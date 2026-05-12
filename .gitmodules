@@ -1,0 +1,4 @@
+[submodule "alp-sdk-upstream"]
+	path = alp-sdk-upstream
+	url = https://github.com/alplabai/alp-sdk.git
+	branch = main

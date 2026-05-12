@@ -1,0 +1,13 @@
+# Node / TypeScript
+node_modules/
+out/
+*.vsix
+
+# Local editor + OS clutter
+.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# Build / test scratch
+coverage/
+.nyc_output/

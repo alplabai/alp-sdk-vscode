@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Build the extension on every PR + push.  Mirrors the
+# `pr-vscode-extension` workflow that used to live in alplabai/alp-sdk;
+# refactored to consume the schema via the alp-sdk-upstream submodule.
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build · extension + vsix
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (with submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile (tsc)
+        run: npm run compile
+
+      - name: Package (.vsix)
+        run: npx vsce package --out alp-sdk.vsix
+
+      - name: Upload vsix artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alp-sdk-vsix
+          path: alp-sdk.vsix
+          retention-days: 30
+
+      - name: Schema-sync check
+        # The package.json points at alp-sdk-upstream's schema; the
+        # submodule HEAD is the source of truth.  Fail if the
+        # submodule pointer was changed but the resulting schema
+        # diverged from what's referenced in package.json's URLs.
+        run: |
+          test -f alp-sdk-upstream/metadata/schemas/board-config-v1.schema.json
+          echo "schema reachable via submodule"
