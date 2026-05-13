@@ -112,6 +112,9 @@ When changing architecture-sensitive code, prefer keeping this split:
 - surface files such as commands, panels, status bar, and diagnostics
   for presentation and orchestration only
 
+For the full implementation contract, see
+[ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md).
+
 ## License
 
 Apache-2.0, same as the SDK.
