@@ -87,10 +87,30 @@ git clone --recurse-submodules https://github.com/alplabai/alp-sdk-vscode.git
 cd alp-sdk-vscode
 npm install
 npm run compile     # tsc -> out/
+npm test            # compile + lightweight service / adapter tests
 npm run package     # vsce package -> alp-sdk-<version>.vsix
 ```
 
 Load the local build via `Extensions: Install from VSIX`.
+
+## Development
+
+Use `npm test` as the default verification step while changing the
+extension.
+
+The current test setup is intentionally lightweight:
+
+- pure service modules are tested directly
+- thin adapter seams with injected dependencies are tested without
+  booting VS Code
+- compile stays part of the test run so API drift is caught early
+
+When changing architecture-sensitive code, prefer keeping this split:
+
+- `service` for pure decision logic
+- `vscodeAdapter` for VS Code, filesystem, and subprocess access
+- surface files such as commands, panels, status bar, and diagnostics
+  for presentation and orchestration only
 
 ## License
 

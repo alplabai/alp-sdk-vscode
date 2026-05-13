@@ -95,6 +95,21 @@
         "command": "alp.openConfigurator",
         "title": "Alp: Open board configurator (GUI)",
         "category": "Alp"
+      },
+      {
+        "command": "alp.inspectProjectState",
+        "title": "Alp: Inspect project state",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.debugDoctor",
+        "title": "Alp: Debug doctor",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.configureDebugProfile",
+        "title": "Alp: Configure debug profile",
+        "category": "Alp"
       }
     ],
     "yamlValidation": [
@@ -137,18 +152,21 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
+    "test": "npm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package"
   },
   "dependencies": {
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^20.11.0",
+    "@types/node": "^25.7.0",
     "@types/vscode": "^1.85.0",
-    "@vscode/vsce": "^2.24.0",
-    "typescript": "^5.3.0"
+    "@vscode/vsce": "^3.9.1",
+    "typescript": "^6.0.3"
   }
 }

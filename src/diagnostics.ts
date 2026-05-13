@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import * as cp from "child_process";
-import * as path from "path";
-import { findSdkRoot, pythonBinary, log } from "./util";
+import { log } from "./util";
+import {
+    analyzeValidationResult,
+    createValidatorPlan,
+    isBoardYamlPath,
+} from "./validation/service";
+import {
+    collectValidationWorkspaceContext,
+    executeValidatorPlan,
+} from "./validation/vscodeAdapter";
 
 /**
  * Surfaces `validate_board_yaml.py` failures as inline diagnostics
@@ -31,71 +38,62 @@ import { findSdkRoot, pythonBinary, log } from "./util";
  * a YAML AST parser (js-yaml-ast or similar) to map field paths.
  */
 
-const SEVERITY: Record<number, vscode.DiagnosticSeverity> = {
-    1: vscode.DiagnosticSeverity.Error,    // schema violation
-    2: vscode.DiagnosticSeverity.Warning,  // missing-preset
-    3: vscode.DiagnosticSeverity.Error,    // hw-rev incompatibility
-};
-
 function isBoardYaml(doc: vscode.TextDocument): boolean {
-    return path.basename(doc.uri.fsPath).toLowerCase() === "board.yaml";
+  return isBoardYamlPath(doc.uri.fsPath);
 }
 
 function validate(
-    doc: vscode.TextDocument,
-    collection: vscode.DiagnosticCollection,
+  doc: vscode.TextDocument,
+  collection: vscode.DiagnosticCollection,
 ): void {
-    if (!isBoardYaml(doc)) return;
-    const sdk = findSdkRoot();
-    if (!sdk) {
-        collection.delete(doc.uri);
-        return;
-    }
-    const validator = path.join(sdk, "scripts", "validate_board_yaml.py");
-    const result = cp.spawnSync(pythonBinary(),
-        [validator, "--input", doc.uri.fsPath],
-        { encoding: "utf8" });
-    log(`$ ${pythonBinary()} ${validator} --input ${doc.uri.fsPath} (rv=${result.status})`);
+  if (!isBoardYaml(doc)) return;
+  const project = collectValidationWorkspaceContext();
+  if (!project.sdkRoot) {
+    collection.delete(doc.uri);
+    return;
+  }
+  const plan = createValidatorPlan(project, doc.uri.fsPath);
+  const execution = executeValidatorPlan(project, plan);
+  log(`$ ${plan.commandLine} (rv=${execution.status})`);
 
-    if (result.status === 0) {
-        collection.delete(doc.uri);
-        return;
-    }
+  const validation = analyzeValidationResult(execution);
+  if (validation.outcome === "clean") {
+    collection.delete(doc.uri);
+    return;
+  }
 
-    const severity = SEVERITY[result.status ?? 1]
-        ?? vscode.DiagnosticSeverity.Error;
-    const lines = (result.stderr || "").split(/\r?\n/)
-        .filter((l) => l.trim().length > 0)
-        // Drop the trailing summary line; keep the per-failure body.
-        .filter((l) => !/^\s*\S+:\s+missing-preset/.test(l)
-                    && !/^\s*\S+:\s+hardware-revision/.test(l));
-
-    // Pin everything to line 0 -- columnless validator output, so a
-    // single squiggle on the first line is the honest representation.
-    const range = new vscode.Range(0, 0, 0, doc.lineAt(0).text.length);
-    const diags = lines.map((message) =>
-        new vscode.Diagnostic(range, message.trim(), severity));
-    collection.set(doc.uri, diags);
+  // Pin everything to line 0 -- columnless validator output, so a
+  // single squiggle on the first line is the honest representation.
+  const range = new vscode.Range(0, 0, 0, doc.lineAt(0).text.length);
+  const diags = validation.issues.map(
+    (issue) =>
+      new vscode.Diagnostic(
+        range,
+        issue.message,
+        issue.severity === "warning"
+          ? vscode.DiagnosticSeverity.Warning
+          : vscode.DiagnosticSeverity.Error,
+      ),
+  );
+  collection.set(doc.uri, diags);
 }
 
 export function registerDiagnostics(
-    context: vscode.ExtensionContext,
+  context: vscode.ExtensionContext,
 ): vscode.Disposable {
-    const collection = vscode.languages.createDiagnosticCollection("alp-sdk");
-    context.subscriptions.push(collection);
+  const collection = vscode.languages.createDiagnosticCollection("alp-sdk");
+  context.subscriptions.push(collection);
 
-    // Validate on open + save + the active editor's initial focus,
-    // so the first time the user touches board.yaml the Problems
-    // panel reflects current state.
-    const disposables: vscode.Disposable[] = [
-        vscode.workspace.onDidOpenTextDocument(
-            (doc) => validate(doc, collection)),
-        vscode.workspace.onDidSaveTextDocument(
-            (doc) => validate(doc, collection)),
-    ];
-    for (const editor of vscode.window.visibleTextEditors) {
-        validate(editor.document, collection);
-    }
+  // Validate on open + save + the active editor's initial focus,
+  // so the first time the user touches board.yaml the Problems
+  // panel reflects current state.
+  const disposables: vscode.Disposable[] = [
+    vscode.workspace.onDidOpenTextDocument((doc) => validate(doc, collection)),
+    vscode.workspace.onDidSaveTextDocument((doc) => validate(doc, collection)),
+  ];
+  for (const editor of vscode.window.visibleTextEditors) {
+    validate(editor.document, collection);
+  }
 
-    return vscode.Disposable.from(...disposables, collection);
+  return vscode.Disposable.from(...disposables, collection);
 }
