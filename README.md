@@ -3,19 +3,18 @@
 First-class IDE support for projects built against the
 [ALP SDK](https://github.com/alplabai/alp-sdk):
 
-* **`board.yaml` schema-aware editing.**  Inline hover docs +
-  autocomplete + validation against the canonical
-  `board-config-v1.schema.json`.  Schema comes from the
-  alp-sdk submodule (see "Schema-sync" below) so the editor's
-  view always matches the loader's view.
+* **`board.yaml` LSP-native editing.** Inline diagnostics,
+  completion, hover, symbols, quick fixes, and effective-config preview
+  run through the language server.
 * **`alp_project.py` loader commands.**  Generate Zephyr-conf /
   DTS overlay / CMake-args / Yocto-conf from `board.yaml` directly
   from the command palette.
 * **`west` workflow wrappers** where build runs
   `validate board.yaml` -> `generate all` -> `west build`, plus
   dedicated `flash` / `run` wrappers with progress reporting.
-* **Per-OS dependency bootstrap.**  Validates Zephyr / west /
-  Yocto toolchain availability before running a build.
+* **Debug-aware orchestration.** Inspect, doctor, preflight,
+  launch-profile planning, and support-bundle surfaces are available
+  without embedding debugger implementation into the extension.
 
 ## Install
 
@@ -27,23 +26,56 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 
 ```text
 .
+├── ARCHITECTURE_RULES.md    -- layering and dependency contract
+├── BACKLOG.md               -- epic/issue tracking checklist
+├── CLI.md                   -- CLI contract and exit-code policy
+├── DEBUG.md                 -- debug support matrix and launch design
+├── PLAN.md                  -- product roadmap and phased delivery
 ├── README.md
 ├── LICENSE                  -- Apache-2.0
 ├── package.json             -- VS Code extension manifest
 ├── tsconfig.json
 ├── src/                     -- TypeScript source
+│   ├── README.md            -- source folder/module guide
 │   ├── extension.ts         -- activation entry point
-│   ├── configuratorPanel.ts -- board.yaml editor
-│   ├── diagnostics.ts       -- inline validator
-│   ├── loader.ts            -- alp_project.py wrapper
-│   ├── statusBar.ts
-│   ├── west.ts              -- validate+generate+build, flash, run orchestration
-│   └── ...
+│   ├── bootstrap.ts         -- extension bootstrap and service wiring
+│   ├── configuratorPanel.ts -- board.yaml panel surface
+│   ├── diagnostics.ts       -- diagnostics surface wiring
+│   ├── loader.ts            -- loader command surface
+│   ├── debug.ts             -- debug command surface
+│   ├── west.ts              -- west command surface
+│   ├── statusBar.ts         -- status bar surface
+│   ├── lsp/                 -- LSP client/server/service/commands
+│   ├── validation/          -- validation plans and issue classification
+│   ├── loader/              -- generation planning and execution contracts
+│   ├── debug/               -- debug models and orchestration logic
+│   ├── project/             -- workspace and toolchain context resolution
+│   ├── boardSummary/        -- compact board summary parsing
+│   ├── configurator/        -- board model parse/normalize/serialize
+│   └── west/                -- west plan/orchestration logic
+├── test/                    -- service and adapter-core unit tests
 ├── snippets/                -- board.yaml + main.c snippets
 ├── media/                   -- icons + walkthrough assets
 └── alp-sdk-upstream/        -- git submodule -> alplabai/alp-sdk
                                 (single source of truth for schemas)
 ```
+
+## Documentation Map
+
+- [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md): Layering,
+  dependency direction, and testing contracts.
+- [PLAN.md](PLAN.md): Product goals and phased roadmap.
+- [BACKLOG.md](BACKLOG.md): Epic and issue checklist with current
+  implementation state.
+- [CLI.md](CLI.md): Proposed CLI command families, output contract,
+  and exit-code policy.
+- [DEBUG.md](DEBUG.md): Debug support matrix and launch strategy.
+- [src/README.md](src/README.md): Source module map.
+- [src/lsp/README.md](src/lsp/README.md): LSP module responsibilities.
+- [src/debug/README.md](src/debug/README.md): Debug module boundaries.
+- [src/loader/README.md](src/loader/README.md): Loader module responsibilities.
+- [src/validation/README.md](src/validation/README.md): Validation module ownership.
+- [src/project/README.md](src/project/README.md): Workspace/toolchain context rules.
 
 ## Why a separate repo
 
@@ -110,11 +142,15 @@ When changing architecture-sensitive code, prefer keeping this split:
 
 * `service` for pure decision logic
 * `vscodeAdapter` for VS Code, filesystem, and subprocess access
+* `adapterCore` for runtime-independent seam logic
 * surface files such as commands, panels, status bar, and diagnostics
   for presentation and orchestration only
 
 For the full implementation contract, see
 [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md).
+
+For slice-level ownership and file conventions, see
+[src/README.md](src/README.md) and each module-local README.
 
 ## License
 
