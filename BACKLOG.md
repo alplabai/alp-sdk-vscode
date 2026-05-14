@@ -280,13 +280,13 @@ thin wrapper panel.
 - [x] Improve field grouping and visual hierarchy.
 - [x] Add inline help and contextual explanations.
 - [x] Preserve compatibility with hand-edited YAML.
-- [ ] Add a first-run project creation wizard.
-- [ ] Let the wizard choose template, hardware, and feature set.
-- [ ] Show generated files before write.
-- [ ] Create the initial workspace layout and starter files.
+- [x] Add a first-run project creation wizard.
+- [x] Let the wizard choose template, hardware, and feature set.
+- [x] Show generated files before write.
+- [x] Create the initial workspace layout and starter files.
 - [x] Show effective config preview.
 - [ ] Show generated output preview.
-- [ ] Show scaffolded project tree preview.
+- [x] Show scaffolded project tree preview.
 - [x] Add write confirmation for changed files.
 - [x] Add validation summary view before apply.
 

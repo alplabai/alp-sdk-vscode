@@ -76,6 +76,7 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 - [src/loader/README.md](src/loader/README.md): Loader module responsibilities.
 - [src/validation/README.md](src/validation/README.md): Validation module ownership.
 - [src/project/README.md](src/project/README.md): Workspace/toolchain context rules.
+- [src/wizard/README.md](src/wizard/README.md): First-run project wizard responsibilities.
 
 ## Why a separate repo
 

@@ -8,6 +8,10 @@ import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
 import { createStatusBar } from "./statusBar";
+import {
+  maybeOfferFirstRunWizard,
+  registerProjectWizardCommand,
+} from "./wizard";
 import { registerWestCommands } from "./west";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -19,9 +23,12 @@ export function activate(context: vscode.ExtensionContext): void {
     registerBootstrapCommand(),
     createStatusBar(context),
     registerConfiguratorCommand(context),
+    registerProjectWizardCommand(),
     ...registerLspCommands(),
     ...registerDebugCommands(),
   );
+
+  void maybeOfferFirstRunWizard(context);
 }
 
 export async function deactivate(): Promise<void> {

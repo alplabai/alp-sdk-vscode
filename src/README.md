@@ -12,6 +12,7 @@ This document explains the purpose of each module folder under `src`.
 - `project/`: Resolves workspace, SDK, and toolchain context from settings and folder layout.
 - `validation/`: Builds and analyzes board validation commands and outputs.
 - `west/`: Handles west build/flash/run planning and execution orchestration.
+- `wizard/`: Implements first-run project creation wizard planning and file previews.
 
 ## Design Rule
 
