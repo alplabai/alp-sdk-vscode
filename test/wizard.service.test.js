@@ -55,9 +55,14 @@ test("createWizardPlan builds starter files and scaffold preview", () => {
   assert.equal(plan.boardModel.som.sku, "E1M-AEN701");
   assert.equal(plan.boardModel.carrier.name, "E1M-EVK");
   assert.equal(plan.boardModel.os, "zephyr");
-  assert.equal(plan.files.length, 4);
+  assert.equal(plan.files.length >= 7, true);
   assert.match(plan.scaffoldTreePreview, /board\.yaml/);
   assert.match(plan.scaffoldTreePreview, /src\/main\.c/);
+  assert.match(plan.scaffoldTreePreview, /prj\.conf/);
+  assert.match(
+    plan.scaffoldTreePreview,
+    /src\/features\/connectivity_pipeline\.c/,
+  );
 
   const boardYaml = plan.files.find(
     (file) => file.relativePath === "board.yaml",
@@ -65,6 +70,16 @@ test("createWizardPlan builds starter files and scaffold preview", () => {
   assert.ok(boardYaml);
   assert.match(boardYaml.content, /schema_version: 1/);
   assert.match(boardYaml.content, /mqtt: true/);
+
+  const prjConf = plan.files.find((file) => file.relativePath === "prj.conf");
+  assert.ok(prjConf);
+  assert.match(prjConf.content, /CONFIG_MQTT_LIB=y/);
+
+  const rootCmake = plan.files.find(
+    (file) => file.relativePath === "CMakeLists.txt",
+  );
+  assert.ok(rootCmake);
+  assert.match(rootCmake.content, /add_subdirectory\(src\)/);
 });
 
 test("createWizardPreviewMarkdown contains selections and file change summary", () => {

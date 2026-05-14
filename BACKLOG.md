@@ -344,7 +344,7 @@ curated templates.
 
 ## Exit Criteria
 
-- [ ] Users can create a credible starter project without manually
+- [x] Users can create a credible starter project without manually
       copying repo examples.
 - [x] Partial scaffolding works for existing projects.
 ```
