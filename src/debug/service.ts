@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  DebugDoctorRequest,
-  DebugGenerationTraceDecision,
-  DebugGenerationTraceReport,
-  DebugInspectReport,
-  DebugLaunchPreview,
-  DebugResolvedValue,
-  DebugRuntimeCapabilities,
-  DebugServerChoice,
-  DebugServerKind,
-  DebugSupportBundlePayload,
-  DebugTargetChoice,
-  DebugTargetKind,
-  DebugWorkspaceContext,
-  DoctorCheck,
-  DoctorReport,
-  LaunchConfigurationDraft,
+    DebugDoctorRequest,
+    DebugGenerationTraceDecision,
+    DebugGenerationTraceReport,
+    DebugInspectReport,
+    DebugLaunchPreview,
+    DebugResolvedValue,
+    DebugRuntimeCapabilities,
+    DebugServerChoice,
+    DebugServerKind,
+    DebugSupportBundlePayload,
+    DebugTargetChoice,
+    DebugTargetKind,
+    DebugWorkspaceContext,
+    DoctorCheck,
+    DoctorReport,
+    LaunchConfigurationDraft,
 } from "./models";
 
 const MCU_SERVER_CHOICES: ReadonlyArray<DebugServerChoice> = [
@@ -107,7 +107,9 @@ export function createSupportBundlePayload(input: {
     inspect: {
       ...input.inspect,
       context: { ...input.inspect.context },
-      resolvedValues: input.inspect.resolvedValues.map((value) => ({ ...value })),
+      resolvedValues: input.inspect.resolvedValues.map((value) => ({
+        ...value,
+      })),
     },
     trace: input.trace
       ? {

@@ -67,8 +67,7 @@ test("createInspectReport returns a copy of the workspace context", () => {
   assert.notEqual(report.context, context);
   assert.ok(
     report.resolvedValues.some(
-      (value) =>
-        value.key === "workspaceRoot" && value.source === "workspace",
+      (value) => value.key === "workspaceRoot" && value.source === "workspace",
     ),
   );
 });
