@@ -1155,18 +1155,18 @@ without hand-authoring everything.
 
 ## Tasks
 
-- [ ] Add `Alp: Inspect project state`.
-- [ ] Add `Alp: Debug doctor`.
-- [ ] Add `Alp: Configure debug profile`.
-- [ ] Surface results in an inspectable form inside VS Code.
-- [ ] Keep the command implementations aligned with the shared debug
+- [x] Add `Alp: Inspect project state`.
+- [x] Add `Alp: Debug doctor`.
+- [x] Add `Alp: Configure debug profile`.
+- [x] Surface results in an inspectable form inside VS Code.
+- [x] Keep the command implementations aligned with the shared debug
       model as it evolves.
 
 ## Acceptance Criteria
 
-- [ ] Users can inspect current workspace/debug inputs without leaving
+- [x] Users can inspect current workspace/debug inputs without leaving
       VS Code.
-- [ ] Users can draft a launch profile for the supported target classes.
+- [x] Users can draft a launch profile for the supported target classes.
 ```
 
 ## 5. Recommended First Sprint
