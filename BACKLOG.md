@@ -951,20 +951,20 @@ classes instead of requiring users to hand-author every debug profile.
 
 ## Tasks
 
-- [ ] Define the shared `DebugProfile` model.
-- [ ] Generate Zephyr + `cortex-debug` + J-Link launch profiles.
-- [ ] Generate Zephyr + `cortex-debug` + OpenOCD launch profiles.
-- [ ] Generate baremetal + `cortex-debug` launch profiles.
-- [ ] Generate Yocto userspace + `cppdbg` + `gdbserver` launch profiles.
-- [ ] Generate `native_sim` / host + `CodeLLDB` launch profiles.
-- [ ] Define whether profiles are written to `launch.json` or provided
+- [x] Define the shared `DebugProfile` model.
+- [x] Generate Zephyr + `cortex-debug` + J-Link launch profiles.
+- [x] Generate Zephyr + `cortex-debug` + OpenOCD launch profiles.
+- [x] Generate baremetal + `cortex-debug` launch profiles.
+- [x] Generate Yocto userspace + `cppdbg` + `gdbserver` launch profiles.
+- [x] Generate `native_sim` / host + `CodeLLDB` launch profiles.
+- [x] Define whether profiles are written to `launch.json` or provided
       dynamically.
 
 ## Acceptance Criteria
 
-- [ ] The product can generate at least one working Zephyr debug
+- [x] The product can generate at least one working Zephyr debug
       profile end-to-end.
-- [ ] The launch design is documented and reusable for other target
+- [x] The launch design is documented and reusable for other target
       classes.
 ```
 

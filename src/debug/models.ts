@@ -123,6 +123,35 @@ export interface DebugSupportBundlePayload {
   notes: string[];
 }
 
+export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "codelldb";
+
+export type DebugProfileOs = "zephyr" | "baremetal" | "yocto" | "host";
+
+export interface DebugSetupCommand {
+  text: string;
+}
+
+export interface DebugProfile {
+  id: string;
+  name: string;
+  targetKind: DebugTargetKind;
+  adapter: DebugAdapterKind;
+  server: DebugServerKind;
+  os: DebugProfileOs;
+  executablePath: string;
+  cwd: string;
+  preLaunchTask?: string;
+  device?: string;
+  interface?: "swd" | "jtag";
+  svdFile?: string;
+  openOcdConfigFiles?: string[];
+  targetId?: string;
+  miMode?: "gdb";
+  miDebuggerPath?: string;
+  miDebuggerServerAddress?: string;
+  setupCommands?: DebugSetupCommand[];
+}
+
 export type LaunchConfigurationDraft = Record<string, unknown>;
 
 export interface DebugLaunchDocument {

@@ -4,6 +4,7 @@ import {
     DebugDoctorRequest,
     DebugGenerationTraceDecision,
     DebugGenerationTraceReport,
+  DebugProfile,
     DebugInspectReport,
     DebugLaunchPreview,
     DebugResolvedValue,
@@ -259,6 +260,8 @@ export function createLaunchPreview(
   targetKind: DebugTargetKind,
   server: DebugServerKind,
 ): DebugLaunchPreview {
+  const profile = createDebugProfile(targetKind, server);
+
   return {
     generatedAt,
     targetKind,
@@ -270,9 +273,182 @@ export function createLaunchPreview(
     ],
     launch: {
       version: "0.2.0",
-      configurations: [createLaunchDraft(targetKind, server)],
+      configurations: [debugProfileToLaunchDraft(profile)],
     },
   };
+}
+
+export function createDebugProfile(
+  targetKind: DebugTargetKind,
+  server: DebugServerKind,
+): DebugProfile {
+  if (!supportsServerForTarget(targetKind, server)) {
+    throw new Error(
+      `Unsupported debug backend '${server}' for target '${targetKind}'.`,
+    );
+  }
+
+  switch (targetKind) {
+    case "zephyr-mcu": {
+      const base: DebugProfile = {
+        id: `alp:${targetKind}:${server}`,
+        name: `ALP: Zephyr Debug (${serverLabel(server)})`,
+        targetKind,
+        adapter: "cortex-debug",
+        server,
+        os: "zephyr",
+        executablePath: "${workspaceFolder}/build/app/zephyr/zephyr.elf",
+        cwd: "${workspaceFolder}",
+        preLaunchTask: "alp: build active target",
+      };
+
+      switch (server) {
+        case "openocd":
+          return {
+            ...base,
+            openOcdConfigFiles: ["<resolved-openocd-board-cfg>"],
+          };
+        case "pyocd":
+          return {
+            ...base,
+            targetId: "<resolved-target-id>",
+          };
+        case "jlink":
+          return {
+            ...base,
+            device: "<resolved-device>",
+            interface: "swd",
+          };
+        case "gdbserver":
+        case "none":
+          break;
+      }
+      break;
+    }
+    case "baremetal-mcu":
+      return {
+        id: `alp:${targetKind}:${server}`,
+        name: `ALP: Baremetal Debug (${serverLabel(server)})`,
+        targetKind,
+        adapter: "cortex-debug",
+        server,
+        os: "baremetal",
+        executablePath: "${workspaceFolder}/build/baremetal/app.elf",
+        cwd: "${workspaceFolder}",
+        preLaunchTask: "alp: build baremetal target",
+        device: "<resolved-device>",
+        interface: "swd",
+        svdFile: "<resolved-svd>",
+      };
+    case "yocto-userspace":
+      return {
+        id: `alp:${targetKind}:${server}`,
+        name: "ALP: Yocto Remote Debug",
+        targetKind,
+        adapter: "cppdbg",
+        server,
+        os: "yocto",
+        executablePath: "${workspaceFolder}/build/yocto/app",
+        cwd: "${workspaceFolder}",
+        preLaunchTask: "alp: deploy and start gdbserver",
+        miMode: "gdb",
+        miDebuggerServerAddress: "<host>:<port>",
+        miDebuggerPath: "<resolved-gdb>",
+        setupCommands: [{ text: "-enable-pretty-printing" }],
+      };
+    case "native-host":
+      return {
+        id: `alp:${targetKind}:${server}`,
+        name: "ALP: Native Sim Debug",
+        targetKind,
+        adapter: "codelldb",
+        server,
+        os: "host",
+        executablePath: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
+        cwd: "${workspaceFolder}",
+        preLaunchTask: "alp: build native_sim target",
+      };
+  }
+
+  throw new Error(`Unsupported debug target '${targetKind}'.`);
+}
+
+export function debugProfileToLaunchDraft(
+  profile: DebugProfile,
+): LaunchConfigurationDraft {
+  switch (profile.targetKind) {
+    case "zephyr-mcu": {
+      const base: LaunchConfigurationDraft = {
+        name: profile.name,
+        type: profile.adapter,
+        request: "launch",
+        cwd: profile.cwd,
+        executable: profile.executablePath,
+        runToEntryPoint: "main",
+        preLaunchTask: profile.preLaunchTask,
+      };
+
+      if (profile.server === "openocd") {
+        return {
+          ...base,
+          servertype: "openocd",
+          configFiles: profile.openOcdConfigFiles,
+        };
+      }
+
+      if (profile.server === "pyocd") {
+        return {
+          ...base,
+          servertype: "pyocd",
+          targetId: profile.targetId,
+        };
+      }
+
+      return {
+        ...base,
+        servertype: "jlink",
+        device: profile.device,
+        interface: profile.interface,
+      };
+    }
+    case "baremetal-mcu":
+      return {
+        name: profile.name,
+        type: profile.adapter,
+        request: "launch",
+        servertype: profile.server,
+        cwd: profile.cwd,
+        executable: profile.executablePath,
+        device: profile.device,
+        interface: profile.interface,
+        svdFile: profile.svdFile,
+        preLaunchTask: profile.preLaunchTask,
+      };
+    case "yocto-userspace":
+      return {
+        name: profile.name,
+        type: profile.adapter,
+        request: "launch",
+        program: profile.executablePath,
+        cwd: profile.cwd,
+        MIMode: profile.miMode,
+        miDebuggerServerAddress: profile.miDebuggerServerAddress,
+        miDebuggerPath: profile.miDebuggerPath,
+        setupCommands: profile.setupCommands,
+        preLaunchTask: profile.preLaunchTask,
+      };
+    case "native-host":
+      return {
+        name: profile.name,
+        type: profile.adapter,
+        request: "launch",
+        program: profile.executablePath,
+        cwd: profile.cwd,
+        preLaunchTask: profile.preLaunchTask,
+      };
+  }
+
+  throw new Error(`Unsupported debug target '${profile.targetKind}'.`);
 }
 
 function createDoctorReport(
@@ -334,93 +510,6 @@ function supportsServerForTarget(
   return serverChoicesForTarget(targetKind).some(
     (choice) => choice.server === server,
   );
-}
-
-function createLaunchDraft(
-  targetKind: DebugTargetKind,
-  server: DebugServerKind,
-): LaunchConfigurationDraft {
-  if (!supportsServerForTarget(targetKind, server)) {
-    throw new Error(
-      `Unsupported debug backend '${server}' for target '${targetKind}'.`,
-    );
-  }
-
-  switch (targetKind) {
-    case "zephyr-mcu": {
-      const base: LaunchConfigurationDraft = {
-        name: `ALP: Zephyr Debug (${serverLabel(server)})`,
-        type: "cortex-debug",
-        request: "launch",
-        cwd: "${workspaceFolder}",
-        executable: "${workspaceFolder}/build/app/zephyr/zephyr.elf",
-        runToEntryPoint: "main",
-        preLaunchTask: "alp: build active target",
-      };
-      switch (server) {
-        case "openocd":
-          return {
-            ...base,
-            servertype: "openocd",
-            configFiles: ["<resolved-openocd-board-cfg>"],
-          };
-        case "pyocd":
-          return {
-            ...base,
-            servertype: "pyocd",
-            targetId: "<resolved-target-id>",
-          };
-        case "jlink":
-          return {
-            ...base,
-            servertype: "jlink",
-            device: "<resolved-device>",
-            interface: "swd",
-          };
-        case "gdbserver":
-        case "none":
-          break;
-      }
-      break;
-    }
-    case "baremetal-mcu":
-      return {
-        name: `ALP: Baremetal Debug (${serverLabel(server)})`,
-        type: "cortex-debug",
-        request: "launch",
-        servertype: server,
-        cwd: "${workspaceFolder}",
-        executable: "${workspaceFolder}/build/baremetal/app.elf",
-        device: "<resolved-device>",
-        interface: "swd",
-        svdFile: "<resolved-svd>",
-        preLaunchTask: "alp: build baremetal target",
-      };
-    case "yocto-userspace":
-      return {
-        name: "ALP: Yocto Remote Debug",
-        type: "cppdbg",
-        request: "launch",
-        program: "${workspaceFolder}/build/yocto/app",
-        cwd: "${workspaceFolder}",
-        MIMode: "gdb",
-        miDebuggerServerAddress: "<host>:<port>",
-        miDebuggerPath: "<resolved-gdb>",
-        setupCommands: [{ text: "-enable-pretty-printing" }],
-        preLaunchTask: "alp: deploy and start gdbserver",
-      };
-    case "native-host":
-      return {
-        name: "ALP: Native Sim Debug",
-        type: "codelldb",
-        request: "launch",
-        program: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
-        cwd: "${workspaceFolder}",
-        preLaunchTask: "alp: build native_sim target",
-      };
-  }
-
-  throw new Error(`Unsupported debug target '${targetKind}'.`);
 }
 
 function serverLabel(server: DebugServerKind): string {

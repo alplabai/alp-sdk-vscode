@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   buildDoctorReport,
+  createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
   createLaunchPreview,
@@ -55,6 +56,28 @@ test("serverChoicesForTarget returns expected backends", () => {
     serverChoicesForTarget("native-host").map((choice) => choice.server),
     ["none"],
   );
+});
+
+test("createDebugProfile defines reusable profile metadata", () => {
+  const zephyr = createDebugProfile("zephyr-mcu", "openocd");
+  const baremetal = createDebugProfile("baremetal-mcu", "jlink");
+  const yocto = createDebugProfile("yocto-userspace", "gdbserver");
+  const host = createDebugProfile("native-host", "none");
+
+  assert.equal(zephyr.adapter, "cortex-debug");
+  assert.equal(zephyr.os, "zephyr");
+  assert.deepEqual(zephyr.openOcdConfigFiles, ["<resolved-openocd-board-cfg>"]);
+
+  assert.equal(baremetal.adapter, "cortex-debug");
+  assert.equal(baremetal.os, "baremetal");
+  assert.equal(baremetal.interface, "swd");
+
+  assert.equal(yocto.adapter, "cppdbg");
+  assert.equal(yocto.server, "gdbserver");
+  assert.equal(yocto.miMode, "gdb");
+
+  assert.equal(host.adapter, "codelldb");
+  assert.equal(host.os, "host");
 });
 
 test("createInspectReport returns a copy of the workspace context", () => {
@@ -179,6 +202,45 @@ test("createLaunchPreview generates a Zephyr J-Link draft", () => {
   assert.equal(config.servertype, "jlink");
   assert.equal(config.interface, "swd");
   assert.match(config.name, /Zephyr Debug/);
+});
+
+test("createLaunchPreview generates a Zephyr OpenOCD draft", () => {
+  const preview = createLaunchPreview(
+    "2026-05-14T00:00:00.000Z",
+    "zephyr-mcu",
+    "openocd",
+  );
+
+  const config = preview.launch.configurations[0];
+  assert.equal(config.type, "cortex-debug");
+  assert.equal(config.servertype, "openocd");
+  assert.deepEqual(config.configFiles, ["<resolved-openocd-board-cfg>"]);
+});
+
+test("createLaunchPreview generates a baremetal draft", () => {
+  const preview = createLaunchPreview(
+    "2026-05-14T00:00:00.000Z",
+    "baremetal-mcu",
+    "jlink",
+  );
+
+  const config = preview.launch.configurations[0];
+  assert.equal(config.type, "cortex-debug");
+  assert.equal(config.servertype, "jlink");
+  assert.equal(config.executable, "${workspaceFolder}/build/baremetal/app.elf");
+});
+
+test("createLaunchPreview generates a Yocto gdbserver draft", () => {
+  const preview = createLaunchPreview(
+    "2026-05-14T00:00:00.000Z",
+    "yocto-userspace",
+    "gdbserver",
+  );
+
+  const config = preview.launch.configurations[0];
+  assert.equal(config.type, "cppdbg");
+  assert.equal(config.MIMode, "gdb");
+  assert.equal(config.miDebuggerServerAddress, "<host>:<port>");
 });
 
 test("createLaunchPreview generates a native host draft", () => {

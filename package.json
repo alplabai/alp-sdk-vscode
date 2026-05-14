@@ -108,7 +108,7 @@
       },
       {
         "command": "alp.configureDebugProfile",
-        "title": "Alp: Configure debug profile",
+        "title": "Alp: Configure debug profile (launch.json)",
         "category": "Alp"
       }
     ],

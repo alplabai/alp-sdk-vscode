@@ -240,38 +240,44 @@ The recommended path is:
 - MVP: generate `launch.json` profiles and keep them inspectable
 - later: add dynamic profile generation once the model stabilizes
 
+Current implementation follows the MVP path: `alp.configureDebugProfile`
+writes or updates `launch.json` entries from generated launch drafts.
+
 ## 9. Shared Debug Model
 
 The shared core should own a debug-profile model so UI, CLI, and any
 future LSP commands can all consume the same resolved configuration.
 
 ```ts
-type DebugTargetKind = "mcu" | "linux-userspace" | "native-host";
+type DebugTargetKind =
+  | "zephyr-mcu"
+  | "baremetal-mcu"
+  | "yocto-userspace"
+  | "native-host";
 type DebugAdapterKind = "cortex-debug" | "cppdbg" | "codelldb";
 type DebugServerKind = "jlink" | "openocd" | "pyocd" | "gdbserver" | "none";
 
 interface DebugProfile {
   id: string;
   name: string;
-  os: "zephyr" | "baremetal" | "yocto";
+  os: "zephyr" | "baremetal" | "yocto" | "host";
   targetKind: DebugTargetKind;
   adapter: DebugAdapterKind;
   server: DebugServerKind;
-  buildDir: string;
-  elfPath: string;
+  executablePath: string;
+  cwd: string;
   preLaunchTask?: string;
-  board?: string;
   device?: string;
   interface?: "swd" | "jtag";
   svdFile?: string;
-  gdbPath?: string;
-  toolPath?: string;
   openOcdConfigFiles?: string[];
-  jlinkDevice?: string;
+  targetId?: string;
+  miMode?: "gdb";
+  miDebuggerPath?: string;
+  miDebuggerServerAddress?: string;
+  setupCommands?: Array<{ text: string }>;
   remoteHost?: string;
   remotePort?: number;
-  cwd?: string;
-  env?: Record<string, string>;
 }
 ```
 
