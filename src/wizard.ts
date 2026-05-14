@@ -13,10 +13,11 @@ import {
 import {
     createWizardPlan,
     createWizardPreviewMarkdown,
+  createWizardValidationSummary,
     listWizardTemplates,
 } from "./wizard/service";
 import {
-  collectGeneratedOutputPreviews,
+    collectGeneratedOutputPreviews,
     collectWizardFileChanges,
     writeWizardFiles,
 } from "./wizard/vscodeAdapter";
@@ -126,13 +127,28 @@ async function runProjectWizard(): Promise<void> {
     project.workspaceRoot,
     plan.files,
   );
-  const generatedOutputs = collectGeneratedOutputPreviews(project.workspaceRoot);
+  const generatedOutputs = collectGeneratedOutputPreviews(
+    project.workspaceRoot,
+  );
+  const validationSummary = createWizardValidationSummary(plan.boardModel);
 
   const previewDocument = await vscode.workspace.openTextDocument({
     language: "markdown",
-    content: createWizardPreviewMarkdown(plan, fileChanges, generatedOutputs),
+    content: createWizardPreviewMarkdown(
+      plan,
+      fileChanges,
+      generatedOutputs,
+      validationSummary,
+    ),
   });
   await vscode.window.showTextDocument(previewDocument, { preview: false });
+
+  if (validationSummary.errors.length > 0) {
+    await vscode.window.showErrorMessage(
+      `Alp: wizard validation found ${validationSummary.errors.length} error(s). Resolve selections before writing files.`,
+    );
+    return;
+  }
 
   const writeCount = fileChanges.filter(
     (file) => file.kind !== "unchanged",

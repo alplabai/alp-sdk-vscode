@@ -63,6 +63,12 @@ export interface WizardGeneratedOutputPreview {
   contentPreview: string;
 }
 
+export interface WizardValidationSummary {
+  errors: string[];
+  warnings: string[];
+  suggestions: string[];
+}
+
 export interface WizardWriteResult {
   written: string[];
   unchanged: string[];

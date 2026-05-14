@@ -2,13 +2,13 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { listGenerationTargetSupport } from "../loader/service";
 import {
     WizardFileChange,
-  WizardGeneratedOutputPreview,
+    WizardGeneratedOutputPreview,
     WizardPlannedFile,
     WizardWriteResult,
 } from "./models";
-import { listGenerationTargetSupport } from "../loader/service";
 
 export function collectWizardFileChanges(
   workspaceRoot: string,
@@ -73,7 +73,8 @@ export function collectGeneratedOutputPreviews(
         outputRelativePath: target.outputRelativePath,
         languageId: target.preview.languageId,
         state: "missing",
-        contentPreview: "(Not generated yet. Run Alp: Generate all to create this output.)",
+        contentPreview:
+          "(Not generated yet. Run Alp: Generate all to create this output.)",
       };
     }
 
@@ -85,7 +86,8 @@ export function collectGeneratedOutputPreviews(
       outputRelativePath: target.outputRelativePath,
       languageId: target.preview.languageId,
       state: "existing",
-      contentPreview: preview.length > 0 ? preview : "(File exists but is empty.)",
+      contentPreview:
+        preview.length > 0 ? preview : "(File exists but is empty.)",
     };
   });
 }

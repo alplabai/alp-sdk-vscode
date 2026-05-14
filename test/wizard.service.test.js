@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   createWizardPlan,
   createWizardPreviewMarkdown,
+  createWizardValidationSummary,
   listWizardTemplates,
 } = require("../out/wizard/service.js");
 
@@ -57,27 +58,47 @@ test("createWizardPreviewMarkdown contains selections and file change summary", 
     libraries: [],
   });
 
-  const markdown = createWizardPreviewMarkdown(plan, [
-    { relativePath: "board.yaml", kind: "new" },
-    { relativePath: "README.md", kind: "update" },
-    { relativePath: "CMakeLists.txt", kind: "unchanged" },
-  ], [
-    {
-      emit: "zephyr-conf",
-      displayName: "Zephyr config",
-      outputRelativePath: "build/generated/alp.conf",
-      languageId: "properties",
-      state: "missing",
-      contentPreview: "(Not generated yet)",
-    },
-  ]);
+  const markdown = createWizardPreviewMarkdown(
+    plan,
+    [
+      { relativePath: "board.yaml", kind: "new" },
+      { relativePath: "README.md", kind: "update" },
+      { relativePath: "CMakeLists.txt", kind: "unchanged" },
+    ],
+    [
+      {
+        emit: "zephyr-conf",
+        displayName: "Zephyr config",
+        outputRelativePath: "build/generated/alp.conf",
+        languageId: "properties",
+        state: "missing",
+        contentPreview: "(Not generated yet)",
+      },
+    ],
+  );
 
   assert.match(markdown, /ALP Project Wizard Preview/);
   assert.match(markdown, /Template: Minimal app/);
   assert.match(markdown, /Files that will be written: 2/);
   assert.match(markdown, /NEW: board\.yaml/);
   assert.match(markdown, /UPDATE: README\.md/);
+  assert.match(markdown, /Validation Summary/);
+  assert.match(markdown, /Errors: 0 \| Warnings: 0 \| Suggestions: 0/);
   assert.match(markdown, /Generated Output Preview/);
   assert.match(markdown, /Zephyr config/);
   assert.match(markdown, /build\/generated\/alp\.conf/);
+});
+
+test("createWizardValidationSummary reports required-field errors", () => {
+  const summary = createWizardValidationSummary({
+    schema_version: 1,
+    som: { sku: "" },
+    carrier: { name: "" },
+    os: "",
+  });
+
+  assert.equal(summary.errors.length, 3);
+  assert.match(summary.errors[0], /SoM SKU is required/);
+  assert.match(summary.errors[1], /Carrier name is required/);
+  assert.match(summary.errors[2], /OS target is required/);
 });

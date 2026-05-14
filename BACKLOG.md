@@ -292,9 +292,9 @@ thin wrapper panel.
 
 ## Exit Criteria
 
-- [ ] A new user can create or update a project entirely through VS
+- [x] A new user can create or update a project entirely through VS
       Code.
-- [ ] The UI provides preview and validation before write.
+- [x] The UI provides preview and validation before write.
 ```
 
 ---

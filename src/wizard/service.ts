@@ -4,12 +4,13 @@ import { BoardModel } from "../configurator/models";
 import { createBoardYaml } from "../configurator/service";
 import {
     WizardFileChange,
-  WizardGeneratedOutputPreview,
+    WizardGeneratedOutputPreview,
     WizardPlan,
     WizardPlanInput,
     WizardPlannedFile,
     WizardTemplateDefinition,
     WizardTemplateId,
+  WizardValidationSummary,
 } from "./models";
 
 const TEMPLATE_DEFINITIONS: readonly WizardTemplateDefinition[] = [
@@ -74,6 +75,8 @@ export function createWizardPreviewMarkdown(
   plan: WizardPlan,
   fileChanges: WizardFileChange[],
   generatedOutputs: WizardGeneratedOutputPreview[] = [],
+  validationSummary: WizardValidationSummary =
+    createWizardValidationSummary(plan.boardModel),
 ): string {
   const boardModel = plan.boardModel;
   const changedCount = fileChanges.filter(
@@ -107,6 +110,29 @@ export function createWizardPreviewMarkdown(
   }
   lines.push("");
 
+  lines.push("## Validation Summary");
+  lines.push("");
+  lines.push(
+    `- Errors: ${validationSummary.errors.length} | Warnings: ${validationSummary.warnings.length} | Suggestions: ${validationSummary.suggestions.length}`,
+  );
+  for (const error of validationSummary.errors) {
+    lines.push(`- Error: ${error}`);
+  }
+  for (const warning of validationSummary.warnings) {
+    lines.push(`- Warning: ${warning}`);
+  }
+  for (const suggestion of validationSummary.suggestions) {
+    lines.push(`- Suggestion: ${suggestion}`);
+  }
+  if (
+    validationSummary.errors.length === 0 &&
+    validationSummary.warnings.length === 0 &&
+    validationSummary.suggestions.length === 0
+  ) {
+    lines.push("- No validation findings.");
+  }
+  lines.push("");
+
   lines.push("## Generated Output Preview");
   lines.push("");
   if (generatedOutputs.length === 0) {
@@ -137,6 +163,37 @@ export function createWizardPreviewMarkdown(
   }
 
   return lines.join("\n");
+}
+
+export function createWizardValidationSummary(
+  boardModel: BoardModel,
+): WizardValidationSummary {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const suggestions: string[] = [];
+
+  if (!boardModel.som?.sku) {
+    errors.push("SoM SKU is required.");
+  }
+  if (!boardModel.carrier?.name) {
+    errors.push("Carrier name is required.");
+  }
+  if (!boardModel.os) {
+    errors.push("OS target is required.");
+  }
+
+  const arena = boardModel.inference?.default_arena_kib;
+  if (arena !== undefined && arena < 16) {
+    warnings.push("Inference arena should be at least 16 KiB.");
+  }
+
+  if (boardModel.iot?.mqtt && !boardModel.iot?.wifi) {
+    suggestions.push(
+      "MQTT is enabled while Wi-Fi is disabled. Confirm your transport path.",
+    );
+  }
+
+  return { errors, warnings, suggestions };
 }
 
 function resolveTemplate(
