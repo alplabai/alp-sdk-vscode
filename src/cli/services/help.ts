@@ -24,6 +24,7 @@ export function createHelpResult(
     "Init flags: --template <id> --name <project-name> --destination <path> --preview --force",
     "Scaffold flags: --template <id> --name <module-name> --destination <path> --preview --force",
     "Diff flags: --project <path> --board-yaml <path>",
+    "Completion flags: --shell <bash|zsh|fish>",
     "Doctor flags: --target-kind <zephyr-mcu|baremetal-mcu|yocto-userspace|native-host> --server <jlink|openocd|pyocd|gdbserver|none>",
   ];
 

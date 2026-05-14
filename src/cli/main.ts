@@ -26,7 +26,11 @@ const result = executeCli({
 if (result.format === "json") {
   process.stdout.write(`${JSON.stringify(result.envelope, null, 2)}\n`);
 } else if (result.textLines.length > 0) {
-  process.stderr.write(`${result.textLines.join("\n")}\n`);
+  if (result.envelope.command === "completion") {
+    process.stdout.write(`${result.textLines.join("\n")}\n`);
+  } else {
+    process.stderr.write(`${result.textLines.join("\n")}\n`);
+  }
 }
 
 process.exitCode = result.exitCode;

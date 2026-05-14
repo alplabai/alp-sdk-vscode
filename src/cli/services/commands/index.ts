@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+export { runCompletionCommand } from "./completion";
 export { runDiffCommand } from "./diff";
 export { runDoctorCommand } from "./doctor";
 export { runExplainCommand } from "./explain";

@@ -28,6 +28,7 @@ The CLI should expose these top-level command families:
 - `alp generate`
 - `alp init`
 - `alp scaffold`
+- `alp completion`
 - `alp inspect`
 - `alp trace`
 - `alp doctor`
@@ -244,6 +245,21 @@ Suggested flags:
 - `--profile <id>`
 - `--write-launch-json`
 - `--output <path>`
+
+### 4.10 `alp completion`
+
+Purpose:
+
+- emit shell completion scripts for supported shells
+
+Required behavior:
+
+- generate completion scripts for bash, zsh, and fish
+- return deterministic scripts for CI and local shell setup
+
+Suggested flags:
+
+- `--shell <bash|zsh|fish>`
 
 ## 5. JSON Contract Shape
 

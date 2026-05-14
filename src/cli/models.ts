@@ -27,11 +27,14 @@ export type CliCommand =
   | "init"
   | "scaffold"
   | "diff"
+  | "completion"
   | "inspect"
   | "trace"
   | "doctor"
   | "support-bundle"
   | "debug-config";
+
+export type CliShell = "bash" | "zsh" | "fish";
 
 export interface CliGlobalFlags {
   projectPath: string | null;
@@ -44,6 +47,7 @@ export interface CliGlobalFlags {
   template: string | null;
   name: string | null;
   destination: string | null;
+  shell: string | null;
   preview: boolean;
   force: boolean;
   format: CliFormat;

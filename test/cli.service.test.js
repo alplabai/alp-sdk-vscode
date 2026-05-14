@@ -127,6 +127,21 @@ test("parseCliArgs parses scaffold template and module flags", () => {
   assert.equal(parsed.flags.force, true);
 });
 
+test("parseCliArgs parses completion shell flag", () => {
+  const parsed = parseCliArgs([
+    "completion",
+    "--shell",
+    "zsh",
+    "--format",
+    "json",
+  ]);
+
+  assert.equal(parsed.command, "completion");
+  assert.equal(parsed.flags.shell, "zsh");
+  assert.equal(parsed.flags.format, "json");
+  assert.deepEqual(parsed.errors, []);
+});
+
 test("executeCli returns clean validate result with json envelope", () => {
   const result = executeCli({
     argv: [
@@ -692,6 +707,36 @@ test("executeCli diff fails when board.yaml is unresolved", () => {
   assert.equal(result.envelope.command, "diff");
   assert.equal(result.envelope.ok, false);
   assert.equal(result.envelope.issues[0].code, "diff.board-yaml-missing");
+});
+
+test("executeCli completion returns script for selected shell", () => {
+  const result = executeCli({
+    argv: ["completion", "--shell", "fish", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => true,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "completion");
+  assert.equal(result.envelope.data.shell, "fish");
+  assert.match(result.envelope.data.script, /complete -c alp/);
+});
+
+test("executeCli completion rejects unsupported shell", () => {
+  const result = executeCli({
+    argv: ["completion", "--shell", "pwsh", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => true,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.envelope.command, "completion");
+  assert.equal(result.envelope.ok, false);
+  assert.equal(result.envelope.issues[0].code, "completion.shell-unsupported");
 });
 
 test("executeCli reports not-implemented commands with deterministic envelope", () => {

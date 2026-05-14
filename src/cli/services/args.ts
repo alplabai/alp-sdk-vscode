@@ -14,6 +14,7 @@ function createDefaultFlags(): CliGlobalFlags {
     template: null,
     name: null,
     destination: null,
+    shell: null,
     preview: false,
     force: false,
     format: "text",
@@ -70,6 +71,9 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
           break;
         case "destination":
           flags.destination = parsed.value;
+          break;
+        case "shell":
+          flags.shell = parsed.value;
           break;
         case "all":
           flags.all = true;
@@ -176,6 +180,7 @@ function parseLongFlag(
     name === "template" ||
     name === "name" ||
     name === "destination" ||
+    name === "shell" ||
     name === "format";
 
   if (!takesValue) {
