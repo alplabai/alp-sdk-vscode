@@ -542,7 +542,9 @@ test("executeCli trace returns planning decisions for target and path", () => {
 });
 
 test("executeCli support-bundle writes an export file", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-support-bundle-"));
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alp-cli-support-bundle-"),
+  );
   const sdkRoot = path.join(root, "alp-sdk");
   const destination = path.join(root, "artifacts");
 

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  DebugResolvedValue,
-} from "../../../debug/models";
+import { DebugResolvedValue } from "../../../debug/models";
 import { createInspectReport } from "../../../debug/service";
 import {
-  CLI_EXIT_CODE,
-  CliExecutionInput,
-  CliExecutionResult,
-  CliGlobalFlags,
-  CliIssue,
+    CLI_EXIT_CODE,
+    CliExecutionInput,
+    CliExecutionResult,
+    CliGlobalFlags,
+    CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 import { resolveCliDebugContext } from "./debugShared";
@@ -41,7 +39,10 @@ export function runInspectCommand(
     }
 
     const focusPath = flags.inspectPath;
-    const resolvedValues = filterResolvedValues(report.resolvedValues, focusPath);
+    const resolvedValues = filterResolvedValues(
+      report.resolvedValues,
+      focusPath,
+    );
 
     if (focusPath && resolvedValues.length === 0) {
       issues.push({
@@ -79,7 +80,9 @@ export function runInspectCommand(
     };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Unexpected CLI inspect failure.";
+      error instanceof Error
+        ? error.message
+        : "Unexpected CLI inspect failure.";
     return createFailureResult(
       "inspect",
       flags.format,

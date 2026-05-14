@@ -14,11 +14,11 @@ import {
     runExplainCommand,
     runGenerateCommand,
     runInitCommand,
-  runInspectCommand,
+    runInspectCommand,
     runPresetsCommand,
     runScaffoldCommand,
-  runSupportBundleCommand,
-  runTraceCommand,
+    runSupportBundleCommand,
+    runTraceCommand,
     runValidateCommand,
 } from "./services/commands/index";
 import { createEnvelope, createFailureResult } from "./services/envelope";

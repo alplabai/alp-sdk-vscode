@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  DebugServerKind,
-  DebugTargetKind,
-  DoctorCheck,
-  DoctorReport,
+    DebugServerKind,
+    DebugTargetKind,
+    DoctorCheck,
+    DoctorReport,
 } from "../../../debug/models";
 import { buildDoctorReport } from "../../../debug/service";
 import {
-  CLI_EXIT_CODE,
-  CliExecutionInput,
-  CliExecutionResult,
-  CliGlobalFlags,
-  CliIssue,
+    CLI_EXIT_CODE,
+    CliExecutionInput,
+    CliExecutionResult,
+    CliGlobalFlags,
+    CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 import {
-  collectRuntimeCapabilitiesForCli,
-  isServerSupportedForTarget,
-  parseServerKind,
-  parseTargetKind,
-  resolveCliDebugContext,
+    collectRuntimeCapabilitiesForCli,
+    isServerSupportedForTarget,
+    parseServerKind,
+    parseTargetKind,
+    resolveCliDebugContext,
 } from "./debugShared";
 
 interface DoctorCommandData {

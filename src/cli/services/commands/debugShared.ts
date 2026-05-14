@@ -2,14 +2,14 @@
 
 import * as path from "path";
 import {
-  collectRuntimeCapabilitiesFromCommands,
-  createDebugWorkspaceContext,
+    collectRuntimeCapabilitiesFromCommands,
+    createDebugWorkspaceContext,
 } from "../../../debug/adapterCore";
 import {
-  DebugRuntimeCapabilities,
-  DebugServerKind,
-  DebugTargetKind,
-  DebugWorkspaceContext,
+    DebugRuntimeCapabilities,
+    DebugServerKind,
+    DebugTargetKind,
+    DebugWorkspaceContext,
 } from "../../../debug/models";
 import { serverChoicesForTarget } from "../../../debug/service";
 import { ProjectContext, ProjectSettings } from "../../../project/models";

@@ -1,7 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { createConfiguratorPanelHtml } = require("../out/configurator/panelHtml.js");
+const {
+  createConfiguratorPanelHtml,
+} = require("../out/configurator/panelHtml.js");
 
 test("createConfiguratorPanelHtml includes core sections and script nonce", () => {
   const html = createConfiguratorPanelHtml({

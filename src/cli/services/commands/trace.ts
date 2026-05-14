@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createLoaderPlan, ALL_EMIT_MODES } from "../../../loader/service";
-import { EmitMode } from "../../../loader/models";
-import {
-  DebugGenerationTraceDecision,
-} from "../../../debug/models";
+import { DebugGenerationTraceDecision } from "../../../debug/models";
 import { createGenerationTraceReport } from "../../../debug/service";
+import { EmitMode } from "../../../loader/models";
+import { ALL_EMIT_MODES, createLoaderPlan } from "../../../loader/service";
 import {
-  CLI_EXIT_CODE,
-  CliExecutionInput,
-  CliExecutionResult,
-  CliGlobalFlags,
-  CliIssue,
+    CLI_EXIT_CODE,
+    CliExecutionInput,
+    CliExecutionResult,
+    CliGlobalFlags,
+    CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 import { resolveCliDebugContext } from "./debugShared";
@@ -46,7 +44,11 @@ export function runTraceCommand(
               "alp-sdk root is unresolved. Use --sdk-root or place project near alp-sdk checkout.",
           },
         ],
-        createEmptyTraceData(resolved.generatedAt, flags.inspectPath, flags.target),
+        createEmptyTraceData(
+          resolved.generatedAt,
+          flags.inspectPath,
+          flags.target,
+        ),
       );
     }
 
@@ -67,7 +69,11 @@ export function runTraceCommand(
               "board.yaml path could not be resolved or the file does not exist.",
           },
         ],
-        createEmptyTraceData(resolved.generatedAt, flags.inspectPath, flags.target),
+        createEmptyTraceData(
+          resolved.generatedAt,
+          flags.inspectPath,
+          flags.target,
+        ),
       );
     }
 
@@ -183,9 +189,7 @@ function formatTraceTextLines(
 
   if (!flags.quiet) {
     for (const decision of report.decisions) {
-      lines.push(
-        `[${decision.outcome}] ${decision.key}: ${decision.detail}`,
-      );
+      lines.push(`[${decision.outcome}] ${decision.key}: ${decision.detail}`);
     }
   }
 

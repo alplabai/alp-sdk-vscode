@@ -2,35 +2,35 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { createLoaderPlan, ALL_EMIT_MODES } from "../../../loader/service";
-import { EmitMode } from "../../../loader/models";
 import {
-  DebugGenerationTraceDecision,
-  DebugServerKind,
-  DebugTargetKind,
-  DoctorCheck,
+    DebugGenerationTraceDecision,
+    DebugServerKind,
+    DebugTargetKind,
+    DoctorCheck,
 } from "../../../debug/models";
 import {
-  buildDoctorReport,
-  createGenerationTraceReport,
-  createInspectReport,
-  createSupportBundlePayload,
-  serializeSupportBundlePayload,
+    buildDoctorReport,
+    createGenerationTraceReport,
+    createInspectReport,
+    createSupportBundlePayload,
+    serializeSupportBundlePayload,
 } from "../../../debug/service";
+import { EmitMode } from "../../../loader/models";
+import { ALL_EMIT_MODES, createLoaderPlan } from "../../../loader/service";
 import {
-  CLI_EXIT_CODE,
-  CliExecutionInput,
-  CliExecutionResult,
-  CliGlobalFlags,
-  CliIssue,
+    CLI_EXIT_CODE,
+    CliExecutionInput,
+    CliExecutionResult,
+    CliGlobalFlags,
+    CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 import {
-  collectRuntimeCapabilitiesForCli,
-  isServerSupportedForTarget,
-  parseServerKind,
-  parseTargetKind,
-  resolveCliDebugContext,
+    collectRuntimeCapabilitiesForCli,
+    isServerSupportedForTarget,
+    parseServerKind,
+    parseTargetKind,
+    resolveCliDebugContext,
 } from "./debugShared";
 
 interface SupportBundleCommandData {
@@ -127,7 +127,11 @@ export function runSupportBundleCommand(
     return {
       format: flags.format,
       exitCode,
-      textLines: formatSupportBundleTextLines(outputPath, traceDecisions.length, flags),
+      textLines: formatSupportBundleTextLines(
+        outputPath,
+        traceDecisions.length,
+        flags,
+      ),
       envelope: createEnvelope(
         "support-bundle",
         {
@@ -288,7 +292,9 @@ function formatSupportBundleTextLines(
   ];
 
   if (flags.verbose) {
-    lines.push("support-bundle: include --format json for machine-readable envelopes.");
+    lines.push(
+      "support-bundle: include --format json for machine-readable envelopes.",
+    );
   }
 
   return lines;
