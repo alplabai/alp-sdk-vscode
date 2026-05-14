@@ -1,19 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import * as path from "path";
-import {
-  collectRuntimeCapabilitiesFromCommands,
-  createDebugWorkspaceContext,
-} from "../../../debug/adapterCore";
 import {
   DebugServerKind,
   DebugTargetKind,
   DoctorCheck,
   DoctorReport,
 } from "../../../debug/models";
-import { buildDoctorReport, serverChoicesForTarget } from "../../../debug/service";
-import { ProjectSettings } from "../../../project/models";
-import { resolveProjectContext } from "../../../project/service";
+import { buildDoctorReport } from "../../../debug/service";
 import {
   CLI_EXIT_CODE,
   CliExecutionInput,
@@ -22,6 +15,13 @@ import {
   CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
+import {
+  collectRuntimeCapabilitiesForCli,
+  isServerSupportedForTarget,
+  parseServerKind,
+  parseTargetKind,
+  resolveCliDebugContext,
+} from "./debugShared";
 
 interface DoctorCommandData {
   generatedAt: string;
@@ -37,21 +37,7 @@ export function runDoctorCommand(
   input: Omit<CliExecutionInput, "argv">,
 ): CliExecutionResult<DoctorCommandData> {
   try {
-    const workspaceRoot = path.resolve(input.cwd, flags.projectPath ?? ".");
-    const settings: ProjectSettings = {
-      sdkPath: flags.sdkRoot ?? "",
-      pythonPath: "",
-      boardYamlPath: flags.boardYamlPath ?? "board.yaml",
-      westCwd: "",
-    };
-    const projectContext = resolveProjectContext(
-      {
-        workspaceFolders: [workspaceRoot],
-        settings,
-        platform: input.platform,
-      },
-      input.pathExists,
-    );
+    const resolved = resolveCliDebugContext(flags, input);
 
     const targetKind = parseTargetKind(flags.targetKind);
     const server = parseServerKind(flags.server);
@@ -84,22 +70,12 @@ export function runDoctorCommand(
       );
     }
 
-    const generatedAt = new Date().toISOString();
-    const debugContext = createDebugWorkspaceContext(projectContext, {
-      generatedAt,
-      boardYamlExists: input.pathExists,
-      debuggerExtensions: {
-        cortexDebug: true,
-        cppTools: true,
-        codeLLDB: true,
-      },
-    });
-    const runtime = collectRuntimeCapabilitiesFromCommands(
-      projectContext,
-      (command) => commandExistsOnPath(input, command),
+    const runtime = collectRuntimeCapabilitiesForCli(
+      resolved.projectContext,
+      input,
     );
     const report = buildDoctorReport(
-      debugContext,
+      resolved.debugContext,
       {
         targetKind,
         server,
@@ -120,8 +96,8 @@ export function runDoctorCommand(
       envelope: createEnvelope(
         "doctor",
         {
-          root: projectContext.workspaceRoot,
-          boardYaml: projectContext.boardYamlPath,
+          root: resolved.projectContext.workspaceRoot,
+          boardYaml: resolved.projectContext.boardYamlPath,
         },
         {
           generatedAt: report.generatedAt,
@@ -160,63 +136,6 @@ export function runDoctorCommand(
       },
     );
   }
-}
-
-function parseTargetKind(raw: string | null): DebugTargetKind {
-  if (!raw) {
-    return "native-host";
-  }
-
-  if (
-    raw === "zephyr-mcu" ||
-    raw === "baremetal-mcu" ||
-    raw === "yocto-userspace" ||
-    raw === "native-host"
-  ) {
-    return raw;
-  }
-
-  throw new Error(
-    `Unsupported --target-kind '${raw}'. Allowed values: zephyr-mcu, baremetal-mcu, yocto-userspace, native-host.`,
-  );
-}
-
-function parseServerKind(raw: string | null): DebugServerKind {
-  if (!raw) {
-    return "none";
-  }
-
-  if (
-    raw === "jlink" ||
-    raw === "openocd" ||
-    raw === "pyocd" ||
-    raw === "gdbserver" ||
-    raw === "none"
-  ) {
-    return raw;
-  }
-
-  throw new Error(
-    `Unsupported --server '${raw}'. Allowed values: jlink, openocd, pyocd, gdbserver, none.`,
-  );
-}
-
-function isServerSupportedForTarget(
-  targetKind: DebugTargetKind,
-  server: DebugServerKind,
-): boolean {
-  return serverChoicesForTarget(targetKind).some(
-    (choice) => choice.server === server,
-  );
-}
-
-function commandExistsOnPath(
-  input: Omit<CliExecutionInput, "argv">,
-  command: string,
-): boolean {
-  const resolver = input.platform === "win32" ? "where" : "which";
-  const result = input.spawnSync(resolver, [command], { encoding: "utf8" });
-  return result.status === 0;
 }
 
 function doctorChecksToIssues(checks: readonly DoctorCheck[]): CliIssue[] {

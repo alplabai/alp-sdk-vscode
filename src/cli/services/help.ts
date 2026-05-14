@@ -26,6 +26,9 @@ export function createHelpResult(
     "Diff flags: --project <path> --board-yaml <path>",
     "Completion flags: --shell <bash|zsh|fish>",
     "Doctor flags: --target-kind <zephyr-mcu|baremetal-mcu|yocto-userspace|native-host> --server <jlink|openocd|pyocd|gdbserver|none>",
+    "Inspect flags: --path <field-path> --show-origin",
+    "Trace flags: --target <emit-mode> --path <field-path>",
+    "Support-bundle flags: --destination <path> --target-kind <...> --server <...>",
   ];
 
   return {

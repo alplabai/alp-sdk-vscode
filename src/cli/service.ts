@@ -14,8 +14,11 @@ import {
     runExplainCommand,
     runGenerateCommand,
     runInitCommand,
+  runInspectCommand,
     runPresetsCommand,
     runScaffoldCommand,
+  runSupportBundleCommand,
+  runTraceCommand,
     runValidateCommand,
 } from "./services/commands/index";
 import { createEnvelope, createFailureResult } from "./services/envelope";
@@ -46,7 +49,10 @@ const IMPLEMENTED_COMMANDS = new Set<CliCommand>([
   "scaffold",
   "diff",
   "completion",
+  "inspect",
+  "trace",
   "doctor",
+  "support-bundle",
 ]);
 
 export { createEnvelope, parseCliArgs, runValidateCommand };
@@ -164,6 +170,12 @@ export function executeCli(input: CliExecutionInput): CliExecutionResult {
       return runCompletionCommand(parsed.flags, input);
     case "doctor":
       return runDoctorCommand(parsed.flags, input);
+    case "inspect":
+      return runInspectCommand(parsed.flags, input);
+    case "trace":
+      return runTraceCommand(parsed.flags, input);
+    case "support-bundle":
+      return runSupportBundleCommand(parsed.flags, input);
     default:
       return createFailureResult(
         parsed.command,

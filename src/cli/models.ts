@@ -40,6 +40,7 @@ export interface CliGlobalFlags {
   projectPath: string | null;
   boardYamlPath: string | null;
   sdkRoot: string | null;
+  inspectPath: string | null;
   target: string | null;
   all: boolean;
   targetKind: string | null;
@@ -50,6 +51,7 @@ export interface CliGlobalFlags {
   shell: string | null;
   preview: boolean;
   force: boolean;
+  showOrigin: boolean;
   format: CliFormat;
   verbose: boolean;
   quiet: boolean;

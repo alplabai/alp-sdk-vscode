@@ -65,7 +65,27 @@ node ./out/cli/main.js diff --project . --format json
 node ./out/cli/main.js doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json
 ```
 
-## 7. Completion Scripts
+## 7. Debug Workflows: Inspect, Trace, Support Bundle
+
+Inspect resolved values and their origins:
+
+```bash
+node ./out/cli/main.js inspect --project . --sdk-root ../alp-sdk --path workspaceRoot --show-origin --format json
+```
+
+Trace generation decisions for one output target:
+
+```bash
+node ./out/cli/main.js trace --project . --sdk-root ../alp-sdk --target zephyr-conf --path sdkRoot --format json
+```
+
+Export a support bundle for issue triage:
+
+```bash
+node ./out/cli/main.js support-bundle --project . --sdk-root ../alp-sdk --destination ./.alp-support --target-kind native-host --server none --format json
+```
+
+## 8. Completion Scripts
 
 Generate completion script for your shell:
 
@@ -75,7 +95,7 @@ node ./out/cli/main.js completion --shell zsh
 node ./out/cli/main.js completion --shell fish
 ```
 
-## 8. Exit Codes
+## 9. Exit Codes
 
 - 0: success
 - 1: runtime/command failure
@@ -84,6 +104,6 @@ node ./out/cli/main.js completion --shell fish
 - 4: doctor/preflight failure
 - 5: internal failure
 
-## 9. CI Pipeline Examples
+## 10. CI Pipeline Examples
 
 For complete GitHub Actions and GitLab CI examples, see CI_EXAMPLES.md.

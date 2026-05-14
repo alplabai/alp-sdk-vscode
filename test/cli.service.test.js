@@ -142,6 +142,23 @@ test("parseCliArgs parses completion shell flag", () => {
   assert.deepEqual(parsed.errors, []);
 });
 
+test("parseCliArgs parses inspect path and origin flags", () => {
+  const parsed = parseCliArgs([
+    "inspect",
+    "--path",
+    "workspaceRoot",
+    "--show-origin",
+    "--format",
+    "json",
+  ]);
+
+  assert.equal(parsed.command, "inspect");
+  assert.equal(parsed.flags.inspectPath, "workspaceRoot");
+  assert.equal(parsed.flags.showOrigin, true);
+  assert.equal(parsed.flags.format, "json");
+  assert.deepEqual(parsed.errors, []);
+});
+
 test("executeCli returns clean validate result with json envelope", () => {
   const result = executeCli({
     argv: [
@@ -454,6 +471,113 @@ test("executeCli returns doctor report in json mode", () => {
   assert.equal(result.envelope.data.server, "none");
 });
 
+test("executeCli inspect returns resolved values in json mode", () => {
+  const result = executeCli({
+    argv: [
+      "inspect",
+      "--project",
+      "/workspace/app",
+      "--sdk-root",
+      "/workspace/sdk",
+      "--path",
+      "workspaceRoot",
+      "--show-origin",
+      "--format",
+      "json",
+    ],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: (candidatePath) =>
+      candidatePath === "/workspace/app/board.yaml" ||
+      candidatePath === "/workspace/sdk/scripts/alp_project.py",
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "inspect");
+  assert.equal(result.envelope.data.focusPath, "workspaceRoot");
+  assert.equal(result.envelope.data.showOrigin, true);
+  assert.equal(result.envelope.data.resolvedValues.length > 0, true);
+  assert.equal(result.envelope.data.resolvedValues[0].key, "workspaceRoot");
+});
+
+test("executeCli trace returns planning decisions for target and path", () => {
+  const result = executeCli({
+    argv: [
+      "trace",
+      "--project",
+      "/workspace/app",
+      "--sdk-root",
+      "/workspace/sdk",
+      "--target",
+      "zephyr-conf",
+      "--path",
+      "sdkRoot",
+      "--format",
+      "json",
+    ],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: (candidatePath) =>
+      candidatePath === "/workspace/app/board.yaml" ||
+      candidatePath === "/workspace/sdk/scripts/alp_project.py",
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "trace");
+  assert.equal(result.envelope.data.target, "zephyr-conf");
+  assert.equal(
+    result.envelope.data.decisions.some(
+      (decision) => decision.key === "generation.target.zephyr-conf",
+    ),
+    true,
+  );
+  assert.equal(
+    result.envelope.data.decisions.some(
+      (decision) => decision.key === "config.path.sdkRoot",
+    ),
+    true,
+  );
+});
+
+test("executeCli support-bundle writes an export file", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-support-bundle-"));
+  const sdkRoot = path.join(root, "alp-sdk");
+  const destination = path.join(root, "artifacts");
+
+  fs.mkdirSync(path.join(sdkRoot, "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(sdkRoot, "scripts/alp_project.py"), "# stub\n");
+  fs.writeFileSync(path.join(root, "board.yaml"), "schema_version: 1\n");
+
+  const result = executeCli({
+    argv: [
+      "support-bundle",
+      "--project",
+      root,
+      "--sdk-root",
+      sdkRoot,
+      "--destination",
+      destination,
+      "--target-kind",
+      "native-host",
+      "--server",
+      "none",
+      "--format",
+      "json",
+    ],
+    cwd: root,
+    platform: "linux",
+    pathExists: (candidatePath) => fs.existsSync(candidatePath),
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "support-bundle");
+  assert.equal(result.envelope.data.outputPath.startsWith(destination), true);
+  assert.equal(fs.existsSync(result.envelope.data.outputPath), true);
+});
+
 test("executeCli init preview reports planned files without writing", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-init-preview-"));
 
@@ -741,7 +865,7 @@ test("executeCli completion rejects unsupported shell", () => {
 
 test("executeCli reports not-implemented commands with deterministic envelope", () => {
   const result = executeCli({
-    argv: ["inspect", "--format", "json"],
+    argv: ["debug-config", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
     pathExists: () => false,
@@ -750,7 +874,7 @@ test("executeCli reports not-implemented commands with deterministic envelope", 
 
   assert.equal(result.exitCode, 1);
   assert.equal(result.format, "json");
-  assert.equal(result.envelope.command, "inspect");
+  assert.equal(result.envelope.command, "debug-config");
   assert.equal(result.envelope.ok, false);
   assert.equal(result.envelope.issues[0].code, "cli.not-implemented");
 });

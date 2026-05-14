@@ -545,19 +545,19 @@ goes wrong.
 
 ## Tasks
 
-- [ ] Add an effective-config inspection model to the shared core.
-- [ ] Add generation-decision tracing to the shared core.
+- [x] Add an effective-config inspection model to the shared core.
+- [x] Add generation-decision tracing to the shared core.
 - [ ] Add a VS Code troubleshooting/debug panel.
-- [ ] Add `alp inspect` for effective config and resolved values.
-- [ ] Add `alp trace` for generation and decision tracing.
-- [ ] Add `alp support-bundle` for issue-report export.
-- [ ] Add documentation for inspect, trace, and support-bundle flows.
-- [ ] Add tests for inspect output, trace output, and bundle export.
+- [x] Add `alp inspect` for effective config and resolved values.
+- [x] Add `alp trace` for generation and decision tracing.
+- [x] Add `alp support-bundle` for issue-report export.
+- [x] Add documentation for inspect, trace, and support-bundle flows.
+- [x] Add tests for inspect output, trace output, and bundle export.
 
 ## Exit Criteria
 
-- [ ] A user can understand why a value resolved the way it did.
-- [ ] A user can export enough debugging context for a useful issue
+- [x] A user can understand why a value resolved the way it did.
+- [x] A user can export enough debugging context for a useful issue
       report.
 - [ ] Debug surfaces exist in both VS Code and CLI workflows.
 ```

@@ -7,6 +7,7 @@ function createDefaultFlags(): CliGlobalFlags {
     projectPath: null,
     boardYamlPath: null,
     sdkRoot: null,
+    inspectPath: null,
     target: null,
     all: false,
     targetKind: null,
@@ -17,6 +18,7 @@ function createDefaultFlags(): CliGlobalFlags {
     shell: null,
     preview: false,
     force: false,
+    showOrigin: false,
     format: "text",
     verbose: false,
     quiet: false,
@@ -57,6 +59,9 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
         case "target":
           flags.target = parsed.value;
           break;
+        case "path":
+          flags.inspectPath = parsed.value;
+          break;
         case "target-kind":
           flags.targetKind = parsed.value;
           break;
@@ -83,6 +88,9 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
           break;
         case "force":
           flags.force = true;
+          break;
+        case "show-origin":
+          flags.showOrigin = true;
           break;
         case "format": {
           const format = parseFormat(parsed.value);
@@ -174,6 +182,7 @@ function parseLongFlag(
     name === "project" ||
     name === "board-yaml" ||
     name === "sdk-root" ||
+    name === "path" ||
     name === "target" ||
     name === "target-kind" ||
     name === "server" ||

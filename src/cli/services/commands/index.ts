@@ -6,7 +6,10 @@ export { runDoctorCommand } from "./doctor";
 export { runExplainCommand } from "./explain";
 export { runGenerateCommand } from "./generate";
 export { runInitCommand } from "./init";
+export { runInspectCommand } from "./inspect";
 export { runPresetsCommand } from "./presets";
 export { runScaffoldCommand } from "./scaffold";
+export { runSupportBundleCommand } from "./supportBundle";
+export { runTraceCommand } from "./trace";
 export { runValidateCommand } from "./validate";
 

@@ -94,7 +94,7 @@ _alp_complete() {
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
   cword=\${COMP_CWORD}
 
-  local commands="validate generate explain presets init scaffold diff completion doctor"
+  local commands="validate generate explain presets init scaffold diff completion inspect trace doctor support-bundle"
   local global_flags="--project --board-yaml --sdk-root --format --verbose --quiet --no-color --non-interactive --ci --help"
 
   if [[ "$prev" == "--format" ]]; then
@@ -131,6 +131,15 @@ _alp_complete() {
     doctor)
       COMPREPLY=( $(compgen -W "$global_flags --target-kind --server" -- "$cur") )
       ;;
+    inspect)
+      COMPREPLY=( $(compgen -W "$global_flags --path --show-origin" -- "$cur") )
+      ;;
+    trace)
+      COMPREPLY=( $(compgen -W "$global_flags --target --path" -- "$cur") )
+      ;;
+    support-bundle)
+      COMPREPLY=( $(compgen -W "$global_flags --destination --target-kind --server --target --path" -- "$cur") )
+      ;;
     *)
       COMPREPLY=( $(compgen -W "$global_flags" -- "$cur") )
       ;;
@@ -154,7 +163,10 @@ _alp() {
     'scaffold:Scaffold module files'
     'diff:Show board normalization diff'
     'completion:Generate shell completion script'
+    'inspect:Inspect effective resolved values'
+    'trace:Trace generation decisions'
     'doctor:Run debug and environment checks'
+    'support-bundle:Export support bundle payload'
   )
 
   _arguments -C \
@@ -182,6 +194,15 @@ _alp() {
         doctor)
           _arguments '--target-kind[Debug target]:target:(zephyr-mcu baremetal-mcu yocto-userspace native-host)' '--server[Debug server]:server:(jlink openocd pyocd gdbserver none)' '--format[Output format]:format:(text json)'
           ;;
+        inspect)
+          _arguments '--path[Field path]' '--show-origin[Include source metadata]' '--format[Output format]:format:(text json)'
+          ;;
+        trace)
+          _arguments '--target[Generation target]:target:(zephyr-conf dts-overlay cmake-args yocto-conf)' '--path[Field path]' '--format[Output format]:format:(text json)'
+          ;;
+        support-bundle)
+          _arguments '--destination[Output directory]:path:_files -/' '--target-kind[Debug target]:target:(zephyr-mcu baremetal-mcu yocto-userspace native-host)' '--server[Debug server]:server:(jlink openocd pyocd gdbserver none)' '--target[Generation target]:target:(zephyr-conf dts-overlay cmake-args yocto-conf)' '--path[Field path]' '--format[Output format]:format:(text json)'
+          ;;
         *)
           _arguments '--project[Project root]:path:_files -/' '--board-yaml[board.yaml path]:path:_files' '--sdk-root[SDK root]:path:_files -/' '--format[Output format]:format:(text json)' '--help[Show help]'
           ;;
@@ -195,7 +216,7 @@ compdef _alp alp`;
 
 function createFishCompletion(): string {
   return `complete -c alp -f
-complete -c alp -n '__fish_use_subcommand' -a 'validate generate explain presets init scaffold diff completion doctor'
+complete -c alp -n '__fish_use_subcommand' -a 'validate generate explain presets init scaffold diff completion inspect trace doctor support-bundle'
 complete -c alp -l project -d 'Project root'
 complete -c alp -l board-yaml -d 'board.yaml path'
 complete -c alp -l sdk-root -d 'SDK root path'
@@ -217,5 +238,11 @@ complete -c alp -n '__fish_seen_subcommand_from init scaffold' -l preview -d 'Pr
 complete -c alp -n '__fish_seen_subcommand_from init scaffold' -l force -d 'Overwrite existing files'
 complete -c alp -n '__fish_seen_subcommand_from doctor' -l target-kind -d 'Debug target kind' -a 'zephyr-mcu baremetal-mcu yocto-userspace native-host'
 complete -c alp -n '__fish_seen_subcommand_from doctor' -l server -d 'Debug server' -a 'jlink openocd pyocd gdbserver none'
+complete -c alp -n '__fish_seen_subcommand_from inspect trace support-bundle' -l path -d 'Field path'
+complete -c alp -n '__fish_seen_subcommand_from inspect' -l show-origin -d 'Include source metadata'
+complete -c alp -n '__fish_seen_subcommand_from trace support-bundle' -l target -d 'Generation target' -a 'zephyr-conf dts-overlay cmake-args yocto-conf'
+complete -c alp -n '__fish_seen_subcommand_from support-bundle' -l destination -d 'Destination path'
+complete -c alp -n '__fish_seen_subcommand_from support-bundle' -l target-kind -d 'Debug target kind' -a 'zephyr-mcu baremetal-mcu yocto-userspace native-host'
+complete -c alp -n '__fish_seen_subcommand_from support-bundle' -l server -d 'Debug server' -a 'jlink openocd pyocd gdbserver none'
 complete -c alp -n '__fish_seen_subcommand_from completion' -l shell -d 'Shell type' -a 'bash zsh fish'`;
 }
