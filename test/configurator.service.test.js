@@ -38,3 +38,17 @@ test("parseBoardModel returns defaults for invalid scalar yaml", () => {
 
   assert.deepEqual(parsed, createDefaultBoardModel());
 });
+
+test("normalizeBoardModel preserves unknown hand-edited fields", () => {
+  const normalized = normalizeBoardModel({
+    schema_version: 1,
+    som: { sku: "E1M-AEN701" },
+    carrier: { name: "E1M-EVK" },
+    os: "zephyr",
+    custom_flag: true,
+    nested_custom: { alpha: 1, beta: "manual" },
+  });
+
+  assert.equal(normalized.custom_flag, true);
+  assert.deepEqual(normalized.nested_custom, { alpha: 1, beta: "manual" });
+});

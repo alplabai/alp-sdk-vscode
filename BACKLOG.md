@@ -275,20 +275,20 @@ thin wrapper panel.
 
 ## Tasks
 
-- [ ] Redesign the configurator into logical sections.
-- [ ] Add basic and advanced modes.
-- [ ] Improve field grouping and visual hierarchy.
-- [ ] Add inline help and contextual explanations.
-- [ ] Preserve compatibility with hand-edited YAML.
+- [x] Redesign the configurator into logical sections.
+- [x] Add basic and advanced modes.
+- [x] Improve field grouping and visual hierarchy.
+- [x] Add inline help and contextual explanations.
+- [x] Preserve compatibility with hand-edited YAML.
 - [ ] Add a first-run project creation wizard.
 - [ ] Let the wizard choose template, hardware, and feature set.
 - [ ] Show generated files before write.
 - [ ] Create the initial workspace layout and starter files.
-- [ ] Show effective config preview.
+- [x] Show effective config preview.
 - [ ] Show generated output preview.
 - [ ] Show scaffolded project tree preview.
-- [ ] Add write confirmation for changed files.
-- [ ] Add validation summary view before apply.
+- [x] Add write confirmation for changed files.
+- [x] Add validation summary view before apply.
 
 ## Exit Criteria
 
