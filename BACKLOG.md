@@ -395,7 +395,7 @@ The same workflows are available from the terminal and in CI.
 - [x] Implement `alp presets`.
 - [x] Implement `alp diff`.
 - [x] Add shell completion support.
-- [ ] Add CI integration examples.
+- [x] Add CI integration examples.
 
 ## Exit Criteria
 

@@ -69,6 +69,8 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
   implementation state.
 - [CLI.md](CLI.md): Proposed CLI command families, output contract,
   and exit-code policy.
+- [CI_EXAMPLES.md](CI_EXAMPLES.md): GitHub Actions and GitLab CI
+  examples for ALP CLI validation/generation/doctor flows.
 - [DEBUG.md](DEBUG.md): Debug support matrix and launch strategy.
 - [src/README.md](src/README.md): Source module map.
 - [src/lsp/README.md](src/lsp/README.md): LSP module responsibilities.

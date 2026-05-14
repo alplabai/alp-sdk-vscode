@@ -353,3 +353,8 @@ To keep future CLI implementation aligned with this contract:
 - CLI output fields must not rename shared-core model keys
 - new command families require contract updates in this file before
   implementation
+
+## 10. CI Integration Examples
+
+For ready-to-copy CI pipelines using `alp validate`, `alp generate`,
+and `alp doctor`, see [CI_EXAMPLES.md](CI_EXAMPLES.md).
