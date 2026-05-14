@@ -77,8 +77,22 @@ function parseValidationIssues(
         !/^\s*\S+:\s+missing-preset/.test(line) &&
         !/^\s*\S+:\s+hardware-revision/.test(line),
     )
-    .map((message) => ({
-      message: message.trim(),
-      severity,
-    }));
+    .map((message) => {
+      const trimmed = message.trim();
+      return {
+        message: trimmed,
+        severity: classifyIssueSeverity(trimmed, severity),
+      };
+    });
+}
+
+function classifyIssueSeverity(
+  message: string,
+  fallbackSeverity: ValidationSeverity,
+): ValidationSeverity {
+  if (/^\s*(hint|suggestion|suggest):/i.test(message)) {
+    return "suggestion";
+  }
+
+  return fallbackSeverity;
 }

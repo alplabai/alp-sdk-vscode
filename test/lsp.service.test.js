@@ -6,6 +6,7 @@ const {
   createBoardYamlDocumentSymbols,
   createBoardYamlHoverInfo,
   createBoardYamlQuickFixes,
+  createDiagnosticMessageWithContext,
   createEffectiveConfigPreviewPayload,
   createIssueRange,
   createLineZeroRange,
@@ -227,4 +228,21 @@ test("createEffectiveConfigPreviewPayload returns normalized config with context
   assert.equal(payload.projectContext.sdkRoot, "/workspace/sdk");
   assert.equal(payload.effectiveConfig.os, "zephyr");
   assert.equal(payload.effectiveConfig.iot, undefined);
+});
+
+test("createDiagnosticMessageWithContext enriches issue with effective context", () => {
+  const message = createDiagnosticMessageWithContext(
+    "FAIL som preset: missing preset",
+    [
+      "som:",
+      "  sku: E1M-AEN701",
+      "carrier:",
+      "  name: E1M-EVK",
+      "os: zephyr",
+    ].join("\n"),
+  );
+
+  assert.match(message, /^FAIL som preset: missing preset/m);
+  assert.match(message, /Context: .*som\.sku=E1M-AEN701/);
+  assert.match(message, /Preset origin: .*som\.sku=board\.yaml inline/);
 });

@@ -221,12 +221,12 @@ instead of command-triggered.
 
 - [x] Add the language server and client wiring.
 - [x] Implement document lifecycle handling.
-- [ ] Add incremental analysis and caching.
+- [x] Add incremental analysis and caching.
 - [x] Add tracing and debugging hooks.
 - [x] Port diagnostics from extension-host execution to the LSP.
 - [x] Attach diagnostics to precise fields where possible.
-- [ ] Distinguish errors, warnings, and suggestions.
-- [ ] Add effective-config and preset-origin context to diagnostic
+- [x] Distinguish errors, warnings, and suggestions.
+- [x] Add effective-config and preset-origin context to diagnostic
       messages.
 - [x] Add completion for known enums and presets.
 - [x] Add hover for field semantics and inherited defaults.

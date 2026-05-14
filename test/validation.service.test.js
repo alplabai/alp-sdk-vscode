@@ -58,3 +58,18 @@ test("analyzeValidationResult classifies hardware-revision failures", () => {
     { message: "FAIL hw_rev: unsupported revision", severity: "error" },
   ]);
 });
+
+test("analyzeValidationResult classifies hint lines as suggestions", () => {
+  const result = analyzeValidationResult({
+    status: 1,
+    stdout: "",
+    stderr:
+      "FAIL schema_version: unsupported value\nHINT: set schema_version to 1\n",
+  });
+
+  assert.equal(result.outcome, "schema-violation");
+  assert.deepEqual(result.issues, [
+    { message: "FAIL schema_version: unsupported value", severity: "error" },
+    { message: "HINT: set schema_version to 1", severity: "suggestion" },
+  ]);
+});

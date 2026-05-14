@@ -4,50 +4,53 @@ import * as cp from "child_process";
 import * as fs from "fs";
 import { fileURLToPath } from "url";
 import {
-    CodeAction,
-    CodeActionKind,
-    CompletionItem,
-    CompletionItemKind,
-    createConnection,
-    Diagnostic,
-    DiagnosticSeverity,
-    DidChangeConfigurationNotification,
-    DocumentSymbol,
-    Hover,
-    InitializeParams,
-    InitializeResult,
-    MarkupKind,
-    ProposedFeatures,
-    SymbolKind,
-    TextDocumentSyncKind,
-    TextEdit,
+  CodeAction,
+  CodeActionKind,
+  CompletionItem,
+  CompletionItemKind,
+  createConnection,
+  Diagnostic,
+  DiagnosticSeverity,
+  DidChangeConfigurationNotification,
+  DocumentSymbol,
+  Hover,
+  InitializeParams,
+  InitializeResult,
+  MarkupKind,
+  ProposedFeatures,
+  SymbolKind,
+  TextDocumentContentChangeEvent,
+  TextDocumentSyncKind,
+  TextEdit,
 } from "vscode-languageserver/node";
 import { resolveProjectContext } from "../project/service";
 import { executeValidatorPlanWithSpawn } from "../validation/adapterCore";
 import {
-    analyzeValidationResult,
-    createValidatorPlan,
-    isBoardYamlPath,
+  analyzeValidationResult,
+  createValidatorPlan,
+  isBoardYamlPath,
 } from "../validation/service";
 import {
-    BoardYamlCompletionSuggestion,
-    BoardYamlDocumentSymbolNode,
-    BoardYamlHoverInfo,
-    BoardYamlQuickFix,
-    createBoardYamlCompletionSuggestions,
-    createBoardYamlDocumentSymbols,
-    createBoardYamlHoverInfo,
-    createBoardYamlQuickFixes,
-    createEffectiveConfigPreviewPayload,
-    createIssueRange,
-    normalizeProjectSettings,
+  BoardYamlCompletionSuggestion,
+  BoardYamlDocumentSymbolNode,
+  BoardYamlHoverInfo,
+  BoardYamlQuickFix,
+  createBoardYamlCompletionSuggestions,
+  createBoardYamlDocumentSymbols,
+  createBoardYamlHoverInfo,
+  createBoardYamlQuickFixes,
+  createDiagnosticMessageWithContext,
+  createEffectiveConfigPreviewPayload,
+  createIssueRange,
+  normalizeProjectSettings,
 } from "./service";
 
-  const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
+const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
 
 const connection = createConnection(ProposedFeatures.all);
 let hasConfigurationCapability = false;
 let workspaceFolderPaths: string[] = [];
+const documentCache = new Map<string, string>();
 
 connection.onInitialize((params: InitializeParams): InitializeResult => {
   hasConfigurationCapability = Boolean(
@@ -105,14 +108,34 @@ connection.onInitialized(() => {
   });
 
   connection.onDidOpenTextDocument((params) => {
-    void validateDocument(params.textDocument.uri);
+    documentCache.set(params.textDocument.uri, params.textDocument.text);
+    void validateDocument(params.textDocument.uri, params.textDocument.text);
+  });
+
+  connection.onDidChangeTextDocument((params) => {
+    const filePath = uriToFsPath(params.textDocument.uri);
+    if (!filePath || !isBoardYamlPath(filePath)) {
+      return;
+    }
+
+    const current = getDocumentText(params.textDocument.uri, filePath);
+    const updated = applyContentChanges(current, params.contentChanges);
+    documentCache.set(params.textDocument.uri, updated);
   });
 
   connection.onDidSaveTextDocument((params) => {
-    void validateDocument(params.textDocument.uri);
+    const filePath = uriToFsPath(params.textDocument.uri);
+    if (!filePath || !isBoardYamlPath(filePath)) {
+      return;
+    }
+
+    const persisted = readDocumentText(filePath);
+    documentCache.set(params.textDocument.uri, persisted);
+    void validateDocument(params.textDocument.uri, persisted);
   });
 
   connection.onDidCloseTextDocument((params) => {
+    documentCache.delete(params.textDocument.uri);
     connection.sendDiagnostics({
       uri: params.textDocument.uri,
       diagnostics: [],
@@ -125,7 +148,7 @@ connection.onInitialized(() => {
       return [];
     }
 
-    const documentText = readDocumentText(filePath);
+    const documentText = getDocumentText(params.textDocument.uri, filePath);
     const suggestions = createBoardYamlCompletionSuggestions(
       documentText,
       params.position.line,
@@ -141,7 +164,7 @@ connection.onInitialized(() => {
       return null;
     }
 
-    const documentText = readDocumentText(filePath);
+    const documentText = getDocumentText(params.textDocument.uri, filePath);
     const hoverInfo = createBoardYamlHoverInfo(
       documentText,
       params.position.line,
@@ -166,7 +189,7 @@ connection.onInitialized(() => {
       return [];
     }
 
-    const documentText = readDocumentText(filePath);
+    const documentText = getDocumentText(params.textDocument.uri, filePath);
     return createBoardYamlDocumentSymbols(documentText).map(toDocumentSymbol);
   });
 
@@ -176,7 +199,7 @@ connection.onInitialized(() => {
       return [];
     }
 
-    const documentText = readDocumentText(filePath);
+    const documentText = getDocumentText(params.textDocument.uri, filePath);
     const actions: CodeAction[] = [];
     const seenTitles = new Set<string>();
 
@@ -249,11 +272,16 @@ connection.onInitialized(() => {
   connection.console.info("ALP SDK language server initialized.");
 });
 
-async function validateDocument(uri: string): Promise<void> {
+async function validateDocument(
+  uri: string,
+  documentTextOverride?: string,
+): Promise<void> {
   const filePath = uriToFsPath(uri);
   if (!filePath || !isBoardYamlPath(filePath)) {
     return;
   }
+
+  const documentText = documentTextOverride ?? getDocumentText(uri, filePath);
 
   const settings = await readProjectSettings(uri);
   const context = resolveProjectContext(
@@ -280,25 +308,37 @@ async function validateDocument(uri: string): Promise<void> {
     return;
   }
 
-  const diagnostics = createDiagnostics(filePath, validation.issues);
+  const diagnostics = createDiagnostics(documentText, validation.issues);
   connection.sendDiagnostics({ uri, diagnostics });
 }
 
 function createDiagnostics(
-  filePath: string,
-  issues: ReadonlyArray<{ message: string; severity: "warning" | "error" }>,
+  documentText: string,
+  issues: ReadonlyArray<{
+    message: string;
+    severity: "warning" | "error" | "suggestion";
+  }>,
 ): Diagnostic[] {
-  const documentText = readDocumentText(filePath);
-
   return issues.map((issue) => ({
     range: createIssueRange(documentText, issue.message),
-    message: issue.message,
-    severity:
-      issue.severity === "warning"
-        ? DiagnosticSeverity.Warning
-        : DiagnosticSeverity.Error,
+    message: createDiagnosticMessageWithContext(issue.message, documentText),
+    severity: mapDiagnosticSeverity(issue.severity),
     source: "alp-sdk",
   }));
+}
+
+function mapDiagnosticSeverity(
+  severity: "warning" | "error" | "suggestion",
+): DiagnosticSeverity {
+  switch (severity) {
+    case "warning":
+      return DiagnosticSeverity.Warning;
+    case "suggestion":
+      return DiagnosticSeverity.Hint;
+    case "error":
+    default:
+      return DiagnosticSeverity.Error;
+  }
 }
 
 function readDocumentText(filePath: string): string {
@@ -307,6 +347,58 @@ function readDocumentText(filePath: string): string {
   } catch {
     return "";
   }
+}
+
+function getDocumentText(uri: string, filePath: string): string {
+  return documentCache.get(uri) ?? readDocumentText(filePath);
+}
+
+function applyContentChanges(
+  currentText: string,
+  changes: readonly TextDocumentContentChangeEvent[],
+): string {
+  let text = currentText;
+
+  for (const change of changes) {
+    if (!("range" in change) || !change.range) {
+      text = change.text;
+      continue;
+    }
+
+    const startOffset = offsetAt(
+      text,
+      change.range.start.line,
+      change.range.start.character,
+    );
+    const endOffset = offsetAt(
+      text,
+      change.range.end.line,
+      change.range.end.character,
+    );
+
+    const safeStart = Math.max(0, Math.min(startOffset, text.length));
+    const safeEnd = Math.max(safeStart, Math.min(endOffset, text.length));
+    text = `${text.slice(0, safeStart)}${change.text}${text.slice(safeEnd)}`;
+  }
+
+  return text;
+}
+
+function offsetAt(text: string, line: number, character: number): number {
+  let offset = 0;
+  let currentLine = 0;
+
+  while (currentLine < line && offset < text.length) {
+    const nextNewline = text.indexOf("\n", offset);
+    if (nextNewline < 0) {
+      return text.length;
+    }
+
+    offset = nextNewline + 1;
+    currentLine += 1;
+  }
+
+  return Math.min(text.length, offset + Math.max(0, character));
 }
 
 function toCompletionItem(

@@ -395,6 +395,28 @@ export function createBoardYamlQuickFixes(
   return fixes;
 }
 
+export function createDiagnosticMessageWithContext(
+  issueMessage: string,
+  documentText: string,
+): string {
+  const parsed = parseBoardModel(documentText);
+  const effectiveConfig: unknown = normalizeBoardModel(parsed);
+  const paths = detectRelevantContextPaths(issueMessage);
+
+  const contextParts = paths.map((path) => {
+    const value = getValueAtPath(effectiveConfig, path);
+    return `${path}=${formatContextValue(value)}`;
+  });
+
+  const originParts = paths.map((path) => `${path}=board.yaml inline`);
+
+  return [
+    issueMessage,
+    `Context: ${contextParts.join("; ")}`,
+    `Preset origin: ${originParts.join("; ")}`,
+  ].join("\n");
+}
+
 export function createEffectiveConfigPreviewPayload(
   documentText: string,
   boardYamlPath: string,
@@ -410,6 +432,54 @@ export function createEffectiveConfigPreviewPayload(
     projectContext,
     effectiveConfig,
   };
+}
+
+function detectRelevantContextPaths(issueMessage: string): string[] {
+  const lowerMessage = issueMessage.toLowerCase();
+  const paths: string[] = [];
+
+  if (lowerMessage.includes("som") || lowerMessage.includes("sku")) {
+    paths.push("som.sku");
+  }
+
+  if (lowerMessage.includes("carrier")) {
+    paths.push("carrier.name");
+  }
+
+  if (lowerMessage.includes("os")) {
+    paths.push("os");
+  }
+
+  if (paths.length === 0) {
+    paths.push("som.sku", "carrier.name", "os");
+  }
+
+  return paths;
+}
+
+function getValueAtPath(root: unknown, path: string): unknown {
+  let current: unknown = root;
+  for (const segment of path.split(".")) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return undefined;
+    }
+
+    current = (current as Record<string, unknown>)[segment];
+  }
+
+  return current;
+}
+
+function formatContextValue(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "n/a";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return JSON.stringify(value);
 }
 
 function inferIssueKeyCandidates(issueMessage: string): string[] {

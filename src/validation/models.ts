@@ -9,7 +9,7 @@ export type ValidationOutcome =
   | "hardware-revision"
   | "failed";
 
-export type ValidationSeverity = "error" | "warning";
+export type ValidationSeverity = "error" | "warning" | "suggestion";
 
 export interface ValidationWorkspaceContext extends ProjectContext {}
 
