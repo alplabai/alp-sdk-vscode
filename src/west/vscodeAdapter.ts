@@ -5,11 +5,7 @@ import { collectProjectContext } from "../project/vscodeAdapter";
 import { WestCommandPlan, WestWorkspaceContext } from "./models";
 
 export function collectWestWorkspaceContext(): WestWorkspaceContext {
-  const project = collectProjectContext();
-  return {
-    westCwd: project.westCwd,
-    sdkRoot: project.sdkRoot,
-  };
+  return collectProjectContext();
 }
 
 export function executeWestPlan(plan: WestCommandPlan): void {

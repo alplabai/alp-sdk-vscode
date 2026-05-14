@@ -700,11 +700,17 @@ language-server baseline while preserving current validation behavior.
 
 ## Tasks
 
-- [ ] Move validation triggers from extension-host events into the LSP.
-- [ ] Preserve current validator behavior as baseline compatibility.
+- [x] Move validation triggers from extension-host events into the LSP.
+- [x] Preserve current validator behavior as baseline compatibility.
 - [ ] Improve diagnostic ranges beyond the current line-1 fallback where
       practical.
-- [ ] Keep Problems panel behavior stable during transition.
+- [x] Keep Problems panel behavior stable during transition.
+
+## Subtask Log
+
+- [x] Record and close migration improvement subtask: keep current
+      fallback range behavior stable while tracking richer range mapping
+      as follow-up work.
 
 ## Acceptance Criteria
 
@@ -748,16 +754,17 @@ including the relationship between `west build` and `west alp-build`.
 
 ## Tasks
 
-- [ ] Decide whether the extension should expose `west build`,
-      `west alp-build`, or both.
-- [ ] Ensure validation and generation happen in the expected order.
-- [ ] Update command descriptions to match actual behavior.
-- [ ] Update documentation to match shipped behavior.
+- [x] Decide whether the extension should expose `west build`,
+      `west alp-build`, or both. (Decision: canonical extension flow is
+      `west build` with explicit pre-build validation + generation.)
+- [x] Ensure validation and generation happen in the expected order.
+- [x] Update command descriptions to match actual behavior.
+- [x] Update documentation to match shipped behavior.
 
 ## Acceptance Criteria
 
-- [ ] Extension build commands match the intended canonical workflow.
-- [ ] Documentation no longer overstates or misstates build behavior.
+- [x] Extension build commands match the intended canonical workflow.
+- [x] Documentation no longer overstates or misstates build behavior.
 ```
 
 ---

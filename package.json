@@ -1,7 +1,7 @@
 {
   "name": "alp-sdk",
   "displayName": "ALP SDK",
-  "description": "First-class IDE support for ALP SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run wrappers.",
+  "description": "First-class IDE support for ALP SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
   "version": "0.3.0",
   "publisher": "alplabai",
   "license": "Apache-2.0",
@@ -78,7 +78,7 @@
       },
       {
         "command": "alp.westBuild",
-        "title": "Alp: West build",
+        "title": "Alp: West build (validate + generate + build)",
         "category": "Alp"
       },
       {

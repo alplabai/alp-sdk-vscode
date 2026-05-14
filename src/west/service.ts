@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { ALL_EMIT_MODES, createLoaderPlan } from "../loader/service";
+import { createValidatorPlan } from "../validation/service";
 import {
     WestBuildInput,
+    WestBuildPreparation,
     WestCommandPlan,
     WestWorkspaceContext,
 } from "./models";
@@ -15,6 +18,19 @@ export function createWestBuildPlan(
     "alp · west build",
     `west build -b ${input.board} ${input.example} -p auto`,
   );
+}
+
+export function createWestBuildPreparation(
+  context: WestWorkspaceContext,
+  input: WestBuildInput,
+): WestBuildPreparation {
+  const boardYamlPath = requireBoardYamlPath(context.boardYamlPath);
+
+  return {
+    validatorPlan: createValidatorPlan(context, boardYamlPath),
+    loaderPlans: ALL_EMIT_MODES.map((emit) => createLoaderPlan(context, emit)),
+    westPlan: createWestBuildPlan(context, input),
+  };
 }
 
 export function createWestFlashPlan(
@@ -45,4 +61,12 @@ function createWestCommandPlan(
     westCwd: context.westCwd,
     env,
   };
+}
+
+function requireBoardYamlPath(boardYamlPath: string | null): string {
+  if (!boardYamlPath) {
+    throw new Error("Alp: board.yaml path is unresolved.");
+  }
+
+  return boardYamlPath;
 }

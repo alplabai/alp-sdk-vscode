@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import { summarizeLoaderBatch } from "./loader/service";
 import {
-    createWestBuildPlan,
+    ensureLoaderOutputDirectory,
+    executeLoaderPlan,
+    inspectGeneratedFile,
+} from "./loader/vscodeAdapter";
+import { log, showOutput } from "./util";
+import { analyzeValidationResult } from "./validation/service";
+import { executeValidatorPlan } from "./validation/vscodeAdapter";
+import {
+    createWestBuildPreparation,
     createWestFlashPlan,
     createWestNativeRunPlan,
 } from "./west/service";
@@ -31,7 +40,55 @@ async function pickBoardAndExamplePath(): Promise<{
 async function westBuild(): Promise<void> {
   const sel = await pickBoardAndExamplePath();
   if (!sel) return;
-  executeWestPlan(createWestBuildPlan(collectWestWorkspaceContext(), sel));
+
+  const context = collectWestWorkspaceContext();
+  let preparation;
+  try {
+    preparation = createWestBuildPreparation(context, sel);
+  } catch (error) {
+    await vscode.window.showErrorMessage(formatWestError(error));
+    return;
+  }
+
+  const validationExecution = executeValidatorPlan(
+    context,
+    preparation.validatorPlan,
+  );
+  if (validationExecution.stdout) log(validationExecution.stdout);
+  if (validationExecution.stderr) log(validationExecution.stderr);
+
+  const validation = analyzeValidationResult(validationExecution);
+  if (validation.outcome !== "clean") {
+    showOutput();
+    await showValidationFailure(validation.outcome);
+    return;
+  }
+
+  const entries = [];
+  for (const loaderPlan of preparation.loaderPlans) {
+    ensureLoaderOutputDirectory(loaderPlan);
+    const execution = executeLoaderPlan(context, loaderPlan);
+    if (execution.stdout) log(execution.stdout);
+    if (execution.stderr) log(execution.stderr);
+    entries.push(inspectGeneratedFile(loaderPlan));
+  }
+
+  const workspaceRoot = context.workspaceRoot;
+  if (!workspaceRoot) {
+    await vscode.window.showErrorMessage("Alp: workspace root is unresolved.");
+    return;
+  }
+
+  const summary = summarizeLoaderBatch(workspaceRoot, entries);
+  if (summary.failed.length > 0) {
+    showOutput();
+    await vscode.window.showErrorMessage(
+      `Alp: generation failed before build for ${summary.failed.join(", ")}. See the ALP SDK output channel.`,
+    );
+    return;
+  }
+
+  executeWestPlan(preparation.westPlan);
 }
 
 async function westFlash(): Promise<void> {
@@ -40,6 +97,48 @@ async function westFlash(): Promise<void> {
 
 async function westRunNativeSim(): Promise<void> {
   executeWestPlan(createWestNativeRunPlan(collectWestWorkspaceContext()));
+}
+
+async function showValidationFailure(
+  outcome:
+    | "clean"
+    | "missing-preset"
+    | "schema-violation"
+    | "hardware-revision"
+    | "failed",
+): Promise<void> {
+  switch (outcome) {
+    case "missing-preset":
+      await vscode.window.showWarningMessage(
+        "Alp: build blocked by missing preset validation issues.",
+      );
+      return;
+    case "schema-violation":
+      await vscode.window.showErrorMessage(
+        "Alp: build blocked by board.yaml schema violations.",
+      );
+      return;
+    case "hardware-revision":
+      await vscode.window.showErrorMessage(
+        "Alp: build blocked by hardware revision compatibility failures.",
+      );
+      return;
+    case "failed":
+      await vscode.window.showErrorMessage(
+        "Alp: build blocked because validation failed unexpectedly.",
+      );
+      return;
+    case "clean":
+      return;
+  }
+}
+
+function formatWestError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Alp: an unexpected west workflow error occurred.";
 }
 
 export function registerWestCommands(): vscode.Disposable[] {

@@ -11,8 +11,9 @@ First-class IDE support for projects built against the
 * **`alp_project.py` loader commands.**  Generate Zephyr-conf /
   CMake-args / Yocto-conf from `board.yaml` directly from the
   command palette.
-* **`west build` / `flash` / `run` wrappers** with progress
-  reporting + log redirection.
+* **`west` workflow wrappers** where build runs
+  `validate board.yaml` -> `generate all` -> `west build`, plus
+  dedicated `flash` / `run` wrappers with progress reporting.
 * **Per-OS dependency bootstrap.**  Validates Zephyr / west /
   Yocto toolchain availability before running a build.
 
@@ -24,7 +25,7 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 
 ## Repo layout
 
-```
+```text
 .
 ├── README.md
 ├── LICENSE                  -- Apache-2.0
@@ -36,7 +37,7 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 │   ├── diagnostics.ts       -- inline validator
 │   ├── loader.ts            -- alp_project.py wrapper
 │   ├── statusBar.ts
-│   ├── west.ts              -- west build/flash/run runner
+│   ├── west.ts              -- validate+generate+build, flash, run orchestration
 │   └── ...
 ├── snippets/                -- board.yaml + main.c snippets
 ├── media/                   -- icons + walkthrough assets
@@ -100,16 +101,16 @@ extension.
 
 The current test setup is intentionally lightweight:
 
-- pure service modules are tested directly
-- thin adapter seams with injected dependencies are tested without
+* pure service modules are tested directly
+* thin adapter seams with injected dependencies are tested without
   booting VS Code
-- compile stays part of the test run so API drift is caught early
+* compile stays part of the test run so API drift is caught early
 
 When changing architecture-sensitive code, prefer keeping this split:
 
-- `service` for pure decision logic
-- `vscodeAdapter` for VS Code, filesystem, and subprocess access
-- surface files such as commands, panels, status bar, and diagnostics
+* `service` for pure decision logic
+* `vscodeAdapter` for VS Code, filesystem, and subprocess access
+* surface files such as commands, panels, status bar, and diagnostics
   for presentation and orchestration only
 
 For the full implementation contract, see

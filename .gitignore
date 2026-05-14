@@ -11,3 +11,6 @@ Thumbs.db
 # Build / test scratch
 coverage/
 .nyc_output/
+
+# Local assistant instructions (keep private)
+.github/local-agent-instructions.md
