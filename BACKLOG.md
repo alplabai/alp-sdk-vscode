@@ -228,8 +228,8 @@ instead of command-triggered.
 - [ ] Distinguish errors, warnings, and suggestions.
 - [ ] Add effective-config and preset-origin context to diagnostic
       messages.
-- [ ] Add completion for known enums and presets.
-- [ ] Add hover for field semantics and inherited defaults.
+- [x] Add completion for known enums and presets.
+- [x] Add hover for field semantics and inherited defaults.
 - [ ] Add document symbols and outline support.
 - [ ] Add quick fixes for common issues.
 - [ ] Add command-backed effective-config preview.

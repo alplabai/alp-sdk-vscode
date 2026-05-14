@@ -4,12 +4,16 @@ import * as cp from "child_process";
 import * as fs from "fs";
 import { fileURLToPath } from "url";
 import {
+  CompletionItem,
+  CompletionItemKind,
     createConnection,
     Diagnostic,
     DiagnosticSeverity,
     DidChangeConfigurationNotification,
+  Hover,
     InitializeParams,
     InitializeResult,
+  MarkupKind,
     ProposedFeatures,
     TextDocumentSyncKind,
 } from "vscode-languageserver/node";
@@ -20,7 +24,14 @@ import {
     createValidatorPlan,
     isBoardYamlPath,
 } from "../validation/service";
-import { createIssueRange, normalizeProjectSettings } from "./service";
+import {
+  BoardYamlCompletionSuggestion,
+  BoardYamlHoverInfo,
+  createBoardYamlCompletionSuggestions,
+  createBoardYamlHoverInfo,
+  createIssueRange,
+  normalizeProjectSettings,
+} from "./service";
 
 const connection = createConnection(ProposedFeatures.all);
 let hasConfigurationCapability = false;
@@ -41,6 +52,10 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
         change: TextDocumentSyncKind.Incremental,
         save: { includeText: false },
       },
+      completionProvider: {
+        resolveProvider: false,
+      },
+      hoverProvider: true,
     },
   };
 });
@@ -85,6 +100,47 @@ connection.onInitialized(() => {
       uri: params.textDocument.uri,
       diagnostics: [],
     });
+  });
+
+  connection.onCompletion((params): CompletionItem[] => {
+    const filePath = uriToFsPath(params.textDocument.uri);
+    if (!filePath || !isBoardYamlPath(filePath)) {
+      return [];
+    }
+
+    const documentText = readDocumentText(filePath);
+    const suggestions = createBoardYamlCompletionSuggestions(
+      documentText,
+      params.position.line,
+      params.position.character,
+    );
+
+    return suggestions.map(toCompletionItem);
+  });
+
+  connection.onHover((params): Hover | null => {
+    const filePath = uriToFsPath(params.textDocument.uri);
+    if (!filePath || !isBoardYamlPath(filePath)) {
+      return null;
+    }
+
+    const documentText = readDocumentText(filePath);
+    const hoverInfo = createBoardYamlHoverInfo(
+      documentText,
+      params.position.line,
+      params.position.character,
+    );
+
+    if (!hoverInfo) {
+      return null;
+    }
+
+    return {
+      contents: {
+        kind: MarkupKind.Markdown,
+        value: formatHoverMarkdown(hoverInfo),
+      },
+    };
   });
 
   connection.console.info("ALP SDK language server initialized.");
@@ -148,6 +204,33 @@ function readDocumentText(filePath: string): string {
   } catch {
     return "";
   }
+}
+
+function toCompletionItem(
+  suggestion: BoardYamlCompletionSuggestion,
+): CompletionItem {
+  return {
+    label: suggestion.label,
+    insertText: suggestion.insertText,
+    detail: suggestion.detail,
+    kind:
+      suggestion.kind === "key"
+        ? CompletionItemKind.Field
+        : CompletionItemKind.Value,
+  };
+}
+
+function formatHoverMarkdown(hoverInfo: BoardYamlHoverInfo): string {
+  const lines = [`**${hoverInfo.title}**`, hoverInfo.description];
+  if (hoverInfo.defaultValue) {
+    lines.push(`Default: ${hoverInfo.defaultValue}`);
+  }
+
+  if (hoverInfo.allowedValues && hoverInfo.allowedValues.length > 0) {
+    lines.push(`Allowed: ${hoverInfo.allowedValues.join(", ")}`);
+  }
+
+  return lines.join("\n\n");
 }
 
 async function readProjectSettings(resourceUri: string) {

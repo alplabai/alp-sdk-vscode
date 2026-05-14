@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  createBoardYamlCompletionSuggestions,
+  createBoardYamlHoverInfo,
   createIssueRange,
   createLineZeroRange,
   normalizeProjectSettings,
@@ -93,4 +95,45 @@ test("createIssueRange falls back to line zero when key is unknown", () => {
     start: { line: 0, character: 0 },
     end: { line: 0, character: "project:".length },
   });
+});
+
+test("createBoardYamlCompletionSuggestions suggests top-level keys", () => {
+  const suggestions = createBoardYamlCompletionSuggestions("", 0, 0);
+  const labels = suggestions.map((item) => item.label);
+
+  assert(labels.includes("som"));
+  assert(labels.includes("os"));
+  assert(labels.includes("diagnostics"));
+});
+
+test("createBoardYamlCompletionSuggestions suggests enum values for os", () => {
+  const suggestions = createBoardYamlCompletionSuggestions("os: ", 0, 4);
+  const labels = suggestions.map((item) => item.label);
+
+  assert.deepEqual(labels, ["zephyr", "yocto", "baremetal"]);
+});
+
+test("createBoardYamlCompletionSuggestions suggests nested keys", () => {
+  const documentText = ["inference:", "  "].join("\n");
+  const suggestions = createBoardYamlCompletionSuggestions(documentText, 1, 2);
+  const labels = suggestions.map((item) => item.label);
+
+  assert(labels.includes("backend"));
+  assert(labels.includes("default_arena_kib"));
+});
+
+test("createBoardYamlHoverInfo returns docs for core fields", () => {
+  const hover = createBoardYamlHoverInfo("os: zephyr", 0, 1);
+
+  assert.equal(hover?.title, "os");
+  assert.match(hover?.description ?? "", /operating system/i);
+  assert.deepEqual(hover?.allowedValues, ["zephyr", "yocto", "baremetal"]);
+});
+
+test("createBoardYamlHoverInfo returns docs for nested fields", () => {
+  const documentText = ["diagnostics:", "  log_level: info"].join("\n");
+  const hover = createBoardYamlHoverInfo(documentText, 1, 5);
+
+  assert.equal(hover?.title, "diagnostics.log_level");
+  assert.match(hover?.description ?? "", /log verbosity/i);
 });
