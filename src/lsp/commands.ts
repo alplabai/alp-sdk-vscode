@@ -47,7 +47,9 @@ async function previewEffectiveConfig(): Promise<void> {
 
   const preview = await requestEffectiveConfigPreview(boardYamlUri);
   await showJsonDocument(preview);
-  log(`alp.previewEffectiveConfig: rendered effective config for ${boardYamlUri.fsPath}`);
+  log(
+    `alp.previewEffectiveConfig: rendered effective config for ${boardYamlUri.fsPath}`,
+  );
 }
 
 export function registerLspCommands(): vscode.Disposable[] {

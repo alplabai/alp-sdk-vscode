@@ -7,11 +7,11 @@ import { ALL_EMIT_MODES, createLoaderPlan } from "../../../loader/service";
 import { ProjectSettings } from "../../../project/models";
 import { resolveProjectContext } from "../../../project/service";
 import {
-  CLI_EXIT_CODE,
-  CliExecutionInput,
-  CliExecutionResult,
-  CliGlobalFlags,
-  CliIssue,
+    CLI_EXIT_CODE,
+    CliExecutionInput,
+    CliExecutionResult,
+    CliGlobalFlags,
+    CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 
@@ -184,7 +184,10 @@ export function runGenerateCommand(
   }
 }
 
-function resolveGenerateTargets(target: string | null, all: boolean): EmitMode[] {
+function resolveGenerateTargets(
+  target: string | null,
+  all: boolean,
+): EmitMode[] {
   if (all || !target) {
     return [...ALL_EMIT_MODES];
   }

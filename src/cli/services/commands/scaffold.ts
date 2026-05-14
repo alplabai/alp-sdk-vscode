@@ -2,16 +2,19 @@
 
 import * as path from "path";
 import { ModuleTemplateId } from "../../../wizard/models";
-import { createModuleScaffoldPlan, listModuleTemplates } from "../../../wizard/service";
 import {
-  collectWizardFileChanges,
-  writeWizardFiles,
+    createModuleScaffoldPlan,
+    listModuleTemplates,
+} from "../../../wizard/service";
+import {
+    collectWizardFileChanges,
+    writeWizardFiles,
 } from "../../../wizard/vscodeAdapter";
 import {
-  CLI_EXIT_CODE,
-  CliExecutionInput,
-  CliExecutionResult,
-  CliGlobalFlags,
+    CLI_EXIT_CODE,
+    CliExecutionInput,
+    CliExecutionResult,
+    CliGlobalFlags,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 

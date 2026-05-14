@@ -8,7 +8,7 @@ import {
 } from "./models";
 import { parseCliArgs } from "./services/args";
 import {
-  runCompletionCommand,
+    runCompletionCommand,
     runDiffCommand,
     runDoctorCommand,
     runExplainCommand,

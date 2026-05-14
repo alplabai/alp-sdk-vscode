@@ -8,11 +8,11 @@ import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
 import { createStatusBar } from "./statusBar";
-import {
-  maybeOfferFirstRunWizard,
-  registerProjectWizardCommand,
-} from "./wizard";
 import { registerWestCommands } from "./west";
+import {
+    maybeOfferFirstRunWizard,
+    registerProjectWizardCommand,
+} from "./wizard";
 
 export function activate(context: vscode.ExtensionContext): void {
   startLanguageServer(context);

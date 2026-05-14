@@ -3,15 +3,15 @@
 import { EmitMode } from "../../../loader/models";
 import { listGenerationTargetSupport } from "../../../loader/service";
 import {
-  createTemplateExplanation,
-  listModuleTemplates,
-  listWizardTemplates,
+    createTemplateExplanation,
+    listModuleTemplates,
+    listWizardTemplates,
 } from "../../../wizard/service";
 import {
-  CLI_EXIT_CODE,
-  CliExecutionInput,
-  CliExecutionResult,
-  CliGlobalFlags,
+    CLI_EXIT_CODE,
+    CliExecutionInput,
+    CliExecutionResult,
+    CliGlobalFlags,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 

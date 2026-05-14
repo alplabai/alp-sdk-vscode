@@ -5,14 +5,14 @@ import { createDefaultBoardModel } from "../../../configurator/service";
 import { WizardTemplateId } from "../../../wizard/models";
 import { createWizardPlan, listWizardTemplates } from "../../../wizard/service";
 import {
-  collectWizardFileChanges,
-  writeWizardFiles,
+    collectWizardFileChanges,
+    writeWizardFiles,
 } from "../../../wizard/vscodeAdapter";
 import {
-  CLI_EXIT_CODE,
-  CliExecutionInput,
-  CliExecutionResult,
-  CliGlobalFlags,
+    CLI_EXIT_CODE,
+    CliExecutionInput,
+    CliExecutionResult,
+    CliGlobalFlags,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 
