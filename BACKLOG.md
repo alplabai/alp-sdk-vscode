@@ -101,29 +101,29 @@ core.
 
 ## Tasks
 
-- [ ] Define the primary user segments.
-- [ ] Document the end-to-end journey for creating a new project.
-- [ ] Document the journey for editing an existing `board.yaml`
+- [x] Define the primary user segments.
+- [x] Document the end-to-end journey for creating a new project.
+- [x] Document the journey for editing an existing `board.yaml`
       project.
-- [ ] Document the journey for generating outputs before build.
-- [ ] Document the journey for scaffolding starter source code.
-- [ ] Document the CLI-first journey for CI and headless use.
-- [ ] Publish a capability matrix for UI, LSP, CLI, and shared core.
-- [ ] List explicitly unsupported or deferred features.
-- [ ] Define the initial project-template shortlist.
-- [ ] Define ownership rules for generated files versus user-owned
+- [x] Document the journey for generating outputs before build.
+- [x] Document the journey for scaffolding starter source code.
+- [x] Document the CLI-first journey for CI and headless use.
+- [x] Publish a capability matrix for UI, LSP, CLI, and shared core.
+- [x] List explicitly unsupported or deferred features.
+- [x] Define the initial project-template shortlist.
+- [x] Define ownership rules for generated files versus user-owned
       files.
-- [ ] Define acceptance criteria for the configurator MVP.
-- [ ] Define acceptance criteria for the first LSP milestone.
-- [ ] Define acceptance criteria for the CLI baseline.
-- [ ] Define documentation expectations per surface.
+- [x] Define acceptance criteria for the configurator MVP.
+- [x] Define acceptance criteria for the first LSP milestone.
+- [x] Define acceptance criteria for the CLI baseline.
+- [x] Define documentation expectations per surface.
 
 ## Exit Criteria
 
-- [ ] The team can answer "which surface owns this feature?" without
+- [x] The team can answer "which surface owns this feature?" without
       ambiguity.
-- [ ] Initial project templates are agreed and documented.
-- [ ] Generated-file ownership policy is agreed and documented.
+- [x] Initial project templates are agreed and documented.
+- [x] Generated-file ownership policy is agreed and documented.
 ```
 
 ---
