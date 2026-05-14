@@ -77,6 +77,18 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
   for local terminal and CI usage.
 - [EDITOR_FEATURES.md](EDITOR_FEATURES.md): LSP/editor capabilities for
   board.yaml authoring.
+- [GENERATION_OUTPUTS.md](GENERATION_OUTPUTS.md): Generation targets,
+  output paths, and deterministic output expectations.
+- [SOURCE_SCAFFOLDING.md](SOURCE_SCAFFOLDING.md): Project bootstrap and
+  module scaffolding workflows.
+- [TROUBLESHOOTING_VALIDATION.md](TROUBLESHOOTING_VALIDATION.md):
+  Validation failure diagnosis and recovery flow.
+- [TROUBLESHOOTING_GENERATION_CONFLICTS.md](TROUBLESHOOTING_GENERATION_CONFLICTS.md):
+  Generation/scaffolding conflict handling and overwrite safety.
+- [TROUBLESHOOTING_ENVIRONMENT.md](TROUBLESHOOTING_ENVIRONMENT.md):
+  Runtime/toolchain troubleshooting for CLI and VS Code workflows.
+- [TASK_RECIPES.md](TASK_RECIPES.md): Common GUI/CLI task mapping for
+  daily workflows.
 - [DEBUG.md](DEBUG.md): Debug support matrix and launch strategy.
 - [src/README.md](src/README.md): Source module map.
 - [src/lsp/README.md](src/lsp/README.md): LSP module responsibilities.

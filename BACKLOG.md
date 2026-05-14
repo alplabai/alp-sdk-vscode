@@ -442,19 +442,19 @@ documentation.
 - [x] Add VS Code getting-started documentation.
 - [x] Add CLI getting-started documentation.
 - [x] Add LSP/editor feature documentation.
-- [ ] Add generation-output documentation.
-- [ ] Add source-scaffolding documentation.
-- [ ] Add validation troubleshooting.
-- [ ] Add generation-conflict troubleshooting.
-- [ ] Add environment and toolchain troubleshooting.
-- [ ] Add common task recipes for GUI and CLI.
+- [x] Add generation-output documentation.
+- [x] Add source-scaffolding documentation.
+- [x] Add validation troubleshooting.
+- [x] Add generation-conflict troubleshooting.
+- [x] Add environment and toolchain troubleshooting.
+- [x] Add common task recipes for GUI and CLI.
 - [x] Add CI usage examples.
 
 ## Exit Criteria
 
-- [ ] New users can choose GUI or CLI quickly and reach a working
+- [x] New users can choose GUI or CLI quickly and reach a working
       project.
-- [ ] Documentation matches implemented behavior closely enough to
+- [x] Documentation matches implemented behavior closely enough to
       avoid routine drift.
 ```
 
