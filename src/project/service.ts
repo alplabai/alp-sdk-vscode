@@ -7,6 +7,7 @@ export function resolveProjectContext(
   input: ProjectResolutionInput,
   pathExists: (candidatePath: string) => boolean,
 ): ProjectContext {
+  // Resolve all runtime inputs once so every surface reads the same project context.
   const workspaceRoot = resolveWorkspaceRoot(input.workspaceFolders);
 
   return {
@@ -39,6 +40,7 @@ function resolveSdkRoot(
   configuredSdkPath: string,
   pathExists: (candidatePath: string) => boolean,
 ): string | null {
+  // Prefer explicit SDK path, but only if it contains the loader entrypoint.
   const trimmedConfiguredPath = configuredSdkPath.trim();
   if (trimmedConfiguredPath) {
     return containsLoaderScript(trimmedConfiguredPath, pathExists)
@@ -46,6 +48,7 @@ function resolveSdkRoot(
       : null;
   }
 
+  // Auto-discovery is valid only when exactly one SDK root is detected.
   const candidates = collectSdkCandidates(workspaceFolders, pathExists);
   if (candidates.length === 1) {
     return candidates[0]!;
@@ -61,6 +64,7 @@ function collectSdkCandidates(
   const candidates = new Set<string>();
 
   for (const workspaceFolder of workspaceFolders) {
+    // Check both workspace root and the conventional sibling alp-sdk folder.
     if (containsLoaderScript(workspaceFolder, pathExists)) {
       candidates.add(workspaceFolder);
     }
@@ -106,5 +110,6 @@ function containsLoaderScript(
   rootPath: string,
   pathExists: (candidatePath: string) => boolean,
 ): boolean {
+  // scripts/alp_project.py is the canonical marker for an ALP SDK root.
   return pathExists(path.join(rootPath, "scripts", "alp_project.py"));
 }

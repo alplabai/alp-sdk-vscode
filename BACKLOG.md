@@ -399,9 +399,9 @@ The same workflows are available from the terminal and in CI.
 
 ## Exit Criteria
 
-- [ ] A CLI-first user can complete the same major workflows as a VS
+- [x] A CLI-first user can complete the same major workflows as a VS
       Code user.
-- [ ] Commands support both human-readable and CI-friendly output.
+- [x] Commands support both human-readable and CI-friendly output.
 ```
 
 ---
@@ -439,16 +439,16 @@ documentation.
 
 ## Tasks
 
-- [ ] Add VS Code getting-started documentation.
-- [ ] Add CLI getting-started documentation.
-- [ ] Add LSP/editor feature documentation.
+- [x] Add VS Code getting-started documentation.
+- [x] Add CLI getting-started documentation.
+- [x] Add LSP/editor feature documentation.
 - [ ] Add generation-output documentation.
 - [ ] Add source-scaffolding documentation.
 - [ ] Add validation troubleshooting.
 - [ ] Add generation-conflict troubleshooting.
 - [ ] Add environment and toolchain troubleshooting.
 - [ ] Add common task recipes for GUI and CLI.
-- [ ] Add CI usage examples.
+- [x] Add CI usage examples.
 
 ## Exit Criteria
 

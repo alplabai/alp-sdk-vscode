@@ -71,6 +71,12 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
   and exit-code policy.
 - [CI_EXAMPLES.md](CI_EXAMPLES.md): GitHub Actions and GitLab CI
   examples for ALP CLI validation/generation/doctor flows.
+- [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md): VS Code
+  first-run workflow from install to validation and generation.
+- [GETTING_STARTED_CLI.md](GETTING_STARTED_CLI.md): CLI-first workflow
+  for local terminal and CI usage.
+- [EDITOR_FEATURES.md](EDITOR_FEATURES.md): LSP/editor capabilities for
+  board.yaml authoring.
 - [DEBUG.md](DEBUG.md): Debug support matrix and launch strategy.
 - [src/README.md](src/README.md): Source module map.
 - [src/lsp/README.md](src/lsp/README.md): LSP module responsibilities.
