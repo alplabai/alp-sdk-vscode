@@ -28,6 +28,21 @@ export interface BoardYamlHoverInfo {
   allowedValues?: readonly string[];
 }
 
+export interface BoardYamlDocumentSymbolNode {
+  name: string;
+  path: string;
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+  children: BoardYamlDocumentSymbolNode[];
+}
+
+export interface BoardYamlQuickFix {
+  title: string;
+  line: number;
+  character: number;
+  newText: string;
+}
+
 const ISSUE_KEY_ALIASES: ReadonlyArray<{
   pattern: RegExp;
   keys: readonly string[];
@@ -285,6 +300,92 @@ export function createBoardYamlHoverInfo(
   return FIELD_DOCS[path] ?? null;
 }
 
+export function createBoardYamlDocumentSymbols(
+  documentText: string,
+): BoardYamlDocumentSymbolNode[] {
+  const lines = splitLines(documentText);
+  const roots: BoardYamlDocumentSymbolNode[] = [];
+  const stack: Array<{ indent: number; node: BoardYamlDocumentSymbolNode }> =
+    [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const lineText = lines[index] ?? "";
+    const keyMatch = parseKeyLine(lineText);
+    if (!keyMatch) {
+      continue;
+    }
+
+    while (
+      stack.length > 0 &&
+      stack[stack.length - 1]!.indent >= keyMatch.indent
+    ) {
+      finalizeSymbolNode(stack.pop()!.node, index - 1, lines);
+    }
+
+    const parentPath = stack.length ? stack[stack.length - 1]!.node.path : "";
+    const path = parentPath ? `${parentPath}.${keyMatch.key}` : keyMatch.key;
+    const node: BoardYamlDocumentSymbolNode = {
+      name: keyMatch.key,
+      path,
+      start: { line: index, character: keyMatch.indent },
+      end: { line: index, character: lineText.length },
+      children: [],
+    };
+
+    if (stack.length > 0) {
+      stack[stack.length - 1]!.node.children.push(node);
+    } else {
+      roots.push(node);
+    }
+
+    stack.push({ indent: keyMatch.indent, node });
+  }
+
+  const lastLine = Math.max(0, lines.length - 1);
+  while (stack.length > 0) {
+    finalizeSymbolNode(stack.pop()!.node, lastLine, lines);
+  }
+
+  return roots;
+}
+
+export function createBoardYamlQuickFixes(
+  documentText: string,
+  issueMessage: string,
+): BoardYamlQuickFix[] {
+  const lines = splitLines(documentText);
+  const message = issueMessage.toLowerCase();
+  const fixes: BoardYamlQuickFix[] = [];
+
+  if (message.includes("som") && !hasTopLevelKey(lines, "som")) {
+    fixes.push(
+      createAppendFix(
+        documentText,
+        "Add missing som.sku block",
+        "som:\n  sku: E1M-AEN701\n",
+      ),
+    );
+  }
+
+  if (message.includes("carrier") && !hasTopLevelKey(lines, "carrier")) {
+    fixes.push(
+      createAppendFix(
+        documentText,
+        "Add missing carrier.name block",
+        "carrier:\n  name: E1M-EVK\n",
+      ),
+    );
+  }
+
+  if (message.includes("os") && !hasTopLevelKey(lines, "os")) {
+    fixes.push(
+      createAppendFix(documentText, "Add missing os field", "os: zephyr\n"),
+    );
+  }
+
+  return fixes;
+}
+
 function inferIssueKeyCandidates(issueMessage: string): string[] {
   const candidates = new Set<string>();
   const fieldMatch = /^\s*fail\s+([^:]+):/i.exec(issueMessage);
@@ -330,6 +431,53 @@ function findKeyLine(lines: readonly string[], key: string): number {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function finalizeSymbolNode(
+  node: BoardYamlDocumentSymbolNode,
+  endLineInclusive: number,
+  lines: readonly string[],
+): void {
+  const clampedLine = Math.max(
+    node.start.line,
+    Math.min(endLineInclusive, Math.max(0, lines.length - 1)),
+  );
+  const lineText = lines[clampedLine] ?? "";
+  node.end = { line: clampedLine, character: lineText.length };
+}
+
+function hasTopLevelKey(lines: readonly string[], key: string): boolean {
+  for (const lineText of lines) {
+    const keyMatch = parseKeyLine(lineText ?? "");
+    if (!keyMatch) {
+      continue;
+    }
+
+    if (keyMatch.indent === 0 && keyMatch.key === key) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function createAppendFix(
+  documentText: string,
+  title: string,
+  block: string,
+): BoardYamlQuickFix {
+  const lines = splitLines(documentText);
+  const line = Math.max(0, lines.length - 1);
+  const character = (lines[line] ?? "").length;
+  const needsLeadingNewline =
+    documentText.trim().length > 0 && !documentText.endsWith("\n");
+
+  return {
+    title,
+    line,
+    character,
+    newText: `${needsLeadingNewline ? "\n" : ""}${block}`,
+  };
 }
 
 function splitLines(documentText: string): string[] {
@@ -386,7 +534,9 @@ function resolveValueContext(
 
     const stack = buildKeyStack(lines, lineIndex);
     const path = stack.map((item) => item.key).join(".");
-    const prefix = lineText.slice(keyMatch.colonIndex + 1, Math.max(0, character)).trim();
+    const prefix = lineText
+      .slice(keyMatch.colonIndex + 1, Math.max(0, character))
+      .trim();
     return { path, prefix };
   }
 
@@ -406,7 +556,9 @@ function resolveValueContext(
     return null;
   }
 
-  const prefix = lineText.slice(arrayMatch.prefixStart, Math.max(0, character)).trim();
+  const prefix = lineText
+    .slice(arrayMatch.prefixStart, Math.max(0, character))
+    .trim();
   return { path: "libraries[]", prefix };
 }
 
@@ -492,13 +644,20 @@ function buildKeyStack(
     return stack;
   }
 
-  for (let index = 0; index <= endLineInclusive && index < lines.length; index += 1) {
+  for (
+    let index = 0;
+    index <= endLineInclusive && index < lines.length;
+    index += 1
+  ) {
     const keyMatch = parseKeyLine(lines[index] ?? "");
     if (!keyMatch) {
       continue;
     }
 
-    while (stack.length > 0 && stack[stack.length - 1]!.indent >= keyMatch.indent) {
+    while (
+      stack.length > 0 &&
+      stack[stack.length - 1]!.indent >= keyMatch.indent
+    ) {
       stack.pop();
     }
 

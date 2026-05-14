@@ -3,7 +3,9 @@ const assert = require("node:assert/strict");
 
 const {
   createBoardYamlCompletionSuggestions,
+  createBoardYamlDocumentSymbols,
   createBoardYamlHoverInfo,
+  createBoardYamlQuickFixes,
   createIssueRange,
   createLineZeroRange,
   normalizeProjectSettings,
@@ -136,4 +138,62 @@ test("createBoardYamlHoverInfo returns docs for nested fields", () => {
 
   assert.equal(hover?.title, "diagnostics.log_level");
   assert.match(hover?.description ?? "", /log verbosity/i);
+});
+
+test("createBoardYamlDocumentSymbols builds nested symbol tree", () => {
+  const documentText = [
+    "schema_version: 1",
+    "som:",
+    "  sku: E1M-AEN701",
+    "inference:",
+    "  backend: auto",
+    "  default_arena_kib: 512",
+  ].join("\n");
+
+  const symbols = createBoardYamlDocumentSymbols(documentText);
+  assert.deepEqual(
+    symbols.map((item) => item.name),
+    ["schema_version", "som", "inference"],
+  );
+
+  assert.deepEqual(
+    symbols[1].children.map((item) => item.name),
+    ["sku"],
+  );
+  assert.deepEqual(
+    symbols[2].children.map((item) => item.name),
+    ["backend", "default_arena_kib"],
+  );
+});
+
+test("createBoardYamlQuickFixes suggests adding missing som block", () => {
+  const fixes = createBoardYamlQuickFixes(
+    "os: zephyr\n",
+    "FAIL som preset: missing preset",
+  );
+
+  assert.equal(fixes.length, 1);
+  assert.equal(fixes[0].title, "Add missing som.sku block");
+  assert.match(fixes[0].newText, /^som:\n\s+sku:/);
+});
+
+test("createBoardYamlQuickFixes does not suggest som block when present", () => {
+  const fixes = createBoardYamlQuickFixes(
+    ["som:", "  sku: E1M-AEN701", "os: zephyr"].join("\n"),
+    "FAIL som preset: missing preset",
+  );
+
+  assert.deepEqual(fixes, []);
+});
+
+test("createBoardYamlQuickFixes can suggest multiple missing fields", () => {
+  const fixes = createBoardYamlQuickFixes(
+    "schema_version: 1\n",
+    "FAIL som carrier os mismatch",
+  );
+
+  const titles = fixes.map((item) => item.title);
+  assert(titles.includes("Add missing som.sku block"));
+  assert(titles.includes("Add missing carrier.name block"));
+  assert(titles.includes("Add missing os field"));
 });

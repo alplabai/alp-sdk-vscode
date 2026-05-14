@@ -4,18 +4,23 @@ import * as cp from "child_process";
 import * as fs from "fs";
 import { fileURLToPath } from "url";
 import {
-  CompletionItem,
-  CompletionItemKind,
+    CodeAction,
+    CodeActionKind,
+    CompletionItem,
+    CompletionItemKind,
     createConnection,
     Diagnostic,
     DiagnosticSeverity,
     DidChangeConfigurationNotification,
-  Hover,
+    DocumentSymbol,
+    Hover,
     InitializeParams,
     InitializeResult,
-  MarkupKind,
+    MarkupKind,
     ProposedFeatures,
+    SymbolKind,
     TextDocumentSyncKind,
+    TextEdit,
 } from "vscode-languageserver/node";
 import { resolveProjectContext } from "../project/service";
 import { executeValidatorPlanWithSpawn } from "../validation/adapterCore";
@@ -25,12 +30,16 @@ import {
     isBoardYamlPath,
 } from "../validation/service";
 import {
-  BoardYamlCompletionSuggestion,
-  BoardYamlHoverInfo,
-  createBoardYamlCompletionSuggestions,
-  createBoardYamlHoverInfo,
-  createIssueRange,
-  normalizeProjectSettings,
+    BoardYamlCompletionSuggestion,
+    BoardYamlDocumentSymbolNode,
+    BoardYamlHoverInfo,
+    BoardYamlQuickFix,
+    createBoardYamlCompletionSuggestions,
+    createBoardYamlDocumentSymbols,
+    createBoardYamlHoverInfo,
+    createBoardYamlQuickFixes,
+    createIssueRange,
+    normalizeProjectSettings,
 } from "./service";
 
 const connection = createConnection(ProposedFeatures.all);
@@ -56,6 +65,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
         resolveProvider: false,
       },
       hoverProvider: true,
+      documentSymbolProvider: true,
+      codeActionProvider: true,
     },
   };
 });
@@ -141,6 +152,47 @@ connection.onInitialized(() => {
         value: formatHoverMarkdown(hoverInfo),
       },
     };
+  });
+
+  connection.onDocumentSymbol((params): DocumentSymbol[] => {
+    const filePath = uriToFsPath(params.textDocument.uri);
+    if (!filePath || !isBoardYamlPath(filePath)) {
+      return [];
+    }
+
+    const documentText = readDocumentText(filePath);
+    return createBoardYamlDocumentSymbols(documentText).map(toDocumentSymbol);
+  });
+
+  connection.onCodeAction((params): CodeAction[] => {
+    const filePath = uriToFsPath(params.textDocument.uri);
+    if (!filePath || !isBoardYamlPath(filePath)) {
+      return [];
+    }
+
+    const documentText = readDocumentText(filePath);
+    const actions: CodeAction[] = [];
+    const seenTitles = new Set<string>();
+
+    for (const diagnostic of params.context.diagnostics) {
+      if (diagnostic.source !== "alp-sdk") {
+        continue;
+      }
+
+      for (const fix of createBoardYamlQuickFixes(
+        documentText,
+        diagnostic.message,
+      )) {
+        if (seenTitles.has(fix.title)) {
+          continue;
+        }
+
+        seenTitles.add(fix.title);
+        actions.push(toCodeAction(params.textDocument.uri, diagnostic, fix));
+      }
+    }
+
+    return actions;
   });
 
   connection.console.info("ALP SDK language server initialized.");
@@ -231,6 +283,49 @@ function formatHoverMarkdown(hoverInfo: BoardYamlHoverInfo): string {
   }
 
   return lines.join("\n\n");
+}
+
+function toDocumentSymbol(node: BoardYamlDocumentSymbolNode): DocumentSymbol {
+  const selectionCharacterEnd = node.start.character + node.name.length;
+  return {
+    name: node.name,
+    detail: node.path,
+    kind: node.children.length > 0 ? SymbolKind.Object : SymbolKind.Property,
+    range: {
+      start: node.start,
+      end: node.end,
+    },
+    selectionRange: {
+      start: node.start,
+      end: {
+        line: node.start.line,
+        character: selectionCharacterEnd,
+      },
+    },
+    children: node.children.map(toDocumentSymbol),
+  };
+}
+
+function toCodeAction(
+  uri: string,
+  diagnostic: Diagnostic,
+  fix: BoardYamlQuickFix,
+): CodeAction {
+  return {
+    title: fix.title,
+    kind: CodeActionKind.QuickFix,
+    diagnostics: [diagnostic],
+    edit: {
+      changes: {
+        [uri]: [
+          TextEdit.insert(
+            { line: fix.line, character: fix.character },
+            fix.newText,
+          ),
+        ],
+      },
+    },
+  };
 }
 
 async function readProjectSettings(resourceUri: string) {

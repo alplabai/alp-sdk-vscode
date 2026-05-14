@@ -230,8 +230,8 @@ instead of command-triggered.
       messages.
 - [x] Add completion for known enums and presets.
 - [x] Add hover for field semantics and inherited defaults.
-- [ ] Add document symbols and outline support.
-- [ ] Add quick fixes for common issues.
+- [x] Add document symbols and outline support.
+- [x] Add quick fixes for common issues.
 - [ ] Add command-backed effective-config preview.
 
 ## Exit Criteria
