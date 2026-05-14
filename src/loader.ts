@@ -2,29 +2,33 @@
 
 import * as vscode from "vscode";
 import {
-    EmitMode,
-    GenerationTargetSupport,
-    LoaderBatchEntry,
-    LoaderPlan,
+  createGenerationTraceReport,
+  serializeGenerationTraceReport,
+} from "./debug/service";
+import {
+  EmitMode,
+  GenerationTargetSupport,
+  LoaderBatchEntry,
+  LoaderPlan,
 } from "./loader/models";
 import {
-    ALL_EMIT_MODES,
-    createLoaderPlan,
-    getGenerationTargetSupport,
-    summarizeLoaderBatch,
+  ALL_EMIT_MODES,
+  createLoaderPlan,
+  getGenerationTargetSupport,
+  summarizeLoaderBatch,
 } from "./loader/service";
 import {
-    boardYamlExists,
-    collectLoaderWorkspaceContext,
-    ensureLoaderOutputDirectory,
-    executeLoaderPlan,
-    inspectGeneratedFile,
-    previewGeneratedFile,
+  boardYamlExists,
+  collectLoaderWorkspaceContext,
+  ensureLoaderOutputDirectory,
+  executeLoaderPlan,
+  inspectGeneratedFile,
+  previewGeneratedFile,
 } from "./loader/vscodeAdapter";
 import { log, showOutput } from "./util";
 import {
-    analyzeValidationResult,
-    createValidatorPlan,
+  analyzeValidationResult,
+  createValidatorPlan,
 } from "./validation/service";
 import { executeValidatorPlan } from "./validation/vscodeAdapter";
 
@@ -157,6 +161,21 @@ async function runLoaderAll(): Promise<void> {
   const failedDisplayNames = summary.failed.map(
     (emit) => getGenerationTargetSupport(emit).displayName,
   );
+  const failedEmits = new Set(summary.failed);
+  const trace = createGenerationTraceReport(
+    new Date().toISOString(),
+    "loader.generateAll",
+    entries.map((entry) => ({
+      key: entry.emit,
+      outputPath: entry.outputPath,
+      outcome: failedEmits.has(entry.emit) ? "failed" : "written",
+      detail: failedEmits.has(entry.emit)
+        ? "Generated artifact missing or empty."
+        : "Generated artifact exists with non-zero size.",
+    })),
+  );
+  log(`alp.generateAll.trace:\n${serializeGenerationTraceReport(trace)}`);
+
   if (summary.failed.length === 0) {
     vscode.window.setStatusBarMessage(
       `Alp: regenerated all ${ALL_EMIT_MODES.length} formats (${summary.written.join(", ")})`,

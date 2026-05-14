@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    DebugDoctorRequest,
-    DebugInspectReport,
-    DebugLaunchPreview,
-    DebugRuntimeCapabilities,
-    DebugServerChoice,
-    DebugServerKind,
-    DebugTargetChoice,
-    DebugTargetKind,
-    DebugWorkspaceContext,
-    DoctorCheck,
-    DoctorReport,
-    LaunchConfigurationDraft,
+  DebugDoctorRequest,
+  DebugGenerationTraceDecision,
+  DebugGenerationTraceReport,
+  DebugInspectReport,
+  DebugLaunchPreview,
+  DebugResolvedValue,
+  DebugRuntimeCapabilities,
+  DebugServerChoice,
+  DebugServerKind,
+  DebugSupportBundlePayload,
+  DebugTargetChoice,
+  DebugTargetKind,
+  DebugWorkspaceContext,
+  DoctorCheck,
+  DoctorReport,
+  LaunchConfigurationDraft,
 } from "./models";
 
 const MCU_SERVER_CHOICES: ReadonlyArray<DebugServerChoice> = [
@@ -69,7 +73,68 @@ export function serverChoicesForTarget(
 export function createInspectReport(
   context: DebugWorkspaceContext,
 ): DebugInspectReport {
-  return { ...context };
+  return {
+    schemaVersion: "1",
+    generatedAt: context.generatedAt,
+    context: { ...context },
+    resolvedValues: collectResolvedValues(context),
+  };
+}
+
+export function createGenerationTraceReport(
+  generatedAt: string,
+  workflow: string,
+  decisions: readonly DebugGenerationTraceDecision[],
+): DebugGenerationTraceReport {
+  return {
+    schemaVersion: "1",
+    generatedAt,
+    workflow,
+    decisions: decisions.map((decision) => ({ ...decision })),
+  };
+}
+
+export function createSupportBundlePayload(input: {
+  generatedAt: string;
+  inspect: DebugInspectReport;
+  trace?: DebugGenerationTraceReport;
+  doctor?: DoctorReport;
+  notes?: string[];
+}): DebugSupportBundlePayload {
+  return {
+    schemaVersion: "1",
+    generatedAt: input.generatedAt,
+    inspect: {
+      ...input.inspect,
+      context: { ...input.inspect.context },
+      resolvedValues: input.inspect.resolvedValues.map((value) => ({ ...value })),
+    },
+    trace: input.trace
+      ? {
+          ...input.trace,
+          decisions: input.trace.decisions.map((decision) => ({ ...decision })),
+        }
+      : undefined,
+    doctor: input.doctor
+      ? {
+          ...input.doctor,
+          summary: { ...input.doctor.summary },
+          checks: input.doctor.checks.map((check) => ({ ...check })),
+          nextSteps: [...input.doctor.nextSteps],
+        }
+      : undefined,
+    notes: input.notes ? [...input.notes] : [],
+  };
+}
+
+export function serializeInspectReport(report: DebugInspectReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+export function serializeGenerationTraceReport(
+  report: DebugGenerationTraceReport,
+): string {
+  return JSON.stringify(report, null, 2);
 }
 
 export function buildDoctorReport(
@@ -369,6 +434,62 @@ function serverLabel(server: DebugServerKind): string {
     case "none":
       return "local";
   }
+}
+
+function collectResolvedValues(
+  context: DebugWorkspaceContext,
+): DebugResolvedValue[] {
+  return [
+    {
+      key: "workspaceRoot",
+      value: context.workspaceRoot,
+      source: context.workspaceRoot ? "workspace" : "unresolved",
+      detail: context.workspaceRoot
+        ? "Resolved from the active workspace folder."
+        : "No workspace folder is open.",
+    },
+    {
+      key: "sdkRoot",
+      value: context.sdkRoot,
+      source: context.sdkRoot ? "workspace" : "unresolved",
+      detail: context.sdkRoot
+        ? "Resolved alp-sdk root used for scripts and schemas."
+        : "Set alpSdk.path when automatic discovery is ambiguous.",
+    },
+    {
+      key: "boardYamlPath",
+      value: context.boardYamlPath,
+      source: context.boardYamlPath ? "setting" : "unresolved",
+      detail: context.boardYamlPath
+        ? "Resolved board.yaml path from project settings."
+        : "board.yaml path is unresolved.",
+    },
+    {
+      key: "boardYamlExists",
+      value: context.boardYamlExists,
+      source: "runtime",
+      detail: context.boardYamlExists
+        ? "board.yaml exists at the resolved path."
+        : "board.yaml is missing at the resolved path.",
+    },
+    {
+      key: "westCwd",
+      value: context.westCwd,
+      source: context.westCwd ? "setting" : "default",
+      detail: context.westCwd
+        ? "Working directory used for west commands."
+        : "Defaults to the workspace root.",
+    },
+    {
+      key: "pythonBinary",
+      value: context.pythonBinary,
+      source:
+        context.pythonBinary === "python3" || context.pythonBinary === "python"
+          ? "default"
+          : "setting",
+      detail: "Interpreter used for loader and validation scripts.",
+    },
+  ];
 }
 
 function countChecks(

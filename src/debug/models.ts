@@ -40,7 +40,43 @@ export interface DebugWorkspaceContext extends ProjectContext {
   debuggerExtensions: DebuggerExtensionsState;
 }
 
-export interface DebugInspectReport extends DebugWorkspaceContext {}
+export type DebugValueSource =
+  | "workspace"
+  | "setting"
+  | "default"
+  | "runtime"
+  | "derived"
+  | "unresolved";
+
+export interface DebugResolvedValue {
+  key: string;
+  value: unknown;
+  source: DebugValueSource;
+  detail: string;
+}
+
+export interface DebugInspectReport {
+  schemaVersion: "1";
+  generatedAt: string;
+  context: DebugWorkspaceContext;
+  resolvedValues: DebugResolvedValue[];
+}
+
+export type DebugTraceOutcome = "planned" | "written" | "failed";
+
+export interface DebugGenerationTraceDecision {
+  key: string;
+  outcome: DebugTraceOutcome;
+  detail: string;
+  outputPath?: string;
+}
+
+export interface DebugGenerationTraceReport {
+  schemaVersion: "1";
+  generatedAt: string;
+  workflow: string;
+  decisions: DebugGenerationTraceDecision[];
+}
 
 export interface DebugRuntimeCapabilities {
   pythonAvailable: boolean;
@@ -76,6 +112,15 @@ export interface DoctorReport {
   summary: DoctorSummary;
   checks: DoctorCheck[];
   nextSteps: string[];
+}
+
+export interface DebugSupportBundlePayload {
+  schemaVersion: "1";
+  generatedAt: string;
+  inspect: DebugInspectReport;
+  trace?: DebugGenerationTraceReport;
+  doctor?: DoctorReport;
+  notes: string[];
 }
 
 export type LaunchConfigurationDraft = Record<string, unknown>;

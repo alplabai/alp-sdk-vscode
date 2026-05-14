@@ -851,18 +851,18 @@ tracing.
 
 ## Tasks
 
-- [ ] Define an inspect-output model for effective config and resolved
+- [x] Define an inspect-output model for effective config and resolved
       values.
-- [ ] Define a trace-output model for generation decisions.
-- [ ] Define a support-bundle payload model for issue reports.
-- [ ] Add reusable helpers so UI, LSP, and CLI can consume the same
+- [x] Define a trace-output model for generation decisions.
+- [x] Define a support-bundle payload model for issue reports.
+- [x] Add reusable helpers so UI, LSP, and CLI can consume the same
       debug data.
-- [ ] Add tests for inspect and trace serialization.
+- [x] Add tests for inspect and trace serialization.
 
 ## Acceptance Criteria
 
-- [ ] Shared debug data models exist and are reusable across surfaces.
-- [ ] Inspect and trace output can be exposed later without refactoring
+- [x] Shared debug data models exist and are reusable across surfaces.
+- [x] Inspect and trace output can be exposed later without refactoring
       core logic again.
 ```
 

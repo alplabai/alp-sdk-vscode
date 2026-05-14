@@ -3,8 +3,12 @@ const assert = require("node:assert/strict");
 
 const {
   buildDoctorReport,
+  createGenerationTraceReport,
   createInspectReport,
   createLaunchPreview,
+  createSupportBundlePayload,
+  serializeGenerationTraceReport,
+  serializeInspectReport,
   serverChoicesForTarget,
 } = require("../out/debug/service.js");
 
@@ -57,8 +61,69 @@ test("createInspectReport returns a copy of the workspace context", () => {
   const context = createDebugContext();
   const report = createInspectReport(context);
 
-  assert.deepEqual(report, context);
-  assert.notEqual(report, context);
+  assert.equal(report.schemaVersion, "1");
+  assert.equal(report.generatedAt, context.generatedAt);
+  assert.deepEqual(report.context, context);
+  assert.notEqual(report.context, context);
+  assert.ok(
+    report.resolvedValues.some(
+      (value) =>
+        value.key === "workspaceRoot" && value.source === "workspace",
+    ),
+  );
+});
+
+test("inspect and trace reports serialize as stable JSON payloads", () => {
+  const inspect = createInspectReport(createDebugContext());
+  const trace = createGenerationTraceReport(
+    "2026-05-14T00:00:00.000Z",
+    "loader.generateAll",
+    [
+      {
+        key: "zephyr-conf",
+        outputPath: "/workspace/app/build/generated/alp.conf",
+        outcome: "written",
+        detail: "Generated artifact exists with non-zero size.",
+      },
+      {
+        key: "yocto-conf",
+        outputPath: "/workspace/app/build/generated/alp-yocto.conf",
+        outcome: "failed",
+        detail: "Generated artifact missing or empty.",
+      },
+    ],
+  );
+
+  const inspectSerialized = JSON.parse(serializeInspectReport(inspect));
+  const traceSerialized = JSON.parse(serializeGenerationTraceReport(trace));
+
+  assert.equal(inspectSerialized.schemaVersion, "1");
+  assert.equal(inspectSerialized.context.pythonBinary, "python3");
+  assert.equal(traceSerialized.schemaVersion, "1");
+  assert.equal(traceSerialized.workflow, "loader.generateAll");
+  assert.equal(traceSerialized.decisions.length, 2);
+  assert.equal(traceSerialized.decisions[1].outcome, "failed");
+});
+
+test("createSupportBundlePayload composes inspect and trace reports", () => {
+  const inspect = createInspectReport(createDebugContext());
+  const trace = createGenerationTraceReport(
+    "2026-05-14T00:00:00.000Z",
+    "loader.generateAll",
+    [],
+  );
+
+  const bundle = createSupportBundlePayload({
+    generatedAt: "2026-05-14T00:00:00.000Z",
+    inspect,
+    trace,
+    notes: ["sample-note"],
+  });
+
+  assert.equal(bundle.schemaVersion, "1");
+  assert.equal(bundle.inspect.schemaVersion, "1");
+  assert.equal(bundle.trace?.workflow, "loader.generateAll");
+  assert.deepEqual(bundle.notes, ["sample-note"]);
 });
 
 test("buildDoctorReport flags unsupported backends clearly", () => {
