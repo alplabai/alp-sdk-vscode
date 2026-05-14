@@ -10,6 +10,7 @@ import {
 } from "vscode-languageclient/node";
 
 let client: LanguageClient | undefined;
+const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
 
 export function startLanguageServer(context: vscode.ExtensionContext): void {
   if (client) {
@@ -58,4 +59,17 @@ export async function stopLanguageServer(): Promise<void> {
   const current = client;
   client = undefined;
   await current.stop();
+}
+
+export async function requestEffectiveConfigPreview(
+  boardYamlUri: vscode.Uri,
+): Promise<unknown> {
+  if (!client) {
+    throw new Error("ALP SDK language server is not started.");
+  }
+
+  return client.sendRequest("workspace/executeCommand", {
+    command: PREVIEW_EFFECTIVE_CONFIG_COMMAND,
+    arguments: [boardYamlUri.toString()],
+  });
 }

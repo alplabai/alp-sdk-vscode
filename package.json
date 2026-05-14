@@ -97,6 +97,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.previewEffectiveConfig",
+        "title": "Alp: Preview effective config (LSP)",
+        "category": "Alp"
+      },
+      {
         "command": "alp.inspectProjectState",
         "title": "Alp: Inspect project state",
         "category": "Alp"

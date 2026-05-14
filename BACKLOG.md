@@ -232,13 +232,13 @@ instead of command-triggered.
 - [x] Add hover for field semantics and inherited defaults.
 - [x] Add document symbols and outline support.
 - [x] Add quick fixes for common issues.
-- [ ] Add command-backed effective-config preview.
+- [x] Add command-backed effective-config preview.
 
 ## Exit Criteria
 
 - [ ] Users receive field-level diagnostics without manually running
       validation commands.
-- [ ] Completion and hover cover the core `board.yaml` authoring flow.
+- [x] Completion and hover cover the core `board.yaml` authoring flow.
 ```
 
 ---

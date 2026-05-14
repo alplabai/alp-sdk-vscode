@@ -6,6 +6,7 @@ import { registerConfiguratorCommand } from "./configuratorPanel";
 import { registerDebugCommands } from "./debug";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
+import { registerLspCommands } from "./lsp/commands";
 import { createStatusBar } from "./statusBar";
 import { registerWestCommands } from "./west";
 
@@ -18,6 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerBootstrapCommand(),
     createStatusBar(context),
     registerConfiguratorCommand(context),
+    ...registerLspCommands(),
     ...registerDebugCommands(),
   );
 }

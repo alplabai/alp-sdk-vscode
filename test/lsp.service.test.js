@@ -6,6 +6,7 @@ const {
   createBoardYamlDocumentSymbols,
   createBoardYamlHoverInfo,
   createBoardYamlQuickFixes,
+  createEffectiveConfigPreviewPayload,
   createIssueRange,
   createLineZeroRange,
   normalizeProjectSettings,
@@ -196,4 +197,34 @@ test("createBoardYamlQuickFixes can suggest multiple missing fields", () => {
   assert(titles.includes("Add missing som.sku block"));
   assert(titles.includes("Add missing carrier.name block"));
   assert(titles.includes("Add missing os field"));
+});
+
+test("createEffectiveConfigPreviewPayload returns normalized config with context", () => {
+  const payload = createEffectiveConfigPreviewPayload(
+    [
+      "schema_version: 1",
+      "som:",
+      "  sku: E1M-AEN701",
+      "os: zephyr",
+      "iot:",
+      "  wifi: false",
+      "  mqtt: false",
+      "  ble: false",
+      "  tls: false",
+    ].join("\n"),
+    "/workspace/app/board.yaml",
+    {
+      workspaceRoot: "/workspace/app",
+      sdkRoot: "/workspace/sdk",
+      boardYamlPath: "/workspace/app/board.yaml",
+      westCwd: "/workspace/app",
+      pythonBinary: "python3",
+    },
+  );
+
+  assert.equal(payload.schemaVersion, "1");
+  assert.equal(payload.boardYamlPath, "/workspace/app/board.yaml");
+  assert.equal(payload.projectContext.sdkRoot, "/workspace/sdk");
+  assert.equal(payload.effectiveConfig.os, "zephyr");
+  assert.equal(payload.effectiveConfig.iot, undefined);
 });

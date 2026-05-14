@@ -38,9 +38,12 @@ import {
     createBoardYamlDocumentSymbols,
     createBoardYamlHoverInfo,
     createBoardYamlQuickFixes,
+    createEffectiveConfigPreviewPayload,
     createIssueRange,
     normalizeProjectSettings,
 } from "./service";
+
+  const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
 
 const connection = createConnection(ProposedFeatures.all);
 let hasConfigurationCapability = false;
@@ -67,6 +70,9 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
       hoverProvider: true,
       documentSymbolProvider: true,
       codeActionProvider: true,
+      executeCommandProvider: {
+        commands: [PREVIEW_EFFECTIVE_CONFIG_COMMAND],
+      },
     },
   };
 });
@@ -193,6 +199,51 @@ connection.onInitialized(() => {
     }
 
     return actions;
+  });
+
+  connection.onExecuteCommand(async (params) => {
+    if (params.command !== PREVIEW_EFFECTIVE_CONFIG_COMMAND) {
+      return null;
+    }
+
+    const resourceUri =
+      typeof params.arguments?.[0] === "string" ? params.arguments[0] : null;
+    if (!resourceUri) {
+      return {
+        schemaVersion: "1",
+        ok: false,
+        error: "Missing board.yaml URI argument.",
+      };
+    }
+
+    const filePath = uriToFsPath(resourceUri);
+    if (!filePath || !isBoardYamlPath(filePath)) {
+      return {
+        schemaVersion: "1",
+        ok: false,
+        error: "The provided URI is not a board.yaml file.",
+      };
+    }
+
+    const documentText = readDocumentText(filePath);
+    const settings = await readProjectSettings(resourceUri);
+    const projectContext = resolveProjectContext(
+      {
+        workspaceFolders: workspaceFolderPaths,
+        settings,
+        platform: process.platform,
+      },
+      fs.existsSync,
+    );
+
+    return {
+      ok: true,
+      ...createEffectiveConfigPreviewPayload(
+        documentText,
+        filePath,
+        projectContext,
+      ),
+    };
   });
 
   connection.console.info("ALP SDK language server initialized.");

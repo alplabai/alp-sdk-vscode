@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { ProjectSettings } from "../project/models";
+import { normalizeBoardModel, parseBoardModel } from "../configurator/service";
+import { ProjectContext, ProjectSettings } from "../project/models";
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   sdkPath: "",
@@ -41,6 +42,14 @@ export interface BoardYamlQuickFix {
   line: number;
   character: number;
   newText: string;
+}
+
+export interface EffectiveConfigPreviewPayload {
+  schemaVersion: "1";
+  generatedAt: string;
+  boardYamlPath: string;
+  projectContext: ProjectContext;
+  effectiveConfig: unknown;
 }
 
 const ISSUE_KEY_ALIASES: ReadonlyArray<{
@@ -384,6 +393,23 @@ export function createBoardYamlQuickFixes(
   }
 
   return fixes;
+}
+
+export function createEffectiveConfigPreviewPayload(
+  documentText: string,
+  boardYamlPath: string,
+  projectContext: ProjectContext,
+): EffectiveConfigPreviewPayload {
+  const parsed = parseBoardModel(documentText);
+  const effectiveConfig = normalizeBoardModel(parsed);
+
+  return {
+    schemaVersion: "1",
+    generatedAt: new Date().toISOString(),
+    boardYamlPath,
+    projectContext,
+    effectiveConfig,
+  };
 }
 
 function inferIssueKeyCandidates(issueMessage: string): string[] {
