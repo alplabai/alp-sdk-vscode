@@ -4,7 +4,6 @@ import * as vscode from "vscode";
 import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorCommand } from "./configuratorPanel";
 import { registerDebugCommands } from "./debug";
-import { registerDiagnostics } from "./diagnostics";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { createStatusBar } from "./statusBar";
@@ -19,7 +18,6 @@ export function activate(context: vscode.ExtensionContext): void {
     registerBootstrapCommand(),
     createStatusBar(context),
     registerConfiguratorCommand(context),
-    registerDiagnostics(context),
     ...registerDebugCommands(),
   );
 }
