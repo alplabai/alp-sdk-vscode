@@ -219,12 +219,12 @@ instead of command-triggered.
 
 ## Tasks
 
-- [ ] Add the language server and client wiring.
-- [ ] Implement document lifecycle handling.
+- [x] Add the language server and client wiring.
+- [x] Implement document lifecycle handling.
 - [ ] Add incremental analysis and caching.
-- [ ] Add tracing and debugging hooks.
-- [ ] Port diagnostics from extension-host execution to the LSP.
-- [ ] Attach diagnostics to precise fields where possible.
+- [x] Add tracing and debugging hooks.
+- [x] Port diagnostics from extension-host execution to the LSP.
+- [x] Attach diagnostics to precise fields where possible.
 - [ ] Distinguish errors, warnings, and suggestions.
 - [ ] Add effective-config and preset-origin context to diagnostic
       messages.
@@ -236,7 +236,7 @@ instead of command-triggered.
 
 ## Exit Criteria
 
-- [ ] Users receive field-level diagnostics without manually running
+- [x] Users receive field-level diagnostics without manually running
       validation commands.
 - [x] Completion and hover cover the core `board.yaml` authoring flow.
 ```
