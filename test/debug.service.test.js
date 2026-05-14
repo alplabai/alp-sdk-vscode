@@ -187,7 +187,8 @@ test("buildDebugPreflightReport can pass for resolved native-host profile", () =
     profile,
     createRuntime(),
     {
-      pathExists: (filePath) => filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+      pathExists: (filePath) =>
+        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
     },
   );
 

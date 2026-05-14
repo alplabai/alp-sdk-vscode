@@ -3,26 +3,26 @@
 import * as path from "path";
 
 import {
-    DebugDoctorRequest,
-    DebugGenerationTraceDecision,
-    DebugGenerationTraceReport,
-    DebugInspectReport,
-    DebugLaunchPreview,
+  DebugDoctorRequest,
+  DebugGenerationTraceDecision,
+  DebugGenerationTraceReport,
+  DebugInspectReport,
+  DebugLaunchPreview,
   DebugPreflightReport,
-    DebugProfile,
-    DebugResolvedValue,
-    DebugRuntimeCapabilities,
-    DebugServerChoice,
-    DebugServerKind,
-    DebugSupportBundlePayload,
-    DebugTargetChoice,
-    DebugTargetKind,
-    DebugWorkspaceContext,
-    DoctorCheck,
-    DoctorReport,
-    LaunchConfigurationDraft,
-    PreflightCheck,
-    PreflightStatus,
+  DebugProfile,
+  DebugResolvedValue,
+  DebugRuntimeCapabilities,
+  DebugServerChoice,
+  DebugServerKind,
+  DebugSupportBundlePayload,
+  DebugTargetChoice,
+  DebugTargetKind,
+  DebugWorkspaceContext,
+  DoctorCheck,
+  DoctorReport,
+  LaunchConfigurationDraft,
+  PreflightCheck,
+  PreflightStatus,
 } from "./models";
 
 export interface DebugPreflightDependencies {
@@ -193,7 +193,9 @@ export function buildDebugPreflightReport(
     createExecutableCheck(profile, context, dependencies),
   ];
 
-  checks.push(...createProfileConfigurationChecks(profile, context, dependencies));
+  checks.push(
+    ...createProfileConfigurationChecks(profile, context, dependencies),
+  );
 
   return {
     generatedAt,
@@ -517,7 +519,6 @@ export function debugProfileToLaunchDraft(
         cwd: profile.cwd,
         preLaunchTask: profile.preLaunchTask,
       };
-  }
 
   throw new Error(`Unsupported debug target '${profile.targetKind}'.`);
 }

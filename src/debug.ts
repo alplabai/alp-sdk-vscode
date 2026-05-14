@@ -4,23 +4,23 @@ import * as vscode from "vscode";
 import { createLaunchJsonWritePlan } from "./debug/launchJsonCore";
 import { DebugServerKind, DebugTargetKind } from "./debug/models";
 import {
-  buildDebugPreflightReport,
-  buildDoctorReport,
-  createDebugProfile,
-  createInspectReport,
-  createLaunchPreview,
-  createSupportBundlePayload,
-  DEBUG_TARGET_CHOICES,
-  serializeSupportBundlePayload,
-  serverChoicesForTarget,
+    buildDebugPreflightReport,
+    buildDoctorReport,
+    createDebugProfile,
+    createInspectReport,
+    createLaunchPreview,
+    createSupportBundlePayload,
+    DEBUG_TARGET_CHOICES,
+    serializeSupportBundlePayload,
+    serverChoicesForTarget,
 } from "./debug/service";
 import {
-  collectRuntimeCapabilities,
-  collectWorkspaceDebugContext,
-  fileExists,
-  readLaunchJson,
-  writeLaunchJson,
-  writeSupportBundle,
+    collectRuntimeCapabilities,
+    collectWorkspaceDebugContext,
+    fileExists,
+    readLaunchJson,
+    writeLaunchJson,
+    writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { log, showOutput } from "./util";
 
@@ -212,7 +212,11 @@ async function exportSupportBundle(): Promise<void> {
     `Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`,
   );
 
-  if (!preflight.canLaunch || doctor.summary.fail > 0 || doctor.summary.warn > 0) {
+  if (
+    !preflight.canLaunch ||
+    doctor.summary.fail > 0 ||
+    doctor.summary.warn > 0
+  ) {
     showOutput();
   }
 }
