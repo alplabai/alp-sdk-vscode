@@ -23,6 +23,7 @@ export function createHelpResult(
     "Presets flags: --project <path> --sdk-root <path>",
     "Init flags: --template <id> --name <project-name> --destination <path> --preview --force",
     "Scaffold flags: --template <id> --name <module-name> --destination <path> --preview --force",
+    "Diff flags: --project <path> --board-yaml <path>",
     "Doctor flags: --target-kind <zephyr-mcu|baremetal-mcu|yocto-userspace|native-host> --server <jlink|openocd|pyocd|gdbserver|none>",
   ];
 

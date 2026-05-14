@@ -8,6 +8,7 @@ import {
 } from "./models";
 import { parseCliArgs } from "./services/args";
 import {
+    runDiffCommand,
     runDoctorCommand,
     runExplainCommand,
     runGenerateCommand,
@@ -15,7 +16,7 @@ import {
     runPresetsCommand,
     runScaffoldCommand,
     runValidateCommand,
-} from "./services/commands";
+  } from "./services/commands/index";
 import { createEnvelope, createFailureResult } from "./services/envelope";
 import { createHelpResult } from "./services/help";
 
@@ -26,6 +27,7 @@ const KNOWN_COMMANDS: readonly CliCommand[] = [
   "presets",
   "init",
   "scaffold",
+  "diff",
   "inspect",
   "trace",
   "doctor",
@@ -40,6 +42,7 @@ const IMPLEMENTED_COMMANDS = new Set<CliCommand>([
   "presets",
   "init",
   "scaffold",
+  "diff",
   "doctor",
 ]);
 
@@ -152,6 +155,8 @@ export function executeCli(input: CliExecutionInput): CliExecutionResult {
       return runInitCommand(parsed.flags, input);
     case "scaffold":
       return runScaffoldCommand(parsed.flags, input);
+    case "diff":
+      return runDiffCommand(parsed.flags, input);
     case "doctor":
       return runDoctorCommand(parsed.flags, input);
     default:

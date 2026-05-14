@@ -256,6 +256,78 @@ test("executeCli maps generate target failures to exit code 3", () => {
   assert.match(result.envelope.issues[0].message, /emit failed/);
 });
 
+test("executeCli explain returns overview in json mode", () => {
+  const result = executeCli({
+    argv: ["explain", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "explain");
+  assert.equal(result.envelope.data.selector.kind, "overview");
+  assert.equal(
+    result.envelope.data.available.projectTemplates.length > 0,
+    true,
+  );
+  assert.equal(result.envelope.data.available.moduleTemplates.length > 0, true);
+  assert.equal(
+    result.envelope.data.available.generationTargets.length > 0,
+    true,
+  );
+});
+
+test("executeCli explain resolves project template details", () => {
+  const result = executeCli({
+    argv: ["explain", "--template", "iot-starter", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "explain");
+  assert.equal(result.envelope.data.selector.kind, "project-template");
+  assert.equal(result.envelope.data.selector.value, "iot-starter");
+  assert.match(result.envelope.data.summary, /iot-starter/);
+});
+
+test("executeCli explain resolves generation target details", () => {
+  const result = executeCli({
+    argv: ["explain", "--target", "dts-overlay", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "explain");
+  assert.equal(result.envelope.data.selector.kind, "generation-target");
+  assert.equal(result.envelope.data.selector.value, "dts-overlay");
+  assert.equal(
+    result.envelope.data.details.some((line) => line.includes("Output path:")),
+    true,
+  );
+});
+
+test("executeCli explain rejects unknown template", () => {
+  const result = executeCli({
+    argv: ["explain", "--template", "unknown-template", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.envelope.command, "explain");
+  assert.equal(result.envelope.issues[0].code, "explain.template-unknown");
+});
+
 test("executeCli returns presets from sdk metadata in json mode", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-presets-json-"));
   const sdkRoot = path.join(root, "alp-sdk");
@@ -566,6 +638,60 @@ test("executeCli scaffold requires module name", () => {
   assert.equal(result.exitCode, 1);
   assert.equal(result.envelope.command, "scaffold");
   assert.equal(result.envelope.issues[0].code, "scaffold.name-required");
+});
+
+test("executeCli diff reports effective-config changes in json mode", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-diff-json-"));
+  const boardPath = path.join(root, "board.yaml");
+  fs.writeFileSync(
+    boardPath,
+    [
+      "schema_version: 1",
+      "som:",
+      "  sku: E1M-AEN701",
+      "carrier:",
+      "  name: E1M-EVK",
+      "os: zephyr",
+      "libraries: []",
+      "iot:",
+      "  wifi: false",
+      "  mqtt: false",
+      "",
+    ].join("\n"),
+  );
+
+  const result = executeCli({
+    argv: ["diff", "--project", root, "--format", "json"],
+    cwd: root,
+    platform: "linux",
+    pathExists: (candidatePath) => fs.existsSync(candidatePath),
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.format, "json");
+  assert.equal(result.envelope.command, "diff");
+  assert.equal(result.envelope.data.unchanged, false);
+  assert.equal(result.envelope.data.changeCount > 0, true);
+  assert.equal(
+    result.envelope.data.changes.some((item) => item.path === "libraries"),
+    true,
+  );
+});
+
+test("executeCli diff fails when board.yaml is unresolved", () => {
+  const result = executeCli({
+    argv: ["diff", "--project", "/workspace/app", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.envelope.command, "diff");
+  assert.equal(result.envelope.ok, false);
+  assert.equal(result.envelope.issues[0].code, "diff.board-yaml-missing");
 });
 
 test("executeCli reports not-implemented commands with deterministic envelope", () => {

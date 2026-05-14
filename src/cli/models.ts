@@ -22,9 +22,11 @@ export type CliFormat = "text" | "json";
 export type CliCommand =
   | "validate"
   | "generate"
+  | "explain"
   | "presets"
   | "init"
   | "scaffold"
+  | "diff"
   | "inspect"
   | "trace"
   | "doctor"
