@@ -606,17 +606,17 @@ Normalize path resolution so the extension works cleanly with:
 
 ## Tasks
 
-- [ ] Distinguish SDK root, project root, and west working directory.
-- [ ] Support the current split-repo + submodule layout.
-- [ ] Support standalone consumer workspaces.
-- [ ] Add explicit failure messaging for ambiguous workspace layouts.
-- [ ] Add unit-testable path-resolution helpers.
+- [x] Distinguish SDK root, project root, and west working directory.
+- [x] Support the current split-repo + submodule layout.
+- [x] Support standalone consumer workspaces.
+- [x] Add explicit failure messaging for ambiguous workspace layouts.
+- [x] Add unit-testable path-resolution helpers.
 
 ## Acceptance Criteria
 
-- [ ] The extension resolves roots correctly in both the extension repo
+- [x] The extension resolves roots correctly in both the extension repo
       and a consumer app workspace.
-- [ ] Errors are actionable when the workspace layout is ambiguous.
+- [x] Errors are actionable when the workspace layout is ambiguous.
 ```
 
 ---
@@ -654,16 +654,16 @@ editor features can move out of extension-host command execution.
 
 ## Tasks
 
-- [ ] Add the language-client dependency.
-- [ ] Add the language-server dependency.
-- [ ] Create server bootstrap files.
-- [ ] Wire activation and shutdown through the extension entry point.
-- [ ] Add basic tracing and debugging hooks.
+- [x] Add the language-client dependency.
+- [x] Add the language-server dependency.
+- [x] Create server bootstrap files.
+- [x] Wire activation and shutdown through the extension entry point.
+- [x] Add basic tracing and debugging hooks.
 
 ## Acceptance Criteria
 
-- [ ] The extension starts and stops the language server reliably.
-- [ ] The project builds cleanly with the new LSP packages.
+- [x] The extension starts and stops the language server reliably.
+- [x] The project builds cleanly with the new LSP packages.
 ```
 
 ---
@@ -702,7 +702,7 @@ language-server baseline while preserving current validation behavior.
 
 - [x] Move validation triggers from extension-host events into the LSP.
 - [x] Preserve current validator behavior as baseline compatibility.
-- [ ] Improve diagnostic ranges beyond the current line-1 fallback where
+- [x] Improve diagnostic ranges beyond the current line-1 fallback where
       practical.
 - [x] Keep Problems panel behavior stable during transition.
 
@@ -714,8 +714,8 @@ language-server baseline while preserving current validation behavior.
 
 ## Acceptance Criteria
 
-- [ ] Users receive equivalent or better diagnostics through the LSP.
-- [ ] Diagnostics still appear reliably in the Problems panel.
+- [x] Users receive equivalent or better diagnostics through the LSP.
+- [x] Diagnostics still appear reliably in the Problems panel.
 ```
 
 ---

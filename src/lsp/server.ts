@@ -20,7 +20,7 @@ import {
     createValidatorPlan,
     isBoardYamlPath,
 } from "../validation/service";
-import { createLineZeroRange, normalizeProjectSettings } from "./service";
+import { createIssueRange, normalizeProjectSettings } from "./service";
 
 const connection = createConnection(ProposedFeatures.all);
 let hasConfigurationCapability = false;
@@ -129,10 +129,10 @@ function createDiagnostics(
   filePath: string,
   issues: ReadonlyArray<{ message: string; severity: "warning" | "error" }>,
 ): Diagnostic[] {
-  const range = createLineZeroRange(readFirstLineLength(filePath));
+  const documentText = readDocumentText(filePath);
 
   return issues.map((issue) => ({
-    range,
+    range: createIssueRange(documentText, issue.message),
     message: issue.message,
     severity:
       issue.severity === "warning"
@@ -142,13 +142,11 @@ function createDiagnostics(
   }));
 }
 
-function readFirstLineLength(filePath: string): number {
+function readDocumentText(filePath: string): string {
   try {
-    const content = fs.readFileSync(filePath, "utf8");
-    const firstLine = content.split(/\r?\n/, 1)[0] ?? "";
-    return firstLine.length;
+    return fs.readFileSync(filePath, "utf8");
   } catch {
-    return 0;
+    return "";
   }
 }
 
