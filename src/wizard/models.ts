@@ -52,6 +52,17 @@ export interface WizardFileChange {
   kind: WizardFileChangeKind;
 }
 
+export type WizardGeneratedOutputState = "existing" | "missing";
+
+export interface WizardGeneratedOutputPreview {
+  emit: string;
+  displayName: string;
+  outputRelativePath: string;
+  languageId: string;
+  state: WizardGeneratedOutputState;
+  contentPreview: string;
+}
+
 export interface WizardWriteResult {
   written: string[];
   unchanged: string[];

@@ -6,18 +6,19 @@ import * as vscode from "vscode";
 import { loadPresetCatalogue } from "./configurator/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 import {
-  WizardFeatureFlags,
-  WizardPlanInput,
-  WizardTemplateDefinition,
+    WizardFeatureFlags,
+    WizardPlanInput,
+    WizardTemplateDefinition,
 } from "./wizard/models";
 import {
-  createWizardPlan,
-  createWizardPreviewMarkdown,
-  listWizardTemplates,
+    createWizardPlan,
+    createWizardPreviewMarkdown,
+    listWizardTemplates,
 } from "./wizard/service";
 import {
-  collectWizardFileChanges,
-  writeWizardFiles,
+  collectGeneratedOutputPreviews,
+    collectWizardFileChanges,
+    writeWizardFiles,
 } from "./wizard/vscodeAdapter";
 
 const FIRST_RUN_PROMPT_KEY_PREFIX = "alp.firstRunWizardPromptShown";
@@ -121,15 +122,21 @@ async function runProjectWizard(): Promise<void> {
     libraries,
   };
   const plan = createWizardPlan(planInput);
-  const fileChanges = collectWizardFileChanges(project.workspaceRoot, plan.files);
+  const fileChanges = collectWizardFileChanges(
+    project.workspaceRoot,
+    plan.files,
+  );
+  const generatedOutputs = collectGeneratedOutputPreviews(project.workspaceRoot);
 
   const previewDocument = await vscode.workspace.openTextDocument({
     language: "markdown",
-    content: createWizardPreviewMarkdown(plan, fileChanges),
+    content: createWizardPreviewMarkdown(plan, fileChanges, generatedOutputs),
   });
   await vscode.window.showTextDocument(previewDocument, { preview: false });
 
-  const writeCount = fileChanges.filter((file) => file.kind !== "unchanged").length;
+  const writeCount = fileChanges.filter(
+    (file) => file.kind !== "unchanged",
+  ).length;
   if (writeCount === 0) {
     await vscode.window.showInformationMessage(
       "Alp: wizard plan matches current files. Nothing to write.",
@@ -137,7 +144,9 @@ async function runProjectWizard(): Promise<void> {
     return;
   }
 
-  const overwriteCount = fileChanges.filter((file) => file.kind === "update").length;
+  const overwriteCount = fileChanges.filter(
+    (file) => file.kind === "update",
+  ).length;
   const action = await vscode.window.showWarningMessage(
     `Alp: write ${writeCount} file(s)? Existing files to update: ${overwriteCount}.`,
     { modal: true },

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createBoardYaml } from "../configurator/service";
 import { BoardModel } from "../configurator/models";
+import { createBoardYaml } from "../configurator/service";
 import {
-  WizardFileChange,
-  WizardPlan,
-  WizardPlanInput,
-  WizardPlannedFile,
-  WizardTemplateDefinition,
-  WizardTemplateId,
+    WizardFileChange,
+  WizardGeneratedOutputPreview,
+    WizardPlan,
+    WizardPlanInput,
+    WizardPlannedFile,
+    WizardTemplateDefinition,
+    WizardTemplateId,
 } from "./models";
 
 const TEMPLATE_DEFINITIONS: readonly WizardTemplateDefinition[] = [
@@ -72,9 +73,12 @@ export function createWizardPlan(input: WizardPlanInput): WizardPlan {
 export function createWizardPreviewMarkdown(
   plan: WizardPlan,
   fileChanges: WizardFileChange[],
+  generatedOutputs: WizardGeneratedOutputPreview[] = [],
 ): string {
   const boardModel = plan.boardModel;
-  const changedCount = fileChanges.filter((file) => file.kind !== "unchanged").length;
+  const changedCount = fileChanges.filter(
+    (file) => file.kind !== "unchanged",
+  ).length;
 
   const lines: string[] = [];
   lines.push("# ALP Project Wizard Preview");
@@ -85,7 +89,9 @@ export function createWizardPreviewMarkdown(
   lines.push(`- SoM: ${boardModel.som.sku}`);
   lines.push(`- Carrier: ${boardModel.carrier?.name ?? "<unset>"}`);
   lines.push(`- OS: ${boardModel.os}`);
-  lines.push(`- Libraries: ${(boardModel.libraries ?? []).join(", ") || "(none)"}`);
+  lines.push(
+    `- Libraries: ${(boardModel.libraries ?? []).join(", ") || "(none)"}`,
+  );
   lines.push("");
   lines.push("## Planned Tree");
   lines.push("");
@@ -101,6 +107,26 @@ export function createWizardPreviewMarkdown(
   }
   lines.push("");
 
+  lines.push("## Generated Output Preview");
+  lines.push("");
+  if (generatedOutputs.length === 0) {
+    lines.push("- No generated output targets available.");
+    lines.push("");
+  } else {
+    for (const output of generatedOutputs) {
+      lines.push(
+        `### ${output.displayName} (${output.emit}) - ${output.state.toUpperCase()}`,
+      );
+      lines.push("");
+      lines.push(`Path: ${output.outputRelativePath}`);
+      lines.push("");
+      lines.push("```text");
+      lines.push(output.contentPreview);
+      lines.push("```");
+      lines.push("");
+    }
+  }
+
   for (const file of plan.files) {
     lines.push(`### ${file.relativePath}`);
     lines.push("");
@@ -113,7 +139,9 @@ export function createWizardPreviewMarkdown(
   return lines.join("\n");
 }
 
-function resolveTemplate(templateId: WizardTemplateId): WizardTemplateDefinition {
+function resolveTemplate(
+  templateId: WizardTemplateId,
+): WizardTemplateDefinition {
   const template = TEMPLATE_DEFINITIONS.find((item) => item.id === templateId);
   if (!template) {
     throw new Error(`Alp: unsupported project template '${templateId}'.`);
@@ -175,7 +203,10 @@ function createStarterFiles(
 ): WizardPlannedFile[] {
   return [
     { relativePath: "board.yaml", content: createBoardYaml(boardModel) },
-    { relativePath: "README.md", content: createProjectReadme(templateId, boardModel) },
+    {
+      relativePath: "README.md",
+      content: createProjectReadme(templateId, boardModel),
+    },
     { relativePath: "CMakeLists.txt", content: createCmakeLists() },
     { relativePath: "src/main.c", content: createMainSource(templateId) },
   ];
@@ -239,28 +270,28 @@ function mainBodyForTemplate(templateId: WizardTemplateId): string[] {
   switch (templateId) {
     case "sensor-starter":
       return [
-        "puts(\"ALP sensor starter boot\");",
-        "puts(\"TODO: initialize sensor bus and polling loop\");",
+        'puts("ALP sensor starter boot");',
+        'puts("TODO: initialize sensor bus and polling loop");',
       ];
     case "iot-starter":
       return [
-        "puts(\"ALP IoT starter boot\");",
-        "puts(\"TODO: connect Wi-Fi and start MQTT session\");",
+        'puts("ALP IoT starter boot");',
+        'puts("TODO: connect Wi-Fi and start MQTT session");',
       ];
     case "edge-ai-starter":
       return [
-        "puts(\"ALP edge AI starter boot\");",
-        "puts(\"TODO: load model and run inference loop\");",
+        'puts("ALP edge AI starter boot");',
+        'puts("TODO: load model and run inference loop");',
       ];
     case "board-diagnostics":
       return [
-        "puts(\"ALP board diagnostics starter boot\");",
-        "puts(\"TODO: run bring-up checks and report failures\");",
+        'puts("ALP board diagnostics starter boot");',
+        'puts("TODO: run bring-up checks and report failures");',
       ];
     default:
       return [
-        "puts(\"ALP minimal starter boot\");",
-        "puts(\"TODO: add your application logic\");",
+        'puts("ALP minimal starter boot");',
+        'puts("TODO: add your application logic");',
       ];
   }
 }

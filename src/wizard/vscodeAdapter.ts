@@ -3,10 +3,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import {
-  WizardFileChange,
-  WizardPlannedFile,
-  WizardWriteResult,
+    WizardFileChange,
+  WizardGeneratedOutputPreview,
+    WizardPlannedFile,
+    WizardWriteResult,
 } from "./models";
+import { listGenerationTargetSupport } from "../loader/service";
 
 export function collectWizardFileChanges(
   workspaceRoot: string,
@@ -55,4 +57,35 @@ export function writeWizardFiles(
   }
 
   return result;
+}
+
+export function collectGeneratedOutputPreviews(
+  workspaceRoot: string,
+): WizardGeneratedOutputPreview[] {
+  const targets = listGenerationTargetSupport();
+
+  return targets.map((target) => {
+    const absolutePath = path.join(workspaceRoot, target.outputRelativePath);
+    if (!fs.existsSync(absolutePath)) {
+      return {
+        emit: target.emit,
+        displayName: target.displayName,
+        outputRelativePath: target.outputRelativePath,
+        languageId: target.preview.languageId,
+        state: "missing",
+        contentPreview: "(Not generated yet. Run Alp: Generate all to create this output.)",
+      };
+    }
+
+    const content = fs.readFileSync(absolutePath, "utf-8");
+    const preview = content.split(/\r?\n/).slice(0, 18).join("\n").trim();
+    return {
+      emit: target.emit,
+      displayName: target.displayName,
+      outputRelativePath: target.outputRelativePath,
+      languageId: target.preview.languageId,
+      state: "existing",
+      contentPreview: preview.length > 0 ? preview : "(File exists but is empty.)",
+    };
+  });
 }

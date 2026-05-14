@@ -39,7 +39,9 @@ test("createWizardPlan builds starter files and scaffold preview", () => {
   assert.match(plan.scaffoldTreePreview, /board\.yaml/);
   assert.match(plan.scaffoldTreePreview, /src\/main\.c/);
 
-  const boardYaml = plan.files.find((file) => file.relativePath === "board.yaml");
+  const boardYaml = plan.files.find(
+    (file) => file.relativePath === "board.yaml",
+  );
   assert.ok(boardYaml);
   assert.match(boardYaml.content, /schema_version: 1/);
   assert.match(boardYaml.content, /mqtt: true/);
@@ -59,6 +61,15 @@ test("createWizardPreviewMarkdown contains selections and file change summary", 
     { relativePath: "board.yaml", kind: "new" },
     { relativePath: "README.md", kind: "update" },
     { relativePath: "CMakeLists.txt", kind: "unchanged" },
+  ], [
+    {
+      emit: "zephyr-conf",
+      displayName: "Zephyr config",
+      outputRelativePath: "build/generated/alp.conf",
+      languageId: "properties",
+      state: "missing",
+      contentPreview: "(Not generated yet)",
+    },
   ]);
 
   assert.match(markdown, /ALP Project Wizard Preview/);
@@ -66,4 +77,7 @@ test("createWizardPreviewMarkdown contains selections and file change summary", 
   assert.match(markdown, /Files that will be written: 2/);
   assert.match(markdown, /NEW: board\.yaml/);
   assert.match(markdown, /UPDATE: README\.md/);
+  assert.match(markdown, /Generated Output Preview/);
+  assert.match(markdown, /Zephyr config/);
+  assert.match(markdown, /build\/generated\/alp\.conf/);
 });

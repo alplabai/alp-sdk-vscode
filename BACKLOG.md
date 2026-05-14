@@ -285,7 +285,7 @@ thin wrapper panel.
 - [x] Show generated files before write.
 - [x] Create the initial workspace layout and starter files.
 - [x] Show effective config preview.
-- [ ] Show generated output preview.
+- [x] Show generated output preview.
 - [x] Show scaffolded project tree preview.
 - [x] Add write confirmation for changed files.
 - [x] Add validation summary view before apply.
