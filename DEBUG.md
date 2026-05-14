@@ -1,6 +1,6 @@
 # Debug Support Matrix and Launch Design
 
-Last revised: 2026-05-13
+Last revised: 2026-05-14
 
 This document defines how debugging should work across the ALP SDK
 extension, the ALP SDK itself, and the supported target classes.
@@ -102,6 +102,18 @@ Primary adapter strategy:
 | Bridge recovery | Zephyr/baremetal host -> GD32 | External tools | J-Link / OpenOCD | Tool-dependent | Yes | Partial | Documented manually | First-class flashing, later debug assist |
 | Host-driven bridge recovery | Zephyr/baremetal host -> GD32 | SDK SWD bit-bang | none external | No debugger semantics today | Yes | No | Partial code/documentation | Recovery feature, not primary debug path |
 
+### 3.1 Support-Level Definitions
+
+- First-class: actively maintained end-to-end flow with explicit product
+  ownership.
+- Optional: supported path when available, but not required for
+  baseline release readiness.
+- Deferred: planned/documented path without immediate release
+  commitment.
+
+Maintenance rule: when debug capabilities change, this matrix and its
+support level labels must be updated in the same change set.
+
 ## 4. What the Current Repos Already Tell Us
 
 The current repositories already point toward the correct strategy.
@@ -123,7 +135,8 @@ The current repositories already point toward the correct strategy.
   are still MVP-level and need richer UX flows.
 - Explicit first-class support claims for `cortex-debug`, `cppdbg`, and
   `CodeLLDB` still need end-to-end workflow hardening.
-- No inspect/trace/support-bundle flow for failed debug sessions.
+- Shared inspect/trace/support-bundle models now exist in the core, but
+  export workflows and guided support-bundle UX are still pending.
 
 ## 5. Product Strategy
 

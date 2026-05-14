@@ -902,16 +902,16 @@ contract.
 
 ## Tasks
 
-- [ ] Define supported debug target classes.
-- [ ] Define primary and optional adapters per target class.
-- [ ] Define first-class versus deferred support levels.
-- [ ] Document current repo state versus planned product state.
-- [ ] Keep the matrix aligned with future launch-generation work.
+- [x] Define supported debug target classes.
+- [x] Define primary and optional adapters per target class.
+- [x] Define first-class versus deferred support levels.
+- [x] Document current repo state versus planned product state.
+- [x] Keep the matrix aligned with future launch-generation work.
 
 ## Acceptance Criteria
 
-- [ ] A single maintained support matrix exists for debug workflows.
-- [ ] The team can answer whether a given toolchain/probe path is
+- [x] A single maintained support matrix exists for debug workflows.
+- [x] The team can answer whether a given toolchain/probe path is
       first-class, optional, or deferred.
 ```
 
