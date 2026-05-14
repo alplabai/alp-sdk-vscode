@@ -60,8 +60,9 @@ Use:
 
 1. Confirm SDK path resolves to a folder containing scripts/alp_project.py.
 2. Confirm board.yaml path is correct.
-3. Run Alp: Debug doctor for environment checks.
-4. If needed, run Alp: Export debug support bundle.
+3. Open Alp: Open troubleshooting panel for inspect/trace/doctor/preflight snapshots.
+4. Run Alp: Debug doctor for environment checks.
+5. If needed, run Alp: Export debug support bundle.
 
 ## 8. Next Steps
 

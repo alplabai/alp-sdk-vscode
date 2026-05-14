@@ -547,7 +547,7 @@ goes wrong.
 
 - [x] Add an effective-config inspection model to the shared core.
 - [x] Add generation-decision tracing to the shared core.
-- [ ] Add a VS Code troubleshooting/debug panel.
+- [x] Add a VS Code troubleshooting/debug panel.
 - [x] Add `alp inspect` for effective config and resolved values.
 - [x] Add `alp trace` for generation and decision tracing.
 - [x] Add `alp support-bundle` for issue-report export.
@@ -559,7 +559,7 @@ goes wrong.
 - [x] A user can understand why a value resolved the way it did.
 - [x] A user can export enough debugging context for a useful issue
       report.
-- [ ] Debug surfaces exist in both VS Code and CLI workflows.
+- [x] Debug surfaces exist in both VS Code and CLI workflows.
 ```
 
 ## 4. Phase 1 Backlog Issues

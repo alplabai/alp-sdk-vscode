@@ -2,11 +2,17 @@
 
 import * as vscode from "vscode";
 import { createLaunchJsonWritePlan } from "./debug/launchJsonCore";
-import { DebugServerKind, DebugTargetKind } from "./debug/models";
+import {
+    DebugGenerationTraceDecision,
+    DebugServerKind,
+    DebugTargetKind,
+} from "./debug/models";
+import { createDebugTroubleshootingPanelHtml } from "./debug/panelHtml";
 import {
     buildDebugPreflightReport,
     buildDoctorReport,
     createDebugProfile,
+    createGenerationTraceReport,
     createInspectReport,
     createLaunchPreview,
     createSupportBundlePayload,
@@ -22,6 +28,7 @@ import {
     writeLaunchJson,
     writeSupportBundle,
 } from "./debug/vscodeAdapter";
+import { ALL_EMIT_MODES, createLoaderPlan } from "./loader/service";
 import { log, showOutput } from "./util";
 
 async function showJsonDocument(data: unknown): Promise<void> {
@@ -221,6 +228,115 @@ async function exportSupportBundle(): Promise<void> {
   }
 }
 
+async function openDebugTroubleshootingPanel(): Promise<void> {
+  const targetKind = await pickTargetKind();
+  if (!targetKind) return;
+  const server = await pickServer(targetKind);
+  const context = collectWorkspaceDebugContext();
+  const runtime = collectRuntimeCapabilities();
+  const generatedAt = new Date().toISOString();
+
+  let profile;
+  try {
+    profile = createDebugProfile(targetKind, server);
+  } catch (error) {
+    await vscode.window.showErrorMessage(formatDebugError(error));
+    return;
+  }
+
+  const preflight = buildDebugPreflightReport(
+    generatedAt,
+    context,
+    profile,
+    runtime,
+    {
+      pathExists: fileExists,
+    },
+  );
+
+  const doctor = buildDoctorReport(context, { targetKind, server }, runtime);
+  const inspect = createInspectReport(context);
+  const trace = createGenerationTraceReport(
+    generatedAt,
+    "vscode.debugPanel",
+    createPanelTraceDecisions(context),
+  );
+
+  const panel = vscode.window.createWebviewPanel(
+    "alpTroubleshootingPanel",
+    "ALP Troubleshooting",
+    vscode.ViewColumn.Active,
+    {
+      enableCommandUris: true,
+    },
+  );
+
+  panel.webview.html = createDebugTroubleshootingPanelHtml({
+    cspSource: panel.webview.cspSource,
+    generatedAt,
+    targetKind,
+    server,
+    inspect,
+    trace,
+    doctor,
+    preflight,
+  });
+
+  log(
+    `alp.openDebugTroubleshootingPanel: opened panel for ${targetKind}/${server}`,
+  );
+}
+
+function createPanelTraceDecisions(
+  context: ReturnType<typeof collectWorkspaceDebugContext>,
+): DebugGenerationTraceDecision[] {
+  if (!context.workspaceRoot || !context.sdkRoot || !context.boardYamlPath) {
+    return [
+      {
+        key: "generation.context",
+        outcome: "failed",
+        detail:
+          "Trace preview is unavailable because workspaceRoot, sdkRoot, or boardYamlPath is unresolved.",
+      },
+    ];
+  }
+
+  if (!context.boardYamlExists) {
+    return [
+      {
+        key: "generation.context.boardYaml",
+        outcome: "failed",
+        detail:
+          "Trace preview is unavailable because board.yaml does not exist in the resolved project context.",
+      },
+    ];
+  }
+
+  const decisions: DebugGenerationTraceDecision[] = [];
+  for (const emit of ALL_EMIT_MODES) {
+    try {
+      const plan = createLoaderPlan(context, emit);
+      decisions.push({
+        key: `generation.target.${emit}`,
+        outcome: "planned",
+        outputPath: plan.outputPath,
+        detail: `Would run: ${plan.commandLine}`,
+      });
+    } catch (error) {
+      decisions.push({
+        key: `generation.target.${emit}`,
+        outcome: "failed",
+        detail:
+          error instanceof Error
+            ? error.message
+            : "Unexpected trace planning failure.",
+      });
+    }
+  }
+
+  return decisions;
+}
+
 function formatDebugError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -247,6 +363,9 @@ export function registerDebugCommands(): vscode.Disposable[] {
     ),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>
       exportSupportBundle(),
+    ),
+    vscode.commands.registerCommand("alp.openDebugTroubleshootingPanel", () =>
+      openDebugTroubleshootingPanel(),
     ),
   ];
 }

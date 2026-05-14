@@ -138,6 +138,11 @@
         "command": "alp.exportSupportBundle",
         "title": "Alp: Export debug support bundle",
         "category": "Alp"
+      },
+      {
+        "command": "alp.openDebugTroubleshootingPanel",
+        "title": "Alp: Open troubleshooting panel",
+        "category": "Alp"
       }
     ],
     "yamlValidation": [
