@@ -159,31 +159,31 @@ UI, LSP, and CLI all consume one deterministic domain engine.
 
 ## Tasks
 
-- [ ] Define `ProjectConfig` and `EffectiveProjectConfig` types.
-- [ ] Define `PresetCatalogue` and preset-origin metadata types.
-- [ ] Define `ValidationIssue`, severity, and fix-suggestion models.
-- [ ] Define `GenerationTarget` and `GeneratedArtifact` models.
-- [ ] Define `ScaffoldTemplate` and template-parameter models.
-- [ ] Move schema validation behind a stable API.
-- [ ] Move semantic validation behind the same API.
-- [ ] Add preset-resolution and inheritance handling.
-- [ ] Add compatibility checks for unsupported combinations.
-- [ ] Add structured error and warning output.
-- [ ] Normalize generation entry points for all targets.
-- [ ] Implement preview support before writing files.
-- [ ] Implement deterministic artifact ordering and formatting.
-- [ ] Add golden tests for generated outputs.
-- [ ] Define stable generation contracts for CLI and UI callers.
-- [ ] Define a template manifest format.
-- [ ] Define template parameter resolution rules.
-- [ ] Define overwrite policy for generated starter files.
-- [ ] Add preview support for scaffolded project trees.
+- [x] Define `ProjectConfig` and `EffectiveProjectConfig` types.
+- [x] Define `PresetCatalogue` and preset-origin metadata types.
+- [x] Define `ValidationIssue`, severity, and fix-suggestion models.
+- [x] Define `GenerationTarget` and `GeneratedArtifact` models.
+- [x] Define `ScaffoldTemplate` and template-parameter models.
+- [x] Move schema validation behind a stable API.
+- [x] Move semantic validation behind the same API.
+- [x] Add preset-resolution and inheritance handling.
+- [x] Add compatibility checks for unsupported combinations.
+- [x] Add structured error and warning output.
+- [x] Normalize generation entry points for all targets.
+- [x] Implement preview support before writing files.
+- [x] Implement deterministic artifact ordering and formatting.
+- [x] Add golden tests for generated outputs.
+- [x] Define stable generation contracts for CLI and UI callers.
+- [x] Define a template manifest format.
+- [x] Define template parameter resolution rules.
+- [x] Define overwrite policy for generated starter files.
+- [x] Add preview support for scaffolded project trees.
 
 ## Exit Criteria
 
-- [ ] UI, LSP, and CLI can call the same validation and generation APIs.
-- [ ] Generated outputs are deterministic.
-- [ ] Core behavior is covered by golden tests.
+- [x] UI, LSP, and CLI can call the same validation and generation APIs.
+- [x] Generated outputs are deterministic.
+- [x] Core behavior is covered by golden tests.
 ```
 
 ---
