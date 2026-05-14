@@ -519,6 +519,7 @@ export function debugProfileToLaunchDraft(
         cwd: profile.cwd,
         preLaunchTask: profile.preLaunchTask,
       };
+  }
 
   throw new Error(`Unsupported debug target '${profile.targetKind}'.`);
 }

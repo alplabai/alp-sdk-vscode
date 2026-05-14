@@ -1054,18 +1054,18 @@ families, JSON output rules, and exit-code behavior.
 
 ## Tasks
 
-- [ ] Define the supported top-level command families.
-- [ ] Define global flags and formatting behavior.
-- [ ] Define stable JSON output envelopes.
-- [ ] Define exit-code behavior for validation, doctor, and generation
+- [x] Define the supported top-level command families.
+- [x] Define global flags and formatting behavior.
+- [x] Define stable JSON output envelopes.
+- [x] Define exit-code behavior for validation, doctor, and generation
       failures.
-- [ ] Define non-interactive requirements for CI.
-- [ ] Keep CLI behavior aligned with shared-core models.
+- [x] Define non-interactive requirements for CI.
+- [x] Keep CLI behavior aligned with shared-core models.
 
 ## Acceptance Criteria
 
-- [ ] The team has a stable CLI contract to implement against.
-- [ ] CI-oriented workflows do not depend on ad-hoc terminal behavior.
+- [x] The team has a stable CLI contract to implement against.
+- [x] CI-oriented workflows do not depend on ad-hoc terminal behavior.
 ```
 
 ---

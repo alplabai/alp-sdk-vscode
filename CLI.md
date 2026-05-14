@@ -1,6 +1,6 @@
 # ALP CLI Contract
 
-Last revised: 2026-05-13
+Last revised: 2026-05-14
 
 This document defines the intended contract for the ALP command-line
 surface.
@@ -47,6 +47,8 @@ All commands should support a shared baseline of flags where relevant:
 - `--verbose`
 - `--quiet`
 - `--no-color`
+- `--non-interactive`
+- `--ci`
 
 ### 3.2 Output policy
 
@@ -56,6 +58,13 @@ All commands should support a shared baseline of flags where relevant:
   names
 - JSON output should avoid prose-only strings when structured fields
   are possible
+
+Normative rules:
+
+- CLI JSON output MUST write exactly one JSON document to stdout.
+- Human-readable logs and progress text MUST go to stderr.
+- Each command MUST set `command`, `ok`, `exitCode`, `data`, and
+  `issues` in JSON mode.
 
 ### 3.3 Exit-code policy
 
@@ -261,6 +270,24 @@ Rules:
 - `issues` is always present, even if empty
 - command-specific payload lives under `data`
 
+### 5.1 Envelope versioning
+
+- `schemaVersion` should be included for command-specific payloads when
+  shared-core models already define a version.
+- Existing `schemaVersion: "1"` payloads from shared-core debug models
+  must be preserved without field renames.
+
+### 5.2 Command payload map
+
+The following command payloads map to shared-core contracts:
+
+- `alp inspect` -> `DebugInspectReport`
+- `alp trace` -> `DebugGenerationTraceReport`
+- `alp doctor` -> `DoctorReport` and optional `DebugPreflightReport`
+- `alp support-bundle` -> `DebugSupportBundlePayload`
+- `alp generate` -> generation summary shaped from loader batch
+  (`written`, `failed`) with deterministic ordering
+
 ## 6. Non-Interactive Requirements
 
 The CLI must support CI and automation cleanly.
@@ -271,8 +298,24 @@ That means:
 - failures must be actionable without opening VS Code
 - `--format json` must not mix structured output with unrelated prose
 - command success must not depend on terminal color or TTY detection
+- `--non-interactive` and `--ci` must disable prompts and default to
+  fail-fast behavior
+- commands must return deterministic exit codes regardless of TTY
+  availability
 
-## 7. Relationship to UI and LSP
+## 7. Exit-Code Matrix
+
+Exit code behavior is mandatory and command-independent:
+
+- `0`: success (`ok=true`)
+- `1`: command/runtime failure (unexpected process failure)
+- `2`: validation/config incompatibility (including schema and semantic
+  validation)
+- `3`: generation/scaffolding write failure
+- `4`: doctor/preflight failure (launch preconditions not met)
+- `5`: internal/unexpected error in CLI orchestration or serialization
+
+## 8. Relationship to UI and LSP
 
 The CLI is the automation surface.
 
@@ -284,3 +327,13 @@ The CLI is the automation surface.
 If a capability is needed in all three surfaces, the implementation
 must live in the shared core and only be presented differently by each
 surface.
+
+## 9. Implementation Guardrails
+
+To keep future CLI implementation aligned with this contract:
+
+- command handlers should use shared-core serializer helpers rather than
+  ad-hoc JSON builders
+- CLI output fields must not rename shared-core model keys
+- new command families require contract updates in this file before
+  implementation
