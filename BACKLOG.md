@@ -491,22 +491,22 @@ The product can scale without drift between surfaces.
 
 ## Tasks
 
-- [ ] Add unit tests for the shared core.
-- [ ] Add golden tests for generation outputs.
-- [ ] Add language-server tests.
-- [ ] Add webview smoke tests.
-- [ ] Add CLI integration tests.
-- [ ] Define compatibility rules for schema changes.
-- [ ] Define compatibility rules for generation targets.
-- [ ] Define compatibility rules for CLI flags and JSON output.
-- [ ] Define release gates and checklists.
-- [ ] Add performance budgets and regression checks.
+- [x] Add unit tests for the shared core.
+- [x] Add golden tests for generation outputs.
+- [x] Add language-server tests.
+- [x] Add webview smoke tests.
+- [x] Add CLI integration tests.
+- [x] Define compatibility rules for schema changes.
+- [x] Define compatibility rules for generation targets.
+- [x] Define compatibility rules for CLI flags and JSON output.
+- [x] Define release gates and checklists.
+- [x] Add performance budgets and regression checks.
 
 ## Exit Criteria
 
-- [ ] Release gates exist for core, LSP, UI, CLI, and docs.
-- [ ] Compatibility guarantees are documented.
-- [ ] Regression coverage exists for all major surfaces.
+- [x] Release gates exist for core, LSP, UI, CLI, and docs.
+- [x] Compatibility guarantees are documented.
+- [x] Regression coverage exists for all major surfaces.
 ```
 
 ---

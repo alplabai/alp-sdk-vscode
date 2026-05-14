@@ -37,8 +37,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Compile (tsc)
-        run: npm run compile
+      - name: Test (compile + unit/integration)
+        run: npm test
 
       - name: Package (.vsix)
         run: npx vsce package --out alp-sdk.vsix

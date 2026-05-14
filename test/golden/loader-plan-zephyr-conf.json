@@ -1,0 +1,14 @@
+{
+  "emit": "zephyr-conf",
+  "outputPath": "/workspace/app/build/generated/alp.conf",
+  "scriptPath": "/workspace/sdk/scripts/alp_project.py",
+  "args": [
+    "--input",
+    "/workspace/app/board.yaml",
+    "--emit",
+    "zephyr-conf",
+    "--output",
+    "/workspace/app/build/generated/alp.conf"
+  ],
+  "commandLine": "python3 /workspace/sdk/scripts/alp_project.py --input /workspace/app/board.yaml --emit zephyr-conf --output /workspace/app/build/generated/alp.conf"
+}

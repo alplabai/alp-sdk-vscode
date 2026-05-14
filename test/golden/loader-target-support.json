@@ -1,0 +1,38 @@
+[
+  {
+    "emit": "zephyr-conf",
+    "displayName": "Zephyr config",
+    "outputRelativePath": "build/generated/alp.conf",
+    "preview": {
+      "label": "Zephyr config preview",
+      "languageId": "properties"
+    }
+  },
+  {
+    "emit": "dts-overlay",
+    "displayName": "Devicetree overlay",
+    "outputRelativePath": "build/generated/alp.overlay",
+    "preview": {
+      "label": "Devicetree overlay preview",
+      "languageId": "dts"
+    }
+  },
+  {
+    "emit": "cmake-args",
+    "displayName": "CMake args",
+    "outputRelativePath": "build/generated/alp-cmake-args.txt",
+    "preview": {
+      "label": "CMake args preview",
+      "languageId": "plaintext"
+    }
+  },
+  {
+    "emit": "yocto-conf",
+    "displayName": "Yocto config",
+    "outputRelativePath": "build/generated/alp-yocto.conf",
+    "preview": {
+      "label": "Yocto config preview",
+      "languageId": "properties"
+    }
+  }
+]

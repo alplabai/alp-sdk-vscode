@@ -89,6 +89,15 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
   Runtime/toolchain troubleshooting for CLI and VS Code workflows.
 - [TASK_RECIPES.md](TASK_RECIPES.md): Common GUI/CLI task mapping for
   daily workflows.
+- [TEST_MATRIX.md](TEST_MATRIX.md): Test coverage map by surface and
+  test type.
+- [COMPATIBILITY_RULES.md](COMPATIBILITY_RULES.md): Backward
+  compatibility guarantees for schema, generation targets, and CLI
+  contracts.
+- [RELEASE_GATES.md](RELEASE_GATES.md): Required release checks for
+  core, LSP, UI, CLI, and docs.
+- [PERFORMANCE_BUDGETS.md](PERFORMANCE_BUDGETS.md): Performance
+  budgets and regression-check guidance.
 - [DEBUG.md](DEBUG.md): Debug support matrix and launch strategy.
 - [src/README.md](src/README.md): Source module map.
 - [src/lsp/README.md](src/lsp/README.md): LSP module responsibilities.
