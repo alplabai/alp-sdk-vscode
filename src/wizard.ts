@@ -3,18 +3,25 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { loadPresetCatalogue } from "./configurator/vscodeAdapter";
+import { BoardModel } from "./configurator/models";
+import {
+    loadBoardModel,
+    loadPresetCatalogue,
+} from "./configurator/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 import {
     WizardFeatureFlags,
     WizardPlanInput,
     WizardTemplateDefinition,
+    WizardTemplateId,
 } from "./wizard/models";
 import {
+    createTemplateExplanation,
     createWizardPlan,
     createWizardPreviewMarkdown,
-  createWizardValidationSummary,
+    createWizardValidationSummary,
     listWizardTemplates,
+    suggestTemplateIdFromBoardModel,
 } from "./wizard/service";
 import {
     collectGeneratedOutputPreviews,
@@ -65,50 +72,67 @@ async function runProjectWizard(): Promise<void> {
     return;
   }
 
+  const existingBoardModel = readExistingBoardModel(project.boardYamlPath);
   const catalogue = loadPresetCatalogue(project);
-  const template = await pickTemplate();
+  const suggestedTemplateId = existingBoardModel
+    ? suggestTemplateIdFromBoardModel(existingBoardModel)
+    : undefined;
+
+  const template = await pickTemplate(suggestedTemplateId);
   if (!template) {
     return;
   }
 
+  const existingSomSku = existingBoardModel?.som?.sku;
   const somSku = await pickValue(
     "Alp: Pick SoM SKU",
     "Select the target module SKU.",
     catalogue.skus,
-    "E1M-AEN701",
+    existingSomSku || "E1M-AEN701",
   );
   if (!somSku) {
     return;
   }
 
+  const existingCarrier = existingBoardModel?.carrier?.name;
   const carrierName = await pickValue(
     "Alp: Pick carrier",
     "Select the carrier preset.",
     catalogue.carriers.map((carrier) => carrier.name),
-    "E1M-EVK",
+    existingCarrier || "E1M-EVK",
   );
   if (!carrierName) {
     return;
   }
 
+  const existingOs = existingBoardModel?.os;
   const os = await pickValue(
     "Alp: Pick OS",
     "Select the OS target for board.yaml.",
     catalogue.osChoices,
-    "zephyr",
+    existingOs || "zephyr",
   );
   if (!os) {
     return;
   }
 
-  const features = await pickFeatures(template.defaultFeatures);
+  const features = await pickFeatures(
+    existingBoardModel
+      ? {
+          wifi: !!existingBoardModel.iot?.wifi,
+          mqtt: !!existingBoardModel.iot?.mqtt,
+          ble: !!existingBoardModel.iot?.ble,
+          tls: !!existingBoardModel.iot?.tls,
+        }
+      : template.defaultFeatures,
+  );
   if (!features) {
     return;
   }
 
   const libraries = await pickLibraries(
     catalogue.libraries,
-    template.defaultLibraries,
+    existingBoardModel?.libraries ?? template.defaultLibraries,
   );
   if (!libraries) {
     return;
@@ -163,8 +187,17 @@ async function runProjectWizard(): Promise<void> {
   const overwriteCount = fileChanges.filter(
     (file) => file.kind === "update",
   ).length;
+  const overwritePreview = fileChanges
+    .filter((file) => file.kind === "update")
+    .slice(0, 3)
+    .map((file) => file.relativePath)
+    .join(", ");
+  const overwriteSuffix =
+    overwritePreview.length > 0
+      ? ` Files to update: ${overwritePreview}${overwriteCount > 3 ? ", ..." : ""}.`
+      : "";
   const action = await vscode.window.showWarningMessage(
-    `Alp: write ${writeCount} file(s)? Existing files to update: ${overwriteCount}.`,
+    `Alp: write ${writeCount} file(s)? Existing files to update: ${overwriteCount}.${overwriteSuffix}`,
     { modal: true },
     "Write Files",
   );
@@ -182,17 +215,33 @@ async function runProjectWizard(): Promise<void> {
     `Alp: wizard wrote ${result.written.length} file(s), unchanged ${result.unchanged.length}.`,
     7000,
   );
+
+  const explanation = createTemplateExplanation(template.id);
+  await vscode.window.showInformationMessage(
+    `Alp: ${template.label} scaffold ready. ${explanation[0]}`,
+  );
 }
 
 function workspacePromptKey(workspaceRoot: string): string {
   return `${FIRST_RUN_PROMPT_KEY_PREFIX}:${workspaceRoot}`;
 }
 
-async function pickTemplate(): Promise<WizardTemplateDefinition | null> {
+async function pickTemplate(
+  preferredTemplateId?: WizardTemplateId,
+): Promise<WizardTemplateDefinition | null> {
   const templates = listWizardTemplates();
+  const orderedTemplates = preferredTemplateId
+    ? [
+        ...templates.filter((template) => template.id === preferredTemplateId),
+        ...templates.filter((template) => template.id !== preferredTemplateId),
+      ]
+    : templates;
   const pick = await vscode.window.showQuickPick(
-    templates.map((template) => ({
-      label: template.label,
+    orderedTemplates.map((template, index) => ({
+      label:
+        index === 0 && template.id === preferredTemplateId
+          ? `${template.label} (recommended)`
+          : template.label,
       description: template.description,
       detail: `id: ${template.id}`,
       template,
@@ -293,4 +342,18 @@ async function pickLibraries(
   }
 
   return picks.map((pick) => pick.label).sort();
+}
+
+function readExistingBoardModel(
+  boardYamlPath: string | null,
+): BoardModel | null {
+  if (!boardYamlPath || !fs.existsSync(boardYamlPath)) {
+    return null;
+  }
+
+  try {
+    return loadBoardModel(boardYamlPath);
+  } catch {
+    return null;
+  }
 }

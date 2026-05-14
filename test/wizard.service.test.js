@@ -2,10 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  createTemplateExplanation,
   createWizardPlan,
   createWizardPreviewMarkdown,
   createWizardValidationSummary,
   listWizardTemplates,
+  suggestTemplateIdFromBoardModel,
 } = require("../out/wizard/service.js");
 
 test("listWizardTemplates includes expected starter catalog", () => {
@@ -84,6 +86,7 @@ test("createWizardPreviewMarkdown contains selections and file change summary", 
   assert.match(markdown, /UPDATE: README\.md/);
   assert.match(markdown, /Validation Summary/);
   assert.match(markdown, /Errors: 0 \| Warnings: 0 \| Suggestions: 0/);
+  assert.match(markdown, /Starter Code Explanation/);
   assert.match(markdown, /Generated Output Preview/);
   assert.match(markdown, /Zephyr config/);
   assert.match(markdown, /build\/generated\/alp\.conf/);
@@ -101,4 +104,45 @@ test("createWizardValidationSummary reports required-field errors", () => {
   assert.match(summary.errors[0], /SoM SKU is required/);
   assert.match(summary.errors[1], /Carrier name is required/);
   assert.match(summary.errors[2], /OS target is required/);
+});
+
+test("suggestTemplateIdFromBoardModel infers templates from existing config", () => {
+  assert.equal(
+    suggestTemplateIdFromBoardModel({
+      schema_version: 1,
+      som: { sku: "E1M-AEN701" },
+      carrier: { name: "E1M-EVK" },
+      os: "zephyr",
+      diagnostics: { last_error: true, log_level: "debug" },
+    }),
+    "board-diagnostics",
+  );
+
+  assert.equal(
+    suggestTemplateIdFromBoardModel({
+      schema_version: 1,
+      som: { sku: "E1M-AEN701" },
+      carrier: { name: "E1M-EVK" },
+      os: "zephyr",
+      inference: { backend: "auto" },
+    }),
+    "edge-ai-starter",
+  );
+
+  assert.equal(
+    suggestTemplateIdFromBoardModel({
+      schema_version: 1,
+      som: { sku: "E1M-AEN701" },
+      carrier: { name: "E1M-EVK" },
+      os: "zephyr",
+      iot: { wifi: true, mqtt: true },
+    }),
+    "iot-starter",
+  );
+});
+
+test("createTemplateExplanation returns non-empty guidance", () => {
+  const explanation = createTemplateExplanation("minimal-app");
+  assert.equal(explanation.length >= 1, true);
+  assert.match(explanation[0], /template/i);
 });

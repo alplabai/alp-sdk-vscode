@@ -332,15 +332,15 @@ curated templates.
 
 ## Tasks
 
-- [ ] Add a minimal ALP app template.
-- [ ] Add a sensor-oriented template.
-- [ ] Add an IoT template.
-- [ ] Add an edge-AI template.
-- [ ] Add a board-diagnostics template.
+- [x] Add a minimal ALP app template.
+- [x] Add a sensor-oriented template.
+- [x] Add an IoT template.
+- [x] Add an edge-AI template.
+- [x] Add a board-diagnostics template.
 - [ ] Add module-level source generation into existing projects.
-- [ ] Allow template parameters to resolve from current config.
-- [ ] Avoid overwriting user-modified files silently.
-- [ ] Add explanation support for generated starter code.
+- [x] Allow template parameters to resolve from current config.
+- [x] Avoid overwriting user-modified files silently.
+- [x] Add explanation support for generated starter code.
 
 ## Exit Criteria
 
