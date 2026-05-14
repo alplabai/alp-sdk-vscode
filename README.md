@@ -9,8 +9,8 @@ First-class IDE support for projects built against the
   alp-sdk submodule (see "Schema-sync" below) so the editor's
   view always matches the loader's view.
 * **`alp_project.py` loader commands.**  Generate Zephyr-conf /
-  CMake-args / Yocto-conf from `board.yaml` directly from the
-  command palette.
+  DTS overlay / CMake-args / Yocto-conf from `board.yaml` directly
+  from the command palette.
 * **`west` workflow wrappers** where build runs
   `validate board.yaml` -> `generate all` -> `west build`, plus
   dedicated `flash` / `run` wrappers with progress reporting.

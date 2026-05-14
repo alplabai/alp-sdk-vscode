@@ -803,15 +803,15 @@ establish one central map of generation support.
 
 ## Tasks
 
-- [ ] Reconcile actual supported emit modes with upstream docs.
-- [ ] Add a central map for supported generation targets.
-- [ ] Add preview metadata for each target.
-- [ ] Add tests for success and failure-path handling.
+- [x] Reconcile actual supported emit modes with upstream docs.
+- [x] Add a central map for supported generation targets.
+- [x] Add preview metadata for each target.
+- [x] Add tests for success and failure-path handling.
 
 ## Acceptance Criteria
 
-- [ ] The extension and docs report the same generation-target surface.
-- [ ] Generation behavior is driven by one central support map.
+- [x] The extension and docs report the same generation-target surface.
+- [x] Generation behavior is driven by one central support map.
 ```
 
 ---

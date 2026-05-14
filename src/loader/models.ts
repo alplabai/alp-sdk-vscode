@@ -38,3 +38,15 @@ export interface LoaderBatchSummary {
   written: string[];
   failed: EmitMode[];
 }
+
+export interface GenerationTargetPreviewMetadata {
+  label: string;
+  languageId: string;
+}
+
+export interface GenerationTargetSupport {
+  emit: EmitMode;
+  displayName: string;
+  outputRelativePath: string;
+  preview: GenerationTargetPreviewMetadata;
+}

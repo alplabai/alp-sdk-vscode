@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 
 const {
   createLoaderPlan,
+  getGenerationTargetSupport,
+  listGenerationTargetSupport,
   summarizeLoaderBatch,
 } = require("../out/loader/service.js");
 
@@ -50,4 +52,39 @@ test("summarizeLoaderBatch separates written and failed outputs", () => {
     written: ["build/generated/alp.conf"],
     failed: ["yocto-conf"],
   });
+});
+
+test("listGenerationTargetSupport exposes all supported targets with preview metadata", () => {
+  const targets = listGenerationTargetSupport();
+
+  assert.deepEqual(
+    targets.map((target) => target.emit),
+    ["zephyr-conf", "dts-overlay", "cmake-args", "yocto-conf"],
+  );
+  assert.deepEqual(
+    targets.map((target) => target.preview.languageId),
+    ["properties", "dts", "plaintext", "properties"],
+  );
+});
+
+test("createLoaderPlan rejects unsupported generation targets", () => {
+  assert.throws(
+    () =>
+      createLoaderPlan(
+        {
+          workspaceRoot: "/workspace/app",
+          sdkRoot: "/workspace/sdk",
+          boardYamlPath: "/workspace/app/board.yaml",
+          westCwd: "/workspace/app",
+          pythonBinary: "python3",
+        },
+        "invalid-target",
+      ),
+    /unsupported generation target/,
+  );
+
+  assert.throws(
+    () => getGenerationTargetSupport("invalid-target"),
+    /unsupported generation target/,
+  );
 });

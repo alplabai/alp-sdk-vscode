@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { EmitMode, LoaderBatchEntry } from "./loader/models";
+import {
+    EmitMode,
+    GenerationTargetSupport,
+    LoaderBatchEntry,
+    LoaderPlan,
+} from "./loader/models";
 import {
     ALL_EMIT_MODES,
     createLoaderPlan,
+    getGenerationTargetSupport,
     summarizeLoaderBatch,
 } from "./loader/service";
 import {
@@ -31,8 +37,10 @@ async function runLoader(emit: EmitMode): Promise<void> {
     return;
   }
 
-  let plan;
+  let plan: LoaderPlan;
+  let target: GenerationTargetSupport;
   try {
+    target = getGenerationTargetSupport(emit);
     plan = createLoaderPlan(context, emit);
   } catch (error) {
     await vscode.window.showErrorMessage(formatLoaderError(error));
@@ -49,13 +57,13 @@ async function runLoader(emit: EmitMode): Promise<void> {
   if (result.status !== 0) {
     showOutput();
     await vscode.window.showErrorMessage(
-      `Alp: ${emit} generation failed (rv=${result.status}).  See the ALP SDK output channel.`,
+      `Alp: ${target.displayName} generation failed (rv=${result.status}).  See the ALP SDK output channel.`,
     );
     return;
   }
   await previewGeneratedFile(plan.outputPath);
   vscode.window.setStatusBarMessage(
-    `Alp: wrote ${vscode.workspace.asRelativePath(plan.outputPath)}`,
+    `Alp: wrote ${target.displayName} (${vscode.workspace.asRelativePath(plan.outputPath)})`,
     5000,
   );
 }
@@ -123,7 +131,7 @@ async function runLoaderAll(): Promise<void> {
   const entries: LoaderBatchEntry[] = [];
 
   for (const emit of ALL_EMIT_MODES) {
-    let plan;
+    let plan: LoaderPlan;
     try {
       plan = createLoaderPlan(context, emit);
     } catch (error) {
@@ -139,7 +147,16 @@ async function runLoaderAll(): Promise<void> {
     entries.push(inspectGeneratedFile(plan));
   }
 
-  const summary = summarizeLoaderBatch(context.workspaceRoot!, entries);
+  const workspaceRoot = context.workspaceRoot;
+  if (!workspaceRoot) {
+    await vscode.window.showErrorMessage("Alp: workspace root is unresolved.");
+    return;
+  }
+
+  const summary = summarizeLoaderBatch(workspaceRoot, entries);
+  const failedDisplayNames = summary.failed.map(
+    (emit) => getGenerationTargetSupport(emit).displayName,
+  );
   if (summary.failed.length === 0) {
     vscode.window.setStatusBarMessage(
       `Alp: regenerated all ${ALL_EMIT_MODES.length} formats (${summary.written.join(", ")})`,
@@ -148,7 +165,7 @@ async function runLoaderAll(): Promise<void> {
   } else {
     showOutput();
     await vscode.window.showWarningMessage(
-      `Alp: regenerated ${summary.written.length}/${ALL_EMIT_MODES.length} -- failed: ${summary.failed.join(", ")}`,
+      `Alp: regenerated ${summary.written.length}/${ALL_EMIT_MODES.length} -- failed: ${failedDisplayNames.join(", ")}`,
     );
   }
 }
