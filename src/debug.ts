@@ -4,17 +4,23 @@ import * as vscode from "vscode";
 import { createLaunchJsonWritePlan } from "./debug/launchJsonCore";
 import { DebugServerKind, DebugTargetKind } from "./debug/models";
 import {
-    buildDoctorReport,
-    createInspectReport,
-    createLaunchPreview,
-    DEBUG_TARGET_CHOICES,
-    serverChoicesForTarget,
+  buildDebugPreflightReport,
+  buildDoctorReport,
+  createDebugProfile,
+  createInspectReport,
+  createLaunchPreview,
+  createSupportBundlePayload,
+  DEBUG_TARGET_CHOICES,
+  serializeSupportBundlePayload,
+  serverChoicesForTarget,
 } from "./debug/service";
 import {
-    collectRuntimeCapabilities,
-    collectWorkspaceDebugContext,
-    readLaunchJson,
-    writeLaunchJson,
+  collectRuntimeCapabilities,
+  collectWorkspaceDebugContext,
+  fileExists,
+  readLaunchJson,
+  writeLaunchJson,
+  writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { log, showOutput } from "./util";
 
@@ -70,6 +76,40 @@ async function debugDoctor(): Promise<void> {
   }
 }
 
+async function debugPreflight(): Promise<void> {
+  const targetKind = await pickTargetKind();
+  if (!targetKind) return;
+  const server = await pickServer(targetKind);
+  const context = collectWorkspaceDebugContext();
+  const runtime = collectRuntimeCapabilities();
+
+  let profile;
+  try {
+    profile = createDebugProfile(targetKind, server);
+  } catch (error) {
+    await vscode.window.showErrorMessage(formatDebugError(error));
+    return;
+  }
+
+  const report = buildDebugPreflightReport(
+    new Date().toISOString(),
+    context,
+    profile,
+    runtime,
+    {
+      pathExists: fileExists,
+    },
+  );
+
+  log(
+    `alp.debugPreflight: ran preflight for ${targetKind}/${server}, canLaunch=${report.canLaunch}`,
+  );
+  await showJsonDocument(report);
+  if (!report.canLaunch || report.summary.warn > 0) {
+    showOutput();
+  }
+}
+
 async function configureDebugProfile(): Promise<void> {
   const targetKind = await pickTargetKind();
   if (!targetKind) return;
@@ -111,6 +151,72 @@ async function configureDebugProfile(): Promise<void> {
   );
 }
 
+async function exportSupportBundle(): Promise<void> {
+  const targetKind = await pickTargetKind();
+  if (!targetKind) return;
+  const server = await pickServer(targetKind);
+  const context = collectWorkspaceDebugContext();
+  if (!context.workspaceRoot) {
+    await vscode.window.showErrorMessage(
+      "Alp: no workspace folder is open, cannot export a support bundle.",
+    );
+    return;
+  }
+
+  const runtime = collectRuntimeCapabilities();
+  const generatedAt = new Date().toISOString();
+
+  let profile;
+  try {
+    profile = createDebugProfile(targetKind, server);
+  } catch (error) {
+    await vscode.window.showErrorMessage(formatDebugError(error));
+    return;
+  }
+
+  const preflight = buildDebugPreflightReport(
+    generatedAt,
+    context,
+    profile,
+    runtime,
+    {
+      pathExists: fileExists,
+    },
+  );
+
+  const doctor = buildDoctorReport(context, { targetKind, server }, runtime);
+  const inspect = createInspectReport(context);
+  const bundle = createSupportBundlePayload({
+    generatedAt,
+    inspect,
+    preflight,
+    doctor,
+    notes: [
+      `targetKind=${targetKind}`,
+      `server=${server}`,
+      `canLaunch=${preflight.canLaunch}`,
+    ],
+  });
+
+  const filePath = writeSupportBundle(
+    context.workspaceRoot,
+    `debug-support-bundle-${timestampForFile(generatedAt)}.json`,
+    serializeSupportBundlePayload(bundle),
+  );
+
+  log(`alp.exportSupportBundle: wrote ${filePath}`);
+  const doc = await vscode.workspace.openTextDocument(filePath);
+  await vscode.window.showTextDocument(doc, { preview: false });
+
+  await vscode.window.showInformationMessage(
+    `Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`,
+  );
+
+  if (!preflight.canLaunch || doctor.summary.fail > 0 || doctor.summary.warn > 0) {
+    showOutput();
+  }
+}
+
 function formatDebugError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -119,14 +225,24 @@ function formatDebugError(error: unknown): string {
   return "Alp: an unexpected debug configuration error occurred.";
 }
 
+function timestampForFile(isoTimestamp: string): string {
+  return isoTimestamp.replace(/[:.]/g, "-");
+}
+
 export function registerDebugCommands(): vscode.Disposable[] {
   return [
     vscode.commands.registerCommand("alp.inspectProjectState", () =>
       inspectProjectState(),
     ),
     vscode.commands.registerCommand("alp.debugDoctor", () => debugDoctor()),
+    vscode.commands.registerCommand("alp.debugPreflight", () =>
+      debugPreflight(),
+    ),
     vscode.commands.registerCommand("alp.configureDebugProfile", () =>
       configureDebugProfile(),
+    ),
+    vscode.commands.registerCommand("alp.exportSupportBundle", () =>
+      exportSupportBundle(),
     ),
   ];
 }

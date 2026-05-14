@@ -17,6 +17,8 @@ export type DebugServerKind =
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 
+export type PreflightStatus = "pass" | "warn" | "fail";
+
 export interface DebugTargetChoice {
   label: string;
   description: string;
@@ -99,7 +101,20 @@ export interface DoctorCheck {
   fix?: string;
 }
 
+export interface PreflightCheck {
+  name: string;
+  status: PreflightStatus;
+  detail: string;
+  fix?: string;
+}
+
 export interface DoctorSummary {
+  pass: number;
+  warn: number;
+  fail: number;
+}
+
+export interface PreflightSummary {
   pass: number;
   warn: number;
   fail: number;
@@ -114,10 +129,22 @@ export interface DoctorReport {
   nextSteps: string[];
 }
 
+export interface DebugPreflightReport {
+  generatedAt: string;
+  targetKind: DebugTargetKind;
+  server: DebugServerKind;
+  profileId: string;
+  summary: PreflightSummary;
+  checks: PreflightCheck[];
+  nextSteps: string[];
+  canLaunch: boolean;
+}
+
 export interface DebugSupportBundlePayload {
   schemaVersion: "1";
   generatedAt: string;
   inspect: DebugInspectReport;
+  preflight?: DebugPreflightReport;
   trace?: DebugGenerationTraceReport;
   doctor?: DoctorReport;
   notes: string[];

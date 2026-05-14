@@ -55,6 +55,21 @@ export function writeLaunchJson(
   return filePath;
 }
 
+export function fileExists(filePath: string): boolean {
+  return fs.existsSync(filePath);
+}
+
+export function writeSupportBundle(
+  workspaceRoot: string,
+  fileName: string,
+  content: string,
+): string {
+  const outputPath = path.join(workspaceRoot, ".alp-support", fileName);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, content, "utf-8");
+  return outputPath;
+}
+
 function hasExtension(extensionId: string): boolean {
   return vscode.extensions.getExtension(extensionId) !== undefined;
 }

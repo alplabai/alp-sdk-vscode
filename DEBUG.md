@@ -374,6 +374,7 @@ able to generate.
 The extension should eventually expose these commands:
 
 - `Alp: Configure debug profile`
+- `Alp: Debug preflight`
 - `Alp: Start debug`
 - `Alp: Flash and debug`
 - `Alp: Attach to running target`
@@ -404,6 +405,14 @@ validate:
 If preflight fails, the product should not attempt a debug launch. It
 should explain the failure and offer the next action.
 
+Current implementation status:
+
+- `Alp: Debug preflight` emits a structured preflight report with
+  actionable checks.
+- `Alp: Debug doctor` emits environment and compatibility diagnostics.
+- `Alp: Configure debug profile` remains draft-oriented (`launch.json`
+  generation) and does not start debugger sessions.
+
 ## 13. Support-Bundle Design
 
 When a user files a debug issue, the product should be able to export a
@@ -420,6 +429,12 @@ bundle containing:
 
 This bundle must avoid secrets and user-sensitive credentials by
 default.
+
+Current implementation status:
+
+- `Alp: Export support bundle` writes a JSON bundle under
+  `.alp-support/` including inspect snapshot, doctor summary, and
+  preflight results.
 
 ## 14. Recommended Delivery Order
 

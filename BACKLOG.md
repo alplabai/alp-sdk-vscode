@@ -1004,18 +1004,18 @@ actionable instead of opaque.
 
 ## Tasks
 
-- [ ] Define debug preflight checks for each target class.
-- [ ] Validate ELF/build artifact presence before launch.
-- [ ] Validate debugger extension/tool availability before launch.
-- [ ] Validate probe/server configuration before launch.
-- [ ] Add a debug-doctor report flow.
-- [ ] Add support-bundle export for issue reports.
-- [ ] Add documentation for debug failure analysis.
+- [x] Define debug preflight checks for each target class.
+- [x] Validate ELF/build artifact presence before launch.
+- [x] Validate debugger extension/tool availability before launch.
+- [x] Validate probe/server configuration before launch.
+- [x] Add a debug-doctor report flow.
+- [x] Add support-bundle export for issue reports.
+- [x] Add documentation for debug failure analysis.
 
 ## Acceptance Criteria
 
-- [ ] The product can fail fast with actionable debug preflight output.
-- [ ] Users can export enough context for a useful debug issue report.
+- [x] The product can fail fast with actionable debug preflight output.
+- [x] Users can export enough context for a useful debug issue report.
 ```
 
 ---

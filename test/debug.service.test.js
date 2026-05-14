@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  buildDebugPreflightReport,
   buildDoctorReport,
   createDebugProfile,
   createGenerationTraceReport,
@@ -10,6 +11,7 @@ const {
   createSupportBundlePayload,
   serializeGenerationTraceReport,
   serializeInspectReport,
+  serializeSupportBundlePayload,
   serverChoicesForTarget,
 } = require("../out/debug/service.js");
 
@@ -146,6 +148,75 @@ test("createSupportBundlePayload composes inspect and trace reports", () => {
   assert.equal(bundle.inspect.schemaVersion, "1");
   assert.equal(bundle.trace?.workflow, "loader.generateAll");
   assert.deepEqual(bundle.notes, ["sample-note"]);
+});
+
+test("buildDebugPreflightReport fails for unresolved profile placeholders", () => {
+  const profile = createDebugProfile("zephyr-mcu", "jlink");
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    profile,
+    createRuntime(),
+    {
+      pathExists: () => false,
+    },
+  );
+
+  assert.equal(report.canLaunch, false);
+  assert.ok(report.summary.fail > 0);
+  assert.ok(
+    report.checks.some(
+      (check) => check.name === "buildArtifact" && check.status === "fail",
+    ),
+  );
+  assert.ok(
+    report.checks.some(
+      (check) => check.name === "device" && check.status === "fail",
+    ),
+  );
+});
+
+test("buildDebugPreflightReport can pass for resolved native-host profile", () => {
+  const profile = {
+    ...createDebugProfile("native-host", "none"),
+    executablePath: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
+  };
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    profile,
+    createRuntime(),
+    {
+      pathExists: (filePath) => filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+    },
+  );
+
+  assert.equal(report.canLaunch, true);
+  assert.equal(report.summary.fail, 0);
+});
+
+test("serializeSupportBundlePayload returns stable JSON", () => {
+  const inspect = createInspectReport(createDebugContext());
+  const preflight = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    createDebugProfile("native-host", "none"),
+    createRuntime(),
+    {
+      pathExists: () => false,
+    },
+  );
+  const bundle = createSupportBundlePayload({
+    generatedAt: "2026-05-14T00:00:00.000Z",
+    inspect,
+    preflight,
+    notes: ["preflight"],
+  });
+
+  const serialized = JSON.parse(serializeSupportBundlePayload(bundle));
+  assert.equal(serialized.schemaVersion, "1");
+  assert.equal(serialized.preflight.targetKind, "native-host");
+  assert.deepEqual(serialized.notes, ["preflight"]);
 });
 
 test("buildDoctorReport flags unsupported backends clearly", () => {

@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import * as path from "path";
+
 import {
     DebugDoctorRequest,
     DebugGenerationTraceDecision,
     DebugGenerationTraceReport,
-  DebugProfile,
     DebugInspectReport,
     DebugLaunchPreview,
+  DebugPreflightReport,
+    DebugProfile,
     DebugResolvedValue,
     DebugRuntimeCapabilities,
     DebugServerChoice,
@@ -18,7 +21,13 @@ import {
     DoctorCheck,
     DoctorReport,
     LaunchConfigurationDraft,
+    PreflightCheck,
+    PreflightStatus,
 } from "./models";
+
+export interface DebugPreflightDependencies {
+  pathExists(path: string): boolean;
+}
 
 const MCU_SERVER_CHOICES: ReadonlyArray<DebugServerChoice> = [
   { label: "J-Link", server: "jlink" },
@@ -98,6 +107,7 @@ export function createGenerationTraceReport(
 export function createSupportBundlePayload(input: {
   generatedAt: string;
   inspect: DebugInspectReport;
+  preflight?: DebugPreflightReport;
   trace?: DebugGenerationTraceReport;
   doctor?: DoctorReport;
   notes?: string[];
@@ -112,6 +122,14 @@ export function createSupportBundlePayload(input: {
         ...value,
       })),
     },
+    preflight: input.preflight
+      ? {
+          ...input.preflight,
+          summary: { ...input.preflight.summary },
+          checks: input.preflight.checks.map((check) => ({ ...check })),
+          nextSteps: [...input.preflight.nextSteps],
+        }
+      : undefined,
     trace: input.trace
       ? {
           ...input.trace,
@@ -138,6 +156,59 @@ export function serializeGenerationTraceReport(
   report: DebugGenerationTraceReport,
 ): string {
   return JSON.stringify(report, null, 2);
+}
+
+export function serializeSupportBundlePayload(
+  payload: DebugSupportBundlePayload,
+): string {
+  return JSON.stringify(payload, null, 2);
+}
+
+export function buildDebugPreflightReport(
+  generatedAt: string,
+  context: DebugWorkspaceContext,
+  profile: DebugProfile,
+  runtime: DebugRuntimeCapabilities,
+  dependencies: DebugPreflightDependencies,
+): DebugPreflightReport {
+  const checks: PreflightCheck[] = [
+    {
+      name: "workspaceRoot",
+      status: context.workspaceRoot ? "pass" : "fail",
+      detail: context.workspaceRoot ?? "No workspace folder is open.",
+      fix: context.workspaceRoot
+        ? undefined
+        : "Open a workspace containing an ALP project.",
+    },
+    {
+      name: "boardYaml",
+      status: context.boardYamlExists ? "pass" : "fail",
+      detail: context.boardYamlPath ?? "board.yaml path is unresolved.",
+      fix: context.boardYamlExists
+        ? undefined
+        : "Create board.yaml or configure alpSdk.boardYamlPath.",
+    },
+    createAdapterCheck(profile, context),
+    createServerToolCheck(profile.server, runtime),
+    createExecutableCheck(profile, context, dependencies),
+  ];
+
+  checks.push(...createProfileConfigurationChecks(profile, context, dependencies));
+
+  return {
+    generatedAt,
+    targetKind: profile.targetKind,
+    server: profile.server,
+    profileId: profile.id,
+    summary: {
+      pass: countPreflightChecks(checks, "pass"),
+      warn: countPreflightChecks(checks, "warn"),
+      fail: countPreflightChecks(checks, "fail"),
+    },
+    checks,
+    nextSteps: uniquePreflightNextSteps(checks),
+    canLaunch: countPreflightChecks(checks, "fail") === 0,
+  };
 }
 
 export function buildDoctorReport(
@@ -590,6 +661,13 @@ function countChecks(
   return checks.filter((check) => check.status === status).length;
 }
 
+function countPreflightChecks(
+  checks: readonly PreflightCheck[],
+  status: PreflightStatus,
+): number {
+  return checks.filter((check) => check.status === status).length;
+}
+
 function uniqueNextSteps(checks: readonly DoctorCheck[]): string[] {
   const nextSteps = new Set<string>();
   for (const check of checks) {
@@ -597,4 +675,228 @@ function uniqueNextSteps(checks: readonly DoctorCheck[]): string[] {
     nextSteps.add(check.fix);
   }
   return [...nextSteps];
+}
+
+function uniquePreflightNextSteps(checks: readonly PreflightCheck[]): string[] {
+  const nextSteps = new Set<string>();
+  for (const check of checks) {
+    if (check.status === "pass" || !check.fix) continue;
+    nextSteps.add(check.fix);
+  }
+  return [...nextSteps];
+}
+
+function createAdapterCheck(
+  profile: DebugProfile,
+  context: DebugWorkspaceContext,
+): PreflightCheck {
+  switch (profile.adapter) {
+    case "cortex-debug":
+      return {
+        name: "adapterExtension",
+        status: context.debuggerExtensions.cortexDebug ? "pass" : "fail",
+        detail: context.debuggerExtensions.cortexDebug
+          ? "marus25.cortex-debug is installed."
+          : "marus25.cortex-debug is not installed.",
+        fix: context.debuggerExtensions.cortexDebug
+          ? undefined
+          : "Install marus25.cortex-debug.",
+      };
+    case "cppdbg":
+      return {
+        name: "adapterExtension",
+        status: context.debuggerExtensions.cppTools ? "pass" : "fail",
+        detail: context.debuggerExtensions.cppTools
+          ? "ms-vscode.cpptools is installed."
+          : "ms-vscode.cpptools is not installed.",
+        fix: context.debuggerExtensions.cppTools
+          ? undefined
+          : "Install ms-vscode.cpptools.",
+      };
+    case "codelldb":
+      return {
+        name: "adapterExtension",
+        status: context.debuggerExtensions.codeLLDB ? "pass" : "fail",
+        detail: context.debuggerExtensions.codeLLDB
+          ? "vadimcn.vscode-lldb is installed."
+          : "vadimcn.vscode-lldb is not installed.",
+        fix: context.debuggerExtensions.codeLLDB
+          ? undefined
+          : "Install vadimcn.vscode-lldb.",
+      };
+  }
+}
+
+function createServerToolCheck(
+  server: DebugProfile["server"],
+  runtime: DebugRuntimeCapabilities,
+): PreflightCheck {
+  const executable = resolveBackendExecutable(server, runtime);
+  return {
+    name: "serverTool",
+    status: executable ? "pass" : "fail",
+    detail: executable ?? `No ${server} executable was found on PATH.`,
+    fix: executable
+      ? undefined
+      : `Install ${server} and make sure it is on PATH.`,
+  };
+}
+
+function createExecutableCheck(
+  profile: DebugProfile,
+  context: DebugWorkspaceContext,
+  dependencies: DebugPreflightDependencies,
+): PreflightCheck {
+  const resolvedPath = resolveWorkspacePath(profile.executablePath, context);
+  if (!resolvedPath) {
+    return {
+      name: "buildArtifactPath",
+      status: "fail",
+      detail: `Executable path is unresolved: ${profile.executablePath}`,
+      fix: "Resolve executable path placeholders before launch.",
+    };
+  }
+
+  const exists = dependencies.pathExists(resolvedPath);
+  return {
+    name: "buildArtifact",
+    status: exists ? "pass" : "fail",
+    detail: resolvedPath,
+    fix: exists ? undefined : "Build the selected target before launch.",
+  };
+}
+
+function createProfileConfigurationChecks(
+  profile: DebugProfile,
+  context: DebugWorkspaceContext,
+  dependencies: DebugPreflightDependencies,
+): PreflightCheck[] {
+  const checks: PreflightCheck[] = [];
+
+  if (profile.server === "jlink") {
+    checks.push(
+      createResolvedValueCheck(
+        "device",
+        profile.device,
+        "Resolve J-Link device before launch.",
+      ),
+    );
+  }
+
+  if (profile.server === "openocd") {
+    const configs = profile.openOcdConfigFiles ?? [];
+    if (configs.length === 0) {
+      checks.push({
+        name: "openOcdConfig",
+        status: "fail",
+        detail: "OpenOCD config file list is empty.",
+        fix: "Set openOcdConfigFiles before launch.",
+      });
+    } else {
+      for (const configFile of configs) {
+        const resolved = resolveWorkspacePath(configFile, context);
+        if (!resolved) {
+          checks.push({
+            name: "openOcdConfig",
+            status: "fail",
+            detail: `OpenOCD config path is unresolved: ${configFile}`,
+            fix: "Resolve OpenOCD config placeholders before launch.",
+          });
+          continue;
+        }
+
+        checks.push({
+          name: "openOcdConfig",
+          status: dependencies.pathExists(resolved) ? "pass" : "fail",
+          detail: resolved,
+          fix: dependencies.pathExists(resolved)
+            ? undefined
+            : "Provide a valid OpenOCD config file path.",
+        });
+      }
+    }
+  }
+
+  if (profile.server === "pyocd") {
+    checks.push(
+      createResolvedValueCheck(
+        "targetId",
+        profile.targetId,
+        "Resolve pyOCD targetId before launch.",
+      ),
+    );
+  }
+
+  if (profile.targetKind === "baremetal-mcu") {
+    checks.push(
+      createResolvedValueCheck(
+        "svdFile",
+        profile.svdFile,
+        "Resolve SVD file path before launch.",
+      ),
+    );
+  }
+
+  if (profile.targetKind === "yocto-userspace") {
+    checks.push(
+      createResolvedValueCheck(
+        "miDebuggerServerAddress",
+        profile.miDebuggerServerAddress,
+        "Resolve gdbserver address before launch.",
+      ),
+      createResolvedValueCheck(
+        "miDebuggerPath",
+        profile.miDebuggerPath,
+        "Resolve local gdb path before launch.",
+      ),
+    );
+  }
+
+  return checks;
+}
+
+function createResolvedValueCheck(
+  name: string,
+  value: string | undefined,
+  fix: string,
+): PreflightCheck {
+  const resolved = isResolvedValue(value);
+  return {
+    name,
+    status: resolved ? "pass" : "fail",
+    detail: value ?? "<unset>",
+    fix: resolved ? undefined : fix,
+  };
+}
+
+function isResolvedValue(value: string | undefined): boolean {
+  return Boolean(value && !value.includes("<resolved"));
+}
+
+function resolveWorkspacePath(
+  value: string,
+  context: DebugWorkspaceContext,
+): string | null {
+  if (!isResolvedValue(value)) {
+    return null;
+  }
+
+  const workspaceRoot = context.workspaceRoot;
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  if (value.startsWith("${workspaceFolder}/")) {
+    return path.join(workspaceRoot, value.slice("${workspaceFolder}/".length));
+  }
+
+  if (value.startsWith("${workspaceFolder}")) {
+    return path.join(workspaceRoot, value.slice("${workspaceFolder}".length));
+  }
+
+  if (value.startsWith("/")) {
+    return value;
+  }
+
+  return path.join(workspaceRoot, value);
 }

@@ -107,8 +107,18 @@
         "category": "Alp"
       },
       {
+        "command": "alp.debugPreflight",
+        "title": "Alp: Debug preflight",
+        "category": "Alp"
+      },
+      {
         "command": "alp.configureDebugProfile",
         "title": "Alp: Configure debug profile (launch.json)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.exportSupportBundle",
+        "title": "Alp: Export debug support bundle",
         "category": "Alp"
       }
     ],
