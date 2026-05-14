@@ -382,16 +382,16 @@ The same workflows are available from the terminal and in CI.
 
 ## Tasks
 
-- [ ] Introduce a stable CLI entry point.
-- [ ] Add shared argument parsing conventions.
-- [ ] Add machine-readable JSON output mode.
-- [ ] Define stable exit-code behavior.
-- [ ] Implement `alp validate`.
-- [ ] Implement `alp generate`.
-- [ ] Implement `alp init`.
-- [ ] Implement `alp doctor`.
+- [x] Introduce a stable CLI entry point.
+- [x] Add shared argument parsing conventions.
+- [x] Add machine-readable JSON output mode.
+- [x] Define stable exit-code behavior.
+- [x] Implement `alp validate`.
+- [x] Implement `alp generate`.
+- [x] Implement `alp init`.
+- [x] Implement `alp doctor`.
 - [ ] Implement `alp explain`.
-- [ ] Implement `alp scaffold`.
+- [x] Implement `alp scaffold`.
 - [ ] Implement `alp presets`.
 - [ ] Implement `alp diff`.
 - [ ] Add shell completion support.
