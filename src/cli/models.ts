@@ -22,6 +22,7 @@ export type CliFormat = "text" | "json";
 export type CliCommand =
   | "validate"
   | "generate"
+  | "presets"
   | "init"
   | "scaffold"
   | "inspect"

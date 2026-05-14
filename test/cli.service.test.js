@@ -256,6 +256,71 @@ test("executeCli maps generate target failures to exit code 3", () => {
   assert.match(result.envelope.issues[0].message, /emit failed/);
 });
 
+test("executeCli returns presets from sdk metadata in json mode", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-presets-json-"));
+  const sdkRoot = path.join(root, "alp-sdk");
+  const modulesDir = path.join(sdkRoot, "metadata/e1m_modules/E1M-AEN701");
+  const carriersDir = path.join(sdkRoot, "metadata/carriers/E1M-EVK");
+  fs.mkdirSync(path.join(sdkRoot, "scripts"), { recursive: true });
+  fs.mkdirSync(modulesDir, { recursive: true });
+  fs.mkdirSync(carriersDir, { recursive: true });
+  fs.writeFileSync(path.join(sdkRoot, "scripts/alp_project.py"), "# stub\n");
+  fs.writeFileSync(path.join(modulesDir, "som.yaml"), "sku: E1M-AEN701\n");
+  fs.writeFileSync(
+    path.join(carriersDir, "board.yaml"),
+    [
+      "schema_version: 1",
+      "som:",
+      "  sku: E1M-AEN701",
+      "carrier:",
+      "  name: E1M-EVK",
+      "  populated:",
+      "    wifi: true",
+      "os: zephyr",
+      "",
+    ].join("\n"),
+  );
+
+  const result = executeCli({
+    argv: [
+      "presets",
+      "--project",
+      root,
+      "--sdk-root",
+      sdkRoot,
+      "--format",
+      "json",
+    ],
+    cwd: root,
+    platform: "linux",
+    pathExists: (candidatePath) => fs.existsSync(candidatePath),
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "presets");
+  assert.deepEqual(result.envelope.data.skus, ["E1M-AEN701"]);
+  assert.equal(result.envelope.data.carriers.length, 1);
+  assert.equal(result.envelope.data.carriers[0].name, "E1M-EVK");
+  assert.equal(result.envelope.issues.length, 0);
+});
+
+test("executeCli presets returns warning when sdk-root is unresolved", () => {
+  const result = executeCli({
+    argv: ["presets", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.command, "presets");
+  assert.equal(result.envelope.data.sdkRoot, null);
+  assert.equal(result.envelope.issues.length, 1);
+  assert.equal(result.envelope.issues[0].code, "presets.sdk-root-unresolved");
+});
+
 test("executeCli returns doctor failure when target/server are incompatible", () => {
   const result = executeCli({
     argv: ["doctor", "--target-kind", "native-host", "--server", "openocd"],

@@ -392,7 +392,7 @@ The same workflows are available from the terminal and in CI.
 - [x] Implement `alp doctor`.
 - [ ] Implement `alp explain`.
 - [x] Implement `alp scaffold`.
-- [ ] Implement `alp presets`.
+- [x] Implement `alp presets`.
 - [ ] Implement `alp diff`.
 - [ ] Add shell completion support.
 - [ ] Add CI integration examples.
