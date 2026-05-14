@@ -1104,17 +1104,17 @@ explicit for debug-related capabilities.
 
 ## Tasks
 
-- [ ] Define which surface owns launch and attach flows.
-- [ ] Define which surface owns inspect, trace, and doctor flows.
-- [ ] Define which surface owns inline explainability and quick fixes.
-- [ ] Define explicit LSP non-goals for debug orchestration.
-- [ ] Prevent duplicate implementation of domain rules across surfaces.
+- [x] Define which surface owns launch and attach flows.
+- [x] Define which surface owns inspect, trace, and doctor flows.
+- [x] Define which surface owns inline explainability and quick fixes.
+- [x] Define explicit LSP non-goals for debug orchestration.
+- [x] Prevent duplicate implementation of domain rules across surfaces.
 
 ## Acceptance Criteria
 
-- [ ] The team can answer where each debug capability belongs without
+- [x] The team can answer where each debug capability belongs without
       ambiguity.
-- [ ] LSP, UI, and CLI responsibilities are documented and non-
+- [x] LSP, UI, and CLI responsibilities are documented and non-
       overlapping.
 ```
 

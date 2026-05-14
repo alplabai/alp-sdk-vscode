@@ -1,6 +1,6 @@
 # ALP SDK VS Code Extension Plan
 
-Last revised: 2026-05-13
+Last revised: 2026-05-14
 
 ## 1. Purpose
 
@@ -130,6 +130,35 @@ Owns:
 
 The key architectural requirement is that layers 4.2, 4.3, and 4.4 do
 not implement domain rules independently.
+
+### 4.6 Debug Ownership Contract (UI / CLI / LSP)
+
+The ownership model for debug-related capabilities is strict:
+
+| Capability | VS Code UI | CLI | LSP |
+| ---------- | ---------- | --- | --- |
+| Start/attach debug session | Primary | Secondary (headless preparation only) | No |
+| Draft or update `launch.json` | Primary | Secondary (export/dry-run helpers) | No |
+| Doctor/preflight execution | Entry and guided rendering | Primary automation surface | Explain-only references |
+| Inspect and trace output | Interactive preview and summaries | Primary text/JSON surface | Inline explain/peek |
+| Hover/completion/quick fix | No | No | Primary |
+| Support-bundle export | Guided UX | Primary automation surface | No |
+
+Routing rules:
+
+- Debug launch and attach orchestration must stay in UI or CLI entry
+   points.
+- LSP must not mutate launch artifacts or run debug side-effect
+   workflows.
+- Shared debug models and serializers remain the single source of truth
+   for all three surfaces.
+
+Contract references:
+
+- `DEBUG.md` defines the operational debug ownership matrix and LSP
+   non-goals.
+- `CLI.md` defines automation contract details for command behavior,
+   JSON envelopes, and exit codes.
 
 ## 5. Phase Plan
 
