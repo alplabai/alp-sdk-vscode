@@ -2,12 +2,13 @@
 
 ## Purpose
 
-The `wizard` module provides first-run and on-demand project creation workflows.
+The `wizard` module provides first-run project creation and module-level scaffolding workflows.
 
 ## Main Responsibilities
 
 - Collect template, hardware, and feature selections.
 - Build deterministic starter file plans.
+- Build deterministic module-level source/header scaffold plans for existing projects.
 - Render pre-write preview summaries, scaffold tree view, and generated-output snapshots.
 - Write planned files through adapter boundaries.
 

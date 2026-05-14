@@ -337,7 +337,7 @@ curated templates.
 - [x] Add an IoT template.
 - [x] Add an edge-AI template.
 - [x] Add a board-diagnostics template.
-- [ ] Add module-level source generation into existing projects.
+- [x] Add module-level source generation into existing projects.
 - [x] Allow template parameters to resolve from current config.
 - [x] Avoid overwriting user-modified files silently.
 - [x] Add explanation support for generated starter code.
@@ -346,7 +346,7 @@ curated templates.
 
 - [ ] Users can create a credible starter project without manually
       copying repo examples.
-- [ ] Partial scaffolding works for existing projects.
+- [x] Partial scaffolding works for existing projects.
 ```
 
 ---

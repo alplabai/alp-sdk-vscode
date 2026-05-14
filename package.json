@@ -102,6 +102,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.scaffoldModule",
+        "title": "Alp: Scaffold module",
+        "category": "Alp"
+      },
+      {
         "command": "alp.previewEffectiveConfig",
         "title": "Alp: Preview effective config (LSP)",
         "category": "Alp"
