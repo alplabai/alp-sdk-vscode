@@ -26,7 +26,11 @@ export interface AlpIdeState {
 export function emptyAlpIdeState(): AlpIdeState {
   return {
     sdk: { activePath: null, version: null, readiness: "unknown" },
-    setup: { pythonAvailable: false, westAvailable: false, workspaceOpen: false },
+    setup: {
+      pythonAvailable: false,
+      westAvailable: false,
+      workspaceOpen: false,
+    },
   };
 }
 

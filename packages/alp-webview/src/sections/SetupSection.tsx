@@ -86,7 +86,9 @@ export function SetupSection({ state }: Props) {
     <div className="section">
       <p className="section-title">Environment</p>
 
-      <div className={`readiness-banner ${issueCount === 0 ? "banner-ok" : "banner-warn"}`}>
+      <div
+        className={`readiness-banner ${issueCount === 0 ? "banner-ok" : "banner-warn"}`}
+      >
         {issueCount === 0
           ? "All systems ready"
           : `${issueCount} item${issueCount > 1 ? "s" : ""} need${issueCount === 1 ? "s" : ""} attention`}

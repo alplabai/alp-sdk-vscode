@@ -4,7 +4,11 @@
 export type SdkReadinessState = "ready" | "missing" | "incomplete" | "unknown";
 
 /** Visual state for a readiness status chip. */
-export type ChipState = "ready" | "setup-required" | "not-installed" | "not-updated";
+export type ChipState =
+  | "ready"
+  | "setup-required"
+  | "not-installed"
+  | "not-updated";
 
 export interface SdkStatus {
   activePath: string | null;

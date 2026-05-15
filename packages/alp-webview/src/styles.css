@@ -121,13 +121,19 @@ body {
 
 .banner-ok {
   border-color: var(--vscode-testing-iconPassed, #4dbb4d);
-  background: var(--vscode-testing-message-infoBackground, rgba(77, 187, 77, 0.08));
+  background: var(
+    --vscode-testing-message-infoBackground,
+    rgba(77, 187, 77, 0.08)
+  );
   color: var(--vscode-foreground);
 }
 
 .banner-warn {
   border-color: var(--vscode-editorWarning-foreground, #bf8803);
-  background: var(--vscode-inputValidation-warningBackground, rgba(191, 136, 3, 0.08));
+  background: var(
+    --vscode-inputValidation-warningBackground,
+    rgba(191, 136, 3, 0.08)
+  );
   color: var(--vscode-foreground);
 }
 
@@ -143,7 +149,11 @@ body {
   flex-direction: column;
   gap: 3px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.15)));
+  border-bottom: 1px solid
+    var(
+      --vscode-widget-border,
+      var(--vscode-panel-border, rgba(128, 128, 128, 0.15))
+    );
 }
 
 .setup-row:last-child {
@@ -185,7 +195,11 @@ body {
   flex-direction: column;
   gap: 3px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.15)));
+  border-bottom: 1px solid
+    var(
+      --vscode-widget-border,
+      var(--vscode-panel-border, rgba(128, 128, 128, 0.15))
+    );
 }
 
 .action-card:last-child {

@@ -1,14 +1,14 @@
 import type { ChipState } from "../types";
 
 const LABELS: Record<ChipState, string> = {
-  "ready": "Ready",
+  ready: "Ready",
   "setup-required": "Setup Required",
   "not-installed": "Not Installed",
   "not-updated": "Not Updated",
 };
 
 const CSS: Record<ChipState, string> = {
-  "ready": "badge badge-ok",
+  ready: "badge badge-ok",
   "setup-required": "badge badge-warn",
   "not-installed": "badge badge-err",
   "not-updated": "badge badge-warn",
