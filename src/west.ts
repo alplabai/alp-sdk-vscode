@@ -1,15 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import * as vscode from "vscode";
 import { summarizeLoaderBatch } from "@alp-sdk/core/loader/service";
-import {
-    ensureLoaderOutputDirectory,
-    executeLoaderPlan,
-    inspectGeneratedFile,
-} from "./loader/vscodeAdapter";
-import { log, showOutput } from "./util";
 import { analyzeValidationResult } from "@alp-sdk/core/validation/service";
-import { executeValidatorPlan } from "./validation/vscodeAdapter";
 import {
     createWestAlpCleanPlan,
     createWestAlpFlashPlan,
@@ -19,6 +11,14 @@ import {
     createWestFlashPlan,
     createWestNativeRunPlan,
 } from "@alp-sdk/core/west/service";
+import * as vscode from "vscode";
+import {
+    ensureLoaderOutputDirectory,
+    executeLoaderPlan,
+    inspectGeneratedFile,
+} from "./loader/vscodeAdapter";
+import { log, showOutput } from "./util";
+import { executeValidatorPlan } from "./validation/vscodeAdapter";
 import {
     collectWestWorkspaceContext,
     executeWestPlan,
@@ -194,8 +194,6 @@ export function registerWestCommands(): vscode.Disposable[] {
     vscode.commands.registerCommand("alp.westAlpImage", () => westAlpImage()),
     vscode.commands.registerCommand("alp.westAlpFlash", () => westAlpFlash()),
     vscode.commands.registerCommand("alp.westAlpClean", () => westAlpClean()),
-    vscode.commands.registerCommand("alp.westAlpRenode", () =>
-      westAlpRenode(),
-    ),
+    vscode.commands.registerCommand("alp.westAlpRenode", () => westAlpRenode()),
   ];
 }
