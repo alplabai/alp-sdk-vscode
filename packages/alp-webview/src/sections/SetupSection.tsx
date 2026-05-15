@@ -141,60 +141,71 @@ export function SetupSection({ state }: Props) {
       : "readiness-banner banner-warn";
 
   const bannerText = allOk
-    ? "All systems ready"
+    ? "✓ All systems ready"
     : blockers.length > 0
-      ? `${blockers.length} blocker${blockers.length > 1 ? "s" : ""}${warnings.length > 0 ? `, ${warnings.length} warning${warnings.length > 1 ? "s" : ""}` : ""} — build is not possible until resolved`
-      : `${warnings.length} warning${warnings.length > 1 ? "s" : ""} — build may work but setup is incomplete`;
+      ? `✗ ${blockers.length} blocker${blockers.length > 1 ? "s" : ""}${warnings.length > 0 ? ` · ${warnings.length} warning${warnings.length > 1 ? "s" : ""}` : ""}`
+      : `⚠ ${warnings.length} warning${warnings.length > 1 ? "s" : ""}`;
 
   return (
     <div className="section">
-      <p className="section-title">Environment</p>
+      <div className="section-title-row">
+        <p className="section-title">Environment</p>
+        <button
+          className="recheck-btn"
+          title="Re-check environment"
+          aria-label="Re-check environment"
+          onClick={() =>
+            postMessage({ type: "runCommand", command: "alp.ideHub.refresh" })
+          }
+        >
+          ↺
+        </button>
+      </div>
 
       <div className={bannerClass}>
         <span>{bannerText}</span>
-        {!allOk && (
-          <vscode-button
-            appearance="icon"
-            title="Re-check environment"
-            onClick={() =>
-              postMessage({ type: "runCommand", command: "alp.ideHub.refresh" })
-            }
-          >
-            ↺
-          </vscode-button>
-        )}
       </div>
 
       <div className="setup-rows">
-        {rows.map((row) => (
-          <div key={row.id} className="setup-row">
-            <div className="setup-row-header">
-              <span className="setup-row-label">{row.label}</span>
-              <StatusChip state={row.chipState} />
-            </div>
-            <p className="setup-row-desc">{row.description}</p>
-            {row.instruction && (
-              <p className="setup-row-instruction">{row.instruction}</p>
-            )}
-            {row.action && (
-              <div className="setup-row-action">
-                <vscode-button
-                  appearance={
-                    row.action.kind === "auto" ? "primary" : "secondary"
-                  }
-                  onClick={() =>
-                    postMessage({
-                      type: "runCommand",
-                      command: row.action!.command,
-                    })
-                  }
-                >
-                  {row.action.label}
-                </vscode-button>
+        {rows.map((row) => {
+          const isOk = row.severity === "ok";
+          return (
+            <div
+              key={row.id}
+              className={`setup-row${isOk ? " setup-row-ok" : ""}`}
+            >
+              <div className="setup-row-header">
+                <span className="setup-row-label">{row.label}</span>
+                <div className="setup-row-header-right">
+                  {row.action && !isOk && (
+                    <vscode-button
+                      appearance={
+                        row.action.kind === "auto" ? "primary" : "secondary"
+                      }
+                      onClick={() =>
+                        postMessage({
+                          type: "runCommand",
+                          command: row.action!.command,
+                        })
+                      }
+                    >
+                      {row.action.label}
+                    </vscode-button>
+                  )}
+                  <StatusChip state={row.chipState} />
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+              {!isOk && (
+                <>
+                  <p className="setup-row-desc">{row.description}</p>
+                  {row.instruction && (
+                    <p className="setup-row-instruction">{row.instruction}</p>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {state.setup.lastBootstrapAt && (

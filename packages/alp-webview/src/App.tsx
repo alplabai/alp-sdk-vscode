@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BuildBar } from "./components/BuildBar";
 import { FooterSection } from "./sections/FooterSection";
 import { ProjectSection } from "./sections/ProjectSection";
 import { QuickActionsSection } from "./sections/QuickActionsSection";
@@ -68,6 +69,7 @@ export function App() {
 
   return (
     <div>
+      <BuildBar state={state} />
       <SetupSection state={state} />
       <vscode-divider role="separator" />
       <ProjectSection state={state} />

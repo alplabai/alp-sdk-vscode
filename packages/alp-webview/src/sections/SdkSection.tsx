@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { StatusChip } from "../components/StatusChip";
 import type { ChipState, LocalSdkEntry, SdkRelease, SdkStatus } from "../types";
 import { postMessage } from "../vscode";
@@ -8,6 +9,8 @@ interface Props {
   installLog: string | null;
   installActive: boolean;
 }
+
+type SdkTab = "active" | "local" | "download";
 
 function sdkChip(readiness: SdkStatus["readiness"]): ChipState {
   switch (readiness) {
@@ -26,31 +29,30 @@ function shortPath(p: string): string {
   return p.replace(/^\/Users\/[^/]+/, "~");
 }
 
-function readinessLabel(r: LocalSdkEntry["readiness"]): string {
-  switch (r) {
-    case "ready":
-      return "Ready";
-    case "partial":
-      return "Partial";
-    default:
-      return "Missing";
+function localEntryChip(r: LocalSdkEntry["readiness"]): ChipState {
+  return r === "ready" ? "ready" : r === "partial" ? "setup-required" : "not-installed";
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return iso;
   }
 }
 
-function localEntryChip(r: LocalSdkEntry["readiness"]): ChipState {
-  return r === "ready"
-    ? "ready"
-    : r === "partial"
-      ? "setup-required"
-      : "not-installed";
-}
+export function SdkSection({ sdk, releases, installLog, installActive }: Props) {
+  const [tab, setTab] = useState<SdkTab>("active");
+  const [selectedTag, setSelectedTag] = useState("");
 
-export function SdkSection({
-  sdk,
-  releases,
-  installLog,
-  installActive,
-}: Props) {
+  const localCount = sdk?.localEntries.length ?? 0;
+  const latestTag = releases?.[0]?.tag ?? "";
+  const installTarget = selectedTag || latestTag;
+
   if (!sdk) {
     return (
       <div className="section">
@@ -62,41 +64,59 @@ export function SdkSection({
     );
   }
 
-  const hasActive = sdk.activePath !== null;
-
   return (
     <div className="section">
       <p className="section-title">SDK Manager</p>
-      <div className="setup-rows">
-        {/* Active SDK row */}
-        <div className="setup-row">
-          <div className="setup-row-header">
-            <span className="setup-row-label">Active SDK</span>
-            {hasActive ? (
-              <StatusChip state={sdkChip(sdk.readiness)} />
-            ) : (
-              <StatusChip state="not-installed" />
-            )}
-          </div>
-          {hasActive ? (
-            <>
-              <p className="setup-row-desc">
-                {sdk.version && <span>v{sdk.version}&nbsp;&nbsp;</span>}
-                <span className="path-mono" title={sdk.activePath ?? ""}>
-                  {shortPath(sdk.activePath!)}
-                </span>
+
+      {/* Tab bar */}
+      <div className="sdk-tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={tab === "active"}
+          className={`sdk-tab${tab === "active" ? " active" : ""}`}
+          onClick={() => setTab("active")}
+        >
+          Active
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "local"}
+          className={`sdk-tab${tab === "local" ? " active" : ""}`}
+          onClick={() => setTab("local")}
+        >
+          Local{localCount > 0 && <span className="sdk-tab-badge">{localCount}</span>}
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "download"}
+          className={`sdk-tab${tab === "download" ? " active" : ""}`}
+          onClick={() => setTab("download")}
+        >
+          Download
+        </button>
+      </div>
+
+      {/* Active tab */}
+      {tab === "active" && (
+        <div className="sdk-tab-content">
+          <div className="setup-row">
+            <div className="setup-row-header">
+              <span className="setup-row-label">
+                {sdk.version ? `v${sdk.version}` : "Active SDK"}
+              </span>
+              <StatusChip state={sdk.activePath ? sdkChip(sdk.readiness) : "not-installed"} />
+            </div>
+            {sdk.activePath ? (
+              <p className="setup-row-desc path-mono" title={sdk.activePath}>
+                {shortPath(sdk.activePath)}
               </p>
-              {sdk.readiness !== "ready" && sdk.readiness !== "partial"
-                ? null
-                : null}
-            </>
-          ) : (
-            <p className="setup-row-desc">No active SDK configured.</p>
-          )}
-          <div className="setup-row-action">
-            <div className="btn-row">
+            ) : (
+              <p className="setup-row-desc">No active SDK configured.</p>
+            )}
+            <div className="setup-row-action">
               <vscode-button
                 appearance="secondary"
+                title="Browse for an SDK directory"
                 onClick={() => postMessage({ type: "selectSdkPath" })}
               >
                 Browse…
@@ -104,20 +124,21 @@ export function SdkSection({
             </div>
           </div>
         </div>
+      )}
 
-        {/* Local SDK candidates */}
-        {sdk.localEntries.length > 0 && (
-          <div className="setup-row">
-            <div className="setup-row-header">
-              <span className="setup-row-label">Local SDKs</span>
-            </div>
+      {/* Local tab */}
+      {tab === "local" && (
+        <div className="sdk-tab-content">
+          {localCount === 0 ? (
+            <p className="setup-row-desc sdk-empty-state">
+              No local SDK installations found. Use Download to get an SDK.
+            </p>
+          ) : (
             <div className="sdk-entry-list">
               {sdk.localEntries.map((entry) => (
                 <div key={entry.path} className="sdk-entry">
                   <div className="sdk-entry-header">
-                    <span className="sdk-entry-version">
-                      {entry.version ?? "unknown"}
-                    </span>
+                    <span className="sdk-entry-version">{entry.version ?? "unknown"}</span>
                     <StatusChip state={localEntryChip(entry.readiness)} />
                   </div>
                   <p className="setup-row-desc path-mono" title={entry.path}>
@@ -128,80 +149,91 @@ export function SdkSection({
                       <vscode-button
                         appearance="secondary"
                         onClick={() =>
-                          postMessage({
-                            type: "switchSdk",
-                            sdkPath: entry.path,
-                          })
+                          postMessage({ type: "switchSdk", sdkPath: entry.path })
                         }
                       >
                         Use This
                       </vscode-button>
                     </div>
                   )}
+                  {entry.path === sdk.activePath && (
+                    <p className="sdk-active-label">← active</p>
+                  )}
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      )}
 
-        {/* Download SDK */}
-        <div className="setup-row">
-          <div className="setup-row-header">
-            <span className="setup-row-label">Download SDK</span>
-          </div>
+      {/* Download tab */}
+      {tab === "download" && (
+        <div className="sdk-tab-content">
           <p className="setup-row-desc">
-            Download a versioned ALP SDK release to ~/.alp/sdk/.
+            Download a versioned ALP SDK release to <span className="path-mono">~/.alp/sdk/</span>.
           </p>
 
-          {installActive ? (
+          {/* Install progress */}
+          {installActive && (
             <div className="sdk-install-status">
               <vscode-progress-ring />
-              <span className="setup-row-desc">
-                {installLog ?? "Installing…"}
-              </span>
+              <span className="setup-row-desc">{installLog ?? "Installing…"}</span>
             </div>
-          ) : installLog && !installActive ? (
+          )}
+          {!installActive && installLog && (
             <p
-              className={`setup-row-desc ${installLog.startsWith("Install failed") ? "text-err" : "text-ok"}`}
+              className={`setup-row-desc sdk-install-result ${
+                installLog.startsWith("Install failed") ? "text-err" : "text-ok"
+              }`}
             >
               {installLog}
             </p>
-          ) : null}
+          )}
 
           {!installActive && (
-            <div className="setup-row-action">
+            <div className="sdk-download-controls">
               {releases === null ? (
-                <vscode-button
-                  onClick={() => postMessage({ type: "requestSdkReleases" })}
-                >
+                <vscode-button onClick={() => postMessage({ type: "requestSdkReleases" })}>
                   Load Releases
                 </vscode-button>
               ) : releases.length === 0 ? (
                 <p className="setup-row-desc">No releases found.</p>
               ) : (
-                <div className="sdk-release-list">
-                  {releases.slice(0, 5).map((r) => (
-                    <div key={r.tag} className="sdk-release-row">
-                      <span className="sdk-release-tag">{r.tag}</span>
-                      <vscode-button
-                        appearance="secondary"
-                        onClick={() =>
-                          postMessage({
-                            type: "requestSdkInstall",
-                            version: r.tag,
-                          })
-                        }
-                      >
-                        Install
-                      </vscode-button>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div className="sdk-release-picker">
+                    <select
+                      className="sdk-release-select"
+                      value={installTarget}
+                      onChange={(e) => setSelectedTag(e.target.value)}
+                      aria-label="Select SDK release version"
+                    >
+                      {releases.map((r) => (
+                        <option key={r.tag} value={r.tag}>
+                          {r.tag}
+                          {r.publishedAt ? `  ·  ${formatDate(r.publishedAt)}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <vscode-button
+                      appearance="primary"
+                      onClick={() =>
+                        postMessage({ type: "requestSdkInstall", version: installTarget })
+                      }
+                    >
+                      Install
+                    </vscode-button>
+                  </div>
+                  {releases.find((r) => r.tag === installTarget)?.releaseNotesSummary && (
+                    <p className="setup-row-desc sdk-release-notes">
+                      {releases.find((r) => r.tag === installTarget)!.releaseNotesSummary}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
