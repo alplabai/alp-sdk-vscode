@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FooterSection } from "./sections/FooterSection";
 import { ProjectSection } from "./sections/ProjectSection";
 import { QuickActionsSection } from "./sections/QuickActionsSection";
 import { SdkSection } from "./sections/SdkSection";
@@ -79,6 +80,7 @@ export function App() {
       />
       <vscode-divider role="separator" />
       <QuickActionsSection />
+      <FooterSection />
     </div>
   );
 }

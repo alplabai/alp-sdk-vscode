@@ -93,10 +93,16 @@ export interface SwitchSdkMessage {
   type: "switchSdk";
   sdkPath: string;
 }
+export interface OpenUrlMessage {
+  type: "openUrl";
+  url: string;
+  label: string;
+}
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
   | SelectSdkPathMessage
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
-  | SwitchSdkMessage;
+  | SwitchSdkMessage
+  | OpenUrlMessage;

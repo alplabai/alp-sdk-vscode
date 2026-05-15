@@ -113,10 +113,19 @@ export interface SwitchSdkMessage {
   sdkPath: string;
 }
 
+export interface OpenUrlMessage {
+  type: "openUrl";
+  /** Target URL — must be https:// or vscode:// only. */
+  url: string;
+  /** Human-readable label used for telemetry tracking. */
+  label: string;
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
   | SelectSdkPathMessage
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
-  | SwitchSdkMessage;
+  | SwitchSdkMessage
+  | OpenUrlMessage;

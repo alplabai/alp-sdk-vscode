@@ -10,10 +10,10 @@ import * as cp from "child_process";
 import * as fs from "fs";
 import * as vscode from "vscode";
 import {
+    emptyAlpIdeState,
     PROTOCOL_VERSION,
     type ExtToWebviewMessage,
     type WebviewToExtMessage,
-    emptyAlpIdeState,
 } from "./messages";
 import { queryAlpIdeState, sdkCacheRoot } from "./vscodeAdapter";
 
@@ -113,6 +113,9 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
         break;
       case "switchSdk":
         void this.handleSwitchSdk(msg.sdkPath);
+        break;
+      case "openUrl":
+        void this.handleOpenUrl(msg.url);
         break;
     }
   }
@@ -255,6 +258,12 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
         }
       },
     );
+  }
+
+  private handleOpenUrl(url: string): void {
+    // Only allow safe schemes to prevent protocol-handler abuse.
+    if (!url.startsWith("https://") && !url.startsWith("vscode://")) return;
+    void vscode.env.openExternal(vscode.Uri.parse(url));
   }
 
   private buildHtml(webview: vscode.Webview): string {
