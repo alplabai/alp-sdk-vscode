@@ -1,9 +1,9 @@
 import {
-  provideVSCodeDesignSystem,
-  vsCodeButton,
-  vsCodeDivider,
-  vsCodeProgressRing,
-  vsCodeTag,
+    provideVSCodeDesignSystem,
+    vsCodeButton,
+    vsCodeDivider,
+    vsCodeProgressRing,
+    vsCodeTag,
 } from "@vscode/webview-ui-toolkit";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
