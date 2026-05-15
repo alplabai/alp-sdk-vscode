@@ -875,7 +875,7 @@ Subtasks:
 
 ### Task 2.5 — Add SDK management domain model and service
 
-**Status:** planned — not yet implemented.
+**Status:** implemented — `packages/alp-core/src/sdk/` (models, adapterCore, service).
 
 The SDK management logic lives in `@alp-sdk/core/sdk/` and is consumed
 by both the CLI (Task 6.4) and the VS Code extension UI (Task 10.5).
@@ -1036,7 +1036,7 @@ Subtasks:
 
 ### Task 6.4 — Ship SDK management CLI commands
 
-**Status:** planned — not yet implemented.
+**Status:** implemented — `packages/alp-cli/src/cli/services/commands/sdk.ts`.
 
 The CLI `alp sdk` subcommand family is a thin surface over the shared
 core module `@alp-sdk/core/sdk/` (Task 2.5). The CLI owns argument

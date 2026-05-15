@@ -17,6 +17,7 @@ import {
     runInspectCommand,
     runPresetsCommand,
     runScaffoldCommand,
+    runSdkCommand,
     runSupportBundleCommand,
     runTraceCommand,
     runValidateCommand,
@@ -38,6 +39,7 @@ const KNOWN_COMMANDS: readonly CliCommand[] = [
   "doctor",
   "support-bundle",
   "debug-config",
+  "sdk",
 ];
 
 const IMPLEMENTED_COMMANDS = new Set<CliCommand>([
@@ -53,11 +55,14 @@ const IMPLEMENTED_COMMANDS = new Set<CliCommand>([
   "trace",
   "doctor",
   "support-bundle",
+  "sdk",
 ]);
 
 export { createEnvelope, parseCliArgs, runValidateCommand };
 
-export function executeCli(input: CliExecutionInput): CliExecutionResult {
+export async function executeCli(
+  input: CliExecutionInput,
+): Promise<CliExecutionResult> {
   const parsed = parseCliArgs(input.argv);
 
   if (parsed.flags.help) {
@@ -176,6 +181,13 @@ export function executeCli(input: CliExecutionInput): CliExecutionResult {
       return runTraceCommand(parsed.flags, input);
     case "support-bundle":
       return runSupportBundleCommand(parsed.flags, input);
+    case "sdk":
+      return runSdkCommand(
+        parsed.commandArgs[0],
+        parsed.commandArgs.slice(1),
+        parsed.flags,
+        input,
+      );
     default:
       return createFailureResult(
         parsed.command,

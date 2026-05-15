@@ -29,6 +29,7 @@ export function createHelpResult(
     "Inspect flags: --path <field-path> --show-origin",
     "Trace flags: --target <emit-mode> --path <field-path>",
     "Support-bundle flags: --destination <path> --target-kind <...> --server <...>",
+    "Sdk flags: sdk list | sdk install <version> | sdk current | sdk switch <version|path> [--destination <cache-root>] [--sdk-root <path>]",
   ];
 
   return {

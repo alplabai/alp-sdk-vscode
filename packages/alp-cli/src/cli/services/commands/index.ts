@@ -9,6 +9,7 @@ export { runInitCommand } from "./init";
 export { runInspectCommand } from "./inspect";
 export { runPresetsCommand } from "./presets";
 export { runScaffoldCommand } from "./scaffold";
+export { runSdkCommand } from "./sdk";
 export { runSupportBundleCommand } from "./supportBundle";
 export { runTraceCommand } from "./trace";
 export { runValidateCommand } from "./validate";
