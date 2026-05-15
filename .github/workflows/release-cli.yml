@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
+#
+# Pack, smoke-test, and publish the `alp-sdk` CLI npm package.
+# Intentionally scoped to packages/alp-cli only — the VS Code extension
+# and webview are NOT compiled here.
 
 name: release-cli
 
@@ -37,17 +41,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: npm
+          node-version: '22'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Compile CLI
-        run: npm run compile
+      - name: Bundle CLI (esbuild — extension/webview not compiled)
+        run: pnpm --filter alp-sdk run bundle
 
       - name: Smoke test packed CLI
         run: bash ./scripts/ci/smoke-cli.sh
@@ -72,18 +81,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '22'
           registry-url: https://registry.npmjs.org
-          cache: npm
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Compile CLI
-        run: npm run compile
+      - name: Bundle CLI
+        run: pnpm --filter alp-sdk run bundle
 
       - name: Resolve npm tag
         run: |
@@ -94,7 +108,8 @@ jobs:
           fi
 
       - name: Publish package
-        run: npm publish --provenance --access public --tag "$NPM_TAG"
+        working-directory: packages/alp-cli
+        run: pnpm publish --provenance --access public --no-git-checks --tag "$NPM_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -110,15 +125,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: npm
+          node-version: '22'
 
       - name: Verify npx from published version
         run: |
-          PACKAGE_NAME="$(node -p "require('./package.json').name")"
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          PACKAGE_NAME="$(node -p "require('./packages/alp-cli/package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./packages/alp-cli/package.json').version")"
           npx --yes "${PACKAGE_NAME}@${PACKAGE_VERSION}" --help | tee /tmp/cli-help.txt
           grep -Eqi "ALP CLI|Usage: alp|Commands:" /tmp/cli-help.txt
