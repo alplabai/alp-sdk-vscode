@@ -33,3 +33,10 @@ TASK_RECIPES.md
 TEST_MATRIX.md
 TROUBLESHOOTING_*.md
 readme.md
+
+packages/alp-webview/node_modules/**
+packages/alp-cli/node_modules/**
+packages/alp-core/node_modules/**
+packages/**/src/**
+packages/**/vite.config.*
+packages/**/tsconfig*

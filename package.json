@@ -33,6 +33,7 @@
     "nxp"
   ],
   "activationEvents": [
+    "onView:alp-ide.panel",
     "onLanguage:yaml",
     "workspaceContains:**/board.yaml"
   ],
