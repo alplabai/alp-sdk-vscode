@@ -42,3 +42,55 @@ test("createStatusBarPresentation renders populated summary", () => {
   );
   assert.equal(presentation.command, "alp.openConfigurator");
 });
+
+test("parseBoardSummary extracts first active os from cores: in v2 documents", () => {
+  const summary = parseBoardSummary(`
+schema_version: 2
+som:
+  sku: E1M-V2N101
+carrier:
+  name: E1M-EVK
+cores:
+  a55_cluster:
+    os: yocto
+    image: alp-image-edge
+  m33_sm:
+    os: zephyr
+    app: apps/zephyr-peer
+`);
+
+  assert.deepEqual(summary, {
+    sku: "E1M-V2N101",
+    carrier: "E1M-EVK",
+    os: "yocto",
+    coreIds: ["a55_cluster", "m33_sm"],
+  });
+});
+
+test("parseBoardSummary returns undefined os when all cores are off", () => {
+  const summary = parseBoardSummary(`
+schema_version: 2
+som:
+  sku: E1M-V2N101
+cores:
+  m33_sm:
+    os: off
+`);
+
+  assert.equal(summary?.os, undefined);
+  assert.deepEqual(summary?.coreIds, ["m33_sm"]);
+});
+
+test("createStatusBarPresentation shows core count for multi-core v2 boards", () => {
+  const presentation = createStatusBarPresentation({
+    sku: "E1M-V2N101",
+    carrier: "E1M-EVK",
+    os: "yocto",
+    coreIds: ["a55_cluster", "m33_sm"],
+  });
+
+  assert.equal(
+    presentation.text,
+    "$(circuit-board) E1M-V2N101 · E1M-EVK · 2 cores",
+  );
+});

@@ -1,14 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 
+export interface CoreEntry {
+  os: "zephyr" | "yocto" | "baremetal" | "off";
+  app?: string;
+  image?: string;
+  peripherals?: string[];
+  libraries?: string[];
+  inference?: { backend?: string; default_arena_kib?: number };
+  iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
+}
+
+export interface IpcCarveOut {
+  name: string;
+  endpoints: string[];
+  size_kib: number;
+}
+
 export interface BoardModel {
   schema_version: number;
   som: { sku: string };
   carrier?: { name: string; populated?: Record<string, boolean> };
-  os: string;
+  /** v1 only. Absent in schema_version >= 2 (use `cores` instead). */
+  os?: string;
+  /** v2 only. Per-core runtime + app mapping. */
+  cores?: Record<string, CoreEntry>;
+  /** v2 only. Cross-core IPC shared-memory carve-outs. */
+  ipc?: IpcCarveOut[];
   inference?: { backend?: string; default_arena_kib?: number };
   libraries?: string[];
   iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
   diagnostics?: { last_error?: boolean; log_level?: string };
+  [key: string]: unknown;
 }
 
 export interface CarrierPreset {

@@ -12,11 +12,31 @@ export function parseBoardSummary(text: string): BoardSummary | null {
   const record = parsed as Record<string, unknown>;
   const som = record.som as Record<string, unknown> | undefined;
   const carrier = record.carrier as Record<string, unknown> | undefined;
+  const schemaVersion = (record.schema_version as number | undefined) ?? 1;
+
+  let os: string | undefined;
+  let coreIds: string[] | undefined;
+
+  if (schemaVersion >= 2) {
+    const cores = record.cores as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (cores) {
+      coreIds = Object.keys(cores);
+      const firstActive = Object.values(cores).find(
+        (c) => c.os && c.os !== "off",
+      );
+      os = firstActive?.os as string | undefined;
+    }
+  } else {
+    os = (record.os as string | undefined) ?? undefined;
+  }
 
   return {
     sku: (som?.sku as string | undefined) ?? undefined,
     carrier: (carrier?.name as string | undefined) ?? undefined,
-    os: (record.os as string | undefined) ?? undefined,
+    os,
+    ...(coreIds !== undefined && { coreIds }),
   };
 }
 
@@ -34,7 +54,11 @@ export function createStatusBarPresentation(
 
   const parts = [summary.sku];
   if (summary.carrier) parts.push(summary.carrier);
-  if (summary.os) parts.push(summary.os);
+  if (summary.coreIds && summary.coreIds.length > 1) {
+    parts.push(`${summary.coreIds.length} cores`);
+  } else if (summary.os) {
+    parts.push(summary.os);
+  }
 
   return {
     text: `$(circuit-board) ${parts.join(" · ")}`,

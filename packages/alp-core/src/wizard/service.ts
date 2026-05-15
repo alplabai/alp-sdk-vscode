@@ -558,7 +558,7 @@ function createBoardModel(input: WizardPlanInput): BoardModel {
     schema_version: 1,
     som: { sku: input.somSku },
     carrier: { name: input.carrierName },
-    os: input.os,
+    os: input.os ?? "zephyr",
   };
 
   const libraries = [...new Set(input.libraries)].sort();

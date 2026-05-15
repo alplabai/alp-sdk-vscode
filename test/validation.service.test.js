@@ -64,12 +64,12 @@ test("analyzeValidationResult classifies hint lines as suggestions", () => {
     status: 1,
     stdout: "",
     stderr:
-      "FAIL schema_version: unsupported value\nHINT: set schema_version to 1\n",
+      "FAIL schema_version: unsupported value\nHINT: set schema_version to 2\n",
   });
 
   assert.equal(result.outcome, "schema-violation");
   assert.deepEqual(result.issues, [
     { message: "FAIL schema_version: unsupported value", severity: "error" },
-    { message: "HINT: set schema_version to 1", severity: "suggestion" },
+    { message: "HINT: set schema_version to 2", severity: "suggestion" },
   ]);
 });

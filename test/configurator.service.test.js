@@ -52,3 +52,64 @@ test("normalizeBoardModel preserves unknown hand-edited fields", () => {
   assert.equal(normalized.custom_flag, true);
   assert.deepEqual(normalized.nested_custom, { alpha: 1, beta: "manual" });
 });
+
+test("normalizeBoardModel preserves cores: and ipc: blocks in v2 documents", () => {
+  const model = {
+    schema_version: 2,
+    som: { sku: "E1M-V2N101" },
+    carrier: { name: "E1M-EVK" },
+    cores: {
+      a55_cluster: { os: "yocto", image: "alp-image-edge" },
+      m33_sm: { os: "zephyr", app: "apps/zephyr-peer" },
+    },
+    ipc: [
+      {
+        name: "main_rpmsg",
+        endpoints: ["a55_cluster", "m33_sm"],
+        size_kib: 64,
+      },
+    ],
+    diagnostics: { log_level: "info" },
+  };
+
+  const normalized = normalizeBoardModel(model);
+
+  assert.deepEqual(normalized.cores, model.cores);
+  assert.deepEqual(normalized.ipc, model.ipc);
+  assert.equal(normalized.os, undefined);
+});
+
+test("normalizeBoardModel strips top-level os: from v2 documents", () => {
+  const normalized = normalizeBoardModel({
+    schema_version: 2,
+    som: { sku: "E1M-V2N101" },
+    cores: { a55_cluster: { os: "yocto" } },
+    os: "zephyr",
+  });
+
+  assert.equal(normalized.os, undefined);
+  assert.ok(normalized.cores);
+});
+
+test("parseBoardModel parses v2 document with cores: block", () => {
+  const parsed = parseBoardModel(`
+schema_version: 2
+som:
+  sku: E1M-V2N101
+carrier:
+  name: E1M-EVK
+cores:
+  a55_cluster:
+    os: yocto
+    image: alp-image-edge
+  m33_sm:
+    os: zephyr
+    app: apps/zephyr-peer
+`);
+
+  assert.equal(parsed.schema_version, 2);
+  assert.equal(parsed.os, undefined);
+  assert.deepEqual(Object.keys(parsed.cores), ["a55_cluster", "m33_sm"]);
+  assert.equal(parsed.cores.a55_cluster.os, "yocto");
+  assert.equal(parsed.cores.m33_sm.os, "zephyr");
+});

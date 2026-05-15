@@ -29,7 +29,8 @@ export interface WizardPlanInput {
   templateId: WizardTemplateId;
   somSku: string;
   carrierName: string;
-  os: string;
+  /** v1 board.yaml only. Omit for schema_version 2 or host-tooling-starter. */
+  os?: string;
   features: WizardFeatureFlags;
   libraries: string[];
 }
