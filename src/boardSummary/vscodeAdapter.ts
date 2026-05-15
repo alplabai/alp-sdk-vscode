@@ -2,8 +2,8 @@
 
 import * as fs from "fs";
 import { log } from "../util";
-import { loadBoardSummaryWithDependencies } from "./adapterCore";
-import { BoardSummary } from "./models";
+import { loadBoardSummaryWithDependencies } from "@alp-sdk/core/boardSummary/adapterCore";
+import { BoardSummary } from "@alp-sdk/core/boardSummary/models";
 
 export function loadBoardSummary(
   boardYamlPath: string | null,

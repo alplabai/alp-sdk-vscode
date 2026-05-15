@@ -4,8 +4,8 @@ import * as vscode from "vscode";
 import {
     ConfiguratorInboundMessage,
     ConfiguratorOutboundMessage,
-} from "./configurator/models";
-import { createConfiguratorPanelHtml } from "./configurator/panelHtml";
+} from "@alp-sdk/core/configurator/models";
+import { createConfiguratorPanelHtml } from "@alp-sdk/core/configurator/panelHtml";
 import {
     loadBoardModel,
     loadPresetCatalogue,

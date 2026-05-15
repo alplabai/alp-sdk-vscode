@@ -33,9 +33,15 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 ├── PLAN.md                  -- product roadmap and phased delivery
 ├── README.md
 ├── LICENSE                  -- Apache-2.0
-├── package.json             -- VS Code extension manifest
+├── package.json             -- VS Code extension manifest (workspace root)
+├── pnpm-workspace.yaml      -- pnpm workspace config
 ├── tsconfig.json
-├── src/                     -- TypeScript source
+├── packages/
+│   ├── alp-core/            -- @alp-sdk/core: shared domain logic
+│   │   └── src/             -- board, configurator, sdk, wizard, ...
+│   └── alp-cli/             -- alp-sdk: standalone CLI (esbuild bundle)
+│       └── src/cli/         -- commands, services, arg parsing
+├── src/                     -- VS Code extension TypeScript source
 │   ├── README.md            -- source folder/module guide
 │   ├── extension.ts         -- activation entry point
 │   ├── bootstrap.ts         -- extension bootstrap and service wiring
@@ -139,8 +145,8 @@ git fetch && git checkout main
 cd ..
 git add alp-sdk-upstream
 git commit -m "deps(alp-sdk): bump submodule to <sha>"
-npm test          # re-runs the schema-snapshot tests
-npm run package   # builds the .vsix against the new schema
+pnpm test         # re-runs the schema-snapshot tests
+pnpm run package  # builds the .vsix against the new schema
 ```
 
 ## Build
@@ -148,17 +154,17 @@ npm run package   # builds the .vsix against the new schema
 ```bash
 git clone --recurse-submodules https://github.com/alplabai/alp-sdk-vscode.git
 cd alp-sdk-vscode
-npm install
-npm run compile     # tsc -> out/
-npm test            # compile + lightweight service / adapter tests
-npm run package     # vsce package -> alp-sdk-<version>.vsix
+pnpm install
+pnpm run compile    # tsc -> out/ (extension) + packages/alp-cli/dist/
+pnpm test           # compile + lightweight service / adapter tests
+pnpm run package    # vsce package -> alp-sdk-<version>.vsix
 ```
 
 Load the local build via `Extensions: Install from VSIX`.
 
 ## Development
 
-Use `npm test` as the default verification step while changing the
+Use `pnpm test` as the default verification step while changing the
 extension.
 
 The current test setup is intentionally lightweight:

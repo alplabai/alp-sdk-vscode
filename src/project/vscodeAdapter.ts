@@ -6,8 +6,8 @@ import {
     ProjectContext,
     ProjectResolutionInput,
     ProjectSettings,
-} from "./models";
-import { resolveProjectContext } from "./service";
+} from "@alp-sdk/core/project/models";
+import { resolveProjectContext } from "@alp-sdk/core/project/service";
 
 export function collectProjectContext(): ProjectContext {
   return resolveProjectContext(createResolutionInput(), fs.existsSync);

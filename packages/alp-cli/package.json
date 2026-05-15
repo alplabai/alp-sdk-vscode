@@ -1,0 +1,35 @@
+{
+  "name": "alp-sdk",
+  "version": "0.3.0",
+  "description": "ALP CLI: board configuration, generation, and project tooling for embedded ALP SDK projects.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alplabai/alp-sdk-vscode.git",
+    "directory": "packages/alp-cli"
+  },
+  "homepage": "https://github.com/alplabai/alp-sdk-vscode",
+  "bugs": {
+    "url": "https://github.com/alplabai/alp-sdk-vscode/issues"
+  },
+  "bin": {
+    "alp": "./dist/cli/main.js"
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "bundle": "esbuild src/cli/main.ts --bundle --platform=node --target=node18 --outfile=dist/cli/main.js --external:@clack/prompts --banner:js='#!/usr/bin/env node' --tsconfig=tsconfig.json --log-level=warning",
+    "prepack": "pnpm run bundle",
+    "cli": "node ./dist/cli/main.js",
+    "cli:pack": "pnpm pack --pack-destination ../../dist",
+    "cli:smoke": "bash ../../scripts/ci/smoke-cli.sh"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.0.8"
+  },
+  "devDependencies": {
+    "@alp-sdk/core": "workspace:*",
+    "@types/node": "^25.7.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3"
+  }
+}

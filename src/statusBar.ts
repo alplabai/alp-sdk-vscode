@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { createStatusBarPresentation } from "./boardSummary/service";
+import { createStatusBarPresentation } from "@alp-sdk/core/boardSummary/service";
 import { loadBoardSummary } from "./boardSummary/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 

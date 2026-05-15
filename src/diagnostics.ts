@@ -6,7 +6,7 @@ import {
     analyzeValidationResult,
     createValidatorPlan,
     isBoardYamlPath,
-} from "./validation/service";
+} from "@alp-sdk/core/validation/service";
 import {
     collectValidationWorkspaceContext,
     executeValidatorPlan,

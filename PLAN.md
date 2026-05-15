@@ -505,6 +505,185 @@ and evolve without regressions.
 - new releases can expand features without producing drift between the
   UI, LSP, CLI, and documentation surfaces
 
+## Phase 8 — ALP IDE Workflow Hub Experience
+
+**Goal:** deliver a true GUI-first onboarding experience with sidebar,
+side-panel, and full-window wizard modes, including SDK selection and
+installation workflows, aligned with native VS Code theme behavior.
+
+Do not replicate a Solution Explorer pattern. VS Code already provides
+file browsing. The ALP IDE surface should be workflow-first and
+status-first.
+
+### Phase 8 Tasks
+
+1. Add an ALP Activity Bar view container using
+   `contributes.viewsContainers`.
+2. Add an ALP IDE root view using `contributes.views`.
+3. Add status-first sections:
+   - Extension Setup
+   - SDK Management
+   - West Workspaces
+   - Projects
+   - Project Details
+   - Active Project State
+4. Add setup status rows with consistent state chips:
+   - Ready
+   - Setup Required
+   - Not Installed
+   - Not Updated
+5. Add progress banner messaging driven by state
+   (for example `2 of 3 steps remaining`).
+6. Add zero-friction prerequisite orchestrator for first-run and
+   re-check flows.
+7. Add component inventory model for host tools, SDK, west, workspace,
+   and project readiness.
+8. Add missing-component diagnostics with blocker/warning severity.
+9. Add one-click `Fix Now` actions for safe automated remediations.
+10. Add guided fallback steps for manual remediations.
+11. Add section-level quick actions (Activate Workspace, New Workspace,
+    Refresh, Save).
+12. Add a `Quick Actions` card grid for setup workflows.
+13. Add cards for Host Tools, Install SDK, West Update, Settings, and
+   Add Project.
+14. Add per-card status chips with semantic color tokens.
+15. Add concise descriptions and click routing for each card.
+16. Add bottom resource link bar (Documentation, Getting Started, West
+   Docs, Report Issues).
+17. Add contextual empty-state cards for missing workspace/project data.
+18. Add side-panel wizard mode for guided editing and preview.
+19. Add full-window wizard mode for immersive onboarding.
+20. Build a shared stepper/state model used by all wizard surfaces.
+21. Build webview frontend with React + TypeScript + Vite.
+22. Bootstrap from Microsoft's official VS Code webview React
+   sample/template baseline.
+23. Use `@vscode/webview-ui-toolkit` as the default component system.
+24. Register toolkit components via
+   `provideVSCodeDesignSystem().register(...)`.
+25. Use VS Code CSS variables (`--vscode-*`) for all custom styling.
+26. Validate Light/Dark/High Contrast theme compatibility.
+27. Add an ALP IDE Overview panel in editor area with setup summary
+    and next actions.
+28. Add new-project flow with template/hardware/features selection.
+29. Add existing-project flow with workspace picker and validation.
+30. Add completion step supporting "open in current" vs "open in new"
+    window.
+31. Add SDK management flow:
+    - detect local SDK candidates
+    - manual SDK path selection
+    - guided SDK download/clone
+    - progress, cancel, and log visibility
+32. Add SDK readiness checks for loader scripts, metadata, and required
+      tools.
+33. Add development component management for compiler, CMake, Ninja,
+    Python, west, and environment paths.
+34. Add workspace lifecycle actions: create, activate, switch, repair,
+    remove.
+35. Add drift detection and remediation guidance for workspace and
+    toolchain mismatch.
+36. Add review/apply flow with file tree diff, overwrite warnings, and
+      generated-output preview.
+37. Add typed webview message contracts and synchronization between
+      extension state and UI state.
+38. Add smoke and integration tests for sidebar/panel/full-window
+      wizard flows.
+39. Add GUI-first documentation for onboarding and SDK setup.
+
+### Phase 8 Key Phrases and Keywords
+
+- `ALP IDE`
+- `Setup at a glance`
+- `Ready`
+- `Setup Required`
+- `Not Installed`
+- `No Active Project`
+- `Install SDK`
+- `Activate Workspace`
+- `Create Project`
+- `Continue Setup`
+- `Quick Actions`
+- `West Update`
+- `Project Details`
+- `Missing Components`
+- `Blocked`
+- `Fix Now`
+- `Retry Check`
+- `Needs Manual Step`
+
+### Phase 8 Deliverables
+
+- ALP Activity Bar container + ALP IDE root view
+- status-first sectioned sidebar experience
+- Quick Actions card grid with setup status chips
+- zero-friction prerequisite detection and remediation flow
+- bottom resource link bar for docs and issue reporting
+- side-panel and full-window wizard surfaces
+- SDK manager UI with install + validation flow
+- React + TypeScript + Vite webview app scaffold
+- `@vscode/webview-ui-toolkit` based component library integration
+- unified wizard state contract
+- end-to-end UI wizard smoke/integration coverage
+
+### Phase 8 Exit Criteria
+
+- users can discover and launch onboarding from the Activity Bar
+   without command palette
+- users can operate primary flows from ALP IDE sections without using
+  file explorer as primary UI
+- users can install/select SDK and verify readiness entirely from UI
+- users can create/open project and choose current/new window on
+   completion
+- one shared state model drives sidebar, side-panel, and full-window
+   modes
+- Quick Actions cards provide direct entry to core setup flows
+- resource links are visible and actionable without opening command
+  palette
+- users can identify missing components with precise blocker/warning
+  diagnostics and actionable fixes
+- users can recover from most environment issues using guided or
+  one-click remediations
+- UI remains readable and consistent in Light, Dark, and High Contrast
+   themes
+- critical wizard paths are covered by automated tests
+
+## Phase 9 — Standalone CLI Productization
+
+**Goal:** deliver CLI as an independently installable artifact while
+preserving one contract across extension and automation use, starting
+with npm as the primary distribution channel.
+
+### Phase 9 Tasks
+
+1. Lock primary distribution strategy to npm package.
+2. Freeze package identity (`alp-sdk` package, `alp` bin command,
+   `alplabai` ownership).
+3. Extract reusable CLI core boundaries away from extension adapters.
+4. Define semver, release channels, and compatibility policy.
+5. Publish standalone npm distribution with signed artifacts and
+   provenance metadata.
+6. Add compatibility tests between extension-invoked CLI and standalone
+   CLI.
+7. Add CI/CD release pipeline and rollback playbook.
+8. Add install docs for dev machines, CI agents, and air-gapped/offline
+   environments.
+9. Add smoke verification for `npm i -g` and `npx` install paths.
+10. Run an optional Rust feasibility spike for future optimization.
+
+### Phase 9 Deliverables
+
+- standalone npm CLI distribution channel
+- versioned npm package identity and bin contract
+- versioned contract policy and changelog discipline
+- compatibility test matrix for extension vs standalone CLI
+- documented release, provenance, and rollback workflow
+
+### Phase 9 Exit Criteria
+
+- CLI runs independently from VS Code extension runtime
+- contract parity is maintained across extension and standalone modes
+- npm publish flow is automated, reproducible, and production-grade
+- global and `npx` install smoke checks pass on supported platforms
+
 ## 6. Cross-Functional Workstreams
 
 The roadmap above should be executed through three continuous
@@ -525,8 +704,9 @@ Owns:
 Owns:
 
 - LSP
-- configurator UI
-- wizard flows
+- Activity Bar and view-container architecture
+- ALP IDE status-first section design
+- configurator UI and guided flows
 - preview/diff views
 - command palette integration
 
@@ -547,10 +727,12 @@ The implementation order should be:
 2. Phase 1 — shared core extraction
 3. Phase 2 — LSP foundation
 4. Phase 3 — VS Code UX redesign (MVP)
-5. Phase 5 — CLI foundation
-6. Phase 4 — project/source scaffolding
-7. Phase 6 — expanded docs
-8. Phase 7 — release hardening
+5. Phase 8 — ALP IDE workflow hub experience
+6. Phase 5 — CLI foundation
+7. Phase 9 — standalone CLI productization
+8. Phase 4 — project/source scaffolding
+9. Phase 6 — expanded docs
+10. Phase 7 — release hardening
 
 This sequence minimizes rework. If the team builds the UI and CLI
 before the shared core exists, the product will accumulate duplicate
@@ -691,6 +873,37 @@ Subtasks:
 3. Define overwrite policy for generated starter files.
 4. Add preview support for scaffolded project trees.
 
+### Task 2.5 — Add SDK management domain model and service
+
+**Status:** implemented — `packages/alp-core/src/sdk/` (models, adapterCore, service).
+
+The SDK management logic lives in `@alp-sdk/core/sdk/` and is consumed
+by both the CLI (Task 6.4) and the VS Code extension UI (Task 10.5).
+Neither surface re-implements this logic; they only adapt it for their
+own output format and interaction model.
+
+Owned by: `packages/alp-core/src/sdk/`
+
+Subtasks:
+
+1. Define `SdkRelease` model: tag name, publish date, download URL,
+   checksum, and release notes summary.
+2. Define `LocalSdkEntry` model: resolved path, detected version,
+   readiness state (scripts, metadata, toolchain present).
+3. Implement `listRemoteSdkReleases()`: query `alplabai/alp-sdk` GitHub
+   Releases API and return a typed list of `SdkRelease` entries.
+4. Implement `installSdkRelease(version, destinationRoot)`: download
+   and verify a specific release tarball to a local cache directory.
+5. Implement `listLocalSdkEntries(searchRoots)`: discover installed SDK
+   candidates from a list of search paths.
+6. Implement `resolveActiveSdk(workspaceRoot)`: resolve the SDK path
+   active for a given project workspace.
+7. Implement `switchActiveSdk(workspaceRoot, sdkPath)`: update the
+   active SDK pointer for a workspace.
+8. Define a `SdkReadinessReport` for surface-agnostic readiness output.
+9. Keep all I/O and HTTP logic behind injectable adapters so the core
+   remains unit-testable without network access.
+
 ## Epic 3 — Language Server
 
 **Outcome:** `board.yaml` editing becomes LSP-native rather than
@@ -772,6 +985,11 @@ Subtasks:
 3. Add an IoT template.
 4. Add an edge-AI template.
 5. Add a board-diagnostics template.
+6. Add a host-tooling-starter template (planned — file generation not yet
+   implemented): monorepo scaffold for a host-side ALP tool with a shared
+   core package (`packages/core`), a standalone CLI (`packages/cli`), and
+   a VS Code extension surface (`src/`). Follows the one-core-many-surfaces
+   principle established in Phase 9.
 
 ### Task 5.2 — Build partial scaffolding
 
@@ -815,6 +1033,31 @@ Subtasks:
 3. Implement `alp diff`.
 4. Add shell completion support.
 5. Add CI integration examples.
+
+### Task 6.4 — Ship SDK management CLI commands
+
+**Status:** implemented — `packages/alp-cli/src/cli/services/commands/sdk.ts`.
+
+The CLI `alp sdk` subcommand family is a thin surface over the shared
+core module `@alp-sdk/core/sdk/` (Task 2.5). The CLI owns argument
+parsing, output formatting, and exit codes only; all domain logic
+(release listing, install, discovery, switch) lives in the core and is
+shared with the VS Code extension UI (Task 10.5).
+
+Subtasks:
+
+1. Implement `alp sdk list`: call `listRemoteSdkReleases()` from core
+   and render tag name, publish date, and release notes in text and
+   JSON modes.
+2. Implement `alp sdk install <version>`: call
+   `installSdkRelease(version, dest)` from core; show progress and
+   verify checksum.
+3. Implement `alp sdk current`: call `resolveActiveSdk(cwd)` from core
+   and report path and version.
+4. Implement `alp sdk switch <version>`: call `switchActiveSdk()` from
+   core to activate a locally cached SDK without re-downloading.
+5. Add `--json` output to all `alp sdk` subcommands for CI use.
+6. All domain behavior blocked on Task 2.5 completion.
 
 ## Epic 7 — Documentation and Recipes
 
@@ -864,6 +1107,155 @@ Subtasks:
 3. Define compatibility rules for CLI flags and JSON output.
 4. Define release gates and checklists.
 5. Add performance budgets and regression checks.
+
+## Epic 10 — ALP IDE Workflow Hub
+
+**Outcome:** users can complete setup, SDK management, and project
+onboarding from a discoverable ALP IDE surface that feels native to VS
+Code and does not duplicate file-explorer behavior.
+
+### Task 10.1 — Ship ALP IDE shell surfaces
+
+Subtasks:
+
+1. Add Activity Bar container via `contributes.viewsContainers`.
+2. Add ALP IDE root view via `contributes.views`.
+3. Add status-first sections for setup/workspaces/projects/details.
+4. Add section-level quick actions and contextual empty states.
+5. Add side-panel guided surface.
+6. Add full-window onboarding surface.
+7. Keep one shared state model across all surfaces.
+
+### Task 10.2 — Standardize webview frontend architecture
+
+Subtasks:
+
+1. Create webview app scaffold with React + TypeScript + Vite.
+2. Bootstrap from Microsoft's official VS Code webview React
+   sample/template.
+3. Use `@vscode/webview-ui-toolkit` as baseline component set.
+4. Register components via `provideVSCodeDesignSystem().register(...)`.
+5. Use VS Code CSS variables for custom styling.
+6. Ensure webview CSS baseline/reset compatibility.
+7. Validate Light/Dark/High Contrast rendering.
+
+### Task 10.3 — Build setup and readiness experience
+
+Subtasks:
+
+1. Add setup rows for host tools, SDK, workspace setup, and west update.
+2. Add state chips: Ready, Setup Required, Not Installed, Not Updated.
+3. Add progress banner text driven by real setup state.
+4. Add next-action routing from setup cards to concrete flows.
+5. Add Quick Actions card set (Host Tools, Install SDK, West Update,
+   Settings, Add Project).
+6. Add semantic status-chip colors and typography that stay theme-safe.
+7. Add short explanatory descriptions per action card.
+
+### Task 10.4 — Add project onboarding and workspace flows
+
+Subtasks:
+
+1. Add new-project flow with template/hardware/features selection.
+2. Add existing-project import/open flow with validation.
+3. Add workspace activation/new workspace actions from ALP IDE.
+4. Add review/apply step with file-change preview and overwrite policy.
+5. Add finish step with current-window vs new-window choice.
+
+### Task 10.5 — Add SDK manager UX
+
+The UI SDK manager is a guided surface over the shared core module
+`@alp-sdk/core/sdk/` (Task 2.5). The extension UI owns interaction,
+progress rendering, and VS Code message contracts only; all domain
+logic (release listing, install, discovery, switch, readiness checks)
+lives in the core and is shared with the CLI (Task 6.4).
+
+Subtasks:
+
+1. Detect local SDK candidates: call `listLocalSdkEntries()` from core.
+2. Add manual SDK path selection and validate via `SdkReadinessReport`
+   from core.
+3. Add guided SDK download flow: call `installSdkRelease()` from core;
+   stream progress to webview.
+4. Add progress/cancel/log UI for SDK installation.
+5. Add SDK readiness checks using `SdkReadinessReport` from core.
+6. All domain behavior blocked on Task 2.5 completion.
+
+### Task 10.6 — Stabilize UI contract and product language
+
+Subtasks:
+
+1. Define typed extension<->webview message contracts.
+2. Add synchronization strategy for state hydration and refresh.
+3. Standardize UI phrases and labels across sidebar and panel surfaces.
+4. Add sidebar, panel, and full-window smoke tests.
+5. Add integration tests for onboarding + SDK flows.
+6. Document ALP IDE onboarding and SDK setup playbooks.
+
+### Task 10.7 — Add resource links and support affordances
+
+Subtasks:
+
+1. Add footer resource links for Documentation, Getting Started, West
+   Docs, and Report Issues.
+2. Track link click telemetry/events for product guidance tuning.
+3. Ensure links are keyboard accessible and screen-reader friendly.
+4. Validate link styling in Light/Dark/High Contrast themes.
+
+### Task 10.8 — Orchestrate zero-friction environment recovery
+
+Subtasks:
+
+1. Run prerequisite checks automatically at first-run and on demand.
+2. Classify gaps into blockers vs warnings.
+3. Add one-click remediations for safe automated fixes.
+4. Add guided manual instructions for non-automatable fixes.
+5. Revalidate after each remediation and refresh status in-place.
+6. Persist remediation history for supportability and diagnostics.
+
+## Epic 11 — Standalone CLI Productization
+
+**Outcome:** CLI can be consumed as an independent product in local
+development and CI/CD, while keeping full compatibility with extension
+workflows.
+
+### Task 11.1 — Confirm npm-first packaging strategy
+
+Subtasks:
+
+1. Confirm npm package as default installation channel.
+2. Define governance for API/CLI output compatibility.
+3. Lock package identity to `alp-sdk` and `alp`.
+4. Define criteria that would justify adding Rust in a later phase.
+
+### Task 11.2 — Extract reusable CLI core
+
+Subtasks:
+
+1. Separate extension adapter code from standalone runtime code.
+2. Define shared contracts for args, output envelopes, and exit codes.
+3. Add integration tests against shared contracts.
+
+### Task 11.3 — Ship standalone distribution
+
+Subtasks:
+
+1. Publish npm package distribution with versioned release notes.
+2. Add release workflow file `.github/workflows/release-cli.yml`.
+3. Publish with provenance and retain release artifacts.
+4. Add install/update docs for developers and CI agents.
+5. Add rollback instructions (`npm deprecate`, pinned downgrade, advisory note).
+6. Keep Rust crate publication as a deferred optional follow-up.
+
+### Task 11.4 — Enforce parity and release safety
+
+Subtasks:
+
+1. Add compatibility matrix tests between extension and standalone CLI.
+2. Add canary/stable release channels.
+3. Add automated release gates (build, tests, pack, smoke install).
+4. Add post-release health checks and CLI telemetry sanity checks.
+5. Add deprecation and migration policy for breaking changes.
 
 ## 12. Initial Backlog — Phase 1, Repo-Shaped
 
