@@ -37,6 +37,8 @@ export interface SdkStatus {
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
+  /** ISO timestamp of the last time the user triggered bootstrap. Null if never. */
+  lastBootstrapAt: string | null;
 }
 
 export interface WorkspaceStatus {

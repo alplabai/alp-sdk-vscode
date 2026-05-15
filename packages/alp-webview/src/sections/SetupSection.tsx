@@ -6,12 +6,18 @@ interface Props {
   state: AlpIdeState | null;
 }
 
+type Severity = "ok" | "blocker" | "warning";
+type RemediationKind = "auto" | "guided" | "manual";
+
 interface SetupRow {
   id: string;
   label: string;
   description: string;
   chipState: ChipState;
-  action?: { label: string; command: string };
+  severity: Severity;
+  action?: { label: string; command: string; kind: RemediationKind };
+  /** Shown for manual remediations where no automated fix is available. */
+  instruction?: string;
 }
 
 function deriveRows(state: AlpIdeState): SetupRow[] {
@@ -26,33 +32,55 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
     }
   })();
 
+  const sdkSeverity: Severity =
+    sdkChip === "ready"
+      ? "ok"
+      : sdkChip === "setup-required"
+        ? "warning"
+        : "blocker";
+
   return [
     {
       id: "python",
       label: "Python",
       description: "Required by project scripts and the firmware loader",
       chipState: state.setup.pythonAvailable ? "ready" : "not-installed",
+      severity: state.setup.pythonAvailable ? "ok" : "blocker",
       action: state.setup.pythonAvailable
         ? undefined
-        : { label: "Run Bootstrap", command: "alp.bootstrap" },
+        : {
+            label: "Run Bootstrap",
+            command: "alp.installDependencies",
+            kind: "auto",
+          },
     },
     {
       id: "west",
       label: "west CLI",
       description: "Zephyr meta-tool for build, flash, and module management",
       chipState: state.setup.westAvailable ? "ready" : "not-installed",
+      severity: state.setup.westAvailable ? "ok" : "blocker",
       action: state.setup.westAvailable
         ? undefined
-        : { label: "Run Bootstrap", command: "alp.bootstrap" },
+        : {
+            label: "Run Bootstrap",
+            command: "alp.installDependencies",
+            kind: "auto",
+          },
     },
     {
       id: "sdk",
       label: "ALP SDK",
       description: "Firmware SDK with board support, libraries, and toolchains",
       chipState: sdkChip,
+      severity: sdkSeverity,
       action:
         sdkChip !== "ready"
-          ? { label: "Open SDK Manager", command: "alp.ideHub.focus" }
+          ? {
+              label: "Open SDK Manager",
+              command: "alp.ideHub.focus",
+              kind: "guided",
+            }
           : undefined,
     },
     {
@@ -61,12 +89,28 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
       description: "Open a folder or workspace containing a project",
       chipState:
         state.workspace.workspaceRoot !== null ? "ready" : "setup-required",
+      severity: state.workspace.workspaceRoot !== null ? "ok" : "warning",
       action:
         state.workspace.workspaceRoot === null
-          ? { label: "Open Folder", command: "vscode.openFolder" }
+          ? { label: "Open Folder", command: "vscode.openFolder", kind: "manual" }
+          : undefined,
+      instruction:
+        state.workspace.workspaceRoot === null
+          ? "Use File → Open Folder to open a project directory."
           : undefined,
     },
   ];
+}
+
+/** Format an ISO timestamp as a human-readable relative time. */
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 2) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 export function SetupSection({ state }: Props) {
@@ -82,18 +126,39 @@ export function SetupSection({ state }: Props) {
   }
 
   const rows = deriveRows(state);
-  const issueCount = rows.filter((r) => r.chipState !== "ready").length;
+  const blockers = rows.filter((r) => r.severity === "blocker");
+  const warnings = rows.filter((r) => r.severity === "warning");
+  const allOk = blockers.length === 0 && warnings.length === 0;
+
+  const bannerClass = allOk
+    ? "readiness-banner banner-ok"
+    : blockers.length > 0
+      ? "readiness-banner banner-err"
+      : "readiness-banner banner-warn";
+
+  const bannerText = allOk
+    ? "All systems ready"
+    : blockers.length > 0
+      ? `${blockers.length} blocker${blockers.length > 1 ? "s" : ""}${warnings.length > 0 ? `, ${warnings.length} warning${warnings.length > 1 ? "s" : ""}` : ""} — build is not possible until resolved`
+      : `${warnings.length} warning${warnings.length > 1 ? "s" : ""} — build may work but setup is incomplete`;
 
   return (
     <div className="section">
       <p className="section-title">Environment</p>
 
-      <div
-        className={`readiness-banner ${issueCount === 0 ? "banner-ok" : "banner-warn"}`}
-      >
-        {issueCount === 0
-          ? "All systems ready"
-          : `${issueCount} item${issueCount > 1 ? "s" : ""} need${issueCount === 1 ? "s" : ""} attention`}
+      <div className={bannerClass}>
+        <span>{bannerText}</span>
+        {!allOk && (
+          <vscode-button
+            appearance="icon"
+            title="Re-check environment"
+            onClick={() =>
+              postMessage({ type: "runCommand", command: "alp.ideHub.refresh" })
+            }
+          >
+            ↺
+          </vscode-button>
+        )}
       </div>
 
       <div className="setup-rows">
@@ -104,10 +169,15 @@ export function SetupSection({ state }: Props) {
               <StatusChip state={row.chipState} />
             </div>
             <p className="setup-row-desc">{row.description}</p>
+            {row.instruction && (
+              <p className="setup-row-instruction">{row.instruction}</p>
+            )}
             {row.action && (
               <div className="setup-row-action">
                 <vscode-button
-                  appearance="secondary"
+                  appearance={
+                    row.action.kind === "auto" ? "primary" : "secondary"
+                  }
                   onClick={() =>
                     postMessage({
                       type: "runCommand",
@@ -122,6 +192,13 @@ export function SetupSection({ state }: Props) {
           </div>
         ))}
       </div>
+
+      {state.setup.lastBootstrapAt && (
+        <p className="setup-last-bootstrap">
+          Last bootstrap: {relativeTime(state.setup.lastBootstrapAt)}
+        </p>
+      )}
     </div>
   );
 }
+

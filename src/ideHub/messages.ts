@@ -24,6 +24,8 @@ export interface SdkStatus {
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
+  /** ISO timestamp of the last time the user triggered bootstrap. Null if never. */
+  lastBootstrapAt: string | null;
 }
 
 export interface WorkspaceStatus {
@@ -45,7 +47,7 @@ export function emptyAlpIdeState(): AlpIdeState {
       readiness: "unknown",
       localEntries: [],
     },
-    setup: { pythonAvailable: false, westAvailable: false },
+    setup: { pythonAvailable: false, westAvailable: false, lastBootstrapAt: null },
     workspace: { workspaceRoot: null, boardYamlExists: false },
   };
 }

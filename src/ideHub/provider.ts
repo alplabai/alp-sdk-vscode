@@ -23,7 +23,7 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(private readonly context: vscode.ExtensionContext) {}
 
   static readonly viewId = VIEW_ID;
 
@@ -38,12 +38,12 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(
-          this.extensionUri,
+          this.context.extensionUri,
           "packages",
           "alp-webview",
           "dist",
         ),
-        vscode.Uri.joinPath(this.extensionUri, "media"),
+        vscode.Uri.joinPath(this.context.extensionUri, "media"),
       ],
     };
 
@@ -85,7 +85,11 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
 
   async refresh(): Promise<void> {
     if (!this.view) return;
-    const state = await queryAlpIdeState().catch(() => emptyAlpIdeState());
+    const lastBootstrapAt =
+      this.context.globalState.get<string>("alp.lastBootstrapAt") ?? null;
+    const state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
+      emptyAlpIdeState(),
+    );
     const msg: ExtToWebviewMessage = {
       type: "stateUpdate",
       _v: PROTOCOL_VERSION,
@@ -101,6 +105,9 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
         break;
       case "runCommand":
         void vscode.commands.executeCommand(msg.command);
+        if (msg.command === "alp.installDependencies") {
+          void this.handleBootstrapTriggered();
+        }
         break;
       case "selectSdkPath":
         void this.handleSelectSdkPath();
@@ -260,8 +267,15 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  private async handleBootstrapTriggered(): Promise<void> {
+    const now = new Date().toISOString();
+    await this.context.globalState.update("alp.lastBootstrapAt", now);
+    // Bootstrap runs asynchronously in a terminal. Re-check after a delay
+    // so the panel reflects newly installed tools without a manual reload.
+    setTimeout(() => void this.refresh(), 8000);
+  }
+
   private handleOpenUrl(url: string): void {
-    // Only allow safe schemes to prevent protocol-handler abuse.
     if (!url.startsWith("https://") && !url.startsWith("vscode://")) return;
     void vscode.env.openExternal(vscode.Uri.parse(url));
   }
@@ -273,7 +287,7 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
     ).join("");
 
     const distBase = vscode.Uri.joinPath(
-      this.extensionUri,
+      this.context.extensionUri,
       "packages",
       "alp-webview",
       "dist",
@@ -314,7 +328,7 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
 export function registerIdeHubProvider(
   context: vscode.ExtensionContext,
 ): vscode.Disposable[] {
-  const provider = new AlpIdeHubProvider(context.extensionUri);
+  const provider = new AlpIdeHubProvider(context);
 
   const disposables: vscode.Disposable[] = [
     vscode.window.registerWebviewViewProvider(

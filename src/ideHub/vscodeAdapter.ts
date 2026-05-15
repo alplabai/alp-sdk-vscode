@@ -30,7 +30,9 @@ export function sdkCacheRoot(): string {
   return path.join(os.homedir(), ".alp", "sdk");
 }
 
-export async function queryAlpIdeState(): Promise<AlpIdeState> {
+export async function queryAlpIdeState(
+  lastBootstrapAt: string | null = null,
+): Promise<AlpIdeState> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   const workspaceRoot = workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   const actualWorkspaceRoot: string | null =
@@ -103,6 +105,7 @@ export async function queryAlpIdeState(): Promise<AlpIdeState> {
     setup: {
       pythonAvailable: commandAvailable(pythonCmd()),
       westAvailable: commandAvailable("west"),
+      lastBootstrapAt,
     },
     workspace: {
       workspaceRoot: actualWorkspaceRoot,

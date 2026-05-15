@@ -41,6 +41,7 @@ test("emptyAlpIdeState setup defaults", () => {
   const { setup } = emptyAlpIdeState();
   assert.equal(setup.pythonAvailable, false);
   assert.equal(setup.westAvailable, false);
+  assert.equal(setup.lastBootstrapAt, null);
 });
 
 test("emptyAlpIdeState workspace defaults", () => {

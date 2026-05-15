@@ -20,7 +20,7 @@ const ACTIONS: ActionCard[] = [
     id: "bootstrap",
     label: "Host Tools",
     description: "Install Python, west CLI, and required host dependencies",
-    command: "alp.bootstrap",
+    command: "alp.installDependencies",
     buttonLabel: "Bootstrap",
   },
   {
