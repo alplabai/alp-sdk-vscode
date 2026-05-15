@@ -19,12 +19,17 @@ export interface SdkStatus {
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
-  workspaceOpen: boolean;
+}
+
+export interface WorkspaceStatus {
+  workspaceRoot: string | null;
+  boardYamlExists: boolean;
 }
 
 export interface AlpIdeState {
   sdk: SdkStatus;
   setup: SetupStatus;
+  workspace: WorkspaceStatus;
 }
 
 // Extension → Webview

@@ -15,22 +15,24 @@ export interface SdkStatus {
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
-  workspaceOpen: boolean;
+}
+
+export interface WorkspaceStatus {
+  workspaceRoot: string | null;
+  boardYamlExists: boolean;
 }
 
 export interface AlpIdeState {
   sdk: SdkStatus;
   setup: SetupStatus;
+  workspace: WorkspaceStatus;
 }
 
 export function emptyAlpIdeState(): AlpIdeState {
   return {
     sdk: { activePath: null, version: null, readiness: "unknown" },
-    setup: {
-      pythonAvailable: false,
-      westAvailable: false,
-      workspaceOpen: false,
-    },
+    setup: { pythonAvailable: false, westAvailable: false },
+    workspace: { workspaceRoot: null, boardYamlExists: false },
   };
 }
 

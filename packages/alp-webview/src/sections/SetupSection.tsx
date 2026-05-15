@@ -59,10 +59,12 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
       id: "workspace",
       label: "Workspace",
       description: "Open a folder or workspace containing a project",
-      chipState: state.setup.workspaceOpen ? "ready" : "setup-required",
-      action: !state.setup.workspaceOpen
-        ? { label: "Open Folder", command: "vscode.openFolder" }
-        : undefined,
+      chipState:
+        state.workspace.workspaceRoot !== null ? "ready" : "setup-required",
+      action:
+        state.workspace.workspaceRoot === null
+          ? { label: "Open Folder", command: "vscode.openFolder" }
+          : undefined,
     },
   ];
 }

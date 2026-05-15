@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ProjectSection } from "./sections/ProjectSection";
 import { QuickActionsSection } from "./sections/QuickActionsSection";
 import { SdkSection } from "./sections/SdkSection";
 import { SetupSection } from "./sections/SetupSection";
@@ -22,6 +23,8 @@ export function App() {
   return (
     <div>
       <SetupSection state={state} />
+      <vscode-divider role="separator" />
+      <ProjectSection state={state} />
       <vscode-divider role="separator" />
       <SdkSection sdk={state?.sdk ?? null} />
       <vscode-divider role="separator" />

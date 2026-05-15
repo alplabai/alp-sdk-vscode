@@ -21,8 +21,10 @@ function pythonCmd(): string {
 }
 
 export async function queryAlpIdeState(): Promise<AlpIdeState> {
-  const workspaceRoot =
-    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  const workspaceRoot = workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+  const actualWorkspaceRoot: string | null =
+    workspaceFolders?.[0]?.uri.fsPath ?? null;
 
   const sdkPath = resolveActiveSdk(
     workspaceRoot,
@@ -54,6 +56,10 @@ export async function queryAlpIdeState(): Promise<AlpIdeState> {
     sdkVersion = fs.readFileSync(versionFile, "utf8").trim();
   }
 
+  const boardYamlPath = actualWorkspaceRoot
+    ? path.join(actualWorkspaceRoot, "board.yaml")
+    : null;
+
   return {
     sdk: {
       activePath: sdkPath,
@@ -63,7 +69,10 @@ export async function queryAlpIdeState(): Promise<AlpIdeState> {
     setup: {
       pythonAvailable: commandAvailable(pythonCmd()),
       westAvailable: commandAvailable("west"),
-      workspaceOpen: (vscode.workspace.workspaceFolders?.length ?? 0) > 0,
+    },
+    workspace: {
+      workspaceRoot: actualWorkspaceRoot,
+      boardYamlExists: boardYamlPath ? fs.existsSync(boardYamlPath) : false,
     },
   };
 }
