@@ -238,3 +238,28 @@ button:hover {
 .severity-clean {
   color: var(--vscode-testing-iconPassed);
 }
+
+/* --- cores block (schema v2) --- */
+.core-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, #444);
+}
+
+.core-id {
+  min-width: 120px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+  color: var(--vscode-symbolIcon-keywordForeground, var(--vscode-foreground));
+}
+
+.core-os-select {
+  min-width: 110px;
+}
+
+.core-app-input {
+  flex: 1;
+  min-width: 0;
+}

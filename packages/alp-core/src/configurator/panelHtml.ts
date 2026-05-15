@@ -59,9 +59,16 @@ export function createConfiguratorPanelHtml(
       <label>Carrier name
         <select id="carrier-name"></select>
       </label>
-      <label>OS target
-        <select id="os-choice"></select>
-      </label>
+      <div id="os-choice-row">
+        <label>OS target
+          <select id="os-choice"></select>
+        </label>
+      </div>
+      <div id="cores-block" hidden>
+        <h3>Core configuration (schema v2)</h3>
+        <p class="help">Each row corresponds to a core in the SoM topology. Set <code>off</code> to exclude a core from the build.</p>
+        <div id="cores-rows"></div>
+      </div>
     </section>
 
     <section id="section-features" class="config-section" data-level="basic" hidden>

@@ -120,7 +120,15 @@
     if (!model || !model.carrier || !model.carrier.name) {
       errors.push("Carrier name is required.");
     }
-    if (!model || !model.os) {
+    if (isV2()) {
+      const cores = model.cores || {};
+      const activeCores = Object.values(cores).filter(
+        (c) => c && c.os && c.os !== "off",
+      );
+      if (activeCores.length === 0) {
+        errors.push("At least one core must be active (os != off) in schema v2.");
+      }
+    } else if (!model || !model.os) {
       errors.push("OS target is required.");
     }
 
@@ -270,6 +278,66 @@
       row.appendChild(label);
       host.appendChild(row);
     }
+  }
+
+  const CORE_OS_CHOICES = ["zephyr", "yocto", "baremetal", "off"];
+
+  function renderCoresBlock() {
+    const host = $("cores-rows");
+    host.innerHTML = "";
+    if (!model || !model.cores) return;
+
+    const coreIds = Object.keys(model.cores);
+    for (const coreId of coreIds) {
+      const entry = model.cores[coreId] || {};
+      const row = document.createElement("div");
+      row.className = "core-row";
+
+      const idLabel = document.createElement("span");
+      idLabel.className = "core-id";
+      idLabel.textContent = coreId;
+      row.appendChild(idLabel);
+
+      const osSelect = document.createElement("select");
+      osSelect.className = "core-os-select";
+      for (const choice of CORE_OS_CHOICES) {
+        const opt = document.createElement("option");
+        opt.value = choice;
+        opt.textContent = choice;
+        if (choice === (entry.os || "")) opt.selected = true;
+        osSelect.appendChild(opt);
+      }
+      osSelect.addEventListener("change", () => {
+        if (!model || !model.cores) return;
+        model.cores[coreId] = model.cores[coreId] || {};
+        model.cores[coreId].os = osSelect.value;
+        onModelChanged();
+      });
+      row.appendChild(osSelect);
+
+      const appInput = document.createElement("input");
+      appInput.type = "text";
+      appInput.className = "core-app-input";
+      appInput.placeholder = "app (optional)";
+      appInput.value = entry.app || "";
+      appInput.addEventListener("change", () => {
+        if (!model || !model.cores) return;
+        model.cores[coreId] = model.cores[coreId] || {};
+        if (appInput.value.trim()) {
+          model.cores[coreId].app = appInput.value.trim();
+        } else {
+          delete model.cores[coreId].app;
+        }
+        onModelChanged();
+      });
+      row.appendChild(appInput);
+
+      host.appendChild(row);
+    }
+  }
+
+  function isV2() {
+    return !!model && model.schema_version >= 2;
   }
 
   function bindStatic() {
@@ -431,6 +499,13 @@
       !model.diagnostics || model.diagnostics.last_error !== false;
     renderCarrierPopulated();
     renderLibraries();
+    // v1: show os-choice row; v2: show cores block
+    const v2 = isV2();
+    $("os-choice-row").hidden = v2;
+    $("cores-block").hidden = !v2;
+    if (v2) {
+      renderCoresBlock();
+    }
     renderValidationSummary();
     updateModeVisibility();
     updateMeta();
