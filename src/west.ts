@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { summarizeLoaderBatch } from "@alp-sdk/core/loader/service";
-import { analyzeValidationResult } from "@alp-sdk/core/validation/service";
+import {
+    analyzeValidationResult,
+    validateBoardYamlLocally,
+} from "@alp-sdk/core/validation/service";
 import {
     createWestAlpCleanPlan,
     createWestAlpFlashPlan,
@@ -11,6 +14,7 @@ import {
     createWestFlashPlan,
     createWestNativeRunPlan,
 } from "@alp-sdk/core/west/service";
+import * as fs from "fs";
 import * as vscode from "vscode";
 import {
     ensureLoaderOutputDirectory,
@@ -46,9 +50,33 @@ async function westBuild(): Promise<void> {
   if (!sel) return;
 
   const context = collectWestWorkspaceContext();
+
+  // Read board.yaml text for pure-TS structural pre-check and emit mode filtering
+  let boardYamlText: string | undefined;
+  if (context.boardYamlPath) {
+    try {
+      boardYamlText = fs.readFileSync(context.boardYamlPath, "utf-8");
+    } catch {
+      // Non-fatal: Python validator will report the missing file
+    }
+  }
+
+  // Fast pure-TS pre-check before invoking the Python validator
+  if (boardYamlText !== undefined) {
+    const localCheck = validateBoardYamlLocally(boardYamlText);
+    if (localCheck.outcome !== "clean") {
+      showOutput();
+      for (const issue of localCheck.issues) {
+        log(`[board.yaml] ${issue.severity}: ${issue.message}`);
+      }
+      await showValidationFailure(localCheck.outcome);
+      return;
+    }
+  }
+
   let preparation;
   try {
-    preparation = createWestBuildPreparation(context, sel);
+    preparation = createWestBuildPreparation(context, sel, boardYamlText);
   } catch (error) {
     await vscode.window.showErrorMessage(formatWestError(error));
     return;

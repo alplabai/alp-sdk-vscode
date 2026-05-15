@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
+import { parseBoardModel } from "../configurator/service";
 import {
     ValidationIssue,
     ValidationOutcome,
@@ -95,4 +96,40 @@ function classifyIssueSeverity(
   }
 
   return fallbackSeverity;
+}
+
+/**
+ * Pure-TypeScript structural pre-check for board.yaml.
+ * Runs without invoking the Python validator and catches v2-specific
+ * issues (bare top-level `os:`, missing `cores:` block) that would
+ * otherwise block the build silently or surface only in the Python output.
+ *
+ * Returns a `clean` outcome when no structural issues are found.
+ */
+export function validateBoardYamlLocally(
+  boardYamlText: string,
+): ValidationResult {
+  const issues: ValidationIssue[] = [];
+  const model = parseBoardModel(boardYamlText);
+
+  if (model.schema_version >= 2) {
+    if (model.os !== undefined) {
+      issues.push({
+        message:
+          "board.yaml v2: top-level 'os:' is not valid; move it into a 'cores:' block",
+        severity: "error",
+      });
+    }
+    if (!model.cores || Object.keys(model.cores).length === 0) {
+      issues.push({
+        message:
+          "board.yaml v2: 'cores:' block is required and must have at least one entry",
+        severity: "error",
+      });
+    }
+  }
+
+  const outcome: ValidationOutcome =
+    issues.length === 0 ? "clean" : "schema-violation";
+  return { outcome, issues };
 }

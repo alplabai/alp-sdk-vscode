@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { ALL_EMIT_MODES, createLoaderPlan } from "../loader/service";
+import {
+    ALL_EMIT_MODES,
+    createLoaderPlan,
+    resolveEmitModesForBoardYaml,
+} from "../loader/service";
 import { createValidatorPlan } from "../validation/service";
 import {
     WestBuildInput,
@@ -23,12 +27,16 @@ export function createWestBuildPlan(
 export function createWestBuildPreparation(
   context: WestWorkspaceContext,
   input: WestBuildInput,
+  boardYamlText?: string,
 ): WestBuildPreparation {
   const boardYamlPath = requireBoardYamlPath(context.boardYamlPath);
+  const emitModes = boardYamlText
+    ? resolveEmitModesForBoardYaml(boardYamlText)
+    : [...ALL_EMIT_MODES];
 
   return {
     validatorPlan: createValidatorPlan(context, boardYamlPath),
-    loaderPlans: ALL_EMIT_MODES.map((emit) => createLoaderPlan(context, emit)),
+    loaderPlans: emitModes.map((emit) => createLoaderPlan(context, emit)),
     westPlan: createWestBuildPlan(context, input),
   };
 }

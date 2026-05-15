@@ -1413,30 +1413,30 @@ was deleted from the SDK. This epic tracks all extension-side adaptations.
 - [x] Update `snippets/board-yaml.json`: `schema_version: 2`, `cores:`
       block, `ipc:` snippet, remove top-level `os:` snippet.
 - [x] Update README.md schema-sync section to reference v2.
-- [ ] Update `packages/alp-core` validation service: teach
+- [x] Update `packages/alp-core` validation service: teach
       `validateBoardYaml` to validate `cores:` block structure and
       reject bare top-level `os:` in v2 documents.
-- [ ] Update `packages/alp-core` loader: read `cores.<id>.os` for
+- [x] Update `packages/alp-core` loader: read `cores.<id>.os` for
       runtime detection instead of top-level `os:` for v2 documents;
       preserve v1 read path for compatibility.
-- [ ] Extend LSP diagnostics: flag bare top-level `os:` in
+- [x] Extend LSP diagnostics: flag bare top-level `os:` in
       `schema_version: 2` files with a quick-fix to migrate to
       `cores:` block.
-- [ ] Extend west integration: add `west alp-image`, `west alp-flash`,
+- [x] Extend west integration: add `west alp-image`, `west alp-flash`,
       `west alp-clean`, `west alp-renode` alongside existing
       `west alp-build` in the task provider.
-- [ ] Add configurator panel support for the `cores:` block:
+- [x] Add configurator panel support for the `cores:` block:
       render per-core OS/app/peripherals/libraries/inference/iot rows.
-- [ ] Update `test/validation.service.test.js` and
+- [x] Update `test/validation.service.test.js` and
       `test/loader.service.test.js` with v2 fixture files.
 
 ## Acceptance Criteria
 
-- [ ] A valid `schema_version: 2` board.yaml with a `cores:` block
+- [x] A valid `schema_version: 2` board.yaml with a `cores:` block
       passes extension validation with zero false-positive errors.
-- [ ] A `schema_version: 2` file using top-level `os:` shows an
+- [x] A `schema_version: 2` file using top-level `os:` shows an
       LSP error with a one-click migration quick-fix.
-- [ ] All five `west alp-*` commands are surfaced in VS Code tasks.
-- [ ] Existing v1 board.yaml files continue to load without error
+- [x] All five `west alp-*` commands are surfaced in VS Code tasks.
+- [x] Existing v1 board.yaml files continue to load without error
       (backward compatibility maintained in the loader).
 ```
