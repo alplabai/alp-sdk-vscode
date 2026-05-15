@@ -11,93 +11,102 @@ import { queryAlpIdeState } from "./vscodeAdapter";
 const VIEW_ID = "alp-ide.panel";
 
 export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
-    private view?: vscode.WebviewView;
-    private readonly disposables: vscode.Disposable[] = [];
+  private view?: vscode.WebviewView;
+  private readonly disposables: vscode.Disposable[] = [];
 
-    constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(private readonly extensionUri: vscode.Uri) {}
 
-    static readonly viewId = VIEW_ID;
+  static readonly viewId = VIEW_ID;
 
-    resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        _context: vscode.WebviewViewResolveContext,
-        _token: vscode.CancellationToken,
-    ): void {
-        this.view = webviewView;
+  resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    _context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken,
+  ): void {
+    this.view = webviewView;
 
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [
-                vscode.Uri.joinPath(this.extensionUri, "packages", "alp-webview", "dist"),
-                vscode.Uri.joinPath(this.extensionUri, "media"),
-            ],
-        };
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(
+          this.extensionUri,
+          "packages",
+          "alp-webview",
+          "dist",
+        ),
+        vscode.Uri.joinPath(this.extensionUri, "media"),
+      ],
+    };
 
-        webviewView.webview.html = this.buildHtml(webviewView.webview);
+    webviewView.webview.html = this.buildHtml(webviewView.webview);
 
-        webviewView.webview.onDidReceiveMessage(
-            (msg: WebviewToExtMessage) => this.handleMessage(msg),
-            undefined,
-            this.disposables,
-        );
+    webviewView.webview.onDidReceiveMessage(
+      (msg: WebviewToExtMessage) => this.handleMessage(msg),
+      undefined,
+      this.disposables,
+    );
 
-        webviewView.onDidChangeVisibility(() => {
-            if (webviewView.visible) {
-                void this.refresh();
-            }
-        }, undefined, this.disposables);
-    }
-
-    async refresh(): Promise<void> {
-        if (!this.view) return;
-        const state = await queryAlpIdeState().catch(() => emptyAlpIdeState());
-        const msg: ExtToWebviewMessage = { type: "stateUpdate", state };
-        void this.view.webview.postMessage(msg);
-    }
-
-    private handleMessage(msg: WebviewToExtMessage): void {
-        switch (msg.type) {
-            case "ready":
-                void this.refresh();
-                break;
-            case "runCommand":
-                void vscode.commands.executeCommand(msg.command);
-                break;
-            case "installSdk":
-                void vscode.commands.executeCommand(
-                    "alp.ideHub.installSdk",
-                    msg.version,
-                );
-                break;
-            case "switchSdk":
-                void vscode.commands.executeCommand(
-                    "alp.ideHub.switchSdk",
-                    msg.sdkPath,
-                );
-                break;
+    webviewView.onDidChangeVisibility(
+      () => {
+        if (webviewView.visible) {
+          void this.refresh();
         }
+      },
+      undefined,
+      this.disposables,
+    );
+  }
+
+  async refresh(): Promise<void> {
+    if (!this.view) return;
+    const state = await queryAlpIdeState().catch(() => emptyAlpIdeState());
+    const msg: ExtToWebviewMessage = { type: "stateUpdate", state };
+    void this.view.webview.postMessage(msg);
+  }
+
+  private handleMessage(msg: WebviewToExtMessage): void {
+    switch (msg.type) {
+      case "ready":
+        void this.refresh();
+        break;
+      case "runCommand":
+        void vscode.commands.executeCommand(msg.command);
+        break;
+      case "installSdk":
+        void vscode.commands.executeCommand(
+          "alp.ideHub.installSdk",
+          msg.version,
+        );
+        break;
+      case "switchSdk":
+        void vscode.commands.executeCommand(
+          "alp.ideHub.switchSdk",
+          msg.sdkPath,
+        );
+        break;
     }
+  }
 
-    private buildHtml(webview: vscode.Webview): string {
-        const nonce = Array.from(
-            { length: 16 },
-            () => Math.random().toString(36)[2],
-        ).join("");
+  private buildHtml(webview: vscode.Webview): string {
+    const nonce = Array.from(
+      { length: 16 },
+      () => Math.random().toString(36)[2],
+    ).join("");
 
-        const distBase = vscode.Uri.joinPath(
-            this.extensionUri,
-            "packages",
-            "alp-webview",
-            "dist",
-        );
-        const scriptUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(distBase, "main.js"),
-        );
-        const styleUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(distBase, "main.css"),
-        );
+    const distBase = vscode.Uri.joinPath(
+      this.extensionUri,
+      "packages",
+      "alp-webview",
+      "dist",
+    );
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(distBase, "main.js"),
+    );
+    const styleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(distBase, "main.css"),
+    );
 
-        return /* html */ `<!DOCTYPE html>
+    return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
@@ -115,34 +124,32 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
-    }
+  }
 
-    dispose(): void {
-        for (const d of this.disposables) d.dispose();
-        this.disposables.length = 0;
-    }
+  dispose(): void {
+    for (const d of this.disposables) d.dispose();
+    this.disposables.length = 0;
+  }
 }
 
 export function registerIdeHubProvider(
-    context: vscode.ExtensionContext,
+  context: vscode.ExtensionContext,
 ): vscode.Disposable[] {
-    const provider = new AlpIdeHubProvider(context.extensionUri);
+  const provider = new AlpIdeHubProvider(context.extensionUri);
 
-    const disposables: vscode.Disposable[] = [
-        vscode.window.registerWebviewViewProvider(
-            AlpIdeHubProvider.viewId,
-            provider,
-            { webviewOptions: { retainContextWhenHidden: true } },
-        ),
-        vscode.commands.registerCommand("alp.ideHub.refresh", () =>
-            provider.refresh(),
-        ),
-        vscode.commands.registerCommand("alp.ideHub.focus", () =>
-            vscode.commands.executeCommand(
-                "workbench.view.extension.alp-ide",
-            ),
-        ),
-    ];
+  const disposables: vscode.Disposable[] = [
+    vscode.window.registerWebviewViewProvider(
+      AlpIdeHubProvider.viewId,
+      provider,
+      { webviewOptions: { retainContextWhenHidden: true } },
+    ),
+    vscode.commands.registerCommand("alp.ideHub.refresh", () =>
+      provider.refresh(),
+    ),
+    vscode.commands.registerCommand("alp.ideHub.focus", () =>
+      vscode.commands.executeCommand("workbench.view.extension.alp-ide"),
+    ),
+  ];
 
-    return disposables;
+  return disposables;
 }

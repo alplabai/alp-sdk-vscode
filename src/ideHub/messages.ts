@@ -7,26 +7,26 @@ import type { SdkReadinessState } from "@alp-sdk/core/sdk/models";
 // ---------------------------------------------------------------------------
 
 export interface SdkStatus {
-    activePath: string | null;
-    version: string | null;
-    readiness: SdkReadinessState | "unknown";
+  activePath: string | null;
+  version: string | null;
+  readiness: SdkReadinessState | "unknown";
 }
 
 export interface SetupStatus {
-    pythonAvailable: boolean;
-    westAvailable: boolean;
+  pythonAvailable: boolean;
+  westAvailable: boolean;
 }
 
 export interface AlpIdeState {
-    sdk: SdkStatus;
-    setup: SetupStatus;
+  sdk: SdkStatus;
+  setup: SetupStatus;
 }
 
 export function emptyAlpIdeState(): AlpIdeState {
-    return {
-        sdk: { activePath: null, version: null, readiness: "unknown" },
-        setup: { pythonAvailable: false, westAvailable: false },
-    };
+  return {
+    sdk: { activePath: null, version: null, readiness: "unknown" },
+    setup: { pythonAvailable: false, westAvailable: false },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -34,8 +34,8 @@ export function emptyAlpIdeState(): AlpIdeState {
 // ---------------------------------------------------------------------------
 
 export interface StateUpdateMessage {
-    type: "stateUpdate";
-    state: AlpIdeState;
+  type: "stateUpdate";
+  state: AlpIdeState;
 }
 
 export type ExtToWebviewMessage = StateUpdateMessage;
@@ -45,26 +45,26 @@ export type ExtToWebviewMessage = StateUpdateMessage;
 // ---------------------------------------------------------------------------
 
 export interface ReadyMessage {
-    type: "ready";
+  type: "ready";
 }
 
 export interface RunCommandMessage {
-    type: "runCommand";
-    command: string;
+  type: "runCommand";
+  command: string;
 }
 
 export interface InstallSdkMessage {
-    type: "installSdk";
-    version: string;
+  type: "installSdk";
+  version: string;
 }
 
 export interface SwitchSdkMessage {
-    type: "switchSdk";
-    sdkPath: string;
+  type: "switchSdk";
+  sdkPath: string;
 }
 
 export type WebviewToExtMessage =
-    | ReadyMessage
-    | RunCommandMessage
-    | InstallSdkMessage
-    | SwitchSdkMessage;
+  | ReadyMessage
+  | RunCommandMessage
+  | InstallSdkMessage
+  | SwitchSdkMessage;
