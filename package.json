@@ -95,6 +95,26 @@
         "category": "Alp"
       },
       {
+        "command": "alp.westAlpImage",
+        "title": "Alp: West alp-image (assemble image bundle)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.westAlpFlash",
+        "title": "Alp: West alp-flash (flash all slices)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.westAlpClean",
+        "title": "Alp: West alp-clean (remove build dir)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.westAlpRenode",
+        "title": "Alp: West alp-renode (simulate in Renode)",
+        "category": "Alp"
+      },
+      {
         "command": "alp.openConfigurator",
         "title": "Alp: Open board configurator (GUI)",
         "category": "Alp"

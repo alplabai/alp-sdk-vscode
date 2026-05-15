@@ -45,6 +45,50 @@ export function createWestNativeRunPlan(
   return createWestCommandPlan(context, "alp · west run", "west build -t run");
 }
 
+export function createWestAlpImagePlan(
+  context: WestWorkspaceContext,
+  appPath: string,
+): WestCommandPlan {
+  return createWestCommandPlan(
+    context,
+    "alp · west alp-image",
+    `west alp-image ${appPath}`,
+  );
+}
+
+export function createWestAlpFlashPlan(
+  context: WestWorkspaceContext,
+  appPath: string,
+): WestCommandPlan {
+  return createWestCommandPlan(
+    context,
+    "alp · west alp-flash",
+    `west alp-flash ${appPath}`,
+  );
+}
+
+export function createWestAlpCleanPlan(
+  context: WestWorkspaceContext,
+  appPath: string,
+): WestCommandPlan {
+  return createWestCommandPlan(
+    context,
+    "alp · west alp-clean",
+    `west alp-clean ${appPath}`,
+  );
+}
+
+export function createWestAlpRenodePlan(
+  context: WestWorkspaceContext,
+  appPath: string,
+): WestCommandPlan {
+  return createWestCommandPlan(
+    context,
+    "alp · west alp-renode",
+    `west alp-renode ${appPath}`,
+  );
+}
+
 function createWestCommandPlan(
   context: WestWorkspaceContext,
   terminalName: string,

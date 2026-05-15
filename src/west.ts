@@ -11,6 +11,10 @@ import { log, showOutput } from "./util";
 import { analyzeValidationResult } from "@alp-sdk/core/validation/service";
 import { executeValidatorPlan } from "./validation/vscodeAdapter";
 import {
+    createWestAlpCleanPlan,
+    createWestAlpFlashPlan,
+    createWestAlpImagePlan,
+    createWestAlpRenodePlan,
     createWestBuildPreparation,
     createWestFlashPlan,
     createWestNativeRunPlan,
@@ -99,6 +103,45 @@ async function westRunNativeSim(): Promise<void> {
   executeWestPlan(createWestNativeRunPlan(collectWestWorkspaceContext()));
 }
 
+async function pickAppPath(): Promise<string | undefined> {
+  return vscode.window.showInputBox({
+    prompt: "Path to the application (relative to the west cwd)",
+    value: "examples/rpmsg-v2n",
+  });
+}
+
+async function westAlpImage(): Promise<void> {
+  const appPath = await pickAppPath();
+  if (!appPath) return;
+  executeWestPlan(
+    createWestAlpImagePlan(collectWestWorkspaceContext(), appPath),
+  );
+}
+
+async function westAlpFlash(): Promise<void> {
+  const appPath = await pickAppPath();
+  if (!appPath) return;
+  executeWestPlan(
+    createWestAlpFlashPlan(collectWestWorkspaceContext(), appPath),
+  );
+}
+
+async function westAlpClean(): Promise<void> {
+  const appPath = await pickAppPath();
+  if (!appPath) return;
+  executeWestPlan(
+    createWestAlpCleanPlan(collectWestWorkspaceContext(), appPath),
+  );
+}
+
+async function westAlpRenode(): Promise<void> {
+  const appPath = await pickAppPath();
+  if (!appPath) return;
+  executeWestPlan(
+    createWestAlpRenodePlan(collectWestWorkspaceContext(), appPath),
+  );
+}
+
 async function showValidationFailure(
   outcome:
     | "clean"
@@ -147,6 +190,12 @@ export function registerWestCommands(): vscode.Disposable[] {
     vscode.commands.registerCommand("alp.westFlash", () => westFlash()),
     vscode.commands.registerCommand("alp.westRunNativeSim", () =>
       westRunNativeSim(),
+    ),
+    vscode.commands.registerCommand("alp.westAlpImage", () => westAlpImage()),
+    vscode.commands.registerCommand("alp.westAlpFlash", () => westAlpFlash()),
+    vscode.commands.registerCommand("alp.westAlpClean", () => westAlpClean()),
+    vscode.commands.registerCommand("alp.westAlpRenode", () =>
+      westAlpRenode(),
     ),
   ];
 }
