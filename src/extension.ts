@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorCommand } from "./configuratorPanel";
 import { registerDebugCommands } from "./debug";
+import { registerIdeHubProvider } from "./ideHub";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
@@ -26,6 +27,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerProjectWizardCommand(),
     ...registerLspCommands(),
     ...registerDebugCommands(),
+    ...registerIdeHubProvider(context),
   );
 
   void maybeOfferFirstRunWizard(context);

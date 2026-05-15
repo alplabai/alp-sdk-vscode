@@ -1,0 +1,131 @@
+/* Reuse VS Code theme tokens so the panel matches the editor theme */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--vscode-font-family, system-ui, sans-serif);
+    font-size: var(--vscode-font-size, 13px);
+    color: var(--vscode-foreground);
+    background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+.section {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+}
+
+.section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
+    margin: 0 0 8px;
+    padding: 6px 0 4px;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+    min-height: 22px;
+}
+
+.label {
+    color: var(--vscode-descriptionForeground);
+    flex-shrink: 0;
+    min-width: 60px;
+}
+
+.value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.badge-ok {
+    background: var(--vscode-testing-iconPassed, #388a34);
+    color: #fff;
+}
+
+.badge-warn {
+    background: var(--vscode-editorWarning-foreground, #bf8803);
+    color: #fff;
+}
+
+.badge-err {
+    background: var(--vscode-editorError-foreground, #f14c4c);
+    color: #fff;
+}
+
+.badge-neutral {
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+}
+
+.btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+button.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    font-size: var(--vscode-font-size, 13px);
+    font-family: inherit;
+    cursor: pointer;
+    border: 1px solid var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));
+    border-radius: 2px;
+    background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+}
+
+button.action-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+
+button.action-btn.primary {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border-color: transparent;
+}
+
+button.action-btn.primary:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.no-sdk {
+    color: var(--vscode-descriptionForeground);
+    font-style: italic;
+    font-size: 12px;
+    margin: 4px 0;
+}
+
+.path-mono {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

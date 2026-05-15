@@ -141,8 +141,47 @@
         "command": "alp.openDebugTroubleshootingPanel",
         "title": "Alp: Open troubleshooting panel",
         "category": "Alp"
+      },
+      {
+        "command": "alp.ideHub.refresh",
+        "title": "Alp: Refresh ALP IDE panel",
+        "category": "Alp",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "alp.ideHub.focus",
+        "title": "Alp: Open ALP IDE panel",
+        "category": "Alp"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "alp-ide",
+          "title": "ALP IDE",
+          "icon": "media/alp-ide-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "alp-ide": [
+        {
+          "type": "webview",
+          "id": "alp-ide.panel",
+          "name": "ALP IDE",
+          "retainContextWhenHidden": true
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "alp.ideHub.refresh",
+          "when": "view == alp-ide.panel",
+          "group": "navigation"
+        }
+      ]
+    },
     "yamlValidation": [
       {
         "fileMatch": "board.yaml",
@@ -182,7 +221,7 @@
     }
   },
   "scripts": {
-    "compile": "tsc --build && pnpm --filter ./packages/alp-cli run compile",
+    "compile": "tsc --build && pnpm --filter ./packages/alp-cli run compile && pnpm --filter ./packages/alp-webview run build",
     "compile:watch": "tsc --build --watch",
     "cli:pack": "pnpm run compile && pnpm --filter ./packages/alp-cli run cli:pack",
     "cli:smoke": "bash ./scripts/ci/smoke-cli.sh",
