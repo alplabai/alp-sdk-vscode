@@ -132,10 +132,15 @@ Marketplace; no functionality changed.
 ## Schema-sync
 
 The extension's schema-aware validation depends on
-`alp-sdk-upstream/metadata/schemas/board-config-v1.schema.json`.
+`alp-sdk-upstream/metadata/schemas/board-config-v2.schema.json`.
 That submodule pins to an alp-sdk commit; the extension's
 `package.json::contributes.yamlValidation.url` references the
 exact submodule path.
+
+> **Schema v2 (alp-sdk v0.6+):** `board.yaml` now uses `schema_version: 2`
+> with a per-core `cores:` block replacing the top-level `os:` field.
+> Use the `alp-board-min` or `alp-board-hetero` snippet to get a
+> valid starting point.
 
 When alp-sdk bumps the schema:
 
