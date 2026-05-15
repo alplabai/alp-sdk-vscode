@@ -8,13 +8,28 @@ test/**
 **/*.ts
 **/*.map
 
+node_modules/**
+packages/**
+alp-sdk-upstream/**
+dist/**
+scripts/**
+
 .gitignore
 .gitmodules
 tsconfig.json
+tsconfig.tsbuildinfo
 package-lock.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
 
 BACKLOG.md
 CLI.md
 DEBUG.md
 PLAN.md
 ARCHITECTURE_RULES.md
+RELEASE_GATES.md
+GETTING_STARTED_CLI.md
+TASK_RECIPES.md
+TEST_MATRIX.md
+TROUBLESHOOTING_*.md
+readme.md

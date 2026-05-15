@@ -1,6 +1,7 @@
 {
   "name": "alp-sdk",
   "displayName": "ALP SDK",
+  "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for ALP SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
   "version": "0.3.0",
   "publisher": "alplabai",
@@ -223,13 +224,14 @@
   "scripts": {
     "compile": "tsc --build && pnpm --filter ./packages/alp-cli run compile && pnpm --filter ./packages/alp-webview run build",
     "compile:watch": "tsc --build --watch",
+    "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
     "cli:pack": "pnpm run compile && pnpm --filter ./packages/alp-cli run cli:pack",
     "cli:smoke": "bash ./scripts/ci/smoke-cli.sh",
     "test": "pnpm run compile && node --test test/*.test.js",
     "install:vscode": "bash ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",
-    "vscode:prepublish": "pnpm run compile",
-    "package": "vsce package"
+    "vscode:prepublish": "pnpm run compile && pnpm run bundle:ext",
+    "package": "vsce package --no-dependencies"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -249,6 +251,7 @@
     "@types/node": "^25.7.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
   }
 }
