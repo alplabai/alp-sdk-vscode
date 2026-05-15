@@ -14,6 +14,11 @@ alp-sdk-upstream/**
 dist/**
 scripts/**
 
+# Keep ALP IDE webview runtime bundle in the packaged extension.
+!packages/alp-webview/dist/
+!packages/alp-webview/dist/**
+!packages/alp-webview/dist/main.js
+
 .gitignore
 .gitmodules
 tsconfig.json
