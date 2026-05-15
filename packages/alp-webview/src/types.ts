@@ -1,6 +1,9 @@
 // Types mirrored from src/ideHub/messages.ts — kept in sync manually.
 // The webview is a separate build; we do not share source with the extension.
 
+/** Must match PROTOCOL_VERSION in src/ideHub/messages.ts. */
+export const PROTOCOL_VERSION = 1 as const;
+
 export type SdkReadinessState = "ready" | "partial" | "missing" | "unknown";
 
 /** Visual state for a readiness status chip. */
@@ -50,6 +53,7 @@ export interface AlpIdeState {
 // Extension → Webview
 export interface StateUpdateMessage {
   type: "stateUpdate";
+  _v: number;
   state: AlpIdeState;
 }
 export interface SdkReleasesLoadedMessage {
@@ -96,4 +100,3 @@ export type WebviewToExtMessage =
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
   | SwitchSdkMessage;
-

@@ -1,10 +1,5 @@
 import { StatusChip } from "../components/StatusChip";
-import type {
-  ChipState,
-  LocalSdkEntry,
-  SdkRelease,
-  SdkStatus,
-} from "../types";
+import type { ChipState, LocalSdkEntry, SdkRelease, SdkStatus } from "../types";
 import { postMessage } from "../vscode";
 
 interface Props {
@@ -43,7 +38,11 @@ function readinessLabel(r: LocalSdkEntry["readiness"]): string {
 }
 
 function localEntryChip(r: LocalSdkEntry["readiness"]): ChipState {
-  return r === "ready" ? "ready" : r === "partial" ? "setup-required" : "not-installed";
+  return r === "ready"
+    ? "ready"
+    : r === "partial"
+      ? "setup-required"
+      : "not-installed";
 }
 
 export function SdkSection({
@@ -82,16 +81,14 @@ export function SdkSection({
           {hasActive ? (
             <>
               <p className="setup-row-desc">
-                {sdk.version && (
-                  <span>
-                    v{sdk.version}&nbsp;&nbsp;
-                  </span>
-                )}
+                {sdk.version && <span>v{sdk.version}&nbsp;&nbsp;</span>}
                 <span className="path-mono" title={sdk.activePath ?? ""}>
                   {shortPath(sdk.activePath!)}
                 </span>
               </p>
-              {sdk.readiness !== "ready" && sdk.readiness !== "partial" ? null : null}
+              {sdk.readiness !== "ready" && sdk.readiness !== "partial"
+                ? null
+                : null}
             </>
           ) : (
             <p className="setup-row-desc">No active SDK configured.</p>
@@ -123,10 +120,7 @@ export function SdkSection({
                     </span>
                     <StatusChip state={localEntryChip(entry.readiness)} />
                   </div>
-                  <p
-                    className="setup-row-desc path-mono"
-                    title={entry.path}
-                  >
+                  <p className="setup-row-desc path-mono" title={entry.path}>
                     {shortPath(entry.path)}
                   </p>
                   {entry.path !== sdk.activePath && (
@@ -134,7 +128,10 @@ export function SdkSection({
                       <vscode-button
                         appearance="secondary"
                         onClick={() =>
-                          postMessage({ type: "switchSdk", sdkPath: entry.path })
+                          postMessage({
+                            type: "switchSdk",
+                            sdkPath: entry.path,
+                          })
                         }
                       >
                         Use This
@@ -159,10 +156,14 @@ export function SdkSection({
           {installActive ? (
             <div className="sdk-install-status">
               <vscode-progress-ring />
-              <span className="setup-row-desc">{installLog ?? "Installing…"}</span>
+              <span className="setup-row-desc">
+                {installLog ?? "Installing…"}
+              </span>
             </div>
           ) : installLog && !installActive ? (
-            <p className={`setup-row-desc ${installLog.startsWith("Install failed") ? "text-err" : "text-ok"}`}>
+            <p
+              className={`setup-row-desc ${installLog.startsWith("Install failed") ? "text-err" : "text-ok"}`}
+            >
               {installLog}
             </p>
           ) : null}
@@ -185,7 +186,10 @@ export function SdkSection({
                       <vscode-button
                         appearance="secondary"
                         onClick={() =>
-                          postMessage({ type: "requestSdkInstall", version: r.tag })
+                          postMessage({
+                            type: "requestSdkInstall",
+                            version: r.tag,
+                          })
                         }
                       >
                         Install
@@ -201,4 +205,3 @@ export function SdkSection({
     </div>
   );
 }
-

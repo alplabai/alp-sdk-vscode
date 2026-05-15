@@ -19,7 +19,7 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
     switch (state.sdk.readiness) {
       case "ready":
         return "ready";
-      case "incomplete":
+      case "partial":
         return "setup-required";
       default:
         return state.sdk.activePath ? "setup-required" : "not-installed";
@@ -52,7 +52,7 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
       chipState: sdkChip,
       action:
         sdkChip !== "ready"
-          ? { label: "Install SDK", command: "alp.sdk.install" }
+          ? { label: "Open SDK Manager", command: "alp.ideHub.focus" }
           : undefined,
     },
     {

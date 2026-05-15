@@ -24,11 +24,11 @@ const ACTIONS: ActionCard[] = [
     buttonLabel: "Bootstrap",
   },
   {
-    id: "install-sdk",
-    label: "Install SDK",
-    description: "Download and configure the ALP firmware SDK",
-    command: "alp.sdk.install",
-    buttonLabel: "Install",
+    id: "sdk-manager",
+    label: "SDK Manager",
+    description: "Browse, install, and switch ALP firmware SDK versions",
+    command: "alp.ideHub.focus",
+    buttonLabel: "Open",
   },
   {
     id: "west-build",

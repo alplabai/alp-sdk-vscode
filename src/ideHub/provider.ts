@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
+import {
+    installSdkRelease,
+    listRemoteSdkReleases,
+    switchActiveSdk,
+} from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as vscode from "vscode";
 import {
-  type ExtToWebviewMessage,
-  type WebviewToExtMessage,
-  emptyAlpIdeState,
+    PROTOCOL_VERSION,
+    type ExtToWebviewMessage,
+    type WebviewToExtMessage,
+    emptyAlpIdeState,
 } from "./messages";
-import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
-import {
-  installSdkRelease,
-  listRemoteSdkReleases,
-  switchActiveSdk,
-} from "@alp-sdk/core/sdk/service";
 import { queryAlpIdeState, sdkCacheRoot } from "./vscodeAdapter";
 
 const VIEW_ID = "alp-ide.panel";
@@ -63,12 +64,33 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
       undefined,
       this.disposables,
     );
+
+    // Auto-refresh when workspace folders change (project open/close).
+    this.disposables.push(
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        void this.refresh();
+      }),
+    );
+
+    // Auto-refresh when board.yaml is created, changed, or deleted.
+    const boardYamlWatcher =
+      vscode.workspace.createFileSystemWatcher("**/board.yaml");
+    this.disposables.push(
+      boardYamlWatcher,
+      boardYamlWatcher.onDidCreate(() => void this.refresh()),
+      boardYamlWatcher.onDidChange(() => void this.refresh()),
+      boardYamlWatcher.onDidDelete(() => void this.refresh()),
+    );
   }
 
   async refresh(): Promise<void> {
     if (!this.view) return;
     const state = await queryAlpIdeState().catch(() => emptyAlpIdeState());
-    const msg: ExtToWebviewMessage = { type: "stateUpdate", state };
+    const msg: ExtToWebviewMessage = {
+      type: "stateUpdate",
+      _v: PROTOCOL_VERSION,
+      state,
+    };
     void this.view.webview.postMessage(msg);
   }
 
@@ -109,8 +131,7 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
 
   private async handleSwitchSdk(sdkPath: string): Promise<void> {
     const workspaceRoot =
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
-      process.cwd();
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
     try {
       switchActiveSdk(
         workspaceRoot,
@@ -129,21 +150,29 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   private async handleRequestSdkReleases(): Promise<void> {
     if (!this.view) return;
     try {
-      const releases = await listRemoteSdkReleases(
-        async (url, headers) => {
-          const { default: https } = await import("https");
-          return new Promise((resolve, reject) => {
-            const options = { headers: { "User-Agent": "alp-sdk-vscode", ...headers } };
-            https.get(url, options, (res) => {
+      const releases = await listRemoteSdkReleases(async (url, headers) => {
+        const { default: https } = await import("https");
+        return new Promise((resolve, reject) => {
+          const options = {
+            headers: { "User-Agent": "alp-sdk-vscode", ...headers },
+          };
+          https
+            .get(url, options, (res) => {
               let data = "";
-              res.on("data", (chunk: string) => { data += chunk; });
-              res.on("end", () => {
-                try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+              res.on("data", (chunk: string) => {
+                data += chunk;
               });
-            }).on("error", reject);
-          });
-        },
-      );
+              res.on("end", () => {
+                try {
+                  resolve(JSON.parse(data));
+                } catch (e) {
+                  reject(e);
+                }
+              });
+            })
+            .on("error", reject);
+        });
+      });
       const msg: ExtToWebviewMessage = { type: "sdkReleasesLoaded", releases };
       void this.view.webview.postMessage(msg);
     } catch {
@@ -164,19 +193,32 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
         const repoUrl = "https://github.com/alplabai/alp-sdk.git";
         const proc = cp.spawn("git", [
           "clone",
-          "--branch", ver,
-          "--depth", "1",
+          "--branch",
+          ver,
+          "--depth",
+          "1",
           repoUrl,
           destPath,
         ]);
         proc.on("exit", (code) => {
-          code === 0 ? resolve() : reject(new Error(`git clone exited with code ${code}`));
+          code === 0
+            ? resolve()
+            : reject(new Error(`git clone exited with code ${code}`));
         });
         proc.on("error", reject);
       });
 
-    const sendProgress = (log: string, done: boolean, success?: boolean): void => {
-      const msg: ExtToWebviewMessage = { type: "sdkInstallProgress", log, done, success };
+    const sendProgress = (
+      log: string,
+      done: boolean,
+      success?: boolean,
+    ): void => {
+      const msg: ExtToWebviewMessage = {
+        type: "sdkInstallProgress",
+        log,
+        done,
+        success,
+      };
       void this.view?.webview.postMessage(msg);
     };
 
@@ -196,7 +238,11 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
             gitInstallAdapter,
             (p) => fs.existsSync(p),
             (p) => {
-              try { return fs.readFileSync(p, "utf8"); } catch { return ""; }
+              try {
+                return fs.readFileSync(p, "utf8");
+              } catch {
+                return "";
+              }
             },
           );
           sendProgress(`SDK ${version} installed successfully.`, true, true);

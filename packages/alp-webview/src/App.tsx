@@ -3,7 +3,7 @@ import { ProjectSection } from "./sections/ProjectSection";
 import { QuickActionsSection } from "./sections/QuickActionsSection";
 import { SdkSection } from "./sections/SdkSection";
 import { SetupSection } from "./sections/SetupSection";
-import type { AlpIdeState, SdkRelease } from "./types";
+import { PROTOCOL_VERSION, type AlpIdeState, type SdkRelease } from "./types";
 import { onMessage, postMessage } from "./vscode";
 
 export function App() {
@@ -11,10 +11,15 @@ export function App() {
   const [sdkReleases, setSdkReleases] = useState<SdkRelease[] | null>(null);
   const [sdkInstallLog, setSdkInstallLog] = useState<string | null>(null);
   const [sdkInstallActive, setSdkInstallActive] = useState(false);
+  const [protocolMismatch, setProtocolMismatch] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onMessage((msg) => {
       if (msg.type === "stateUpdate") {
+        if (msg._v !== PROTOCOL_VERSION) {
+          setProtocolMismatch(true);
+          return;
+        }
         setState(msg.state);
       } else if (msg.type === "sdkReleasesLoaded") {
         setSdkReleases(msg.releases);
@@ -35,6 +40,30 @@ export function App() {
     postMessage({ type: "ready" });
     return unsubscribe;
   }, []);
+
+  if (protocolMismatch) {
+    return (
+      <div className="section">
+        <p className="section-title">ALP IDE</p>
+        <p className="setup-row-desc">
+          The extension was updated. Please reload the window to refresh the
+          panel.
+        </p>
+        <div className="setup-row-action">
+          <vscode-button
+            onClick={() =>
+              postMessage({
+                type: "runCommand",
+                command: "workbench.action.reloadWindow",
+              })
+            }
+          >
+            Reload Window
+          </vscode-button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

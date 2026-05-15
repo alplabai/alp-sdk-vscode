@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
-  LocalSdkEntry,
-  SdkReadinessState,
-  SdkRelease,
+    LocalSdkEntry,
+    SdkReadinessState,
+    SdkRelease,
 } from "@alp-sdk/core/sdk/models";
 
 // Re-export so callers only need this module.
@@ -39,7 +39,12 @@ export interface AlpIdeState {
 
 export function emptyAlpIdeState(): AlpIdeState {
   return {
-    sdk: { activePath: null, version: null, readiness: "unknown", localEntries: [] },
+    sdk: {
+      activePath: null,
+      version: null,
+      readiness: "unknown",
+      localEntries: [],
+    },
     setup: { pythonAvailable: false, westAvailable: false },
     workspace: { workspaceRoot: null, boardYamlExists: false },
   };
@@ -49,8 +54,13 @@ export function emptyAlpIdeState(): AlpIdeState {
 // Extension → Webview messages
 // ---------------------------------------------------------------------------
 
+/** Increment whenever the message protocol changes in a breaking way. */
+export const PROTOCOL_VERSION = 1 as const;
+
 export interface StateUpdateMessage {
   type: "stateUpdate";
+  /** Protocol version — webview shows a reload prompt on mismatch. */
+  _v: typeof PROTOCOL_VERSION;
   state: AlpIdeState;
 }
 
@@ -110,4 +120,3 @@ export type WebviewToExtMessage =
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
   | SwitchSdkMessage;
-
