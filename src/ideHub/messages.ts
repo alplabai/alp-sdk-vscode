@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SdkReadinessState } from "@alp-sdk/core/sdk/models";
+import type {
+  LocalSdkEntry,
+  SdkReadinessState,
+  SdkRelease,
+} from "@alp-sdk/core/sdk/models";
+
+// Re-export so callers only need this module.
+export type { LocalSdkEntry, SdkRelease };
 
 // ---------------------------------------------------------------------------
 // Shared state model (extension → webview)
@@ -10,6 +17,8 @@ export interface SdkStatus {
   activePath: string | null;
   version: string | null;
   readiness: SdkReadinessState | "unknown";
+  /** Locally discovered SDK installations, sorted by version descending. */
+  localEntries: LocalSdkEntry[];
 }
 
 export interface SetupStatus {
@@ -30,7 +39,7 @@ export interface AlpIdeState {
 
 export function emptyAlpIdeState(): AlpIdeState {
   return {
-    sdk: { activePath: null, version: null, readiness: "unknown" },
+    sdk: { activePath: null, version: null, readiness: "unknown", localEntries: [] },
     setup: { pythonAvailable: false, westAvailable: false },
     workspace: { workspaceRoot: null, boardYamlExists: false },
   };
@@ -45,7 +54,23 @@ export interface StateUpdateMessage {
   state: AlpIdeState;
 }
 
-export type ExtToWebviewMessage = StateUpdateMessage;
+export interface SdkReleasesLoadedMessage {
+  type: "sdkReleasesLoaded";
+  releases: SdkRelease[];
+}
+
+export interface SdkInstallProgressMessage {
+  type: "sdkInstallProgress";
+  /** Human-readable status line. */
+  log: string;
+  done: boolean;
+  success?: boolean;
+}
+
+export type ExtToWebviewMessage =
+  | StateUpdateMessage
+  | SdkReleasesLoadedMessage
+  | SdkInstallProgressMessage;
 
 // ---------------------------------------------------------------------------
 // Webview → Extension messages
@@ -60,8 +85,16 @@ export interface RunCommandMessage {
   command: string;
 }
 
-export interface InstallSdkMessage {
-  type: "installSdk";
+export interface SelectSdkPathMessage {
+  type: "selectSdkPath";
+}
+
+export interface RequestSdkReleasesMessage {
+  type: "requestSdkReleases";
+}
+
+export interface RequestSdkInstallMessage {
+  type: "requestSdkInstall";
   version: string;
 }
 
@@ -73,5 +106,8 @@ export interface SwitchSdkMessage {
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
-  | InstallSdkMessage
+  | SelectSdkPathMessage
+  | RequestSdkReleasesMessage
+  | RequestSdkInstallMessage
   | SwitchSdkMessage;
+

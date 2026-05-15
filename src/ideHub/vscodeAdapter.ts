@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { checkSdkReadiness, resolveActiveSdk } from "@alp-sdk/core/sdk/service";
+import {
+  checkSdkReadiness,
+  listLocalSdkEntries,
+  resolveActiveSdk,
+} from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import type { AlpIdeState } from "./messages";
@@ -18,6 +23,11 @@ function commandAvailable(cmd: string): boolean {
 
 function pythonCmd(): string {
   return process.platform === "win32" ? "python" : "python3";
+}
+
+/** Default directory for versioned SDK installations. */
+export function sdkCacheRoot(): string {
+  return path.join(os.homedir(), ".alp", "sdk");
 }
 
 export async function queryAlpIdeState(): Promise<AlpIdeState> {
@@ -56,6 +66,29 @@ export async function queryAlpIdeState(): Promise<AlpIdeState> {
     sdkVersion = fs.readFileSync(versionFile, "utf8").trim();
   }
 
+  const cacheRoot = sdkCacheRoot();
+  const searchRoots = [cacheRoot];
+  if (actualWorkspaceRoot) searchRoots.push(actualWorkspaceRoot);
+
+  const localEntries = listLocalSdkEntries(
+    searchRoots,
+    (p) => fs.existsSync(p),
+    (p) => {
+      try {
+        return fs.readFileSync(p, "utf8");
+      } catch {
+        return "";
+      }
+    },
+    (p) => {
+      try {
+        return fs.readdirSync(p);
+      } catch {
+        return [];
+      }
+    },
+  );
+
   const boardYamlPath = actualWorkspaceRoot
     ? path.join(actualWorkspaceRoot, "board.yaml")
     : null;
@@ -65,6 +98,7 @@ export async function queryAlpIdeState(): Promise<AlpIdeState> {
       activePath: sdkPath,
       version: sdkVersion,
       readiness: sdkReadiness,
+      localEntries,
     },
     setup: {
       pythonAvailable: commandAvailable(pythonCmd()),

@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import * as cp from "child_process";
+import * as fs from "fs";
 import * as vscode from "vscode";
 import {
-    type ExtToWebviewMessage,
-    type WebviewToExtMessage,
-    emptyAlpIdeState,
+  type ExtToWebviewMessage,
+  type WebviewToExtMessage,
+  emptyAlpIdeState,
 } from "./messages";
-import { queryAlpIdeState } from "./vscodeAdapter";
+import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
+import {
+  installSdkRelease,
+  listRemoteSdkReleases,
+  switchActiveSdk,
+} from "@alp-sdk/core/sdk/service";
+import { queryAlpIdeState, sdkCacheRoot } from "./vscodeAdapter";
 
 const VIEW_ID = "alp-ide.panel";
 
@@ -72,19 +80,135 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
       case "runCommand":
         void vscode.commands.executeCommand(msg.command);
         break;
-      case "installSdk":
-        void vscode.commands.executeCommand(
-          "alp.ideHub.installSdk",
-          msg.version,
-        );
+      case "selectSdkPath":
+        void this.handleSelectSdkPath();
+        break;
+      case "requestSdkReleases":
+        void this.handleRequestSdkReleases();
+        break;
+      case "requestSdkInstall":
+        void this.handleRequestSdkInstall(msg.version);
         break;
       case "switchSdk":
-        void vscode.commands.executeCommand(
-          "alp.ideHub.switchSdk",
-          msg.sdkPath,
-        );
+        void this.handleSwitchSdk(msg.sdkPath);
         break;
     }
+  }
+
+  private async handleSelectSdkPath(): Promise<void> {
+    const uris = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      title: "Select ALP SDK root directory",
+    });
+    if (!uris || uris.length === 0) return;
+    const sdkPath = uris[0].fsPath;
+    await this.handleSwitchSdk(sdkPath);
+  }
+
+  private async handleSwitchSdk(sdkPath: string): Promise<void> {
+    const workspaceRoot =
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
+      process.cwd();
+    try {
+      switchActiveSdk(
+        workspaceRoot,
+        sdkPath,
+        (p, content) => fs.writeFileSync(p, content, "utf8"),
+        (p) => fs.mkdirSync(p, { recursive: true }),
+      );
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Alp: failed to switch SDK — ${String(err)}`,
+      );
+    }
+    await this.refresh();
+  }
+
+  private async handleRequestSdkReleases(): Promise<void> {
+    if (!this.view) return;
+    try {
+      const releases = await listRemoteSdkReleases(
+        async (url, headers) => {
+          const { default: https } = await import("https");
+          return new Promise((resolve, reject) => {
+            const options = { headers: { "User-Agent": "alp-sdk-vscode", ...headers } };
+            https.get(url, options, (res) => {
+              let data = "";
+              res.on("data", (chunk: string) => { data += chunk; });
+              res.on("end", () => {
+                try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+              });
+            }).on("error", reject);
+          });
+        },
+      );
+      const msg: ExtToWebviewMessage = { type: "sdkReleasesLoaded", releases };
+      void this.view.webview.postMessage(msg);
+    } catch {
+      void vscode.window.showErrorMessage(
+        "Alp: failed to fetch SDK releases. Check your network connection.",
+      );
+    }
+  }
+
+  private async handleRequestSdkInstall(version: string): Promise<void> {
+    if (!this.view) return;
+
+    const cacheRoot = sdkCacheRoot();
+    fs.mkdirSync(cacheRoot, { recursive: true });
+
+    const gitInstallAdapter: SdkInstallAdapter = (ver, destPath) =>
+      new Promise<void>((resolve, reject) => {
+        const repoUrl = "https://github.com/alplabai/alp-sdk.git";
+        const proc = cp.spawn("git", [
+          "clone",
+          "--branch", ver,
+          "--depth", "1",
+          repoUrl,
+          destPath,
+        ]);
+        proc.on("exit", (code) => {
+          code === 0 ? resolve() : reject(new Error(`git clone exited with code ${code}`));
+        });
+        proc.on("error", reject);
+      });
+
+    const sendProgress = (log: string, done: boolean, success?: boolean): void => {
+      const msg: ExtToWebviewMessage = { type: "sdkInstallProgress", log, done, success };
+      void this.view?.webview.postMessage(msg);
+    };
+
+    sendProgress(`Installing SDK ${version}…`, false);
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `ALP: Installing SDK ${version}`,
+        cancellable: false,
+      },
+      async () => {
+        try {
+          await installSdkRelease(
+            version,
+            cacheRoot,
+            gitInstallAdapter,
+            (p) => fs.existsSync(p),
+            (p) => {
+              try { return fs.readFileSync(p, "utf8"); } catch { return ""; }
+            },
+          );
+          sendProgress(`SDK ${version} installed successfully.`, true, true);
+          await this.refresh();
+        } catch (err) {
+          sendProgress(`Install failed: ${String(err)}`, true, false);
+          void vscode.window.showErrorMessage(
+            `Alp: SDK install failed — ${String(err)}`,
+          );
+        }
+      },
+    );
   }
 
   private buildHtml(webview: vscode.Webview): string {

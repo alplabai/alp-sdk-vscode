@@ -1,7 +1,7 @@
 // Types mirrored from src/ideHub/messages.ts — kept in sync manually.
 // The webview is a separate build; we do not share source with the extension.
 
-export type SdkReadinessState = "ready" | "missing" | "incomplete" | "unknown";
+export type SdkReadinessState = "ready" | "partial" | "missing" | "unknown";
 
 /** Visual state for a readiness status chip. */
 export type ChipState =
@@ -10,10 +10,25 @@ export type ChipState =
   | "not-installed"
   | "not-updated";
 
+export interface LocalSdkEntry {
+  path: string;
+  version: string | null;
+  readiness: SdkReadinessState;
+  issues: string[];
+}
+
+export interface SdkRelease {
+  tag: string;
+  publishedAt: string;
+  tarballUrl: string;
+  releaseNotesSummary: string;
+}
+
 export interface SdkStatus {
   activePath: string | null;
   version: string | null;
   readiness: SdkReadinessState;
+  localEntries: LocalSdkEntry[];
 }
 
 export interface SetupStatus {
@@ -37,7 +52,20 @@ export interface StateUpdateMessage {
   type: "stateUpdate";
   state: AlpIdeState;
 }
-export type ExtToWebviewMessage = StateUpdateMessage;
+export interface SdkReleasesLoadedMessage {
+  type: "sdkReleasesLoaded";
+  releases: SdkRelease[];
+}
+export interface SdkInstallProgressMessage {
+  type: "sdkInstallProgress";
+  log: string;
+  done: boolean;
+  success?: boolean;
+}
+export type ExtToWebviewMessage =
+  | StateUpdateMessage
+  | SdkReleasesLoadedMessage
+  | SdkInstallProgressMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -47,8 +75,14 @@ export interface RunCommandMessage {
   type: "runCommand";
   command: string;
 }
-export interface InstallSdkMessage {
-  type: "installSdk";
+export interface SelectSdkPathMessage {
+  type: "selectSdkPath";
+}
+export interface RequestSdkReleasesMessage {
+  type: "requestSdkReleases";
+}
+export interface RequestSdkInstallMessage {
+  type: "requestSdkInstall";
   version: string;
 }
 export interface SwitchSdkMessage {
@@ -58,5 +92,8 @@ export interface SwitchSdkMessage {
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
-  | InstallSdkMessage
+  | SelectSdkPathMessage
+  | RequestSdkReleasesMessage
+  | RequestSdkInstallMessage
   | SwitchSdkMessage;
+
