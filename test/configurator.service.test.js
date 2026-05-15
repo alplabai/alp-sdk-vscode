@@ -6,7 +6,7 @@ const {
   createDefaultBoardModel,
   normalizeBoardModel,
   parseBoardModel,
-} = require("../out/configurator/service.js");
+} = require("../packages/alp-core/dist/configurator/service.js");
 
 test("normalizeBoardModel drops empty optional blocks", () => {
   const normalized = normalizeBoardModel({

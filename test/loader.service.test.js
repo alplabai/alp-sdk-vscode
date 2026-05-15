@@ -6,7 +6,7 @@ const {
   getGenerationTargetSupport,
   listGenerationTargetSupport,
   summarizeLoaderBatch,
-} = require("../out/loader/service.js");
+} = require("../packages/alp-core/dist/loader/service.js");
 
 test("createLoaderPlan resolves output and command line", () => {
   const plan = createLoaderPlan(

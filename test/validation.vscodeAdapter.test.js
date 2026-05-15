@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   executeValidatorPlanWithSpawn,
-} = require("../out/validation/adapterCore.js");
+} = require("../packages/alp-core/dist/validation/adapterCore.js");
 
 test("executeValidatorPlanWithSpawn forwards command and normalizes output", () => {
   const calls = [];

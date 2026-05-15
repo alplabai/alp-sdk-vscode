@@ -11,7 +11,7 @@ const {
   listModuleTemplates,
   listWizardTemplates,
   suggestTemplateIdFromBoardModel,
-} = require("../out/wizard/service.js");
+} = require("../packages/alp-core/dist/wizard/service.js");
 
 test("listWizardTemplates includes expected starter catalog", () => {
   const templates = listWizardTemplates();
@@ -24,6 +24,7 @@ test("listWizardTemplates includes expected starter catalog", () => {
       "iot-starter",
       "edge-ai-starter",
       "board-diagnostics",
+      "host-tooling-starter",
     ],
   );
 });
@@ -80,6 +81,45 @@ test("createWizardPlan builds starter files and scaffold preview", () => {
   );
   assert.ok(rootCmake);
   assert.match(rootCmake.content, /add_subdirectory\(src\)/);
+});
+
+test("createWizardPlan builds host-tooling-starter TypeScript monorepo scaffold", () => {
+  const plan = createWizardPlan({
+    templateId: "host-tooling-starter",
+    somSku: "E1M-AEN701",
+    carrierName: "E1M-EVK",
+    os: "zephyr",
+    features: { wifi: false, mqtt: false, ble: false, tls: false },
+    libraries: [],
+  });
+
+  assert.equal(plan.template.id, "host-tooling-starter");
+  assert.equal(plan.files.length, 12);
+
+  const paths = plan.files.map((f) => f.relativePath).sort();
+  assert.ok(paths.includes("package.json"));
+  assert.ok(paths.includes("pnpm-workspace.yaml"));
+  assert.ok(paths.includes("tsconfig.json"));
+  assert.ok(paths.includes(".gitignore"));
+  assert.ok(paths.includes("README.md"));
+  assert.ok(paths.includes("packages/core/package.json"));
+  assert.ok(paths.includes("packages/core/tsconfig.json"));
+  assert.ok(paths.includes("packages/core/src/index.ts"));
+  assert.ok(paths.includes("packages/cli/package.json"));
+  assert.ok(paths.includes("packages/cli/tsconfig.json"));
+  assert.ok(paths.includes("packages/cli/src/cli/main.ts"));
+  assert.ok(paths.includes("src/extension.ts"));
+
+  const coreIndex = plan.files.find(
+    (f) => f.relativePath === "packages/core/src/index.ts",
+  );
+  assert.ok(coreIndex);
+  assert.match(coreIndex.content, /export const version/);
+
+  const rootPkg = plan.files.find((f) => f.relativePath === "package.json");
+  assert.ok(rootPkg);
+  assert.match(rootPkg.content, /pnpm/);
+  assert.doesNotMatch(rootPkg.content, /board\.yaml/);
 });
 
 test("createWizardPreviewMarkdown contains selections and file change summary", () => {

@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const {
   createStatusBarPresentation,
   parseBoardSummary,
-} = require("../out/boardSummary/service.js");
+} = require("../packages/alp-core/dist/boardSummary/service.js");
 
 test("parseBoardSummary extracts sku, carrier, and os", () => {
   const summary = parseBoardSummary(`

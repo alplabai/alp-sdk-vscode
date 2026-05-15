@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { resolveProjectContext } = require("../out/project/service.js");
+const { resolveProjectContext } = require("../packages/alp-core/dist/project/service.js");
 
 test("resolveProjectContext resolves sdk, board yaml, west cwd, and python", () => {
   const context = resolveProjectContext(
