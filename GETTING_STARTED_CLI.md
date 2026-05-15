@@ -1,45 +1,85 @@
 # Getting Started (CLI)
 
-Last revised: 2026-05-14
+Last revised: 2026-05-15
 
-This guide covers the terminal-first ALP CLI workflow for local development and CI.
+This guide covers the terminal-first ALP CLI workflow. Two usage modes are
+supported: **standalone install** (npm, recommended for end users and CI) and
+**development from source** (build from this repository).
+
+## 0. Standalone Install
+
+Install the `alp-sdk` npm package to get the `alp` command globally:
+
+```bash
+npm install -g alp-sdk
+alp --help
+```
+
+Or use without installing via npx:
+
+```bash
+npx alp-sdk --help
+```
+
+For CI environments, pin to an exact version to ensure reproducibility:
+
+```bash
+npm install -g alp-sdk@0.3.0
+```
+
+For air-gapped or offline environments, download the tarball from the
+[GitHub release artifacts](https://github.com/alplabai/alp-sdk-vscode/releases)
+and install from the local file:
+
+```bash
+npm install -g ./alp-sdk-0.3.0.tgz
+```
+
+Once installed, replace `node ./packages/alp-cli/dist/cli/main.js` with `alp`
+in all commands below.
 
 ## 1. Prerequisites
 
 - Node.js 20+
-- Compiled CLI entrypoint at out/cli/main.js
 - Project folder with board.yaml
 - ALP SDK root containing scripts/alp_project.py
+- For development from source: compiled CLI at `packages/alp-cli/dist/cli/main.js`
 
-## 2. Build CLI Artifacts
+## 2. Build CLI Artifacts (development from source)
 
 ```bash
-npm ci
-npm run compile
+pnpm install
+pnpm run compile
 ```
 
 ## 3. Validate Project Config
 
 ```bash
-node ./out/cli/main.js validate --project . --sdk-root ../alp-sdk
+alp validate --project . --sdk-root ../alp-sdk
 ```
 
 CI-friendly variant:
 
 ```bash
-node ./out/cli/main.js validate --project . --sdk-root ../alp-sdk --format json > validate-report.json
+alp validate --project . --sdk-root ../alp-sdk --format json > validate-report.json
+```
+
+Development from source:
+
+```bash
+node ./packages/alp-cli/dist/cli/main.js validate --project . --sdk-root ../alp-sdk
 ```
 
 ## 4. Generate Derived Outputs
 
 ```bash
-node ./out/cli/main.js generate --project . --sdk-root ../alp-sdk --all
+alp generate --project . --sdk-root ../alp-sdk --all
 ```
 
 Single target example:
 
 ```bash
-node ./out/cli/main.js generate --project . --sdk-root ../alp-sdk --target zephyr-conf
+alp generate --project . --sdk-root ../alp-sdk --target zephyr-conf
 ```
 
 ## 5. Project Bootstrap and Scaffolding
@@ -47,22 +87,22 @@ node ./out/cli/main.js generate --project . --sdk-root ../alp-sdk --target zephy
 Initialize a starter project:
 
 ```bash
-node ./out/cli/main.js init --template minimal-app --name demo-app --destination . --preview
+alp init --template minimal-app --name demo-app --destination . --preview
 ```
 
 Scaffold module files:
 
 ```bash
-node ./out/cli/main.js scaffold --template sensor-driver --name sensor_mod --destination . --preview
+alp scaffold --template sensor-driver --name sensor_mod --destination . --preview
 ```
 
 ## 6. Explain, Presets, Diff, Doctor
 
 ```bash
-node ./out/cli/main.js explain --format json
-node ./out/cli/main.js presets --project . --sdk-root ../alp-sdk --format json
-node ./out/cli/main.js diff --project . --format json
-node ./out/cli/main.js doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json
+alp explain --format json
+alp presets --project . --sdk-root ../alp-sdk --format json
+alp diff --project . --format json
+alp doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json
 ```
 
 ## 7. Debug Workflows: Inspect, Trace, Support Bundle
@@ -70,19 +110,19 @@ node ./out/cli/main.js doctor --project . --sdk-root ../alp-sdk --target-kind na
 Inspect resolved values and their origins:
 
 ```bash
-node ./out/cli/main.js inspect --project . --sdk-root ../alp-sdk --path workspaceRoot --show-origin --format json
+alp inspect --project . --sdk-root ../alp-sdk --path workspaceRoot --show-origin --format json
 ```
 
 Trace generation decisions for one output target:
 
 ```bash
-node ./out/cli/main.js trace --project . --sdk-root ../alp-sdk --target zephyr-conf --path sdkRoot --format json
+alp trace --project . --sdk-root ../alp-sdk --target zephyr-conf --path sdkRoot --format json
 ```
 
 Export a support bundle for issue triage:
 
 ```bash
-node ./out/cli/main.js support-bundle --project . --sdk-root ../alp-sdk --destination ./.alp-support --target-kind native-host --server none --format json
+alp support-bundle --project . --sdk-root ../alp-sdk --destination ./.alp-support --target-kind native-host --server none --format json
 ```
 
 ## 8. Completion Scripts
@@ -90,9 +130,9 @@ node ./out/cli/main.js support-bundle --project . --sdk-root ../alp-sdk --destin
 Generate completion script for your shell:
 
 ```bash
-node ./out/cli/main.js completion --shell bash
-node ./out/cli/main.js completion --shell zsh
-node ./out/cli/main.js completion --shell fish
+alp completion --shell bash
+alp completion --shell zsh
+alp completion --shell fish
 ```
 
 ## 9. Exit Codes

@@ -4,7 +4,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { executeCli, parseCliArgs } = require("../out/cli/service.js");
+const {
+  executeCli,
+  parseCliArgs,
+} = require("../packages/alp-cli/dist/cli/service.js");
 
 function createSpawnWith(status, stderr = "") {
   return () => ({
@@ -159,8 +162,8 @@ test("parseCliArgs parses inspect path and origin flags", () => {
   assert.deepEqual(parsed.errors, []);
 });
 
-test("executeCli returns clean validate result with json envelope", () => {
-  const result = executeCli({
+test("executeCli returns clean validate result with json envelope", async () => {
+  const result = await executeCli({
     argv: [
       "validate",
       "--project",
@@ -188,8 +191,8 @@ test("executeCli returns clean validate result with json envelope", () => {
   assert.equal(result.envelope.issues.length, 0);
 });
 
-test("executeCli maps schema validation failures to exit code 2", () => {
-  const result = executeCli({
+test("executeCli maps schema validation failures to exit code 2", async () => {
+  const result = await executeCli({
     argv: ["validate", "--project=/workspace/app", "--sdk-root=/workspace/sdk"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -206,8 +209,8 @@ test("executeCli maps schema validation failures to exit code 2", () => {
   assert.match(result.envelope.issues[0].message, /schema/);
 });
 
-test("executeCli fails with validation exit code when board.yaml is missing", () => {
-  const result = executeCli({
+test("executeCli fails with validation exit code when board.yaml is missing", async () => {
+  const result = await executeCli({
     argv: [
       "validate",
       "--project",
@@ -227,8 +230,8 @@ test("executeCli fails with validation exit code when board.yaml is missing", ()
   assert.match(result.envelope.issues[0].message, /board\.yaml/);
 });
 
-test("executeCli runs generate for all targets in json mode", () => {
-  const result = executeCli({
+test("executeCli runs generate for all targets in json mode", async () => {
+  const result = await executeCli({
     argv: [
       "generate",
       "--project",
@@ -261,8 +264,8 @@ test("executeCli runs generate for all targets in json mode", () => {
   assert.deepEqual(result.envelope.data.failed, []);
 });
 
-test("executeCli maps generate target failures to exit code 3", () => {
-  const result = executeCli({
+test("executeCli maps generate target failures to exit code 3", async () => {
+  const result = await executeCli({
     argv: [
       "generate",
       "--project",
@@ -288,8 +291,8 @@ test("executeCli maps generate target failures to exit code 3", () => {
   assert.match(result.envelope.issues[0].message, /emit failed/);
 });
 
-test("executeCli explain returns overview in json mode", () => {
-  const result = executeCli({
+test("executeCli explain returns overview in json mode", async () => {
+  const result = await executeCli({
     argv: ["explain", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -311,8 +314,8 @@ test("executeCli explain returns overview in json mode", () => {
   );
 });
 
-test("executeCli explain resolves project template details", () => {
-  const result = executeCli({
+test("executeCli explain resolves project template details", async () => {
+  const result = await executeCli({
     argv: ["explain", "--template", "iot-starter", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -327,8 +330,8 @@ test("executeCli explain resolves project template details", () => {
   assert.match(result.envelope.data.summary, /iot-starter/);
 });
 
-test("executeCli explain resolves generation target details", () => {
-  const result = executeCli({
+test("executeCli explain resolves generation target details", async () => {
+  const result = await executeCli({
     argv: ["explain", "--target", "dts-overlay", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -346,8 +349,8 @@ test("executeCli explain resolves generation target details", () => {
   );
 });
 
-test("executeCli explain rejects unknown template", () => {
-  const result = executeCli({
+test("executeCli explain rejects unknown template", async () => {
+  const result = await executeCli({
     argv: ["explain", "--template", "unknown-template", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -360,7 +363,7 @@ test("executeCli explain rejects unknown template", () => {
   assert.equal(result.envelope.issues[0].code, "explain.template-unknown");
 });
 
-test("executeCli returns presets from sdk metadata in json mode", () => {
+test("executeCli returns presets from sdk metadata in json mode", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-presets-json-"));
   const sdkRoot = path.join(root, "alp-sdk");
   const modulesDir = path.join(sdkRoot, "metadata/e1m_modules/E1M-AEN701");
@@ -385,7 +388,7 @@ test("executeCli returns presets from sdk metadata in json mode", () => {
     ].join("\n"),
   );
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: [
       "presets",
       "--project",
@@ -409,8 +412,8 @@ test("executeCli returns presets from sdk metadata in json mode", () => {
   assert.equal(result.envelope.issues.length, 0);
 });
 
-test("executeCli presets returns warning when sdk-root is unresolved", () => {
-  const result = executeCli({
+test("executeCli presets returns warning when sdk-root is unresolved", async () => {
+  const result = await executeCli({
     argv: ["presets", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -425,8 +428,8 @@ test("executeCli presets returns warning when sdk-root is unresolved", () => {
   assert.equal(result.envelope.issues[0].code, "presets.sdk-root-unresolved");
 });
 
-test("executeCli returns doctor failure when target/server are incompatible", () => {
-  const result = executeCli({
+test("executeCli returns doctor failure when target/server are incompatible", async () => {
+  const result = await executeCli({
     argv: ["doctor", "--target-kind", "native-host", "--server", "openocd"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -440,8 +443,8 @@ test("executeCli returns doctor failure when target/server are incompatible", ()
   assert.equal(result.envelope.issues[0].code, "doctor.server-compatibility");
 });
 
-test("executeCli returns doctor report in json mode", () => {
-  const result = executeCli({
+test("executeCli returns doctor report in json mode", async () => {
+  const result = await executeCli({
     argv: [
       "doctor",
       "--project",
@@ -471,8 +474,8 @@ test("executeCli returns doctor report in json mode", () => {
   assert.equal(result.envelope.data.server, "none");
 });
 
-test("executeCli inspect returns resolved values in json mode", () => {
-  const result = executeCli({
+test("executeCli inspect returns resolved values in json mode", async () => {
+  const result = await executeCli({
     argv: [
       "inspect",
       "--project",
@@ -501,8 +504,8 @@ test("executeCli inspect returns resolved values in json mode", () => {
   assert.equal(result.envelope.data.resolvedValues[0].key, "workspaceRoot");
 });
 
-test("executeCli trace returns planning decisions for target and path", () => {
-  const result = executeCli({
+test("executeCli trace returns planning decisions for target and path", async () => {
+  const result = await executeCli({
     argv: [
       "trace",
       "--project",
@@ -541,7 +544,7 @@ test("executeCli trace returns planning decisions for target and path", () => {
   );
 });
 
-test("executeCli support-bundle writes an export file", () => {
+test("executeCli support-bundle writes an export file", async () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "alp-cli-support-bundle-"),
   );
@@ -552,7 +555,7 @@ test("executeCli support-bundle writes an export file", () => {
   fs.writeFileSync(path.join(sdkRoot, "scripts/alp_project.py"), "# stub\n");
   fs.writeFileSync(path.join(root, "board.yaml"), "schema_version: 1\n");
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: [
       "support-bundle",
       "--project",
@@ -580,10 +583,10 @@ test("executeCli support-bundle writes an export file", () => {
   assert.equal(fs.existsSync(result.envelope.data.outputPath), true);
 });
 
-test("executeCli init preview reports planned files without writing", () => {
+test("executeCli init preview reports planned files without writing", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-init-preview-"));
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: [
       "init",
       "--destination",
@@ -612,10 +615,10 @@ test("executeCli init preview reports planned files without writing", () => {
   assert.equal(fs.existsSync(boardPath), false);
 });
 
-test("executeCli init writes files when preview is disabled", () => {
+test("executeCli init writes files when preview is disabled", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-init-write-"));
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: [
       "init",
       "--destination",
@@ -641,7 +644,7 @@ test("executeCli init writes files when preview is disabled", () => {
   assert.equal(fs.existsSync(boardPath), true);
 });
 
-test("executeCli init blocks overwriting without force", () => {
+test("executeCli init blocks overwriting without force", async () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "alp-cli-init-overwrite-"),
   );
@@ -649,7 +652,7 @@ test("executeCli init blocks overwriting without force", () => {
   fs.mkdirSync(appRoot, { recursive: true });
   fs.writeFileSync(path.join(appRoot, "board.yaml"), "schema_version: 999\n");
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: [
       "init",
       "--destination",
@@ -670,12 +673,12 @@ test("executeCli init blocks overwriting without force", () => {
   assert.equal(result.envelope.issues[0].code, "init.overwrite-blocked");
 });
 
-test("executeCli scaffold preview reports planned files without writing", () => {
+test("executeCli scaffold preview reports planned files without writing", async () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "alp-cli-scaffold-preview-"),
   );
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: [
       "scaffold",
       "--destination",
@@ -704,12 +707,12 @@ test("executeCli scaffold preview reports planned files without writing", () => 
   assert.equal(fs.existsSync(headerPath), false);
 });
 
-test("executeCli scaffold writes files when preview is disabled", () => {
+test("executeCli scaffold writes files when preview is disabled", async () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "alp-cli-scaffold-write-"),
   );
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: [
       "scaffold",
       "--destination",
@@ -736,7 +739,7 @@ test("executeCli scaffold writes files when preview is disabled", () => {
   assert.equal(fs.existsSync(sourcePath), true);
 });
 
-test("executeCli scaffold blocks overwriting without force", () => {
+test("executeCli scaffold blocks overwriting without force", async () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "alp-cli-scaffold-overwrite-"),
   );
@@ -744,7 +747,7 @@ test("executeCli scaffold blocks overwriting without force", () => {
   fs.mkdirSync(path.dirname(headerPath), { recursive: true });
   fs.writeFileSync(headerPath, "// user-owned header\n");
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: [
       "scaffold",
       "--destination",
@@ -767,8 +770,8 @@ test("executeCli scaffold blocks overwriting without force", () => {
   assert.equal(result.envelope.issues[0].code, "scaffold.overwrite-blocked");
 });
 
-test("executeCli scaffold requires module name", () => {
-  const result = executeCli({
+test("executeCli scaffold requires module name", async () => {
+  const result = await executeCli({
     argv: ["scaffold", "--template", "sensor-driver", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -781,7 +784,7 @@ test("executeCli scaffold requires module name", () => {
   assert.equal(result.envelope.issues[0].code, "scaffold.name-required");
 });
 
-test("executeCli diff reports effective-config changes in json mode", () => {
+test("executeCli diff reports effective-config changes in json mode", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "alp-cli-diff-json-"));
   const boardPath = path.join(root, "board.yaml");
   fs.writeFileSync(
@@ -801,7 +804,7 @@ test("executeCli diff reports effective-config changes in json mode", () => {
     ].join("\n"),
   );
 
-  const result = executeCli({
+  const result = await executeCli({
     argv: ["diff", "--project", root, "--format", "json"],
     cwd: root,
     platform: "linux",
@@ -820,8 +823,8 @@ test("executeCli diff reports effective-config changes in json mode", () => {
   );
 });
 
-test("executeCli diff fails when board.yaml is unresolved", () => {
-  const result = executeCli({
+test("executeCli diff fails when board.yaml is unresolved", async () => {
+  const result = await executeCli({
     argv: ["diff", "--project", "/workspace/app", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -835,8 +838,8 @@ test("executeCli diff fails when board.yaml is unresolved", () => {
   assert.equal(result.envelope.issues[0].code, "diff.board-yaml-missing");
 });
 
-test("executeCli completion returns script for selected shell", () => {
-  const result = executeCli({
+test("executeCli completion returns script for selected shell", async () => {
+  const result = await executeCli({
     argv: ["completion", "--shell", "fish", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -850,8 +853,8 @@ test("executeCli completion returns script for selected shell", () => {
   assert.match(result.envelope.data.script, /complete -c alp/);
 });
 
-test("executeCli completion rejects unsupported shell", () => {
-  const result = executeCli({
+test("executeCli completion rejects unsupported shell", async () => {
+  const result = await executeCli({
     argv: ["completion", "--shell", "pwsh", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",
@@ -865,8 +868,8 @@ test("executeCli completion rejects unsupported shell", () => {
   assert.equal(result.envelope.issues[0].code, "completion.shell-unsupported");
 });
 
-test("executeCli reports not-implemented commands with deterministic envelope", () => {
-  const result = executeCli({
+test("executeCli reports not-implemented commands with deterministic envelope", async () => {
+  const result = await executeCli({
     argv: ["debug-config", "--format", "json"],
     cwd: "/workspace/app",
     platform: "linux",

@@ -58,6 +58,9 @@ jobs:
       - name: Bundle CLI (esbuild — extension/webview not compiled)
         run: pnpm --filter alp-sdk run bundle
 
+      - name: Run CLI contract compatibility tests
+        run: node --test test/cli.compat.test.js
+
       - name: Smoke test packed CLI
         run: bash ./scripts/ci/smoke-cli.sh
 

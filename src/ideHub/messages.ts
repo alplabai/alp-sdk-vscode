@@ -47,7 +47,11 @@ export function emptyAlpIdeState(): AlpIdeState {
       readiness: "unknown",
       localEntries: [],
     },
-    setup: { pythonAvailable: false, westAvailable: false, lastBootstrapAt: null },
+    setup: {
+      pythonAvailable: false,
+      westAvailable: false,
+      lastBootstrapAt: null,
+    },
     workspace: { workspaceRoot: null, boardYamlExists: false },
   };
 }

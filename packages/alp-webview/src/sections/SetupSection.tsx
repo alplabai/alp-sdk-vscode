@@ -92,7 +92,11 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
       severity: state.workspace.workspaceRoot !== null ? "ok" : "warning",
       action:
         state.workspace.workspaceRoot === null
-          ? { label: "Open Folder", command: "vscode.openFolder", kind: "manual" }
+          ? {
+              label: "Open Folder",
+              command: "vscode.openFolder",
+              kind: "manual",
+            }
           : undefined,
       instruction:
         state.workspace.workspaceRoot === null
@@ -201,4 +205,3 @@ export function SetupSection({ state }: Props) {
     </div>
   );
 }
-
