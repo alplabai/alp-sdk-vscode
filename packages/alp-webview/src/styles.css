@@ -109,3 +109,106 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Readiness banner ──────────────────────────────────────────────────── */
+.readiness-banner {
+  padding: 5px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  border-left: 3px solid;
+}
+
+.banner-ok {
+  border-color: var(--vscode-testing-iconPassed, #4dbb4d);
+  background: var(--vscode-testing-message-infoBackground, rgba(77, 187, 77, 0.08));
+  color: var(--vscode-foreground);
+}
+
+.banner-warn {
+  border-color: var(--vscode-editorWarning-foreground, #bf8803);
+  background: var(--vscode-inputValidation-warningBackground, rgba(191, 136, 3, 0.08));
+  color: var(--vscode-foreground);
+}
+
+/* ── Setup rows ────────────────────────────────────────────────────────── */
+.setup-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.setup-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.15)));
+}
+
+.setup-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.setup-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.setup-row-label {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.setup-row-desc {
+  margin: 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.4;
+}
+
+.setup-row-action {
+  margin-top: 4px;
+}
+
+/* ── Action cards ──────────────────────────────────────────────────────── */
+.action-cards {
+  display: flex;
+  flex-direction: column;
+}
+
+.action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.15)));
+}
+
+.action-card:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.action-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.action-card-label {
+  font-weight: 600;
+  font-size: 12px;
+  flex: 1;
+}
+
+.action-card-desc {
+  margin: 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.4;
+}

@@ -63,6 +63,7 @@ export async function queryAlpIdeState(): Promise<AlpIdeState> {
     setup: {
       pythonAvailable: commandAvailable(pythonCmd()),
       westAvailable: commandAvailable("west"),
+      workspaceOpen: (vscode.workspace.workspaceFolders?.length ?? 0) > 0,
     },
   };
 }

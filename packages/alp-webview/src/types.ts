@@ -3,6 +3,9 @@
 
 export type SdkReadinessState = "ready" | "missing" | "incomplete" | "unknown";
 
+/** Visual state for a readiness status chip. */
+export type ChipState = "ready" | "setup-required" | "not-installed" | "not-updated";
+
 export interface SdkStatus {
   activePath: string | null;
   version: string | null;
@@ -12,6 +15,7 @@ export interface SdkStatus {
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
+  workspaceOpen: boolean;
 }
 
 export interface AlpIdeState {

@@ -21,7 +21,7 @@ export function App() {
 
   return (
     <div>
-      <SetupSection setup={state?.setup ?? null} />
+      <SetupSection state={state} />
       <vscode-divider role="separator" />
       <SdkSection sdk={state?.sdk ?? null} />
       <vscode-divider role="separator" />
