@@ -295,9 +295,13 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(distBase, "main.js"),
     );
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(distBase, "main.css"),
-    );
+
+    // Read the extracted CSS file if present; otherwise leave empty (CSS is
+    // inlined inside main.js via Vite's IIFE CSS injection).
+    const cssFilePath = vscode.Uri.joinPath(distBase, "main.css").fsPath;
+    const inlineCss = fs.existsSync(cssFilePath)
+      ? fs.readFileSync(cssFilePath, "utf8")
+      : "";
 
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -306,14 +310,21 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
-             style-src ${webview.cspSource} 'nonce-${nonce}';
+             style-src ${webview.cspSource} 'unsafe-inline';
              script-src 'nonce-${nonce}';
-             font-src ${webview.cspSource};"/>
-  <link rel="stylesheet" href="${styleUri}"/>
+             img-src ${webview.cspSource} data: blob:;
+             font-src ${webview.cspSource} data:;"/>
+  ${inlineCss ? `<style nonce="${nonce}">${inlineCss}</style>` : ""}
   <title>ALP IDE</title>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root"><p style="padding:8px;color:var(--vscode-foreground,#ccc)">Loading ALP IDE…</p></div>
+  <script nonce="${nonce}">
+    window.onerror = function(msg, src, line, col, err) {
+      var r = document.getElementById('root');
+      if (r) r.innerHTML = '<div style="padding:12px;color:#f88;font-size:11px"><b>JS Error:</b> ' + msg + '<br>' + (src||'') + ':' + line + '</div>';
+    };
+  </script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
