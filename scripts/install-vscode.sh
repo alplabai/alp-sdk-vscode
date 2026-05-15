@@ -120,7 +120,7 @@ else
 fi
 
 if [[ "$SKIP_PACKAGE" -eq 0 ]]; then
-  run_cmd npx @vscode/vsce package --out "$VSIX_PATH"
+  run_cmd npx @vscode/vsce package --no-dependencies --out "$VSIX_PATH"
 else
   echo "Skipping package step (--skip-package)."
 fi
@@ -131,6 +131,9 @@ if [[ "$DRY_RUN" -eq 0 && ! -f "$VSIX_PATH" ]]; then
 fi
 
 run_cmd "$CODE_BIN" --install-extension "$VSIX_PATH" --force
+
+# Sync runtime node_modules (pnpm workspace: vsce --no-dependencies skips them)
+run_cmd bash "${SCRIPT_DIR}/sync-deps-to-installed.sh"
 
 echo "Installed extension: $EXT_ID"
 echo "VSIX: $VSIX_PATH"

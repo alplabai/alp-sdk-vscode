@@ -27,11 +27,18 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
 
   static readonly viewId = VIEW_ID;
 
+  private readonly outputChannel = vscode.window.createOutputChannel(
+    "ALP IDE Hub",
+  );
+
   resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken,
   ): void {
+    this.outputChannel.appendLine(
+      `[${new Date().toISOString()}] resolveWebviewView called`,
+    );
     this.view = webviewView;
 
     webviewView.webview.options = {
@@ -47,7 +54,12 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
       ],
     };
 
-    webviewView.webview.html = this.buildHtml(webviewView.webview);
+    const html = this.buildHtml(webviewView.webview);
+    this.outputChannel.appendLine(`[HTML] scriptUri length=${html.length}`);
+    this.outputChannel.appendLine(
+      `[HTML] scriptUri snippet=${html.substring(html.indexOf("src="), html.indexOf("src=") + 80)}`,
+    );
+    webviewView.webview.html = html;
 
     webviewView.webview.onDidReceiveMessage(
       (msg: WebviewToExtMessage) => this.handleMessage(msg),
@@ -281,11 +293,6 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   }
 
   private buildHtml(webview: vscode.Webview): string {
-    const nonce = Array.from(
-      { length: 16 },
-      () => Math.random().toString(36)[2],
-    ).join("");
-
     const distBase = vscode.Uri.joinPath(
       this.context.extensionUri,
       "packages",
@@ -295,13 +302,10 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(distBase, "main.js"),
     );
-
-    // Read the extracted CSS file if present; otherwise leave empty (CSS is
-    // inlined inside main.js via Vite's IIFE CSS injection).
-    const cssFilePath = vscode.Uri.joinPath(distBase, "main.css").fsPath;
-    const inlineCss = fs.existsSync(cssFilePath)
-      ? fs.readFileSync(cssFilePath, "utf8")
-      : "";
+    this.outputChannel.appendLine(`[buildHtml] scriptUri=${String(scriptUri)}`);
+    this.outputChannel.appendLine(
+      `[buildHtml] cspSource=${webview.cspSource}`,
+    );
 
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -309,23 +313,24 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none';
-             style-src ${webview.cspSource} 'unsafe-inline';
-             script-src 'nonce-${nonce}';
-             img-src ${webview.cspSource} data: blob:;
-             font-src ${webview.cspSource} data:;"/>
-  ${inlineCss ? `<style nonce="${nonce}">${inlineCss}</style>` : ""}
+    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
   <title>ALP IDE</title>
 </head>
-<body>
-  <div id="root"><p style="padding:8px;color:var(--vscode-foreground,#ccc)">Loading ALP IDE…</p></div>
-  <script nonce="${nonce}">
+<body style="margin:0;padding:0">
+  <div id="root">
+    <p style="padding:8px;color:var(--vscode-foreground,#fff);background:var(--vscode-sideBar-background,transparent)">
+      ⏳ Loading ALP IDE…
+    </p>
+  </div>
+  <script>
+    console.log('[ALP IDE] inline script running, scriptUri="${scriptUri}"');
     window.onerror = function(msg, src, line, col, err) {
+      console.error('[ALP IDE] error:', msg, src, line);
       var r = document.getElementById('root');
-      if (r) r.innerHTML = '<div style="padding:12px;color:#f88;font-size:11px"><b>JS Error:</b> ' + msg + '<br>' + (src||'') + ':' + line + '</div>';
+      if (r) r.innerHTML = '<pre style="padding:8px;color:red;font-size:11px;white-space:pre-wrap"><b>ALP IDE Error:</b>\\n' + msg + '\\n' + (src||'') + ':' + line + '\\n' + (err ? err.stack : '') + '</pre>';
     };
   </script>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script src="${scriptUri}"></script>
 </body>
 </html>`;
   }
@@ -333,6 +338,7 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   dispose(): void {
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
+    this.outputChannel.dispose();
   }
 }
 
