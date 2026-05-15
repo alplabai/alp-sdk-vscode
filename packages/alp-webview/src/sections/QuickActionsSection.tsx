@@ -15,13 +15,12 @@ export function QuickActionsSection() {
       <p className="section-title">Quick Actions</p>
       <div className="btn-row">
         {ACTIONS.map(({ label, command }) => (
-          <button
+          <vscode-button
             key={command}
-            className="action-btn"
             onClick={() => postMessage({ type: "runCommand", command })}
           >
             {label}
-          </button>
+          </vscode-button>
         ))}
       </div>
     </div>

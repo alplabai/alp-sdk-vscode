@@ -34,7 +34,9 @@ export function SdkSection({ sdk }: Props) {
     return (
       <div className="section">
         <p className="section-title">SDK</p>
-        <span className="no-sdk">Loading…</span>
+        <div className="loading-row">
+          <vscode-progress-ring />
+        </div>
       </div>
     );
   }
@@ -66,36 +68,34 @@ export function SdkSection({ sdk }: Props) {
             </span>
           </div>
           <div className="btn-row">
-            <button
-              className="action-btn"
+            <vscode-button
               onClick={() =>
                 postMessage({ type: "runCommand", command: "alp.sdk.switch" })
               }
             >
               Switch SDK
-            </button>
-            <button
-              className="action-btn"
+            </vscode-button>
+            <vscode-button
               onClick={() =>
                 postMessage({ type: "runCommand", command: "alp.sdk.install" })
               }
             >
               Install SDK
-            </button>
+            </vscode-button>
           </div>
         </>
       ) : (
         <>
           <span className="no-sdk">No active SDK configured.</span>
           <div className="btn-row">
-            <button
-              className="action-btn primary"
+            <vscode-button
+              appearance="primary"
               onClick={() =>
                 postMessage({ type: "runCommand", command: "alp.sdk.install" })
               }
             >
               Install SDK
-            </button>
+            </vscode-button>
           </div>
         </>
       )}

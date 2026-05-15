@@ -16,7 +16,9 @@ export function SetupSection({ setup }: Props) {
     <div className="section">
       <p className="section-title">Setup</p>
       {loading ? (
-        <span className="no-sdk">Loading…</span>
+        <div className="loading-row">
+          <vscode-progress-ring />
+        </div>
       ) : (
         <>
           <div className="row">
@@ -33,14 +35,14 @@ export function SetupSection({ setup }: Props) {
           </div>
           {!allOk && (
             <div className="btn-row">
-              <button
-                className="action-btn primary"
+              <vscode-button
+                appearance="primary"
                 onClick={() =>
                   postMessage({ type: "runCommand", command: "alp.bootstrap" })
                 }
               >
                 Run Bootstrap
-              </button>
+              </vscode-button>
             </div>
           )}
         </>

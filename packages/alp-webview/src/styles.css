@@ -17,8 +17,6 @@ body {
 
 .section {
   padding: 8px 12px;
-  border-bottom: 1px solid
-    var(--vscode-sideBarSectionHeader-border, transparent);
 }
 
 .section-title {
@@ -91,45 +89,10 @@ body {
   margin-top: 4px;
 }
 
-button.action-btn {
-  display: inline-flex;
+.loading-row {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  font-size: var(--vscode-font-size, 13px);
-  font-family: inherit;
-  cursor: pointer;
-  border: 1px solid
-    var(
-      --vscode-button-secondaryBorder,
-      var(--vscode-button-border, transparent)
-    );
-  border-radius: 2px;
-  background: var(
-    --vscode-button-secondaryBackground,
-    var(--vscode-button-background)
-  );
-  color: var(
-    --vscode-button-secondaryForeground,
-    var(--vscode-button-foreground)
-  );
-}
-
-button.action-btn:hover {
-  background: var(
-    --vscode-button-secondaryHoverBackground,
-    var(--vscode-button-hoverBackground)
-  );
-}
-
-button.action-btn.primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border-color: transparent;
-}
-
-button.action-btn.primary:hover {
-  background: var(--vscode-button-hoverBackground);
+  padding: 8px 0;
 }
 
 .no-sdk {

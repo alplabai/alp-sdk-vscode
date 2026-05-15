@@ -22,7 +22,9 @@ export function App() {
   return (
     <div>
       <SetupSection setup={state?.setup ?? null} />
+      <vscode-divider role="separator" />
       <SdkSection sdk={state?.sdk ?? null} />
+      <vscode-divider role="separator" />
       <QuickActionsSection />
     </div>
   );
