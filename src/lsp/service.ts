@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { normalizeBoardModel, parseBoardModel } from "@alp-sdk/core/configurator/service";
+import {
+    normalizeBoardModel,
+    parseBoardModel,
+} from "@alp-sdk/core/configurator/service";
 import { ProjectContext, ProjectSettings } from "@alp-sdk/core/project/models";
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
@@ -42,7 +45,14 @@ export interface BoardYamlQuickFix {
   line: number;
   character: number;
   newText: string;
+  /** If defined, replaces [line:character..endLine:endCharacter] instead of inserting. */
+  endLine?: number;
+  endCharacter?: number;
 }
+
+/** Diagnostic message emitted when a v2 document still has a top-level `os:` key. */
+export const V2_LEGACY_OS_FIELD_MSG =
+  "board.yaml v2: top-level 'os:' is not supported; move it into a 'cores:' block";
 
 export interface EffectiveConfigPreviewPayload {
   schemaVersion: "1";
@@ -88,6 +98,17 @@ const TOP_LEVEL_KEYS: readonly string[] = [
   "iot",
   "diagnostics",
 ];
+const TOP_LEVEL_KEYS_V2: readonly string[] = [
+  "schema_version",
+  "som",
+  "carrier",
+  "cores",
+  "ipc",
+  "inference",
+  "libraries",
+  "iot",
+  "diagnostics",
+];
 
 const CHILD_KEYS: Readonly<Record<string, readonly string[]>> = {
   som: ["sku"],
@@ -128,8 +149,19 @@ const VALUE_CHOICES: Readonly<Record<string, readonly string[]>> = {
 const FIELD_DOCS: Readonly<Record<string, BoardYamlHoverInfo>> = {
   schema_version: {
     title: "schema_version",
-    description: "Board configuration schema version.",
+    description:
+      "Board configuration schema version. Use 2 for heterogeneous multi-core boards.",
     defaultValue: "1",
+  },
+  cores: {
+    title: "cores",
+    description:
+      "Per-core OS and application configuration block (schema v2). Keys are core IDs from the SoM topology (e.g. a55_cluster, m33_sm, m55_hp).",
+  },
+  ipc: {
+    title: "ipc",
+    description:
+      "IPC shared-memory carve-out list (schema v2). Each entry names a carve-out, its endpoints, and size in KiB.",
   },
   som: {
     title: "som",
@@ -291,7 +323,8 @@ export function createBoardYamlCompletionSuggestions(
     return [];
   }
 
-  const choices = resolveKeyChoices(keyContext.containerPath);
+  const schemaVersion = parseBoardModel(documentText).schema_version;
+  const choices = resolveKeyChoices(keyContext.containerPath, schemaVersion);
   return toKeySuggestions(choices, keyContext.prefix);
 }
 
@@ -358,13 +391,72 @@ export function createBoardYamlDocumentSymbols(
   return roots;
 }
 
+/**
+ * Detects schema v2 structural issues that cannot be caught by the Python
+ * validator alone (e.g. a legacy top-level `os:` key in a v2 document).
+ */
+export function detectV2StructuralIssues(documentText: string): Array<{
+  message: string;
+  severity: "warning" | "error" | "suggestion";
+}> {
+  const model = parseBoardModel(documentText);
+  if (model.schema_version >= 2 && model.os !== undefined) {
+    return [{ message: V2_LEGACY_OS_FIELD_MSG, severity: "error" }];
+  }
+  return [];
+}
+
+function inferCoreIdFromSkuAndOs(sku: string | undefined, os: string): string {
+  const skuUpper = (sku ?? "").toUpperCase();
+  const isYocto = os.toLowerCase() === "yocto";
+  if (skuUpper.includes("AEN301") || skuUpper.includes("AEN401")) {
+    // M55-only SoMs — no A-class core
+    return "m55_hp";
+  }
+  if (skuUpper.includes("AEN")) {
+    return isYocto ? "a32_cluster" : "m55_hp";
+  }
+  if (skuUpper.includes("V2N") || skuUpper.includes("V2M")) {
+    return isYocto ? "a55_cluster" : "m33_sm";
+  }
+  if (skuUpper.includes("NX9")) {
+    return isYocto ? "a55_cluster" : "m33";
+  }
+  // Unknown SKU — use generic fallback
+  return isYocto ? "a55_cluster" : "m33_sm";
+}
+
 export function createBoardYamlQuickFixes(
   documentText: string,
   issueMessage: string,
 ): BoardYamlQuickFix[] {
   const lines = splitLines(documentText);
-  const message = issueMessage.toLowerCase();
   const fixes: BoardYamlQuickFix[] = [];
+
+  // v2 migration: replace top-level os: with cores: block
+  if (issueMessage.startsWith(V2_LEGACY_OS_FIELD_MSG)) {
+    const osLineIndex = findKeyLine(lines, "os");
+    if (osLineIndex >= 0) {
+      const osLine = lines[osLineIndex] ?? "";
+      const osValueMatch = /^os:\s*(.+)$/.exec(osLine);
+      const osValue = osValueMatch?.[1]?.trim() ?? "zephyr";
+      const model = parseBoardModel(documentText);
+      const coreId = inferCoreIdFromSkuAndOs(model.som?.sku, osValue);
+      fixes.push({
+        title: `Migrate 'os: ${osValue}' to cores: block (schema v2)`,
+        line: osLineIndex,
+        character: 0,
+        endLine: osLineIndex,
+        endCharacter: osLine.length,
+        newText: `cores:\n  ${coreId}:\n    os: ${osValue}`,
+      });
+    }
+    return fixes;
+  }
+
+  const message = issueMessage.toLowerCase();
+  const model = parseBoardModel(documentText);
+  const isV2 = model.schema_version >= 2;
 
   if (message.includes("som") && !hasTopLevelKey(lines, "som")) {
     fixes.push(
@@ -386,7 +478,8 @@ export function createBoardYamlQuickFixes(
     );
   }
 
-  if (message.includes("os") && !hasTopLevelKey(lines, "os")) {
+  // Only suggest adding os: for v1 documents; v2 uses cores: block
+  if (!isV2 && message.includes("os") && !hasTopLevelKey(lines, "os")) {
     fixes.push(
       createAppendFix(documentText, "Add missing os field", "os: zephyr\n"),
     );
@@ -691,9 +784,12 @@ function resolvePathAtPosition(
   return null;
 }
 
-function resolveKeyChoices(containerPath: string): readonly string[] {
+function resolveKeyChoices(
+  containerPath: string,
+  schemaVersion: number,
+): readonly string[] {
   if (!containerPath) {
-    return TOP_LEVEL_KEYS;
+    return schemaVersion >= 2 ? TOP_LEVEL_KEYS_V2 : TOP_LEVEL_KEYS;
   }
 
   return CHILD_KEYS[containerPath] ?? [];

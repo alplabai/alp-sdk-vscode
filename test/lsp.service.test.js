@@ -10,7 +10,9 @@ const {
   createEffectiveConfigPreviewPayload,
   createIssueRange,
   createLineZeroRange,
+  detectV2StructuralIssues,
   normalizeProjectSettings,
+  V2_LEGACY_OS_FIELD_MSG,
 } = require("../out/lsp/service.js");
 
 test("normalizeProjectSettings returns defaults for non-object input", () => {
@@ -245,4 +247,82 @@ test("createDiagnosticMessageWithContext enriches issue with effective context",
   assert.match(message, /^FAIL som preset: missing preset/m);
   assert.match(message, /Context: .*som\.sku=E1M-AEN701/);
   assert.match(message, /Preset origin: .*som\.sku=board\.yaml inline/);
+});
+
+
+// --- detectV2StructuralIssues ---
+
+test("detectV2StructuralIssues returns empty for v1 document with top-level os", () => {
+  const issues = detectV2StructuralIssues(
+    ["schema_version: 1", "som:", "  sku: E1M-AEN701", "os: zephyr"].join("\n"),
+  );
+  assert.deepEqual(issues, []);
+});
+
+test("detectV2StructuralIssues returns error for v2 document with top-level os", () => {
+  const issues = detectV2StructuralIssues(
+    ["schema_version: 2", "som:", "  sku: E1M-AEN701", "os: zephyr"].join("\n"),
+  );
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].severity, "error");
+  assert.equal(issues[0].message, V2_LEGACY_OS_FIELD_MSG);
+});
+
+test("detectV2StructuralIssues returns empty for clean v2 document", () => {
+  const issues = detectV2StructuralIssues(
+    [
+      "schema_version: 2",
+      "som:",
+      "  sku: E1M-AEN701",
+      "cores:",
+      "  a32_cluster:",
+      "    os: yocto",
+      "  m55_hp:",
+      "    os: zephyr",
+    ].join("\n"),
+  );
+  assert.deepEqual(issues, []);
+});
+
+// --- createBoardYamlQuickFixes v2 migration ---
+
+test("createBoardYamlQuickFixes offers migration fix for v2 legacy os field", () => {
+  const doc = [
+    "schema_version: 2",
+    "som:",
+    "  sku: E1M-AEN701",
+    "os: zephyr",
+  ].join("\n");
+  const fixes = createBoardYamlQuickFixes(doc, V2_LEGACY_OS_FIELD_MSG);
+  assert.equal(fixes.length, 1);
+  assert.match(fixes[0].title, /Migrate 'os: zephyr' to cores: block/);
+  // Should replace the os: line
+  assert.equal(fixes[0].endLine, fixes[0].line);
+  assert.match(fixes[0].newText, /^cores:\n\s+m55_hp:/);
+});
+
+test("createBoardYamlQuickFixes migration uses a55_cluster for yocto on V2N SoM", () => {
+  const doc = [
+    "schema_version: 2",
+    "som:",
+    "  sku: E1M-V2N101",
+    "os: yocto",
+  ].join("\n");
+  const fixes = createBoardYamlQuickFixes(doc, V2_LEGACY_OS_FIELD_MSG);
+  assert.equal(fixes.length, 1);
+  assert.match(fixes[0].newText, /^cores:\n\s+a55_cluster:/);
+});
+
+test("createBoardYamlQuickFixes does not offer add-os fix for v2 documents", () => {
+  const doc = ["schema_version: 2", "som:", "  sku: E1M-AEN701"].join("\n");
+  const fixes = createBoardYamlQuickFixes(doc, "FAIL os missing or invalid");
+  const titles = fixes.map((f) => f.title);
+  assert(!titles.includes("Add missing os field"), "Should not offer os fix for v2");
+});
+
+test("createBoardYamlQuickFixes still offers add-os fix for v1 documents", () => {
+  const doc = ["schema_version: 1", "som:", "  sku: E1M-AEN701"].join("\n");
+  const fixes = createBoardYamlQuickFixes(doc, "FAIL os missing");
+  const titles = fixes.map((f) => f.title);
+  assert(titles.includes("Add missing os field"), "Should offer os fix for v1");
 });
