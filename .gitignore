@@ -3,6 +3,11 @@ node_modules/
 out/
 *.vsix
 
+# Build outputs
+dist/
+*.tsbuildinfo
+*.tgz
+
 # Local editor + OS clutter
 .vscode/settings.json
 .DS_Store

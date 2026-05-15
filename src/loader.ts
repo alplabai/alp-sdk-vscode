@@ -4,19 +4,19 @@ import * as vscode from "vscode";
 import {
     createGenerationTraceReport,
     serializeGenerationTraceReport,
-} from "./debug/service";
+} from "@alp-sdk/core/debug/service";
 import {
     EmitMode,
     GenerationTargetSupport,
     LoaderBatchEntry,
     LoaderPlan,
-} from "./loader/models";
+} from "@alp-sdk/core/loader/models";
 import {
     ALL_EMIT_MODES,
     createLoaderPlan,
     getGenerationTargetSupport,
     summarizeLoaderBatch,
-} from "./loader/service";
+} from "@alp-sdk/core/loader/service";
 import {
     boardYamlExists,
     collectLoaderWorkspaceContext,
@@ -29,7 +29,7 @@ import { log, showOutput } from "./util";
 import {
     analyzeValidationResult,
     createValidatorPlan,
-} from "./validation/service";
+} from "@alp-sdk/core/validation/service";
 import { executeValidatorPlan } from "./validation/vscodeAdapter";
 
 async function runLoader(emit: EmitMode): Promise<void> {

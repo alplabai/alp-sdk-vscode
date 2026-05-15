@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
-import { ProjectSettings } from "../../../project/models";
-import { resolveProjectContext } from "../../../project/service";
-import { executeValidatorPlanWithSpawn } from "../../../validation/adapterCore";
-import { ValidationOutcome } from "../../../validation/models";
+import { ProjectSettings } from "@alp-sdk/core/project/models";
+import { resolveProjectContext } from "@alp-sdk/core/project/service";
+import { executeValidatorPlanWithSpawn } from "@alp-sdk/core/validation/adapterCore";
+import { ValidationOutcome } from "@alp-sdk/core/validation/models";
 import {
     analyzeValidationResult,
     createValidatorPlan,
-} from "../../../validation/service";
+} from "@alp-sdk/core/validation/service";
 import {
     CLI_EXIT_CODE,
     CliExecutionInput,

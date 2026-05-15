@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { summarizeLoaderBatch } from "./loader/service";
+import { summarizeLoaderBatch } from "@alp-sdk/core/loader/service";
 import {
     ensureLoaderOutputDirectory,
     executeLoaderPlan,
     inspectGeneratedFile,
 } from "./loader/vscodeAdapter";
 import { log, showOutput } from "./util";
-import { analyzeValidationResult } from "./validation/service";
+import { analyzeValidationResult } from "@alp-sdk/core/validation/service";
 import { executeValidatorPlan } from "./validation/vscodeAdapter";
 import {
     createWestBuildPreparation,
     createWestFlashPlan,
     createWestNativeRunPlan,
-} from "./west/service";
+} from "@alp-sdk/core/west/service";
 import {
     collectWestWorkspaceContext,
     executeWestPlan,

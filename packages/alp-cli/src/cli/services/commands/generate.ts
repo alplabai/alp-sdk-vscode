@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
-import { executeLoaderPlanWithSpawn } from "../../../loader/adapterCore";
-import { EmitMode } from "../../../loader/models";
-import { ALL_EMIT_MODES, createLoaderPlan } from "../../../loader/service";
-import { ProjectSettings } from "../../../project/models";
-import { resolveProjectContext } from "../../../project/service";
+import { executeLoaderPlanWithSpawn } from "@alp-sdk/core/loader/adapterCore";
+import { EmitMode } from "@alp-sdk/core/loader/models";
+import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
+import { ProjectSettings } from "@alp-sdk/core/project/models";
+import { resolveProjectContext } from "@alp-sdk/core/project/service";
 import {
     CLI_EXIT_CODE,
     CliExecutionInput,

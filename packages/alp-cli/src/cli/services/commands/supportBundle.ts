@@ -7,16 +7,16 @@ import {
     DebugServerKind,
     DebugTargetKind,
     DoctorCheck,
-} from "../../../debug/models";
+} from "@alp-sdk/core/debug/models";
 import {
     buildDoctorReport,
     createGenerationTraceReport,
     createInspectReport,
     createSupportBundlePayload,
     serializeSupportBundlePayload,
-} from "../../../debug/service";
-import { EmitMode } from "../../../loader/models";
-import { ALL_EMIT_MODES, createLoaderPlan } from "../../../loader/service";
+} from "@alp-sdk/core/debug/service";
+import { EmitMode } from "@alp-sdk/core/loader/models";
+import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import {
     CLI_EXIT_CODE,
     CliExecutionInput,

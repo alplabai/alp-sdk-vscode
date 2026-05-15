@@ -3,7 +3,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { BoardModel } from "./configurator/models";
+import { BoardModel } from "@alp-sdk/core/configurator/models";
 import {
     loadBoardModel,
     loadPresetCatalogue,
@@ -17,7 +17,7 @@ import {
     WizardPlanInput,
     WizardTemplateDefinition,
     WizardTemplateId,
-} from "./wizard/models";
+} from "@alp-sdk/core/wizard/models";
 import {
     createModuleScaffoldPlan,
     createModuleScaffoldPreviewMarkdown,
@@ -28,12 +28,12 @@ import {
     listModuleTemplates,
     listWizardTemplates,
     suggestTemplateIdFromBoardModel,
-} from "./wizard/service";
+} from "@alp-sdk/core/wizard/service";
 import {
     collectGeneratedOutputPreviews,
     collectWizardFileChanges,
     writeWizardFiles,
-} from "./wizard/vscodeAdapter";
+} from "@alp-sdk/core/wizard/vscodeAdapter";
 
 const FIRST_RUN_PROMPT_KEY_PREFIX = "alp.firstRunWizardPromptShown";
 

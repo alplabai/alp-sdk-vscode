@@ -2,7 +2,7 @@
 
 # GitHub Backlog
 
-Last revised: 2026-05-13
+Last revised: 2026-05-15
 
 This document converts the roadmap in [PLAN.md](PLAN.md) into a
 GitHub-friendly backlog format.
@@ -60,6 +60,8 @@ Before opening issues, create the following labels.
 - `M5 — CLI Baseline`
 - `M6 — Scaffolding`
 - `M7 — Docs and Hardening`
+- `M8 — ALP IDE Experience`
+- `M9 — CLI Productization`
 
 ## 3. Epic Issues
 
@@ -560,6 +562,189 @@ goes wrong.
 - [x] A user can export enough debugging context for a useful issue
       report.
 - [x] Debug surfaces exist in both VS Code and CLI workflows.
+```
+
+---
+
+## Epic 10
+
+**Title**
+
+`Epic: Ship ALP IDE as a status-first workflow hub`
+
+**Labels**
+
+- `type:epic`
+- `area:ui`
+- `area:build`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M8 — ALP IDE Experience`
+
+**Body**
+
+```md
+## Summary
+
+Replace command-palette-first onboarding with a full UI workflow that
+supports Activity Bar discovery, ALP IDE sections, side-panel editing,
+and full-window guided flows.
+
+## Outcome
+
+Users can open ALP IDE and immediately understand setup state,
+workspace state, and project readiness without relying on
+command-palette workflows, while preserving native VS Code theme
+behavior (Light/Dark/High Contrast).
+
+## UX Intent
+
+Do not emulate a Solution Explorer or file browser. File navigation
+already exists in VS Code.
+
+ALP IDE should behave as a workflow cockpit with status-first sections:
+
+- Extension Setup
+- SDK Management
+- West Workspaces
+- Projects
+- Project Details
+- Active Project State
+
+## Tasks
+
+- [ ] Add an ALP Activity Bar container using `contributes.viewsContainers`.
+- [ ] Add an ALP IDE root view using `contributes.views`.
+- [ ] Add section groups for Extension Setup, West Workspaces, Projects, and Project Details.
+- [ ] Add setup status rows (Ready, Not Installed, Setup Required, Not Updated).
+- [ ] Add progress banner copy such as `2 of 3 steps remaining` driven by real state.
+- [ ] Add zero-friction setup orchestrator that evaluates prerequisites on first open.
+- [ ] Add component inventory for host tools, SDK toolchains, west, workspace health, and project readiness.
+- [ ] Add missing-component diagnostics with blocker vs warning classification.
+- [ ] Add one-click `Fix Now` actions for install/update/configure steps where safe.
+- [ ] Add guided fallback steps for actions that cannot be automated.
+- [ ] Add post-action revalidation loop so status updates immediately after each fix.
+- [ ] Add section-level quick actions (Activate Workspace, New Workspace, Refresh, Save).
+- [ ] Add `Quick Actions` card grid as the primary interaction surface.
+- [ ] Add cards for `Host Tools`, `Install SDK`, `West Update`, `Settings`, and `Add Project`.
+- [ ] Add per-card state chips (`Ready`, `Setup Required`, `Not Updated`) with consistent semantic color tokens.
+- [ ] Add concise card descriptions and single primary intent per card.
+- [ ] Add card click routing to focused setup flows and command handlers.
+- [ ] Keep card layout fluid and responsive (2-column narrow, 3-column wide) without feeling rigid.
+- [ ] Add contextual empty states (for example `No Active Project`) with primary CTA buttons.
+- [ ] Add side-panel flow for focused setup/configuration steps.
+- [ ] Add full-window flow for first-run or complex onboarding.
+- [ ] Add a unified stepper model shared by all three UI surfaces.
+- [ ] Build webview frontend with React + TypeScript + Vite pipeline.
+- [ ] Bootstrap webview app from Microsoft's official VS Code webview React sample/template.
+- [ ] Integrate `@vscode/webview-ui-toolkit` components as the default UI primitives.
+- [ ] Register toolkit components via `provideVSCodeDesignSystem().register(...)`.
+- [ ] Use VS Code CSS variables (`--vscode-*`) for custom layout and styling.
+- [ ] Add theme-compatibility checks for Light, Dark, and High Contrast.
+- [ ] Keep webview styling compatible with VS Code reset/baseline styles.
+- [ ] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
+- [ ] Add new-project flow with template, hardware, and feature steps.
+- [ ] Add existing-project flow with workspace selection and validation.
+- [ ] Add finish step with `open in current window` vs `open in new window` choice.
+- [ ] Add SDK discovery step (detected SDKs + manual path selection).
+- [ ] Add SDK install step (download/clone, progress, cancel, logs).
+- [ ] Add SDK readiness validation step (scripts, metadata, toolchain checks).
+- [ ] Add guided dependency/bootstrap actions from UI (python/west/host tooling).
+- [ ] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
+- [ ] Add development component management view for compiler, CMake, Ninja, Python, west, and env paths.
+- [ ] Add workspace and toolchain drift detection with explicit remediation guidance.
+- [ ] Add review/apply step with file-change preview and overwrite warnings.
+- [ ] Add generated-output preview and plan summary before write.
+- [ ] Add typed extension<->webview message contracts and state sync.
+- [ ] Add smoke/integration tests for sidebar, panel, and full-window flows.
+- [ ] Add docs for GUI-first onboarding and SDK installation workflows.
+- [ ] Add bottom resource/link bar with `Documentation`, `Getting Started`, `West Docs`, `Report Issues` actions.
+
+## Key Phrases and Keywords
+
+- [ ] Standardize UI language around: `Setup at a glance`, `Ready`, `Setup Required`, `Not Installed`, `No Active Project`.
+- [ ] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
+- [ ] Keep dashboard naming stable: `Quick Actions`, `West Workspaces`, `Projects`, `Project Details`.
+- [ ] Use consistent action verbs: `Install SDK`, `Activate Workspace`, `Create Project`, `Open Project`, `Continue Setup`.
+- [ ] Keep section names stable across sidebar and full-window surfaces.
+
+## Exit Criteria
+
+- [ ] A user can launch onboarding from the Activity Bar without using command palette.
+- [ ] A user can complete setup tasks without opening file explorer as a primary UI.
+- [ ] A new user can reach a build-ready environment through guided steps without manual path hunting.
+- [ ] A user can select or install SDK and verify readiness entirely from UI.
+- [ ] Missing prerequisites are surfaced with exact actionable fixes in the same panel.
+- [ ] A user can create or open a project and choose current/new window at wizard completion.
+- [ ] Sidebar, side-panel, and full-window modes use one consistent state model.
+- [ ] Webview UI stays visually correct across Light, Dark, and High Contrast themes.
+- [ ] ALP IDE sections render meaningful status and next action in empty and partially configured states.
+- [ ] `Quick Actions` cards drive at least the five primary setup workflows without command palette dependency.
+- [ ] Bottom resource links are visible, actionable, and theme-consistent.
+- [ ] Major wizard flows are covered by automated smoke/integration tests.
+```
+
+---
+
+## Epic 11
+
+**Title**
+
+`Epic: Productize CLI as a standalone package and reusable core`
+
+**Labels**
+
+- `type:epic`
+- `area:cli`
+- `area:build`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M9 — CLI Productization`
+
+**Body**
+
+```md
+## Summary
+
+Make CLI independently installable and versionable outside the VS Code
+extension lifecycle, with npm as the primary distribution path.
+
+## Outcome
+
+Teams can consume CLI directly in CI/CD and local workflows through a
+stable npm distribution channel, while VS Code extension depends on the
+same contracts.
+
+## Tasks
+
+- [x] Decide primary distribution strategy: npm package.
+- [x] Freeze package identity: npm package `alp-sdk`, binary command `alp`.
+- [ ] Define semver policy and release channels (`next` canary, `latest` stable).
+- [ ] Extract CLI core contracts into reusable package boundaries.
+- [ ] Separate VS Code adapter code from standalone CLI runtime.
+- [ ] Add standalone CLI package layout (entrypoint, bin mapping, exports map).
+- [ ] Add npm scripts for build, test, pack, and smoke-install verification.
+- [ ] Add contract tests that compare extension-invoked CLI and standalone CLI outputs.
+- [ ] Add CI workflow `.github/workflows/release-cli.yml` for publish automation.
+- [ ] Add provenance-enabled publishing and artifact/signature retention.
+- [ ] Add rollback playbook (deprecate/yank guidance + affected version matrix).
+- [ ] Add installation docs for developers, CI agents, and offline mirrors.
+- [ ] Add optional Rust feasibility spike for performance-critical core (non-blocking).
+- [ ] If Rust path is later selected, define Node interop strategy (napi, ffi, or process boundary).
+
+## Exit Criteria
+
+- [ ] CLI can be installed and executed independently of the VS Code extension.
+- [ ] Extension and standalone CLI share the same command/output contract.
+- [ ] Release workflow exists with versioning, changelog, provenance, and rollback guidance.
+- [ ] npm distribution path is production-ready, documented, and tested.
+- [ ] Install verification passes for `npm i -g <package>` and `npx <package>@latest --help` flows.
 ```
 
 ## 4. Phase 1 Backlog Issues

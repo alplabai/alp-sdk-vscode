@@ -53,6 +53,15 @@ const TEMPLATE_DEFINITIONS: readonly WizardTemplateDefinition[] = [
     defaultFeatures: { wifi: false, mqtt: false, ble: false, tls: false },
     defaultLibraries: ["fmt", "doctest"],
   },
+  {
+    id: "host-tooling-starter",
+    label: "Host tooling starter",
+    // planned — file generation not yet implemented
+    description:
+      "Monorepo scaffold for a host-side ALP tool: shared core package, standalone CLI, and VS Code extension surface.",
+    defaultFeatures: { wifi: false, mqtt: false, ble: false, tls: false },
+    defaultLibraries: [],
+  },
 ];
 
 const MODULE_TEMPLATE_DEFINITIONS: readonly ModuleTemplateDefinition[] = [
@@ -359,6 +368,12 @@ export function createTemplateExplanation(
       return [
         "Template enables diagnostics-friendly defaults for bring-up and fault tracking.",
         "src/main.c is oriented toward check-list style board validation routines.",
+      ];
+    case "host-tooling-starter":
+      return [
+        "Scaffolds a monorepo with packages/core (shared domain), packages/cli (standalone npm CLI), and root src/ (VS Code extension).",
+        "Follows the one-core-many-surfaces principle: validation, generation, and scaffolding logic lives in the core package.",
+        "File generation for this template is planned and not yet available.",
       ];
     default:
       return [
@@ -667,6 +682,10 @@ function createTemplateSpecificStarterFiles(
           ),
         },
       ];
+    case "host-tooling-starter":
+      throw new Error(
+        "Alp: 'host-tooling-starter' file generation is not yet implemented.",
+      );
     default:
       return [
         {

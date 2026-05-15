@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { ProjectContext } from "../project/models";
-import { SpawnSyncLike } from "../validation/adapterCore";
+import { ProjectContext } from "@alp-sdk/core/project/models";
+import { SpawnSyncLike } from "@alp-sdk/core/validation/adapterCore";
 import {
     ValidationOutcome,
     ValidationResult,
     ValidationSeverity,
-} from "../validation/models";
+} from "@alp-sdk/core/validation/models";
 
 export const CLI_EXIT_CODE = {
   success: 0,

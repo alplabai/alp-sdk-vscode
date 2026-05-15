@@ -23,13 +23,13 @@ import {
   TextDocumentSyncKind,
   TextEdit,
 } from "vscode-languageserver/node";
-import { resolveProjectContext } from "../project/service";
-import { executeValidatorPlanWithSpawn } from "../validation/adapterCore";
+import { resolveProjectContext } from "@alp-sdk/core/project/service";
+import { executeValidatorPlanWithSpawn } from "@alp-sdk/core/validation/adapterCore";
 import {
   analyzeValidationResult,
   createValidatorPlan,
   isBoardYamlPath,
-} from "../validation/service";
+} from "@alp-sdk/core/validation/service";
 import {
   BoardYamlCompletionSuggestion,
   BoardYamlDocumentSymbolNode,

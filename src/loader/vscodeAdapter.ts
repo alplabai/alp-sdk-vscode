@@ -9,13 +9,13 @@ import {
     boardYamlExistsWithDependencies,
     executeLoaderPlanWithSpawn,
     inspectGeneratedFileWithDependencies,
-} from "./adapterCore";
+} from "@alp-sdk/core/loader/adapterCore";
 import {
     LoaderBatchEntry,
     LoaderPlan,
     LoaderWorkspaceContext,
     ScriptExecutionResult,
-} from "./models";
+} from "@alp-sdk/core/loader/models";
 
 export function collectLoaderWorkspaceContext(): LoaderWorkspaceContext {
   return collectProjectContext();

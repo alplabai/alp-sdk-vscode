@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { EmitMode } from "../../../loader/models";
-import { listGenerationTargetSupport } from "../../../loader/service";
+import { EmitMode } from "@alp-sdk/core/loader/models";
+import { listGenerationTargetSupport } from "@alp-sdk/core/loader/service";
 import {
     createTemplateExplanation,
     listModuleTemplates,
     listWizardTemplates,
-} from "../../../wizard/service";
+} from "@alp-sdk/core/wizard/service";
 import {
     CLI_EXIT_CODE,
     CliExecutionInput,

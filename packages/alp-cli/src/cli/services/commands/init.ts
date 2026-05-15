@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
-import { createDefaultBoardModel } from "../../../configurator/service";
-import { WizardTemplateId } from "../../../wizard/models";
-import { createWizardPlan, listWizardTemplates } from "../../../wizard/service";
+import { createDefaultBoardModel } from "@alp-sdk/core/configurator/service";
+import { WizardTemplateId } from "@alp-sdk/core/wizard/models";
+import { createWizardPlan, listWizardTemplates } from "@alp-sdk/core/wizard/service";
 import {
     collectWizardFileChanges,
     writeWizardFiles,
-} from "../../../wizard/vscodeAdapter";
+} from "@alp-sdk/core/wizard/vscodeAdapter";
 import {
     CLI_EXIT_CODE,
     CliExecutionInput,

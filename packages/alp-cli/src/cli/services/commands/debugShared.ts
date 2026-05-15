@@ -4,16 +4,16 @@ import * as path from "path";
 import {
     collectRuntimeCapabilitiesFromCommands,
     createDebugWorkspaceContext,
-} from "../../../debug/adapterCore";
+} from "@alp-sdk/core/debug/adapterCore";
 import {
     DebugRuntimeCapabilities,
     DebugServerKind,
     DebugTargetKind,
     DebugWorkspaceContext,
-} from "../../../debug/models";
-import { serverChoicesForTarget } from "../../../debug/service";
-import { ProjectContext, ProjectSettings } from "../../../project/models";
-import { resolveProjectContext } from "../../../project/service";
+} from "@alp-sdk/core/debug/models";
+import { serverChoicesForTarget } from "@alp-sdk/core/debug/service";
+import { ProjectContext, ProjectSettings } from "@alp-sdk/core/project/models";
+import { resolveProjectContext } from "@alp-sdk/core/project/service";
 import { CliExecutionInput, CliGlobalFlags } from "../../models";
 
 export interface CliDebugContext {

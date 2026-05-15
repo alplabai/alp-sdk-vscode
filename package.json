@@ -10,9 +10,9 @@
     "url": "https://github.com/alplabai/alp-sdk-vscode.git",
     "directory": "."
   },
-  "bin": {
-    "alp": "./out/cli/main.js"
-  },
+  "workspaces": [
+    "packages/*"
+  ],
   "homepage": "https://github.com/alplabai/alp-sdk-vscode",
   "bugs": {
     "url": "https://github.com/alplabai/alp-sdk-vscode/issues"
@@ -39,6 +39,7 @@
     "workspaceContains:**/board.yaml"
   ],
   "main": "./out/extension.js",
+  "icon": "media/icon.png",
   "extensionDependencies": [
     "redhat.vscode-yaml"
   ],
@@ -184,14 +185,18 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "cli": "node ./out/cli/main.js",
+    "compile": "tsc --build && npm run compile --workspace packages/alp-cli",
+    "compile:watch": "tsc --build --watch",
+    "cli:pack": "npm run compile && npm pack --workspace packages/alp-cli --pack-destination dist",
+    "cli:smoke": "bash ./scripts/ci/smoke-cli.sh",
     "test": "npm run compile && node --test test/*.test.js",
-    "watch": "tsc -watch -p ./",
+    "install:vscode": "bash ./scripts/install-vscode.sh",
+    "watch": "tsc --build --watch",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package"
   },
   "dependencies": {
+    "@alp-sdk/core": "^0.3.0",
     "js-yaml": "^4.1.0",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver": "^9.0.1"

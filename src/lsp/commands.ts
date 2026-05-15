@@ -4,7 +4,7 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log } from "../util";
-import { isBoardYamlPath } from "../validation/service";
+import { isBoardYamlPath } from "@alp-sdk/core/validation/service";
 import { requestEffectiveConfigPreview } from "./client";
 
 async function showJsonDocument(data: unknown): Promise<void> {

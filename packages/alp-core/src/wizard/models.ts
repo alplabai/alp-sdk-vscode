@@ -7,7 +7,8 @@ export type WizardTemplateId =
   | "sensor-starter"
   | "iot-starter"
   | "edge-ai-starter"
-  | "board-diagnostics";
+  | "board-diagnostics"
+  | "host-tooling-starter";
 
 export interface WizardFeatureFlags {
   wifi: boolean;

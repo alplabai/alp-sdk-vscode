@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { DebugResolvedValue } from "../../../debug/models";
-import { createInspectReport } from "../../../debug/service";
+import { DebugResolvedValue } from "@alp-sdk/core/debug/models";
+import { createInspectReport } from "@alp-sdk/core/debug/service";
 import {
     CLI_EXIT_CODE,
     CliExecutionInput,

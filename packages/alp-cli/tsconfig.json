@@ -3,7 +3,7 @@
     "module": "commonjs",
     "target": "ES2022",
     "lib": ["ES2022"],
-    "outDir": "out",
+    "outDir": "dist",
     "rootDir": "src",
     "sourceMap": true,
     "strict": true,
@@ -13,9 +13,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      "@alp-sdk/core/*": ["../alp-core/src/*"]
+    }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "out"],
-  "references": [{ "path": "packages/alp-core" }]
+  "references": [{ "path": "../alp-core" }]
 }

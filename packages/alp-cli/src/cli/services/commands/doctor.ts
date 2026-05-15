@@ -5,8 +5,8 @@ import {
     DebugTargetKind,
     DoctorCheck,
     DoctorReport,
-} from "../../../debug/models";
-import { buildDoctorReport } from "../../../debug/service";
+} from "@alp-sdk/core/debug/models";
+import { buildDoctorReport } from "@alp-sdk/core/debug/service";
 import {
     CLI_EXIT_CODE,
     CliExecutionInput,

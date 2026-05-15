@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { createLaunchJsonWritePlan } from "./debug/launchJsonCore";
+import { createLaunchJsonWritePlan } from "@alp-sdk/core/debug/launchJsonCore";
 import {
     DebugGenerationTraceDecision,
     DebugServerKind,
     DebugTargetKind,
-} from "./debug/models";
-import { createDebugTroubleshootingPanelHtml } from "./debug/panelHtml";
+} from "@alp-sdk/core/debug/models";
+import { createDebugTroubleshootingPanelHtml } from "@alp-sdk/core/debug/panelHtml";
 import {
     buildDebugPreflightReport,
     buildDoctorReport,
@@ -19,7 +19,7 @@ import {
     DEBUG_TARGET_CHOICES,
     serializeSupportBundlePayload,
     serverChoicesForTarget,
-} from "./debug/service";
+} from "@alp-sdk/core/debug/service";
 import {
     collectRuntimeCapabilities,
     collectWorkspaceDebugContext,
@@ -28,7 +28,7 @@ import {
     writeLaunchJson,
     writeSupportBundle,
 } from "./debug/vscodeAdapter";
-import { ALL_EMIT_MODES, createLoaderPlan } from "./loader/service";
+import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { log, showOutput } from "./util";
 
 async function showJsonDocument(data: unknown): Promise<void> {

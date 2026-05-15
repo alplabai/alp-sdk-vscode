@@ -1,0 +1,124 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: release-cli
+
+on:
+  push:
+    tags:
+      - "cli-v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish CLI package to npm
+        required: true
+        type: boolean
+        default: false
+      npmTag:
+        description: npm dist-tag for workflow_dispatch publish
+        required: true
+        type: choice
+        default: next
+        options:
+          - next
+          - latest
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pack_and_smoke:
+    name: pack and smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile CLI
+        run: npm run compile
+
+      - name: Smoke test packed CLI
+        run: bash ./scripts/ci/smoke-cli.sh
+
+      - name: Upload packed CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-tarball
+          path: dist/*.tgz
+          retention-days: 14
+
+  publish:
+    name: publish npm
+    runs-on: ubuntu-latest
+    needs: pack_and_smoke
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == true) }}
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile CLI
+        run: npm run compile
+
+      - name: Resolve npm tag
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            echo "NPM_TAG=latest" >> "$GITHUB_ENV"
+          else
+            echo "NPM_TAG=${{ inputs.npmTag }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Publish package
+        run: npm publish --provenance --access public --tag "$NPM_TAG"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  verify_registry:
+    name: verify registry install
+    runs-on: ubuntu-latest
+    needs: publish
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == true) }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Verify npx from published version
+        run: |
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          npx --yes "${PACKAGE_NAME}@${PACKAGE_VERSION}" --help | tee /tmp/cli-help.txt
+          grep -Eqi "ALP CLI|Usage: alp|Commands:" /tmp/cli-help.txt

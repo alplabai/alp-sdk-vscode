@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { DebugGenerationTraceDecision } from "../../../debug/models";
-import { createGenerationTraceReport } from "../../../debug/service";
-import { EmitMode } from "../../../loader/models";
-import { ALL_EMIT_MODES, createLoaderPlan } from "../../../loader/service";
+import { DebugGenerationTraceDecision } from "@alp-sdk/core/debug/models";
+import { createGenerationTraceReport } from "@alp-sdk/core/debug/service";
+import { EmitMode } from "@alp-sdk/core/loader/models";
+import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import {
     CLI_EXIT_CODE,
     CliExecutionInput,
