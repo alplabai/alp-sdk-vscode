@@ -17,8 +17,7 @@ if [[ $# -gt 0 ]]; then
   PACKAGE_TGZ="$1"
 else
   mkdir -p dist
-  PACKAGE_FILE="$(npm pack --workspace packages/alp-cli --pack-destination "$ROOT_DIR/dist" --json | node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync(0,'utf8')); process.stdout.write(data[0].filename);")"
-  PACKAGE_TGZ="dist/$PACKAGE_FILE"
+  PACKAGE_TGZ="$(pnpm -C "$ROOT_DIR/packages/alp-cli" pack --pack-destination "$ROOT_DIR/dist" | tail -1)"
 fi
 
 if [[ ! -f "$PACKAGE_TGZ" ]]; then

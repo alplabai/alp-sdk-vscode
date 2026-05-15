@@ -2,6 +2,7 @@
 node_modules/
 out/
 *.vsix
+package-lock.json
 
 # Build outputs
 dist/

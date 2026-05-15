@@ -18,16 +18,16 @@
   "scripts": {
     "compile": "tsc -p ./",
     "bundle": "esbuild src/cli/main.ts --bundle --platform=node --target=node18 --outfile=dist/cli/main.js --external:@clack/prompts --banner:js='#!/usr/bin/env node' --tsconfig=tsconfig.json --log-level=warning",
-    "prepack": "npm run bundle",
+    "prepack": "pnpm run bundle",
     "cli": "node ./dist/cli/main.js",
-    "cli:pack": "npm pack --pack-destination ../../dist",
+    "cli:pack": "pnpm pack --pack-destination ../../dist",
     "cli:smoke": "bash ../../scripts/ci/smoke-cli.sh"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.8"
   },
   "devDependencies": {
-    "@alp-sdk/core": "*",
+    "@alp-sdk/core": "workspace:*",
     "@types/node": "^25.7.0",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
