@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { StatusChip } from "../../shared/ui/StatusChip";
 import layout from "../../shared/ui/layout.module.css";
+import { StatusChip } from "../../shared/ui/StatusChip";
 import type { ChipState, LocalSdkEntry, SdkStatus } from "../../types";
 import styles from "./SdkView.module.css";
 import { useSdk } from "./useSdk";
@@ -67,7 +67,7 @@ export function SdkView() {
       <div className={layout.section}>
         <p className={layout.sectionTitle}>SDK Manager</p>
         <div className={layout.loadingRow}>
-          <vscode-progress-ring />
+          <Spinner />
         </div>
       </div>
     );
@@ -133,13 +133,13 @@ export function SdkView() {
               <p className={layout.setupRowDesc}>No active SDK configured.</p>
             )}
             <div className={layout.setupRowAction}>
-              <vscode-button
+              <Button
                 appearance="secondary"
                 title="Browse for an SDK directory"
                 onClick={() => browseSdk()}
               >
                 Browse…
-              </vscode-button>
+              </Button>
             </div>
           </div>
         </div>
@@ -170,12 +170,12 @@ export function SdkView() {
                   </p>
                   {entry.path !== sdk.activePath && (
                     <div className={layout.setupRowAction}>
-                      <vscode-button
+                      <Button
                         appearance="secondary"
                         onClick={() => switchSdk(entry.path)}
                       >
                         Use This
-                      </vscode-button>
+                      </Button>
                     </div>
                   )}
                   {entry.path === sdk.activePath && (
@@ -199,7 +199,7 @@ export function SdkView() {
           {/* Install progress */}
           {installActive && (
             <div className={styles.installStatus}>
-              <vscode-progress-ring />
+              <Spinner />
               <span className={layout.setupRowDesc}>
                 {installLog ?? "Installing…"}
               </span>
@@ -219,11 +219,9 @@ export function SdkView() {
           {!installActive && (
             <div className={styles.downloadControls}>
               {releases === null ? (
-                <vscode-button
-                  onClick={() => loadReleases()}
-                >
+                <Button onClick={() => loadReleases()}>
                   Load Releases
-                </vscode-button>
+                </Button>
               ) : releases.length === 0 ? (
                 <p className={layout.setupRowDesc}>No releases found.</p>
               ) : (
@@ -244,12 +242,12 @@ export function SdkView() {
                         </option>
                       ))}
                     </select>
-                    <vscode-button
+                    <Button
                       appearance="primary"
                       onClick={() => install(installTarget)}
                     >
                       Install
-                    </vscode-button>
+                    </Button>
                   </div>
                   {releases.find((r) => r.tag === installTarget)
                     ?.releaseNotesSummary && (

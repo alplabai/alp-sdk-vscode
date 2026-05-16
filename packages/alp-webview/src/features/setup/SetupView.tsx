@@ -1,6 +1,6 @@
+import { useAppContext } from "../../shared/AppContext";
 import layout from "../../shared/ui/layout.module.css";
 import { StatusChip } from "../../shared/ui/StatusChip";
-import { useAppContext } from "../../shared/AppContext";
 import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./SetupView.module.css";
@@ -159,7 +159,7 @@ export function SetupView() {
       <div className={layout.section}>
         <p className={layout.sectionTitle}>Environment</p>
         <div className={layout.loadingRow}>
-          <vscode-progress-ring />
+          <Spinner />
         </div>
       </div>
     );
@@ -212,7 +212,7 @@ export function SetupView() {
                 <span className={layout.setupRowLabel}>{row.label}</span>
                 <div className={layout.setupRowHeaderRight}>
                   {row.action && !isOk && (
-                    <vscode-button
+                    <Button
                       appearance={
                         row.action.kind === "auto" ? "primary" : "secondary"
                       }
@@ -224,7 +224,7 @@ export function SetupView() {
                       }
                     >
                       {row.action.label}
-                    </vscode-button>
+                    </Button>
                   )}
                   <StatusChip state={row.chipState} />
                 </div>

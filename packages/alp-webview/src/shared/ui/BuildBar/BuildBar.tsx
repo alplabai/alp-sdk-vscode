@@ -1,5 +1,6 @@
 import { useAppContext } from "../../../shared/AppContext";
 import { postMessage } from "../../../vscode";
+import { Button } from "../Button";
 import styles from "./BuildBar.module.css";
 
 export function BuildBar() {
@@ -9,7 +10,7 @@ export function BuildBar() {
 
   return (
     <div className={styles.buildBar}>
-      <vscode-button
+      <Button
         appearance="primary"
         disabled={!canBuild}
         title={tip ?? "Build firmware (west build)"}
@@ -18,8 +19,8 @@ export function BuildBar() {
         }
       >
         ▶ Build
-      </vscode-button>
-      <vscode-button
+      </Button>
+      <Button
         appearance="secondary"
         disabled={!canBuild}
         title={tip ?? "Flash to target device (west flash)"}
@@ -28,8 +29,8 @@ export function BuildBar() {
         }
       >
         ⚡ Flash
-      </vscode-button>
-      <vscode-button
+      </Button>
+      <Button
         appearance="secondary"
         disabled={!canBuild}
         title={tip ?? "Run under native_sim"}
@@ -38,7 +39,7 @@ export function BuildBar() {
         }
       >
         🖥 Sim
-      </vscode-button>
+      </Button>
     </div>
   );
 }

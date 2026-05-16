@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { StatusChip } from "../../shared/ui/StatusChip";
-import layout from "../../shared/ui/layout.module.css";
 import { useAppContext } from "../../shared/AppContext";
+import { Button, Spinner } from "../../shared/ui";
+import layout from "../../shared/ui/layout.module.css";
+import { StatusChip } from "../../shared/ui/StatusChip";
 import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 
@@ -18,7 +19,7 @@ export function WestWorkspacesView() {
       <div className={layout.section}>
         <p className={layout.sectionTitle}>West Workspace</p>
         <div className={layout.loadingRow}>
-          <vscode-progress-ring />
+          <Spinner />
         </div>
       </div>
     );
@@ -65,9 +66,9 @@ export function WestWorkspacesView() {
             <div className={layout.setupRowAction}>
               <div className={layout.btnRow}>
                 {westInitialized ? (
-                  <vscode-button
+                  <Button
                     appearance="secondary"
-                    disabled={!westAvailable || undefined}
+                    disabled={!westAvailable}
                     onClick={() =>
                       postMessage({
                         type: "runCommand",
@@ -76,9 +77,9 @@ export function WestWorkspacesView() {
                     }
                   >
                     West Update
-                  </vscode-button>
+                  </Button>
                 ) : (
-                  <vscode-button
+                  <Button
                     appearance="primary"
                     onClick={() =>
                       postMessage({
@@ -88,7 +89,7 @@ export function WestWorkspacesView() {
                     }
                   >
                     Bootstrap
-                  </vscode-button>
+                  </Button>
                 )}
               </div>
             </div>

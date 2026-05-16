@@ -1,0 +1,48 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast),
+    opacity var(--duration-fast);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Primary (default) */
+.btn[data-appearance="primary"] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn[data-appearance="primary"]:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+/* Secondary */
+.btn[data-appearance="secondary"] {
+  background: var(--surface-btn-secondary);
+  color: var(--vscode-button-secondaryForeground, var(--text-primary));
+}
+
+.btn[data-appearance="secondary"]:hover:not(:disabled) {
+  background: var(--surface-btn-secondary-hover);
+}

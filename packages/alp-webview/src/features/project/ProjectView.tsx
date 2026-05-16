@@ -1,6 +1,7 @@
-import { StatusChip } from "../../shared/ui/StatusChip";
-import layout from "../../shared/ui/layout.module.css";
 import { useAppContext } from "../../shared/AppContext";
+import { Button, Spinner } from "../../shared/ui";
+import layout from "../../shared/ui/layout.module.css";
+import { StatusChip } from "../../shared/ui/StatusChip";
 import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 
@@ -16,7 +17,7 @@ export function ProjectView() {
       <div className={layout.section}>
         <p className={layout.sectionTitle}>Project</p>
         <div className={layout.loadingRow}>
-          <vscode-progress-ring />
+          <Spinner />
         </div>
       </div>
     );
@@ -60,7 +61,7 @@ export function ProjectView() {
           <div className={layout.setupRowAction}>
             <div className={layout.btnRow}>
               {!workspaceOpen ? (
-                <vscode-button
+                <Button
                   appearance="primary"
                   onClick={() =>
                     postMessage({
@@ -70,10 +71,10 @@ export function ProjectView() {
                   }
                 >
                   Open Folder
-                </vscode-button>
+                </Button>
               ) : (
                 <>
-                  <vscode-button
+                  <Button
                     appearance={boardConfigured ? "secondary" : "primary"}
                     onClick={() =>
                       postMessage({
@@ -83,9 +84,9 @@ export function ProjectView() {
                     }
                   >
                     {boardConfigured ? "Update Project" : "New Project"}
-                  </vscode-button>
+                  </Button>
                   {!boardConfigured && (
-                    <vscode-button
+                    <Button
                       appearance="secondary"
                       onClick={() =>
                         postMessage({
@@ -95,7 +96,7 @@ export function ProjectView() {
                       }
                     >
                       Open Folder
-                    </vscode-button>
+                    </Button>
                   )}
                 </>
               )}
@@ -113,7 +114,7 @@ export function ProjectView() {
               Add a new firmware module or component to the project.
             </p>
             <div className={layout.setupRowAction}>
-              <vscode-button
+              <Button
                 onClick={() =>
                   postMessage({
                     type: "runCommand",
@@ -122,7 +123,7 @@ export function ProjectView() {
                 }
               >
                 Scaffold
-              </vscode-button>
+              </Button>
             </div>
           </div>
         )}

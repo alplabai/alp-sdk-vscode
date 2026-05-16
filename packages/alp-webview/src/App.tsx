@@ -6,6 +6,7 @@ import { SetupView } from "./features/setup";
 import { WestWorkspacesView } from "./features/west-workspaces";
 import { AppProvider, useAppContext } from "./shared/AppContext";
 import { BuildBar } from "./shared/ui/BuildBar";
+import { Button, Divider } from "./shared/ui";
 import layout from "./shared/ui/layout.module.css";
 import { postMessage } from "./vscode";
 
@@ -21,7 +22,7 @@ function AppShell() {
           panel.
         </p>
         <div className={layout.setupRowAction}>
-          <vscode-button
+          <Button
             onClick={() =>
               postMessage({
                 type: "runCommand",
@@ -30,7 +31,7 @@ function AppShell() {
             }
           >
             Reload Window
-          </vscode-button>
+          </Button>
         </div>
       </div>
     );
@@ -40,13 +41,13 @@ function AppShell() {
     <div>
       <BuildBar />
       <SetupView />
-      <vscode-divider role="separator" />
+      <Divider />
       <WestWorkspacesView />
-      <vscode-divider role="separator" />
+      <Divider />
       <ProjectView />
-      <vscode-divider role="separator" />
+      <Divider />
       <SdkView />
-      <vscode-divider role="separator" />
+      <Divider />
       <QuickActionsView />
       <FooterView />
     </div>
