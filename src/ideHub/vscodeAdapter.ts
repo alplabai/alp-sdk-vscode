@@ -21,6 +21,19 @@ function commandAvailable(cmd: string): boolean {
   }
 }
 
+/** Run `cmd --version` and return the first line of stdout, or null on error. */
+function commandVersion(cmd: string): string | null {
+  try {
+    const out = cp.execSync(`${cmd} --version`, {
+      stdio: "pipe",
+      timeout: 3000,
+    });
+    return out.toString("utf8").trim().split("\n")[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function pythonCmd(): string {
   return process.platform === "win32" ? "python" : "python3";
 }
@@ -95,6 +108,10 @@ export async function queryAlpIdeState(
     ? path.join(actualWorkspaceRoot, "board.yaml")
     : null;
 
+  const pyCmd = pythonCmd();
+  const pythonAvailable = commandAvailable(pyCmd);
+  const westAvailable = commandAvailable("west");
+
   return {
     sdk: {
       activePath: sdkPath,
@@ -103,9 +120,15 @@ export async function queryAlpIdeState(
       localEntries,
     },
     setup: {
-      pythonAvailable: commandAvailable(pythonCmd()),
-      westAvailable: commandAvailable("west"),
+      pythonAvailable,
+      westAvailable,
       lastBootstrapAt,
+      toolVersions: {
+        python: pythonAvailable ? commandVersion(pyCmd) : null,
+        west: westAvailable ? commandVersion("west") : null,
+        cmake: commandVersion("cmake"),
+        ninja: commandVersion("ninja"),
+      },
     },
     workspace: {
       workspaceRoot: actualWorkspaceRoot,

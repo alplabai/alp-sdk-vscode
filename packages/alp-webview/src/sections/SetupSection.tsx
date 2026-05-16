@@ -15,12 +15,16 @@ interface SetupRow {
   description: string;
   chipState: ChipState;
   severity: Severity;
+  /** Version string shown as a detail line when the tool is available. */
+  version?: string | null;
   action?: { label: string; command: string; kind: RemediationKind };
   /** Shown for manual remediations where no automated fix is available. */
   instruction?: string;
 }
 
 function deriveRows(state: AlpIdeState): SetupRow[] {
+  const { toolVersions } = state.setup;
+
   const sdkChip: ChipState = (() => {
     switch (state.sdk.readiness) {
       case "ready":
@@ -39,6 +43,9 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
         ? "warning"
         : "blocker";
 
+  const cmakeAvail = toolVersions.cmake !== null;
+  const ninjaAvail = toolVersions.ninja !== null;
+
   return [
     {
       id: "python",
@@ -46,6 +53,7 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
       description: "Required by project scripts and the firmware loader",
       chipState: state.setup.pythonAvailable ? "ready" : "not-installed",
       severity: state.setup.pythonAvailable ? "ok" : "blocker",
+      version: toolVersions.python,
       action: state.setup.pythonAvailable
         ? undefined
         : {
@@ -60,7 +68,38 @@ function deriveRows(state: AlpIdeState): SetupRow[] {
       description: "Zephyr meta-tool for build, flash, and module management",
       chipState: state.setup.westAvailable ? "ready" : "not-installed",
       severity: state.setup.westAvailable ? "ok" : "blocker",
+      version: toolVersions.west,
       action: state.setup.westAvailable
+        ? undefined
+        : {
+            label: "Run Bootstrap",
+            command: "alp.installDependencies",
+            kind: "auto",
+          },
+    },
+    {
+      id: "cmake",
+      label: "CMake",
+      description: "Build system generator required for firmware compilation",
+      chipState: cmakeAvail ? "ready" : "not-installed",
+      severity: cmakeAvail ? "ok" : "warning",
+      version: toolVersions.cmake,
+      action: cmakeAvail
+        ? undefined
+        : {
+            label: "Run Bootstrap",
+            command: "alp.installDependencies",
+            kind: "auto",
+          },
+    },
+    {
+      id: "ninja",
+      label: "Ninja",
+      description: "Fast build executor used with CMake",
+      chipState: ninjaAvail ? "ready" : "not-installed",
+      severity: ninjaAvail ? "ok" : "warning",
+      version: toolVersions.ninja,
+      action: ninjaAvail
         ? undefined
         : {
             label: "Run Bootstrap",
@@ -204,6 +243,9 @@ export function SetupSection({ state }: Props) {
                     <p className="setup-row-instruction">{row.instruction}</p>
                   )}
                 </>
+              )}
+              {isOk && row.version && (
+                <p className="setup-row-version">{row.version}</p>
               )}
             </div>
           );

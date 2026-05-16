@@ -5,6 +5,7 @@ import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorCommand } from "./configuratorPanel";
 import { registerDebugCommands } from "./debug";
 import { registerIdeHubProvider } from "./ideHub";
+import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
@@ -37,6 +38,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   void maybeOfferFirstRunWizard(context);
+  void maybeOfferSetupPanel(context);
 }
 
 export async function deactivate(): Promise<void> {

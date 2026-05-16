@@ -42,6 +42,12 @@ test("emptyAlpIdeState setup defaults", () => {
   assert.equal(setup.pythonAvailable, false);
   assert.equal(setup.westAvailable, false);
   assert.equal(setup.lastBootstrapAt, null);
+  assert.deepEqual(setup.toolVersions, {
+    python: null,
+    west: null,
+    cmake: null,
+    ninja: null,
+  });
 });
 
 test("emptyAlpIdeState workspace defaults", () => {

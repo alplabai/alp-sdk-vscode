@@ -21,11 +21,20 @@ export interface SdkStatus {
   localEntries: LocalSdkEntry[];
 }
 
+export interface ToolVersions {
+  python: string | null;
+  west: string | null;
+  cmake: string | null;
+  ninja: string | null;
+}
+
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
   /** ISO timestamp of the last time the user triggered bootstrap. Null if never. */
   lastBootstrapAt: string | null;
+  /** Raw version strings for each build tool, null when not found. */
+  toolVersions: ToolVersions;
 }
 
 export interface WorkspaceStatus {
@@ -53,6 +62,7 @@ export function emptyAlpIdeState(): AlpIdeState {
       pythonAvailable: false,
       westAvailable: false,
       lastBootstrapAt: null,
+      toolVersions: { python: null, west: null, cmake: null, ninja: null },
     },
     workspace: {
       workspaceRoot: null,

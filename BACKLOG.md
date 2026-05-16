@@ -621,7 +621,7 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 - [x] Add section groups for Extension Setup, West Workspaces, Projects, and Project Details.
 - [x] Add setup status rows (Ready, Not Installed, Setup Required, Not Updated).
 - [x] Add progress banner copy such as `2 of 3 steps remaining` driven by real state.
-- [ ] Add zero-friction setup orchestrator that evaluates prerequisites on first open.
+- [x] Add zero-friction setup orchestrator that evaluates prerequisites on first open.
 - [x] Add component inventory for host tools, SDK toolchains, west, workspace health, and project readiness.
 - [x] Add missing-component diagnostics with blocker vs warning classification.
 - [x] Add one-click `Fix Now` actions for install/update/configure steps where safe.
@@ -654,7 +654,7 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 - [x] Add SDK readiness validation step (scripts, metadata, toolchain checks).
 - [x] Add guided dependency/bootstrap actions from UI (python/west/host tooling).
 - [ ] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
-- [ ] Add development component management view for compiler, CMake, Ninja, Python, west, and env paths.
+- [x] Add development component management view for compiler, CMake, Ninja, Python, west, and env paths.
 - [ ] Add workspace and toolchain drift detection with explicit remediation guidance.
 - [ ] Add review/apply step with file-change preview and overwrite warnings.
 - [ ] Add generated-output preview and plan summary before write.
@@ -675,10 +675,10 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 
 - [x] A user can launch onboarding from the Activity Bar without using command palette.
 - [x] A user can complete setup tasks without opening file explorer as a primary UI.
-- [ ] A new user can reach a build-ready environment through guided steps without manual path hunting.
+- [x] A new user can reach a build-ready environment through guided steps without manual path hunting.
 - [x] A user can select or install SDK and verify readiness entirely from UI.
 - [x] Missing prerequisites are surfaced with exact actionable fixes in the same panel.
-- [ ] A user can create or open a project and choose current/new window at wizard completion.
+- [x] A user can create or open a project and choose current/new window at wizard completion.
 - [ ] Sidebar, side-panel, and full-window modes use one consistent state model.
 - [x] Webview UI stays visually correct across Light, Dark, and High Contrast themes.
 - [x] ALP IDE sections render meaningful status and next action in empty and partially configured states.
