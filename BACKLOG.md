@@ -589,9 +589,9 @@ goes wrong.
 ```md
 ## Summary
 
-Replace command-palette-first onboarding with a full UI workflow that
-supports Activity Bar discovery, ALP IDE sections, side-panel editing,
-and full-window guided flows.
+Replace command-palette-first onboarding with a polished status-first
+sidebar workflow that supports Activity Bar discovery and guided setup
+without depending on command-palette workflows.
 
 ## Outcome
 
@@ -627,7 +627,6 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 - [x] Add one-click `Fix Now` actions for install/update/configure steps where safe.
 - [x] Add guided fallback steps for actions that cannot be automated.
 - [x] Add post-action revalidation loop so status updates immediately after each fix.
-- [ ] Add section-level quick actions (Activate Workspace, New Workspace, Refresh, Save).
 - [x] Add `Quick Actions` card grid as the primary interaction surface.
 - [x] Add cards for `Host Tools`, `Install SDK`, `West Update`, `Settings`, and `Add Project`.
 - [x] Add per-card state chips (`Ready`, `Setup Required`, `Not Updated`) with consistent semantic color tokens.
@@ -635,40 +634,29 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 - [x] Add card click routing to focused setup flows and command handlers.
 - [x] Keep card layout fluid and responsive (2-column narrow, 3-column wide) without feeling rigid.
 - [x] Add contextual empty states (for example `No Active Project`) with primary CTA buttons.
-- [ ] Add side-panel flow for focused setup/configuration steps.
-- [ ] Add full-window flow for first-run or complex onboarding.
-- [ ] Add a unified stepper model shared by all three UI surfaces.
 - [x] Build webview frontend with React + TypeScript + Vite pipeline.
 - [x] Bootstrap webview app from Microsoft's official VS Code webview React sample/template.
 - [x] Replace `@vscode/webview-ui-toolkit` with native HTML elements styled via VS Code CSS variables; toolkit dependency removed.
 - [x] Use VS Code CSS variables (`--vscode-*`) for custom layout and styling.
-- [ ] Add theme-compatibility checks for Light, Dark, and High Contrast.
-- [ ] Keep webview styling compatible with VS Code reset/baseline styles.
-- [ ] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
-- [ ] Add new-project flow with template, hardware, and feature steps.
-- [ ] Add existing-project flow with workspace selection and validation.
+- [x] Add theme-compatibility checks for Light, Dark, and High Contrast.
+- [x] Keep webview styling compatible with VS Code reset/baseline styles.
 - [x] Add finish step with `open in current window` vs `open in new window` choice.
 - [x] Add SDK discovery step (detected SDKs + manual path selection).
 - [x] Add SDK install step (download/clone, progress, cancel, logs).
 - [x] Add SDK readiness validation step (scripts, metadata, toolchain checks).
 - [x] Add guided dependency/bootstrap actions from UI (python/west/host tooling).
-- [ ] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
 - [x] Add development component management view for compiler, CMake, Ninja, Python, west, and env paths.
 - [x] Add workspace and toolchain drift detection with explicit remediation guidance.
 - [x] Add review/apply step with file-change preview and overwrite warnings.
 - [x] Add generated-output preview and plan summary before write.
 - [x] Add typed extension<->webview message contracts and state sync.
-- [ ] Add smoke/integration tests for sidebar, panel, and full-window flows.
-- [ ] Add docs for GUI-first onboarding and SDK installation workflows.
 - [x] Add bottom resource/link bar with `Documentation`, `Getting Started`, `West Docs`, `Report Issues` actions.
 
 ## Key Phrases and Keywords
 
 - [x] Standardize UI language around: `Setup at a glance`, `Ready`, `Setup Required`, `Not Installed`, `No Active Project`.
-- [ ] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
 - [x] Keep dashboard naming stable: `Quick Actions`, `West Workspaces`, `Projects`, `Project Details`.
 - [x] Use consistent action verbs: `Install SDK`, `Activate Workspace`, `Create Project`, `Open Project`, `Continue Setup`.
-- [ ] Keep section names stable across sidebar and full-window surfaces.
 
 ## Exit Criteria
 
@@ -678,12 +666,10 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 - [x] A user can select or install SDK and verify readiness entirely from UI.
 - [x] Missing prerequisites are surfaced with exact actionable fixes in the same panel.
 - [x] A user can create or open a project and choose current/new window at wizard completion.
-- [ ] Sidebar, side-panel, and full-window modes use one consistent state model.
 - [x] Webview UI stays visually correct across Light, Dark, and High Contrast themes.
 - [x] ALP IDE sections render meaningful status and next action in empty and partially configured states.
 - [x] `Quick Actions` cards drive at least the five primary setup workflows without command palette dependency.
 - [x] Bottom resource links are visible, actionable, and theme-consistent.
-- [ ] Major wizard flows are covered by automated smoke/integration tests.
 ```
 
 ---
@@ -1438,4 +1424,63 @@ was deleted from the SDK. This epic tracks all extension-side adaptations.
 - [x] All five `west alp-*` commands are surfaced in VS Code tasks.
 - [x] Existing v1 board.yaml files continue to load without error
       (backward compatibility maintained in the loader).
+```
+
+---
+
+## Epic 13
+
+**Title**
+
+`Epic: ALP IDE advanced flows — wizard surfaces, lifecycle management, and quality gates`
+
+**Labels**
+
+- `type:epic`
+- `area:ui`
+- `area:testing`
+- `area:docs`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M10 — ALP IDE Advanced Flows`
+
+**Body**
+
+```md
+## Summary
+
+Extend the ALP IDE experience with side-panel and full-window wizard
+surfaces, workspace lifecycle management, a unified stepper model,
+recovery language standardization, and automated quality gates.
+Deferred from Epic 10 (M8) after the core sidebar experience shipped.
+
+## Outcome
+
+Users have guided multi-step flows for new-project creation, workspace
+management, and complex onboarding that go beyond the status-first
+sidebar panel.
+
+## Tasks
+
+- [ ] Add section-level quick actions (Activate Workspace, New Workspace, Refresh, Save).
+- [ ] Add side-panel flow for focused setup/configuration steps.
+- [ ] Add full-window flow for first-run or complex onboarding.
+- [ ] Add a unified stepper model shared by all three UI surfaces.
+- [ ] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
+- [ ] Add new-project flow with template, hardware, and feature steps.
+- [ ] Add existing-project flow with workspace selection and validation.
+- [ ] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
+- [ ] Add smoke/integration tests for sidebar, panel, and full-window flows.
+- [ ] Add docs for GUI-first onboarding and SDK installation workflows.
+- [ ] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
+- [ ] Keep section names stable across sidebar and full-window surfaces.
+
+## Exit Criteria
+
+- [ ] Sidebar, side-panel, and full-window modes use one consistent state model.
+- [ ] Major wizard flows are covered by automated smoke/integration tests.
+- [ ] GUI-first onboarding and SDK installation are fully documented.
 ```
