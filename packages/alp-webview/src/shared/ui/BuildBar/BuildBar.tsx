@@ -1,5 +1,5 @@
-import type { AlpIdeState } from "../types";
-import { postMessage } from "../vscode";
+import type { AlpIdeState } from "../../../types";
+import { postMessage } from "../../../vscode";
 import styles from "./BuildBar.module.css";
 
 interface Props {

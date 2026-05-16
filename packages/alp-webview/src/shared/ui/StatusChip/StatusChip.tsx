@@ -1,4 +1,4 @@
-import type { ChipState } from "../types";
+import type { ChipState } from "../../../types";
 import styles from "./StatusChip.module.css";
 
 const LABELS: Record<ChipState, string> = {

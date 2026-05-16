@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { StatusChip } from "../components/StatusChip";
-import layout from "../shared/layout.module.css";
-import type { ChipState, LocalSdkEntry, SdkRelease, SdkStatus } from "../types";
-import { postMessage } from "../vscode";
-import styles from "./SdkSection.module.css";
+import { StatusChip } from "../../shared/ui/StatusChip";
+import layout from "../../shared/ui/layout.module.css";
+import type { ChipState, LocalSdkEntry, SdkRelease, SdkStatus } from "../../types";
+import { postMessage } from "../../vscode";
+import styles from "./SdkView.module.css";
 
 interface Props {
   sdk: SdkStatus | null;
@@ -51,7 +51,7 @@ function formatDate(iso: string): string {
   }
 }
 
-export function SdkSection({
+export function SdkView({
   sdk,
   releases,
   installLog,

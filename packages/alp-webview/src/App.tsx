@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { BuildBar } from "./components/BuildBar";
-import { FooterSection } from "./sections/FooterSection";
-import { ProjectSection } from "./sections/ProjectSection";
-import { QuickActionsSection } from "./sections/QuickActionsSection";
-import { SdkSection } from "./sections/SdkSection";
-import { SetupSection } from "./sections/SetupSection";
-import { WestWorkspacesSection } from "./sections/WestWorkspacesSection";
-import layout from "./shared/layout.module.css";
+import { FooterView } from "./features/footer";
+import { ProjectView } from "./features/project";
+import { QuickActionsView } from "./features/quick-actions";
+import { SdkView } from "./features/sdk";
+import { SetupView } from "./features/setup";
+import { WestWorkspacesView } from "./features/west-workspaces";
+import layout from "./shared/ui/layout.module.css";
+import { BuildBar } from "./shared/ui/BuildBar";
 import { PROTOCOL_VERSION, type AlpIdeState, type SdkRelease } from "./types";
 import { onMessage, postMessage } from "./vscode";
 
@@ -72,21 +72,21 @@ export function App() {
   return (
     <div>
       <BuildBar state={state} />
-      <SetupSection state={state} />
+      <SetupView state={state} />
       <vscode-divider role="separator" />
-      <WestWorkspacesSection state={state} />
+      <WestWorkspacesView state={state} />
       <vscode-divider role="separator" />
-      <ProjectSection state={state} />
+      <ProjectView state={state} />
       <vscode-divider role="separator" />
-      <SdkSection
+      <SdkView
         sdk={state?.sdk ?? null}
         releases={sdkReleases}
         installLog={sdkInstallLog}
         installActive={sdkInstallActive}
       />
       <vscode-divider role="separator" />
-      <QuickActionsSection />
-      <FooterSection />
+      <QuickActionsView />
+      <FooterView />
     </div>
   );
 }

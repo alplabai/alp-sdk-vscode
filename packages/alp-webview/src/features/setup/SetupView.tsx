@@ -1,8 +1,8 @@
-import { StatusChip } from "../components/StatusChip";
-import type { AlpIdeState, ChipState } from "../types";
-import { postMessage } from "../vscode";
-import layout from "../shared/layout.module.css";
-import styles from "./SetupSection.module.css";
+import { StatusChip } from "../../shared/ui/StatusChip";
+import type { AlpIdeState, ChipState } from "../../types";
+import { postMessage } from "../../vscode";
+import layout from "../../shared/ui/layout.module.css";
+import styles from "./SetupView.module.css";
 
 interface Props {
   state: AlpIdeState | null;
@@ -109,7 +109,7 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export function SetupSection({ state }: Props) {
+export function SetupView({ state }: Props) {
   if (!state) {
     return (
       <div className={layout.section}>

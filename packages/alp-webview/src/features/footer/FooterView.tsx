@@ -1,5 +1,5 @@
-import { ResourceLink } from "../components/ResourceLink";
-import styles from "./FooterSection.module.css";
+import { ResourceLink } from "../../shared/ui/ResourceLink";
+import styles from "./FooterView.module.css";
 
 interface ResourceLinkDef {
   label: string;
@@ -30,7 +30,7 @@ const LINKS: ResourceLinkDef[] = [
   },
 ];
 
-export function FooterSection() {
+export function FooterView() {
   return (
     <div className={styles.footer}>
       <div className={styles.links}>

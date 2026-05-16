@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { StatusChip } from "../components/StatusChip";
-import layout from "../shared/layout.module.css";
-import type { AlpIdeState, ChipState } from "../types";
-import { postMessage } from "../vscode";
+import { StatusChip } from "../../shared/ui/StatusChip";
+import layout from "../../shared/ui/layout.module.css";
+import type { AlpIdeState, ChipState } from "../../types";
+import { postMessage } from "../../vscode";
 
 interface Props {
   state: AlpIdeState | null;
@@ -14,7 +14,7 @@ function basename(p: string): string {
   return parts.length > 0 ? parts[parts.length - 1] : p;
 }
 
-export function WestWorkspacesSection({ state }: Props) {
+export function WestWorkspacesView({ state }: Props) {
   if (!state) {
     return (
       <div className={layout.section}>

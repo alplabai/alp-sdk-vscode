@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { postMessage } from "../vscode";
+import { postMessage } from "../../../vscode";
 import styles from "./ResourceLink.module.css";
 
 interface Props {

@@ -1,6 +1,6 @@
-import layout from "../shared/layout.module.css";
-import { postMessage } from "../vscode";
-import styles from "./QuickActionsSection.module.css";
+import layout from "../../shared/ui/layout.module.css";
+import { postMessage } from "../../vscode";
+import styles from "./QuickActionsView.module.css";
 
 interface Tool {
   id: string;
@@ -76,7 +76,7 @@ const TOOLS: Tool[] = [
   },
 ];
 
-export function QuickActionsSection() {
+export function QuickActionsView() {
   return (
     <div className={layout.section}>
       <p className={layout.sectionTitle}>Tools</p>
