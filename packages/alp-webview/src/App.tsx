@@ -1,49 +1,16 @@
-import { useEffect, useState } from "react";
 import { FooterView } from "./features/footer";
 import { ProjectView } from "./features/project";
 import { QuickActionsView } from "./features/quick-actions";
 import { SdkView } from "./features/sdk";
 import { SetupView } from "./features/setup";
 import { WestWorkspacesView } from "./features/west-workspaces";
-import layout from "./shared/ui/layout.module.css";
+import { AppProvider, useAppContext } from "./shared/AppContext";
 import { BuildBar } from "./shared/ui/BuildBar";
-import { PROTOCOL_VERSION, type AlpIdeState, type SdkRelease } from "./types";
-import { onMessage, postMessage } from "./vscode";
+import layout from "./shared/ui/layout.module.css";
+import { postMessage } from "./vscode";
 
-export function App() {
-  const [state, setState] = useState<AlpIdeState | null>(null);
-  const [sdkReleases, setSdkReleases] = useState<SdkRelease[] | null>(null);
-  const [sdkInstallLog, setSdkInstallLog] = useState<string | null>(null);
-  const [sdkInstallActive, setSdkInstallActive] = useState(false);
-  const [protocolMismatch, setProtocolMismatch] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onMessage((msg) => {
-      if (msg.type === "stateUpdate") {
-        if (msg._v !== PROTOCOL_VERSION) {
-          setProtocolMismatch(true);
-          return;
-        }
-        setState(msg.state);
-      } else if (msg.type === "sdkReleasesLoaded") {
-        setSdkReleases(msg.releases);
-      } else if (msg.type === "sdkInstallProgress") {
-        setSdkInstallLog(msg.log);
-        if (msg.done) {
-          setSdkInstallActive(false);
-          if (msg.success) {
-            // Clear log after a short delay on success
-            setTimeout(() => setSdkInstallLog(null), 4000);
-          }
-        } else {
-          setSdkInstallActive(true);
-        }
-      }
-    });
-    // Tell the extension we are ready
-    postMessage({ type: "ready" });
-    return unsubscribe;
-  }, []);
+function AppShell() {
+  const { protocolMismatch } = useAppContext();
 
   if (protocolMismatch) {
     return (
@@ -71,22 +38,25 @@ export function App() {
 
   return (
     <div>
-      <BuildBar state={state} />
-      <SetupView state={state} />
+      <BuildBar />
+      <SetupView />
       <vscode-divider role="separator" />
-      <WestWorkspacesView state={state} />
+      <WestWorkspacesView />
       <vscode-divider role="separator" />
-      <ProjectView state={state} />
+      <ProjectView />
       <vscode-divider role="separator" />
-      <SdkView
-        sdk={state?.sdk ?? null}
-        releases={sdkReleases}
-        installLog={sdkInstallLog}
-        installActive={sdkInstallActive}
-      />
+      <SdkView />
       <vscode-divider role="separator" />
       <QuickActionsView />
       <FooterView />
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <AppProvider>
+      <AppShell />
+    </AppProvider>
   );
 }

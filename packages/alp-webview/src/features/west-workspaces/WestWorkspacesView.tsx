@@ -2,19 +2,17 @@
 
 import { StatusChip } from "../../shared/ui/StatusChip";
 import layout from "../../shared/ui/layout.module.css";
-import type { AlpIdeState, ChipState } from "../../types";
+import { useAppContext } from "../../shared/AppContext";
+import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";
-
-interface Props {
-  state: AlpIdeState | null;
-}
 
 function basename(p: string): string {
   const parts = p.split(/[\\/]/).filter(Boolean);
   return parts.length > 0 ? parts[parts.length - 1] : p;
 }
 
-export function WestWorkspacesView({ state }: Props) {
+export function WestWorkspacesView() {
+  const { state } = useAppContext();
   if (!state) {
     return (
       <div className={layout.section}>

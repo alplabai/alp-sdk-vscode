@@ -1,12 +1,9 @@
-import type { AlpIdeState } from "../../../types";
+import { useAppContext } from "../../../shared/AppContext";
 import { postMessage } from "../../../vscode";
 import styles from "./BuildBar.module.css";
 
-interface Props {
-  state: AlpIdeState | null;
-}
-
-export function BuildBar({ state }: Props) {
+export function BuildBar() {
+  const { state } = useAppContext();
   const canBuild = state?.workspace.boardYamlExists === true;
   const tip = canBuild ? undefined : "Open a configured ALP project first";
 

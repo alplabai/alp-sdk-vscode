@@ -1,16 +1,9 @@
 import { useState } from "react";
 import { StatusChip } from "../../shared/ui/StatusChip";
 import layout from "../../shared/ui/layout.module.css";
-import type { ChipState, LocalSdkEntry, SdkRelease, SdkStatus } from "../../types";
-import { postMessage } from "../../vscode";
+import type { ChipState, LocalSdkEntry, SdkStatus } from "../../types";
 import styles from "./SdkView.module.css";
-
-interface Props {
-  sdk: SdkStatus | null;
-  releases: SdkRelease[] | null;
-  installLog: string | null;
-  installActive: boolean;
-}
+import { useSdk } from "./useSdk";
 
 type SdkTab = "active" | "local" | "download";
 
@@ -51,12 +44,17 @@ function formatDate(iso: string): string {
   }
 }
 
-export function SdkView({
-  sdk,
-  releases,
-  installLog,
-  installActive,
-}: Props) {
+export function SdkView() {
+  const {
+    sdk,
+    releases,
+    installLog,
+    installActive,
+    loadReleases,
+    install,
+    switchSdk,
+    browseSdk,
+  } = useSdk();
   const [tab, setTab] = useState<SdkTab>("active");
   const [selectedTag, setSelectedTag] = useState("");
 
@@ -138,7 +136,7 @@ export function SdkView({
               <vscode-button
                 appearance="secondary"
                 title="Browse for an SDK directory"
-                onClick={() => postMessage({ type: "selectSdkPath" })}
+                onClick={() => browseSdk()}
               >
                 Browse…
               </vscode-button>
@@ -174,12 +172,7 @@ export function SdkView({
                     <div className={layout.setupRowAction}>
                       <vscode-button
                         appearance="secondary"
-                        onClick={() =>
-                          postMessage({
-                            type: "switchSdk",
-                            sdkPath: entry.path,
-                          })
-                        }
+                        onClick={() => switchSdk(entry.path)}
                       >
                         Use This
                       </vscode-button>
@@ -227,7 +220,7 @@ export function SdkView({
             <div className={styles.downloadControls}>
               {releases === null ? (
                 <vscode-button
-                  onClick={() => postMessage({ type: "requestSdkReleases" })}
+                  onClick={() => loadReleases()}
                 >
                   Load Releases
                 </vscode-button>
@@ -253,12 +246,7 @@ export function SdkView({
                     </select>
                     <vscode-button
                       appearance="primary"
-                      onClick={() =>
-                        postMessage({
-                          type: "requestSdkInstall",
-                          version: installTarget,
-                        })
-                      }
+                      onClick={() => install(installTarget)}
                     >
                       Install
                     </vscode-button>
