@@ -1472,10 +1472,10 @@ sidebar panel.
 - [ ] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
 - [ ] Add new-project flow with template, hardware, and feature steps.
 - [ ] Add existing-project flow with workspace selection and validation.
-- [ ] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
+- [x] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
 - [ ] Add smoke/integration tests for sidebar, panel, and full-window flows.
 - [ ] Add docs for GUI-first onboarding and SDK installation workflows.
-- [ ] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
+- [x] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
 - [ ] Keep section names stable across sidebar and full-window surfaces.
 
 ## Exit Criteria

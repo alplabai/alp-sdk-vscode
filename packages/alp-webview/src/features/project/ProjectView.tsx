@@ -1,7 +1,6 @@
 import { useAppContext } from "../../shared/AppContext";
-import { Button, Spinner } from "../../shared/ui";
+import { Button, Skeleton, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
-import { StatusChip } from "../../shared/ui/StatusChip";
 import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 
@@ -17,7 +16,7 @@ export function ProjectView() {
       <div className={layout.section}>
         <p className={layout.sectionTitle}>Project</p>
         <div className={layout.loadingRow}>
-          <Spinner />
+          <Skeleton lines={2} />
         </div>
       </div>
     );

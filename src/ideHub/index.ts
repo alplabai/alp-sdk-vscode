@@ -5,7 +5,8 @@ export type {
     ExtToWebviewMessage,
     WebviewToExtMessage
 } from "./messages";
+export { OverviewPanel } from "./overviewPanel";
 export { registerIdeHubProvider } from "./provider";
 export { SetupFlowPanel } from "./setupFlowPanel";
-export { OverviewPanel } from "./overviewPanel";
+export { registerWorkspaceCommands } from "./workspaceCommands";
 

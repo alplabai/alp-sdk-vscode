@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useAppContext } from "../../shared/AppContext";
-import { Button, Spinner } from "../../shared/ui";
+import { Button, Skeleton, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
-import { StatusChip } from "../../shared/ui/StatusChip";
 import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 
@@ -21,7 +20,7 @@ export function WestWorkspacesView() {
           <p className={layout.sectionTitle}>West Workspace</p>
         </div>
         <div className={layout.loadingRow}>
-          <Spinner />
+          <Skeleton lines={2} />
         </div>
       </div>
     );
@@ -54,6 +53,19 @@ export function WestWorkspacesView() {
             }
           >
             +
+          </button>
+          <button
+            className={layout.sectionIconBtn}
+            title="Switch workspace"
+            aria-label="Switch workspace"
+            onClick={() =>
+              postMessage({
+                type: "runCommand",
+                command: "alp.switchWorkspace",
+              })
+            }
+          >
+            ⇄
           </button>
           <button
             className={layout.sectionIconBtn}
@@ -117,18 +129,31 @@ export function WestWorkspacesView() {
             <div className={layout.setupRowAction}>
               <div className={layout.btnRow}>
                 {westInitialized ? (
-                  <Button
-                    appearance="secondary"
-                    disabled={!westAvailable}
-                    onClick={() =>
-                      postMessage({
-                        type: "runCommand",
-                        command: "alp.westUpdate",
-                      })
-                    }
-                  >
-                    West Update
-                  </Button>
+                  <>
+                    <Button
+                      appearance="secondary"
+                      disabled={!westAvailable}
+                      onClick={() =>
+                        postMessage({
+                          type: "runCommand",
+                          command: "alp.westUpdate",
+                        })
+                      }
+                    >
+                      West Update
+                    </Button>
+                    <Button
+                      appearance="secondary"
+                      onClick={() =>
+                        postMessage({
+                          type: "runCommand",
+                          command: "alp.removeWestInit",
+                        })
+                      }
+                    >
+                      Remove Init
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     appearance="primary"

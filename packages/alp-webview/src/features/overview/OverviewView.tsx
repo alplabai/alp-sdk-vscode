@@ -1,6 +1,5 @@
 import { useAppContext } from "../../shared/AppContext";
-import { Button, Spinner } from "../../shared/ui";
-import { StatusChip } from "../../shared/ui/StatusChip";
+import { Button, Card, Skeleton, StatusChip } from "../../shared/ui";
 import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./OverviewView.module.css";
@@ -91,9 +90,10 @@ interface CardProps {
 
 function StatusCard({ icon, title, chip, meta }: CardProps) {
   return (
-    <div
-      className={styles.card}
+    <Card
+      className={styles.statusCard}
       data-state={chip === "ready" ? "ready" : "error"}
+      padding="none"
     >
       <div className={styles.cardIcon} aria-hidden="true">
         {icon}
@@ -103,7 +103,7 @@ function StatusCard({ icon, title, chip, meta }: CardProps) {
       <div className={styles.cardChip}>
         <StatusChip state={chip} />
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -140,8 +140,8 @@ export function OverviewView() {
           <h1 className={styles.heroTitle}>ALP IDE</h1>
           <p className={styles.heroSub}>Loading workspace state…</p>
         </div>
-        <div style={{ padding: "var(--space-8) var(--space-10)" }}>
-          <Spinner />
+      <div className={styles.body}>
+          <Skeleton lines={4} />
         </div>
       </div>
     );
@@ -242,8 +242,7 @@ export function OverviewView() {
             <span className={styles.readyIcon} aria-hidden="true">
               ✅
             </span>
-            All systems are ready. You can now build and flash ALP SDK
-            firmware.
+            All systems are ready. You can now build and flash ALP SDK firmware.
           </div>
         )}
 

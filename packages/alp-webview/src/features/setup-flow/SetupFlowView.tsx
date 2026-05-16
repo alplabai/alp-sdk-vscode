@@ -2,8 +2,7 @@ import { useMemo } from "react";
 import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
-import { Button, Spinner, Stepper, StepperNav } from "../../shared/ui";
-import { StatusChip } from "../../shared/ui/StatusChip";
+import { Button, Skeleton, StatusChip, Stepper, StepperNav } from "../../shared/ui";
 import type { AlpIdeState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./SetupFlowView.module.css";
@@ -217,7 +216,7 @@ export function SetupFlowView() {
 
         <main className={styles.content}>
           {isLoading ? (
-            <Spinner />
+            <Skeleton lines={2} />
           ) : (
             <>
               {stepper.currentIndex === 0 && <EnvStep state={state} />}

@@ -4,7 +4,12 @@ import * as vscode from "vscode";
 import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorCommand } from "./configuratorPanel";
 import { registerDebugCommands } from "./debug";
-import { registerIdeHubProvider, SetupFlowPanel, OverviewPanel } from "./ideHub";
+import {
+    OverviewPanel,
+    registerIdeHubProvider,
+    registerWorkspaceCommands,
+    SetupFlowPanel,
+} from "./ideHub";
 import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
@@ -29,6 +34,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerLspCommands(),
     ...registerDebugCommands(),
     ...registerIdeHubProvider(context),
+    ...registerWorkspaceCommands(),
     vscode.commands.registerCommand("alp.openSetupFlow", () =>
       SetupFlowPanel.open(context),
     ),

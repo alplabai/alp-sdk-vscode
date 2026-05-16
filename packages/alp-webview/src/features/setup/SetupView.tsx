@@ -1,6 +1,6 @@
 import { useAppContext } from "../../shared/AppContext";
+import { Skeleton, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
-import { StatusChip } from "../../shared/ui/StatusChip";
 import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./SetupView.module.css";
@@ -159,7 +159,7 @@ export function SetupView() {
       <div className={layout.section}>
         <p className={layout.sectionTitle}>Environment</p>
         <div className={layout.loadingRow}>
-          <Spinner />
+          <Skeleton lines={2} />
         </div>
       </div>
     );
@@ -185,8 +185,8 @@ export function SetupView() {
         <p className={layout.sectionTitle}>Environment</p>
         <button
           className={styles.recheckBtn}
-          title="Re-check environment"
-          aria-label="Re-check environment"
+          title="Retry Check"
+          aria-label="Retry Check"
           onClick={() =>
             postMessage({ type: "runCommand", command: "alp.ideHub.refresh" })
           }

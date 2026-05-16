@@ -191,6 +191,16 @@
         "category": "Alp"
       },
       {
+        "command": "alp.switchWorkspace",
+        "title": "Alp: Switch workspace folder",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.removeWestInit",
+        "title": "Alp: Remove west initialization (.west/)",
+        "category": "Alp"
+      },
+      {
         "command": "alp.openSettings",
         "title": "Alp: Open ALP IDE settings",
         "category": "Alp"

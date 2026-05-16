@@ -3,9 +3,9 @@ import styles from "./StatusChip.module.css";
 
 const LABELS: Record<ChipState, string> = {
   ready: "Ready",
-  "setup-required": "Setup Required",
-  "not-installed": "Not Installed",
-  "not-updated": "Not Updated",
+  "setup-required": "Action Required",
+  "not-installed": "Missing",
+  "not-updated": "Update Needed",
 };
 
 interface Props {
