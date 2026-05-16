@@ -4,4 +4,5 @@ export { Divider } from "./Divider";
 export { ResourceLink } from "./ResourceLink";
 export { Spinner } from "./Spinner";
 export { StatusChip } from "./StatusChip";
+export { Stepper, StepperNav } from "./Stepper";
 
