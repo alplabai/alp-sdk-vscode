@@ -640,8 +640,7 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 - [ ] Add a unified stepper model shared by all three UI surfaces.
 - [x] Build webview frontend with React + TypeScript + Vite pipeline.
 - [x] Bootstrap webview app from Microsoft's official VS Code webview React sample/template.
-- [x] Integrate `@vscode/webview-ui-toolkit` components as the default UI primitives.
-- [x] Register toolkit components via `provideVSCodeDesignSystem().register(...)`.
+- [x] Replace `@vscode/webview-ui-toolkit` with native HTML elements styled via VS Code CSS variables; toolkit dependency removed.
 - [x] Use VS Code CSS variables (`--vscode-*`) for custom layout and styling.
 - [ ] Add theme-compatibility checks for Light, Dark, and High Contrast.
 - [ ] Keep webview styling compatible with VS Code reset/baseline styles.
