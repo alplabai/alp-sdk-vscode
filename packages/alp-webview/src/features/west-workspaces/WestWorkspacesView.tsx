@@ -17,7 +17,9 @@ export function WestWorkspacesView() {
   if (!state) {
     return (
       <div className={layout.section}>
-        <p className={layout.sectionTitle}>West Workspace</p>
+        <div className={layout.sectionTitleRow}>
+          <p className={layout.sectionTitle}>West Workspace</p>
+        </div>
         <div className={layout.loadingRow}>
           <Spinner />
         </div>
@@ -37,7 +39,53 @@ export function WestWorkspacesView() {
 
   return (
     <div className={layout.section}>
-      <p className={layout.sectionTitle}>West Workspace</p>
+      <div className={layout.sectionTitleRow}>
+        <p className={layout.sectionTitle}>West Workspace</p>
+        <div className={layout.sectionActions}>
+          <button
+            className={layout.sectionIconBtn}
+            title="New workspace"
+            aria-label="New workspace"
+            onClick={() =>
+              postMessage({ type: "runCommand", command: "alp.newProjectWizard" })
+            }
+          >
+            +
+          </button>
+          <button
+            className={layout.sectionIconBtn}
+            title="Activate workspace"
+            aria-label="Activate workspace"
+            disabled={!workspaceOpen}
+            onClick={() =>
+              postMessage({ type: "runCommand", command: "alp.bootstrap" })
+            }
+          >
+            ⊙
+          </button>
+          <button
+            className={layout.sectionIconBtn}
+            title="Refresh"
+            aria-label="Refresh"
+            onClick={() =>
+              postMessage({ type: "runCommand", command: "alp.ideHub.refresh" })
+            }
+          >
+            ↺
+          </button>
+          <button
+            className={layout.sectionIconBtn}
+            title="Save configuration"
+            aria-label="Save configuration"
+            disabled={!westInitialized}
+            onClick={() =>
+              postMessage({ type: "runCommand", command: "alp.generateAll" })
+            }
+          >
+            ⊞
+          </button>
+        </div>
+      </div>
       <div className={layout.setupRows}>
         <div className={layout.setupRow}>
           <div className={layout.setupRowHeader}>

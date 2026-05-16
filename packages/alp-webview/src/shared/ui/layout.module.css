@@ -28,6 +28,42 @@
   margin-bottom: var(--space-4);
 }
 
+/* ── Section header icon buttons ───────────────────────────────────────── */
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  /* push buttons up to align with the title cap-line */
+  margin-bottom: var(--space-4);
+  flex-shrink: 0;
+}
+
+.sectionIconBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.sectionIconBtn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.sectionIconBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .loadingRow {
   display: flex;
   align-items: center;
