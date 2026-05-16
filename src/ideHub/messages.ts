@@ -54,7 +54,11 @@ export function emptyAlpIdeState(): AlpIdeState {
       westAvailable: false,
       lastBootstrapAt: null,
     },
-    workspace: { workspaceRoot: null, boardYamlExists: false, westInitialized: false },
+    workspace: {
+      workspaceRoot: null,
+      boardYamlExists: false,
+      westInitialized: false,
+    },
   };
 }
 
