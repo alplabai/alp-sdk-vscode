@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+export { ExistingProjectFlowPanel } from "./existingProjectFlowPanel";
 export type {
     AlpIdeState,
     ExtToWebviewMessage,
     WebviewToExtMessage
 } from "./messages";
-export { ExistingProjectFlowPanel } from "./existingProjectFlowPanel";
 export { NewProjectFlowPanel } from "./newProjectFlowPanel";
 export { OverviewPanel } from "./overviewPanel";
 export { registerIdeHubProvider } from "./provider";

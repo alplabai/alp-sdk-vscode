@@ -1,5 +1,5 @@
-import { FooterView } from "./features/footer";
 import { ExistingProjectFlowView } from "./features/existing-project-flow";
+import { FooterView } from "./features/footer";
 import { NewProjectFlowView } from "./features/new-project-flow";
 import { OverviewView } from "./features/overview";
 import { ProjectView } from "./features/project";

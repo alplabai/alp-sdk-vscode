@@ -33,7 +33,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sdkInstallLog, setSdkInstallLog] = useState<string | null>(null);
   const [sdkInstallActive, setSdkInstallActive] = useState(false);
   const [protocolMismatch, setProtocolMismatch] = useState(false);
-  const [projectTemplates, setProjectTemplates] = useState<ProjectTemplate[] | null>(null);
+  const [projectTemplates, setProjectTemplates] = useState<
+    ProjectTemplate[] | null
+  >(null);
   const [e1mModules, setE1mModules] = useState<E1mModule[] | null>(null);
 
   useEffect(() => {
@@ -75,7 +77,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       projectTemplates,
       e1mModules,
     }),
-    [state, sdkReleases, sdkInstallLog, sdkInstallActive, protocolMismatch, projectTemplates, e1mModules],
+    [
+      state,
+      sdkReleases,
+      sdkInstallLog,
+      sdkInstallActive,
+      protocolMismatch,
+      projectTemplates,
+      e1mModules,
+    ],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
