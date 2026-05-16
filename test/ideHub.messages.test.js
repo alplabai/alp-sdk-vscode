@@ -128,7 +128,11 @@ test("projectTemplatesData message shape matches contract", () => {
       },
     ],
     modules: [
-      { id: "E1M-AEN701", displayName: "E1M-AEN701 (Alif Ensemble E7)", family: "alif-ensemble" },
+      {
+        id: "E1M-AEN701",
+        displayName: "E1M-AEN701 (Alif Ensemble E7)",
+        family: "alif-ensemble",
+      },
     ],
   };
   assert.equal(msg.type, "projectTemplatesData");
@@ -163,11 +167,21 @@ test("openExistingProject with activate=true is a valid message", () => {
 
 test("ProjectTemplate category must be starter, example or library", () => {
   const valid = ["starter", "example", "library"];
-  const t = { id: "blank-app", title: "Blank", description: "x", category: "starter", icon: "📄" };
+  const t = {
+    id: "blank-app",
+    title: "Blank",
+    description: "x",
+    category: "starter",
+    icon: "📄",
+  };
   assert.ok(valid.includes(t.category));
 });
 
 test("E1mModule family is a non-empty string", () => {
-  const m = { id: "E1M-NX9101", displayName: "E1M-NX9101 (NXP i.MX 93)", family: "nxp-imx9" };
+  const m = {
+    id: "E1M-NX9101",
+    displayName: "E1M-NX9101 (NXP i.MX 93)",
+    family: "nxp-imx9",
+  };
   assert.ok(m.family.length > 0);
 });

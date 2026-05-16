@@ -25,9 +25,18 @@ test("E1M_MODULES contains all known silicon families", () => {
 
 test("E1M_MODULES every entry has id, displayName, family", () => {
   for (const m of E1M_MODULES) {
-    assert.ok(m.id && typeof m.id === "string", `missing id: ${JSON.stringify(m)}`);
-    assert.ok(m.displayName && typeof m.displayName === "string", `missing displayName: ${m.id}`);
-    assert.ok(m.family && typeof m.family === "string", `missing family: ${m.id}`);
+    assert.ok(
+      m.id && typeof m.id === "string",
+      `missing id: ${JSON.stringify(m)}`,
+    );
+    assert.ok(
+      m.displayName && typeof m.displayName === "string",
+      `missing displayName: ${m.id}`,
+    );
+    assert.ok(
+      m.family && typeof m.family === "string",
+      `missing family: ${m.id}`,
+    );
   }
 });
 
@@ -73,7 +82,10 @@ test("PROJECT_TEMPLATES every entry has required fields", () => {
     assert.ok(t.id, `missing id: ${JSON.stringify(t)}`);
     assert.ok(t.title, `missing title: ${t.id}`);
     assert.ok(t.description, `missing description: ${t.id}`);
-    assert.ok(["starter", "example", "library"].includes(t.category), `invalid category: ${t.id}`);
+    assert.ok(
+      ["starter", "example", "library"].includes(t.category),
+      `invalid category: ${t.id}`,
+    );
     assert.ok(t.icon, `missing icon: ${t.id}`);
   }
 });
@@ -176,7 +188,11 @@ test("generateMainC example template includes TODO stub comment", () => {
 test("generateMainC always includes zephyr kernel header", () => {
   for (const id of ["blank-app", "lvgl-widgets", "iot-dashboard"]) {
     const src = generateMainC(id);
-    assert.match(src, /#include <zephyr\/kernel\.h>/, `missing header for template: ${id}`);
+    assert.match(
+      src,
+      /#include <zephyr\/kernel\.h>/,
+      `missing header for template: ${id}`,
+    );
   }
 });
 

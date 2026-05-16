@@ -13,7 +13,7 @@ export {
     generateBoardYaml,
     generateCMakeLists,
     generateMainC,
-    PROJECT_TEMPLATES,
+    PROJECT_TEMPLATES
 } from "./projectScaffold";
 export { registerIdeHubProvider } from "./provider";
 export { SetupFlowPanel } from "./setupFlowPanel";

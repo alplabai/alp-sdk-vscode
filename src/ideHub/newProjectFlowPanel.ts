@@ -22,7 +22,6 @@ import { buildWebviewHtml } from "./webviewHtml";
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
 const PANEL_TITLE = "ALP IDE — New Project";
 
-
 export class NewProjectFlowPanel {
   private static instance?: NewProjectFlowPanel;
 
@@ -193,4 +192,3 @@ export class NewProjectFlowPanel {
     this.disposables.length = 0;
   }
 }
-

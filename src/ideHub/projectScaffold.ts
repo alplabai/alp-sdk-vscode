@@ -9,31 +9,77 @@ import type { E1mModule, ProjectTemplate } from "./messages";
 // ---------------------------------------------------------------------------
 
 export const E1M_MODULES: E1mModule[] = [
-  { id: "E1M-AEN701", displayName: "E1M-AEN701 (Alif Ensemble E7)", family: "alif-ensemble" },
-  { id: "E1M-AEN301", displayName: "E1M-AEN301 (Alif Ensemble E3)", family: "alif-ensemble" },
-  { id: "E1M-AEN401", displayName: "E1M-AEN401 (Alif Ensemble E4)", family: "alif-ensemble" },
-  { id: "E1M-AEN501", displayName: "E1M-AEN501 (Alif Ensemble E5)", family: "alif-ensemble" },
-  { id: "E1M-AEN601", displayName: "E1M-AEN601 (Alif Ensemble E6)", family: "alif-ensemble" },
-  { id: "E1M-AEN801", displayName: "E1M-AEN801 (Alif Ensemble E8)", family: "alif-ensemble" },
-  { id: "E1M-V2N101", displayName: "E1M-V2N101 (Renesas RZ/V2N)", family: "renesas-rzv2n" },
-  { id: "E1M-V2N102", displayName: "E1M-V2N102 (Renesas RZ/V2N, larger memory)", family: "renesas-rzv2n" },
-  { id: "E1M-V2M101", displayName: "E1M-V2M101 (Renesas RZ/V2N + DEEPX DX-M1)", family: "renesas-rzv2n" },
-  { id: "E1M-V2M102", displayName: "E1M-V2M102 (Renesas RZ/V2N + DEEPX DX-M1, larger memory)", family: "renesas-rzv2n" },
-  { id: "E1M-NX9101", displayName: "E1M-NX9101 (NXP i.MX 93)", family: "nxp-imx9" },
+  {
+    id: "E1M-AEN701",
+    displayName: "E1M-AEN701 (Alif Ensemble E7)",
+    family: "alif-ensemble",
+  },
+  {
+    id: "E1M-AEN301",
+    displayName: "E1M-AEN301 (Alif Ensemble E3)",
+    family: "alif-ensemble",
+  },
+  {
+    id: "E1M-AEN401",
+    displayName: "E1M-AEN401 (Alif Ensemble E4)",
+    family: "alif-ensemble",
+  },
+  {
+    id: "E1M-AEN501",
+    displayName: "E1M-AEN501 (Alif Ensemble E5)",
+    family: "alif-ensemble",
+  },
+  {
+    id: "E1M-AEN601",
+    displayName: "E1M-AEN601 (Alif Ensemble E6)",
+    family: "alif-ensemble",
+  },
+  {
+    id: "E1M-AEN801",
+    displayName: "E1M-AEN801 (Alif Ensemble E8)",
+    family: "alif-ensemble",
+  },
+  {
+    id: "E1M-V2N101",
+    displayName: "E1M-V2N101 (Renesas RZ/V2N)",
+    family: "renesas-rzv2n",
+  },
+  {
+    id: "E1M-V2N102",
+    displayName: "E1M-V2N102 (Renesas RZ/V2N, larger memory)",
+    family: "renesas-rzv2n",
+  },
+  {
+    id: "E1M-V2M101",
+    displayName: "E1M-V2M101 (Renesas RZ/V2N + DEEPX DX-M1)",
+    family: "renesas-rzv2n",
+  },
+  {
+    id: "E1M-V2M102",
+    displayName: "E1M-V2M102 (Renesas RZ/V2N + DEEPX DX-M1, larger memory)",
+    family: "renesas-rzv2n",
+  },
+  {
+    id: "E1M-NX9101",
+    displayName: "E1M-NX9101 (NXP i.MX 93)",
+    family: "nxp-imx9",
+  },
 ];
 
 export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: "blank-app",
     title: "Blank Application",
-    description: "Minimal starter with CMakeLists.txt, prj.conf, board.yaml, and an empty main.c",
+    description:
+      "Minimal starter with CMakeLists.txt, prj.conf, board.yaml, and an empty main.c",
     category: "starter",
     icon: "📄",
   },
   {
     id: "gpio-button-led",
     title: "GPIO Peripheral",
-    description: "Button input and LED output using board.yaml pin allocation and the peripheral block helper",
+    description:
+      "Button input and LED output using board.yaml pin allocation and the peripheral block helper",
     category: "example",
     icon: "🔘",
     sourceDir: "gpio-button-led",
@@ -41,7 +87,8 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: "lvgl-widgets",
     title: "LVGL UI Application",
-    description: "Touchscreen UI with LVGL widgets, animations, and theme support",
+    description:
+      "Touchscreen UI with LVGL widgets, animations, and theme support",
     category: "example",
     icon: "🖥️",
     sourceDir: "lvgl-widgets-demo",
@@ -49,7 +96,8 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: "iot-dashboard",
     title: "IoT Dashboard",
-    description: "Connected device with sensor data aggregation and cloud reporting",
+    description:
+      "Connected device with sensor data aggregation and cloud reporting",
     category: "example",
     icon: "🌐",
     sourceDir: "iot-dashboard",
@@ -57,7 +105,8 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: "ai-object-detection",
     title: "AI Object Detection",
-    description: "Real-time object detection pipeline using the DRP-AI3 or Ethos-U55 accelerator",
+    description:
+      "Real-time object detection pipeline using the DRP-AI3 or Ethos-U55 accelerator",
     category: "example",
     icon: "🤖",
     sourceDir: "ai-object-detection-realtime",
@@ -76,7 +125,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
 // File generators
 // ---------------------------------------------------------------------------
 
-export function generateBoardYaml(moduleId: string, projectName: string): string {
+export function generateBoardYaml(
+  moduleId: string,
+  projectName: string,
+): string {
   return `# board.yaml — ALP SDK project configuration (schema v2)
 # Generated by ALP IDE for project: ${projectName}
 #
