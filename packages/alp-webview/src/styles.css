@@ -1,3 +1,5 @@
+@import './styles/tokens.css';
+
 /* Reuse VS Code theme tokens so the panel matches the editor theme */
 
 *,
@@ -11,8 +13,8 @@ body {
   padding: 0;
   font-family: var(--vscode-font-family, system-ui, sans-serif);
   font-size: var(--vscode-font-size, 13px);
-  color: var(--vscode-foreground);
-  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  color: var(--text-primary);
+  background: var(--surface-bg);
 }
 
 .section {
@@ -24,10 +26,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(
-    --vscode-sideBarSectionHeader-foreground,
-    var(--vscode-foreground)
-  );
+  color: var(--text-section-header);
   margin: 0 0 8px;
   padding: 6px 0 4px;
 }
@@ -41,7 +40,7 @@ body {
 }
 
 .label {
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   flex-shrink: 0;
   min-width: 60px;
 }
@@ -56,29 +55,29 @@ body {
 .badge {
   display: inline-block;
   padding: 1px 6px;
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   font-size: 11px;
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .badge-ok {
-  background: var(--vscode-testing-iconPassed, #388a34);
-  color: #fff;
+  background: var(--status-ok);
+  color: var(--vscode-badge-foreground);
 }
 
 .badge-warn {
-  background: var(--vscode-editorWarning-foreground, #bf8803);
-  color: #fff;
+  background: var(--status-warn);
+  color: var(--vscode-badge-foreground);
 }
 
 .badge-err {
-  background: var(--vscode-editorError-foreground, #f14c4c);
-  color: #fff;
+  background: var(--status-err);
+  color: var(--vscode-badge-foreground);
 }
 
 .badge-neutral {
-  background: var(--vscode-badge-background);
+  background: var(--surface-badge);
   color: var(--vscode-badge-foreground);
 }
 
@@ -96,7 +95,7 @@ body {
 }
 
 .no-sdk {
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   font-style: italic;
   font-size: 12px;
   margin: 4px 0;
@@ -113,7 +112,7 @@ body {
 /* ── Readiness banner ──────────────────────────────────────────────────── */
 .readiness-banner {
   padding: 5px 8px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   font-size: 11px;
   font-weight: 600;
   margin-bottom: 8px;
@@ -125,30 +124,21 @@ body {
 }
 
 .banner-ok {
-  border-color: var(--vscode-testing-iconPassed, #4dbb4d);
-  background: var(
-    --vscode-testing-message-infoBackground,
-    rgba(77, 187, 77, 0.08)
-  );
-  color: var(--vscode-foreground);
+  border-color: var(--status-ok);
+  background: var(--vscode-testing-message-infoBackground);
+  color: var(--text-primary);
 }
 
 .banner-warn {
-  border-color: var(--vscode-editorWarning-foreground, #bf8803);
-  background: var(
-    --vscode-inputValidation-warningBackground,
-    rgba(191, 136, 3, 0.08)
-  );
-  color: var(--vscode-foreground);
+  border-color: var(--status-warn);
+  background: var(--vscode-inputValidation-warningBackground);
+  color: var(--text-primary);
 }
 
 .banner-err {
-  border-color: var(--vscode-editorError-foreground, #f14c4c);
-  background: var(
-    --vscode-inputValidation-errorBackground,
-    rgba(241, 76, 76, 0.08)
-  );
-  color: var(--vscode-foreground);
+  border-color: var(--status-err);
+  background: var(--vscode-inputValidation-errorBackground);
+  color: var(--text-primary);
 }
 
 /* ── Setup rows ────────────────────────────────────────────────────────── */
@@ -163,11 +153,7 @@ body {
   flex-direction: column;
   gap: 3px;
   padding: 8px 0;
-  border-bottom: 1px solid
-    var(
-      --vscode-widget-border,
-      var(--vscode-panel-border, rgba(128, 128, 128, 0.15))
-    );
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
 }
 
 .setup-row:last-child {
@@ -190,7 +176,7 @@ body {
 .setup-row-desc {
   margin: 0;
   font-size: 11px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
@@ -202,24 +188,24 @@ body {
   margin: 2px 0 0;
   font-size: 11px;
   font-style: italic;
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   line-height: 1.4;
   padding-left: 6px;
-  border-left: 2px solid var(--vscode-editorWarning-foreground, #bf8803);
+  border-left: 2px solid var(--status-warn);
 }
 
 .setup-row-version {
   margin: 2px 0 0;
   font-size: 10px;
   font-family: var(--vscode-editor-font-family, monospace);
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   opacity: 0.8;
 }
 
 .setup-last-bootstrap {
   margin: 6px 0 0;
   font-size: 11px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   opacity: 0.75;
 }
 
@@ -229,15 +215,8 @@ body {
   align-items: center;
   gap: 6px;
   padding: 10px 12px;
-  background: var(
-    --vscode-sideBarSectionHeader-background,
-    rgba(128, 128, 128, 0.05)
-  );
-  border-bottom: 1px solid
-    var(
-      --vscode-widget-border,
-      var(--vscode-panel-border, rgba(128, 128, 128, 0.15))
-    );
+  background: var(--surface-section-header);
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
 }
 
 /* Stretch the primary Build button, keep Flash and Sim compact */
@@ -260,21 +239,21 @@ body {
 .recheck-btn {
   background: transparent;
   border: none;
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   margin-bottom: 8px;
   transition:
-    color 0.1s,
-    background 0.1s;
+    color var(--duration-fast),
+    background var(--duration-fast);
 }
 
 .recheck-btn:hover {
-  color: var(--vscode-foreground);
-  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.1));
+  color: var(--text-primary);
+  background: var(--surface-hover);
 }
 
 /* ── Compact "ready" row variant ──────────────────────────────────────── */
@@ -299,7 +278,7 @@ body {
   display: flex;
   gap: 0;
   margin-bottom: 8px;
-  border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+  border-bottom: 1px solid var(--border-default);
 }
 
 .sdk-tab {
@@ -310,30 +289,30 @@ body {
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   margin-bottom: -1px;
   transition:
-    color 0.1s,
-    border-color 0.1s;
+    color var(--duration-fast),
+    border-color var(--duration-fast);
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .sdk-tab:hover {
-  color: var(--vscode-foreground);
+  color: var(--text-primary);
 }
 
 .sdk-tab.active {
-  color: var(--vscode-foreground);
-  border-bottom-color: var(--vscode-focusBorder, #007fd4);
+  color: var(--text-primary);
+  border-bottom-color: var(--border-focus);
   font-weight: 600;
 }
 
 .sdk-tab-badge {
   display: inline-block;
-  background: var(--vscode-badge-background, rgba(128, 128, 128, 0.3));
-  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+  background: var(--surface-badge);
+  color: var(--vscode-badge-foreground);
   border-radius: 8px;
   font-size: 10px;
   font-weight: 600;
@@ -350,7 +329,7 @@ body {
 .sdk-active-label {
   margin: 2px 0 0;
   font-size: 10px;
-  color: var(--vscode-testing-iconPassed, #4dbb4d);
+  color: var(--status-ok);
   font-style: italic;
 }
 
@@ -380,17 +359,17 @@ body {
     var(--vscode-editor-background)
   );
   color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
-  border: 1px solid var(--vscode-dropdown-border, rgba(128, 128, 128, 0.4));
+  border: 1px solid var(--border-dropdown);
   padding: 3px 6px;
   font-size: 12px;
   font-family: var(--vscode-font-family, system-ui, sans-serif);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   outline: none;
   cursor: pointer;
 }
 
 .sdk-release-select:focus {
-  border-color: var(--vscode-focusBorder, #007fd4);
+  border-color: var(--border-focus);
 }
 
 .sdk-release-notes {
@@ -415,32 +394,26 @@ body {
   align-items: center;
   gap: 5px;
   padding: 6px 8px;
-  background: var(
-    --vscode-button-secondaryBackground,
-    rgba(128, 128, 128, 0.1)
-  );
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--surface-btn-secondary);
+  color: var(--vscode-button-secondaryForeground, var(--text-primary));
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 11px;
   font-family: var(--vscode-font-family, system-ui, sans-serif);
   text-align: left;
-  transition: background 0.1s;
+  transition: background var(--duration-fast);
   overflow: hidden;
   white-space: nowrap;
 }
 
 .tool-btn:hover {
-  background: var(
-    --vscode-button-secondaryHoverBackground,
-    rgba(128, 128, 128, 0.2)
-  );
-  border-color: var(--vscode-focusBorder, transparent);
+  background: var(--surface-btn-secondary-hover);
+  border-color: var(--border-focus, transparent);
 }
 
 .tool-btn:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline: 1px solid var(--border-focus);
   outline-offset: 1px;
 }
 
@@ -470,7 +443,7 @@ body {
   flex-direction: column;
   gap: 2px;
   padding: 4px 0;
-  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.1));
+  border-bottom: 1px solid var(--border-widget);
 }
 
 .sdk-entry:last-child {
@@ -518,11 +491,11 @@ body {
 }
 
 .text-ok {
-  color: var(--vscode-testing-iconPassed, #4dbb4d);
+  color: var(--status-ok);
 }
 
 .text-err {
-  color: var(--vscode-editorError-foreground, #f14c4c);
+  color: var(--status-err);
 }
 
 /* ── Resource links ────────────────────────────────────────────────────── */
@@ -530,20 +503,20 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--vscode-textLink-foreground, #3794ff);
+  color: var(--text-link);
   text-decoration: none;
   font-size: 12px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .resource-link:hover {
-  color: var(--vscode-textLink-activeForeground, #3794ff);
+  color: var(--text-link-active);
   text-decoration: underline;
 }
 
 .resource-link:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline: 1px solid var(--border-focus);
   outline-offset: 1px;
 }
 
@@ -555,7 +528,7 @@ body {
 /* ── Footer ────────────────────────────────────────────────────────────── */
 .footer-section {
   padding: 8px 12px 14px;
-  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
+  border-top: 1px solid var(--border-widget);
 }
 
 .footer-links {
@@ -572,7 +545,7 @@ body {
 /* Bullet separator between adjacent links */
 .footer-links .resource-link + .resource-link::before {
   content: "·";
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-secondary);
   margin-right: 4px;
   pointer-events: none;
   text-decoration: none;
