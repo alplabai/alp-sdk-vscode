@@ -1,5 +1,5 @@
 import { useAppContext } from "../../shared/AppContext";
-import { Skeleton, StatusChip } from "../../shared/ui";
+import { Button, Skeleton, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
 import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";

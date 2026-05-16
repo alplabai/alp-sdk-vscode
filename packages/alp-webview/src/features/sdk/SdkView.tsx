@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Skeleton, Spinner, StatusChip } from "../../shared/ui";
+import { Button, Skeleton, Spinner, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
 import type { ChipState, LocalSdkEntry, SdkStatus } from "../../types";
 import styles from "./SdkView.module.css";
