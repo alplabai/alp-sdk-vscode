@@ -557,10 +557,10 @@ status-first.
 21. Build webview frontend with React + TypeScript + Vite.
 22. Bootstrap from Microsoft's official VS Code webview React
    sample/template baseline.
-23. Use `@vscode/webview-ui-toolkit` as the default component system.
-24. Register toolkit components via
-   `provideVSCodeDesignSystem().register(...)`.
-25. Use VS Code CSS variables (`--vscode-*`) for all custom styling.
+23. Use native HTML elements with VS Code CSS variables (`--vscode-*`) and
+   semantic token aliases for all components; `@vscode/webview-ui-toolkit`
+   dependency removed.
+24. Use VS Code CSS variables (`--vscode-*`) for all custom styling.
 26. Validate Light/Dark/High Contrast theme compatibility.
 27. Add an ALP IDE Overview panel in editor area with setup summary
     and next actions.
@@ -620,7 +620,7 @@ status-first.
 - side-panel and full-window wizard surfaces
 - SDK manager UI with install + validation flow
 - React + TypeScript + Vite webview app scaffold
-- `@vscode/webview-ui-toolkit` based component library integration
+- native HTML component library with VS Code CSS variable token system
 - unified wizard state contract
 - end-to-end UI wizard smoke/integration coverage
 
@@ -1133,11 +1133,11 @@ Subtasks:
 1. Create webview app scaffold with React + TypeScript + Vite.
 2. Bootstrap from Microsoft's official VS Code webview React
    sample/template.
-3. Use `@vscode/webview-ui-toolkit` as baseline component set.
-4. Register components via `provideVSCodeDesignSystem().register(...)`.
-5. Use VS Code CSS variables for custom styling.
-6. Ensure webview CSS baseline/reset compatibility.
-7. Validate Light/Dark/High Contrast rendering.
+3. Use native HTML elements with VS Code CSS variable token system as
+   the component baseline; `@vscode/webview-ui-toolkit` removed.
+4. Use VS Code CSS variables for custom styling.
+5. Ensure webview CSS baseline/reset compatibility.
+6. Validate Light/Dark/High Contrast rendering.
 
 ### Task 10.3 — Build setup and readiness experience
 
