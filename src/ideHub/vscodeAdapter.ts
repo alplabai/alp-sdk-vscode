@@ -110,6 +110,9 @@ export async function queryAlpIdeState(
     workspace: {
       workspaceRoot: actualWorkspaceRoot,
       boardYamlExists: boardYamlPath ? fs.existsSync(boardYamlPath) : false,
+      westInitialized: actualWorkspaceRoot
+        ? fs.existsSync(path.join(actualWorkspaceRoot, ".west"))
+        : false,
     },
   };
 }

@@ -618,7 +618,7 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 
 - [x] Add an ALP Activity Bar container using `contributes.viewsContainers`.
 - [x] Add an ALP IDE root view using `contributes.views`.
-- [ ] Add section groups for Extension Setup, West Workspaces, Projects, and Project Details.
+- [x] Add section groups for Extension Setup, West Workspaces, Projects, and Project Details.
 - [x] Add setup status rows (Ready, Not Installed, Setup Required, Not Updated).
 - [x] Add progress banner copy such as `2 of 3 steps remaining` driven by real state.
 - [ ] Add zero-friction setup orchestrator that evaluates prerequisites on first open.
@@ -648,7 +648,7 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 - [ ] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
 - [ ] Add new-project flow with template, hardware, and feature steps.
 - [ ] Add existing-project flow with workspace selection and validation.
-- [ ] Add finish step with `open in current window` vs `open in new window` choice.
+- [x] Add finish step with `open in current window` vs `open in new window` choice.
 - [x] Add SDK discovery step (detected SDKs + manual path selection).
 - [x] Add SDK install step (download/clone, progress, cancel, logs).
 - [x] Add SDK readiness validation step (scripts, metadata, toolchain checks).
@@ -725,26 +725,26 @@ same contracts.
 
 - [x] Decide primary distribution strategy: npm package.
 - [x] Freeze package identity: npm package `alp-sdk`, binary command `alp`.
-- [ ] Define semver policy and release channels (`next` canary, `latest` stable).
-- [ ] Extract CLI core contracts into reusable package boundaries.
-- [ ] Separate VS Code adapter code from standalone CLI runtime.
-- [ ] Add standalone CLI package layout (entrypoint, bin mapping, exports map).
-- [ ] Add npm scripts for build, test, pack, and smoke-install verification.
-- [ ] Add contract tests that compare extension-invoked CLI and standalone CLI outputs.
-- [ ] Add CI workflow `.github/workflows/release-cli.yml` for publish automation.
-- [ ] Add provenance-enabled publishing and artifact/signature retention.
-- [ ] Add rollback playbook (deprecate/yank guidance + affected version matrix).
-- [ ] Add installation docs for developers, CI agents, and offline mirrors.
+- [x] Define semver policy and release channels (`next` canary, `latest` stable).
+- [x] Extract CLI core contracts into reusable package boundaries.
+- [x] Separate VS Code adapter code from standalone CLI runtime.
+- [x] Add standalone CLI package layout (entrypoint, bin mapping, exports map).
+- [x] Add npm scripts for build, test, pack, and smoke-install verification.
+- [x] Add contract tests that compare extension-invoked CLI and standalone CLI outputs.
+- [x] Add CI workflow `.github/workflows/release-cli.yml` for publish automation.
+- [x] Add provenance-enabled publishing and artifact/signature retention.
+- [x] Add rollback playbook (deprecate/yank guidance + affected version matrix).
+- [x] Add installation docs for developers, CI agents, and offline mirrors.
 - [ ] Add optional Rust feasibility spike for performance-critical core (non-blocking).
 - [ ] If Rust path is later selected, define Node interop strategy (napi, ffi, or process boundary).
 
 ## Exit Criteria
 
-- [ ] CLI can be installed and executed independently of the VS Code extension.
-- [ ] Extension and standalone CLI share the same command/output contract.
-- [ ] Release workflow exists with versioning, changelog, provenance, and rollback guidance.
-- [ ] npm distribution path is production-ready, documented, and tested.
-- [ ] Install verification passes for `npm i -g <package>` and `npx <package>@latest --help` flows.
+- [x] CLI can be installed and executed independently of the VS Code extension.
+- [x] Extension and standalone CLI share the same command/output contract.
+- [x] Release workflow exists with versioning, changelog, provenance, and rollback guidance.
+- [x] npm distribution path is production-ready, documented, and tested.
+- [x] Install verification passes for `npm i -g <package>` and `npx <package>@latest --help` flows.
 ```
 
 ## 4. Phase 1 Backlog Issues

@@ -228,9 +228,18 @@ async function runProjectWizard(): Promise<void> {
   );
 
   const explanation = createTemplateExplanation(template.id);
-  await vscode.window.showInformationMessage(
+  const openAction = await vscode.window.showInformationMessage(
     `Alp: ${template.label} scaffold ready. ${explanation[0]}`,
+    "Open in New Window",
+    "Stay Here",
   );
+  if (openAction === "Open in New Window") {
+    await vscode.commands.executeCommand(
+      "vscode.openFolder",
+      vscode.Uri.file(project.workspaceRoot),
+      { forceNewWindow: true },
+    );
+  }
 }
 
 async function runModuleScaffoldWizard(): Promise<void> {

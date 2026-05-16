@@ -5,6 +5,7 @@ import { ProjectSection } from "./sections/ProjectSection";
 import { QuickActionsSection } from "./sections/QuickActionsSection";
 import { SdkSection } from "./sections/SdkSection";
 import { SetupSection } from "./sections/SetupSection";
+import { WestWorkspacesSection } from "./sections/WestWorkspacesSection";
 import { PROTOCOL_VERSION, type AlpIdeState, type SdkRelease } from "./types";
 import { onMessage, postMessage } from "./vscode";
 
@@ -71,6 +72,8 @@ export function App() {
     <div>
       <BuildBar state={state} />
       <SetupSection state={state} />
+      <vscode-divider role="separator" />
+      <WestWorkspacesSection state={state} />
       <vscode-divider role="separator" />
       <ProjectSection state={state} />
       <vscode-divider role="separator" />

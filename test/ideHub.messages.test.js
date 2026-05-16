@@ -48,6 +48,7 @@ test("emptyAlpIdeState workspace defaults", () => {
   const { workspace } = emptyAlpIdeState();
   assert.equal(workspace.workspaceRoot, null);
   assert.equal(workspace.boardYamlExists, false);
+  assert.equal(workspace.westInitialized, false);
 });
 
 // ---------------------------------------------------------------------------
