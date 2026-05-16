@@ -9,21 +9,21 @@ import * as vscode from "vscode";
  *              to the correct shell without a separate bundle.
  */
 export function buildWebviewHtml(
-    webview: vscode.Webview,
-    extensionUri: vscode.Uri,
-    mode = "sidebar",
+  webview: vscode.Webview,
+  extensionUri: vscode.Uri,
+  mode = "sidebar",
 ): string {
-    const scriptUri = webview.asWebviewUri(
-        vscode.Uri.joinPath(
-            extensionUri,
-            "packages",
-            "alp-webview",
-            "dist",
-            "main.js",
-        ),
-    );
+  const scriptUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      extensionUri,
+      "packages",
+      "alp-webview",
+      "dist",
+      "main.js",
+    ),
+  );
 
-    return /* html */ `<!DOCTYPE html>
+  return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>

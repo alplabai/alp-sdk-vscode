@@ -7,4 +7,5 @@ export type {
 } from "./messages";
 export { registerIdeHubProvider } from "./provider";
 export { SetupFlowPanel } from "./setupFlowPanel";
+export { OverviewPanel } from "./overviewPanel";
 

@@ -1466,7 +1466,7 @@ sidebar panel.
 ## Tasks
 
 - [x] Add section-level quick actions (Activate Workspace, New Workspace, Refresh, Save).
-- [ ] Add side-panel flow for focused setup/configuration steps.
+- [x] Add side-panel flow for focused setup/configuration steps.
 - [ ] Add full-window flow for first-run or complex onboarding.
 - [x] Add a unified stepper model shared by all three UI surfaces.
 - [ ] Add an ALP IDE Overview panel in editor area with setup summary and next actions.

@@ -181,6 +181,16 @@
         "category": "Alp"
       },
       {
+        "command": "alp.openSetupFlow",
+        "title": "Alp: Open setup wizard",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openOverview",
+        "title": "Alp: Open ALP IDE overview",
+        "category": "Alp"
+      },
+      {
         "command": "alp.openSettings",
         "title": "Alp: Open ALP IDE settings",
         "category": "Alp"

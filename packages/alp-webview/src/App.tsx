@@ -1,4 +1,5 @@
 import { FooterView } from "./features/footer";
+import { OverviewView } from "./features/overview";
 import { ProjectView } from "./features/project";
 import { QuickActionsView } from "./features/quick-actions";
 import { SdkView } from "./features/sdk";
@@ -64,7 +65,13 @@ function AppShell() {
 export function App() {
   return (
     <AppProvider>
-      {ALP_MODE === "setup-flow" ? <SetupFlowView /> : <AppShell />}
+      {ALP_MODE === "setup-flow" ? (
+        <SetupFlowView />
+      ) : ALP_MODE === "overview" ? (
+        <OverviewView />
+      ) : (
+        <AppShell />
+      )}
     </AppProvider>
   );
 }

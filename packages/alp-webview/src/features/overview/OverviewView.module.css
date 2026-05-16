@@ -1,0 +1,165 @@
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  padding: 0 0 var(--space-10);
+}
+
+/* ── Hero header ────────────────────────────────────────────────────────── */
+.hero {
+  padding: 48px var(--space-10) var(--space-8);
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+  margin-bottom: var(--space-8);
+}
+
+.heroTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2);
+  letter-spacing: -0.3px;
+}
+
+.heroSub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ── Content area ───────────────────────────────────────────────────────── */
+.body {
+  padding: 0 var(--space-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* ── Section heading ────────────────────────────────────────────────────── */
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-4);
+}
+
+/* ── Status card grid ───────────────────────────────────────────────────── */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+.card {
+  background: var(--surface-bg);
+  border: 1px solid var(--border-widget, var(--border-default));
+  border-radius: var(--radius-lg, 6px);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transition: border-color var(--duration-base) var(--ease-out);
+}
+
+.card[data-state="ready"] {
+  border-color: var(--vscode-charts-green, #89d185);
+}
+
+.card[data-state="error"] {
+  border-color: var(--vscode-editorError-foreground, #f14c4c);
+}
+
+.cardIcon {
+  font-size: 18px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--surface-hover);
+}
+
+.cardTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.cardMeta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.cardChip {
+  margin-top: auto;
+}
+
+/* ── Action grid ────────────────────────────────────────────────────────── */
+.actionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.actionBtn {
+  background: var(--surface-bg);
+  border: 1px solid var(--border-widget, var(--border-default));
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.actionBtn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-focus);
+}
+
+.actionBtnIcon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.actionBtnLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.actionBtnDesc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* ── "All ready" banner ─────────────────────────────────────────────────── */
+.readyBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-green, #89d185) 40%, transparent);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.readyIcon {
+  font-size: 16px;
+  flex-shrink: 0;
+}

@@ -28,9 +28,8 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
 
   static readonly viewId = VIEW_ID;
 
-  private readonly outputChannel = vscode.window.createOutputChannel(
-    "ALP IDE Hub",
-  );
+  private readonly outputChannel =
+    vscode.window.createOutputChannel("ALP IDE Hub");
 
   resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -294,13 +293,15 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   }
 
   private buildHtml(webview: vscode.Webview): string {
-    const html = buildWebviewHtml(webview, this.context.extensionUri, "sidebar");
+    const html = buildWebviewHtml(
+      webview,
+      this.context.extensionUri,
+      "sidebar",
+    );
     this.outputChannel.appendLine(
       `[buildHtml] scriptUri snippet=${html.substring(html.indexOf("src="), html.indexOf("src=") + 80)}`,
     );
-    this.outputChannel.appendLine(
-      `[buildHtml] cspSource=${webview.cspSource}`,
-    );
+    this.outputChannel.appendLine(`[buildHtml] cspSource=${webview.cspSource}`);
     return html;
   }
 

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useAppContext } from "../../shared/AppContext";
-import { useStepper } from "../../shared/hooks/useStepper";
 import type { StepDef } from "../../shared/hooks/useStepper";
+import { useStepper } from "../../shared/hooks/useStepper";
 import { Button, Spinner, Stepper, StepperNav } from "../../shared/ui";
 import { StatusChip } from "../../shared/ui/StatusChip";
 import type { AlpIdeState } from "../../types";
@@ -55,8 +55,8 @@ function EnvStep({ state }: { state: AlpIdeState }) {
         </div>
       )}
       <p className={styles.stepDesc}>
-        Bootstrap installs Python, west, and other host dependencies required
-        to build ALP SDK firmware.
+        Bootstrap installs Python, west, and other host dependencies required to
+        build ALP SDK firmware.
       </p>
     </>
   );
@@ -183,8 +183,7 @@ export function SetupFlowView() {
     if (!state) return [false, false, false];
     return [
       state.setup.pythonAvailable && state.setup.westAvailable,
-      state.workspace.workspaceRoot !== null &&
-        state.workspace.westInitialized,
+      state.workspace.workspaceRoot !== null && state.workspace.westInitialized,
       state.sdk.readiness === "ready",
     ];
   }, [state]);
@@ -222,9 +221,7 @@ export function SetupFlowView() {
           ) : (
             <>
               {stepper.currentIndex === 0 && <EnvStep state={state} />}
-              {stepper.currentIndex === 1 && (
-                <WorkspaceStep state={state} />
-              )}
+              {stepper.currentIndex === 1 && <WorkspaceStep state={state} />}
               {stepper.currentIndex === 2 && <SdkStep state={state} />}
             </>
           )}
