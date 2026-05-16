@@ -22,7 +22,7 @@ export function Stepper({ steps, direction = "vertical" }: StepperProps) {
         <div
           key={`conn-${step.id}`}
           className={styles.connector}
-          data-complete={step.status === "complete" ? "" : undefined}
+          data-complete={steps[i - 1].status === "complete" ? "" : undefined}
           aria-hidden="true"
         />,
       );
@@ -106,13 +106,7 @@ export function StepperNav({
           disabled={disabled || loading}
           onClick={onNext}
         >
-          {loading ? (
-            <Spinner />
-          ) : isLast ? (
-            finishLabel
-          ) : (
-            nextLabel
-          )}
+          {loading ? <Spinner /> : isLast ? finishLabel : nextLabel}
         </Button>
       </div>
     </div>

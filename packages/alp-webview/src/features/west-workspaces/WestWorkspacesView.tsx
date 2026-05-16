@@ -47,7 +47,10 @@ export function WestWorkspacesView() {
             title="New workspace"
             aria-label="New workspace"
             onClick={() =>
-              postMessage({ type: "runCommand", command: "alp.newProjectWizard" })
+              postMessage({
+                type: "runCommand",
+                command: "alp.newProjectWizard",
+              })
             }
           >
             +

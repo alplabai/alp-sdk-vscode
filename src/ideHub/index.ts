@@ -6,4 +6,5 @@ export type {
     WebviewToExtMessage
 } from "./messages";
 export { registerIdeHubProvider } from "./provider";
+export { SetupFlowPanel } from "./setupFlowPanel";
 

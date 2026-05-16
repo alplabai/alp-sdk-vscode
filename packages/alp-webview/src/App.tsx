@@ -3,12 +3,19 @@ import { ProjectView } from "./features/project";
 import { QuickActionsView } from "./features/quick-actions";
 import { SdkView } from "./features/sdk";
 import { SetupView } from "./features/setup";
+import { SetupFlowView } from "./features/setup-flow";
 import { WestWorkspacesView } from "./features/west-workspaces";
 import { AppProvider, useAppContext } from "./shared/AppContext";
 import { Button, Divider } from "./shared/ui";
 import { BuildBar } from "./shared/ui/BuildBar";
 import layout from "./shared/ui/layout.module.css";
 import { postMessage } from "./vscode";
+
+// Resolved once at module load; never changes after the page is mounted.
+const ALP_MODE =
+  typeof document !== "undefined"
+    ? (document.body.dataset.alpMode ?? "sidebar")
+    : "sidebar";
 
 function AppShell() {
   const { protocolMismatch } = useAppContext();
@@ -57,7 +64,7 @@ function AppShell() {
 export function App() {
   return (
     <AppProvider>
-      <AppShell />
+      {ALP_MODE === "setup-flow" ? <SetupFlowView /> : <AppShell />}
     </AppProvider>
   );
 }

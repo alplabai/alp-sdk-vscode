@@ -111,6 +111,9 @@ export interface OpenUrlMessage {
   url: string;
   label: string;
 }
+export interface ClosePanelMessage {
+  type: "closePanel";
+}
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -118,4 +121,5 @@ export type WebviewToExtMessage =
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
   | SwitchSdkMessage
-  | OpenUrlMessage;
+  | OpenUrlMessage
+  | ClosePanelMessage;

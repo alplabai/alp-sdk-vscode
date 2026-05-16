@@ -16,6 +16,7 @@ import {
     type WebviewToExtMessage,
 } from "./messages";
 import { queryAlpIdeState, sdkCacheRoot } from "./vscodeAdapter";
+import { buildWebviewHtml } from "./webviewHtml";
 
 const VIEW_ID = "alp-ide.panel";
 
@@ -293,46 +294,14 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
   }
 
   private buildHtml(webview: vscode.Webview): string {
-    const distBase = vscode.Uri.joinPath(
-      this.context.extensionUri,
-      "packages",
-      "alp-webview",
-      "dist",
+    const html = buildWebviewHtml(webview, this.context.extensionUri, "sidebar");
+    this.outputChannel.appendLine(
+      `[buildHtml] scriptUri snippet=${html.substring(html.indexOf("src="), html.indexOf("src=") + 80)}`,
     );
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(distBase, "main.js"),
-    );
-    this.outputChannel.appendLine(`[buildHtml] scriptUri=${String(scriptUri)}`);
     this.outputChannel.appendLine(
       `[buildHtml] cspSource=${webview.cspSource}`,
     );
-
-    return /* html */ `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
-  <title>ALP IDE</title>
-</head>
-<body style="margin:0;padding:0">
-  <div id="root">
-    <p style="padding:8px;color:var(--vscode-foreground,#fff);background:var(--vscode-sideBar-background,transparent)">
-      ⏳ Loading ALP IDE…
-    </p>
-  </div>
-  <script>
-    console.log('[ALP IDE] inline script running, scriptUri="${scriptUri}"');
-    window.onerror = function(msg, src, line, col, err) {
-      console.error('[ALP IDE] error:', msg, src, line);
-      var r = document.getElementById('root');
-      if (r) r.innerHTML = '<pre style="padding:8px;color:red;font-size:11px;white-space:pre-wrap"><b>ALP IDE Error:</b>\\n' + msg + '\\n' + (src||'') + ':' + line + '\\n' + (err ? err.stack : '') + '</pre>';
-    };
-  </script>
-  <script src="${scriptUri}"></script>
-</body>
-</html>`;
+    return html;
   }
 
   dispose(): void {
