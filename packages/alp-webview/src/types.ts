@@ -79,10 +79,32 @@ export interface SdkInstallProgressMessage {
   done: boolean;
   success?: boolean;
 }
+export interface ProjectTemplatesDataMessage {
+  type: "projectTemplatesData";
+  templates: ProjectTemplate[];
+  modules: E1mModule[];
+}
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
-  | SdkInstallProgressMessage;
+  | SdkInstallProgressMessage
+  | ProjectTemplatesDataMessage;
+
+// ── New-project / existing-project shared types ──
+export interface ProjectTemplate {
+  id: string;
+  title: string;
+  description: string;
+  category: "starter" | "example" | "library";
+  icon: string;
+  sourceDir?: string;
+}
+
+export interface E1mModule {
+  id: string;
+  displayName: string;
+  family: string;
+}
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -114,6 +136,16 @@ export interface OpenUrlMessage {
 export interface ClosePanelMessage {
   type: "closePanel";
 }
+export interface CreateNewProjectMessage {
+  type: "createNewProject";
+  templateId: string;
+  moduleId: string;
+  projectName: string;
+}
+export interface OpenExistingProjectMessage {
+  type: "openExistingProject";
+  activate: boolean;
+}
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -122,4 +154,6 @@ export type WebviewToExtMessage =
   | RequestSdkInstallMessage
   | SwitchSdkMessage
   | OpenUrlMessage
-  | ClosePanelMessage;
+  | ClosePanelMessage
+  | CreateNewProjectMessage
+  | OpenExistingProjectMessage;

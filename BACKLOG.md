@@ -1467,16 +1467,16 @@ sidebar panel.
 
 - [x] Add section-level quick actions (Activate Workspace, New Workspace, Refresh, Save).
 - [x] Add side-panel flow for focused setup/configuration steps.
-- [ ] Add full-window flow for first-run or complex onboarding.
+- [x] Add full-window flow for first-run or complex onboarding.
 - [x] Add a unified stepper model shared by all three UI surfaces.
-- [ ] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
-- [ ] Add new-project flow with template, hardware, and feature steps.
-- [ ] Add existing-project flow with workspace selection and validation.
+- [x] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
+- [x] Add new-project flow with template, hardware, and feature steps.
+- [x] Add existing-project flow with workspace selection and validation.
 - [x] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
 - [ ] Add smoke/integration tests for sidebar, panel, and full-window flows.
 - [ ] Add docs for GUI-first onboarding and SDK installation workflows.
 - [x] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
-- [ ] Keep section names stable across sidebar and full-window surfaces.
+- [x] Keep section names stable across sidebar and full-window surfaces.
 
 ## Exit Criteria
 

@@ -1,4 +1,6 @@
 import { FooterView } from "./features/footer";
+import { ExistingProjectFlowView } from "./features/existing-project-flow";
+import { NewProjectFlowView } from "./features/new-project-flow";
 import { OverviewView } from "./features/overview";
 import { ProjectView } from "./features/project";
 import { QuickActionsView } from "./features/quick-actions";
@@ -69,6 +71,10 @@ export function App() {
         <SetupFlowView />
       ) : ALP_MODE === "overview" ? (
         <OverviewView />
+      ) : ALP_MODE === "new-project-flow" ? (
+        <NewProjectFlowView />
+      ) : ALP_MODE === "existing-project-flow" ? (
+        <ExistingProjectFlowView />
       ) : (
         <AppShell />
       )}

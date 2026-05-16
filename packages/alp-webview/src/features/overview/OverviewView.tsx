@@ -140,7 +140,7 @@ export function OverviewView() {
           <h1 className={styles.heroTitle}>ALP IDE</h1>
           <p className={styles.heroSub}>Loading workspace state…</p>
         </div>
-      <div className={styles.body}>
+        <div className={styles.body}>
           <Skeleton lines={4} />
         </div>
       </div>

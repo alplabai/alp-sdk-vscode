@@ -6,7 +6,13 @@ import {
     useState,
     type ReactNode,
 } from "react";
-import { PROTOCOL_VERSION, type AlpIdeState, type SdkRelease } from "../types";
+import {
+    PROTOCOL_VERSION,
+    type AlpIdeState,
+    type E1mModule,
+    type ProjectTemplate,
+    type SdkRelease,
+} from "../types";
 import { onMessage, postMessage } from "../vscode";
 
 export interface AppContextValue {
@@ -15,6 +21,8 @@ export interface AppContextValue {
   sdkInstallLog: string | null;
   sdkInstallActive: boolean;
   protocolMismatch: boolean;
+  projectTemplates: ProjectTemplate[] | null;
+  e1mModules: E1mModule[] | null;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -25,6 +33,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sdkInstallLog, setSdkInstallLog] = useState<string | null>(null);
   const [sdkInstallActive, setSdkInstallActive] = useState(false);
   const [protocolMismatch, setProtocolMismatch] = useState(false);
+  const [projectTemplates, setProjectTemplates] = useState<ProjectTemplate[] | null>(null);
+  const [e1mModules, setE1mModules] = useState<E1mModule[] | null>(null);
 
   useEffect(() => {
     const unsubscribe = onMessage((msg) => {
@@ -46,6 +56,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } else {
           setSdkInstallActive(true);
         }
+      } else if (msg.type === "projectTemplatesData") {
+        setProjectTemplates(msg.templates);
+        setE1mModules(msg.modules);
       }
     });
     postMessage({ type: "ready" });
@@ -59,8 +72,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sdkInstallLog,
       sdkInstallActive,
       protocolMismatch,
+      projectTemplates,
+      e1mModules,
     }),
-    [state, sdkReleases, sdkInstallLog, sdkInstallActive, protocolMismatch],
+    [state, sdkReleases, sdkInstallLog, sdkInstallActive, protocolMismatch, projectTemplates, e1mModules],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

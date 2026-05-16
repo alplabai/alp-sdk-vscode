@@ -1,0 +1,52 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  font-size: var(--vscode-font-size, 13px);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.field[data-error] .label {
+  color: var(--vscode-errorForeground, var(--status-err));
+}
+
+.input {
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--vscode-input-foreground, var(--text-primary));
+  background: var(--vscode-input-background, var(--surface-bg));
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  width: 100%;
+  transition: border-color var(--duration-base) var(--ease-out);
+}
+
+.input:focus {
+  border-color: var(--border-focus);
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+.field[data-error] .input {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--status-err));
+}
+
+.input::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--text-secondary));
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.error {
+  font-size: 11px;
+  color: var(--vscode-errorForeground, var(--status-err));
+}
