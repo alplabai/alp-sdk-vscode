@@ -5,8 +5,8 @@ import { SdkView } from "./features/sdk";
 import { SetupView } from "./features/setup";
 import { WestWorkspacesView } from "./features/west-workspaces";
 import { AppProvider, useAppContext } from "./shared/AppContext";
-import { BuildBar } from "./shared/ui/BuildBar";
 import { Button, Divider } from "./shared/ui";
+import { BuildBar } from "./shared/ui/BuildBar";
 import layout from "./shared/ui/layout.module.css";
 import { postMessage } from "./vscode";
 

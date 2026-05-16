@@ -219,9 +219,7 @@ export function SdkView() {
           {!installActive && (
             <div className={styles.downloadControls}>
               {releases === null ? (
-                <Button onClick={() => loadReleases()}>
-                  Load Releases
-                </Button>
+                <Button onClick={() => loadReleases()}>Load Releases</Button>
               ) : releases.length === 0 ? (
                 <p className={layout.setupRowDesc}>No releases found.</p>
               ) : (
