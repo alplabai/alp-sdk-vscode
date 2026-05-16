@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Skeleton, Spinner, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
 import type { ChipState, LocalSdkEntry, SdkStatus } from "../../types";
+import { postMessage } from "../../vscode";
 import styles from "./SdkView.module.css";
 import { useSdk } from "./useSdk";
 
@@ -44,7 +45,7 @@ function formatDate(iso: string): string {
   }
 }
 
-export function SdkView() {
+export function SdkView({ compact = false }: { compact?: boolean }) {
   const {
     sdk,
     releases,
@@ -68,6 +69,50 @@ export function SdkView() {
         <p className={layout.sectionTitle}>SDK Manager</p>
         <div className={layout.loadingRow}>
           <Skeleton lines={2} />
+        </div>
+      </div>
+    );
+  }
+
+  if (compact) {
+    return (
+      <div className={layout.section}>
+        <p className={layout.sectionTitle}>SDK Manager</p>
+        <div className={layout.setupRow}>
+          <div className={layout.setupRowHeader}>
+            <span className={layout.setupRowLabel}>
+              {sdk.version ? `v${sdk.version}` : "Active SDK"}
+            </span>
+            <StatusChip
+              state={sdk.activePath ? sdkChip(sdk.readiness) : "not-installed"}
+            />
+          </div>
+          {sdk.activePath ? (
+            <p
+              className={`${layout.setupRowDesc} ${layout.pathMono}`}
+              title={sdk.activePath}
+            >
+              {shortPath(sdk.activePath)}
+            </p>
+          ) : (
+            <p className={layout.setupRowDesc}>No active SDK configured.</p>
+          )}
+          <div className={layout.setupRowAction}>
+            <Button appearance="secondary" onClick={() => browseSdk()}>
+              Browse…
+            </Button>
+            <Button
+              appearance="primary"
+              onClick={() =>
+                postMessage({
+                  type: "runCommand",
+                  command: "alp.openSdkManager",
+                })
+              }
+            >
+              Manage SDK →
+            </Button>
+          </div>
         </div>
       </div>
     );

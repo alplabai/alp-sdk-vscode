@@ -56,7 +56,7 @@ function AppShell() {
       <Divider />
       <ProjectView />
       <Divider />
-      <SdkView />
+      <SdkView compact />
       <Divider />
       <QuickActionsView />
       <FooterView />
@@ -75,6 +75,8 @@ export function App() {
         <NewProjectFlowView />
       ) : ALP_MODE === "existing-project-flow" ? (
         <ExistingProjectFlowView />
+      ) : ALP_MODE === "sdk-manager" ? (
+        <SdkView />
       ) : (
         <AppShell />
       )}

@@ -10,6 +10,7 @@ import {
     OverviewPanel,
     registerIdeHubProvider,
     registerWorkspaceCommands,
+    SdkManagerPanel,
     SetupFlowPanel,
 } from "./ideHub";
 import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
@@ -48,6 +49,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("alp.openExistingProject", () =>
       ExistingProjectFlowPanel.open(context),
+    ),
+    vscode.commands.registerCommand("alp.openSdkManager", () =>
+      SdkManagerPanel.open(context),
     ),
     vscode.commands.registerCommand("alp.openSettings", () =>
       vscode.commands.executeCommand(

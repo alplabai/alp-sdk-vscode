@@ -199,51 +199,57 @@ export function SetupView() {
         <span>{bannerText}</span>
       </div>
 
-      <div className={layout.setupRows}>
-        {rows.map((row) => {
-          const isOk = row.severity === "ok";
-          return (
-            <div
-              key={row.id}
-              className={layout.setupRow}
-              data-ok={isOk ? "" : undefined}
-            >
-              <div className={layout.setupRowHeader}>
-                <span className={layout.setupRowLabel}>{row.label}</span>
-                <div className={layout.setupRowHeaderRight}>
-                  {row.action && !isOk && (
-                    <Button
-                      appearance={
-                        row.action.kind === "auto" ? "primary" : "secondary"
-                      }
-                      onClick={() =>
-                        postMessage({
-                          type: "runCommand",
-                          command: row.action!.command,
-                        })
-                      }
-                    >
-                      {row.action.label}
-                    </Button>
+      {!allOk && (
+        <div className={layout.setupRows}>
+          {rows
+            .filter((r) => r.severity !== "ok")
+            .map((row) => {
+              const isOk = row.severity === "ok";
+              return (
+                <div
+                  key={row.id}
+                  className={layout.setupRow}
+                  data-ok={isOk ? "" : undefined}
+                >
+                  <div className={layout.setupRowHeader}>
+                    <span className={layout.setupRowLabel}>{row.label}</span>
+                    <div className={layout.setupRowHeaderRight}>
+                      {row.action && !isOk && (
+                        <Button
+                          appearance={
+                            row.action.kind === "auto" ? "primary" : "secondary"
+                          }
+                          onClick={() =>
+                            postMessage({
+                              type: "runCommand",
+                              command: row.action!.command,
+                            })
+                          }
+                        >
+                          {row.action.label}
+                        </Button>
+                      )}
+                      <StatusChip state={row.chipState} />
+                    </div>
+                  </div>
+                  {!isOk && (
+                    <>
+                      <p className={layout.setupRowDesc}>{row.description}</p>
+                      {row.instruction && (
+                        <p className={styles.rowInstruction}>
+                          {row.instruction}
+                        </p>
+                      )}
+                    </>
                   )}
-                  <StatusChip state={row.chipState} />
+                  {isOk && row.version && (
+                    <p className={styles.rowVersion}>{row.version}</p>
+                  )}
                 </div>
-              </div>
-              {!isOk && (
-                <>
-                  <p className={layout.setupRowDesc}>{row.description}</p>
-                  {row.instruction && (
-                    <p className={styles.rowInstruction}>{row.instruction}</p>
-                  )}
-                </>
-              )}
-              {isOk && row.version && (
-                <p className={styles.rowVersion}>{row.version}</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+        </div>
+      )}
 
       {state.setup.lastBootstrapAt && (
         <p className={styles.lastBootstrap}>

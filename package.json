@@ -201,6 +201,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.openSdkManager",
+        "title": "ALP: SDK Manager",
+        "category": "Alp"
+      },
+      {
         "command": "alp.switchWorkspace",
         "title": "Alp: Switch workspace folder",
         "category": "Alp"

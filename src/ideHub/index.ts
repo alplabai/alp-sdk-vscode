@@ -16,6 +16,7 @@ export {
     PROJECT_TEMPLATES
 } from "./projectScaffold";
 export { registerIdeHubProvider } from "./provider";
+export { SdkManagerPanel } from "./sdkManagerPanel";
 export { SetupFlowPanel } from "./setupFlowPanel";
 export { registerWorkspaceCommands } from "./workspaceCommands";
 
