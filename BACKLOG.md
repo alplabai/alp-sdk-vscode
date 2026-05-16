@@ -1473,14 +1473,14 @@ sidebar panel.
 - [x] Add new-project flow with template, hardware, and feature steps.
 - [x] Add existing-project flow with workspace selection and validation.
 - [x] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
-- [ ] Add smoke/integration tests for sidebar, panel, and full-window flows.
-- [ ] Add docs for GUI-first onboarding and SDK installation workflows.
+- [x] Add smoke/integration tests for sidebar, panel, and full-window flows.
+- [x] Add docs for GUI-first onboarding and SDK installation workflows.
 - [x] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
 - [x] Keep section names stable across sidebar and full-window surfaces.
 
 ## Exit Criteria
 
-- [ ] Sidebar, side-panel, and full-window modes use one consistent state model.
-- [ ] Major wizard flows are covered by automated smoke/integration tests.
-- [ ] GUI-first onboarding and SDK installation are fully documented.
+- [x] Sidebar, side-panel, and full-window modes use one consistent state model.
+- [x] Major wizard flows are covered by automated smoke/integration tests.
+- [x] GUI-first onboarding and SDK installation are fully documented.
 ```

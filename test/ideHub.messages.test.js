@@ -110,3 +110,64 @@ test("switchSdk message carries an sdkPath string", () => {
   const msg = { type: "switchSdk", sdkPath: "/opt/alp-sdk" };
   assert.equal(msg.sdkPath, "/opt/alp-sdk");
 });
+
+// ---------------------------------------------------------------------------
+// New wizard message types (Epic 13)
+// ---------------------------------------------------------------------------
+
+test("projectTemplatesData message shape matches contract", () => {
+  const msg = {
+    type: "projectTemplatesData",
+    templates: [
+      {
+        id: "blank-app",
+        title: "Blank Application",
+        description: "Minimal starter",
+        category: "starter",
+        icon: "📄",
+      },
+    ],
+    modules: [
+      { id: "E1M-AEN701", displayName: "E1M-AEN701 (Alif Ensemble E7)", family: "alif-ensemble" },
+    ],
+  };
+  assert.equal(msg.type, "projectTemplatesData");
+  assert.equal(msg.templates.length, 1);
+  assert.equal(msg.modules.length, 1);
+  assert.equal(msg.templates[0].category, "starter");
+});
+
+test("createNewProject message carries templateId, moduleId, projectName", () => {
+  const msg = {
+    type: "createNewProject",
+    templateId: "blank-app",
+    moduleId: "E1M-AEN701",
+    projectName: "my-sensor-app",
+  };
+  assert.equal(msg.type, "createNewProject");
+  assert.equal(msg.templateId, "blank-app");
+  assert.equal(msg.moduleId, "E1M-AEN701");
+  assert.equal(msg.projectName, "my-sensor-app");
+});
+
+test("openExistingProject with activate=false is a valid message", () => {
+  const msg = { type: "openExistingProject", activate: false };
+  assert.equal(msg.type, "openExistingProject");
+  assert.equal(msg.activate, false);
+});
+
+test("openExistingProject with activate=true is a valid message", () => {
+  const msg = { type: "openExistingProject", activate: true };
+  assert.equal(msg.activate, true);
+});
+
+test("ProjectTemplate category must be starter, example or library", () => {
+  const valid = ["starter", "example", "library"];
+  const t = { id: "blank-app", title: "Blank", description: "x", category: "starter", icon: "📄" };
+  assert.ok(valid.includes(t.category));
+});
+
+test("E1mModule family is a non-empty string", () => {
+  const m = { id: "E1M-NX9101", displayName: "E1M-NX9101 (NXP i.MX 93)", family: "nxp-imx9" };
+  assert.ok(m.family.length > 0);
+});

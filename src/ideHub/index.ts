@@ -8,6 +8,13 @@ export type {
 } from "./messages";
 export { NewProjectFlowPanel } from "./newProjectFlowPanel";
 export { OverviewPanel } from "./overviewPanel";
+export {
+    E1M_MODULES,
+    generateBoardYaml,
+    generateCMakeLists,
+    generateMainC,
+    PROJECT_TEMPLATES,
+} from "./projectScaffold";
 export { registerIdeHubProvider } from "./provider";
 export { SetupFlowPanel } from "./setupFlowPanel";
 export { registerWorkspaceCommands } from "./workspaceCommands";
