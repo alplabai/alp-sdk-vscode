@@ -51,9 +51,7 @@ export async function maybeOfferSetupPanel(
       sdk: "ALP SDK not ready",
       "no-workspace": "No workspace open",
     };
-    const summary = issues
-      .map((k) => issueLabels[k] ?? k)
-      .join(", ");
+    const summary = issues.map((k) => issueLabels[k] ?? k).join(", ");
 
     const action = await vscode.window.showWarningMessage(
       `ALP IDE: environment not ready — ${summary}.`,
