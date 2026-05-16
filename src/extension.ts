@@ -28,6 +28,12 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerLspCommands(),
     ...registerDebugCommands(),
     ...registerIdeHubProvider(context),
+    vscode.commands.registerCommand("alp.openSettings", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "@ext:alplabai.alp-sdk",
+      ),
+    ),
   );
 
   void maybeOfferFirstRunWizard(context);

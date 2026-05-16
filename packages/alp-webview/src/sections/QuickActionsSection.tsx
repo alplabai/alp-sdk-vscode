@@ -38,6 +38,20 @@ const TOOLS: Tool[] = [
     command: "alp.installDependencies",
   },
   {
+    id: "west-update",
+    icon: "⟳",
+    label: "West Update",
+    description: "Fetch and update all west modules",
+    command: "alp.westUpdate",
+  },
+  {
+    id: "install-sdk",
+    icon: "⬇",
+    label: "Install SDK",
+    description: "Download or switch the active ALP SDK",
+    command: "alp.ideHub.focus",
+  },
+  {
     id: "debug-doctor",
     icon: "⚕",
     label: "Debug Doctor",
@@ -50,6 +64,13 @@ const TOOLS: Tool[] = [
     label: "Preview Config",
     description: "Preview effective configuration (LSP)",
     command: "alp.previewEffectiveConfig",
+  },
+  {
+    id: "settings",
+    icon: "⊞",
+    label: "Settings",
+    description: "Open ALP IDE extension settings",
+    command: "alp.openSettings",
   },
 ];
 

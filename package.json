@@ -90,6 +90,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.westUpdate",
+        "title": "Alp: West update (fetch and update modules)",
+        "category": "Alp"
+      },
+      {
         "command": "alp.westRunNativeSim",
         "title": "Alp: Run under native_sim",
         "category": "Alp"
@@ -173,6 +178,11 @@
       {
         "command": "alp.ideHub.focus",
         "title": "Alp: Open ALP IDE panel",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openSettings",
+        "title": "Alp: Open ALP IDE settings",
         "category": "Alp"
       }
     ],

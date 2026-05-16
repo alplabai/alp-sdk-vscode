@@ -47,6 +47,12 @@ export function createWestFlashPlan(
   return createWestCommandPlan(context, "alp · west flash", "west flash");
 }
 
+export function createWestUpdatePlan(
+  context: WestWorkspaceContext,
+): WestCommandPlan {
+  return createWestCommandPlan(context, "alp · west update", "west update");
+}
+
 export function createWestNativeRunPlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {

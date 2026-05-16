@@ -13,6 +13,7 @@ import {
     createWestBuildPreparation,
     createWestFlashPlan,
     createWestNativeRunPlan,
+    createWestUpdatePlan,
 } from "@alp-sdk/core/west/service";
 import * as fs from "fs";
 import * as vscode from "vscode";
@@ -127,6 +128,10 @@ async function westFlash(): Promise<void> {
   executeWestPlan(createWestFlashPlan(collectWestWorkspaceContext()));
 }
 
+async function westUpdate(): Promise<void> {
+  executeWestPlan(createWestUpdatePlan(collectWestWorkspaceContext()));
+}
+
 async function westRunNativeSim(): Promise<void> {
   executeWestPlan(createWestNativeRunPlan(collectWestWorkspaceContext()));
 }
@@ -216,6 +221,7 @@ export function registerWestCommands(): vscode.Disposable[] {
   return [
     vscode.commands.registerCommand("alp.westBuild", () => westBuild()),
     vscode.commands.registerCommand("alp.westFlash", () => westFlash()),
+    vscode.commands.registerCommand("alp.westUpdate", () => westUpdate()),
     vscode.commands.registerCommand("alp.westRunNativeSim", () =>
       westRunNativeSim(),
     ),

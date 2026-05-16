@@ -616,74 +616,74 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 
 ## Tasks
 
-- [ ] Add an ALP Activity Bar container using `contributes.viewsContainers`.
-- [ ] Add an ALP IDE root view using `contributes.views`.
+- [x] Add an ALP Activity Bar container using `contributes.viewsContainers`.
+- [x] Add an ALP IDE root view using `contributes.views`.
 - [ ] Add section groups for Extension Setup, West Workspaces, Projects, and Project Details.
-- [ ] Add setup status rows (Ready, Not Installed, Setup Required, Not Updated).
-- [ ] Add progress banner copy such as `2 of 3 steps remaining` driven by real state.
+- [x] Add setup status rows (Ready, Not Installed, Setup Required, Not Updated).
+- [x] Add progress banner copy such as `2 of 3 steps remaining` driven by real state.
 - [ ] Add zero-friction setup orchestrator that evaluates prerequisites on first open.
-- [ ] Add component inventory for host tools, SDK toolchains, west, workspace health, and project readiness.
-- [ ] Add missing-component diagnostics with blocker vs warning classification.
-- [ ] Add one-click `Fix Now` actions for install/update/configure steps where safe.
-- [ ] Add guided fallback steps for actions that cannot be automated.
-- [ ] Add post-action revalidation loop so status updates immediately after each fix.
+- [x] Add component inventory for host tools, SDK toolchains, west, workspace health, and project readiness.
+- [x] Add missing-component diagnostics with blocker vs warning classification.
+- [x] Add one-click `Fix Now` actions for install/update/configure steps where safe.
+- [x] Add guided fallback steps for actions that cannot be automated.
+- [x] Add post-action revalidation loop so status updates immediately after each fix.
 - [ ] Add section-level quick actions (Activate Workspace, New Workspace, Refresh, Save).
-- [ ] Add `Quick Actions` card grid as the primary interaction surface.
-- [ ] Add cards for `Host Tools`, `Install SDK`, `West Update`, `Settings`, and `Add Project`.
-- [ ] Add per-card state chips (`Ready`, `Setup Required`, `Not Updated`) with consistent semantic color tokens.
-- [ ] Add concise card descriptions and single primary intent per card.
-- [ ] Add card click routing to focused setup flows and command handlers.
-- [ ] Keep card layout fluid and responsive (2-column narrow, 3-column wide) without feeling rigid.
-- [ ] Add contextual empty states (for example `No Active Project`) with primary CTA buttons.
+- [x] Add `Quick Actions` card grid as the primary interaction surface.
+- [x] Add cards for `Host Tools`, `Install SDK`, `West Update`, `Settings`, and `Add Project`.
+- [x] Add per-card state chips (`Ready`, `Setup Required`, `Not Updated`) with consistent semantic color tokens.
+- [x] Add concise card descriptions and single primary intent per card.
+- [x] Add card click routing to focused setup flows and command handlers.
+- [x] Keep card layout fluid and responsive (2-column narrow, 3-column wide) without feeling rigid.
+- [x] Add contextual empty states (for example `No Active Project`) with primary CTA buttons.
 - [ ] Add side-panel flow for focused setup/configuration steps.
 - [ ] Add full-window flow for first-run or complex onboarding.
 - [ ] Add a unified stepper model shared by all three UI surfaces.
-- [ ] Build webview frontend with React + TypeScript + Vite pipeline.
-- [ ] Bootstrap webview app from Microsoft's official VS Code webview React sample/template.
-- [ ] Integrate `@vscode/webview-ui-toolkit` components as the default UI primitives.
-- [ ] Register toolkit components via `provideVSCodeDesignSystem().register(...)`.
-- [ ] Use VS Code CSS variables (`--vscode-*`) for custom layout and styling.
+- [x] Build webview frontend with React + TypeScript + Vite pipeline.
+- [x] Bootstrap webview app from Microsoft's official VS Code webview React sample/template.
+- [x] Integrate `@vscode/webview-ui-toolkit` components as the default UI primitives.
+- [x] Register toolkit components via `provideVSCodeDesignSystem().register(...)`.
+- [x] Use VS Code CSS variables (`--vscode-*`) for custom layout and styling.
 - [ ] Add theme-compatibility checks for Light, Dark, and High Contrast.
 - [ ] Keep webview styling compatible with VS Code reset/baseline styles.
 - [ ] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
 - [ ] Add new-project flow with template, hardware, and feature steps.
 - [ ] Add existing-project flow with workspace selection and validation.
 - [ ] Add finish step with `open in current window` vs `open in new window` choice.
-- [ ] Add SDK discovery step (detected SDKs + manual path selection).
-- [ ] Add SDK install step (download/clone, progress, cancel, logs).
-- [ ] Add SDK readiness validation step (scripts, metadata, toolchain checks).
-- [ ] Add guided dependency/bootstrap actions from UI (python/west/host tooling).
+- [x] Add SDK discovery step (detected SDKs + manual path selection).
+- [x] Add SDK install step (download/clone, progress, cancel, logs).
+- [x] Add SDK readiness validation step (scripts, metadata, toolchain checks).
+- [x] Add guided dependency/bootstrap actions from UI (python/west/host tooling).
 - [ ] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
 - [ ] Add development component management view for compiler, CMake, Ninja, Python, west, and env paths.
 - [ ] Add workspace and toolchain drift detection with explicit remediation guidance.
 - [ ] Add review/apply step with file-change preview and overwrite warnings.
 - [ ] Add generated-output preview and plan summary before write.
-- [ ] Add typed extension<->webview message contracts and state sync.
+- [x] Add typed extension<->webview message contracts and state sync.
 - [ ] Add smoke/integration tests for sidebar, panel, and full-window flows.
 - [ ] Add docs for GUI-first onboarding and SDK installation workflows.
-- [ ] Add bottom resource/link bar with `Documentation`, `Getting Started`, `West Docs`, `Report Issues` actions.
+- [x] Add bottom resource/link bar with `Documentation`, `Getting Started`, `West Docs`, `Report Issues` actions.
 
 ## Key Phrases and Keywords
 
-- [ ] Standardize UI language around: `Setup at a glance`, `Ready`, `Setup Required`, `Not Installed`, `No Active Project`.
+- [x] Standardize UI language around: `Setup at a glance`, `Ready`, `Setup Required`, `Not Installed`, `No Active Project`.
 - [ ] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
-- [ ] Keep dashboard naming stable: `Quick Actions`, `West Workspaces`, `Projects`, `Project Details`.
-- [ ] Use consistent action verbs: `Install SDK`, `Activate Workspace`, `Create Project`, `Open Project`, `Continue Setup`.
+- [x] Keep dashboard naming stable: `Quick Actions`, `West Workspaces`, `Projects`, `Project Details`.
+- [x] Use consistent action verbs: `Install SDK`, `Activate Workspace`, `Create Project`, `Open Project`, `Continue Setup`.
 - [ ] Keep section names stable across sidebar and full-window surfaces.
 
 ## Exit Criteria
 
-- [ ] A user can launch onboarding from the Activity Bar without using command palette.
-- [ ] A user can complete setup tasks without opening file explorer as a primary UI.
+- [x] A user can launch onboarding from the Activity Bar without using command palette.
+- [x] A user can complete setup tasks without opening file explorer as a primary UI.
 - [ ] A new user can reach a build-ready environment through guided steps without manual path hunting.
-- [ ] A user can select or install SDK and verify readiness entirely from UI.
-- [ ] Missing prerequisites are surfaced with exact actionable fixes in the same panel.
+- [x] A user can select or install SDK and verify readiness entirely from UI.
+- [x] Missing prerequisites are surfaced with exact actionable fixes in the same panel.
 - [ ] A user can create or open a project and choose current/new window at wizard completion.
 - [ ] Sidebar, side-panel, and full-window modes use one consistent state model.
-- [ ] Webview UI stays visually correct across Light, Dark, and High Contrast themes.
-- [ ] ALP IDE sections render meaningful status and next action in empty and partially configured states.
-- [ ] `Quick Actions` cards drive at least the five primary setup workflows without command palette dependency.
-- [ ] Bottom resource links are visible, actionable, and theme-consistent.
+- [x] Webview UI stays visually correct across Light, Dark, and High Contrast themes.
+- [x] ALP IDE sections render meaningful status and next action in empty and partially configured states.
+- [x] `Quick Actions` cards drive at least the five primary setup workflows without command palette dependency.
+- [x] Bottom resource links are visible, actionable, and theme-consistent.
 - [ ] Major wizard flows are covered by automated smoke/integration tests.
 ```
 

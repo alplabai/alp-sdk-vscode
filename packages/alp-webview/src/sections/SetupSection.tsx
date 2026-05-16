@@ -133,6 +133,8 @@ export function SetupSection({ state }: Props) {
   const blockers = rows.filter((r) => r.severity === "blocker");
   const warnings = rows.filter((r) => r.severity === "warning");
   const allOk = blockers.length === 0 && warnings.length === 0;
+  const readyCount = rows.filter((r) => r.severity === "ok").length;
+  const totalCount = rows.length;
 
   const bannerClass = allOk
     ? "readiness-banner banner-ok"
@@ -141,10 +143,10 @@ export function SetupSection({ state }: Props) {
       : "readiness-banner banner-warn";
 
   const bannerText = allOk
-    ? "✓ All systems ready"
+    ? `✓ All systems ready (${totalCount}/${totalCount})`
     : blockers.length > 0
-      ? `✗ ${blockers.length} blocker${blockers.length > 1 ? "s" : ""}${warnings.length > 0 ? ` · ${warnings.length} warning${warnings.length > 1 ? "s" : ""}` : ""}`
-      : `⚠ ${warnings.length} warning${warnings.length > 1 ? "s" : ""}`;
+      ? `${readyCount} of ${totalCount} ready — ${blockers.length} blocker${blockers.length > 1 ? "s" : ""}${warnings.length > 0 ? ` · ${warnings.length} warning${warnings.length > 1 ? "s" : ""}` : ""}`
+      : `${readyCount} of ${totalCount} ready — ${warnings.length} warning${warnings.length > 1 ? "s" : ""}`;
 
   return (
     <div className="section">
