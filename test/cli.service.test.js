@@ -868,7 +868,49 @@ test("executeCli completion rejects unsupported shell", async () => {
   assert.equal(result.envelope.issues[0].code, "completion.shell-unsupported");
 });
 
-test("executeCli reports not-implemented commands with deterministic envelope", async () => {
+test("executeCli debug-config preview succeeds with default target and server", async () => {
+  const result = await executeCli({
+    argv: ["debug-config", "--preview", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.format, "json");
+  assert.equal(result.envelope.command, "debug-config");
+  assert.equal(result.envelope.ok, true);
+  assert.equal(result.envelope.data.schemaVersion, "1");
+  assert.equal(result.envelope.data.preview, true);
+  assert.equal(result.envelope.data.targetKind, "native-host");
+});
+
+test("executeCli debug-config preview with explicit target-kind and server", async () => {
+  const result = await executeCli({
+    argv: [
+      "debug-config",
+      "--target-kind",
+      "native-host",
+      "--server",
+      "none",
+      "--preview",
+      "--format",
+      "json",
+    ],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.data.targetKind, "native-host");
+  assert.equal(result.envelope.data.server, "none");
+  assert.equal(result.envelope.data.preview, true);
+});
+
+test("executeCli debug-config write fails without file adapters", async () => {
   const result = await executeCli({
     argv: ["debug-config", "--format", "json"],
     cwd: "/workspace/app",
@@ -878,8 +920,33 @@ test("executeCli reports not-implemented commands with deterministic envelope", 
   });
 
   assert.equal(result.exitCode, 1);
-  assert.equal(result.format, "json");
   assert.equal(result.envelope.command, "debug-config");
   assert.equal(result.envelope.ok, false);
-  assert.equal(result.envelope.issues[0].code, "cli.not-implemented");
+  assert.equal(
+    result.envelope.issues[0].code,
+    "debug-config.adapters-required",
+  );
+});
+
+test("executeCli debug-config write creates launch.json via adapters", async () => {
+  const written = new Map();
+  const result = await executeCli({
+    argv: ["debug-config", "--format", "json"],
+    cwd: "/workspace/app",
+    platform: "linux",
+    pathExists: () => false,
+    spawnSync: createSpawnWith(0),
+    readFile: () => null,
+    writeFile: (p, c) => written.set(p, c),
+    mkdirP: () => undefined,
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.envelope.ok, true);
+  assert.equal(result.envelope.data.replaced, false);
+  assert.ok(written.size > 0, "writeFile should have been called");
+  const content = JSON.parse([...written.values()][0]);
+  assert.equal(content.version, "0.2.0");
+  assert.ok(Array.isArray(content.configurations));
+  assert.ok(content.configurations.length > 0);
 });

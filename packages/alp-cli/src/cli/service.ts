@@ -9,6 +9,7 @@ import {
 import { parseCliArgs } from "./services/args";
 import {
     runCompletionCommand,
+    runDebugConfigCommand,
     runDiffCommand,
     runDoctorCommand,
     runExplainCommand,
@@ -55,6 +56,7 @@ const IMPLEMENTED_COMMANDS = new Set<CliCommand>([
   "trace",
   "doctor",
   "support-bundle",
+  "debug-config",
   "sdk",
 ]);
 
@@ -181,6 +183,8 @@ export async function executeCli(
       return runTraceCommand(parsed.flags, input);
     case "support-bundle":
       return runSupportBundleCommand(parsed.flags, input);
+    case "debug-config":
+      return runDebugConfigCommand(parsed.flags, input);
     case "sdk":
       return runSdkCommand(
         parsed.commandArgs[0],
