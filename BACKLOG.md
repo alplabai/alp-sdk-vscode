@@ -655,9 +655,9 @@ ALP IDE should behave as a workflow cockpit with status-first sections:
 - [x] Add guided dependency/bootstrap actions from UI (python/west/host tooling).
 - [ ] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
 - [x] Add development component management view for compiler, CMake, Ninja, Python, west, and env paths.
-- [ ] Add workspace and toolchain drift detection with explicit remediation guidance.
-- [ ] Add review/apply step with file-change preview and overwrite warnings.
-- [ ] Add generated-output preview and plan summary before write.
+- [x] Add workspace and toolchain drift detection with explicit remediation guidance.
+- [x] Add review/apply step with file-change preview and overwrite warnings.
+- [x] Add generated-output preview and plan summary before write.
 - [x] Add typed extension<->webview message contracts and state sync.
 - [ ] Add smoke/integration tests for sidebar, panel, and full-window flows.
 - [ ] Add docs for GUI-first onboarding and SDK installation workflows.

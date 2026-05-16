@@ -195,24 +195,21 @@ async function runProjectWizard(): Promise<void> {
     return;
   }
 
-  const overwriteCount = fileChanges.filter(
-    (file) => file.kind === "update",
-  ).length;
-  const overwritePreview = fileChanges
-    .filter((file) => file.kind === "update")
-    .slice(0, 3)
-    .map((file) => file.relativePath)
+  const newCount = fileChanges.filter((f) => f.kind === "new").length;
+  const updateCount = fileChanges.filter((f) => f.kind === "update").length;
+  const changeSummary = [
+    newCount > 0 ? `${newCount} new` : null,
+    updateCount > 0 ? `${updateCount} updated` : null,
+  ]
+    .filter(Boolean)
     .join(", ");
-  const overwriteSuffix =
-    overwritePreview.length > 0
-      ? ` Files to update: ${overwritePreview}${overwriteCount > 3 ? ", ..." : ""}.`
-      : "";
+
   const action = await vscode.window.showWarningMessage(
-    `Alp: write ${writeCount} file(s)? Existing files to update: ${overwriteCount}.${overwriteSuffix}`,
+    `Alp: ${writeCount} file change(s) — ${changeSummary}. Review the plan above, then apply?`,
     { modal: true },
-    "Write Files",
+    "Apply Changes",
   );
-  if (action !== "Write Files") {
+  if (action !== "Apply Changes") {
     return;
   }
 
@@ -302,15 +299,20 @@ async function runModuleScaffoldWizard(): Promise<void> {
     return;
   }
 
-  const overwriteCount = fileChanges.filter(
-    (file) => file.kind === "update",
-  ).length;
-  const action = await vscode.window.showWarningMessage(
-    `Alp: write ${writeCount} module file(s)? Existing files to update: ${overwriteCount}.`,
+  const newCount = fileChanges.filter((f) => f.kind === "new").length;
+  const updateCount = fileChanges.filter((f) => f.kind === "update").length;
+  const changeSummary = [
+    newCount > 0 ? `${newCount} new` : null,
+    updateCount > 0 ? `${updateCount} updated` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const moduleAction = await vscode.window.showWarningMessage(
+    `Alp: ${writeCount} module file change(s) — ${changeSummary}. Review the plan above, then apply?`,
     { modal: true },
-    "Write Files",
+    "Apply Changes",
   );
-  if (action !== "Write Files") {
+  if (moduleAction !== "Apply Changes") {
     return;
   }
 
