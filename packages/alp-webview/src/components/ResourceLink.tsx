@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { postMessage } from "../vscode";
+import styles from "./ResourceLink.module.css";
 
 interface Props {
   /** Target URL — must be https:// or vscode://. */
@@ -25,7 +26,7 @@ export function ResourceLink({ href, label, prefix, children }: Props) {
   return (
     <a
       href={href}
-      className="resource-link"
+      className={styles.link}
       aria-label={label}
       rel="noopener noreferrer"
       onClick={(e) => {
@@ -39,7 +40,11 @@ export function ResourceLink({ href, label, prefix, children }: Props) {
         }
       }}
     >
-      {prefix && <span className="resource-link-prefix">{prefix}</span>}
+      {prefix && (
+        <span className={styles.prefix} aria-hidden="true">
+          {prefix}
+        </span>
+      )}
       {children ?? label}
     </a>
   );

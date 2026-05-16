@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { StatusChip } from "../components/StatusChip";
+import layout from "../shared/layout.module.css";
 import type { AlpIdeState, ChipState } from "../types";
 import { postMessage } from "../vscode";
 
@@ -16,9 +17,9 @@ function basename(p: string): string {
 export function WestWorkspacesSection({ state }: Props) {
   if (!state) {
     return (
-      <div className="section">
-        <p className="section-title">West Workspace</p>
-        <div className="loading-row">
+      <div className={layout.section}>
+        <p className={layout.sectionTitle}>West Workspace</p>
+        <div className={layout.loadingRow}>
           <vscode-progress-ring />
         </div>
       </div>
@@ -36,35 +37,35 @@ export function WestWorkspacesSection({ state }: Props) {
       : "not-updated";
 
   return (
-    <div className="section">
-      <p className="section-title">West Workspace</p>
-      <div className="setup-rows">
-        <div className="setup-row">
-          <div className="setup-row-header">
-            <span className="setup-row-label">
+    <div className={layout.section}>
+      <p className={layout.sectionTitle}>West Workspace</p>
+      <div className={layout.setupRows}>
+        <div className={layout.setupRow}>
+          <div className={layout.setupRowHeader}>
+            <span className={layout.setupRowLabel}>
               {workspaceOpen ? basename(workspaceRoot!) : "No Workspace"}
             </span>
             <StatusChip state={initChip} />
           </div>
 
           {!workspaceOpen ? (
-            <p className="setup-row-desc">
+            <p className={layout.setupRowDesc}>
               Open a folder to see west workspace status.
             </p>
           ) : westInitialized ? (
-            <p className="setup-row-desc">
+            <p className={layout.setupRowDesc}>
               West workspace initialised — modules are tracked.
             </p>
           ) : (
-            <p className="setup-row-desc">
+            <p className={layout.setupRowDesc}>
               No <code>.west</code> directory found. Run Bootstrap to initialise
               the west workspace and fetch modules.
             </p>
           )}
 
           {workspaceOpen && (
-            <div className="setup-row-action">
-              <div className="btn-row">
+            <div className={layout.setupRowAction}>
+              <div className={layout.btnRow}>
                 {westInitialized ? (
                   <vscode-button
                     appearance="secondary"

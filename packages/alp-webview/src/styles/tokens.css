@@ -13,78 +13,99 @@
 
 /* ── Color — text ───────────────────────────────────────────────────────── */
 :root {
-    --text-primary:         var(--vscode-foreground);
-    --text-secondary:       var(--vscode-descriptionForeground);
-    --text-section-header:  var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
-    --text-link:            var(--vscode-textLink-foreground);
-    --text-link-active:     var(--vscode-textLink-activeForeground);
-    --text-mono:            var(--vscode-editor-font-family, 'Cascadia Code', monospace);
+  --text-primary: var(--vscode-foreground);
+  --text-secondary: var(--vscode-descriptionForeground);
+  --text-section-header: var(
+    --vscode-sideBarSectionHeader-foreground,
+    var(--vscode-foreground)
+  );
+  --text-link: var(--vscode-textLink-foreground);
+  --text-link-active: var(--vscode-textLink-activeForeground);
+  --text-mono: var(--vscode-editor-font-family, "Cascadia Code", monospace);
 }
 
 /* ── Color — surfaces ───────────────────────────────────────────────────── */
 :root {
-    --surface-bg:                   var(--vscode-sideBar-background, var(--vscode-editor-background));
-    --surface-hover:                var(--vscode-toolbar-hoverBackground);
-    --surface-badge:                var(--vscode-badge-background);
-    --surface-input:                var(--vscode-input-background);
-    --surface-dropdown:             var(--vscode-dropdown-background, var(--vscode-input-background));
-    --surface-section-header:       var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.05));
-    --surface-btn-secondary:        var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.1));
-    --surface-btn-secondary-hover:  var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.2));
+  --surface-bg: var(
+    --vscode-sideBar-background,
+    var(--vscode-editor-background)
+  );
+  --surface-hover: var(--vscode-toolbar-hoverBackground);
+  --surface-badge: var(--vscode-badge-background);
+  --surface-input: var(--vscode-input-background);
+  --surface-dropdown: var(
+    --vscode-dropdown-background,
+    var(--vscode-input-background)
+  );
+  --surface-section-header: var(
+    --vscode-sideBarSectionHeader-background,
+    rgba(128, 128, 128, 0.05)
+  );
+  --surface-btn-secondary: var(
+    --vscode-button-secondaryBackground,
+    rgba(128, 128, 128, 0.1)
+  );
+  --surface-btn-secondary-hover: var(
+    --vscode-button-secondaryHoverBackground,
+    rgba(128, 128, 128, 0.2)
+  );
 }
 
 /* ── Color — borders ────────────────────────────────────────────────────── */
 :root {
-    --border-default: var(--vscode-panel-border);
-    --border-widget:  var(--vscode-widget-border);
-    --border-focus:   var(--vscode-focusBorder);
-    --border-input:   var(--vscode-input-border);
-    --border-dropdown:var(--vscode-dropdown-border);
+  --border-default: var(--vscode-panel-border);
+  --border-widget: var(--vscode-widget-border);
+  --border-focus: var(--vscode-focusBorder);
+  --border-input: var(--vscode-input-border);
+  --border-dropdown: var(--vscode-dropdown-border);
 }
 
 /* ── Color — status ─────────────────────────────────────────────────────── */
 :root {
-    --status-ok:   var(--vscode-testing-iconPassed);
-    --status-warn: var(--vscode-editorWarning-foreground);
-    --status-err:  var(--vscode-editorError-foreground);
-    --status-info: var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground));
+  --status-ok: var(--vscode-testing-iconPassed);
+  --status-warn: var(--vscode-editorWarning-foreground);
+  --status-err: var(--vscode-editorError-foreground);
+  --status-info: var(
+    --vscode-editorInfo-foreground,
+    var(--vscode-textLink-foreground)
+  );
 }
 
 /* ── Motion ─────────────────────────────────────────────────────────────── */
 :root {
-    --duration-fast:   100ms;
-    --duration-base:   150ms;
-    --duration-slow:   250ms;
-    --ease-out:        cubic-bezier(0.16, 1, 0.3, 1);
-    --ease-in-out:     cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 100ms;
+  --duration-base: 150ms;
+  --duration-slow: 250ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-    :root {
-        --duration-fast:  0ms;
-        --duration-base:  0ms;
-        --duration-slow:  0ms;
-    }
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
 }
 
 /* ── Spacing scale ──────────────────────────────────────────────────────── */
 :root {
-    --space-1:   2px;
-    --space-2:   4px;
-    --space-3:   6px;
-    --space-4:   8px;
-    --space-5:  12px;
-    --space-6:  16px;
-    --space-7:  20px;
-    --space-8:  24px;
-    --space-10: 32px;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-10: 32px;
 }
 
 /* ── Border radius ──────────────────────────────────────────────────────── */
 :root {
-    --radius-sm:   2px;
-    --radius-md:   3px;
-    --radius-lg:   8px;
-    --radius-xl:  10px;
-    --radius-full: 9999px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-full: 9999px;
 }

@@ -6,6 +6,7 @@ import { QuickActionsSection } from "./sections/QuickActionsSection";
 import { SdkSection } from "./sections/SdkSection";
 import { SetupSection } from "./sections/SetupSection";
 import { WestWorkspacesSection } from "./sections/WestWorkspacesSection";
+import layout from "./shared/layout.module.css";
 import { PROTOCOL_VERSION, type AlpIdeState, type SdkRelease } from "./types";
 import { onMessage, postMessage } from "./vscode";
 
@@ -46,13 +47,13 @@ export function App() {
 
   if (protocolMismatch) {
     return (
-      <div className="section">
-        <p className="section-title">ALP IDE</p>
-        <p className="setup-row-desc">
+      <div className={layout.section}>
+        <p className={layout.sectionTitle}>ALP IDE</p>
+        <p className={layout.setupRowDesc}>
           The extension was updated. Please reload the window to refresh the
           panel.
         </p>
-        <div className="setup-row-action">
+        <div className={layout.setupRowAction}>
           <vscode-button
             onClick={() =>
               postMessage({

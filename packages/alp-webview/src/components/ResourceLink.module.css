@@ -1,0 +1,25 @@
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-link);
+  text-decoration: none;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.link:hover {
+  color: var(--text-link-active);
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.prefix {
+  font-size: 11px;
+  opacity: 0.8;
+}

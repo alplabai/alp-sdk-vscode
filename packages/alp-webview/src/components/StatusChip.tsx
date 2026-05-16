@@ -1,4 +1,5 @@
 import type { ChipState } from "../types";
+import styles from "./StatusChip.module.css";
 
 const LABELS: Record<ChipState, string> = {
   ready: "Ready",
@@ -7,17 +8,14 @@ const LABELS: Record<ChipState, string> = {
   "not-updated": "Not Updated",
 };
 
-const CSS: Record<ChipState, string> = {
-  ready: "badge badge-ok",
-  "setup-required": "badge badge-warn",
-  "not-installed": "badge badge-err",
-  "not-updated": "badge badge-warn",
-};
-
 interface Props {
   state: ChipState;
 }
 
 export function StatusChip({ state }: Props) {
-  return <span className={CSS[state]}>{LABELS[state]}</span>;
+  return (
+    <span className={styles.badge} data-variant={state}>
+      {LABELS[state]}
+    </span>
+  );
 }

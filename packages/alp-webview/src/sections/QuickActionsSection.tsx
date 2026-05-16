@@ -1,4 +1,6 @@
+import layout from "../shared/layout.module.css";
 import { postMessage } from "../vscode";
+import styles from "./QuickActionsSection.module.css";
 
 interface Tool {
   id: string;
@@ -76,20 +78,20 @@ const TOOLS: Tool[] = [
 
 export function QuickActionsSection() {
   return (
-    <div className="section">
-      <p className="section-title">Tools</p>
-      <div className="tool-grid">
+    <div className={layout.section}>
+      <p className={layout.sectionTitle}>Tools</p>
+      <div className={styles.grid}>
         {TOOLS.map(({ id, icon, label, description, command }) => (
           <button
             key={id}
-            className="tool-btn"
+            className={styles.btn}
             title={description}
             onClick={() => postMessage({ type: "runCommand", command })}
           >
-            <span className="tool-btn-icon" aria-hidden="true">
+            <span className={styles.btnIcon} aria-hidden="true">
               {icon}
             </span>
-            <span className="tool-btn-label">{label}</span>
+            <span className={styles.btnLabel}>{label}</span>
           </button>
         ))}
       </div>

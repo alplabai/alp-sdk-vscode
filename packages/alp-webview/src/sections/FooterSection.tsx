@@ -1,9 +1,9 @@
 import { ResourceLink } from "../components/ResourceLink";
+import styles from "./FooterSection.module.css";
 
 interface ResourceLinkDef {
   label: string;
   href: string;
-  /** Optional short prefix shown before the label (e.g. "→" or an icon). */
   prefix?: string;
 }
 
@@ -30,15 +30,10 @@ const LINKS: ResourceLinkDef[] = [
   },
 ];
 
-/**
- * Sticky footer section rendered at the bottom of the IDE Hub panel.
- * Renders a flat list of external resource links using the reusable
- * ResourceLink component.  Add new links by appending to LINKS above.
- */
 export function FooterSection() {
   return (
-    <div className="footer-section">
-      <div className="footer-links">
+    <div className={styles.footer}>
+      <div className={styles.links}>
         {LINKS.map(({ label, href, prefix }) => (
           <ResourceLink key={label} href={href} label={label} prefix={prefix}>
             {label}

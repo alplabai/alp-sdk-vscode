@@ -1,4 +1,5 @@
 import { StatusChip } from "../components/StatusChip";
+import layout from "../shared/layout.module.css";
 import type { AlpIdeState, ChipState } from "../types";
 import { postMessage } from "../vscode";
 
@@ -14,9 +15,9 @@ function basename(p: string): string {
 export function ProjectSection({ state }: Props) {
   if (!state) {
     return (
-      <div className="section">
-        <p className="section-title">Project</p>
-        <div className="loading-row">
+      <div className={layout.section}>
+        <p className={layout.sectionTitle}>Project</p>
+        <div className={layout.loadingRow}>
           <vscode-progress-ring />
         </div>
       </div>
@@ -28,13 +29,13 @@ export function ProjectSection({ state }: Props) {
   const configChip: ChipState = boardConfigured ? "ready" : "setup-required";
 
   return (
-    <div className="section">
-      <p className="section-title">Project</p>
-      <div className="setup-rows">
+    <div className={layout.section}>
+      <p className={layout.sectionTitle}>Project</p>
+      <div className={layout.setupRows}>
         {/* Workspace / board.yaml row */}
-        <div className="setup-row">
-          <div className="setup-row-header">
-            <span className="setup-row-label">
+        <div className={layout.setupRow}>
+          <div className={layout.setupRowHeader}>
+            <span className={layout.setupRowLabel}>
               {workspaceOpen
                 ? basename(state.workspace.workspaceRoot!)
                 : "No Workspace"}
@@ -44,22 +45,22 @@ export function ProjectSection({ state }: Props) {
 
           {workspaceOpen ? (
             boardConfigured ? (
-              <p className="setup-row-desc">
+              <p className={layout.setupRowDesc}>
                 board.yaml configured — project is ready.
               </p>
             ) : (
-              <p className="setup-row-desc">
+              <p className={layout.setupRowDesc}>
                 No board.yaml found. Run the wizard to configure.
               </p>
             )
           ) : (
-            <p className="setup-row-desc">
+            <p className={layout.setupRowDesc}>
               Open a folder containing an ALP project to get started.
             </p>
           )}
 
-          <div className="setup-row-action">
-            <div className="btn-row">
+          <div className={layout.setupRowAction}>
+            <div className={layout.btnRow}>
               {!workspaceOpen ? (
                 <vscode-button
                   appearance="primary"
@@ -106,14 +107,14 @@ export function ProjectSection({ state }: Props) {
 
         {/* Scaffold row — only when project is configured */}
         {boardConfigured && (
-          <div className="setup-row">
-            <div className="setup-row-header">
-              <span className="setup-row-label">Scaffold Module</span>
+          <div className={layout.setupRow}>
+            <div className={layout.setupRowHeader}>
+              <span className={layout.setupRowLabel}>Scaffold Module</span>
             </div>
-            <p className="setup-row-desc">
+            <p className={layout.setupRowDesc}>
               Add a new firmware module or component to the project.
             </p>
-            <div className="setup-row-action">
+            <div className={layout.setupRowAction}>
               <vscode-button
                 onClick={() =>
                   postMessage({

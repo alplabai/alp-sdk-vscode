@@ -59,14 +59,16 @@ export async function maybeOfferSetupPanel(
       const lastDriftShown = context.globalState.get<string>(driftKey, "");
       if (lastDriftShown !== currentVersionFp) {
         await context.globalState.update(driftKey, currentVersionFp);
-        void vscode.window.showWarningMessage(
-          "ALP IDE: build tool versions have changed since last session. Re-verify your build environment.",
-          "Open ALP IDE",
-        ).then((action) => {
-          if (action === "Open ALP IDE") {
-            void vscode.commands.executeCommand("alp.ideHub.focus");
-          }
-        });
+        void vscode.window
+          .showWarningMessage(
+            "ALP IDE: build tool versions have changed since last session. Re-verify your build environment.",
+            "Open ALP IDE",
+          )
+          .then((action) => {
+            if (action === "Open ALP IDE") {
+              void vscode.commands.executeCommand("alp.ideHub.focus");
+            }
+          });
       }
     }
     await context.workspaceState.update(DRIFT_VERSION_KEY, currentVersionFp);
