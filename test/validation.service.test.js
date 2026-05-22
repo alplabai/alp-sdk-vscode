@@ -43,7 +43,7 @@ test("analyzeValidationResult classifies missing-preset warnings", () => {
 
   assert.equal(result.outcome, "missing-preset");
   assert.deepEqual(result.issues, [
-    { message: "FAIL som preset: missing preset", severity: "warning" },
+    { message: "som preset: missing preset", severity: "warning" },
   ]);
 });
 
@@ -56,7 +56,7 @@ test("analyzeValidationResult classifies hardware-revision failures", () => {
 
   assert.equal(result.outcome, "hardware-revision");
   assert.deepEqual(result.issues, [
-    { message: "FAIL hw_rev: unsupported revision", severity: "error" },
+    { message: "hw_rev: unsupported revision", severity: "error" },
   ]);
 });
 
@@ -65,14 +65,86 @@ test("analyzeValidationResult classifies hint lines as suggestions", () => {
     status: 1,
     stdout: "",
     stderr:
-      "FAIL schema_version: unsupported value\nHINT: set schema_version to 2\n",
+      "FAIL schema_version: unsupported value\nhint: set schema_version to 2\n",
   });
 
   assert.equal(result.outcome, "schema-violation");
   assert.deepEqual(result.issues, [
-    { message: "FAIL schema_version: unsupported value", severity: "error" },
-    { message: "HINT: set schema_version to 2", severity: "suggestion" },
+    { message: "schema_version: unsupported value", severity: "error" },
+    { message: "hint: set schema_version to 2", severity: "suggestion" },
   ]);
+});
+
+test("analyzeValidationResult combines FAIL continuation lines", () => {
+  const result = analyzeValidationResult({
+    status: 2,
+    stdout: "",
+    stderr:
+      "FAIL board: `preset: my-board` does not resolve\n" +
+      "     expected shared definition at metadata/boards/my-board.yaml\n",
+  });
+
+  assert.equal(result.outcome, "missing-preset");
+  assert.equal(result.issues.length, 1);
+  assert.match(result.issues[0].message, /preset: my-board.*does not resolve/);
+  assert.match(result.issues[0].message, /expected shared definition/);
+});
+
+test("analyzeValidationResult parses ALP-B* rich error block", () => {
+  const stderr = [
+    "error[ALP-B005]: SoM SKU 'E1M-NX9999' does not resolve to a known module",
+    "  --> board.yaml:3:8",
+    "   |",
+    " 3 | som: {sku: E1M-NX9999}",
+    "   |          ^^^^^^^^^^^^",
+    "   = hint: did you mean E1M-NX9?",
+    "   = see: docs/diagnostics/ALP-B005.md",
+    "",
+  ].join("\n");
+
+  const result = analyzeValidationResult({ status: 2, stdout: "", stderr });
+
+  assert.equal(result.outcome, "missing-preset");
+  assert.equal(result.issues.length, 1);
+  const issue = result.issues[0];
+  assert.equal(issue.code, "ALP-B005");
+  assert.equal(issue.severity, "error");
+  assert.equal(issue.line, 3);
+  assert.equal(issue.col, 8);
+  assert.match(issue.message, /SoM SKU.*E1M-NX9999/);
+});
+
+test("analyzeValidationResult parses ALP-B* warning block", () => {
+  const stderr = [
+    "warning[ALP-B010]: peripheral 'ethernet' not found in SoC capability table",
+    "  --> board.yaml:10:5",
+    "   |",
+    "10 | peripherals: [ethernet]",
+    "   |               ^^^^^^^^",
+    "   = hint: check soc JSON or use board-side wiring",
+    "",
+  ].join("\n");
+
+  const result = analyzeValidationResult({ status: 0, stdout: "", stderr });
+
+  assert.equal(result.outcome, "clean");
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.issues[0].code, "ALP-B010");
+  assert.equal(result.issues[0].severity, "warning");
+  assert.equal(result.issues[0].line, 10);
+});
+
+test("analyzeValidationResult WARN lines become warnings", () => {
+  const result = analyzeValidationResult({
+    status: 0,
+    stdout: "",
+    stderr: "WARN hw_compat: minor version mismatch\n",
+  });
+
+  assert.equal(result.outcome, "clean");
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.issues[0].severity, "warning");
+  assert.equal(result.issues[0].message, "hw_compat: minor version mismatch");
 });
 
 // --- validateBoardYamlLocally v2 structural pre-checks ---
