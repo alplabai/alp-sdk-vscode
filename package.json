@@ -33,7 +33,16 @@
     "nxp"
   ],
   "activationEvents": [
-    "onView:alp-ide.panel",
+    "onView:alp-ide.setup",
+    "onView:alp-ide.workspaces",
+    "onView:alp-ide.projects",
+    "onView:alp-ide.sdk",
+    "onView:alp-ide.build",
+    "onCommand:alp.openSdkManager",
+    "onCommand:alp.openSetupFlow",
+    "onCommand:alp.openOverview",
+    "onCommand:alp.newProjectWizard",
+    "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
     "workspaceContains:**/board.yaml"
   ],
