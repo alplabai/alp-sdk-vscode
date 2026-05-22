@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    analyzeValidationResult,
-    createValidatorPlan,
-    isBoardYamlPath,
+  analyzeValidationResult,
+  createValidatorPlan,
+  isBoardYamlPath,
 } from "@alp-sdk/core/validation/service";
 import * as vscode from "vscode";
 import { log } from "./util";
 import {
-    collectValidationWorkspaceContext,
-    executeValidatorPlan,
+  collectValidationWorkspaceContext,
+  executeValidatorPlan,
 } from "./validation/vscodeAdapter";
 
 /**

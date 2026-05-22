@@ -5,23 +5,23 @@ import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorCommand } from "./configuratorPanel";
 import { registerDebugCommands } from "./debug";
 import {
-    ExistingProjectFlowPanel,
-    NewProjectFlowPanel,
-    OverviewPanel,
-    registerWorkspaceCommands,
-    SdkManagerPanel,
-    SetupFlowPanel,
+  ExistingProjectFlowPanel,
+  NewProjectFlowPanel,
+  OverviewPanel,
+  registerWorkspaceCommands,
+  SdkManagerPanel,
+  SetupFlowPanel,
 } from "./ideHub";
 import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
-import { registerTreeViews } from "./views";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
 import { createStatusBar } from "./statusBar";
+import { registerTreeViews } from "./views";
 import { registerWestCommands } from "./west";
 import {
-    maybeOfferFirstRunWizard,
-    registerProjectWizardCommand,
+  maybeOfferFirstRunWizard,
+  registerProjectWizardCommand,
 } from "./wizard";
 
 export function activate(context: vscode.ExtensionContext): void {
