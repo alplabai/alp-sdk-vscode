@@ -170,12 +170,6 @@
         "category": "Alp"
       },
       {
-        "command": "alp.ideHub.refresh",
-        "title": "Alp: Refresh ALP IDE panel",
-        "category": "Alp",
-        "icon": "$(refresh)"
-      },
-      {
         "command": "alp.ideHub.focus",
         "title": "Alp: Open ALP IDE panel",
         "category": "Alp"
@@ -219,6 +213,12 @@
         "command": "alp.openSettings",
         "title": "Alp: Open ALP IDE settings",
         "category": "Alp"
+      },
+      {
+        "command": "alp.views.refresh",
+        "title": "ALP: Refresh sidebar views",
+        "icon": "$(refresh)",
+        "category": "Alp"
       }
     ],
     "viewsContainers": {
@@ -233,18 +233,37 @@
     "views": {
       "alp-ide": [
         {
-          "type": "webview",
-          "id": "alp-ide.panel",
-          "name": "ALP IDE",
-          "retainContextWhenHidden": true
+          "type": "tree",
+          "id": "alp-ide.setup",
+          "name": "ALP IDE Setup"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.workspaces",
+          "name": "West Workspaces"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.projects",
+          "name": "Projects"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.sdk",
+          "name": "SDK Manager"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.build",
+          "name": "Build & Flash"
         }
       ]
     },
     "menus": {
       "view/title": [
         {
-          "command": "alp.ideHub.refresh",
-          "when": "view == alp-ide.panel",
+          "command": "alp.views.refresh",
+          "when": "view == alp-ide.setup || view == alp-ide.workspaces || view == alp-ide.projects || view == alp-ide.sdk || view == alp-ide.build",
           "group": "navigation"
         }
       ]
