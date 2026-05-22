@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import path from "path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -8,7 +8,7 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      input: path.resolve(__dirname, "index.html"),
+      input: fileURLToPath(new URL("./index.html", import.meta.url)),
       output: {
         // IIFE format: the webview script tag has no type="module",
         // so an ESM bundle would silently fail to execute.
