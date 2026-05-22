@@ -27,9 +27,15 @@ importers:
       '@types/node':
         specifier: ^25.7.0
         version: 25.7.0
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.28
       '@types/vscode':
         specifier: ^1.85.0
         version: 1.120.0
+      '@vitejs/plugin-react':
+        specifier: ^6.0.2
+        version: 6.0.2(vite@8.0.14(@types/node@25.7.0)(esbuild@0.28.0))
       '@vscode/vsce':
         specifier: ^3.9.1
         version: 3.9.1

@@ -315,7 +315,9 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.7.0",
+    "@types/react": "^18.3.12",
     "@types/vscode": "^1.85.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
