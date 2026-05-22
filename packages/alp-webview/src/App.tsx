@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ExistingProjectFlowView } from "./features/existing-project-flow";
 import { FooterView } from "./features/footer";
 import { NewProjectFlowView } from "./features/new-project-flow";
@@ -9,7 +10,8 @@ import { SetupView } from "./features/setup";
 import { SetupFlowView } from "./features/setup-flow";
 import { WestWorkspacesView } from "./features/west-workspaces";
 import { AppProvider, useAppContext } from "./shared/AppContext";
-import { Button, Divider } from "./shared/ui";
+import type { TabItem } from "./shared/ui";
+import { Button, TabBar } from "./shared/ui";
 import { BuildBar } from "./shared/ui/BuildBar";
 import layout from "./shared/ui/layout.module.css";
 import { postMessage } from "./vscode";
@@ -20,8 +22,18 @@ const ALP_MODE =
     ? (document.body.dataset.alpMode ?? "sidebar")
     : "sidebar";
 
+type SidebarTab = "env" | "project" | "sdk" | "tools";
+
+const SIDEBAR_TABS: TabItem<SidebarTab>[] = [
+  { id: "env", label: "Env", icon: "🐍" },
+  { id: "project", label: "Project", icon: "📁" },
+  { id: "sdk", label: "SDK", icon: "🧰" },
+  { id: "tools", label: "Tools", icon: "⚡" },
+];
+
 function AppShell() {
   const { protocolMismatch } = useAppContext();
+  const [activeTab, setActiveTab] = useState<SidebarTab>("env");
 
   if (protocolMismatch) {
     return (
@@ -50,15 +62,31 @@ function AppShell() {
   return (
     <div>
       <BuildBar />
-      <SetupView />
-      <Divider />
-      <WestWorkspacesView />
-      <Divider />
-      <ProjectView />
-      <Divider />
-      <SdkView compact />
-      <Divider />
-      <QuickActionsView />
+      <TabBar
+        tabs={SIDEBAR_TABS}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
+
+      <div
+        role="tabpanel"
+        id={`tabpanel-${activeTab}`}
+        aria-labelledby={`tab-${activeTab}`}
+      >
+        {activeTab === "env" && <SetupView />}
+
+        {activeTab === "project" && (
+          <>
+            <WestWorkspacesView />
+            <ProjectView />
+          </>
+        )}
+
+        {activeTab === "sdk" && <SdkView />}
+
+        {activeTab === "tools" && <QuickActionsView />}
+      </div>
+
       <FooterView />
     </div>
   );
