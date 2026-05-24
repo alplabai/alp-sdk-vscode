@@ -1,8 +1,13 @@
-# Design: Alp activity-bar view
+# Design: Alp activity-bar view (Phase 1)
 
 **Date:** 2026-05-24
 **Status:** Approved (pending spec review)
-**Scope:** Activity-bar UI only. Publishing / `.vsix` / CHANGELOG work is explicitly deferred.
+**Roadmap:** Phase 1 of `2026-05-24-alp-studio-roadmap.md`.
+**Scope:** Activity-bar UI only. Publishing / `.vsix` / CHANGELOG work is deferred.
+This phase is the **discoverable home** for the extension; the board configurator
+(Phase 2) is the centerpiece it surfaces, so **"Configure board (GUI)" is the
+featured action** here. No SDK-catalogue dependency — board summary only parses
+`board.yaml`.
 
 ## Problem
 
@@ -49,8 +54,9 @@ Single-color bolt silhouette extracted from the existing logo, drawn with
 - `contributes.views.alpSdk`:
   `[{ "id": "alpSdk.projectView", "name": "Project" }]`
 - `contributes.viewsWelcome`: content for `alpSdk.projectView`, shown
-  `"when": "!alpSdk.hasBoard"`, with buttons invoking `alp.newProjectWizard` and
-  `alp.openConfigurator`.
+  `"when": "!alpSdk.hasBoard"`. Primary button **"Configure board"**
+  (`alp.openConfigurator`), secondary **"New project wizard"**
+  (`alp.newProjectWizard`).
 - `contributes.menus."view/title"`: a refresh button (`alp.refreshProjectView`)
   bound to `"when": "view == alpSdk.projectView"`, group `navigation`,
   icon `$(refresh)`.
@@ -81,9 +87,10 @@ type AlpNode = {
 Sections (matching the approved mockup):
 - **PROJECT** (collapsed-expanded): `SoM` → `summary.sku`, `Carrier` →
   `summary.carrier`, `OS` → `summary.os`. Missing values render as `—`.
-- **ACTIONS**: Validate board.yaml (`alp.validateBoardYaml`), Generate all
-  (`alp.generateAll`), West build (`alp.westBuild`), West flash (`alp.westFlash`),
-  Open configurator (`alp.openConfigurator`).
+- **ACTIONS** (Configure board listed first as the featured action):
+  Configure board (`alp.openConfigurator`), Validate board.yaml
+  (`alp.validateBoardYaml`), Generate all (`alp.generateAll`), West build
+  (`alp.westBuild`), West flash (`alp.westFlash`).
 - **DEBUG**: Doctor (`alp.debugDoctor`), Troubleshooting panel
   (`alp.openDebugTroubleshootingPanel`).
 
