@@ -17,7 +17,7 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "bundle": "esbuild src/cli/main.ts --bundle --platform=node --target=node18 --outfile=dist/cli/main.js --external:@clack/prompts --banner:js='#!/usr/bin/env node' --tsconfig=tsconfig.json --log-level=warning",
+    "bundle": "esbuild src/cli/main.ts --bundle --platform=node --target=node18 --outfile=dist/cli/main.js --external:@clack/prompts --banner:js=\"#!/usr/bin/env node\" --tsconfig=tsconfig.json --log-level=warning",
     "prepack": "pnpm run bundle",
     "cli": "node ./dist/cli/main.js",
     "cli:pack": "pnpm pack --pack-destination ../../dist",
