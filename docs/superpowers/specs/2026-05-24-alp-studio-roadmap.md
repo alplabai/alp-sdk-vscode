@@ -38,52 +38,90 @@ The original perceived gap ("I don't see the GUI") was **discoverability**, not
 missing configuration: the configurator is launched by command, with no activity-bar
 home. Hence the roadmap *elevates and polishes* existing code rather than rebuilding.
 
-## Key data dependency (cross-cutting risk)
+## SKU-driven model (the core domain truth)
 
-The catalogue (real SKUs, carriers, and `populated` maps) is loaded **at runtime from
-a separate alp-sdk checkout**: `sdkRoot/metadata/e1m_modules/*/som.yaml` and
-`sdkRoot/metadata/carriers/*/board.yaml` (`src/configurator/vscodeAdapter.ts`).
+The selected **SoM SKU drives the valid option space** — the extension must mirror
+what alp-sdk does. Each `metadata/e1m_modules/E1M-*.yaml` SoM preset encodes
+silicon-determined settings:
 
-- `alp-sdk-upstream/` in **this** repo is currently **empty**, and the
-  `board-config-v1.schema.json` referenced by `package.json` is **missing**.
-- Without a real SDK checkout (via `alpSdk.path` or workspace autodetect), the
-  configurator dropdowns are empty. **Phase 1 does not depend on this** (board summary
-  only parses `board.yaml`); Phase 2/3 do.
+- `inference.preferred_backend` is **silicon-fixed** (AEN/NX → `ethos_u`, V2N →
+  `drpai`, V2M → `deepx_dxm1`). Per the v0.6 schema, `inference.backend` was **removed
+  as a customer field** — the UI must *derive and display* the backend, not offer a
+  free picker. Only V2M SKUs expose DeepX.
+- `capabilities` (per-SKU booleans: `deepx_dx`, `optiga_trust_m`, `tmu_*`, …),
+  `default_board`, `memory`, `topology` (heterogeneous A-cluster Yocto machine +
+  M-core Zephyr boards), `on_module` chips, `pad_routes` (E1M pad → dispatch chip/pin),
+  and the on-module I2C device map.
 
-## Phases
+Board presets (`metadata/boards/*.yaml`) carry `name`, `display_name`,
+`hosts_som_families` (constrains which SoMs a carrier supports), and `populated`
+(chip→bool, grouped by comment into Motion / Storage / Audio / … — usable as map labels).
 
-Each phase is its own spec → plan → implementation cycle.
+## Real alp-sdk metadata layout (authoritative) + loader drift
 
-### Phase 0 — SDK-data wiring (small, prerequisite for Phase 2+)
-Init/restore `alp-sdk-upstream` (or document `alpSdk.path` setup), fix the missing
-schema path, confirm the catalogue loads end-to-end. Done **alongside Phase 2** when
-the catalogue is first actually needed.
+Verified against a real checkout (`C:\Users\caner\Documents\GitHub\alp-sdk`). The
+current extension loader (`src/configurator/vscodeAdapter.ts`) targets the **wrong**
+paths — this is why dropdowns are empty even with a checkout:
 
-### Phase 1 — Activity-bar home (START HERE; no data dependency)
-Bolt icon in the activity bar → "Project" tree (board summary + grouped actions) with
-a welcome-view fallback. Surfaces **"Configure board (GUI)"** as the featured action.
-Detailed spec: `2026-05-24-alp-activity-bar-view-design.md`.
+| Data | Extension currently expects | Real alp-sdk path |
+|---|---|---|
+| SoM SKUs | `e1m_modules/<sku>/som.yaml` (subdir) | flat `e1m_modules/E1M-*.yaml` |
+| Carriers/boards | `metadata/carriers/<name>/board.yaml` | `metadata/boards/*.yaml` |
+| board.yaml schema | `alp-sdk-upstream/…/board-config-v1.schema.json` (missing) | `metadata/schemas/board.schema.json` |
 
-### Phase 2 — Elevate + upgrade the configurator
-Open the configurator from the activity-bar home; add UX patterns: **board-picker
-funnel** (SoM/carrier first), **categorized navigation + search**, theme-native
-(VS Code UI toolkit) components, keep live validation + effective-config preview.
-Pairs with Phase 0.
+Other real dirs: `socs/<vendor>/<family>/<part>.json` (cores/memory/variants),
+`chips/<name>/` (drivers behind `populated`), `library-profiles/` (the libraries),
+`templates/`, `sdk_version.yaml`.
 
-### Phase 3 — Visual peripheral / "populated" map (pin-configurator analog)
-Graphical carrier view; click chips to toggle `carrier.populated`. **Decision:** add
-**label metadata to the SDK** (friendly name + peripheral type, possibly position) so
-the map renders real labels rather than raw chip keys (e.g. `lsm6dso`). This is
-upstream SDK work bundled into Phase 3.
+## Expanded program (supersedes the original 4 phases)
+
+Dependency-ordered. The **SKU-aware data layer** is the keystone everything visual
+depends on. Each phase is its own spec → plan → implementation cycle.
+
+### Phase 1 — Activity-bar home ✅ DONE
+Bolt icon → "Project" tree + welcome view (branch `feat/activity-bar-view`).
+
+### Phase 2a — Foundation + redesigned configurator (START HERE)  *(metadata only)*
+1. **SKU-aware data layer** — fix the loader paths above; parse SoM + board presets
+   (and `socs/` specs) into a rich, unit-tested model (silicon, cores, derived
+   backend, capabilities, default board, memory, topology, pad_routes, I2C map,
+   populated). Fix the `package.json` `yamlValidation` schema path.
+2. **Redesigned configurator** — site-styled (alplab-website tokens: Indigo-dark,
+   Inter/Roboto Mono, hairline header w/ real white wordmark, brand-indigo CTA,
+   compute-coded accents), **left sidebar nav + search**, and **SKU-driven**: picking
+   a SoM derives the backend (read-only), hardware card, accelerator availability,
+   and default board. Drop the free backend picker.
+
+### Phase 2b — Reference tools  *(metadata/env only, no build needed)*
+Hardware & pin-route explorer · Topology view · Per-SKU docs/datasheet links ·
+Toolchain/SDK status + bootstrap.
+
+### Phase 2c — Generated-config viewer + diff  *(uses existing generate step)*
+Browse/diff `build/generated/{alp.conf,alp.overlay,alp-cmake-args.txt,alp-yocto.conf}`.
+
+### Phase 3 — Runtime tools  *(need build/device)*
+Build/Flash/Run integration · Serial monitor · Memory/flash report · Device/probe
+manager.
+
+### Phase 4 — Visual peripheral / `populated` map (pin-configurator analog)
+Graphical carrier view; click chips to toggle `carrier.populated`. Labels from new
+SDK metadata (friendly name + type), or grouped from the board-file comments.
 
 ## Build order
 
-Phase 1 → (Phase 0 + Phase 2) → Phase 3.
+Phase 1 ✅ → **Phase 2a** → 2b → 2c → 3 → 4.
 
 ## Decisions log
 
 - Pin configurator → **visual peripheral/populated map** (not true pin mux).
-- Build approach → **elevate + upgrade the existing configurator** (reuse data layer
-  and webview, don't rebuild from scratch).
-- Phase 3 labels → **add label metadata to the SDK**.
-- Start with **Phase 1**.
+- Build approach → **elevate + upgrade the existing configurator** (reuse `BoardModel`
+  + webview; redesign the UI; do not rebuild the data protocol from scratch).
+- Visual style → **match alplab-website** (Indigo-dark default theme, Inter/Roboto
+  Mono, real white wordmark logo used as-is — never recolor the bolt).
+- Branding → **"Alp"**, never "ALP", in all text strings ([[branding-alp-not-allcaps]]).
+- Backend is **SKU-derived and read-only** (v0.6 dropped the customer field).
+- Layout → **left sidebar nav + search** (confirmed from mockup).
+- Developer tools → build **all eight** (serial monitor, generated-config viewer+diff,
+  hardware/pin-route explorer, memory report, topology, toolchain status, probe
+  manager, per-SKU docs) across phases 2b–3.
+- **Start with Phase 2a** (foundation + configurator).
