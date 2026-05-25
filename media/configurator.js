@@ -195,10 +195,11 @@
     kvRow(kv, "Default board", hw.defaultBoard || "—");
     if (hw.onModule && hw.onModule.length) kvRow(kv, "On-module", hw.onModule.join(" · "));
 
-    // accelerator availability row
+    // accelerator row — only the accelerators this SoM actually has
     const acc = el("div", { class: "alp-acc" });
     for (const a of vm.accelerators) {
-      acc.appendChild(el("span", { class: "alp-accchip " + (a.available ? "on" : "off"), text: a.available ? a.label + " ✓" : a.label }));
+      if (!a.available) continue;
+      acc.appendChild(el("span", { class: "alp-accchip on", text: a.label }));
     }
     kv.appendChild(el("dt", { text: "Accelerators" }));
     kv.appendChild(el("dd", {}, [acc]));
