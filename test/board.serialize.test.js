@@ -3,9 +3,19 @@ const assert = require("node:assert/strict");
 
 const { parseBoardConfig } = require("../packages/alp-core/dist/board/parse.js");
 const { serializeBoardConfig } = require("../packages/alp-core/dist/board/serialize.js");
-const { EDGEAI, OBJDET, PRODUCTION } = require("./board.parse.test.js");
+const {
+  EDGEAI,
+  OBJDET,
+  PRODUCTION,
+  ALLBLOCKS,
+} = require("./fixtures/board.fixtures.js");
 
-for (const [name, text] of [["EDGEAI", EDGEAI], ["OBJDET", OBJDET], ["PRODUCTION", PRODUCTION]]) {
+for (const [name, text] of [
+  ["EDGEAI", EDGEAI],
+  ["OBJDET", OBJDET],
+  ["PRODUCTION", PRODUCTION],
+  ["ALLBLOCKS", ALLBLOCKS],
+]) {
   test(`serializeBoardConfig round-trips ${name} (data-stable)`, () => {
     const parsed = parseBoardConfig(text);
     const reparsed = parseBoardConfig(serializeBoardConfig(parsed));

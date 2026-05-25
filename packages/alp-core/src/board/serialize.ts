@@ -14,7 +14,7 @@ export function serializeBoardConfig(cfg: BoardConfig): string {
   const ordered: Record<string, unknown> = {};
   for (const key of BOARD_KEY_ORDER) {
     const value = (cfg as unknown as Record<string, unknown>)[key];
-    if (value !== undefined) {
+    if (value !== undefined && value !== null) {
       ordered[key] = value;
     }
   }

@@ -169,13 +169,13 @@ export interface BoardConfig {
   populated?: Record<string, boolean>;
   e1m_routes?: E1mRoutes;
   pins?: PinRef[];
+  chips?: string[];
   ipc?: IpcEntry[];
   diagnostics?: Diagnostics;
   storage?: StoragePartition[];
   security?: Security;
   boot?: Boot;
   ota?: Ota;
-  chips?: string[];
   features?: Record<string, unknown>;
   supported_boards?: string[];
 }

@@ -10,7 +10,7 @@ import { BoardConfig, BOARD_KEY_ORDER, CoreEntry } from "./models";
  * so callers never branch on undefined.
  */
 export function parseBoardConfig(text: string): BoardConfig {
-  const d = (yaml.load(text) ?? {}) as Record<string, any>;
+  const d = (yaml.load(text) ?? {}) as Record<string, unknown>;
 
   const som = (d.som ?? {}) as Record<string, unknown>;
   const cfg: BoardConfig = {

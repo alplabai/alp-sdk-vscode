@@ -2,80 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { parseBoardConfig } = require("../packages/alp-core/dist/board/parse.js");
-
-const EDGEAI = `
-som:
-  sku: E1M-AEN701
-preset: e1m-evk
-pins:
-  - { e1m: E1M_I2C0, macro: EVK_I2C_BUS_SENSORS, doc: "Shared sensor bus" }
-cores:
-  a32_cluster:
-    os: "off"
-  m55_hp:
-    app: ./src
-    inference:
-      default_arena_kib: 256
-diagnostics:
-  log_level: info
-`;
-
-const OBJDET = `
-som:
-  sku: E1M-V2M101
-preset: e1m-evk
-chips:
-  - ov5640
-  - st7789
-cores:
-  a55_cluster:
-    os: "off"
-  m33_sm:
-    app: ./src
-    libraries:
-      - cmsis_dsp
-`;
-
-const PRODUCTION = `
-som:
-  sku: E1M-AEN701
-preset: e1m-evk
-cores:
-  a32_cluster:
-    os: "off"
-  m55_hp:
-    app: ./src
-    iot: { wifi: true, mqtt: true, tls: true }
-    libraries: [mbedtls]
-    memory: { stack_kib: 8, heap_kib: 64, isr_stack_kib: 4 }
-    power:
-      sleep_mode: standby
-      wakeup_sources: [uart, gpio, rtc]
-  m55_he:
-    os: "off"
-chips:
-  - optiga_trust_m
-  - eeprom_24c128
-boot:
-  method: mcuboot
-  signing: { algorithm: ecdsa_p256, key_file: keys/prod_ecdsa_p256.pub.pem }
-  slots:
-    primary: { size_kib: 1024 }
-    secondary: { size_kib: 1024 }
-  swap_algorithm: scratch
-  scratch_size_kib: 64
-  anti_rollback: true
-ota:
-  provider: mender
-  artifact_name: production-deployment
-  server: { url: "https://hosted.mender.io" }
-  rollback: { enabled: true, retries: 3, min_version: 1 }
-  poll_interval_s: 1800
-diagnostics:
-  log_level: info
-`;
-
-module.exports = { EDGEAI, OBJDET, PRODUCTION };
+const {
+  EDGEAI,
+  OBJDET,
+  PRODUCTION,
+  ALLBLOCKS,
+} = require("./fixtures/board.fixtures.js");
 
 test("parseBoardConfig maps the EDGEAI example", () => {
   const c = parseBoardConfig(EDGEAI);
@@ -107,6 +39,24 @@ test("parseBoardConfig maps the PRODUCTION example (boot/ota/memory/power/iot)",
   assert.equal(c.ota.provider, "mender");
   assert.equal(c.ota.rollback.min_version, 1);
   assert.ok(c.chips.includes("optiga_trust_m"));
+});
+
+test("parseBoardConfig maps the ALLBLOCKS example (inline populated/routes/ipc/storage/security/features)", () => {
+  const c = parseBoardConfig(ALLBLOCKS);
+  assert.equal(c.populated.lsm6dso, true);
+  assert.equal(c.populated.bme280, false);
+  assert.equal(c.e1m_routes.gpio[0].macro, "BTN_USER");
+  assert.equal(c.e1m_routes.gpio[0].active_low, true);
+  assert.equal(c.ipc[0].kind, "rpmsg");
+  assert.deepEqual(c.ipc[0].endpoints, ["a55_cluster", "m33_sm"]);
+  assert.equal(c.storage[0].fs, "littlefs");
+  assert.equal(c.security.psa.tfm, true);
+  assert.equal(c.security.psa.attestation_root, "optiga_trust_m");
+  assert.equal(c.features.custom_flag, true);
+  assert.deepEqual(c.supported_boards, ["e1m-x-evk"]);
+  assert.equal(c.diagnostics.modules.alp_inference, "trace");
+  assert.equal(c.cores.a55_cluster.image, "alp-image-edge");
+  assert.ok(c.cores.m33_sm.peripherals.includes("i2c"));
 });
 
 test("parseBoardConfig defaults missing som/cores rather than throwing", () => {
