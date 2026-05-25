@@ -87,7 +87,7 @@
     if (!m) return;
     clear(m);
     if (!state.sdkConnected) { m.appendChild(renderDisconnected()); return; }
-    if (state.active === "cores") m.appendChild(renderCoresPlaceholder());
+    if (state.active === "cores") m.appendChild(renderCores());
     else m.appendChild(renderProject());
   }
 
@@ -207,12 +207,158 @@
     return card;
   }
 
-  // ============================ Cores (placeholder until UI-2b Task 3) ============================
-  function renderCoresPlaceholder() {
-    return el("div", { class: "alp-section" }, [
-      el("p", { class: "alp-seclabel", text: "§ Cores" }),
-      el("p", { class: "alp-help", text: "Per-core editor (override cards + library selector) — building next." }),
-    ]);
+  // ============================ Cores ============================
+  function ensureCore(id) {
+    state.board.cores = state.board.cores || {};
+    state.board.cores[id] = state.board.cores[id] || {};
+    return state.board.cores[id];
+  }
+
+  function renderCores() {
+    const vm = state.vm;
+    const sec = el("div", { class: "alp-section alp-wide" });
+    sec.appendChild(el("p", { class: "alp-seclabel", text: `§ Cores · ${vm.som.selected}` }));
+    sec.appendChild(el("p", { class: "alp-help", text: "One slice per core from the SoM topology. Blank cores inherit the SoM preset's defaults." }));
+    for (const core of vm.cores) sec.appendChild(renderCoreCard(core));
+    return sec;
+  }
+
+  function renderCoreCard(core) {
+    if (core.inheritedFromTopology) {
+      const card = el("div", { class: "alp-core ghost" });
+      card.appendChild(el("div", { class: "alp-chd" }, [
+        el("span", { class: "alp-led m" }),
+        el("span", { class: "alp-cid", text: core.id }),
+        el("span", { class: "alp-spacer" }),
+        el("span", { class: "alp-osq", text: "inherits SoM default" }),
+      ]));
+      const ob = el("button", { class: "alp-ob", text: "Override this core" });
+      ob.addEventListener("click", () => { ensureCore(core.id); postUpdate(true); });
+      card.appendChild(el("div", { class: "alp-ghostnote" }, [
+        document.createTextNode("Runs the SoM preset's default image. "), ob,
+      ]));
+      return card;
+    }
+
+    const enabled = core.os !== "off";
+    const card = el("div", { class: "alp-core" });
+    const sw = el("span", { class: "alp-sw" + (enabled ? " on" : "") });
+    const toggle = el("span", { class: "alp-toggle" }, [el("span", { text: "Enabled" }), sw]);
+    toggle.addEventListener("click", () => {
+      const c = ensureCore(core.id);
+      if (enabled) c.os = "off"; else delete c.os;
+      postUpdate(true);
+    });
+    card.appendChild(el("div", { class: "alp-chd" }, [
+      el("span", { class: "alp-led m" }),
+      el("span", { class: "alp-cid", text: core.id }),
+      el("span", { class: "alp-spacer" }),
+      toggle,
+    ]));
+    if (!enabled) {
+      card.appendChild(el("div", { class: "alp-ghostnote", text: "Disabled (os: off)." }));
+      return card;
+    }
+
+    const body = el("div", { class: "alp-cbody" });
+    const appInput = el("input", { type: "text", value: core.app || "", placeholder: "./src" });
+    appInput.addEventListener("input", () => { const c = ensureCore(core.id); setOrDelete(c, "app", appInput.value); postUpdateDebounced(); });
+    const arenaInput = el("input", { type: "number", value: core.inferenceArenaKib != null ? String(core.inferenceArenaKib) : "", placeholder: "128", min: "16" });
+    arenaInput.addEventListener("input", () => {
+      const c = ensureCore(core.id);
+      const n = parseInt(arenaInput.value, 10);
+      if (Number.isFinite(n)) { c.inference = c.inference || {}; c.inference.default_arena_kib = n; }
+      else if (c.inference) { delete c.inference.default_arena_kib; if (!Object.keys(c.inference).length) delete c.inference; }
+      postUpdateDebounced();
+    });
+    body.appendChild(row(field("App directory", appInput), field("Inference arena (KiB)", arenaInput)));
+
+    // IoT toggles (structural — affects validation)
+    const iotWrap = el("div", { class: "alp-chips" });
+    ["wifi", "mqtt", "ble", "tls"].forEach((flag) => {
+      const on = !!core.iot[flag];
+      const chip = el("span", { class: "alp-chip" + (on ? " on" : ""), text: flag });
+      chip.addEventListener("click", () => {
+        const c = ensureCore(core.id); c.iot = c.iot || {};
+        if (on) delete c.iot[flag]; else c.iot[flag] = true;
+        if (!Object.keys(c.iot).length) delete c.iot;
+        postUpdate(true);
+      });
+      iotWrap.appendChild(chip);
+    });
+    body.appendChild(field("Connectivity (IoT)", iotWrap));
+
+    body.appendChild(field("Libraries", renderLibrarySelector(core.id)));
+    card.appendChild(body);
+    return card;
+  }
+
+  // searchable add control (selected chips + filter dropdown), updates locally + posts
+  function renderLibrarySelector(coreId) {
+    const all = state.vm.libraries;
+    const wrap = el("div", { class: "alp-sel" });
+    const chips = el("div", { class: "alp-selchips" });
+    const combo = el("div", { class: "alp-combo" });
+    const input = el("input", { type: "text", placeholder: "Add library…" });
+    const dd = el("div", { class: "alp-dd", style: "display:none" });
+    let matches = [], active = -1;
+
+    const libs = () => { const c = state.board.cores && state.board.cores[coreId]; return (c && c.libraries) || []; };
+    function commit() {
+      const c = ensureCore(coreId);
+      const list = c.libraries || [];
+      if (!list.length) delete c.libraries;
+      rebuildChips(); refresh();
+      postUpdate(false); // suppressed: validation updates, selector keeps focus
+    }
+    function add(id) {
+      const c = ensureCore(coreId);
+      c.libraries = (c.libraries || []).slice();
+      if (!c.libraries.includes(id)) c.libraries.push(id);
+      input.value = ""; commit(); input.focus();
+    }
+    function remove(id) {
+      const c = ensureCore(coreId);
+      c.libraries = (c.libraries || []).filter((l) => l !== id);
+      commit();
+    }
+    function rebuildChips() {
+      clear(chips);
+      const list = libs();
+      if (!list.length) chips.appendChild(el("span", { class: "alp-selempty", text: "none" }));
+      for (const id of list) {
+        const x = el("span", { class: "x", text: "×" });
+        x.addEventListener("click", () => remove(id));
+        chips.appendChild(el("span", { class: "alp-selchip" }, [document.createTextNode(id + " "), x]));
+      }
+    }
+    function refresh() {
+      const q = input.value.trim().toLowerCase();
+      const chosen = new Set(libs());
+      matches = all.filter((id) => !chosen.has(id) && id.toLowerCase().includes(q)).sort().slice(0, 8);
+      clear(dd); active = -1;
+      if (!matches.length) { dd.style.display = "none"; return; }
+      matches.forEach((id) => {
+        const opt = el("div", { class: "alp-opt", text: id });
+        opt.addEventListener("mousedown", (e) => { e.preventDefault(); add(id); });
+        dd.appendChild(opt);
+      });
+      dd.style.display = "block";
+    }
+    function markActive() { Array.prototype.forEach.call(dd.children, (c, i) => c.classList.toggle("active", i === active)); }
+    input.addEventListener("input", refresh);
+    input.addEventListener("focus", refresh);
+    input.addEventListener("blur", () => setTimeout(() => { dd.style.display = "none"; }, 150));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { active = Math.min(active + 1, matches.length - 1); markActive(); e.preventDefault(); }
+      else if (e.key === "ArrowUp") { active = Math.max(active - 1, 0); markActive(); e.preventDefault(); }
+      else if (e.key === "Enter") { if (matches.length) add(matches[active >= 0 ? active : 0]); e.preventDefault(); }
+      else if (e.key === "Escape") { dd.style.display = "none"; }
+    });
+    combo.appendChild(input); combo.appendChild(dd);
+    wrap.appendChild(chips); wrap.appendChild(combo);
+    rebuildChips();
+    return wrap;
   }
 
   // ---- field/layout helpers ----
