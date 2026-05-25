@@ -26,8 +26,7 @@ export function buildProjectNodes(summary: BoardSummary | null): AlpNode[] {
       collapsible: true,
       children: [
         { id: "project.som", label: "SoM", description: summary.sku, icon: "circuit-board" },
-        { id: "project.carrier", label: "Carrier", description: summary.carrier ?? DASH, icon: "primitive-square" },
-        { id: "project.os", label: "OS", description: summary.os ?? DASH, icon: "server-environment" },
+        { id: "project.preset", label: "Preset", description: summary.preset ?? DASH, icon: "primitive-square" },
       ],
     },
     {

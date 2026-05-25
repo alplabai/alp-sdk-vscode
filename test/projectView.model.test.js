@@ -22,29 +22,22 @@ test("buildProjectNodes returns Project / Actions / Debug sections for a board",
   assert.ok(roots.every((node) => node.collapsible === true));
 });
 
-test("buildProjectNodes maps sku/carrier/os to the Project section", () => {
-  const [project] = buildProjectNodes({
-    sku: "E1M-AEN701",
-    carrier: "E1M-EVK",
-    os: "zephyr",
-  });
-
+test("buildProjectNodes maps sku + preset to the Project section", () => {
+  const [project] = buildProjectNodes({ sku: "E1M-AEN701", preset: "e1m-evk" });
   assert.deepEqual(
     project.children.map((child) => [child.label, child.description]),
     [
       ["SoM", "E1M-AEN701"],
-      ["Carrier", "E1M-EVK"],
-      ["OS", "zephyr"],
+      ["Preset", "e1m-evk"],
     ],
   );
 });
 
-test("buildProjectNodes renders an em dash for missing carrier/os", () => {
+test("buildProjectNodes renders an em dash for a missing preset", () => {
   const [project] = buildProjectNodes({ sku: "E1M-AEN701" });
-
   assert.deepEqual(
     project.children.map((child) => child.description),
-    ["E1M-AEN701", "—", "—"],
+    ["E1M-AEN701", "—"],
   );
 });
 
