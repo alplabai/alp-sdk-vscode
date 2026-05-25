@@ -81,16 +81,23 @@ depends on. Each phase is its own spec → plan → implementation cycle.
 ### Phase 1 — Activity-bar home ✅ DONE
 Bolt icon → "Project" tree + welcome view (branch `feat/activity-bar-view`).
 
-### Phase 2a — Foundation + redesigned configurator (START HERE)  *(metadata only)*
-1. **SKU-aware data layer** — fix the loader paths above; parse SoM + board presets
-   (and `socs/` specs) into a rich, unit-tested model (silicon, cores, derived
-   backend, capabilities, default board, memory, topology, pad_routes, I2C map,
-   populated). Fix the `package.json` `yamlValidation` schema path.
-2. **Redesigned configurator** — site-styled (alplab-website tokens: Indigo-dark,
-   Inter/Roboto Mono, hairline header w/ real white wordmark, brand-indigo CTA,
-   compute-coded accents), **left sidebar nav + search**, and **SKU-driven**: picking
-   a SoM derives the backend (read-only), hardware card, accelerator availability,
-   and default board. Drop the free backend picker.
+### Phase 2a — v0.6 realignment + foundation + full configurator (START HERE)
+**Decision: full v0.6, all blocks.** The extension models a **pre-v0.6** board.yaml; the
+real `metadata/schemas/board.schema.json` (SDK v0.6.0) is fundamentally different —
+**per-core `cores:` slices**, `preset` xor inline `populated`/`e1m_routes`, top-level
+`os` forbidden, per-core `libraries`/`iot`/`inference{arena}` (no backend), plus new
+`chips[]`, `pins[]`, `storage[]`, `security{}`, `boot{}`, `ota{}`, `ipc[]`,
+`diagnostics.modules{}`. So Phase 2a is:
+1. **SKU-aware data layer** — real paths (flat `e1m_modules/E1M-*.yaml`,
+   `metadata/boards/*.yaml`, `chips/*.yaml`, `library-profiles/*/`, `socs/**`); derived
+   read-only backend; accelerator availability; carrier+chip filtering by family.
+2. **v0.6 board model** — replace `BoardModel` with a full v0.6 model (parse/serialize/
+   validate); vendor `board.schema.json`; migrate old-shape board.yaml.
+3. **Full configurator** — site-styled (Indigo-dark, Inter/Roboto Mono, hairline header
+   w/ real white wordmark, brand CTA), left sidebar + search, **SKU-driven**, with a
+   section per v0.6 block (Project, Cores, Board population, Chips, Diagnostics, Storage,
+   Security, Boot, OTA, IPC, Review). Detailed spec:
+   `2026-05-25-phase-2a-data-layer-and-configurator-design.md`.
 
 ### Phase 2b — Reference tools  *(metadata/env only, no build needed)*
 Hardware & pin-route explorer · Topology view · Per-SKU docs/datasheet links ·
@@ -120,6 +127,9 @@ Phase 1 ✅ → **Phase 2a** → 2b → 2c → 3 → 4.
   Mono, real white wordmark logo used as-is — never recolor the bolt).
 - Branding → **"Alp"**, never "ALP", in all text strings ([[branding-alp-not-allcaps]]).
 - Backend is **SKU-derived and read-only** (v0.6 dropped the customer field).
+- **Target the real v0.6 `board.schema.json`** — the extension's pre-v0.6 `BoardModel`
+  is replaced wholesale (per-core `cores:`, preset/inline, `chips[]`, storage/security/
+  boot/ota/ipc); **build all blocks** (user choice). Old board.yaml gets a migration path.
 - Layout → **left sidebar nav + search** (confirmed from mockup).
 - Developer tools → build **all eight** (serial monitor, generated-config viewer+diff,
   hardware/pin-route explorer, memory report, topology, toolchain status, probe
