@@ -4,8 +4,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { ProjectContext } from "@alp-sdk/core/project/models";
 import { log } from "../util";
-import { BoardModel, CarrierPreset, PresetCatalogue } from "@alp-sdk/core/configurator/models";
 import {
+    BoardModel,
+    CarrierPreset,
+    PresetCatalogue,
     createBoardYaml,
     createDefaultBoardModel,
     createEmptyPresetCatalogue,

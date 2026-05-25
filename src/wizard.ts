@@ -3,7 +3,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { BoardModel } from "@alp-sdk/core/configurator/models";
+import { BoardModel } from "@alp-sdk/core/configurator/service";
 import {
     loadBoardModel,
     loadPresetCatalogue,

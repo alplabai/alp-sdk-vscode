@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { BoardModel } from "../configurator/models";
+import { BoardModel } from "../configurator/service";
 import { createBoardYaml } from "../configurator/service";
 import {
     ModuleScaffoldInput,

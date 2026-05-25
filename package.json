@@ -217,6 +217,13 @@
           "type": "string",
           "default": "",
           "description": "Working directory for `west build/flash/run`.  When empty, defaults to the workspace root."
+        },
+        "alpSdk.configuratorTheme": {
+          "type": "string",
+          "enum": ["brand", "vscode"],
+          "enumDescriptions": ["Alp brand (Indigo-dark)", "Follow the VS Code color theme"],
+          "default": "brand",
+          "description": "Color theme for the Alp board configurator panel."
         }
       }
     }
