@@ -1,0 +1,7 @@
+{
+  "name": "vscode",
+  "version": "0.0.0",
+  "description": "Minimal vscode stub for Node.js unit tests (not the real VS Code API)",
+  "license": "Apache-2.0",
+  "main": "index.js"
+}
