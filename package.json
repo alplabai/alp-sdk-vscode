@@ -33,7 +33,8 @@
   ],
   "activationEvents": [
     "onLanguage:yaml",
-    "workspaceContains:**/board.yaml"
+    "workspaceContains:**/board.yaml",
+    "onView:alpSdk.projectView"
   ],
   "main": "./out/extension.js",
   "icon": "media/icon.png",
@@ -141,8 +142,47 @@
         "command": "alp.openDebugTroubleshootingPanel",
         "title": "Alp: Open troubleshooting panel",
         "category": "Alp"
+      },
+      {
+        "command": "alp.refreshProjectView",
+        "title": "Alp: Refresh project view",
+        "category": "Alp",
+        "icon": "$(refresh)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "alpSdk",
+          "title": "Alp SDK",
+          "icon": "media/bolt.svg"
+        }
+      ]
+    },
+    "views": {
+      "alpSdk": [
+        {
+          "id": "alpSdk.projectView",
+          "name": "Project"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "alpSdk.projectView",
+        "when": "!alpSdk.hasBoard",
+        "contents": "No board.yaml found in this workspace.\n\n[Configure board](command:alp.openConfigurator)\n[New project wizard](command:alp.newProjectWizard)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "alp.refreshProjectView",
+          "when": "view == alpSdk.projectView",
+          "group": "navigation"
+        }
+      ]
+    },
     "yamlValidation": [
       {
         "fileMatch": "board.yaml",

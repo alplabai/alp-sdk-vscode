@@ -13,6 +13,7 @@ import {
     maybeOfferFirstRunWizard,
     registerProjectWizardCommand,
 } from "./wizard";
+import { registerProjectView } from "./projectView";
 
 export function activate(context: vscode.ExtensionContext): void {
   startLanguageServer(context);
@@ -26,6 +27,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerProjectWizardCommand(),
     ...registerLspCommands(),
     ...registerDebugCommands(),
+    ...registerProjectView(),
   );
 
   void maybeOfferFirstRunWizard(context);

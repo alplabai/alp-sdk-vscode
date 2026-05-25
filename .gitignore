@@ -20,3 +20,9 @@ coverage/
 
 # Local assistant instructions (keep private)
 .github/local-agent-instructions.md
+
+# code-review-graph local DB (also self-ignored inside the dir)
+.code-review-graph/
+
+# Superpowers brainstorm visual-companion scratch
+.superpowers/
