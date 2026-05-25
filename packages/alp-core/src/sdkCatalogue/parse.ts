@@ -99,7 +99,8 @@ export function parseSomPreset(text: string): SomPreset {
     defaultBoard: str(d.default_board),
     topologyCoreIds: Object.keys(topology),
     onModule: Object.entries(onModuleRaw)
-      .filter(([, val]) => typeof val === "string" && !isTbd(val))
+      // `silicon:` is the SoC reference (captured separately), not a companion chip.
+      .filter(([key, val]) => key !== "silicon" && typeof val === "string" && !isTbd(val))
       .map(([, val]) => val as string),
     memory: hasMemory ? { dramMbit, flashMbit } : undefined,
     preliminary: Boolean(status.preliminary),

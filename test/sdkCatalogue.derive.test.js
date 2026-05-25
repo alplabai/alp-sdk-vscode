@@ -49,7 +49,10 @@ test("acceleratorAvailability lights deepx for a V2M SoM", () => {
   assert.equal(by.ethos_u, false);
 });
 
-test("chipDefaults returns the board populated map; coreIdsForSom returns topology ids", () => {
+test("chipDefaults returns the board populated map", () => {
   assert.deepEqual(chipDefaults(catalogue.boards[0]), { lsm6dso: true });
+});
+
+test("coreIdsForSom returns the SoM topology core ids", () => {
   assert.deepEqual(coreIdsForSom(catalogue, "E1M-AEN701"), ["m55_hp", "m55_he"]);
 });

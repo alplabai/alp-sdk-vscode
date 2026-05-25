@@ -47,3 +47,24 @@ test("loadSdkCatalogue returns empty catalogue for a missing root", () => {
   const cat = loadSdkCatalogue(null);
   assert.deepEqual(cat, { soms: [], boards: [], chips: [], libraries: [], socs: [], sdkVersion: undefined });
 });
+
+test("loadSdkCatalogue isolates a bad file: valid presets still load, logError fires", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alpsdk-"));
+  try {
+    const e1m = path.join(root, "metadata", "e1m_modules");
+    fs.mkdirSync(e1m, { recursive: true });
+    fs.writeFileSync(path.join(e1m, "E1M-AEN701.yaml"),
+      "sku: E1M-AEN701\nfamily: alif-ensemble\nsilicon: alif:ensemble:e7\ndisplay_name: AEN701\ntopology:\n  m55_hp: { app: x }\nstatus: { preliminary: false }\n");
+    // Unclosed flow mapping -> js-yaml throws on load.
+    fs.writeFileSync(path.join(e1m, "E1M-BAD.yaml"), "sku: { unterminated\n");
+
+    const errors = [];
+    const cat = loadSdkCatalogue(root, (msg) => errors.push(msg));
+
+    assert.deepEqual(cat.soms.map((s) => s.sku), ["E1M-AEN701"]); // good one loaded
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /E1M-BAD\.yaml/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

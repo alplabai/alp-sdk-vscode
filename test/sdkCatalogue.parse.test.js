@@ -74,6 +74,8 @@ test("parseSomPreset maps an AEN preset", () => {
   assert.equal(s.capabilities.deepx_dx ?? false, false);
   assert.equal(s.preliminary, false);
   assert.ok(s.onModule.includes("cc3501e"));
+  // the `silicon:` ref under on_module is NOT a companion chip
+  assert.ok(!s.onModule.includes("alif:ensemble:e7"));
 });
 
 test("parseSomPreset maps a V2M preset with deepx + memory", () => {
