@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import type { BoardSummary } from "@alp-sdk/core/boardSummary/models";
 import { loadBoardSummary } from "../boardSummary/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { AlpNode, buildProjectNodes } from "./model";
@@ -8,7 +9,8 @@ import { AlpNode, buildProjectNodes } from "./model";
 class AlpProjectTreeProvider implements vscode.TreeDataProvider<AlpNode> {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
-  private summary = loadBoardSummary(collectProjectContext().boardYamlPath);
+  // Seeded by the mandatory refresh() in registerProjectView before first render.
+  private summary: BoardSummary | null = null;
 
   getTreeItem(node: AlpNode): vscode.TreeItem {
     const item = new vscode.TreeItem(
@@ -37,9 +39,11 @@ class AlpProjectTreeProvider implements vscode.TreeDataProvider<AlpNode> {
     return buildProjectNodes(this.summary);
   }
 
-  refresh(): void {
+  async refresh(): Promise<void> {
     this.summary = loadBoardSummary(collectProjectContext().boardYamlPath);
-    void vscode.commands.executeCommand(
+    // Await the context-key update so the welcome view's `!alpSdk.hasBoard`
+    // guard is settled before the tree re-renders (no empty-tree flash).
+    await vscode.commands.executeCommand(
       "setContext",
       "alpSdk.hasBoard",
       Boolean(this.summary?.sku),
@@ -62,7 +66,7 @@ export function registerProjectView(): vscode.Disposable[] {
   const watcher = vscode.workspace.createFileSystemWatcher("**/board.yaml");
 
   // Seed the alpSdk.hasBoard context key for the welcome view.
-  provider.refresh();
+  void provider.refresh();
 
   return [
     treeView,
