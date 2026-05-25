@@ -110,3 +110,32 @@ test("parseBoardPreset maps name, families, and populated", () => {
   assert.deepEqual(b.hostsSomFamilies, ["alif-ensemble", "nxp-imx9"]);
   assert.deepEqual(b.populated, { lsm6dso: true, ssd1306: true, ov5640: false });
 });
+
+const { parseChipDef } = require("../packages/alp-core/dist/sdkCatalogue/parse.js");
+
+const CHIP = `
+schema_version: 1
+chip_id: lsm6dso
+driver_status: partial
+display_name: "STMicroelectronics LSM6DSO 6-axis IMU"
+vendor: st
+bus: i2c
+kconfig:
+  zephyr: ALP_SDK_CHIP_LSM6DSO
+  baremetal: ALP_SDK_CHIP_LSM6DSO
+families:
+  - aen
+  - v2n
+  - v2n-m1
+`;
+
+test("parseChipDef maps chip fields including families + kconfig", () => {
+  const c = parseChipDef(CHIP);
+  assert.equal(c.chipId, "lsm6dso");
+  assert.equal(c.displayName, "STMicroelectronics LSM6DSO 6-axis IMU");
+  assert.equal(c.vendor, "st");
+  assert.equal(c.bus, "i2c");
+  assert.equal(c.driverStatus, "partial");
+  assert.deepEqual(c.families, ["aen", "v2n", "v2n-m1"]);
+  assert.deepEqual(c.kconfig, { zephyr: "ALP_SDK_CHIP_LSM6DSO", baremetal: "ALP_SDK_CHIP_LSM6DSO" });
+});

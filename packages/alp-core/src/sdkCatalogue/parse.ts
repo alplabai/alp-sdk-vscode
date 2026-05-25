@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as yaml from "js-yaml";
-import { BoardPreset, SomPreset } from "./models";
+import { BoardPreset, ChipDef, SomPreset } from "./models";
 
 function isTbd(v: unknown): boolean {
   return typeof v === "string" && v.trim() === "TBD";
@@ -37,6 +37,23 @@ export function parseBoardPreset(text: string): BoardPreset {
     displayName: str(d.display_name) ?? str(d.name) ?? "",
     hostsSomFamilies: strList(d.hosts_som_families),
     populated: boolMap(d.populated),
+  };
+}
+
+export function parseChipDef(text: string): ChipDef {
+  const d = (yaml.load(text) ?? {}) as Record<string, any>;
+  const kc = (d.kconfig ?? {}) as Record<string, unknown>;
+  const zephyr = str(kc.zephyr);
+  const baremetal = str(kc.baremetal);
+  const hasKconfig = zephyr !== undefined || baremetal !== undefined;
+  return {
+    chipId: str(d.chip_id) ?? "",
+    displayName: str(d.display_name) ?? str(d.chip_id) ?? "",
+    vendor: str(d.vendor),
+    bus: str(d.bus),
+    driverStatus: str(d.driver_status),
+    families: strList(d.families),
+    kconfig: hasKconfig ? { zephyr, baremetal } : undefined,
   };
 }
 
