@@ -90,3 +90,23 @@ test("parseSomPreset treats TBD as unknown", () => {
   assert.equal(s.memory, undefined);
   assert.equal(s.preliminary, true);
 });
+
+const { parseBoardPreset } = require("../packages/alp-core/dist/sdkCatalogue/parse.js");
+
+const BOARD = `
+name: e1m-evk
+display_name: "E1M-EVK reference board"
+hosts_som_families: [alif-ensemble, nxp-imx9]
+populated:
+  lsm6dso: true
+  ssd1306: true
+  ov5640: false
+`;
+
+test("parseBoardPreset maps name, families, and populated", () => {
+  const b = parseBoardPreset(BOARD);
+  assert.equal(b.name, "e1m-evk");
+  assert.equal(b.displayName, "E1M-EVK reference board");
+  assert.deepEqual(b.hostsSomFamilies, ["alif-ensemble", "nxp-imx9"]);
+  assert.deepEqual(b.populated, { lsm6dso: true, ssd1306: true, ov5640: false });
+});

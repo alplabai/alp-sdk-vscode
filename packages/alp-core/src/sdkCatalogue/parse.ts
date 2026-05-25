@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as yaml from "js-yaml";
-import { SomPreset } from "./models";
+import { BoardPreset, SomPreset } from "./models";
 
 function isTbd(v: unknown): boolean {
   return typeof v === "string" && v.trim() === "TBD";
@@ -24,6 +24,20 @@ function boolMap(v: unknown): Record<string, boolean> {
     }
   }
   return out;
+}
+
+function strList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+export function parseBoardPreset(text: string): BoardPreset {
+  const d = (yaml.load(text) ?? {}) as Record<string, any>;
+  return {
+    name: str(d.name) ?? "",
+    displayName: str(d.display_name) ?? str(d.name) ?? "",
+    hostsSomFamilies: strList(d.hosts_som_families),
+    populated: boolMap(d.populated),
+  };
 }
 
 export function parseSomPreset(text: string): SomPreset {
