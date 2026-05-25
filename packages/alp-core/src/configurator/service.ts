@@ -1,7 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as yaml from "js-yaml";
-import { BoardModel, PresetCatalogue } from "./models";
+
+// Legacy v0.5 types — kept for the old vscodeAdapter only; not re-exported from index.
+export interface BoardModel {
+  schema_version: number;
+  som: { sku: string };
+  carrier?: { name: string; populated?: Record<string, boolean> };
+  os: string;
+  inference?: { backend?: string; default_arena_kib?: number };
+  libraries?: string[];
+  iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
+  diagnostics?: { last_error?: boolean; log_level?: string };
+}
+
+export interface CarrierPreset {
+  name: string;
+  populated: Record<string, boolean>;
+}
+
+export interface PresetCatalogue {
+  skus: string[];
+  carriers: CarrierPreset[];
+  libraries: string[];
+  inferenceBackends: string[];
+  logLevels: string[];
+  osChoices: string[];
+}
 
 export function createEmptyPresetCatalogue(): PresetCatalogue {
   return {
