@@ -8,6 +8,7 @@ import { AlpNode, buildProjectNodes } from "./model";
 class AlpProjectTreeProvider implements vscode.TreeDataProvider<AlpNode> {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
+  private summary = loadBoardSummary(collectProjectContext().boardYamlPath);
 
   getTreeItem(node: AlpNode): vscode.TreeItem {
     const item = new vscode.TreeItem(
@@ -33,21 +34,17 @@ class AlpProjectTreeProvider implements vscode.TreeDataProvider<AlpNode> {
     if (node) {
       return node.children ?? [];
     }
-    return buildProjectNodes(this.currentSummary());
+    return buildProjectNodes(this.summary);
   }
 
   refresh(): void {
-    const summary = this.currentSummary();
+    this.summary = loadBoardSummary(collectProjectContext().boardYamlPath);
     void vscode.commands.executeCommand(
       "setContext",
       "alpSdk.hasBoard",
-      Boolean(summary?.sku),
+      Boolean(this.summary?.sku),
     );
     this.emitter.fire();
-  }
-
-  private currentSummary() {
-    return loadBoardSummary(collectProjectContext().boardYamlPath);
   }
 }
 
@@ -63,12 +60,16 @@ export function registerProjectView(): vscode.Disposable[] {
   );
 
   const watcher = vscode.workspace.createFileSystemWatcher("**/board.yaml");
-  watcher.onDidChange(() => provider.refresh());
-  watcher.onDidCreate(() => provider.refresh());
-  watcher.onDidDelete(() => provider.refresh());
 
   // Seed the alpSdk.hasBoard context key for the welcome view.
   provider.refresh();
 
-  return [treeView, refreshCommand, watcher];
+  return [
+    treeView,
+    refreshCommand,
+    watcher,
+    watcher.onDidChange(() => provider.refresh()),
+    watcher.onDidCreate(() => provider.refresh()),
+    watcher.onDidDelete(() => provider.refresh()),
+  ];
 }
