@@ -17,7 +17,10 @@ import {
   SocSpec,
   SomPreset,
 } from "@alp-sdk/core/sdkCatalogue/models";
-import { log } from "../util";
+
+/** Logger the caller injects (the extension passes `log` from ./util; tests omit it). */
+export type LogFn = (message: string) => void;
+const noLog: LogFn = () => {};
 
 function emptyCatalogue(): SdkCatalogue {
   return { soms: [], boards: [], chips: [], libraries: [], socs: [], sdkVersion: undefined };
@@ -35,13 +38,17 @@ function listFiles(dir: string, predicate: (name: string) => boolean): string[] 
     .map((name) => path.join(dir, name));
 }
 
-function parseEach<T>(files: string[], parse: (text: string) => T): T[] {
+function parseEach<T>(
+  files: string[],
+  parse: (text: string) => T,
+  logError: LogFn,
+): T[] {
   const out: T[] = [];
   for (const file of files) {
     try {
       out.push(parse(readUtf8(file)));
     } catch (error) {
-      log(`sdkCatalogue: failed to parse ${file}: ${error}`);
+      logError(`sdkCatalogue: failed to parse ${file}: ${error}`);
     }
   }
   return out;
@@ -58,7 +65,10 @@ function findJsonFiles(dir: string): string[] {
   return out;
 }
 
-export function loadSdkCatalogue(sdkRoot: string | null): SdkCatalogue {
+export function loadSdkCatalogue(
+  sdkRoot: string | null,
+  logError: LogFn = noLog,
+): SdkCatalogue {
   if (!sdkRoot) return emptyCatalogue();
   const meta = path.join(sdkRoot, "metadata");
   if (!fs.existsSync(meta)) return emptyCatalogue();
@@ -66,19 +76,26 @@ export function loadSdkCatalogue(sdkRoot: string | null): SdkCatalogue {
   const soms: SomPreset[] = parseEach(
     listFiles(path.join(meta, "e1m_modules"), (n) => /^E1M-.*\.yaml$/.test(n)),
     parseSomPreset,
+    logError,
   ).sort((a, b) => a.sku.localeCompare(b.sku));
 
   const boards: BoardPreset[] = parseEach(
     listFiles(path.join(meta, "boards"), (n) => n.endsWith(".yaml")),
     parseBoardPreset,
+    logError,
   ).sort((a, b) => a.name.localeCompare(b.name));
 
   const chips: ChipDef[] = parseEach(
     listFiles(path.join(meta, "chips"), (n) => n.endsWith(".yaml")),
     parseChipDef,
+    logError,
   ).sort((a, b) => a.chipId.localeCompare(b.chipId));
 
-  const socs: SocSpec[] = parseEach(findJsonFiles(path.join(meta, "socs")), parseSocSpec);
+  const socs: SocSpec[] = parseEach(
+    findJsonFiles(path.join(meta, "socs")),
+    parseSocSpec,
+    logError,
+  );
 
   const libDir = path.join(meta, "library-profiles");
   const libraries: LibraryProfile[] = fs.existsSync(libDir)
@@ -96,7 +113,7 @@ export function loadSdkCatalogue(sdkRoot: string | null): SdkCatalogue {
       const v = (yaml.load(readUtf8(versionFile)) ?? {}) as Record<string, unknown>;
       if (typeof v.version === "string") sdkVersion = v.version;
     } catch (error) {
-      log(`sdkCatalogue: failed to read sdk_version.yaml: ${error}`);
+      logError(`sdkCatalogue: failed to read sdk_version.yaml: ${error}`);
     }
   }
 
