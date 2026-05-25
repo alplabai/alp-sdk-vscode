@@ -2,8 +2,7 @@
 
 export interface BoardSummary {
   sku?: string;
-  carrier?: string;
-  os?: string;
+  preset?: string;
 }
 
 export interface StatusBarPresentation {
