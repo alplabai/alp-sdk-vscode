@@ -89,6 +89,8 @@
     clear(m);
     if (!state.sdkConnected) { m.appendChild(renderDisconnected()); return; }
     if (state.active === "cores") m.appendChild(renderCores());
+    else if (state.active === "diagnostics") m.appendChild(renderDiagnostics());
+    else if (state.active === "review") m.appendChild(renderReview());
     else m.appendChild(renderProject());
   }
 
@@ -364,6 +366,121 @@
     wrap.appendChild(chips); wrap.appendChild(combo);
     rebuildChips();
     return wrap;
+  }
+
+  // ============================ Diagnostics ============================
+  const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"];
+  function cleanupDiag() { const d = state.board.diagnostics; if (d && !Object.keys(d).length) delete state.board.diagnostics; }
+  function ensureDiag() { state.board.diagnostics = state.board.diagnostics || {}; return state.board.diagnostics; }
+
+  function renderDiagnostics() {
+    const d = state.board.diagnostics || {};
+    const sec = el("div", { class: "alp-section" });
+    sec.appendChild(el("p", { class: "alp-seclabel", text: "§ Diagnostics" }));
+
+    const le = el("input", { type: "checkbox" }); le.checked = d.last_error !== false;
+    le.addEventListener("change", () => {
+      const dg = ensureDiag();
+      if (le.checked) delete dg.last_error; else dg.last_error = false;
+      cleanupDiag(); postUpdate(false);
+    });
+    sec.appendChild(el("div", { class: "alp-field" }, [
+      el("label", { class: "alp-check" }, [le, el("span", { text: " Keep alp_last_error() slot (thread-local)" })]),
+    ]));
+
+    const lvl = el("select");
+    LOG_LEVELS.forEach((l) => { const o = el("option", { value: l, text: l }); if ((d.log_level || "info") === l) o.selected = true; lvl.appendChild(o); });
+    lvl.addEventListener("change", () => {
+      const dg = ensureDiag();
+      if (lvl.value === "info") delete dg.log_level; else dg.log_level = lvl.value;
+      cleanupDiag(); postUpdate(false);
+    });
+    sec.appendChild(field("Default log level", lvl, "applies to every module without an override below"));
+
+    sec.appendChild(el("div", { class: "alp-field" }, [
+      el("label", { text: "Per-module overrides" }),
+      renderModuleOverrides(),
+    ]));
+    return sec;
+  }
+
+  function renderModuleOverrides() {
+    const wrap = el("div", { class: "alp-modules" });
+    function mods() { const d = state.board.diagnostics; return (d && d.modules) || {}; }
+    function setLevel(name, level) {
+      const dg = ensureDiag(); dg.modules = dg.modules || {};
+      dg.modules[name] = level;
+      rebuild(); postUpdate(false);
+    }
+    function removeMod(name) {
+      const dg = state.board.diagnostics;
+      if (dg && dg.modules) { delete dg.modules[name]; if (!Object.keys(dg.modules).length) delete dg.modules; }
+      cleanupDiag(); rebuild(); postUpdate(false);
+    }
+    const rows = el("div", { class: "alp-modrows" });
+    const adder = el("div", { class: "alp-modadd" });
+    function rebuild() {
+      clear(rows);
+      const m = mods();
+      const keys = Object.keys(m);
+      if (!keys.length) rows.appendChild(el("span", { class: "alp-selempty", text: "no overrides — every module uses the default level" }));
+      keys.forEach((name) => {
+        const sel = el("select");
+        ["error", "warn", "info", "debug", "trace", "off"].forEach((l) => { const o = el("option", { value: l, text: l }); if (m[name] === l) o.selected = true; sel.appendChild(o); });
+        sel.addEventListener("change", () => setLevel(name, sel.value));
+        const x = el("span", { class: "alp-modx", text: "×" });
+        x.addEventListener("click", () => removeMod(name));
+        rows.appendChild(el("div", { class: "alp-modrow" }, [el("span", { class: "alp-modname", text: name }), sel, x]));
+      });
+    }
+    const addInput = el("input", { type: "text", placeholder: "module name (e.g. alp_inference)" });
+    const addBtn = el("button", { class: "alp-btn", text: "Add override" });
+    addBtn.addEventListener("click", () => {
+      const name = addInput.value.trim();
+      if (/^[a-z][a-z0-9_]*$/.test(name)) { setLevel(name, "debug"); addInput.value = ""; }
+    });
+    adder.appendChild(addInput); adder.appendChild(addBtn);
+    wrap.appendChild(rows); wrap.appendChild(adder);
+    rebuild();
+    return wrap;
+  }
+
+  // ============================ Review ============================
+  function renderReview() {
+    const vm = state.vm, board = state.board;
+    const sec = el("div", { class: "alp-section" });
+    sec.appendChild(el("p", { class: "alp-seclabel", text: "§ Review" }));
+
+    const v = vm.validation;
+    if (v.errors.length) {
+      sec.appendChild(el("p", { class: "alp-revhead err", text: `✗ ${v.errors.length} error(s)` }));
+      const ul = el("ul", { class: "alp-revlist" });
+      v.errors.forEach((e) => ul.appendChild(el("li", { text: e })));
+      sec.appendChild(ul);
+    } else {
+      sec.appendChild(el("p", { class: "alp-revhead ok", text: "✓ board.yaml is valid" }));
+    }
+    if (v.warnings && v.warnings.length) {
+      const ul = el("ul", { class: "alp-revlist warn" });
+      v.warnings.forEach((w) => ul.appendChild(el("li", { text: w })));
+      sec.appendChild(ul);
+    }
+
+    const enabledCores = vm.cores.filter((c) => !c.inheritedFromTopology && c.os !== "off").map((c) => c.id);
+    const summary = el("dl", { class: "alp-kv" });
+    kvRow(summary, "SoM", vm.som.selected || "—");
+    kvRow(summary, "Board", board.preset ? board.preset : (vm.boardMode === "inline" ? "inline" : "—"));
+    kvRow(summary, "Active cores", enabledCores.length ? enabledCores.join(" · ") : "—");
+    if (board.chips && board.chips.length) kvRow(summary, "Chips", board.chips.join(" · "));
+    sec.appendChild(el("div", { class: "alp-card" }, [
+      el("div", { class: "alp-cardtop" }, [el("span", { class: "alp-name", text: "Effective summary" })]),
+      summary,
+    ]));
+
+    const prev = el("button", { class: "alp-btn primary", text: "Preview effective config" });
+    prev.addEventListener("click", () => vscode.postMessage({ type: "previewEffectiveConfig" }));
+    sec.appendChild(el("div", { style: "margin-top:14px" }, [prev]));
+    return sec;
   }
 
   // ---- field/layout helpers ----

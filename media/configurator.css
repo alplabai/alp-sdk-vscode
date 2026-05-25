@@ -257,7 +257,27 @@ select:focus-visible {
 .alp-dd { position: absolute; left: 0; right: 0; margin-top: 6px; border: 1px solid var(--border-line); border-radius: var(--r); background: var(--bg-elev); max-height: 220px; overflow: auto; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5); z-index: 5; }
 .alp-opt { padding: 9px 12px; cursor: pointer; font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-primary); border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
 .alp-opt:last-child { border-bottom: none; }
-.alp-opt:hover, .alp-opt.active { background: rgba(37, 65, 178, 0.18); }
+.alp-opt:hover, .alp-opt.active { background: var(--on-bg); }
+
+/* ---- diagnostics ---- */
+.alp-check { display: inline-flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--text-primary); cursor: pointer; }
+.alp-check input { width: auto !important; }
+.alp-modules { display: flex; flex-direction: column; gap: 10px; }
+.alp-modrows { display: flex; flex-direction: column; gap: 7px; }
+.alp-modrow { display: flex; align-items: center; gap: 10px; }
+.alp-modname { font-family: var(--font-mono); font-size: 0.82rem; min-width: 180px; color: var(--text-primary); }
+.alp-modrow select { max-width: 140px; }
+.alp-modx { cursor: pointer; color: var(--text-fade); font-size: 1rem; }
+.alp-modx:hover { color: var(--err); }
+.alp-modadd { display: flex; gap: 9px; }
+.alp-modadd input { flex: 1; }
+
+/* ---- review ---- */
+.alp-revhead { font-weight: 600; font-size: 0.92rem; margin: 0 0 10px; }
+.alp-revhead.ok { color: var(--ok); }
+.alp-revhead.err { color: var(--err); }
+.alp-revlist { margin: 0 0 16px; padding-left: 20px; font-size: 0.84rem; color: var(--text-muted); }
+.alp-revlist.warn { color: var(--warn); }
 
 /* ---- VS Code theme mode ---- */
 body[data-theme="vscode"] {
