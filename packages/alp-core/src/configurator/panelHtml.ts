@@ -44,6 +44,7 @@ export function createConfiguratorPanelHtml(input: ConfiguratorPanelHtmlInput): 
         <a data-section="cores" href="#">Cores</a>
         <a data-section="chips" href="#">Chips</a>
         <a data-section="diagnostics" href="#">Diagnostics</a>
+        <a data-section="advanced" href="#">Advanced</a>
         <a data-section="review" href="#">Review</a>
       </nav>
     </aside>

@@ -91,6 +91,7 @@
     if (state.active === "cores") m.appendChild(renderCores());
     else if (state.active === "chips") m.appendChild(renderChips());
     else if (state.active === "diagnostics") m.appendChild(renderDiagnostics());
+    else if (state.active === "advanced") m.appendChild(renderAdvanced());
     else if (state.active === "review") m.appendChild(renderReview());
     else m.appendChild(renderProject());
   }
@@ -491,6 +492,125 @@
     prev.addEventListener("click", () => vscode.postMessage({ type: "previewEffectiveConfig" }));
     sec.appendChild(el("div", { style: "margin-top:14px" }, [prev]));
     return sec;
+  }
+
+  // ============================ Advanced (Boot / Storage / Security / OTA / IPC) ============================
+  function ensureObj(key) { state.board[key] = state.board[key] || {}; return state.board[key]; }
+  function selectEl(options, current, onChange) {
+    const s = el("select");
+    options.forEach(([v, l]) => { const o = el("option", { value: v, text: l }); if (v === current) o.selected = true; s.appendChild(o); });
+    s.addEventListener("change", () => onChange(s.value));
+    return s;
+  }
+  function textEl(value, ph, onInput) { const i = el("input", { type: "text", value: value || "", placeholder: ph || "" }); i.addEventListener("input", () => onInput(i.value)); return i; }
+  function numEl(value, ph, onInput) { const i = el("input", { type: "number", value: value != null ? String(value) : "", placeholder: ph || "" }); i.addEventListener("input", () => onInput(i.value)); return i; }
+  function checkEl(checked, label, onChange) { const c = el("input", { type: "checkbox" }); c.checked = !!checked; c.addEventListener("change", () => onChange(c.checked)); return el("label", { class: "alp-check" }, [c, el("span", { text: " " + label })]); }
+  function advCard(title, children) { return el("div", { class: "alp-advcard" }, [el("div", { class: "alp-advhd", text: title }), el("div", { class: "alp-advbody" }, children)]); }
+  function intInto(obj, key, raw) { const n = parseInt(raw, 10); if (Number.isFinite(n)) obj[key] = n; else delete obj[key]; }
+
+  function renderAdvanced() {
+    const sec = el("div", { class: "alp-section alp-wide" });
+    sec.appendChild(el("p", { class: "alp-seclabel", text: "§ Advanced" }));
+    sec.appendChild(el("p", { class: "alp-help", text: "Production blocks — bootloader, storage, security, OTA, and cross-core IPC. Leave a block off to use the SDK defaults." }));
+    sec.appendChild(renderBootBlock());
+    sec.appendChild(renderStorageBlock());
+    sec.appendChild(renderSecurityBlock());
+    sec.appendChild(renderOtaBlock());
+    sec.appendChild(renderIpcBlock());
+    return sec;
+  }
+
+  function renderBootBlock() {
+    const b = state.board.boot || {};
+    const kids = [];
+    kids.push(field("Bootloader", selectEl([["", "(SDK default)"], ["mcuboot", "mcuboot"], ["none", "none"]], b.method || "", (v) => {
+      if (!v) delete state.board.boot; else ensureObj("boot").method = v;
+      postUpdate(true);
+    })));
+    if (b.method === "mcuboot") {
+      const sign = b.signing || {};
+      kids.push(row(
+        field("Signing algorithm", selectEl([["ecdsa_p256", "ecdsa_p256"], ["rsa2048", "rsa2048"], ["rsa3072", "rsa3072"], ["ed25519", "ed25519"]], sign.algorithm || "ecdsa_p256", (v) => { const bb = ensureObj("boot"); bb.signing = bb.signing || {}; bb.signing.algorithm = v; postUpdate(false); })),
+        field("Public key file", textEl(sign.key_file, "keys/prod.pub.pem", (v) => { const bb = ensureObj("boot"); bb.signing = bb.signing || {}; setOrDelete(bb.signing, "key_file", v); postUpdateDebounced(); })),
+      ));
+      kids.push(row(
+        field("Swap algorithm", selectEl([["scratch", "scratch"], ["move", "move"], ["overwrite", "overwrite"]], b.swap_algorithm || "scratch", (v) => { const bb = ensureObj("boot"); if (v === "scratch") delete bb.swap_algorithm; else bb.swap_algorithm = v; postUpdate(false); })),
+        field("Build type", selectEl([["Release", "Release"], ["Debug", "Debug"], ["MinSizeRel", "MinSizeRel"]], b.build_type || "Release", (v) => { const bb = ensureObj("boot"); if (v === "Release") delete bb.build_type; else bb.build_type = v; postUpdate(false); })),
+      ));
+      kids.push(checkEl(b.anti_rollback, "Anti-rollback (monotonic image counters)", (c) => { const bb = ensureObj("boot"); if (c) bb.anti_rollback = true; else delete bb.anti_rollback; postUpdate(false); }));
+    }
+    return advCard("Boot", kids);
+  }
+
+  function renderStorageBlock() {
+    const parts = state.board.storage || [];
+    const list = el("div", { class: "alp-partlist" });
+    if (!parts.length) list.appendChild(el("span", { class: "alp-selempty", text: "no partitions" }));
+    parts.forEach((p, i) => {
+      const x = el("span", { class: "alp-modx", text: "×" });
+      x.addEventListener("click", () => { state.board.storage.splice(i, 1); if (!state.board.storage.length) delete state.board.storage; postUpdate(true); });
+      list.appendChild(el("div", { class: "alp-partrow" }, [
+        textEl(p.name, "name", (v) => { p.name = v; postUpdateDebounced(); }),
+        numEl(p.size_kib, "size KiB", (v) => { intInto(p, "size_kib", v); postUpdateDebounced(); }),
+        selectEl([["raw", "raw"], ["littlefs", "littlefs"], ["fat", "fat"], ["ext4", "ext4"]], p.fs || "raw", (v) => { if (v === "raw") delete p.fs; else p.fs = v; postUpdate(false); }),
+        textEl(p.flash_device, "flash device", (v) => { setOrDelete(p, "flash_device", v); postUpdateDebounced(); }),
+        x,
+      ]));
+    });
+    const add = el("button", { class: "alp-btn", text: "Add partition" });
+    add.addEventListener("click", () => { state.board.storage = state.board.storage || []; state.board.storage.push({ name: "data", size_kib: 64 }); postUpdate(true); });
+    return advCard("Storage partitions", [list, add]);
+  }
+
+  function renderSecurityBlock() {
+    const has = !!(state.board.security && state.board.security.psa);
+    const psa = (state.board.security && state.board.security.psa) || {};
+    const kids = [checkEl(has, "Enable PSA Crypto key store", (c) => { if (c) { const s = ensureObj("security"); s.psa = s.psa || {}; } else delete state.board.security; postUpdate(true); })];
+    if (has) {
+      kids.push(row(
+        field("Persistent key slots", numEl(psa.persistent_slots, "16", (v) => { const s = ensureObj("security"); s.psa = s.psa || {}; intInto(s.psa, "persistent_slots", v); postUpdateDebounced(); })),
+        field("Attestation root", selectEl([["none", "none"], ["optiga_trust_m", "optiga_trust_m"], ["tfm_internal", "tfm_internal"]], psa.attestation_root || "none", (v) => { const s = ensureObj("security"); s.psa = s.psa || {}; if (v === "none") delete s.psa.attestation_root; else s.psa.attestation_root = v; postUpdate(false); })),
+      ));
+      kids.push(checkEl(psa.tfm, "Enable TF-M secure partition", (c) => { const s = ensureObj("security"); s.psa = s.psa || {}; if (c) s.psa.tfm = true; else delete s.psa.tfm; postUpdate(false); }));
+    }
+    return advCard("Security (PSA)", kids);
+  }
+
+  function renderOtaBlock() {
+    const o = state.board.ota || {};
+    const kids = [field("OTA provider", selectEl([["", "(none)"], ["mender", "mender"], ["hawkbit", "hawkbit"], ["mcumgr", "mcumgr"]], o.provider || "", (v) => {
+      if (!v) delete state.board.ota; else ensureObj("ota").provider = v;
+      postUpdate(true);
+    }))];
+    if (o.provider) {
+      const srv = o.server || {};
+      kids.push(row(
+        field("Artifact name", textEl(o.artifact_name, "my-fw-v1", (v) => { const oo = ensureObj("ota"); setOrDelete(oo, "artifact_name", v); postUpdateDebounced(); })),
+        field("Poll interval (s)", numEl(o.poll_interval_s, "1800", (v) => { const oo = ensureObj("ota"); intInto(oo, "poll_interval_s", v); postUpdateDebounced(); })),
+      ));
+      kids.push(field("Server URL", textEl(srv.url, "https://hosted.mender.io", (v) => { const oo = ensureObj("ota"); oo.server = oo.server || {}; setOrDelete(oo.server, "url", v); if (!Object.keys(oo.server).length) delete oo.server; postUpdateDebounced(); })));
+    }
+    return advCard("OTA", kids);
+  }
+
+  function renderIpcBlock() {
+    const ipc = state.board.ipc || [];
+    const list = el("div", { class: "alp-partlist" });
+    if (!ipc.length) list.appendChild(el("span", { class: "alp-selempty", text: "no IPC channels" }));
+    ipc.forEach((e, i) => {
+      const x = el("span", { class: "alp-modx", text: "×" });
+      x.addEventListener("click", () => { state.board.ipc.splice(i, 1); if (!state.board.ipc.length) delete state.board.ipc; postUpdate(true); });
+      list.appendChild(el("div", { class: "alp-partrow ipc" }, [
+        textEl(e.name, "name", (v) => { e.name = v; postUpdateDebounced(); }),
+        selectEl([["rpmsg", "rpmsg"], ["raw_shmem", "raw_shmem"], ["mailbox_only", "mailbox_only"]], e.kind || "rpmsg", (v) => { e.kind = v; postUpdate(false); }),
+        textEl((e.endpoints || []).join(", "), "core_a, core_b", (v) => { e.endpoints = v.split(",").map((s) => s.trim()).filter(Boolean); postUpdateDebounced(); }),
+        numEl(e.carve_out_kb, "KiB", (v) => { intInto(e, "carve_out_kb", v); postUpdateDebounced(); }),
+        x,
+      ]));
+    });
+    const add = el("button", { class: "alp-btn", text: "Add IPC channel" });
+    add.addEventListener("click", () => { state.board.ipc = state.board.ipc || []; state.board.ipc.push({ kind: "rpmsg", name: "alp_rpmsg", endpoints: [], carve_out_kb: 256 }); postUpdate(true); });
+    return advCard("IPC carve-outs", [list, add]);
   }
 
   // ---- field/layout helpers ----
