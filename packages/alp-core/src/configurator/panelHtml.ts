@@ -30,6 +30,10 @@ export function createConfiguratorPanelHtml(input: ConfiguratorPanelHtmlInput): 
     <span class="alp-div"></span>
     <h1>Board Configurator</h1>
     <span class="alp-spacer"></span>
+    <select id="alp-theme" class="alp-theme" title="Configurator theme">
+      <option value="brand">Brand</option>
+      <option value="vscode">Editor</option>
+    </select>
     <span id="alp-saved" class="alp-saved"></span>
   </header>
   <div class="alp-grid">

@@ -254,3 +254,30 @@ select:focus-visible {
 .alp-opt { padding: 9px 12px; cursor: pointer; font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-primary); border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
 .alp-opt:last-child { border-bottom: none; }
 .alp-opt:hover, .alp-opt.active { background: rgba(37, 65, 178, 0.18); }
+
+/* ---- VS Code theme mode ---- */
+body[data-theme="vscode"] {
+  --bg-base: var(--vscode-editor-background, #1e1e1e);
+  --bg-surface: var(--vscode-sideBar-background, #252526);
+  --bg-elev: var(--vscode-input-background, #2a2a2b);
+  --border-line: var(--vscode-panel-border, #3a3a3a);
+  --text-primary: var(--vscode-foreground, #ccc);
+  --text-muted: var(--vscode-descriptionForeground, #999);
+  --text-fade: var(--vscode-disabledForeground, #777);
+  --accent-brand: var(--vscode-button-background, #0e639c);
+  --accent-brand-hi: var(--vscode-button-hoverBackground, #1177bb);
+  --accent-npu: var(--vscode-focusBorder, #007fd4);
+  --ok: var(--vscode-testing-iconPassed, #5eead4);
+  --warn: var(--vscode-editorWarning-foreground, #fbbf24);
+  --err: var(--vscode-errorForeground, #f87171);
+  --font-sans: var(--vscode-font-family, system-ui, sans-serif);
+}
+.alp-theme {
+  background: var(--bg-elev);
+  color: var(--text-muted);
+  border: 1px solid var(--border-line);
+  border-radius: var(--r);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 6px;
+}

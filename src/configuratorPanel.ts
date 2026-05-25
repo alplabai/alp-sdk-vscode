@@ -90,12 +90,14 @@ class ConfiguratorPanel {
 
   private postRender(boardPath: string, sdkRoot: string | null): void {
     const catalogue = loadSdkCatalogue(sdkRoot, log);
+    const theme = vscode.workspace.getConfiguration("alpSdk").get<string>("configuratorTheme", "brand") === "vscode" ? "vscode" : "brand";
     const message: ConfiguratorOutboundMessage = {
       type: "render",
       viewModel: buildConfiguratorViewModel(this.board, catalogue),
       board: this.board,
       boardPath,
       sdkConnected: catalogue.soms.length > 0,
+      theme,
     };
     this.panel.webview.postMessage(message);
   }
@@ -120,6 +122,10 @@ class ConfiguratorPanel {
       this.refresh();
     } else if (msg.type === "previewEffectiveConfig") {
       void vscode.commands.executeCommand("alp.previewEffectiveConfig");
+    } else if (msg.type === "setTheme") {
+      void vscode.workspace.getConfiguration("alpSdk").update("configuratorTheme", msg.theme, vscode.ConfigurationTarget.Workspace);
+      const project = collectProjectContext();
+      if (project.boardYamlPath) this.postRender(project.boardYamlPath, project.sdkRoot ?? null);
     }
   }
 

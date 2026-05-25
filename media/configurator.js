@@ -60,6 +60,7 @@
     state.sdkConnected = msg.sdkConnected;
     if (msg.theme) state.theme = msg.theme;
     document.body.dataset.theme = state.theme;
+    const ts = document.getElementById("alp-theme"); if (ts) ts.value = state.theme;
     renderValidation();
     flashSaved("saved");
     if (state.suppressRebuild) { state.suppressRebuild = false; return; }
@@ -106,6 +107,10 @@
   bindClick("alp-reload", () => vscode.postMessage({ type: "reload" }));
   bindClick("alp-preview", () => vscode.postMessage({ type: "previewEffectiveConfig" }));
   function bindClick(id, fn) { const b = document.getElementById(id); if (b) b.addEventListener("click", fn); }
+
+  // ---- theme toggle ----
+  bindChange("alp-theme", (v) => vscode.postMessage({ type: "setTheme", theme: v }));
+  function bindChange(id, fn) { const e = document.getElementById(id); if (e) e.addEventListener("change", () => fn(e.value)); }
 
   // ============================ disconnected ============================
   function renderDisconnected() {

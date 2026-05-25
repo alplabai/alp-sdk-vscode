@@ -9,6 +9,7 @@ export interface RenderPayload {
   board: BoardConfig;
   boardPath: string;
   sdkConnected: boolean;
+  theme: "brand" | "vscode";
 }
 
 export interface SavedPayload {
@@ -27,4 +28,9 @@ export interface CommandMessage {
   type: "save" | "reload" | "previewEffectiveConfig";
 }
 
-export type ConfiguratorInboundMessage = UpdateMessage | CommandMessage;
+export interface SetThemeMessage {
+  type: "setTheme";
+  theme: "brand" | "vscode";
+}
+
+export type ConfiguratorInboundMessage = UpdateMessage | CommandMessage | SetThemeMessage;
