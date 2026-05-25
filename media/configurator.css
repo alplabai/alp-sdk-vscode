@@ -279,6 +279,16 @@ select:focus-visible {
 .alp-revlist { margin: 0 0 16px; padding-left: 20px; font-size: 0.84rem; color: var(--text-muted); }
 .alp-revlist.warn { color: var(--warn); }
 
+/* ---- advanced blocks ---- */
+.alp-advcard { border: 1px solid var(--border-line); border-radius: 7px; background: var(--bg-elev); margin-bottom: 14px; }
+.alp-advhd { padding: 11px 15px; border-bottom: 1px solid var(--border-line); border-radius: 7px 7px 0 0; font-family: var(--font-mono); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-muted); }
+.alp-advbody { padding: 14px 15px; display: flex; flex-direction: column; gap: 12px; }
+.alp-advbody .alp-field { margin-bottom: 0; }
+.alp-partlist { display: flex; flex-direction: column; gap: 8px; }
+.alp-partrow { display: grid; grid-template-columns: 1.4fr 0.9fr 1fr 1.2fr 20px; gap: 8px; align-items: center; }
+.alp-partrow.ipc { grid-template-columns: 1.2fr 1fr 1.6fr 0.8fr 20px; }
+.alp-partrow input, .alp-partrow select { width: 100%; }
+
 /* ---- VS Code theme mode ---- */
 body[data-theme="vscode"] {
   --bg-base: var(--vscode-editor-background, #1e1e1e);
