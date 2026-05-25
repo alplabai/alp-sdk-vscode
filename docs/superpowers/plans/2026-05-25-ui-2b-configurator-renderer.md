@@ -232,7 +232,90 @@ git commit -m "feat(configurator): render Cores section + searchable library sel
 
 ---
 
-### Task 4: Full-flow verification + headless capture
+### Task 4: VS Code theme option (brand ⇄ editor)
+
+Make the configurator able to follow the VS Code theme, toggled + persisted. Because the
+renderer/CSS use semantic tokens, this is a token-override block + a toggle + a setting.
+
+**Files:**
+- Modify: `media/configurator.css` (add `[data-theme="vscode"]` token overrides)
+- Modify: `packages/alp-core/src/configurator/{models.ts,panelHtml.ts}` (theme in payload +
+  header toggle), `media/configurator.js` (apply `data-theme` + toggle handler)
+- Modify: `src/configuratorPanel.ts` (read/persist the setting, include `theme` in render)
+- Modify: `package.json` (the `alpSdk.configuratorTheme` setting)
+
+- [ ] **Step 1: Add the setting**
+
+In `package.json` `contributes.configuration.properties`, add:
+
+```json
+        "alpSdk.configuratorTheme": {
+          "type": "string",
+          "enum": ["brand", "vscode"],
+          "enumDescriptions": ["Alp brand (Indigo-dark)", "Follow the VS Code color theme"],
+          "default": "brand",
+          "description": "Color theme for the Alp board configurator panel."
+        }
+```
+
+- [ ] **Step 2: Add the `[data-theme="vscode"]` token block**
+
+In `media/configurator.css`, after the `:root` brand tokens, append a block that remaps the
+semantic tokens to VS Code theme variables (with safe fallbacks):
+
+```css
+body[data-theme="vscode"] {
+  --bg-base: var(--vscode-editor-background, #1e1e1e);
+  --bg-surface: var(--vscode-editorWidget-background, #252526);
+  --bg-elev: var(--vscode-input-background, #2a2a2b);
+  --border-line: var(--vscode-panel-border, #3a3a3a);
+  --text-primary: var(--vscode-foreground, #ccc);
+  --text-muted: var(--vscode-descriptionForeground, #999);
+  --text-fade: var(--vscode-disabledForeground, #777);
+  --accent-brand: var(--vscode-button-background, #0e639c);
+  --accent-brand-hi: var(--vscode-button-hoverBackground, #1177bb);
+  --accent-npu: var(--vscode-focusBorder, #007fd4);
+  --ok: var(--vscode-testing-iconPassed, #5eead4);
+  --err: var(--vscode-errorForeground, #f87171);
+  --font-sans: var(--vscode-font-family, system-ui, sans-serif);
+}
+```
+
+(Brand mode is the default `:root`; `body` carries `data-theme="brand"` or `"vscode"`.)
+
+- [ ] **Step 3: Protocol + panel + setting wiring**
+
+- `RenderPayload` (core `configurator/models.ts`) gains `theme: "brand" | "vscode"`.
+- `ConfiguratorInboundMessage` gains `{ type: "setTheme"; theme: "brand" | "vscode" }`.
+- `configuratorPanel.ts`: read
+  `vscode.workspace.getConfiguration("alpSdk").get<string>("configuratorTheme", "brand")`,
+  include it in every `render`; handle `setTheme` by
+  `getConfiguration("alpSdk").update("configuratorTheme", theme, vscode.ConfigurationTarget.Workspace)`
+  then re-render.
+
+- [ ] **Step 4: Header toggle + apply**
+
+- `panelHtml.ts`: add a small theme control in the header (e.g. a two-option
+  `<select id="alp-theme">` with Brand/Editor, or a labeled button) before `#alp-saved`.
+- `media/configurator.js`: on `render`, set `document.body.dataset.theme = msg.theme` and
+  reflect the control's value; on change, post `{ type: "setTheme", theme }`.
+
+- [ ] **Step 5: Build + dev-host verify (USER)**
+
+Run: `pnpm run compile` → exit 0. Reload the dev host; toggle Brand ⇄ Editor and switch the
+VS Code color theme (e.g. a light theme) — the configurator chrome + sections should follow
+it in `vscode` mode and stay Indigo-dark in `brand` mode; the choice persists across reopen.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add package.json media/configurator.css media/configurator.js packages/alp-core/src/configurator/models.ts packages/alp-core/src/configurator/panelHtml.ts src/configuratorPanel.ts
+git commit -m "feat(configurator): brand/VS Code theme toggle (persisted)"
+```
+
+---
+
+### Task 5: Full-flow verification + headless capture
 
 - [ ] **Step 1: Headless render check (controller)**
 
@@ -253,8 +336,11 @@ show SoM·Preset. On sign-off, the `feat/configurator-ui` branch is ready to mer
 
 - **Spec coverage (UI-2 renderer parts):** pure selector filter tested in core (Task 1);
   Project & Hardware render + edit/save + disconnected state (Task 2); Cores + searchable
-  selector + IoT/override + live validation (Task 3); full-flow + headless capture + dev-host
-  sign-off (Task 4). Diagnostics/Storage/Security/Boot/OTA/IPC/Review remain UI-3.
+  selector + IoT/override + live validation (Task 3); brand/VS Code theme toggle (Task 4);
+  full-flow + headless capture + dev-host sign-off (Task 5). Diagnostics/Storage/Security/
+  Boot/OTA/IPC/Review remain UI-3.
+- **Theme tokens:** all CSS uses semantic tokens, so the `[data-theme="vscode"]` override
+  makes both chrome and sections follow the editor theme; brand (Indigo-dark) is the default.
 - **Testing honesty:** only `filterChoices` is unit-tested (no jsdom); the renderer is
   verified live + via a headless Playwright capture. This matches the UI-2 spec's testing
   section.
