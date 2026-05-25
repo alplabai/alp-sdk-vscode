@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as yaml from "js-yaml";
-import { BoardPreset, ChipDef, SomPreset } from "./models";
+import { BoardPreset, ChipDef, SocCore, SocSpec, SomPreset } from "./models";
 
 function isTbd(v: unknown): boolean {
   return typeof v === "string" && v.trim() === "TBD";
@@ -54,6 +54,25 @@ export function parseChipDef(text: string): ChipDef {
     driverStatus: str(d.driver_status),
     families: strList(d.families),
     kconfig: hasKconfig ? { zephyr, baremetal } : undefined,
+  };
+}
+
+export function parseSocSpec(text: string): SocSpec {
+  const d = JSON.parse(text) as Record<string, any>;
+  const cores: SocCore[] = Array.isArray(d.cores)
+    ? d.cores.map((c: Record<string, unknown>) => ({
+        id: String(c.id ?? ""),
+        type: String(c.type ?? ""),
+        count: typeof c.count === "number" ? c.count : 1,
+        freqMhz: num(c.freq_mhz),
+      }))
+    : [];
+  return {
+    ref: String(d.ref ?? ""),
+    vendor: String(d.vendor ?? ""),
+    family: String(d.family ?? ""),
+    part: String(d.part ?? ""),
+    cores,
   };
 }
 

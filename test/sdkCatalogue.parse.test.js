@@ -111,6 +111,30 @@ test("parseBoardPreset maps name, families, and populated", () => {
   assert.deepEqual(b.populated, { lsm6dso: true, ssd1306: true, ov5640: false });
 });
 
+const { parseSocSpec } = require("../packages/alp-core/dist/sdkCatalogue/parse.js");
+
+const SOC = JSON.stringify({
+  soc_spec_version: 1,
+  ref: "alif:ensemble:e7",
+  vendor: "Alif Semiconductor",
+  family: "Ensemble",
+  part: "E7",
+  cores: [
+    { id: "a32_cluster", type: "cortex-a32", count: 2, freq_mhz: 800 },
+    { id: "m55_hp", type: "cortex-m55", count: 1, freq_mhz: 400 },
+  ],
+});
+
+test("parseSocSpec maps ref + cores", () => {
+  const s = parseSocSpec(SOC);
+  assert.equal(s.ref, "alif:ensemble:e7");
+  assert.equal(s.part, "E7");
+  assert.deepEqual(s.cores, [
+    { id: "a32_cluster", type: "cortex-a32", count: 2, freqMhz: 800 },
+    { id: "m55_hp", type: "cortex-m55", count: 1, freqMhz: 400 },
+  ]);
+});
+
 const { parseChipDef } = require("../packages/alp-core/dist/sdkCatalogue/parse.js");
 
 const CHIP = `
