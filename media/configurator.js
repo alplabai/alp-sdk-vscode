@@ -89,6 +89,7 @@
     clear(m);
     if (!state.sdkConnected) { m.appendChild(renderDisconnected()); return; }
     if (state.active === "cores") m.appendChild(renderCores());
+    else if (state.active === "chips") m.appendChild(renderChips());
     else if (state.active === "diagnostics") m.appendChild(renderDiagnostics());
     else if (state.active === "review") m.appendChild(renderReview());
     else m.appendChild(renderProject());
@@ -300,38 +301,22 @@
     return card;
   }
 
-  // searchable add control (selected chips + filter dropdown), updates locally + posts
-  function renderLibrarySelector(coreId) {
-    const all = state.vm.libraries;
+  // generic searchable add control (selected chips + filter dropdown), updates locally + posts.
+  // getList()->string[] current selection; setList(arr) mutates the board.
+  function renderTagSelector(allIds, getList, setList, placeholder) {
     const wrap = el("div", { class: "alp-sel" });
     const chips = el("div", { class: "alp-selchips" });
     const combo = el("div", { class: "alp-combo" });
-    const input = el("input", { type: "text", placeholder: "Add library…" });
+    const input = el("input", { type: "text", placeholder: placeholder || "Add…" });
     const dd = el("div", { class: "alp-dd", style: "display:none" });
     let matches = [], active = -1;
 
-    const libs = () => { const c = state.board.cores && state.board.cores[coreId]; return (c && c.libraries) || []; };
-    function commit() {
-      const c = ensureCore(coreId);
-      const list = c.libraries || [];
-      if (!list.length) delete c.libraries;
-      rebuildChips(); refresh();
-      postUpdate(false); // suppressed: validation updates, selector keeps focus
-    }
-    function add(id) {
-      const c = ensureCore(coreId);
-      c.libraries = (c.libraries || []).slice();
-      if (!c.libraries.includes(id)) c.libraries.push(id);
-      input.value = ""; commit(); input.focus();
-    }
-    function remove(id) {
-      const c = ensureCore(coreId);
-      c.libraries = (c.libraries || []).filter((l) => l !== id);
-      commit();
-    }
+    function commit(arr) { setList(arr); rebuildChips(); refresh(); postUpdate(false); }
+    function add(id) { const arr = getList().slice(); if (!arr.includes(id)) arr.push(id); input.value = ""; commit(arr); input.focus(); }
+    function remove(id) { commit(getList().filter((l) => l !== id)); }
     function rebuildChips() {
       clear(chips);
-      const list = libs();
+      const list = getList();
       if (!list.length) chips.appendChild(el("span", { class: "alp-selempty", text: "none" }));
       for (const id of list) {
         const x = el("span", { class: "x", text: "×" });
@@ -341,8 +326,8 @@
     }
     function refresh() {
       const q = input.value.trim().toLowerCase();
-      const chosen = new Set(libs());
-      matches = all.filter((id) => !chosen.has(id) && id.toLowerCase().includes(q)).sort().slice(0, 8);
+      const chosen = new Set(getList());
+      matches = allIds.filter((id) => !chosen.has(id) && id.toLowerCase().includes(q)).sort().slice(0, 8);
       clear(dd); active = -1;
       if (!matches.length) { dd.style.display = "none"; return; }
       matches.forEach((id) => {
@@ -366,6 +351,31 @@
     wrap.appendChild(chips); wrap.appendChild(combo);
     rebuildChips();
     return wrap;
+  }
+
+  function renderLibrarySelector(coreId) {
+    return renderTagSelector(
+      state.vm.libraries,
+      () => { const c = state.board.cores && state.board.cores[coreId]; return (c && c.libraries) || []; },
+      (arr) => { const c = ensureCore(coreId); if (arr.length) c.libraries = arr; else delete c.libraries; },
+      "Add library…",
+    );
+  }
+
+  // ============================ Chips (project-wide chips[]) ============================
+  function renderChips() {
+    const sec = el("div", { class: "alp-section" });
+    sec.appendChild(el("p", { class: "alp-seclabel", text: "§ Chips" }));
+    sec.appendChild(el("p", { class: "alp-help", text: "Chip drivers the app links directly via <alp/chips/…>, project-wide. The list is filtered to the selected SoM's family." }));
+    const allChipIds = (state.vm.chips || []).map((c) => c.chipId);
+    const sel = renderTagSelector(
+      allChipIds,
+      () => state.board.chips || [],
+      (arr) => { if (arr.length) state.board.chips = arr; else delete state.board.chips; },
+      "Add chip driver…",
+    );
+    sec.appendChild(field("Linked chip drivers", sel, `${allChipIds.length} chip drivers available for this SoM`));
+    return sec;
   }
 
   // ============================ Diagnostics ============================
