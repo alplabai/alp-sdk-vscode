@@ -113,7 +113,13 @@
   function bindClick(id, fn) { const b = document.getElementById(id); if (b) b.addEventListener("click", fn); }
 
   // ---- theme toggle ----
-  bindChange("alp-theme", (v) => vscode.postMessage({ type: "setTheme", theme: v }));
+  // Apply instantly client-side (theme is purely a CSS data attribute); the panel
+  // only persists the choice. Avoids a render round-trip and a config read-after-write race.
+  bindChange("alp-theme", (v) => {
+    state.theme = v;
+    document.body.dataset.theme = v;
+    vscode.postMessage({ type: "setTheme", theme: v });
+  });
   function bindChange(id, fn) { const e = document.getElementById(id); if (e) e.addEventListener("change", () => fn(e.value)); }
 
   // ============================ disconnected ============================

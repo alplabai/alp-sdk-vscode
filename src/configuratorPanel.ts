@@ -123,9 +123,16 @@ class ConfiguratorPanel {
     } else if (msg.type === "previewEffectiveConfig") {
       void vscode.commands.executeCommand("alp.previewEffectiveConfig");
     } else if (msg.type === "setTheme") {
-      void vscode.workspace.getConfiguration("alpSdk").update("configuratorTheme", msg.theme, vscode.ConfigurationTarget.Workspace);
-      const project = collectProjectContext();
-      if (project.boardYamlPath) this.postRender(project.boardYamlPath, project.sdkRoot ?? null);
+      // The webview applies the theme instantly; here we only persist it.
+      // No postRender: a re-render would re-read the not-yet-committed config
+      // (one-selection-behind bug) and needlessly reload the SDK catalogue.
+      void vscode.workspace
+        .getConfiguration("alpSdk")
+        .update(
+          "configuratorTheme",
+          msg.theme === "vscode" ? "vscode" : "brand",
+          vscode.ConfigurationTarget.Workspace,
+        );
     }
   }
 
