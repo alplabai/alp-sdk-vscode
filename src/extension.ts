@@ -17,6 +17,7 @@ import { registerProjectView } from "./projectView";
 import { registerHardwareExplorerCommand } from "./hardwareExplorerPanel";
 import { registerSdkStatusCommands } from "./sdkStatus";
 import { registerToolchainCommands } from "./toolchain";
+import { registerOnboardingCommands } from "./onboarding";
 
 export function activate(context: vscode.ExtensionContext): void {
   startLanguageServer(context);
@@ -34,6 +35,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerHardwareExplorerCommand(context),
     ...registerSdkStatusCommands(),
     ...registerToolchainCommands(context),
+    ...registerOnboardingCommands(),
   );
 
   void maybeOfferFirstRunWizard(context);

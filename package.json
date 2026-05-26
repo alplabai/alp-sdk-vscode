@@ -179,6 +179,11 @@
         "command": "alp.toolchainDoctor",
         "title": "Alp: Toolchain doctor",
         "category": "Alp"
+      },
+      {
+        "command": "alp.newBoardFromSku",
+        "title": "Alp: New board.yaml from SKU",
+        "category": "Alp"
       }
     ],
     "viewsContainers": {
