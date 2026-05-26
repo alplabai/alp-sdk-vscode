@@ -3,23 +3,13 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import { execFileSync } from "child_process";
 import { collectProjectContext } from "./project/vscodeAdapter";
+import { probeTool } from "./toolchain/vscodeAdapter";
 import { loadSdkCatalogue } from "./sdkCatalogue/vscodeAdapter";
 import { loadBoardConfigFromFile } from "./configurator/boardIo";
 import { log, showOutput } from "./util";
 
 interface Check { label: string; value: string; ok: boolean; }
-
-/** Probe a CLI tool's version; ok=false if it isn't on PATH / errors. */
-function probe(cmd: string, args: string[]): { ok: boolean; value: string } {
-  try {
-    const out = execFileSync(cmd, args, { encoding: "utf-8", timeout: 4000 });
-    return { ok: true, value: out.trim().split(/\r?\n/)[0] };
-  } catch {
-    return { ok: false, value: "not found on PATH" };
-  }
-}
 
 function gatherStatus(): Check[] {
   const project = collectProjectContext();
@@ -27,8 +17,8 @@ function gatherStatus(): Check[] {
   const pythonCmd = process.platform === "win32" ? "python" : "python3";
 
   const sdkOk = !!project.sdkRoot && fs.existsSync(path.join(project.sdkRoot, "metadata"));
-  const py = probe(pythonCmd, ["--version"]);
-  const west = probe("west", ["--version"]);
+  const py = probeTool(pythonCmd, ["--version"]);
+  const west = probeTool("west", ["--version"]);
 
   return [
     { label: "alp-sdk", value: project.sdkRoot ?? "not set (alpSdk.path)", ok: sdkOk },
@@ -38,8 +28,8 @@ function gatherStatus(): Check[] {
       value: `${catalogue.soms.length} SoMs · ${catalogue.boards.length} boards · ${catalogue.chips.length} chips · ${catalogue.libraries.length} libraries`,
       ok: catalogue.soms.length > 0,
     },
-    { label: "Python", value: py.value, ok: py.ok },
-    { label: "west", value: west.value, ok: west.ok },
+    { label: "Python", value: py.detail ?? "not found on PATH", ok: py.present },
+    { label: "west", value: west.detail ?? "not found on PATH", ok: west.present },
   ];
 }
 
