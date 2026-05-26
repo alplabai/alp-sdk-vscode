@@ -19,39 +19,66 @@ import {
     collectWestWorkspaceContext,
     executeWestPlan,
 } from "./west/vscodeAdapter";
+import { normalizeBuildTarget, BuildTarget } from "@alp-sdk/core/west/buildTarget";
 
-async function pickBoardAndExamplePath(): Promise<{
-  board: string;
-  example: string;
-} | null> {
+const BUILD_TARGET_KEY = "alp.buildTarget";
+
+async function promptBuildTarget(
+  initial?: BuildTarget | null,
+): Promise<BuildTarget | null> {
   const board = await vscode.window.showInputBox({
     prompt: "Zephyr board target (e.g. native_sim/native/64, alp_e1m_evk_aen)",
-    value: "native_sim/native/64",
+    value: initial?.board ?? "native_sim/native/64",
   });
-  if (!board) return null;
+  if (board === undefined) return null;
   const example = await vscode.window.showInputBox({
     prompt: "Path to the application (relative to the west cwd)",
-    value: "examples/gpio-button-led",
+    value: initial?.example ?? "examples/gpio-button-led",
   });
-  if (!example) return null;
-  return { board, example };
+  if (example === undefined) return null;
+  return normalizeBuildTarget({ board, example });
 }
 
-async function westBuild(): Promise<void> {
-  const sel = await pickBoardAndExamplePath();
+async function resolveBuildTarget(
+  context: vscode.ExtensionContext,
+): Promise<BuildTarget | null> {
+  const remembered = normalizeBuildTarget(
+    context.workspaceState.get<BuildTarget>(BUILD_TARGET_KEY) ?? null,
+  );
+  if (remembered) return remembered;
+  const picked = await promptBuildTarget();
+  if (picked) await context.workspaceState.update(BUILD_TARGET_KEY, picked);
+  return picked;
+}
+
+async function setBuildTarget(context: vscode.ExtensionContext): Promise<void> {
+  const current = normalizeBuildTarget(
+    context.workspaceState.get<BuildTarget>(BUILD_TARGET_KEY) ?? null,
+  );
+  const picked = await promptBuildTarget(current);
+  if (!picked) return;
+  await context.workspaceState.update(BUILD_TARGET_KEY, picked);
+  vscode.window.setStatusBarMessage(
+    `Alp: build target set to ${picked.board} · ${picked.example}`,
+    5000,
+  );
+}
+
+async function westBuild(context: vscode.ExtensionContext): Promise<void> {
+  const sel = await resolveBuildTarget(context);
   if (!sel) return;
 
-  const context = collectWestWorkspaceContext();
+  const wsContext = collectWestWorkspaceContext();
   let preparation;
   try {
-    preparation = createWestBuildPreparation(context, sel);
+    preparation = createWestBuildPreparation(wsContext, sel);
   } catch (error) {
     await vscode.window.showErrorMessage(formatWestError(error));
     return;
   }
 
   const validationExecution = executeValidatorPlan(
-    context,
+    wsContext,
     preparation.validatorPlan,
   );
   if (validationExecution.stdout) log(validationExecution.stdout);
@@ -67,13 +94,13 @@ async function westBuild(): Promise<void> {
   const entries = [];
   for (const loaderPlan of preparation.loaderPlans) {
     ensureLoaderOutputDirectory(loaderPlan);
-    const execution = executeLoaderPlan(context, loaderPlan);
+    const execution = executeLoaderPlan(wsContext, loaderPlan);
     if (execution.stdout) log(execution.stdout);
     if (execution.stderr) log(execution.stderr);
     entries.push(inspectGeneratedFile(loaderPlan));
   }
 
-  const workspaceRoot = context.workspaceRoot;
+  const workspaceRoot = wsContext.workspaceRoot;
   if (!workspaceRoot) {
     await vscode.window.showErrorMessage("Alp: workspace root is unresolved.");
     return;
@@ -141,12 +168,17 @@ function formatWestError(error: unknown): string {
   return "Alp: an unexpected west workflow error occurred.";
 }
 
-export function registerWestCommands(): vscode.Disposable[] {
+export function registerWestCommands(
+  context: vscode.ExtensionContext,
+): vscode.Disposable[] {
   return [
-    vscode.commands.registerCommand("alp.westBuild", () => westBuild()),
+    vscode.commands.registerCommand("alp.westBuild", () => westBuild(context)),
     vscode.commands.registerCommand("alp.westFlash", () => westFlash()),
     vscode.commands.registerCommand("alp.westRunNativeSim", () =>
       westRunNativeSim(),
+    ),
+    vscode.commands.registerCommand("alp.setBuildTarget", () =>
+      setBuildTarget(context),
     ),
   ];
 }

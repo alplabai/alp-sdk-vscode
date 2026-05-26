@@ -22,7 +22,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     ...registerLoaderCommands(),
-    ...registerWestCommands(),
+    ...registerWestCommands(context),
     registerBootstrapCommand(),
     createStatusBar(context),
     registerConfiguratorCommand(context),

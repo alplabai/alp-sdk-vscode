@@ -164,6 +164,11 @@
         "command": "alp.openSomDocs",
         "title": "Alp: Open SoM documentation",
         "category": "Alp"
+      },
+      {
+        "command": "alp.setBuildTarget",
+        "title": "Alp: Set build target (board + app)",
+        "category": "Alp"
       }
     ],
     "viewsContainers": {
