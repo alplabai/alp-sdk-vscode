@@ -38,6 +38,8 @@
 
     // Compute
     wrap.appendChild(card("Compute", coresTable(data.cores || [])));
+    // Topology (per-core firmware mapping)
+    wrap.appendChild(card("Topology (per-core firmware)", topologyTable(s.topology || [])));
     // On-module chips
     wrap.appendChild(card("On-module", chipList(s.onModule || [])));
     // Pad routes (searchable)
@@ -67,6 +69,16 @@
   function coresTable(cores) {
     if (!cores.length) return el("span", { class: "alp-selempty", text: "core detail not in the SoC spec" });
     return table(["Core", "Type", "Count", "Freq (MHz)"], cores.map((c) => [c.id, c.type, c.count, c.freqMhz]));
+  }
+  function osOf(toolchain) {
+    const t = (toolchain || "").toLowerCase();
+    if (t.includes("zephyr")) return "Zephyr";
+    if (t.includes("poky") || t.includes("glibc")) return "Linux (Yocto)";
+    return "—";
+  }
+  function topologyTable(topo) {
+    if (!topo.length) return el("span", { class: "alp-selempty", text: "no topology declared" });
+    return table(["Core", "OS", "App / image", "Board / machine", "Toolchain"], topo.map((t) => [t.id, osOf(t.toolchain), t.app || t.image, t.board || t.machine, t.toolchain]));
   }
   function chipList(chips) {
     if (!chips.length) return el("span", { class: "alp-selempty", text: "none" });
