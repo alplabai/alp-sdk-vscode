@@ -34,7 +34,8 @@
   "activationEvents": [
     "onLanguage:yaml",
     "workspaceContains:**/board.yaml",
-    "onView:alpSdk.projectView"
+    "onView:alpSdk.projectView",
+    "onCommand:alp.connectSdk"
   ],
   "main": "./out/extension.js",
   "icon": "media/icon.png",
@@ -163,11 +164,6 @@
         "command": "alp.openSomDocs",
         "title": "Alp: Open SoM documentation",
         "category": "Alp"
-      },
-      {
-        "command": "alp.connectSdk",
-        "title": "Alp: Connect SDK",
-        "category": "Alp"
       }
     ],
     "viewsContainers": {
@@ -192,11 +188,6 @@
         "view": "alpSdk.projectView",
         "when": "!alpSdk.hasBoard",
         "contents": "No board.yaml found in this workspace.\n\n[Configure board](command:alp.openConfigurator)\n[New project wizard](command:alp.newProjectWizard)"
-      },
-      {
-        "view": "alpSdk.projectView",
-        "when": "!alpSdk.sdkConnected",
-        "contents": "No Alp SDK connected.\n\n[Connect SDK](command:alp.connectSdk)"
       }
     ],
     "menus": {

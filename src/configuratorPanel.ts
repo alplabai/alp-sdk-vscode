@@ -73,14 +73,6 @@ class ConfiguratorPanel {
       this.disposables,
     );
 
-    vscode.workspace.onDidChangeConfiguration(
-      (e) => {
-        if (e.affectsConfiguration("alpSdk.path")) this.refresh();
-      },
-      null,
-      this.disposables,
-    );
-
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.refresh();
   }
@@ -130,8 +122,6 @@ class ConfiguratorPanel {
       this.refresh();
     } else if (msg.type === "previewEffectiveConfig") {
       void vscode.commands.executeCommand("alp.previewEffectiveConfig");
-    } else if (msg.type === "connectSdk") {
-      void vscode.commands.executeCommand("alp.connectSdk");
     } else if (msg.type === "setTheme") {
       // The webview applies the theme instantly; here we only persist it.
       // No postRender: a re-render would re-read the not-yet-committed config

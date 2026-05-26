@@ -16,7 +16,6 @@ import {
 import { registerProjectView } from "./projectView";
 import { registerHardwareExplorerCommand } from "./hardwareExplorerPanel";
 import { registerSdkStatusCommands } from "./sdkStatus";
-import { registerSdkConnectCommand, maybeOfferSdkConnect } from "./sdkConnect";
 
 export function activate(context: vscode.ExtensionContext): void {
   startLanguageServer(context);
@@ -33,11 +32,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerProjectView(),
     registerHardwareExplorerCommand(context),
     ...registerSdkStatusCommands(),
-    registerSdkConnectCommand(),
   );
 
   void maybeOfferFirstRunWizard(context);
-  void maybeOfferSdkConnect(context);
 }
 
 export async function deactivate(): Promise<void> {

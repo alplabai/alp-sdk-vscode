@@ -11,7 +11,6 @@ class AlpProjectTreeProvider implements vscode.TreeDataProvider<AlpNode> {
   readonly onDidChangeTreeData = this.emitter.event;
   // Seeded by the mandatory refresh() in registerProjectView before first render.
   private summary: BoardSummary | null = null;
-  private sdkConnected = false;
 
   getTreeItem(node: AlpNode): vscode.TreeItem {
     const item = new vscode.TreeItem(
@@ -37,24 +36,17 @@ class AlpProjectTreeProvider implements vscode.TreeDataProvider<AlpNode> {
     if (node) {
       return node.children ?? [];
     }
-    return buildProjectNodes(this.summary, this.sdkConnected);
+    return buildProjectNodes(this.summary);
   }
 
   async refresh(): Promise<void> {
-    const project = collectProjectContext();
-    this.summary = loadBoardSummary(project.boardYamlPath);
-    this.sdkConnected = project.sdkRoot !== null;
+    this.summary = loadBoardSummary(collectProjectContext().boardYamlPath);
     // Await the context-key update so the welcome view's `!alpSdk.hasBoard`
     // guard is settled before the tree re-renders (no empty-tree flash).
     await vscode.commands.executeCommand(
       "setContext",
       "alpSdk.hasBoard",
       Boolean(this.summary?.sku),
-    );
-    await vscode.commands.executeCommand(
-      "setContext",
-      "alpSdk.sdkConnected",
-      this.sdkConnected,
     );
     this.emitter.fire();
   }

@@ -124,12 +124,9 @@
 
   // ============================ disconnected ============================
   function renderDisconnected() {
-    const connect = el("button", { class: "alp-btn primary", text: "Connect SDK" });
-    connect.addEventListener("click", () => vscode.postMessage({ type: "connectSdk" }));
     return el("div", { class: "alp-section" }, [
       el("p", { class: "alp-seclabel", text: "§ Not connected" }),
-      el("p", { class: "alp-help", text: "No Alp SDK connected. Connect a local alp-sdk checkout (or clone it) to load SoMs, boards, chips and libraries." }),
-      connect,
+      el("p", { class: "alp-help", text: "No Alp SDK found. Set alpSdk.path to your alp-sdk checkout to load SoMs, boards, chips and libraries." }),
     ]);
   }
 
