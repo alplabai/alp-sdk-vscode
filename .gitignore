@@ -29,3 +29,6 @@ coverage/
 
 # Playwright MCP scratch
 .playwright-mcp/
+
+# Local Claude Code config (personal, not shared)
+.claude/
