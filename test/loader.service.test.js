@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
 
 const {
   createLoaderPlan,
@@ -9,47 +10,58 @@ const {
 } = require("@alp-sdk/core/loader/service");
 
 test("createLoaderPlan resolves output and command line", () => {
+  const workspaceRoot = "/workspace/app";
+  const sdkRoot = "/workspace/sdk";
+  const boardYamlPath = "/workspace/app/board.yaml";
+
   const plan = createLoaderPlan(
     {
-      workspaceRoot: "/workspace/app",
-      sdkRoot: "/workspace/sdk",
-      boardYamlPath: "/workspace/app/board.yaml",
-      westCwd: "/workspace/app",
+      workspaceRoot,
+      sdkRoot,
+      boardYamlPath,
+      westCwd: workspaceRoot,
       pythonBinary: "python3",
     },
     "zephyr-conf",
   );
 
-  assert.equal(plan.outputPath, "/workspace/app/build/generated/alp.conf");
-  assert.equal(plan.scriptPath, "/workspace/sdk/scripts/alp_project.py");
+  const expectedOutputPath = path.join(workspaceRoot, "build/generated/alp.conf");
+  const expectedScriptPath = path.join(sdkRoot, "scripts", "alp_project.py");
+
+  assert.equal(plan.outputPath, expectedOutputPath);
+  assert.equal(plan.scriptPath, expectedScriptPath);
   assert.deepEqual(plan.args, [
     "--input",
-    "/workspace/app/board.yaml",
+    boardYamlPath,
     "--emit",
     "zephyr-conf",
     "--output",
-    "/workspace/app/build/generated/alp.conf",
+    expectedOutputPath,
   ]);
 });
 
 test("summarizeLoaderBatch separates written and failed outputs", () => {
-  const summary = summarizeLoaderBatch("/workspace/app", [
+  const workspaceRoot = "/workspace/app";
+  const outputPath = path.join(workspaceRoot, "build/generated/alp.conf");
+  const failedOutputPath = path.join(workspaceRoot, "build/generated/alp-yocto.conf");
+
+  const summary = summarizeLoaderBatch(workspaceRoot, [
     {
       emit: "zephyr-conf",
-      outputPath: "/workspace/app/build/generated/alp.conf",
+      outputPath,
       exists: true,
       size: 10,
     },
     {
       emit: "yocto-conf",
-      outputPath: "/workspace/app/build/generated/alp-yocto.conf",
+      outputPath: failedOutputPath,
       exists: false,
       size: 0,
     },
   ]);
 
   assert.deepEqual(summary, {
-    written: ["build/generated/alp.conf"],
+    written: [path.relative(workspaceRoot, outputPath)],
     failed: ["yocto-conf"],
   });
 });

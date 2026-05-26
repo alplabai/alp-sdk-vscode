@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
 
 const {
   analyzeValidationResult,
@@ -14,22 +15,25 @@ test("isBoardYamlPath matches board.yaml case-insensitively", () => {
 });
 
 test("createValidatorPlan builds the expected validator command", () => {
+  const sdkRoot = "/workspace/sdk";
+  const boardYamlPath = "/workspace/app/board.yaml";
+
   const plan = createValidatorPlan(
     {
       workspaceRoot: "/workspace/app",
-      sdkRoot: "/workspace/sdk",
-      boardYamlPath: "/workspace/app/board.yaml",
+      sdkRoot,
+      boardYamlPath,
       westCwd: "/workspace/app",
       pythonBinary: "python3",
     },
-    "/workspace/app/board.yaml",
+    boardYamlPath,
   );
 
   assert.equal(
     plan.scriptPath,
-    "/workspace/sdk/scripts/validate_board_yaml.py",
+    path.join(sdkRoot, "scripts", "validate_board_yaml.py"),
   );
-  assert.deepEqual(plan.args, ["--input", "/workspace/app/board.yaml"]);
+  assert.deepEqual(plan.args, ["--input", boardYamlPath]);
   assert.match(plan.commandLine, /python3 .*validate_board_yaml.py --input/);
 });
 

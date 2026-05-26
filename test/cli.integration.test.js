@@ -3,7 +3,9 @@ const assert = require("node:assert/strict");
 const cp = require("node:child_process");
 const path = require("node:path");
 
-const cliMain = path.join(__dirname, "..", "out", "cli", "main.js");
+// The CLI moved out of the extension build into its own package; its bin
+// ("alp") is packages/alp-cli/dist/cli/main.js.
+const cliMain = path.join(__dirname, "..", "packages", "alp-cli", "dist", "cli", "main.js");
 
 function runCli(args) {
   return cp.spawnSync(process.execPath, [cliMain, ...args], {

@@ -1,9 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
 
 const { resolveProjectContext } = require("@alp-sdk/core/project/service");
 
+// The service composes paths with Node's `path` module, so expectations are
+// built the same way to stay correct on both POSIX and Windows separators.
 test("resolveProjectContext resolves sdk, board yaml, west cwd, and python", () => {
+  const siblingSdk = path.resolve("/workspace/app", "..", "alp-sdk");
   const context = resolveProjectContext(
     {
       workspaceFolders: ["/workspace/app"],
@@ -16,13 +20,13 @@ test("resolveProjectContext resolves sdk, board yaml, west cwd, and python", () 
       platform: "darwin",
     },
     (candidatePath) =>
-      candidatePath === "/workspace/alp-sdk/scripts/alp_project.py",
+      candidatePath === path.join(siblingSdk, "scripts", "alp_project.py"),
   );
 
   assert.deepEqual(context, {
     workspaceRoot: "/workspace/app",
-    sdkRoot: "/workspace/alp-sdk",
-    boardYamlPath: "/workspace/app/configs/board.yaml",
+    sdkRoot: siblingSdk,
+    boardYamlPath: path.join("/workspace/app", "configs/board.yaml"),
     westCwd: "/workspace/app",
     pythonBinary: "python3",
   });
@@ -40,7 +44,8 @@ test("resolveProjectContext honors explicit settings", () => {
       },
       platform: "win32",
     },
-    (candidatePath) => candidatePath === "/custom/sdk/scripts/alp_project.py",
+    (candidatePath) =>
+      candidatePath === path.join("/custom/sdk", "scripts", "alp_project.py"),
   );
 
   assert.equal(context.sdkRoot, "/custom/sdk");
