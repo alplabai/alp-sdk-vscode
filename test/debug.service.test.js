@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
 
 const {
   buildDebugPreflightReport,
@@ -188,7 +189,7 @@ test("buildDebugPreflightReport can pass for resolved native-host profile", () =
     createRuntime(),
     {
       pathExists: (filePath) =>
-        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+        filePath.endsWith(path.join("build", "native_sim", "zephyr", "zephyr.exe")),
     },
   );
 

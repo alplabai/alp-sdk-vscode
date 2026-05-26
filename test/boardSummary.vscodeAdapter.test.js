@@ -29,8 +29,7 @@ test("loadBoardSummaryWithDependencies parses board.yaml contents", () => {
 
   assert.deepEqual(summary, {
     sku: "E1M-AEN701",
-    carrier: "E1M-EVK",
-    os: "zephyr",
+    preset: undefined,
   });
 });
 

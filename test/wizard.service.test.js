@@ -24,6 +24,7 @@ test("listWizardTemplates includes expected starter catalog", () => {
       "iot-starter",
       "edge-ai-starter",
       "board-diagnostics",
+      "host-tooling-starter",
     ],
   );
 });
