@@ -69,16 +69,23 @@ On `feat/dev-tools`:
   (python/west/cmake/ninja/dtc/gdb + Zephyr SDK env + python deps + alp CLI), reports it in the output
   channel **and** a webview panel with per-row non-destructive Fix actions. Pure analyzer/plan in
   `@alp-sdk/core/toolchain/*` (tested); `bootstrap.ts` + `sdkStatus.ts` refactored onto the shared core.
+- ✅ **Onboarding — New board.yaml from SKU** — `Alp: New board.yaml from SKU` picks a SoM (catalogue
+  QuickPick or input fallback), derives core ids, and writes a **valid v0.6** `board.yaml` (first core
+  Zephyr, rest off), opens it, offers the configurator. Pure `buildStarterBoardConfig` in
+  `@alp-sdk/core/board/starter.ts` (validated by `validateBoardConfig`).
+  **Finding:** the legacy `Alp: New project wizard` (`src/wizard.ts`) still uses the **pre-v0.6 BoardModel**
+  (carrier/os/iot) and emits a non-v0.6 board.yaml — recommend modernizing or retiring it (not done here).
 
 ## 6. What's PENDING (pick up here)
 
-Each remaining area needs its own spec → plan → build:
-1. ⬜ **Onboarding / project setup** — smarter New Project flow, create `board.yaml` from a SKU, scaffold
-   folders so a fresh clone is runnable fast. (Note: `src/wizard.ts` is the existing starting point.)
-
-Deferred earlier (need real hardware/environment to verify, so do these when you can test on a board):
-- ⬜ Generated-config viewer + diff, serial monitor / probe delegation (reuse `ms-vscode.vscode-serial-monitor`
-  / `marus25.cortex-debug`), memory-flash report, peripheral map.
+All three chosen "developer speedup" areas are now done. Remaining queued tools — most need real
+hardware/a build to verify, so do them when you can test on a board. **Two are NOT hardware-dependent**
+and are good next pick-ups:
+- ⬜ **Generated-config viewer + diff** (not hardware-dependent) — view/diff the generated `alp.conf` /
+  `alp.overlay` / `alp-cmake-args.txt` against the current board.yaml. Pure diff logic is testable.
+- ⬜ **Peripheral map** (catalogue-driven, not hardware-dependent) — visualize pad routes / pin usage.
+- ⬜ Serial monitor / probe delegation (reuse `ms-vscode.vscode-serial-monitor` / `marus25.cortex-debug`),
+  memory-flash report — need a device / build artifact to verify.
 
 ## 7. One open verification item
 
