@@ -25,7 +25,7 @@ export interface UpdateMessage {
 }
 
 export interface CommandMessage {
-  type: "save" | "reload" | "previewEffectiveConfig";
+  type: "save" | "reload" | "previewEffectiveConfig" | "connectSdk";
 }
 
 export interface SetThemeMessage {
