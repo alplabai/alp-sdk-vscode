@@ -148,6 +148,11 @@
         "title": "Alp: Refresh project view",
         "category": "Alp",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "alp.openHardwareExplorer",
+        "title": "Alp: Open hardware explorer",
+        "category": "Alp"
       }
     ],
     "viewsContainers": {

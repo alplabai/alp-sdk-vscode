@@ -14,6 +14,7 @@ import {
     registerProjectWizardCommand,
 } from "./wizard";
 import { registerProjectView } from "./projectView";
+import { registerHardwareExplorerCommand } from "./hardwareExplorerPanel";
 
 export function activate(context: vscode.ExtensionContext): void {
   startLanguageServer(context);
@@ -28,6 +29,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerLspCommands(),
     ...registerDebugCommands(),
     ...registerProjectView(),
+    registerHardwareExplorerCommand(context),
   );
 
   void maybeOfferFirstRunWizard(context);

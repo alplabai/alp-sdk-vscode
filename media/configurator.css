@@ -289,6 +289,14 @@ select:focus-visible {
 .alp-partrow.ipc { grid-template-columns: 1.2fr 1fr 1.6fr 0.8fr 20px; }
 .alp-partrow input, .alp-partrow select { width: 100%; }
 
+/* ---- hardware explorer tables ---- */
+.hx-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.hx-table th { text-align: left; font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-fade); padding: 6px 10px; border-bottom: 1px solid var(--border-line); }
+.hx-table td { padding: 6px 10px; border-bottom: 1px solid rgba(127, 127, 127, 0.12); color: var(--text-primary); font-family: var(--font-mono); font-size: 0.8rem; }
+.hx-table tr:last-child td { border-bottom: none; }
+.hx-search { width: 100%; background: var(--bg-base); border: 1px solid var(--border-line); border-radius: var(--r); color: var(--text-primary); font-family: var(--font-sans); font-size: 0.82rem; padding: 7px 10px; margin-bottom: 10px; }
+.hx-search:focus { outline: none; border-color: var(--accent-npu); box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.16); }
+
 /* ---- VS Code theme mode ---- */
 body[data-theme="vscode"] {
   --bg-base: var(--vscode-editor-background, #1e1e1e);
