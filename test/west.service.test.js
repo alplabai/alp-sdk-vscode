@@ -6,7 +6,7 @@ const {
   createWestBuildPlan,
   createWestFlashPlan,
   createWestNativeRunPlan,
-} = require("../out/west/service.js");
+} = require("@alp-sdk/core/west/service");
 
 function createWestContext(overrides = {}) {
   return {

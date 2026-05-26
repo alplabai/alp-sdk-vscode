@@ -1,8 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { createLaunchJsonWritePlan } = require("../out/debug/launchJsonCore.js");
-const { createLaunchPreview } = require("../out/debug/service.js");
+const { createLaunchJsonWritePlan } = require("@alp-sdk/core/debug/launchJsonCore");
+const { createLaunchPreview } = require("@alp-sdk/core/debug/service");
 
 function createConfiguration(name = "ALP: Zephyr Debug (J-Link)") {
   return {

@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { executeCli, parseCliArgs } = require("../out/cli/service.js");
+const { executeCli, parseCliArgs } = require("../packages/alp-cli/dist/cli/service.js");
 
 function createSpawnWith(status, stderr = "") {
   return () => ({

@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   loadBoardSummaryWithDependencies,
-} = require("../out/boardSummary/adapterCore.js");
+} = require("@alp-sdk/core/boardSummary/adapterCore");
 
 test("loadBoardSummaryWithDependencies returns null when file is missing", () => {
   const logs = [];

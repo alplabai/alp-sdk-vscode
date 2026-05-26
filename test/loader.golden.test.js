@@ -6,7 +6,7 @@ const path = require("node:path");
 const {
   createLoaderPlan,
   listGenerationTargetSupport,
-} = require("../out/loader/service.js");
+} = require("@alp-sdk/core/loader/service");
 
 function readGolden(relativePath) {
   const fullPath = path.join(__dirname, "golden", relativePath);

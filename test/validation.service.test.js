@@ -5,7 +5,7 @@ const {
   analyzeValidationResult,
   createValidatorPlan,
   isBoardYamlPath,
-} = require("../out/validation/service.js");
+} = require("@alp-sdk/core/validation/service");
 
 test("isBoardYamlPath matches board.yaml case-insensitively", () => {
   assert.equal(isBoardYamlPath("/tmp/board.yaml"), true);

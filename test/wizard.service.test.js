@@ -11,7 +11,7 @@ const {
   listModuleTemplates,
   listWizardTemplates,
   suggestTemplateIdFromBoardModel,
-} = require("../out/wizard/service.js");
+} = require("@alp-sdk/core/wizard/service");
 
 test("listWizardTemplates includes expected starter catalog", () => {
   const templates = listWizardTemplates();

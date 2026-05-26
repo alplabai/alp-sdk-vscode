@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const {
   collectRuntimeCapabilitiesFromCommands,
   createDebugWorkspaceContext,
-} = require("../out/debug/adapterCore.js");
+} = require("@alp-sdk/core/debug/adapterCore");
 
 function createProjectContext(overrides = {}) {
   return {
