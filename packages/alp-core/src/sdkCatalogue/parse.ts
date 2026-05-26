@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as yaml from "js-yaml";
-import { BoardPreset, ChipDef, I2cDevice, PadRoute, SocCore, SocSpec, SomPreset } from "./models";
+import { BoardPreset, ChipDef, I2cDevice, PadRoute, SocCore, SocSpec, SomPreset, TopologyCore } from "./models";
 
 function isTbd(v: unknown): boolean {
   return typeof v === "string" && v.trim() === "TBD";
@@ -109,6 +109,11 @@ export function parseSomPreset(text: string): SomPreset {
     }
   }
 
+  const topologyDetail: TopologyCore[] = Object.entries(topology).map(([id, t]) => {
+    const tc = (t ?? {}) as Record<string, unknown>;
+    return { id, app: str(tc.app), image: str(tc.image), machine: str(tc.machine), board: str(tc.board), toolchain: str(tc.toolchain) };
+  });
+
   return {
     sku: str(d.sku) ?? "",
     displayName: str(d.display_name) ?? str(d.sku) ?? "",
@@ -119,6 +124,7 @@ export function parseSomPreset(text: string): SomPreset {
     capabilities: boolMap(d.capabilities),
     defaultBoard: str(d.default_board),
     topologyCoreIds: Object.keys(topology),
+    topology: topologyDetail,
     onModule: Object.entries(onModuleRaw)
       // `silicon:` is the SoC reference (captured separately), not a companion chip.
       .filter(([key, val]) => key !== "silicon" && typeof val === "string" && !isTbd(val))

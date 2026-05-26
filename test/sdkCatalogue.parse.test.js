@@ -208,3 +208,24 @@ test("parseSomPreset defaults padRoutes/i2cDevices to [] when absent", () => {
   assert.deepEqual(s.padRoutes, []);
   assert.deepEqual(s.i2cDevices, []);
 });
+
+const TOPO = `
+sku: E1M-AEN701
+family: alif-ensemble
+silicon: alif:ensemble:e7
+display_name: AEN701
+topology:
+  a32_cluster: { app: alp-image-edge, machine: e1m-aen701-a32, toolchain: poky-glibc }
+  m55_hp: { app: alp-stock-shim, board: alp_e1m_aen701_m55_hp, toolchain: arm-zephyr-eabi }
+status: { preliminary: false }
+`;
+
+test("parseSomPreset captures full topology detail", () => {
+  const s = parseSomPreset(TOPO);
+  assert.deepEqual(s.topologyCoreIds, ["a32_cluster", "m55_hp"]);
+  assert.equal(s.topology.length, 2);
+  assert.deepEqual(s.topology[0], { id: "a32_cluster", app: "alp-image-edge", image: undefined, machine: "e1m-aen701-a32", board: undefined, toolchain: "poky-glibc" });
+  assert.equal(s.topology[1].id, "m55_hp");
+  assert.equal(s.topology[1].board, "alp_e1m_aen701_m55_hp");
+  assert.equal(s.topology[1].toolchain, "arm-zephyr-eabi");
+});
