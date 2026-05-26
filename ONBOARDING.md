@@ -65,14 +65,15 @@ On `feat/dev-tools`:
 - ✅ **Build/flash/debug ergonomics** — `west build` runs via the VS Code Task API with a contributed
   `$alp-west` problem matcher (errors → Problems panel); status-bar Build/Flash buttons; remembered build
   target (`Alp: Set build target`); `Alp: Generate .vscode/tasks.json`. Specs/plans dated 2026-05-26.
+- ✅ **Toolchain bootstrap + doctor** — `Alp: Toolchain doctor` probes the Zephyr build toolchain
+  (python/west/cmake/ninja/dtc/gdb + Zephyr SDK env + python deps + alp CLI), reports it in the output
+  channel **and** a webview panel with per-row non-destructive Fix actions. Pure analyzer/plan in
+  `@alp-sdk/core/toolchain/*` (tested); `bootstrap.ts` + `sdkStatus.ts` refactored onto the shared core.
 
 ## 6. What's PENDING (pick up here)
 
 Each remaining area needs its own spec → plan → build:
-1. ⬜ **Toolchain bootstrap + doctor** — detect/install python, west, Zephyr SDK with one-click fixes; an
-   environment doctor that diagnoses what's missing and offers repairs. (Note: `src/bootstrap.ts` already
-   has a basic per-OS dependency installer to build on.)
-2. ⬜ **Onboarding / project setup** — smarter New Project flow, create `board.yaml` from a SKU, scaffold
+1. ⬜ **Onboarding / project setup** — smarter New Project flow, create `board.yaml` from a SKU, scaffold
    folders so a fresh clone is runnable fast. (Note: `src/wizard.ts` is the existing starting point.)
 
 Deferred earlier (need real hardware/environment to verify, so do these when you can test on a board):
