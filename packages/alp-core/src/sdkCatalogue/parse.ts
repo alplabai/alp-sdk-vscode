@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as yaml from "js-yaml";
-import { BoardPreset, ChipDef, SocCore, SocSpec, SomPreset } from "./models";
+import { BoardPreset, ChipDef, I2cDevice, PadRoute, SocCore, SocSpec, SomPreset } from "./models";
 
 function isTbd(v: unknown): boolean {
   return typeof v === "string" && v.trim() === "TBD";
@@ -88,6 +88,27 @@ export function parseSomPreset(text: string): SomPreset {
   const flashMbit = num(memory.flash_mbit);
   const hasMemory = dramMbit !== undefined || flashMbit !== undefined;
 
+  const padRoutesRaw = Array.isArray(d.pad_routes) ? d.pad_routes : [];
+  const padRoutes: PadRoute[] = padRoutesRaw
+    .filter((r: any) => r && typeof r.e1m === "string")
+    .map((r: any) => ({
+      e1m: String(r.e1m),
+      dispatch: String(r.dispatch ?? ""),
+      dispatchPin: r.dispatch_pin != null ? String(r.dispatch_pin) : undefined,
+      doc: str(r.doc),
+    }));
+
+  const i2cRaw = (onModuleRaw.i2c_devices ?? {}) as Record<string, any>;
+  const i2cDevices: I2cDevice[] = [];
+  for (const [bus, def] of Object.entries(i2cRaw)) {
+    const devs = (def && Array.isArray(def.devices)) ? def.devices : [];
+    for (const dv of devs) {
+      if (dv && typeof dv.chip === "string") {
+        i2cDevices.push({ bus, chip: dv.chip, role: str(dv.role), address: str(dv.address_7bit) });
+      }
+    }
+  }
+
   return {
     sku: str(d.sku) ?? "",
     displayName: str(d.display_name) ?? str(d.sku) ?? "",
@@ -104,5 +125,7 @@ export function parseSomPreset(text: string): SomPreset {
       .map(([, val]) => val as string),
     memory: hasMemory ? { dramMbit, flashMbit } : undefined,
     preliminary: Boolean(status.preliminary),
+    padRoutes,
+    i2cDevices,
   };
 }

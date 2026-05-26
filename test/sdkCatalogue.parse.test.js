@@ -165,3 +165,46 @@ test("parseChipDef maps chip fields including families + kconfig", () => {
   assert.deepEqual(c.families, ["aen", "v2n", "v2n-m1"]);
   assert.deepEqual(c.kconfig, { zephyr: "ALP_SDK_CHIP_LSM6DSO", baremetal: "ALP_SDK_CHIP_LSM6DSO" });
 });
+
+const AEN_ROUTES = `
+sku: E1M-AEN701
+family: alif-ensemble
+silicon: alif:ensemble:e7
+display_name: AEN701
+on_module:
+  silicon: alif:ensemble:e7
+  wifi_ble: cc3501e
+  i2c_devices:
+    brd_i2c:
+      bus_master: alif
+      devices:
+        - { chip: rv3028c7, role: rtc, address_7bit: "0x52" }
+        - { chip: tmp112, role: temp_sensor, address_7bit: "0x40" }
+pad_routes:
+  - { e1m: E1M_SPI1, dispatch: cc3501e, doc: "inter-chip SPI" }
+  - { e1m: E1M_GPIO_IO11, dispatch: cc3501e, dispatch_pin: 2 }
+topology:
+  m55_hp: { app: x }
+status: { preliminary: false }
+`;
+
+test("parseSomPreset captures pad_routes", () => {
+  const s = parseSomPreset(AEN_ROUTES);
+  assert.equal(s.padRoutes.length, 2);
+  assert.deepEqual(s.padRoutes[0], { e1m: "E1M_SPI1", dispatch: "cc3501e", dispatchPin: undefined, doc: "inter-chip SPI" });
+  assert.equal(s.padRoutes[1].e1m, "E1M_GPIO_IO11");
+  assert.equal(s.padRoutes[1].dispatchPin, "2");
+});
+
+test("parseSomPreset flattens on-module i2c_devices", () => {
+  const s = parseSomPreset(AEN_ROUTES);
+  assert.equal(s.i2cDevices.length, 2);
+  assert.deepEqual(s.i2cDevices[0], { bus: "brd_i2c", chip: "rv3028c7", role: "rtc", address: "0x52" });
+  assert.equal(s.i2cDevices[1].chip, "tmp112");
+});
+
+test("parseSomPreset defaults padRoutes/i2cDevices to [] when absent", () => {
+  const s = parseSomPreset("sku: E1M-AEN701\nfamily: alif-ensemble\nsilicon: x\ndisplay_name: y\ntopology: { m55_hp: {} }\nstatus: { preliminary: false }\n");
+  assert.deepEqual(s.padRoutes, []);
+  assert.deepEqual(s.i2cDevices, []);
+});

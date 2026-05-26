@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+export interface PadRoute { e1m: string; dispatch: string; dispatchPin?: string; doc?: string; }
+export interface I2cDevice { bus: string; chip: string; role?: string; address?: string; }
+
 export interface SomPreset {
   sku: string;
   displayName: string;
@@ -13,6 +16,8 @@ export interface SomPreset {
   onModule: string[];
   memory?: { dramMbit?: number; flashMbit?: number };
   preliminary: boolean;
+  padRoutes: PadRoute[];
+  i2cDevices: I2cDevice[];
 }
 
 export interface BoardPreset {
