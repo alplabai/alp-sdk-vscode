@@ -5,7 +5,11 @@ import { createStatusBarPresentation } from "@alp-sdk/core/boardSummary/service"
 import { loadBoardSummary } from "./boardSummary/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 
+// Mirrors BUILD_TARGET_KEY in src/west.ts — the remembered { board, example }.
+const BUILD_TARGET_KEY = "alp.buildTarget";
+
 function refresh(
+  context: vscode.ExtensionContext,
   summaryItem: vscode.StatusBarItem,
   buildItem: vscode.StatusBarItem,
   flashItem: vscode.StatusBarItem,
@@ -16,6 +20,14 @@ function refresh(
   summaryItem.tooltip = presentation.tooltip;
   summaryItem.command = presentation.command;
   summaryItem.show();
+
+  const target = context.workspaceState.get<{ board?: string; example?: string }>(
+    BUILD_TARGET_KEY,
+  );
+  buildItem.tooltip =
+    target?.board && target?.example
+      ? `Alp: west build — ${target.board} · ${target.example}`
+      : "Alp: west build";
 
   if (summary?.sku) {
     buildItem.show();
@@ -39,7 +51,6 @@ export function createStatusBar(
     99,
   );
   buildItem.text = "$(tools) Build";
-  buildItem.tooltip = "Alp: west build";
   buildItem.command = "alp.westBuild";
 
   const flashItem = vscode.window.createStatusBarItem(
@@ -50,12 +61,12 @@ export function createStatusBar(
   flashItem.tooltip = "Alp: west flash";
   flashItem.command = "alp.westFlash";
 
-  refresh(summaryItem, buildItem, flashItem);
+  refresh(context, summaryItem, buildItem, flashItem);
 
   const watcher = vscode.workspace.createFileSystemWatcher("**/board.yaml");
-  watcher.onDidChange(() => refresh(summaryItem, buildItem, flashItem));
-  watcher.onDidCreate(() => refresh(summaryItem, buildItem, flashItem));
-  watcher.onDidDelete(() => refresh(summaryItem, buildItem, flashItem));
+  watcher.onDidChange(() => refresh(context, summaryItem, buildItem, flashItem));
+  watcher.onDidCreate(() => refresh(context, summaryItem, buildItem, flashItem));
+  watcher.onDidDelete(() => refresh(context, summaryItem, buildItem, flashItem));
 
   context.subscriptions.push(watcher, summaryItem, buildItem, flashItem);
 
