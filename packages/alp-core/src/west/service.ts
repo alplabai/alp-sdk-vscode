@@ -6,6 +6,7 @@ import {
     WestBuildInput,
     WestBuildPreparation,
     WestCommandPlan,
+    WestPlanKind,
     WestWorkspaceContext,
 } from "./models";
 
@@ -17,6 +18,7 @@ export function createWestBuildPlan(
     context,
     "alp · west build",
     `west build -b ${input.board} ${input.example} -p auto`,
+    "build",
   );
 }
 
@@ -36,19 +38,20 @@ export function createWestBuildPreparation(
 export function createWestFlashPlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west flash", "west flash");
+  return createWestCommandPlan(context, "alp · west flash", "west flash", "flash");
 }
 
 export function createWestNativeRunPlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west run", "west build -t run");
+  return createWestCommandPlan(context, "alp · west run", "west build -t run", "run");
 }
 
 function createWestCommandPlan(
   context: WestWorkspaceContext,
   terminalName: string,
   command: string,
+  kind: WestPlanKind,
 ): WestCommandPlan {
   const env: Record<string, string> = {};
   if (context.sdkRoot) {
@@ -60,6 +63,7 @@ function createWestCommandPlan(
     command,
     westCwd: context.westCwd,
     env,
+    kind,
   };
 }
 

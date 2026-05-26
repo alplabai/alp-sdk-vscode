@@ -32,6 +32,7 @@ test("createWestBuildPlan builds the expected west command", () => {
     env: {
       EXTRA_ZEPHYR_MODULES: "/workspace/sdk",
     },
+    kind: "build",
   });
 });
 
@@ -43,6 +44,7 @@ test("createWestFlashPlan preserves cwd and uses an empty env without sdkRoot", 
     command: "west flash",
     westCwd: "/workspace/app",
     env: {},
+    kind: "flash",
   });
 });
 

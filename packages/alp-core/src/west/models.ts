@@ -11,11 +11,14 @@ export interface WestBuildInput {
   example: string;
 }
 
+export type WestPlanKind = "build" | "flash" | "run";
+
 export interface WestCommandPlan {
   terminalName: string;
   command: string;
   westCwd: string | null;
   env: Record<string, string>;
+  kind: WestPlanKind;
 }
 
 export interface WestBuildPreparation {
