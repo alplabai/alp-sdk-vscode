@@ -184,6 +184,11 @@
         "command": "alp.newBoardFromSku",
         "title": "Alp: New board.yaml from SKU",
         "category": "Alp"
+      },
+      {
+        "command": "alp.checkGeneratedConfig",
+        "title": "Alp: Check generated config",
+        "category": "Alp"
       }
     ],
     "viewsContainers": {
