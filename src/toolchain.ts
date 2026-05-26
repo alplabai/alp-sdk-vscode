@@ -4,7 +4,8 @@ import * as vscode from "vscode";
 import { analyzeToolchain, ToolchainReport } from "@alp-sdk/core/toolchain/doctor";
 import { fixCommand, ToolchainFixId, BootstrapHost } from "@alp-sdk/core/toolchain/bootstrapPlan";
 import { collectToolchainInputs } from "./toolchain/vscodeAdapter";
-import { log, showOutput } from "./util";
+import { log } from "./util";
+import { showToolchainDoctorPanel } from "./toolchain/doctorPanel";
 
 function host(): BootstrapHost {
   return process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
@@ -38,7 +39,7 @@ export function buildToolchainReport(): ToolchainReport {
   return analyzeToolchain(collectToolchainInputs());
 }
 
-function registerDoctorCommand(): vscode.Disposable {
+function registerDoctorCommand(context: vscode.ExtensionContext): vscode.Disposable {
   return vscode.commands.registerCommand("alp.toolchainDoctor", async () => {
     const report = buildToolchainReport();
     reportToOutput(report);
@@ -48,12 +49,12 @@ function registerDoctorCommand(): vscode.Disposable {
       : `Toolchain — ${report.missingRequired} required item(s) missing`;
     const actions = ["Show report", firstFix ? "Fix missing" : "", "Settings"].filter(Boolean);
     const pick = await vscode.window.showInformationMessage(summary, ...actions);
-    if (pick === "Show report") showOutput();
+    if (pick === "Show report") showToolchainDoctorPanel(context);
     else if (pick === "Fix missing" && firstFix?.fixId) runToolchainFix(firstFix.fixId);
     else if (pick === "Settings") void vscode.commands.executeCommand("workbench.action.openSettings", "alpSdk");
   });
 }
 
-export function registerToolchainCommands(): vscode.Disposable[] {
-  return [registerDoctorCommand()];
+export function registerToolchainCommands(context: vscode.ExtensionContext): vscode.Disposable[] {
+  return [registerDoctorCommand(context)];
 }

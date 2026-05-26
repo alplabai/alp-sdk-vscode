@@ -1,0 +1,14 @@
+:root { color-scheme: light dark; }
+body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); margin: 0; padding: 0 16px 24px; }
+.alp-doc-header { display: flex; align-items: baseline; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--vscode-panel-border); position: sticky; top: 0; background: var(--vscode-editor-background); }
+.alp-doc-title { font-size: 16px; font-weight: 600; }
+.alp-doc-summary { opacity: 0.8; }
+.alp-doc-row { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+.alp-doc-glyph { font-weight: 700; }
+.alp-doc-ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+.alp-doc-warn { color: var(--vscode-testing-iconQueued, #d29922); }
+.alp-doc-missing { color: var(--vscode-testing-iconFailed, #f85149); }
+.alp-doc-label { font-weight: 600; }
+.alp-doc-detail { opacity: 0.75; font-size: 12px; }
+.alp-doc-fix { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; }
+.alp-doc-fix:hover { background: var(--vscode-button-hoverBackground); }

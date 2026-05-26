@@ -33,7 +33,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerProjectView(),
     registerHardwareExplorerCommand(context),
     ...registerSdkStatusCommands(),
-    ...registerToolchainCommands(),
+    ...registerToolchainCommands(context),
   );
 
   void maybeOfferFirstRunWizard(context);
