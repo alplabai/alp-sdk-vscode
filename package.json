@@ -153,6 +153,16 @@
         "command": "alp.openHardwareExplorer",
         "title": "Alp: Open hardware explorer",
         "category": "Alp"
+      },
+      {
+        "command": "alp.sdkStatus",
+        "title": "Alp: SDK status",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openSomDocs",
+        "title": "Alp: Open SoM documentation",
+        "category": "Alp"
       }
     ],
     "viewsContainers": {
@@ -229,6 +239,11 @@
           "enumDescriptions": ["Alp brand (Indigo-dark)", "Follow the VS Code color theme"],
           "default": "brand",
           "description": "Color theme for the Alp board configurator panel."
+        },
+        "alpSdk.docsBaseUrl": {
+          "type": "string",
+          "default": "https://alplab.ai",
+          "description": "Base URL for 'Alp: Open SoM documentation' links (docs + per-SoM product page)."
         }
       }
     }
