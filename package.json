@@ -211,6 +211,26 @@
         "path": "./snippets/board-yaml.json"
       }
     ],
+    "problemPatterns": [
+      {
+        "name": "alp-west-gcc",
+        "regexp": "^(.+?):(\\d+):(\\d+):\\s+(warning|error|fatal error):\\s+(.+)$",
+        "file": 1,
+        "line": 2,
+        "column": 3,
+        "severity": 4,
+        "message": 5
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "alp-west",
+        "owner": "alp",
+        "source": "west",
+        "fileLocation": ["autoDetect", "${workspaceFolder}"],
+        "pattern": "alp-west-gcc"
+      }
+    ],
     "configuration": {
       "title": "ALP SDK",
       "properties": {
