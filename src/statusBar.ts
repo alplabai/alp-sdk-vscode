@@ -5,29 +5,59 @@ import { createStatusBarPresentation } from "@alp-sdk/core/boardSummary/service"
 import { loadBoardSummary } from "./boardSummary/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 
-function refresh(item: vscode.StatusBarItem): void {
+function refresh(
+  summaryItem: vscode.StatusBarItem,
+  buildItem: vscode.StatusBarItem,
+  flashItem: vscode.StatusBarItem,
+): void {
   const summary = loadBoardSummary(collectProjectContext().boardYamlPath);
   const presentation = createStatusBarPresentation(summary);
-  item.text = presentation.text;
-  item.tooltip = presentation.tooltip;
-  item.command = presentation.command;
-  item.show();
+  summaryItem.text = presentation.text;
+  summaryItem.tooltip = presentation.tooltip;
+  summaryItem.command = presentation.command;
+  summaryItem.show();
+
+  if (summary?.sku) {
+    buildItem.show();
+    flashItem.show();
+  } else {
+    buildItem.hide();
+    flashItem.hide();
+  }
 }
 
 export function createStatusBar(
   context: vscode.ExtensionContext,
 ): vscode.Disposable {
-  const item = vscode.window.createStatusBarItem(
+  const summaryItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     100,
   );
-  refresh(item);
+
+  const buildItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    99,
+  );
+  buildItem.text = "$(tools) Build";
+  buildItem.tooltip = "Alp: west build";
+  buildItem.command = "alp.westBuild";
+
+  const flashItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    98,
+  );
+  flashItem.text = "$(zap) Flash";
+  flashItem.tooltip = "Alp: west flash";
+  flashItem.command = "alp.westFlash";
+
+  refresh(summaryItem, buildItem, flashItem);
 
   const watcher = vscode.workspace.createFileSystemWatcher("**/board.yaml");
-  watcher.onDidChange(() => refresh(item));
-  watcher.onDidCreate(() => refresh(item));
-  watcher.onDidDelete(() => refresh(item));
-  context.subscriptions.push(watcher);
+  watcher.onDidChange(() => refresh(summaryItem, buildItem, flashItem));
+  watcher.onDidCreate(() => refresh(summaryItem, buildItem, flashItem));
+  watcher.onDidDelete(() => refresh(summaryItem, buildItem, flashItem));
 
-  return item;
+  context.subscriptions.push(watcher, summaryItem, buildItem, flashItem);
+
+  return summaryItem;
 }
