@@ -26,3 +26,6 @@ coverage/
 
 # Superpowers brainstorm visual-companion scratch
 .superpowers/
+
+# Playwright MCP scratch
+.playwright-mcp/

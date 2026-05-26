@@ -11,6 +11,24 @@
 				"--branch"
 			],
 			"group": "build"
+		},
+		{
+			"label": "watch",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"run",
+				"watch"
+			],
+			"isBackground": true,
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": "$tsc-watch",
+			"presentation": {
+				"reveal": "never"
+			}
 		}
 	]
 }
