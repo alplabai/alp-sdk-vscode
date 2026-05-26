@@ -64,7 +64,7 @@ the environment and renders.
   (no required check missing) and `missingRequired`.
 
 `@alp-sdk/core/toolchain/bootstrapPlan.ts` (refactor of `bootstrap.ts` logic)
-- `ToolchainFixId` — union: `"python-deps" | "west" | "zephyr-sdk" | "yocto-host" | "vendor-baremetal"`.
+- `ToolchainFixId` — union: `"python-deps" | "west" | "build-tools" | "zephyr-sdk"`. (`build-tools` covers cmake/ninja/dtc/gdb via the Zephyr getting-started pointer; yocto/baremetal install paths stay in `planForHost`, reached through the existing `Alp: Install dependencies` command rather than per-check doctor fixes.)
 - `BootstrapHost = "linux" | "darwin" | "win32"`; `BootstrapOs = "zephyr" | "yocto" | "baremetal"`.
 - `BootstrapPlan = { title; steps: { description; command }[]; pointers: { name; url }[] }`.
 - `planForHost(host, os): BootstrapPlan` — moved verbatim from bootstrap.ts (now tested).

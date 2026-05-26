@@ -42,5 +42,6 @@ export function showToolchainDoctorPanel(context: vscode.ExtensionContext): void
     current = undefined;
   });
   current = panel;
-  postReport(panel);
+  // No eager postReport here: the webview posts `reload` once its listener is
+  // ready, which drives the first render (an eager post would be dropped).
 }
