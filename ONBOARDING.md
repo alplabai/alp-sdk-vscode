@@ -75,17 +75,22 @@ On `feat/dev-tools`:
   `@alp-sdk/core/board/starter.ts` (validated by `validateBoardConfig`).
   **Finding:** the legacy `Alp: New project wizard` (`src/wizard.ts`) still uses the **pre-v0.6 BoardModel**
   (carrier/os/iot) and emits a non-v0.6 board.yaml — recommend modernizing or retiring it (not done here).
+- ✅ **Generated-config staleness** — `Alp: Check generated config` warns when `build/generated/*` are
+  stale vs `board.yaml` (or missing) and offers `Generate all`. Pure `analyzeGenerationStaleness` in
+  `@alp-sdk/core/loader/staleness.ts` (tested). (The *content* diff is deferred — it needs to run the
+  python loader to produce the expected output.)
 
 ## 6. What's PENDING (pick up here)
 
-All three chosen "developer speedup" areas are now done. Remaining queued tools — most need real
-hardware/a build to verify, so do them when you can test on a board. **Two are NOT hardware-dependent**
-and are good next pick-ups:
-- ⬜ **Generated-config viewer + diff** (not hardware-dependent) — view/diff the generated `alp.conf` /
-  `alp.overlay` / `alp-cmake-args.txt` against the current board.yaml. Pure diff logic is testable.
-- ⬜ **Peripheral map** (catalogue-driven, not hardware-dependent) — visualize pad routes / pin usage.
-- ⬜ Serial monitor / probe delegation (reuse `ms-vscode.vscode-serial-monitor` / `marus25.cortex-debug`),
-  memory-flash report — need a device / build artifact to verify.
+All three chosen "developer speedup" areas are done, plus the staleness check. Remaining queued tools
+each need a device / build artifact / running the python loader to verify properly, so do them with the
+SDK + hardware on hand:
+- ⬜ **Generated-config content diff** — diff a freshly-run loader output against the on-disk generated
+  file (needs python + SDK to regenerate). The staleness check (done) covers the mtime case.
+- ⬜ **Peripheral map** — visualize pad routes / pin usage (overlaps the existing Hardware explorer;
+  decide whether to extend it rather than add a new view).
+- ⬜ **Serial monitor / probe delegation** (reuse `ms-vscode.vscode-serial-monitor` / `marus25.cortex-debug`)
+  and **memory-flash report** — need a connected device / a real build to verify.
 
 ## 7. One open verification item
 
