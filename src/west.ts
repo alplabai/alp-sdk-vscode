@@ -18,7 +18,10 @@ import {
 import {
     collectWestWorkspaceContext,
     executeWestPlan,
+    readTasksJson,
+    writeTasksJson,
 } from "./west/vscodeAdapter";
+import { buildAlpWestTasks, createTasksJsonWritePlan } from "@alp-sdk/core/west/tasksJsonCore";
 import { normalizeBuildTarget, BuildTarget } from "@alp-sdk/core/west/buildTarget";
 
 const BUILD_TARGET_KEY = "alp.buildTarget";
@@ -160,6 +163,36 @@ async function showValidationFailure(
   }
 }
 
+async function generateTasksJson(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const project = collectWestWorkspaceContext();
+  const workspaceRoot = project.workspaceRoot;
+  if (!workspaceRoot) {
+    await vscode.window.showErrorMessage(
+      "Alp: open a workspace folder before generating tasks.json.",
+    );
+    return;
+  }
+  const target = await resolveBuildTarget(context);
+  if (!target) return;
+
+  try {
+    const plan = createTasksJsonWritePlan(
+      readTasksJson(workspaceRoot),
+      buildAlpWestTasks(target),
+    );
+    const filePath = writeTasksJson(workspaceRoot, plan.content);
+    vscode.window.showInformationMessage(
+      `Alp: ${plan.replaced ? "updated" : "wrote"} build/flash tasks in ${filePath}`,
+    );
+  } catch (error) {
+    await vscode.window.showErrorMessage(
+      error instanceof Error ? error.message : "Alp: failed to write tasks.json.",
+    );
+  }
+}
+
 function formatWestError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -179,6 +212,9 @@ export function registerWestCommands(
     ),
     vscode.commands.registerCommand("alp.setBuildTarget", () =>
       setBuildTarget(context),
+    ),
+    vscode.commands.registerCommand("alp.generateTasksJson", () =>
+      generateTasksJson(context),
     ),
   ];
 }
