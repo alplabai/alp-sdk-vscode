@@ -9,16 +9,22 @@ export function collectWestWorkspaceContext(): WestWorkspaceContext {
 }
 
 export function executeWestPlan(plan: WestCommandPlan): void {
-  const existing = vscode.window.terminals.find(
-    (terminal) => terminal.name === plan.terminalName,
-  );
-  const terminal =
-    existing ??
-    vscode.window.createTerminal({
-      name: plan.terminalName,
+  const problemMatchers = plan.kind === "build" ? ["$alp-west"] : [];
+  const task = new vscode.Task(
+    { type: "alp-west", kind: plan.kind },
+    vscode.TaskScope.Workspace,
+    plan.terminalName,
+    "alp",
+    new vscode.ShellExecution(plan.command, {
       cwd: plan.westCwd ?? undefined,
       env: plan.env,
-    });
-  terminal.show(true);
-  terminal.sendText(plan.command);
+    }),
+    problemMatchers,
+  );
+  task.presentationOptions = {
+    reveal: vscode.TaskRevealKind.Always,
+    panel: vscode.TaskPanelKind.Dedicated,
+    clear: true,
+  };
+  void vscode.tasks.executeTask(task);
 }
