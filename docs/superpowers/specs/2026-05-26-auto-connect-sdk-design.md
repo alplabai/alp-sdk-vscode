@@ -37,12 +37,17 @@ Follows the repo convention: hard logic is pure and unit-tested in
 - `candidateSdkPaths(workspaceRoot: string | null, homeDir: string): string[]`
   Returns an **ordered** list of absolute paths to probe (see Detection order).
   Pure: it only joins/normalizes strings.
-- `isSdkRoot(hasFile: (relativePath: string) => boolean): boolean`
+- `isSdkRoot(root, pathExists): boolean`
   Predicate deciding whether a directory is a valid SDK root. Takes an injected
-  "does this relative file exist" function — **no filesystem access** — so it is
-  fully unit-testable against fixture file-maps. A directory is a valid SDK root
-  when it contains `metadata/sdk_version.yaml` (the catalogue source the
-  extension actually reads via the existing `loadSdkCatalogue`).
+  `pathExists` function — **no direct filesystem access** — so it is fully
+  unit-testable. A directory is a valid SDK root when it contains
+  **`scripts/alp_project.py`**. This deliberately matches the marker used by the
+  existing `resolveProjectContext`/`resolveSdkRoot` (`service.ts`): that resolver
+  is the real gate that turns a configured `alpSdk.path` into a live `sdkRoot`
+  (and thus loads the catalogue). If `isSdkRoot` used a different marker (e.g.
+  `metadata/sdk_version.yaml`), we could "connect" to a path the resolver then
+  rejects, leaving the UI stuck on NOT CONNECTED. The SDK checkout ships both
+  `scripts/alp_project.py` and `metadata/`, so this marker is correct.
 
 ### VS Code adapter — `src/sdkConnect/index.ts`
 
@@ -132,8 +137,8 @@ post-connect:
   - `candidateSdkPaths` — correct ordering and platform-independent path joining
     for representative `workspaceRoot` / `homeDir` inputs (incl. `null`
     workspace).
-  - `isSdkRoot` — true only when `metadata/sdk_version.yaml` is present; false for
-    near-misses (only `metadata/`, only `scripts/alp_project.py`, empty).
+  - `isSdkRoot` — true only when `scripts/alp_project.py` is present; false for
+    near-misses (only `metadata/`, only a `scripts/` dir without the file, empty).
 - **VS Code adapter** — thin; verified in the Extension Development Host per this
   repo's established practice (no jsdom / no vscode unit tests). Manual check:
   unset `alpSdk.path`, run the command, confirm detection finds the sibling
