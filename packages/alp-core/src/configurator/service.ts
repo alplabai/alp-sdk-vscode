@@ -42,7 +42,7 @@ export function createEmptyPresetCatalogue(): PresetCatalogue {
       "cmsis_dsp",
       "littlefs",
     ],
-    inferenceBackends: ["auto", "cpu", "ethos_u", "drpai", "deepx_dx"],
+    inferenceBackends: ["auto", "cpu", "ethos_u", "drpai", "deepx_dxm1"],
     logLevels: ["error", "warn", "info", "debug", "trace"],
     osChoices: ["zephyr", "yocto", "baremetal"],
   };

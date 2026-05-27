@@ -102,7 +102,7 @@ const VALUE_CHOICES: Readonly<Record<string, readonly string[]>> = {
   os: ["zephyr", "yocto", "baremetal"],
   "som.sku": ["E1M-AEN701"],
   "carrier.name": ["E1M-EVK"],
-  "inference.backend": ["auto", "cpu", "ethos_u", "drpai", "deepx_dx"],
+  "inference.backend": ["auto", "cpu", "ethos_u", "drpai", "deepx_dxm1"],
   "diagnostics.log_level": ["error", "warn", "info", "debug", "trace"],
   "diagnostics.last_error": ["true", "false"],
   "iot.wifi": ["true", "false"],

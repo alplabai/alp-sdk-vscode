@@ -31,7 +31,7 @@
     "prefix": "alp-inference",
     "body": [
       "inference:",
-      "  backend: ${1|auto,cpu,ethos_u,drpai,deepx_dx|}",
+      "  backend: ${1|auto,cpu,ethos_u,drpai,deepx_dxm1|}",
       "  default_arena_kib: ${2:128}"
     ],
     "description": "Pick an inference backend explicitly (defaults to the SoM preset's preferred_backend)."
