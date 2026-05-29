@@ -9,6 +9,8 @@
 src/**
 test/**
 packages/**
+!packages/alp-webview/dist/
+!packages/alp-webview/dist/**
 node_modules/**
 dist/**
 docs/**

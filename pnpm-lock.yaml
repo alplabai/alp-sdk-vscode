@@ -30,9 +30,15 @@ importers:
       '@types/vscode':
         specifier: ^1.85.0
         version: 1.120.0
+      '@vitejs/plugin-react':
+        specifier: ^6.0.2
+        version: 6.0.2(vite@8.0.14(@types/node@25.7.0)(esbuild@0.28.0))
       '@vscode/vsce':
         specifier: ^3.9.1
         version: 3.9.1
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -1248,6 +1254,19 @@ packages:
     engines: {node: ^14.18.0 || >=16.0.0}
     peerDependencies:
       vite: ^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
+
+  '@vitejs/plugin-react@6.0.2':
+    resolution: {integrity: sha512-DlSMqo4WhThw4vB8Mpn0Woe9J+Jfq1geJ61AKW0QEgLzGMNwtIMdxbDUzLxcun8W7NbJO0e2Jg/Nxm3cCSVzzg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    peerDependencies:
+      '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0
+      babel-plugin-react-compiler: ^1.0.0
+      vite: ^8.0.0
+    peerDependenciesMeta:
+      '@rolldown/plugin-babel':
+        optional: true
+      babel-plugin-react-compiler:
+        optional: true
 
   '@voidzero-dev/vite-plus-core@0.1.22':
     resolution: {integrity: sha512-OC7tChagbJCoY7YKzD5MuyxJO1km5IF42B3ltZoQ9Twc8UuPrMuWZrVoP984tJKYd/gFJuQFM/lrbNtBm9kyDg==}
@@ -3652,6 +3671,11 @@ snapshots:
       vite: 5.4.21(@types/node@25.7.0)(lightningcss@1.32.0)
     transitivePeerDependencies:
       - supports-color
+
+  '@vitejs/plugin-react@6.0.2(vite@8.0.14(@types/node@25.7.0)(esbuild@0.28.0))':
+    dependencies:
+      '@rolldown/pluginutils': 1.0.1
+      vite: 8.0.14(@types/node@25.7.0)(esbuild@0.28.0)
 
   '@voidzero-dev/vite-plus-core@0.1.22(@types/node@25.7.0)(esbuild@0.28.0)(typescript@6.0.3)':
     dependencies:
