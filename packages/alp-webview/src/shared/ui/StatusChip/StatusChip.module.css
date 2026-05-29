@@ -1,0 +1,23 @@
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-xl);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  /* foreground is always badge-foreground — set per-variant below */
+  color: var(--vscode-badge-foreground);
+}
+
+.badge[data-variant="ready"] {
+  background: var(--status-ok);
+}
+
+.badge[data-variant="setup-required"],
+.badge[data-variant="not-updated"] {
+  background: var(--status-warn);
+}
+
+.badge[data-variant="not-installed"] {
+  background: var(--status-err);
+}
