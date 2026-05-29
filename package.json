@@ -311,7 +311,7 @@
     "test": "pnpm run compile && node --test test/*.test.js",
     "install:vscode": "bash ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",
-    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --outfile=out/extension.js --external:vscode --tsconfig=tsconfig.json --log-level=warning && esbuild src/lsp/server.ts --bundle --platform=node --format=cjs --target=node18 --outfile=out/lsp/server.js --external:vscode --tsconfig=tsconfig.json --log-level=warning",
+    "bundle": "vp pack",
     "vscode:prepublish": "pnpm run compile && pnpm run bundle",
     "package": "vsce package --no-dependencies"
   },
@@ -326,8 +326,8 @@
     "@types/node": "^25.7.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.9.1",
-    "esbuild": "^0.28.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vite-plus": "^0.1.22"
   },
   "packageManager": "pnpm@11.4.0"
 }
