@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type {
-    BoardModel,
-    PresetCatalogue,
-} from "@alp-sdk/core/configurator/models";
+import type { BoardConfig } from "@alp-sdk/core/board/models";
+import type { ConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
 import type {
     LocalSdkEntry,
     SdkReadinessState,
@@ -15,9 +13,9 @@ import type { SomPreset, SocCore } from "@alp-sdk/core/sdkCatalogue/models";
 
 // Re-export so callers only need this module.
 export type {
-    BoardModel,
+    BoardConfig,
+    ConfiguratorViewModel,
     LocalSdkEntry,
-    PresetCatalogue,
     SdkRelease,
     SocCore,
     SomPreset,
@@ -121,11 +119,12 @@ export interface ProjectTemplatesDataMessage {
   modules: E1mModule[];
 }
 
-export interface ConfiguratorInitMessage {
-  type: "configuratorInit";
-  model: BoardModel;
-  catalogue: PresetCatalogue;
+export interface ConfiguratorRenderMessage {
+  type: "configuratorRender";
+  viewModel: ConfiguratorViewModel;
+  board: BoardConfig;
   boardPath: string;
+  sdkConnected: boolean;
 }
 
 export interface ConfiguratorSavedMessage {
@@ -150,7 +149,7 @@ export type ExtToWebviewMessage =
   | SdkReleasesLoadedMessage
   | SdkInstallProgressMessage
   | ProjectTemplatesDataMessage
-  | ConfiguratorInitMessage
+  | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
   | HardwareExplorerDataMessage;
@@ -231,9 +230,13 @@ export interface OpenExistingProjectMessage {
   activate: boolean;
 }
 
-export interface SaveBoardModelMessage {
-  type: "saveBoardModel";
-  model: BoardModel;
+export interface ConfiguratorUpdateMessage {
+  type: "configuratorUpdate";
+  board: BoardConfig;
+}
+
+export interface SaveBoardConfigMessage {
+  type: "saveBoardConfig";
 }
 
 export interface ReloadConfiguratorMessage {
@@ -268,7 +271,8 @@ export type WebviewToExtMessage =
   | ClosePanelMessage
   | CreateNewProjectMessage
   | OpenExistingProjectMessage
-  | SaveBoardModelMessage
+  | SaveBoardConfigMessage
+  | ConfiguratorUpdateMessage
   | ReloadConfiguratorMessage
   | PreviewEffectiveConfigMessage
   | RunToolchainFixMessage

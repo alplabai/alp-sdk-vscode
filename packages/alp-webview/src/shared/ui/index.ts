@@ -4,6 +4,8 @@ export { Card } from "./Card";
 export { Divider } from "./Divider";
 export { EmptyState } from "./EmptyState";
 export { Field } from "./Field";
+export { Icon } from "./Icon";
+export type { IconName, IconProps } from "./Icon";
 export { ResourceLink } from "./ResourceLink";
 export { Skeleton } from "./Skeleton";
 export { Spinner } from "./Spinner";

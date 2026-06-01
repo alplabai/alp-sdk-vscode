@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import { buildConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
+import type { BoardConfig } from "@alp-sdk/core/board/models";
 import {
-    loadBoardModel,
-    loadPresetCatalogue,
-    saveBoardModel,
-} from "./configurator/vscodeAdapter";
+    loadBoardConfigFromFile,
+    saveBoardConfigToFile,
+} from "./configurator/boardIo";
 import {
     type ExtToWebviewMessage,
     type WebviewToExtMessage,
 } from "./ideHub/messages";
 import { buildWebviewHtml } from "./ideHub/webviewHtml";
 import { collectProjectContext } from "./project/vscodeAdapter";
+import { loadSdkCatalogue } from "./sdkCatalogue/vscodeAdapter";
+import { log } from "./util";
 
 const PANEL_VIEW_TYPE = "alpConfigurator";
 const PANEL_TITLE = "ALP Board Configurator";
@@ -19,6 +22,8 @@ const PANEL_TITLE = "ALP Board Configurator";
 class ConfiguratorPanel {
   private static current: ConfiguratorPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
+  private board: BoardConfig = { som: { sku: "" }, cores: {} };
+
   private readonly disposables: vscode.Disposable[] = [];
 
   static show(context: vscode.ExtensionContext): void {
@@ -76,30 +81,43 @@ class ConfiguratorPanel {
       );
       return;
     }
+    this.board = loadBoardConfigFromFile(boardPath);
+    this.postRender(boardPath, project.sdkRoot ?? null);
+  }
+
+  private postRender(boardPath: string, sdkRoot: string | null): void {
+    const catalogue = loadSdkCatalogue(sdkRoot, (m) => log(m));
     const message: ExtToWebviewMessage = {
-      type: "configuratorInit",
-      model: loadBoardModel(boardPath),
-      catalogue: loadPresetCatalogue(project),
+      type: "configuratorRender",
+      viewModel: buildConfiguratorViewModel(this.board, catalogue),
+      board: this.board,
       boardPath,
+      sdkConnected: catalogue.soms.length > 0,
     };
     void this.panel.webview.postMessage(message);
   }
 
   private onMessage(msg: WebviewToExtMessage): void {
+    const project = collectProjectContext();
+    const boardPath = project.boardYamlPath;
     switch (msg.type) {
       case "ready":
         this.refresh();
         break;
-      case "saveBoardModel": {
-        const boardPath = collectProjectContext().boardYamlPath;
+      case "configuratorUpdate":
+        if (!boardPath) return;
+        this.board = msg.board;
+        this.postRender(boardPath, project.sdkRoot ?? null);
+        break;
+      case "saveBoardConfig": {
         if (!boardPath) return;
         try {
-          saveBoardModel(boardPath, msg.model);
-          const message: ExtToWebviewMessage = {
+          saveBoardConfigToFile(boardPath, this.board);
+          const saved: ExtToWebviewMessage = {
             type: "configuratorSaved",
             boardPath,
           };
-          void this.panel.webview.postMessage(message);
+          void this.panel.webview.postMessage(saved);
           vscode.window.setStatusBarMessage(`Alp: saved ${boardPath}`, 5000);
         } catch (e) {
           void vscode.window.showErrorMessage(`Alp: save failed: ${e}`);

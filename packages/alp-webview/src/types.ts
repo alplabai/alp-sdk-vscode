@@ -101,61 +101,182 @@ export interface E1mModule {
   family: string;
 }
 
-// ── Configurator (board.yaml) model — mirrored from
-//    @alp-sdk/core/configurator/models. The webview is a separate build and
-//    cannot import core sources, so these are kept in sync manually. ──
+// ── Configurator (board.yaml) — rich model mirrored from
+//    @alp-sdk/core/board/models + configurator/viewModel. The webview is a
+//    separate build and cannot import core sources, so these are kept in sync
+//    manually. ──
+export type CoreOs = "zephyr" | "yocto" | "baremetal" | "off";
+export type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+export type LogLevelOrOff = LogLevel | "off";
+
+export interface CoreInference {
+  default_arena_kib?: number;
+}
+export interface CoreIot {
+  wifi?: boolean;
+  mqtt?: boolean;
+  ble?: boolean;
+  tls?: boolean;
+}
 export interface CoreEntry {
-  os: "zephyr" | "yocto" | "baremetal" | "off";
+  os?: CoreOs;
   app?: string;
   image?: string;
   peripherals?: string[];
   libraries?: string[];
-  inference?: { backend?: string; default_arena_kib?: number };
-  iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
+  inference?: CoreInference;
+  iot?: CoreIot;
 }
 
-export interface IpcCarveOut {
+export interface StoragePartition {
   name: string;
-  endpoints: string[];
   size_kib: number;
+  fs?: "littlefs" | "fat" | "ext4" | "raw";
+  mount?: string;
+  flash_device?: string;
+  offset_kib?: number;
+  raw?: boolean;
 }
 
-export interface BoardModel {
-  schema_version: number;
-  som: { sku: string };
-  carrier?: { name: string; populated?: Record<string, boolean> };
-  /** v1 only. Absent in schema_version >= 2 (use `cores` instead). */
-  os?: string;
-  /** v2 only. Per-core runtime + app mapping. */
-  cores?: Record<string, CoreEntry>;
-  /** v2 only. Cross-core IPC shared-memory carve-outs. */
-  ipc?: IpcCarveOut[];
-  inference?: { backend?: string; default_arena_kib?: number };
-  libraries?: string[];
-  iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
-  diagnostics?: { last_error?: boolean; log_level?: string };
+export interface SecurityPsa {
+  persistent_slots?: number;
+  its_storage?: string;
+  ps_storage?: string;
+  tfm?: boolean;
+  attestation_root?: "optiga_trust_m" | "tfm_internal" | "none";
+}
+export interface Security {
+  psa?: SecurityPsa;
+}
+
+export interface BootSigning {
+  algorithm: "ecdsa_p256" | "rsa2048" | "rsa3072" | "ed25519";
+  key_file: string;
+}
+export interface Boot {
+  method?: "mcuboot" | "none";
+  signing?: BootSigning;
+  swap_algorithm?: "scratch" | "move" | "overwrite";
+  scratch_size_kib?: number;
+  anti_rollback?: boolean;
+  build_type?: "Release" | "Debug" | "MinSizeRel";
+}
+
+export interface OtaServer {
+  url: string;
+  tenant?: string;
+  tls_ca_bundle?: string;
+}
+export interface Ota {
+  provider: "mender" | "hawkbit" | "mcumgr" | "none";
+  artifact_name?: string;
+  signing_key?: string;
+  server?: OtaServer;
+  poll_interval_s?: number;
+}
+
+export interface IpcEntry {
+  kind: "rpmsg" | "raw_shmem" | "mailbox_only";
+  endpoints: string[];
+  carve_out_kb: number;
+  name: string;
+  cacheable?: boolean;
+  address?: number;
+}
+
+export interface Diagnostics {
+  last_error?: boolean;
+  log_level?: LogLevel;
+  modules?: Record<string, LogLevelOrOff>;
+}
+
+export interface BoardConfig {
+  name?: string;
+  description?: string;
+  preset?: string;
+  hw_rev?: string;
+  som: { sku: string; hw_rev?: string };
+  cores: Record<string, CoreEntry>;
+  populated?: Record<string, boolean>;
+  chips?: string[];
+  ipc?: IpcEntry[];
+  diagnostics?: Diagnostics;
+  storage?: StoragePartition[];
+  security?: Security;
+  boot?: Boot;
+  ota?: Ota;
   [key: string]: unknown;
 }
 
-export interface CarrierPreset {
+// ── Configurator view-model (host-computed, read-only on the webview) ──
+export interface SomOptionGroup {
+  family: string;
+  soms: { sku: string; displayName: string; preliminary: boolean }[];
+}
+export interface HardwareCard {
+  sku: string;
+  displayName: string;
+  silicon: string;
+  cores: { id: string; type: string; count: number; freqMhz?: number }[];
+  preferredBackend?: string;
+  defaultBoard?: string;
+  onModule: string[];
+  preliminary: boolean;
+}
+export interface CorePanel {
+  id: string;
+  inheritedFromTopology: boolean;
+  os?: string;
+  app?: string;
+  image?: string;
+  peripherals: string[];
+  libraries: string[];
+  iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
+  inferenceArenaKib?: number;
+}
+export interface ChipChoice {
+  chipId: string;
+  displayName: string;
+  vendor?: string;
+  bus?: string;
+  driverStatus?: string;
+  enabled: boolean;
+}
+export interface AcceleratorAvail {
+  id: string;
+  label: string;
+  available: boolean;
+}
+export interface BoardPreset {
   name: string;
+  displayName: string;
+  hostsSomFamilies: string[];
   populated: Record<string, boolean>;
 }
-
-export interface PresetCatalogue {
-  skus: string[];
-  carriers: CarrierPreset[];
+export interface ValidationResult {
+  errors: string[];
+  warnings: string[];
+}
+export interface ConfiguratorViewModel {
+  sdkConnected: boolean;
+  som: { selected: string; options: SomOptionGroup[] };
+  hardware: HardwareCard | null;
+  accelerators: AcceleratorAvail[];
+  boardMode: "preset" | "inline";
+  carriers: { selected?: string; options: BoardPreset[] };
+  cores: CorePanel[];
   libraries: string[];
-  inferenceBackends: string[];
-  logLevels: string[];
-  osChoices: string[];
+  chips: ChipChoice[];
+  projectChips: string[];
+  validation: ValidationResult;
 }
 
-export interface ConfiguratorInitMessage {
-  type: "configuratorInit";
-  model: BoardModel;
-  catalogue: PresetCatalogue;
+export interface ConfiguratorRenderMessage {
+  type: "configuratorRender";
+  viewModel: ConfiguratorViewModel;
+  board: BoardConfig;
   boardPath: string;
+  sdkConnected: boolean;
 }
 
 export interface ConfiguratorSavedMessage {
@@ -242,7 +363,7 @@ export type ExtToWebviewMessage =
   | SdkReleasesLoadedMessage
   | SdkInstallProgressMessage
   | ProjectTemplatesDataMessage
-  | ConfiguratorInitMessage
+  | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
   | HardwareExplorerDataMessage;
@@ -287,9 +408,12 @@ export interface OpenExistingProjectMessage {
   type: "openExistingProject";
   activate: boolean;
 }
-export interface SaveBoardModelMessage {
-  type: "saveBoardModel";
-  model: BoardModel;
+export interface ConfiguratorUpdateMessage {
+  type: "configuratorUpdate";
+  board: BoardConfig;
+}
+export interface SaveBoardConfigMessage {
+  type: "saveBoardConfig";
 }
 export interface ReloadConfiguratorMessage {
   type: "reloadConfigurator";
@@ -318,7 +442,8 @@ export type WebviewToExtMessage =
   | ClosePanelMessage
   | CreateNewProjectMessage
   | OpenExistingProjectMessage
-  | SaveBoardModelMessage
+  | SaveBoardConfigMessage
+  | ConfiguratorUpdateMessage
   | ReloadConfiguratorMessage
   | PreviewEffectiveConfigMessage
   | RunToolchainFixMessage

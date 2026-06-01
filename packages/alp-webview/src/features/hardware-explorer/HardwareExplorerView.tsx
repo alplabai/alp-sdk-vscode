@@ -24,14 +24,18 @@ export function HardwareExplorerView() {
   if (!sdkConnected || som === null) {
     return (
       <EmptyState
-        icon="circuit-board"
+        icon="🔌"
         title={sdkConnected ? "No SoM configured" : "SDK not connected"}
         description={
           sdkConnected
             ? "Open a project with a board.yaml that specifies a SoM SKU."
             : "Connect or install an ALP SDK to explore hardware details."
         }
-        action={{ label: "Reload", onClick: reload }}
+        action={
+          <Button appearance="secondary" onClick={reload}>
+            Reload
+          </Button>
+        }
       />
     );
   }
@@ -51,15 +55,14 @@ export function HardwareExplorerView() {
       <div className={styles.header}>
         <span className={styles.sku}>{som.sku}</span>
         <span className={styles.family}>{som.displayName}</span>
-        <Button
+        <button
+          type="button"
           className={styles.reloadBtn}
-          variant="secondary"
-          size="small"
           onClick={reload}
           aria-label="Reload hardware data"
         >
           Reload
-        </Button>
+        </button>
       </div>
 
       {/* Compute — SoC cores */}

@@ -1,7 +1,7 @@
 import { useAppContext } from "../../shared/AppContext";
 import { Button, Skeleton, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
-import type { ChipState } from "../../types";
+import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./SetupView.module.css";
 

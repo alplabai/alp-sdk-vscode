@@ -1,5 +1,6 @@
 import { useAppContext } from "../../shared/AppContext";
-import { Button, Card, Skeleton, StatusChip } from "../../shared/ui";
+import { Icon, Skeleton, StatusChip } from "../../shared/ui";
+import type { IconName } from "../../shared/ui";
 import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./OverviewView.module.css";
@@ -77,51 +78,101 @@ function isAllReady(state: AlpIdeState): boolean {
   );
 }
 
+function run(command: string) {
+  postMessage({ type: "runCommand", command });
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-interface CardProps {
-  icon: string;
+function Brand({ subtitle }: { subtitle: string }) {
+  return (
+    <header className={styles.topbar}>
+      <div className={styles.brand}>
+        <span className={styles.bolt} aria-hidden="true">
+          <Icon name="bolt" size={18} />
+        </span>
+        <span className={styles.brandName}>
+          ALP<span className={styles.brandLab}>LAB</span>
+        </span>
+      </div>
+      <span className={styles.topDivider} aria-hidden="true" />
+      <span className={styles.topTitle}>{subtitle}</span>
+    </header>
+  );
+}
+
+interface StatusCardProps {
+  icon: IconName;
   title: string;
   chip: ChipState;
   meta: string;
 }
 
-function StatusCard({ icon, title, chip, meta }: CardProps) {
+function StatusCard({ icon, title, chip, meta }: StatusCardProps) {
   return (
-    <Card
+    <div
       className={styles.statusCard}
       data-state={chip === "ready" ? "ready" : "error"}
-      padding="none"
     >
       <div className={styles.cardIcon} aria-hidden="true">
-        {icon}
+        <Icon name={icon} size={18} />
       </div>
       <p className={styles.cardTitle}>{title}</p>
       <p className={styles.cardMeta}>{meta}</p>
       <div className={styles.cardChip}>
         <StatusChip state={chip} />
       </div>
-    </Card>
+    </div>
+  );
+}
+
+interface PanelCardProps {
+  icon: IconName;
+  title: string;
+  desc: string;
+  command: string;
+}
+
+function PanelCard({ icon, title, desc, command }: PanelCardProps) {
+  return (
+    <button
+      type="button"
+      className={styles.panelCard}
+      onClick={() => run(command)}
+    >
+      <span className={styles.panelIcon} aria-hidden="true">
+        <Icon name={icon} size={20} />
+      </span>
+      <span className={styles.panelBody}>
+        <span className={styles.panelTitle}>{title}</span>
+        <span className={styles.panelDesc}>{desc}</span>
+      </span>
+      <span className={styles.panelArrow} aria-hidden="true">
+        <Icon name="arrowRight" size={16} />
+      </span>
+    </button>
   );
 }
 
 interface ActionItem {
-  icon: string;
+  icon: IconName;
   label: string;
-  desc: string;
-  onClick: () => void;
+  command: string;
 }
 
-function ActionButton({ icon, label, desc, onClick }: ActionItem) {
+function ActionButton({ icon, label, command }: ActionItem) {
   return (
-    <button className={styles.actionBtn} onClick={onClick}>
+    <button
+      type="button"
+      className={styles.actionBtn}
+      onClick={() => run(command)}
+    >
       <span className={styles.actionBtnIcon} aria-hidden="true">
-        {icon}
+        <Icon name={icon} size={16} />
       </span>
       <span className={styles.actionBtnLabel}>{label}</span>
-      <span className={styles.actionBtnDesc}>{desc}</span>
     </button>
   );
 }
@@ -130,16 +181,42 @@ function ActionButton({ icon, label, desc, onClick }: ActionItem) {
 // Main view
 // ---------------------------------------------------------------------------
 
+const PANELS: PanelCardProps[] = [
+  {
+    icon: "sliders",
+    title: "Board Configurator",
+    desc: "Edit board.yaml — cores, chips, OTA, security and IPC.",
+    command: "alp.openConfigurator",
+  },
+  {
+    icon: "cpu",
+    title: "Hardware Explorer",
+    desc: "Inspect SoM compute, on-module chips, E1M pad routes and I2C.",
+    command: "alp.openHardwareExplorer",
+  },
+  {
+    icon: "activity",
+    title: "Toolchain Doctor",
+    desc: "Diagnose build tools and apply one-click fixes.",
+    command: "alp.toolchainDoctor",
+  },
+];
+
+const ACTIONS: ActionItem[] = [
+  { icon: "wrench", label: "Setup Wizard", command: "alp.openSetupFlow" },
+  { icon: "filePlus", label: "New Project", command: "alp.newProjectWizard" },
+  { icon: "download", label: "SDK Manager", command: "alp.openSdkManager" },
+  { icon: "refresh", label: "Run Bootstrap", command: "alp.installDependencies" },
+  { icon: "settings", label: "Settings", command: "alp.openSettings" },
+];
+
 export function OverviewView() {
   const { state } = useAppContext();
 
   if (!state) {
     return (
       <div className={styles.root}>
-        <div className={styles.hero}>
-          <h1 className={styles.heroTitle}>ALP IDE</h1>
-          <p className={styles.heroSub}>Loading workspace state…</p>
-        </div>
+        <Brand subtitle="ALP IDE" />
         <div className={styles.body}>
           <Skeleton lines={4} />
         </div>
@@ -149,66 +226,17 @@ export function OverviewView() {
 
   const allReady = isAllReady(state);
 
-  const actions: ActionItem[] = [
-    {
-      icon: "🔧",
-      label: "Setup Wizard",
-      desc: "Step-by-step environment setup",
-      onClick: () =>
-        postMessage({ type: "runCommand", command: "alp.openSetupFlow" }),
-    },
-    {
-      icon: "📦",
-      label: "SDK Manager",
-      desc: "Install or switch ALP SDK version",
-      onClick: () =>
-        postMessage({ type: "runCommand", command: "alp.ideHub.focus" }),
-    },
-    {
-      icon: "✨",
-      label: "New Project",
-      desc: "Create project from template",
-      onClick: () =>
-        postMessage({ type: "runCommand", command: "alp.newProjectWizard" }),
-    },
-    {
-      icon: "⚙️",
-      label: "Configure Board",
-      desc: "Open board.yaml configurator",
-      onClick: () =>
-        postMessage({ type: "runCommand", command: "alp.openConfigurator" }),
-    },
-    {
-      icon: "🔄",
-      label: "Run Bootstrap",
-      desc: "Install / update build tools",
-      onClick: () =>
-        postMessage({
-          type: "runCommand",
-          command: "alp.installDependencies",
-        }),
-    },
-    {
-      icon: "⚙️",
-      label: "Settings",
-      desc: "ALP IDE extension settings",
-      onClick: () =>
-        postMessage({ type: "runCommand", command: "alp.openSettings" }),
-    },
-  ];
-
   return (
     <div className={styles.root}>
-      <div className={styles.hero}>
-        <h1 className={styles.heroTitle}>ALP IDE</h1>
-        <p className={styles.heroSub}>
+      <Brand subtitle="ALP IDE" />
+
+      <div className={styles.body}>
+        <p className={styles.lead}>
           {allReady
             ? "Workspace is configured and ready for development."
             : "Complete the steps below to set up your development environment."}
         </p>
-      </div>
 
-      <div className={styles.body}>
         {/* Status cards */}
         <section aria-labelledby="status-heading">
           <p id="status-heading" className={styles.sectionLabel}>
@@ -216,19 +244,19 @@ export function OverviewView() {
           </p>
           <div className={styles.cardGrid}>
             <StatusCard
-              icon="🐍"
+              icon="terminal"
               title="Environment"
               chip={envChip(state)}
               meta={envMeta(state)}
             />
             <StatusCard
-              icon="📁"
+              icon="folder"
               title="Workspace"
               chip={workspaceChip(state)}
               meta={workspaceMeta(state)}
             />
             <StatusCard
-              icon="🧰"
+              icon="package"
               title="ALP SDK"
               chip={sdkChip(state)}
               meta={sdkMeta(state)}
@@ -236,15 +264,26 @@ export function OverviewView() {
           </div>
         </section>
 
-        {/* All-ready banner */}
         {allReady && (
           <div className={styles.readyBanner} role="status">
             <span className={styles.readyIcon} aria-hidden="true">
-              ✅
+              <Icon name="check" size={16} />
             </span>
             All systems are ready. You can now build and flash ALP SDK firmware.
           </div>
         )}
+
+        {/* Featured panels */}
+        <section aria-labelledby="panels-heading">
+          <p id="panels-heading" className={styles.sectionLabel}>
+            Panels
+          </p>
+          <div className={styles.panelGrid}>
+            {PANELS.map((p) => (
+              <PanelCard key={p.command} {...p} />
+            ))}
+          </div>
+        </section>
 
         {/* Quick actions */}
         <section aria-labelledby="actions-heading">
@@ -252,26 +291,11 @@ export function OverviewView() {
             Quick Actions
           </p>
           <div className={styles.actionGrid}>
-            {actions.map((a) => (
-              <ActionButton key={a.label} {...a} />
+            {ACTIONS.map((a) => (
+              <ActionButton key={a.command} {...a} />
             ))}
           </div>
         </section>
-
-        {/* Open ALP IDE panel button */}
-        <div>
-          <Button
-            appearance="secondary"
-            onClick={() =>
-              postMessage({
-                type: "runCommand",
-                command: "alp.ideHub.focus",
-              })
-            }
-          >
-            Open ALP IDE Panel
-          </Button>
-        </div>
       </div>
     </div>
   );
