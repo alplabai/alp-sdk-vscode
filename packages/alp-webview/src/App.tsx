@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ConfiguratorView } from "./features/configurator";
 import { ExistingProjectFlowView } from "./features/existing-project-flow";
 import { FooterView } from "./features/footer";
 import { NewProjectFlowView } from "./features/new-project-flow";
@@ -8,6 +9,8 @@ import { QuickActionsView } from "./features/quick-actions";
 import { SdkView } from "./features/sdk";
 import { SetupView } from "./features/setup";
 import { SetupFlowView } from "./features/setup-flow";
+import { ToolchainDoctorView } from "./features/toolchain-doctor";
+import { HardwareExplorerView } from "./features/hardware-explorer";
 import { WestWorkspacesView } from "./features/west-workspaces";
 import { AppProvider, useAppContext } from "./shared/AppContext";
 import type { TabItem } from "./shared/ui";
@@ -105,6 +108,12 @@ export function App() {
         <ExistingProjectFlowView />
       ) : ALP_MODE === "sdk-manager" ? (
         <SdkView />
+      ) : ALP_MODE === "configurator" ? (
+        <ConfiguratorView />
+      ) : ALP_MODE === "toolchain-doctor" ? (
+        <ToolchainDoctorView />
+      ) : ALP_MODE === "hardware-explorer" ? (
+        <HardwareExplorerView />
       ) : (
         <AppShell />
       )}

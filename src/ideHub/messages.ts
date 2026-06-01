@@ -1,13 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
+    BoardModel,
+    PresetCatalogue,
+} from "@alp-sdk/core/configurator/models";
+import type {
     LocalSdkEntry,
     SdkReadinessState,
     SdkRelease,
 } from "@alp-sdk/core/sdk/models";
+import type { ToolchainReport } from "@alp-sdk/core/toolchain/doctor";
+import type { ToolchainFixId } from "@alp-sdk/core/toolchain/bootstrapPlan";
+import type { SomPreset, SocCore } from "@alp-sdk/core/sdkCatalogue/models";
 
 // Re-export so callers only need this module.
-export type { LocalSdkEntry, SdkRelease };
+export type {
+    BoardModel,
+    LocalSdkEntry,
+    PresetCatalogue,
+    SdkRelease,
+    SocCore,
+    SomPreset,
+    ToolchainFixId,
+    ToolchainReport,
+};
 
 // ---------------------------------------------------------------------------
 // Shared state model (extension → webview)
@@ -105,11 +121,39 @@ export interface ProjectTemplatesDataMessage {
   modules: E1mModule[];
 }
 
+export interface ConfiguratorInitMessage {
+  type: "configuratorInit";
+  model: BoardModel;
+  catalogue: PresetCatalogue;
+  boardPath: string;
+}
+
+export interface ConfiguratorSavedMessage {
+  type: "configuratorSaved";
+  boardPath: string;
+}
+
+export interface ToolchainReportMessage {
+  type: "toolchainReport";
+  report: ToolchainReport;
+}
+
+export interface HardwareExplorerDataMessage {
+  type: "hardwareExplorerData";
+  som: SomPreset | null;
+  cores: SocCore[];
+  sdkConnected: boolean;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
   | SdkInstallProgressMessage
-  | ProjectTemplatesDataMessage;
+  | ProjectTemplatesDataMessage
+  | ConfiguratorInitMessage
+  | ConfiguratorSavedMessage
+  | ToolchainReportMessage
+  | HardwareExplorerDataMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -187,6 +231,32 @@ export interface OpenExistingProjectMessage {
   activate: boolean;
 }
 
+export interface SaveBoardModelMessage {
+  type: "saveBoardModel";
+  model: BoardModel;
+}
+
+export interface ReloadConfiguratorMessage {
+  type: "reloadConfigurator";
+}
+
+export interface PreviewEffectiveConfigMessage {
+  type: "previewEffectiveConfig";
+}
+
+export interface RunToolchainFixMessage {
+  type: "runToolchainFix";
+  fixId: ToolchainFixId;
+}
+
+export interface ReloadToolchainMessage {
+  type: "reloadToolchain";
+}
+
+export interface ReloadHardwareExplorerMessage {
+  type: "reloadHardwareExplorer";
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -197,4 +267,10 @@ export type WebviewToExtMessage =
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage
-  | OpenExistingProjectMessage;
+  | OpenExistingProjectMessage
+  | SaveBoardModelMessage
+  | ReloadConfiguratorMessage
+  | PreviewEffectiveConfigMessage
+  | RunToolchainFixMessage
+  | ReloadToolchainMessage
+  | ReloadHardwareExplorerMessage;

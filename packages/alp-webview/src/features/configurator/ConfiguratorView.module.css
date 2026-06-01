@@ -1,0 +1,285 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+.shell {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  min-height: 0;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.header {
+  flex-shrink: 0;
+  padding: var(--space-7) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: var(--space-2) 0 var(--space-5);
+  line-height: 1.5;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-5);
+}
+
+.modeSelect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 120px;
+}
+
+.sectionNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sectionTab {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.sectionTab:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.sectionTab[data-active] {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  border-color: var(--border-focus);
+}
+
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.metaChip {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--surface-badge, var(--surface-hover));
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+}
+
+.metaChip[data-dirty] {
+  color: var(--vscode-editorWarning-foreground, var(--text-primary));
+}
+
+/* ── Content ────────────────────────────────────────────────────────────── */
+.content {
+  flex: 1 1 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHeading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+.subHeading {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: var(--space-4) 0 var(--space-1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.help {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3);
+  line-height: 1.5;
+}
+
+/* ── Fields ─────────────────────────────────────────────────────────────── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.fieldLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.select,
+.input {
+  background: var(--surface-input, var(--vscode-input-background));
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--border-input, var(--vscode-input-border, transparent));
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.select:focus,
+.input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: var(--space-2) 0;
+}
+
+.libGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0 var(--space-4);
+}
+
+/* ── Cores (v2) ─────────────────────────────────────────────────────────── */
+.coresBlock {
+  margin-top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.coreRow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.coreId {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  color: var(--text-mono, var(--text-primary));
+}
+
+/* ── Carrier overrides ──────────────────────────────────────────────────── */
+.populatedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+  padding: var(--space-1) 0;
+}
+
+.populatedRow:last-child {
+  border-bottom: none;
+}
+
+.source {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ── Validation ─────────────────────────────────────────────────────────── */
+.validationCounts {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3);
+}
+
+.validationItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.validationItems li {
+  font-size: 12px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
+}
+
+.validationItems li[data-severity="error"] {
+  color: var(--vscode-editorError-foreground);
+  border-left-color: var(--vscode-editorError-foreground);
+  background: var(--surface-hover);
+}
+
+.validationItems li[data-severity="warning"] {
+  color: var(--vscode-editorWarning-foreground);
+  border-left-color: var(--vscode-editorWarning-foreground);
+  background: var(--surface-hover);
+}
+
+.validationItems li[data-severity="suggestion"] {
+  color: var(--text-secondary);
+  border-left-color: var(--border-focus);
+  background: var(--surface-hover);
+}
+
+.validationItems li[data-severity="clean"] {
+  color: var(--text-secondary);
+}
+
+/* ── Actions ────────────────────────────────────────────────────────────── */
+.actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-widget, var(--border-default));
+}
+
+.status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}

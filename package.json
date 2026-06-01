@@ -134,6 +134,16 @@
         "category": "Alp"
       },
       {
+        "command": "alp.toolchainDoctor",
+        "title": "Alp: Toolchain doctor",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openHardwareExplorer",
+        "title": "Alp: Hardware Explorer",
+        "category": "Alp"
+      },
+      {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
         "category": "Alp"

@@ -1,0 +1,124 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+.container {
+  padding: var(--spacing-md, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg, 24px);
+  color: var(--text-primary);
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm, 8px);
+}
+
+.sku {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.family {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.reloadBtn {
+  margin-left: auto;
+}
+
+/* ── Section ── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 6px);
+}
+
+.sectionTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+  padding-bottom: 4px;
+}
+
+/* ── Table ── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.table th {
+  text-align: left;
+  padding: 4px 8px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+}
+
+.table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  color: var(--text-primary);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── Chips (on-module) ── */
+.chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #fff);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+/* ── Pad routes search ── */
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.searchInput {
+  flex: 1;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #d4d4d4);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 2px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.searchInput:focus {
+  border-color: var(--border-focus, var(--vscode-focusBorder, #007acc));
+}
+
+.mono {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.82rem;
+}
+
+.badge {
+  display: inline-block;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #fff);
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 0.75rem;
+}

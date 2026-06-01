@@ -1,30 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import {
-    loadBoardModel,
-    loadPresetCatalogue,
-    saveBoardModel,
-} from "./configurator/vscodeAdapter";
+import { loadBoardConfigFromFile } from "../configurator/boardIo";
 import {
     type ExtToWebviewMessage,
     type WebviewToExtMessage,
-} from "./ideHub/messages";
-import { buildWebviewHtml } from "./ideHub/webviewHtml";
-import { collectProjectContext } from "./project/vscodeAdapter";
+} from "../ideHub/messages";
+import { buildWebviewHtml } from "../ideHub/webviewHtml";
+import { collectProjectContext } from "../project/vscodeAdapter";
+import { loadSdkCatalogue } from "../sdkCatalogue/vscodeAdapter";
+import { log } from "../util";
 
-const PANEL_VIEW_TYPE = "alpConfigurator";
-const PANEL_TITLE = "ALP Board Configurator";
+const PANEL_VIEW_TYPE = "alpHardwareExplorer";
+const PANEL_TITLE = "ALP Hardware Explorer";
 
-class ConfiguratorPanel {
-  private static current: ConfiguratorPanel | undefined;
+class HardwareExplorerPanel {
+  private static current: HardwareExplorerPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
 
   static show(context: vscode.ExtensionContext): void {
-    if (ConfiguratorPanel.current) {
-      ConfiguratorPanel.current.panel.reveal(vscode.ViewColumn.Active);
-      ConfiguratorPanel.current.refresh();
+    if (HardwareExplorerPanel.current) {
+      HardwareExplorerPanel.current.panel.reveal(vscode.ViewColumn.Active);
+      HardwareExplorerPanel.current.refresh();
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -44,7 +42,7 @@ class ConfiguratorPanel {
         ],
       },
     );
-    ConfiguratorPanel.current = new ConfiguratorPanel(panel, context);
+    HardwareExplorerPanel.current = new HardwareExplorerPanel(panel, context);
   }
 
   private constructor(
@@ -55,7 +53,7 @@ class ConfiguratorPanel {
     this.panel.webview.html = buildWebviewHtml(
       this.panel.webview,
       context.extensionUri,
-      "configurator",
+      "hardware-explorer",
     );
 
     this.panel.webview.onDidReceiveMessage(
@@ -69,18 +67,29 @@ class ConfiguratorPanel {
 
   private refresh(): void {
     const project = collectProjectContext();
+    const catalogue = loadSdkCatalogue(project.sdkRoot, (msg) => log(msg));
+
     const boardPath = project.boardYamlPath;
-    if (!boardPath) {
-      void vscode.window.showErrorMessage(
-        "Alp: open a workspace folder before launching the configurator.",
-      );
-      return;
+    const boardCfg = boardPath
+      ? loadBoardConfigFromFile(boardPath)
+      : { som: { sku: "" }, cores: {} };
+    const sku = boardCfg.som.sku;
+
+    const som = sku
+      ? (catalogue.soms.find((s) => s.sku === sku) ?? null)
+      : null;
+
+    let cores: import("@alp-sdk/core/sdkCatalogue/models").SocCore[] = [];
+    if (som) {
+      const soc = catalogue.socs.find((s) => s.ref === som.silicon);
+      if (soc) cores = soc.cores;
     }
+
     const message: ExtToWebviewMessage = {
-      type: "configuratorInit",
-      model: loadBoardModel(boardPath),
-      catalogue: loadPresetCatalogue(project),
-      boardPath,
+      type: "hardwareExplorerData",
+      som,
+      cores,
+      sdkConnected: project.sdkRoot !== null,
     };
     void this.panel.webview.postMessage(message);
   }
@@ -88,29 +97,8 @@ class ConfiguratorPanel {
   private onMessage(msg: WebviewToExtMessage): void {
     switch (msg.type) {
       case "ready":
+      case "reloadHardwareExplorer":
         this.refresh();
-        break;
-      case "saveBoardModel": {
-        const boardPath = collectProjectContext().boardYamlPath;
-        if (!boardPath) return;
-        try {
-          saveBoardModel(boardPath, msg.model);
-          const message: ExtToWebviewMessage = {
-            type: "configuratorSaved",
-            boardPath,
-          };
-          void this.panel.webview.postMessage(message);
-          vscode.window.setStatusBarMessage(`Alp: saved ${boardPath}`, 5000);
-        } catch (e) {
-          void vscode.window.showErrorMessage(`Alp: save failed: ${e}`);
-        }
-        break;
-      }
-      case "reloadConfigurator":
-        this.refresh();
-        break;
-      case "previewEffectiveConfig":
-        void vscode.commands.executeCommand("alp.previewEffectiveConfig");
         break;
       case "closePanel":
         this.panel.dispose();
@@ -124,16 +112,14 @@ class ConfiguratorPanel {
   }
 
   private dispose(): void {
-    ConfiguratorPanel.current = undefined;
+    HardwareExplorerPanel.current = undefined;
     this.panel.dispose();
     while (this.disposables.length) this.disposables.pop()?.dispose();
   }
 }
 
-export function registerConfiguratorCommand(
+export function showHardwareExplorerPanel(
   context: vscode.ExtensionContext,
-): vscode.Disposable {
-  return vscode.commands.registerCommand("alp.openConfigurator", () =>
-    ConfiguratorPanel.show(context),
-  );
+): void {
+  HardwareExplorerPanel.show(context);
 }
