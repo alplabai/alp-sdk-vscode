@@ -155,8 +155,17 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
   same toasts, and `issues` are logged to the output channel. The in-process
   board.yaml-exists pre-check stays (cheap; nicer "not found" message); the
   per-edit diagnostics path (`src/diagnostics.ts` → `executeValidatorPlan`) is
-  untouched (LSP domain, §4). Remaining: generate → sdk → debug-config →
-  support-bundle → inspect/trace/presets/explain/diff.
+  untouched (LSP domain, §4). **generate ✅** — the four `alp.generate*` +
+  `alp.generateAll` now spawn `alp generate --target <emit>` / `--all`; the
+  envelope's `{targets,written,failed}` drives the same preview + status-bar /
+  warning UX (the in-process loop, trace, and plan/exec machinery are gone from
+  `loader.ts`). **Scope finding:** the debug-domain commands (`debugDoctor`,
+  `debugPreflight`, …) probe **VS Code-host-only state** —
+  `vscode.extensions.getExtension(...)` for installed debuggers — which the CLI
+  can't see (it assumes the marquee extensions present). Migrating them would
+  regress accuracy, so they **stay in-process** (they belong to the live/LSP
+  side of §4). Remaining envelope targets: sdk list/current, and (if surfaced as
+  commands) presets/explain/diff/trace/inspect that don't need host state.
 - **B4 — shrink + retire.** Trim `@alp-sdk/core` to the LSP + live-configurator
   subset; retire `packages/alp-cli`.
 
