@@ -71,9 +71,14 @@ Highest-value command after validate.
 - [x] Extended `contract/run.sh` to run generate fixtures (reads `args.txt` per fixture).
 - [x] Full success-path parity with Python SDK requires PyYAML; tracked as Phase 5 (spawn parity).
 
-## Phase 4 — `init` / scaffold (interactive)
-- [ ] `inquire`-driven prompts; `--non-interactive`/`--ci` must fully bypass prompts.
-- [ ] Scaffold parity with `SOURCE_SCAFFOLDING.md`.
+## Phase 4 — `init` / scaffold (interactive)  ✅ DONE
+- [x] `inquire`-driven prompts; `--non-interactive`/`--ci` must fully bypass prompts.
+- [x] Scaffold parity with `SOURCE_SCAFFOLDING.md`.
+- [x] 6 project templates (minimal-app, sensor-starter, iot-starter, edge-ai-starter, board-diagnostics, host-tooling-starter).
+- [x] 4 module templates (sensor-driver, connectivity-service, inference-stage, diagnostics-check).
+- [x] `--preview`, `--force`, `--name`, `--destination`, `--template` as subcommand args on Init/Scaffold.
+- [x] `alp-core/src/wizard/` module: models, service (file generators), filesystem (collect/write).
+- [x] 23 unit tests pass; contract harness passes.
 
 ## Phase 5 — Remaining commands + SDK spawn
 - [ ] `doctor` (exit 4), `validate` **full** (Python validator spawn parity), and the rest of the 14 commands.

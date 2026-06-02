@@ -22,6 +22,8 @@ fn main() {
     let run: CommandRun = match args.command {
         Command::Validate => commands::validate::run(&global),
         Command::Generate => commands::generate::run(&global),
+        Command::Init(args) => commands::init::run(&global, &args),
+        Command::Scaffold(args) => commands::scaffold::run(&global, &args),
     };
 
     emit(&global.format, run.json.as_deref(), &run.text);

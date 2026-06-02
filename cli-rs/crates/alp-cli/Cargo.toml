@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 alp-core = { path = "../alp-core" }
 clap.workspace = true
+inquire.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

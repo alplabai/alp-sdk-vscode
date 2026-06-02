@@ -10,4 +10,6 @@ pub struct CommandRun {
 }
 
 pub mod generate;
+pub mod init;
+pub mod scaffold;
 pub mod validate;

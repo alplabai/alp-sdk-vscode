@@ -10,6 +10,7 @@ pub mod model;
 pub mod preview;
 pub mod sdk_catalogue;
 pub mod validate;
+pub mod wizard;
 
 pub use model::{BoardModel, normalize_board_model};
 pub use preview::{

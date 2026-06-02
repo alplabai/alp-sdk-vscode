@@ -79,4 +79,46 @@ pub enum Command {
     Validate,
     /// Generate build artifacts from board.yaml (alp.conf, overlay, args, yocto).
     Generate,
+    /// Initialize a new ALP project from a template.
+    Init(InitArgs),
+    /// Scaffold a module into an existing project.
+    Scaffold(ScaffoldArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct InitArgs {
+    /// Project template id (e.g. minimal-app, sensor-starter).
+    #[arg(long)]
+    pub template: Option<String>,
+    /// Project name; creates a sub-directory when provided.
+    #[arg(long)]
+    pub name: Option<String>,
+    /// Destination directory (default: current directory or --project).
+    #[arg(long)]
+    pub destination: Option<String>,
+    /// Show planned files without writing anything.
+    #[arg(long)]
+    pub preview: bool,
+    /// Allow overwriting existing files.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ScaffoldArgs {
+    /// Module template id (e.g. sensor-driver, connectivity-service).
+    #[arg(long)]
+    pub template: Option<String>,
+    /// Module name (required).
+    #[arg(long)]
+    pub name: Option<String>,
+    /// Destination project root (default: current directory or --project).
+    #[arg(long)]
+    pub destination: Option<String>,
+    /// Show planned files without writing anything.
+    #[arg(long)]
+    pub preview: bool,
+    /// Allow overwriting existing files.
+    #[arg(long)]
+    pub force: bool,
 }
