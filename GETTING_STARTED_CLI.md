@@ -6,6 +6,13 @@ This guide covers the terminal-first ALP CLI workflow. Two usage modes are
 supported: **standalone install** (npm, recommended for end users and CI) and
 **development from source** (build from this repository).
 
+> **Heads up (migration in progress).** The `alp-sdk` npm package currently ships
+> the TypeScript CLI. A native Rust binary (`cli-rs/`) is feature-complete and
+> will replace it at cutover — the `alp` command and its flags/output stay the
+> same, so the workflow below is unchanged. To try the native binary today, build
+> from source: `cargo build --release --manifest-path cli-rs/Cargo.toml` →
+> `cli-rs/target/release/alp`.
+
 ## 0. Standalone Install
 
 Install the `alp-sdk` npm package to get the `alp` command globally:

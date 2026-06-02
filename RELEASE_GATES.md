@@ -20,6 +20,10 @@ A release candidate is valid only when all gates pass:
    - CLI/public behavior changes are reflected in docs
 5. Compatibility gate
    - Compatibility Rules reviewed for breaking changes
+6. Rust CLI contract gate
+   - `bash cli-rs/contract/run.sh` passes — the native `alp` binary stays
+     byte-for-byte compatible with the TypeScript CLI's JSON envelopes + exit
+     codes. Runs as the `rust_cli_contract` job in the `ci` workflow.
 
 ## 2. Surface Coverage Checklist
 
@@ -53,6 +57,13 @@ the `release-cli` CI workflow.
 
 Extension and CLI `MAJOR.MINOR` are kept in sync. `PATCH` may diverge for
 standalone CLI-only hotfixes.
+
+> **Native CLI migration (in progress).** The CLI is being replaced by the native
+> Rust binary in `cli-rs/`. Its releases are tagged `cli-rs-v<version>`, which
+> triggers `release-cli-rs` to build the per-platform `alp` archives. At cutover
+> the npm package `alp-sdk` becomes the `cli-rs/npm-shim` wrapper (downloading
+> that binary); until then the legacy `cli-v*` / TypeScript publish path remains
+> the shipped CLI. Both must keep the contract gate (§1.6) green.
 
 Before bumping `MAJOR`:
 - all breaking CLI flag or JSON envelope changes must be documented in `COMPATIBILITY_RULES.md`.

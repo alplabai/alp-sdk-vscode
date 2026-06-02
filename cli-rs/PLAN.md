@@ -201,9 +201,18 @@ be generated in this environment without running the tool).
   cutover (it would replace the legacy TS package of the same name).
 
 ## Phase 7 — Cutover
-- [ ] Flip docs (`CLI.md`, `GETTING_STARTED_CLI.md`) to the Rust binary.
-- [ ] Deprecate the TS CLI entrypoint; keep core for the VS Code extension + LSP.
-- [ ] Run the contract harness as a release gate (`RELEASE_GATES.md`).
+Pre-release prep (safe now — no cli-rs release published yet):
+- [x] Contract harness is a release gate — `RELEASE_GATES.md` §1.6 (already wired
+      as the `rust_cli_contract` CI job).
+- [x] Migration notes added to `CLI.md` (single contract for both impls) and
+      `GETTING_STARTED_CLI.md` (build-from-source instructions for the native
+      binary); `RELEASE_GATES.md` §5 documents the `cli-rs-v*` channel.
+
+Gated on the first real `cli-rs-v<version>` release (would break users if done early):
+- [ ] Flip the published `alp-sdk` npm package to `cli-rs/npm-shim`; npm-publish it.
+- [ ] Flip install instructions (`npm i -g alp-sdk` → native binary) once published.
+- [ ] Deprecate/retire the TS CLI entrypoint (`packages/alp-cli`); keep `alp-core`
+      (TS) for the VS Code extension + LSP.
 
 ## Phase 8 — Optional TUI
 - [ ] Only if a genuinely interactive dashboard is wanted (`ratatui`/`iocraft`); not required for CLI parity.
