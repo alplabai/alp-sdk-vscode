@@ -1,6 +1,6 @@
 # Extension ↔ CLI Integration Plan
 
-Last revised: 2026-06-02. Status: **design / not yet implemented.**
+Last revised: 2026-06-02. Status: **decisions locked (§8); not yet implemented.**
 
 How the VS Code extension should consume the native `alp` CLI so that command
 behavior has a single source of truth — instead of being reimplemented per
@@ -83,39 +83,45 @@ Delegate to the **`alp` binary** — user-triggered "actions":
 
 Rule of thumb: **per-keystroke → in-process TS; per-click → CLI binary.**
 
-## 5. Binary resolution (open decision)
+## 5. Binary resolution (locked)
 
-The extension needs to locate `alp`. Options, cheapest-first:
-
-- **(C) PATH + `alpSdk.cliPath` setting** — find `alp` on PATH or an explicit
-  setting; otherwise prompt to `npm i -g alp-sdk`. Universal VSIX, zero bundling.
-  *(Pre-noted direction in the migration memory.)* **Recommended first step.**
-- **(B) Download-on-demand** — fetch the matching release archive into
-  `globalStorage` on first use (same logic as `cli-rs/npm-shim/postinstall.js`).
-  Universal VSIX, works without a separate install; needs network once.
-- **(A) Bundle per-platform** — ship platform-specific VSIXes (`vsce --target`)
-  each carrying the right `alp`. Fully offline; 4 VSIXes + binary size.
-
-Add an `alpSdk.cliPath` configuration property regardless (it makes A/B/C
-interchangeable and supports dev builds: `cli-rs/target/release/alp`).
+**Decision (locked): `alpSdk.cliPath` setting → PATH → download-on-demand.**
+`resolveAlpBinary()` resolves in that order: an explicit `alpSdk.cliPath`
+(also serves dev builds: `cli-rs/target/release/alp`), then `alp` on PATH, then
+a download into `globalStorage` (the `cli-rs/npm-shim/postinstall.js` logic) for
+the host target; if all fail, surface a one-click "install the ALP CLI" action.
+This keeps a single universal VSIX (no per-platform bundling) and reuses the
+shim's download path. Per-platform-bundled VSIXes are explicitly **not** pursued.
 
 ## 6. Incremental rollout
 
-- **Slice 1 — bootstrap (first, low-risk).** Add `alp bootstrap` to the CLI
-  (orchestrate the SDK's `scripts/bootstrap.sh`; POSIX now, Windows → pointer).
-  Rewire `alp.installDependencies` to run `alp bootstrap` in a terminal and
-  delete `src/bootstrap.ts`'s private plan. **3 bootstraps → 1.**
-- **Slice 2 — binary resolution.** Add `alpSdk.cliPath`, a `resolveAlpBinary()`
-  helper (PATH → setting → download/prompt), and a `runAlp(cmd, args): Envelope`
-  wrapper with exit-code → UX mapping.
-- **Slice 3 — migrate envelope commands.** Move the action commands from
-  in-process `alp-core` calls to `runAlp(...)` one at a time
-  (validate → generate → sdk → debug-config → support-bundle → inspect/trace/…),
-  each diffed against current behavior.
-- **Slice 4 — build through the CLI (`alp build` + siblings).** See §6a — this
-  is the one place where the flow genuinely varies by platform, so it gets its
-  own design.
-- **Slice 5 — shrink + retire.** Trim `@alp-sdk/core` to the LSP/configurator
+Two waves. **Wave A is pure CLI work** — new commands, contract-harness-testable,
+no extension change and no release dependency, so it can land now. **Wave B is
+the extension consuming the binary** — every step needs a resolvable `alp`, so it
+follows the first `cli-rs-v*` release (§5 + Phase 7).
+
+**Wave A — CLI gains the missing commands (now):**
+
+- **A1 — `alp bootstrap`.** Orchestrate the SDK's `scripts/bootstrap.sh`
+  (POSIX now; Windows → pointer to `docs/cross-platform-setup.md`). Envelope on
+  completion; the long install runs in the caller's terminal.
+- **A2 — `alp build` + `image`/`flash`/`clean`/`renode`.** Thin terminal-mode
+  wrappers over the SDK's `west alp-*` driver (§6a). Full set, not just `build`.
+- **A3 — build preflight in `doctor`.** Extend `doctor` to check the per-core
+  toolchains the active `board.yaml` actually needs (§6a) and point to installers.
+
+**Wave B — extension consumes the CLI (after first `cli-rs-v*` release):**
+
+- **B1 — binary resolution.** Add `alpSdk.cliPath`, `resolveAlpBinary()` (§5), and
+  a `runAlp(cmd, args): Envelope` wrapper with exit-code → UX mapping.
+- **B2 — rewire the terminal actions first.** Point `alp.installDependencies` at
+  `alp bootstrap` and the `alp.west*` build/flash commands at `alp build`/etc.,
+  then delete `src/bootstrap.ts`'s private plan. **3 bootstraps → 1.**
+- **B3 — migrate envelope commands.** Move action commands from in-process
+  `alp-core` calls to `runAlp(...)` one at a time (validate → generate → sdk →
+  debug-config → support-bundle → inspect/trace/presets/explain/diff), each
+  diffed against current behavior.
+- **B4 — shrink + retire.** Trim `@alp-sdk/core` to the LSP + live-configurator
   subset; retire `packages/alp-cli`.
 
 ## 6a. `alp build` — the build flow varies by platform (and by core)
@@ -151,8 +157,8 @@ driver stays the single source of that truth. The CLI surface:
   and device interaction). A short final envelope summary is optional.
 - **Prerequisites are platform-specific and beyond `bootstrap`.** `bootstrap`
   gets west + the Zephyr workspace + Zephyr Python reqs, but **not** the
-  compiler toolchains above. So `alp build` needs a build-preflight (extend
-  `doctor`, or an `alp build --check`) that verifies the toolchains required by
+  compiler toolchains above. So `alp build` runs a build-preflight (in `doctor`,
+  per A3) that verifies the toolchains required by
   *the cores this board.yaml actually uses* and points to installers when
   missing — Zephyr SDK for M-cores, Yocto host packages for A-cores, vendor
   toolchains for baremetal.
@@ -172,15 +178,21 @@ extension and terminal a single `alp build` entry point.
 - Sequencing follows the Rust cutover: don't point the extension at a binary
   that isn't resolvable yet (ties into §5 and Phase 7).
 
-## 8. Open decisions to confirm
+## 8. Decisions (locked)
 
-1. Binary distribution: (C) PATH/setting first, (B) download later, or (A) bundle?
-2. `alp build` scope: just `build`, or the full set (`build`/`image`/`flash`/
-   `clean`/`renode`) mirroring the SDK's `west alp-*` commands at once?
-3. Build preflight: extend `doctor` to verify per-platform toolchains (Zephyr SDK
-   / Yocto host packages / vendor toolchains) keyed off the board.yaml's cores,
-   or a separate `alp build --check`?
-4. Should `bootstrap` grow beyond `bootstrap.sh`'s scope to also fetch the Zephyr
-   SDK compiler toolchain (and, on Linux, the Yocto host packages), or stay a
-   pointer for those?
-5. Do slices 2–5 before or after the first `cli-rs-v*` release?
+No open items — this plan is frozen; revisit only if an assumption breaks.
+
+1. **Binary distribution** → `alpSdk.cliPath` → PATH → download-on-demand into
+   `globalStorage` (§5). Single universal VSIX; no per-platform bundling.
+2. **`alp build` scope** → the full set `build`/`image`/`flash`/`clean`/`renode`,
+   mirroring the SDK's `west alp-*` commands 1:1 (the extension already exposes
+   all five). Done together to avoid a half-migrated extension.
+3. **Build preflight** → lives in `doctor` (A3), keyed off the active
+   `board.yaml`'s cores. No separate `--check` flag.
+4. **`bootstrap` scope** → orchestrate `bootstrap.sh` (west + Zephyr workspace +
+   Zephyr Python reqs) only. The compiler toolchains (Zephyr SDK, vendor SDKs)
+   and Yocto host packages stay **pointer-only** — they are large, license-gated,
+   and interactive; `doctor` detects + points to them. Matches what `bootstrap.sh`
+   itself deliberately does.
+5. **Sequencing** → Wave A (CLI commands) now; Wave B (extension consumption)
+   after the first `cli-rs-v*` release. See §6.
