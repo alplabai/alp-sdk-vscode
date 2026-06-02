@@ -204,3 +204,18 @@ No open items — this plan is frozen; revisit only if an assumption breaks.
    itself deliberately does.
 5. **Sequencing** → Wave A (CLI commands) now; Wave B (extension consumption)
    after the first `cli-rs-v*` release. See §6.
+
+## 9. Deferred / optional (not scheduled)
+
+- **Move the build orchestration into Rust.** Today `alp build` delegates to the
+  SDK's `west alp-build` → `alp_orchestrate.py` (≈3370 lines: SoC/board/topology
+  resolution, memory maps, secure-boot partitions, `system-manifest.yaml`),
+  which is versioned with the SDK and used by west + 2 CI workflows + the docs.
+  Reimplementing it in Rust is **deferred and only makes sense as part of the SDK
+  team rewriting its own Python tooling (`alp_project.py` + `alp_orchestrate.py`)
+  in Rust** — not as CLI/extension work. Doing it sooner would fork the SDK's
+  build brain across repos+languages (perpetual version-chase) and still require
+  `west build`/`bitbake`/`cmake` (the actual builders) anyway, so it removes no
+  dependency. If the SDK adopts a Rust core, the CLI would link it instead of
+  shelling to west. Until then: thin wrapper (§6a). The CLI may still *preview*
+  the build plan (`trace`, `doctor` A3) without owning dispatch.
