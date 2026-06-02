@@ -10,6 +10,17 @@ The native CLI is versioned and tagged independently of the VS Code extension:
 release tags are `cli-rs-v<version>`, and the npm shim (`alp-sdk`) carries the
 same version.
 
+## Unreleased
+
+- **Spinners for `sdk list` and `sdk install`.** The GitHub releases fetch and
+  the SDK git-clone now show a steady braille spinner (drawn to stderr) so
+  latency-bound work gives live feedback. Shown only in genuine interactive use
+  (a TTY with none of `--format json` / `--quiet` / `--ci` / `--non-interactive`);
+  hidden otherwise, so logs and the JSON envelope stay clean. `sdk install` now
+  runs `git clone --quiet` with captured output (surfacing git's stderr only on
+  failure) instead of inheriting the terminal — which also stops git chatter
+  from leaking in JSON/non-interactive runs. New `progress` module.
+
 ## 0.1.0 — first native release
 
 First public release of the native binary. Full command parity with the

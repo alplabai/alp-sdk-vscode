@@ -9,6 +9,7 @@ mod cli;
 mod commands;
 mod envelope;
 mod exit;
+mod progress;
 mod style;
 mod util;
 

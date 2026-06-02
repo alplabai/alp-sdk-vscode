@@ -84,7 +84,10 @@ pub fn run(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
 // ── alp sdk list ────────────────────────────────────────────────────────────
 
 fn run_list(g: &GlobalArgs) -> CommandRun {
-    let releases = match fetch_releases() {
+    let pb = crate::progress::spinner(g, "Fetching ALP SDK releases…");
+    let result = fetch_releases();
+    pb.finish_and_clear();
+    let releases = match result {
         Ok(r) => r,
         Err(message) => {
             return emit_failure(
@@ -168,7 +171,10 @@ fn run_install(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
 
     let already_installed = dest_path.join("scripts").join("alp_project.py").exists();
     if !already_installed {
-        if let Err(message) = git_clone(&version, &dest_path) {
+        let pb = crate::progress::spinner(g, &format!("Cloning alp-sdk {version}…"));
+        let clone_result = git_clone(&version, &dest_path);
+        pb.finish_and_clear();
+        if let Err(message) = clone_result {
             return emit_failure(
                 g,
                 InstallData {
@@ -210,19 +216,36 @@ fn git_clone(version: &str, dest: &Path) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let status = Command::new("git")
-        .args(["clone", "--branch", version, "--depth", "1", SDK_GIT_URL])
+    // Capture output (--quiet) rather than inherit: the spinner owns the
+    // terminal while cloning, and JSON/non-interactive runs stay output-free.
+    // git's stderr is surfaced verbatim only on failure.
+    let output = Command::new("git")
+        .args([
+            "clone",
+            "--quiet",
+            "--branch",
+            version,
+            "--depth",
+            "1",
+            SDK_GIT_URL,
+        ])
         .arg(dest)
-        .status()
+        .output()
         .map_err(|e| format!("Alp: git clone failed to start: {e}"))?;
-    if !status.success() {
-        return Err(format!(
-            "Alp: git clone failed with exit code {}.",
-            status
-                .code()
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "unknown".to_string())
-        ));
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        let detail = detail.trim();
+        if detail.is_empty() {
+            return Err(format!(
+                "Alp: git clone failed with exit code {}.",
+                output
+                    .status
+                    .code()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            ));
+        }
+        return Err(format!("Alp: git clone failed: {detail}"));
     }
     Ok(())
 }
