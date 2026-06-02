@@ -125,8 +125,15 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
 
 **Wave B — extension consumes the CLI (after first `cli-rs-v*` release):**
 
-- **B1 — binary resolution.** Add `alpSdk.cliPath`, `resolveAlpBinary()` (§5), and
-  a `runAlp(cmd, args): Envelope` wrapper with exit-code → UX mapping.
+- **B1 — binary resolution. ✅ done.** New `src/alpCli/` slice + `alpSdk.cliPath`
+  setting. `service.ts` (pure): `decideBinarySource` (cliPath→PATH→cached→download,
+  §5), `parseEnvelope`, `classifyExitCode`/`classifyOutcome` (exit 0/1/2/3/4/5 →
+  UX severity), `releaseAssetForTarget` (the 3 published targets; Intel-mac → null).
+  `adapterCore.ts` (injected fs/net/process seams): `resolveAlpBinary` (downloads
+  into globalStorage on demand) + `runAlp` (spawns `alp … --format json`, parses,
+  classifies; spawn-ENOENT → graceful error outcome). `vscodeAdapter.ts`: real
+  https-redirect download + `tar` extract + `spawnSync`, session-memoized.
+  17 unit tests (service + adapterCore). Not yet wired into commands (that's B2/B3).
 - **B2 — rewire the terminal actions first.** Point `alp.installDependencies` at
   `alp bootstrap` and the `alp.west*` build/flash commands at `alp build`/etc.,
   then delete `src/bootstrap.ts`'s private plan. **3 bootstraps → 1.**

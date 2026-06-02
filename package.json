@@ -321,6 +321,11 @@
           "type": "string",
           "default": "",
           "description": "Working directory for `west build/flash/run`.  When empty, defaults to the workspace root."
+        },
+        "alpSdk.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the native `alp` CLI binary. When empty, the extension uses `alp` on PATH, then falls back to downloading the matching release into its global storage. Point this at a local dev build (e.g. `cli-rs/target/release/alp`) to override."
         }
       }
     }
