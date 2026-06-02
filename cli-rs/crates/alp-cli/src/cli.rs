@@ -105,6 +105,28 @@ pub enum Command {
     Sdk(SdkArgs),
     /// Set up the SDK build environment (west + Zephyr workspace + Python deps).
     Bootstrap(BootstrapArgs),
+    /// Build the project (fans board.yaml into per-core slices via `west alp-build`).
+    Build(WestForwardArgs),
+    /// Assemble a flashable image (`west alp-image`).
+    Image(WestForwardArgs),
+    /// Flash the assembled image to the device (`west alp-flash`).
+    Flash(WestForwardArgs),
+    /// Remove build dirs + orchestrator cache (`west alp-clean`).
+    Clean(WestForwardArgs),
+    /// Boot the system manifest in Renode (`west alp-renode`).
+    Renode(WestForwardArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct WestForwardArgs {
+    /// Arguments forwarded verbatim to the underlying `west alp-*` command
+    /// (e.g. app path, `--core <id>`, `--sequential`, `-b <board>`).
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        value_name = "ARGS"
+    )]
+    pub args: Vec<String>,
 }
 
 #[derive(Debug, Args)]

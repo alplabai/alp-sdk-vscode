@@ -107,8 +107,11 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
   mode inherits stdio (live install in the caller's terminal); JSON mode captures
   + emits one envelope. sdk-unresolved → exit 2. Golden fixtures + verified
   against the real SDK's `bootstrap.sh --print-env`.
-- **A2 — `alp build` + `image`/`flash`/`clean`/`renode`.** Thin terminal-mode
-  wrappers over the SDK's `west alp-*` driver (§6a). Full set, not just `build`.
+- **A2 — `alp build` + `image`/`flash`/`clean`/`renode`. ✅ done.** Five thin
+  terminal-mode wrappers that forward args verbatim to the SDK's `west alp-*`
+  driver (§6a), run in the west cwd, and hide `west`. west-not-found → `alp
+  bootstrap` hint. Arg-forwarding unit-tested + stub-west smoke; no golden
+  fixtures (real builds need west + a workspace).
 - **A3 — build preflight in `doctor`.** Extend `doctor` to check the per-core
   toolchains the active `board.yaml` actually needs (§6a) and point to installers.
 
@@ -129,26 +132,29 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
 ## 6a. `alp build` — the build flow varies by platform (and by core)
 
 Build is **not** "run `west build`". A single `board.yaml` declares multiple
-cores, and each core's runtime decides its toolchain. The SDK already owns this
-dispatch in **`west alp-build`** (a Python west extension in
-`scripts/west_commands/`), which:
+cores, and each core's runtime decides its backend. The SDK already owns this
+dispatch: **`west alp-build`** is a thin Python west extension
+(`scripts/west_commands/alp_build.py`) that shells into **`alp_orchestrate.py`**,
+the real per-core/per-platform brain. It:
 
 - reads + validates `board.yaml`, then **fans out one build slice per non-`off`
   core** into `<app>/build/<core>-<os>/…`,
 - routes each slice to the right backend and runs them in parallel
-  (`--sequential` on Windows), figuring the cross-compile target out of
-  `board.yaml`:
+  (`--sequential` on Windows), deriving the cross-compile target from
+  `board.yaml` (`alp_orchestrate.py:_default_os_from_core_type`):
 
-  | Core runtime | Backend it dispatches to | Toolchain prerequisite |
+  | Core runtime | Backend it routes to | Toolchain prerequisite |
   |---|---|---|
   | Zephyr (Cortex-M) | `west build` | Zephyr SDK compiler + bootstrapped west workspace |
-  | Yocto (Cortex-A) | bitbake / `meta-alp-sdk` layer | Yocto host packages (Linux-only; can be hour-long) |
-  | baremetal | CMake + vendor toolchain | Alif Ensemble / Renesas FSP / NXP MCUXpresso, per SoC family |
+  | Yocto (Cortex-A) | **bitbake** (`meta-alp-sdk` layer) | Yocto host packages (Linux-only; can be hour-long) |
+  | baremetal | **CMake + vendor toolchain** | Alif Ensemble / Renesas FSP / NXP MCUXpresso, per SoC family |
 
-**Design: `alp build` is a thin orchestrator over `west alp-build`** — exactly
-like `alp bootstrap` wraps `bootstrap.sh` and `generate` spawns `alp_project.py`.
-The CLI does **not** reimplement per-platform/per-core build logic; the SDK's
-driver stays the single source of that truth. The CLI surface:
+**Design: `alp build` is the single user-facing entry that hides `west`.** The
+user types `alp build` (never `west alp-build`); the CLI delegates to
+`west alp-build`, and the Zephyr→`west build` / Yocto→`bitbake` /
+baremetal→`CMake` routing stays in the SDK's orchestrator. The CLI does **not**
+re-decide the backend — same pattern as `alp bootstrap` wrapping `bootstrap.sh`.
+CLI surface:
 
 - `alp build [app] [--core <id>] [--board <b>] [--sequential]` → runs
   `west alp-build …` in a **terminal** (live, long-running). Mirror the SDK's

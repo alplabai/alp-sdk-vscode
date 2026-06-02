@@ -10,6 +10,7 @@ pub struct CommandRun {
 }
 
 pub mod bootstrap;
+pub mod build;
 pub mod completion;
 pub mod debug_config;
 pub mod diff;

@@ -36,6 +36,11 @@ fn main() {
         Command::SupportBundle(args) => commands::support_bundle::run(&global, &args),
         Command::Sdk(args) => commands::sdk::run(&global, &args),
         Command::Bootstrap(args) => commands::bootstrap::run(&global, &args),
+        Command::Build(args) => commands::build::run(&global, "build", &args.args),
+        Command::Image(args) => commands::build::run(&global, "image", &args.args),
+        Command::Flash(args) => commands::build::run(&global, "flash", &args.args),
+        Command::Clean(args) => commands::build::run(&global, "clean", &args.args),
+        Command::Renode(args) => commands::build::run(&global, "renode", &args.args),
     };
 
     emit(&global.format, run.json.as_deref(), &run.text);
