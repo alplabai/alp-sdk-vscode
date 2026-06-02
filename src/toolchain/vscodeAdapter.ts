@@ -20,7 +20,10 @@ function pythonCmd(): string {
 
 function probePythonDep(module: string): boolean {
   try {
-    execFileSync(pythonCmd(), ["-c", `import ${module}`], { timeout: 4000, stdio: "ignore" });
+    execFileSync(pythonCmd(), ["-c", `import ${module}`], {
+      timeout: 4000,
+      stdio: "ignore",
+    });
     return true;
   } catch {
     return false;

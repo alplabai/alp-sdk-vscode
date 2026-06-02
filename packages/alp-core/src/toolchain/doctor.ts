@@ -46,7 +46,7 @@ function toolCheck(
     required,
     status: present ? "ok" : required ? "missing" : "warn",
     detail: present
-      ? probe?.detail ?? "found"
+      ? (probe?.detail ?? "found")
       : required
         ? "not found on PATH"
         : "not found (recommended)",
@@ -67,14 +67,19 @@ export function analyzeToolchain(inputs: ToolchainInputs): ToolchainReport {
     label: "Python deps (pyyaml, jsonschema)",
     required: true,
     status: missingDeps.length === 0 ? "ok" : "missing",
-    detail: missingDeps.length === 0 ? "importable" : `missing: ${missingDeps.join(", ")}`,
+    detail:
+      missingDeps.length === 0
+        ? "importable"
+        : `missing: ${missingDeps.join(", ")}`,
     fixId: missingDeps.length === 0 ? undefined : "python-deps",
   });
 
   checks.push(toolCheck(inputs, "west", "west", true, "west"));
   checks.push(toolCheck(inputs, "cmake", "CMake", true, "build-tools"));
   checks.push(toolCheck(inputs, "ninja", "Ninja", true, "build-tools"));
-  checks.push(toolCheck(inputs, "dtc", "Device Tree Compiler (dtc)", true, "build-tools"));
+  checks.push(
+    toolCheck(inputs, "dtc", "Device Tree Compiler (dtc)", true, "build-tools"),
+  );
   checks.push(toolCheck(inputs, "gdb", "GDB", false, "build-tools"));
 
   checks.push({
@@ -99,9 +104,13 @@ export function analyzeToolchain(inputs: ToolchainInputs): ToolchainReport {
     label: "Alp SDK connected",
     required: false,
     status: inputs.sdkConnected ? "ok" : "warn",
-    detail: inputs.sdkConnected ? "alpSdk.path resolves" : "run Alp: Connect SDK",
+    detail: inputs.sdkConnected
+      ? "alpSdk.path resolves"
+      : "run Alp: Connect SDK",
   });
 
-  const missingRequired = checks.filter((c) => c.required && c.status === "missing").length;
+  const missingRequired = checks.filter(
+    (c) => c.required && c.status === "missing",
+  ).length;
   return { checks, ok: missingRequired === 0, missingRequired };
 }

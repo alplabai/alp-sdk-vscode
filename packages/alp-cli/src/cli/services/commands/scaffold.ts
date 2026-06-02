@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    collectWizardFileChanges,
-    writeWizardFiles,
+  collectWizardFileChanges,
+  writeWizardFiles,
 } from "@alp-sdk/core/wizard/fileSystem";
 import { ModuleTemplateId } from "@alp-sdk/core/wizard/models";
 import {
-    createModuleScaffoldPlan,
-    listModuleTemplates,
+  createModuleScaffoldPlan,
+  listModuleTemplates,
 } from "@alp-sdk/core/wizard/service";
 import * as path from "path";
 import {
-    CLI_EXIT_CODE,
-    CliExecutionInput,
-    CliExecutionResult,
-    CliGlobalFlags,
+  CLI_EXIT_CODE,
+  CliExecutionInput,
+  CliExecutionResult,
+  CliGlobalFlags,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 

@@ -1,6 +1,6 @@
 import { useAppContext } from "../../shared/AppContext";
-import { Icon, Skeleton, StatusChip } from "../../shared/ui";
 import type { IconName } from "../../shared/ui";
+import { Icon, Skeleton, StatusChip } from "../../shared/ui";
 import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./OverviewView.module.css";
@@ -206,7 +206,11 @@ const ACTIONS: ActionItem[] = [
   { icon: "wrench", label: "Setup Wizard", command: "alp.openSetupFlow" },
   { icon: "filePlus", label: "New Project", command: "alp.newProjectWizard" },
   { icon: "download", label: "SDK Manager", command: "alp.openSdkManager" },
-  { icon: "refresh", label: "Run Bootstrap", command: "alp.installDependencies" },
+  {
+    icon: "refresh",
+    label: "Run Bootstrap",
+    command: "alp.installDependencies",
+  },
   { icon: "settings", label: "Settings", command: "alp.openSettings" },
 ];
 

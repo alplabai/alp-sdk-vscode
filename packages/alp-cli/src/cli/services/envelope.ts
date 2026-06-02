@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    CLI_EXIT_CODE,
-    CliEnvelope,
-    CliExecutionResult,
-    CliFormat,
-    CliIssue,
+  CLI_EXIT_CODE,
+  CliEnvelope,
+  CliExecutionResult,
+  CliFormat,
+  CliIssue,
 } from "../models";
 
 export function createFailureResult<TData>(

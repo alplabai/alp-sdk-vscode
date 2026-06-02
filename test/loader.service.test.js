@@ -121,7 +121,10 @@ test("resolveEmitModesForBoardYaml: v2 zephyr-only board excludes yocto-conf", (
     "    os: zephyr",
   ].join("\n");
   const modes = resolveEmitModesForBoardYaml(yaml);
-  assert.ok(!modes.includes("yocto-conf"), "yocto-conf should not be present for zephyr-only v2");
+  assert.ok(
+    !modes.includes("yocto-conf"),
+    "yocto-conf should not be present for zephyr-only v2",
+  );
   assert.ok(modes.includes("zephyr-conf"));
   assert.ok(modes.includes("dts-overlay"));
   assert.ok(modes.includes("cmake-args"));
@@ -155,6 +158,9 @@ test("resolveEmitModesForBoardYaml: v2 board with off core excludes its OS", () 
     "    os: zephyr",
   ].join("\n");
   const modes = resolveEmitModesForBoardYaml(yaml);
-  assert.ok(!modes.includes("yocto-conf"), "off core should not contribute any modes");
+  assert.ok(
+    !modes.includes("yocto-conf"),
+    "off core should not contribute any modes",
+  );
   assert.ok(modes.includes("zephyr-conf"));
 });

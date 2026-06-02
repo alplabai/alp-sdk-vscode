@@ -2,8 +2,8 @@
 
 import * as vscode from "vscode";
 import {
-    type ExtToWebviewMessage,
-    type WebviewToExtMessage,
+  type ExtToWebviewMessage,
+  type WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { buildToolchainReport, runToolchainFix } from "../toolchain";

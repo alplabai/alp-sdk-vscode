@@ -2,33 +2,33 @@
 
 import * as vscode from "vscode";
 import {
-    createGenerationTraceReport,
-    serializeGenerationTraceReport,
+  createGenerationTraceReport,
+  serializeGenerationTraceReport,
 } from "@alp-sdk/core/debug/service";
 import {
-    EmitMode,
-    GenerationTargetSupport,
-    LoaderBatchEntry,
-    LoaderPlan,
+  EmitMode,
+  GenerationTargetSupport,
+  LoaderBatchEntry,
+  LoaderPlan,
 } from "@alp-sdk/core/loader/models";
 import {
-    ALL_EMIT_MODES,
-    createLoaderPlan,
-    getGenerationTargetSupport,
-    summarizeLoaderBatch,
+  ALL_EMIT_MODES,
+  createLoaderPlan,
+  getGenerationTargetSupport,
+  summarizeLoaderBatch,
 } from "@alp-sdk/core/loader/service";
 import {
-    boardYamlExists,
-    collectLoaderWorkspaceContext,
-    ensureLoaderOutputDirectory,
-    executeLoaderPlan,
-    inspectGeneratedFile,
-    previewGeneratedFile,
+  boardYamlExists,
+  collectLoaderWorkspaceContext,
+  ensureLoaderOutputDirectory,
+  executeLoaderPlan,
+  inspectGeneratedFile,
+  previewGeneratedFile,
 } from "./loader/vscodeAdapter";
 import { log, showOutput } from "./util";
 import {
-    analyzeValidationResult,
-    createValidatorPlan,
+  analyzeValidationResult,
+  createValidatorPlan,
 } from "@alp-sdk/core/validation/service";
 import { executeValidatorPlan } from "./validation/vscodeAdapter";
 

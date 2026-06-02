@@ -1,17 +1,17 @@
 import {
-    createContext,
-    useContext,
-    useEffect,
-    useMemo,
-    useState,
-    type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
 } from "react";
 import {
-    PROTOCOL_VERSION,
-    type AlpIdeState,
-    type E1mModule,
-    type ProjectTemplate,
-    type SdkRelease,
+  PROTOCOL_VERSION,
+  type AlpIdeState,
+  type E1mModule,
+  type ProjectTemplate,
+  type SdkRelease,
 } from "../types";
 import { onMessage, postMessage } from "../vscode";
 

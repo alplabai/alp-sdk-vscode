@@ -2,20 +2,20 @@
 
 import { ProjectContext } from "@alp-sdk/core/project/models";
 import {
-    MkdirP,
-    PathExists,
-    Readdir,
-    ReadFile,
-    SdkHttpFetch,
-    SdkInstallAdapter,
-    WriteFile,
+  MkdirP,
+  PathExists,
+  Readdir,
+  ReadFile,
+  SdkHttpFetch,
+  SdkInstallAdapter,
+  WriteFile,
 } from "@alp-sdk/core/sdk/adapterCore";
 import { SdkReadinessReport, SdkRelease } from "@alp-sdk/core/sdk/models";
 import { SpawnSyncLike } from "@alp-sdk/core/validation/adapterCore";
 import {
-    ValidationOutcome,
-    ValidationResult,
-    ValidationSeverity,
+  ValidationOutcome,
+  ValidationResult,
+  ValidationSeverity,
 } from "@alp-sdk/core/validation/models";
 
 export const CLI_EXIT_CODE = {

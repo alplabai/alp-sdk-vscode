@@ -14,4 +14,3 @@ export { runSdkCommand } from "./sdk";
 export { runSupportBundleCommand } from "./supportBundle";
 export { runTraceCommand } from "./trace";
 export { runValidateCommand } from "./validate";
-

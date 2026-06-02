@@ -2,10 +2,10 @@
 
 import * as vscode from "vscode";
 import {
-    emptyAlpIdeState,
-    PROTOCOL_VERSION,
-    type ExtToWebviewMessage,
-    type WebviewToExtMessage,
+  emptyAlpIdeState,
+  PROTOCOL_VERSION,
+  type ExtToWebviewMessage,
+  type WebviewToExtMessage,
 } from "./messages";
 import { queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";

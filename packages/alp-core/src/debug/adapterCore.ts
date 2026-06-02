@@ -2,9 +2,9 @@
 
 import { ProjectContext } from "../project/models";
 import {
-    DebugRuntimeCapabilities,
-    DebugWorkspaceContext,
-    DebuggerExtensionsState,
+  DebugRuntimeCapabilities,
+  DebugWorkspaceContext,
+  DebuggerExtensionsState,
 } from "./models";
 
 export interface DebugWorkspaceDependencies {

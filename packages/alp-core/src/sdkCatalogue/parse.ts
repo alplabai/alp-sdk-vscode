@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as yaml from "js-yaml";
-import { BoardPreset, ChipDef, I2cDevice, PadRoute, SocCore, SocSpec, SomPreset, TopologyCore } from "./models";
+import {
+  BoardPreset,
+  ChipDef,
+  I2cDevice,
+  PadRoute,
+  SocCore,
+  SocSpec,
+  SomPreset,
+  TopologyCore,
+} from "./models";
 
 function isTbd(v: unknown): boolean {
   return typeof v === "string" && v.trim() === "TBD";
@@ -27,7 +36,9 @@ function boolMap(v: unknown): Record<string, boolean> {
 }
 
 function strList(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  return Array.isArray(v)
+    ? v.filter((x): x is string => typeof x === "string")
+    : [];
 }
 
 export function parseBoardPreset(text: string): BoardPreset {
@@ -101,18 +112,32 @@ export function parseSomPreset(text: string): SomPreset {
   const i2cRaw = (onModuleRaw.i2c_devices ?? {}) as Record<string, any>;
   const i2cDevices: I2cDevice[] = [];
   for (const [bus, def] of Object.entries(i2cRaw)) {
-    const devs = (def && Array.isArray(def.devices)) ? def.devices : [];
+    const devs = def && Array.isArray(def.devices) ? def.devices : [];
     for (const dv of devs) {
       if (dv && typeof dv.chip === "string") {
-        i2cDevices.push({ bus, chip: dv.chip, role: str(dv.role), address: str(dv.address_7bit) });
+        i2cDevices.push({
+          bus,
+          chip: dv.chip,
+          role: str(dv.role),
+          address: str(dv.address_7bit),
+        });
       }
     }
   }
 
-  const topologyDetail: TopologyCore[] = Object.entries(topology).map(([id, t]) => {
-    const tc = (t ?? {}) as Record<string, unknown>;
-    return { id, app: str(tc.app), image: str(tc.image), machine: str(tc.machine), board: str(tc.board), toolchain: str(tc.toolchain) };
-  });
+  const topologyDetail: TopologyCore[] = Object.entries(topology).map(
+    ([id, t]) => {
+      const tc = (t ?? {}) as Record<string, unknown>;
+      return {
+        id,
+        app: str(tc.app),
+        image: str(tc.image),
+        machine: str(tc.machine),
+        board: str(tc.board),
+        toolchain: str(tc.toolchain),
+      };
+    },
+  );
 
   return {
     sku: str(d.sku) ?? "",
@@ -127,7 +152,10 @@ export function parseSomPreset(text: string): SomPreset {
     topology: topologyDetail,
     onModule: Object.entries(onModuleRaw)
       // `silicon:` is the SoC reference (captured separately), not a companion chip.
-      .filter(([key, val]) => key !== "silicon" && typeof val === "string" && !isTbd(val))
+      .filter(
+        ([key, val]) =>
+          key !== "silicon" && typeof val === "string" && !isTbd(val),
+      )
       .map(([, val]) => val as string),
     memory: hasMemory ? { dramMbit, flashMbit } : undefined,
     preliminary: Boolean(status.preliminary),

@@ -3,11 +3,11 @@ import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
 import {
-    Button,
-    Skeleton,
-    StatusChip,
-    Stepper,
-    StepperNav,
+  Button,
+  Skeleton,
+  StatusChip,
+  Stepper,
+  StepperNav,
 } from "../../shared/ui";
 import type { AlpIdeState } from "../../types";
 import { postMessage } from "../../vscode";

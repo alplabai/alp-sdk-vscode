@@ -5,11 +5,11 @@ import { createGenerationTraceReport } from "@alp-sdk/core/debug/service";
 import { EmitMode } from "@alp-sdk/core/loader/models";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import {
-    CLI_EXIT_CODE,
-    CliExecutionInput,
-    CliExecutionResult,
-    CliGlobalFlags,
-    CliIssue,
+  CLI_EXIT_CODE,
+  CliExecutionInput,
+  CliExecutionResult,
+  CliGlobalFlags,
+  CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 import { resolveCliDebugContext } from "./debugShared";

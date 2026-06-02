@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    CLI_EXIT_CODE,
-    CliExecutionInput,
-    CliExecutionResult,
-    CliGlobalFlags,
-    CliShell,
+  CLI_EXIT_CODE,
+  CliExecutionInput,
+  CliExecutionResult,
+  CliGlobalFlags,
+  CliShell,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 

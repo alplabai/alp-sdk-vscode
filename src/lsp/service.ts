@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    normalizeBoardModel,
-    parseBoardModel,
+  normalizeBoardModel,
+  parseBoardModel,
 } from "@alp-sdk/core/configurator/service";
 import { ProjectContext, ProjectSettings } from "@alp-sdk/core/project/models";
 

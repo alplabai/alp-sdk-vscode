@@ -1,6 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { planForHost, fixCommand } = require("@alp-sdk/core/toolchain/bootstrapPlan");
+const {
+  planForHost,
+  fixCommand,
+} = require("@alp-sdk/core/toolchain/bootstrapPlan");
 
 test("planForHost zephyr/win32 installs python deps + west", () => {
   const plan = planForHost("win32", "zephyr");
@@ -12,8 +15,14 @@ test("planForHost zephyr/win32 installs python deps + west", () => {
 });
 
 test("planForHost yocto/linux uses apt; darwin warns linux-only", () => {
-  assert.match(planForHost("linux", "yocto").steps[1].command, /apt-get install/);
-  assert.match(planForHost("darwin", "yocto").steps[1].description, /Linux-only/);
+  assert.match(
+    planForHost("linux", "yocto").steps[1].command,
+    /apt-get install/,
+  );
+  assert.match(
+    planForHost("darwin", "yocto").steps[1].description,
+    /Linux-only/,
+  );
 });
 
 test("planForHost baremetal lists vendor pointers", () => {
@@ -24,9 +33,15 @@ test("planForHost baremetal lists vendor pointers", () => {
 
 test("fixCommand maps fixIds to a command or pointer", () => {
   assert.equal(fixCommand("python-deps", "linux").kind, "command");
-  assert.match(fixCommand("python-deps", "linux").step.command, /pyyaml jsonschema/);
+  assert.match(
+    fixCommand("python-deps", "linux").step.command,
+    /pyyaml jsonschema/,
+  );
   assert.equal(fixCommand("west", "win32").kind, "command");
-  assert.match(fixCommand("west", "win32").step.command, /pip install --user west/);
+  assert.match(
+    fixCommand("west", "win32").step.command,
+    /pip install --user west/,
+  );
   assert.equal(fixCommand("build-tools", "linux").kind, "pointer");
   assert.equal(fixCommand("zephyr-sdk", "linux").kind, "pointer");
 });

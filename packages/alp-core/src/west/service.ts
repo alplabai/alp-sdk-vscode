@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    ALL_EMIT_MODES,
-    createLoaderPlan,
-    resolveEmitModesForBoardYaml,
+  ALL_EMIT_MODES,
+  createLoaderPlan,
+  resolveEmitModesForBoardYaml,
 } from "../loader/service";
 import { createValidatorPlan } from "../validation/service";
 import {
-    WestBuildInput,
-    WestBuildPreparation,
-    WestCommandPlan,
-    WestWorkspaceContext,
+  WestBuildInput,
+  WestBuildPreparation,
+  WestCommandPlan,
+  WestWorkspaceContext,
 } from "./models";
 
 export function createWestBuildPlan(

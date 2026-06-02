@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Format check (prettier)
+        run: pnpm run format:check
+
       - name: Compile (extension + CLI bundle + webview)
         run: pnpm run compile
 

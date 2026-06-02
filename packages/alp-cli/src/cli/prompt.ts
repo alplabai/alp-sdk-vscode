@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ALL_EMIT_MODES } from "@alp-sdk/core/loader/service";
-import { listModuleTemplates, listWizardTemplates } from "@alp-sdk/core/wizard/service";
+import {
+  listModuleTemplates,
+  listWizardTemplates,
+} from "@alp-sdk/core/wizard/service";
 import { parseCliArgs } from "./service";
 
 const DYNAMIC_IMPORT = new Function(

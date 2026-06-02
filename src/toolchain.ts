@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    BootstrapHost,
-    fixCommand,
-    ToolchainFixId,
+  BootstrapHost,
+  fixCommand,
+  ToolchainFixId,
 } from "@alp-sdk/core/toolchain/bootstrapPlan";
 import {
-    analyzeToolchain,
-    ToolchainReport,
+  analyzeToolchain,
+  ToolchainReport,
 } from "@alp-sdk/core/toolchain/doctor";
 import * as vscode from "vscode";
 import { showToolchainDoctorPanel } from "./toolchain/doctorPanel";

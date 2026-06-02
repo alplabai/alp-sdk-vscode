@@ -2,31 +2,31 @@
 
 import { summarizeLoaderBatch } from "@alp-sdk/core/loader/service";
 import {
-    analyzeValidationResult,
-    validateBoardYamlLocally,
+  analyzeValidationResult,
+  validateBoardYamlLocally,
 } from "@alp-sdk/core/validation/service";
 import {
-    createWestAlpCleanPlan,
-    createWestAlpFlashPlan,
-    createWestAlpImagePlan,
-    createWestAlpRenodePlan,
-    createWestBuildPreparation,
-    createWestFlashPlan,
-    createWestNativeRunPlan,
-    createWestUpdatePlan,
+  createWestAlpCleanPlan,
+  createWestAlpFlashPlan,
+  createWestAlpImagePlan,
+  createWestAlpRenodePlan,
+  createWestBuildPreparation,
+  createWestFlashPlan,
+  createWestNativeRunPlan,
+  createWestUpdatePlan,
 } from "@alp-sdk/core/west/service";
 import * as fs from "fs";
 import * as vscode from "vscode";
 import {
-    ensureLoaderOutputDirectory,
-    executeLoaderPlan,
-    inspectGeneratedFile,
+  ensureLoaderOutputDirectory,
+  executeLoaderPlan,
+  inspectGeneratedFile,
 } from "./loader/vscodeAdapter";
 import { log, showOutput } from "./util";
 import { executeValidatorPlan } from "./validation/vscodeAdapter";
 import {
-    collectWestWorkspaceContext,
-    executeWestPlan,
+  collectWestWorkspaceContext,
+  executeWestPlan,
 } from "./west/vscodeAdapter";
 
 async function pickBoardAndExamplePath(): Promise<{

@@ -4,13 +4,14 @@ import * as vscode from "vscode";
 import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorCommand } from "./configuratorPanel";
 import { registerDebugCommands } from "./debug";
+import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
-    ExistingProjectFlowPanel,
-    NewProjectFlowPanel,
-    OverviewPanel,
-    registerWorkspaceCommands,
-    SdkManagerPanel,
-    SetupFlowPanel,
+  ExistingProjectFlowPanel,
+  NewProjectFlowPanel,
+  OverviewPanel,
+  registerWorkspaceCommands,
+  SdkManagerPanel,
+  SetupFlowPanel,
 } from "./ideHub";
 import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
 import { registerLoaderCommands } from "./loader";
@@ -18,12 +19,11 @@ import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
-import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import { registerTreeViews } from "./views";
 import { registerWestCommands } from "./west";
 import {
-    maybeOfferFirstRunWizard,
-    registerProjectWizardCommand,
+  maybeOfferFirstRunWizard,
+  registerProjectWizardCommand,
 } from "./wizard";
 
 export function activate(context: vscode.ExtensionContext): void {

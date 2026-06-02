@@ -3,13 +3,13 @@
 import * as path from "path";
 import { parseBoardModel } from "../configurator/service";
 import {
-    ValidationIssue,
-    ValidationOutcome,
-    ValidationResult,
-    ValidationSeverity,
-    ValidationWorkspaceContext,
-    ValidatorExecutionResult,
-    ValidatorPlan,
+  ValidationIssue,
+  ValidationOutcome,
+  ValidationResult,
+  ValidationSeverity,
+  ValidationWorkspaceContext,
+  ValidatorExecutionResult,
+  ValidatorPlan,
 } from "./models";
 
 export function isBoardYamlPath(filePath: string): boolean {

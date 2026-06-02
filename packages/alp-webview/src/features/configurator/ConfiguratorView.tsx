@@ -172,7 +172,10 @@ function TagSelector({
   const matches = useMemo(
     () =>
       all
-        .filter((id) => !chosen.has(id) && id.toLowerCase().includes(query.toLowerCase()))
+        .filter(
+          (id) =>
+            !chosen.has(id) && id.toLowerCase().includes(query.toLowerCase()),
+        )
         .sort()
         .slice(0, 8),
     [all, query, selected],
@@ -265,7 +268,10 @@ function HardwareCard({ vm }: { vm: ConfiguratorViewModel }) {
   }
   const compute = hw.cores.length
     ? hw.cores
-        .map((c) => `${c.count}× ${c.type}${c.freqMhz ? ` @ ${c.freqMhz}MHz` : ""}`)
+        .map(
+          (c) =>
+            `${c.count}× ${c.type}${c.freqMhz ? ` @ ${c.freqMhz}MHz` : ""}`,
+        )
         .join(" · ")
     : "—";
   return (
@@ -378,7 +384,9 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
       </Row>
       <Field
         label="Carrier / board preset"
-        hint={vm.boardMode === "inline" ? "inline populated mode" : "preset mode"}
+        hint={
+          vm.boardMode === "inline" ? "inline populated mode" : "preset mode"
+        }
       >
         <Select
           label="Carrier / board preset"
@@ -402,13 +410,7 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
   );
 }
 
-function CoreCard({
-  core,
-  cfg,
-}: {
-  core: CorePanel;
-  cfg: UseConfigurator;
-}) {
+function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   const { mutate, vm } = cfg;
   const ensure = (d: BoardConfig) => {
     d.cores = d.cores || {};
@@ -674,7 +676,8 @@ function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
                   onChange={(v) =>
                     mutate((draft) => {
                       draft.diagnostics = draft.diagnostics || {};
-                      draft.diagnostics.modules = draft.diagnostics.modules || {};
+                      draft.diagnostics.modules =
+                        draft.diagnostics.modules || {};
                       draft.diagnostics.modules[name] = v as never;
                     })
                   }
@@ -982,7 +985,11 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
               <Field label="Persistent key slots">
                 <NumberInput
                   label="Persistent key slots"
-                  value={sec.persistent_slots != null ? String(sec.persistent_slots) : ""}
+                  value={
+                    sec.persistent_slots != null
+                      ? String(sec.persistent_slots)
+                      : ""
+                  }
                   placeholder="16"
                   onChange={(v) =>
                     mutate(
@@ -990,7 +997,8 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                         d.security = d.security || {};
                         d.security.psa = d.security.psa || {};
                         const n = parseInt(v, 10);
-                        if (Number.isFinite(n)) d.security.psa.persistent_slots = n;
+                        if (Number.isFinite(n))
+                          d.security.psa.persistent_slots = n;
                         else delete d.security.psa.persistent_slots;
                       },
                       { debounce: true },
@@ -1080,7 +1088,11 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
               <Field label="Poll interval (s)">
                 <NumberInput
                   label="Poll interval (s)"
-                  value={ota.poll_interval_s != null ? String(ota.poll_interval_s) : ""}
+                  value={
+                    ota.poll_interval_s != null
+                      ? String(ota.poll_interval_s)
+                      : ""
+                  }
                   placeholder="1800"
                   onChange={(v) =>
                     mutate(
@@ -1242,7 +1254,9 @@ function ReviewSection({ cfg }: { cfg: UseConfigurator }) {
           </ul>
         </>
       ) : (
-        <p className={`${styles.revHead} ${styles.ok}`}>✓ board.yaml is valid</p>
+        <p className={`${styles.revHead} ${styles.ok}`}>
+          ✓ board.yaml is valid
+        </p>
       )}
       {validation.warnings.length ? (
         <ul className={`${styles.revList} ${styles.warn}`}>

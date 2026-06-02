@@ -3,12 +3,12 @@ import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
 import {
-    Card,
-    Field,
-    Skeleton,
-    StatusChip,
-    Stepper,
-    StepperNav
+  Card,
+  Field,
+  Skeleton,
+  StatusChip,
+  Stepper,
+  StepperNav,
 } from "../../shared/ui";
 import type { E1mModule, ProjectTemplate } from "../../types";
 import { postMessage } from "../../vscode";

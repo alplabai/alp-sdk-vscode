@@ -3,17 +3,17 @@
 import * as fs from "fs";
 import * as path from "path";
 import {
-    createEmptyPresetCatalogue,
-    parseBoardModel,
+  createEmptyPresetCatalogue,
+  parseBoardModel,
 } from "@alp-sdk/core/configurator/service";
 import { ProjectSettings } from "@alp-sdk/core/project/models";
 import { resolveProjectContext } from "@alp-sdk/core/project/service";
 import {
-    CLI_EXIT_CODE,
-    CliExecutionInput,
-    CliExecutionResult,
-    CliGlobalFlags,
-    CliIssue,
+  CLI_EXIT_CODE,
+  CliExecutionInput,
+  CliExecutionResult,
+  CliGlobalFlags,
+  CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 

@@ -4,17 +4,17 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
-    emptyAlpIdeState,
-    PROTOCOL_VERSION,
-    type ExtToWebviewMessage,
-    type WebviewToExtMessage,
+  emptyAlpIdeState,
+  PROTOCOL_VERSION,
+  type ExtToWebviewMessage,
+  type WebviewToExtMessage,
 } from "./messages";
 import {
-    E1M_MODULES,
-    generateBoardYaml,
-    generateCMakeLists,
-    generateMainC,
-    PROJECT_TEMPLATES,
+  E1M_MODULES,
+  generateBoardYaml,
+  generateCMakeLists,
+  generateMainC,
+  PROJECT_TEMPLATES,
 } from "./projectScaffold";
 import { queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";

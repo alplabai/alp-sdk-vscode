@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    checkSdkReadiness,
-    listLocalSdkEntries,
-    resolveActiveSdk,
+  checkSdkReadiness,
+  listLocalSdkEntries,
+  resolveActiveSdk,
 } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";

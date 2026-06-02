@@ -3,26 +3,26 @@
 import * as path from "path";
 
 import {
-    DebugDoctorRequest,
-    DebugGenerationTraceDecision,
-    DebugGenerationTraceReport,
-    DebugInspectReport,
-    DebugLaunchPreview,
-    DebugPreflightReport,
-    DebugProfile,
-    DebugResolvedValue,
-    DebugRuntimeCapabilities,
-    DebugServerChoice,
-    DebugServerKind,
-    DebugSupportBundlePayload,
-    DebugTargetChoice,
-    DebugTargetKind,
-    DebugWorkspaceContext,
-    DoctorCheck,
-    DoctorReport,
-    LaunchConfigurationDraft,
-    PreflightCheck,
-    PreflightStatus,
+  DebugDoctorRequest,
+  DebugGenerationTraceDecision,
+  DebugGenerationTraceReport,
+  DebugInspectReport,
+  DebugLaunchPreview,
+  DebugPreflightReport,
+  DebugProfile,
+  DebugResolvedValue,
+  DebugRuntimeCapabilities,
+  DebugServerChoice,
+  DebugServerKind,
+  DebugSupportBundlePayload,
+  DebugTargetChoice,
+  DebugTargetKind,
+  DebugWorkspaceContext,
+  DoctorCheck,
+  DoctorReport,
+  LaunchConfigurationDraft,
+  PreflightCheck,
+  PreflightStatus,
 } from "./models";
 
 export interface DebugPreflightDependencies {
@@ -520,7 +520,6 @@ export function debugProfileToLaunchDraft(
         preLaunchTask: profile.preLaunchTask,
       };
   }
-
 }
 
 function createDoctorReport(

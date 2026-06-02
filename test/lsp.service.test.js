@@ -249,7 +249,6 @@ test("createDiagnosticMessageWithContext enriches issue with effective context",
   assert.match(message, /Preset origin: .*som\.sku=board\.yaml inline/);
 });
 
-
 // --- detectV2StructuralIssues ---
 
 test("detectV2StructuralIssues returns empty for v1 document with top-level os", () => {
@@ -317,7 +316,10 @@ test("createBoardYamlQuickFixes does not offer add-os fix for v2 documents", () 
   const doc = ["schema_version: 2", "som:", "  sku: E1M-AEN701"].join("\n");
   const fixes = createBoardYamlQuickFixes(doc, "FAIL os missing or invalid");
   const titles = fixes.map((f) => f.title);
-  assert(!titles.includes("Add missing os field"), "Should not offer os fix for v2");
+  assert(
+    !titles.includes("Add missing os field"),
+    "Should not offer os fix for v2",
+  );
 });
 
 test("createBoardYamlQuickFixes still offers add-os fix for v1 documents", () => {

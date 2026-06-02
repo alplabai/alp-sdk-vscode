@@ -3,8 +3,8 @@
 import * as vscode from "vscode";
 import { loadBoardConfigFromFile } from "../configurator/boardIo";
 import {
-    type ExtToWebviewMessage,
-    type WebviewToExtMessage,
+  type ExtToWebviewMessage,
+  type WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { collectProjectContext } from "../project/vscodeAdapter";

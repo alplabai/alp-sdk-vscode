@@ -23,14 +23,24 @@ export type LogFn = (message: string) => void;
 const noLog: LogFn = () => {};
 
 function emptyCatalogue(): SdkCatalogue {
-  return { soms: [], boards: [], chips: [], libraries: [], socs: [], sdkVersion: undefined };
+  return {
+    soms: [],
+    boards: [],
+    chips: [],
+    libraries: [],
+    socs: [],
+    sdkVersion: undefined,
+  };
 }
 
 function readUtf8(file: string): string {
   return fs.readFileSync(file, "utf-8");
 }
 
-function listFiles(dir: string, predicate: (name: string) => boolean): string[] {
+function listFiles(
+  dir: string,
+  predicate: (name: string) => boolean,
+): string[] {
   if (!fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
@@ -110,7 +120,10 @@ export function loadSdkCatalogue(
   const versionFile = path.join(meta, "sdk_version.yaml");
   if (fs.existsSync(versionFile)) {
     try {
-      const v = (yaml.load(readUtf8(versionFile)) ?? {}) as Record<string, unknown>;
+      const v = (yaml.load(readUtf8(versionFile)) ?? {}) as Record<
+        string,
+        unknown
+      >;
       if (typeof v.version === "string") sdkVersion = v.version;
     } catch (error) {
       logError(`sdkCatalogue: failed to read sdk_version.yaml: ${error}`);

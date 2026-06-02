@@ -3,18 +3,18 @@
 import { BoardModel } from "../configurator/models";
 import { createBoardYaml } from "../configurator/service";
 import {
-    ModuleScaffoldInput,
-    ModuleScaffoldPlan,
-    ModuleTemplateDefinition,
-    ModuleTemplateId,
-    WizardFileChange,
-    WizardGeneratedOutputPreview,
-    WizardPlan,
-    WizardPlanInput,
-    WizardPlannedFile,
-    WizardTemplateDefinition,
-    WizardTemplateId,
-    WizardValidationSummary,
+  ModuleScaffoldInput,
+  ModuleScaffoldPlan,
+  ModuleTemplateDefinition,
+  ModuleTemplateId,
+  WizardFileChange,
+  WizardGeneratedOutputPreview,
+  WizardPlan,
+  WizardPlanInput,
+  WizardPlannedFile,
+  WizardTemplateDefinition,
+  WizardTemplateId,
+  WizardValidationSummary,
 } from "./models";
 
 const TEMPLATE_DEFINITIONS: readonly WizardTemplateDefinition[] = [

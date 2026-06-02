@@ -2,7 +2,11 @@
 
 export type BootstrapHost = "linux" | "darwin" | "win32";
 export type BootstrapOs = "zephyr" | "yocto" | "baremetal";
-export type ToolchainFixId = "python-deps" | "west" | "build-tools" | "zephyr-sdk";
+export type ToolchainFixId =
+  | "python-deps"
+  | "west"
+  | "build-tools"
+  | "zephyr-sdk";
 
 export interface BootstrapStep {
   description: string;
@@ -29,17 +33,29 @@ const ZEPHYR_SDK_INSTALLER: BootstrapPointer = {
 
 function pythonDepsStep(host: BootstrapHost): BootstrapStep {
   return host === "win32"
-    ? { description: "Install loader Python deps (pip)", command: "python -m pip install --user pyyaml jsonschema" }
-    : { description: "Install loader Python deps (pip3)", command: "pip3 install --user pyyaml jsonschema" };
+    ? {
+        description: "Install loader Python deps (pip)",
+        command: "python -m pip install --user pyyaml jsonschema",
+      }
+    : {
+        description: "Install loader Python deps (pip3)",
+        command: "pip3 install --user pyyaml jsonschema",
+      };
 }
 
 function westStep(host: BootstrapHost): BootstrapStep {
   return host === "win32"
-    ? { description: "Install `west`", command: "python -m pip install --user west" }
+    ? {
+        description: "Install `west`",
+        command: "python -m pip install --user west",
+      }
     : { description: "Install `west`", command: "pip3 install --user west" };
 }
 
-export function planForHost(host: BootstrapHost, os: BootstrapOs): BootstrapPlan {
+export function planForHost(
+  host: BootstrapHost,
+  os: BootstrapOs,
+): BootstrapPlan {
   if (os === "zephyr") {
     return {
       title: `Bootstrap Alp SDK (Zephyr, ${host})`,
@@ -60,13 +76,23 @@ export function planForHost(host: BootstrapHost, os: BootstrapOs): BootstrapPlan
               "libegl1-mesa libsdl1.2-dev pylint xterm python3-subunit " +
               "mesa-common-dev zstd liblz4-tool file locales",
           }
-        : { description: "Yocto host build is Linux-only.  Use a VM / Docker container.", command: "echo 'See pointers below'" };
+        : {
+            description:
+              "Yocto host build is Linux-only.  Use a VM / Docker container.",
+            command: "echo 'See pointers below'",
+          };
     return {
       title: `Bootstrap Alp SDK (Yocto, ${host})`,
       steps: [pythonDepsStep(host), yoctoStep],
       pointers: [
-        { name: "Yocto Project quick build", url: "https://docs.yoctoproject.org/brief-yoctoprojectqs/index.html" },
-        { name: "Yocto host requirements", url: "https://docs.yoctoproject.org/ref-manual/system-requirements.html" },
+        {
+          name: "Yocto Project quick build",
+          url: "https://docs.yoctoproject.org/brief-yoctoprojectqs/index.html",
+        },
+        {
+          name: "Yocto host requirements",
+          url: "https://docs.yoctoproject.org/ref-manual/system-requirements.html",
+        },
       ],
     };
   }
@@ -74,9 +100,18 @@ export function planForHost(host: BootstrapHost, os: BootstrapOs): BootstrapPlan
     title: `Bootstrap Alp SDK (baremetal, ${host})`,
     steps: [pythonDepsStep(host)],
     pointers: [
-      { name: "Alif Ensemble dev tools", url: "https://alifsemi.com/support/software-development-kit/" },
-      { name: "Renesas RZ/V2N CMSIS-Driver pack", url: "https://www.renesas.com/us/en/software-tool/flexible-software-package-fsp" },
-      { name: "NXP MCUXpresso for i.MX 93", url: "https://www.nxp.com/design/software/mcuxpresso-software-and-tools/" },
+      {
+        name: "Alif Ensemble dev tools",
+        url: "https://alifsemi.com/support/software-development-kit/",
+      },
+      {
+        name: "Renesas RZ/V2N CMSIS-Driver pack",
+        url: "https://www.renesas.com/us/en/software-tool/flexible-software-package-fsp",
+      },
+      {
+        name: "NXP MCUXpresso for i.MX 93",
+        url: "https://www.nxp.com/design/software/mcuxpresso-software-and-tools/",
+      },
     ],
   };
 }
@@ -85,7 +120,10 @@ export type FixResult =
   | { kind: "command"; step: BootstrapStep }
   | { kind: "pointer"; pointer: BootstrapPointer };
 
-export function fixCommand(fixId: ToolchainFixId, host: BootstrapHost): FixResult {
+export function fixCommand(
+  fixId: ToolchainFixId,
+  host: BootstrapHost,
+): FixResult {
   switch (fixId) {
     case "python-deps":
       return { kind: "command", step: pythonDepsStep(host) };

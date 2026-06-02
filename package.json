@@ -336,7 +336,9 @@
     "watch": "tsc --build --watch",
     "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm --filter ./packages/alp-cli run compile && pnpm run bundle:ext",
     "package": "pnpm run vscode:prepublish && vsce package --no-dependencies",
-    "package:dev": "pnpm run vscode:prepublish && vsce package --no-dependencies --pre-release"
+    "package:dev": "pnpm run vscode:prepublish && vsce package --no-dependencies --pre-release",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -359,6 +361,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
+    "prettier": "^3.8.3",
     "typescript": "^6.0.3"
   }
 }

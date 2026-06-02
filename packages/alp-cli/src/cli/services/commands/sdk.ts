@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    checkSdkReadiness,
-    installSdkRelease,
-    listRemoteSdkReleases,
-    resolveActiveSdk,
-    switchActiveSdk,
+  checkSdkReadiness,
+  installSdkRelease,
+  listRemoteSdkReleases,
+  resolveActiveSdk,
+  switchActiveSdk,
 } from "@alp-sdk/core/sdk/service";
 import * as os from "os";
 import * as path from "path";
 import {
-    CLI_EXIT_CODE,
-    CliExecutionInput,
-    CliExecutionResult,
-    CliGlobalFlags,
-    SdkCommandData,
-    SdkCurrentData,
-    SdkInstallData,
-    SdkListData,
-    SdkSwitchData,
+  CLI_EXIT_CODE,
+  CliExecutionInput,
+  CliExecutionResult,
+  CliGlobalFlags,
+  SdkCommandData,
+  SdkCurrentData,
+  SdkInstallData,
+  SdkListData,
+  SdkSwitchData,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 

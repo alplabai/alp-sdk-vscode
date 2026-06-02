@@ -193,7 +193,11 @@
   font-size: 10px;
   padding: 1px 6px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 22%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-charts-yellow, #e2c08d) 22%,
+    transparent
+  );
   color: var(--vscode-charts-yellow, #e2c08d);
 }
 .kv {
@@ -223,7 +227,11 @@
   font-size: 11px;
   padding: 1px 7px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 18%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-charts-green, #89d185) 18%,
+    transparent
+  );
   color: var(--vscode-charts-green, #89d185);
 }
 
@@ -478,7 +486,10 @@
   color: var(--vscode-button-foreground);
 }
 .btnPrimary:hover {
-  background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+  background: var(
+    --vscode-button-hoverBackground,
+    var(--vscode-button-background)
+  );
 }
 .btn:disabled {
   opacity: 0.5;

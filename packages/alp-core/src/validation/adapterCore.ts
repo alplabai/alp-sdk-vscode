@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    ValidationWorkspaceContext,
-    ValidatorExecutionResult,
-    ValidatorPlan,
+  ValidationWorkspaceContext,
+  ValidatorExecutionResult,
+  ValidatorPlan,
 } from "./models";
 
 export interface SpawnSyncResultLike {

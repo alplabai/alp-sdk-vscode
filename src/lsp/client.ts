@@ -3,10 +3,10 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import {
-    LanguageClient,
-    LanguageClientOptions,
-    ServerOptions,
-    TransportKind,
+  LanguageClient,
+  LanguageClientOptions,
+  ServerOptions,
+  TransportKind,
 } from "vscode-languageclient/node";
 
 let client: LanguageClient | undefined;

@@ -4,12 +4,16 @@ import * as fs from "fs";
 import * as path from "path";
 import { ProjectContext } from "@alp-sdk/core/project/models";
 import { log } from "../util";
-import { BoardModel, CarrierPreset, PresetCatalogue } from "@alp-sdk/core/configurator/models";
 import {
-    createBoardYaml,
-    createDefaultBoardModel,
-    createEmptyPresetCatalogue,
-    parseBoardModel,
+  BoardModel,
+  CarrierPreset,
+  PresetCatalogue,
+} from "@alp-sdk/core/configurator/models";
+import {
+  createBoardYaml,
+  createDefaultBoardModel,
+  createEmptyPresetCatalogue,
+  parseBoardModel,
 } from "@alp-sdk/core/configurator/service";
 
 export function loadPresetCatalogue(project: ProjectContext): PresetCatalogue {

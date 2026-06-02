@@ -12,10 +12,15 @@ function somBySku(catalogue: SdkCatalogue, sku: string): SomPreset | undefined {
   return catalogue.soms.find((s) => s.sku === sku);
 }
 
-export function boardsForSom(catalogue: SdkCatalogue, sku: string): BoardPreset[] {
+export function boardsForSom(
+  catalogue: SdkCatalogue,
+  sku: string,
+): BoardPreset[] {
   const som = somBySku(catalogue, sku);
   if (!som) return [];
-  return catalogue.boards.filter((b) => b.hostsSomFamilies.includes(som.family));
+  return catalogue.boards.filter((b) =>
+    b.hostsSomFamilies.includes(som.family),
+  );
 }
 
 export function coreIdsForSom(catalogue: SdkCatalogue, sku: string): string[] {
@@ -32,7 +37,11 @@ export function acceleratorAvailability(som: SomPreset): AcceleratorAvail[] {
   return [
     { id: "ethos_u", label: "Ethos-U", available: pb === "ethos_u" },
     { id: "drpai", label: "DRP-AI", available: pb === "drpai" },
-    { id: "deepx_dxm1", label: "DeepX DX-M1", available: hasDeepx || pb === "deepx_dxm1" },
+    {
+      id: "deepx_dxm1",
+      label: "DeepX DX-M1",
+      available: hasDeepx || pb === "deepx_dxm1",
+    },
     { id: "cpu", label: "CPU fallback", available: true },
   ];
 }

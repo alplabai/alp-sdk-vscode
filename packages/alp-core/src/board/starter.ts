@@ -9,7 +9,10 @@ import { BoardConfig, CoreEntry } from "./models";
  * inline routing is set, so the result passes validateBoardConfig and the user
  * picks a preset afterward in the configurator.
  */
-export function buildStarterBoardConfig(sku: string, coreIds: string[]): BoardConfig {
+export function buildStarterBoardConfig(
+  sku: string,
+  coreIds: string[],
+): BoardConfig {
   const ids = coreIds.length > 0 ? coreIds : ["app"];
   const cores: Record<string, CoreEntry> = {};
   ids.forEach((id, index) => {

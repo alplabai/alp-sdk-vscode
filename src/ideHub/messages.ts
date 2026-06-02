@@ -3,24 +3,24 @@
 import type { BoardConfig } from "@alp-sdk/core/board/models";
 import type { ConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
 import type {
-    LocalSdkEntry,
-    SdkReadinessState,
-    SdkRelease,
+  LocalSdkEntry,
+  SdkReadinessState,
+  SdkRelease,
 } from "@alp-sdk/core/sdk/models";
-import type { ToolchainReport } from "@alp-sdk/core/toolchain/doctor";
+import type { SocCore, SomPreset } from "@alp-sdk/core/sdkCatalogue/models";
 import type { ToolchainFixId } from "@alp-sdk/core/toolchain/bootstrapPlan";
-import type { SomPreset, SocCore } from "@alp-sdk/core/sdkCatalogue/models";
+import type { ToolchainReport } from "@alp-sdk/core/toolchain/doctor";
 
 // Re-export so callers only need this module.
 export type {
-    BoardConfig,
-    ConfiguratorViewModel,
-    LocalSdkEntry,
-    SdkRelease,
-    SocCore,
-    SomPreset,
-    ToolchainFixId,
-    ToolchainReport,
+  BoardConfig,
+  ConfiguratorViewModel,
+  LocalSdkEntry,
+  SdkRelease,
+  SocCore,
+  SomPreset,
+  ToolchainFixId,
+  ToolchainReport,
 };
 
 // ---------------------------------------------------------------------------

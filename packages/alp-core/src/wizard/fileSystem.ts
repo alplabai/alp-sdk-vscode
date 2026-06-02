@@ -4,10 +4,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { listGenerationTargetSupport } from "../loader/service";
 import {
-    WizardFileChange,
-    WizardGeneratedOutputPreview,
-    WizardPlannedFile,
-    WizardWriteResult,
+  WizardFileChange,
+  WizardGeneratedOutputPreview,
+  WizardPlannedFile,
+  WizardWriteResult,
 } from "./models";
 
 export function collectWizardFileChanges(

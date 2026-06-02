@@ -6,10 +6,13 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import {
-    collectRuntimeCapabilitiesFromCommands,
-    createDebugWorkspaceContext,
+  collectRuntimeCapabilitiesFromCommands,
+  createDebugWorkspaceContext,
 } from "@alp-sdk/core/debug/adapterCore";
-import { DebugRuntimeCapabilities, DebugWorkspaceContext } from "@alp-sdk/core/debug/models";
+import {
+  DebugRuntimeCapabilities,
+  DebugWorkspaceContext,
+} from "@alp-sdk/core/debug/models";
 
 export function collectWorkspaceDebugContext(): DebugWorkspaceContext {
   const project = collectProjectContext();

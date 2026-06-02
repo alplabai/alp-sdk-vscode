@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    CLI_EXIT_CODE,
-    CliCommand,
-    CliExecutionResult,
-    CliFormat,
+  CLI_EXIT_CODE,
+  CliCommand,
+  CliExecutionResult,
+  CliFormat,
 } from "../models";
 import { createEnvelope } from "./envelope";
 

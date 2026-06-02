@@ -3,16 +3,16 @@
 import * as fs from "fs";
 import * as path from "path";
 import {
-    normalizeBoardModel,
-    parseBoardModel,
+  normalizeBoardModel,
+  parseBoardModel,
 } from "@alp-sdk/core/configurator/service";
 import { ProjectSettings } from "@alp-sdk/core/project/models";
 import { resolveProjectContext } from "@alp-sdk/core/project/service";
 import {
-    CLI_EXIT_CODE,
-    CliExecutionInput,
-    CliExecutionResult,
-    CliGlobalFlags,
+  CLI_EXIT_CODE,
+  CliExecutionInput,
+  CliExecutionResult,
+  CliGlobalFlags,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 

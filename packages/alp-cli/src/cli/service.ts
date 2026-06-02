@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    CLI_EXIT_CODE,
-    CliCommand,
-    CliExecutionInput,
-    CliExecutionResult,
+  CLI_EXIT_CODE,
+  CliCommand,
+  CliExecutionInput,
+  CliExecutionResult,
 } from "./models";
 import { parseCliArgs } from "./services/args";
 import {
-    runCompletionCommand,
-    runDebugConfigCommand,
-    runDiffCommand,
-    runDoctorCommand,
-    runExplainCommand,
-    runGenerateCommand,
-    runInitCommand,
-    runInspectCommand,
-    runPresetsCommand,
-    runScaffoldCommand,
-    runSdkCommand,
-    runSupportBundleCommand,
-    runTraceCommand,
-    runValidateCommand,
+  runCompletionCommand,
+  runDebugConfigCommand,
+  runDiffCommand,
+  runDoctorCommand,
+  runExplainCommand,
+  runGenerateCommand,
+  runInitCommand,
+  runInspectCommand,
+  runPresetsCommand,
+  runScaffoldCommand,
+  runSdkCommand,
+  runSupportBundleCommand,
+  runTraceCommand,
+  runValidateCommand,
 } from "./services/commands/index";
 import { createEnvelope, createFailureResult } from "./services/envelope";
 import { createHelpResult } from "./services/help";

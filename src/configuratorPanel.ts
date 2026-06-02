@@ -4,12 +4,12 @@ import * as vscode from "vscode";
 import { buildConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
 import type { BoardConfig } from "@alp-sdk/core/board/models";
 import {
-    loadBoardConfigFromFile,
-    saveBoardConfigToFile,
+  loadBoardConfigFromFile,
+  saveBoardConfigToFile,
 } from "./configurator/boardIo";
 import {
-    type ExtToWebviewMessage,
-    type WebviewToExtMessage,
+  type ExtToWebviewMessage,
+  type WebviewToExtMessage,
 } from "./ideHub/messages";
 import { buildWebviewHtml } from "./ideHub/webviewHtml";
 import { collectProjectContext } from "./project/vscodeAdapter";

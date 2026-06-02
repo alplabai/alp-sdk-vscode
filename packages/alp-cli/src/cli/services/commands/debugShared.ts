@@ -2,14 +2,14 @@
 
 import * as path from "path";
 import {
-    collectRuntimeCapabilitiesFromCommands,
-    createDebugWorkspaceContext,
+  collectRuntimeCapabilitiesFromCommands,
+  createDebugWorkspaceContext,
 } from "@alp-sdk/core/debug/adapterCore";
 import {
-    DebugRuntimeCapabilities,
-    DebugServerKind,
-    DebugTargetKind,
-    DebugWorkspaceContext,
+  DebugRuntimeCapabilities,
+  DebugServerKind,
+  DebugTargetKind,
+  DebugWorkspaceContext,
 } from "@alp-sdk/core/debug/models";
 import { serverChoicesForTarget } from "@alp-sdk/core/debug/service";
 import { ProjectContext, ProjectSettings } from "@alp-sdk/core/project/models";

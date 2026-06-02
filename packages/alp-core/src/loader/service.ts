@@ -3,12 +3,12 @@
 import * as path from "path";
 import { parseBoardModel } from "../configurator/service";
 import {
-    EmitMode,
-    GenerationTargetSupport,
-    LoaderBatchEntry,
-    LoaderBatchSummary,
-    LoaderPlan,
-    LoaderWorkspaceContext,
+  EmitMode,
+  GenerationTargetSupport,
+  LoaderBatchEntry,
+  LoaderBatchSummary,
+  LoaderPlan,
+  LoaderWorkspaceContext,
 } from "./models";
 
 const GENERATION_TARGET_CATALOG: readonly GenerationTargetSupport[] = [

@@ -6,15 +6,15 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import {
-    boardYamlExistsWithDependencies,
-    executeLoaderPlanWithSpawn,
-    inspectGeneratedFileWithDependencies,
+  boardYamlExistsWithDependencies,
+  executeLoaderPlanWithSpawn,
+  inspectGeneratedFileWithDependencies,
 } from "@alp-sdk/core/loader/adapterCore";
 import {
-    LoaderBatchEntry,
-    LoaderPlan,
-    LoaderWorkspaceContext,
-    ScriptExecutionResult,
+  LoaderBatchEntry,
+  LoaderPlan,
+  LoaderWorkspaceContext,
+  ScriptExecutionResult,
 } from "@alp-sdk/core/loader/models";
 
 export function collectLoaderWorkspaceContext(): LoaderWorkspaceContext {

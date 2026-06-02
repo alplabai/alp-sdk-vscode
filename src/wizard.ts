@@ -2,36 +2,36 @@
 
 import { BoardModel } from "@alp-sdk/core/configurator/models";
 import {
-    collectGeneratedOutputPreviews,
-    collectWizardFileChanges,
-    writeWizardFiles,
+  collectGeneratedOutputPreviews,
+  collectWizardFileChanges,
+  writeWizardFiles,
 } from "@alp-sdk/core/wizard/fileSystem";
 import {
-    ModuleScaffoldInput,
-    ModuleTemplateDefinition,
-    ModuleTemplateId,
-    WizardFeatureFlags,
-    WizardPlanInput,
-    WizardTemplateDefinition,
-    WizardTemplateId,
+  ModuleScaffoldInput,
+  ModuleTemplateDefinition,
+  ModuleTemplateId,
+  WizardFeatureFlags,
+  WizardPlanInput,
+  WizardTemplateDefinition,
+  WizardTemplateId,
 } from "@alp-sdk/core/wizard/models";
 import {
-    createModuleScaffoldPlan,
-    createModuleScaffoldPreviewMarkdown,
-    createTemplateExplanation,
-    createWizardPlan,
-    createWizardPreviewMarkdown,
-    createWizardValidationSummary,
-    listModuleTemplates,
-    listWizardTemplates,
-    suggestTemplateIdFromBoardModel,
+  createModuleScaffoldPlan,
+  createModuleScaffoldPreviewMarkdown,
+  createTemplateExplanation,
+  createWizardPlan,
+  createWizardPreviewMarkdown,
+  createWizardValidationSummary,
+  listModuleTemplates,
+  listWizardTemplates,
+  suggestTemplateIdFromBoardModel,
 } from "@alp-sdk/core/wizard/service";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
-    loadBoardModel,
-    loadPresetCatalogue,
+  loadBoardModel,
+  loadPresetCatalogue,
 } from "./configurator/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 

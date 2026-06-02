@@ -7,8 +7,11 @@ function allPresent() {
     tools: {
       python: { present: true, detail: "Python 3.11.0" },
       west: { present: true, detail: "v1.2" },
-      cmake: { present: true }, ninja: { present: true },
-      dtc: { present: true }, gdb: { present: true }, alp: { present: true },
+      cmake: { present: true },
+      ninja: { present: true },
+      dtc: { present: true },
+      gdb: { present: true },
+      alp: { present: true },
     },
     pythonDeps: { pyyaml: true, jsonschema: true },
     env: { zephyrSdkDir: "/opt/zephyr-sdk", zephyrBase: "/z" },

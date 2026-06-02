@@ -3,34 +3,34 @@
 import * as fs from "fs";
 import * as path from "path";
 import {
-    DebugGenerationTraceDecision,
-    DebugServerKind,
-    DebugTargetKind,
-    DoctorCheck,
+  DebugGenerationTraceDecision,
+  DebugServerKind,
+  DebugTargetKind,
+  DoctorCheck,
 } from "@alp-sdk/core/debug/models";
 import {
-    buildDoctorReport,
-    createGenerationTraceReport,
-    createInspectReport,
-    createSupportBundlePayload,
-    serializeSupportBundlePayload,
+  buildDoctorReport,
+  createGenerationTraceReport,
+  createInspectReport,
+  createSupportBundlePayload,
+  serializeSupportBundlePayload,
 } from "@alp-sdk/core/debug/service";
 import { EmitMode } from "@alp-sdk/core/loader/models";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import {
-    CLI_EXIT_CODE,
-    CliExecutionInput,
-    CliExecutionResult,
-    CliGlobalFlags,
-    CliIssue,
+  CLI_EXIT_CODE,
+  CliExecutionInput,
+  CliExecutionResult,
+  CliGlobalFlags,
+  CliIssue,
 } from "../../models";
 import { createEnvelope, createFailureResult } from "../envelope";
 import {
-    collectRuntimeCapabilitiesForCli,
-    isServerSupportedForTarget,
-    parseServerKind,
-    parseTargetKind,
-    resolveCliDebugContext,
+  collectRuntimeCapabilitiesForCli,
+  isServerSupportedForTarget,
+  parseServerKind,
+  parseTargetKind,
+  resolveCliDebugContext,
 } from "./debugShared";
 
 interface SupportBundleCommandData {

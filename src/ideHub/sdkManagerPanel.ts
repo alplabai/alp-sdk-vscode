@@ -2,18 +2,18 @@
 
 import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
 import {
-    installSdkRelease,
-    listRemoteSdkReleases,
-    switchActiveSdk,
+  installSdkRelease,
+  listRemoteSdkReleases,
+  switchActiveSdk,
 } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as vscode from "vscode";
 import {
-    emptyAlpIdeState,
-    PROTOCOL_VERSION,
-    type ExtToWebviewMessage,
-    type WebviewToExtMessage,
+  emptyAlpIdeState,
+  PROTOCOL_VERSION,
+  type ExtToWebviewMessage,
+  type WebviewToExtMessage,
 } from "./messages";
 import { queryAlpIdeState, sdkCacheRoot } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";

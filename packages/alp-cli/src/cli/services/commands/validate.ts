@@ -6,18 +6,18 @@ import { resolveProjectContext } from "@alp-sdk/core/project/service";
 import { executeValidatorPlanWithSpawn } from "@alp-sdk/core/validation/adapterCore";
 import { ValidationOutcome } from "@alp-sdk/core/validation/models";
 import {
-    analyzeValidationResult,
-    createValidatorPlan,
+  analyzeValidationResult,
+  createValidatorPlan,
 } from "@alp-sdk/core/validation/service";
 import {
-    CLI_EXIT_CODE,
-    CliExecutionInput,
-    CliExecutionResult,
-    CliFormat,
-    CliGlobalFlags,
-    CliIssue,
-    ValidateCommandData,
-    ValidateCommandResult,
+  CLI_EXIT_CODE,
+  CliExecutionInput,
+  CliExecutionResult,
+  CliFormat,
+  CliGlobalFlags,
+  CliIssue,
+  ValidateCommandData,
+  ValidateCommandResult,
 } from "../../models";
 import { createEnvelope } from "../envelope";
 
