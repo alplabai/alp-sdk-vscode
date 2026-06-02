@@ -13,6 +13,7 @@ packages/**
 alp-sdk-upstream/**
 dist/**
 scripts/**
+cli-rs/**
 
 # Keep ALP IDE webview runtime bundle in the packaged extension.
 !packages/alp-webview/dist/
