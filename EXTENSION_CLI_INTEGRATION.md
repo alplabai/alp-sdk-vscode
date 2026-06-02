@@ -112,11 +112,53 @@ interchangeable and supports dev builds: `cli-rs/target/release/alp`).
   in-process `alp-core` calls to `runAlp(...)` one at a time
   (validate → generate → sdk → debug-config → support-bundle → inspect/trace/…),
   each diffed against current behavior.
-- **Slice 4 — build through the CLI.** Decide whether to add `alp build`
-  (wrapping `west alp-build`); the extension's build/flash terminal then runs the
-  CLI rather than west directly.
+- **Slice 4 — build through the CLI (`alp build` + siblings).** See §6a — this
+  is the one place where the flow genuinely varies by platform, so it gets its
+  own design.
 - **Slice 5 — shrink + retire.** Trim `@alp-sdk/core` to the LSP/configurator
   subset; retire `packages/alp-cli`.
+
+## 6a. `alp build` — the build flow varies by platform (and by core)
+
+Build is **not** "run `west build`". A single `board.yaml` declares multiple
+cores, and each core's runtime decides its toolchain. The SDK already owns this
+dispatch in **`west alp-build`** (a Python west extension in
+`scripts/west_commands/`), which:
+
+- reads + validates `board.yaml`, then **fans out one build slice per non-`off`
+  core** into `<app>/build/<core>-<os>/…`,
+- routes each slice to the right backend and runs them in parallel
+  (`--sequential` on Windows), figuring the cross-compile target out of
+  `board.yaml`:
+
+  | Core runtime | Backend it dispatches to | Toolchain prerequisite |
+  |---|---|---|
+  | Zephyr (Cortex-M) | `west build` | Zephyr SDK compiler + bootstrapped west workspace |
+  | Yocto (Cortex-A) | bitbake / `meta-alp-sdk` layer | Yocto host packages (Linux-only; can be hour-long) |
+  | baremetal | CMake + vendor toolchain | Alif Ensemble / Renesas FSP / NXP MCUXpresso, per SoC family |
+
+**Design: `alp build` is a thin orchestrator over `west alp-build`** — exactly
+like `alp bootstrap` wraps `bootstrap.sh` and `generate` spawns `alp_project.py`.
+The CLI does **not** reimplement per-platform/per-core build logic; the SDK's
+driver stays the single source of that truth. The CLI surface:
+
+- `alp build [app] [--core <id>] [--board <b>] [--sequential]` → runs
+  `west alp-build …` in a **terminal** (live, long-running). Mirror the SDK's
+  sibling commands too: `alp image` / `alp flash` / `alp clean` / `alp renode`
+  (→ `west alp-image|alp-flash|alp-clean|alp-renode`). These already exist as
+  extension commands (`alp.westAlp*`); the extension flips to invoking the CLI.
+- Mode is **terminal**, not envelope (Yocto rebuilds + flashing want live output
+  and device interaction). A short final envelope summary is optional.
+- **Prerequisites are platform-specific and beyond `bootstrap`.** `bootstrap`
+  gets west + the Zephyr workspace + Zephyr Python reqs, but **not** the
+  compiler toolchains above. So `alp build` needs a build-preflight (extend
+  `doctor`, or an `alp build --check`) that verifies the toolchains required by
+  *the cores this board.yaml actually uses* and points to installers when
+  missing — Zephyr SDK for M-cores, Yocto host packages for A-cores, vendor
+  toolchains for baremetal.
+
+This keeps the heterogeneity where it belongs (the SDK), while still giving the
+extension and terminal a single `alp build` entry point.
 
 ## 7. Constraints & non-goals
 
@@ -124,13 +166,21 @@ interchangeable and supports dev builds: `cli-rs/target/release/alp`).
   survives for it (and the live configurator).
 - **The envelope contract is the seam** — the extension depends only on the
   documented envelope (`CLI.md`); the contract harness remains the parity gate.
-- **Build is Python/west** — the CLI orchestrates `west alp-build` (it does not
-  reimplement the build). `alp build` (if added) is a thin wrapper.
+- **Build heterogeneity lives in the SDK, not the CLI** (§6a) — `alp build`
+  orchestrates `west alp-build`, which owns the per-core Zephyr/Yocto/baremetal
+  dispatch and cross-compile-target resolution. The CLI is a thin wrapper.
 - Sequencing follows the Rust cutover: don't point the extension at a binary
   that isn't resolvable yet (ties into §5 and Phase 7).
 
 ## 8. Open decisions to confirm
 
 1. Binary distribution: (C) PATH/setting first, (B) download later, or (A) bundle?
-2. Add `alp build` (wrap `west alp-build`) so build also flows through the CLI?
-3. Do slices 2–5 before or after the first `cli-rs-v*` release?
+2. `alp build` scope: just `build`, or the full set (`build`/`image`/`flash`/
+   `clean`/`renode`) mirroring the SDK's `west alp-*` commands at once?
+3. Build preflight: extend `doctor` to verify per-platform toolchains (Zephyr SDK
+   / Yocto host packages / vendor toolchains) keyed off the board.yaml's cores,
+   or a separate `alp build --check`?
+4. Should `bootstrap` grow beyond `bootstrap.sh`'s scope to also fetch the Zephyr
+   SDK compiler toolchain (and, on Linux, the Yocto host packages), or stay a
+   pointer for those?
+5. Do slices 2–5 before or after the first `cli-rs-v*` release?
