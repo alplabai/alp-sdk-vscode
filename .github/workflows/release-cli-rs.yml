@@ -6,8 +6,14 @@
 # legacy TypeScript CLI's `cli-v*` tags).
 #
 # Release flow: bump cli-rs/Cargo.toml + cli-rs/npm-shim/package.json to the same
-# version, tag `cli-rs-v<version>`, push. This workflow builds the four targets
+# version, tag `cli-rs-v<version>`, push. This workflow builds the three targets
 # and attaches `alp-<target>.tar.gz` to the GitHub Release for that tag.
+#
+# Note: x86_64-apple-darwin (Intel mac) is intentionally not built — GitHub's
+# macos-13 Intel runners are scarce and stall the release for tens of minutes.
+# Intel-mac users build from source (`cargo build --release`). To restore it,
+# cross-compile on macos-14: add `{ target: x86_64-apple-darwin, os: macos-14 }`
+# and pass `--target x86_64-apple-darwin` (the macOS toolchain builds both arches).
 
 name: release-cli-rs
 
@@ -33,8 +39,6 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          - target: x86_64-apple-darwin
-            os: macos-13
           - target: aarch64-apple-darwin
             os: macos-14
           - target: x86_64-pc-windows-msvc

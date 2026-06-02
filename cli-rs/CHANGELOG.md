@@ -10,21 +10,21 @@ The native CLI is versioned and tagged independently of the VS Code extension:
 release tags are `cli-rs-v<version>`, and the npm shim (`alp-sdk`) carries the
 same version.
 
-## Unreleased
-
-- **Styled `doctor` / `doctor --build` text output.** Modern, colorized
-  human-readable rendering: a bold heading + dim subtitle, colored status
-  glyphs (green ✓ / yellow ! / red ✗), aligned check names, a colored
-  `N passed · N warnings · N failed` summary (zero counts stay muted), and
-  cyan next-step arrows. Color is emitted only on a TTY with `NO_COLOR` unset
-  and neither `--no-color` nor `--ci` passed; non-TTY/piped output falls back
-  to equal-width ASCII markers (`[+]` / `[!]` / `[x]`). The JSON envelope is
-  never styled. New `style` module (color gating + shared report renderer).
-
 ## 0.1.0 — first native release
 
 First public release of the native binary. Full command parity with the
 TypeScript CLI plus the new build/bootstrap surface.
+
+### Output
+
+- **Styled `doctor` / `doctor --build` text.** Modern, colorized human-readable
+  rendering: a bold heading + dim subtitle, colored status glyphs
+  (green ✓ / yellow ! / red ✗), aligned check names, a colored
+  `N passed · N warnings · N failed` summary (zero counts stay muted), and cyan
+  next-step arrows. Color is emitted only on a TTY with `NO_COLOR` unset and
+  neither `--no-color` nor `--ci` passed; non-TTY/piped output falls back to
+  equal-width ASCII markers (`[+]` / `[!]` / `[x]`). The JSON envelope is never
+  styled.
 
 ### Commands (14, full parity with the TypeScript CLI)
 
@@ -55,8 +55,10 @@ TypeScript CLI plus the new build/bootstrap surface.
 
 ### Distribution
 
-- GitHub Release assets `alp-<target>.tar.gz` for four targets: macOS
-  x64/arm64, Linux x64 (gnu), Windows x64 (msvc), built by the
-  `release-cli-rs` workflow on `cli-rs-v*` tags.
+- GitHub Release assets `alp-<target>.tar.gz` for three targets: macOS arm64
+  (Apple Silicon), Linux x64 (gnu), Windows x64 (msvc), built by the
+  `release-cli-rs` workflow on `cli-rs-v*` tags. Intel macOS
+  (`x86_64-apple-darwin`) is not prebuilt — GitHub's Intel runners stall the
+  release; Intel-mac users build from source (`cargo build --release`).
 - npm shim package `alp-sdk` downloads the matching archive in its postinstall
   step (no runtime dependencies) and forwards `argv` to the native binary.

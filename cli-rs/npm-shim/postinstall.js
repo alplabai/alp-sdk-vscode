@@ -17,16 +17,19 @@ const BINARY_DIR = path.join(__dirname, "binary");
 /** Map the host platform/arch to the release target triple. */
 function resolveTarget() {
   const key = `${process.platform}/${process.arch}`;
+  // Note: darwin/x64 (Intel mac) has no prebuilt archive — GitHub's Intel
+  // macOS runners stall the release build. Intel-mac users build from source:
+  // `cargo build --release --manifest-path cli-rs/Cargo.toml`.
   const targets = {
     "linux/x64": "x86_64-unknown-linux-gnu",
-    "darwin/x64": "x86_64-apple-darwin",
     "darwin/arm64": "aarch64-apple-darwin",
     "win32/x64": "x86_64-pc-windows-msvc",
   };
   const target = targets[key];
   if (!target) {
     throw new Error(
-      `alp-sdk: no prebuilt binary for ${key}. Supported: ${Object.keys(targets).join(", ")}.`,
+      `alp-sdk: no prebuilt binary for ${key}. Supported: ${Object.keys(targets).join(", ")}. ` +
+        `Build from source: cargo build --release --manifest-path cli-rs/Cargo.toml`,
     );
   }
   return target;
