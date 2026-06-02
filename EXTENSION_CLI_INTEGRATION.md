@@ -146,10 +146,17 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
   `west flash/update/run` commands have no CLI equivalent and stay as direct west
   invocations (revisited in B4). No new unit tests (terminal-mode UX); the
   testable runAlp/resolve logic was covered in B1.
-- **B3 — migrate envelope commands.** Move action commands from in-process
-  `alp-core` calls to `runAlp(...)` one at a time (validate → generate → sdk →
-  debug-config → support-bundle → inspect/trace/presets/explain/diff), each
-  diffed against current behavior.
+- **B3 — migrate envelope commands (in progress).** Move action commands from
+  in-process `alp-core` calls to `runAlp(...)` one at a time, each diffed against
+  current behavior. `runAlpCommand` hardened to never throw (a resolution failure
+  becomes an error outcome). **validate ✅** — `alp.validateBoardYaml` now spawns
+  `alp validate --format json`; the envelope's `data.outcome`
+  (clean/missing-preset/hardware-revision/schema-violation/failed) maps to the
+  same toasts, and `issues` are logged to the output channel. The in-process
+  board.yaml-exists pre-check stays (cheap; nicer "not found" message); the
+  per-edit diagnostics path (`src/diagnostics.ts` → `executeValidatorPlan`) is
+  untouched (LSP domain, §4). Remaining: generate → sdk → debug-config →
+  support-bundle → inspect/trace/presets/explain/diff.
 - **B4 — shrink + retire.** Trim `@alp-sdk/core` to the LSP + live-configurator
   subset; retire `packages/alp-cli`.
 

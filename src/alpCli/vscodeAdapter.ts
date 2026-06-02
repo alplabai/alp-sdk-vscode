@@ -75,7 +75,30 @@ export async function runAlpCommand(
   args: string[],
   cwd?: string,
 ): Promise<{ outcome: CliOutcome; raw: SpawnResult }> {
-  const binary = await resolveAlpBinaryForContext(context);
+  let binary: ResolvedBinary;
+  try {
+    binary = await resolveAlpBinaryForContext(context);
+  } catch (error) {
+    // Never throw: a resolution failure becomes an error outcome so callers
+    // can present it uniformly (the message already points at alpSdk.cliPath).
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      outcome: {
+        exitCode: -1,
+        kind: "unknown",
+        ok: false,
+        severity: "error",
+        message: `ALP CLI unavailable: ${message}`,
+        envelope: null,
+      },
+      raw: {
+        status: null,
+        stdout: "",
+        stderr: "",
+        error: error instanceof Error ? error : new Error(message),
+      },
+    };
+  }
   return runAlp(binary.command, args, spawnAlp, cwd);
 }
 

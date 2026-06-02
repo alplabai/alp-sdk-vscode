@@ -17,6 +17,7 @@ import {
   getGenerationTargetSupport,
   summarizeLoaderBatch,
 } from "@alp-sdk/core/loader/service";
+import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import {
   boardYamlExists,
   collectLoaderWorkspaceContext,
@@ -26,11 +27,6 @@ import {
   previewGeneratedFile,
 } from "./loader/vscodeAdapter";
 import { log, showOutput } from "./util";
-import {
-  analyzeValidationResult,
-  createValidatorPlan,
-} from "@alp-sdk/core/validation/service";
-import { executeValidatorPlan } from "./validation/vscodeAdapter";
 
 async function runLoader(emit: EmitMode): Promise<void> {
   const context = collectLoaderWorkspaceContext();
@@ -72,31 +68,35 @@ async function runLoader(emit: EmitMode): Promise<void> {
   );
 }
 
-async function runValidator(): Promise<void> {
-  const context = collectLoaderWorkspaceContext();
-  const boardYamlPath = context.boardYamlPath;
-  if (!boardYamlPath || !boardYamlExists(boardYamlPath)) {
+async function runValidator(context: vscode.ExtensionContext): Promise<void> {
+  const project = collectLoaderWorkspaceContext();
+  if (!project.boardYamlPath || !boardYamlExists(project.boardYamlPath)) {
     await vscode.window.showErrorMessage(
-      `Alp: board.yaml not found at ${context.boardYamlPath ?? "<unset>"}.`,
+      `Alp: board.yaml not found at ${project.boardYamlPath ?? "<unset>"}.`,
     );
     return;
   }
 
-  let plan;
-  try {
-    plan = createValidatorPlan(context, boardYamlPath);
-  } catch (error) {
-    await vscode.window.showErrorMessage(formatLoaderError(error));
+  // Delegate to the native CLI (which spawns the SDK's Python validator) and
+  // map the envelope back onto the same toasts.
+  const { outcome } = await runAlpCommand(context, ["validate"]);
+  const envelope = outcome.envelope;
+
+  if (envelope && envelope.issues.length > 0) {
+    showOutput();
+    for (const issue of envelope.issues) {
+      log(`[validate] ${issue.severity}: ${issue.message}`);
+    }
+  }
+
+  if (!envelope) {
+    // Binary could not be resolved or produced no envelope.
+    await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
     return;
   }
 
-  log(`$ ${plan.commandLine}`);
-  const execution = executeValidatorPlan(context, plan);
-  if (execution.stdout) log(execution.stdout);
-  if (execution.stderr) log(execution.stderr);
-  showOutput();
-
-  switch (analyzeValidationResult(execution).outcome) {
+  const granular = (envelope.data as { outcome?: string } | undefined)?.outcome;
+  switch (granular) {
     case "clean":
       await vscode.window.showInformationMessage("Alp: board.yaml is clean.");
       return;
@@ -115,7 +115,7 @@ async function runValidator(): Promise<void> {
         "Alp: board.yaml schema violation.  See the ALP SDK output channel.",
       );
       return;
-    case "failed":
+    default:
       await vscode.window.showErrorMessage(
         "Alp: board.yaml validation failed unexpectedly.  See the ALP SDK output channel.",
       );
@@ -196,7 +196,9 @@ function formatLoaderError(error: unknown): string {
   return "Alp: an unexpected loader error occurred.";
 }
 
-export function registerLoaderCommands(): vscode.Disposable[] {
+export function registerLoaderCommands(
+  context: vscode.ExtensionContext,
+): vscode.Disposable[] {
   return [
     vscode.commands.registerCommand("alp.generateZephyrConf", () =>
       runLoader("zephyr-conf"),
@@ -212,7 +214,7 @@ export function registerLoaderCommands(): vscode.Disposable[] {
     ),
     vscode.commands.registerCommand("alp.generateAll", () => runLoaderAll()),
     vscode.commands.registerCommand("alp.validateBoardYaml", () =>
-      runValidator(),
+      runValidator(context),
     ),
   ];
 }

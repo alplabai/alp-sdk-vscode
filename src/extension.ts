@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext): void {
   startLanguageServer(context);
 
   context.subscriptions.push(
-    ...registerLoaderCommands(),
+    ...registerLoaderCommands(context),
     ...registerWestCommands(context),
     registerBootstrapCommand(context),
     createStatusBar(context),
