@@ -31,8 +31,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     ...registerLoaderCommands(),
-    ...registerWestCommands(),
-    registerBootstrapCommand(),
+    ...registerWestCommands(context),
+    registerBootstrapCommand(context),
     createStatusBar(context),
     registerConfiguratorCommand(context),
     ...registerToolchainCommands(context),

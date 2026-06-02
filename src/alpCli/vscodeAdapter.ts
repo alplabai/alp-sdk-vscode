@@ -79,6 +79,59 @@ export async function runAlpCommand(
   return runAlp(binary.command, args, spawnAlp, cwd);
 }
 
+/**
+ * Run an `alp` command in a VS Code integrated terminal (terminal mode, per
+ * EXTENSION_CLI_INTEGRATION.md §3): live output, interactive prompts, long
+ * builds. Resolves the binary first; if it can't, surfaces a one-click action
+ * to point `alpSdk.cliPath` at a build.
+ */
+export async function runAlpInTerminal(
+  context: vscode.ExtensionContext,
+  args: string[],
+  options: { name: string; cwd?: string },
+): Promise<void> {
+  let binary: ResolvedBinary;
+  try {
+    binary = await resolveAlpBinaryForContext(context);
+  } catch (error) {
+    await surfaceResolutionError(error);
+    return;
+  }
+  const terminal = vscode.window.createTerminal({
+    name: options.name,
+    cwd: options.cwd,
+  });
+  terminal.show(true);
+  terminal.sendText(formatCommandLine(binary.command, args));
+}
+
+function formatCommandLine(command: string, args: string[]): string {
+  return [command, ...args].map(quoteToken).join(" ");
+}
+
+/** Minimal cross-shell quoting: wrap tokens with whitespace (e.g. a global-
+ *  storage path containing "Application Support") in double quotes. */
+function quoteToken(token: string): string {
+  if (token.length === 0) {
+    return '""';
+  }
+  return /\s/.test(token) ? `"${token}"` : token;
+}
+
+async function surfaceResolutionError(error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
+  const choice = await vscode.window.showErrorMessage(
+    `ALP CLI unavailable: ${message}`,
+    "Open Settings",
+  );
+  if (choice === "Open Settings") {
+    await vscode.commands.executeCommand(
+      "workbench.action.openSettings",
+      "alpSdk.cliPath",
+    );
+  }
+}
+
 // ── real seams ───────────────────────────────────────────────────────────────
 
 function spawnAlp(command: string, args: string[], cwd?: string): SpawnResult {

@@ -85,12 +85,12 @@
       },
       {
         "command": "alp.installDependencies",
-        "title": "Alp: Install dependencies (per-OS)",
+        "title": "Alp: Bootstrap SDK environment (west + Zephyr deps)",
         "category": "Alp"
       },
       {
         "command": "alp.westBuild",
-        "title": "Alp: West build (validate + generate + build)",
+        "title": "Alp: Build (validate + generate + build)",
         "category": "Alp"
       },
       {
@@ -110,22 +110,22 @@
       },
       {
         "command": "alp.westAlpImage",
-        "title": "Alp: West alp-image (assemble image bundle)",
+        "title": "Alp: Build image (assemble image bundle)",
         "category": "Alp"
       },
       {
         "command": "alp.westAlpFlash",
-        "title": "Alp: West alp-flash (flash all slices)",
+        "title": "Alp: Flash (all slices)",
         "category": "Alp"
       },
       {
         "command": "alp.westAlpClean",
-        "title": "Alp: West alp-clean (remove build dir)",
+        "title": "Alp: Clean build (remove build dir)",
         "category": "Alp"
       },
       {
         "command": "alp.westAlpRenode",
-        "title": "Alp: West alp-renode (simulate in Renode)",
+        "title": "Alp: Run in Renode (simulate)",
         "category": "Alp"
       },
       {

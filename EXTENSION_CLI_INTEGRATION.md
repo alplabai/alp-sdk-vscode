@@ -134,9 +134,18 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
   classifies; spawn-ENOENT → graceful error outcome). `vscodeAdapter.ts`: real
   https-redirect download + `tar` extract + `spawnSync`, session-memoized.
   17 unit tests (service + adapterCore). Not yet wired into commands (that's B2/B3).
-- **B2 — rewire the terminal actions first.** Point `alp.installDependencies` at
-  `alp bootstrap` and the `alp.west*` build/flash commands at `alp build`/etc.,
-  then delete `src/bootstrap.ts`'s private plan. **3 bootstraps → 1.**
+- **B2 — rewire the terminal actions first. ✅ done.** New `runAlpInTerminal()`
+  (resolves the binary, opens a terminal, runs `alp …`; surfaces a one-click
+  "Open Settings" if the binary can't be resolved). `alp.installDependencies` →
+  `alp bootstrap` (the whole `src/bootstrap.ts` venv/pip/OS-picker plan deleted —
+  **3 bootstraps → 1**). The orchestrator-backed commands flip to the CLI:
+  `alp.westBuild` → `alp build`, and `westAlp{Image,Flash,Clean,Renode}` →
+  `alp {image,flash,clean,renode}` — dropping the extension's in-process
+  validate+generate (the SDK orchestrator owns it; board.yaml diagnostics still
+  come live from the LSP). Command titles de-`west`-ed (hide west). The plain
+  `west flash/update/run` commands have no CLI equivalent and stay as direct west
+  invocations (revisited in B4). No new unit tests (terminal-mode UX); the
+  testable runAlp/resolve logic was covered in B1.
 - **B3 — migrate envelope commands.** Move action commands from in-process
   `alp-core` calls to `runAlp(...)` one at a time (validate → generate → sdk →
   debug-config → support-bundle → inspect/trace/presets/explain/diff), each
