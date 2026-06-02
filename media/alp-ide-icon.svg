@@ -1,14 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Chip outline -->
-  <rect x="6" y="6" width="12" height="12" rx="2"/>
-  <!-- Pin left -->
-  <line x1="2" y1="9" x2="6" y2="9"/>
-  <line x1="2" y1="12" x2="6" y2="12"/>
-  <line x1="2" y1="15" x2="6" y2="15"/>
-  <!-- Pin right -->
-  <line x1="18" y1="9" x2="22" y2="9"/>
-  <line x1="18" y1="12" x2="22" y2="12"/>
-  <line x1="18" y1="15" x2="22" y2="15"/>
-  <!-- Center dot -->
-  <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+  <!-- Lightning bolt -->
+  <polyline points="13 2 4.5 13.5 11 13.5 11 22 19.5 10.5 13 10.5 13 2"/>
 </svg>
