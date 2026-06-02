@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `alp` — ALP CLI (Rust). Phase 0: argument surface + `validate`.
+//! `alp` — ALP CLI (Rust). Phase 0-3: validate + generate scaffolding.
 //!
 //! Output contract (CLI.md §3.2):
 //!   * JSON mode writes exactly one JSON document to stdout.
@@ -21,6 +21,7 @@ fn main() {
 
     let run: CommandRun = match args.command {
         Command::Validate => commands::validate::run(&global),
+        Command::Generate => commands::generate::run(&global),
     };
 
     emit(&global.format, run.json.as_deref(), &run.text);

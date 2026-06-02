@@ -32,6 +32,14 @@ pub struct GlobalArgs {
     #[arg(long = "sdk-root", global = true, value_name = "PATH")]
     pub sdk_root: Option<String>,
 
+    /// Generation target (e.g. zephyr-conf, dts-overlay, cmake-args, yocto-conf).
+    #[arg(long, global = true, value_name = "EMIT")]
+    pub target: Option<String>,
+
+    /// Run command against all relevant targets.
+    #[arg(long, global = true)]
+    pub all: bool,
+
     /// Output format.
     #[arg(long, global = true, value_enum, default_value_t = Format::Text)]
     pub format: Format,
@@ -69,4 +77,6 @@ pub enum Format {
 pub enum Command {
     /// Validate schema and semantic rules for the active project.
     Validate,
+    /// Generate build artifacts from board.yaml (alp.conf, overlay, args, yocto).
+    Generate,
 }

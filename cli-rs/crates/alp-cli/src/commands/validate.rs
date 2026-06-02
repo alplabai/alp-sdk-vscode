@@ -8,18 +8,10 @@ use std::path::{Path, PathBuf};
 
 use alp_core::{Outcome, validate_board_yaml_local};
 
+use super::CommandRun;
 use crate::cli::GlobalArgs;
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
-
-/// One command run: what to print and which code to exit with.
-pub struct CommandRun {
-    pub exit: ExitCode,
-    /// Human text (stderr-bound); empty in JSON mode.
-    pub text: Vec<String>,
-    /// JSON document (stdout-bound) in JSON mode.
-    pub json: Option<String>,
-}
 
 #[derive(serde::Serialize)]
 struct ValidateData {
