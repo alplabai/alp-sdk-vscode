@@ -9,6 +9,7 @@ mod cli;
 mod commands;
 mod envelope;
 mod exit;
+mod style;
 mod util;
 
 use clap::Parser;

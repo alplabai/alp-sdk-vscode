@@ -10,6 +10,17 @@ The native CLI is versioned and tagged independently of the VS Code extension:
 release tags are `cli-rs-v<version>`, and the npm shim (`alp-sdk`) carries the
 same version.
 
+## Unreleased
+
+- **Styled `doctor` / `doctor --build` text output.** Modern, colorized
+  human-readable rendering: a bold heading + dim subtitle, colored status
+  glyphs (green ✓ / yellow ! / red ✗), aligned check names, a colored
+  `N passed · N warnings · N failed` summary (zero counts stay muted), and
+  cyan next-step arrows. Color is emitted only on a TTY with `NO_COLOR` unset
+  and neither `--no-color` nor `--ci` passed; non-TTY/piped output falls back
+  to equal-width ASCII markers (`[+]` / `[!]` / `[x]`). The JSON envelope is
+  never styled. New `style` module (color gating + shared report renderer).
+
 ## 0.1.0 — first native release
 
 First public release of the native binary. Full command parity with the

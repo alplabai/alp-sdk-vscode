@@ -20,3 +20,6 @@ coverage/
 
 # Local assistant instructions (keep private)
 .github/local-agent-instructions.md
+
+# Transient Claude Code runtime locks
+.claude/scheduled_tasks.lock

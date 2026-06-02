@@ -20,6 +20,7 @@ use super::CommandRun;
 use crate::cli::{DoctorArgs, GlobalArgs};
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
+use crate::style::{self, Theme};
 use crate::util::{command_on_path, generated_at_iso, resolve_cli_project_context};
 
 pub fn run(g: &GlobalArgs, args: &DoctorArgs) -> CommandRun {
@@ -148,7 +149,7 @@ fn zephyr_sdk_detected() -> bool {
 }
 
 fn format_build_text(g: &GlobalArgs, report: &alp_core::BuildReadinessReport) -> Vec<String> {
-    let os_list = report
+    let subtitle = report
         .os_set
         .iter()
         .map(|os| {
@@ -158,34 +159,15 @@ fn format_build_text(g: &GlobalArgs, report: &alp_core::BuildReadinessReport) ->
                 .unwrap_or_default()
         })
         .collect::<Vec<_>>()
-        .join(", ");
-    let mut lines = vec![
-        format!(
-            "doctor (build): pass={} warn={} fail={}",
-            report.summary.pass, report.summary.warn, report.summary.fail
-        ),
-        format!("os: {os_list}"),
-    ];
-
-    if !g.quiet {
-        for check in &report.checks {
-            lines.push(format!(
-                "[{}] {}: {}",
-                status_label(check.status),
-                check.name,
-                check.detail
-            ));
-        }
-    }
-
-    if g.verbose && !report.next_steps.is_empty() {
-        lines.push("next-steps:".to_string());
-        for step in &report.next_steps {
-            lines.push(format!("- {step}"));
-        }
-    }
-
-    lines
+        .join(" · ");
+    style::render_report(
+        g,
+        "alp doctor --build",
+        &subtitle,
+        &report.checks,
+        &report.summary,
+        &report.next_steps,
+    )
 }
 
 /// Resolve the debug workspace context, mirroring TS `resolveCliDebugContext`.
@@ -236,45 +218,19 @@ fn checks_to_issues(checks: &[DoctorCheck]) -> Vec<Issue> {
 }
 
 fn format_doctor_text(g: &GlobalArgs, report: &DoctorReport) -> Vec<String> {
-    let mut lines = vec![
-        format!(
-            "doctor: pass={} warn={} fail={}",
-            report.summary.pass, report.summary.warn, report.summary.fail
-        ),
-        format!(
-            "target={} server={}",
-            report.target_kind.as_str(),
-            report.server.as_str()
-        ),
-    ];
-
-    if !g.quiet {
-        for check in &report.checks {
-            lines.push(format!(
-                "[{}] {}: {}",
-                status_label(check.status),
-                check.name,
-                check.detail
-            ));
-        }
-    }
-
-    if g.verbose && !report.next_steps.is_empty() {
-        lines.push("next-steps:".to_string());
-        for step in &report.next_steps {
-            lines.push(format!("- {step}"));
-        }
-    }
-
-    lines
-}
-
-fn status_label(status: DoctorStatus) -> &'static str {
-    match status {
-        DoctorStatus::Pass => "pass",
-        DoctorStatus::Warn => "warn",
-        DoctorStatus::Fail => "fail",
-    }
+    let subtitle = format!(
+        "{} · {}",
+        report.target_kind.as_str(),
+        report.server.as_str()
+    );
+    style::render_report(
+        g,
+        "alp doctor",
+        &subtitle,
+        &report.checks,
+        &report.summary,
+        &report.next_steps,
+    )
 }
 
 fn empty_report(
@@ -321,11 +277,11 @@ fn unsupported_server(
     let text = if g.is_json() {
         Vec::new()
     } else {
-        vec![format!(
-            "doctor: server '{}' is not supported for '{}'.",
+        Theme::from_args(g).error_lines(&format!(
+            "Server '{}' is not supported for target '{}'.",
             server.as_str(),
             target.as_str()
-        )]
+        ))
     };
     let json = g.is_json().then(|| {
         Envelope::new(
@@ -360,7 +316,7 @@ fn internal_failure(g: &GlobalArgs, generated_at: &str, message: String) -> Comm
     let text = if g.is_json() {
         Vec::new()
     } else {
-        vec!["doctor: internal failure".to_string(), message]
+        Theme::from_args(g).error_lines(&message)
     };
     let json = g.is_json().then(|| {
         Envelope::new(
