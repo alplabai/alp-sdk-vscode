@@ -3,8 +3,8 @@
 
 use super::models::{
     FeatureFileSpec, ModuleScaffoldInput, ModuleScaffoldPlan, ModuleTemplateDefinition,
-    ModuleTemplateId, WizardFeatureFlags, WizardPlan, WizardPlanInput,
-    WizardPlannedFile, WizardTemplateDefinition, WizardTemplateId,
+    ModuleTemplateId, WizardFeatureFlags, WizardPlan, WizardPlanInput, WizardPlannedFile,
+    WizardTemplateDefinition, WizardTemplateId,
 };
 
 // ---------------------------------------------------------------------------
@@ -14,8 +14,8 @@ use super::models::{
 static TEMPLATE_DEFINITIONS: &[WizardTemplateDefinition] = &[
     WizardTemplateDefinition {
         id: WizardTemplateId::MinimalApp,
-        label: "Minimal App",
-        description: "Minimal starter with no framework defaults.",
+        label: "Minimal app",
+        description: "Smallest baseline project with a simple main loop.",
         libs: &[],
         features: None,
         prj_conf_extras: &[],
@@ -33,8 +33,8 @@ static TEMPLATE_DEFINITIONS: &[WizardTemplateDefinition] = &[
     },
     WizardTemplateDefinition {
         id: WizardTemplateId::SensorStarter,
-        label: "Sensor Starter",
-        description: "Sensor bring-up and polling loop starter.",
+        label: "Sensor starter",
+        description: "Sensor polling skeleton with diagnostics-friendly logging.",
         libs: &["fmt"],
         features: None,
         prj_conf_extras: &["CONFIG_SENSOR=y", "CONFIG_I2C=y"],
@@ -52,8 +52,8 @@ static TEMPLATE_DEFINITIONS: &[WizardTemplateDefinition] = &[
     },
     WizardTemplateDefinition {
         id: WizardTemplateId::IotStarter,
-        label: "IoT Starter",
-        description: "Wi-Fi, MQTT, and TLS connectivity starter.",
+        label: "IoT starter",
+        description: "Connectivity-oriented starter with Wi-Fi and MQTT defaults.",
         libs: &["mbedtls", "fmt"],
         features: Some(WizardFeatureFlags {
             wifi: true,
@@ -81,8 +81,8 @@ static TEMPLATE_DEFINITIONS: &[WizardTemplateDefinition] = &[
     },
     WizardTemplateDefinition {
         id: WizardTemplateId::EdgeAiStarter,
-        label: "Edge AI Starter",
-        description: "ML inference with CMSIS-DSP and ETL.",
+        label: "Edge AI starter",
+        description: "Inference-first starter with arena sizing and backend hints.",
         libs: &["cmsis_dsp", "etl"],
         features: None,
         prj_conf_extras: &["CONFIG_CMSIS_DSP=y", "CONFIG_CBPRINTF_FP_SUPPORT=y"],
@@ -100,15 +100,11 @@ static TEMPLATE_DEFINITIONS: &[WizardTemplateDefinition] = &[
     },
     WizardTemplateDefinition {
         id: WizardTemplateId::BoardDiagnostics,
-        label: "Board Diagnostics",
-        description: "Diagnostics and bring-up validation starter.",
+        label: "Board diagnostics",
+        description: "Bring-up oriented starter for board and peripheral checks.",
         libs: &["fmt", "doctest"],
         features: None,
-        prj_conf_extras: &[
-            "CONFIG_LOG=y",
-            "LOG_MODE_DEFERRED=y",
-            "LOG_DEFAULT_LEVEL=4",
-        ],
+        prj_conf_extras: &["CONFIG_LOG=y", "LOG_MODE_DEFERRED=y", "LOG_DEFAULT_LEVEL=4"],
         feature_files: &[FeatureFileSpec {
             path: "src/features/diagnostics_checks.c",
             unit_name: "diagnostics_checks",
@@ -123,8 +119,8 @@ static TEMPLATE_DEFINITIONS: &[WizardTemplateDefinition] = &[
     },
     WizardTemplateDefinition {
         id: WizardTemplateId::HostToolingStarter,
-        label: "Host Tooling Starter",
-        description: "TypeScript monorepo for VS Code extension + CLI.",
+        label: "Host tooling starter",
+        description: "Monorepo scaffold for a host-side ALP tool: shared core package, standalone CLI, and VS Code extension surface.",
         libs: &[],
         features: None,
         prj_conf_extras: &[],
@@ -142,7 +138,8 @@ static TEMPLATE_DEFINITIONS: &[WizardTemplateDefinition] = &[
 static MODULE_TEMPLATE_DEFINITIONS: &[ModuleTemplateDefinition] = &[
     ModuleTemplateDefinition {
         id: ModuleTemplateId::SensorDriver,
-        label: "Sensor Driver",
+        label: "Sensor driver module",
+        description: "Adds a source/header pair for sensor acquisition logic.",
         function_prefix: "alp_sensor",
         explanation: &[
             "Use {nm}_run to place sensor polling and conversion logic.",
@@ -151,7 +148,8 @@ static MODULE_TEMPLATE_DEFINITIONS: &[ModuleTemplateDefinition] = &[
     },
     ModuleTemplateDefinition {
         id: ModuleTemplateId::ConnectivityService,
-        label: "Connectivity Service",
+        label: "Connectivity service module",
+        description: "Adds module skeleton for network/session orchestration.",
         function_prefix: "alp_conn",
         explanation: &[
             "Use {nm}_init for stack/session initialization.",
@@ -160,7 +158,8 @@ static MODULE_TEMPLATE_DEFINITIONS: &[ModuleTemplateDefinition] = &[
     },
     ModuleTemplateDefinition {
         id: ModuleTemplateId::InferenceStage,
-        label: "Inference Stage",
+        label: "Inference stage module",
+        description: "Adds module skeleton for model pre/post processing path.",
         function_prefix: "alp_infer",
         explanation: &[
             "Use {nm}_run to host pre-process, infer, and post-process calls.",
@@ -169,7 +168,8 @@ static MODULE_TEMPLATE_DEFINITIONS: &[ModuleTemplateDefinition] = &[
     },
     ModuleTemplateDefinition {
         id: ModuleTemplateId::DiagnosticsCheck,
-        label: "Diagnostics Check",
+        label: "Diagnostics check module",
+        description: "Adds bring-up and runtime health-check module scaffold.",
         function_prefix: "alp_diag",
         explanation: &[
             "Use {nm}_run for periodic health checks and error probes.",
@@ -227,7 +227,10 @@ pub fn create_wizard_plan(input: &WizardPlanInput) -> WizardPlan {
         gen_c_project_files(def)
     };
 
-    WizardPlan { template_id: input.template_id, files }
+    WizardPlan {
+        template_id: input.template_id,
+        files,
+    }
 }
 
 pub fn create_module_scaffold_plan(
@@ -240,7 +243,11 @@ pub fn create_module_scaffold_plan(
         .expect("module template id must exist in registry");
 
     let files = gen_module_files(def, &normalized_name);
-    Ok(ModuleScaffoldPlan { template_id: input.template_id, normalized_name, files })
+    Ok(ModuleScaffoldPlan {
+        template_id: input.template_id,
+        normalized_name,
+        files,
+    })
 }
 
 pub fn create_scaffold_tree_preview(files: &[WizardPlannedFile]) -> String {
@@ -366,9 +373,7 @@ fn gen_readme(def: &WizardTemplateDefinition) -> String {
     }
     s.push_str("\n## Next Steps\n\n");
     s.push_str("- Run Alp: Validate board.yaml.\n");
-    s.push_str(
-        "- Run Alp: Generate all to produce derived outputs under build/generated/.\n",
-    );
+    s.push_str("- Run Alp: Generate all to produce derived outputs under build/generated/.\n");
     s.push_str("- Extend source files under src/features/ for your target behavior.\n\n");
     s.push_str("This workspace was generated by Alp: New Project Wizard.\n");
     s.push_str("Use Alp commands to validate, generate, and build outputs.\n");
@@ -712,7 +717,11 @@ mod tests {
             project_name: String::new(),
             destination: ".".to_string(),
         });
-        let paths: Vec<&str> = plan.files.iter().map(|f| f.relative_path.as_str()).collect();
+        let paths: Vec<&str> = plan
+            .files
+            .iter()
+            .map(|f| f.relative_path.as_str())
+            .collect();
         assert!(paths.contains(&"board.yaml"));
         assert!(paths.contains(&"src/main.c"));
         assert!(paths.contains(&"CMakeLists.txt"));
@@ -721,8 +730,14 @@ mod tests {
     #[test]
     fn scaffold_preview_sorted_order() {
         let files = vec![
-            WizardPlannedFile { relative_path: "src/main.c".to_string(), content: String::new() },
-            WizardPlannedFile { relative_path: "board.yaml".to_string(), content: String::new() },
+            WizardPlannedFile {
+                relative_path: "src/main.c".to_string(),
+                content: String::new(),
+            },
+            WizardPlannedFile {
+                relative_path: "board.yaml".to_string(),
+                content: String::new(),
+            },
         ];
         let tree = create_scaffold_tree_preview(&files);
         assert!(tree.starts_with(".\n"));
@@ -759,7 +774,11 @@ mod tests {
             project_name: String::new(),
             destination: ".".to_string(),
         });
-        let paths: Vec<&str> = plan.files.iter().map(|f| f.relative_path.as_str()).collect();
+        let paths: Vec<&str> = plan
+            .files
+            .iter()
+            .map(|f| f.relative_path.as_str())
+            .collect();
         assert!(paths.contains(&"config/iot.env.example"));
     }
 
@@ -770,7 +789,11 @@ mod tests {
             project_name: String::new(),
             destination: ".".to_string(),
         });
-        let paths: Vec<&str> = plan.files.iter().map(|f| f.relative_path.as_str()).collect();
+        let paths: Vec<&str> = plan
+            .files
+            .iter()
+            .map(|f| f.relative_path.as_str())
+            .collect();
         assert!(paths.contains(&"package.json"));
         assert!(paths.contains(&"src/extension.ts"));
         assert!(paths.contains(&"packages/core/src/index.ts"));

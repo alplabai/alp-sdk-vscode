@@ -1,0 +1,1 @@
+--template minimal-app --target zephyr-conf

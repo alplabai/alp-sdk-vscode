@@ -217,7 +217,10 @@ fn output_path_for_emit(workspace_root: &Path, emit: &str) -> PathBuf {
         _ => "alp.out",
     };
 
-    workspace_root.join("build").join("generated").join(file_name)
+    workspace_root
+        .join("build")
+        .join("generated")
+        .join(file_name)
 }
 
 fn relative_or_full(workspace_root: &Path, output_path: &Path) -> String {

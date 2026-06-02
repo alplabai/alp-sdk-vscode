@@ -80,7 +80,11 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
 
     // 4. Compute project root.
     let dest_path = PathBuf::from(&destination);
-    let project_root = if name.is_empty() { dest_path.clone() } else { dest_path.join(&name) };
+    let project_root = if name.is_empty() {
+        dest_path.clone()
+    } else {
+        dest_path.join(&name)
+    };
 
     // 5. Build plan.
     let plan = create_wizard_plan(&WizardPlanInput {
@@ -99,7 +103,9 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         })
         .collect();
 
-    let has_updates = changes.iter().any(|c| c.kind == WizardFileChangeKind::Update);
+    let has_updates = changes
+        .iter()
+        .any(|c| c.kind == WizardFileChangeKind::Update);
 
     // 7. Guard against unforced overwrites.
     if has_updates && !args.force {
@@ -108,8 +114,8 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         let issues = vec![Issue {
             code: "init.would-overwrite".to_string(),
             severity: "error".to_string(),
-            message:
-                "One or more files would be overwritten. Use --force to allow updates.".to_string(),
+            message: "One or more files would be overwritten. Use --force to allow updates."
+                .to_string(),
         }];
         let text = if g.is_json() {
             vec![]
@@ -119,7 +125,11 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         let json = g.is_json().then(|| {
             Envelope::new("init", project, data, issues, ExitCode::WriteFailure.code()).to_json()
         });
-        return CommandRun { exit: ExitCode::WriteFailure, text, json };
+        return CommandRun {
+            exit: ExitCode::WriteFailure,
+            text,
+            json,
+        };
     }
 
     // 8. Preview mode — show plan, no writes.
@@ -138,7 +148,11 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         let json = g.is_json().then(|| {
             Envelope::new("init", project, data, vec![], ExitCode::Success.code()).to_json()
         });
-        return CommandRun { exit: ExitCode::Success, text, json };
+        return CommandRun {
+            exit: ExitCode::Success,
+            text,
+            json,
+        };
     }
 
     // 9. Write files.
@@ -158,16 +172,32 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
                 vec![]
             } else {
                 vec![
-                    format!("init: created '{}' from template '{}'", project_root.display(), template_id.as_str()),
-                    format!("  written: {}, unchanged: {}", result.written.len(), result.unchanged.len()),
+                    format!(
+                        "init: created '{}' from template '{}'",
+                        project_root.display(),
+                        template_id.as_str()
+                    ),
+                    format!(
+                        "  written: {}, unchanged: {}",
+                        result.written.len(),
+                        result.unchanged.len()
+                    ),
                 ]
             };
             let json = g.is_json().then(|| {
                 Envelope::new("init", project, data, vec![], ExitCode::Success.code()).to_json()
             });
-            CommandRun { exit: ExitCode::Success, text, json }
+            CommandRun {
+                exit: ExitCode::Success,
+                text,
+                json,
+            }
         }
-        Err(e) => error_run(g, "init.write-failed", &format!("Failed to write files: {e}")),
+        Err(e) => error_run(
+            g,
+            "init.write-failed",
+            &format!("Failed to write files: {e}"),
+        ),
     }
 }
 
@@ -181,10 +211,7 @@ enum ResolveErr {
 }
 use ResolveErr::*;
 
-fn resolve_template(
-    arg: Option<&str>,
-    interactive: bool,
-) -> Result<WizardTemplateId, ResolveErr> {
+fn resolve_template(arg: Option<&str>, interactive: bool) -> Result<WizardTemplateId, ResolveErr> {
     if let Some(s) = arg {
         return WizardTemplateId::from_str(s)
             .ok_or_else(|| BadArg(format!("Unknown template '{s}'.")));
@@ -200,8 +227,9 @@ fn resolve_template(
                 let idx = options.iter().position(|o| *o == choice).unwrap_or(0);
                 Ok(templates[idx].id)
             }
-            Err(InquireError::OperationCanceled)
-            | Err(InquireError::OperationInterrupted) => Err(Cancelled),
+            Err(InquireError::OperationCanceled) | Err(InquireError::OperationInterrupted) => {
+                Err(Cancelled)
+            }
             Err(_) => Err(Cancelled),
         };
     }
@@ -213,10 +241,14 @@ fn resolve_name(arg: Option<&str>, interactive: bool) -> Result<String, ResolveE
         return Ok(s.to_string());
     }
     if interactive {
-        return match Text::new("Project name (optional, leave blank to init in destination):").with_default("").prompt() {
+        return match Text::new("Project name (optional, leave blank to init in destination):")
+            .with_default("")
+            .prompt()
+        {
             Ok(s) => Ok(s.trim().to_string()),
-            Err(InquireError::OperationCanceled)
-            | Err(InquireError::OperationInterrupted) => Err(Cancelled),
+            Err(InquireError::OperationCanceled) | Err(InquireError::OperationInterrupted) => {
+                Err(Cancelled)
+            }
             Err(_) => Err(Cancelled),
         };
     }
@@ -235,10 +267,18 @@ fn resolve_destination(
         return Ok(p.to_string());
     }
     if interactive {
-        return match Text::new("Destination directory:").with_default(".").prompt() {
-            Ok(s) => Ok(if s.trim().is_empty() { ".".to_string() } else { s }),
-            Err(InquireError::OperationCanceled)
-            | Err(InquireError::OperationInterrupted) => Err(Cancelled),
+        return match Text::new("Destination directory:")
+            .with_default(".")
+            .prompt()
+        {
+            Ok(s) => Ok(if s.trim().is_empty() {
+                ".".to_string()
+            } else {
+                s
+            }),
+            Err(InquireError::OperationCanceled) | Err(InquireError::OperationInterrupted) => {
+                Err(Cancelled)
+            }
             Err(_) => Err(Cancelled),
         };
     }
@@ -250,7 +290,10 @@ fn resolve_destination(
 // ---------------------------------------------------------------------------
 
 fn make_project(destination: &str) -> Project {
-    Project { root: Some(destination.to_string()), board_yaml: None }
+    Project {
+        root: Some(destination.to_string()),
+        board_yaml: None,
+    }
 }
 
 fn empty_data(
@@ -271,11 +314,18 @@ fn empty_data(
 }
 
 fn runtime_failure_run() -> CommandRun {
-    CommandRun { exit: ExitCode::RuntimeFailure, text: vec![], json: None }
+    CommandRun {
+        exit: ExitCode::RuntimeFailure,
+        text: vec![],
+        json: None,
+    }
 }
 
 fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
-    let project = Project { root: None, board_yaml: None };
+    let project = Project {
+        root: None,
+        board_yaml: None,
+    };
     let issues = vec![Issue {
         code: code.to_string(),
         severity: "error".to_string(),
@@ -290,9 +340,24 @@ fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
         written: vec![],
         unchanged: vec![],
     };
-    let text = if g.is_json() { vec![] } else { vec![format!("init: {message}")] };
+    let text = if g.is_json() {
+        vec![]
+    } else {
+        vec![format!("init: {message}")]
+    };
     let json = g.is_json().then(|| {
-        Envelope::new("init", project, data, issues, ExitCode::RuntimeFailure.code()).to_json()
+        Envelope::new(
+            "init",
+            project,
+            data,
+            issues,
+            ExitCode::RuntimeFailure.code(),
+        )
+        .to_json()
     });
-    CommandRun { exit: ExitCode::RuntimeFailure, text, json }
+    CommandRun {
+        exit: ExitCode::RuntimeFailure,
+        text,
+        json,
+    }
 }

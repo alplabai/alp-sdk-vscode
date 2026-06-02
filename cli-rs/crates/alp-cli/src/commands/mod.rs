@@ -9,7 +9,17 @@ pub struct CommandRun {
     pub json: Option<String>,
 }
 
+pub mod completion;
+pub mod debug_config;
+pub mod diff;
+pub mod doctor;
+pub mod explain;
 pub mod generate;
 pub mod init;
+pub mod inspect;
+pub mod presets;
 pub mod scaffold;
+pub mod sdk;
+pub mod support_bundle;
+pub mod trace;
 pub mod validate;

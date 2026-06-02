@@ -1,0 +1,1 @@
+{"command":"completion","ok":false,"exitCode":1,"project":{"root":null,"boardYaml":null},"data":{"schemaVersion":"1","shell":"bash","script":""},"issues":[{"code":"completion.shell-unsupported","severity":"error","message":"Unsupported shell. Allowed values: bash, zsh, fish."}]}

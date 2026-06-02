@@ -11,10 +11,14 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order: serde_json::Value keeps object insertion order (matches JS),
+# so generated launch.json / diff values mirror the TypeScript CLI byte-for-byte.
+serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
 clap = { version = "4.6", features = ["derive"] }
 inquire = "0.9"
+# Lightweight blocking HTTP client (rustls) for `alp sdk list` (GitHub releases).
+ureq = { version = "2", features = ["json"] }
 anyhow = "1"
 thiserror = "2"
 owo-colors = "4"

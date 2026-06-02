@@ -1,0 +1,1 @@
+--preview --project contract/fixtures/debug-config/preview-yocto --target-kind yocto-userspace --server gdbserver

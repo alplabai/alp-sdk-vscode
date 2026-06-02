@@ -58,7 +58,9 @@ run_and_compare() {
 
   set +e
   if [[ "$engine" == "rust" ]]; then
-    (cd "$CLI_RS_DIR" && "$RUST_BIN" validate --board-yaml "$board_rel" --format json >"$actual_json" 2>"$actual_stderr")
+    # These fixtures pin the OFFLINE structural validator (TS-vs-Rust parity);
+    # the spawn path is covered by fixtures/validate-full/*.
+    (cd "$CLI_RS_DIR" && "$RUST_BIN" validate --offline --board-yaml "$board_rel" --format json >"$actual_json" 2>"$actual_stderr")
   else
     (cd "$CLI_RS_DIR" && node "$SCRIPT_DIR/offline-validate-ts.mjs" "$board_rel" >"$actual_json" 2>"$actual_stderr")
   fi
@@ -159,6 +161,140 @@ run_generate_fixture() {
 for case_dir in "$GEN_FIXTURE_ROOT"/*; do
   [[ -d "$case_dir" ]] || continue
   run_generate_fixture "$(basename "$case_dir")"
+done
+
+# ── Full-validate fixtures (fixtures/validate-full/*) ───────────────────────
+# The real `alp validate` spawns <sdk>/scripts/validate_board_yaml.py. Each
+# fixture ships a hermetic Python stub (canned stderr + exit code) so the spawn
+# + classify + parse + envelope path is exercised deterministically without
+# PyYAML or a real SDK. Rust-only golden (like generate); absolute path
+# prefixes are normalized so goldens are machine-independent.
+VALIDATE_FULL_ROOT="$SCRIPT_DIR/fixtures/validate-full"
+
+normalize_paths() {
+  sed "s|${CLI_RS_DIR}/||g"
+}
+
+run_validate_full_fixture() {
+  local case_name="$1"
+  local case_dir="$VALIDATE_FULL_ROOT/$case_name"
+  local args_file="$case_dir/args.txt"
+  local expected_json="$case_dir/expected.json"
+  local expected_exit="$case_dir/expected.exit"
+
+  [[ -f "$args_file" ]] || { echo "validate-full/$case_name: missing args.txt" >&2; failures=$((failures + 1)); return; }
+
+  local extra_args
+  extra_args="$(tr -d '\n' <"$args_file")"
+
+  local actual_raw actual_json actual_stderr actual_exit
+  actual_raw="$(mktemp)"
+  actual_json="$(mktemp)"
+  actual_stderr="$(mktemp)"
+
+  set +e
+  # shellcheck disable=SC2086
+  (cd "$CLI_RS_DIR" && "$RUST_BIN" validate $extra_args --format json) >"$actual_raw" 2>"$actual_stderr"
+  actual_exit=$?
+  set -e
+  normalize_paths <"$actual_raw" >"$actual_json"
+
+  if [[ "$bless" -eq 1 ]]; then
+    cp "$actual_json" "$expected_json"
+    printf "%s\n" "$actual_exit" >"$expected_exit"
+  fi
+
+  if ! diff -u "$expected_json" "$actual_json"; then
+    echo "contract mismatch: validate-full/$case_name stdout" >&2
+    failures=$((failures + 1))
+  fi
+
+  local wanted_exit
+  wanted_exit="$(tr -d '[:space:]' <"$expected_exit")"
+  if [[ "$actual_exit" != "$wanted_exit" ]]; then
+    echo "contract mismatch: validate-full/$case_name exit code: got $actual_exit, expected $wanted_exit" >&2
+    failures=$((failures + 1))
+  fi
+
+  if [[ -s "$actual_stderr" ]]; then
+    echo "unexpected stderr: validate-full/$case_name" >&2
+    cat "$actual_stderr" >&2
+    failures=$((failures + 1))
+  fi
+
+  rm -f "$actual_raw" "$actual_json" "$actual_stderr"
+}
+
+for case_dir in "$VALIDATE_FULL_ROOT"/*; do
+  [[ -d "$case_dir" ]] || continue
+  run_validate_full_fixture "$(basename "$case_dir")"
+done
+
+# ── Generic offline-command fixtures (fixtures/<command>/<case>/*) ───────────
+# For deterministic, offline commands (completion, diff, presets): run the Rust
+# binary with the fixture args and compare the path-normalized envelope against
+# a Rust golden. Each fixture dir holds args.txt + expected.json + expected.exit.
+run_command_fixture() {
+  local subcommand="$1"
+  local case_dir="$2"
+  local case_name
+  case_name="$(basename "$case_dir")"
+  local args_file="$case_dir/args.txt"
+  local expected_json="$case_dir/expected.json"
+  local expected_exit="$case_dir/expected.exit"
+
+  [[ -f "$args_file" ]] || { echo "$subcommand/$case_name: missing args.txt" >&2; failures=$((failures + 1)); return; }
+
+  local extra_args
+  extra_args="$(tr -d '\n' <"$args_file")"
+
+  local raw json stderr code
+  raw="$(mktemp)"
+  json="$(mktemp)"
+  stderr="$(mktemp)"
+
+  set +e
+  # SOURCE_DATE_EPOCH pins generatedAt for commands that timestamp output
+  # (inspect/trace); harmless for the others.
+  # shellcheck disable=SC2086
+  (cd "$CLI_RS_DIR" && SOURCE_DATE_EPOCH=0 "$RUST_BIN" "$subcommand" $extra_args --format json) >"$raw" 2>"$stderr"
+  code=$?
+  set -e
+  normalize_paths <"$raw" >"$json"
+
+  if [[ "$bless" -eq 1 ]]; then
+    cp "$json" "$expected_json"
+    printf "%s\n" "$code" >"$expected_exit"
+  fi
+
+  if ! diff -u "$expected_json" "$json"; then
+    echo "contract mismatch: $subcommand/$case_name stdout" >&2
+    failures=$((failures + 1))
+  fi
+
+  local wanted_exit
+  wanted_exit="$(tr -d '[:space:]' <"$expected_exit")"
+  if [[ "$code" != "$wanted_exit" ]]; then
+    echo "contract mismatch: $subcommand/$case_name exit code: got $code, expected $wanted_exit" >&2
+    failures=$((failures + 1))
+  fi
+
+  if [[ -s "$stderr" ]]; then
+    echo "unexpected stderr: $subcommand/$case_name" >&2
+    cat "$stderr" >&2
+    failures=$((failures + 1))
+  fi
+
+  rm -f "$raw" "$json" "$stderr"
+}
+
+for command_name in completion diff presets explain inspect trace debug-config support-bundle sdk; do
+  command_root="$SCRIPT_DIR/fixtures/$command_name"
+  [[ -d "$command_root" ]] || continue
+  for case_dir in "$command_root"/*; do
+    [[ -d "$case_dir" ]] || continue
+    run_command_fixture "$command_name" "$case_dir"
+  done
 done
 
 if [[ "$failures" -ne 0 ]]; then

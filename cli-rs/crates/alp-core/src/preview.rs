@@ -4,17 +4,8 @@
 use serde::Serialize;
 
 use crate::model::{BoardModel, normalize_board_model};
+pub use crate::project::ProjectContext;
 use crate::validate::{ParseError, parse_board_model};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectContext {
-    pub workspace_root: Option<String>,
-    pub sdk_root: Option<String>,
-    pub board_yaml_path: Option<String>,
-    pub west_cwd: Option<String>,
-    pub python_binary: String,
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

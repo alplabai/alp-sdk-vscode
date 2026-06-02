@@ -1,0 +1,1 @@
+--project contract/fixtures/validate-full/schema-violation-rich --board-yaml board.yaml --sdk-root contract/fixtures/validate-full/schema-violation-rich

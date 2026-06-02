@@ -22,7 +22,10 @@ pub fn collect_wizard_file_changes(
                     _ => WizardFileChangeKind::Update,
                 }
             };
-            WizardFileChange { relative_path: f.relative_path.clone(), kind }
+            WizardFileChange {
+                relative_path: f.relative_path.clone(),
+                kind,
+            }
         })
         .collect()
 }

@@ -121,6 +121,7 @@ pub struct WizardTemplateDefinition {
 pub struct ModuleTemplateDefinition {
     pub id: ModuleTemplateId,
     pub label: &'static str,
+    pub description: &'static str,
     pub function_prefix: &'static str,
     /// Lines may contain `{nm}` which is substituted with the normalized module name.
     pub explanation: &'static [&'static str],

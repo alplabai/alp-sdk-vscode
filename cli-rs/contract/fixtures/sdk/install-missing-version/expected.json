@@ -1,0 +1,1 @@
+{"command":"sdk","ok":false,"exitCode":1,"project":{"root":null,"boardYaml":null},"data":{"subcommand":"install","version":"","sdkPath":"","readiness":{"sdkPath":"","version":null,"loaderScriptPresent":false,"metadataPresent":false,"state":"missing","issues":[]}},"issues":[{"code":"sdk.missing-version","severity":"error","message":"Version argument is required."}]}

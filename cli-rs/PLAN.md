@@ -80,14 +80,125 @@ Highest-value command after validate.
 - [x] `alp-core/src/wizard/` module: models, service (file generators), filesystem (collect/write).
 - [x] 23 unit tests pass; contract harness passes.
 
-## Phase 5 — Remaining commands + SDK spawn
-- [ ] `doctor` (exit 4), `validate` **full** (Python validator spawn parity), and the rest of the 14 commands.
-- [ ] Decide spawn strategy: shell out to the same Python entrypoint the TS CLI uses → guarantees parity.
+## Phase 5 — Remaining commands + SDK spawn  (ACTIVE)
+- [x] `doctor` (exit 4). Ported the debug-doctor domain to `alp-core`
+      (`debug.rs`: target/server kinds, `build_doctor_report`,
+      `server_choices_for_target`, runtime-capability + workspace-context
+      adapters), plus `project.rs` (`resolve_project_context`, the canonical
+      `ProjectContext` now shared with `preview.rs`) and `clock.rs`
+      (`format_iso8601_utc`, pure, honors `SOURCE_DATE_EPOCH`). CLI command in
+      `commands/doctor.rs`: `--target-kind`/`--server`, `which`/`where` probe,
+      unsupported-server → exit 4 (`project: null`), invalid kind → exit 5.
+  - **Parity is unit-tested, not golden-fixtured.** Doctor output is machine
+    dependent (absolute workspace/sdk paths; `which jlink/openocd/lldb/python`
+    presence varies per host), so a byte-for-byte golden fixture would be
+    flaky. The TS↔Rust logic parity lives in deterministic `alp-core` unit
+    tests (runtime capabilities + contexts injected as predicates). The
+    contract harness stays focused on IO-shaped envelope determinism
+    (validate/generate).
+- [x] **Spawn strategy: shell out** to the same Python entrypoint the TS CLI
+      uses (the validator is a Python script — `generate` already shells out the
+      same way). napi-rs/WASM is irrelevant here and stays deferred (§0).
+- [x] `validate` **full** (Python validator spawn parity). Default `alp validate`
+      now spawns `<sdk>/scripts/validate_board_yaml.py --input <board>`, mirroring
+      TS `runValidateCommand`: context resolve → guards (board-missing /
+      sdk-unresolved → exit 2) → spawn → classify exit status (0 clean · 1
+      schema-violation · 2 missing-preset · 3 hardware-revision · else failed) →
+      parse stderr → outcome→exit (clean 0 · {missing-preset,schema,hw} 2 ·
+      failed 1). Ported `analyze_validation_result` + `parse_validation_issues`
+      (rich `error[ALP-B*]` blocks + legacy `FAIL`/`WARN` + `hint:`, hand-rolled,
+      no `regex` dep) to `alp-core/validate.rs`.
+  - `--offline` flag runs the structural validator only (no Python/SDK); the
+    existing offline fixtures pin TS↔Rust offline parity via `--offline`.
+  - **Contract: hermetic Python stubs.** `fixtures/validate-full/*` ship a fake
+    `validate_board_yaml.py` (canned stderr + exit) so the spawn→classify→parse→
+    envelope path is exercised deterministically (python3 only, no PyYAML/SDK).
+    `run.sh` runs them Rust-only and normalizes absolute path prefixes so
+    goldens are machine-independent.
+- [x] Offline batch (1/2): `completion`, `diff`, `presets`.
+  - `completion` — bash/zsh/fish scripts embedded verbatim via `include_str!`
+    (captured byte-for-byte from the TS CLI; `--shell`, invalid → exit 1).
+  - `diff` — parse vs `normalize_board_model`, diffed as JSON trees in
+    `alp-core/diff.rs` (`collect_diff_entries` + `prune_nulls` to match TS's
+    sparse model); board-missing → exit 2.
+  - `presets` — `empty_preset_catalogue` defaults in `alp-core/presets.rs` +
+    SDK metadata discovery (`metadata/e1m_modules/*/som.yaml`,
+    `metadata/carriers/*/board.yaml`); sdk-unresolved → warning, still exit 0.
+  - All three verified byte-for-byte against the live TS CLI; golden fixtures
+    added under `fixtures/{completion,diff,presets}` via a generic, path-
+    normalized harness loop. Shared `util::resolve_cli_project_context` now
+    backs validate/diff/presets/doctor.
+- [x] Offline batch (2/2): `explain`. Ported the generation-target catalog to
+      `alp-core/loader.rs` (`list_generation_target_support`); explain reads it
+      plus the wizard project/module templates. Overview / project-template /
+      module-template / generation-target selectors; both selectors → exit 1
+      (ambiguous), unknown id → exit 1. Verified byte-for-byte vs the live TS
+      CLI across all 18 selector/error cases; 6 golden fixtures added.
+  - **Fixed a latent Phase-4 divergence:** the Rust wizard had rewritten the
+    template `label`s (Title Case) and `description`s, and module templates
+    lacked `description`. Realigned all 6 project + 4 module
+    labels/descriptions to the TS source and added `ModuleTemplateDefinition.description`
+    (display-only fields; file generation unaffected, all wizard tests still pass).
+- [x] Debug-domain (read-only): `inspect`, `trace`. Ported `collect_resolved_values`
+      + `DebugResolvedValue`/`DebugValueSource` (+ `west_cwd` on the debug context)
+      and `create_loader_plan` + `ALL_EMIT_MODES` + `DebugGenerationTraceDecision`
+      to `alp-core`. `inspect` lists resolved context values (`--path` filter,
+      `--show-origin`, board-missing/path-not-found warnings); `trace` reports
+      per-target planned loader decisions (sdk/board guards → exit 2, unknown
+      `--target` → exit 5). Shared `util::generated_at_iso` (SOURCE_DATE_EPOCH).
+      Verified byte-for-byte vs the live TS CLI across 10 cases; 8 golden fixtures.
+- [x] `debugConfig` (`debug-config`). Ported the launch-profile machinery to
+      `alp-core/debug_launch.rs` (`create_launch_draft` per target/server +
+      `create_launch_json_write_plan` merge). `--preview` prints the draft;
+      otherwise it merges into `<workspace>/.vscode/launch.json` (replace by
+      name). Invalid kind / unsupported backend → exit 5, write failure → exit 3.
+      Enabled serde_json `preserve_order` so emitted JSON keeps JS key order.
+      Verified byte-for-byte vs the live TS CLI: 9 preview envelopes + 6 written
+      launch.json shapes + merge/replaced. 5 golden fixtures (preview + errors).
+- [x] `supportBundle` (`support-bundle`). Assembles an inspect report + generation
+      trace + doctor report into one JSON bundle written under `.alp-support`
+      (or `--destination`); the envelope carries the written path + decision
+      count, and the exit code follows the doctor summary (fail > 0 → exit 4,
+      unsupported backend → exit 4, bad kind/target → exit 5). Added `Serialize`
+      (camelCase, `codeLLDB`) to the debug context so the bundle file matches TS.
+      Verified byte-for-byte vs the live TS CLI: success envelope + full bundle
+      file + 3 error paths. 3 golden fixtures (deterministic, no-write paths);
+      success-path issues are doctor-derived (machine-dependent), so — like
+      `doctor` — that path is verified directly, not golden-fixtured.
+- [x] `sdk` (`list`/`install`/`current`/`switch`) — the last command. Ported the
+      IO-free parts (release-payload parse, `check_sdk_readiness`,
+      `resolve_active_sdk`) to `alp-core/sdk.rs`; the CLI does `list` over HTTP
+      (`ureq`, the one new dependency), `install` via `git clone --branch`,
+      and `current`/`switch` over the `.alp/sdk-path` pointer. Verified
+      byte-for-byte vs the live TS CLI: the offline subcommands + switch/current
+      success; 5 deterministic golden fixtures (the network paths `list`/
+      `install` aren't fixtured — non-deterministic/network, like `doctor`).
 
-## Phase 6 — Distribution
-- [ ] Adopt `dist`: generate `release.yml` producing macOS/Linux/Windows binaries + installers.
-- [ ] npm shim package wrapping the native binary so `npm i -g alp-sdk` is unchanged.
-- [ ] Add `cli-rs/` to `.vscodeignore` so it is **not** packaged into the VSIX.
+**Phase 5 complete — all 14 commands ported.** Contract harness covers every
+deterministic command path (TS-offline parity + Rust goldens); machine-/network-
+dependent paths (`doctor`, `support-bundle` success, `sdk list/install`) are
+verified directly against the live TS CLI and unit-tested. Next: Phase 6
+(distribution) + Phase 7 (cutover).
+
+## Phase 6 — Distribution  ✅ DONE
+Hand-rolled release pipeline (chose in-repo + reviewable over `dist`, which can't
+be generated in this environment without running the tool).
+- [x] `.github/workflows/release-cli-rs.yml`: on `cli-rs-v*` tags, build `alp`
+      for four targets (x86_64/aarch64 macOS, x86_64 linux-gnu, x86_64 windows-msvc)
+      on native runners, archive each as `alp-<target>.tar.gz`, and attach to the
+      GitHub release. Distinct `cli-rs-v*` tag namespace (legacy TS CLI uses `cli-v*`).
+- [x] npm shim `cli-rs/npm-shim` (package **`alp-sdk`**, bin `alp`): `postinstall.js`
+      maps platform/arch → target, downloads the matching archive from the
+      `cli-rs-v<version>` release (Node `fetch` + system `tar`, no deps), and
+      `bin/alp.js` forwards argv to the native binary. Keeps `npm i -g alp-sdk`
+      working. Launcher verified locally (forwards args + exit codes); downloaded
+      `binary/` is gitignored.
+- [x] `cli-rs/**` already in `.vscodeignore` — the Rust CLI + shim are excluded
+      from the VSIX.
+- Release flow: bump `cli-rs/Cargo.toml` + `cli-rs/npm-shim/package.json` to the
+  same version, tag `cli-rs-v<version>`, push (builds + attaches archives), then
+  `npm publish` the shim. Publishing the shim as `alp-sdk` is held until Phase 7
+  cutover (it would replace the legacy TS package of the same name).
 
 ## Phase 7 — Cutover
 - [ ] Flip docs (`CLI.md`, `GETTING_STARTED_CLI.md`) to the Rust binary.
@@ -109,10 +220,10 @@ cli-rs/
 │   ├── run.sh                 # TS vs Rust conformance (Phase 1)
 │   └── fixtures/validate/
 └── crates/
-    ├── alp-core/   # domain logic, zero IO/clap; fixture-tested
-    │   └── src/{lib,model,validate}.rs
+    ├── alp-core/   # domain logic, zero IO/clap; fixture- + unit-tested
+    │   └── src/{lib,model,validate,preview,sdk_catalogue,project,debug,clock}.rs + wizard/
     └── alp-cli/    # bin "alp"; clap + envelope + IO
-        └── src/{main,cli,exit,envelope}.rs + commands/
+        └── src/{main,cli,exit,envelope}.rs + commands/{validate,generate,init,scaffold,doctor}.rs
 ```
 
 ## Build / test

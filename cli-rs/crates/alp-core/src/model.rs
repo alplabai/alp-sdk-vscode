@@ -115,8 +115,7 @@ pub struct Inference {
 
 impl Inference {
     pub fn is_empty(&self) -> bool {
-        self.backend.as_deref().unwrap_or_default().is_empty()
-            && self.default_arena_kib.is_none()
+        self.backend.as_deref().unwrap_or_default().is_empty() && self.default_arena_kib.is_none()
     }
 }
 

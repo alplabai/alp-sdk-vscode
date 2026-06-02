@@ -1,0 +1,1 @@
+--project contract/fixtures/trace/one-target --target cmake-args

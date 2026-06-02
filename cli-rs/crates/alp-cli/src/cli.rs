@@ -76,13 +76,123 @@ pub enum Format {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Validate schema and semantic rules for the active project.
-    Validate,
+    Validate(ValidateArgs),
     /// Generate build artifacts from board.yaml (alp.conf, overlay, args, yocto).
     Generate,
     /// Initialize a new ALP project from a template.
     Init(InitArgs),
     /// Scaffold a module into an existing project.
     Scaffold(ScaffoldArgs),
+    /// Diagnose debug readiness for a target/server combination.
+    Doctor(DoctorArgs),
+    /// Emit a shell completion script (bash, zsh, or fish).
+    Completion(CompletionArgs),
+    /// Show how board.yaml normalization changes the effective config.
+    Diff,
+    /// List SDK presets (SKUs, carriers) and built-in catalogue defaults.
+    Presets,
+    /// Explain a project/module template or a generation target.
+    Explain(ExplainArgs),
+    /// Inspect resolved project/debug context values.
+    Inspect(InspectArgs),
+    /// Trace the generation decisions a build would make.
+    Trace(TraceArgs),
+    /// Generate or preview a VS Code launch.json debug configuration.
+    DebugConfig(DebugConfigArgs),
+    /// Export a diagnostic support bundle (inspect + trace + doctor).
+    SupportBundle(SupportBundleArgs),
+    /// Manage local SDK installs (list, install, current, switch).
+    Sdk(SdkArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SdkArgs {
+    /// Subcommand: list, install, current, or switch.
+    #[arg(value_name = "SUBCOMMAND")]
+    pub subcommand: Option<String>,
+    /// Positional argument (version for install, version|path for switch).
+    #[arg(value_name = "ARG")]
+    pub arg: Option<String>,
+    /// Cache root for `install` (default: ~/.alp/sdk-cache).
+    #[arg(long)]
+    pub destination: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct SupportBundleArgs {
+    /// Debug target class (zephyr-mcu, baremetal-mcu, yocto-userspace, native-host).
+    #[arg(long = "target-kind", value_name = "KIND")]
+    pub target_kind: Option<String>,
+    /// Debug server backend (jlink, openocd, pyocd, gdbserver, none).
+    #[arg(long, value_name = "SERVER")]
+    pub server: Option<String>,
+    /// Limit generation tracing to this config key path.
+    #[arg(long)]
+    pub path: Option<String>,
+    /// Output directory for the bundle (default: <workspace>/.alp-support).
+    #[arg(long)]
+    pub destination: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DebugConfigArgs {
+    /// Debug target class (zephyr-mcu, baremetal-mcu, yocto-userspace, native-host).
+    #[arg(long = "target-kind", value_name = "KIND")]
+    pub target_kind: Option<String>,
+    /// Debug server backend (jlink, openocd, pyocd, gdbserver, none).
+    #[arg(long, value_name = "SERVER")]
+    pub server: Option<String>,
+    /// Print the launch configuration without writing launch.json.
+    #[arg(long)]
+    pub preview: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ExplainArgs {
+    /// Template id to explain (project or module template).
+    #[arg(long)]
+    pub template: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct InspectArgs {
+    /// Limit output to resolved values under this key path.
+    #[arg(long)]
+    pub path: Option<String>,
+    /// Include source + detail metadata for each value.
+    #[arg(long = "show-origin")]
+    pub show_origin: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct TraceArgs {
+    /// Limit tracing to this config key path.
+    #[arg(long)]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct CompletionArgs {
+    /// Target shell (bash, zsh, or fish). Defaults to bash.
+    #[arg(long, value_name = "SHELL")]
+    pub shell: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Debug target class (zephyr-mcu, baremetal-mcu, yocto-userspace, native-host).
+    #[arg(long = "target-kind", value_name = "KIND")]
+    pub target_kind: Option<String>,
+    /// Debug server backend (jlink, openocd, pyocd, gdbserver, none).
+    #[arg(long, value_name = "SERVER")]
+    pub server: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ValidateArgs {
+    /// Run the offline structural validator only (no Python SDK spawn).
+    #[arg(long)]
+    pub offline: bool,
 }
 
 #[derive(Debug, Args)]

@@ -1,0 +1,1 @@
+--project contract/fixtures/inspect/path-filter --path sdkRoot

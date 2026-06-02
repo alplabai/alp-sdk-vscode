@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Build + publish the native Rust `alp` CLI (cli-rs/) as GitHub Release assets.
+# One archive per platform; the npm shim (cli-rs/npm-shim) downloads the
+# matching archive on install. Triggered by `cli-rs-v*` tags (distinct from the
+# legacy TypeScript CLI's `cli-v*` tags).
+#
+# Release flow: bump cli-rs/Cargo.toml + cli-rs/npm-shim/package.json to the same
+# version, tag `cli-rs-v<version>`, push. This workflow builds the four targets
+# and attaches `alp-<target>.tar.gz` to the GitHub Release for that tag.
+
+name: release-cli-rs
+
+on:
+  push:
+    tags:
+      - "cli-rs-v*"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build (release, optimized profile)
+        run: cargo build --release --locked --manifest-path cli-rs/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Package archive
+        shell: bash
+        run: |
+          dir="cli-rs/target/${{ matrix.target }}/release"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            binfile="alp.exe"
+          else
+            binfile="alp"
+          fi
+          tar -czf "alp-${{ matrix.target }}.tar.gz" -C "$dir" "$binfile"
+
+      - name: Upload archive to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: alp-${{ matrix.target }}.tar.gz
+
+      - name: Upload archive as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alp-${{ matrix.target }}
+          path: alp-${{ matrix.target }}.tar.gz
+          retention-days: 14

@@ -186,7 +186,9 @@ fn str_clean(value: Option<&YamlValue>) -> Option<String> {
 }
 
 fn num_u32(value: Option<&YamlValue>) -> Option<u32> {
-    value.and_then(YamlValue::as_i64).and_then(|n| u32::try_from(n).ok())
+    value
+        .and_then(YamlValue::as_i64)
+        .and_then(|n| u32::try_from(n).ok())
 }
 
 fn bool_map(value: Option<&YamlValue>) -> BTreeMap<String, bool> {
@@ -233,8 +235,7 @@ pub fn parse_chip_def(text: &str) -> Result<ChipDef, serde_yaml::Error> {
     let root: YamlValue = serde_yaml::from_str(text)?;
     let map = root.as_mapping().cloned().unwrap_or_default();
     let chip_id = str_clean(yget(&map, "chip_id")).unwrap_or_default();
-    let display_name =
-        str_clean(yget(&map, "display_name")).unwrap_or_else(|| chip_id.clone());
+    let display_name = str_clean(yget(&map, "display_name")).unwrap_or_else(|| chip_id.clone());
 
     let kconfig = yget(&map, "kconfig")
         .and_then(YamlValue::as_mapping)
@@ -331,7 +332,10 @@ pub fn parse_som_preset(text: &str) -> Result<SomPreset, serde_yaml::Error> {
     let dram_mbit = num_u32(memory_map.and_then(|m| yget(m, "dram_mbit")));
     let flash_mbit = num_u32(memory_map.and_then(|m| yget(m, "flash_mbit")));
     let memory = if dram_mbit.is_some() || flash_mbit.is_some() {
-        Some(MemorySpec { dram_mbit, flash_mbit })
+        Some(MemorySpec {
+            dram_mbit,
+            flash_mbit,
+        })
     } else {
         None
     };
@@ -644,7 +648,10 @@ mod tests {
     fn derives_board_and_core_helpers() {
         let c = fixture_catalogue();
         assert_eq!(boards_for_som(&c, "E1M-AEN701").len(), 1);
-        assert_eq!(core_ids_for_som(&c, "E1M-AEN701"), vec!["m55_hp".to_string()]);
+        assert_eq!(
+            core_ids_for_som(&c, "E1M-AEN701"),
+            vec!["m55_hp".to_string()]
+        );
         assert!(boards_for_som(&c, "UNKNOWN").is_empty());
     }
 
@@ -673,7 +680,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(chip.vendor, None);
-        assert_eq!(chip.kconfig.as_ref().and_then(|k| k.zephyr.clone()), Some("CONFIG_CHIP_A".to_string()));
+        assert_eq!(
+            chip.kconfig.as_ref().and_then(|k| k.zephyr.clone()),
+            Some("CONFIG_CHIP_A".to_string())
+        );
 
         let som = parse_som_preset(
             "sku: E1M-AEN701\ndisplay_name: E1M AEN701\nfamily: aen\nsilicon: alif-e7\ninference:\n  preferred_backend: ethos_u\ncapabilities: { deepx_dx: true }\ntopology:\n  m55_hp: { app: ./src }\non_module:\n  i2c_devices:\n    i2c0:\n      devices:\n        - chip: ina236\n          role: sensor\n          address_7bit: '0x40'\nstatus:\n  preliminary: true\n",

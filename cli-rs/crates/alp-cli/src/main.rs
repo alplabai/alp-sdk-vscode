@@ -9,6 +9,7 @@ mod cli;
 mod commands;
 mod envelope;
 mod exit;
+mod util;
 
 use clap::Parser;
 
@@ -20,10 +21,20 @@ fn main() {
     let global = args.global;
 
     let run: CommandRun = match args.command {
-        Command::Validate => commands::validate::run(&global),
+        Command::Validate(args) => commands::validate::run(&global, &args),
         Command::Generate => commands::generate::run(&global),
         Command::Init(args) => commands::init::run(&global, &args),
         Command::Scaffold(args) => commands::scaffold::run(&global, &args),
+        Command::Doctor(args) => commands::doctor::run(&global, &args),
+        Command::Completion(args) => commands::completion::run(&global, &args),
+        Command::Diff => commands::diff::run(&global),
+        Command::Presets => commands::presets::run(&global),
+        Command::Explain(args) => commands::explain::run(&global, &args),
+        Command::Inspect(args) => commands::inspect::run(&global, &args),
+        Command::Trace(args) => commands::trace::run(&global, &args),
+        Command::DebugConfig(args) => commands::debug_config::run(&global, &args),
+        Command::SupportBundle(args) => commands::support_bundle::run(&global, &args),
+        Command::Sdk(args) => commands::sdk::run(&global, &args),
     };
 
     emit(&global.format, run.json.as_deref(), &run.text);

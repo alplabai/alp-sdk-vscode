@@ -3,7 +3,7 @@
 
 use alp_core::wizard::{
     ModuleScaffoldInput, ModuleTemplateId, WizardFileChangeKind, collect_wizard_file_changes,
-    create_scaffold_tree_preview, create_module_scaffold_plan, list_module_templates,
+    create_module_scaffold_plan, create_scaffold_tree_preview, list_module_templates,
     write_wizard_files,
 };
 use inquire::{InquireError, Select, Text};
@@ -107,7 +107,9 @@ pub fn run(g: &GlobalArgs, args: &ScaffoldArgs) -> CommandRun {
         })
         .collect();
 
-    let has_updates = changes.iter().any(|c| c.kind == WizardFileChangeKind::Update);
+    let has_updates = changes
+        .iter()
+        .any(|c| c.kind == WizardFileChangeKind::Update);
 
     // 6. Guard against unforced overwrites.
     if has_updates && !args.force {
@@ -132,10 +134,20 @@ pub fn run(g: &GlobalArgs, args: &ScaffoldArgs) -> CommandRun {
             vec!["scaffold: would overwrite existing files; use --force to proceed.".to_string()]
         };
         let json = g.is_json().then(|| {
-            Envelope::new("scaffold", project, data, issues, ExitCode::WriteFailure.code())
-                .to_json()
+            Envelope::new(
+                "scaffold",
+                project,
+                data,
+                issues,
+                ExitCode::WriteFailure.code(),
+            )
+            .to_json()
         });
-        return CommandRun { exit: ExitCode::WriteFailure, text, json };
+        return CommandRun {
+            exit: ExitCode::WriteFailure,
+            text,
+            json,
+        };
     }
 
     // 7. Preview mode.
@@ -165,7 +177,11 @@ pub fn run(g: &GlobalArgs, args: &ScaffoldArgs) -> CommandRun {
         let json = g.is_json().then(|| {
             Envelope::new("scaffold", project, data, vec![], ExitCode::Success.code()).to_json()
         });
-        return CommandRun { exit: ExitCode::Success, text, json };
+        return CommandRun {
+            exit: ExitCode::Success,
+            text,
+            json,
+        };
     }
 
     // 8. Write files.
@@ -202,9 +218,17 @@ pub fn run(g: &GlobalArgs, args: &ScaffoldArgs) -> CommandRun {
             let json = g.is_json().then(|| {
                 Envelope::new("scaffold", project, data, vec![], ExitCode::Success.code()).to_json()
             });
-            CommandRun { exit: ExitCode::Success, text, json }
+            CommandRun {
+                exit: ExitCode::Success,
+                text,
+                json,
+            }
         }
-        Err(e) => error_run(g, "scaffold.write-failed", &format!("Failed to write files: {e}")),
+        Err(e) => error_run(
+            g,
+            "scaffold.write-failed",
+            &format!("Failed to write files: {e}"),
+        ),
     }
 }
 
@@ -227,18 +251,16 @@ fn resolve_module_name(arg: Option<&str>, interactive: bool) -> Result<String, R
         return match Text::new("Module name:").prompt() {
             Ok(s) if s.trim().is_empty() => Err(NeedName),
             Ok(s) => Ok(s.trim().to_string()),
-            Err(InquireError::OperationCanceled)
-            | Err(InquireError::OperationInterrupted) => Err(Cancelled),
+            Err(InquireError::OperationCanceled) | Err(InquireError::OperationInterrupted) => {
+                Err(Cancelled)
+            }
             Err(_) => Err(Cancelled),
         };
     }
     Err(NeedName)
 }
 
-fn resolve_template(
-    arg: Option<&str>,
-    interactive: bool,
-) -> Result<ModuleTemplateId, ResolveErr> {
+fn resolve_template(arg: Option<&str>, interactive: bool) -> Result<ModuleTemplateId, ResolveErr> {
     if let Some(s) = arg {
         return ModuleTemplateId::from_str(s)
             .ok_or_else(|| BadArg(format!("Unknown module template '{s}'.")));
@@ -254,8 +276,9 @@ fn resolve_template(
                 let idx = options.iter().position(|o| *o == choice).unwrap_or(0);
                 Ok(templates[idx].id)
             }
-            Err(InquireError::OperationCanceled)
-            | Err(InquireError::OperationInterrupted) => Err(Cancelled),
+            Err(InquireError::OperationCanceled) | Err(InquireError::OperationInterrupted) => {
+                Err(Cancelled)
+            }
             Err(_) => Err(Cancelled),
         };
     }
@@ -267,7 +290,10 @@ fn resolve_template(
 // ---------------------------------------------------------------------------
 
 fn make_project(destination: &str) -> Project {
-    Project { root: Some(destination.to_string()), board_yaml: None }
+    Project {
+        root: Some(destination.to_string()),
+        board_yaml: None,
+    }
 }
 
 fn empty_data(
@@ -292,11 +318,18 @@ fn empty_data(
 }
 
 fn runtime_failure_run() -> CommandRun {
-    CommandRun { exit: ExitCode::RuntimeFailure, text: vec![], json: None }
+    CommandRun {
+        exit: ExitCode::RuntimeFailure,
+        text: vec![],
+        json: None,
+    }
 }
 
 fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
-    let project = Project { root: None, board_yaml: None };
+    let project = Project {
+        root: None,
+        board_yaml: None,
+    };
     let issues = vec![Issue {
         code: code.to_string(),
         severity: "error".to_string(),
@@ -313,9 +346,24 @@ fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
         written: vec![],
         unchanged: vec![],
     };
-    let text = if g.is_json() { vec![] } else { vec![format!("scaffold: {message}")] };
+    let text = if g.is_json() {
+        vec![]
+    } else {
+        vec![format!("scaffold: {message}")]
+    };
     let json = g.is_json().then(|| {
-        Envelope::new("scaffold", project, data, issues, ExitCode::RuntimeFailure.code()).to_json()
+        Envelope::new(
+            "scaffold",
+            project,
+            data,
+            issues,
+            ExitCode::RuntimeFailure.code(),
+        )
+        .to_json()
     });
-    CommandRun { exit: ExitCode::RuntimeFailure, text, json }
+    CommandRun {
+        exit: ExitCode::RuntimeFailure,
+        text,
+        json,
+    }
 }
