@@ -1,0 +1,10 @@
+schema_version: 2
+som:
+  sku: E1M-AEN701
+
+cores:
+  m55_hp:
+    os: zephyr
+    app: ./src
+    libraries:
+      - mbedtls

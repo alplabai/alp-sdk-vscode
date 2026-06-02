@@ -64,3 +64,31 @@ jobs:
         run: |
           test -f alp-sdk-upstream/metadata/schemas/board-config-v1.schema.json
           echo "schema reachable via submodule"
+
+  rust_cli_contract:
+    name: rust cli · contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Rust CLI contract harness
+        run: bash cli-rs/contract/run.sh

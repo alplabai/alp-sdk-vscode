@@ -39,14 +39,14 @@ validator (`executeValidatorPlanWithSpawn`); full spawn parity is **Phase 5**.
 
 ---
 
-## Phase 1 — Contract harness  (NEXT)
+## Phase 1 — Contract harness  ✅ DONE
 Make divergence detectable by CI instead of by humans.
 
-- [ ] Author `contract/board.schema.json` from the TS board model.
-- [ ] Define golden-fixture format: `input.board.yaml` → `expected.json` (envelope) + `expected.exit`.
-- [ ] Build a fixture corpus from `alp-sdk-upstream/examples/*` (clean) + hand-crafted violations.
-- [ ] `contract/run.sh`: runs **both** the TS CLI and the Rust binary over every fixture, diffs stdout JSON + exit code, fails on mismatch.
-- [ ] Wire the harness into CI (`.github/workflows`), gating Rust PRs.
+- [x] Author `contract/board.schema.json` from the TS board model.
+- [x] Define golden-fixture format: `board.yaml` → `expected.json` (envelope) + `expected.exit`.
+- [x] Build an initial fixture corpus from clean examples + hand-crafted violations.
+- [x] `contract/run.sh`: runs the Rust binary and the TS **offline validator runner** over every fixture, diffs stdout JSON + exit code, fails on mismatch.
+- [x] Wire the harness into CI (`.github/workflows`), gating Rust PRs.
 
 ## Phase 2 — Deepen `alp-core`
 Port the remaining offline-computable domain logic, fixture-driven.
