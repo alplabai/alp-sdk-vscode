@@ -1,0 +1,1 @@
+{"command":"generate","ok":false,"exitCode":2,"project":{"root":".","boardYaml":"contract/fixtures/generate/missing-board/board.yaml"},"data":{"schemaVersion":"1","targets":[],"written":[],"failed":[]},"issues":[{"code":"generate.board-yaml-missing","severity":"error","message":"board.yaml path could not be resolved or the file does not exist."}]}

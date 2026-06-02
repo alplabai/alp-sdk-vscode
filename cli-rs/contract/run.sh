@@ -3,9 +3,15 @@
 #
 # Contract harness for the Rust alp CLI migration.
 #
-# It checks two things for each golden fixture:
+# Validate fixtures (fixtures/validate/*):
 #   1. Rust `alp validate --format json` matches expected stdout + exit code.
 #   2. TS `validateBoardYamlLocally` emits the same contract envelope.
+#
+# Generate fixtures (fixtures/generate/*):
+#   Each fixture directory contains:
+#     args.txt    — CLI flags (one line, space-separated, relative to cli-rs/)
+#     expected.json — golden stdout
+#     expected.exit — golden exit code
 
 set -euo pipefail
 
@@ -98,6 +104,61 @@ for case_dir in "$FIXTURE_ROOT"/*; do
   if [[ "$rust_only" -eq 0 ]]; then
     run_and_compare ts "$case_name" "$board_rel" "$expected_json" "$expected_exit"
   fi
+done
+
+GEN_FIXTURE_ROOT="$SCRIPT_DIR/fixtures/generate"
+
+run_generate_fixture() {
+  local case_name="$1"
+  local case_dir="$GEN_FIXTURE_ROOT/$case_name"
+  local args_file="$case_dir/args.txt"
+  local expected_json="$case_dir/expected.json"
+  local expected_exit="$case_dir/expected.exit"
+
+  [[ -f "$args_file" ]] || { echo "generate/$case_name: missing args.txt" >&2; failures=$((failures + 1)); return; }
+
+  local extra_args
+  extra_args="$(tr -d '\n' <"$args_file")"
+
+  local actual_json actual_stderr actual_exit
+  actual_json="$(mktemp)"
+  actual_stderr="$(mktemp)"
+
+  set +e
+  # shellcheck disable=SC2086
+  (cd "$CLI_RS_DIR" && "$RUST_BIN" generate $extra_args --format json >"$actual_json" 2>"$actual_stderr")
+  actual_exit=$?
+  set -e
+
+  if [[ "$bless" -eq 1 ]]; then
+    cp "$actual_json" "$expected_json"
+    printf "%s\n" "$actual_exit" >"$expected_exit"
+  fi
+
+  if ! diff -u "$expected_json" "$actual_json"; then
+    echo "contract mismatch: generate/$case_name stdout" >&2
+    failures=$((failures + 1))
+  fi
+
+  local wanted_exit
+  wanted_exit="$(tr -d '[:space:]' <"$expected_exit")"
+  if [[ "$actual_exit" != "$wanted_exit" ]]; then
+    echo "contract mismatch: generate/$case_name exit code: got $actual_exit, expected $wanted_exit" >&2
+    failures=$((failures + 1))
+  fi
+
+  if [[ -s "$actual_stderr" ]]; then
+    echo "unexpected stderr: generate/$case_name" >&2
+    cat "$actual_stderr" >&2
+    failures=$((failures + 1))
+  fi
+
+  rm -f "$actual_json" "$actual_stderr"
+}
+
+for case_dir in "$GEN_FIXTURE_ROOT"/*; do
+  [[ -d "$case_dir" ]] || continue
+  run_generate_fixture "$(basename "$case_dir")"
 done
 
 if [[ "$failures" -ne 0 ]]; then

@@ -23,10 +23,16 @@ struct GenerateData {
 pub fn run(g: &GlobalArgs) -> CommandRun {
     let workspace_root = resolve_workspace_root(g);
     let board_path = resolve_board_path(g, &workspace_root);
-    let board_str = board_path.to_string_lossy().to_string();
+
+    // Keep as-given strings for JSON (reproducible in golden fixtures).
+    let project_str = g.project.clone().unwrap_or_else(|| ".".to_string());
+    let board_yaml_str = g
+        .board_yaml
+        .clone()
+        .unwrap_or_else(|| "board.yaml".to_string());
     let project = Project {
-        root: Some(workspace_root.to_string_lossy().to_string()),
-        board_yaml: Some(board_str.clone()),
+        root: Some(project_str),
+        board_yaml: Some(board_yaml_str),
     };
 
     if !board_path.exists() {

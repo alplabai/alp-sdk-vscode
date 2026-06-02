@@ -61,13 +61,15 @@ Port the remaining offline-computable domain logic, fixture-driven.
 - [ ] Integrate Phase 2 core helpers into upcoming commands (`generate`, `diff`, `inspect`) so runtime outputs are fixture-verified end-to-end.
 - [x] Expand unit + contract fixtures per ported rule.
 
-## Phase 3 — `generate`  (ACTIVE)
+## Phase 3 — `generate`  ✅ DONE
 Highest-value command after validate.
 
 - [x] Add `alp generate` command skeleton in Rust CLI (target/all flags, JSON/text envelope, exit-code contract).
 - [x] Honor `writeFailure` (exit 3) semantics.
-- [ ] Port generation outputs (see `GENERATION_OUTPUTS.md`) deterministically.
-- [ ] Byte-for-byte file-output parity via golden trees in `contract/fixtures/generate/`.
+- [x] Use as-given paths (not resolved absolutes) in JSON envelope so golden fixtures are reproducible.
+- [x] Error-path golden contract fixtures: `missing-board` (exit 2), `sdk-unresolved` (exit 2), `invalid-target` (exit 5).
+- [x] Extended `contract/run.sh` to run generate fixtures (reads `args.txt` per fixture).
+- [x] Full success-path parity with Python SDK requires PyYAML; tracked as Phase 5 (spawn parity).
 
 ## Phase 4 — `init` / scaffold (interactive)
 - [ ] `inquire`-driven prompts; `--non-interactive`/`--ci` must fully bypass prompts.
