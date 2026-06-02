@@ -83,6 +83,28 @@ Delegate to the **`alp` binary** — user-triggered "actions":
 
 Rule of thumb: **per-keystroke → in-process TS; per-click → CLI binary.**
 
+### 4a. Debug doctor / preflight stay in-process (host-state exception)
+
+There is a third class beyond per-keystroke vs per-click: **commands whose
+answer depends on VS Code host state the CLI cannot observe.** The debug-domain
+commands — `alp.debugDoctor`, `alp.debugPreflight` (and the debug parts of
+`inspect` / `support-bundle`) — probe **which debugger extensions are installed**
+via `vscode.extensions.getExtension(...)` (Cortex-Debug, CodeLLDB, C/C++). A
+separate `alp` process cannot see the host's installed extensions, so the Rust
+`alp doctor` deliberately *assumes* the marquee extensions are present
+(`resolveCliDebugContext` sets them all to `true`). That assumption is fine for a
+terminal/CI doctor, but in the extension it would turn a real "CodeLLDB is not
+installed" finding into a false "installed" — a correctness regression.
+
+**Decision:** the debug doctor/preflight readiness checks **stay in-process**
+(`@alp-sdk/core/debug` via `src/debug.ts` + `collectRuntimeCapabilities`), even
+though a same-named `alp doctor` envelope exists. They are part of the live/LSP
+side of this split, not delegated. The CLI `alp doctor` remains the surface for
+terminals and CI (where extension state is irrelevant). Only commands whose full
+result is reproducible from `board.yaml` + the SDK + PATH (validate, generate,
+sdk, …) are delegated. If a future need arises, the extension could pass its
+observed extension state to the CLI via flags — out of scope for now.
+
 ## 5. Binary resolution (locked)
 
 **Decision (locked): `alpSdk.cliPath` setting → PATH → download-on-demand.**
@@ -164,8 +186,16 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
   `vscode.extensions.getExtension(...)` for installed debuggers — which the CLI
   can't see (it assumes the marquee extensions present). Migrating them would
   regress accuracy, so they **stay in-process** (they belong to the live/LSP
-  side of §4). Remaining envelope targets: sdk list/current, and (if surfaced as
-  commands) presets/explain/diff/trace/inspect that don't need host state.
+  side of §4, see §4a). **sdk list ✅** — both release-fetchers (the SDK Manager
+  panel and the IDE Hub sidebar provider) now call `alp sdk list --format json`
+  and post `data.releases` to the webview, replacing two copies of an in-process
+  `listRemoteSdkReleases` + hand-rolled `https.get`. **B3 effectively complete:**
+  the cleanly-delegable envelope commands (validate, generate, sdk list) are
+  migrated; the rest are either host-coupled (the whole debug domain — doctor,
+  preflight, inspect, support-bundle, debug-config — §4a) or not worth a spawn
+  (sdk install is a bespoke webview/terminal git-clone flow; sdk switch is a
+  cheap local fs pointer write). `previewEffectiveConfig` stays in-process (live
+  configurator, §4).
 - **B4 — shrink + retire.** Trim `@alp-sdk/core` to the LSP + live-configurator
   subset; retire `packages/alp-cli`.
 

@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
-import {
-  installSdkRelease,
-  listRemoteSdkReleases,
-  switchActiveSdk,
-} from "@alp-sdk/core/sdk/service";
+import type { SdkRelease } from "@alp-sdk/core/sdk/models";
+import { installSdkRelease, switchActiveSdk } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as vscode from "vscode";
+import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   emptyAlpIdeState,
   PROTOCOL_VERSION,
@@ -171,37 +169,21 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
 
   private async handleRequestSdkReleases(): Promise<void> {
     if (!this.view) return;
-    try {
-      const releases = await listRemoteSdkReleases(async (url, headers) => {
-        const { default: https } = await import("https");
-        return new Promise((resolve, reject) => {
-          const options = {
-            headers: { "User-Agent": "alp-sdk-vscode", ...headers },
-          };
-          https
-            .get(url, options, (res) => {
-              let data = "";
-              res.on("data", (chunk: string) => {
-                data += chunk;
-              });
-              res.on("end", () => {
-                try {
-                  resolve(JSON.parse(data));
-                } catch (e) {
-                  reject(e);
-                }
-              });
-            })
-            .on("error", reject);
-        });
-      });
-      const msg: ExtToWebviewMessage = { type: "sdkReleasesLoaded", releases };
-      void this.view.webview.postMessage(msg);
-    } catch {
+    // Delegate the GitHub releases fetch to `alp sdk list --format json`.
+    const { outcome } = await runAlpCommand(this.context, ["sdk", "list"]);
+    const envelope = outcome.envelope;
+    if (!envelope || !envelope.ok) {
       void vscode.window.showErrorMessage(
-        "Alp: failed to fetch SDK releases. Check your network connection.",
+        envelope
+          ? "Alp: failed to fetch SDK releases. Check your network connection."
+          : `Alp: ${outcome.message}`,
       );
+      return;
     }
+    const releases =
+      (envelope.data as { releases?: SdkRelease[] }).releases ?? [];
+    const msg: ExtToWebviewMessage = { type: "sdkReleasesLoaded", releases };
+    void this.view.webview.postMessage(msg);
   }
 
   private async handleRequestSdkInstall(version: string): Promise<void> {
