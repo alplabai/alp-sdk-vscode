@@ -111,6 +111,8 @@ pub fn validate_board_yaml_local(text: &str) -> Result<ValidationResult, ParseEr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Carrier, Inference, Iot, Som, normalize_board_model};
+    use std::collections::BTreeMap;
 
     #[test]
     fn v1_board_passes_without_errors() {
@@ -141,5 +143,69 @@ mod tests {
         let r = validate_board_yaml_local(text).unwrap();
         assert_eq!(r.outcome, Outcome::SchemaViolation);
         assert_eq!(r.issues.len(), 1);
+    }
+
+    #[test]
+    fn parse_rich_board_fields() {
+        let text = r#"
+schema_version: 2
+som:
+  sku: E1M-AEN701
+cores:
+  m55_hp:
+    os: zephyr
+    app: ./src
+    image: app.bin
+    peripherals: [i2c, spi]
+    libraries: [mbedtls]
+    inference:
+      backend: ethos_u
+      default_arena_kib: 256
+    iot:
+      wifi: true
+ipc:
+  - name: telemetry
+    endpoints: [m55_hp, a32_cluster]
+    size_kib: 64
+"#;
+        let model = parse_board_model(text).unwrap();
+        let core = model.cores.unwrap().remove("m55_hp").unwrap();
+        assert_eq!(core.os.as_deref(), Some("zephyr"));
+        assert_eq!(core.peripherals.unwrap(), vec!["i2c", "spi"]);
+        assert_eq!(core.inference.unwrap().default_arena_kib, Some(256));
+        assert_eq!(model.ipc.unwrap()[0].size_kib, 64);
+    }
+
+    #[test]
+    fn normalize_v1_removes_empty_optional_blocks() {
+        let model = BoardModel {
+            schema_version: Some(1),
+            som: Some(Som { sku: Some("E1M-AEN701".to_string()) }),
+            carrier: Some(Carrier {
+                name: Some("E1M-EVK".to_string()),
+                populated: Some(BTreeMap::new()),
+            }),
+            inference: Some(Inference::default()),
+            libraries: Some(Vec::new()),
+            iot: Some(Iot::default()),
+            ..BoardModel::default()
+        };
+
+        let normalized = normalize_board_model(model);
+        assert!(normalized.libraries.is_none());
+        assert!(normalized.iot.is_none());
+        assert!(normalized.inference.is_none());
+        assert!(normalized.carrier.unwrap().populated.is_none());
+    }
+
+    #[test]
+    fn normalize_v2_removes_top_level_os() {
+        let model = BoardModel {
+            schema_version: Some(2),
+            os: Some("zephyr".to_string()),
+            ..BoardModel::default()
+        };
+
+        assert!(normalize_board_model(model).os.is_none());
     }
 }

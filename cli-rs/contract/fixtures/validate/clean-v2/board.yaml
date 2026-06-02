@@ -6,5 +6,24 @@ cores:
   m55_hp:
     os: zephyr
     app: ./src
+    image: app.bin
+    peripherals:
+      - i2c
     libraries:
       - mbedtls
+    inference:
+      backend: ethos_u
+      default_arena_kib: 256
+    iot:
+      wifi: true
+
+ipc:
+  - name: telemetry
+    endpoints:
+      - m55_hp
+      - a32_cluster
+    size_kib: 64
+
+diagnostics:
+  last_error: false
+  log_level: info

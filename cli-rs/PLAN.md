@@ -48,12 +48,18 @@ Make divergence detectable by CI instead of by humans.
 - [x] `contract/run.sh`: runs the Rust binary and the TS **offline validator runner** over every fixture, diffs stdout JSON + exit code, fails on mismatch.
 - [x] Wire the harness into CI (`.github/workflows`), gating Rust PRs.
 
-## Phase 2 — Deepen `alp-core`
+## Phase 2 — Deepen `alp-core`  (ACTIVE)
 Port the remaining offline-computable domain logic, fixture-driven.
 
-- [ ] Full BoardModel (presets, IPC carve-outs, carrier presets, diagnostics).
-- [ ] Capabilities/effective-config computation (`previewEffectiveConfig` parity).
-- [ ] Expand unit + contract fixtures per ported rule.
+- [x] Expand Rust BoardModel mirror with carrier, inference, IoT, libraries, IPC, diagnostics, chips/routes scaffolding.
+- [x] Port `normalizeBoardModel` cleanup rules (`v1` empty optional blocks, `v2` top-level `os` removal).
+- [x] Add Rust effective-config preview payload helper mirroring TS `createEffectiveConfigPreviewPayload`.
+- [x] Port SDK-catalogue parser helpers (`parse_board_preset`, `parse_chip_def`, `parse_som_preset`, `parse_soc_spec`).
+- [ ] Full BoardModel parity for board/schematic-specific fields (pins/populated routes/board presets + strict enums).
+- [x] Port SDK-catalogue derive helpers for SoM capability lookups (`boards_for_som`, `core_ids_for_som`, `chips_for_som`, `chip_family_for_sku`, `accelerator_availability`).
+- [x] Add board-level overlay helpers for effective chip enablement (`effective_populated`, `effective_chip_choices`).
+- [ ] Integrate Phase 2 core helpers into upcoming commands (`generate`, `diff`, `inspect`) so runtime outputs are fixture-verified end-to-end.
+- [x] Expand unit + contract fixtures per ported rule.
 
 ## Phase 3 — `generate`
 Highest-value command after validate.
@@ -93,7 +99,7 @@ cli-rs/
 ├── contract/
 │   ├── board.schema.json      # (Phase 1)
 │   ├── run.sh                 # TS vs Rust conformance (Phase 1)
-│   └── fixtures/{valid,invalid}/
+│   └── fixtures/validate/
 └── crates/
     ├── alp-core/   # domain logic, zero IO/clap; fixture-tested
     │   └── src/{lib,model,validate}.rs
