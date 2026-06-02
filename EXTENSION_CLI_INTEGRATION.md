@@ -112,8 +112,16 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
   driver (§6a), run in the west cwd, and hide `west`. west-not-found → `alp
   bootstrap` hint. Arg-forwarding unit-tested + stub-west smoke; no golden
   fixtures (real builds need west + a workspace).
-- **A3 — build preflight in `doctor`.** Extend `doctor` to check the per-core
-  toolchains the active `board.yaml` actually needs (§6a) and point to installers.
+- **A3 — build preflight in `doctor`. ✅ done.** `alp doctor --build` resolves the
+  OS set from the active `board.yaml` (explicit core `os:` fields; falls back to all
+  three backends when none are declared — board.yaml alone doesn't carry per-core
+  type, that stays `west alp-build`'s job, §9), probes the host build tools each
+  needs (west/cmake/ninja/zephyrSdk for Zephyr, bitbake for Yocto / Linux-only
+  warning otherwise, cmake+vendorToolchain for baremetal), and emits a doctor
+  envelope with per-OS checks + installer next-steps. Vendor compilers/Yocto host
+  pkgs stay pointer-only (decision 4). Advisory only. `alp-core/build_readiness.rs`
+  (6 unit tests); the default `alp doctor` (no `--build`) is unchanged. No golden
+  fixtures — output is machine-dependent like the debug doctor.
 
 **Wave B — extension consumes the CLI (after first `cli-rs-v*` release):**
 

@@ -223,6 +223,9 @@ pub struct DoctorArgs {
     /// Debug server backend (jlink, openocd, pyocd, gdbserver, none).
     #[arg(long, value_name = "SERVER")]
     pub server: Option<String>,
+    /// Run the build-readiness preflight instead of the debug-readiness checks.
+    #[arg(long)]
+    pub build: bool,
 }
 
 #[derive(Debug, Args)]

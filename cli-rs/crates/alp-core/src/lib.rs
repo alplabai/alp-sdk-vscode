@@ -6,6 +6,7 @@
 //! logic so it can be reused by the CLI today and (later) bridged to the
 //! TypeScript extension/LSP via napi-rs or WASM.
 
+pub mod build_readiness;
 pub mod clock;
 pub mod debug;
 pub mod debug_launch;
@@ -20,6 +21,9 @@ pub mod sdk_catalogue;
 pub mod validate;
 pub mod wizard;
 
+pub use build_readiness::{
+    BuildOs, BuildReadinessReport, BuildToolProbe, board_os_set, build_readiness_report,
+};
 pub use clock::format_iso8601_utc;
 pub use debug::{
     DebugGenerationTraceDecision, DebugResolvedValue, DebugRuntimeCapabilities, DebugServerKind,

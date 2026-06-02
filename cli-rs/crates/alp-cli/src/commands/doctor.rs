@@ -9,10 +9,11 @@
 use std::path::Path;
 
 use alp_core::{
-    DebugServerKind, DebugTargetKind, DebuggerExtensionsState, DoctorCheck, DoctorReport,
-    DoctorStatus, DoctorSummary, ProjectContext, build_doctor_report,
-    collect_runtime_capabilities_from_commands, create_debug_workspace_context,
-    is_server_supported_for_target, parse_server_kind, parse_target_kind,
+    BuildOs, BuildToolProbe, DebugServerKind, DebugTargetKind, DebuggerExtensionsState,
+    DoctorCheck, DoctorReport, DoctorStatus, DoctorSummary, ProjectContext, board_os_set,
+    build_doctor_report, build_readiness_report, collect_runtime_capabilities_from_commands,
+    create_debug_workspace_context, is_server_supported_for_target, parse_board_model,
+    parse_server_kind, parse_target_kind,
 };
 
 use super::CommandRun;
@@ -23,6 +24,9 @@ use crate::util::{command_on_path, generated_at_iso, resolve_cli_project_context
 
 pub fn run(g: &GlobalArgs, args: &DoctorArgs) -> CommandRun {
     let generated_at = generated_at_iso();
+    if args.build {
+        return run_build_readiness(g, &generated_at);
+    }
     let context = resolve_context(g, &generated_at);
 
     // Resolved project paths are reported on the success path only (mirrors TS).
@@ -64,6 +68,124 @@ pub fn run(g: &GlobalArgs, args: &DoctorArgs) -> CommandRun {
         .then(|| Envelope::new("doctor", resolved_project, report, issues, exit.code()).to_json());
 
     CommandRun { exit, text, json }
+}
+
+/// `alp doctor --build` — build-readiness preflight. Resolves the OS set from
+/// the active `board.yaml` (explicit core `os:` fields; all three when none are
+/// declared), probes host build tools, and reports per-OS toolchain readiness.
+/// Advisory only — the authoritative per-core resolution stays `west alp-build`.
+fn run_build_readiness(g: &GlobalArgs, generated_at: &str) -> CommandRun {
+    let context = resolve_cli_project_context(g);
+    let resolved_project = Project {
+        root: context.workspace_root.clone(),
+        board_yaml: context.board_yaml_path.clone(),
+    };
+
+    let os_set = read_board_model(&context)
+        .map(|board| board_os_set(&board))
+        .unwrap_or_else(|| vec![BuildOs::Zephyr, BuildOs::Yocto, BuildOs::Baremetal]);
+
+    let probe = BuildToolProbe {
+        west: command_on_path("west"),
+        cmake: command_on_path("cmake"),
+        ninja: command_on_path("ninja"),
+        bitbake: command_on_path("bitbake"),
+        zephyr_sdk: zephyr_sdk_detected(),
+        is_linux: cfg!(target_os = "linux"),
+    };
+
+    let report = build_readiness_report(generated_at.to_string(), os_set, &probe);
+
+    let exit = if report.summary.fail > 0 {
+        ExitCode::DoctorFailure
+    } else {
+        ExitCode::Success
+    };
+    let issues = checks_to_issues(&report.checks);
+    let text = if g.is_json() {
+        Vec::new()
+    } else {
+        format_build_text(g, &report)
+    };
+    let json = g
+        .is_json()
+        .then(|| Envelope::new("doctor", resolved_project, report, issues, exit.code()).to_json());
+
+    CommandRun { exit, text, json }
+}
+
+/// Read + parse the active `board.yaml`, returning `None` when it is absent or
+/// unparseable (the preflight then falls back to checking all three backends).
+fn read_board_model(context: &ProjectContext) -> Option<alp_core::BoardModel> {
+    let path = context.board_yaml_path.as_deref()?;
+    let source = std::fs::read_to_string(path).ok()?;
+    parse_board_model(&source).ok()
+}
+
+/// Detect a Zephyr SDK install without spawning anything: honor
+/// `ZEPHYR_SDK_INSTALL_DIR`, else look for a `zephyr-sdk-*` directory in the
+/// usual install roots (home + `/opt`).
+fn zephyr_sdk_detected() -> bool {
+    if std::env::var_os("ZEPHYR_SDK_INSTALL_DIR").is_some() {
+        return true;
+    }
+    let mut roots: Vec<std::path::PathBuf> = vec![std::path::PathBuf::from("/opt")];
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        roots.push(std::path::PathBuf::from(home));
+    }
+    roots.iter().any(|root| {
+        std::fs::read_dir(root)
+            .map(|entries| {
+                entries.flatten().any(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("zephyr-sdk")
+                })
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn format_build_text(g: &GlobalArgs, report: &alp_core::BuildReadinessReport) -> Vec<String> {
+    let os_list = report
+        .os_set
+        .iter()
+        .map(|os| {
+            serde_json::to_value(os)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut lines = vec![
+        format!(
+            "doctor (build): pass={} warn={} fail={}",
+            report.summary.pass, report.summary.warn, report.summary.fail
+        ),
+        format!("os: {os_list}"),
+    ];
+
+    if !g.quiet {
+        for check in &report.checks {
+            lines.push(format!(
+                "[{}] {}: {}",
+                status_label(check.status),
+                check.name,
+                check.detail
+            ));
+        }
+    }
+
+    if g.verbose && !report.next_steps.is_empty() {
+        lines.push("next-steps:".to_string());
+        for step in &report.next_steps {
+            lines.push(format!("- {step}"));
+        }
+    }
+
+    lines
 }
 
 /// Resolve the debug workspace context, mirroring TS `resolveCliDebugContext`.
