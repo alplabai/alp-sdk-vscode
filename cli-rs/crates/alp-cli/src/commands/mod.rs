@@ -9,6 +9,7 @@ pub struct CommandRun {
     pub json: Option<String>,
 }
 
+pub mod bootstrap;
 pub mod completion;
 pub mod debug_config;
 pub mod diff;

@@ -35,6 +35,7 @@ fn main() {
         Command::DebugConfig(args) => commands::debug_config::run(&global, &args),
         Command::SupportBundle(args) => commands::support_bundle::run(&global, &args),
         Command::Sdk(args) => commands::sdk::run(&global, &args),
+        Command::Bootstrap(args) => commands::bootstrap::run(&global, &args),
     };
 
     emit(&global.format, run.json.as_deref(), &run.text);

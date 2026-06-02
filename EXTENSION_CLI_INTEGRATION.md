@@ -102,9 +102,11 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
 
 **Wave A — CLI gains the missing commands (now):**
 
-- **A1 — `alp bootstrap`.** Orchestrate the SDK's `scripts/bootstrap.sh`
-  (POSIX now; Windows → pointer to `docs/cross-platform-setup.md`). Envelope on
-  completion; the long install runs in the caller's terminal.
+- **A1 — `alp bootstrap`. ✅ done.** Orchestrates the SDK's `scripts/bootstrap.sh`
+  (`--no-pip`/`--no-west`/`--print-env` pass-through; Windows → pointer). Text
+  mode inherits stdio (live install in the caller's terminal); JSON mode captures
+  + emits one envelope. sdk-unresolved → exit 2. Golden fixtures + verified
+  against the real SDK's `bootstrap.sh --print-env`.
 - **A2 — `alp build` + `image`/`flash`/`clean`/`renode`.** Thin terminal-mode
   wrappers over the SDK's `west alp-*` driver (§6a). Full set, not just `build`.
 - **A3 — build preflight in `doctor`.** Extend `doctor` to check the per-core

@@ -1,0 +1,1 @@
+--sdk-root contract/fixtures/bootstrap/stub-success --project contract/fixtures/bootstrap/stub-success

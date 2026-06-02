@@ -103,6 +103,21 @@ pub enum Command {
     SupportBundle(SupportBundleArgs),
     /// Manage local SDK installs (list, install, current, switch).
     Sdk(SdkArgs),
+    /// Set up the SDK build environment (west + Zephyr workspace + Python deps).
+    Bootstrap(BootstrapArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct BootstrapArgs {
+    /// Skip the pip dependency install step.
+    #[arg(long = "no-pip")]
+    pub no_pip: bool,
+    /// Skip the west init/update step.
+    #[arg(long = "no-west")]
+    pub no_west: bool,
+    /// Only print the environment-variable lines and exit.
+    #[arg(long = "print-env")]
+    pub print_env: bool,
 }
 
 #[derive(Debug, Args)]
