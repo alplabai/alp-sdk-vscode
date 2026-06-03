@@ -21,14 +21,5 @@ coverage/
 # Local assistant instructions (keep private)
 .github/local-agent-instructions.md
 
-# code-review-graph local DB (also self-ignored inside the dir)
-.code-review-graph/
-
-# Superpowers brainstorm visual-companion scratch
-.superpowers/
-
-# Playwright MCP scratch
-.playwright-mcp/
-
-# Local Claude Code config (personal, not shared)
-.claude/
+# Transient Claude Code runtime locks
+.claude/scheduled_tasks.lock

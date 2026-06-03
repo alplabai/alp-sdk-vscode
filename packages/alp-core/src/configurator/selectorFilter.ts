@@ -5,7 +5,11 @@
  * keep those whose id contains the (case-insensitive) query as a substring, sorted
  * alphabetically. Plain substring match — the right behaviour for a library/chip search.
  */
-export function filterChoices(all: string[], selected: string[], query: string): string[] {
+export function filterChoices(
+  all: string[],
+  selected: string[],
+  query: string,
+): string[] {
   const q = query.trim().toLowerCase();
   const chosen = new Set(selected);
   return all

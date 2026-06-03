@@ -1,0 +1,1 @@
+{"command":"sdk","ok":false,"exitCode":1,"project":{"root":null,"boardYaml":null},"data":{"subcommand":"list","releases":[]},"issues":[{"code":"sdk.unknown-subcommand","severity":"error","message":"Unknown sdk subcommand: bogus"}]}

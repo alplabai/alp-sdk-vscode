@@ -1,6 +1,7 @@
 {
   "name": "alp-sdk",
   "displayName": "ALP SDK",
+  "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for ALP SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
   "version": "0.3.0",
   "publisher": "alplabai",
@@ -32,9 +33,18 @@
     "nxp"
   ],
   "activationEvents": [
+    "onView:alp-ide.setup",
+    "onView:alp-ide.workspaces",
+    "onView:alp-ide.projects",
+    "onView:alp-ide.sdk",
+    "onView:alp-ide.build",
+    "onCommand:alp.openSdkManager",
+    "onCommand:alp.openSetupFlow",
+    "onCommand:alp.openOverview",
+    "onCommand:alp.newProjectWizard",
+    "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
-    "workspaceContains:**/board.yaml",
-    "onView:alpSdk.projectView"
+    "workspaceContains:**/board.yaml"
   ],
   "main": "./out/extension.js",
   "icon": "media/icon.png",
@@ -75,12 +85,12 @@
       },
       {
         "command": "alp.installDependencies",
-        "title": "Alp: Install dependencies (per-OS)",
+        "title": "Alp: Bootstrap SDK environment (west + Zephyr deps)",
         "category": "Alp"
       },
       {
         "command": "alp.westBuild",
-        "title": "Alp: West build (validate + generate + build)",
+        "title": "Alp: Build (validate + generate + build)",
         "category": "Alp"
       },
       {
@@ -89,13 +99,48 @@
         "category": "Alp"
       },
       {
+        "command": "alp.westUpdate",
+        "title": "Alp: West update (fetch and update modules)",
+        "category": "Alp"
+      },
+      {
         "command": "alp.westRunNativeSim",
         "title": "Alp: Run under native_sim",
         "category": "Alp"
       },
       {
+        "command": "alp.westAlpImage",
+        "title": "Alp: Build image (assemble image bundle)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.westAlpFlash",
+        "title": "Alp: Flash (all slices)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.westAlpClean",
+        "title": "Alp: Clean build (remove build dir)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.westAlpRenode",
+        "title": "Alp: Run in Renode (simulate)",
+        "category": "Alp"
+      },
+      {
         "command": "alp.openConfigurator",
         "title": "Alp: Open board configurator (GUI)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.toolchainDoctor",
+        "title": "Alp: Toolchain doctor",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openHardwareExplorer",
+        "title": "Alp: Hardware Explorer",
         "category": "Alp"
       },
       {
@@ -144,41 +189,100 @@
         "category": "Alp"
       },
       {
-        "command": "alp.refreshProjectView",
-        "title": "Alp: Refresh project view",
-        "category": "Alp",
-        "icon": "$(refresh)"
+        "command": "alp.ideHub.focus",
+        "title": "Alp: Open ALP IDE panel",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openSetupFlow",
+        "title": "Alp: Open setup wizard",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openOverview",
+        "title": "Alp: Open ALP IDE overview",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.newProjectWizard",
+        "title": "Alp: New Project Wizard",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openExistingProject",
+        "title": "Alp: Open Existing ALP Project",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openSdkManager",
+        "title": "ALP: SDK Manager",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.switchWorkspace",
+        "title": "Alp: Switch workspace folder",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.removeWestInit",
+        "title": "Alp: Remove west initialization (.west/)",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.openSettings",
+        "title": "Alp: Open ALP IDE settings",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.views.refresh",
+        "title": "ALP: Refresh sidebar views",
+        "icon": "$(refresh)",
+        "category": "Alp"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "alpSdk",
-          "title": "Alp SDK",
-          "icon": "media/bolt.svg"
+          "id": "alp-ide",
+          "title": "ALP IDE",
+          "icon": "media/alp-ide-icon.svg"
         }
       ]
     },
     "views": {
-      "alpSdk": [
+      "alp-ide": [
         {
-          "id": "alpSdk.projectView",
-          "name": "Project"
+          "type": "tree",
+          "id": "alp-ide.setup",
+          "name": "ALP IDE Setup"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.workspaces",
+          "name": "West Workspaces"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.projects",
+          "name": "Projects"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.sdk",
+          "name": "SDK Manager"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.build",
+          "name": "Build & Flash"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "alpSdk.projectView",
-        "when": "!alpSdk.hasBoard",
-        "contents": "No board.yaml found in this workspace.\n\n[Configure board](command:alp.openConfigurator)\n[New project wizard](command:alp.newProjectWizard)"
-      }
-    ],
     "menus": {
       "view/title": [
         {
-          "command": "alp.refreshProjectView",
-          "when": "view == alpSdk.projectView",
+          "command": "alp.views.refresh",
+          "when": "view == alp-ide.setup || view == alp-ide.workspaces || view == alp-ide.projects || view == alp-ide.sdk || view == alp-ide.build",
           "group": "navigation"
         }
       ]
@@ -186,7 +290,7 @@
     "yamlValidation": [
       {
         "fileMatch": "board.yaml",
-        "url": "./schemas/board.schema.json"
+        "url": "./alp-sdk-upstream/metadata/schemas/board-config-v2.schema.json"
       }
     ],
     "snippets": [
@@ -218,26 +322,26 @@
           "default": "",
           "description": "Working directory for `west build/flash/run`.  When empty, defaults to the workspace root."
         },
-        "alpSdk.configuratorTheme": {
+        "alpSdk.cliPath": {
           "type": "string",
-          "enum": ["brand", "vscode"],
-          "enumDescriptions": ["Alp brand (Indigo-dark)", "Follow the VS Code color theme"],
-          "default": "brand",
-          "description": "Color theme for the Alp board configurator panel."
+          "default": "",
+          "description": "Path to the native `alp` CLI binary. When empty, the extension uses `alp` on PATH, then falls back to downloading the matching release into its global storage. Point this at a local dev build (e.g. `cli-rs/target/release/alp`) to override."
         }
       }
     }
   },
   "scripts": {
-    "compile": "tsc --build && pnpm --filter ./packages/alp-cli run compile",
+    "compile": "tsc --build && vp build",
     "compile:watch": "tsc --build --watch",
-    "cli:pack": "pnpm run compile && pnpm --filter ./packages/alp-cli run cli:pack",
-    "cli:smoke": "bash ./scripts/ci/smoke-cli.sh",
+    "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
     "test": "pnpm run compile && node --test test/*.test.js",
     "install:vscode": "bash ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",
-    "vscode:prepublish": "pnpm run compile",
-    "package": "vsce package"
+    "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm run bundle:ext",
+    "package": "pnpm run vscode:prepublish && vsce package --no-dependencies",
+    "package:dev": "pnpm run vscode:prepublish && vsce package --no-dependencies --pre-release",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -255,8 +359,12 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.7.0",
+    "@types/react": "^19.2.15",
     "@types/vscode": "^1.85.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0",
+    "prettier": "^3.8.3",
     "typescript": "^6.0.3"
   }
 }

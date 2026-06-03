@@ -1,0 +1,108 @@
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+/* Center content at 640px while allowing the bg to fill full width */
+.shell {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  min-height: 0;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 40px var(--space-6) var(--space-5);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.closeBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.closeBtn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+/* ── Step content area ──────────────────────────────────────────────────── */
+.content {
+  flex: 1 1 0;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-6) var(--space-10);
+}
+
+/* ── Step sub-sections ──────────────────────────────────────────────────── */
+.stepHeading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-5);
+}
+
+.checkList {
+  display: flex;
+  flex-direction: column;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+  gap: var(--space-4);
+}
+
+.checkRow:last-child {
+  border-bottom: none;
+}
+
+.checkLabel {
+  font-size: 13px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.stepDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: var(--space-5) 0 0;
+  line-height: 1.6;
+}

@@ -1,0 +1,451 @@
+// Types mirrored from src/ideHub/messages.ts — kept in sync manually.
+// The webview is a separate build; we do not share source with the extension.
+
+/** Must match PROTOCOL_VERSION in src/ideHub/messages.ts. */
+export const PROTOCOL_VERSION = 1 as const;
+
+export type SdkReadinessState = "ready" | "partial" | "missing" | "unknown";
+
+/** Visual state for a readiness status chip. */
+export type ChipState =
+  | "ready"
+  | "setup-required"
+  | "not-installed"
+  | "not-updated";
+
+export interface LocalSdkEntry {
+  path: string;
+  version: string | null;
+  readiness: SdkReadinessState;
+  issues: string[];
+}
+
+export interface SdkRelease {
+  tag: string;
+  publishedAt: string;
+  tarballUrl: string;
+  releaseNotesSummary: string;
+}
+
+export interface SdkStatus {
+  activePath: string | null;
+  version: string | null;
+  readiness: SdkReadinessState;
+  localEntries: LocalSdkEntry[];
+}
+
+export interface ToolVersions {
+  python: string | null;
+  west: string | null;
+  cmake: string | null;
+  ninja: string | null;
+}
+
+export interface SetupStatus {
+  pythonAvailable: boolean;
+  westAvailable: boolean;
+  /** ISO timestamp of the last time the user triggered bootstrap. Null if never. */
+  lastBootstrapAt: string | null;
+  /** Raw version strings for each build tool, null when not found. */
+  toolVersions: ToolVersions;
+}
+
+export interface WorkspaceStatus {
+  workspaceRoot: string | null;
+  boardYamlExists: boolean;
+  /** True when a `.west` directory exists at the workspace root. */
+  westInitialized: boolean;
+}
+
+export interface AlpIdeState {
+  sdk: SdkStatus;
+  setup: SetupStatus;
+  workspace: WorkspaceStatus;
+}
+
+// Extension → Webview
+export interface StateUpdateMessage {
+  type: "stateUpdate";
+  _v: number;
+  state: AlpIdeState;
+}
+export interface SdkReleasesLoadedMessage {
+  type: "sdkReleasesLoaded";
+  releases: SdkRelease[];
+}
+export interface SdkInstallProgressMessage {
+  type: "sdkInstallProgress";
+  log: string;
+  done: boolean;
+  success?: boolean;
+}
+export interface ProjectTemplatesDataMessage {
+  type: "projectTemplatesData";
+  templates: ProjectTemplate[];
+  modules: E1mModule[];
+}
+
+// ── New-project / existing-project shared types ──
+export interface ProjectTemplate {
+  id: string;
+  title: string;
+  description: string;
+  category: "starter" | "example" | "library";
+  icon: string;
+  sourceDir?: string;
+}
+
+export interface E1mModule {
+  id: string;
+  displayName: string;
+  family: string;
+}
+
+// ── Configurator (board.yaml) — rich model mirrored from
+//    @alp-sdk/core/board/models + configurator/viewModel. The webview is a
+//    separate build and cannot import core sources, so these are kept in sync
+//    manually. ──
+export type CoreOs = "zephyr" | "yocto" | "baremetal" | "off";
+export type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+export type LogLevelOrOff = LogLevel | "off";
+
+export interface CoreInference {
+  default_arena_kib?: number;
+}
+export interface CoreIot {
+  wifi?: boolean;
+  mqtt?: boolean;
+  ble?: boolean;
+  tls?: boolean;
+}
+export interface CoreEntry {
+  os?: CoreOs;
+  app?: string;
+  image?: string;
+  peripherals?: string[];
+  libraries?: string[];
+  inference?: CoreInference;
+  iot?: CoreIot;
+}
+
+export interface StoragePartition {
+  name: string;
+  size_kib: number;
+  fs?: "littlefs" | "fat" | "ext4" | "raw";
+  mount?: string;
+  flash_device?: string;
+  offset_kib?: number;
+  raw?: boolean;
+}
+
+export interface SecurityPsa {
+  persistent_slots?: number;
+  its_storage?: string;
+  ps_storage?: string;
+  tfm?: boolean;
+  attestation_root?: "optiga_trust_m" | "tfm_internal" | "none";
+}
+export interface Security {
+  psa?: SecurityPsa;
+}
+
+export interface BootSigning {
+  algorithm: "ecdsa_p256" | "rsa2048" | "rsa3072" | "ed25519";
+  key_file: string;
+}
+export interface Boot {
+  method?: "mcuboot" | "none";
+  signing?: BootSigning;
+  swap_algorithm?: "scratch" | "move" | "overwrite";
+  scratch_size_kib?: number;
+  anti_rollback?: boolean;
+  build_type?: "Release" | "Debug" | "MinSizeRel";
+}
+
+export interface OtaServer {
+  url: string;
+  tenant?: string;
+  tls_ca_bundle?: string;
+}
+export interface Ota {
+  provider: "mender" | "hawkbit" | "mcumgr" | "none";
+  artifact_name?: string;
+  signing_key?: string;
+  server?: OtaServer;
+  poll_interval_s?: number;
+}
+
+export interface IpcEntry {
+  kind: "rpmsg" | "raw_shmem" | "mailbox_only";
+  endpoints: string[];
+  carve_out_kb: number;
+  name: string;
+  cacheable?: boolean;
+  address?: number;
+}
+
+export interface Diagnostics {
+  last_error?: boolean;
+  log_level?: LogLevel;
+  modules?: Record<string, LogLevelOrOff>;
+}
+
+export interface BoardConfig {
+  name?: string;
+  description?: string;
+  preset?: string;
+  hw_rev?: string;
+  som: { sku: string; hw_rev?: string };
+  cores: Record<string, CoreEntry>;
+  populated?: Record<string, boolean>;
+  chips?: string[];
+  ipc?: IpcEntry[];
+  diagnostics?: Diagnostics;
+  storage?: StoragePartition[];
+  security?: Security;
+  boot?: Boot;
+  ota?: Ota;
+  [key: string]: unknown;
+}
+
+// ── Configurator view-model (host-computed, read-only on the webview) ──
+export interface SomOptionGroup {
+  family: string;
+  soms: { sku: string; displayName: string; preliminary: boolean }[];
+}
+export interface HardwareCard {
+  sku: string;
+  displayName: string;
+  silicon: string;
+  cores: { id: string; type: string; count: number; freqMhz?: number }[];
+  preferredBackend?: string;
+  defaultBoard?: string;
+  onModule: string[];
+  preliminary: boolean;
+}
+export interface CorePanel {
+  id: string;
+  inheritedFromTopology: boolean;
+  os?: string;
+  app?: string;
+  image?: string;
+  peripherals: string[];
+  libraries: string[];
+  iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
+  inferenceArenaKib?: number;
+}
+export interface ChipChoice {
+  chipId: string;
+  displayName: string;
+  vendor?: string;
+  bus?: string;
+  driverStatus?: string;
+  enabled: boolean;
+}
+export interface AcceleratorAvail {
+  id: string;
+  label: string;
+  available: boolean;
+}
+export interface BoardPreset {
+  name: string;
+  displayName: string;
+  hostsSomFamilies: string[];
+  populated: Record<string, boolean>;
+}
+export interface ValidationResult {
+  errors: string[];
+  warnings: string[];
+}
+export interface ConfiguratorViewModel {
+  sdkConnected: boolean;
+  som: { selected: string; options: SomOptionGroup[] };
+  hardware: HardwareCard | null;
+  accelerators: AcceleratorAvail[];
+  boardMode: "preset" | "inline";
+  carriers: { selected?: string; options: BoardPreset[] };
+  cores: CorePanel[];
+  libraries: string[];
+  chips: ChipChoice[];
+  projectChips: string[];
+  validation: ValidationResult;
+}
+
+export interface ConfiguratorRenderMessage {
+  type: "configuratorRender";
+  viewModel: ConfiguratorViewModel;
+  board: BoardConfig;
+  boardPath: string;
+  sdkConnected: boolean;
+}
+
+export interface ConfiguratorSavedMessage {
+  type: "configuratorSaved";
+  boardPath: string;
+}
+
+// ── Toolchain Doctor — mirrored from @alp-sdk/core/toolchain/doctor +
+//    bootstrapPlan. Kept in sync manually (separate webview build). ──
+export type ToolchainFixId =
+  | "python-deps"
+  | "west"
+  | "build-tools"
+  | "zephyr-sdk";
+
+export type DoctorCheckStatus = "ok" | "missing" | "warn";
+
+export interface DoctorCheck {
+  id: string;
+  label: string;
+  status: DoctorCheckStatus;
+  detail: string;
+  required: boolean;
+  fixId?: ToolchainFixId;
+}
+
+export interface ToolchainReport {
+  checks: DoctorCheck[];
+  ok: boolean;
+  missingRequired: number;
+}
+
+export interface ToolchainReportMessage {
+  type: "toolchainReport";
+  report: ToolchainReport;
+}
+
+// ── Hardware Explorer model — mirrored from @alp-sdk/core/sdkCatalogue/models ──
+export interface ExplorerPadRoute {
+  e1m: string;
+  dispatch: string;
+  dispatchPin?: string;
+  doc?: string;
+}
+export interface ExplorerI2cDevice {
+  bus: string;
+  chip: string;
+  role?: string;
+  address?: string;
+}
+export interface ExplorerTopologyCore {
+  id: string;
+  app?: string;
+  image?: string;
+  machine?: string;
+  board?: string;
+  toolchain?: string;
+}
+export interface ExplorerCore {
+  id: string;
+  type: string;
+  count: number;
+  freqMhz?: number;
+}
+export interface HardwareExplorerSom {
+  sku: string;
+  displayName: string;
+  family: string;
+  silicon: string;
+  topology: ExplorerTopologyCore[];
+  onModule: string[];
+  padRoutes: ExplorerPadRoute[];
+  i2cDevices: ExplorerI2cDevice[];
+}
+export interface HardwareExplorerDataMessage {
+  type: "hardwareExplorerData";
+  som: HardwareExplorerSom | null;
+  cores: ExplorerCore[];
+  sdkConnected: boolean;
+}
+
+export type ExtToWebviewMessage =
+  | StateUpdateMessage
+  | SdkReleasesLoadedMessage
+  | SdkInstallProgressMessage
+  | ProjectTemplatesDataMessage
+  | ConfiguratorRenderMessage
+  | ConfiguratorSavedMessage
+  | ToolchainReportMessage
+  | HardwareExplorerDataMessage;
+
+// Webview → Extension
+export interface ReadyMessage {
+  type: "ready";
+}
+export interface RunCommandMessage {
+  type: "runCommand";
+  command: string;
+}
+export interface SelectSdkPathMessage {
+  type: "selectSdkPath";
+}
+export interface RequestSdkReleasesMessage {
+  type: "requestSdkReleases";
+}
+export interface RequestSdkInstallMessage {
+  type: "requestSdkInstall";
+  version: string;
+}
+export interface SwitchSdkMessage {
+  type: "switchSdk";
+  sdkPath: string;
+}
+export interface OpenUrlMessage {
+  type: "openUrl";
+  url: string;
+  label: string;
+}
+export interface ClosePanelMessage {
+  type: "closePanel";
+}
+export interface CreateNewProjectMessage {
+  type: "createNewProject";
+  templateId: string;
+  moduleId: string;
+  projectName: string;
+}
+export interface OpenExistingProjectMessage {
+  type: "openExistingProject";
+  activate: boolean;
+}
+export interface ConfiguratorUpdateMessage {
+  type: "configuratorUpdate";
+  board: BoardConfig;
+}
+export interface SaveBoardConfigMessage {
+  type: "saveBoardConfig";
+}
+export interface ReloadConfiguratorMessage {
+  type: "reloadConfigurator";
+}
+export interface PreviewEffectiveConfigMessage {
+  type: "previewEffectiveConfig";
+}
+export interface RunToolchainFixMessage {
+  type: "runToolchainFix";
+  fixId: ToolchainFixId;
+}
+export interface ReloadToolchainMessage {
+  type: "reloadToolchain";
+}
+export interface ReloadHardwareExplorerMessage {
+  type: "reloadHardwareExplorer";
+}
+export type WebviewToExtMessage =
+  | ReadyMessage
+  | RunCommandMessage
+  | SelectSdkPathMessage
+  | RequestSdkReleasesMessage
+  | RequestSdkInstallMessage
+  | SwitchSdkMessage
+  | OpenUrlMessage
+  | ClosePanelMessage
+  | CreateNewProjectMessage
+  | OpenExistingProjectMessage
+  | SaveBoardConfigMessage
+  | ConfiguratorUpdateMessage
+  | ReloadConfiguratorMessage
+  | PreviewEffectiveConfigMessage
+  | RunToolchainFixMessage
+  | ReloadToolchainMessage
+  | ReloadHardwareExplorerMessage;

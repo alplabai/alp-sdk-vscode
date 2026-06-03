@@ -2,42 +2,29 @@
 
 import * as vscode from "vscode";
 import { buildConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
+import type { BoardConfig } from "@alp-sdk/core/board/models";
 import {
-    ConfiguratorInboundMessage,
-    ConfiguratorOutboundMessage,
-} from "@alp-sdk/core/configurator/models";
-import { createConfiguratorPanelHtml } from "@alp-sdk/core/configurator/panelHtml";
-import { loadBoardConfigFromFile, saveBoardConfigToFile } from "./configurator/boardIo";
-import { loadSdkCatalogue } from "./sdkCatalogue/vscodeAdapter";
+  loadBoardConfigFromFile,
+  saveBoardConfigToFile,
+} from "./configurator/boardIo";
+import {
+  type ExtToWebviewMessage,
+  type WebviewToExtMessage,
+} from "./ideHub/messages";
+import { buildWebviewHtml } from "./ideHub/webviewHtml";
 import { collectProjectContext } from "./project/vscodeAdapter";
+import { loadSdkCatalogue } from "./sdkCatalogue/vscodeAdapter";
 import { log } from "./util";
-import { BoardConfig } from "@alp-sdk/core/board/models";
 
-function panelHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const nonce = String(Math.random()).slice(2);
-  const cssUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "media", "configurator.css"),
-  );
-  const jsUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "media", "configurator.js"),
-  );
-  const logoUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "media", "alplab-logo-white.svg"),
-  );
-  return createConfiguratorPanelHtml({
-    nonce,
-    cspSource: webview.cspSource,
-    cssUri: String(cssUri),
-    jsUri: String(jsUri),
-    logoUri: String(logoUri),
-  });
-}
+const PANEL_VIEW_TYPE = "alpConfigurator";
+const PANEL_TITLE = "ALP Board Configurator";
 
 class ConfiguratorPanel {
   private static current: ConfiguratorPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
-  private readonly disposables: vscode.Disposable[] = [];
   private board: BoardConfig = { som: { sku: "" }, cores: {} };
+
+  private readonly disposables: vscode.Disposable[] = [];
 
   static show(context: vscode.ExtensionContext): void {
     if (ConfiguratorPanel.current) {
@@ -46,14 +33,19 @@ class ConfiguratorPanel {
       return;
     }
     const panel = vscode.window.createWebviewPanel(
-      "alpConfigurator",
-      "Alp Board Configurator",
+      PANEL_VIEW_TYPE,
+      PANEL_TITLE,
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [
-          vscode.Uri.joinPath(context.extensionUri, "media"),
+          vscode.Uri.joinPath(
+            context.extensionUri,
+            "packages",
+            "alp-webview",
+            "dist",
+          ),
         ],
       },
     );
@@ -65,23 +57,28 @@ class ConfiguratorPanel {
     context: vscode.ExtensionContext,
   ) {
     this.panel = panel;
-    this.panel.webview.html = panelHtml(panel.webview, context.extensionUri);
+    this.panel.webview.html = buildWebviewHtml(
+      this.panel.webview,
+      context.extensionUri,
+      "configurator",
+    );
 
     this.panel.webview.onDidReceiveMessage(
-      (msg) => this.onMessage(msg),
+      (msg: WebviewToExtMessage) => this.onMessage(msg),
       null,
       this.disposables,
     );
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
-    this.refresh();
   }
 
   private refresh(): void {
     const project = collectProjectContext();
     const boardPath = project.boardYamlPath;
     if (!boardPath) {
-      vscode.window.showErrorMessage("Alp: open a workspace folder before launching the configurator.");
+      void vscode.window.showErrorMessage(
+        "Alp: open a workspace folder before launching the configurator.",
+      );
       return;
     }
     this.board = loadBoardConfigFromFile(boardPath);
@@ -89,43 +86,58 @@ class ConfiguratorPanel {
   }
 
   private postRender(boardPath: string, sdkRoot: string | null): void {
-    const catalogue = loadSdkCatalogue(sdkRoot, log);
-    const theme = vscode.workspace.getConfiguration("alpSdk").get<string>("configuratorTheme", "brand") === "vscode" ? "vscode" : "brand";
-    const message: ConfiguratorOutboundMessage = {
-      type: "render",
+    const catalogue = loadSdkCatalogue(sdkRoot, (m) => log(m));
+    const message: ExtToWebviewMessage = {
+      type: "configuratorRender",
       viewModel: buildConfiguratorViewModel(this.board, catalogue),
       board: this.board,
       boardPath,
       sdkConnected: catalogue.soms.length > 0,
-      theme,
     };
-    this.panel.webview.postMessage(message);
+    void this.panel.webview.postMessage(message);
   }
 
-  private onMessage(msg: ConfiguratorInboundMessage): void {
+  private onMessage(msg: WebviewToExtMessage): void {
     const project = collectProjectContext();
     const boardPath = project.boardYamlPath;
-    if (!boardPath) return;
-    if (msg.type === "update") {
-      this.board = msg.board;
-      this.postRender(boardPath, project.sdkRoot ?? null);
-    } else if (msg.type === "save") {
-      try {
-        saveBoardConfigToFile(boardPath, this.board);
-        const saved: ConfiguratorOutboundMessage = { type: "saved", boardPath };
-        this.panel.webview.postMessage(saved);
-        vscode.window.setStatusBarMessage(`Alp: saved ${boardPath}`, 5000);
-      } catch (e) {
-        vscode.window.showErrorMessage(`Alp: save failed: ${e}`);
+    switch (msg.type) {
+      case "ready":
+        this.refresh();
+        break;
+      case "configuratorUpdate":
+        if (!boardPath) return;
+        this.board = msg.board;
+        this.postRender(boardPath, project.sdkRoot ?? null);
+        break;
+      case "saveBoardConfig": {
+        if (!boardPath) return;
+        try {
+          saveBoardConfigToFile(boardPath, this.board);
+          const saved: ExtToWebviewMessage = {
+            type: "configuratorSaved",
+            boardPath,
+          };
+          void this.panel.webview.postMessage(saved);
+          vscode.window.setStatusBarMessage(`Alp: saved ${boardPath}`, 5000);
+        } catch (e) {
+          void vscode.window.showErrorMessage(`Alp: save failed: ${e}`);
+        }
+        break;
       }
-    } else if (msg.type === "reload") {
-      this.refresh();
-    } else if (msg.type === "previewEffectiveConfig") {
-      void vscode.commands.executeCommand("alp.previewEffectiveConfig");
-    } else if (msg.type === "setTheme") {
-      void vscode.workspace.getConfiguration("alpSdk").update("configuratorTheme", msg.theme, vscode.ConfigurationTarget.Workspace);
-      const project = collectProjectContext();
-      if (project.boardYamlPath) this.postRender(project.boardYamlPath, project.sdkRoot ?? null);
+      case "reloadConfigurator":
+        this.refresh();
+        break;
+      case "previewEffectiveConfig":
+        void vscode.commands.executeCommand("alp.previewEffectiveConfig");
+        break;
+      case "closePanel":
+        this.panel.dispose();
+        break;
+      case "openUrl":
+        if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
+          void vscode.env.openExternal(vscode.Uri.parse(msg.url));
+        }
+        break;
     }
   }
 

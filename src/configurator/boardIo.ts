@@ -13,7 +13,10 @@ export function loadBoardConfigFromFile(boardPath: string): BoardConfig {
   return parseBoardConfig(fs.readFileSync(boardPath, "utf-8"));
 }
 
-export function saveBoardConfigToFile(boardPath: string, cfg: BoardConfig): void {
+export function saveBoardConfigToFile(
+  boardPath: string,
+  cfg: BoardConfig,
+): void {
   fs.mkdirSync(path.dirname(boardPath), { recursive: true });
   fs.writeFileSync(boardPath, serializeBoardConfig(cfg), "utf-8");
 }

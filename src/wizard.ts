@@ -1,39 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { BoardModel } from "@alp-sdk/core/configurator/models";
+import {
+  collectGeneratedOutputPreviews,
+  collectWizardFileChanges,
+  writeWizardFiles,
+} from "@alp-sdk/core/wizard/fileSystem";
+import {
+  ModuleScaffoldInput,
+  ModuleTemplateDefinition,
+  ModuleTemplateId,
+  WizardFeatureFlags,
+  WizardPlanInput,
+  WizardTemplateDefinition,
+  WizardTemplateId,
+} from "@alp-sdk/core/wizard/models";
+import {
+  createModuleScaffoldPlan,
+  createModuleScaffoldPreviewMarkdown,
+  createTemplateExplanation,
+  createWizardPlan,
+  createWizardPreviewMarkdown,
+  createWizardValidationSummary,
+  listModuleTemplates,
+  listWizardTemplates,
+  suggestTemplateIdFromBoardModel,
+} from "@alp-sdk/core/wizard/service";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { BoardModel } from "@alp-sdk/core/configurator/service";
 import {
-    loadBoardModel,
-    loadPresetCatalogue,
+  loadBoardModel,
+  loadPresetCatalogue,
 } from "./configurator/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
-import {
-    ModuleScaffoldInput,
-    ModuleTemplateDefinition,
-    ModuleTemplateId,
-    WizardFeatureFlags,
-    WizardPlanInput,
-    WizardTemplateDefinition,
-    WizardTemplateId,
-} from "@alp-sdk/core/wizard/models";
-import {
-    createModuleScaffoldPlan,
-    createModuleScaffoldPreviewMarkdown,
-    createTemplateExplanation,
-    createWizardPlan,
-    createWizardPreviewMarkdown,
-    createWizardValidationSummary,
-    listModuleTemplates,
-    listWizardTemplates,
-    suggestTemplateIdFromBoardModel,
-} from "@alp-sdk/core/wizard/service";
-import {
-    collectGeneratedOutputPreviews,
-    collectWizardFileChanges,
-    writeWizardFiles,
-} from "@alp-sdk/core/wizard/vscodeAdapter";
 
 const FIRST_RUN_PROMPT_KEY_PREFIX = "alp.firstRunWizardPromptShown";
 
@@ -195,24 +195,21 @@ async function runProjectWizard(): Promise<void> {
     return;
   }
 
-  const overwriteCount = fileChanges.filter(
-    (file) => file.kind === "update",
-  ).length;
-  const overwritePreview = fileChanges
-    .filter((file) => file.kind === "update")
-    .slice(0, 3)
-    .map((file) => file.relativePath)
+  const newCount = fileChanges.filter((f) => f.kind === "new").length;
+  const updateCount = fileChanges.filter((f) => f.kind === "update").length;
+  const changeSummary = [
+    newCount > 0 ? `${newCount} new` : null,
+    updateCount > 0 ? `${updateCount} updated` : null,
+  ]
+    .filter(Boolean)
     .join(", ");
-  const overwriteSuffix =
-    overwritePreview.length > 0
-      ? ` Files to update: ${overwritePreview}${overwriteCount > 3 ? ", ..." : ""}.`
-      : "";
+
   const action = await vscode.window.showWarningMessage(
-    `Alp: write ${writeCount} file(s)? Existing files to update: ${overwriteCount}.${overwriteSuffix}`,
+    `Alp: ${writeCount} file change(s) — ${changeSummary}. Review the plan above, then apply?`,
     { modal: true },
-    "Write Files",
+    "Apply Changes",
   );
-  if (action !== "Write Files") {
+  if (action !== "Apply Changes") {
     return;
   }
 
@@ -228,9 +225,18 @@ async function runProjectWizard(): Promise<void> {
   );
 
   const explanation = createTemplateExplanation(template.id);
-  await vscode.window.showInformationMessage(
+  const openAction = await vscode.window.showInformationMessage(
     `Alp: ${template.label} scaffold ready. ${explanation[0]}`,
+    "Open in New Window",
+    "Stay Here",
   );
+  if (openAction === "Open in New Window") {
+    await vscode.commands.executeCommand(
+      "vscode.openFolder",
+      vscode.Uri.file(project.workspaceRoot),
+      { forceNewWindow: true },
+    );
+  }
 }
 
 async function runModuleScaffoldWizard(): Promise<void> {
@@ -293,15 +299,20 @@ async function runModuleScaffoldWizard(): Promise<void> {
     return;
   }
 
-  const overwriteCount = fileChanges.filter(
-    (file) => file.kind === "update",
-  ).length;
-  const action = await vscode.window.showWarningMessage(
-    `Alp: write ${writeCount} module file(s)? Existing files to update: ${overwriteCount}.`,
+  const newCount = fileChanges.filter((f) => f.kind === "new").length;
+  const updateCount = fileChanges.filter((f) => f.kind === "update").length;
+  const changeSummary = [
+    newCount > 0 ? `${newCount} new` : null,
+    updateCount > 0 ? `${updateCount} updated` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const moduleAction = await vscode.window.showWarningMessage(
+    `Alp: ${writeCount} module file change(s) — ${changeSummary}. Review the plan above, then apply?`,
     { modal: true },
-    "Write Files",
+    "Apply Changes",
   );
-  if (action !== "Write Files") {
+  if (moduleAction !== "Apply Changes") {
     return;
   }
 

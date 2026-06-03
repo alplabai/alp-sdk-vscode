@@ -1,5 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
+export interface PadRoute {
+  e1m: string;
+  dispatch: string;
+  dispatchPin?: string;
+  doc?: string;
+}
+export interface I2cDevice {
+  bus: string;
+  chip: string;
+  role?: string;
+  address?: string;
+}
+export interface TopologyCore {
+  id: string;
+  app?: string;
+  image?: string;
+  machine?: string;
+  board?: string;
+  toolchain?: string;
+}
+
 export interface SomPreset {
   sku: string;
   displayName: string;
@@ -10,9 +31,12 @@ export interface SomPreset {
   capabilities: Record<string, boolean>;
   defaultBoard?: string;
   topologyCoreIds: string[];
+  topology: TopologyCore[];
   onModule: string[];
   memory?: { dramMbit?: number; flashMbit?: number };
   preliminary: boolean;
+  padRoutes: PadRoute[];
+  i2cDevices: I2cDevice[];
 }
 
 export interface BoardPreset {

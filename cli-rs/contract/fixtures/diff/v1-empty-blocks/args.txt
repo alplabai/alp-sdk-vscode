@@ -1,0 +1,1 @@
+--project contract/fixtures/diff/v1-empty-blocks --board-yaml board.yaml

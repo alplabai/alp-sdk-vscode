@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { BoardModel } from "../configurator/service";
+import { BoardModel } from "../configurator/models";
 
 export type WizardTemplateId =
   | "minimal-app"
@@ -29,7 +29,8 @@ export interface WizardPlanInput {
   templateId: WizardTemplateId;
   somSku: string;
   carrierName: string;
-  os: string;
+  /** v1 board.yaml only. Omit for schema_version 2 or host-tooling-starter. */
+  os?: string;
   features: WizardFeatureFlags;
   libraries: string[];
 }

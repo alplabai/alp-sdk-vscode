@@ -20,7 +20,7 @@ Usage:
 Options:
   --code-bin <cmd>   VS Code CLI command (default: code)
   --vsix <path>      Install this VSIX path (skips auto path resolution)
-  --skip-compile     Skip npm run compile
+  --skip-compile     Skip pnpm run compile
   --skip-package     Skip VSIX packaging step
   --dry-run          Print planned commands without executing
   -h, --help         Show this help
@@ -93,8 +93,8 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "npm is required but not found on PATH." >&2
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm is required but not found on PATH." >&2
   exit 1
 fi
 
@@ -114,13 +114,13 @@ if [[ -z "$VSIX_PATH" ]]; then
 fi
 
 if [[ "$SKIP_COMPILE" -eq 0 ]]; then
-  run_cmd npm run compile
+  run_cmd pnpm run compile
 else
   echo "Skipping compile step (--skip-compile)."
 fi
 
 if [[ "$SKIP_PACKAGE" -eq 0 ]]; then
-  run_cmd npx @vscode/vsce package --out "$VSIX_PATH"
+  run_cmd pnpm exec vsce package --no-dependencies --out "$VSIX_PATH"
 else
   echo "Skipping package step (--skip-package)."
 fi
@@ -131,6 +131,9 @@ if [[ "$DRY_RUN" -eq 0 && ! -f "$VSIX_PATH" ]]; then
 fi
 
 run_cmd "$CODE_BIN" --install-extension "$VSIX_PATH" --force
+
+# Sync runtime node_modules (pnpm workspace: vsce --no-dependencies skips them)
+run_cmd bash "${SCRIPT_DIR}/sync-deps-to-installed.sh"
 
 echo "Installed extension: $EXT_ID"
 echo "VSIX: $VSIX_PATH"

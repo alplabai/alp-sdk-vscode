@@ -1,0 +1,22 @@
+[package]
+name = "alp-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "alp"
+path = "src/main.rs"
+
+[dependencies]
+alp-core = { path = "../alp-core" }
+clap.workspace = true
+inquire.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+anyhow.workspace = true
+owo-colors.workspace = true
+indicatif.workspace = true

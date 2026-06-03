@@ -1,0 +1,1 @@
+--preview --project contract/fixtures/debug-config/preview-native --target-kind native-host --server none

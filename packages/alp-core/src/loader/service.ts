@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
+import { parseBoardModel } from "../configurator/service";
 import {
-    EmitMode,
-    GenerationTargetSupport,
-    LoaderBatchEntry,
-    LoaderBatchSummary,
-    LoaderPlan,
-    LoaderWorkspaceContext,
+  EmitMode,
+  GenerationTargetSupport,
+  LoaderBatchEntry,
+  LoaderBatchSummary,
+  LoaderPlan,
+  LoaderWorkspaceContext,
 } from "./models";
 
 const GENERATION_TARGET_CATALOG: readonly GenerationTargetSupport[] = [
@@ -64,6 +65,56 @@ const GENERATION_TARGETS_BY_EMIT: Readonly<
 export const ALL_EMIT_MODES: readonly EmitMode[] = [
   ...GENERATION_TARGET_CATALOG.map((target) => target.emit),
 ];
+
+/**
+ * Resolves the set of emit modes that are actually needed for the given
+ * board.yaml content.  For schema v1, the top-level `os:` field governs
+ * which outputs to produce.  For schema v2, the union of all non-`off`
+ * core OSes determines the relevant targets, avoiding spurious "failed"
+ * batch entries when, e.g., a zephyr-only v2 board has no yocto core.
+ *
+ * Falls back to ALL_EMIT_MODES when the schema version or os fields
+ * cannot be determined.
+ */
+export function resolveEmitModesForBoardYaml(
+  boardYamlText: string,
+): EmitMode[] {
+  const model = parseBoardModel(boardYamlText);
+
+  let osSet: Set<string>;
+
+  if (model.schema_version >= 2 && model.cores) {
+    osSet = new Set<string>(
+      Object.values(model.cores)
+        .map((c) => (c as { os?: string }).os ?? "")
+        .filter((os) => os && os !== "off"),
+    );
+  } else if (typeof model.os === "string" && model.os) {
+    osSet = new Set<string>([model.os]);
+  } else {
+    return [...ALL_EMIT_MODES];
+  }
+
+  const modeSet = new Set<EmitMode>();
+  if (osSet.has("zephyr")) {
+    modeSet.add("zephyr-conf");
+    modeSet.add("dts-overlay");
+    modeSet.add("cmake-args");
+  }
+  if (osSet.has("baremetal")) {
+    modeSet.add("cmake-args");
+  }
+  if (osSet.has("yocto")) {
+    modeSet.add("yocto-conf");
+  }
+  const modes = [...modeSet];
+  // Unknown OS values — include all modes as a safe fallback
+  if (modes.length === 0) {
+    return [...ALL_EMIT_MODES];
+  }
+
+  return modes;
+}
 
 export function listGenerationTargetSupport(): readonly GenerationTargetSupport[] {
   return GENERATION_TARGET_CATALOG;

@@ -42,6 +42,7 @@ import {
   createDiagnosticMessageWithContext,
   createEffectiveConfigPreviewPayload,
   createIssueRange,
+  detectV2StructuralIssues,
   normalizeProjectSettings,
 } from "./service";
 
@@ -303,12 +304,15 @@ async function validateDocument(
   connection.console.log(`$ ${plan.commandLine} (rv=${execution.status})`);
 
   const validation = analyzeValidationResult(execution);
-  if (validation.outcome === "clean") {
+  const v2Issues = detectV2StructuralIssues(documentText);
+
+  if (validation.outcome === "clean" && v2Issues.length === 0) {
     connection.sendDiagnostics({ uri, diagnostics: [] });
     return;
   }
 
-  const diagnostics = createDiagnostics(documentText, validation.issues);
+  const allIssues = [...validation.issues, ...v2Issues];
+  const diagnostics = createDiagnostics(documentText, allIssues);
   connection.sendDiagnostics({ uri, diagnostics });
 }
 
@@ -454,18 +458,27 @@ function toCodeAction(
   diagnostic: Diagnostic,
   fix: BoardYamlQuickFix,
 ): CodeAction {
+  const edit =
+    fix.endLine !== undefined
+      ? TextEdit.replace(
+          {
+            start: { line: fix.line, character: fix.character },
+            end: { line: fix.endLine, character: fix.endCharacter ?? 0 },
+          },
+          fix.newText,
+        )
+      : TextEdit.insert(
+          { line: fix.line, character: fix.character },
+          fix.newText,
+        );
+
   return {
     title: fix.title,
     kind: CodeActionKind.QuickFix,
     diagnostics: [diagnostic],
     edit: {
       changes: {
-        [uri]: [
-          TextEdit.insert(
-            { line: fix.line, character: fix.character },
-            fix.newText,
-          ),
-        ],
+        [uri]: [edit],
       },
     },
   };

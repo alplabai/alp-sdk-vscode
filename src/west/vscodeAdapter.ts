@@ -2,7 +2,10 @@
 
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { WestCommandPlan, WestWorkspaceContext } from "@alp-sdk/core/west/models";
+import {
+  WestCommandPlan,
+  WestWorkspaceContext,
+} from "@alp-sdk/core/west/models";
 
 export function collectWestWorkspaceContext(): WestWorkspaceContext {
   return collectProjectContext();

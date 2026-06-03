@@ -1,0 +1,24 @@
+# Dependencies & build artifacts
+node_modules/
+out/
+dist/
+*.vsix
+*.tsbuildinfo
+*.tgz
+.venv/
+
+# Lockfiles
+pnpm-lock.yaml
+
+# git submodule — not ours to format
+alp-sdk-upstream/
+
+# Rust build output
+cli-rs/target/
+
+# Byte-for-byte compared fixtures/snapshots — formatting would break tests
+cli-rs/contract/
+test/golden/
+
+# Hand-maintained prose docs — not subject to code formatting
+*.md

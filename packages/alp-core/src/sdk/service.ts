@@ -2,20 +2,20 @@
 
 import * as path from "path";
 import {
-    MkdirP,
-    PathExists,
-    Readdir,
-    ReadFile,
-    SdkHttpFetch,
-    SdkInstallAdapter,
-    WriteFile,
+  MkdirP,
+  PathExists,
+  Readdir,
+  ReadFile,
+  SdkHttpFetch,
+  SdkInstallAdapter,
+  WriteFile,
 } from "./adapterCore";
 import {
-    ActiveSdkPointer,
-    LocalSdkEntry,
-    SdkReadinessReport,
-    SdkReadinessState,
-    SdkRelease,
+  ActiveSdkPointer,
+  LocalSdkEntry,
+  SdkReadinessReport,
+  SdkReadinessState,
+  SdkRelease,
 } from "./models";
 
 // ---------------------------------------------------------------------------

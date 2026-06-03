@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Build the extension on every PR + push.  Mirrors the
-# `pr-vscode-extension` workflow that used to live in alplabai/alp-sdk;
-# refactored to consume the schema via the alp-sdk-upstream submodule.
+# Build the VS Code extension on every PR + push.
+# Uses pnpm workspaces; compiles extension + alp-cli + alp-webview.
 
 name: ci
 
@@ -28,20 +27,34 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Set up Node 20
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "22"
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Test (compile + unit/integration)
-        run: npm test
+      - name: Format check (prettier)
+        run: pnpm run format:check
+
+      - name: Compile (extension + CLI bundle + webview)
+        run: pnpm run compile
+
+      - name: Unit / integration tests
+        run: node --test "test/*.test.js"
 
       - name: Package (.vsix)
-        run: npx vsce package --out alp-sdk.vsix
+        # --no-dependencies: workspace:* protocol is not resolvable by vsce;
+        # the extension code is compiled to out/ and does not need bundled
+        # node_modules in the artefact (vscode provides its own require path).
+        run: pnpm exec vsce package --no-dependencies --out alp-sdk.vsix
 
       - name: Upload vsix artefact
         uses: actions/upload-artifact@v4
@@ -51,10 +64,34 @@ jobs:
           retention-days: 30
 
       - name: Schema-sync check
-        # The package.json points at alp-sdk-upstream's schema; the
-        # submodule HEAD is the source of truth.  Fail if the
-        # submodule pointer was changed but the resulting schema
-        # diverged from what's referenced in package.json's URLs.
         run: |
           test -f alp-sdk-upstream/metadata/schemas/board-config-v1.schema.json
           echo "schema reachable via submodule"
+
+  rust_cli_contract:
+    name: rust cli · contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Rust CLI contract harness
+        run: bash cli-rs/contract/run.sh

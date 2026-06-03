@@ -5,7 +5,7 @@ const {
   boardYamlExistsWithDependencies,
   executeLoaderPlanWithSpawn,
   inspectGeneratedFileWithDependencies,
-} = require("../out/loader/adapterCore.js");
+} = require("../packages/alp-core/dist/loader/adapterCore.js");
 
 function createLoaderPlan(overrides = {}) {
   return {

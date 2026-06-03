@@ -1,0 +1,1 @@
+--project contract/fixtures/diff/board-missing --board-yaml board.yaml

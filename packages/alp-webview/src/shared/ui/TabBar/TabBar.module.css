@@ -1,0 +1,72 @@
+.tabBar {
+  display: flex;
+  flex-direction: row;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-bg);
+  /* stick to top when panel scrolls */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  gap: 0;
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab:hover:not([aria-selected="true"]) {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text-primary);
+  border-bottom-color: var(--border-focus);
+  font-weight: 600;
+}
+
+.tab:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+.tabIcon {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--surface-badge);
+  color: var(--vscode-badge-foreground);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}

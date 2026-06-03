@@ -1,0 +1,1486 @@
+<!-- markdownlint-disable MD036 -->
+
+# GitHub Backlog
+
+Last revised: 2026-05-15
+
+This document converts the roadmap in [PLAN.md](PLAN.md) into a
+GitHub-friendly backlog format.
+
+It is designed for three practical uses:
+
+1. Create milestone issues directly from the epic sections.
+2. Create implementation issues directly from the task sections.
+3. Track initial delivery progress through the Phase 1 backlog at the
+   bottom of the file.
+
+## 1. Suggested GitHub Setup
+
+Before opening issues, create the following labels.
+
+### Type labels
+
+- `type:epic`
+- `type:task`
+- `type:subtask`
+- `type:docs`
+- `type:design`
+- `type:tech-debt`
+
+### Area labels
+
+- `area:core`
+- `area:lsp`
+- `area:ui`
+- `area:cli`
+- `area:debug`
+- `area:docs`
+- `area:build`
+- `area:testing`
+
+### Priority labels
+
+- `priority:p0`
+- `priority:p1`
+- `priority:p2`
+
+### Status labels
+
+- `status:ready`
+- `status:blocked`
+- `status:in-progress`
+- `status:needs-design`
+
+## 2. Suggested Milestones
+
+- `M1 — Product Contract`
+- `M2 — Shared Core`
+- `M3 — LSP Baseline`
+- `M4 — UX MVP`
+- `M5 — CLI Baseline`
+- `M6 — Scaffolding`
+- `M7 — Docs and Hardening`
+- `M8 — ALP IDE Experience`
+- `M9 — CLI Productization`
+
+## 3. Epic Issues
+
+Each section below is intended to map to one GitHub issue.
+
+---
+
+## Epic 1
+
+**Title**
+
+`Epic: Define product contract and first-class workflows`
+
+**Labels**
+
+- `type:epic`
+- `area:docs`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M1 — Product Contract`
+
+**Body**
+
+```md
+## Summary
+
+Define the product contract for the ALP SDK VS Code extension so the
+team is aligned on user segments, first-class workflows, and the
+boundary between shared core, LSP, UI, and CLI.
+
+## Outcome
+
+The team agrees on who the product serves, which workflows are
+first-class, and which features belong to UI, LSP, CLI, or shared
+core.
+
+## Tasks
+
+- [x] Define the primary user segments.
+- [x] Document the end-to-end journey for creating a new project.
+- [x] Document the journey for editing an existing `board.yaml`
+      project.
+- [x] Document the journey for generating outputs before build.
+- [x] Document the journey for scaffolding starter source code.
+- [x] Document the CLI-first journey for CI and headless use.
+- [x] Publish a capability matrix for UI, LSP, CLI, and shared core.
+- [x] List explicitly unsupported or deferred features.
+- [x] Define the initial project-template shortlist.
+- [x] Define ownership rules for generated files versus user-owned
+      files.
+- [x] Define acceptance criteria for the configurator MVP.
+- [x] Define acceptance criteria for the first LSP milestone.
+- [x] Define acceptance criteria for the CLI baseline.
+- [x] Define documentation expectations per surface.
+
+## Exit Criteria
+
+- [x] The team can answer "which surface owns this feature?" without
+      ambiguity.
+- [x] Initial project templates are agreed and documented.
+- [x] Generated-file ownership policy is agreed and documented.
+```
+
+---
+
+## Epic 2
+
+**Title**
+
+`Epic: Extract a shared core for validation, generation, and scaffolding`
+
+**Labels**
+
+- `type:epic`
+- `area:core`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M2 — Shared Core`
+
+**Body**
+
+```md
+## Summary
+
+Build a shared core so UI, LSP, and CLI all depend on one domain engine
+for config resolution, validation, generation, and future scaffolding.
+
+## Outcome
+
+UI, LSP, and CLI all consume one deterministic domain engine.
+
+## Tasks
+
+- [x] Define `ProjectConfig` and `EffectiveProjectConfig` types.
+- [x] Define `PresetCatalogue` and preset-origin metadata types.
+- [x] Define `ValidationIssue`, severity, and fix-suggestion models.
+- [x] Define `GenerationTarget` and `GeneratedArtifact` models.
+- [x] Define `ScaffoldTemplate` and template-parameter models.
+- [x] Move schema validation behind a stable API.
+- [x] Move semantic validation behind the same API.
+- [x] Add preset-resolution and inheritance handling.
+- [x] Add compatibility checks for unsupported combinations.
+- [x] Add structured error and warning output.
+- [x] Normalize generation entry points for all targets.
+- [x] Implement preview support before writing files.
+- [x] Implement deterministic artifact ordering and formatting.
+- [x] Add golden tests for generated outputs.
+- [x] Define stable generation contracts for CLI and UI callers.
+- [x] Define a template manifest format.
+- [x] Define template parameter resolution rules.
+- [x] Define overwrite policy for generated starter files.
+- [x] Add preview support for scaffolded project trees.
+
+## Exit Criteria
+
+- [x] UI, LSP, and CLI can call the same validation and generation APIs.
+- [x] Generated outputs are deterministic.
+- [x] Core behavior is covered by golden tests.
+```
+
+---
+
+## Epic 3
+
+**Title**
+
+`Epic: Ship LSP-native editing for board.yaml`
+
+**Labels**
+
+- `type:epic`
+- `area:lsp`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M3 — LSP Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Introduce a language server so `board.yaml` editing becomes LSP-native
+instead of command-triggered.
+
+## Outcome
+
+`board.yaml` editing becomes LSP-native rather than command-triggered.
+
+## Tasks
+
+- [x] Add the language server and client wiring.
+- [x] Implement document lifecycle handling.
+- [x] Add incremental analysis and caching.
+- [x] Add tracing and debugging hooks.
+- [x] Port diagnostics from extension-host execution to the LSP.
+- [x] Attach diagnostics to precise fields where possible.
+- [x] Distinguish errors, warnings, and suggestions.
+- [x] Add effective-config and preset-origin context to diagnostic
+      messages.
+- [x] Add completion for known enums and presets.
+- [x] Add hover for field semantics and inherited defaults.
+- [x] Add document symbols and outline support.
+- [x] Add quick fixes for common issues.
+- [x] Add command-backed effective-config preview.
+
+## Exit Criteria
+
+- [x] Users receive field-level diagnostics without manually running
+      validation commands.
+- [x] Completion and hover cover the core `board.yaml` authoring flow.
+```
+
+---
+
+## Epic 4
+
+**Title**
+
+`Epic: Redesign the VS Code UX for guided project creation and editing`
+
+**Labels**
+
+- `type:epic`
+- `area:ui`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M4 — UX MVP`
+
+**Body**
+
+```md
+## Summary
+
+Redesign the configurator and onboarding flows so the extension feels
+like a polished VS Code product rather than a thin wrapper panel.
+
+## Outcome
+
+The extension feels like a polished VS Code product and not just a
+thin wrapper panel.
+
+## Tasks
+
+- [x] Redesign the configurator into logical sections.
+- [x] Add basic and advanced modes.
+- [x] Improve field grouping and visual hierarchy.
+- [x] Add inline help and contextual explanations.
+- [x] Preserve compatibility with hand-edited YAML.
+- [x] Add a first-run project creation wizard.
+- [x] Let the wizard choose template, hardware, and feature set.
+- [x] Show generated files before write.
+- [x] Create the initial workspace layout and starter files.
+- [x] Show effective config preview.
+- [x] Show generated output preview.
+- [x] Show scaffolded project tree preview.
+- [x] Add write confirmation for changed files.
+- [x] Add validation summary view before apply.
+
+## Exit Criteria
+
+- [x] A new user can create or update a project entirely through VS
+      Code.
+- [x] The UI provides preview and validation before write.
+```
+
+---
+
+## Epic 5
+
+**Title**
+
+`Epic: Add project and source scaffolding`
+
+**Labels**
+
+- `type:epic`
+- `area:core`
+- `area:ui`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M6 — Scaffolding`
+
+**Body**
+
+```md
+## Summary
+
+Allow users to generate complete starter projects and feature modules
+from curated templates.
+
+## Outcome
+
+Users can generate complete starter projects and feature modules from
+curated templates.
+
+## Tasks
+
+- [x] Add a minimal ALP app template.
+- [x] Add a sensor-oriented template.
+- [x] Add an IoT template.
+- [x] Add an edge-AI template.
+- [x] Add a board-diagnostics template.
+- [x] Add module-level source generation into existing projects.
+- [x] Allow template parameters to resolve from current config.
+- [x] Avoid overwriting user-modified files silently.
+- [x] Add explanation support for generated starter code.
+
+## Exit Criteria
+
+- [x] Users can create a credible starter project without manually
+      copying repo examples.
+- [x] Partial scaffolding works for existing projects.
+```
+
+---
+
+## Epic 6
+
+**Title**
+
+`Epic: Ship a first-class CLI workflow`
+
+**Labels**
+
+- `type:epic`
+- `area:cli`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M5 — CLI Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Deliver the same validation, generation, and project-setup workflows
+through a stable CLI for terminal and CI users.
+
+## Outcome
+
+The same workflows are available from the terminal and in CI.
+
+## Tasks
+
+- [x] Introduce a stable CLI entry point.
+- [x] Add shared argument parsing conventions.
+- [x] Add machine-readable JSON output mode.
+- [x] Define stable exit-code behavior.
+- [x] Implement `alp validate`.
+- [x] Implement `alp generate`.
+- [x] Implement `alp init`.
+- [x] Implement `alp doctor`.
+- [x] Implement `alp explain`.
+- [x] Implement `alp scaffold`.
+- [x] Implement `alp presets`.
+- [x] Implement `alp diff`.
+- [x] Add shell completion support.
+- [x] Add CI integration examples.
+
+## Exit Criteria
+
+- [x] A CLI-first user can complete the same major workflows as a VS
+      Code user.
+- [x] Commands support both human-readable and CI-friendly output.
+```
+
+---
+
+## Epic 7
+
+**Title**
+
+`Epic: Rebuild documentation around workflows, not internals`
+
+**Labels**
+
+- `type:epic`
+- `area:docs`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M7 — Docs and Hardening`
+
+**Body**
+
+```md
+## Summary
+
+Provide task-oriented documentation for GUI users, power users, and
+CLI users without allowing drift between documented and implemented
+behavior.
+
+## Outcome
+
+Both VS Code users and CLI users get task-oriented, accurate
+documentation.
+
+## Tasks
+
+- [x] Add VS Code getting-started documentation.
+- [x] Add CLI getting-started documentation.
+- [x] Add LSP/editor feature documentation.
+- [x] Add generation-output documentation.
+- [x] Add source-scaffolding documentation.
+- [x] Add validation troubleshooting.
+- [x] Add generation-conflict troubleshooting.
+- [x] Add environment and toolchain troubleshooting.
+- [x] Add common task recipes for GUI and CLI.
+- [x] Add CI usage examples.
+
+## Exit Criteria
+
+- [x] New users can choose GUI or CLI quickly and reach a working
+      project.
+- [x] Documentation matches implemented behavior closely enough to
+      avoid routine drift.
+```
+
+---
+
+## Epic 8
+
+**Title**
+
+`Epic: Harden testing, compatibility, and release engineering`
+
+**Labels**
+
+- `type:epic`
+- `area:testing`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M7 — Docs and Hardening`
+
+**Body**
+
+```md
+## Summary
+
+Add the test matrix, compatibility policy, and release gates needed to
+scale the product without drift between UI, LSP, CLI, and docs.
+
+## Outcome
+
+The product can scale without drift between surfaces.
+
+## Tasks
+
+- [x] Add unit tests for the shared core.
+- [x] Add golden tests for generation outputs.
+- [x] Add language-server tests.
+- [x] Add webview smoke tests.
+- [x] Add CLI integration tests.
+- [x] Define compatibility rules for schema changes.
+- [x] Define compatibility rules for generation targets.
+- [x] Define compatibility rules for CLI flags and JSON output.
+- [x] Define release gates and checklists.
+- [x] Add performance budgets and regression checks.
+
+## Exit Criteria
+
+- [x] Release gates exist for core, LSP, UI, CLI, and docs.
+- [x] Compatibility guarantees are documented.
+- [x] Regression coverage exists for all major surfaces.
+```
+
+---
+
+## Epic 9
+
+**Title**
+
+`Epic: Add explicit debugging, inspection, and supportability workflows`
+
+**Labels**
+
+- `type:epic`
+- `area:debug`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M5 — CLI Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Make debugging and troubleshooting an explicit product capability across
+UI, LSP, and CLI rather than leaving it implicit in diagnostics and
+docs.
+
+## Outcome
+
+Users can inspect effective config, understand generation decisions,
+capture environment state, and export support bundles when something
+goes wrong.
+
+## Tasks
+
+- [x] Add an effective-config inspection model to the shared core.
+- [x] Add generation-decision tracing to the shared core.
+- [x] Add a VS Code troubleshooting/debug panel.
+- [x] Add `alp inspect` for effective config and resolved values.
+- [x] Add `alp trace` for generation and decision tracing.
+- [x] Add `alp support-bundle` for issue-report export.
+- [x] Add documentation for inspect, trace, and support-bundle flows.
+- [x] Add tests for inspect output, trace output, and bundle export.
+
+## Exit Criteria
+
+- [x] A user can understand why a value resolved the way it did.
+- [x] A user can export enough debugging context for a useful issue
+      report.
+- [x] Debug surfaces exist in both VS Code and CLI workflows.
+```
+
+---
+
+## Epic 10
+
+**Title**
+
+`Epic: Ship ALP IDE as a status-first workflow hub`
+
+**Labels**
+
+- `type:epic`
+- `area:ui`
+- `area:build`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M8 — ALP IDE Experience`
+
+**Body**
+
+```md
+## Summary
+
+Replace command-palette-first onboarding with a polished status-first
+sidebar workflow that supports Activity Bar discovery and guided setup
+without depending on command-palette workflows.
+
+## Outcome
+
+Users can open ALP IDE and immediately understand setup state,
+workspace state, and project readiness without relying on
+command-palette workflows, while preserving native VS Code theme
+behavior (Light/Dark/High Contrast).
+
+## UX Intent
+
+Do not emulate a Solution Explorer or file browser. File navigation
+already exists in VS Code.
+
+ALP IDE should behave as a workflow cockpit with status-first sections:
+
+- Extension Setup
+- SDK Management
+- West Workspaces
+- Projects
+- Project Details
+- Active Project State
+
+## Tasks
+
+- [x] Add an ALP Activity Bar container using `contributes.viewsContainers`.
+- [x] Add an ALP IDE root view using `contributes.views`.
+- [x] Add section groups for Extension Setup, West Workspaces, Projects, and Project Details.
+- [x] Add setup status rows (Ready, Not Installed, Setup Required, Not Updated).
+- [x] Add progress banner copy such as `2 of 3 steps remaining` driven by real state.
+- [x] Add zero-friction setup orchestrator that evaluates prerequisites on first open.
+- [x] Add component inventory for host tools, SDK toolchains, west, workspace health, and project readiness.
+- [x] Add missing-component diagnostics with blocker vs warning classification.
+- [x] Add one-click `Fix Now` actions for install/update/configure steps where safe.
+- [x] Add guided fallback steps for actions that cannot be automated.
+- [x] Add post-action revalidation loop so status updates immediately after each fix.
+- [x] Add `Quick Actions` card grid as the primary interaction surface.
+- [x] Add cards for `Host Tools`, `Install SDK`, `West Update`, `Settings`, and `Add Project`.
+- [x] Add per-card state chips (`Ready`, `Setup Required`, `Not Updated`) with consistent semantic color tokens.
+- [x] Add concise card descriptions and single primary intent per card.
+- [x] Add card click routing to focused setup flows and command handlers.
+- [x] Keep card layout fluid and responsive (2-column narrow, 3-column wide) without feeling rigid.
+- [x] Add contextual empty states (for example `No Active Project`) with primary CTA buttons.
+- [x] Build webview frontend with React + TypeScript + Vite pipeline.
+- [x] Bootstrap webview app from Microsoft's official VS Code webview React sample/template.
+- [x] Replace `@vscode/webview-ui-toolkit` with native HTML elements styled via VS Code CSS variables; toolkit dependency removed.
+- [x] Use VS Code CSS variables (`--vscode-*`) for custom layout and styling.
+- [x] Add theme-compatibility checks for Light, Dark, and High Contrast.
+- [x] Keep webview styling compatible with VS Code reset/baseline styles.
+- [x] Add finish step with `open in current window` vs `open in new window` choice.
+- [x] Add SDK discovery step (detected SDKs + manual path selection).
+- [x] Add SDK install step (download/clone, progress, cancel, logs).
+- [x] Add SDK readiness validation step (scripts, metadata, toolchain checks).
+- [x] Add guided dependency/bootstrap actions from UI (python/west/host tooling).
+- [x] Add development component management view for compiler, CMake, Ninja, Python, west, and env paths.
+- [x] Add workspace and toolchain drift detection with explicit remediation guidance.
+- [x] Add review/apply step with file-change preview and overwrite warnings.
+- [x] Add generated-output preview and plan summary before write.
+- [x] Add typed extension<->webview message contracts and state sync.
+- [x] Add bottom resource/link bar with `Documentation`, `Getting Started`, `West Docs`, `Report Issues` actions.
+
+## Key Phrases and Keywords
+
+- [x] Standardize UI language around: `Setup at a glance`, `Ready`, `Setup Required`, `Not Installed`, `No Active Project`.
+- [x] Keep dashboard naming stable: `Quick Actions`, `West Workspaces`, `Projects`, `Project Details`.
+- [x] Use consistent action verbs: `Install SDK`, `Activate Workspace`, `Create Project`, `Open Project`, `Continue Setup`.
+
+## Exit Criteria
+
+- [x] A user can launch onboarding from the Activity Bar without using command palette.
+- [x] A user can complete setup tasks without opening file explorer as a primary UI.
+- [x] A new user can reach a build-ready environment through guided steps without manual path hunting.
+- [x] A user can select or install SDK and verify readiness entirely from UI.
+- [x] Missing prerequisites are surfaced with exact actionable fixes in the same panel.
+- [x] A user can create or open a project and choose current/new window at wizard completion.
+- [x] Webview UI stays visually correct across Light, Dark, and High Contrast themes.
+- [x] ALP IDE sections render meaningful status and next action in empty and partially configured states.
+- [x] `Quick Actions` cards drive at least the five primary setup workflows without command palette dependency.
+- [x] Bottom resource links are visible, actionable, and theme-consistent.
+```
+
+---
+
+## Epic 11
+
+**Title**
+
+`Epic: Productize CLI as a standalone package and reusable core`
+
+**Labels**
+
+- `type:epic`
+- `area:cli`
+- `area:build`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M9 — CLI Productization`
+
+**Body**
+
+```md
+## Summary
+
+Make CLI independently installable and versionable outside the VS Code
+extension lifecycle, with npm as the primary distribution path.
+
+## Outcome
+
+Teams can consume CLI directly in CI/CD and local workflows through a
+stable npm distribution channel, while VS Code extension depends on the
+same contracts.
+
+## Tasks
+
+- [x] Decide primary distribution strategy: npm package.
+- [x] Freeze package identity: npm package `alp-sdk`, binary command `alp`.
+- [x] Define semver policy and release channels (`next` canary, `latest` stable).
+- [x] Extract CLI core contracts into reusable package boundaries.
+- [x] Separate VS Code adapter code from standalone CLI runtime.
+- [x] Add standalone CLI package layout (entrypoint, bin mapping, exports map).
+- [x] Add npm scripts for build, test, pack, and smoke-install verification.
+- [x] Add contract tests that compare extension-invoked CLI and standalone CLI outputs.
+- [x] Add CI workflow `.github/workflows/release-cli.yml` for publish automation.
+- [x] Add provenance-enabled publishing and artifact/signature retention.
+- [x] Add rollback playbook (deprecate/yank guidance + affected version matrix).
+- [x] Add installation docs for developers, CI agents, and offline mirrors.
+- [ ] Add optional Rust feasibility spike for performance-critical core (non-blocking).
+- [ ] If Rust path is later selected, define Node interop strategy (napi, ffi, or process boundary).
+
+## Exit Criteria
+
+- [x] CLI can be installed and executed independently of the VS Code extension.
+- [x] Extension and standalone CLI share the same command/output contract.
+- [x] Release workflow exists with versioning, changelog, provenance, and rollback guidance.
+- [x] npm distribution path is production-ready, documented, and tested.
+- [x] Install verification passes for `npm i -g <package>` and `npx <package>@latest --help` flows.
+```
+
+## 4. Phase 1 Backlog Issues
+
+These issues are the most actionable items for the first implementation
+wave and map closely to the current repository layout.
+
+---
+
+## Issue P1-1
+
+**Title**
+
+`Task: Normalize SDK root, project root, and west working-directory resolution`
+
+**Labels**
+
+- `type:task`
+- `area:core`
+- `area:build`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M2 — Shared Core`
+
+**Body**
+
+```md
+## Summary
+
+Normalize path resolution so the extension works cleanly with:
+
+- the current split-repo + submodule layout
+- standalone consumer workspaces
+- explicit `alpSdk.path` overrides
+
+## Target Areas
+
+- `src/util.ts`
+- `src/loader.ts`
+- `src/west.ts`
+
+## Tasks
+
+- [x] Distinguish SDK root, project root, and west working directory.
+- [x] Support the current split-repo + submodule layout.
+- [x] Support standalone consumer workspaces.
+- [x] Add explicit failure messaging for ambiguous workspace layouts.
+- [x] Add unit-testable path-resolution helpers.
+
+## Acceptance Criteria
+
+- [x] The extension resolves roots correctly in both the extension repo
+      and a consumer app workspace.
+- [x] Errors are actionable when the workspace layout is ambiguous.
+```
+
+---
+
+## Issue P1-2
+
+**Title**
+
+`Task: Introduce the language-server skeleton`
+
+**Labels**
+
+- `type:task`
+- `area:lsp`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M3 — LSP Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Add the first language-server/client structure so diagnostics and later
+editor features can move out of extension-host command execution.
+
+## Target Areas
+
+- `package.json`
+- `src/extension.ts`
+- new `src/lsp/` or equivalent
+
+## Tasks
+
+- [x] Add the language-client dependency.
+- [x] Add the language-server dependency.
+- [x] Create server bootstrap files.
+- [x] Wire activation and shutdown through the extension entry point.
+- [x] Add basic tracing and debugging hooks.
+
+## Acceptance Criteria
+
+- [x] The extension starts and stops the language server reliably.
+- [x] The project builds cleanly with the new LSP packages.
+```
+
+---
+
+## Issue P1-3
+
+**Title**
+
+`Task: Port board.yaml diagnostics to the LSP baseline`
+
+**Labels**
+
+- `type:task`
+- `area:lsp`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M3 — LSP Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Move diagnostics from file-open/save command execution into the
+language-server baseline while preserving current validation behavior.
+
+## Target Areas
+
+- `src/diagnostics.ts`
+- new server diagnostics module
+
+## Tasks
+
+- [x] Move validation triggers from extension-host events into the LSP.
+- [x] Preserve current validator behavior as baseline compatibility.
+- [x] Improve diagnostic ranges beyond the current line-1 fallback where
+      practical.
+- [x] Keep Problems panel behavior stable during transition.
+
+## Subtask Log
+
+- [x] Record and close migration improvement subtask: keep current
+      fallback range behavior stable while tracking richer range mapping
+      as follow-up work.
+
+## Acceptance Criteria
+
+- [x] Users receive equivalent or better diagnostics through the LSP.
+- [x] Diagnostics still appear reliably in the Problems panel.
+```
+
+---
+
+## Issue P1-4
+
+**Title**
+
+`Task: Reconcile west command behavior with the canonical ALP workflow`
+
+**Labels**
+
+- `type:task`
+- `area:build`
+- `area:ui`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M4 — UX MVP`
+
+**Body**
+
+```md
+## Summary
+
+Align extension build commands with the documented ALP workflow,
+including the relationship between `west build` and `west alp-build`.
+
+## Target Areas
+
+- `src/west.ts`
+- `README.md`
+- command titles in `package.json`
+
+## Tasks
+
+- [x] Decide whether the extension should expose `west build`,
+      `west alp-build`, or both. (Decision: canonical extension flow is
+      `west build` with explicit pre-build validation + generation.)
+- [x] Ensure validation and generation happen in the expected order.
+- [x] Update command descriptions to match actual behavior.
+- [x] Update documentation to match shipped behavior.
+
+## Acceptance Criteria
+
+- [x] Extension build commands match the intended canonical workflow.
+- [x] Documentation no longer overstates or misstates build behavior.
+```
+
+---
+
+## Issue P1-5
+
+**Title**
+
+`Task: Reconcile generation-target support with documented behavior`
+
+**Labels**
+
+- `type:task`
+- `area:core`
+- `area:docs`
+- `priority:p0`
+- `status:ready`
+
+**Milestone**
+
+- `M2 — Shared Core`
+
+**Body**
+
+```md
+## Summary
+
+Reconcile actual supported generation targets with the upstream docs and
+establish one central map of generation support.
+
+## Target Areas
+
+- `src/loader.ts`
+- `package.json`
+- docs references
+
+## Tasks
+
+- [x] Reconcile actual supported emit modes with upstream docs.
+- [x] Add a central map for supported generation targets.
+- [x] Add preview metadata for each target.
+- [x] Add tests for success and failure-path handling.
+
+## Acceptance Criteria
+
+- [x] The extension and docs report the same generation-target surface.
+- [x] Generation behavior is driven by one central support map.
+```
+
+---
+
+## Issue P1-6
+
+**Title**
+
+`Task: Add a shared inspect and trace model for debugging workflows`
+
+**Labels**
+
+- `type:task`
+- `area:debug`
+- `area:core`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M2 — Shared Core`
+
+**Body**
+
+```md
+## Summary
+
+Add the shared core structures needed for explicit debugging features,
+starting with effective-config inspection and generation-decision
+tracing.
+
+## Target Areas
+
+- new shared core/domain files under `src/`
+- `src/loader.ts`
+- future LSP and CLI integration points
+
+## Tasks
+
+- [x] Define an inspect-output model for effective config and resolved
+      values.
+- [x] Define a trace-output model for generation decisions.
+- [x] Define a support-bundle payload model for issue reports.
+- [x] Add reusable helpers so UI, LSP, and CLI can consume the same
+      debug data.
+- [x] Add tests for inspect and trace serialization.
+
+## Acceptance Criteria
+
+- [x] Shared debug data models exist and are reusable across surfaces.
+- [x] Inspect and trace output can be exposed later without refactoring
+      core logic again.
+```
+
+---
+
+## Issue P1-7
+
+**Title**
+
+`Task: Define and ship the debug support matrix as a maintained product contract`
+
+**Labels**
+
+- `type:task`
+- `area:debug`
+- `area:docs`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M5 — CLI Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Define the supported debug target classes, adapters, probes, and
+support levels so the product has a clear and maintainable debug
+contract.
+
+## Target Areas
+
+- `DEBUG.md`
+- debug-related docs and product references
+
+## Tasks
+
+- [x] Define supported debug target classes.
+- [x] Define primary and optional adapters per target class.
+- [x] Define first-class versus deferred support levels.
+- [x] Document current repo state versus planned product state.
+- [x] Keep the matrix aligned with future launch-generation work.
+
+## Acceptance Criteria
+
+- [x] A single maintained support matrix exists for debug workflows.
+- [x] The team can answer whether a given toolchain/probe path is
+      first-class, optional, or deferred.
+```
+
+---
+
+## Issue P1-8
+
+**Title**
+
+`Task: Design and implement generated launch profiles for Zephyr, baremetal, Yocto, and native targets`
+
+**Labels**
+
+- `type:task`
+- `area:debug`
+- `area:ui`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M4 — UX MVP`
+
+**Body**
+
+```md
+## Summary
+
+Generate or provide launch configurations for the supported debug
+classes instead of requiring users to hand-author every debug profile.
+
+## Target Areas
+
+- future launch-generation module under `src/`
+- `package.json`
+- `DEBUG.md`
+
+## Tasks
+
+- [x] Define the shared `DebugProfile` model.
+- [x] Generate Zephyr + `cortex-debug` + J-Link launch profiles.
+- [x] Generate Zephyr + `cortex-debug` + OpenOCD launch profiles.
+- [x] Generate baremetal + `cortex-debug` launch profiles.
+- [x] Generate Yocto userspace + `cppdbg` + `gdbserver` launch profiles.
+- [x] Generate `native_sim` / host + `CodeLLDB` launch profiles.
+- [x] Define whether profiles are written to `launch.json` or provided
+      dynamically.
+
+## Acceptance Criteria
+
+- [x] The product can generate at least one working Zephyr debug
+      profile end-to-end.
+- [x] The launch design is documented and reusable for other target
+      classes.
+```
+
+---
+
+## Issue P1-9
+
+**Title**
+
+`Task: Add debug preflight, doctor, and support-bundle workflows`
+
+**Labels**
+
+- `type:task`
+- `area:debug`
+- `area:cli`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M5 — CLI Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Add productized debug troubleshooting so failed launch attempts become
+actionable instead of opaque.
+
+## Target Areas
+
+- future debug-preflight module under `src/`
+- future CLI doctor/inspect/trace commands
+- `DEBUG.md`
+
+## Tasks
+
+- [x] Define debug preflight checks for each target class.
+- [x] Validate ELF/build artifact presence before launch.
+- [x] Validate debugger extension/tool availability before launch.
+- [x] Validate probe/server configuration before launch.
+- [x] Add a debug-doctor report flow.
+- [x] Add support-bundle export for issue reports.
+- [x] Add documentation for debug failure analysis.
+
+## Acceptance Criteria
+
+- [x] The product can fail fast with actionable debug preflight output.
+- [x] Users can export enough context for a useful debug issue report.
+```
+
+---
+
+## Issue P1-10
+
+**Title**
+
+`Task: Define and enforce the ALP CLI contract for local and CI use`
+
+**Labels**
+
+- `type:task`
+- `area:cli`
+- `area:docs`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M5 — CLI Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Turn the planned CLI into a stable contract with explicit command
+families, JSON output rules, and exit-code behavior.
+
+## Target Areas
+
+- `CLI.md`
+- future CLI entrypoint and command modules
+- shared core serialization helpers
+
+## Tasks
+
+- [x] Define the supported top-level command families.
+- [x] Define global flags and formatting behavior.
+- [x] Define stable JSON output envelopes.
+- [x] Define exit-code behavior for validation, doctor, and generation
+      failures.
+- [x] Define non-interactive requirements for CI.
+- [x] Keep CLI behavior aligned with shared-core models.
+
+## Acceptance Criteria
+
+- [x] The team has a stable CLI contract to implement against.
+- [x] CI-oriented workflows do not depend on ad-hoc terminal behavior.
+```
+
+---
+
+## Issue P1-11
+
+**Title**
+
+`Task: Enforce debug ownership boundaries between UI, CLI, and LSP`
+
+**Labels**
+
+- `type:task`
+- `area:debug`
+- `area:lsp`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M3 — LSP Baseline`
+
+**Body**
+
+```md
+## Summary
+
+Prevent feature drift by making the boundaries between UI, CLI, and LSP
+explicit for debug-related capabilities.
+
+## Target Areas
+
+- `DEBUG.md`
+- `PLAN.md`
+- future UI/LSP/CLI implementation points
+
+## Tasks
+
+- [x] Define which surface owns launch and attach flows.
+- [x] Define which surface owns inspect, trace, and doctor flows.
+- [x] Define which surface owns inline explainability and quick fixes.
+- [x] Define explicit LSP non-goals for debug orchestration.
+- [x] Prevent duplicate implementation of domain rules across surfaces.
+
+## Acceptance Criteria
+
+- [x] The team can answer where each debug capability belongs without
+      ambiguity.
+- [x] LSP, UI, and CLI responsibilities are documented and non-
+      overlapping.
+```
+
+---
+
+## Issue P1-12
+
+**Title**
+
+`Task: Ship the first VS Code debug command surface for inspect, doctor, and profile drafting`
+
+**Labels**
+
+- `type:task`
+- `area:debug`
+- `area:ui`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M4 — UX MVP`
+
+**Body**
+
+```md
+## Summary
+
+Add the first concrete VS Code debug commands so users can inspect
+project state, run debug doctor checks, and draft launch profiles
+without hand-authoring everything.
+
+## Target Areas
+
+- `package.json`
+- `src/extension.ts`
+- new debug command module under `src/`
+
+## Tasks
+
+- [x] Add `Alp: Inspect project state`.
+- [x] Add `Alp: Debug doctor`.
+- [x] Add `Alp: Configure debug profile`.
+- [x] Surface results in an inspectable form inside VS Code.
+- [x] Keep the command implementations aligned with the shared debug
+      model as it evolves.
+
+## Acceptance Criteria
+
+- [x] Users can inspect current workspace/debug inputs without leaving
+      VS Code.
+- [x] Users can draft a launch profile for the supported target classes.
+```
+
+## 5. Recommended First Sprint
+
+If the team wants the highest-leverage first sprint, create and work
+these issues first:
+
+1. `Task: Normalize SDK root, project root, and west working-directory resolution`
+2. `Task: Introduce the language-server skeleton`
+3. `Task: Port board.yaml diagnostics to the LSP baseline`
+4. `Task: Reconcile west command behavior with the canonical ALP workflow`
+5. `Task: Reconcile generation-target support with documented behavior`
+6. `Task: Add a shared inspect and trace model for debugging workflows`
+7. `Task: Define and ship the debug support matrix as a maintained product contract`
+
+These issues reduce the biggest current sources of drift before the
+larger configurator redesign and scaffolding work begins.
+
+---
+
+## Epic 12
+
+**Title**
+
+`Epic: Adapt extension to alp-sdk v0.6 heterogeneous-OS changes`
+
+**Labels**
+
+- `type:epic`
+- `area:core`
+- `area:lsp`
+- `priority:p0`
+- `status:in-progress`
+
+**Milestone**
+
+- `M2 — Shared Core`
+
+**Body**
+
+```md
+## Summary
+
+alp-sdk v0.6.0 (2026-05-15) introduced heterogeneous OS orchestration,
+replacing the top-level `os:` field with a per-core `cores:` block in
+`board.yaml`. schema_version bumped from 1 to 2; board-config-v1.schema.json
+was deleted from the SDK. This epic tracks all extension-side adaptations.
+
+## Context
+
+- ADR 0010: heterogeneous OS orchestration.
+- Five new `west alp-*` commands replace the single `west alp-build`.
+- Per-SoM topology metadata ships in `metadata/e1m_modules/<SKU>.yaml`.
+- IPC carve-outs declared via top-level `ipc:` block.
+
+## Tasks
+
+- [x] Fix `package.json` yamlValidation URL: v1 → v2 schema.
+- [x] Update `snippets/board-yaml.json`: `schema_version: 2`, `cores:`
+      block, `ipc:` snippet, remove top-level `os:` snippet.
+- [x] Update README.md schema-sync section to reference v2.
+- [x] Update `packages/alp-core` validation service: teach
+      `validateBoardYaml` to validate `cores:` block structure and
+      reject bare top-level `os:` in v2 documents.
+- [x] Update `packages/alp-core` loader: read `cores.<id>.os` for
+      runtime detection instead of top-level `os:` for v2 documents;
+      preserve v1 read path for compatibility.
+- [x] Extend LSP diagnostics: flag bare top-level `os:` in
+      `schema_version: 2` files with a quick-fix to migrate to
+      `cores:` block.
+- [x] Extend west integration: add `west alp-image`, `west alp-flash`,
+      `west alp-clean`, `west alp-renode` alongside existing
+      `west alp-build` in the task provider.
+- [x] Add configurator panel support for the `cores:` block:
+      render per-core OS/app/peripherals/libraries/inference/iot rows.
+- [x] Update `test/validation.service.test.js` and
+      `test/loader.service.test.js` with v2 fixture files.
+
+## Acceptance Criteria
+
+- [x] A valid `schema_version: 2` board.yaml with a `cores:` block
+      passes extension validation with zero false-positive errors.
+- [x] A `schema_version: 2` file using top-level `os:` shows an
+      LSP error with a one-click migration quick-fix.
+- [x] All five `west alp-*` commands are surfaced in VS Code tasks.
+- [x] Existing v1 board.yaml files continue to load without error
+      (backward compatibility maintained in the loader).
+```
+
+---
+
+## Epic 13
+
+**Title**
+
+`Epic: ALP IDE advanced flows — wizard surfaces, lifecycle management, and quality gates`
+
+**Labels**
+
+- `type:epic`
+- `area:ui`
+- `area:testing`
+- `area:docs`
+- `priority:p1`
+- `status:ready`
+
+**Milestone**
+
+- `M10 — ALP IDE Advanced Flows`
+
+**Body**
+
+```md
+## Summary
+
+Extend the ALP IDE experience with side-panel and full-window wizard
+surfaces, workspace lifecycle management, a unified stepper model,
+recovery language standardization, and automated quality gates.
+Deferred from Epic 10 (M8) after the core sidebar experience shipped.
+
+## Outcome
+
+Users have guided multi-step flows for new-project creation, workspace
+management, and complex onboarding that go beyond the status-first
+sidebar panel.
+
+## Tasks
+
+- [x] Add section-level quick actions (Activate Workspace, New Workspace, Refresh, Save).
+- [x] Add side-panel flow for focused setup/configuration steps.
+- [x] Add full-window flow for first-run or complex onboarding.
+- [x] Add a unified stepper model shared by all three UI surfaces.
+- [x] Add an ALP IDE Overview panel in editor area with setup summary and next actions.
+- [x] Add new-project flow with template, hardware, and feature steps.
+- [x] Add existing-project flow with workspace selection and validation.
+- [x] Add workspace lifecycle actions (create, activate, switch, repair, remove) with safety checks.
+- [x] Add smoke/integration tests for sidebar, panel, and full-window flows.
+- [x] Add docs for GUI-first onboarding and SDK installation workflows.
+- [x] Standardize recovery language: `Missing Components`, `Blocked`, `Fix Now`, `Retry Check`, `Needs Manual Step`.
+- [x] Keep section names stable across sidebar and full-window surfaces.
+
+## Exit Criteria
+
+- [x] Sidebar, side-panel, and full-window modes use one consistent state model.
+- [x] Major wizard flows are covered by automated smoke/integration tests.
+- [x] GUI-first onboarding and SDK installation are fully documented.
+```

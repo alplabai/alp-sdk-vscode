@@ -26,21 +26,17 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 
 ```text
 .
-├── ARCHITECTURE_RULES.md    -- layering and dependency contract
-├── BACKLOG.md               -- epic/issue tracking checklist
-├── CLI.md                   -- CLI contract and exit-code policy
-├── DEBUG.md                 -- debug support matrix and launch design
-├── PLAN.md                  -- product roadmap and phased delivery
-├── README.md
+├── README.md                -- this file (the only doc in the root)
+├── CLAUDE.md                -- operating guide for AI agents (auto-loaded)
+├── docs/                    -- all project docs (see "Documentation Map" below)
 ├── LICENSE                  -- Apache-2.0
 ├── package.json             -- VS Code extension manifest (workspace root)
 ├── pnpm-workspace.yaml      -- pnpm workspace config
 ├── tsconfig.json
 ├── packages/
-│   ├── alp-core/            -- @alp-sdk/core: shared domain logic
-│   │   └── src/             -- board, configurator, sdk, wizard, ...
-│   └── alp-cli/             -- alp-sdk: standalone CLI (esbuild bundle)
-│       └── src/cli/         -- commands, services, arg parsing
+│   └── alp-core/            -- @alp-sdk/core: shared domain logic
+│       └── src/             -- board, configurator, sdk, wizard, ...
+├── cli-rs/                  -- the native `alp` CLI (Rust; replaced packages/alp-cli)
 ├── src/                     -- VS Code extension TypeScript source
 │   ├── README.md            -- source folder/module guide
 │   ├── extension.ts         -- activation entry point
@@ -68,43 +64,51 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 
 ## Documentation Map
 
-- [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md): Layering,
+- [ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md): Layering,
   dependency direction, and testing contracts.
-- [PLAN.md](PLAN.md): Product goals and phased roadmap.
-- [BACKLOG.md](BACKLOG.md): Epic and issue checklist with current
+- [PLAN.md](docs/PLAN.md): Product goals and phased roadmap.
+- [BACKLOG.md](docs/BACKLOG.md): Epic and issue checklist with current
   implementation state.
-- [CLI.md](CLI.md): Proposed CLI command families, output contract,
+- [CLI.md](docs/CLI.md): Proposed CLI command families, output contract,
   and exit-code policy.
-- [CI_EXAMPLES.md](CI_EXAMPLES.md): GitHub Actions and GitLab CI
+- [CI_EXAMPLES.md](docs/CI_EXAMPLES.md): GitHub Actions and GitLab CI
   examples for ALP CLI validation/generation/doctor flows.
-- [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md): VS Code
+- [GETTING_STARTED_VSCODE.md](docs/GETTING_STARTED_VSCODE.md): VS Code
   first-run workflow from install to validation and generation.
-- [GETTING_STARTED_CLI.md](GETTING_STARTED_CLI.md): CLI-first workflow
+- [GETTING_STARTED_CLI.md](docs/GETTING_STARTED_CLI.md): CLI-first workflow
   for local terminal and CI usage.
-- [EDITOR_FEATURES.md](EDITOR_FEATURES.md): LSP/editor capabilities for
+- [EDITOR_FEATURES.md](docs/EDITOR_FEATURES.md): LSP/editor capabilities for
   board.yaml authoring.
-- [GENERATION_OUTPUTS.md](GENERATION_OUTPUTS.md): Generation targets,
+- [GENERATION_OUTPUTS.md](docs/GENERATION_OUTPUTS.md): Generation targets,
   output paths, and deterministic output expectations.
-- [SOURCE_SCAFFOLDING.md](SOURCE_SCAFFOLDING.md): Project bootstrap and
+- [SOURCE_SCAFFOLDING.md](docs/SOURCE_SCAFFOLDING.md): Project bootstrap and
   module scaffolding workflows.
-- [TROUBLESHOOTING_VALIDATION.md](TROUBLESHOOTING_VALIDATION.md):
+- [TROUBLESHOOTING_VALIDATION.md](docs/TROUBLESHOOTING_VALIDATION.md):
   Validation failure diagnosis and recovery flow.
-- [TROUBLESHOOTING_GENERATION_CONFLICTS.md](TROUBLESHOOTING_GENERATION_CONFLICTS.md):
+- [TROUBLESHOOTING_GENERATION_CONFLICTS.md](docs/TROUBLESHOOTING_GENERATION_CONFLICTS.md):
   Generation/scaffolding conflict handling and overwrite safety.
-- [TROUBLESHOOTING_ENVIRONMENT.md](TROUBLESHOOTING_ENVIRONMENT.md):
+- [TROUBLESHOOTING_ENVIRONMENT.md](docs/TROUBLESHOOTING_ENVIRONMENT.md):
   Runtime/toolchain troubleshooting for CLI and VS Code workflows.
-- [TASK_RECIPES.md](TASK_RECIPES.md): Common GUI/CLI task mapping for
+- [TASK_RECIPES.md](docs/TASK_RECIPES.md): Common GUI/CLI task mapping for
   daily workflows.
-- [TEST_MATRIX.md](TEST_MATRIX.md): Test coverage map by surface and
+- [TEST_MATRIX.md](docs/TEST_MATRIX.md): Test coverage map by surface and
   test type.
-- [COMPATIBILITY_RULES.md](COMPATIBILITY_RULES.md): Backward
+- [COMPATIBILITY_RULES.md](docs/COMPATIBILITY_RULES.md): Backward
   compatibility guarantees for schema, generation targets, and CLI
   contracts.
-- [RELEASE_GATES.md](RELEASE_GATES.md): Required release checks for
+- [RELEASE_GATES.md](docs/RELEASE_GATES.md): Required release checks for
   core, LSP, UI, CLI, and docs.
-- [PERFORMANCE_BUDGETS.md](PERFORMANCE_BUDGETS.md): Performance
+- [PERFORMANCE_BUDGETS.md](docs/PERFORMANCE_BUDGETS.md): Performance
   budgets and regression-check guidance.
-- [DEBUG.md](DEBUG.md): Debug support matrix and launch strategy.
+- [DEBUG.md](docs/DEBUG.md): Debug support matrix and launch strategy.
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md): Dev setup, the CLI release flow, and
+  rollback playbook.
+- [EXTENSION_CLI_INTEGRATION.md](docs/EXTENSION_CLI_INTEGRATION.md): How the
+  extension consumes the native `alp` CLI (binary resolution + the in-process vs
+  delegated split).
+- [ALP_IDE_ONBOARDING.md](docs/ALP_IDE_ONBOARDING.md) /
+  [ALP_IDE_SDK_INSTALLATION.md](docs/ALP_IDE_SDK_INSTALLATION.md): IDE Hub
+  onboarding and SDK install flows.
 - [src/README.md](src/README.md): Source module map.
 - [src/lsp/README.md](src/lsp/README.md): LSP module responsibilities.
 - [src/debug/README.md](src/debug/README.md): Debug module boundaries.
@@ -132,10 +136,15 @@ Marketplace; no functionality changed.
 ## Schema-sync
 
 The extension's schema-aware validation depends on
-`alp-sdk-upstream/metadata/schemas/board-config-v1.schema.json`.
+`alp-sdk-upstream/metadata/schemas/board-config-v2.schema.json`.
 That submodule pins to an alp-sdk commit; the extension's
 `package.json::contributes.yamlValidation.url` references the
 exact submodule path.
+
+> **Schema v2 (alp-sdk v0.6+):** `board.yaml` now uses `schema_version: 2`
+> with a per-core `cores:` block replacing the top-level `os:` field.
+> Use the `alp-board-min` or `alp-board-hetero` snippet to get a
+> valid starting point.
 
 When alp-sdk bumps the schema:
 
@@ -155,7 +164,7 @@ pnpm run package  # builds the .vsix against the new schema
 git clone --recurse-submodules https://github.com/alplabai/alp-sdk-vscode.git
 cd alp-sdk-vscode
 pnpm install
-pnpm run compile    # tsc -> out/ (extension) + packages/alp-cli/dist/
+pnpm run compile    # tsc -> out/ (extension) + webview (vp build)
 pnpm test           # compile + lightweight service / adapter tests
 pnpm run package    # vsce package -> alp-sdk-<version>.vsix
 ```
@@ -183,7 +192,7 @@ When changing architecture-sensitive code, prefer keeping this split:
   for presentation and orchestration only
 
 For the full implementation contract, see
-[ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md).
+[ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md).
 
 For slice-level ownership and file conventions, see
 [src/README.md](src/README.md) and each module-local README.

@@ -1,7 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { parseBoardConfig } = require("../packages/alp-core/dist/board/parse.js");
+const {
+  parseBoardConfig,
+} = require("../packages/alp-core/dist/board/parse.js");
 const {
   EDGEAI,
   OBJDET,
@@ -32,7 +34,11 @@ test("parseBoardConfig maps the PRODUCTION example (boot/ota/memory/power/iot)",
   assert.equal(c.cores.m55_hp.iot.wifi, true);
   assert.equal(c.cores.m55_hp.memory.stack_kib, 8);
   assert.equal(c.cores.m55_hp.power.sleep_mode, "standby");
-  assert.deepEqual(c.cores.m55_hp.power.wakeup_sources, ["uart", "gpio", "rtc"]);
+  assert.deepEqual(c.cores.m55_hp.power.wakeup_sources, [
+    "uart",
+    "gpio",
+    "rtc",
+  ]);
   assert.equal(c.boot.method, "mcuboot");
   assert.equal(c.boot.signing.algorithm, "ecdsa_p256");
   assert.equal(c.boot.slots.primary.size_kib, 1024);

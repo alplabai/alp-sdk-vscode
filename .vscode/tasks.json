@@ -1,34 +1,12 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"label": "git-status-before-ui-plan",
-			"type": "shell",
-			"command": "git",
-			"args": [
-				"status",
-				"--short",
-				"--branch"
-			],
-			"group": "build"
-		},
-		{
-			"label": "watch",
-			"type": "shell",
-			"command": "pnpm",
-			"args": [
-				"run",
-				"watch"
-			],
-			"isBackground": true,
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
-			"problemMatcher": "$tsc-watch",
-			"presentation": {
-				"reveal": "never"
-			}
-		}
-	]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "git-status-before-ui-plan",
+      "type": "shell",
+      "command": "git",
+      "args": ["status", "--short", "--branch"],
+      "group": "build"
+    }
+  ]
 }

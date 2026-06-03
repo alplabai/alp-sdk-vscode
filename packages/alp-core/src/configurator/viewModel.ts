@@ -79,7 +79,11 @@ export function buildConfiguratorViewModel(
       group = { family: s.family, soms: [] };
       groups.set(s.family, group);
     }
-    group.soms.push({ sku: s.sku, displayName: s.displayName, preliminary: s.preliminary });
+    group.soms.push({
+      sku: s.sku,
+      displayName: s.displayName,
+      preliminary: s.preliminary,
+    });
   }
 
   let hardware: HardwareCard | null = null;
@@ -89,7 +93,14 @@ export function buildConfiguratorViewModel(
       sku: som.sku,
       displayName: som.displayName,
       silicon: som.silicon,
-      cores: soc ? soc.cores.map((c) => ({ id: c.id, type: c.type, count: c.count, freqMhz: c.freqMhz })) : [],
+      cores: soc
+        ? soc.cores.map((c) => ({
+            id: c.id,
+            type: c.type,
+            count: c.count,
+            freqMhz: c.freqMhz,
+          }))
+        : [],
       preferredBackend: som.preferredBackend,
       defaultBoard: som.defaultBoard,
       onModule: som.onModule,
@@ -99,7 +110,10 @@ export function buildConfiguratorViewModel(
 
   const topoIds = som?.topologyCoreIds ?? [];
   const boardCoreIds = Object.keys(board.cores ?? {});
-  const orderedIds = [...topoIds, ...boardCoreIds.filter((id) => !topoIds.includes(id))];
+  const orderedIds = [
+    ...topoIds,
+    ...boardCoreIds.filter((id) => !topoIds.includes(id)),
+  ];
   const cores: CorePanel[] = orderedIds.map((id) => {
     const core = board.cores?.[id];
     const iot = core?.iot ?? {};
@@ -140,8 +154,14 @@ export function buildConfiguratorViewModel(
     som: { selected, options: [...groups.values()] },
     hardware,
     accelerators: som ? acceleratorAvailability(som) : [],
-    boardMode: board.populated !== undefined || board.e1m_routes !== undefined ? "inline" : "preset",
-    carriers: { selected: board.preset, options: boardsForSom(catalogue, selected) },
+    boardMode:
+      board.populated !== undefined || board.e1m_routes !== undefined
+        ? "inline"
+        : "preset",
+    carriers: {
+      selected: board.preset,
+      options: boardsForSom(catalogue, selected),
+    },
     cores,
     libraries: catalogue.libraries.map((l) => l.id),
     chips,

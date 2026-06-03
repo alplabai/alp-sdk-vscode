@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    DebugGenerationTraceReport,
-    DebugInspectReport,
-    DebugPreflightReport,
-    DebugServerKind,
-    DebugTargetKind,
-    DoctorReport,
+  DebugGenerationTraceReport,
+  DebugInspectReport,
+  DebugPreflightReport,
+  DebugServerKind,
+  DebugTargetKind,
+  DoctorReport,
 } from "./models";
 
 export interface DebugTroubleshootingPanelHtmlInput {

@@ -1,8 +1,8 @@
 {
-  "Minimum-viable board.yaml": {
+  "Minimum-viable board.yaml (v2)": {
     "prefix": "alp-board-min",
     "body": [
-      "schema_version: 1",
+      "schema_version: 2",
       "",
       "som:",
       "  sku: ${1|E1M-AEN301,E1M-AEN401,E1M-AEN501,E1M-AEN601,E1M-AEN701,E1M-AEN801,E1M-V2N101,E1M-V2N102,E1M-V2M101,E1M-V2M102,E1M-NX9101|}",
@@ -10,12 +10,44 @@
       "carrier:",
       "  name: ${2|E1M-EVK,E1M-X-EVK|}",
       "",
-      "os: ${3|zephyr,yocto,baremetal|}",
+      "cores:",
+      "  ${3:a55_cluster}:",
+      "    os: ${4|yocto,zephyr,baremetal,off|}",
+      "    image: ${5:alp-image-edge}",
       "",
       "diagnostics:",
-      "  log_level: ${4|error,warn,info,debug,trace|}"
+      "  log_level: ${6|error,warn,info,debug,trace|}"
     ],
-    "description": "Smallest board.yaml that compiles cleanly via scripts/alp_project.py."
+    "description": "Smallest board.yaml (schema v2) with per-core `cores:` block. Keys are canonical core IDs from the SoM preset's topology (e.g. a55_cluster, m33_sm, m55_hp, m55_he)."
+  },
+  "Heterogeneous multi-core board.yaml (v2)": {
+    "prefix": "alp-board-hetero",
+    "body": [
+      "schema_version: 2",
+      "",
+      "som:",
+      "  sku: ${1|E1M-V2N101,E1M-V2N102,E1M-AEN701,E1M-AEN801|}",
+      "",
+      "carrier:",
+      "  name: ${2|E1M-EVK,E1M-X-EVK|}",
+      "",
+      "cores:",
+      "  ${3:a55_cluster}:",
+      "    os: yocto",
+      "    image: alp-image-edge",
+      "  ${4:m33_sm}:",
+      "    os: zephyr",
+      "    app: ${5:apps/zephyr-peer}",
+      "",
+      "ipc:",
+      "  - name: ${6:main_rpmsg}",
+      "    endpoints: [${3:a55_cluster}, ${4:m33_sm}]",
+      "    size_kib: ${7:64}",
+      "",
+      "diagnostics:",
+      "  log_level: ${8|info,debug,warn,error,trace|}"
+    ],
+    "description": "Heterogeneous dual-core board.yaml (schema v2): A-cluster (Yocto) + M-class (Zephyr) with RPMsg IPC carve-out."
   },
   "Carrier populated-override block": {
     "prefix": "alp-carrier-populated",
@@ -27,32 +59,51 @@
     ],
     "description": "Override the carrier preset's populated defaults (per-chip true/false)."
   },
-  "Inference backend block": {
+  "Per-core inference backend block (v2)": {
     "prefix": "alp-inference",
     "body": [
-      "inference:",
-      "  backend: ${1|auto,cpu,ethos_u,drpai,deepx_dx|}",
-      "  default_arena_kib: ${2:128}"
+      "cores:",
+      "  ${1:m55_hp}:",
+      "    os: ${2|zephyr,baremetal|}",
+      "    inference:",
+      "      backend: ${3|auto,cpu,ethos_u,drpai,deepx_dx|}",
+      "      default_arena_kib: ${4:128}"
     ],
-    "description": "Pick an inference backend explicitly (defaults to the SoM preset's preferred_backend)."
+    "description": "Inference backend declared per-core inside the cores: block (schema v2). Use the canonical core ID that runs inference (e.g. m55_hp, m55_he)."
   },
-  "IoT feature toggles": {
+  "Per-core IoT feature toggles (v2)": {
     "prefix": "alp-iot",
     "body": [
-      "iot:",
-      "  wifi: ${1|true,false|}",
-      "  mqtt: ${2|true,false|}",
-      "  ble:  ${3|true,false|}",
-      "  tls:  ${4|true,false|}"
+      "cores:",
+      "  ${1:a55_cluster}:",
+      "    os: ${2|yocto,zephyr|}",
+      "    iot:",
+      "      wifi: ${3|true,false|}",
+      "      mqtt: ${4|true,false|}",
+      "      ble:  ${5|true,false|}",
+      "      tls:  ${6|true,false|}"
     ],
-    "description": "Enable Wi-Fi / MQTT / BLE / TLS feature paths."
+    "description": "IoT feature toggles declared per-core inside the cores: block (schema v2)."
   },
-  "Libraries enable list": {
+  "Per-core libraries enable list (v2)": {
     "prefix": "alp-libraries",
     "body": [
-      "libraries:",
-      "  - ${1|etl,fmt,nlohmann_json,doctest,lvgl,mbedtls,cmsis_dsp,littlefs|}"
+      "cores:",
+      "  ${1:m33_sm}:",
+      "    os: ${2|zephyr,baremetal|}",
+      "    libraries:",
+      "      - ${3|etl,fmt,nlohmann_json,doctest,lvgl,mbedtls,cmsis_dsp,littlefs|}"
     ],
-    "description": "Make a user-facing library available with the SDK's compile-time profile applied."
+    "description": "Libraries declared per-core inside the cores: block (schema v2)."
+  },
+  "IPC carve-out block (v2)": {
+    "prefix": "alp-ipc",
+    "body": [
+      "ipc:",
+      "  - name: ${1:main_rpmsg}",
+      "    endpoints: [${2:a55_cluster}, ${3:m33_sm}]",
+      "    size_kib: ${4:64}"
+    ],
+    "description": "Cross-core IPC shared-memory carve-out (schema v2). Addresses are computed deterministically by the orchestrator from the SoM preset's memory_map."
   }
 }

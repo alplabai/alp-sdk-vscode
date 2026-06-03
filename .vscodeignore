@@ -8,13 +8,32 @@ test/**
 **/*.ts
 **/*.map
 
+node_modules/**
+packages/**
+alp-sdk-upstream/**
+dist/**
+scripts/**
+cli-rs/**
+
+# Keep ALP IDE webview runtime bundle in the packaged extension.
+!packages/alp-webview/dist/
+!packages/alp-webview/dist/**
+!packages/alp-webview/dist/main.js
+
 .gitignore
 .gitmodules
 tsconfig.json
+tsconfig.tsbuildinfo
 package-lock.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
 
-BACKLOG.md
-CLI.md
-DEBUG.md
-PLAN.md
-ARCHITECTURE_RULES.md
+docs/**
+CLAUDE.md
+readme.md
+
+packages/alp-webview/node_modules/**
+packages/alp-core/node_modules/**
+packages/**/src/**
+packages/**/vite.config.*
+packages/**/tsconfig*

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import {
+  analyzeValidationResult,
+  createValidatorPlan,
+  isBoardYamlPath,
+} from "@alp-sdk/core/validation/service";
 import * as vscode from "vscode";
 import { log } from "./util";
 import {
-    analyzeValidationResult,
-    createValidatorPlan,
-    isBoardYamlPath,
-} from "@alp-sdk/core/validation/service";
-import {
-    collectValidationWorkspaceContext,
-    executeValidatorPlan,
+  collectValidationWorkspaceContext,
+  executeValidatorPlan,
 } from "./validation/vscodeAdapter";
 
 /**
@@ -29,13 +29,12 @@ import {
  * carrier preset without inline `populated`, and the v0.3
  * hw_rev / SDK-version compatibility window.
  *
- * Line ranges: the validator emits text like
- *     `FAIL som preset: no preset for E1M-NX9999 at ...`
- * without a column.  We attach all entries to line 1 of the
- * document so the user gets a Problems-panel summary; opening the
- * file shows a single squiggle on the first line linking to the
- * full text.  Targeted ranges per field land in v0.4 when we add
- * a YAML AST parser (js-yaml-ast or similar) to map field paths.
+ * Line ranges: the legacy validator emits `FAIL <category>: <message>`
+ * without column info, so those attach to line 1.  The rich ALP-B*
+ * validator (`alp_cli/validator.py`) includes file:line:col coordinates
+ * and diagnostic codes (ALP-B001..B010) that appear as clickable links
+ * in the Problems panel.  The `suggestion` severity maps to
+ * `DiagnosticSeverity.Information` (blue underline) in VS Code.
  */
 
 function isBoardYaml(doc: vscode.TextDocument): boolean {
@@ -62,19 +61,45 @@ function validate(
     return;
   }
 
-  // Pin everything to line 0 -- columnless validator output, so a
-  // single squiggle on the first line is the honest representation.
   const range = new vscode.Range(0, 0, 0, doc.lineAt(0).text.length);
-  const diags = validation.issues.map(
-    (issue) =>
-      new vscode.Diagnostic(
-        range,
-        issue.message,
-        issue.severity === "warning"
-          ? vscode.DiagnosticSeverity.Warning
+  const diags = validation.issues.map((issue) => {
+    // Use pinpointed location when the rich validator provides line/col.
+    const diagRange =
+      issue.line !== undefined && issue.col !== undefined
+        ? (() => {
+            const zeroLine = issue.line! - 1;
+            const zeroCol = issue.col! - 1;
+            const lineText =
+              zeroLine < doc.lineCount ? doc.lineAt(zeroLine).text : "";
+            return new vscode.Range(
+              zeroLine,
+              zeroCol,
+              zeroLine,
+              lineText.length,
+            );
+          })()
+        : range;
+
+    const diag = new vscode.Diagnostic(
+      diagRange,
+      issue.message,
+      issue.severity === "warning"
+        ? vscode.DiagnosticSeverity.Warning
+        : issue.severity === "suggestion"
+          ? vscode.DiagnosticSeverity.Information
           : vscode.DiagnosticSeverity.Error,
-      ),
-  );
+    );
+
+    if (issue.code) {
+      diag.code = {
+        value: issue.code,
+        target: vscode.Uri.parse(
+          `https://github.com/alplabai/alp-sdk/blob/main/docs/diagnostics/${issue.code}.md`,
+        ),
+      };
+    }
+    return diag;
+  });
   collection.set(doc.uri, diags);
 }
 

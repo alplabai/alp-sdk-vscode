@@ -1,36 +1,69 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { BoardConfig } from "../board/models";
-import { ConfiguratorViewModel } from "./viewModel";
-
-export interface RenderPayload {
-  type: "render";
-  viewModel: ConfiguratorViewModel;
-  board: BoardConfig;
-  boardPath: string;
-  sdkConnected: boolean;
-  theme: "brand" | "vscode";
+export interface CoreEntry {
+  os: "zephyr" | "yocto" | "baremetal" | "off";
+  app?: string;
+  image?: string;
+  peripherals?: string[];
+  libraries?: string[];
+  inference?: { backend?: string; default_arena_kib?: number };
+  iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
 }
 
-export interface SavedPayload {
+export interface IpcCarveOut {
+  name: string;
+  endpoints: string[];
+  size_kib: number;
+}
+
+export interface BoardModel {
+  schema_version: number;
+  som: { sku: string };
+  carrier?: { name: string; populated?: Record<string, boolean> };
+  /** v1 only. Absent in schema_version >= 2 (use `cores` instead). */
+  os?: string;
+  /** v2 only. Per-core runtime + app mapping. */
+  cores?: Record<string, CoreEntry>;
+  /** v2 only. Cross-core IPC shared-memory carve-outs. */
+  ipc?: IpcCarveOut[];
+  inference?: { backend?: string; default_arena_kib?: number };
+  libraries?: string[];
+  iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
+  diagnostics?: { last_error?: boolean; log_level?: string };
+  [key: string]: unknown;
+}
+
+export interface CarrierPreset {
+  name: string;
+  populated: Record<string, boolean>;
+}
+
+export interface PresetCatalogue {
+  skus: string[];
+  carriers: CarrierPreset[];
+  libraries: string[];
+  inferenceBackends: string[];
+  logLevels: string[];
+  osChoices: string[];
+}
+
+export interface ConfiguratorInitPayload {
+  type: "init";
+  model: BoardModel;
+  catalogue: PresetCatalogue;
+  boardPath: string;
+}
+
+export interface ConfiguratorSavedPayload {
   type: "saved";
   boardPath: string;
 }
 
-export type ConfiguratorOutboundMessage = RenderPayload | SavedPayload;
+export type ConfiguratorOutboundMessage =
+  | ConfiguratorInitPayload
+  | ConfiguratorSavedPayload;
 
-export interface UpdateMessage {
-  type: "update";
-  board: BoardConfig;
+export interface ConfiguratorInboundMessage {
+  type: string;
+  payload?: BoardModel;
 }
-
-export interface CommandMessage {
-  type: "save" | "reload" | "previewEffectiveConfig";
-}
-
-export interface SetThemeMessage {
-  type: "setTheme";
-  theme: "brand" | "vscode";
-}
-
-export type ConfiguratorInboundMessage = UpdateMessage | CommandMessage | SetThemeMessage;

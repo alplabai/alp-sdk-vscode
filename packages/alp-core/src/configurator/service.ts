@@ -1,32 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as yaml from "js-yaml";
-
-// Legacy v0.5 types — kept for the old vscodeAdapter only; not re-exported from index.
-export interface BoardModel {
-  schema_version: number;
-  som: { sku: string };
-  carrier?: { name: string; populated?: Record<string, boolean> };
-  os: string;
-  inference?: { backend?: string; default_arena_kib?: number };
-  libraries?: string[];
-  iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
-  diagnostics?: { last_error?: boolean; log_level?: string };
-}
-
-export interface CarrierPreset {
-  name: string;
-  populated: Record<string, boolean>;
-}
-
-export interface PresetCatalogue {
-  skus: string[];
-  carriers: CarrierPreset[];
-  libraries: string[];
-  inferenceBackends: string[];
-  logLevels: string[];
-  osChoices: string[];
-}
+import { BoardModel, PresetCatalogue } from "./models";
 
 export function createEmptyPresetCatalogue(): PresetCatalogue {
   return {
@@ -78,31 +53,39 @@ export function createBoardYaml(model: BoardModel): string {
 export function normalizeBoardModel(model: BoardModel): BoardModel {
   const normalized = JSON.parse(JSON.stringify(model)) as BoardModel;
 
-  if (normalized.libraries && normalized.libraries.length === 0) {
-    delete normalized.libraries;
-  }
+  // v1: clean up empty top-level optional blocks
+  if (normalized.schema_version < 2) {
+    if (normalized.libraries && normalized.libraries.length === 0) {
+      delete normalized.libraries;
+    }
 
-  if (normalized.iot) {
-    const hasEnabledIoTFlag = Object.values(normalized.iot).some(
-      (value) => value === true,
-    );
-    if (!hasEnabledIoTFlag) {
-      delete normalized.iot;
+    if (normalized.iot) {
+      const hasEnabledIoTFlag = Object.values(normalized.iot).some(
+        (value) => value === true,
+      );
+      if (!hasEnabledIoTFlag) {
+        delete normalized.iot;
+      }
+    }
+
+    if (
+      normalized.inference &&
+      !normalized.inference.backend &&
+      normalized.inference.default_arena_kib === undefined
+    ) {
+      delete normalized.inference;
+    }
+
+    if (normalized.carrier?.populated) {
+      if (Object.keys(normalized.carrier.populated).length === 0) {
+        delete normalized.carrier.populated;
+      }
     }
   }
 
-  if (
-    normalized.inference &&
-    !normalized.inference.backend &&
-    normalized.inference.default_arena_kib === undefined
-  ) {
-    delete normalized.inference;
-  }
-
-  if (normalized.carrier?.populated) {
-    if (Object.keys(normalized.carrier.populated).length === 0) {
-      delete normalized.carrier.populated;
-    }
+  // v2: top-level os: has no meaning — remove it if present
+  if (normalized.schema_version >= 2 && normalized.os !== undefined) {
+    delete normalized.os;
   }
 
   return normalized;

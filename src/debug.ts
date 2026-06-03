@@ -3,30 +3,30 @@
 import * as vscode from "vscode";
 import { createLaunchJsonWritePlan } from "@alp-sdk/core/debug/launchJsonCore";
 import {
-    DebugGenerationTraceDecision,
-    DebugServerKind,
-    DebugTargetKind,
+  DebugGenerationTraceDecision,
+  DebugServerKind,
+  DebugTargetKind,
 } from "@alp-sdk/core/debug/models";
 import { createDebugTroubleshootingPanelHtml } from "@alp-sdk/core/debug/panelHtml";
 import {
-    buildDebugPreflightReport,
-    buildDoctorReport,
-    createDebugProfile,
-    createGenerationTraceReport,
-    createInspectReport,
-    createLaunchPreview,
-    createSupportBundlePayload,
-    DEBUG_TARGET_CHOICES,
-    serializeSupportBundlePayload,
-    serverChoicesForTarget,
+  buildDebugPreflightReport,
+  buildDoctorReport,
+  createDebugProfile,
+  createGenerationTraceReport,
+  createInspectReport,
+  createLaunchPreview,
+  createSupportBundlePayload,
+  DEBUG_TARGET_CHOICES,
+  serializeSupportBundlePayload,
+  serverChoicesForTarget,
 } from "@alp-sdk/core/debug/service";
 import {
-    collectRuntimeCapabilities,
-    collectWorkspaceDebugContext,
-    fileExists,
-    readLaunchJson,
-    writeLaunchJson,
-    writeSupportBundle,
+  collectRuntimeCapabilities,
+  collectWorkspaceDebugContext,
+  fileExists,
+  readLaunchJson,
+  writeLaunchJson,
+  writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { log, showOutput } from "./util";

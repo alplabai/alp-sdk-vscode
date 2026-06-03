@@ -1,8 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { parseBoardConfig } = require("../packages/alp-core/dist/board/parse.js");
-const { serializeBoardConfig } = require("../packages/alp-core/dist/board/serialize.js");
+const {
+  parseBoardConfig,
+} = require("../packages/alp-core/dist/board/parse.js");
+const {
+  serializeBoardConfig,
+} = require("../packages/alp-core/dist/board/serialize.js");
 const {
   EDGEAI,
   OBJDET,

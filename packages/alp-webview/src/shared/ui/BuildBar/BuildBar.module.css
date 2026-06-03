@@ -1,0 +1,13 @@
+.buildBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px var(--space-5);
+  background: var(--surface-section-header);
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+}
+
+/* Stretch the primary Build button, keep Flash and Sim compact */
+.buildBar > *:first-child {
+  flex: 1;
+}

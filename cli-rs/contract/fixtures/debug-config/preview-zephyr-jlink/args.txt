@@ -1,0 +1,1 @@
+--preview --project contract/fixtures/debug-config/preview-zephyr-jlink --target-kind zephyr-mcu --server jlink

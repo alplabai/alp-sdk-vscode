@@ -3,9 +3,9 @@
 import * as fs from "fs";
 import * as vscode from "vscode";
 import {
-    ProjectContext,
-    ProjectResolutionInput,
-    ProjectSettings,
+  ProjectContext,
+  ProjectResolutionInput,
+  ProjectSettings,
 } from "@alp-sdk/core/project/models";
 import { resolveProjectContext } from "@alp-sdk/core/project/service";
 
