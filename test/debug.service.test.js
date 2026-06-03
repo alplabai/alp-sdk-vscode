@@ -13,7 +13,7 @@ const {
   serializeInspectReport,
   serializeSupportBundlePayload,
   serverChoicesForTarget,
-} = require("../out/debug/service.js");
+} = require("../packages/alp-core/dist/debug/service.js");
 
 function createDebugContext(overrides = {}) {
   return {

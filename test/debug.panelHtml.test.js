@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   createDebugTroubleshootingPanelHtml,
-} = require("../out/debug/panelHtml.js");
+} = require("../packages/alp-core/dist/debug/panelHtml.js");
 
 test("createDebugTroubleshootingPanelHtml includes sections and command links", () => {
   const html = createDebugTroubleshootingPanelHtml({
