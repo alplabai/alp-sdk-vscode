@@ -10,8 +10,10 @@ toolchain bootstrap, code generation (Zephyr conf / DTS overlay / CMake args / Y
 conf), and `west build/flash/run` workflows. Targets Alif, Renesas, NXP across Zephyr,
 Yocto, and baremetal.
 
-A standalone CLI (`alp`) ships separately to npm. A Rust rewrite of that CLI is in
-progress under `cli-rs/` (see "Rust CLI migration" below).
+A standalone CLI (`alp`) ships separately. It is the **native Rust binary** under
+`cli-rs/` (distributed via GitHub releases + the `cli-rs/npm-shim` npm package).
+The former TypeScript CLI (`packages/alp-cli`) has been **retired** — the Rust CLI
+is the sole implementation (see "Rust CLI migration" below).
 
 ## Repo layout
 
@@ -21,8 +23,8 @@ This is a **pnpm monorepo** + a separate **Rust workspace** + a **git submodule*
 src/                      VS Code extension host (TypeScript). Entry: src/extension.ts
 packages/alp-core/        Shared domain logic (pure). Published as @alp-sdk/core (workspace:*)
 packages/alp-webview/     Activity Bar UI — React 19 + Vite, builds to dist/main.{js,css}
-packages/alp-cli/         The TypeScript CLI published to npm (@alp-sdk/cli)
-cli-rs/                   Rust rewrite of the CLI (own Cargo workspace, NOT in the VSIX)
+cli-rs/                   The native `alp` CLI (own Cargo workspace, NOT in the VSIX).
+                          Replaced the retired TypeScript packages/alp-cli.
 alp-sdk-upstream/         git submodule (github.com/alplabai/alp-sdk) — source of truth for
                           board.yaml JSON schemas referenced by package.json yamlValidation
 test/                     Node-native tests (node --test). test/golden/ holds snapshots
@@ -39,7 +41,7 @@ esbuild (extension bundle), Vite (webview, invoked as `vp build`), `vsce` (packa
 
 ```bash
 pnpm install --frozen-lockfile      # always; submodule schemas needed for full build
-pnpm run compile                    # tsc --build + alp-cli compile + webview (vp build)
+pnpm run compile                    # tsc --build + webview (vp build)
 pnpm test                           # compiles, then node --test test/*.test.js
 pnpm run bundle:ext                 # esbuild src/extension.ts + src/lsp/server.ts -> out/
 pnpm run package                    # full prepublish build, then vsce package --no-dependencies
@@ -98,18 +100,23 @@ The JSON schema for `board.yaml` is **not** stored here — it comes from the
 in `package.json` `contributes.yamlValidation`). Run `git submodule update --init` before
 a full build, or the schema reference and CI schema-sync check will fail.
 
-## Rust CLI migration (cli-rs/)
+## Rust CLI (cli-rs/) — the `alp` binary
 
-Schema-first rewrite of `packages/alp-cli`. The two CLIs share **no code**; parity is
-guaranteed by a shared `cli-rs/contract/board.schema.json` + golden fixtures + a
-conformance suite run against both (gated in CI). The JSON output envelope is byte-for-byte
-fixed and exit codes are stable (0 success, 1 runtime, 2 validation, 3 write, 4 doctor,
-5 internal). See `cli-rs/PLAN.md` for the 8-phase roadmap.
+`cli-rs/` is the native `alp` CLI: a schema-first Rust rewrite that **replaced** the
+former TypeScript `packages/alp-cli` (now retired). The JSON output envelope is
+byte-for-byte fixed and exit codes are stable (0 success, 1 runtime, 2 validation,
+3 write, 4 doctor, 5 internal). Parity is gated by `cli-rs/contract/run.sh`, which now
+compares the Rust binary against **committed golden fixtures** (the TS reference is gone;
+one small `offline-validate-ts.mjs` cross-checks the offline validator against
+`@alp-sdk/core`). See `cli-rs/PLAN.md` for the roadmap.
 
-Status (phases 0–4 done): `validate`, `generate`, `init`, `scaffold` ported (4 of 14
-commands). Next (phase 5): `doctor`, full `validate` with Python SDK spawn, and the
-remaining commands. The Python-spawn strategy (shell vs napi-rs) is still undecided.
-Until cutover (phase 7), npm continues to ship the TypeScript CLI.
+Status: all 14 commands ported + the orchestration surface (`bootstrap`, `build`/`image`/
+`flash`/`clean`/`renode`, `doctor --build`). First release `cli-rs-v0.1.0` (GitHub
+archives for linux-x64 / macOS-arm64 / windows-x64). Distributed via the
+`cli-rs/npm-shim` package (`alp-sdk`) + the VS Code extension's binary resolver
+(`src/alpCli/`, setting `alpSdk.cliPath` → PATH → download-on-demand). The extension now
+invokes the CLI for bootstrap/build (terminal) and validate/generate/sdk-list (envelope);
+host-coupled debug commands stay in-process (see EXTENSION_CLI_INTEGRATION.md §4a).
 
 ## Conventions
 

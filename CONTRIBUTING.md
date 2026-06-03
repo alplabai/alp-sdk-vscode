@@ -18,7 +18,7 @@
 git clone --recurse-submodules https://github.com/alplabai/alp-sdk-vscode.git
 cd alp-sdk-vscode
 pnpm install
-pnpm run compile        # tsc + alp-cli tsc + vite
+pnpm run compile        # tsc + vite (the alp CLI builds separately from cli-rs/)
 node --test test/*.test.js
 ```
 
@@ -63,28 +63,26 @@ Before merging any change that bumps the major version:
 
 ## Releasing the CLI
 
-### Automated (recommended)
+The CLI is the native Rust binary in `cli-rs/`.
 
-1. Bump the version in `packages/alp-cli/package.json`.
-2. Update `CHANGELOG.md`.
-3. Commit and push to `main`.
+1. Bump the version in **both** `cli-rs/Cargo.toml` and
+   `cli-rs/npm-shim/package.json` (keep them equal) and refresh `cli-rs/Cargo.lock`.
+2. Update `cli-rs/CHANGELOG.md`.
+3. Commit and push.
 4. Create and push a tag:
 
    ```bash
-   git tag cli-v<version>
-   git push origin cli-v<version>
+   git tag cli-rs-v<version>
+   git push origin cli-rs-v<version>
    ```
 
-The `release-cli.yml` workflow triggers automatically, runs contract and smoke tests, publishes with provenance to npm under the `latest` dist-tag, and then verifies the published version with `npx`.
+The `release-cli-rs.yml` workflow triggers automatically and attaches
+`alp-<target>.tar.gz` archives (linux-x64, macOS-arm64, windows-x64) to the
+GitHub release. Publishing the npm shim is a separate manual step:
 
-### Manual (workflow_dispatch)
-
-Trigger the `release-cli` workflow from the GitHub Actions UI:
-
-- Set **Publish** to `true`.
-- Choose a dist-tag (`next` or `latest`).
-
-The workflow will bundle, test, publish, and verify the package.
+```bash
+cd cli-rs/npm-shim && npm publish     # alp-sdk@<version>; postinstall fetches the archive
+```
 
 ---
 
@@ -96,8 +94,8 @@ The workflow will bundle, test, publish, and verify the package.
 
    ```bash
    # Bump patch in package.json, then:
-   git tag cli-v<corrected>
-   git push origin cli-v<corrected>
+   git tag cli-rs-v<corrected>
+   git push origin cli-rs-v<corrected>
    ```
 
 2. Deprecate the bad version with a clear message:
@@ -160,15 +158,11 @@ npx alp-sdk@0.3.0 --help
 ### For developers (local from source)
 
 ```bash
-pnpm --filter alp-sdk run bundle       # build the esbuild bundle
-node packages/alp-cli/dist/cli/main.js --help
+cargo build --release --manifest-path cli-rs/Cargo.toml
+cli-rs/target/release/alp --help
 ```
 
-Or use the npm script shortcut:
-
-```bash
-pnpm --filter alp-sdk run cli -- --help
-```
+Point the VS Code extension at a local build via the `alpSdk.cliPath` setting.
 
 ### For CI agents
 

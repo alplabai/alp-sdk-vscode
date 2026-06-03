@@ -196,8 +196,19 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
   (sdk install is a bespoke webview/terminal git-clone flow; sdk switch is a
   cheap local fs pointer write). `previewEffectiveConfig` stays in-process (live
   configurator, §4).
-- **B4 — shrink + retire.** Trim `@alp-sdk/core` to the LSP + live-configurator
-  subset; retire `packages/alp-cli`.
+- **B4 — retire the TS CLI. ✅ done (retire); core shrink = n/a.** Inventory found
+  the extension (`src/`) imports **nearly all** of `@alp-sdk/core` (board,
+  boardSummary, configurator, the whole debug domain [in-process per §4a], loader,
+  project, sdk, sdkCatalogue, toolchain, validation, west, wizard), and every core
+  module `packages/alp-cli` used is also used by `src/` — so retiring the TS CLI
+  frees **zero** core modules. Core stays as-is; "shrink to LSP + configurator"
+  isn't achievable (the extension legitimately needs the rest). **Deleted
+  `packages/alp-cli`** (+ its `test/cli.*.test.js`, the `cli:pack`/`cli:smoke`
+  scripts + `scripts/ci/smoke-cli.sh`, and the build-script filters). The contract
+  harness is unaffected — it compares the Rust binary against committed goldens
+  (the only TS bit, `offline-validate-ts.mjs`, reads `@alp-sdk/core`, not alp-cli).
+  Safe because `alp-sdk` was never published to npm. The Rust `alp` is now the sole
+  CLI.
 
 ## 6a. `alp build` — the build flow varies by platform (and by core)
 

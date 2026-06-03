@@ -5,9 +5,9 @@ Last revised: 2026-05-14
 This document defines the intended contract for the ALP command-line
 surface.
 
-> **Implementation note (migration in progress).** The CLI is moving from the
-> TypeScript implementation (`packages/alp-cli`) to a native Rust binary
-> (`cli-rs/`, the `alp` binary). The Rust binary is feature-complete — all
+> **Implementation note.** The CLI is the native Rust binary (`cli-rs/`, the
+> `alp` binary); the former TypeScript implementation (`packages/alp-cli`) has
+> been retired. The Rust binary is feature-complete — all
 > commands below are ported and held byte-for-byte compatible with this contract
 > by the `cli-rs/contract` harness. This document is the single contract for both
 > implementations; the published `alp-sdk` npm package flips to the native binary

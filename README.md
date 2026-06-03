@@ -37,10 +37,9 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 ├── pnpm-workspace.yaml      -- pnpm workspace config
 ├── tsconfig.json
 ├── packages/
-│   ├── alp-core/            -- @alp-sdk/core: shared domain logic
-│   │   └── src/             -- board, configurator, sdk, wizard, ...
-│   └── alp-cli/             -- alp-sdk: standalone CLI (esbuild bundle)
-│       └── src/cli/         -- commands, services, arg parsing
+│   └── alp-core/            -- @alp-sdk/core: shared domain logic
+│       └── src/             -- board, configurator, sdk, wizard, ...
+├── cli-rs/                  -- the native `alp` CLI (Rust; replaced packages/alp-cli)
 ├── src/                     -- VS Code extension TypeScript source
 │   ├── README.md            -- source folder/module guide
 │   ├── extension.ts         -- activation entry point
@@ -160,7 +159,7 @@ pnpm run package  # builds the .vsix against the new schema
 git clone --recurse-submodules https://github.com/alplabai/alp-sdk-vscode.git
 cd alp-sdk-vscode
 pnpm install
-pnpm run compile    # tsc -> out/ (extension) + packages/alp-cli/dist/
+pnpm run compile    # tsc -> out/ (extension) + webview (vp build)
 pnpm test           # compile + lightweight service / adapter tests
 pnpm run package    # vsce package -> alp-sdk-<version>.vsix
 ```

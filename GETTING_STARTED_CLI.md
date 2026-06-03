@@ -39,24 +39,22 @@ For air-gapped or offline environments, download the tarball from the
 and install from the local file:
 
 ```bash
-npm install -g ./alp-sdk-0.3.0.tgz
+npm install -g alp-sdk          # the npm shim downloads the matching release binary
 ```
 
-Once installed, replace `node ./packages/alp-cli/dist/cli/main.js` with `alp`
-in all commands below.
+The `alp` command below is the native Rust binary. For development from source,
+substitute `cli-rs/target/release/alp`.
 
 ## 1. Prerequisites
 
-- Node.js 20+
 - Project folder with board.yaml
 - ALP SDK root containing scripts/alp_project.py
-- For development from source: compiled CLI at `packages/alp-cli/dist/cli/main.js`
+- For development from source: Rust toolchain (the binary is built from `cli-rs/`)
 
 ## 2. Build CLI Artifacts (development from source)
 
 ```bash
-pnpm install
-pnpm run compile
+cargo build --release --manifest-path cli-rs/Cargo.toml   # -> cli-rs/target/release/alp
 ```
 
 ## 3. Validate Project Config
@@ -74,7 +72,7 @@ alp validate --project . --sdk-root ../alp-sdk --format json > validate-report.j
 Development from source:
 
 ```bash
-node ./packages/alp-cli/dist/cli/main.js validate --project . --sdk-root ../alp-sdk
+cli-rs/target/release/alp validate --project . --sdk-root ../alp-sdk
 ```
 
 ## 4. Generate Derived Outputs

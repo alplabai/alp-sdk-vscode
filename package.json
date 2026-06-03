@@ -331,15 +331,13 @@
     }
   },
   "scripts": {
-    "compile": "tsc --build && pnpm --filter ./packages/alp-cli run compile && vp build",
+    "compile": "tsc --build && vp build",
     "compile:watch": "tsc --build --watch",
     "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
-    "cli:pack": "pnpm run compile && pnpm --filter ./packages/alp-cli run cli:pack",
-    "cli:smoke": "bash ./scripts/ci/smoke-cli.sh",
     "test": "pnpm run compile && node --test test/*.test.js",
     "install:vscode": "bash ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",
-    "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm --filter ./packages/alp-cli run compile && pnpm run bundle:ext",
+    "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm run bundle:ext",
     "package": "pnpm run vscode:prepublish && vsce package --no-dependencies",
     "package:dev": "pnpm run vscode:prepublish && vsce package --no-dependencies --pre-release",
     "format": "prettier --write .",
