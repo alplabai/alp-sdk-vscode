@@ -95,12 +95,13 @@ Webview styling: CSS Modules + design tokens in `src/styles/tokens.css` + VS Cod
 
 ## board.yaml schema source
 
-The board schema's source of truth is the `alp-sdk-upstream` submodule
-(`metadata/schemas/board.schema.json`). It is **vendored** into `schemas/board.schema.json`
-(a verbatim copy) so it ships in the VSIX — `package.json` `contributes.yamlValidation`
-points at the vendored path, and CI's schema-sync check `cmp`s the two so they can't
-drift. Run `git submodule update --init` before a full build; after bumping the submodule,
-re-vendor with `cp alp-sdk-upstream/metadata/schemas/board.schema.json schemas/board.schema.json`.
+The board schema ships **vendored** at `schemas/board.schema.json` (so it's in the
+VSIX — `alp-sdk-upstream/**` is excluded). It is derived from the `alp-sdk-upstream`
+submodule's board schema; `package.json` `contributes.yamlValidation` points at the
+vendored path. Presence + structure are enforced by `test/board.schema.vendored.test.js`
+and the CI "vendored schema" step. After bumping the submodule, re-vendor by copying its
+board schema over `schemas/board.schema.json` (the submodule's filename has varied across
+versions — `board.schema.json` / `board-config-v2.schema.json`).
 
 ## Rust CLI (cli-rs/) — the `alp` binary
 

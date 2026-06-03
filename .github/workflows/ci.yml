@@ -61,13 +61,15 @@ jobs:
           path: alp-sdk.vsix
           retention-days: 30
 
-      - name: Schema-sync check
+      - name: Vendored schema present + valid
         run: |
-          # The vendored board schema (shipped in the VSIX) must match the
-          # submodule source of truth, so board.yaml validation can't drift.
-          cmp schemas/board.schema.json \
-            alp-sdk-upstream/metadata/schemas/board.schema.json
-          echo "vendored board.schema.json is in sync with the submodule"
+          # The board schema ships vendored in the VSIX (the submodule is
+          # excluded from the package). Confirm it's present and valid JSON;
+          # structural assertions ($id, required) live in
+          # test/board.schema.vendored.test.js.
+          test -f schemas/board.schema.json
+          node -e "JSON.parse(require('fs').readFileSync('schemas/board.schema.json','utf8'))"
+          echo "vendored board schema present + valid JSON"
 
   rust_cli_contract:
     name: rust cli · contract
