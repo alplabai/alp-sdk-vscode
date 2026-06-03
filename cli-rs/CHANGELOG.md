@@ -12,6 +12,15 @@ same version.
 
 ## Unreleased
 
+## 0.1.2
+
+- **`alp presets` now returns rich SoMs.** New `data.soms` array
+  (`{sku, displayName, family}`) discovered from
+  `<sdk>/metadata/e1m_modules` — supporting both the flat `E1M-X.yaml` and the
+  `E1M-X/som.yaml` directory layouts (parsed via the shared catalogue parser).
+  `data.skus` (bare ids) is kept and derived from `soms`. Lets the VS Code New
+  Project "Hardware" picker reflect the installed SDK's actual modules.
+
 ## 0.1.1
 
 - **`alp init --som <sku>`** — scaffold a project whose `board.yaml` targets a

@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use alp_core::{empty_preset_catalogue, parse_board_model};
+use alp_core::{empty_preset_catalogue, parse_board_model, parse_som_preset};
 
 use super::CommandRun;
 use crate::cli::GlobalArgs;
@@ -24,12 +24,23 @@ struct CarrierEntry {
 }
 
 #[derive(serde::Serialize)]
+struct SomEntry {
+    sku: String,
+    #[serde(rename = "displayName")]
+    display_name: String,
+    family: String,
+}
+
+#[derive(serde::Serialize)]
 struct PresetsData {
     #[serde(rename = "schemaVersion")]
     schema_version: String,
     #[serde(rename = "sdkRoot")]
     sdk_root: Option<String>,
+    /// Bare SKU ids (back-compat); derived from `soms`.
     skus: Vec<String>,
+    /// Rich SoM presets discovered from `<sdk>/metadata/e1m_modules/*.yaml`.
+    soms: Vec<SomEntry>,
     carriers: Vec<CarrierEntry>,
     libraries: Vec<String>,
     #[serde(rename = "inferenceBackends")]
@@ -44,10 +55,11 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
     let context = resolve_cli_project_context(g);
     let defaults = empty_preset_catalogue();
 
-    let (skus, carriers) = match &context.sdk_root {
-        Some(root) => (read_skus(root), read_carriers(root)),
+    let (soms, carriers) = match &context.sdk_root {
+        Some(root) => (read_soms(root), read_carriers(root)),
         None => (Vec::new(), Vec::new()),
     };
+    let skus: Vec<String> = soms.iter().map(|s| s.sku.clone()).collect();
 
     let mut issues = Vec::new();
     if context.sdk_root.is_none() {
@@ -64,6 +76,7 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
         schema_version: "1".to_string(),
         sdk_root: context.sdk_root.clone(),
         skus,
+        soms,
         carriers,
         libraries: defaults.libraries,
         inference_backends: defaults.inference_backends,
@@ -91,27 +104,41 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
     }
 }
 
-fn read_skus(sdk_root: &str) -> Vec<String> {
+/// Discover SoM presets from `<sdk>/metadata/e1m_modules`, parsing each
+/// (sku + display_name + family) via the shared catalogue parser. Supports both
+/// layouts the SDK has used: a flat `E1M-X.yaml` file, or an `E1M-X/som.yaml`
+/// directory. Entries that aren't `E1M-*` or lack a yaml are skipped.
+fn read_soms(sdk_root: &str) -> Vec<SomEntry> {
     let dir = Path::new(sdk_root).join("metadata").join("e1m_modules");
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let mut skus: Vec<String> = entries
+    let mut soms: Vec<SomEntry> = entries
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
             if !name.starts_with("E1M-") {
                 return None;
             }
-            if dir.join(&name).join("som.yaml").exists() {
-                Some(name)
+            let path = entry.path();
+            let yaml_path = if path.is_dir() {
+                path.join("som.yaml")
+            } else if name.ends_with(".yaml") {
+                path
             } else {
-                None
-            }
+                return None;
+            };
+            let text = std::fs::read_to_string(&yaml_path).ok()?;
+            let som = parse_som_preset(&text).ok()?;
+            Some(SomEntry {
+                sku: som.sku,
+                display_name: som.display_name,
+                family: som.family,
+            })
         })
         .collect();
-    skus.sort();
-    skus
+    soms.sort_by(|a, b| a.sku.cmp(&b.sku));
+    soms
 }
 
 fn read_carriers(sdk_root: &str) -> Vec<CarrierEntry> {
