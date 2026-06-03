@@ -59,7 +59,7 @@ cargo test   --manifest-path cli-rs/Cargo.toml
 bash cli-rs/contract/run.sh          # conformance harness (TS vs Rust parity); --bless to update
 ```
 
-## Architecture rules (enforced — see ARCHITECTURE_RULES.md)
+## Architecture rules (enforced — see docs/ARCHITECTURE_RULES.md)
 
 Strict four-layer contract with a one-directional dependency rule:
 
@@ -116,7 +116,7 @@ archives for linux-x64 / macOS-arm64 / windows-x64). Distributed via the
 `cli-rs/npm-shim` package (`alp-sdk`) + the VS Code extension's binary resolver
 (`src/alpCli/`, setting `alpSdk.cliPath` → PATH → download-on-demand). The extension now
 invokes the CLI for bootstrap/build (terminal) and validate/generate/sdk-list (envelope);
-host-coupled debug commands stay in-process (see EXTENSION_CLI_INTEGRATION.md §4a).
+host-coupled debug commands stay in-process (see docs/EXTENSION_CLI_INTEGRATION.md §4a).
 
 ## Conventions
 
@@ -126,11 +126,14 @@ host-coupled debug commands stay in-process (see EXTENSION_CLI_INTEGRATION.md §
 - Tests are Node-native (`node --test`), no framework; they require compiled
   `packages/alp-core/dist`, so `pnpm run compile` runs first (the `test` script does this).
 - Keep `test/golden/*` snapshots deterministic; loader plans must not drift.
-- Before merging architecture-sensitive changes, run the ARCHITECTURE_RULES.md §6 checklist.
+- Before merging architecture-sensitive changes, run the docs/ARCHITECTURE_RULES.md §6 checklist.
 
 ## Docs map
 
-`PLAN.md` / `BACKLOG.md` (roadmap), `ARCHITECTURE_RULES.md` (the layer contract above),
-`CLI.md` (CLI command families + output contract), `DEBUG.md`, `RELEASE_GATES.md`,
-`COMPATIBILITY_RULES.md`, and getting-started / troubleshooting guides. All are excluded
-from the VSIX.
+All project docs live under `docs/` (the repo root holds only `README.md` +
+this file). `docs/PLAN.md` / `docs/BACKLOG.md` (roadmap), `docs/ARCHITECTURE_RULES.md`
+(the layer contract above), `docs/CLI.md` (CLI command families + output contract),
+`docs/DEBUG.md`, `docs/RELEASE_GATES.md`, `docs/COMPATIBILITY_RULES.md`,
+`docs/EXTENSION_CLI_INTEGRATION.md`, and the getting-started / troubleshooting guides.
+`README.md` has the full index. All of `docs/**` is excluded from the VSIX.
+(Note: `cli-rs/PLAN.md` is the CLI's own roadmap and stays under `cli-rs/`.)

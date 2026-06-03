@@ -28,17 +28,8 @@ package-lock.json
 pnpm-lock.yaml
 pnpm-workspace.yaml
 
-BACKLOG.md
-CLI.md
-DEBUG.md
-PLAN.md
-ARCHITECTURE_RULES.md
-RELEASE_GATES.md
-EXTENSION_CLI_INTEGRATION.md
-GETTING_STARTED_CLI.md
-TASK_RECIPES.md
-TEST_MATRIX.md
-TROUBLESHOOTING_*.md
+docs/**
+CLAUDE.md
 readme.md
 
 packages/alp-webview/node_modules/**
