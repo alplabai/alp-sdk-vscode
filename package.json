@@ -331,7 +331,7 @@
     }
   },
   "scripts": {
-    "compile": "tsc --build && vp build",
+    "compile": "tsc --build && pnpm --filter ./packages/alp-webview run build",
     "compile:watch": "tsc --build --watch",
     "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
     "test": "pnpm run compile && node --test test/*.test.js",

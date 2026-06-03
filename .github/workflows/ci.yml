@@ -71,8 +71,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout (with submodule)
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
