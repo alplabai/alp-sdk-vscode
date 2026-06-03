@@ -15,12 +15,20 @@ import { collectProjectContext } from "./project/vscodeAdapter";
 
 export function registerBootstrapCommand(
   context: vscode.ExtensionContext,
-): vscode.Disposable {
-  return vscode.commands.registerCommand("alp.installDependencies", () => {
+): vscode.Disposable[] {
+  const runBootstrap = () => {
     const workspaceRoot = collectProjectContext().workspaceRoot ?? undefined;
     return runAlpInTerminal(context, ["bootstrap"], {
       name: "ALP Bootstrap",
       cwd: workspaceRoot,
     });
-  });
+  };
+  return [
+    // Palette / Setup view command.
+    vscode.commands.registerCommand("alp.installDependencies", runBootstrap),
+    // Same flow, under the id the webview posts from the "Initialize Workspace"
+    // (Setup flow) and "Activate workspace" (West workspaces) buttons. Without
+    // this registration those buttons silently no-op'd.
+    vscode.commands.registerCommand("alp.bootstrap", runBootstrap),
+  ];
 }
