@@ -91,6 +91,7 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         template_id,
         project_name: name.clone(),
         destination: destination.clone(),
+        som_sku: args.som.clone(),
     });
 
     // 6. Collect file changes.

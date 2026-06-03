@@ -12,6 +12,14 @@ same version.
 
 ## Unreleased
 
+## 0.1.1
+
+- **`alp init --som <sku>`** — scaffold a project whose `board.yaml` targets a
+  specific SoM. The SKU is written verbatim into `som.sku` (default
+  `E1M-AEN701` when omitted); it is not validated against the SDK catalogue
+  here — `alp validate` owns that — so `init` stays SDK-free. Lets the VS Code
+  New Project flow delegate scaffolding (template + hardware) entirely to the CLI.
+
 - **Spinners for `sdk list` and `sdk install`.** The GitHub releases fetch and
   the SDK git-clone now show a steady braille spinner (drawn to stderr) so
   latency-bound work gives live feedback. Shown only in genuine interactive use

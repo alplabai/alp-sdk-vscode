@@ -135,6 +135,8 @@ pub struct WizardPlanInput {
     pub template_id: WizardTemplateId,
     pub project_name: String,
     pub destination: String,
+    /// Optional SoM SKU to write into board.yaml; defaults when None.
+    pub som_sku: Option<String>,
 }
 
 pub struct WizardPlannedFile {

@@ -246,6 +246,9 @@ pub struct InitArgs {
     /// Destination directory (default: current directory or --project).
     #[arg(long)]
     pub destination: Option<String>,
+    /// Target SoM SKU written into the generated board.yaml (e.g. E1M-AEN701).
+    #[arg(long)]
+    pub som: Option<String>,
     /// Show planned files without writing anything.
     #[arg(long)]
     pub preview: bool,
