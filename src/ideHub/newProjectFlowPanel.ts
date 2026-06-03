@@ -7,6 +7,7 @@ import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   emptyAlpIdeState,
   PROTOCOL_VERSION,
+  type E1mModule,
   type ExtToWebviewMessage,
   type ProjectTemplate,
   type WebviewToExtMessage,
@@ -83,9 +84,30 @@ export class NewProjectFlowPanel {
     const catalogMsg: ExtToWebviewMessage = {
       type: "projectTemplatesData",
       templates: await this.fetchTemplates(),
-      modules: E1M_MODULES,
+      modules: await this.fetchSomModules(),
     };
     void this.panel.webview.postMessage(catalogMsg);
+  }
+
+  /** SoM ("Hardware") list from the CLI's `alp presets` (the installed SDK's
+   *  actual modules). Falls back to the built-in list when no SDK is resolved
+   *  (presets returns an empty `soms`) so New Project works pre-SDK. */
+  private async fetchSomModules(): Promise<E1mModule[]> {
+    const { outcome } = await runAlpCommand(this.context, ["presets"]);
+    const soms =
+      (
+        outcome.envelope?.data as
+          | { soms?: { sku: string; displayName: string; family: string }[] }
+          | undefined
+      )?.soms ?? [];
+    if (soms.length === 0) {
+      return E1M_MODULES;
+    }
+    return soms.map((s) => ({
+      id: s.sku,
+      displayName: s.displayName || s.sku,
+      family: s.family || "other",
+    }));
   }
 
   /** Build the template picker from the CLI's real templates (single source of
