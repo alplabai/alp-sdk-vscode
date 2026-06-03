@@ -3,19 +3,15 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   emptyAlpIdeState,
   PROTOCOL_VERSION,
   type ExtToWebviewMessage,
+  type ProjectTemplate,
   type WebviewToExtMessage,
 } from "./messages";
-import {
-  E1M_MODULES,
-  generateBoardYaml,
-  generateCMakeLists,
-  generateMainC,
-  PROJECT_TEMPLATES,
-} from "./projectScaffold";
+import { E1M_MODULES } from "./projectScaffold";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
@@ -86,10 +82,42 @@ export class NewProjectFlowPanel {
 
     const catalogMsg: ExtToWebviewMessage = {
       type: "projectTemplatesData",
-      templates: PROJECT_TEMPLATES,
+      templates: await this.fetchTemplates(),
       modules: E1M_MODULES,
     };
     void this.panel.webview.postMessage(catalogMsg);
+  }
+
+  /** Build the template picker from the CLI's real templates (single source of
+   *  truth): `alp explain` lists ids, then per-id explain gives title/blurb. */
+  private async fetchTemplates(): Promise<ProjectTemplate[]> {
+    const overview = await runAlpCommand(this.context, ["explain"]);
+    const ids =
+      (
+        overview.outcome.envelope?.data as
+          | { available?: { projectTemplates?: string[] } }
+          | undefined
+      )?.available?.projectTemplates ?? [];
+
+    const templates: ProjectTemplate[] = [];
+    for (const id of ids) {
+      const detail = await runAlpCommand(this.context, [
+        "explain",
+        "--template",
+        id,
+      ]);
+      const data = detail.outcome.envelope?.data as
+        | { summary?: string; details?: string[] }
+        | undefined;
+      templates.push({
+        id,
+        title: data?.summary ?? id,
+        description: data?.details?.[0] ?? "",
+        category: "starter",
+        icon: "📦",
+      });
+    }
+    return templates;
   }
 
   private async handleMessage(msg: WebviewToExtMessage): Promise<void> {
@@ -146,28 +174,22 @@ export class NewProjectFlowPanel {
       return;
     }
 
-    try {
-      fs.mkdirSync(path.join(projectDir, "src"), { recursive: true });
-      fs.writeFileSync(
-        path.join(projectDir, "board.yaml"),
-        generateBoardYaml(moduleId, projectName),
-      );
-      fs.writeFileSync(
-        path.join(projectDir, "CMakeLists.txt"),
-        generateCMakeLists(projectName),
-      );
-      fs.writeFileSync(
-        path.join(projectDir, "prj.conf"),
-        "# Kconfig fragments — add CONFIG_* entries here.\n",
-      );
-      fs.writeFileSync(
-        path.join(projectDir, "src", "main.c"),
-        generateMainC(templateId),
-      );
-    } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Failed to create project: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    // Delegate scaffolding to the CLI: real template files + the chosen SoM
+    // written into board.yaml (alp init --som).
+    const { outcome } = await runAlpCommand(this.context, [
+      "init",
+      "--template",
+      templateId,
+      "--name",
+      projectName,
+      "--destination",
+      parentDir,
+      "--som",
+      moduleId,
+      "--non-interactive",
+    ]);
+    if (!outcome.envelope || !outcome.envelope.ok) {
+      await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
       return;
     }
 
