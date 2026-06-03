@@ -16,7 +16,7 @@ import {
   generateMainC,
   PROJECT_TEMPLATES,
 } from "./projectScaffold";
-import { queryAlpIdeState } from "./vscodeAdapter";
+import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
@@ -177,10 +177,9 @@ export class NewProjectFlowPanel {
       open,
     );
     if (choice === open) {
-      await vscode.commands.executeCommand(
-        "vscode.openFolder",
-        vscode.Uri.file(projectDir),
-      );
+      // Open in a new window when a workspace is already open, so we don't
+      // replace the user's current session.
+      await openProjectFolder(vscode.Uri.file(projectDir));
     }
 
     this.panel.dispose();

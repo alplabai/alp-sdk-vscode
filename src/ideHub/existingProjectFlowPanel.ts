@@ -7,7 +7,7 @@ import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
-import { queryAlpIdeState } from "./vscodeAdapter";
+import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.existing-project-flow";
@@ -87,7 +87,7 @@ export class ExistingProjectFlowPanel {
         break;
 
       case "openExistingProject":
-        await this.openProject(msg.activate);
+        await this.openProject();
         break;
 
       case "runCommand":
@@ -112,7 +112,7 @@ export class ExistingProjectFlowPanel {
     }
   }
 
-  private async openProject(activate: boolean): Promise<void> {
+  private async openProject(): Promise<void> {
     const uris = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,
@@ -125,12 +125,9 @@ export class ExistingProjectFlowPanel {
       return;
     }
 
-    if (activate) {
-      // Open the folder first (this will reload VS Code), then bootstrap runs.
-      await vscode.commands.executeCommand("vscode.openFolder", uris[0]);
-    } else {
-      await vscode.commands.executeCommand("vscode.openFolder", uris[0]);
-    }
+    // Open in a new window when a workspace is already open, so the user's
+    // current session isn't replaced.
+    await openProjectFolder(uris[0]);
   }
 
   private dispose(): void {

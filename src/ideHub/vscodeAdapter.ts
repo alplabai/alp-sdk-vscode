@@ -12,6 +12,18 @@ import * as path from "path";
 import * as vscode from "vscode";
 import type { AlpIdeState } from "./messages";
 
+/**
+ * Open a project folder without disrupting the user's current session: if a
+ * workspace is already open, open in a NEW window; otherwise reuse the current
+ * (empty) window. Used by the new- and existing-project flows.
+ */
+export async function openProjectFolder(uri: vscode.Uri): Promise<void> {
+  const hasWorkspaceOpen = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+  await vscode.commands.executeCommand("vscode.openFolder", uri, {
+    forceNewWindow: hasWorkspaceOpen,
+  });
+}
+
 function commandAvailable(cmd: string): boolean {
   try {
     cp.execSync(`${cmd} --version`, { stdio: "ignore", timeout: 3000 });
