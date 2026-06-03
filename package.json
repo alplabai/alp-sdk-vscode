@@ -290,7 +290,7 @@
     "yamlValidation": [
       {
         "fileMatch": "board.yaml",
-        "url": "./alp-sdk-upstream/metadata/schemas/board-config-v2.schema.json"
+        "url": "./schemas/board.schema.json"
       }
     ],
     "snippets": [

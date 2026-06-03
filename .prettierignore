@@ -20,5 +20,8 @@ cli-rs/target/
 cli-rs/contract/
 test/golden/
 
+# Vendored board schema — must stay byte-identical to the submodule (CI cmp)
+schemas/
+
 # Hand-maintained prose docs — not subject to code formatting
 *.md

@@ -135,11 +135,12 @@ Marketplace; no functionality changed.
 
 ## Schema-sync
 
-The extension's schema-aware validation depends on
-`alp-sdk-upstream/metadata/schemas/board-config-v2.schema.json`.
-That submodule pins to an alp-sdk commit; the extension's
-`package.json::contributes.yamlValidation.url` references the
-exact submodule path.
+The extension's schema-aware validation uses a **vendored** copy of the board
+schema at `schemas/board.schema.json` (so it ships inside the VSIX —
+`alp-sdk-upstream/**` is excluded from the package). The vendored file is a copy
+of the submodule source of truth, `alp-sdk-upstream/metadata/schemas/board.schema.json`,
+and `package.json::contributes.yamlValidation.url` points at the vendored path.
+CI's schema-sync check (`cmp`) fails if the two drift.
 
 > **Schema v2 (alp-sdk v0.6+):** `board.yaml` now uses `schema_version: 2`
 > with a per-core `cores:` block replacing the top-level `os:` field.
@@ -152,8 +153,9 @@ When alp-sdk bumps the schema:
 cd alp-sdk-upstream
 git fetch && git checkout main
 cd ..
-git add alp-sdk-upstream
-git commit -m "deps(alp-sdk): bump submodule to <sha>"
+cp alp-sdk-upstream/metadata/schemas/board.schema.json schemas/board.schema.json  # re-vendor
+git add alp-sdk-upstream schemas/board.schema.json
+git commit -m "deps(alp-sdk): bump submodule to <sha> + re-vendor schema"
 pnpm test         # re-runs the schema-snapshot tests
 pnpm run package  # builds the .vsix against the new schema
 ```

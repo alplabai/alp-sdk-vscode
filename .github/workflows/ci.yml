@@ -63,8 +63,11 @@ jobs:
 
       - name: Schema-sync check
         run: |
-          test -f alp-sdk-upstream/metadata/schemas/board-config-v1.schema.json
-          echo "schema reachable via submodule"
+          # The vendored board schema (shipped in the VSIX) must match the
+          # submodule source of truth, so board.yaml validation can't drift.
+          cmp schemas/board.schema.json \
+            alp-sdk-upstream/metadata/schemas/board.schema.json
+          echo "vendored board.schema.json is in sync with the submodule"
 
   rust_cli_contract:
     name: rust cli · contract
