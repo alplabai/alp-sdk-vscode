@@ -14,4 +14,79 @@ body {
   font-size: var(--vscode-font-size, 13px);
   color: var(--text-primary);
   background: var(--surface-bg);
+  line-height: 1.5;
+}
+
+/* ── Focus ring — VS Code style, only for keyboard nav ──────────────────── */
+:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Scrollbar — native VS Code slider ──────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+::-webkit-scrollbar-thumb:active {
+  background: var(--vscode-scrollbarSlider-activeBackground);
+}
+
+/* ── Selection ──────────────────────────────────────────────────────────── */
+::selection {
+  background: var(
+    --vscode-editor-selectionBackground,
+    rgba(128, 128, 128, 0.3)
+  );
+}
+
+/* ── Inline code base ───────────────────────────────────────────────────── */
+code {
+  font-family: var(--text-mono, monospace);
+  background: var(--vscode-textCodeBlock-background, transparent);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Shared keyframes ───────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Motion utility (reduced-motion safe via --duration tokens) ─────────── */
+.alp-animate-in {
+  animation: fadeIn var(--duration-base) var(--ease-out) both;
 }

@@ -4,6 +4,7 @@ import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
 import {
   Button,
+  Icon,
   Skeleton,
   StatusChip,
   Stepper,
@@ -214,7 +215,7 @@ export function SetupFlowView() {
             aria-label="Close setup"
             onClick={() => postMessage({ type: "closePanel" })}
           >
-            ✕
+            <Icon name="x" size={14} />
           </button>
         </header>
 

@@ -5,6 +5,7 @@ import { useStepper } from "../../shared/hooks/useStepper";
 import {
   Button,
   EmptyState,
+  Icon,
   Skeleton,
   StatusChip,
   Stepper,
@@ -34,13 +35,13 @@ function FolderStep({ workspaceRoot }: FolderStepProps) {
       {workspaceRoot ? (
         <div className={styles.folderCard}>
           <span className={styles.folderIcon} aria-hidden="true">
-            📁
+            <Icon name="folder" size={18} />
           </span>
           <span className={styles.folderPath}>{workspaceRoot}</span>
         </div>
       ) : (
         <EmptyState
-          icon="📂"
+          icon={<Icon name="folder" size={28} />}
           title="No folder open"
           description="Open a folder that contains an ALP SDK project."
           action={
@@ -247,7 +248,7 @@ export function ExistingProjectFlowView() {
             aria-label="Close wizard"
             onClick={() => postMessage({ type: "closePanel" })}
           >
-            ✕
+            <Icon name="x" size={14} />
           </button>
         </header>
 

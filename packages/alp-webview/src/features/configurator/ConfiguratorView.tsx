@@ -1245,7 +1245,7 @@ function ReviewSection({ cfg }: { cfg: UseConfigurator }) {
       {validation.errors.length ? (
         <>
           <p className={`${styles.revHead} ${styles.err}`}>
-            ✗ {validation.errors.length} error(s)
+            <Icon name="x" size={14} /> {validation.errors.length} error(s)
           </p>
           <ul className={styles.revList}>
             {validation.errors.map((e, i) => (
@@ -1255,7 +1255,7 @@ function ReviewSection({ cfg }: { cfg: UseConfigurator }) {
         </>
       ) : (
         <p className={`${styles.revHead} ${styles.ok}`}>
-          ✓ board.yaml is valid
+          <Icon name="check" size={14} /> board.yaml is valid
         </p>
       )}
       {validation.warnings.length ? (

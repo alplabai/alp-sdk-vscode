@@ -6,10 +6,11 @@ import { installSdkRelease, switchActiveSdk } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as vscode from "vscode";
-import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { runAlpCommand, runAlpInTerminal } from "../alpCli/vscodeAdapter";
 import {
   emptyAlpIdeState,
   PROTOCOL_VERSION,
+  type BuildPlanData,
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
@@ -134,7 +135,63 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
       case "openUrl":
         void this.handleOpenUrl(msg.url);
         break;
+      case "requestBuildPlan":
+        void this.handleRequestBuildPlan();
+        break;
+      case "materialiseBuildPlan":
+        void this.handleMaterialiseBuildPlan();
+        break;
+      case "runBuild":
+        void this.handleRunBuild();
+        break;
     }
+  }
+
+  private async handleMaterialiseBuildPlan(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const { outcome } = await runAlpCommand(
+      this.context,
+      ["build", "--materialise"],
+      cwd,
+    );
+    const envelope = outcome.envelope;
+    if (envelope && envelope.ok) {
+      const written = (envelope.data as { written?: string[] }).written ?? [];
+      void vscode.window.showInformationMessage(
+        `Alp: materialised ${written.length} file(s) under the build tree.`,
+      );
+    } else {
+      const error = envelope?.issues?.[0]?.message ?? outcome.message;
+      void vscode.window.showErrorMessage(`Alp: materialise failed — ${error}`);
+    }
+  }
+
+  private async handleRunBuild(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // Live build in a terminal (streams output, like `alp build`).
+    await runAlpInTerminal(this.context, ["build"], { name: "alp build", cwd });
+  }
+
+  private async handleRequestBuildPlan(): Promise<void> {
+    if (!this.view) return;
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // Consume the SDK build plan via the CLI envelope (`alp build --plan`).
+    const { outcome } = await runAlpCommand(
+      this.context,
+      ["build", "--plan"],
+      cwd,
+    );
+    const envelope = outcome.envelope;
+    let msg: ExtToWebviewMessage;
+    if (envelope && envelope.ok) {
+      msg = { type: "buildPlanData", plan: envelope.data as BuildPlanData };
+    } else {
+      // Surface the first issue (e.g. "no SDK / awaiting a tagged release")
+      // or the runtime message so the view can explain the empty state.
+      const error = envelope?.issues?.[0]?.message ?? outcome.message;
+      msg = { type: "buildPlanData", plan: null, error };
+    }
+    void this.view.webview.postMessage(msg);
   }
 
   private async handleSelectSdkPath(): Promise<void> {

@@ -1,9 +1,10 @@
+import type { ReactNode } from "react";
 import styles from "./TabBar.module.css";
 
 export interface TabItem<T extends string = string> {
   id: T;
   label: string;
-  icon?: string;
+  icon?: ReactNode;
   badge?: number;
 }
 

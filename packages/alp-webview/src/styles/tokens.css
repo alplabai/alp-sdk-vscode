@@ -69,6 +69,13 @@
     --vscode-editorInfo-foreground,
     var(--vscode-textLink-foreground)
   );
+  /* Soft backgrounds + borders for status callouts/badges. */
+  --status-warn-bg: var(--vscode-inputValidation-warningBackground);
+  --status-warn-border: var(--vscode-inputValidation-warningBorder);
+  --status-err-bg: var(--vscode-inputValidation-errorBackground);
+  --status-err-border: var(--vscode-inputValidation-errorBorder);
+  --status-info-bg: var(--vscode-inputValidation-infoBackground);
+  --status-info-border: var(--vscode-inputValidation-infoBorder);
 }
 
 /* ── Motion ─────────────────────────────────────────────────────────────── */

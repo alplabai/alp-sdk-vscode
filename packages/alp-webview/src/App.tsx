@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BuildPlanView } from "./features/build-plan";
 import { ConfiguratorView } from "./features/configurator";
 import { ExistingProjectFlowView } from "./features/existing-project-flow";
 import { FooterView } from "./features/footer";
@@ -14,7 +15,7 @@ import { ToolchainDoctorView } from "./features/toolchain-doctor";
 import { WestWorkspacesView } from "./features/west-workspaces";
 import { AppProvider, useAppContext } from "./shared/AppContext";
 import type { TabItem } from "./shared/ui";
-import { Button, TabBar } from "./shared/ui";
+import { Button, Icon, TabBar } from "./shared/ui";
 import { BuildBar } from "./shared/ui/BuildBar";
 import layout from "./shared/ui/layout.module.css";
 import { postMessage } from "./vscode";
@@ -25,13 +26,19 @@ const ALP_MODE =
     ? (document.body.dataset.alpMode ?? "sidebar")
     : "sidebar";
 
-type SidebarTab = "env" | "project" | "sdk" | "tools";
+type SidebarTab = "env" | "project" | "build" | "sdk" | "tools";
 
+const ICON_SIZE = 16;
 const SIDEBAR_TABS: TabItem<SidebarTab>[] = [
-  { id: "env", label: "Env", icon: "🐍" },
-  { id: "project", label: "Project", icon: "📁" },
-  { id: "sdk", label: "SDK", icon: "🧰" },
-  { id: "tools", label: "Tools", icon: "⚡" },
+  { id: "env", label: "Env", icon: <Icon name="terminal" size={ICON_SIZE} /> },
+  {
+    id: "project",
+    label: "Project",
+    icon: <Icon name="folder" size={ICON_SIZE} />,
+  },
+  { id: "build", label: "Build", icon: <Icon name="cpu" size={ICON_SIZE} /> },
+  { id: "sdk", label: "SDK", icon: <Icon name="package" size={ICON_SIZE} /> },
+  { id: "tools", label: "Tools", icon: <Icon name="bolt" size={ICON_SIZE} /> },
 ];
 
 function AppShell() {
@@ -72,6 +79,8 @@ function AppShell() {
       />
 
       <div
+        key={activeTab}
+        className="alp-animate-in"
         role="tabpanel"
         id={`tabpanel-${activeTab}`}
         aria-labelledby={`tab-${activeTab}`}
@@ -84,6 +93,8 @@ function AppShell() {
             <ProjectView />
           </>
         )}
+
+        {activeTab === "build" && <BuildPlanView />}
 
         {activeTab === "sdk" && <SdkView />}
 
