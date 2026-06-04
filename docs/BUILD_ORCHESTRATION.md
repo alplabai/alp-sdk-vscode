@@ -2,207 +2,176 @@
 
 # CLI-native build orchestration (Wave C)
 
-**Status:** plan / design. Decided direction; not yet implemented.
+**Status:** plan / design. Direction decided **and agreed with the SDK team**;
+not yet implemented.
 **Owner:** the `alp` CLI (`cli-rs/`).
-**Decision:** the `alp` CLI sits **at the top** of the build and drives it
-directly — it computes the build plan and invokes `west` / `bitbake` / `cmake`
-itself. `scripts/alp_orchestrate.py` is **not** a runtime dependency; it is a
-**reference spec** we read to reproduce the correct command sequence. The SDK
-does **not** need to orchestrate on our behalf (see
-[`PROPOSAL-alp-build-core.md`](PROPOSAL-alp-build-core.md) for the SDK-team
-message).
 
-This supersedes the deferred note in
-[`EXTENSION_CLI_INTEGRATION.md`](EXTENSION_CLI_INTEGRATION.md) §9 and the earlier
-"SDK extracts a shared crate" framing.
+**Decision (post SDK review):** the `alp` CLI sits **at the top** of the build —
+it owns materialise / execute / schedule / cache / progress UX / envelope and
+invokes `west` / `bitbake` / `cmake` directly. It does **not** re-implement the
+planner in Rust. Instead it **consumes the SDK's `alp_orchestrate.py --emit
+build-plan` JSON** (the SDK team's counter-offer). The planner — the
+fast-moving, vendor-heavy part — stays the SDK's single source of truth; the CLI
+owns the stable mechanism below it.
+
+> Why we flipped from "native Rust planner": the SDK revealed the planner is not
+> the stable schema logic we assumed. It doubled (1547 → 3066 lines, ~1.5k lines
+> of planner/materialiser semantics in three weeks) and now carries storage
+> partition allocation, sysbuild, and TF-M secure-boot. Porting it would mean
+> chasing that surface forever. The "no Python dependency" prize is small (`west`
+> and `bitbake` are Python; the build host already has a Python-bearing SDK
+> checkout). Consuming `--emit build-plan` drops planner drift to ~zero — "one
+> machine-readable source per fact", which is the SDK's core design rule.
+
+See [`PROPOSAL-alp-build-core.md`](PROPOSAL-alp-build-core.md) for the agreement
+record with the SDK team, and §9 of
+[`EXTENSION_CLI_INTEGRATION.md`](EXTENSION_CLI_INTEGRATION.md).
 
 ---
 
-## 1. Why this is safe (what `alp_orchestrate.py` actually does)
+## 1. The split (who owns what)
 
-We read `alp-sdk-upstream/scripts/alp_orchestrate.py` (1547 lines) end to end.
-It is **not** a vendor-execution monster. It is a planner with a trivial
-executor:
-
-| Part | What it does | Owner after Wave C |
+| Concern | Owner | How |
 |---|---|---|
-| **Planner** | `load_board_yaml` → `cores: {core_id: Slice}`; per-core topology resolution; IPC contract + DTS reservations; SoM preset lookup | **CLI / `alp-core`** |
-| **Materialiser** | per-slice config files + shared generated headers | **CLI** (reuses `generate`) |
-| **Executor** | **one** tool command per slice | **CLI** (wraps the tool) |
-| **Scheduler** | incremental cache (slice-hash skip), parallel/sequential fan-out | **CLI** |
-| **Manifest** | `system-manifest.yaml` | **CLI** |
+| Parse + validate `board.yaml`, resolve per-core slices, partition allocation, IPC/DTS/sysbuild/TF-M derivation, generated-file **contents** | **SDK** | `alp_orchestrate.py --emit build-plan` (new) |
+| Hardware metadata (`metadata/**`), the builders (`west`/`bitbake`/`cmake`), Yocto layer, vendor glue | **SDK** | unchanged |
+| Materialise (write the plan's files to disk) | **CLI** | pure IO — byte-write the `GeneratedFile`s the emit carries |
+| Execute (run each slice's command) | **CLI** | subprocess: `cwd`, `env`, tee to `build.log`, rc → status |
+| Schedule (parallel/sequential, incremental cache) | **CLI** | `.alp-build-state.json`, slice-hash skip |
+| Progress UX + JSON envelope + exit codes | **CLI** | indicatif + the existing envelope |
 
-The entire executor is three commands (`alp_orchestrate.py:1440-1465`):
+The CLI is still "at the top" — it drives the build and owns everything the user
+sees. It just *fetches* the plan instead of *computing* it.
 
-```
-zephyr:    west build -b <board> <app_path>           # cwd = build/<core>-<os>/
-yocto:     bitbake <image|app>                         # cwd = build/<core>-<os>/
-baremetal: cmake -S <app_path> -B build/<core>-<os>/
-```
+## 2. Re-baseline: what changed since our first read
 
-Each slice subprocess runs with `cwd = build/<core>-<os>/`,
-`env = os.environ + ALP_SDK_ROOT=<sdk root>`, output tee'd to `build.log`, and
-its return code mapped to a status (`alp_orchestrate.py:1069-1094`). **There is
-no signing / `imgtool` / `objcopy` / partition-packaging in the build path.**
+Our initial pass read a 1547-line `alp_orchestrate.py`; current SDK `dev` is
+3066 lines. Corrections (per the SDK team, with their refs) — **all to be
+re-verified against a current SDK release tag before C1, not against `dev`**:
 
-Two facts that further de-risk owning this:
+- **Partition packaging exists now.** Storage partition allocator +
+  `dts-partitions.dtsi` emission landed (commit `9a4c63e`). Our earlier "no
+  partition-packaging in the build path" claim is **stale**.
+- **`shared_artefacts` is larger.** `_materialise_shared`
+  (`alp_orchestrate.py:2079-2106`) now emits `system_ipc.h`,
+  `dts-reservations.dtsi`, `dts-partitions.dtsi` (always), `build/alp_sysbuild.conf`
+  (when `boot:` is present), and `build/sysbuild/tfm/tfm.conf` (when
+  `security.psa.tfm: true`).
+- **Flash backends are real, not stubs.** `scripts/flash_backends/` is six
+  backends; `swd_probe.py` (J-Link, GD32G553) is silicon-validated with tests.
+  Leaving flash out of Wave C is still correct scoping — just not on a "stubs"
+  premise.
+- **Still true:** the executor is genuinely trivial (three commands, `cwd`/`env`/
+  tee-to-log); per-slice `alp.conf` / `local.conf` / `cmake-args.txt` are written
+  but **not yet consumed** (`alp_orchestrate.py:2130-2135`). Our two open
+  questions stand.
 
-- **Flash is a separate, still-maturing concern.** Vendor flash logic lives in
-  `scripts/flash_backends/` + `west alp-flash` and is explicitly noted in-code as
-  landing in "subsequent PRs" — i.e. still stubs. Build and flash are decoupled.
-- **`alp_orchestrate.py` is itself Phase 2/3.** Per-slice config is written but
-  the build command does not yet obviously consume it ("Phase 3 wires this up").
-  We are not discarding a finished, battle-tested system.
+The meta-point: the planner is Phase 2/3 of an actively moving roadmap. That is
+exactly why we consume its output rather than mirror its logic.
 
-**Where the real work is:** the *planner* (board.yaml → slices: backend, board,
-machine, toolchain, app, build dir, env; plus IPC carve-outs, DTS reservations,
-boot order, helper MCUs). That is **schema semantics**, which we already vendor
-and track — far lower risk than owning vendor *execution*. `alp-core` already
-parses `board.yaml` v2 with per-core `os` and the SoM catalogue, so this is an
-*extension* of existing code, not a from-scratch port.
+## 3. The contract we consume (C1 — `--emit build-plan`)
 
-## 2. The build-plan contract (C1, grounded in the script)
+The SDK adds `--emit build-plan` (idiomatic — it already does `--emit
+{system-manifest|ipc-contract-h|dts-reservations}`), emitting deterministic,
+schema-versioned JSON. **Our one refinement to the schema we spec'd: the emit
+must carry the generated-file *contents*, so our materialise stays pure IO and no
+content-derivation logic leaks back to the CLI.**
 
-Pure function `(resolved board.yaml + SoM/SDK metadata) → BuildPlan`. No IO,
-deterministic, unit-testable. Field set mirrors `Slice`
-(`alp_orchestrate.py:67-89`) plus what the executor needs.
+Rust deserialization target (we still own the type for the envelope):
 
 ```rust
 pub struct BuildPlan {
     pub schema_version: u32,
-    pub board_yaml: String,                 // resolved path
-    pub sku: String,                        // SoM sku (e.g. "E1M-AEN701")
-    pub build_root: String,                 // "build"
-    pub slices: Vec<BuildSlice>,            // one per non-`off` core
-    pub shared_artefacts: Vec<GeneratedFile>, // generated/alp/system_ipc.h, dts-reservations.dtsi
-    pub sequential: bool,                   // Windows / --no-parallel
+    pub board_yaml: String,
+    pub sku: String,
+    pub build_root: String,                  // "build"
+    pub slices: Vec<BuildSlice>,             // one per non-`off` core
+    pub shared_artefacts: Vec<GeneratedFile>, // system_ipc.h, dts-reservations.dtsi,
+                                              // dts-partitions.dtsi, alp_sysbuild.conf, tfm.conf, …
+    pub sequential: bool,
     pub warnings: Vec<PlanWarning>,
 }
 
 pub struct BuildSlice {
-    pub core_id: String,                    // "m55_hp", "a32", ...
-    pub backend: Backend,                   // Zephyr | Yocto | Baremetal
-    pub app: Option<String>,
-    pub image: Option<String>,              // Yocto image recipe
-    pub machine: Option<String>,            // Yocto MACHINE
-    pub board: Option<String>,              // Zephyr board target
-    pub toolchain: Option<String>,
-    pub peripherals: Vec<String>,
-    pub libraries: Vec<String>,
-    pub build_dir: String,                  // build/<core>-<os>/
-    pub config_artefacts: Vec<GeneratedFile>, // alp.conf | local.conf | cmake-args.txt
-    pub command: ToolStep,                  // the actual build invocation
-    pub env: BTreeMap<String, String>,      // ALP_SDK_ROOT, ...
-    pub input_hash: String,                 // for the incremental cache
+    pub core_id: String,
+    pub backend: Backend,                    // Zephyr | Yocto | Baremetal
+    pub build_dir: String,                   // build/<core>-<os>/
+    pub config_artefacts: Vec<GeneratedFile>, // alp.conf | local.conf | cmake-args.txt (+contents)
+    pub command: ToolStep,                   // the build invocation (do NOT freeze its shape — see §6)
+    pub env: BTreeMap<String, String>,       // ALP_SDK_ROOT, …
+    pub input_hash: String,                  // for the incremental cache (or recomputed CLI-side)
 }
 
 pub struct ToolStep { pub tool: String, pub args: Vec<String>, pub cwd: String }
-pub struct GeneratedFile { pub path: String, pub contents: String }
+pub struct GeneratedFile { pub path: String, pub contents: String }  // contents REQUIRED
 pub enum Backend { Zephyr, Yocto, Baremetal }
 ```
 
-JSON form emitted under the existing envelope's `data` (e.g. `alp build --plan
---format json`):
+Surfaced under the existing envelope's `data` for `alp build --plan --format
+json`. The envelope (C2) and exit codes are reused verbatim.
 
-```json
-{
-  "schemaVersion": 1,
-  "boardYaml": "/path/board.yaml",
-  "sku": "E1M-AEN701",
-  "buildRoot": "build",
-  "slices": [
-    { "coreId": "m55_hp", "backend": "zephyr", "board": "alif_e7_dk_rtss_he",
-      "app": "app", "toolchain": "zephyr-sdk", "buildDir": "build/m55_hp-zephyr",
-      "command": { "tool": "west", "args": ["build","-b","alif_e7_dk_rtss_he","app"],
-                   "cwd": "build/m55_hp-zephyr" },
-      "env": { "ALP_SDK_ROOT": "…" }, "inputHash": "…" }
-  ],
-  "sharedArtefacts": [{ "path": "build/generated/alp/system_ipc.h", "contents": "…" }],
-  "sequential": false,
-  "warnings": []
-}
-```
+## 4. Parity — now a thin faithfulness check
 
-## 3. Executor, materialiser, scheduler, manifest
+Because we consume the plan, "plan parity" is by construction. What the harness
+verifies is that our **mechanism faithfully applies the emit**:
 
-- **Materialiser** writes `shared_artefacts` + each slice's `config_artefacts`
-  (reuses the existing `generate` code paths). Build dirs: `build/<core>-<os>/`;
-  shared: `build/generated/`.
-- **Executor** runs `slice.command` as a subprocess (`cwd`, `env`, tee to
-  `build/<core>-<os>/build.log`), rc → status. Text mode inherits stdio (live
-  output + indicatif progress); JSON mode captures and folds per-slice results
-  into the envelope.
-- **Scheduler** = incremental cache (`build/.alp-build-state.json`, keyed by
-  `BuildSlice.input_hash`; skip when hash matches a prior `ok` and the build dir
-  exists) + parallel fan-out (sequential when `BuildPlan.sequential`). `--core`
-  limits to one slice; `off` cores never enter the plan.
-- **Manifest** writes `build/system-manifest.yaml` (slices, carve-outs, boot
-  order, helper MCUs) — same shape the script emits today.
+- We write every `GeneratedFile` byte-identically to where the script's own
+  `_materialise_*` would, and
+- we run each `ToolStep` with the same `cwd` / `env`, and
+- our `system-manifest.yaml` matches the script's (or we consume `--emit
+  system-manifest` too).
 
-This replaces today's `alp build` → terminal `west alp-build` delegation (Wave
-A2). Exit codes + envelope (C2 in the proposal) are reused verbatim.
-
-## 4. Parity strategy (the safety net)
-
-`alp_orchestrate.py` is deterministic and already supports
-`--emit {system-manifest|ipc-contract-h|dts-reservations}` plus per-slice config
-materialisation. We use it as a **golden reference**:
-
-- For a fixture matrix of `board.yaml` × SoM, run the script and the CLI and diff
-  (a) the materialised config + shared artefacts, (b) `system-manifest.yaml`, and
-  (c) the exact command each would run per slice (tool + args + cwd + env keys).
-- Wire this as a parity harness in the spirit of `cli-rs/contract/run.sh`
-  (golden fixtures committed; `--bless` to refresh). It gates each phase.
-
-This proves our planner matches the SDK's intent **without** depending on the
-script at runtime. If the script changes, the harness flags the diff.
+Run against a **pinned SDK release tag** (not `dev` — see §7.2), committed
+goldens, `--bless` to refresh, in the spirit of `cli-rs/contract/run.sh`. The
+emit doubles as the strongest possible golden.
 
 ## 5. Phased delivery
 
-Each phase is independently shippable and parity-gated.
-
-- **C0 — Pure planner + `--plan` (no execution).** `alp-core` grows
-  `build_plan()`; `alp build --plan` emits the `BuildPlan` (and would-write
-  artefacts) without running anything. Gate: parity vs the script's
-  materialise/`--emit` for the fixture matrix. *Highest-value, lowest-risk — it
-  de-risks matching SDK semantics before any subprocess runs.*
-- **C1 — Single-core Zephyr end to end.** Materialise + run `west build` for the
-  common one-core case; live output + envelope. Gate: builds a real project; plan
-  parity holds.
+- **C0 — Agree the schema + consume the emit + `alp build --plan`.** Lock the
+  `--emit build-plan` JSON shape with the SDK (incl. the contents requirement);
+  deserialize into `BuildPlan`; `alp build --plan` shows it (and can dry-run the
+  would-write artefacts). No execution. Gate: round-trips the emit for the
+  fixture matrix. *Low-risk, no SDK semantics mirrored.*
+- **C1 — Single-core Zephyr end to end.** Materialise (write the emit's files) +
+  run the `ToolStep`; live output + envelope. **Blocked on the SDK's C4 answer
+  (conf→build wiring) — they commit to answering before C1.**
 - **C2 — Multi-core fan-out + Yocto + baremetal.** Parallel/sequential scheduler;
-  `bitbake` (host-gated) + `cmake` backends. Gate: parity across the matrix.
+  `bitbake` (host-gated) + `cmake` backends.
 - **C3 — Incremental cache + manifest.** `.alp-build-state.json` slice-hash skip;
-  `system-manifest.yaml` emission. Gate: cache-hit/miss matches the script.
-- **C4 — Flip the front-ends + retire delegation.** `alp build` no longer shells
-  to `west alp-build`; the extension keeps calling `alp build` (no UX change).
-  Optionally offer `west alp-build` a thin shim over `alp build` for SDK users.
+  `system-manifest.yaml`.
+- **C4 — Flip the front-ends + retire delegation.** `alp build` stops shelling to
+  `west alp-build`; the extension keeps calling `alp build` (no UX change).
+  `west alp-build` stays native (the SDK declined the shim — standalone west use
+  is a first-class path).
 
-Rollback at any phase = the previous phase's behavior (C0 is inert; C1+ fall back
-to the terminal delegation until flipped at C4).
+Rollback at any phase = the terminal delegation that ships today.
 
-## 6. What we need from the SDK (minimal, stable contract)
+## 6. What we need from the SDK (agreed)
 
-We are **not** asking the SDK to orchestrate or to build us a crate. We only
-depend on data + tools that already exist and should stay stable:
+The SDK team committed to:
 
-1. **`board.yaml` schema** (already vendored + versioned) — the planner's input.
-2. **`metadata/**`** (SoM topology, chips, soc-spec) — per-core type → backend +
-   board/machine/toolchain resolution. Keep `schema_version` on the e1m_modules
-   YAMLs.
-3. **The build tools** (`west` workspace, `meta-alp-sdk` for bitbake, vendor
-   CMake toolchains) — unchanged; we invoke them.
-4. **The per-slice config → build consumption convention** — once the SDK
-   finalizes how `alp.conf` / `local.conf` / `cmake-args.txt` feed each build
-   (the script's still-open "Phase 3" wiring), we match it.
+1. `board.yaml` schema-version bump on breaking shape changes (as today).
+2. `schema_version` stays on the `e1m_modules` YAMLs.
+3. Release-notes / CHANGELOG heads-up for changes to: per-slice **command shape**,
+   build-dir convention, env keys, metadata layout. *(Hence: do **not** freeze C3
+   against today's `west build -b <board> <app>` — sysbuild overlays will grow it
+   to `west build --sysbuild --sysbuild-config`.)*
+4. An answer on **C4 (conf→build wiring)** before our C1.
+5. **`--emit build-plan`** per §3 — to be scheduled (our refinement: carry file
+   contents).
 
-## 7. Open questions
+## 7. Open questions / notes
 
-- **Conf→build wiring.** The script writes per-slice config but the build
-  command does not yet obviously consume it. Confirm the intended wiring with the
-  SDK before C1 so generated config is actually applied.
+- **C4 conf→build wiring** (SDK answering; current leaning, subject to change):
+  - **Zephyr:** `alp.conf` via `EXTRA_CONF_FILE`. Trap to inherit: keep extra
+    conf files in a `generated/` subdir, **not** loose in the app binary dir, or
+    Zephyr's `${APPLICATION_BINARY_DIR}/*.conf` GLOB picks them up twice. Sysbuild
+    overlays via `west build --sysbuild --sysbuild-config`.
+  - **Yocto:** per-slice `local.conf` fragment pulled via `require` from the slice
+    build dir's conf; fragments use weak `?=` so hand-edits win.
+  - **Baremetal:** `cmake-args.txt` splatted onto the `cmake` invocation.
 - **`west build` build-dir vs cwd.** The script sets `cwd = build/<core>-<os>/`
-  and runs `west build` without `-d`; decide whether the CLI passes `-d
-  <build_dir>` explicitly (clearer) while keeping parity with the script's
-  output layout.
-- **Flash backends.** Out of scope for Wave C (separate, still-stub). `alp flash`
-  keeps delegating until the SDK's flash backends stabilize.
+  and runs `west build` without `-d`. Once the command shape is consumed from the
+  emit (§3), this is the SDK's choice and we just run what the emit says.
+- **Flash** stays out of Wave C (separate, real backends). `alp flash` keeps
+  delegating until we wire it deliberately.

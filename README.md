@@ -107,12 +107,13 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
   extension consumes the native `alp` CLI (binary resolution + the in-process vs
   delegated split).
 - [BUILD_ORCHESTRATION.md](docs/BUILD_ORCHESTRATION.md): Wave C plan — the `alp`
-  CLI takes build orchestration to the top and wraps `west`/`bitbake`/`cmake`
-  directly; the `BuildPlan` contract, parity-harness strategy, and phased rollout
-  (C0 pure planner → C4 flip the front-ends).
-- [PROPOSAL-alp-build-core.md](docs/PROPOSAL-alp-build-core.md): the SDK-team
-  message — why their orchestration isn't needed on our behalf, and the small,
-  already-existing contract (schema + metadata + tools) the CLI depends on.
+  CLI drives the build (materialise/execute/schedule/cache/UX) and wraps
+  `west`/`bitbake`/`cmake` directly, **consuming** the SDK's
+  `alp_orchestrate.py --emit build-plan` instead of re-implementing the planner;
+  the consumed `BuildPlan` contract, parity strategy, and phased rollout.
+- [PROPOSAL-alp-build-core.md](docs/PROPOSAL-alp-build-core.md): the team-to-team
+  agreement record — the settled CLI/SDK split, why we consume `--emit
+  build-plan`, and the SDK's committed contract seams.
 - [ALP_IDE_ONBOARDING.md](docs/ALP_IDE_ONBOARDING.md) /
   [ALP_IDE_SDK_INSTALLATION.md](docs/ALP_IDE_SDK_INSTALLATION.md): IDE Hub
   onboarding and SDK install flows.

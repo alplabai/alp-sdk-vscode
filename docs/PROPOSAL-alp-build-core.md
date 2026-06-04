@@ -1,121 +1,104 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Note to the SDK team: the `alp` CLI is taking build orchestration
+# Agreement: the `alp` CLI consumes the SDK's emitted build plan
 
-**Audience:** the alp-sdk (firmware) team.
-**Author:** the alp-sdk-vscode (IDE + native `alp` CLI) team.
-**Status:** decided direction (CLI side). This asks **nothing** new of you; it
-records what we are building and the small, already-existing contract we depend
-on, so there are no surprises.
+**Audience:** the alp-sdk (firmware) team + the alp-sdk-vscode (IDE/CLI) team.
+**Status:** agreement reached. This records the settled split after the SDK
+team's review; it supersedes the earlier RFC framing in this file.
 
-**TL;DR:** We are moving build orchestration **into the `alp` CLI**. The CLI sits
-at the top, computes the build plan from `board.yaml` + your metadata, and
-invokes `west` / `bitbake` / `cmake` directly. `scripts/alp_orchestrate.py` stops
-being a runtime dependency for the CLI/IDE — we read it only as a **reference
-spec**. **You do not need to orchestrate on our behalf, extract a shared crate,
-or keep a "build brain" wired for us.** What we need from you is only that the
-data + tools you already ship stay stable and versioned. Our implementation plan
-is in [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md).
+**TL;DR:** The `alp` CLI takes build orchestration to the top — it owns
+materialise / execute / schedule / cache / progress UX / envelope and invokes
+`west` / `bitbake` / `cmake` directly. It does **not** re-implement the planner.
+Per the SDK team's counter-offer, the CLI **consumes
+`alp_orchestrate.py --emit build-plan`** — the planner stays the SDK's single
+source of truth. Both sides accept this; the only scheduled new work on the SDK
+side is the `--emit build-plan` command (plus an answer on the conf→build
+wiring). The CLI's implementation plan is in
+[`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md).
 
-> This supersedes the earlier RFC framing ("extract `alp_orchestrate.py` into a
-> shared `alp-build-core` crate that both `west alp-build` and the CLI consume").
-> After reading the orchestrator end to end, that coordination is unnecessary:
-> the executor is trivial and the planner is schema logic we already own. The CLI
-> can own orchestration unilaterally without forking any vendor execution logic.
+> **History.** Round 1 (our RFC): "extract `alp_orchestrate.py` into a shared
+> `alp-build-core` Rust crate consumed by both `west alp-build` and the CLI."
+> Round 2 (we withdrew that): "the CLI owns orchestration and re-implements the
+> planner in Rust; you don't need to orchestrate for us." Round 3 (SDK reply,
+> accepted here): "agreed on the split — but don't mirror the planner; consume
+> our `--emit build-plan` instead." This document is the Round-3 settlement.
 
 ---
 
-## 1. Why we no longer need you to orchestrate
+## 1. The settled split
 
-We read `scripts/alp_orchestrate.py` (1547 lines) in full. It is a **planner with
-a trivial executor**, not a vendor-execution engine:
+| Concern | Owner |
+|---|---|
+| Parse/validate `board.yaml`; per-core slice resolution; partition allocation; IPC/DTS/sysbuild/TF-M derivation; **contents** of all generated files | **SDK** — via `--emit build-plan` |
+| `metadata/**`, the builders (`west`/`bitbake`/`cmake`), Yocto layer, vendor glue | **SDK** — unchanged |
+| Materialise (write the plan's files), execute (run each slice), schedule (parallel/cache), progress UX, JSON envelope, exit codes | **CLI** |
+| `west alp-build` | **SDK** — stays native (see §3.3) |
 
-- The entire build executor is three commands (`alp_orchestrate.py:1440-1465`):
-  `west build -b <board> <app>` · `bitbake <image|app>` · `cmake -S <app> -B
-  <dir>` — each run with `cwd = build/<core>-<os>/`, `env += ALP_SDK_ROOT`, output
-  to `build.log`. **No signing / `imgtool` / `objcopy` / partition packaging in
-  the build path.**
-- The "brain" is the **planner**: `board.yaml` → per-core slices (backend, board,
-  machine, toolchain, app, build dir), IPC carve-outs, DTS reservations, boot
-  order, helper MCUs. That is **schema semantics over data you own** — and our
-  Rust `alp-core` already parses `board.yaml` v2 + the SoM catalogue, so it is an
-  extension of existing code, not a port of yours.
-- Flash (`scripts/flash_backends/`, `west alp-flash`) is a **separate**, in-code
-  "subsequent PRs" concern — still stubs. We leave it with you.
+The CLI is still the top-level driver of the build; it *fetches* the plan rather
+than *computing* it.
 
-So the CLI can drive builds directly without reimplementing anything
-vendor-specific. We are **not** forking your build logic — there is no execution
-logic to fork; we reproduce a command sequence.
+## 2. Why we accepted the `--emit build-plan` offer
 
-## 2. What this means for the SDK side
+The SDK's pushback was right, and the new facts changed our calculus:
 
-| Thing | Before | After |
-|---|---|---|
-| `alp_orchestrate.py` as the CLI/IDE's build brain | runtime dependency (via `west alp-build`) | **reference only** — not called by the CLI |
-| `west alp-build` | owns orchestration | **your call**: keep as-is for `west` users, or make it a thin shim over `alp build` later |
-| `metadata/**`, `board.yaml` schema | SDK-owned data | **unchanged** — still yours, still the source of truth |
-| `west` workspace, `meta-alp-sdk`, vendor CMake toolchains | the actual builders | **unchanged** — we invoke them, never replace them |
-| Yocto layer / CMake helpers / vendor glue | SDK | **unchanged** |
+- **The planner is not stable schema logic.** It doubled (1547 → 3066 lines) in
+  three weeks — partition allocation, sysbuild, TF-M secure-boot. Mirroring it in
+  Rust is a standing tax on a fast-moving, vendor-heavy surface; a parity harness
+  would *detect* drift, not *remove* the re-implementation cost.
+- **"One machine-readable source per fact"** is the SDK's core design rule.
+  Consuming the emit honors it; a second Rust planner would violate it.
+- **The "no Python" prize is small.** `west` and `bitbake` are Python; every
+  build host already has a Python-bearing SDK checkout. One sub-second,
+  cacheable `--emit build-plan` subprocess is not a real dependency cost.
 
-Nothing in your repo has to change for the CLI to work. `west alp-build` and
-`alp_orchestrate.py` can stay exactly as they are; the CLI simply no longer
-routes through them.
+## 3. What we accept from the SDK response
 
-## 3. The contract we depend on (please keep these stable)
+### 3.1 `--emit build-plan` — yes, with one refinement
 
-We consume four stable seams that already exist. None is new work for you — the
-ask is only **stability + versioning**.
+Please emit exactly the `BuildPlan` JSON we spec'd, with **one addition: carry
+the generated-file _contents_** (`GeneratedFile { path, contents }`) for both
+`shared_artefacts` and per-slice `config_artefacts`. That keeps the CLI's
+materialise step pure IO (byte-write) and keeps **all** content-derivation
+(IPC/DTS/partitions/sysbuild/TF-M) inside your emit, where it belongs. Shape is
+in [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md) §3.
 
-### C1 — `board.yaml` schema (the planner's primary input)
+### 3.2 Parity pinned to release tags — agreed
 
-We vendor your board schema (`schemas/board.schema.json`) and track it. Per-core
-`os`, app/image, peripherals, libraries, IPC, and SoM `sku` are what the planner
-reads. Breaking shape changes should bump the schema version (as today).
+We will track released tags / `schema_version`s, never `dev`. Goldens against a
+churning integration branch would just train everyone to rubber-stamp `--bless`.
+We rely on your release-notes/CHANGELOG heads-up (§4.3) to know when to re-bless.
 
-### C2 — `metadata/**` (per-core type → backend + targets)
+### 3.3 `west alp-build` stays native — agreed
 
-`metadata/e1m_modules/<E1M-…>{.yaml | /som.yaml}` (sku, family, display_name,
-topology, cores, boot_order), `metadata/chips/`, `metadata/soc-spec/`. The
-per-core **type → backend** mapping and board/machine/toolchain resolution come
-from here — exactly where hardware knowledge belongs. Please keep the
-`schema_version` on the e1m_modules YAMLs. (Our CLI already parses both the flat
-and the `…/som.yaml` directory layouts.)
+We withdraw the shim suggestion. Standalone `west` usage (hand-written firmware,
+no IDE/CLI) is a first-class consumer path, and a shim would invert the
+dependency direction (an SDK `west` command depending on a binary from our repo).
+Both paths coexist; the parity harness keeps them honest.
 
-### C3 — the build tools' invocation contract
+### 3.4 Do not freeze the command shape (C3) — understood
 
-We invoke `west build` / `bitbake` / `cmake` the way the orchestrator does today.
-If you change the per-slice command shape (flags, build-dir convention, env), a
-heads-up keeps our parity harness green.
+We will **not** treat today's `west build -b <board> <app>` as frozen. The
+command comes from the emit (§3.1) and will grow (e.g. `--sysbuild
+--sysbuild-config`) as Phase 3 lands. A CHANGELOG heads-up on command-shape
+changes (your commitment §4.3) keeps our harness green.
 
-### C4 — per-slice config → build consumption (the one open item)
+## 4. Open item + your commitments
 
-The orchestrator writes `alp.conf` / `local.conf` / `cmake-args.txt` per slice,
-but the build command does not yet obviously consume them ("Phase 3 wires this
-up" in-code). **When you finalize how that config feeds each build, tell us** —
-we will materialize and apply it identically. This is the only place where your
-roadmap and ours genuinely intersect.
+**Open (blocks our C1):** the conf→build wiring (per-slice `alp.conf` /
+`local.conf` / `cmake-args.txt` consumption). You committed to an answer before
+our C1; current leanings (Zephyr `EXTRA_CONF_FILE` in a `generated/` subdir to
+avoid the double-GLOB trap + sysbuild overlays; Yocto `require` fragment with
+weak `?=`; baremetal cmake-args splat) are captured in
+[`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md) §7.
 
-## 4. How we keep honest (parity harness)
+**Your committed seams:** `board.yaml` schema-version bumps; `schema_version` on
+`e1m_modules`; CHANGELOG heads-up on per-slice command shape / build-dir / env /
+metadata layout; the C4 answer before C1; `--emit build-plan` (with our contents
+refinement).
 
-`alp_orchestrate.py` is deterministic and supports `--emit
-{system-manifest|ipc-contract-h|dts-reservations}` plus per-slice config
-materialization. We diff the CLI's plan against the script's output (config +
-shared artefacts + `system-manifest.yaml` + the exact per-slice command) for a
-`board.yaml` × SoM fixture matrix — committed goldens, `--bless` to refresh, in
-the spirit of our existing `cli-rs/contract/run.sh`. **Your script stays the
-reference of record**; if it changes, our harness flags the drift. This is how we
-guarantee we match your intent without depending on your code at runtime.
+## 5. Sequencing
 
-## 5. What we'd value from you (optional, not blocking)
-
-1. A pointer to the **intended per-slice config → build wiring** (C4) so we match
-   it from day one.
-2. A heads-up if the **per-slice command shape** (C3) or **metadata layout** (C2)
-   changes in a release.
-3. Later, if useful to `west` users: we are happy to make `west alp-build` a thin
-   shim over `alp build` so there is one orchestration path — but that is your
-   call and not required for us.
-
-That's all. We own the orchestration; you keep owning the hardware knowledge and
-the builders. See [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md) for the
-phased plan and the exact `BuildPlan` shape we compute.
+C0 (lock the emit schema together + consume it + `alp build --plan`, no
+execution) can start now in parallel with you scheduling `--emit build-plan`. C1
+(single-core Zephyr, real materialise + execute) waits on the C4 answer. Full
+phase breakdown in [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md) §5.
