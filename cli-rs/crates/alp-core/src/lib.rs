@@ -13,6 +13,7 @@ pub mod clock;
 pub mod debug;
 pub mod debug_launch;
 pub mod diff;
+pub mod engine_e2e_spike; // LOCAL SPIKE — not for dev
 pub mod loader;
 pub mod memory_map_spike; // LOCAL SPIKE — not for dev
 pub mod model;
