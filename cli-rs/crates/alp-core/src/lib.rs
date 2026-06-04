@@ -14,6 +14,7 @@ pub mod debug_launch;
 pub mod diff;
 pub mod loader;
 pub mod model;
+pub mod partition_alloc_spike; // LOCAL SPIKE — not for dev
 pub mod presets;
 pub mod preview;
 pub mod project;
