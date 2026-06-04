@@ -13,6 +13,7 @@ pub mod debug;
 pub mod debug_launch;
 pub mod diff;
 pub mod loader;
+pub mod memory_map_spike; // LOCAL SPIKE — not for dev
 pub mod model;
 pub mod partition_alloc_spike; // LOCAL SPIKE — not for dev
 pub mod presets;
