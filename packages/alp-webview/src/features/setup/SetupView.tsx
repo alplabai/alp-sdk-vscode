@@ -1,5 +1,5 @@
 import { useAppContext } from "../../shared/AppContext";
-import { Button, Skeleton, StatusChip } from "../../shared/ui";
+import { Button, Icon, Skeleton, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
 import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
@@ -191,7 +191,7 @@ export function SetupView() {
             postMessage({ type: "runCommand", command: "alp.ideHub.refresh" })
           }
         >
-          ↺
+          <Icon name="refresh" size={14} />
         </button>
       </div>
 
