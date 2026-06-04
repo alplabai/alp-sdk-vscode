@@ -29,7 +29,10 @@ export type IconName =
   | "plug"
   | "book"
   | "rocket"
-  | "bug";
+  | "bug"
+  | "eye"
+  | "swap"
+  | "save";
 
 const PATHS: Record<IconName, JSX.Element> = {
   bolt: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />,
@@ -174,6 +177,27 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M20.97 5c0 2.1-1.6 3.8-3.5 4" />
       <path d="M22 13h-4" />
       <path d="M17.2 17c2.1.2 3.8 1.9 3.8 4" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  swap: (
+    <>
+      <path d="M8 3 4 7l4 4" />
+      <path d="M4 7h16" />
+      <path d="m16 21 4-4-4-4" />
+      <path d="M20 17H4" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+      <path d="M17 21v-8H7v8" />
+      <path d="M7 3v5h8" />
     </>
   ),
 };

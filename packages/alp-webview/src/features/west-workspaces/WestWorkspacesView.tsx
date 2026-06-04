@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useAppContext } from "../../shared/AppContext";
-import { Button, Skeleton, StatusChip } from "../../shared/ui";
+import { Button, Icon, Skeleton, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
 import type { ChipState } from "../../types";
 import { postMessage } from "../../vscode";
@@ -52,7 +52,7 @@ export function WestWorkspacesView() {
               })
             }
           >
-            +
+            <Icon name="filePlus" size={14} />
           </button>
           <button
             className={layout.sectionIconBtn}
@@ -65,7 +65,7 @@ export function WestWorkspacesView() {
               })
             }
           >
-            ⇄
+            <Icon name="swap" size={14} />
           </button>
           <button
             className={layout.sectionIconBtn}
@@ -76,7 +76,7 @@ export function WestWorkspacesView() {
               postMessage({ type: "runCommand", command: "alp.bootstrap" })
             }
           >
-            ⊙
+            <Icon name="play" size={14} />
           </button>
           <button
             className={layout.sectionIconBtn}
@@ -86,7 +86,7 @@ export function WestWorkspacesView() {
               postMessage({ type: "runCommand", command: "alp.ideHub.refresh" })
             }
           >
-            ↺
+            <Icon name="refresh" size={14} />
           </button>
           <button
             className={layout.sectionIconBtn}
@@ -97,7 +97,7 @@ export function WestWorkspacesView() {
               postMessage({ type: "runCommand", command: "alp.generateAll" })
             }
           >
-            ⊞
+            <Icon name="save" size={14} />
           </button>
         </div>
       </div>
