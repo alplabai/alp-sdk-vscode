@@ -102,3 +102,27 @@ C0 (lock the emit schema together + consume it + `alp build --plan`, no
 execution) can start now in parallel with you scheduling `--emit build-plan`. C1
 (single-core Zephyr, real materialise + execute) waits on the C4 answer. Full
 phase breakdown in [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md) §5.
+
+## 6. Follow-up requests (CLI side → SDK, 2026-06-04)
+
+Status from our side since the ADR: the consumer is **done and verified** — our
+`alp build --plan-from <FILE>` parses your real `--emit build-plan` output (run
+on `dev` against `examples/audio/i2s-tone/board.yaml`) and re-serializes it
+**semantically identical**; `alp build --materialise` byte-writes the plan's
+artefacts (path-traversal-guarded, idempotent). Two things from you unblock the
+rest:
+
+1. **Cut a tagged release that includes `--emit build-plan` (ADR 0014).** The
+   emit is on `dev` (`ebaa3dd`); per the ADR we pin to **release tags**, not
+   `dev`. A tag lets us (a) bump our submodule pin to it, (b) wire the live
+   `alp build --plan` (invoke `--emit build-plan` directly), and (c) start the
+   parity harness against a stable golden. Until then `--plan` returns a clear
+   "awaiting a tagged release" message and we consume via `--plan-from`.
+2. **Confirm C4 (conf→build wiring)** — the one item you committed to answer
+   before our C1. Your leanings are captured (Zephyr `EXTRA_CONF_FILE` in a
+   `generated/` subdir + sysbuild overlays; Yocto `require` fragment with weak
+   `?=`; baremetal cmake-args splat). Once it lands we wire **execute** (run each
+   slice's `ToolStep`) so the per-slice config is actually applied identically.
+
+Neither blocks you on us: consume + materialise are shipped on our `dev`
+([`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md) §5, phases C0 + C1-materialise).
