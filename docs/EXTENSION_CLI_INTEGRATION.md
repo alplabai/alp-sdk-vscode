@@ -300,3 +300,10 @@ No open items — this plan is frozen; revisit only if an assumption breaks.
   dependency. If the SDK adopts a Rust core, the CLI would link it instead of
   shelling to west. Until then: thin wrapper (§6a). The CLI may still *preview*
   the build plan (`trace`, `doctor` A3) without owning dispatch.
+
+  **Update:** a concrete, contract-bound design for doing this *right* — a shared
+  `alp-build-core` Rust crate consumed by **both** `west alp-build` and the CLI,
+  with a phased, parity-gated migration that avoids the fork by having the SDK
+  team own the one crate + its contracts (C1 build-plan, C2 envelope, C3
+  executor, C4 metadata, C5 versioning) — is written up as a proposal for the SDK
+  team in [`PROPOSAL-alp-build-core.md`](PROPOSAL-alp-build-core.md).

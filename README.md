@@ -106,6 +106,10 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 - [EXTENSION_CLI_INTEGRATION.md](docs/EXTENSION_CLI_INTEGRATION.md): How the
   extension consumes the native `alp` CLI (binary resolution + the in-process vs
   delegated split).
+- [PROPOSAL-alp-build-core.md](docs/PROPOSAL-alp-build-core.md): RFC for the SDK
+  team — extract build orchestration into a shared `alp-build-core` Rust crate
+  (one brain for `west alp-build` + the `alp` CLI), with contracts + a phased
+  migration.
 - [ALP_IDE_ONBOARDING.md](docs/ALP_IDE_ONBOARDING.md) /
   [ALP_IDE_SDK_INSTALLATION.md](docs/ALP_IDE_SDK_INSTALLATION.md): IDE Hub
   onboarding and SDK install flows.
