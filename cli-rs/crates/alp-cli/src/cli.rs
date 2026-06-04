@@ -146,6 +146,11 @@ pub struct BuildArgs {
     /// the plan. Requires a plan source (`--plan` / `--plan-from`).
     #[arg(long)]
     pub materialise: bool,
+    /// Build natively: consume the plan, materialise its files, then run each
+    /// slice's command (`west` / `bitbake` / `cmake`) sequentially — instead of
+    /// delegating to `west alp-build`.
+    #[arg(long)]
+    pub native: bool,
     /// Arguments forwarded verbatim to `west alp-build` (app path, `--core <id>`,
     /// `--sequential`, `-b <board>`) when not using `--plan`.
     #[arg(

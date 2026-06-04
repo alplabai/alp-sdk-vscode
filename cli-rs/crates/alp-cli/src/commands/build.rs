@@ -35,19 +35,50 @@ struct BuildData {
     args: Vec<String>,
 }
 
-/// `alp build` entry: `--plan` / `--materialise` consume the SDK's emitted build
+/// `alp build` entry. `--native` runs the CLI-native build (consume plan →
+/// materialise → execute); `--plan` / `--materialise` consume + show/write the
 /// plan; otherwise delegate to `west alp-build` (the Wave A2 behavior).
 pub fn run_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
-    if args.plan || args.plan_from.is_some() || args.materialise {
+    if args.native {
+        native_build(g, args)
+    } else if args.plan || args.plan_from.is_some() || args.materialise {
         plan_command(g, args)
     } else {
         run(g, "build", &args.args)
     }
 }
 
+/// The project build tree base (where `build/<core>-<os>/` lives) — the same
+/// place `west alp-build` would run.
+fn base_dir(context: &ProjectContext) -> String {
+    context
+        .west_cwd
+        .clone()
+        .or_else(|| context.workspace_root.clone())
+        .unwrap_or_else(|| ".".to_string())
+}
+
+/// Acquire + parse the build plan: from `--plan-from <FILE>` if given, else by
+/// invoking the SDK's `--emit build-plan` (ADR 0014). Schema-version guarded.
+fn acquire_plan(
+    context: &ProjectContext,
+    args: &BuildArgs,
+) -> Result<BuildPlan, (&'static str, String)> {
+    let json = match &args.plan_from {
+        Some(path) => std::fs::read_to_string(path).map_err(|e| {
+            (
+                "build.plan-unavailable",
+                format!("failed to read plan file `{path}`: {e}"),
+            )
+        })?,
+        None => invoke_sdk_emit(context)?,
+    };
+    parse_build_plan(&json).map_err(|e| ("build.plan-invalid", e.to_string()))
+}
+
 /// `alp build --plan [--plan-from FILE] [--materialise]` — consume the build
 /// plan (the SDK's single source of truth; the CLI only deserializes it), then
-/// either show it or materialise its files. No execution yet (Wave C0 / C1-prep).
+/// either show it or materialise its files. No execution.
 fn plan_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
     let context = resolve_cli_project_context(g);
     let project = Project {
@@ -55,20 +86,7 @@ fn plan_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
         board_yaml: context.board_yaml_path.clone(),
     };
 
-    let source: Result<String, (&str, String)> = match &args.plan_from {
-        Some(path) => std::fs::read_to_string(path).map_err(|e| {
-            (
-                "build.plan-unavailable",
-                format!("failed to read plan file `{path}`: {e}"),
-            )
-        }),
-        // No explicit file: invoke the SDK's `--emit build-plan` (ADR 0014).
-        None => invoke_sdk_emit(&context),
-    };
-
-    let plan = match source
-        .and_then(|json| parse_build_plan(&json).map_err(|e| ("build.plan-invalid", e.to_string())))
-    {
+    let plan = match acquire_plan(&context, args) {
         Ok(plan) => plan,
         Err((code, message)) => {
             return plan_error_run(g, project, code, message, ExitCode::RuntimeFailure);
@@ -79,13 +97,7 @@ fn plan_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
         return show_plan_run(g, project, &plan);
     }
 
-    // Materialise: byte-write the plan's files under the project's build tree
-    // (the same place `west alp-build` would run).
-    let base = context
-        .west_cwd
-        .clone()
-        .or_else(|| context.workspace_root.clone())
-        .unwrap_or_else(|| ".".to_string());
+    let base = base_dir(&context);
     match materialise_plan(&plan, Path::new(&base)) {
         Ok(written) => materialise_ok_run(g, project, &base, written),
         Err(e) => plan_error_run(
@@ -95,6 +107,175 @@ fn plan_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
             e.message(),
             ExitCode::WriteFailure,
         ),
+    }
+}
+
+/// `alp build --native` — consume the plan, materialise its files, then run each
+/// slice's command sequentially. (Per ADR 0014 the conf→build wiring "C4" is
+/// still settling on the SDK side; we run whatever command the emit gives, so a
+/// build before C4 lands may not yet apply the per-slice config.)
+fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
+    let context = resolve_cli_project_context(g);
+    let project = Project {
+        root: context.workspace_root.clone(),
+        board_yaml: context.board_yaml_path.clone(),
+    };
+
+    let plan = match acquire_plan(&context, args) {
+        Ok(plan) => plan,
+        Err((code, message)) => {
+            return plan_error_run(g, project, code, message, ExitCode::RuntimeFailure);
+        }
+    };
+
+    let base = base_dir(&context);
+    if let Err(e) = materialise_plan(&plan, Path::new(&base)) {
+        return plan_error_run(
+            g,
+            project,
+            "build.materialise-failed",
+            e.message(),
+            ExitCode::WriteFailure,
+        );
+    }
+
+    execute_slices(g, project, &plan, &base)
+}
+
+#[derive(Serialize)]
+struct SliceResult {
+    #[serde(rename = "coreId")]
+    core_id: String,
+    backend: String,
+    status: String, // "ok" | "failed" | "skipped"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rc: Option<i32>,
+}
+
+#[derive(Serialize)]
+struct BuildRunData {
+    #[serde(rename = "schemaVersion")]
+    schema_version: String,
+    #[serde(rename = "baseDir")]
+    base_dir: String,
+    slices: Vec<SliceResult>,
+}
+
+/// Run each slice's `ToolStep` sequentially under `base`. Text mode streams each
+/// build live (inherited stdio) with per-slice headers; JSON mode captures and
+/// folds per-slice results into the envelope. Commandless slices are skipped.
+/// Runs all slices (does not abort early) and exits non-zero if any failed.
+fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str) -> CommandRun {
+    let base_path = Path::new(base);
+    let text_mode = !g.is_json();
+    let mut results: Vec<SliceResult> = Vec::new();
+    let mut any_failed = false;
+
+    for slice in &plan.slices {
+        let backend = slice.backend.as_str().to_string();
+        let Some(cmd) = &slice.command else {
+            if text_mode {
+                eprintln!("→ {} [{}]: (no command — skipped)", slice.core_id, backend);
+            }
+            results.push(SliceResult {
+                core_id: slice.core_id.clone(),
+                backend,
+                status: "skipped".to_string(),
+                rc: None,
+            });
+            continue;
+        };
+
+        if text_mode {
+            eprintln!("→ {} [{}]: {}", slice.core_id, backend, cmd.display());
+        }
+        let cwd = base_path.join(&cmd.cwd);
+        // The build dir must exist before the tool runs (west/cmake build there).
+        if let Err(e) = std::fs::create_dir_all(&cwd) {
+            if text_mode {
+                eprintln!("   [failed] cannot create build dir {}: {e}", cwd.display());
+            }
+            any_failed = true;
+            results.push(SliceResult {
+                core_id: slice.core_id.clone(),
+                backend,
+                status: "failed".to_string(),
+                rc: None,
+            });
+            continue;
+        }
+        let mut command = Command::new(&cmd.tool);
+        command.args(&cmd.args).current_dir(&cwd).envs(&slice.env);
+
+        let (status, rc) = if text_mode {
+            match command.status() {
+                Ok(s) if s.success() => ("ok", s.code()),
+                Ok(s) => ("failed", s.code()),
+                Err(e) => {
+                    eprintln!("   launch error: {e}");
+                    ("failed", None)
+                }
+            }
+        } else {
+            match command.output() {
+                Ok(o) if o.status.success() => ("ok", o.status.code()),
+                Ok(o) => ("failed", o.status.code()),
+                Err(_) => ("failed", None),
+            }
+        };
+        if status == "failed" {
+            any_failed = true;
+        }
+        if text_mode {
+            let rc_note = rc.map(|c| format!(" (rc={c})")).unwrap_or_default();
+            eprintln!("   [{status}]{rc_note}");
+        }
+        results.push(SliceResult {
+            core_id: slice.core_id.clone(),
+            backend,
+            status: status.to_string(),
+            rc,
+        });
+    }
+
+    let exit = if any_failed {
+        ExitCode::RuntimeFailure
+    } else {
+        ExitCode::Success
+    };
+
+    if g.is_json() {
+        let issues = if any_failed {
+            vec![Issue {
+                code: "build.slice-failed".to_string(),
+                severity: "error".to_string(),
+                message: "one or more slices failed to build".to_string(),
+            }]
+        } else {
+            Vec::new()
+        };
+        let data = BuildRunData {
+            schema_version: "1".to_string(),
+            base_dir: base.to_string(),
+            slices: results,
+        };
+        let json = Envelope::new("build", project, data, issues, exit.code()).to_json();
+        CommandRun {
+            exit,
+            text: Vec::new(),
+            json: Some(json),
+        }
+    } else {
+        let ok = results.iter().filter(|r| r.status == "ok").count();
+        let failed = results.iter().filter(|r| r.status == "failed").count();
+        let skipped = results.iter().filter(|r| r.status == "skipped").count();
+        CommandRun {
+            exit,
+            text: vec![format!(
+                "build: {ok} ok, {failed} failed, {skipped} skipped"
+            )],
+            json: None,
+        }
     }
 }
 
@@ -468,6 +649,53 @@ mod tests {
         assert!(err.message().contains("unsafe"), "got: {}", err.message());
         // Nothing escaped above base.
         assert!(!base.join("../escape.txt").exists());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn native_execute_runs_commands_skips_commandless_and_reports() {
+        use clap::Parser;
+        // A real GlobalArgs in JSON mode (captures output, no stderr noise).
+        let g = crate::cli::Cli::parse_from(["alp", "--format", "json", "validate"]).global;
+
+        // A portable success command on every CI platform.
+        let (tool, args) = if cfg!(windows) {
+            ("cmd", r#"["/C", "exit", "0"]"#)
+        } else {
+            ("true", "[]")
+        };
+        let json = format!(
+            r#"{{
+              "schemaVersion": 1, "boardYaml": "b", "sku": "S", "buildRoot": "build",
+              "slices": [
+                {{ "coreId": "c1", "backend": "zephyr", "buildDir": "build/c1",
+                   "command": {{ "tool": "{tool}", "args": {args}, "cwd": "build/c1" }} }},
+                {{ "coreId": "c2", "backend": "zephyr", "buildDir": "build/c2", "command": null }}
+              ],
+              "sharedArtefacts": []
+            }}"#
+        );
+        let plan = parse_build_plan(&json).unwrap();
+        let base = unique_temp_dir("alp-exec");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let project = Project {
+            root: None,
+            board_yaml: None,
+        };
+        let run = execute_slices(&g, project, &plan, base.to_str().unwrap());
+        assert_eq!(run.exit.code(), 0);
+
+        let env: serde_json::Value = serde_json::from_str(run.json.as_deref().unwrap()).unwrap();
+        assert_eq!(env["ok"], true);
+        let slices = env["data"]["slices"].as_array().unwrap();
+        assert_eq!(slices.len(), 2);
+        assert_eq!(slices[0]["status"], "ok");
+        assert_eq!(slices[1]["status"], "skipped");
+        // The build dir for the runnable slice was created.
+        assert!(base.join("build/c1").is_dir());
 
         std::fs::remove_dir_all(&base).ok();
     }

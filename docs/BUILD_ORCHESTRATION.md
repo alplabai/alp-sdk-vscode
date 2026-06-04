@@ -151,14 +151,19 @@ emit doubles as the strongest possible golden.
   download-on-demand + parity goldens; the invocation works against any checkout
   shipping the emit.) Sample/reference fixture:
   `cli-rs/contract/fixtures/build/build-plan.sample.json`.**)**
-- **C1 — Single-core Zephyr end to end.** **Materialise landed:**
-  `alp build --plan-from <FILE> --materialise` byte-writes the plan's shared +
-  per-slice artefacts under the build tree (`alp-core::BuildPlan::all_artefacts`
-  + `materialise_plan`, path-traversal-guarded, idempotent). Still pending:
-  **execute** the per-slice `ToolStep` (live output + envelope) — gated on a
-  tagged SDK release (to wire live `--plan`) + the SDK's C4 conf→build answer.
-- **C2 — Multi-core fan-out + Yocto + baremetal.** Parallel/sequential scheduler;
-  `bitbake` (host-gated) + `cmake` backends.
+- **C1 — Single-core Zephyr end to end.** **Materialise + execute landed
+  (mechanism):** `alp build --native` consumes the plan (live emit or
+  `--plan-from`), byte-writes its artefacts (`materialise_plan`,
+  path-traversal-guarded, idempotent), then runs each slice's `ToolStep`
+  **sequentially** — text mode streams each build live with per-slice headers;
+  JSON mode folds per-slice results (`{coreId, backend, status, rc}`) into the
+  envelope; commandless slices are skipped; exit 1 if any slice fails. Real
+  builds still need a bootstrapped toolchain env, and **per-slice config is only
+  truly applied once the SDK's C4 (conf→build) lands** — we run whatever command
+  the emit gives, so the command will start carrying `--sysbuild-config` etc.
+  then (we don't freeze its shape).
+- **C2 — Multi-core fan-out + Yocto + baremetal.** Parallel scheduler (today C1
+  runs sequential) + `bitbake` (host-gated) + `cmake` backends across cores.
 - **C3 — Incremental cache + manifest.** `.alp-build-state.json` slice-hash skip;
   `system-manifest.yaml`.
 - **C4 — Flip the front-ends + retire delegation.** `alp build` stops shelling to
