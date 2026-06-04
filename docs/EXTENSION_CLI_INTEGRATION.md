@@ -286,24 +286,20 @@ No open items — this plan is frozen; revisit only if an assumption breaks.
 5. **Sequencing** → Wave A (CLI commands) now; Wave B (extension consumption)
    after the first `cli-rs-v*` release. See §6.
 
-## 9. Deferred / optional (not scheduled)
+## 9. Build orchestration — decided: the CLI owns it (Wave C)
 
-- **Move the build orchestration into Rust.** Today `alp build` delegates to the
-  SDK's `west alp-build` → `alp_orchestrate.py` (≈3370 lines: SoC/board/topology
-  resolution, memory maps, secure-boot partitions, `system-manifest.yaml`),
-  which is versioned with the SDK and used by west + 2 CI workflows + the docs.
-  Reimplementing it in Rust is **deferred and only makes sense as part of the SDK
-  team rewriting its own Python tooling (`alp_project.py` + `alp_orchestrate.py`)
-  in Rust** — not as CLI/extension work. Doing it sooner would fork the SDK's
-  build brain across repos+languages (perpetual version-chase) and still require
-  `west build`/`bitbake`/`cmake` (the actual builders) anyway, so it removes no
-  dependency. If the SDK adopts a Rust core, the CLI would link it instead of
-  shelling to west. Until then: thin wrapper (§6a). The CLI may still *preview*
-  the build plan (`trace`, `doctor` A3) without owning dispatch.
-
-  **Update:** a concrete, contract-bound design for doing this *right* — a shared
-  `alp-build-core` Rust crate consumed by **both** `west alp-build` and the CLI,
-  with a phased, parity-gated migration that avoids the fork by having the SDK
-  team own the one crate + its contracts (C1 build-plan, C2 envelope, C3
-  executor, C4 metadata, C5 versioning) — is written up as a proposal for the SDK
-  team in [`PROPOSAL-alp-build-core.md`](PROPOSAL-alp-build-core.md).
+- Today `alp build` delegates to the SDK's `west alp-build` →
+  `alp_orchestrate.py` (a thin terminal wrapper, §6a). **Decision:** the CLI will
+  take orchestration to the top and drive the build itself — compute the plan
+  from `board.yaml` + metadata and invoke `west` / `bitbake` / `cmake` directly.
+- This is safe because the orchestrator's executor is trivial (three plain tool
+  commands per slice; **no signing / image-packaging in the build path**) and its
+  "brain" is the *planner* — schema logic our `alp-core` already mostly owns.
+  `alp_orchestrate.py` becomes a **reference spec**, not a runtime dependency.
+- The SDK side needs **no** changes for this; we depend only on the existing,
+  versioned `board.yaml` schema + `metadata/**` + the build tools. The full
+  evidence, the `BuildPlan` contract, the parity-harness strategy, and the phased
+  plan (C0 pure planner → C4 flip the front-ends) are in
+  [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md); the SDK-team-facing message
+  ("you don't need to orchestrate for us") is in
+  [`PROPOSAL-alp-build-core.md`](PROPOSAL-alp-build-core.md).

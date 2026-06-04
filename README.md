@@ -106,10 +106,13 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 - [EXTENSION_CLI_INTEGRATION.md](docs/EXTENSION_CLI_INTEGRATION.md): How the
   extension consumes the native `alp` CLI (binary resolution + the in-process vs
   delegated split).
-- [PROPOSAL-alp-build-core.md](docs/PROPOSAL-alp-build-core.md): RFC for the SDK
-  team — extract build orchestration into a shared `alp-build-core` Rust crate
-  (one brain for `west alp-build` + the `alp` CLI), with contracts + a phased
-  migration.
+- [BUILD_ORCHESTRATION.md](docs/BUILD_ORCHESTRATION.md): Wave C plan — the `alp`
+  CLI takes build orchestration to the top and wraps `west`/`bitbake`/`cmake`
+  directly; the `BuildPlan` contract, parity-harness strategy, and phased rollout
+  (C0 pure planner → C4 flip the front-ends).
+- [PROPOSAL-alp-build-core.md](docs/PROPOSAL-alp-build-core.md): the SDK-team
+  message — why their orchestration isn't needed on our behalf, and the small,
+  already-existing contract (schema + metadata + tools) the CLI depends on.
 - [ALP_IDE_ONBOARDING.md](docs/ALP_IDE_ONBOARDING.md) /
   [ALP_IDE_SDK_INSTALLATION.md](docs/ALP_IDE_SDK_INSTALLATION.md): IDE Hub
   onboarding and SDK install flows.
