@@ -144,9 +144,12 @@ emit doubles as the strongest possible golden.
   `parse_build_plan` / `summarize_plan`, schema-version guarded), matched to the
   shipped ADR 0014 emit and **verified byte-identical against the real SDK emit**;
   `alp build --plan-from <FILE>` renders a plan under the envelope (text + JSON).
-  The live `alp build --plan` path returns a clear issue until `--emit
-  build-plan` lands in a tagged SDK release (it exists on SDK `dev`; we pin to
-  tags). Sample/reference fixture:
+  The live `alp build --plan` now **invokes the SDK emit** —
+  `<sdk_root>/scripts/alp_orchestrate.py --input <board.yaml> --emit build-plan`
+  (SDK resolved via `--sdk-root` / settings / bootstrap), parses + renders,
+  schema-version-guarded with graceful errors. (Pin-to-tags still governs
+  download-on-demand + parity goldens; the invocation works against any checkout
+  shipping the emit.) Sample/reference fixture:
   `cli-rs/contract/fixtures/build/build-plan.sample.json`.**)**
 - **C1 — Single-core Zephyr end to end.** **Materialise landed:**
   `alp build --plan-from <FILE> --materialise` byte-writes the plan's shared +
@@ -177,8 +180,9 @@ The SDK team committed to:
    to `west build --sysbuild --sysbuild-config`.)*
 4. An answer on **C4 (conf→build wiring)** before our C1.
 5. **`--emit build-plan`** per §3 — ✅ shipped on SDK `dev` (`ebaa3dd`, ADR 0014)
-   with the file-contents refinement; **awaiting a tagged release** so we can pin
-   to it and wire the live `alp build --plan`.
+   with the file-contents refinement. Live `alp build --plan` now invokes it
+   (against any resolved SDK checkout); **awaiting a tagged release** only to pin
+   download-on-demand + the parity goldens to it.
 
 ## 7. Open questions / notes
 

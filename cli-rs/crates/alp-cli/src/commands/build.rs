@@ -14,6 +14,7 @@
 use std::path::{Component, Path};
 use std::process::Command;
 
+use alp_core::ProjectContext;
 use alp_core::build_plan::{BuildPlan, parse_build_plan, summarize_plan};
 use serde::Serialize;
 
@@ -61,14 +62,8 @@ fn plan_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
                 format!("failed to read plan file `{path}`: {e}"),
             )
         }),
-        None => Err((
-            "build.plan-unavailable",
-            "live build-plan emit is not wired yet — the SDK's \
-             `alp_orchestrate.py --emit build-plan` exists (ADR 0014) but is not \
-             yet in a tagged SDK release we pin to. Pass `--plan-from <FILE>` to \
-             consume an emitted plan JSON (see docs/BUILD_ORCHESTRATION.md)."
-                .to_string(),
-        )),
+        // No explicit file: invoke the SDK's `--emit build-plan` (ADR 0014).
+        None => invoke_sdk_emit(&context),
     };
 
     let plan = match source
@@ -101,6 +96,68 @@ fn plan_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
             ExitCode::WriteFailure,
         ),
     }
+}
+
+/// Invoke the SDK's `alp_orchestrate.py --emit build-plan` and return its stdout
+/// (deterministic, write-free JSON). The plan is the SDK's single source of
+/// truth — we only run + parse it. Works against whatever SDK checkout is
+/// resolved (`--sdk-root` / settings / bootstrap); the schema-version guard in
+/// `parse_build_plan` rejects an incompatible emit.
+fn invoke_sdk_emit(context: &ProjectContext) -> Result<String, (&'static str, String)> {
+    let sdk_root = context.sdk_root.as_deref().ok_or((
+        "build.plan-unavailable",
+        "no alp-sdk checkout found — pass `--sdk-root <PATH>`, set it in settings, or run \
+         `alp bootstrap`. The build plan comes from the SDK's `alp_orchestrate.py --emit \
+         build-plan` (ADR 0014)."
+            .to_string(),
+    ))?;
+    let board_yaml = context.board_yaml_path.as_deref().ok_or((
+        "build.plan-unavailable",
+        "no board.yaml found — pass `--board-yaml <PATH>` or run from a project.".to_string(),
+    ))?;
+    let script = Path::new(sdk_root)
+        .join("scripts")
+        .join("alp_orchestrate.py");
+    if !script.is_file() {
+        return Err((
+            "build.plan-unavailable",
+            format!(
+                "the SDK at `{sdk_root}` has no `scripts/alp_orchestrate.py` — pin to an SDK \
+                 release that ships `--emit build-plan` (ADR 0014)."
+            ),
+        ));
+    }
+    let output = Command::new(&context.python_binary)
+        .arg(&script)
+        .args(["--input", board_yaml, "--emit", "build-plan"])
+        .output()
+        .map_err(|e| {
+            (
+                "build.plan-unavailable",
+                format!(
+                    "failed to run `{} {}`: {e}",
+                    context.python_binary,
+                    script.display()
+                ),
+            )
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        return Err((
+            "build.plan-unavailable",
+            format!(
+                "the SDK build-plan emit failed (rc {}){}",
+                output.status.code().unwrap_or(-1),
+                if stderr.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {stderr}")
+                }
+            ),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn show_plan_run(g: &GlobalArgs, project: Project, plan: &BuildPlan) -> CommandRun {
