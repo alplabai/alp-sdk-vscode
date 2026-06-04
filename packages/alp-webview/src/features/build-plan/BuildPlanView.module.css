@@ -201,8 +201,12 @@
 
 .chevron {
   flex-shrink: 0;
-  font-size: 9px;
+  display: inline-flex;
   color: var(--text-secondary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.chevron[data-open] {
+  transform: rotate(90deg);
 }
 
 .filePath {

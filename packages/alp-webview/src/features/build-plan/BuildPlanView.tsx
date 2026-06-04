@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, EmptyState, Skeleton } from "../../shared/ui";
+import { Button, Card, EmptyState, Icon, Skeleton } from "../../shared/ui";
 import type { BuildPlanGeneratedFile, BuildPlanSlice } from "../../types";
 import styles from "./BuildPlanView.module.css";
 import { useBuildPlan } from "./useBuildPlan";
@@ -28,8 +28,12 @@ function FileRow({
         onClick={onToggle}
         aria-expanded={open}
       >
-        <span className={styles.chevron} aria-hidden="true">
-          {open ? "▾" : "▸"}
+        <span
+          className={styles.chevron}
+          data-open={open || undefined}
+          aria-hidden="true"
+        >
+          <Icon name="chevronRight" size={12} />
         </span>
         <code className={styles.filePath}>{file.path}</code>
       </button>
@@ -67,7 +71,7 @@ export function BuildPlanView() {
         </div>
       ) : error || !plan ? (
         <EmptyState
-          icon="🧩"
+          icon={<Icon name="cpu" size={28} />}
           title="No build plan"
           description={
             error ??

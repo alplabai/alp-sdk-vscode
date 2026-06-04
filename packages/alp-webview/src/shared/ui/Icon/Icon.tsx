@@ -20,7 +20,10 @@ export type IconName =
   | "download"
   | "refresh"
   | "settings"
-  | "arrowRight";
+  | "arrowRight"
+  | "chevronRight"
+  | "warning"
+  | "x";
 
 const PATHS: Record<IconName, JSX.Element> = {
   bolt: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />,
@@ -106,6 +109,20 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M5 12h14" />
       <path d="m12 5 7 7-7 7" />
+    </>
+  ),
+  chevronRight: <path d="m9 18 6-6-6-6" />,
+  warning: (
+    <>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </>
+  ),
+  x: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
     </>
   ),
 };

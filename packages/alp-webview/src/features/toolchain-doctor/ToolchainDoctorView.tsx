@@ -1,12 +1,13 @@
-import { Button, Skeleton } from "../../shared/ui";
+import { Button, Icon, Skeleton } from "../../shared/ui";
+import type { IconName } from "../../shared/ui";
 import type { DoctorCheckStatus } from "../../types";
 import styles from "./ToolchainDoctorView.module.css";
 import { useToolchainDoctor } from "./useToolchainDoctor";
 
-const GLYPH: Record<DoctorCheckStatus, string> = {
-  ok: "✓",
-  warn: "!",
-  missing: "✕",
+const GLYPH: Record<DoctorCheckStatus, IconName> = {
+  ok: "check",
+  warn: "warning",
+  missing: "x",
 };
 
 export function ToolchainDoctorView() {
@@ -60,7 +61,7 @@ export function ToolchainDoctorView() {
                     data-status={check.status}
                     aria-hidden="true"
                   >
-                    {GLYPH[check.status]}
+                    <Icon name={GLYPH[check.status]} size={14} />
                   </span>
                   <div className={styles.info}>
                     <div className={styles.label}>
