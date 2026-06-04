@@ -126,3 +126,79 @@ rest:
 
 Neither blocks you on us: consume + materialise are shipped on our `dev`
 ([`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md) §5, phases C0 + C1-materialise).
+
+## 7. Future evolution (for discussion): a Rust planner crate
+
+This is **not** a reversal of ADR 0014 — the JSON emit is shipping and our
+consumer + materialise are done and verified. It is a forward option to weigh
+once the conditions below hold. The `BuildPlan` JSON schema is the insulating
+contract, so the planner's _implementation_ can evolve without reworking the
+consumer. (This revisits round 1's "shared crate" with the new context: a proven
+contract, a phased migration, and an SDK-repo home that resolves the west
+dependency-inversion concern.)
+
+### Two variants — only one changes the consumer
+
+- **A — crate replaces the Python planner, still emits JSON.** The SDK rewrites
+  the planner as a Rust crate that produces the same `--emit build-plan` output.
+  The CLI is unchanged (still consumes JSON via subprocess). No consumer-side
+  win; purely the SDK's internal choice — we don't need it.
+- **B — the CLI _links_ the crate (Cargo dependency).** The CLI computes the
+  plan **in-process**. This is the variant worth discussing, because it delivers
+  real wins:
+  - **Offline, Python-free, instant planning** — the IDE can show the build plan
+    / enrich `board.yaml` editing without the user having bootstrapped the SDK +
+    a Python env. Removes today's subprocess + Python-checkout friction at plan
+    time.
+  - **Compile-time-checked contract** — a fast-moving planner is _safer_ to
+    consume as typed Rust (breakage = compile error) than as hand-maintained
+    JSON (`schemaVersion` + CHANGELOG discipline, caught only at runtime/parity).
+  - **Richer model** — the crate can expose the planner's intermediate model
+    (topology, carve-outs, "why this board target") for IDE features the lean
+    emit deliberately drops.
+
+### The crux: who owns the moving Rust
+
+B's only real cost is ownership of a fast-moving planner in Rust (~3.5k lines,
+doubled in three weeks: partition allocator, sysbuild, TF-M):
+
+- **SDK owns it** — the right home (hardware knowledge lives there), but the SDK
+  is a Python team; this is exactly what round 1 rejected. Viable only with
+  genuine Rust appetite and/or a planner that is stabilizing.
+- **CLI owns it** — that is the round-2 "planner mirror": a second source of
+  truth + a standing re-implementation tax. Rejected then, rejected now.
+
+So B is gated on two SDK-side conditions, not a technical blocker: **(1) Rust
+appetite on the SDK team, and (2) the planner stabilizing** enough that a Rust
+port is not chasing daily churn.
+
+### Migration path (nothing already built is wasted)
+
+Phased + reversible, with the `BuildPlan` JSON schema as the stable seam:
+
+1. **Today** — Python planner → JSON emit → CLI consumer (shipped, verified).
+2. **Variant A** — the SDK moves the planner into a Rust crate (in the SDK repo,
+   SDK-owned); the emit becomes `crate::build_plan(...).to_json()`. The CLI is
+   untouched; west keeps consuming as today.
+3. **Variant B** — the CLI adds the crate as a Cargo dependency and computes the
+   plan in-process; our `BuildPlan` types become the crate's _output type_
+   (reused, not rewritten). The emit stays for west / CI / non-Rust callers.
+
+The west path stays clean: the crate lives in the **SDK** repo, so west calling
+its own repo's Rust (a thin binary or a pyo3 binding) is intra-repo — no
+cross-repo dependency inversion (the concern that kept `west alp-build` native).
+
+### The ask (a conversation, not a decision)
+
+Two questions for the SDK team:
+
+1. Is there **appetite to own a Rust planner crate**, given the planner's pace?
+2. Is the planner **stabilizing** (partition / sysbuild / TF-M settling) enough
+   that a port would not be chasing churn?
+
+If both are "yes", B is the cleanest end-state and we would co-design the crate
+boundary — a pure `fn build_plan(board_yaml, metadata) -> BuildPlan` published
+from the SDK repo, consumed by the CLI (link) **and** the SDK's own
+`west alp-build` (binary / pyo3) — one brain, in Rust, two surfaces. If either is
+"no", the JSON emit stays the right answer and we revisit later; the consumer we
+shipped works unchanged in every case.
