@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Build-plan contract (Wave C) — the **consumed** shape of the SDK's
-//! `alp_orchestrate.py --emit build-plan` JSON.
+//! `alp_orchestrate.py --emit build-plan` JSON, locked as ADR 0014
+//! (alp-sdk `docs/adr/0014-build-plan-emit-cli-contract.md`, 2026-06-04).
 //!
 //! The CLI *consumes* this plan; it does **not** compute it. The planner — the
 //! fast-moving, vendor-heavy part (partition allocation, sysbuild, TF-M) — stays
@@ -9,8 +10,17 @@
 //! parses the plan JSON. Materialise / execute / schedule live in the CLI
 //! (`alp-cli`).
 //!
-//! The emit carries the generated-file **contents** (`GeneratedFile`) so the
-//! CLI's materialise step is pure IO — no content derivation leaks back here.
+//! Contract notes (ADR 0014, mirrored here so the types stay honest):
+//!   * camelCase keys; `schemaVersion` independent of board.yaml's version.
+//!   * Every artefact carries its `contents` (`GeneratedFile`) so materialise is
+//!     pure byte-write IO — no content-derivation leaks to the consumer.
+//!   * **No `inputHash`** (the consumer computes its own cache key over the plan)
+//!     and **no `sequential`** (parallelism policy is the consumer's scheduler).
+//!   * One slice per non-`off` core, sorted by `coreId`. A slice the script
+//!     cannot build yet carries `command: null` + a `no-command` warning — never
+//!     dropped.
+//!   * The per-slice `command` shape is **not frozen** (it will grow, e.g.
+//!     `--sysbuild`); we never assume a fixed arg layout.
 
 use std::collections::BTreeMap;
 
@@ -67,40 +77,33 @@ impl ToolStep {
     }
 }
 
-/// One build slice — a single non-`off` core.
+/// One build slice — a single non-`off` core. Lean by contract (ADR 0014): the
+/// command already encodes the board/app, so the consumer needs only what it
+/// runs + writes, not the planner's intermediate fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildSlice {
     pub core_id: String,
     pub backend: Backend,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub machine: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub board: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub toolchain: Option<String>,
-    #[serde(default)]
-    pub peripherals: Vec<String>,
-    #[serde(default)]
-    pub libraries: Vec<String>,
     pub build_dir: String,
     #[serde(default)]
     pub config_artefacts: Vec<GeneratedFile>,
-    pub command: ToolStep,
+    /// `None` when the planner cannot build this core yet (paired with a
+    /// `no-command` warning); the slice is reported, never dropped.
+    #[serde(default)]
+    pub command: Option<ToolStep>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
-    #[serde(default)]
-    pub input_hash: String,
 }
 
-/// A non-fatal note from the planner (e.g. "core X is off", "toolchain TBD").
+/// A non-fatal note from the planner (e.g. "core X has no build command").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlanWarning {
     pub code: String,
+    /// Set when the warning is about a specific core (e.g. `no-command`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_id: Option<String>,
     pub message: String,
 }
 
@@ -109,14 +112,14 @@ pub struct PlanWarning {
 #[serde(rename_all = "camelCase")]
 pub struct BuildPlan {
     pub schema_version: u32,
+    #[serde(default)]
+    pub generated_by: String,
     pub board_yaml: String,
     pub sku: String,
     pub build_root: String,
     pub slices: Vec<BuildSlice>,
     #[serde(default)]
     pub shared_artefacts: Vec<GeneratedFile>,
-    #[serde(default)]
-    pub sequential: bool,
     #[serde(default)]
     pub warnings: Vec<PlanWarning>,
 }
@@ -150,24 +153,24 @@ pub fn parse_build_plan(json: &str) -> Result<BuildPlan, BuildPlanError> {
 /// mode). Pure so it is unit-testable without the CLI.
 pub fn summarize_plan(plan: &BuildPlan) -> Vec<String> {
     let mut lines = Vec::new();
-    let order = if plan.sequential {
-        "sequential"
-    } else {
-        "parallel"
-    };
     lines.push(format!(
         "build plan (schema v{}) — {}",
         plan.schema_version, plan.sku
     ));
     lines.push(format!("  board.yaml: {}", plan.board_yaml));
-    lines.push(format!("  build root: {} ({order})", plan.build_root));
+    lines.push(format!("  build root: {}", plan.build_root));
     lines.push(format!("  slices ({}):", plan.slices.len()));
     for s in &plan.slices {
+        let cmd = s
+            .command
+            .as_ref()
+            .map(ToolStep::display)
+            .unwrap_or_else(|| "(no command)".to_string());
         lines.push(format!(
             "    - {} [{}] {}  -> {}",
             s.core_id,
             s.backend.as_str(),
-            s.command.display(),
+            cmd,
             s.build_dir
         ));
     }
@@ -190,7 +193,10 @@ pub fn summarize_plan(plan: &BuildPlan) -> Vec<String> {
     } else {
         lines.push(format!("  warnings ({}):", plan.warnings.len()));
         for w in &plan.warnings {
-            lines.push(format!("    - [{}] {}", w.code, w.message));
+            match &w.core_id {
+                Some(c) => lines.push(format!("    - [{}] {}: {}", w.code, c, w.message)),
+                None => lines.push(format!("    - [{}] {}", w.code, w.message)),
+            }
         }
     }
     lines
@@ -200,38 +206,37 @@ pub fn summarize_plan(plan: &BuildPlan) -> Vec<String> {
 mod tests {
     use super::*;
 
+    // Mirrors the ADR 0014 emit shape: lean slices (sorted by coreId), nullable
+    // command, `generatedBy`, no `sequential`/`inputHash`, warnings carry coreId.
     const SAMPLE: &str = r#"{
       "schemaVersion": 1,
+      "generatedBy": "scripts/alp_orchestrate.py",
       "boardYaml": "/proj/board.yaml",
       "sku": "E1M-AEN701",
       "buildRoot": "build",
       "slices": [
         {
+          "coreId": "m55_he",
+          "backend": "baremetal",
+          "buildDir": "build/m55_he-baremetal",
+          "configArtefacts": [{ "path": "build/m55_he-baremetal/cmake-args.txt", "contents": "-DALP_CORE_ID=m55_he\n" }],
+          "command": { "tool": "cmake", "args": ["-S", "he_app", "-B", "build/m55_he-baremetal"], "cwd": "build/m55_he-baremetal" },
+          "env": { "ALP_SDK_ROOT": "/sdk" }
+        },
+        {
           "coreId": "m55_hp",
           "backend": "zephyr",
-          "app": "app",
-          "board": "alif_e7_dk_rtss_hp",
-          "toolchain": "zephyr-sdk",
-          "peripherals": ["uart", "gpio"],
           "buildDir": "build/m55_hp-zephyr",
           "configArtefacts": [{ "path": "build/m55_hp-zephyr/alp.conf", "contents": "CONFIG_GPIO=y\n" }],
           "command": { "tool": "west", "args": ["build", "-b", "alif_e7_dk_rtss_hp", "app"], "cwd": "build/m55_hp-zephyr" },
-          "env": { "ALP_SDK_ROOT": "/sdk" },
-          "inputHash": "abc123"
-        },
-        {
-          "coreId": "m55_he",
-          "backend": "baremetal",
-          "app": "he_app",
-          "buildDir": "build/m55_he-baremetal",
-          "command": { "tool": "cmake", "args": ["-S", "he_app", "-B", "build/m55_he-baremetal"], "cwd": "build/m55_he-baremetal" }
+          "env": { "ALP_SDK_ROOT": "/sdk" }
         }
       ],
       "sharedArtefacts": [
         { "path": "build/generated/alp/system_ipc.h", "contents": "/* ipc */\n" },
+        { "path": "build/generated/dts-reservations.dtsi", "contents": "/* res */\n" },
         { "path": "build/generated/dts-partitions.dtsi", "contents": "/* parts */\n" }
       ],
-      "sequential": false,
       "warnings": []
     }"#;
 
@@ -239,19 +244,24 @@ mod tests {
     fn parses_a_well_formed_plan() {
         let plan = parse_build_plan(SAMPLE).expect("sample should parse");
         assert_eq!(plan.schema_version, 1);
+        assert_eq!(plan.generated_by, "scripts/alp_orchestrate.py");
         assert_eq!(plan.sku, "E1M-AEN701");
-        assert_eq!(plan.slices.len(), 2);
-        assert_eq!(plan.slices[0].backend, Backend::Zephyr);
-        assert_eq!(plan.slices[0].board.as_deref(), Some("alif_e7_dk_rtss_hp"));
+        // One slice per core, sorted by coreId (m55_he before m55_hp).
         assert_eq!(
-            plan.slices[0].env.get("ALP_SDK_ROOT").map(String::as_str),
+            plan.slices
+                .iter()
+                .map(|s| s.core_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["m55_he", "m55_hp"]
+        );
+        assert_eq!(plan.slices[0].backend, Backend::Baremetal);
+        assert_eq!(plan.slices[1].backend, Backend::Zephyr);
+        assert_eq!(
+            plan.slices[1].env.get("ALP_SDK_ROOT").map(String::as_str),
             Some("/sdk")
         );
-        assert_eq!(plan.slices[1].backend, Backend::Baremetal);
-        // Defaulted optionals on the lean second slice.
-        assert!(plan.slices[1].peripherals.is_empty());
-        assert_eq!(plan.slices[1].input_hash, "");
-        assert_eq!(plan.shared_artefacts.len(), 2);
+        assert_eq!(plan.shared_artefacts.len(), 3);
+        assert!(plan.warnings.is_empty());
     }
 
     #[test]
@@ -265,10 +275,41 @@ mod tests {
     #[test]
     fn command_display_joins_args() {
         let plan = parse_build_plan(SAMPLE).unwrap();
-        assert_eq!(
-            plan.slices[0].command.display(),
-            "west build -b alif_e7_dk_rtss_hp app"
-        );
+        let cmd = plan.slices[1]
+            .command
+            .as_ref()
+            .expect("zephyr slice has a command");
+        assert_eq!(cmd.display(), "west build -b alif_e7_dk_rtss_hp app");
+    }
+
+    #[test]
+    fn carries_commandless_slice_with_warning() {
+        // A core the planner can't build yet: command is null, paired with a
+        // `no-command` warning that names the core. The slice is still present.
+        let json = r#"{
+          "schemaVersion": 1,
+          "boardYaml": "/p/board.yaml",
+          "sku": "E1M-X",
+          "buildRoot": "build",
+          "slices": [
+            { "coreId": "m33_sm", "backend": "zephyr", "buildDir": "build/m33_sm-zephyr", "command": null }
+          ],
+          "warnings": [
+            { "code": "no-command", "coreId": "m33_sm", "message": "no build command for core 'm33_sm'" }
+          ]
+        }"#;
+        let plan = parse_build_plan(json).unwrap();
+        assert_eq!(plan.slices.len(), 1);
+        assert!(plan.slices[0].command.is_none());
+        assert_eq!(plan.warnings[0].code, "no-command");
+        assert_eq!(plan.warnings[0].core_id.as_deref(), Some("m33_sm"));
+        // Defaulted optionals on the lean slice.
+        assert!(plan.slices[0].config_artefacts.is_empty());
+        assert!(plan.slices[0].env.is_empty());
+
+        let summary = summarize_plan(&plan).join("\n");
+        assert!(summary.contains("m33_sm [zephyr] (no command)"));
+        assert!(summary.contains("[no-command] m33_sm: no build command"));
     }
 
     #[test]
@@ -294,12 +335,11 @@ mod tests {
     #[test]
     fn summary_lists_each_slice() {
         let plan = parse_build_plan(SAMPLE).unwrap();
-        let lines = summarize_plan(&plan);
-        let joined = lines.join("\n");
+        let joined = summarize_plan(&plan).join("\n");
         assert!(joined.contains("E1M-AEN701"));
-        assert!(joined.contains("m55_hp [zephyr] west build -b alif_e7_dk_rtss_hp app"));
         assert!(joined.contains("m55_he [baremetal] cmake -S he_app -B build/m55_he-baremetal"));
-        assert!(joined.contains("shared artefacts (2):"));
+        assert!(joined.contains("m55_hp [zephyr] west build -b alif_e7_dk_rtss_hp app"));
+        assert!(joined.contains("shared artefacts (3):"));
         assert!(joined.contains("warnings: 0"));
     }
 }

@@ -69,46 +69,54 @@ re-verified against a current SDK release tag before C1, not against `dev`**:
 The meta-point: the planner is Phase 2/3 of an actively moving roadmap. That is
 exactly why we consume its output rather than mirror its logic.
 
-## 3. The contract we consume (C1 — `--emit build-plan`)
+## 3. The contract we consume (C1 — `--emit build-plan`, locked as ADR 0014)
 
-The SDK adds `--emit build-plan` (idiomatic — it already does `--emit
-{system-manifest|ipc-contract-h|dts-reservations}`), emitting deterministic,
-schema-versioned JSON. **Our one refinement to the schema we spec'd: the emit
-must carry the generated-file *contents*, so our materialise stays pure IO and no
-content-derivation logic leaks back to the CLI.**
+**Shipped.** The SDK added `alp_orchestrate.py --emit build-plan` on its `dev`
+branch (commit `ebaa3dd`) and locked the contract as
+**ADR 0014** (`alp-sdk/docs/adr/0014-build-plan-emit-cli-contract.md`, accepted
+2026-06-04). It emits deterministic, write-free, schema-versioned JSON; every
+artefact carries its `contents` (our refinement), so our materialise step stays
+pure IO. Two shape decisions differ from our first sketch and are now the
+contract: **no `inputHash`** (the consumer computes its own cache key) and **no
+`sequential`** (parallelism is the consumer's scheduler); a slice the planner
+can't build yet carries `command: null` + a `no-command` warning.
 
-Rust deserialization target (we still own the type for the envelope):
+Rust deserialization target (we own the type for the envelope), matching the
+emit byte-for-byte:
 
 ```rust
 pub struct BuildPlan {
     pub schema_version: u32,
+    pub generated_by: String,                 // "scripts/alp_orchestrate.py"
     pub board_yaml: String,
     pub sku: String,
-    pub build_root: String,                  // "build"
-    pub slices: Vec<BuildSlice>,             // one per non-`off` core
+    pub build_root: String,                   // "build"
+    pub slices: Vec<BuildSlice>,              // one per non-`off` core, sorted by coreId
     pub shared_artefacts: Vec<GeneratedFile>, // system_ipc.h, dts-reservations.dtsi,
-                                              // dts-partitions.dtsi, alp_sysbuild.conf, tfm.conf, …
-    pub sequential: bool,
+                                              // dts-partitions.dtsi, alp_sysbuild.conf?, tfm.conf?
     pub warnings: Vec<PlanWarning>,
 }
 
 pub struct BuildSlice {
     pub core_id: String,
-    pub backend: Backend,                    // Zephyr | Yocto | Baremetal
-    pub build_dir: String,                   // build/<core>-<os>/
+    pub backend: Backend,                     // zephyr | yocto | baremetal
+    pub build_dir: String,                    // build/<core>-<os>/
     pub config_artefacts: Vec<GeneratedFile>, // alp.conf | local.conf | cmake-args.txt (+contents)
-    pub command: ToolStep,                   // the build invocation (do NOT freeze its shape — see §6)
-    pub env: BTreeMap<String, String>,       // ALP_SDK_ROOT, …
-    pub input_hash: String,                  // for the incremental cache (or recomputed CLI-side)
+    pub command: Option<ToolStep>,            // null when not buildable yet; shape NOT frozen (§6)
+    pub env: BTreeMap<String, String>,        // ALP_SDK_ROOT, …
 }
 
+pub struct PlanWarning { pub code: String, pub core_id: Option<String>, pub message: String }
 pub struct ToolStep { pub tool: String, pub args: Vec<String>, pub cwd: String }
 pub struct GeneratedFile { pub path: String, pub contents: String }  // contents REQUIRED
 pub enum Backend { Zephyr, Yocto, Baremetal }
 ```
 
-Surfaced under the existing envelope's `data` for `alp build --plan --format
-json`. The envelope (C2) and exit codes are reused verbatim.
+This is implemented in `alp-core::build_plan` and surfaced under the existing
+envelope's `data` for `alp build --plan --format json` (C2 + exit codes reused
+verbatim). **Verified:** the consumer parses the real SDK emit (run on `dev`
+against `examples/audio/i2s-tone/board.yaml` → a 3-slice hetero plan) and
+re-serializes it semantically identical.
 
 ## 4. Parity — now a thin faithfulness check
 
@@ -133,10 +141,12 @@ emit doubles as the strongest possible golden.
   would-write artefacts). No execution. Gate: round-trips the emit for the
   fixture matrix. *Low-risk, no SDK semantics mirrored.*
   **(Landed:** the consumer is in `alp-core::build_plan` (`BuildPlan` /
-  `parse_build_plan` / `summarize_plan`, schema-version guarded) and
-  `alp build --plan-from <FILE>` renders a plan under the envelope (text +
-  JSON). The live `alp build --plan` path returns a clear "pending SDK emit"
-  issue until `--emit build-plan` ships. Sample/reference fixture:
+  `parse_build_plan` / `summarize_plan`, schema-version guarded), matched to the
+  shipped ADR 0014 emit and **verified byte-identical against the real SDK emit**;
+  `alp build --plan-from <FILE>` renders a plan under the envelope (text + JSON).
+  The live `alp build --plan` path returns a clear issue until `--emit
+  build-plan` lands in a tagged SDK release (it exists on SDK `dev`; we pin to
+  tags). Sample/reference fixture:
   `cli-rs/contract/fixtures/build/build-plan.sample.json`.**)**
 - **C1 — Single-core Zephyr end to end.** Materialise (write the emit's files) +
   run the `ToolStep`; live output + envelope. **Blocked on the SDK's C4 answer
@@ -163,8 +173,9 @@ The SDK team committed to:
    against today's `west build -b <board> <app>` — sysbuild overlays will grow it
    to `west build --sysbuild --sysbuild-config`.)*
 4. An answer on **C4 (conf→build wiring)** before our C1.
-5. **`--emit build-plan`** per §3 — to be scheduled (our refinement: carry file
-   contents).
+5. **`--emit build-plan`** per §3 — ✅ shipped on SDK `dev` (`ebaa3dd`, ADR 0014)
+   with the file-contents refinement; **awaiting a tagged release** so we can pin
+   to it and wire the live `alp build --plan`.
 
 ## 7. Open questions / notes
 

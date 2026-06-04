@@ -63,10 +63,10 @@ fn plan(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
         }),
         None => Err((
             "build.plan-unavailable",
-            "live build-plan emit is not available yet — the SDK's \
-             `alp_orchestrate.py --emit build-plan` is pending (see \
-             docs/BUILD_ORCHESTRATION.md). Pass `--plan-from <FILE>` to consume \
-             an emitted plan JSON."
+            "live build-plan emit is not wired yet — the SDK's \
+             `alp_orchestrate.py --emit build-plan` exists (ADR 0014) but is not \
+             yet in a tagged SDK release we pin to. Pass `--plan-from <FILE>` to \
+             consume an emitted plan JSON (see docs/BUILD_ORCHESTRATION.md)."
                 .to_string(),
         )),
     };
