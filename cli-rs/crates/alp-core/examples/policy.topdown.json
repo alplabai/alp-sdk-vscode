@@ -1,0 +1,11 @@
+{
+  "pageBytes": 4096,
+  "partition": { "strategy": "top-down-bump" },
+  "carveOut": {
+    "strategy": "bottom-up-bump",
+    "regionRanking": ["cacheable-match", "larger-first"],
+    "endpointId": { "hash": "fnv1a-32", "srcMask": 1280, "dstOffset": 1 }
+  },
+  "memoryMap": { "tcmSuffix": "_{CORE}_", "tcmCacheable": false },
+  "kconfig": { "socSymbolPrefix": "MYVENDOR_SOC_" }
+}
