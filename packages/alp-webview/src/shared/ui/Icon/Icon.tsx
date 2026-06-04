@@ -23,7 +23,9 @@ export type IconName =
   | "arrowRight"
   | "chevronRight"
   | "warning"
-  | "x";
+  | "x"
+  | "play"
+  | "monitor";
 
 const PATHS: Record<IconName, JSX.Element> = {
   bolt: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />,
@@ -123,6 +125,14 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </>
+  ),
+  play: <path d="M6 4v16l14-8-14-8Z" />,
+  monitor: (
+    <>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
     </>
   ),
 };

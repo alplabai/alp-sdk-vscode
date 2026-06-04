@@ -1,6 +1,7 @@
 import { useAppContext } from "../../../shared/AppContext";
 import { postMessage } from "../../../vscode";
 import { Button } from "../Button";
+import { Icon } from "../Icon";
 import styles from "./BuildBar.module.css";
 
 export function BuildBar() {
@@ -18,7 +19,7 @@ export function BuildBar() {
           postMessage({ type: "runCommand", command: "alp.westBuild" })
         }
       >
-        ▶ Build
+        <Icon name="play" size={14} /> Build
       </Button>
       <Button
         appearance="secondary"
@@ -28,7 +29,7 @@ export function BuildBar() {
           postMessage({ type: "runCommand", command: "alp.westFlash" })
         }
       >
-        ⚡ Flash
+        <Icon name="bolt" size={14} /> Flash
       </Button>
       <Button
         appearance="secondary"
@@ -38,7 +39,7 @@ export function BuildBar() {
           postMessage({ type: "runCommand", command: "alp.westRunNativeSim" })
         }
       >
-        🖥 Sim
+        <Icon name="monitor" size={14} /> Sim
       </Button>
     </div>
   );

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { StepState } from "../../hooks/useStepper";
 import { Button } from "../Button";
+import { Icon } from "../Icon";
 import { Spinner } from "../Spinner";
 import styles from "./Stepper.module.css";
 
@@ -36,11 +37,13 @@ export function Stepper({ steps, direction = "vertical" }: StepperProps) {
         aria-current={step.status === "active" ? "step" : undefined}
       >
         <div className={styles.dot} aria-hidden="true">
-          {step.status === "complete"
-            ? "✓"
-            : step.status === "error"
-              ? "!"
-              : i + 1}
+          {step.status === "complete" ? (
+            <Icon name="check" size={12} />
+          ) : step.status === "error" ? (
+            <Icon name="warning" size={12} />
+          ) : (
+            i + 1
+          )}
         </div>
         <span className={styles.title}>{step.title}</span>
       </div>,
