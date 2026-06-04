@@ -8,6 +8,7 @@
 
 pub mod build_plan;
 pub mod build_readiness;
+pub mod carve_out_spike; // LOCAL SPIKE — not for dev
 pub mod clock;
 pub mod debug;
 pub mod debug_launch;
