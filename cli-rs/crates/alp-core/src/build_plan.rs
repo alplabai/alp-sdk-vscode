@@ -124,6 +124,21 @@ pub struct BuildPlan {
     pub warnings: Vec<PlanWarning>,
 }
 
+impl BuildPlan {
+    /// Every generated file the consumer must materialise, in a deterministic
+    /// order: shared artefacts first, then each slice's config artefacts in
+    /// slice order. Pure — the CLI does the byte-writes. The SDK guarantees
+    /// these `contents` match what `west alp-build` would write itself, so
+    /// materialising them cannot drift from the on-disk build.
+    pub fn all_artefacts(&self) -> Vec<&GeneratedFile> {
+        let mut out: Vec<&GeneratedFile> = self.shared_artefacts.iter().collect();
+        for slice in &self.slices {
+            out.extend(slice.config_artefacts.iter());
+        }
+        out
+    }
+}
+
 /// Why a build-plan JSON could not be consumed.
 #[derive(Debug, thiserror::Error)]
 pub enum BuildPlanError {
@@ -310,6 +325,18 @@ mod tests {
         let summary = summarize_plan(&plan).join("\n");
         assert!(summary.contains("m33_sm [zephyr] (no command)"));
         assert!(summary.contains("[no-command] m33_sm: no build command"));
+    }
+
+    #[test]
+    fn all_artefacts_collects_shared_then_per_slice() {
+        let plan = parse_build_plan(SAMPLE).unwrap();
+        let arts = plan.all_artefacts();
+        // 3 shared + 1 config per slice (2 slices) = 5, shared first.
+        assert_eq!(arts.len(), 5);
+        assert_eq!(arts[0].path, "build/generated/alp/system_ipc.h");
+        let paths: Vec<&str> = arts.iter().map(|a| a.path.as_str()).collect();
+        assert!(paths.contains(&"build/m55_he-baremetal/cmake-args.txt"));
+        assert!(paths.contains(&"build/m55_hp-zephyr/alp.conf"));
     }
 
     #[test]

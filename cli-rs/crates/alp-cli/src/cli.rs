@@ -141,6 +141,11 @@ pub struct BuildArgs {
     /// output (Wave C; the live emit is pending on the SDK side).
     #[arg(long = "plan-from", value_name = "FILE")]
     pub plan_from: Option<String>,
+    /// Materialise the plan: write its generated files (shared artefacts +
+    /// per-slice config) to disk under the build root, instead of just showing
+    /// the plan. Requires a plan source (`--plan` / `--plan-from`).
+    #[arg(long)]
+    pub materialise: bool,
     /// Arguments forwarded verbatim to `west alp-build` (app path, `--core <id>`,
     /// `--sequential`, `-b <board>`) when not using `--plan`.
     #[arg(

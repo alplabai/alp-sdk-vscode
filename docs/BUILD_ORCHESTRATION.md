@@ -148,9 +148,12 @@ emit doubles as the strongest possible golden.
   build-plan` lands in a tagged SDK release (it exists on SDK `dev`; we pin to
   tags). Sample/reference fixture:
   `cli-rs/contract/fixtures/build/build-plan.sample.json`.**)**
-- **C1 — Single-core Zephyr end to end.** Materialise (write the emit's files) +
-  run the `ToolStep`; live output + envelope. **Blocked on the SDK's C4 answer
-  (conf→build wiring) — they commit to answering before C1.**
+- **C1 — Single-core Zephyr end to end.** **Materialise landed:**
+  `alp build --plan-from <FILE> --materialise` byte-writes the plan's shared +
+  per-slice artefacts under the build tree (`alp-core::BuildPlan::all_artefacts`
+  + `materialise_plan`, path-traversal-guarded, idempotent). Still pending:
+  **execute** the per-slice `ToolStep` (live output + envelope) — gated on a
+  tagged SDK release (to wire live `--plan`) + the SDK's C4 conf→build answer.
 - **C2 — Multi-core fan-out + Yocto + baremetal.** Parallel/sequential scheduler;
   `bitbake` (host-gated) + `cmake` backends.
 - **C3 — Incremental cache + manifest.** `.alp-build-state.json` slice-hash skip;
