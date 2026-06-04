@@ -202,3 +202,117 @@ from the SDK repo, consumed by the CLI (link) **and** the SDK's own
 `west alp-build` (binary / pyo3) — one brain, in Rust, two surfaces. If either is
 "no", the JSON emit stays the right answer and we revisit later; the consumer we
 shipped works unchanged in every case.
+
+## 8. The data contracts + a generic engine — with spike evidence
+
+§7 asks _whether_ the planner should become a (Rust) crate. This section answers
+_what it would look like_ and reports a spike series (local to the
+alp-sdk-vscode repo, not committed to either product) that tested the
+load-bearing claim: **the fast-moving rules can live in data, so the engine code
+stays small + generic.** This is a north star for discussion, not a request to
+change anything today — the JSON emit (ADR 0014) ships as-is.
+
+### 8.1 Layering: facts / rules / scaffolds / engine
+
+| Layer | "What" | Changes when |
+|---|---|---|
+| **Facts** (metadata) | what the hardware _is_ | new silicon/chip → a data row |
+| **Rules** (policy) | _how_ to allocate / derive | a knob → data |
+| **Scaffolds** (templates) | _how_ to render | new output format → a template |
+| **Engine** (code) | applies rules to facts, fills scaffolds → `BuildPlan` | only a new _algorithm shape_ (rare) |
+
+Concrete shapes (drafts):
+
+```
+# FACTS — already mostly present in the SDK metadata
+metadata/socs/<v>/<f>/<variant>.json   cores[], mram_mb, sram_banks_kb, memory_regions[]?, capabilities
+metadata/e1m_modules/<sku>.yaml        silicon, memory_map[]?, on_module.ospi_memories, mailbox, boot_order, chips
+metadata/chips/<chip>.yaml             kconfig[], peripherals[], deps[]
+metadata/registries/som.json          { "skuPrefixToFamily": { "AEN":"aen", "V2M":"v2n-m1", ... } }
+
+# RULES — extracted from today's hardcoded constants into data
+metadata/policy/build.json
+  { "pageBytes": 4096,
+    "partition": { "strategy": "bottom-up-bump" },
+    "carveOut":  { "strategy": "top-down-bump",
+                   "regionRanking": ["cacheable-match", "smaller-first"],
+                   "endpointId": { "hash": "fnv1a-32", "srcMask": 1024, "dstOffset": 1 } },
+    "memoryMap": { "tcmSuffix": "_{CORE}_", "tcmCacheable": false },
+    "kconfig":   { "socSymbolPrefix": "ALP_SOC_" } }
+
+# SCAFFOLDS — the textual content the engine fills
+metadata/templates/zephyr/{alp.conf,dts-reservations.dtsi,dts-partitions.dtsi,...}.tmpl
+```
+
+### 8.2 What the engine consumes + produces
+
+```
+plan(board.yaml, facts, rules, scaffolds) -> BuildPlan
+  resolve  (facts+registries → effective regions/devices/chips/mailbox)
+  derive   (SoC variant → memory_map, per `memoryMap` rules)
+  allocate (carve-out + partition, per `carveOut`/`partition` rules)
+  render   (templates ∘ chips ∘ allocations → file contents)
+  assemble → BuildPlan { slices, sharedArtefacts{path,contents}, warnings }   # = the ADR-0014 emit
+```
+
+It produces the **same `BuildPlan` JSON the CLI already consumes** — the seam
+never changes, so the consumer (materialise / execute) is untouched no matter how
+the engine evolves.
+
+### 8.3 Three-layer versioning
+
+`board.yaml schema_version` · `policy schema_version` (engine) · `BuildPlan
+schemaVersion` (consumer seam) — each moves at its own pace; the emit insulates
+consumers from engine + policy evolution.
+
+### 8.4 Spike evidence (local branch, ports of SDK `dev`)
+
+We ported pieces of `alp_orchestrate.py` / `alp_project.py` to Rust and checked
+them against the SDK's own test expectations:
+
+| Datapoint | Result |
+|---|---|
+| Storage partition allocator | 7/7 parity (SDK test offsets), generic, capacity = data input |
+| `resolve_memory_map` derivation | rule-parity; **no per-SoC branching** — new silicon = SoC JSON (data) |
+| IPC carve-out allocator (hardest) | 7/7 parity (base/size/endpoint), FNV-1a pinned to canonical vectors |
+| Registry tables | `sku→family` = genuine data (JSON); `silicon→Kconfig` = a pure rule (no table) |
+| Input-resolution (`_resolve_flash_device`) | ~90 % data lookup + unit-convert + validate |
+| **Policy-driven engine (the load-bearing proof)** | engine has **zero hardcoded rules** — see below |
+
+The policy proof: a runnable engine whose page size, allocation strategy, region
+ranking, endpoint-id scheme, TCM convention and Kconfig rule are **all loaded
+from a `Policy` JSON at runtime**. With the default policy it reproduces the SDK's
+exact offsets + `0x400` endpoint mask; swapping the policy DATA (bottom-up →
+top-down, a different mask, page size, or Kconfig prefix) changes the output
+predictably with **no code change**; an unknown strategy is a hard load error,
+never silent. Same inputs + same engine code, different rules → different result.
+This is the evidence that "new silicon = data, engine stays generic" holds.
+
+(All ports are clippy `-D warnings` clean and pass alongside the existing suite.
+The Rust types also caught real issues for free — an MSRV violation at compile
+time, and exhaustive `enum` matching that the Python `status: str` leaves to
+runtime.)
+
+### 8.5 Honest status: proven vs. still design
+
+- **Proven by spikes:** the two allocators + the memory-map derivation + the
+  registry data/rule + **policy-as-data** (the engine genuinely runs on loaded
+  rules) — all parity-checked against the SDK's own expectations.
+- **Still design, not yet spiked:** the template / render step (Kconfig + DTS
+  content generation), deserializing the _real_ `e1m_modules` / `socs` files
+  (only `registries` was actually parsed), and assembling a full `BuildPlan` from
+  the engine end-to-end.
+
+### 8.6 The crux + recommendation (unchanged from §7, now evidenced)
+
+The engine code that must exist is small + stable: a handful of strategies + a
+renderer + the assemble step. Because the spikes show it can be **generic +
+policy-driven**, CLI-ownership becomes more viable than §7's framing implied —
+silicon churn lands in _data_ (facts + policy), not engine code, so the round-2
+"planner mirror" objection weakens. The genuinely-new-code case shrinks to a
+brand-new _allocation shape_ (rare, and caught by exhaustive matching).
+
+Recommendation, unchanged: **the JSON emit ships today (ADR 0014); treat the
+generic engine as the north star**, pursued when there is Rust appetite or the
+planner stabilizes. The `BuildPlan` seam makes the migration incremental and
+parity-gated — nothing already shipped is wasted.
