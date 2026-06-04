@@ -91,7 +91,7 @@ export function emptyAlpIdeState(): AlpIdeState {
 // ---------------------------------------------------------------------------
 
 /** Increment whenever the message protocol changes in a breaking way. */
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 
 export interface StateUpdateMessage {
   type: "stateUpdate";
@@ -144,6 +144,53 @@ export interface HardwareExplorerDataMessage {
   sdkConnected: boolean;
 }
 
+// --- Build-plan preview (consumes `alp build --plan`, ADR 0014 BuildPlan) ---
+
+export interface BuildPlanToolStep {
+  tool: string;
+  args: string[];
+  cwd: string;
+}
+
+export interface BuildPlanGeneratedFile {
+  path: string;
+  contents: string;
+}
+
+export interface BuildPlanSlice {
+  coreId: string;
+  backend: "zephyr" | "yocto" | "baremetal";
+  buildDir: string;
+  configArtefacts: BuildPlanGeneratedFile[];
+  /** `null` when the planner can't build this core yet (paired with a warning). */
+  command: BuildPlanToolStep | null;
+  env: Record<string, string>;
+}
+
+export interface BuildPlanWarning {
+  code: string;
+  coreId?: string;
+  message: string;
+}
+
+export interface BuildPlanData {
+  schemaVersion: number;
+  generatedBy?: string;
+  boardYaml: string;
+  sku: string;
+  buildRoot: string;
+  slices: BuildPlanSlice[];
+  sharedArtefacts: BuildPlanGeneratedFile[];
+  warnings: BuildPlanWarning[];
+}
+
+export interface BuildPlanDataMessage {
+  type: "buildPlanData";
+  /** The consumed plan, or `null` when it couldn't be produced (see `error`). */
+  plan: BuildPlanData | null;
+  error?: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -152,7 +199,8 @@ export type ExtToWebviewMessage =
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
-  | HardwareExplorerDataMessage;
+  | HardwareExplorerDataMessage
+  | BuildPlanDataMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -260,6 +308,10 @@ export interface ReloadHardwareExplorerMessage {
   type: "reloadHardwareExplorer";
 }
 
+export interface RequestBuildPlanMessage {
+  type: "requestBuildPlan";
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -277,4 +329,5 @@ export type WebviewToExtMessage =
   | PreviewEffectiveConfigMessage
   | RunToolchainFixMessage
   | ReloadToolchainMessage
-  | ReloadHardwareExplorerMessage;
+  | ReloadHardwareExplorerMessage
+  | RequestBuildPlanMessage;

@@ -2,7 +2,7 @@
 // The webview is a separate build; we do not share source with the extension.
 
 /** Must match PROTOCOL_VERSION in src/ideHub/messages.ts. */
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 
 export type SdkReadinessState = "ready" | "partial" | "missing" | "unknown";
 
@@ -358,6 +358,45 @@ export interface HardwareExplorerDataMessage {
   sdkConnected: boolean;
 }
 
+// --- Build-plan preview (mirrors messages.ts; consumes `alp build --plan`) ---
+export interface BuildPlanToolStep {
+  tool: string;
+  args: string[];
+  cwd: string;
+}
+export interface BuildPlanGeneratedFile {
+  path: string;
+  contents: string;
+}
+export interface BuildPlanSlice {
+  coreId: string;
+  backend: "zephyr" | "yocto" | "baremetal";
+  buildDir: string;
+  configArtefacts: BuildPlanGeneratedFile[];
+  command: BuildPlanToolStep | null;
+  env: Record<string, string>;
+}
+export interface BuildPlanWarning {
+  code: string;
+  coreId?: string;
+  message: string;
+}
+export interface BuildPlanData {
+  schemaVersion: number;
+  generatedBy?: string;
+  boardYaml: string;
+  sku: string;
+  buildRoot: string;
+  slices: BuildPlanSlice[];
+  sharedArtefacts: BuildPlanGeneratedFile[];
+  warnings: BuildPlanWarning[];
+}
+export interface BuildPlanDataMessage {
+  type: "buildPlanData";
+  plan: BuildPlanData | null;
+  error?: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -366,7 +405,8 @@ export type ExtToWebviewMessage =
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
-  | HardwareExplorerDataMessage;
+  | HardwareExplorerDataMessage
+  | BuildPlanDataMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -431,6 +471,10 @@ export interface ReloadToolchainMessage {
 export interface ReloadHardwareExplorerMessage {
   type: "reloadHardwareExplorer";
 }
+export interface RequestBuildPlanMessage {
+  type: "requestBuildPlan";
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -448,4 +492,5 @@ export type WebviewToExtMessage =
   | PreviewEffectiveConfigMessage
   | RunToolchainFixMessage
   | ReloadToolchainMessage
-  | ReloadHardwareExplorerMessage;
+  | ReloadHardwareExplorerMessage
+  | RequestBuildPlanMessage;

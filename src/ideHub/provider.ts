@@ -10,6 +10,7 @@ import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   emptyAlpIdeState,
   PROTOCOL_VERSION,
+  type BuildPlanData,
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
@@ -134,7 +135,32 @@ export class AlpIdeHubProvider implements vscode.WebviewViewProvider {
       case "openUrl":
         void this.handleOpenUrl(msg.url);
         break;
+      case "requestBuildPlan":
+        void this.handleRequestBuildPlan();
+        break;
     }
+  }
+
+  private async handleRequestBuildPlan(): Promise<void> {
+    if (!this.view) return;
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // Consume the SDK build plan via the CLI envelope (`alp build --plan`).
+    const { outcome } = await runAlpCommand(
+      this.context,
+      ["build", "--plan"],
+      cwd,
+    );
+    const envelope = outcome.envelope;
+    let msg: ExtToWebviewMessage;
+    if (envelope && envelope.ok) {
+      msg = { type: "buildPlanData", plan: envelope.data as BuildPlanData };
+    } else {
+      // Surface the first issue (e.g. "no SDK / awaiting a tagged release")
+      // or the runtime message so the view can explain the empty state.
+      const error = envelope?.issues?.[0]?.message ?? outcome.message;
+      msg = { type: "buildPlanData", plan: null, error };
+    }
+    void this.view.webview.postMessage(msg);
   }
 
   private async handleSelectSdkPath(): Promise<void> {

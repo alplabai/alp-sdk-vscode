@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BuildPlanView } from "./features/build-plan";
 import { ConfiguratorView } from "./features/configurator";
 import { ExistingProjectFlowView } from "./features/existing-project-flow";
 import { FooterView } from "./features/footer";
@@ -25,11 +26,12 @@ const ALP_MODE =
     ? (document.body.dataset.alpMode ?? "sidebar")
     : "sidebar";
 
-type SidebarTab = "env" | "project" | "sdk" | "tools";
+type SidebarTab = "env" | "project" | "build" | "sdk" | "tools";
 
 const SIDEBAR_TABS: TabItem<SidebarTab>[] = [
   { id: "env", label: "Env", icon: "🐍" },
   { id: "project", label: "Project", icon: "📁" },
+  { id: "build", label: "Build", icon: "🧩" },
   { id: "sdk", label: "SDK", icon: "🧰" },
   { id: "tools", label: "Tools", icon: "⚡" },
 ];
@@ -84,6 +86,8 @@ function AppShell() {
             <ProjectView />
           </>
         )}
+
+        {activeTab === "build" && <BuildPlanView />}
 
         {activeTab === "sdk" && <SdkView />}
 
