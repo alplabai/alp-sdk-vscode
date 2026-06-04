@@ -277,6 +277,9 @@ them against the SDK's own test expectations:
 | IPC carve-out allocator (hardest) | 7/7 parity (base/size/endpoint), FNV-1a pinned to canonical vectors |
 | Registry tables | `sku→family` = genuine data (JSON); `silicon→Kconfig` = a pure rule (no table) |
 | Input-resolution (`_resolve_flash_device`) | ~90 % data lookup + unit-convert + validate |
+| Real metadata deserialize | the **actual** `E1M-AEN701.yaml` + `socs/.../e7.json` parse into structs (real `TBD` values, 3-core `topology`, TCM-suffixed banks) |
+| Template / render | a `{{#each}}` engine renders a DTS partitions overlay + a Kconfig fragment from data |
+| Engine → `BuildPlan` assemble | real SoM `topology` → a `BuildPlan` the **shipped consumer** (`parse_build_plan`) accepts (round-trip) |
 | **Policy-driven engine (the load-bearing proof)** | engine has **zero hardcoded rules** — see below |
 
 The policy proof: a runnable engine whose page size, allocation strategy, region
@@ -293,15 +296,22 @@ The Rust types also caught real issues for free — an MSRV violation at compile
 time, and exhaustive `enum` matching that the Python `status: str` leaves to
 runtime.)
 
-### 8.5 Honest status: proven vs. still design
+### 8.5 Honest status: feasibility proven; what remains is volume
 
-- **Proven by spikes:** the two allocators + the memory-map derivation + the
-  registry data/rule + **policy-as-data** (the engine genuinely runs on loaded
-  rules) — all parity-checked against the SDK's own expectations.
-- **Still design, not yet spiked:** the template / render step (Kconfig + DTS
-  content generation), deserializing the _real_ `e1m_modules` / `socs` files
-  (only `registries` was actually parsed), and assembling a full `BuildPlan` from
-  the engine end-to-end.
+The whole chain is now spiked end-to-end — **real metadata → generic
+policy-driven engine → a `BuildPlan` the shipped consumer accepts**:
+
+- **Proven (feasibility):** both allocators + the memory-map derivation +
+  registry data/rule + input-resolution + **policy-as-data** (the engine runs on
+  loaded rules) + **real-file deserialize** (the actual `E1M-AEN701.yaml` /
+  `e7.json`) + **template render** + **engine→`BuildPlan` assemble** that round-
+  trips through `parse_build_plan`. All parity-checked against the SDK's own
+  expectations; clippy `-D warnings` clean.
+- **Remaining = volume + real-hardware validation, not unknowns:** porting
+  _every_ chip→Kconfig mapping and the full DTS / sysbuild / TF-M templates at
+  100 % fidelity, and validating a real build on silicon. These are effort, not
+  open feasibility questions — each piece ports the same way the spiked ones did,
+  behind the SDK's existing test goldens.
 
 ### 8.6 The crux + recommendation (unchanged from §7, now evidenced)
 
