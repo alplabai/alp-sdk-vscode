@@ -6,6 +6,7 @@
 //! logic so it can be reused by the CLI today and (later) bridged to the
 //! TypeScript extension/LSP via napi-rs or WASM.
 
+pub mod build_plan;
 pub mod build_readiness;
 pub mod clock;
 pub mod debug;
@@ -21,6 +22,10 @@ pub mod sdk_catalogue;
 pub mod validate;
 pub mod wizard;
 
+pub use build_plan::{
+    BUILD_PLAN_SCHEMA_VERSION, Backend, BuildPlan, BuildPlanError, BuildSlice, GeneratedFile,
+    PlanWarning, ToolStep, parse_build_plan, summarize_plan,
+};
 pub use build_readiness::{
     BuildOs, BuildReadinessReport, BuildToolProbe, board_os_set, build_readiness_report,
 };

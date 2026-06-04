@@ -132,6 +132,12 @@ emit doubles as the strongest possible golden.
   deserialize into `BuildPlan`; `alp build --plan` shows it (and can dry-run the
   would-write artefacts). No execution. Gate: round-trips the emit for the
   fixture matrix. *Low-risk, no SDK semantics mirrored.*
+  **(Landed:** the consumer is in `alp-core::build_plan` (`BuildPlan` /
+  `parse_build_plan` / `summarize_plan`, schema-version guarded) and
+  `alp build --plan-from <FILE>` renders a plan under the envelope (text +
+  JSON). The live `alp build --plan` path returns a clear "pending SDK emit"
+  issue until `--emit build-plan` ships. Sample/reference fixture:
+  `cli-rs/contract/fixtures/build/build-plan.sample.json`.**)**
 - **C1 — Single-core Zephyr end to end.** Materialise (write the emit's files) +
   run the `ToolStep`; live output + envelope. **Blocked on the SDK's C4 answer
   (conf→build wiring) — they commit to answering before C1.**

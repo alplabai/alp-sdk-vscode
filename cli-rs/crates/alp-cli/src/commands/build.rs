@@ -13,10 +13,11 @@
 
 use std::process::Command;
 
+use alp_core::build_plan::{parse_build_plan, summarize_plan};
 use serde::Serialize;
 
 use super::CommandRun;
-use crate::cli::GlobalArgs;
+use crate::cli::{BuildArgs, GlobalArgs};
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
@@ -30,6 +31,104 @@ struct BuildData {
     #[serde(rename = "westCwd")]
     west_cwd: String,
     args: Vec<String>,
+}
+
+/// `alp build` entry: `--plan` consumes the SDK's emitted build plan; otherwise
+/// delegate to `west alp-build` (the Wave A2 behavior).
+pub fn run_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
+    if args.plan || args.plan_from.is_some() {
+        plan(g, args)
+    } else {
+        run(g, "build", &args.args)
+    }
+}
+
+/// `alp build --plan [--plan-from FILE]` — consume + render the build plan
+/// without building. The plan is the SDK's single source of truth; the CLI only
+/// deserializes + presents it (Wave C0). Live `--emit build-plan` is pending on
+/// the SDK side, so today the plan comes from `--plan-from <FILE>`.
+fn plan(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
+    let context = resolve_cli_project_context(g);
+    let project = Project {
+        root: context.workspace_root.clone(),
+        board_yaml: context.board_yaml_path.clone(),
+    };
+
+    let source: Result<String, (&str, String)> = match &args.plan_from {
+        Some(path) => std::fs::read_to_string(path).map_err(|e| {
+            (
+                "build.plan-unavailable",
+                format!("failed to read plan file `{path}`: {e}"),
+            )
+        }),
+        None => Err((
+            "build.plan-unavailable",
+            "live build-plan emit is not available yet — the SDK's \
+             `alp_orchestrate.py --emit build-plan` is pending (see \
+             docs/BUILD_ORCHESTRATION.md). Pass `--plan-from <FILE>` to consume \
+             an emitted plan JSON."
+                .to_string(),
+        )),
+    };
+
+    let parsed = source.and_then(|json| {
+        parse_build_plan(&json).map_err(|e| ("build.plan-invalid", e.to_string()))
+    });
+
+    match parsed {
+        Ok(plan) => {
+            if g.is_json() {
+                let json = Envelope::new(
+                    "build",
+                    project,
+                    &plan,
+                    Vec::new(),
+                    ExitCode::Success.code(),
+                )
+                .to_json();
+                CommandRun {
+                    exit: ExitCode::Success,
+                    text: Vec::new(),
+                    json: Some(json),
+                }
+            } else {
+                CommandRun {
+                    exit: ExitCode::Success,
+                    text: summarize_plan(&plan),
+                    json: None,
+                }
+            }
+        }
+        Err((code, message)) => {
+            let exit = ExitCode::RuntimeFailure;
+            let issues = vec![Issue {
+                code: code.to_string(),
+                severity: "error".to_string(),
+                message: message.clone(),
+            }];
+            if g.is_json() {
+                let json = Envelope::new(
+                    "build",
+                    project,
+                    serde_json::Value::Null,
+                    issues,
+                    exit.code(),
+                )
+                .to_json();
+                CommandRun {
+                    exit,
+                    text: Vec::new(),
+                    json: Some(json),
+                }
+            } else {
+                CommandRun {
+                    exit,
+                    text: vec![format!("build: {message}")],
+                    json: None,
+                }
+            }
+        }
+    }
 }
 
 /// Build the `west` argv: `alp-<subcommand>` followed by the forwarded args.
