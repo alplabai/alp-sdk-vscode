@@ -20,6 +20,7 @@ pub mod partition_alloc_spike; // LOCAL SPIKE — not for dev
 pub mod presets;
 pub mod preview;
 pub mod project;
+pub mod registries_spike; // LOCAL SPIKE — not for dev
 pub mod sdk;
 pub mod sdk_catalogue;
 pub mod validate;
