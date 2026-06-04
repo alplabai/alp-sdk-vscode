@@ -474,6 +474,12 @@ export interface ReloadHardwareExplorerMessage {
 export interface RequestBuildPlanMessage {
   type: "requestBuildPlan";
 }
+export interface MaterialiseBuildPlanMessage {
+  type: "materialiseBuildPlan";
+}
+export interface RunBuildMessage {
+  type: "runBuild";
+}
 
 export type WebviewToExtMessage =
   | ReadyMessage
@@ -493,4 +499,6 @@ export type WebviewToExtMessage =
   | RunToolchainFixMessage
   | ReloadToolchainMessage
   | ReloadHardwareExplorerMessage
-  | RequestBuildPlanMessage;
+  | RequestBuildPlanMessage
+  | MaterialiseBuildPlanMessage
+  | RunBuildMessage;

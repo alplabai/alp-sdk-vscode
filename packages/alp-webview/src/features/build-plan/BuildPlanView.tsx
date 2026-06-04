@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Button, Card, EmptyState, Skeleton } from "../../shared/ui";
-import type { BuildPlanSlice } from "../../types";
+import type { BuildPlanGeneratedFile, BuildPlanSlice } from "../../types";
 import styles from "./BuildPlanView.module.css";
 import { useBuildPlan } from "./useBuildPlan";
 
@@ -9,8 +10,39 @@ function commandLine(slice: BuildPlanSlice): string {
   return args.length > 0 ? `${tool} ${args.join(" ")}` : tool;
 }
 
+/** A generated file: a toggle showing its path; expands to its contents. */
+function FileRow({
+  file,
+  open,
+  onToggle,
+}: {
+  file: BuildPlanGeneratedFile;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <li className={styles.fileRow}>
+      <button
+        type="button"
+        className={styles.fileToggle}
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <span className={styles.chevron} aria-hidden="true">
+          {open ? "▾" : "▸"}
+        </span>
+        <code className={styles.filePath}>{file.path}</code>
+      </button>
+      {open && <pre className={styles.fileContent}>{file.contents}</pre>}
+    </li>
+  );
+}
+
 export function BuildPlanView() {
-  const { plan, error, loading, reload } = useBuildPlan();
+  const { plan, error, loading, reload, materialise, build } = useBuildPlan();
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const toggle = (path: string) =>
+    setExpanded((cur) => (cur === path ? null : path));
 
   return (
     <div className={styles.root}>
@@ -54,6 +86,15 @@ export function BuildPlanView() {
             <code>{plan.boardYaml}</code>
           </div>
 
+          <div className={styles.actions}>
+            <Button appearance="secondary" onClick={materialise}>
+              Materialise
+            </Button>
+            <Button appearance="primary" onClick={build}>
+              Build
+            </Button>
+          </div>
+
           <ul className={styles.slices}>
             {plan.slices.map((slice) => (
               <li key={slice.coreId}>
@@ -70,13 +111,19 @@ export function BuildPlanView() {
                   <code className={styles.cmd}>{commandLine(slice)}</code>
                   <div className={styles.sliceMeta}>
                     <span className={styles.buildDir}>{slice.buildDir}</span>
-                    {slice.configArtefacts.length > 0 && (
-                      <span>
-                        {slice.configArtefacts.length} config file
-                        {slice.configArtefacts.length === 1 ? "" : "s"}
-                      </span>
-                    )}
                   </div>
+                  {slice.configArtefacts.length > 0 && (
+                    <ul className={styles.fileList}>
+                      {slice.configArtefacts.map((file) => (
+                        <FileRow
+                          key={file.path}
+                          file={file}
+                          open={expanded === file.path}
+                          onToggle={() => toggle(file.path)}
+                        />
+                      ))}
+                    </ul>
+                  )}
                 </Card>
               </li>
             ))}
@@ -89,9 +136,12 @@ export function BuildPlanView() {
               </p>
               <ul className={styles.fileList}>
                 {plan.sharedArtefacts.map((file) => (
-                  <li key={file.path}>
-                    <code>{file.path}</code>
-                  </li>
+                  <FileRow
+                    key={file.path}
+                    file={file}
+                    open={expanded === file.path}
+                    onToggle={() => toggle(file.path)}
+                  />
                 ))}
               </ul>
             </section>

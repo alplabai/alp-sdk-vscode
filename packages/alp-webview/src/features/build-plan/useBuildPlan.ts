@@ -7,6 +7,10 @@ export interface UseBuildPlan {
   error: string | null;
   loading: boolean;
   reload(): void;
+  /** Write the plan's files to disk (`alp build --materialise`). */
+  materialise(): void;
+  /** Run the build live in a terminal (`alp build`). */
+  build(): void;
 }
 
 /**
@@ -40,6 +44,12 @@ export function useBuildPlan(): UseBuildPlan {
         setPlan(null);
         setError(null);
         postMessage({ type: "requestBuildPlan" });
+      },
+      materialise() {
+        postMessage({ type: "materialiseBuildPlan" });
+      },
+      build() {
+        postMessage({ type: "runBuild" });
       },
     }),
     [plan, error, loading],

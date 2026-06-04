@@ -312,6 +312,16 @@ export interface RequestBuildPlanMessage {
   type: "requestBuildPlan";
 }
 
+/** Materialise the plan's files to disk (`alp build --materialise`). */
+export interface MaterialiseBuildPlanMessage {
+  type: "materialiseBuildPlan";
+}
+
+/** Run the build live in a terminal (`alp build`). */
+export interface RunBuildMessage {
+  type: "runBuild";
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -330,4 +340,6 @@ export type WebviewToExtMessage =
   | RunToolchainFixMessage
   | ReloadToolchainMessage
   | ReloadHardwareExplorerMessage
-  | RequestBuildPlanMessage;
+  | RequestBuildPlanMessage
+  | MaterialiseBuildPlanMessage
+  | RunBuildMessage;
