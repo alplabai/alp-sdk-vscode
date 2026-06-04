@@ -25,7 +25,11 @@ export type IconName =
   | "warning"
   | "x"
   | "play"
-  | "monitor";
+  | "monitor"
+  | "plug"
+  | "book"
+  | "rocket"
+  | "bug";
 
 const PATHS: Record<IconName, JSX.Element> = {
   bolt: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />,
@@ -133,6 +137,43 @@ const PATHS: Record<IconName, JSX.Element> = {
       <rect x="2" y="3" width="20" height="14" rx="2" />
       <path d="M8 21h8" />
       <path d="M12 17v4" />
+    </>
+  ),
+  plug: (
+    <>
+      <path d="M9 2v6" />
+      <path d="M15 2v6" />
+      <path d="M6 8h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6Z" />
+      <path d="M12 17v5" />
+    </>
+  ),
+  book: (
+    <>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+    </>
+  ),
+  rocket: (
+    <>
+      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z" />
+      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z" />
+      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+    </>
+  ),
+  bug: (
+    <>
+      <path d="m8 2 1.88 1.88" />
+      <path d="M14.12 3.88 16 2" />
+      <path d="M9 7.13v-1a3 3 0 1 1 6 0v1" />
+      <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6Z" />
+      <path d="M12 20v-9" />
+      <path d="M6.53 9C4.6 8.8 3 7.1 3 5" />
+      <path d="M6 13H2" />
+      <path d="M3 21c0-2.1 1.7-3.8 3.8-4" />
+      <path d="M20.97 5c0 2.1-1.6 3.8-3.5 4" />
+      <path d="M22 13h-4" />
+      <path d="M17.2 17c2.1.2 3.8 1.9 3.8 4" />
     </>
   ),
 };

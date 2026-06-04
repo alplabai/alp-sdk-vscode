@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useId, useState } from "react";
-import { Button, EmptyState, Skeleton } from "../../shared/ui";
+import { Button, EmptyState, Icon, Skeleton } from "../../shared/ui";
 import type { ExplorerCore, ExplorerTopologyCore } from "../../types";
 import styles from "./HardwareExplorerView.module.css";
 import { useHardwareExplorer } from "./useHardwareExplorer";
@@ -24,7 +24,7 @@ export function HardwareExplorerView() {
   if (!sdkConnected || som === null) {
     return (
       <EmptyState
-        icon="🔌"
+        icon={<Icon name="plug" size={28} />}
         title={sdkConnected ? "No SoM configured" : "SDK not connected"}
         description={
           sdkConnected
