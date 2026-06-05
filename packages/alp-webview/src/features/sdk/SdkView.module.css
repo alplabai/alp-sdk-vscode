@@ -8,7 +8,7 @@
 
 .tab {
   padding: var(--space-2) 10px;
-  font-size: 11px;
+  font-size: var(--font-size-base);
   font-family: var(--vscode-font-family, system-ui, sans-serif);
   cursor: pointer;
   background: transparent;
@@ -39,7 +39,7 @@
   background: var(--surface-badge);
   color: var(--vscode-badge-foreground);
   border-radius: var(--radius-xl);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   padding: 0 var(--space-2);
   line-height: 14px;
@@ -80,13 +80,13 @@
 
 .entryVersion {
   font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 
 .activeLabel {
   margin: 2px 0 0;
-  font-size: 10px;
+  font-size: var(--font-size-sm);
   color: var(--status-ok);
   font-style: italic;
 }
@@ -116,7 +116,7 @@
   color: var(--vscode-dropdown-foreground, var(--text-primary));
   border: 1px solid var(--border-dropdown);
   padding: 3px var(--space-3);
-  font-size: 12px;
+  font-size: var(--font-size-base);
   font-family: var(--vscode-font-family, system-ui, sans-serif);
   border-radius: var(--radius-sm);
   outline: none;
@@ -150,7 +150,7 @@
 
 .releaseTag {
   font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
+  font-size: var(--font-size-base);
 }
 
 /* ── Install status ─────────────────────────────────────────────────────── */
