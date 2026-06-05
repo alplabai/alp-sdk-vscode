@@ -105,8 +105,9 @@ pub enum Command {
     Sdk(SdkArgs),
     /// Set up the SDK build environment (west + Zephyr workspace + Python deps).
     Bootstrap(BootstrapArgs),
-    /// Build the project (fans board.yaml into per-core slices via `west alp-build`).
-    Build(WestForwardArgs),
+    /// Build the project. `--plan` consumes the SDK's emitted build plan;
+    /// otherwise fans board.yaml into per-core slices via `west alp-build`.
+    Build(BuildArgs),
     /// Assemble a flashable image (`west alp-image`).
     Image(WestForwardArgs),
     /// Flash the assembled image to the device (`west alp-flash`).
@@ -121,6 +122,37 @@ pub enum Command {
 pub struct WestForwardArgs {
     /// Arguments forwarded verbatim to the underlying `west alp-*` command
     /// (e.g. app path, `--core <id>`, `--sequential`, `-b <board>`).
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        value_name = "ARGS"
+    )]
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct BuildArgs {
+    /// Show the build plan (consumed from the SDK's `--emit build-plan`) and
+    /// exit without building.
+    #[arg(long)]
+    pub plan: bool,
+    /// Read the build plan from a JSON file instead of invoking the SDK. Implies
+    /// `--plan`. Use this to consume `alp_orchestrate.py --emit build-plan`
+    /// output (Wave C; the live emit is pending on the SDK side).
+    #[arg(long = "plan-from", value_name = "FILE")]
+    pub plan_from: Option<String>,
+    /// Materialise the plan: write its generated files (shared artefacts +
+    /// per-slice config) to disk under the build root, instead of just showing
+    /// the plan. Requires a plan source (`--plan` / `--plan-from`).
+    #[arg(long)]
+    pub materialise: bool,
+    /// Build natively: consume the plan, materialise its files, then run each
+    /// slice's command (`west` / `bitbake` / `cmake`) sequentially — instead of
+    /// delegating to `west alp-build`.
+    #[arg(long)]
+    pub native: bool,
+    /// Arguments forwarded verbatim to `west alp-build` (app path, `--core <id>`,
+    /// `--sequential`, `-b <board>`) when not using `--plan`.
     #[arg(
         trailing_var_arg = true,
         allow_hyphen_values = true,

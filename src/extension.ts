@@ -2,10 +2,11 @@
 
 import * as vscode from "vscode";
 import { registerBootstrapCommand } from "./bootstrap";
-import { registerConfiguratorCommand } from "./configuratorPanel";
+import { registerConfiguratorEditor } from "./configurator/customEditor";
 import { registerDebugCommands } from "./debug";
 import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
+  BuildPlanPanel,
   ExistingProjectFlowPanel,
   NewProjectFlowPanel,
   OverviewPanel,
@@ -20,6 +21,7 @@ import { registerLspCommands } from "./lsp/commands";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
 import { registerTreeViews } from "./views";
+import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
 import {
   maybeOfferFirstRunWizard,
@@ -29,17 +31,22 @@ import {
 export function activate(context: vscode.ExtensionContext): void {
   startLanguageServer(context);
 
+  // One shared state source for both the native trees and the status bar, so
+  // the Build & Flash tree and the status-bar Build/Flash gating never disagree.
+  const stateMgr = new StateManager();
+
   context.subscriptions.push(
+    stateMgr,
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),
-    createStatusBar(context),
-    registerConfiguratorCommand(context),
+    createStatusBar(stateMgr),
+    ...registerConfiguratorEditor(context),
     ...registerToolchainCommands(context),
     registerProjectWizardCommand(),
     ...registerLspCommands(),
     ...registerDebugCommands(),
-    ...registerTreeViews(context),
+    ...registerTreeViews(context, stateMgr),
     ...registerWorkspaceCommands(),
     vscode.commands.registerCommand("alp.openSetupFlow", () =>
       SetupFlowPanel.open(context),
@@ -64,6 +71,16 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("alp.openHardwareExplorer", () =>
       showHardwareExplorerPanel(context),
+    ),
+    vscode.commands.registerCommand("alp.showBuildPlan", () =>
+      BuildPlanPanel.open(context),
+    ),
+    vscode.commands.registerCommand("alp.openGettingStarted", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        "alplabai.alp-sdk#alpGettingStarted",
+        false,
+      ),
     ),
   );
 

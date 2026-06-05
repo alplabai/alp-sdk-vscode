@@ -286,17 +286,22 @@ No open items — this plan is frozen; revisit only if an assumption breaks.
 5. **Sequencing** → Wave A (CLI commands) now; Wave B (extension consumption)
    after the first `cli-rs-v*` release. See §6.
 
-## 9. Deferred / optional (not scheduled)
+## 9. Build orchestration — agreed: the CLI drives, the SDK emits the plan (Wave C)
 
-- **Move the build orchestration into Rust.** Today `alp build` delegates to the
-  SDK's `west alp-build` → `alp_orchestrate.py` (≈3370 lines: SoC/board/topology
-  resolution, memory maps, secure-boot partitions, `system-manifest.yaml`),
-  which is versioned with the SDK and used by west + 2 CI workflows + the docs.
-  Reimplementing it in Rust is **deferred and only makes sense as part of the SDK
-  team rewriting its own Python tooling (`alp_project.py` + `alp_orchestrate.py`)
-  in Rust** — not as CLI/extension work. Doing it sooner would fork the SDK's
-  build brain across repos+languages (perpetual version-chase) and still require
-  `west build`/`bitbake`/`cmake` (the actual builders) anyway, so it removes no
-  dependency. If the SDK adopts a Rust core, the CLI would link it instead of
-  shelling to west. Until then: thin wrapper (§6a). The CLI may still *preview*
-  the build plan (`trace`, `doctor` A3) without owning dispatch.
+- Today `alp build` delegates to the SDK's `west alp-build` →
+  `alp_orchestrate.py` (a thin terminal wrapper, §6a). **Agreed direction (after
+  SDK review):** the CLI takes orchestration to the top — it owns materialise /
+  execute / schedule / cache / progress UX / envelope and invokes `west` /
+  `bitbake` / `cmake` directly.
+- The CLI does **not** re-implement the planner. Per the SDK team's counter-offer
+  it **consumes `alp_orchestrate.py --emit build-plan`**: the planner (the
+  fast-moving, vendor-heavy part — partition allocation, sysbuild, TF-M) stays the
+  SDK's single source of truth; the CLI owns the stable mechanism below it.
+- The SDK's only scheduled new work is `--emit build-plan` (emitting our spec'd
+  `BuildPlan` JSON **with generated-file contents**) plus an answer on the
+  conf→build wiring before our C1. `west alp-build` stays native (the shim was
+  declined). Full evidence, the consumed `BuildPlan` contract, the parity strategy
+  (pinned to release tags), and the phased plan (C0 consume-the-emit → C4 flip the
+  front-ends) are in [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md); the
+  team-to-team agreement record is in
+  [`PROPOSAL-alp-build-core.md`](PROPOSAL-alp-build-core.md).

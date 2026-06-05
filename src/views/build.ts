@@ -96,16 +96,29 @@ export class BuildTreeProvider
   private updateItems(state: AlpIdeState): void {
     const enabled = state.workspace.westInitialized;
 
-    this.items = BUILD_ACTIONS.map(
-      (a) =>
-        new BuildItem(
-          a.label,
-          a.description,
-          new vscode.ThemeIcon(a.icon),
-          { command: a.command, title: a.label },
-          enabled,
-        ),
+    // "Preview Build Plan" stays available even before west init — the view
+    // explains its own empty/error states (no SDK, no board.yaml, …).
+    const previewPlan = new BuildItem(
+      "Preview Build Plan",
+      "inspect the SDK build plan",
+      new vscode.ThemeIcon("list-tree"),
+      { command: "alp.showBuildPlan", title: "Preview Build Plan" },
+      true,
     );
+
+    this.items = [
+      previewPlan,
+      ...BUILD_ACTIONS.map(
+        (a) =>
+          new BuildItem(
+            a.label,
+            a.description,
+            new vscode.ThemeIcon(a.icon),
+            { command: a.command, title: a.label },
+            enabled,
+          ),
+      ),
+    ];
 
     this._emitter.fire(undefined);
   }

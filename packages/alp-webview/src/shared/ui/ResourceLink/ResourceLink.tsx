@@ -7,8 +7,8 @@ interface Props {
   href: string;
   /** Accessible label and telemetry identifier. */
   label: string;
-  /** Optional leading text/icon rendered before the label. */
-  prefix?: string;
+  /** Optional leading icon/text rendered before the label. */
+  prefix?: ReactNode;
   /** Override display content; falls back to `label`. */
   children?: ReactNode;
 }

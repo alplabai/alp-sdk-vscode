@@ -1,122 +1,81 @@
-import { useState } from "react";
+import { BuildPlanView } from "./features/build-plan";
 import { ConfiguratorView } from "./features/configurator";
 import { ExistingProjectFlowView } from "./features/existing-project-flow";
-import { FooterView } from "./features/footer";
 import { HardwareExplorerView } from "./features/hardware-explorer";
 import { NewProjectFlowView } from "./features/new-project-flow";
 import { OverviewView } from "./features/overview";
-import { ProjectView } from "./features/project";
-import { QuickActionsView } from "./features/quick-actions";
 import { SdkView } from "./features/sdk";
-import { SetupView } from "./features/setup";
 import { SetupFlowView } from "./features/setup-flow";
 import { ToolchainDoctorView } from "./features/toolchain-doctor";
-import { WestWorkspacesView } from "./features/west-workspaces";
 import { AppProvider, useAppContext } from "./shared/AppContext";
-import type { TabItem } from "./shared/ui";
-import { Button, TabBar } from "./shared/ui";
-import { BuildBar } from "./shared/ui/BuildBar";
+import { Button } from "./shared/ui";
 import layout from "./shared/ui/layout.module.css";
 import { postMessage } from "./vscode";
 
 // Resolved once at module load; never changes after the page is mounted.
+// Each webview panel sets `data-alp-mode` to pick the view it hosts.
 const ALP_MODE =
   typeof document !== "undefined"
-    ? (document.body.dataset.alpMode ?? "sidebar")
-    : "sidebar";
+    ? (document.body.dataset.alpMode ?? "overview")
+    : "overview";
 
-type SidebarTab = "env" | "project" | "sdk" | "tools";
-
-const SIDEBAR_TABS: TabItem<SidebarTab>[] = [
-  { id: "env", label: "Env", icon: "🐍" },
-  { id: "project", label: "Project", icon: "📁" },
-  { id: "sdk", label: "SDK", icon: "🧰" },
-  { id: "tools", label: "Tools", icon: "⚡" },
-];
-
-function AppShell() {
-  const { protocolMismatch } = useAppContext();
-  const [activeTab, setActiveTab] = useState<SidebarTab>("env");
-
-  if (protocolMismatch) {
-    return (
-      <div className={layout.section}>
-        <p className={layout.sectionTitle}>ALP IDE</p>
-        <p className={layout.setupRowDesc}>
-          The extension was updated. Please reload the window to refresh the
-          panel.
-        </p>
-        <div className={layout.setupRowAction}>
-          <Button
-            onClick={() =>
-              postMessage({
-                type: "runCommand",
-                command: "workbench.action.reloadWindow",
-              })
-            }
-          >
-            Reload Window
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
+/** Shown when the extension and webview protocol versions diverge. */
+function ProtocolMismatchNotice() {
   return (
-    <div>
-      <BuildBar />
-      <TabBar
-        tabs={SIDEBAR_TABS}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
-
-      <div
-        role="tabpanel"
-        id={`tabpanel-${activeTab}`}
-        aria-labelledby={`tab-${activeTab}`}
-      >
-        {activeTab === "env" && <SetupView />}
-
-        {activeTab === "project" && (
-          <>
-            <WestWorkspacesView />
-            <ProjectView />
-          </>
-        )}
-
-        {activeTab === "sdk" && <SdkView />}
-
-        {activeTab === "tools" && <QuickActionsView />}
+    <div className={layout.section}>
+      <p className={layout.sectionTitle}>ALP IDE</p>
+      <p className={layout.setupRowDesc}>
+        The extension was updated. Please reload the window to refresh this
+        view.
+      </p>
+      <div className={layout.setupRowAction}>
+        <Button
+          onClick={() =>
+            postMessage({
+              type: "runCommand",
+              command: "workbench.action.reloadWindow",
+            })
+          }
+        >
+          Reload Window
+        </Button>
       </div>
-
-      <FooterView />
     </div>
   );
+}
+
+/** Routes the active `ALP_MODE` to its panel view. */
+function Router() {
+  const { protocolMismatch } = useAppContext();
+  if (protocolMismatch) return <ProtocolMismatchNotice />;
+
+  switch (ALP_MODE) {
+    case "setup-flow":
+      return <SetupFlowView />;
+    case "new-project-flow":
+      return <NewProjectFlowView />;
+    case "existing-project-flow":
+      return <ExistingProjectFlowView />;
+    case "sdk-manager":
+      return <SdkView />;
+    case "configurator":
+      return <ConfiguratorView />;
+    case "toolchain-doctor":
+      return <ToolchainDoctorView />;
+    case "hardware-explorer":
+      return <HardwareExplorerView />;
+    case "build-plan":
+      return <BuildPlanView />;
+    case "overview":
+    default:
+      return <OverviewView />;
+  }
 }
 
 export function App() {
   return (
     <AppProvider>
-      {ALP_MODE === "setup-flow" ? (
-        <SetupFlowView />
-      ) : ALP_MODE === "overview" ? (
-        <OverviewView />
-      ) : ALP_MODE === "new-project-flow" ? (
-        <NewProjectFlowView />
-      ) : ALP_MODE === "existing-project-flow" ? (
-        <ExistingProjectFlowView />
-      ) : ALP_MODE === "sdk-manager" ? (
-        <SdkView />
-      ) : ALP_MODE === "configurator" ? (
-        <ConfiguratorView />
-      ) : ALP_MODE === "toolchain-doctor" ? (
-        <ToolchainDoctorView />
-      ) : ALP_MODE === "hardware-explorer" ? (
-        <HardwareExplorerView />
-      ) : (
-        <AppShell />
-      )}
+      <Router />
     </AppProvider>
   );
 }

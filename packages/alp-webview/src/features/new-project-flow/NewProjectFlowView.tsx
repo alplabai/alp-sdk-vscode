@@ -5,6 +5,7 @@ import { useStepper } from "../../shared/hooks/useStepper";
 import {
   Card,
   Field,
+  Icon,
   Skeleton,
   StatusChip,
   Stepper,
@@ -285,7 +286,7 @@ export function NewProjectFlowView() {
             aria-label="Close wizard"
             onClick={() => postMessage({ type: "closePanel" })}
           >
-            ✕
+            <Icon name="x" size={14} />
           </button>
         </header>
 
