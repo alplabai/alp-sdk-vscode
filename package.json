@@ -144,6 +144,12 @@
         "category": "Alp"
       },
       {
+        "command": "alp.showBuildPlan",
+        "title": "Alp: Preview build plan",
+        "category": "Alp",
+        "icon": "$(list-tree)"
+      },
+      {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
         "category": "Alp"

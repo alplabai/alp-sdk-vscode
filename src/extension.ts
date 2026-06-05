@@ -6,6 +6,7 @@ import { registerConfiguratorCommand } from "./configuratorPanel";
 import { registerDebugCommands } from "./debug";
 import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
+  BuildPlanPanel,
   ExistingProjectFlowPanel,
   NewProjectFlowPanel,
   OverviewPanel,
@@ -64,6 +65,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("alp.openHardwareExplorer", () =>
       showHardwareExplorerPanel(context),
+    ),
+    vscode.commands.registerCommand("alp.showBuildPlan", () =>
+      BuildPlanPanel.open(context),
     ),
   );
 

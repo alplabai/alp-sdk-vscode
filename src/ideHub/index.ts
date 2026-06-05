@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+export { BuildPlanPanel } from "./buildPlanPanel";
 export { ExistingProjectFlowPanel } from "./existingProjectFlowPanel";
 export type {
   AlpIdeState,

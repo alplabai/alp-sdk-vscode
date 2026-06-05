@@ -125,6 +125,8 @@ export function App() {
         <ToolchainDoctorView />
       ) : ALP_MODE === "hardware-explorer" ? (
         <HardwareExplorerView />
+      ) : ALP_MODE === "build-plan" ? (
+        <BuildPlanView />
       ) : (
         <AppShell />
       )}
