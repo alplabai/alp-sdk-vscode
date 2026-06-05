@@ -152,12 +152,14 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
 }
 
 /**
- * Resolve the active project's `board.yaml` and open it with the configurator.
- * Backs the `alp.openConfigurator` command (an alternate entry to the editor).
+ * Open a `board.yaml` with the configurator. Backs the `alp.openConfigurator`
+ * command (an alternate entry to the editor). When invoked from the editor
+ * title bar or the explorer context menu, VS Code passes the clicked resource;
+ * from the command palette it falls back to the active project's board.yaml.
  */
-function openConfigurator(): void {
-  const boardPath = collectProjectContext().boardYamlPath;
-  if (!boardPath || !fs.existsSync(boardPath)) {
+function openConfigurator(resource?: vscode.Uri): void {
+  const target = resource?.fsPath ?? collectProjectContext().boardYamlPath;
+  if (!target || !fs.existsSync(target)) {
     void vscode.window.showErrorMessage(
       "Alp: no board.yaml found — open a workspace folder with a board.yaml, or create a project first.",
     );
@@ -165,7 +167,7 @@ function openConfigurator(): void {
   }
   void vscode.commands.executeCommand(
     "vscode.openWith",
-    vscode.Uri.file(boardPath),
+    vscode.Uri.file(target),
     VIEW_TYPE,
   );
 }

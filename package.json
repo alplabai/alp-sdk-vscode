@@ -200,7 +200,8 @@
       {
         "command": "alp.openConfigurator",
         "title": "Alp: Open board configurator (GUI)",
-        "category": "Alp"
+        "category": "Alp",
+        "icon": "$(circuit-board)"
       },
       {
         "command": "alp.toolchainDoctor",
@@ -363,6 +364,20 @@
         {
           "command": "alp.views.refresh",
           "when": "view == alp-ide.setup || view == alp-ide.workspaces || view == alp-ide.projects || view == alp-ide.sdk || view == alp-ide.build",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "alp.openConfigurator",
+          "when": "resourceFilename == board.yaml && activeEditor == 'workbench.editors.files.textFileEditor'",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "alp.openConfigurator",
+          "when": "resourceFilename == board.yaml",
           "group": "navigation"
         }
       ]
