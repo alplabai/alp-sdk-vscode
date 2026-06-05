@@ -36,7 +36,7 @@
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   line-height: 1;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
@@ -59,14 +59,14 @@
 /* ── Shared ── */
 
 .stepHeading {
-  font-size: 14px;
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0 0 var(--space-5);
 }
 
 .stepDesc {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   margin-top: var(--space-4);
   line-height: 1.6;
@@ -95,12 +95,12 @@
 }
 
 .folderIcon {
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   flex-shrink: 0;
 }
 
 .folderPath {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   font-family: var(--vscode-editor-font-family, monospace);
   color: var(--text-primary);
   word-break: break-all;
@@ -133,13 +133,13 @@
 }
 
 .inspectLabel {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .inspectDesc {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
@@ -156,14 +156,14 @@
 }
 
 .actionTitle {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
 }
 
 .actionDesc {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   line-height: 1.6;
   margin: 0;
