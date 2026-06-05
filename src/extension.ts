@@ -2,10 +2,11 @@
 
 import * as vscode from "vscode";
 import { registerBootstrapCommand } from "./bootstrap";
-import { registerConfiguratorCommand } from "./configuratorPanel";
+import { registerConfiguratorEditor } from "./configurator/customEditor";
 import { registerDebugCommands } from "./debug";
 import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
+  BuildPlanPanel,
   ExistingProjectFlowPanel,
   NewProjectFlowPanel,
   OverviewPanel,
@@ -33,8 +34,8 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),
-    createStatusBar(context),
-    registerConfiguratorCommand(context),
+    createStatusBar(),
+    ...registerConfiguratorEditor(context),
     ...registerToolchainCommands(context),
     registerProjectWizardCommand(),
     ...registerLspCommands(),
@@ -64,6 +65,16 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("alp.openHardwareExplorer", () =>
       showHardwareExplorerPanel(context),
+    ),
+    vscode.commands.registerCommand("alp.showBuildPlan", () =>
+      BuildPlanPanel.open(context),
+    ),
+    vscode.commands.registerCommand("alp.openGettingStarted", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        "alplabai.alp-sdk#alpGettingStarted",
+        false,
+      ),
     ),
   );
 

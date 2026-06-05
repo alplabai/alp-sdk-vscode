@@ -57,6 +57,14 @@ export function registerTreeViews(
       showCollapseAll: false,
     }),
     vscode.commands.registerCommand("alp.views.refresh", doRefresh),
+    // Back-compat aliases over the native shell: the flow panels, the setup
+    // orchestrator, and the setup-flow webview still call these IDs (they were
+    // registered by the now-retired ideHub webview provider). Focus reveals the
+    // ALP IDE container; refresh re-runs the tree state load.
+    vscode.commands.registerCommand("alp.ideHub.focus", () =>
+      vscode.commands.executeCommand("workbench.view.extension.alp-ide"),
+    ),
+    vscode.commands.registerCommand("alp.ideHub.refresh", doRefresh),
     vscode.workspace.onDidChangeWorkspaceFolders(doRefresh),
     boardYamlWatcher.onDidCreate(doRefresh),
     boardYamlWatcher.onDidChange(doRefresh),
