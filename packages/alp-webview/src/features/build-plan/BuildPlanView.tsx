@@ -48,6 +48,11 @@ export function BuildPlanView() {
   const toggle = (path: string) =>
     setExpanded((cur) => (cur === path ? null : path));
 
+  // A slice with no command isn't buildable yet (paired with a warning); the
+  // whole-plan build would fail, so gate Build until every slice has a command.
+  const unbuildable = plan ? plan.slices.filter((s) => !s.command) : [];
+  const canBuild = unbuildable.length === 0;
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -94,10 +99,30 @@ export function BuildPlanView() {
             <Button appearance="secondary" onClick={materialise}>
               Materialise
             </Button>
-            <Button appearance="primary" onClick={build}>
+            <Button
+              appearance="primary"
+              onClick={build}
+              disabled={!canBuild}
+              title={
+                canBuild
+                  ? undefined
+                  : `${unbuildable.length} slice(s) have no command yet — resolve the warnings before building.`
+              }
+            >
               Build
             </Button>
           </div>
+          {!canBuild && (
+            <p className={styles.buildNote}>
+              <Icon name="warning" size={12} />
+              <span>
+                Build unavailable —{" "}
+                <strong>{unbuildable.map((s) => s.coreId).join(", ")}</strong>{" "}
+                {unbuildable.length === 1 ? "has" : "have"} no command yet.
+                Materialise still writes the config artefacts.
+              </span>
+            </p>
+          )}
 
           <ul className={styles.slices}>
             {plan.slices.map((slice) => (
@@ -116,6 +141,16 @@ export function BuildPlanView() {
                   <div className={styles.sliceMeta}>
                     <span className={styles.buildDir}>{slice.buildDir}</span>
                   </div>
+                  {Object.keys(slice.env).length > 0 && (
+                    <dl className={styles.env}>
+                      {Object.entries(slice.env).map(([key, value]) => (
+                        <div key={key} className={styles.envRow}>
+                          <dt className={styles.envKey}>{key}</dt>
+                          <dd className={styles.envVal}>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
                   {slice.configArtefacts.length > 0 && (
                     <ul className={styles.fileList}>
                       {slice.configArtefacts.map((file) => (
