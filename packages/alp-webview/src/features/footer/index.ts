@@ -1,1 +1,0 @@
-export { FooterView } from "./FooterView";
