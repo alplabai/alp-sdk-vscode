@@ -69,6 +69,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.showBuildPlan", () =>
       BuildPlanPanel.open(context),
     ),
+    vscode.commands.registerCommand("alp.openGettingStarted", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        "alplabai.alp-sdk#alpGettingStarted",
+        false,
+      ),
+    ),
   );
 
   void maybeOfferFirstRunWizard(context);

@@ -52,6 +52,63 @@
     "redhat.vscode-yaml"
   ],
   "contributes": {
+    "walkthroughs": [
+      {
+        "id": "alpGettingStarted",
+        "title": "Get started with ALP SDK",
+        "description": "Install the SDK, bootstrap your toolchain, open a project, and build — all from here.",
+        "featuredFor": [
+          "**/board.yaml"
+        ],
+        "steps": [
+          {
+            "id": "alp.walkthrough.installSdk",
+            "title": "Install the ALP SDK",
+            "description": "Pick a tagged SDK release (or point at one on disk). The active SDK supplies the board schemas, presets, and build-plan emitter.\n[Open SDK Manager](command:alp.openSdkManager)",
+            "media": {
+              "markdown": "media/walkthroughs/01-install-sdk.md"
+            },
+            "completionEvents": [
+              "onCommand:alp.openSdkManager"
+            ]
+          },
+          {
+            "id": "alp.walkthrough.bootstrap",
+            "title": "Bootstrap your toolchain",
+            "description": "Install the host tools the build needs — Python, west, CMake, Ninja — for your OS.\n[Bootstrap toolchain](command:alp.installDependencies)",
+            "media": {
+              "markdown": "media/walkthroughs/02-bootstrap.md"
+            },
+            "completionEvents": [
+              "onCommand:alp.installDependencies"
+            ]
+          },
+          {
+            "id": "alp.walkthrough.project",
+            "title": "Open or create a project",
+            "description": "Scaffold a real project from a template (and target your SoM), or open an existing folder.\n[New project](command:alp.newProjectWizard)\n[Open existing](command:alp.openExistingProject)",
+            "media": {
+              "markdown": "media/walkthroughs/03-project.md"
+            },
+            "completionEvents": [
+              "onCommand:alp.newProjectWizard",
+              "onCommand:alp.openExistingProject"
+            ]
+          },
+          {
+            "id": "alp.walkthrough.build",
+            "title": "Build & flash",
+            "description": "Preview the build plan, then build and flash — from the status bar or the Build & Flash view.\n[Preview build plan](command:alp.showBuildPlan)\n[Build](command:alp.westBuild)",
+            "media": {
+              "markdown": "media/walkthroughs/04-build.md"
+            },
+            "completionEvents": [
+              "onCommand:alp.westBuild"
+            ]
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "alp.generateZephyrConf",
@@ -148,6 +205,11 @@
         "title": "Alp: Preview build plan",
         "category": "Alp",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "alp.openGettingStarted",
+        "title": "Alp: Get started (walkthrough)",
+        "category": "Alp"
       },
       {
         "command": "alp.newProjectWizard",
