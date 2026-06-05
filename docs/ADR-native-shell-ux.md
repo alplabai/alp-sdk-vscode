@@ -2,10 +2,28 @@
 
 # ADR: Native-first IDE shell, webview reserved for visual surfaces
 
-**Status:** Proposed (2026-06-05).
+**Status:** Accepted — implemented on `feat/webview-ui` (2026-06-05).
 **Deciders:** Hakan (alp-sdk-vscode).
 **Scope:** the extension's UX architecture — what lives in native VS Code
 primitives vs. in React webviews.
+
+> **Implementation log** (all phases landed):
+>
+> - **R** — Build Plan rescued into a live `BuildPlanPanel` + Build & Flash tree
+>   node + `alp.showBuildPlan`.
+> - **A** — status bar promoted to an action surface (board target + Build/Flash).
+> - **B** — `contributes.walkthroughs` "Get started with ALP SDK" +
+>   `alp.openGettingStarted`.
+> - **C** — configurator is now a document-backed `CustomTextEditor` for
+>   `board.yaml` (priority `option`); `alp.openConfigurator` opens it via
+>   `vscode.openWith`; the old `ConfiguratorPanel` is retired.
+> - **Cleanup** — orphan AppShell (`alp-ide.panel` provider + tab-only
+>   components) removed; `App.tsx` is now a pure mode-router; webview bundle
+>   105 → 86 modules.
+>
+> Decisions taken during implementation: Phase C ships as an **opt-in** custom
+> editor (text editor stays the default for `board.yaml`); the setup-flow
+> webview wizard is kept as a fallback alongside the new Walkthrough.
 
 ## Context
 
