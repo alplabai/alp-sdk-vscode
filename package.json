@@ -52,6 +52,18 @@
     "redhat.vscode-yaml"
   ],
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "alp.boardConfigurator",
+        "displayName": "ALP Board Configurator",
+        "selector": [
+          {
+            "filenamePattern": "**/board.yaml"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "walkthroughs": [
       {
         "id": "alpGettingStarted",

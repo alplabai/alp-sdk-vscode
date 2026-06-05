@@ -2,7 +2,7 @@
 
 import * as vscode from "vscode";
 import { registerBootstrapCommand } from "./bootstrap";
-import { registerConfiguratorCommand } from "./configuratorPanel";
+import { registerConfiguratorEditor } from "./configurator/customEditor";
 import { registerDebugCommands } from "./debug";
 import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
@@ -35,7 +35,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),
     createStatusBar(),
-    registerConfiguratorCommand(context),
+    ...registerConfiguratorEditor(context),
     ...registerToolchainCommands(context),
     registerProjectWizardCommand(),
     ...registerLspCommands(),
