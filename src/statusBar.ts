@@ -3,19 +3,22 @@
 import * as vscode from "vscode";
 import { createStatusBarPresentation } from "@alp-sdk/core/boardSummary/service";
 import { loadBoardSummary } from "./boardSummary/vscodeAdapter";
+import type { AlpIdeState } from "./ideHub/messages";
 import { collectProjectContext } from "./project/vscodeAdapter";
+import type { StateManager } from "./views/stateManager";
 
 /**
  * Status-bar surface for the active board (left-aligned, reading order):
  *   $(circuit-board) <sku>   → open the board configurator
- *   $(play) Build            → alp.westBuild   (shown only when a board exists)
- *   $(zap)  Flash            → alp.westFlash   (shown only when a board exists)
+ *   $(play) Build            → alp.westBuild
+ *   $(zap)  Flash            → alp.westFlash
  *
- * Making Build/Flash always-visible one-click actions follows the VS Code
- * status-bar pattern (cf. the run/debug + language items) — see
- * docs/ADR-native-shell-ux.md phase A.
+ * Build/Flash are gated on the same `westInitialized` signal the Build & Flash
+ * tree uses (a shared StateManager), so the two surfaces never disagree — and
+ * the bar re-renders on every state change (board.yaml, west init, workspace).
  */
-function refresh(
+function render(
+  state: AlpIdeState,
   target: vscode.StatusBarItem,
   build: vscode.StatusBarItem,
   flash: vscode.StatusBarItem,
@@ -27,9 +30,9 @@ function refresh(
   target.command = presentation.command;
   target.show();
 
-  // Build/Flash are only meaningful once a board.yaml exists; the target chip
-  // otherwise reads "no board.yaml" and routes to the configurator.
-  if (summary?.sku) {
+  // Build/Flash invoke `west` commands — only meaningful once a board.yaml
+  // exists AND the west workspace is initialized (matches the tree's gating).
+  if (summary?.sku && state.workspace.westInitialized) {
     build.show();
     flash.show();
   } else {
@@ -38,7 +41,7 @@ function refresh(
   }
 }
 
-export function createStatusBar(): vscode.Disposable {
+export function createStatusBar(stateMgr: StateManager): vscode.Disposable {
   const target = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     100,
@@ -60,12 +63,10 @@ export function createStatusBar(): vscode.Disposable {
   flash.tooltip = "Alp: flash the connected device (alp.westFlash)";
   flash.command = "alp.westFlash";
 
-  refresh(target, build, flash);
+  render(stateMgr.state, target, build, flash);
+  const sub = stateMgr.onStateChange((state) =>
+    render(state, target, build, flash),
+  );
 
-  const watcher = vscode.workspace.createFileSystemWatcher("**/board.yaml");
-  watcher.onDidChange(() => refresh(target, build, flash));
-  watcher.onDidCreate(() => refresh(target, build, flash));
-  watcher.onDidDelete(() => refresh(target, build, flash));
-
-  return vscode.Disposable.from(target, build, flash, watcher);
+  return vscode.Disposable.from(target, build, flash, sub);
 }

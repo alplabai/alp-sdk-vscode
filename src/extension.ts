@@ -21,6 +21,7 @@ import { registerLspCommands } from "./lsp/commands";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
 import { registerTreeViews } from "./views";
+import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
 import {
   maybeOfferFirstRunWizard,
@@ -30,17 +31,22 @@ import {
 export function activate(context: vscode.ExtensionContext): void {
   startLanguageServer(context);
 
+  // One shared state source for both the native trees and the status bar, so
+  // the Build & Flash tree and the status-bar Build/Flash gating never disagree.
+  const stateMgr = new StateManager();
+
   context.subscriptions.push(
+    stateMgr,
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),
-    createStatusBar(),
+    createStatusBar(stateMgr),
     ...registerConfiguratorEditor(context),
     ...registerToolchainCommands(context),
     registerProjectWizardCommand(),
     ...registerLspCommands(),
     ...registerDebugCommands(),
-    ...registerTreeViews(context),
+    ...registerTreeViews(context, stateMgr),
     ...registerWorkspaceCommands(),
     vscode.commands.registerCommand("alp.openSetupFlow", () =>
       SetupFlowPanel.open(context),

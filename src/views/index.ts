@@ -5,13 +5,13 @@ import { BuildTreeProvider } from "./build";
 import { ProjectsTreeProvider } from "./projects";
 import { SdkTreeProvider } from "./sdk";
 import { SetupTreeProvider } from "./setup";
-import { StateManager } from "./stateManager";
+import type { StateManager } from "./stateManager";
 import { WorkspacesTreeProvider } from "./workspaces";
 
 export function registerTreeViews(
   context: vscode.ExtensionContext,
+  stateMgr: StateManager,
 ): vscode.Disposable[] {
-  const stateMgr = new StateManager();
   const setupProvider = new SetupTreeProvider(stateMgr);
   const workspacesProvider = new WorkspacesTreeProvider(stateMgr);
   const projectsProvider = new ProjectsTreeProvider(stateMgr);
@@ -29,7 +29,6 @@ export function registerTreeViews(
     vscode.workspace.createFileSystemWatcher("**/board.yaml");
 
   const disposables: vscode.Disposable[] = [
-    stateMgr,
     setupProvider,
     workspacesProvider,
     projectsProvider,
