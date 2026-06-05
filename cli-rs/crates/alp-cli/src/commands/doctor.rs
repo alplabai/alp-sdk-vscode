@@ -51,7 +51,12 @@ pub fn run(g: &GlobalArgs, args: &DoctorArgs) -> CommandRun {
 
     let runtime =
         collect_runtime_capabilities_from_commands(&project_context(&context), command_on_path);
-    let report = build_doctor_report(&context, target, server, &runtime);
+    let mut report = build_doctor_report(&context, target, server, &runtime);
+    append_sdk_provenance(
+        &mut report.checks,
+        &mut report.summary,
+        context.sdk_root.as_deref(),
+    );
 
     let exit = if report.summary.fail > 0 {
         ExitCode::DoctorFailure
@@ -95,7 +100,12 @@ fn run_build_readiness(g: &GlobalArgs, generated_at: &str) -> CommandRun {
         is_linux: cfg!(target_os = "linux"),
     };
 
-    let report = build_readiness_report(generated_at.to_string(), os_set, &probe);
+    let mut report = build_readiness_report(generated_at.to_string(), os_set, &probe);
+    append_sdk_provenance(
+        &mut report.checks,
+        &mut report.summary,
+        context.sdk_root.as_deref(),
+    );
 
     let exit = if report.summary.fail > 0 {
         ExitCode::DoctorFailure
@@ -113,6 +123,107 @@ fn run_build_readiness(g: &GlobalArgs, generated_at: &str) -> CommandRun {
         .then(|| Envelope::new("doctor", resolved_project, report, issues, exit.code()).to_json());
 
     CommandRun { exit, text, json }
+}
+
+/// Append an SDK-provenance check (conformance Issue 4 + 6): records the SDK
+/// checkout's git short-commit and `metadata/sdk_version.yaml`, so a build plan
+/// can be traced to the planner that produced it, and warns when the checkout
+/// is behind its upstream tracking ref.
+fn append_sdk_provenance(
+    checks: &mut Vec<DoctorCheck>,
+    summary: &mut DoctorSummary,
+    sdk_root: Option<&str>,
+) {
+    let Some(root) = sdk_root else {
+        return;
+    };
+
+    let commit = git_short_commit(root);
+    let version = read_sdk_version(root);
+
+    let mut detail = match (&version, &commit) {
+        (Some(v), Some(c)) => format!("alp-sdk {v} @ {c}"),
+        (None, Some(c)) => format!("alp-sdk @ {c}"),
+        (Some(v), None) => format!("alp-sdk {v}"),
+        (None, None) => {
+            format!("alp-sdk at {root} (no git checkout / metadata/sdk_version.yaml)")
+        }
+    };
+
+    // Advisory: reads the local remote-tracking ref, performs no network fetch,
+    // so it only reflects the checkout's state as of the last `git fetch`.
+    let (status, fix) = match git_behind_upstream(root) {
+        Some(n) if n > 0 => {
+            detail = format!("{detail} — {n} commit(s) behind upstream");
+            (
+                DoctorStatus::Warn,
+                Some(format!("Update the SDK checkout: git -C {root} pull")),
+            )
+        }
+        _ => (DoctorStatus::Pass, None),
+    };
+
+    match status {
+        DoctorStatus::Pass => summary.pass += 1,
+        DoctorStatus::Warn => summary.warn += 1,
+        DoctorStatus::Fail => summary.fail += 1,
+    }
+    checks.push(DoctorCheck {
+        name: "sdkProvenance".to_string(),
+        status,
+        detail,
+        fix,
+    });
+}
+
+/// `git -C <root> rev-parse --short HEAD`, or `None` when `root` is not a git
+/// checkout (e.g. an extracted SDK release archive).
+fn git_short_commit(root: &str) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["-C", root, "rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let commit = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (!commit.is_empty()).then_some(commit)
+}
+
+/// Count of commits `HEAD` is behind its upstream tracking ref, without
+/// fetching. `None` when there is no upstream or `root` is not a git checkout.
+fn git_behind_upstream(root: &str) -> Option<u32> {
+    let output = std::process::Command::new("git")
+        .args(["-C", root, "rev-list", "--count", "HEAD..@{upstream}"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+}
+
+/// Read a version from `<root>/metadata/sdk_version.yaml`: a `version: X` line
+/// if present, else the first bare scalar. `None` when the file is absent.
+fn read_sdk_version(root: &str) -> Option<String> {
+    let path = Path::new(root).join("metadata").join("sdk_version.yaml");
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut bare: Option<String> = None;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("version:") {
+            let value = rest.trim().trim_matches('"').trim_matches('\'');
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        } else if bare.is_none() && !line.contains(':') {
+            bare = Some(line.trim_matches('"').trim_matches('\'').to_string());
+        }
+    }
+    bare
 }
 
 /// Read + parse the active `board.yaml`, returning `None` when it is absent or
