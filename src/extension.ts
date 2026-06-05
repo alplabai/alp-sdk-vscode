@@ -34,7 +34,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),
-    createStatusBar(context),
+    createStatusBar(),
     registerConfiguratorCommand(context),
     ...registerToolchainCommands(context),
     registerProjectWizardCommand(),
