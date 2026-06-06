@@ -94,7 +94,7 @@ function Brand({ subtitle }: { subtitle: string }) {
           <Icon name="bolt" size={18} />
         </span>
         <span className={styles.brandName}>
-          ALP<span className={styles.brandLab}>LAB</span>
+          Alp<span className={styles.brandLab}>LAB</span>
         </span>
       </div>
       <span className={styles.topDivider} aria-hidden="true" />
@@ -220,7 +220,7 @@ export function OverviewView() {
   if (!state) {
     return (
       <div className={styles.root}>
-        <Brand subtitle="ALP IDE" />
+        <Brand subtitle="Alp IDE" />
         <div className={styles.body}>
           <Skeleton lines={4} />
         </div>
@@ -232,7 +232,7 @@ export function OverviewView() {
 
   return (
     <div className={styles.root}>
-      <Brand subtitle="ALP IDE" />
+      <Brand subtitle="Alp IDE" />
 
       <div className={styles.body}>
         <p className={styles.lead}>
@@ -261,7 +261,7 @@ export function OverviewView() {
             />
             <StatusCard
               icon="package"
-              title="ALP SDK"
+              title="Alp SDK"
               chip={sdkChip(state)}
               meta={sdkMeta(state)}
             />
@@ -273,7 +273,7 @@ export function OverviewView() {
             <span className={styles.readyIcon} aria-hidden="true">
               <Icon name="check" size={16} />
             </span>
-            All systems are ready. You can now build and flash ALP SDK firmware.
+            All systems are ready. You can now build and flash Alp SDK firmware.
           </div>
         )}
 

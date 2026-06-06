@@ -88,7 +88,7 @@ export async function runAlpCommand(
         kind: "unknown",
         ok: false,
         severity: "error",
-        message: `ALP CLI unavailable: ${message}`,
+        message: `Alp CLI unavailable: ${message}`,
         envelope: null,
       },
       raw: {
@@ -144,7 +144,7 @@ function quoteToken(token: string): string {
 async function surfaceResolutionError(error: unknown): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
   const choice = await vscode.window.showErrorMessage(
-    `ALP CLI unavailable: ${message}`,
+    `Alp CLI unavailable: ${message}`,
     "Open Settings",
   );
   if (choice === "Open Settings") {

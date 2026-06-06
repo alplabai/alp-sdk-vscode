@@ -62,7 +62,7 @@ function EnvStep({ state }: { state: AlpIdeState }) {
       )}
       <p className={styles.stepDesc}>
         Bootstrap installs Python, west, and other host dependencies required to
-        build ALP SDK firmware.
+        build Alp SDK firmware.
       </p>
     </>
   );
@@ -122,7 +122,7 @@ function WorkspaceStep({ state }: { state: AlpIdeState }) {
         )}
       </div>
       <p className={styles.stepDesc}>
-        Open a folder that contains your ALP project, then run Bootstrap to
+        Open a folder that contains your Alp project, then run Bootstrap to
         create the <code>.west</code> directory and fetch all modules.
       </p>
     </>
@@ -135,11 +135,11 @@ function SdkStep({ state }: { state: AlpIdeState }) {
 
   return (
     <>
-      <p className={styles.stepHeading}>ALP SDK</p>
+      <p className={styles.stepHeading}>Alp SDK</p>
       <div className={styles.checkList}>
         <div className={styles.checkRow}>
           <span className={styles.checkLabel}>
-            {isReady && version ? `Version ${version}` : "ALP SDK"}
+            {isReady && version ? `Version ${version}` : "Alp SDK"}
           </span>
           <StatusChip
             state={
@@ -169,8 +169,8 @@ function SdkStep({ state }: { state: AlpIdeState }) {
       )}
       <p className={styles.stepDesc}>
         {isReady
-          ? "The ALP SDK is installed and ready for firmware development."
-          : "Install or select an ALP SDK in the SDK Manager to continue."}
+          ? "The Alp SDK is installed and ready for firmware development."
+          : "Install or select an Alp SDK in the SDK Manager to continue."}
       </p>
     </>
   );
@@ -208,7 +208,7 @@ export function SetupFlowView() {
     <div className={styles.root}>
       <div className={styles.shell}>
         <header className={styles.header}>
-          <h1 className={styles.title}>ALP IDE Setup</h1>
+          <h1 className={styles.title}>Alp IDE Setup</h1>
           <button
             className={styles.closeBtn}
             title="Close"
@@ -237,7 +237,7 @@ export function SetupFlowView() {
           isFirst={stepper.isFirst}
           isLast={stepper.isLast}
           disabled={isLoading || !canAdvance[stepper.currentIndex]}
-          finishLabel="Open ALP IDE"
+          finishLabel="Open Alp IDE"
           onBack={goBack}
           onNext={handleNext}
           onCancel={() => postMessage({ type: "closePanel" })}

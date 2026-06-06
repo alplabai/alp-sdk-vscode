@@ -25,7 +25,7 @@ import {
 const GITHUB_RELEASES_URL =
   "https://api.github.com/repos/alplabai/alp-sdk/releases";
 
-/** Canonical marker that identifies a directory as an ALP SDK root. */
+/** Canonical marker that identifies a directory as an Alp SDK root. */
 const LOADER_SCRIPT_RELATIVE = path.join("scripts", "alp_project.py");
 
 /** Version file written by the SDK build system. */
@@ -260,7 +260,7 @@ export function checkSdkReadiness(
   );
   if (!loaderScriptPresent) {
     issues.push(
-      `scripts/alp_project.py not found — "${sdkPath}" is not a valid ALP SDK root.`,
+      `scripts/alp_project.py not found — "${sdkPath}" is not a valid Alp SDK root.`,
     );
   }
 

@@ -237,7 +237,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
       {tab === "download" && (
         <div className={styles.tabContent}>
           <p className={layout.setupRowDesc}>
-            Download a versioned ALP SDK release to{" "}
+            Download a versioned Alp SDK release to{" "}
             <span className={layout.pathMono}>~/.alp/sdk/</span>.
           </p>
 

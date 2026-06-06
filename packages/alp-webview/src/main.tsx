@@ -6,7 +6,7 @@ import "./styles.css";
 const root = document.getElementById("root");
 if (!root) {
   document.body.innerHTML =
-    '<p style="color:#f88;padding:8px">ALP IDE: #root element missing</p>';
+    '<p style="color:#f88;padding:8px">Alp IDE: #root element missing</p>';
 } else {
   try {
     createRoot(root).render(
@@ -16,7 +16,7 @@ if (!root) {
     );
   } catch (err) {
     root.innerHTML = `<div style="padding:12px;color:#f88;font-family:monospace;font-size:12px">
-      <b>ALP IDE render error:</b><br>${String(err)}
+      <b>Alp IDE render error:</b><br>${String(err)}
     </div>`;
   }
 }

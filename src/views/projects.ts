@@ -45,7 +45,7 @@ export class ProjectsTreeProvider
       this.items = [
         new ProjectItem(
           "No board.yaml found",
-          "Create or open an ALP project",
+          "Create or open an Alp project",
           new vscode.ThemeIcon(
             "warning",
             new vscode.ThemeColor("problemsWarningIcon.foreground"),
@@ -59,7 +59,7 @@ export class ProjectsTreeProvider
         ),
         new ProjectItem(
           "Open Existing",
-          "Open existing ALP project",
+          "Open existing Alp project",
           new vscode.ThemeIcon("folder-opened"),
           {
             command: "alp.openExistingProject",

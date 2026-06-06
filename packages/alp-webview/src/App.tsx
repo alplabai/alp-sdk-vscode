@@ -23,7 +23,7 @@ const ALP_MODE =
 function ProtocolMismatchNotice() {
   return (
     <div className={layout.section}>
-      <p className={layout.sectionTitle}>ALP IDE</p>
+      <p className={layout.sectionTitle}>Alp IDE</p>
       <p className={layout.setupRowDesc}>
         The extension was updated. Please reload the window to refresh this
         view.

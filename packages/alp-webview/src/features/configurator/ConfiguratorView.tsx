@@ -1329,7 +1329,7 @@ export function ConfiguratorView() {
         <div className={styles.section}>
           <SectionLabel
             text="Not connected"
-            hint="No ALP SDK found. Set alpSdk.path to your alp-sdk checkout to load SoMs, boards, chips and libraries."
+            hint="No Alp SDK found. Set alpSdk.path to your alp-sdk checkout to load SoMs, boards, chips and libraries."
           />
         </div>
       );
@@ -1358,7 +1358,7 @@ export function ConfiguratorView() {
             <Icon name="bolt" size={16} />
           </span>
           <span className={styles.brandName}>
-            ALP<span className={styles.brandLab}>LAB</span>
+            Alp<span className={styles.brandLab}>LAB</span>
           </span>
         </div>
         <span className={styles.topDivider} aria-hidden="true" />

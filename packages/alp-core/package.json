@@ -1,7 +1,7 @@
 {
   "name": "@alp-sdk/core",
   "version": "0.3.0",
-  "description": "ALP SDK shared domain logic: board configuration, loader, validation, wizard, debug.",
+  "description": "Alp SDK shared domain logic: board configuration, loader, validation, wizard, debug.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

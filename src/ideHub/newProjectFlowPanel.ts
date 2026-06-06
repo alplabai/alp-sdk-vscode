@@ -17,7 +17,7 @@ import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
-const PANEL_TITLE = "ALP IDE — New Project";
+const PANEL_TITLE = "Alp IDE — New Project";
 
 export class NewProjectFlowPanel {
   private static instance?: NewProjectFlowPanel;

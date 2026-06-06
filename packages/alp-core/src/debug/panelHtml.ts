@@ -62,10 +62,10 @@ export function createDebugTroubleshootingPanelHtml(
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="${csp}">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ALP Troubleshooting</title>
+  <title>Alp Troubleshooting</title>
 </head>
 <body>
-  <h1>ALP Troubleshooting Panel</h1>
+  <h1>Alp Troubleshooting Panel</h1>
   <p>Generated at ${escapeHtml(input.generatedAt)} for target ${escapeHtml(input.targetKind)} with server ${escapeHtml(input.server)}.</p>
 
   <h2>Quick Actions</h2>

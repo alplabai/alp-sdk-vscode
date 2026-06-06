@@ -74,7 +74,7 @@ export class SetupTreeProvider
         setup.westAvailable ? readyIcon : warnIcon,
       ),
       new SetupItem(
-        "ALP SDK",
+        "Alp SDK",
         sdk.version
           ? `v${sdk.version}`
           : sdk.activePath

@@ -52,7 +52,7 @@ export interface ResolvedBinary {
  * Resolve the `alp` command to invoke, downloading on demand when nothing else
  * is available. Throws when the host has no prebuilt binary and none is
  * configured/on PATH, or when a download fails — the surface maps that to a
- * one-click "install the ALP CLI" action.
+ * one-click "install the Alp CLI" action.
  */
 export async function resolveAlpBinary(
   deps: ResolveDeps,
