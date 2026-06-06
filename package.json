@@ -457,7 +457,7 @@
     "@types/react": "^19.2.15",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^6.0.2",
-    "@vscode/vsce": "^3.9.1",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
     "prettier": "^3.8.3",
     "typescript": "^6.0.3"
