@@ -151,7 +151,7 @@ test("createWizardPreviewMarkdown contains selections and file change summary", 
     ],
   );
 
-  assert.match(markdown, /ALP Project Wizard Preview/);
+  assert.match(markdown, /Alp Project Wizard Preview/);
   assert.match(markdown, /Template: Minimal app/);
   assert.match(markdown, /Files that will be written: 2/);
   assert.match(markdown, /NEW: board\.yaml/);
@@ -258,7 +258,7 @@ test("createModuleScaffoldPreviewMarkdown includes notes and file change summary
     { relativePath: "src/modules/board_health/board_health.c", kind: "update" },
   ]);
 
-  assert.match(markdown, /ALP Module Scaffold Preview/);
+  assert.match(markdown, /Alp Module Scaffold Preview/);
   assert.match(markdown, /Template: Diagnostics check module/);
   assert.match(markdown, /Files that will be written: 2/);
   assert.match(markdown, /NEW: include\/modules\/board_health\.h/);

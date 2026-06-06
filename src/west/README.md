@@ -9,7 +9,7 @@ The `west` module orchestrates west-based build, flash, and run workflows.
 - Build west command plans for supported actions.
 - Compose preparation steps (validation and generation) before build.
 - Execute west operations through adapter boundaries.
-- Keep command behavior aligned with documented ALP workflows.
+- Keep command behavior aligned with documented Alp workflows.
 
 ## Key Files
 

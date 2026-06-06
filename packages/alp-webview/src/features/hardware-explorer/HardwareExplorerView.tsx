@@ -29,7 +29,7 @@ export function HardwareExplorerView() {
         description={
           sdkConnected
             ? "Open a project with a board.yaml that specifies a SoM SKU."
-            : "Connect or install an ALP SDK to explore hardware details."
+            : "Connect or install an Alp SDK to explore hardware details."
         }
         action={
           <Button appearance="secondary" onClick={reload}>

@@ -17,7 +17,7 @@ import { queryAlpIdeState, sdkCacheRoot } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.sdk-manager";
-const PANEL_TITLE = "ALP IDE — SDK Manager";
+const PANEL_TITLE = "Alp IDE — SDK Manager";
 
 export class SdkManagerPanel {
   private static instance?: SdkManagerPanel;
@@ -109,7 +109,7 @@ export class SdkManagerPanel {
       canSelectFiles: false,
       canSelectFolders: true,
       canSelectMany: false,
-      title: "Select ALP SDK root directory",
+      title: "Select Alp SDK root directory",
     });
     if (!uris || uris.length === 0) return;
     await this.handleSwitchSdk(uris[0].fsPath);
@@ -193,7 +193,7 @@ export class SdkManagerPanel {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `ALP: Installing SDK ${version}`,
+        title: `Alp: Installing SDK ${version}`,
         cancellable: false,
       },
       async () => {

@@ -11,7 +11,7 @@ import { queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.setup-flow";
-const PANEL_TITLE = "ALP IDE Setup";
+const PANEL_TITLE = "Alp IDE Setup";
 
 export class SetupFlowPanel {
   private static instance?: SetupFlowPanel;

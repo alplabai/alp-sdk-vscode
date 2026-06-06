@@ -11,7 +11,7 @@ import { queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.overview";
-const PANEL_TITLE = "ALP IDE Overview";
+const PANEL_TITLE = "Alp IDE Overview";
 
 export class OverviewPanel {
   private static instance?: OverviewPanel;

@@ -41,7 +41,7 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   const app = await pickAppPath("examples/gpio-button-led");
   if (!app) return;
   await runAlpInTerminal(context, ["build", app], {
-    name: "ALP Build",
+    name: "Alp Build",
     cwd: westCwd(),
   });
 }
@@ -50,7 +50,7 @@ async function alpImage(context: vscode.ExtensionContext): Promise<void> {
   const app = await pickAppPath("examples/rpmsg-v2n");
   if (!app) return;
   await runAlpInTerminal(context, ["image", app], {
-    name: "ALP Image",
+    name: "Alp Image",
     cwd: westCwd(),
   });
 }
@@ -59,7 +59,7 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
   const app = await pickAppPath("examples/rpmsg-v2n");
   if (!app) return;
   await runAlpInTerminal(context, ["flash", app], {
-    name: "ALP Flash",
+    name: "Alp Flash",
     cwd: westCwd(),
   });
 }
@@ -68,7 +68,7 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
   const app = await pickAppPath("examples/rpmsg-v2n");
   if (!app) return;
   await runAlpInTerminal(context, ["clean", app], {
-    name: "ALP Clean",
+    name: "Alp Clean",
     cwd: westCwd(),
   });
 }
@@ -77,7 +77,7 @@ async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
   const app = await pickAppPath("examples/rpmsg-v2n");
   if (!app) return;
   await runAlpInTerminal(context, ["renode", app], {
-    name: "ALP Renode",
+    name: "Alp Renode",
     cwd: westCwd(),
   });
 }

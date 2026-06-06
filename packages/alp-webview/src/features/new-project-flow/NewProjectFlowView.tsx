@@ -279,7 +279,7 @@ export function NewProjectFlowView() {
     <div className={styles.root}>
       <div className={styles.shell}>
         <header className={styles.header}>
-          <h1 className={styles.title}>New ALP Project</h1>
+          <h1 className={styles.title}>New Alp Project</h1>
           <button
             className={styles.closeBtn}
             title="Close"

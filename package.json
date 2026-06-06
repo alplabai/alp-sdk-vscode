@@ -1,8 +1,8 @@
 {
   "name": "alp-sdk",
-  "displayName": "ALP SDK",
+  "displayName": "Alp SDK",
   "packageManager": "pnpm@11.1.0",
-  "description": "First-class IDE support for ALP SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
+  "description": "First-class IDE support for Alp SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
   "version": "0.3.0",
   "publisher": "alplabai",
   "license": "Apache-2.0",
@@ -55,7 +55,7 @@
     "customEditors": [
       {
         "viewType": "alp.boardConfigurator",
-        "displayName": "ALP Board Configurator",
+        "displayName": "Alp Board Configurator",
         "selector": [
           {
             "filenamePattern": "**/board.yaml"
@@ -67,7 +67,7 @@
     "walkthroughs": [
       {
         "id": "alpGettingStarted",
-        "title": "Get started with ALP SDK",
+        "title": "Get started with Alp SDK",
         "description": "Install the SDK, bootstrap your toolchain, open a project, and build — all from here.",
         "featuredFor": [
           "**/board.yaml"
@@ -75,7 +75,7 @@
         "steps": [
           {
             "id": "alp.walkthrough.installSdk",
-            "title": "Install the ALP SDK",
+            "title": "Install the Alp SDK",
             "description": "Pick a tagged SDK release (or point at one on disk). The active SDK supplies the board schemas, presets, and build-plan emitter.\n[Open SDK Manager](command:alp.openSdkManager)",
             "media": {
               "markdown": "media/walkthroughs/01-install-sdk.md"
@@ -271,7 +271,7 @@
       },
       {
         "command": "alp.ideHub.focus",
-        "title": "Alp: Open ALP IDE panel",
+        "title": "Alp: Open Alp IDE panel",
         "category": "Alp"
       },
       {
@@ -281,7 +281,7 @@
       },
       {
         "command": "alp.openOverview",
-        "title": "Alp: Open ALP IDE overview",
+        "title": "Alp: Open Alp IDE overview",
         "category": "Alp"
       },
       {
@@ -291,12 +291,12 @@
       },
       {
         "command": "alp.openExistingProject",
-        "title": "Alp: Open Existing ALP Project",
+        "title": "Alp: Open Existing Alp Project",
         "category": "Alp"
       },
       {
         "command": "alp.openSdkManager",
-        "title": "ALP: SDK Manager",
+        "title": "Alp: SDK Manager",
         "category": "Alp"
       },
       {
@@ -311,12 +311,12 @@
       },
       {
         "command": "alp.openSettings",
-        "title": "Alp: Open ALP IDE settings",
+        "title": "Alp: Open Alp IDE settings",
         "category": "Alp"
       },
       {
         "command": "alp.views.refresh",
-        "title": "ALP: Refresh sidebar views",
+        "title": "Alp: Refresh sidebar views",
         "icon": "$(refresh)",
         "category": "Alp"
       }
@@ -325,7 +325,7 @@
       "activitybar": [
         {
           "id": "alp-ide",
-          "title": "ALP IDE",
+          "title": "Alp IDE",
           "icon": "media/alp-ide-icon.svg"
         }
       ]
@@ -335,7 +335,7 @@
         {
           "type": "tree",
           "id": "alp-ide.setup",
-          "name": "ALP IDE Setup"
+          "name": "Alp IDE Setup"
         },
         {
           "type": "tree",
@@ -395,7 +395,7 @@
       }
     ],
     "configuration": {
-      "title": "ALP SDK",
+      "title": "Alp SDK",
       "properties": {
         "alpSdk.path": {
           "type": "string",

@@ -178,7 +178,7 @@ export function buildDebugPreflightReport(
       detail: context.workspaceRoot ?? "No workspace folder is open.",
       fix: context.workspaceRoot
         ? undefined
-        : "Open a workspace containing an ALP project.",
+        : "Open a workspace containing an Alp project.",
     },
     {
       name: "boardYaml",
@@ -225,7 +225,7 @@ export function buildDoctorReport(
       detail: context.workspaceRoot ?? "No workspace folder is open.",
       fix: context.workspaceRoot
         ? undefined
-        : "Open a workspace containing an ALP project.",
+        : "Open a workspace containing an Alp project.",
     },
     {
       name: "sdkRoot",
@@ -365,7 +365,7 @@ export function createDebugProfile(
     case "zephyr-mcu": {
       const base: DebugProfile = {
         id: `alp:${targetKind}:${server}`,
-        name: `ALP: Zephyr Debug (${serverLabel(server)})`,
+        name: `Alp: Zephyr Debug (${serverLabel(server)})`,
         targetKind,
         adapter: "cortex-debug",
         server,
@@ -401,7 +401,7 @@ export function createDebugProfile(
     case "baremetal-mcu":
       return {
         id: `alp:${targetKind}:${server}`,
-        name: `ALP: Baremetal Debug (${serverLabel(server)})`,
+        name: `Alp: Baremetal Debug (${serverLabel(server)})`,
         targetKind,
         adapter: "cortex-debug",
         server,
@@ -416,7 +416,7 @@ export function createDebugProfile(
     case "yocto-userspace":
       return {
         id: `alp:${targetKind}:${server}`,
-        name: "ALP: Yocto Remote Debug",
+        name: "Alp: Yocto Remote Debug",
         targetKind,
         adapter: "cppdbg",
         server,
@@ -432,7 +432,7 @@ export function createDebugProfile(
     case "native-host":
       return {
         id: `alp:${targetKind}:${server}`,
-        name: "ALP: Native Sim Debug",
+        name: "Alp: Native Sim Debug",
         targetKind,
         adapter: "codelldb",
         server,

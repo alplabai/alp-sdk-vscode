@@ -71,7 +71,7 @@ async function runLoader(
   if (!envelope.ok || data.failed.includes(emit)) {
     showOutput();
     await vscode.window.showErrorMessage(
-      `Alp: ${target.displayName} generation failed.  See the ALP SDK output channel.`,
+      `Alp: ${target.displayName} generation failed.  See the Alp SDK output channel.`,
     );
     return;
   }
@@ -137,22 +137,22 @@ async function runValidator(context: vscode.ExtensionContext): Promise<void> {
       return;
     case "missing-preset":
       await vscode.window.showWarningMessage(
-        "Alp: board.yaml has missing-preset failures.  See the ALP SDK output channel.",
+        "Alp: board.yaml has missing-preset failures.  See the Alp SDK output channel.",
       );
       return;
     case "hardware-revision":
       await vscode.window.showErrorMessage(
-        "Alp: board.yaml hardware revision is incompatible with the current SDK.  See the ALP SDK output channel.",
+        "Alp: board.yaml hardware revision is incompatible with the current SDK.  See the Alp SDK output channel.",
       );
       return;
     case "schema-violation":
       await vscode.window.showErrorMessage(
-        "Alp: board.yaml schema violation.  See the ALP SDK output channel.",
+        "Alp: board.yaml schema violation.  See the Alp SDK output channel.",
       );
       return;
     default:
       await vscode.window.showErrorMessage(
-        "Alp: board.yaml validation failed unexpectedly.  See the ALP SDK output channel.",
+        "Alp: board.yaml validation failed unexpectedly.  See the Alp SDK output channel.",
       );
       return;
   }

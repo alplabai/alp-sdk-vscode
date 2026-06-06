@@ -43,7 +43,7 @@ export function startLanguageServer(context: vscode.ExtensionContext): void {
 
   client = new LanguageClient(
     "alpSdkLsp",
-    "ALP SDK Language Server",
+    "Alp SDK Language Server",
     serverOptions,
     clientOptions,
   );
@@ -65,7 +65,7 @@ export async function requestEffectiveConfigPreview(
   boardYamlUri: vscode.Uri,
 ): Promise<unknown> {
   if (!client) {
-    throw new Error("ALP SDK language server is not started.");
+    throw new Error("Alp SDK language server is not started.");
   }
 
   return client.sendRequest("workspace/executeCommand", {

@@ -19,7 +19,7 @@ export function registerBootstrapCommand(
   const runBootstrap = () => {
     const workspaceRoot = collectProjectContext().workspaceRoot ?? undefined;
     return runAlpInTerminal(context, ["bootstrap"], {
-      name: "ALP Bootstrap",
+      name: "Alp Bootstrap",
       cwd: workspaceRoot,
     });
   };

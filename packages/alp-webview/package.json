@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "ALP IDE Hub — Activity Bar webview UI",
+  "description": "Alp IDE Hub — Activity Bar webview UI",
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",

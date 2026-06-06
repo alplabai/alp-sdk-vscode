@@ -270,7 +270,7 @@ connection.onInitialized(() => {
     };
   });
 
-  connection.console.info("ALP SDK language server initialized.");
+  connection.console.info("Alp SDK language server initialized.");
 });
 
 async function validateDocument(

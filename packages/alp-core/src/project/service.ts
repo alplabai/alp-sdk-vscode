@@ -110,6 +110,6 @@ function containsLoaderScript(
   rootPath: string,
   pathExists: (candidatePath: string) => boolean,
 ): boolean {
-  // scripts/alp_project.py is the canonical marker for an ALP SDK root.
+  // scripts/alp_project.py is the canonical marker for an Alp SDK root.
   return pathExists(path.join(rootPath, "scripts", "alp_project.py"));
 }

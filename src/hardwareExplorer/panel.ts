@@ -12,7 +12,7 @@ import { loadSdkCatalogue } from "../sdkCatalogue/vscodeAdapter";
 import { log } from "../util";
 
 const PANEL_VIEW_TYPE = "alpHardwareExplorer";
-const PANEL_TITLE = "ALP Hardware Explorer";
+const PANEL_TITLE = "Alp Hardware Explorer";
 
 class HardwareExplorerPanel {
   private static current: HardwareExplorerPanel | undefined;

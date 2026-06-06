@@ -48,13 +48,13 @@ const BUILD_ACTIONS: Array<{
     command: "alp.westRunNativeSim",
   },
   {
-    label: "ALP Image",
+    label: "Alp Image",
     description: "assemble image bundle",
     icon: "package",
     command: "alp.westAlpImage",
   },
   {
-    label: "ALP Flash",
+    label: "Alp Flash",
     description: "flash all slices",
     icon: "rocket",
     command: "alp.westAlpFlash",

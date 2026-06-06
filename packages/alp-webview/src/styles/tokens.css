@@ -1,5 +1,5 @@
 /*
- * Design-system tokens for the ALP IDE Hub webview.
+ * Design-system tokens for the Alp IDE Hub webview.
  *
  * Every rule here maps VS Code CSS variables (injected by the host) to stable
  * semantic aliases.  Consumers should use the aliases — never the raw

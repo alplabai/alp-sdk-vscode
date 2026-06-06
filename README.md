@@ -1,7 +1,7 @@
-# ALP SDK VS Code extension
+# Alp SDK VS Code extension
 
 First-class IDE support for projects built against the
-[ALP SDK](https://github.com/alplabai/alp-sdk):
+[Alp SDK](https://github.com/alplabai/alp-sdk):
 
 * **`board.yaml` LSP-native editing.** Inline diagnostics,
   completion, hover, symbols, quick fixes, and effective-config preview
@@ -18,7 +18,7 @@ First-class IDE support for projects built against the
 
 ## Install
 
-VS Code Marketplace: search for "ALP SDK".  Or grab the latest
+VS Code Marketplace: search for "Alp SDK".  Or grab the latest
 `.vsix` from the [Releases page](../../releases) and install via
 `Extensions: Install from VSIX`.
 
@@ -72,7 +72,7 @@ VS Code Marketplace: search for "ALP SDK".  Or grab the latest
 - [CLI.md](docs/CLI.md): Proposed CLI command families, output contract,
   and exit-code policy.
 - [CI_EXAMPLES.md](docs/CI_EXAMPLES.md): GitHub Actions and GitLab CI
-  examples for ALP CLI validation/generation/doctor flows.
+  examples for Alp CLI validation/generation/doctor flows.
 - [GETTING_STARTED_VSCODE.md](docs/GETTING_STARTED_VSCODE.md): VS Code
   first-run workflow from install to validation and generation.
 - [GETTING_STARTED_CLI.md](docs/GETTING_STARTED_CLI.md): CLI-first workflow
