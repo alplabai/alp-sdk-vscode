@@ -149,7 +149,12 @@ export class NewProjectFlowPanel {
         break;
 
       case "createNewProject":
-        await this.createProject(msg.templateId, msg.moduleId, msg.projectName);
+        await this.createProject(
+          msg.templateId,
+          msg.moduleId,
+          msg.projectName,
+          msg.sdkPath,
+        );
         break;
 
       case "closePanel":
@@ -173,6 +178,7 @@ export class NewProjectFlowPanel {
     templateId: string,
     moduleId: string,
     projectName: string,
+    sdkPath?: string,
   ): Promise<void> {
     const uris = await vscode.window.showOpenDialog({
       canSelectFiles: false,
@@ -215,6 +221,13 @@ export class NewProjectFlowPanel {
       return;
     }
 
+    // Pin the chosen SDK for the new project so it opens with the right one
+    // (workspace-scoped alpSdk.path). Omitted ⇒ the project inherits the global
+    // default / auto-resolution.
+    if (sdkPath) {
+      this.pinProjectSdk(projectDir, sdkPath);
+    }
+
     const open = "Open Project";
     const choice = await vscode.window.showInformationMessage(
       `Project "${projectName}" created at ${projectDir}`,
@@ -227,6 +240,34 @@ export class NewProjectFlowPanel {
     }
 
     this.panel.dispose();
+  }
+
+  /** Write `alpSdk.path` into the new project's .vscode/settings.json so it
+   *  opens with the SDK chosen in the wizard (merges if a file already exists). */
+  private pinProjectSdk(projectDir: string, sdkPath: string): void {
+    try {
+      const vscodeDir = path.join(projectDir, ".vscode");
+      fs.mkdirSync(vscodeDir, { recursive: true });
+      const settingsPath = path.join(vscodeDir, "settings.json");
+      let settings: Record<string, unknown> = {};
+      if (fs.existsSync(settingsPath)) {
+        try {
+          settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+        } catch {
+          settings = {};
+        }
+      }
+      settings["alpSdk.path"] = sdkPath;
+      fs.writeFileSync(
+        settingsPath,
+        JSON.stringify(settings, null, 2) + "\n",
+        "utf8",
+      );
+    } catch (err) {
+      void vscode.window.showWarningMessage(
+        `Alp: project created, but pinning its SDK failed — ${String(err)}`,
+      );
+    }
   }
 
   private dispose(): void {

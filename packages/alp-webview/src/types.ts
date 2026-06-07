@@ -443,6 +443,8 @@ export interface CreateNewProjectMessage {
   templateId: string;
   moduleId: string;
   projectName: string;
+  /** Active SDK to pin for the new project (absolute path); omitted = default. */
+  sdkPath?: string;
 }
 export interface OpenExistingProjectMessage {
   type: "openExistingProject";

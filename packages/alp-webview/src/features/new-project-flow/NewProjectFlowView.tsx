@@ -11,16 +11,22 @@ import {
   Stepper,
   StepperNav,
 } from "../../shared/ui";
-import type { E1mModule, ProjectTemplate } from "../../types";
+import type { E1mModule, LocalSdkEntry, ProjectTemplate } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./NewProjectFlowView.module.css";
 
 const STEPS: StepDef[] = [
   { id: "template", title: "Template" },
   { id: "hardware", title: "Hardware" },
+  { id: "sdk", title: "SDK" },
   { id: "name", title: "Name" },
   { id: "confirm", title: "Confirm" },
 ];
+
+/** Last path segment (cross-platform); the cache dir is named after the tag. */
+function pathTail(p: string): string {
+  return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+}
 
 // ---------------------------------------------------------------------------
 // Step components
@@ -184,6 +190,7 @@ interface ConfirmStepProps {
   templateId: string;
   moduleId: string;
   projectName: string;
+  sdkLabel: string;
   templates: ProjectTemplate[];
   modules: E1mModule[];
 }
@@ -192,6 +199,7 @@ function ConfirmStep({
   templateId,
   moduleId,
   projectName,
+  sdkLabel,
   templates,
   modules,
 }: ConfirmStepProps) {
@@ -201,6 +209,7 @@ function ConfirmStep({
   const rows = [
     { label: "Template", value: tpl ? `${tpl.icon} ${tpl.title}` : templateId },
     { label: "Module", value: mod?.displayName ?? moduleId },
+    { label: "SDK", value: sdkLabel },
     { label: "Project name", value: projectName || "—" },
   ];
 
@@ -225,6 +234,58 @@ function ConfirmStep({
   );
 }
 
+interface SdkStepProps {
+  entries: LocalSdkEntry[];
+  activePath: string | null;
+  selected: string; // "" = default
+  onSelect: (path: string) => void;
+}
+
+function SdkStep({ entries, activePath, selected, onSelect }: SdkStepProps) {
+  return (
+    <>
+      <p className={styles.stepHeading}>Choose an SDK</p>
+      <div className={styles.moduleGroup}>
+        <button
+          className={styles.moduleRow}
+          data-selected={selected === "" ? "" : undefined}
+          onClick={() => onSelect("")}
+          aria-pressed={selected === ""}
+        >
+          <span className={styles.moduleId}>Default</span>
+          <span className={styles.moduleDesc}>
+            {activePath
+              ? "Use the active / default SDK"
+              : "Resolve automatically when the project opens"}
+          </span>
+          {selected === "" && <StatusChip state="ready" />}
+        </button>
+        {entries.map((e) => (
+          <button
+            key={e.path}
+            className={styles.moduleRow}
+            data-selected={selected === e.path ? "" : undefined}
+            onClick={() => onSelect(e.path)}
+            aria-pressed={selected === e.path}
+          >
+            <span className={styles.moduleId}>
+              {e.version ?? pathTail(e.path)}
+            </span>
+            <span className={styles.moduleDesc}>{pathTail(e.path)}</span>
+            {selected === e.path && <StatusChip state="ready" />}
+          </button>
+        ))}
+      </div>
+      {entries.length === 0 && (
+        <p className={styles.stepDesc}>
+          No SDKs installed yet — the project will use the default SDK. Install
+          one from the SDK Manager.
+        </p>
+      )}
+    </>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main view
 // ---------------------------------------------------------------------------
@@ -235,19 +296,28 @@ export function NewProjectFlowView() {
 
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [selectedModule, setSelectedModule] = useState("");
+  const [selectedSdk, setSelectedSdk] = useState(""); // "" = default SDK
   const [projectName, setProjectName] = useState("");
   const [nameError, setNameError] = useState("");
 
   const templates = projectTemplates ?? [];
   const modules = e1mModules ?? [];
+  const sdkEntries = state?.sdk.localEntries ?? [];
+  const activeSdkPath = state?.sdk.activePath ?? null;
   const isLoading = !state;
 
   const nameValid = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectName);
+
+  const sdkLabel = selectedSdk
+    ? (sdkEntries.find((e) => e.path === selectedSdk)?.version ??
+      pathTail(selectedSdk))
+    : "Default";
 
   const canAdvance = useMemo(() => {
     return [
       selectedTemplate !== "",
       selectedModule !== "",
+      true, // SDK step — default is always valid
       projectName !== "" && nameValid,
       true,
     ];
@@ -269,6 +339,7 @@ export function NewProjectFlowView() {
         templateId: selectedTemplate,
         moduleId: selectedModule,
         projectName,
+        sdkPath: selectedSdk || undefined,
       });
     } else {
       goNext();
@@ -312,17 +383,26 @@ export function NewProjectFlowView() {
                 />
               )}
               {stepper.currentIndex === 2 && (
+                <SdkStep
+                  entries={sdkEntries}
+                  activePath={activeSdkPath}
+                  selected={selectedSdk}
+                  onSelect={setSelectedSdk}
+                />
+              )}
+              {stepper.currentIndex === 3 && (
                 <NameStep
                   value={projectName}
                   onChange={handleNameChange}
                   error={nameError}
                 />
               )}
-              {stepper.currentIndex === 3 && (
+              {stepper.currentIndex === 4 && (
                 <ConfirmStep
                   templateId={selectedTemplate}
                   moduleId={selectedModule}
                   projectName={projectName}
+                  sdkLabel={sdkLabel}
                   templates={templates}
                   modules={modules}
                 />
