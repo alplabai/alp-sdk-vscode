@@ -18,6 +18,7 @@ import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
+import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
 import { registerTreeViews } from "./views";
@@ -41,6 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),
     createStatusBar(stateMgr),
+    registerSelectSdkCommand(),
     ...registerConfiguratorEditor(context),
     ...registerToolchainCommands(context),
     registerProjectWizardCommand(),

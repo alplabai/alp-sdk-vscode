@@ -225,6 +225,12 @@
         "category": "Alp"
       },
       {
+        "command": "alp.selectSdk",
+        "title": "Alp: Select active SDK",
+        "category": "Alp",
+        "icon": "$(package)"
+      },
+      {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
         "category": "Alp"

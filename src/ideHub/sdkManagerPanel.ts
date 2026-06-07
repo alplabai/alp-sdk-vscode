@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { setActiveSdk } from "../sdk/activeSdk";
 import {
   emptyAlpIdeState,
   PROTOCOL_VERSION,
@@ -117,23 +118,8 @@ export class SdkManagerPanel {
   }
 
   private async handleSwitchSdk(sdkPath: string): Promise<void> {
-    // The active SDK is the `alpSdk.path` setting, which project resolution
-    // already reads. Scope it to the Workspace when a folder is open (per-project
-    // override) and Global otherwise (the default for windows without one) —
-    // VS Code merges Workspace over Global automatically.
-    const hasWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
-    const target = hasWorkspace
-      ? vscode.ConfigurationTarget.Workspace
-      : vscode.ConfigurationTarget.Global;
     try {
-      await vscode.workspace
-        .getConfiguration("alpSdk")
-        .update("path", sdkPath, target);
-      void vscode.window.showInformationMessage(
-        hasWorkspace
-          ? `Alp: active SDK for this project → ${sdkPath}`
-          : `Alp: default SDK → ${sdkPath} (open a project folder to override per-project)`,
-      );
+      await setActiveSdk(sdkPath);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Alp: failed to set active SDK — ${String(err)}`,

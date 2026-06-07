@@ -3,13 +3,13 @@
 import {
   checkSdkReadiness,
   listLocalSdkEntries,
-  resolveActiveSdk,
 } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { collectProjectContext } from "../project/vscodeAdapter";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -59,15 +59,12 @@ export async function queryAlpIdeState(
   lastBootstrapAt: string | null = null,
 ): Promise<AlpIdeState> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
-  const workspaceRoot = workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   const actualWorkspaceRoot: string | null =
     workspaceFolders?.[0]?.uri.fsPath ?? null;
 
-  const sdkPath = resolveActiveSdk(
-    workspaceRoot,
-    (p) => fs.existsSync(p),
-    (p) => fs.readFileSync(p, "utf8"),
-  );
+  // Active SDK = the unified project/CLI resolution (alpSdk.path → sibling), so
+  // the SDK Manager UI agrees with what `--sdk-root` sends to the CLI.
+  const sdkPath = collectProjectContext().sdkRoot;
 
   let sdkReadiness: AlpIdeState["sdk"]["readiness"] = "unknown";
   let sdkVersion: string | null = null;
