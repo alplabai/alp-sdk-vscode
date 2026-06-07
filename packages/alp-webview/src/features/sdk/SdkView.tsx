@@ -1,7 +1,12 @@
-import { useState } from "react";
-import { Button, Skeleton, Spinner, StatusChip } from "../../shared/ui";
+import { useEffect, useState } from "react";
+import { Button, Icon, Skeleton, Spinner, StatusChip } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
-import type { ChipState, LocalSdkEntry, SdkStatus } from "../../types";
+import type {
+  ChipState,
+  LocalSdkEntry,
+  SdkRelease,
+  SdkStatus,
+} from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./SdkView.module.css";
 import { useSdk } from "./useSdk";
@@ -45,6 +50,101 @@ function formatDate(iso: string): string {
   }
 }
 
+/** Last path segment (cross-platform) — the install dir is named after the tag. */
+function pathTail(p: string): string {
+  return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+}
+
+/** The local installation matching a release tag, if any (side-by-side cache). */
+function installedFor(
+  release: SdkRelease,
+  entries: LocalSdkEntry[],
+): LocalSdkEntry | undefined {
+  return entries.find(
+    (e) =>
+      pathTail(e.path) === release.tag ||
+      (e.version !== null && e.version === release.tag.replace(/^v/, "")),
+  );
+}
+
+/** A single release row: version + date, install/installed/active state, and an
+ *  expandable changelog. Models the VS Code Extensions-view card pattern. */
+function ReleaseCard({
+  release,
+  installed,
+  isActive,
+  expanded,
+  onToggle,
+  onInstall,
+  onUse,
+}: {
+  release: SdkRelease;
+  installed: LocalSdkEntry | undefined;
+  isActive: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onInstall: () => void;
+  onUse: () => void;
+}) {
+  return (
+    <div className={styles.releaseCard} data-active={isActive || undefined}>
+      <div className={styles.releaseCardHead}>
+        <div className={styles.releaseTagBlock}>
+          <span className={styles.releaseTagName}>{release.tag}</span>
+          {release.publishedAt && (
+            <span className={styles.releaseDate}>
+              {formatDate(release.publishedAt)}
+            </span>
+          )}
+        </div>
+        <div className={styles.releaseActions}>
+          {isActive ? (
+            <span className={styles.activeBadge}>
+              <Icon name="check" size={12} /> Active
+            </span>
+          ) : installed ? (
+            <>
+              <span className={styles.installedBadge}>Installed</span>
+              <Button appearance="secondary" onClick={onUse}>
+                Use
+              </Button>
+            </>
+          ) : (
+            <Button appearance="primary" onClick={onInstall}>
+              Install
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {release.releaseNotesSummary && (
+        <>
+          <button
+            type="button"
+            className={styles.changelogToggle}
+            onClick={onToggle}
+            aria-expanded={expanded}
+          >
+            <span
+              className={styles.chevron}
+              data-open={expanded || undefined}
+              aria-hidden="true"
+            >
+              <Icon name="chevronRight" size={12} />
+            </span>
+            Changelog
+          </button>
+          {expanded && (
+            <p className={styles.changelogBody}>
+              {release.releaseNotesSummary}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function SdkView({ compact = false }: { compact?: boolean }) {
   const {
     sdk,
@@ -57,11 +157,15 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     browseSdk,
   } = useSdk();
   const [tab, setTab] = useState<SdkTab>("active");
-  const [selectedTag, setSelectedTag] = useState("");
+  const [expandedTag, setExpandedTag] = useState<string | null>(null);
+
+  // Auto-load the release list once so the Download tab isn't a manual step.
+  useEffect(() => {
+    if (releases === null) loadReleases();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const localCount = sdk?.localEntries.length ?? 0;
-  const latestTag = releases?.[0]?.tag ?? "";
-  const installTarget = selectedTag || latestTag;
 
   if (!sdk) {
     return (
@@ -175,7 +279,10 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
                 {shortPath(sdk.activePath)}
               </p>
             ) : (
-              <p className={layout.setupRowDesc}>No active SDK configured.</p>
+              <p className={layout.setupRowDesc}>
+                No active SDK configured. Install one from Download, or Browse
+                to an SDK on disk.
+              </p>
             )}
             <div className={layout.setupRowAction}>
               <Button
@@ -203,7 +310,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
                 <div key={entry.path} className={styles.entry}>
                   <div className={styles.entryHeader}>
                     <span className={styles.entryVersion}>
-                      {entry.version ?? "unknown"}
+                      {entry.version ?? pathTail(entry.path)}
                     </span>
                     <StatusChip state={localEntryChip(entry.readiness)} />
                   </div>
@@ -213,7 +320,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
                   >
                     {shortPath(entry.path)}
                   </p>
-                  {entry.path !== sdk.activePath && (
+                  {entry.path !== sdk.activePath ? (
                     <div className={layout.setupRowAction}>
                       <Button
                         appearance="secondary"
@@ -222,8 +329,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
                         Use This
                       </Button>
                     </div>
-                  )}
-                  {entry.path === sdk.activePath && (
+                  ) : (
                     <p className={styles.activeLabel}>← active</p>
                   )}
                 </div>
@@ -233,15 +339,15 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
-      {/* Download tab */}
+      {/* Download tab — release card list */}
       {tab === "download" && (
         <div className={styles.tabContent}>
           <p className={layout.setupRowDesc}>
-            Download a versioned Alp SDK release to{" "}
-            <span className={layout.pathMono}>~/.alp/sdk/</span>.
+            Versioned Alp SDK releases install side by side under{" "}
+            <span className={layout.pathMono}>~/.alp/sdk/</span>. Pick one per
+            project from Local or the status bar.
           </p>
 
-          {/* Install progress */}
           {installActive && (
             <div className={styles.installStatus}>
               <Spinner />
@@ -250,61 +356,37 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
               </span>
             </div>
           )}
-          {!installActive && installLog && (
-            <p
-              className={`${layout.setupRowDesc} ${styles.installResult}`}
-              data-success={
-                !installLog.startsWith("Install failed") ? "" : undefined
-              }
-            >
-              {installLog}
-            </p>
-          )}
 
-          {!installActive && (
-            <div className={styles.downloadControls}>
-              {releases === null ? (
-                <Button onClick={() => loadReleases()}>Load Releases</Button>
-              ) : releases.length === 0 ? (
-                <p className={layout.setupRowDesc}>No releases found.</p>
-              ) : (
-                <>
-                  <div className={styles.releasePicker}>
-                    <select
-                      className={styles.releaseSelect}
-                      value={installTarget}
-                      onChange={(e) => setSelectedTag(e.target.value)}
-                      aria-label="Select SDK release version"
-                    >
-                      {releases.map((r) => (
-                        <option key={r.tag} value={r.tag}>
-                          {r.tag}
-                          {r.publishedAt
-                            ? `  ·  ${formatDate(r.publishedAt)}`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      appearance="primary"
-                      onClick={() => install(installTarget)}
-                    >
-                      Install
-                    </Button>
-                  </div>
-                  {releases.find((r) => r.tag === installTarget)
-                    ?.releaseNotesSummary && (
-                    <p
-                      className={`${layout.setupRowDesc} ${styles.releaseNotes}`}
-                    >
-                      {
-                        releases.find((r) => r.tag === installTarget)!
-                          .releaseNotesSummary
-                      }
-                    </p>
-                  )}
-                </>
-              )}
+          {releases === null ? (
+            <div className={layout.loadingRow}>
+              <Spinner />
+              <span className={layout.setupRowDesc}>Loading releases…</span>
+            </div>
+          ) : releases.length === 0 ? (
+            <p className={`${layout.setupRowDesc} ${styles.emptyState}`}>
+              No releases found.
+            </p>
+          ) : (
+            <div className={styles.releaseList}>
+              {releases.map((release) => {
+                const installed = installedFor(release, sdk.localEntries);
+                return (
+                  <ReleaseCard
+                    key={release.tag}
+                    release={release}
+                    installed={installed}
+                    isActive={!!installed && installed.path === sdk.activePath}
+                    expanded={expandedTag === release.tag}
+                    onToggle={() =>
+                      setExpandedTag((t) =>
+                        t === release.tag ? null : release.tag,
+                      )
+                    }
+                    onInstall={() => install(release.tag)}
+                    onUse={() => installed && switchSdk(installed.path)}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

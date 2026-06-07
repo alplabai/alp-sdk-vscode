@@ -96,61 +96,103 @@
   font-style: italic;
 }
 
-/* ── Download controls ──────────────────────────────────────────────────── */
-.downloadControls {
+/* ── Release cards (Download tab) ───────────────────────────────────────── */
+.releaseList {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   margin-top: var(--space-3);
 }
 
-.releasePicker {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
+.releaseCard {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-bg);
 }
 
-.releaseSelect {
-  flex: 1;
-  background: var(--surface-dropdown);
-  color: var(--vscode-dropdown-foreground, var(--text-primary));
-  border: 1px solid var(--border-dropdown);
-  padding: 3px var(--space-3);
-  font-size: var(--font-size-base);
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  border-radius: var(--radius-sm);
-  outline: none;
-  cursor: pointer;
+.releaseCard[data-active] {
+  border-color: var(--status-ok);
 }
 
-.releaseSelect:focus {
-  border-color: var(--border-focus);
-}
-
-.releaseNotes {
-  font-style: italic;
-  opacity: 0.8;
-  padding: 0 2px;
-}
-
-.releaseList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.releaseRow {
+.releaseCardHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  padding: 3px 0;
+  gap: var(--space-3);
 }
 
-.releaseTag {
+.releaseTagBlock {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.releaseTagName {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.releaseDate {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.releaseActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.installedBadge {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.activeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--status-ok);
+}
+
+.changelogToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.changelogToggle:hover {
+  color: var(--text-primary);
+}
+
+.chevron {
+  display: inline-flex;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.chevron[data-open] {
+  transform: rotate(90deg);
+}
+
+.changelogBody {
+  margin: var(--space-2) 0 0 var(--space-5);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
 }
 
 /* ── Install status ─────────────────────────────────────────────────────── */
