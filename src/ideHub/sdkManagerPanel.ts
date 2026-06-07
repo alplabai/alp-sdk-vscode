@@ -2,9 +2,10 @@
 
 import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
 import type { SdkRelease } from "@alp-sdk/core/sdk/models";
-import { installSdkRelease, switchActiveSdk } from "@alp-sdk/core/sdk/service";
+import { installSdkRelease } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
@@ -116,18 +117,26 @@ export class SdkManagerPanel {
   }
 
   private async handleSwitchSdk(sdkPath: string): Promise<void> {
-    const workspaceRoot =
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+    // The active SDK is the `alpSdk.path` setting, which project resolution
+    // already reads. Scope it to the Workspace when a folder is open (per-project
+    // override) and Global otherwise (the default for windows without one) —
+    // VS Code merges Workspace over Global automatically.
+    const hasWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+    const target = hasWorkspace
+      ? vscode.ConfigurationTarget.Workspace
+      : vscode.ConfigurationTarget.Global;
     try {
-      switchActiveSdk(
-        workspaceRoot,
-        sdkPath,
-        (p, content) => fs.writeFileSync(p, content, "utf8"),
-        (p) => fs.mkdirSync(p, { recursive: true }),
+      await vscode.workspace
+        .getConfiguration("alpSdk")
+        .update("path", sdkPath, target);
+      void vscode.window.showInformationMessage(
+        hasWorkspace
+          ? `Alp: active SDK for this project → ${sdkPath}`
+          : `Alp: default SDK → ${sdkPath} (open a project folder to override per-project)`,
       );
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `Alp: failed to switch SDK — ${String(err)}`,
+        `Alp: failed to set active SDK — ${String(err)}`,
       );
     }
     await this.refresh();
@@ -154,6 +163,16 @@ export class SdkManagerPanel {
   private async handleRequestSdkInstall(version: string): Promise<void> {
     const cacheRoot = sdkCacheRoot();
     fs.mkdirSync(cacheRoot, { recursive: true });
+
+    // Already installed → say so instead of a silent, instant no-op. Installs
+    // are side-by-side under ~/.alp/sdk/<version>, so this never overwrites.
+    if (fs.existsSync(path.join(cacheRoot, version))) {
+      void vscode.window.showInformationMessage(
+        `Alp: SDK ${version} is already installed — activate it from the Local tab.`,
+      );
+      await this.refresh();
+      return;
+    }
 
     const gitInstallAdapter: SdkInstallAdapter = (ver, destPath) =>
       new Promise<void>((resolve, reject) => {

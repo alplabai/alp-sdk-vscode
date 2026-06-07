@@ -20,6 +20,19 @@ import {
 } from "./adapterCore";
 import { CliOutcome } from "./models";
 import { binaryName } from "./service";
+import { collectProjectContext } from "../project/vscodeAdapter";
+
+/**
+ * Forward the extension-resolved active SDK to the CLI as a global `--sdk-root`,
+ * so envelope/terminal commands (build --plan, validate, …) use the same SDK the
+ * user selected (alpSdk.path / per-project override) rather than the CLI's own
+ * cwd-based discovery. No-op when nothing resolves or the caller already set it.
+ */
+function withSdkRoot(args: string[]): string[] {
+  if (args.includes("--sdk-root")) return args;
+  const sdkRoot = collectProjectContext().sdkRoot;
+  return sdkRoot ? ["--sdk-root", sdkRoot, ...args] : args;
+}
 
 /** Session memo so we probe PATH / download at most once per window. */
 let resolved: ResolvedBinary | undefined;
@@ -99,7 +112,7 @@ export async function runAlpCommand(
       },
     };
   }
-  return runAlp(binary.command, args, spawnAlp, cwd);
+  return runAlp(binary.command, withSdkRoot(args), spawnAlp, cwd);
 }
 
 /**
@@ -125,7 +138,7 @@ export async function runAlpInTerminal(
     cwd: options.cwd,
   });
   terminal.show(true);
-  terminal.sendText(formatCommandLine(binary.command, args));
+  terminal.sendText(formatCommandLine(binary.command, withSdkRoot(args)));
 }
 
 function formatCommandLine(command: string, args: string[]): string {

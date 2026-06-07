@@ -28,8 +28,11 @@ const GITHUB_RELEASES_URL =
 /** Canonical marker that identifies a directory as an Alp SDK root. */
 const LOADER_SCRIPT_RELATIVE = path.join("scripts", "alp_project.py");
 
-/** Version file written by the SDK build system. */
+/** Legacy version file (older SDK build systems wrote a bare VERSION). */
 const VERSION_FILE_RELATIVE = "VERSION";
+
+/** Canonical SDK version file — `metadata/sdk_version.yaml` (`version: X`). */
+const SDK_VERSION_FILE_RELATIVE = path.join("metadata", "sdk_version.yaml");
 
 /** Metadata catalogue directory. */
 const METADATA_DIR_RELATIVE = "metadata";
@@ -248,6 +251,17 @@ export function switchActiveSdk(
  * @param pathExists - injectable filesystem existence check
  * @param readFile   - injectable file reader (for VERSION)
  */
+/** Extract `version: X` from a `metadata/sdk_version.yaml` document. */
+function parseSdkVersionYaml(text: string): string | null {
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^version:\s*["']?([^"'#]+?)["']?\s*$/);
+    if (match) return match[1].trim() || null;
+  }
+  return null;
+}
+
 export function checkSdkReadiness(
   sdkPath: string,
   pathExists: PathExists,
@@ -276,6 +290,17 @@ export function checkSdkReadiness(
       version = readFile(versionFilePath).trim() || null;
     } catch {
       issues.push("VERSION file could not be read.");
+    }
+  }
+  // Fall back to the SDK's canonical metadata/sdk_version.yaml (`version: X`).
+  if (version === null) {
+    const sdkVersionPath = path.join(sdkPath, SDK_VERSION_FILE_RELATIVE);
+    if (pathExists(sdkVersionPath)) {
+      try {
+        version = parseSdkVersionYaml(readFile(sdkVersionPath));
+      } catch {
+        /* leave version null — readiness still derives from the loader script */
+      }
     }
   }
 
