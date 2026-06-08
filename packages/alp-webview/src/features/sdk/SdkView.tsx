@@ -341,12 +341,14 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
                     ) : (
                       <span className={styles.activeLabel}>← active</span>
                     )}
-                    <Button
-                      appearance="danger"
-                      onClick={() => uninstall(entry.path)}
-                    >
-                      Remove
-                    </Button>
+                    {entry.removable && (
+                      <Button
+                        appearance="danger"
+                        onClick={() => uninstall(entry.path)}
+                      >
+                        Remove
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}

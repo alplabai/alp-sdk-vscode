@@ -18,6 +18,8 @@ export interface LocalSdkEntry {
   version: string | null;
   readiness: SdkReadinessState;
   issues: string[];
+  /** True when Alp installed this SDK (under ~/.alp/sdk) and may remove it. */
+  removable?: boolean;
 }
 
 export interface SdkRelease {

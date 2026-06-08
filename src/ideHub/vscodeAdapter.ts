@@ -94,7 +94,7 @@ export async function queryAlpIdeState(
   const searchRoots = [cacheRoot];
   if (actualWorkspaceRoot) searchRoots.push(actualWorkspaceRoot);
 
-  const localEntries = listLocalSdkEntries(
+  const discoveredEntries = listLocalSdkEntries(
     searchRoots,
     (p) => fs.existsSync(p),
     (p) => {
@@ -112,6 +112,16 @@ export async function queryAlpIdeState(
       }
     },
   );
+
+  // Only Alp-installed SDKs (under the ~/.alp/sdk cache) are removable; external
+  // SDKs (sibling checkouts / Browse) are the user's own folders.
+  const cacheRootResolved = path.resolve(cacheRoot);
+  const localEntries = discoveredEntries.map((entry) => ({
+    ...entry,
+    removable: path
+      .resolve(entry.path)
+      .startsWith(cacheRootResolved + path.sep),
+  }));
 
   const boardYamlPath = actualWorkspaceRoot
     ? path.join(actualWorkspaceRoot, "board.yaml")
