@@ -253,10 +253,15 @@ export interface SwitchSdkMessage {
   sdkPath: string;
 }
 
-/** Remove an Alp-installed SDK (deletes ~/.alp/sdk/<version>). */
+/** Remove a local SDK (deletes its folder on disk, after confirmation). */
 export interface UninstallSdkMessage {
   type: "uninstallSdk";
   sdkPath: string;
+}
+
+/** Clear the active SDK (deactivate) without deleting anything. */
+export interface DeactivateSdkMessage {
+  type: "deactivateSdk";
 }
 
 export interface OpenUrlMessage {
@@ -338,6 +343,7 @@ export type WebviewToExtMessage =
   | RequestSdkInstallMessage
   | SwitchSdkMessage
   | UninstallSdkMessage
+  | DeactivateSdkMessage
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage

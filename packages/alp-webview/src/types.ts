@@ -437,6 +437,9 @@ export interface UninstallSdkMessage {
   type: "uninstallSdk";
   sdkPath: string;
 }
+export interface DeactivateSdkMessage {
+  type: "deactivateSdk";
+}
 export interface OpenUrlMessage {
   type: "openUrl";
   url: string;
@@ -498,6 +501,7 @@ export type WebviewToExtMessage =
   | RequestSdkInstallMessage
   | SwitchSdkMessage
   | UninstallSdkMessage
+  | DeactivateSdkMessage
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage

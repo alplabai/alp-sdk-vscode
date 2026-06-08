@@ -8,7 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
-import { setActiveSdk } from "../sdk/activeSdk";
+import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
 import {
   emptyAlpIdeState,
   PROTOCOL_VERSION,
@@ -106,6 +106,9 @@ export class SdkManagerPanel {
       case "uninstallSdk":
         void this.handleUninstallSdk(msg.sdkPath);
         break;
+      case "deactivateSdk":
+        void this.handleDeactivateSdk();
+        break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
           void vscode.env.openExternal(vscode.Uri.parse(msg.url));
@@ -136,27 +139,27 @@ export class SdkManagerPanel {
     await this.refresh();
   }
 
-  /** Remove an Alp-installed SDK — deletes ~/.alp/sdk/<version> cleanly. Only
-   *  cache-root installs are removable; SDKs added via Browse are the user's own
-   *  folders and are never deleted. Clears the active pointer if it dangled. */
+  /** Delete a local SDK's folder from disk (after confirmation). Works for any
+   *  local SDK — Alp-managed (~/.alp/sdk) or external (Browse / a checkout); the
+   *  confirm spells out the path and warns when it isn't Alp-managed. Clears the
+   *  active pointer if it pointed at the removed install. */
   private async handleUninstallSdk(sdkPath: string): Promise<void> {
     const cacheRoot = path.resolve(sdkCacheRoot());
     const target = path.resolve(sdkPath);
-    if (target !== cacheRoot && !target.startsWith(cacheRoot + path.sep)) {
-      void vscode.window.showWarningMessage(
-        "Alp: only SDKs installed by Alp (under ~/.alp/sdk) can be removed. " +
-          "This one was added via Browse — delete it yourself if no longer needed.",
-      );
-      return;
-    }
+    const alpManaged =
+      target === cacheRoot || target.startsWith(cacheRoot + path.sep);
 
     const name = path.basename(target);
+    const detail = alpManaged
+      ? `This permanently deletes ${target}.`
+      : `${target} is not an Alp-managed install (added via Browse or a ` +
+        `checkout). Permanently delete this folder from disk? This cannot be undone.`;
     const confirm = await vscode.window.showWarningMessage(
-      `Remove SDK ${name}? This permanently deletes ${target}.`,
-      { modal: true },
-      "Remove",
+      `Remove SDK ${name}?`,
+      { modal: true, detail },
+      "Delete from disk",
     );
-    if (confirm !== "Remove") return;
+    if (confirm !== "Delete from disk") return;
 
     try {
       fs.rmSync(target, { recursive: true, force: true });
@@ -186,6 +189,12 @@ export class SdkManagerPanel {
 
     void vscode.window.showInformationMessage(`Alp: removed SDK ${name}.`);
     await vscode.commands.executeCommand("alp.views.refresh");
+    await this.refresh();
+  }
+
+  /** Deactivate — clear the active SDK without deleting anything. */
+  private async handleDeactivateSdk(): Promise<void> {
+    await clearActiveSdk();
     await this.refresh();
   }
 

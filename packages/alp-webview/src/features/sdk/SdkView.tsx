@@ -164,6 +164,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     install,
     switchSdk,
     uninstall,
+    deactivate,
     browseSdk,
   } = useSdk();
   const [tab, setTab] = useState<SdkTab>("active");
@@ -302,6 +303,15 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
               >
                 Browse…
               </Button>
+              {sdk.activePath && (
+                <Button
+                  appearance="secondary"
+                  title="Clear the active SDK (keeps it installed)"
+                  onClick={() => deactivate()}
+                >
+                  Deactivate
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -339,16 +349,25 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
                         Use This
                       </Button>
                     ) : (
-                      <span className={styles.activeLabel}>← active</span>
-                    )}
-                    {entry.removable && (
                       <Button
-                        appearance="danger"
-                        onClick={() => uninstall(entry.path)}
+                        appearance="secondary"
+                        title="Clear the active SDK (keeps it installed)"
+                        onClick={() => deactivate()}
                       >
-                        Remove
+                        Deactivate
                       </Button>
                     )}
+                    <Button
+                      appearance="danger"
+                      title={
+                        entry.removable
+                          ? "Delete this Alp-installed SDK from disk"
+                          : "Delete this folder from disk (added via Browse / a checkout)"
+                      }
+                      onClick={() => uninstall(entry.path)}
+                    >
+                      Remove
+                    </Button>
                   </div>
                 </div>
               ))}

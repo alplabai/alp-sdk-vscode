@@ -26,6 +26,24 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
   );
 }
 
+/**
+ * Clear the active SDK (deactivate) — remove the `alpSdk.path` setting at both
+ * scopes. The SDK stays installed/listed; nothing on disk is deleted. Project
+ * resolution then reports no active SDK (or auto-discovers one if present).
+ */
+export async function clearActiveSdk(): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("alpSdk");
+  const inspected = cfg.inspect<string>("path");
+  if (inspected?.workspaceValue !== undefined) {
+    await cfg.update("path", undefined, vscode.ConfigurationTarget.Workspace);
+  }
+  if (inspected?.globalValue !== undefined) {
+    await cfg.update("path", undefined, vscode.ConfigurationTarget.Global);
+  }
+  await vscode.commands.executeCommand("alp.views.refresh");
+  void vscode.window.showInformationMessage("Alp: active SDK cleared.");
+}
+
 /** Last path segment (cross-platform); the cache dir is named after the tag. */
 function pathTail(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
@@ -33,7 +51,7 @@ function pathTail(p: string): string {
 
 type SdkPickItem = vscode.QuickPickItem & {
   sdkPath?: string;
-  action?: "browse" | "manage";
+  action?: "browse" | "manage" | "deactivate";
 };
 
 /** Quick Pick to choose the active SDK from the installed (side-by-side) set. */
@@ -51,6 +69,12 @@ async function selectSdk(): Promise<void> {
       sdkPath: entry.path,
     };
   });
+  if (active) {
+    items.push({
+      label: "$(circle-slash) Deactivate (no active SDK)",
+      action: "deactivate",
+    });
+  }
   items.push(
     {
       label: "$(folder-opened) Browse for an SDK folder…",
@@ -68,7 +92,9 @@ async function selectSdk(): Promise<void> {
   });
   if (!pick) return;
 
-  if (pick.action === "manage") {
+  if (pick.action === "deactivate") {
+    await clearActiveSdk();
+  } else if (pick.action === "manage") {
     await vscode.commands.executeCommand("alp.openSdkManager");
   } else if (pick.action === "browse") {
     const uris = await vscode.window.showOpenDialog({
