@@ -25,6 +25,7 @@ export interface SdkRelease {
   publishedAt: string;
   tarballUrl: string;
   releaseNotesSummary: string;
+  releaseNotes: string;
 }
 
 export interface SdkStatus {

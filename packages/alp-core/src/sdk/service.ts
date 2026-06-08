@@ -78,6 +78,7 @@ export async function listRemoteSdkReleases(
       publishedAt: item.published_at ?? "",
       tarballUrl: item.tarball_url ?? "",
       releaseNotesSummary: extractFirstParagraph(item.body ?? ""),
+      releaseNotes: (item.body ?? "").trim(),
     }));
 }
 

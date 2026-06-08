@@ -14,6 +14,8 @@ export interface SdkRelease {
   tarballUrl: string;
   /** First paragraph of the release body, or empty string when absent. */
   releaseNotesSummary: string;
+  /** Full release body (Markdown), for an expandable changelog. */
+  releaseNotes: string;
 }
 
 // ---------------------------------------------------------------------------

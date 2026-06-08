@@ -117,7 +117,7 @@ function ReleaseCard({
         </div>
       </div>
 
-      {release.releaseNotesSummary && (
+      {(release.releaseNotes || release.releaseNotesSummary) && (
         <>
           <button
             type="button"
@@ -135,9 +135,9 @@ function ReleaseCard({
             Changelog
           </button>
           {expanded && (
-            <p className={styles.changelogBody}>
-              {release.releaseNotesSummary}
-            </p>
+            <pre className={styles.changelogBody}>
+              {release.releaseNotes || release.releaseNotesSummary}
+            </pre>
           )}
         </>
       )}

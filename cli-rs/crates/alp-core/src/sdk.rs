@@ -19,7 +19,10 @@ pub struct SdkRelease {
     pub tag: String,
     pub published_at: String,
     pub tarball_url: String,
+    /// First paragraph of the release body (compact headline).
     pub release_notes_summary: String,
+    /// Full release body (Markdown), for an expandable changelog.
+    pub release_notes: String,
 }
 
 /// Parse the GitHub Releases API payload into typed releases (mirror of
@@ -39,13 +42,13 @@ pub fn parse_remote_sdk_releases(raw: &Value) -> Result<Vec<SdkRelease>, String>
                     .unwrap_or("")
                     .to_string()
             };
+            let body = item.get("body").and_then(Value::as_str).unwrap_or("");
             SdkRelease {
                 tag: str_field("tag_name"),
                 published_at: str_field("published_at"),
                 tarball_url: str_field("tarball_url"),
-                release_notes_summary: extract_first_paragraph(
-                    item.get("body").and_then(Value::as_str).unwrap_or(""),
-                ),
+                release_notes_summary: extract_first_paragraph(body),
+                release_notes: body.trim().to_string(),
             }
         })
         .collect())
@@ -180,6 +183,7 @@ mod tests {
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].tag, "v1.5.0");
         assert_eq!(releases[0].release_notes_summary, "First line.");
+        assert_eq!(releases[0].release_notes, "First line.\n\nrest");
     }
 
     #[test]
