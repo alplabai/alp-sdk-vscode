@@ -101,7 +101,7 @@
 
 .folderPath {
   font-size: var(--font-size-base);
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   color: var(--text-primary);
   word-break: break-all;
 }

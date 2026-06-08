@@ -29,10 +29,15 @@
 }
 
 .subtitle code,
-.boardYaml code,
-.cmd,
-.fileList code {
+.cmd {
   font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--text-mono, var(--text-primary));
+}
+
+/* Paths (board.yaml, generated artefacts) are chrome — UI font, not editor mono. */
+.boardYaml code,
+.fileList code {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   color: var(--text-mono, var(--text-primary));
 }
 
@@ -89,7 +94,7 @@
 }
 
 .buildNote strong {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   font-weight: 600;
 }
 
@@ -166,7 +171,7 @@
 }
 
 .buildDir {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
 .env {
@@ -180,7 +185,7 @@
   display: flex;
   gap: var(--space-2);
   font-size: var(--font-size-sm);
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
 .envKey {
@@ -254,7 +259,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
 .fileContent {
@@ -295,7 +300,7 @@
 }
 
 .warnCore {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   color: var(--text-primary);
 }
 
