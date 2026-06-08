@@ -188,19 +188,13 @@
 }
 
 .changelogBody {
-  margin: var(--space-2) 0 0 var(--space-5);
-  max-height: 280px;
+  margin: var(--space-3) 0 0;
+  max-height: 320px;
   overflow: auto;
-  padding: var(--space-3);
+  padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-sm);
   background: var(--surface-input, var(--surface-hover));
   border: 1px solid var(--border-default);
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 /* ── Install status ─────────────────────────────────────────────────────── */

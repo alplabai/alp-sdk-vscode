@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Button, Icon, Skeleton, Spinner, StatusChip } from "../../shared/ui";
+import {
+  Button,
+  Icon,
+  Markdown,
+  Skeleton,
+  Spinner,
+  StatusChip,
+} from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
 import type {
   ChipState,
@@ -135,9 +142,11 @@ function ReleaseCard({
             Changelog
           </button>
           {expanded && (
-            <pre className={styles.changelogBody}>
-              {release.releaseNotes || release.releaseNotesSummary}
-            </pre>
+            <div className={styles.changelogBody}>
+              <Markdown>
+                {release.releaseNotes || release.releaseNotesSummary}
+              </Markdown>
+            </div>
           )}
         </>
       )}

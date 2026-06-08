@@ -5,6 +5,7 @@ export { EmptyState } from "./EmptyState";
 export { Field } from "./Field";
 export { Icon } from "./Icon";
 export type { IconName, IconProps } from "./Icon";
+export { Markdown } from "./Markdown/Markdown";
 export { ResourceLink } from "./ResourceLink";
 export { Skeleton } from "./Skeleton";
 export { Spinner } from "./Spinner";

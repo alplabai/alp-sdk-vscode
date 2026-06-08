@@ -106,6 +106,11 @@ export class SdkManagerPanel {
       case "uninstallSdk":
         void this.handleUninstallSdk(msg.sdkPath);
         break;
+      case "openUrl":
+        if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
+          void vscode.env.openExternal(vscode.Uri.parse(msg.url));
+        }
+        break;
     }
   }
 
