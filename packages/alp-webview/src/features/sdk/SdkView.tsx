@@ -154,6 +154,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     loadReleases,
     install,
     switchSdk,
+    uninstall,
     browseSdk,
   } = useSdk();
   const [tab, setTab] = useState<SdkTab>("active");
@@ -320,18 +321,24 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
                   >
                     {shortPath(entry.path)}
                   </p>
-                  {entry.path !== sdk.activePath ? (
-                    <div className={layout.setupRowAction}>
+                  <div className={layout.setupRowAction}>
+                    {entry.path !== sdk.activePath ? (
                       <Button
                         appearance="secondary"
                         onClick={() => switchSdk(entry.path)}
                       >
                         Use This
                       </Button>
-                    </div>
-                  ) : (
-                    <p className={styles.activeLabel}>← active</p>
-                  )}
+                    ) : (
+                      <span className={styles.activeLabel}>← active</span>
+                    )}
+                    <Button
+                      appearance="danger"
+                      onClick={() => uninstall(entry.path)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

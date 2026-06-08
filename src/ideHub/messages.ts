@@ -253,6 +253,12 @@ export interface SwitchSdkMessage {
   sdkPath: string;
 }
 
+/** Remove an Alp-installed SDK (deletes ~/.alp/sdk/<version>). */
+export interface UninstallSdkMessage {
+  type: "uninstallSdk";
+  sdkPath: string;
+}
+
 export interface OpenUrlMessage {
   type: "openUrl";
   /** Target URL — must be https:// or vscode:// only. */
@@ -331,6 +337,7 @@ export type WebviewToExtMessage =
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
   | SwitchSdkMessage
+  | UninstallSdkMessage
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage

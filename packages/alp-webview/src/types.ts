@@ -431,6 +431,10 @@ export interface SwitchSdkMessage {
   type: "switchSdk";
   sdkPath: string;
 }
+export interface UninstallSdkMessage {
+  type: "uninstallSdk";
+  sdkPath: string;
+}
 export interface OpenUrlMessage {
   type: "openUrl";
   url: string;
@@ -491,6 +495,7 @@ export type WebviewToExtMessage =
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
   | SwitchSdkMessage
+  | UninstallSdkMessage
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage

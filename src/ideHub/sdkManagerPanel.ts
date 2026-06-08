@@ -103,6 +103,9 @@ export class SdkManagerPanel {
       case "switchSdk":
         void this.handleSwitchSdk(msg.sdkPath);
         break;
+      case "uninstallSdk":
+        void this.handleUninstallSdk(msg.sdkPath);
+        break;
     }
   }
 
@@ -125,6 +128,59 @@ export class SdkManagerPanel {
         `Alp: failed to set active SDK — ${String(err)}`,
       );
     }
+    await this.refresh();
+  }
+
+  /** Remove an Alp-installed SDK — deletes ~/.alp/sdk/<version> cleanly. Only
+   *  cache-root installs are removable; SDKs added via Browse are the user's own
+   *  folders and are never deleted. Clears the active pointer if it dangled. */
+  private async handleUninstallSdk(sdkPath: string): Promise<void> {
+    const cacheRoot = path.resolve(sdkCacheRoot());
+    const target = path.resolve(sdkPath);
+    if (target !== cacheRoot && !target.startsWith(cacheRoot + path.sep)) {
+      void vscode.window.showWarningMessage(
+        "Alp: only SDKs installed by Alp (under ~/.alp/sdk) can be removed. " +
+          "This one was added via Browse — delete it yourself if no longer needed.",
+      );
+      return;
+    }
+
+    const name = path.basename(target);
+    const confirm = await vscode.window.showWarningMessage(
+      `Remove SDK ${name}? This permanently deletes ${target}.`,
+      { modal: true },
+      "Remove",
+    );
+    if (confirm !== "Remove") return;
+
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Alp: failed to remove SDK — ${String(err)}`,
+      );
+      return;
+    }
+
+    // Clear the active SDK setting if it pointed at the removed install, so
+    // nothing dangles after removal.
+    const cfg = vscode.workspace.getConfiguration("alpSdk");
+    const inspected = cfg.inspect<string>("path");
+    if (
+      inspected?.workspaceValue &&
+      path.resolve(inspected.workspaceValue) === target
+    ) {
+      await cfg.update("path", undefined, vscode.ConfigurationTarget.Workspace);
+    }
+    if (
+      inspected?.globalValue &&
+      path.resolve(inspected.globalValue) === target
+    ) {
+      await cfg.update("path", undefined, vscode.ConfigurationTarget.Global);
+    }
+
+    void vscode.window.showInformationMessage(`Alp: removed SDK ${name}.`);
+    await vscode.commands.executeCommand("alp.views.refresh");
     await this.refresh();
   }
 
