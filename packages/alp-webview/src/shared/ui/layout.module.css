@@ -79,8 +79,10 @@
   margin-top: var(--space-2);
 }
 
+/* Truncated path label. Uses the UI (sans) font — VS Code renders paths in
+ * lists/chrome in the workbench font, not the editor monospace. */
 .pathMono {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   font-size: var(--font-size-sm);
   overflow: hidden;
   text-overflow: ellipsis;
