@@ -1,94 +1,22 @@
-/* ── Tab bar ────────────────────────────────────────────────────────────── */
-.tabs {
-  display: flex;
-  gap: 0;
-  margin-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border-default);
-}
-
-.tab {
-  padding: var(--space-2) 10px;
-  font-size: var(--font-size-base);
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-secondary);
-  margin-bottom: -1px;
-  transition:
-    color var(--duration-fast),
-    border-color var(--duration-fast);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.tab:hover {
-  color: var(--text-primary);
-}
-
-.tab[aria-selected="true"] {
-  color: var(--text-primary);
-  border-bottom-color: var(--border-focus);
-  font-weight: 600;
-}
-
-.tabBadge {
-  display: inline-block;
-  background: var(--surface-badge);
-  color: var(--vscode-badge-foreground);
-  border-radius: var(--radius-xl);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  padding: 0 var(--space-2);
-  line-height: 14px;
-  min-width: 14px;
-  text-align: center;
-}
-
-.tabContent {
-  padding-top: 2px;
-}
-
-/* ── SDK entry list ─────────────────────────────────────────────────────── */
-.entryList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
-}
-
-.entry {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border-widget);
-}
-
-.entry:last-child {
-  border-bottom: none;
-}
-
-.entryHeader {
+/* ── Header (title + Refresh / Browse) ──────────────────────────────────── */
+.header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.entryVersion {
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  font-size: var(--font-size-base);
-  font-weight: 600;
-}
-
-.entryTitle {
-  display: flex;
-  align-items: baseline;
   gap: var(--space-3);
-  min-width: 0;
+}
+
+.headerActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.intro {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* Source badge: where the SDK came from. Installed = Alp-managed (~/.alp/sdk);
@@ -107,13 +35,6 @@
 .sourceBadge[data-linked] {
   background: color-mix(in srgb, var(--status-info) 16%, transparent);
   color: var(--status-info);
-}
-
-.activeLabel {
-  margin: 2px 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--status-ok);
-  font-style: italic;
 }
 
 .emptyState {
