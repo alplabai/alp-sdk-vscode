@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Icon,
@@ -246,12 +246,38 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     browseSdk,
   } = useSdk();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load the release list once so the list isn't a manual step.
   useEffect(() => {
     if (releases === null) loadReleases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A new release list (success or empty) ends the refresh spinner.
+  useEffect(() => {
+    setRefreshing(false);
+    if (refreshTimer.current) {
+      clearTimeout(refreshTimer.current);
+      refreshTimer.current = null;
+    }
+  }, [releases]);
+
+  // Clean up the safety timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, []);
+
+  function handleRefresh() {
+    setRefreshing(true);
+    loadReleases();
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    // Safety: clear the spinner even if the fetch fails silently (no message).
+    refreshTimer.current = setTimeout(() => setRefreshing(false), 12000);
+  }
 
   if (!sdk) {
     return (
@@ -319,8 +345,9 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
           <Button
             appearance="secondary"
             title="Reload the release list"
+            loading={refreshing}
             disabled={releases === null}
-            onClick={() => loadReleases()}
+            onClick={handleRefresh}
           >
             Refresh
           </Button>
