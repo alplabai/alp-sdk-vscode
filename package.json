@@ -231,6 +231,12 @@
         "icon": "$(package)"
       },
       {
+        "command": "alp.showOutput",
+        "title": "Alp: Show output log",
+        "category": "Alp",
+        "icon": "$(output)"
+      },
+      {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
         "category": "Alp"

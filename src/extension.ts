@@ -21,6 +21,7 @@ import { registerLspCommands } from "./lsp/commands";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
+import { showOutput } from "./util";
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
@@ -84,6 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
         false,
       ),
     ),
+    vscode.commands.registerCommand("alp.showOutput", () => showOutput()),
   );
 
   void maybeOfferFirstRunWizard(context);
