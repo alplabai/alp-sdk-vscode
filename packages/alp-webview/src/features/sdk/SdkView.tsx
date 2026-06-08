@@ -329,9 +329,22 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
               {sdk.localEntries.map((entry) => (
                 <div key={entry.path} className={styles.entry}>
                   <div className={styles.entryHeader}>
-                    <span className={styles.entryVersion}>
-                      {entry.version ?? pathTail(entry.path)}
-                    </span>
+                    <div className={styles.entryTitle}>
+                      <span className={styles.entryVersion}>
+                        {entry.version ?? pathTail(entry.path)}
+                      </span>
+                      <span
+                        className={styles.sourceBadge}
+                        data-linked={!entry.removable || undefined}
+                        title={
+                          entry.removable
+                            ? "Installed by Alp under ~/.alp/sdk"
+                            : "Linked checkout (e.g. a sibling/submodule), not Alp-managed"
+                        }
+                      >
+                        {entry.removable ? "Installed" : "Linked"}
+                      </span>
+                    </div>
                     <StatusChip state={localEntryChip(entry.readiness)} />
                   </div>
                   <p

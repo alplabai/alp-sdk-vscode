@@ -84,6 +84,31 @@
   font-weight: 600;
 }
 
+.entryTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Source badge: where the SDK came from. Installed = Alp-managed (~/.alp/sdk);
+ * Linked = an external checkout (sibling/submodule) discovered in the workspace. */
+.sourceBadge {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--status-ok) 16%, transparent);
+  color: var(--status-ok);
+}
+.sourceBadge[data-linked] {
+  background: color-mix(in srgb, var(--status-info) 16%, transparent);
+  color: var(--status-info);
+}
+
 .activeLabel {
   margin: 2px 0 0;
   font-size: var(--font-size-sm);
