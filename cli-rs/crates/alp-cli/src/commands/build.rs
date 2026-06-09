@@ -204,7 +204,12 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
             });
             continue;
         }
-        let mut command = Command::new(&cmd.tool);
+        let tool = if cmd.tool == "west" {
+            west_program(base)
+        } else {
+            cmd.tool.clone()
+        };
+        let mut command = Command::new(&tool);
         command.args(&cmd.args).current_dir(&cwd).envs(&slice.env);
 
         let (status, rc) = if text_mode {
@@ -482,6 +487,28 @@ fn west_argv(subcommand: &str, passthrough: &[String]) -> Vec<String> {
     argv
 }
 
+/// Resolve the `west` program to launch. Prefer a workspace Python venv created
+/// by `alp bootstrap` (`<dir>/.venv/bin/west`, searched from `start` upward) so
+/// builds use the hermetic west rather than a (possibly broken) global one.
+/// Falls back to `"west"` on PATH when no venv is found — so environments with
+/// no venv (CI, the contract harness) behave exactly as before.
+fn west_program(start: &str) -> String {
+    let (sub, exe) = if cfg!(windows) {
+        ("Scripts", "west.exe")
+    } else {
+        ("bin", "west")
+    };
+    let mut dir = Some(Path::new(start));
+    while let Some(d) = dir {
+        let candidate = d.join(".venv").join(sub).join(exe);
+        if candidate.is_file() {
+            return candidate.to_string_lossy().into_owned();
+        }
+        dir = d.parent();
+    }
+    "west".to_string()
+}
+
 /// `subcommand` is the bare alp verb (`build`/`image`/`flash`/`clean`/`renode`).
 pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandRun {
     let context = resolve_cli_project_context(g);
@@ -493,6 +520,7 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
 
     let argv = west_argv(subcommand, passthrough);
     let west_command = argv[0].clone();
+    let west_bin = west_program(&west_cwd);
     let data = BuildData {
         schema_version: "1".to_string(),
         west_command: west_command.clone(),
@@ -505,7 +533,7 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
     };
 
     if g.is_json() {
-        let result = Command::new("west")
+        let result = Command::new(&west_bin)
             .args(&argv)
             .current_dir(&west_cwd)
             .output();
@@ -533,7 +561,7 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
         }
     } else {
         // Text mode: stream the build live (inherited stdio).
-        let status = Command::new("west")
+        let status = Command::new(&west_bin)
             .args(&argv)
             .current_dir(&west_cwd)
             .status();
