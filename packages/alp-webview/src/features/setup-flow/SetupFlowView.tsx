@@ -77,53 +77,41 @@ function WorkspaceStep({ state }: { state: AlpIdeState }) {
       <p className={styles.stepHeading}>West workspace status</p>
       <div className={styles.checkList}>
         <div className={styles.checkRow}>
-          <span className={styles.checkLabel}>Folder open</span>
-          <StatusChip state={workspaceOpen ? "ready" : "setup-required"} />
+          <span className={styles.checkLabel}>West workspace initialized</span>
+          <StatusChip state={westInitialized ? "ready" : "setup-required"} />
         </div>
         <div className={styles.checkRow}>
-          <span className={styles.checkLabel}>West initialized</span>
-          <StatusChip
-            state={
-              !workspaceOpen
-                ? "setup-required"
-                : westInitialized
-                  ? "ready"
-                  : "not-updated"
-            }
-          />
+          <span className={styles.checkLabel}>Project folder open</span>
+          <StatusChip state={workspaceOpen ? "ready" : "not-updated"} />
         </div>
       </div>
       <div className={styles.actionRow}>
-        {!workspaceOpen && (
+        {!westInitialized && (
           <Button
             appearance="primary"
             onClick={() =>
-              postMessage({
-                type: "runCommand",
-                command: "vscode.openFolder",
-              })
+              postMessage({ type: "runCommand", command: "alp.bootstrap" })
+            }
+          >
+            Run Bootstrap
+          </Button>
+        )}
+        {!workspaceOpen && (
+          <Button
+            appearance={westInitialized ? "primary" : "secondary"}
+            onClick={() =>
+              postMessage({ type: "runCommand", command: "vscode.openFolder" })
             }
           >
             Open Folder
           </Button>
         )}
-        {workspaceOpen && !westInitialized && (
-          <Button
-            appearance="primary"
-            onClick={() =>
-              postMessage({
-                type: "runCommand",
-                command: "alp.bootstrap",
-              })
-            }
-          >
-            Initialize Workspace
-          </Button>
-        )}
       </div>
       <p className={styles.stepDesc}>
-        Open a folder that contains your Alp project, then run Bootstrap to
-        create the <code>.west</code> directory and fetch all modules.
+        Bootstrap sets up the shared Zephyr <code>west</code> workspace (the{" "}
+        <code>.west</code> directory + modules) the SDK builds against — it
+        lives outside your project. Open a folder when you want to edit a
+        specific Alp project.
       </p>
     </>
   );
@@ -189,7 +177,9 @@ export function SetupFlowView() {
     if (!state) return [false, false, false];
     return [
       state.setup.pythonAvailable && state.setup.westAvailable,
-      state.workspace.workspaceRoot !== null && state.workspace.westInitialized,
+      // The west workspace is the milestone (central/bootstrap); opening a
+      // project folder is per-project and optional for onboarding.
+      state.workspace.westInitialized,
       state.sdk.readiness === "ready",
     ];
   }, [state]);

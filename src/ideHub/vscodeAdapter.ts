@@ -48,13 +48,41 @@ function commandVersion(cmd: string): string | null {
 }
 
 /**
+ * Candidate Zephyr-workspace dirs, most specific first — used to locate both the
+ * bootstrap venv and the `.west` marker with or without a folder open. The west
+ * workspace is shared/central (Zephyr's model: the SDK injects itself via
+ * EXTRA_ZEPHYR_MODULES), so it usually lives outside the open project:
+ *   1. the open project's west cwd + its ancestors,
+ *   2. the workspace beside ZEPHYR_BASE (env var; shell-agnostic, not an rc file),
+ *   3. the SDK's default isolated workspace (`<sdk-parent>/zephyrproject`),
+ *   4. the conventional `~/zephyrproject`.
+ */
+function westWorkspaceCandidates(
+  westCwd: string | null,
+  sdkRoot: string | null,
+): string[] {
+  const candidates: string[] = [];
+  let dir = westCwd;
+  while (dir) {
+    candidates.push(dir);
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  const zephyrBase = process.env.ZEPHYR_BASE;
+  if (zephyrBase) candidates.push(path.dirname(zephyrBase));
+  if (sdkRoot) {
+    candidates.push(path.join(path.dirname(sdkRoot), "zephyrproject"));
+  }
+  candidates.push(path.join(os.homedir(), "zephyrproject"));
+  return candidates;
+}
+
+/**
  * The `west` to probe for readiness: prefer a bootstrap venv
  * (`<workspace>/.venv/bin/west`) over PATH — matching how builds run west.
  * `alp bootstrap` installs west into a venv, not globally, so a PATH-only probe
- * would wrongly report west missing. We look (in order) at: the open project's
- * west cwd (walking up), then — so it also works with no folder open — a venv
- * beside ZEPHYR_BASE (env var; shell-agnostic), the SDK's default isolated
- * workspace (`<sdk-parent>/zephyrproject`), and the conventional `~/zephyrproject`.
+ * would wrongly report west missing.
  */
 function resolveWestBinary(
   westCwd: string | null,
@@ -64,32 +92,26 @@ function resolveWestBinary(
     process.platform === "win32"
       ? path.join("Scripts", "west.exe")
       : path.join("bin", "west");
-  const venvWest = (workspaceDir: string): string =>
-    path.join(workspaceDir, ".venv", rel);
-
-  // 1) Walk up from the open project's west cwd.
-  let dir = westCwd;
-  while (dir) {
-    const candidate = venvWest(dir);
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-
-  // 2) Known bootstrap-workspace locations, usable with no folder open.
-  const workspaces: string[] = [];
-  const zephyrBase = process.env.ZEPHYR_BASE;
-  if (zephyrBase) workspaces.push(path.dirname(zephyrBase)); // reused workspace
-  if (sdkRoot)
-    workspaces.push(path.join(path.dirname(sdkRoot), "zephyrproject"));
-  workspaces.push(path.join(os.homedir(), "zephyrproject")); // Zephyr convention
-
-  for (const workspaceDir of workspaces) {
-    const candidate = venvWest(workspaceDir);
+  for (const workspaceDir of westWorkspaceCandidates(westCwd, sdkRoot)) {
+    const candidate = path.join(workspaceDir, ".venv", rel);
     if (fs.existsSync(candidate)) return candidate;
   }
   return "west";
+}
+
+/**
+ * Whether an initialized west workspace (a `.west` dir) exists. Checks the shared
+ * bootstrap workspace, not just the open folder — the Zephyr workspace is central
+ * and the SDK builds against it via EXTRA_ZEPHYR_MODULES, so a project folder
+ * need not contain `.west` itself.
+ */
+function westWorkspaceInitialized(
+  westCwd: string | null,
+  sdkRoot: string | null,
+): boolean {
+  return westWorkspaceCandidates(westCwd, sdkRoot).some((workspaceDir) =>
+    fs.existsSync(path.join(workspaceDir, ".west")),
+  );
 }
 
 function pythonCmd(): string {
@@ -204,9 +226,10 @@ export async function queryAlpIdeState(
     workspace: {
       workspaceRoot: actualWorkspaceRoot,
       boardYamlExists: boardYamlPath ? fs.existsSync(boardYamlPath) : false,
-      westInitialized: actualWorkspaceRoot
-        ? fs.existsSync(path.join(actualWorkspaceRoot, ".west"))
-        : false,
+      westInitialized: westWorkspaceInitialized(
+        projectContext.westCwd,
+        projectContext.sdkRoot,
+      ),
     },
   };
 }
