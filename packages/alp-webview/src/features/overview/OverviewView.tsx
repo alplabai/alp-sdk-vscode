@@ -31,18 +31,17 @@ function envMeta(state: AlpIdeState): string {
 }
 
 function workspaceChip(state: AlpIdeState): ChipState {
-  if (state.workspace.workspaceRoot && state.workspace.westInitialized)
-    return "ready";
-  if (state.workspace.workspaceRoot) return "not-updated";
-  return "setup-required";
+  // The west workspace is the milestone (central/bootstrap). A project folder is
+  // optional — open one to edit a specific app, but it isn't required to be set up.
+  return state.workspace.westInitialized ? "ready" : "setup-required";
 }
 
 function workspaceMeta(state: AlpIdeState): string {
   const { workspaceRoot, westInitialized, boardYamlExists } = state.workspace;
-  if (!workspaceRoot) return "No folder open";
-  const parts: string[] = [];
-  if (boardYamlExists) parts.push("board.yaml found");
-  parts.push(westInitialized ? "west ready" : "west not initialized");
+  if (!westInitialized) return "Run Bootstrap to set up the west workspace";
+  const parts: string[] = ["west workspace ready"];
+  if (workspaceRoot && boardYamlExists) parts.push("board.yaml found");
+  else if (!workspaceRoot) parts.push("no folder open");
   return parts.join(" · ");
 }
 
@@ -72,7 +71,7 @@ function isAllReady(state: AlpIdeState): boolean {
   return (
     state.setup.pythonAvailable &&
     state.setup.westAvailable &&
-    state.workspace.workspaceRoot !== null &&
+    // West workspace (central) is the milestone; an open project folder is optional.
     state.workspace.westInitialized &&
     state.sdk.readiness === "ready"
   );
