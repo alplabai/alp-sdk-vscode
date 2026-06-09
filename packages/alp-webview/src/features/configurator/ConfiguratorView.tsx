@@ -451,6 +451,26 @@ function runtimeOptions(id: string): Array<[string, string]> {
   ];
 }
 
+/** Per-core peripheral classes (board.schema.json `core_entry.peripherals` enum). */
+const PERIPHERAL_CHOICES = [
+  "adc",
+  "can",
+  "counter",
+  "emmc",
+  "ethernet",
+  "flash",
+  "gpio",
+  "i2c",
+  "i2s",
+  "pwm",
+  "rtc",
+  "sensor",
+  "spi",
+  "uart",
+  "usb",
+  "watchdog",
+];
+
 function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   const { mutate, vm } = cfg;
   const ensure = (d: BoardConfig) => {
@@ -586,6 +606,23 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
                 );
               })}
             </div>
+          </Field>
+          <Field
+            label="Peripherals"
+            hint="Peripheral subsystems this core uses directly — enables the matching Zephyr Kconfig / Yocto package."
+          >
+            <TagSelector
+              all={PERIPHERAL_CHOICES}
+              selected={core.peripherals}
+              placeholder="Add peripheral…"
+              onChange={(next) =>
+                mutate((d) => {
+                  const c = ensure(d);
+                  if (next.length) c.peripherals = next;
+                  else delete c.peripherals;
+                })
+              }
+            />
           </Field>
           <Field label="Libraries">
             <TagSelector
