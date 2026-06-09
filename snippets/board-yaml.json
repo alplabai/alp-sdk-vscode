@@ -42,7 +42,7 @@
       "ipc:",
       "  - name: ${6:main_rpmsg}",
       "    endpoints: [${3:a55_cluster}, ${4:m33_sm}]",
-      "    size_kib: ${7:64}",
+      "    carve_out_kb: ${7:64}",
       "",
       "diagnostics:",
       "  log_level: ${8|info,debug,warn,error,trace|}"
@@ -102,7 +102,7 @@
       "ipc:",
       "  - name: ${1:main_rpmsg}",
       "    endpoints: [${2:a55_cluster}, ${3:m33_sm}]",
-      "    size_kib: ${4:64}"
+      "    carve_out_kb: ${4:64}"
     ],
     "description": "Cross-core IPC shared-memory carve-out (schema v2). Addresses are computed deterministically by the orchestrator from the SoM preset's memory_map."
   }
