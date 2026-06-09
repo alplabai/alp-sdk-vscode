@@ -81,7 +81,8 @@ function resolveWestBinary(
   const workspaces: string[] = [];
   const zephyrBase = process.env.ZEPHYR_BASE;
   if (zephyrBase) workspaces.push(path.dirname(zephyrBase)); // reused workspace
-  if (sdkRoot) workspaces.push(path.join(path.dirname(sdkRoot), "zephyrproject"));
+  if (sdkRoot)
+    workspaces.push(path.join(path.dirname(sdkRoot), "zephyrproject"));
   workspaces.push(path.join(os.homedir(), "zephyrproject")); // Zephyr convention
 
   for (const workspaceDir of workspaces) {
