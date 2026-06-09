@@ -44,7 +44,8 @@
     "onCommand:alp.newProjectWizard",
     "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
-    "workspaceContains:**/board.yaml"
+    "workspaceContains:**/board.yaml",
+    "workspaceContains:**/prj*.conf"
   ],
   "main": "./out/extension.js",
   "icon": "media/icon.png",
