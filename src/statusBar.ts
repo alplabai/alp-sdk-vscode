@@ -8,21 +8,32 @@ import { collectProjectContext } from "./project/vscodeAdapter";
 import type { StateManager } from "./views/stateManager";
 
 /**
- * Status-bar surface for the active board (left-aligned, reading order):
+ * Status-bar surface (left-aligned, reading order):
+ *   $(package) <sdk>         → alp.selectSdk (active SDK + per-project picker)
  *   $(circuit-board) <sku>   → open the board configurator
  *   $(play) Build            → alp.westBuild
  *   $(zap)  Flash            → alp.westFlash
  *
- * Build/Flash are gated on the same `westInitialized` signal the Build & Flash
- * tree uses (a shared StateManager), so the two surfaces never disagree — and
- * the bar re-renders on every state change (board.yaml, west init, workspace).
+ * Everything reads one shared StateManager, so these items, the Build & Flash
+ * tree, and the SDK Manager never disagree; the bar re-renders on every state
+ * change (board.yaml, west init, active SDK, workspace).
  */
 function render(
   state: AlpIdeState,
+  sdk: vscode.StatusBarItem,
   target: vscode.StatusBarItem,
   build: vscode.StatusBarItem,
   flash: vscode.StatusBarItem,
 ): void {
+  // Active SDK indicator + per-project picker (always visible).
+  const sdkLabel =
+    state.sdk.version ?? (state.sdk.activePath ? "SDK" : "No SDK");
+  sdk.text = `$(package) ${sdkLabel}`;
+  sdk.tooltip = state.sdk.activePath
+    ? `Active Alp SDK: ${state.sdk.activePath}\nClick to change (per project)`
+    : "No active Alp SDK — click to select";
+  sdk.show();
+
   const summary = loadBoardSummary(collectProjectContext().boardYamlPath);
   const presentation = createStatusBarPresentation(summary);
   target.text = presentation.text;
@@ -42,6 +53,12 @@ function render(
 }
 
 export function createStatusBar(stateMgr: StateManager): vscode.Disposable {
+  const sdk = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    101,
+  );
+  sdk.command = "alp.selectSdk";
+
   const target = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     100,
@@ -63,10 +80,10 @@ export function createStatusBar(stateMgr: StateManager): vscode.Disposable {
   flash.tooltip = "Alp: flash the connected device (alp.westFlash)";
   flash.command = "alp.westFlash";
 
-  render(stateMgr.state, target, build, flash);
+  render(stateMgr.state, sdk, target, build, flash);
   const sub = stateMgr.onStateChange((state) =>
-    render(state, target, build, flash),
+    render(state, sdk, target, build, flash),
   );
 
-  return vscode.Disposable.from(target, build, flash, sub);
+  return vscode.Disposable.from(sdk, target, build, flash, sub);
 }

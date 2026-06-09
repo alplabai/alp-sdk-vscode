@@ -7,5 +7,5 @@ Start from a template or bring your own:
 - **Open existing** points the extension at a folder you already have and, if you
   want, initialises the `west` workspace.
 
-Every ALP project is anchored by its `board.yaml`. Edit it any time with the
+Every Alp project is anchored by its `board.yaml`. Edit it any time with the
 board configurator.

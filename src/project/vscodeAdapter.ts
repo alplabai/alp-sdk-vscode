@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import * as vscode from "vscode";
 import {
   ProjectContext,
@@ -18,7 +20,37 @@ function createResolutionInput(): ProjectResolutionInput {
     workspaceFolders: workspaceFolderPaths(),
     settings: readProjectSettings(),
     platform: process.platform,
+    installedSdkRoots: installedSdkRoots(),
   };
+}
+
+/**
+ * SDK installs under the ~/.alp/sdk cache, newest version first (best-effort
+ * numeric sort on the version-named dirs). Lowest-precedence fallback for SDK
+ * resolution — see resolveProjectContext in @alp-sdk/core.
+ */
+function installedSdkRoots(): string[] {
+  const cacheRoot = path.join(os.homedir(), ".alp", "sdk");
+  let names: string[];
+  try {
+    names = fs.readdirSync(cacheRoot);
+  } catch {
+    return [];
+  }
+  return names
+    .map((name) => path.join(cacheRoot, name))
+    .filter((candidate) => {
+      try {
+        return fs.statSync(candidate).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .sort((a, b) =>
+      path.basename(b).localeCompare(path.basename(a), undefined, {
+        numeric: true,
+      }),
+    );
 }
 
 function readProjectSettings(): ProjectSettings {

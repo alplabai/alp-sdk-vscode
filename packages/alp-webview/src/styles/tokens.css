@@ -1,5 +1,5 @@
 /*
- * Design-system tokens for the ALP IDE Hub webview.
+ * Design-system tokens for the Alp IDE Hub webview.
  *
  * Every rule here maps VS Code CSS variables (injected by the host) to stable
  * semantic aliases.  Consumers should use the aliases — never the raw
@@ -93,6 +93,28 @@
     --duration-base: 0ms;
     --duration-slow: 0ms;
   }
+}
+
+/* ── Typography scale ───────────────────────────────────────────────────── */
+/* Anchored to the VS Code UI font size so webview text matches the workbench
+ * and honours the user's editor font-size. Use these instead of hardcoded px
+ * so panels read at native size, not sidebar density. */
+:root {
+  --font-size-xs: calc(
+    var(--vscode-font-size, 13px) - 2px
+  ); /* badges, micro-meta */
+  --font-size-sm: calc(
+    var(--vscode-font-size, 13px) - 1px
+  ); /* captions, mono paths */
+  --font-size-base: var(
+    --vscode-font-size,
+    13px
+  ); /* body, labels, descriptions */
+  --font-size-md: calc(var(--vscode-font-size, 13px) + 1px); /* sub-headers */
+  --font-size-lg: calc(
+    var(--vscode-font-size, 13px) + 3px
+  ); /* section headings */
+  --font-size-xl: calc(var(--vscode-font-size, 13px) + 7px); /* panel titles */
 }
 
 /* ── Spacing scale ──────────────────────────────────────────────────────── */

@@ -1,4 +1,4 @@
-/* ALP Board Configurator — rich shell. Top bar · left nav · section body · footer. */
+/* Alp Board Configurator — rich shell. Top bar · left nav · section body · footer. */
 
 .root {
   display: flex;
@@ -6,7 +6,7 @@
   height: 100vh;
   background: var(--vscode-editor-background);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-base);
 }
 
 /* ── top bar ─────────────────────────────────────────────────────────── */
@@ -33,7 +33,7 @@
 .brandName {
   font-weight: 800;
   letter-spacing: 0.4px;
-  font-size: 14px;
+  font-size: var(--font-size-md);
 }
 .brandLab {
   margin-left: 3px;
@@ -53,7 +53,7 @@
   flex: 1;
 }
 .savedTag {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
@@ -81,7 +81,7 @@
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-out);
 }
@@ -112,7 +112,7 @@
 }
 .secLabel {
   margin: 0 0 var(--space-2);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -120,7 +120,7 @@
 .secHelp {
   margin: 0 0 var(--space-4);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-base);
 }
 
 /* ── fields ─────────────────────────────────────────────────────────── */
@@ -130,14 +130,14 @@
 .fieldLabel {
   display: block;
   margin-bottom: var(--space-2);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
 }
 .hint {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 .row {
@@ -149,7 +149,7 @@
   width: 100%;
   box-sizing: border-box;
   padding: 6px 8px;
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, var(--border-widget));
@@ -185,12 +185,12 @@
   font-weight: 700;
 }
 .cardSilicon {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 .pillWarn {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   padding: 1px 6px;
   border-radius: var(--radius-full);
   background: color-mix(
@@ -205,7 +205,7 @@
   grid-template-columns: 120px 1fr;
   gap: 4px var(--space-3);
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-base);
 }
 .kv dt {
   color: var(--text-secondary);
@@ -215,7 +215,7 @@
 }
 .cardKv {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 .acc {
@@ -224,7 +224,7 @@
   gap: 4px;
 }
 .accChip {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   padding: 1px 7px;
   border-radius: var(--radius-full);
   background: color-mix(
@@ -255,18 +255,18 @@
 }
 .coreId {
   font-weight: 700;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 .coreSpacer {
   flex: 1;
 }
 .coreInherit {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 .ghostNote {
   padding: var(--space-3) var(--space-4);
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 .coreBody {
@@ -279,7 +279,7 @@
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-base);
   cursor: pointer;
 }
 .sw {
@@ -317,7 +317,7 @@
 }
 .chip {
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-base);
   border-radius: var(--radius-full);
   border: 1px solid var(--border-widget);
   background: transparent;
@@ -343,7 +343,7 @@
   min-height: 18px;
 }
 .selEmpty {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   font-style: italic;
 }
@@ -352,7 +352,7 @@
   align-items: center;
   gap: 4px;
   padding: 2px 4px 2px 8px;
-  font-size: 12px;
+  font-size: var(--font-size-base);
   border-radius: var(--radius-full);
   background: var(--surface-hover);
 }
@@ -388,7 +388,7 @@
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-base);
   cursor: pointer;
 }
 .opt:hover {
@@ -408,15 +408,15 @@
   gap: var(--space-2);
 }
 .modName {
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--font-size-base);
 }
 .modX {
   border: none;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   line-height: 1;
 }
 .modAdd {
@@ -436,7 +436,7 @@
 }
 .advHead {
   padding: var(--space-3) var(--space-4);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -469,7 +469,7 @@
 /* ── buttons ────────────────────────────────────────────────────────── */
 .btn {
   padding: 5px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-base);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-widget);
   background: var(--vscode-button-secondaryBackground, transparent);
@@ -504,7 +504,7 @@
 .revList {
   margin: 0 0 var(--space-3);
   padding-left: 18px;
-  font-size: 12px;
+  font-size: var(--font-size-base);
 }
 .revList.warn {
   color: var(--vscode-charts-yellow, #e2c08d);
@@ -531,7 +531,7 @@
   flex-shrink: 0;
 }
 .valid {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 .vOk {

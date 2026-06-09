@@ -3,13 +3,17 @@
 import {
   checkSdkReadiness,
   listLocalSdkEntries,
-  resolveActiveSdk,
 } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { collectProjectContext } from "../project/vscodeAdapter";
+import {
+  resolveWestBinary,
+  westWorkspaceInitialized,
+} from "../environment/vscodeAdapter";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -26,7 +30,8 @@ export async function openProjectFolder(uri: vscode.Uri): Promise<void> {
 
 function commandAvailable(cmd: string): boolean {
   try {
-    cp.execSync(`${cmd} --version`, { stdio: "ignore", timeout: 3000 });
+    // Quote so an absolute venv path (possibly with spaces) is one token.
+    cp.execSync(`"${cmd}" --version`, { stdio: "ignore", timeout: 3000 });
     return true;
   } catch {
     return false;
@@ -36,7 +41,7 @@ function commandAvailable(cmd: string): boolean {
 /** Run `cmd --version` and return the first line of stdout, or null on error. */
 function commandVersion(cmd: string): string | null {
   try {
-    const out = cp.execSync(`${cmd} --version`, {
+    const out = cp.execSync(`"${cmd}" --version`, {
       stdio: "pipe",
       timeout: 3000,
     });
@@ -59,15 +64,14 @@ export async function queryAlpIdeState(
   lastBootstrapAt: string | null = null,
 ): Promise<AlpIdeState> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
-  const workspaceRoot = workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   const actualWorkspaceRoot: string | null =
     workspaceFolders?.[0]?.uri.fsPath ?? null;
 
-  const sdkPath = resolveActiveSdk(
-    workspaceRoot,
-    (p) => fs.existsSync(p),
-    (p) => fs.readFileSync(p, "utf8"),
-  );
+  // Active SDK = the unified project/CLI resolution (alpSdk.path → sibling →
+  // newest cache install), so the SDK Manager UI agrees with what `--sdk-root`
+  // sends to the CLI.
+  const projectContext = collectProjectContext();
+  const sdkPath = projectContext.sdkRoot;
 
   let sdkReadiness: AlpIdeState["sdk"]["readiness"] = "unknown";
   let sdkVersion: string | null = null;
@@ -97,7 +101,7 @@ export async function queryAlpIdeState(
   const searchRoots = [cacheRoot];
   if (actualWorkspaceRoot) searchRoots.push(actualWorkspaceRoot);
 
-  const localEntries = listLocalSdkEntries(
+  const discoveredEntries = listLocalSdkEntries(
     searchRoots,
     (p) => fs.existsSync(p),
     (p) => {
@@ -116,13 +120,27 @@ export async function queryAlpIdeState(
     },
   );
 
+  // Only Alp-installed SDKs (under the ~/.alp/sdk cache) are removable; external
+  // SDKs (sibling checkouts / Browse) are the user's own folders.
+  const cacheRootResolved = path.resolve(cacheRoot);
+  const localEntries = discoveredEntries.map((entry) => ({
+    ...entry,
+    removable: path
+      .resolve(entry.path)
+      .startsWith(cacheRootResolved + path.sep),
+  }));
+
   const boardYamlPath = actualWorkspaceRoot
     ? path.join(actualWorkspaceRoot, "board.yaml")
     : null;
 
   const pyCmd = pythonCmd();
+  const westBin = resolveWestBinary(
+    projectContext.westCwd,
+    projectContext.sdkRoot,
+  );
   const pythonAvailable = commandAvailable(pyCmd);
-  const westAvailable = commandAvailable("west");
+  const westAvailable = commandAvailable(westBin);
 
   return {
     sdk: {
@@ -137,7 +155,7 @@ export async function queryAlpIdeState(
       lastBootstrapAt,
       toolVersions: {
         python: pythonAvailable ? commandVersion(pyCmd) : null,
-        west: westAvailable ? commandVersion("west") : null,
+        west: westAvailable ? commandVersion(westBin) : null,
         cmake: commandVersion("cmake"),
         ninja: commandVersion("ninja"),
       },
@@ -145,9 +163,10 @@ export async function queryAlpIdeState(
     workspace: {
       workspaceRoot: actualWorkspaceRoot,
       boardYamlExists: boardYamlPath ? fs.existsSync(boardYamlPath) : false,
-      westInitialized: actualWorkspaceRoot
-        ? fs.existsSync(path.join(actualWorkspaceRoot, ".west"))
-        : false,
+      westInitialized: westWorkspaceInitialized(
+        projectContext.westCwd,
+        projectContext.sdkRoot,
+      ),
     },
   };
 }

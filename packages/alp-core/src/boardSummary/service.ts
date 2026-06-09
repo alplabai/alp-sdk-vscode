@@ -62,7 +62,7 @@ export function createStatusBarPresentation(
 
   return {
     text: `$(circuit-board) ${parts.join(" · ")}`,
-    tooltip: "Click to open the ALP board configurator.",
+    tooltip: "Click to open the Alp board configurator.",
     command: "alp.openConfigurator",
   };
 }

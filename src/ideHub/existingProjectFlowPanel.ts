@@ -11,7 +11,7 @@ import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.existing-project-flow";
-const PANEL_TITLE = "ALP IDE — Open Project";
+const PANEL_TITLE = "Alp IDE — Open Project";
 
 export class ExistingProjectFlowPanel {
   private static instance?: ExistingProjectFlowPanel;
@@ -117,7 +117,7 @@ export class ExistingProjectFlowPanel {
       canSelectFiles: false,
       canSelectFolders: true,
       canSelectMany: false,
-      title: "Select ALP project folder",
+      title: "Select Alp project folder",
       openLabel: "Open Project",
     });
 

@@ -264,7 +264,7 @@ async function openDebugTroubleshootingPanel(): Promise<void> {
 
   const panel = vscode.window.createWebviewPanel(
     "alpTroubleshootingPanel",
-    "ALP Troubleshooting",
+    "Alp Troubleshooting",
     vscode.ViewColumn.Active,
     {
       enableCommandUris: true,

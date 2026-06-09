@@ -24,6 +24,25 @@ node --test test/*.test.js
 
 Open the workspace in VS Code and press **F5** to launch the extension host.
 
+### Dev note — the `alp-sdk-upstream` submodule shows as a "Linked" SDK
+
+When you run the extension host **on this repo**, the SDK Manager discovers the
+`alp-sdk-upstream` submodule (a valid SDK checkout under the workspace) and lists
+it on the **Local** tab tagged **Linked** — as opposed to **Installed** SDKs that
+Alp downloads to `~/.alp/sdk/<version>`. This is expected and only happens while
+developing the extension; a real user's project won't contain that submodule.
+
+- **Use This / Deactivate** behave normally on it (it's a real SDK).
+- **Remove** will **delete the submodule's working tree** from disk (the confirm
+  modal warns that it isn't Alp-managed). If you do, restore it with:
+
+  ```bash
+  git submodule update --init alp-sdk-upstream
+  ```
+
+Alp-managed installs (the **Installed** badge) live under `~/.alp/sdk` and carry
+no such caveat — removing one just deletes that cached version.
+
 ---
 
 ## Semver policy and release channels

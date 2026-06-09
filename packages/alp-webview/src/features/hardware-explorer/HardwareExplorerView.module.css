@@ -84,7 +84,7 @@
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 0.8rem;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
 /* ── Pad routes search ── */
@@ -110,7 +110,7 @@
 }
 
 .mono {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   font-size: 0.82rem;
 }
 

@@ -18,6 +18,8 @@ export interface LocalSdkEntry {
   version: string | null;
   readiness: SdkReadinessState;
   issues: string[];
+  /** True when Alp installed this SDK (under ~/.alp/sdk) and may remove it. */
+  removable?: boolean;
 }
 
 export interface SdkRelease {
@@ -25,6 +27,7 @@ export interface SdkRelease {
   publishedAt: string;
   tarballUrl: string;
   releaseNotesSummary: string;
+  releaseNotes: string;
 }
 
 export interface SdkStatus {
@@ -397,6 +400,11 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
+export interface ProjectLocationPickedMessage {
+  type: "projectLocationPicked";
+  path: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -406,6 +414,7 @@ export type ExtToWebviewMessage =
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
   | HardwareExplorerDataMessage
+  | ProjectLocationPickedMessage
   | BuildPlanDataMessage;
 
 // Webview → Extension
@@ -430,6 +439,13 @@ export interface SwitchSdkMessage {
   type: "switchSdk";
   sdkPath: string;
 }
+export interface UninstallSdkMessage {
+  type: "uninstallSdk";
+  sdkPath: string;
+}
+export interface DeactivateSdkMessage {
+  type: "deactivateSdk";
+}
 export interface OpenUrlMessage {
   type: "openUrl";
   url: string;
@@ -443,6 +459,14 @@ export interface CreateNewProjectMessage {
   templateId: string;
   moduleId: string;
   projectName: string;
+  /** Active SDK to pin for the new project (absolute path); omitted = default. */
+  sdkPath?: string;
+  /** Parent directory chosen in the wizard; omitted = prompt with a dialog. */
+  destination?: string;
+}
+export interface PickProjectLocationMessage {
+  type: "pickProjectLocation";
+  current?: string;
 }
 export interface OpenExistingProjectMessage {
   type: "openExistingProject";
@@ -488,9 +512,12 @@ export type WebviewToExtMessage =
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
   | SwitchSdkMessage
+  | UninstallSdkMessage
+  | DeactivateSdkMessage
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage
+  | PickProjectLocationMessage
   | OpenExistingProjectMessage
   | SaveBoardConfigMessage
   | ConfiguratorUpdateMessage

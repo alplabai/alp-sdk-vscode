@@ -36,7 +36,7 @@
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   line-height: 1;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
@@ -59,14 +59,14 @@
 /* ── Step layout ── */
 
 .stepHeading {
-  font-size: 14px;
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0 0 var(--space-5);
 }
 
 .groupLabel {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -79,7 +79,7 @@
 }
 
 .stepDesc {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   margin-top: var(--space-5);
   line-height: 1.6;
@@ -119,18 +119,18 @@
 }
 
 .templateIcon {
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   line-height: 1;
 }
 
 .templateTitle {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .templateDesc {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   line-height: 1.4;
 }
@@ -167,7 +167,7 @@
 }
 
 .moduleId {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
   min-width: 120px;
@@ -175,7 +175,7 @@
 }
 
 .moduleDesc {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   flex: 1;
 }
@@ -184,6 +184,28 @@
 
 .fieldWrap {
   max-width: 400px;
+}
+
+/* ── Location field (Name step) ── */
+
+.locationRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.locationPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-input, var(--surface-hover));
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 /* ── Confirm step ── */
@@ -207,13 +229,13 @@
 }
 
 .summaryLabel {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   min-width: 100px;
 }
 
 .summaryValue {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
   text-align: right;

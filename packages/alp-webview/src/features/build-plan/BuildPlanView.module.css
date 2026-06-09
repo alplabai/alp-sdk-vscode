@@ -15,24 +15,29 @@
 }
 
 .title {
-  font-size: 14px;
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
 }
 
 .subtitle {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   line-height: 1.5;
   margin: var(--space-2) 0 0;
 }
 
 .subtitle code,
-.boardYaml code,
-.cmd,
-.fileList code {
+.cmd {
   font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--text-mono, var(--text-primary));
+}
+
+/* Paths (board.yaml, generated artefacts) are chrome — UI font, not editor mono. */
+.boardYaml code,
+.fileList code {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   color: var(--text-mono, var(--text-primary));
 }
 
@@ -56,17 +61,17 @@
 
 .sku {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
 }
 
 .metaItem {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
 .boardYaml {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -83,13 +88,13 @@
   align-items: flex-start;
   gap: var(--space-2);
   margin: calc(-1 * var(--space-2)) 0 0;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   line-height: 1.45;
   color: var(--status-warn);
 }
 
 .buildNote strong {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   font-weight: 600;
 }
 
@@ -117,12 +122,12 @@
 
 .coreId {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
 }
 
 .backend {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -149,7 +154,7 @@
 
 .cmd {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-size-base);
   line-height: 1.5;
   word-break: break-all;
   padding: var(--space-2) var(--space-3);
@@ -161,12 +166,12 @@
 .sliceMeta {
   display: flex;
   gap: var(--space-3);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
 .buildDir {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
 .env {
@@ -179,8 +184,8 @@
 .envRow {
   display: flex;
   gap: var(--space-2);
-  font-size: 11px;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--font-size-sm);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
 .envKey {
@@ -202,7 +207,7 @@
 }
 
 .sectionTitle {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -220,7 +225,7 @@
 }
 
 .fileRow {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .fileToggle {
@@ -254,7 +259,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
 .fileContent {
@@ -262,7 +267,7 @@
   padding: var(--space-2) var(--space-3);
   max-height: 220px;
   overflow: auto;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   line-height: 1.45;
   white-space: pre;
   border-radius: var(--radius-sm, 4px);
@@ -284,7 +289,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
@@ -295,7 +300,7 @@
 }
 
 .warnCore {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
   color: var(--text-primary);
 }
 

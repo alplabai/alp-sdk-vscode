@@ -14,6 +14,9 @@ export function useSdk() {
     install: (version: string) =>
       postMessage({ type: "requestSdkInstall", version }),
     switchSdk: (sdkPath: string) => postMessage({ type: "switchSdk", sdkPath }),
+    uninstall: (sdkPath: string) =>
+      postMessage({ type: "uninstallSdk", sdkPath }),
+    deactivate: () => postMessage({ type: "deactivateSdk" }),
     browseSdk: () => postMessage({ type: "selectSdkPath" }),
   };
 }

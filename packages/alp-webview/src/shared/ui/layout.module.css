@@ -8,7 +8,7 @@
 }
 
 .sectionTitle {
-  font-size: 11px;
+  font-size: var(--font-size-base);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -43,7 +43,7 @@
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-size-md);
   line-height: 1;
   padding: 2px var(--space-2);
   border-radius: var(--radius-md);
@@ -79,9 +79,11 @@
   margin-top: var(--space-2);
 }
 
+/* Truncated path label. Uses the UI (sans) font — VS Code renders paths in
+ * lists/chrome in the workbench font, not the editor monospace. */
 .pathMono {
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 11px;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--font-size-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -132,12 +134,12 @@
 
 .setupRowLabel {
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-base);
 }
 
 .setupRowDesc {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   line-height: 1.4;
 }

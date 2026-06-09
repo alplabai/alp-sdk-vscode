@@ -10,7 +10,7 @@ import {
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.buildPlan";
-const PANEL_TITLE = "ALP Build Plan";
+const PANEL_TITLE = "Alp Build Plan";
 
 /**
  * Full-tab preview of the SDK-emitted build plan (`alp build --plan`, ADR 0014).
@@ -136,6 +136,8 @@ export class BuildPlanPanel {
       void vscode.window.showInformationMessage(
         `Alp: materialised ${written.length} file(s) under the build tree.`,
       );
+      // The plan view reflects on-disk state — re-request so it isn't stale.
+      await this.handleRequestBuildPlan();
     } else {
       const error = envelope?.issues?.[0]?.message ?? outcome.message;
       void vscode.window.showErrorMessage(`Alp: materialise failed — ${error}`);

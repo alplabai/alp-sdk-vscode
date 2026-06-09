@@ -1,94 +1,40 @@
-/* ── Tab bar ────────────────────────────────────────────────────────────── */
-.tabs {
-  display: flex;
-  gap: 0;
-  margin-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border-default);
-}
-
-.tab {
-  padding: var(--space-2) 10px;
-  font-size: 11px;
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-secondary);
-  margin-bottom: -1px;
-  transition:
-    color var(--duration-fast),
-    border-color var(--duration-fast);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.tab:hover {
-  color: var(--text-primary);
-}
-
-.tab[aria-selected="true"] {
-  color: var(--text-primary);
-  border-bottom-color: var(--border-focus);
-  font-weight: 600;
-}
-
-.tabBadge {
-  display: inline-block;
-  background: var(--surface-badge);
-  color: var(--vscode-badge-foreground);
-  border-radius: var(--radius-xl);
-  font-size: 10px;
-  font-weight: 600;
-  padding: 0 var(--space-2);
-  line-height: 14px;
-  min-width: 14px;
-  text-align: center;
-}
-
-.tabContent {
-  padding-top: 2px;
-}
-
-/* ── SDK entry list ─────────────────────────────────────────────────────── */
-.entryList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
-}
-
-.entry {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border-widget);
-}
-
-.entry:last-child {
-  border-bottom: none;
-}
-
-.entryHeader {
+/* ── Header (title + Refresh / Browse) ──────────────────────────────────── */
+.header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.headerActions {
+  display: flex;
   gap: var(--space-2);
+  flex-shrink: 0;
 }
 
-.entryVersion {
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
+.intro {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Source badge: where the SDK came from. Installed = Alp-managed (~/.alp/sdk);
+ * Linked = an external checkout (sibling/submodule) discovered in the workspace. */
+.sourceBadge {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
   font-weight: 600;
-}
-
-.activeLabel {
-  margin: 2px 0 0;
-  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--status-ok) 16%, transparent);
   color: var(--status-ok);
-  font-style: italic;
+}
+.sourceBadge[data-linked] {
+  background: color-mix(in srgb, var(--status-info) 16%, transparent);
+  color: var(--status-info);
 }
 
 .emptyState {
@@ -96,61 +42,105 @@
   font-style: italic;
 }
 
-/* ── Download controls ──────────────────────────────────────────────────── */
-.downloadControls {
+/* ── Release cards (Download tab) ───────────────────────────────────────── */
+.releaseList {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   margin-top: var(--space-3);
 }
 
-.releasePicker {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
+.releaseCard {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-bg);
 }
 
-.releaseSelect {
-  flex: 1;
-  background: var(--surface-dropdown);
-  color: var(--vscode-dropdown-foreground, var(--text-primary));
-  border: 1px solid var(--border-dropdown);
-  padding: 3px var(--space-3);
-  font-size: 12px;
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  border-radius: var(--radius-sm);
-  outline: none;
-  cursor: pointer;
+.releaseCard[data-active] {
+  border-color: var(--status-ok);
 }
 
-.releaseSelect:focus {
-  border-color: var(--border-focus);
-}
-
-.releaseNotes {
-  font-style: italic;
-  opacity: 0.8;
-  padding: 0 2px;
-}
-
-.releaseList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.releaseRow {
+.releaseCardHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  padding: 3px 0;
+  gap: var(--space-3);
 }
 
-.releaseTag {
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
+.releaseTagBlock {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.releaseTagName {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.releaseDate {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.releaseActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.installedBadge {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.activeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--status-ok);
+}
+
+.changelogToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.changelogToggle:hover {
+  color: var(--text-primary);
+}
+
+.chevron {
+  display: inline-flex;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.chevron[data-open] {
+  transform: rotate(90deg);
+}
+
+.changelogBody {
+  margin: var(--space-3) 0 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--surface-input, var(--surface-hover));
+  border: 1px solid var(--border-default);
 }
 
 /* ── Install status ─────────────────────────────────────────────────────── */

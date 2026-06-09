@@ -2,7 +2,7 @@
   display: inline-block;
   padding: 1px 6px;
   border-radius: var(--radius-xl);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   flex-shrink: 0;
   /* foreground is always badge-foreground — set per-variant below */

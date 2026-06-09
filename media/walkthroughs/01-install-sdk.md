@@ -1,6 +1,6 @@
-# Install the ALP SDK
+# Install the Alp SDK
 
-The **SDK Manager** lists tagged ALP SDK releases and installs the one you pick
+The **SDK Manager** lists tagged Alp SDK releases and installs the one you pick
 into a local cache. The active SDK supplies the board schemas, presets, and the
 build-plan emitter the extension consumes.
 

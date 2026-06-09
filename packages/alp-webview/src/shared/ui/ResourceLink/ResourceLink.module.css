@@ -4,7 +4,7 @@
   gap: 3px;
   color: var(--text-link);
   text-decoration: none;
-  font-size: 12px;
+  font-size: var(--font-size-base);
   cursor: pointer;
   border-radius: var(--radius-sm);
 }
@@ -20,6 +20,6 @@
 }
 
 .prefix {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   opacity: 0.8;
 }

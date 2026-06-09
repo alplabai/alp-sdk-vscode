@@ -15,6 +15,7 @@ export function resolveProjectContext(
     sdkRoot: resolveSdkRoot(
       input.workspaceFolders,
       input.settings.sdkPath,
+      input.installedSdkRoots ?? [],
       pathExists,
     ),
     boardYamlPath: resolveBoardYamlPath(
@@ -38,6 +39,7 @@ function resolveWorkspaceRoot(
 function resolveSdkRoot(
   workspaceFolders: readonly string[],
   configuredSdkPath: string,
+  installedSdkRoots: readonly string[],
   pathExists: (candidatePath: string) => boolean,
 ): string | null {
   // Prefer explicit SDK path, but only if it contains the loader entrypoint.
@@ -52,6 +54,20 @@ function resolveSdkRoot(
   const candidates = collectSdkCandidates(workspaceFolders, pathExists);
   if (candidates.length === 1) {
     return candidates[0]!;
+  }
+  // Multiple sibling SDKs is ambiguous — require an explicit alpSdk.path.
+  if (candidates.length > 1) {
+    return null;
+  }
+
+  // Lowest precedence: an SDK installed in the local cache (~/.alp/sdk/<version>).
+  // Lets the extension recognize + use an installed SDK with no workspace and no
+  // alpSdk.path set (e.g. straight after `alp sdk install`, before activation).
+  for (const installedRoot of installedSdkRoots) {
+    const trimmed = installedRoot.trim();
+    if (trimmed && containsLoaderScript(trimmed, pathExists)) {
+      return trimmed;
+    }
   }
 
   return null;
@@ -110,6 +126,6 @@ function containsLoaderScript(
   rootPath: string,
   pathExists: (candidatePath: string) => boolean,
 ): boolean {
-  // scripts/alp_project.py is the canonical marker for an ALP SDK root.
+  // scripts/alp_project.py is the canonical marker for an Alp SDK root.
   return pathExists(path.join(rootPath, "scripts", "alp_project.py"));
 }

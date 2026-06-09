@@ -42,11 +42,11 @@
 }
 
 .hint {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
 .error {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--vscode-errorForeground, var(--status-err));
 }

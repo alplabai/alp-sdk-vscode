@@ -43,7 +43,7 @@ function FolderStep({ workspaceRoot }: FolderStepProps) {
         <EmptyState
           icon={<Icon name="folder" size={28} />}
           title="No folder open"
-          description="Open a folder that contains an ALP SDK project."
+          description="Open a folder that contains an Alp SDK project."
           action={
             <Button
               appearance="primary"
@@ -62,7 +62,7 @@ function FolderStep({ workspaceRoot }: FolderStepProps) {
       {workspaceRoot && (
         <p className={styles.stepDesc}>
           This is the currently open folder. Continue to inspect whether it is
-          an ALP project, or{" "}
+          an Alp project, or{" "}
           <button
             className={styles.inlineLink}
             onClick={() =>
@@ -105,8 +105,8 @@ function InspectStep({
           : ("not-installed" as const),
       description:
         boardYamlStatus === "found"
-          ? "ALP project configuration found"
-          : "No board.yaml found — may not be an ALP project",
+          ? "Alp project configuration found"
+          : "No board.yaml found — may not be an Alp project",
     },
     {
       label: "west workspace",
@@ -160,7 +160,7 @@ function ActivateStep({
 }: ActivateStepProps) {
   return (
     <>
-      <p className={styles.stepHeading}>Activate the ALP project</p>
+      <p className={styles.stepHeading}>Activate the Alp project</p>
 
       {westStatus === "missing" && (
         <div className={styles.actionCard}>
@@ -183,7 +183,7 @@ function ActivateStep({
         <div className={styles.actionCard}>
           <p className={styles.actionTitle}>Project is ready</p>
           <p className={styles.actionDesc}>
-            The workspace is already initialised. You can open the ALP Overview
+            The workspace is already initialised. You can open the Alp Overview
             or configure the board.
           </p>
           <div className={styles.btnRow}>
@@ -241,7 +241,7 @@ export function ExistingProjectFlowView() {
     <div className={styles.root}>
       <div className={styles.shell}>
         <header className={styles.header}>
-          <h1 className={styles.title}>Open ALP Project</h1>
+          <h1 className={styles.title}>Open Alp Project</h1>
           <button
             className={styles.closeBtn}
             title="Close"

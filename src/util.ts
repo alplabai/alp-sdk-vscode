@@ -2,7 +2,7 @@
 
 import * as vscode from "vscode";
 
-const OUTPUT = vscode.window.createOutputChannel("ALP SDK");
+const OUTPUT = vscode.window.createOutputChannel("Alp SDK");
 
 export function log(line: string): void {
   OUTPUT.appendLine(line);

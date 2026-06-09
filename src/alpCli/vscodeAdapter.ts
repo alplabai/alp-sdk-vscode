@@ -20,6 +20,33 @@ import {
 } from "./adapterCore";
 import { CliOutcome } from "./models";
 import { binaryName } from "./service";
+import { collectProjectContext } from "../project/vscodeAdapter";
+import { log } from "../util";
+
+/** Bare binary name (not the full resolved path) for readable log lines. */
+function binaryLabel(command: string): string {
+  return command.split(/[\\/]/).pop() || command;
+}
+
+/** Truncate long output so a single stderr dump can't flood the channel. */
+function clip(text: string, max = 4000): string {
+  const t = text.trim();
+  return t.length > max
+    ? `${t.slice(0, max)}\n… (${t.length - max} more chars)`
+    : t;
+}
+
+/**
+ * Forward the extension-resolved active SDK to the CLI as a global `--sdk-root`,
+ * so envelope/terminal commands (build --plan, validate, …) use the same SDK the
+ * user selected (alpSdk.path / per-project override) rather than the CLI's own
+ * cwd-based discovery. No-op when nothing resolves or the caller already set it.
+ */
+function withSdkRoot(args: string[]): string[] {
+  if (args.includes("--sdk-root")) return args;
+  const sdkRoot = collectProjectContext().sdkRoot;
+  return sdkRoot ? ["--sdk-root", sdkRoot, ...args] : args;
+}
 
 /** Session memo so we probe PATH / download at most once per window. */
 let resolved: ResolvedBinary | undefined;
@@ -82,13 +109,14 @@ export async function runAlpCommand(
     // Never throw: a resolution failure becomes an error outcome so callers
     // can present it uniformly (the message already points at alpSdk.cliPath).
     const message = error instanceof Error ? error.message : String(error);
+    log(`[cli] ✗ CLI unavailable: ${message}`);
     return {
       outcome: {
         exitCode: -1,
         kind: "unknown",
         ok: false,
         severity: "error",
-        message: `ALP CLI unavailable: ${message}`,
+        message: `Alp CLI unavailable: ${message}`,
         envelope: null,
       },
       raw: {
@@ -99,7 +127,24 @@ export async function runAlpCommand(
       },
     };
   }
-  return runAlp(binary.command, args, spawnAlp, cwd);
+  const finalArgs = withSdkRoot(args);
+  log(
+    `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")} --format json` +
+      (cwd ? `  (cwd: ${cwd})` : ""),
+  );
+  const result = runAlp(binary.command, finalArgs, spawnAlp, cwd);
+  const { outcome, raw } = result;
+  if (outcome.ok) {
+    log(`[cli] → ok (exit ${outcome.exitCode})`);
+  } else {
+    log(
+      `[cli] → ${outcome.severity} (exit ${outcome.exitCode}): ${outcome.message}`,
+    );
+    if (raw.stderr && raw.stderr.trim()) {
+      log(`[cli]   stderr: ${clip(raw.stderr)}`);
+    }
+  }
+  return result;
 }
 
 /**
@@ -117,15 +162,22 @@ export async function runAlpInTerminal(
   try {
     binary = await resolveAlpBinaryForContext(context);
   } catch (error) {
+    log(
+      `[cli] ✗ CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
+    );
     await surfaceResolutionError(error);
     return;
   }
+  const finalArgs = withSdkRoot(args);
+  log(
+    `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (terminal: ${options.name})`,
+  );
   const terminal = vscode.window.createTerminal({
     name: options.name,
     cwd: options.cwd,
   });
   terminal.show(true);
-  terminal.sendText(formatCommandLine(binary.command, args));
+  terminal.sendText(formatCommandLine(binary.command, finalArgs));
 }
 
 function formatCommandLine(command: string, args: string[]): string {
@@ -144,7 +196,7 @@ function quoteToken(token: string): string {
 async function surfaceResolutionError(error: unknown): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
   const choice = await vscode.window.showErrorMessage(
-    `ALP CLI unavailable: ${message}`,
+    `Alp CLI unavailable: ${message}`,
     "Open Settings",
   );
   if (choice === "Open Settings") {

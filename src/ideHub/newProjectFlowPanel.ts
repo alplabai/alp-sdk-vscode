@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
@@ -17,7 +18,7 @@ import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
-const PANEL_TITLE = "ALP IDE — New Project";
+const PANEL_TITLE = "Alp IDE — New Project";
 
 export class NewProjectFlowPanel {
   private static instance?: NewProjectFlowPanel;
@@ -89,6 +90,31 @@ export class NewProjectFlowPanel {
     void this.panel.webview.postMessage(catalogMsg);
   }
 
+  /** Push a chosen/default parent directory to the wizard's Location field. */
+  private postLocation(dir: string): void {
+    const msg: ExtToWebviewMessage = {
+      type: "projectLocationPicked",
+      path: dir,
+    };
+    void this.panel.webview.postMessage(msg);
+  }
+
+  /** Open a folder picker for the project's parent directory and push the result. */
+  private async handlePickLocation(current?: string): Promise<void> {
+    const seed = current && fs.existsSync(current) ? current : os.homedir();
+    const uris = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      defaultUri: vscode.Uri.file(seed),
+      title: "Choose where to create the project",
+      openLabel: "Select Folder",
+    });
+    if (uris && uris.length > 0) {
+      this.postLocation(uris[0].fsPath);
+    }
+  }
+
   /** SoM ("Hardware") list from the CLI's `alp presets` (the installed SDK's
    *  actual modules). Falls back to the built-in list when no SDK is resolved
    *  (presets returns an empty `soms`) so New Project works pre-SDK. */
@@ -146,10 +172,22 @@ export class NewProjectFlowPanel {
     switch (msg.type) {
       case "ready":
         await this.sendState();
+        // Seed the wizard's Location field with a sensible default.
+        this.postLocation(os.homedir());
+        break;
+
+      case "pickProjectLocation":
+        await this.handlePickLocation(msg.current);
         break;
 
       case "createNewProject":
-        await this.createProject(msg.templateId, msg.moduleId, msg.projectName);
+        await this.createProject(
+          msg.templateId,
+          msg.moduleId,
+          msg.projectName,
+          msg.sdkPath,
+          msg.destination,
+        );
         break;
 
       case "closePanel":
@@ -173,20 +211,25 @@ export class NewProjectFlowPanel {
     templateId: string,
     moduleId: string,
     projectName: string,
+    sdkPath?: string,
+    destination?: string,
   ): Promise<void> {
-    const uris = await vscode.window.showOpenDialog({
-      canSelectFiles: false,
-      canSelectFolders: true,
-      canSelectMany: false,
-      title: "Select parent folder for new project",
-      openLabel: "Select Folder",
-    });
-
-    if (!uris || uris.length === 0) {
-      return;
+    // Prefer the location chosen in the wizard; fall back to a picker if absent.
+    let parentDir = destination?.trim() ?? "";
+    if (!parentDir || !fs.existsSync(parentDir)) {
+      const uris = await vscode.window.showOpenDialog({
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        title: "Select parent folder for new project",
+        openLabel: "Select Folder",
+      });
+      if (!uris || uris.length === 0) {
+        return;
+      }
+      parentDir = uris[0].fsPath;
     }
 
-    const parentDir = uris[0].fsPath;
     const projectDir = path.join(parentDir, projectName);
 
     if (fs.existsSync(projectDir)) {
@@ -215,6 +258,13 @@ export class NewProjectFlowPanel {
       return;
     }
 
+    // Pin the chosen SDK for the new project so it opens with the right one
+    // (workspace-scoped alpSdk.path). Omitted ⇒ the project inherits the global
+    // default / auto-resolution.
+    if (sdkPath) {
+      this.pinProjectSdk(projectDir, sdkPath);
+    }
+
     const open = "Open Project";
     const choice = await vscode.window.showInformationMessage(
       `Project "${projectName}" created at ${projectDir}`,
@@ -227,6 +277,34 @@ export class NewProjectFlowPanel {
     }
 
     this.panel.dispose();
+  }
+
+  /** Write `alpSdk.path` into the new project's .vscode/settings.json so it
+   *  opens with the SDK chosen in the wizard (merges if a file already exists). */
+  private pinProjectSdk(projectDir: string, sdkPath: string): void {
+    try {
+      const vscodeDir = path.join(projectDir, ".vscode");
+      fs.mkdirSync(vscodeDir, { recursive: true });
+      const settingsPath = path.join(vscodeDir, "settings.json");
+      let settings: Record<string, unknown> = {};
+      if (fs.existsSync(settingsPath)) {
+        try {
+          settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+        } catch {
+          settings = {};
+        }
+      }
+      settings["alpSdk.path"] = sdkPath;
+      fs.writeFileSync(
+        settingsPath,
+        JSON.stringify(settings, null, 2) + "\n",
+        "utf8",
+      );
+    } catch (err) {
+      void vscode.window.showWarningMessage(
+        `Alp: project created, but pinning its SDK failed — ${String(err)}`,
+      );
+    }
   }
 
   private dispose(): void {

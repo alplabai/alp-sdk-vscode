@@ -23,7 +23,7 @@ const EMPTY_BOARD: BoardConfig = { som: { sku: "" }, cores: {} };
  *
  * Registered with priority "option" (see package.json contributes.customEditors)
  * so the text editor stays the default; users opt in via
- * "Reopen Editor With… → ALP Board Configurator". Edits flow through the
+ * "Reopen Editor With… → Alp Board Configurator". Edits flow through the
  * TextDocument (WorkspaceEdit), so VS Code's native dirty/save/undo applies —
  * no bespoke file IO. The webview message contract is identical to the former
  * command-launched panel, so the React view is unchanged.

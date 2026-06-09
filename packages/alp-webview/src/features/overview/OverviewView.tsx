@@ -31,18 +31,17 @@ function envMeta(state: AlpIdeState): string {
 }
 
 function workspaceChip(state: AlpIdeState): ChipState {
-  if (state.workspace.workspaceRoot && state.workspace.westInitialized)
-    return "ready";
-  if (state.workspace.workspaceRoot) return "not-updated";
-  return "setup-required";
+  // The west workspace is the milestone (central/bootstrap). A project folder is
+  // optional — open one to edit a specific app, but it isn't required to be set up.
+  return state.workspace.westInitialized ? "ready" : "setup-required";
 }
 
 function workspaceMeta(state: AlpIdeState): string {
   const { workspaceRoot, westInitialized, boardYamlExists } = state.workspace;
-  if (!workspaceRoot) return "No folder open";
-  const parts: string[] = [];
-  if (boardYamlExists) parts.push("board.yaml found");
-  parts.push(westInitialized ? "west ready" : "west not initialized");
+  if (!westInitialized) return "Run Bootstrap to set up the west workspace";
+  const parts: string[] = ["west workspace ready"];
+  if (workspaceRoot && boardYamlExists) parts.push("board.yaml found");
+  else if (!workspaceRoot) parts.push("no folder open");
   return parts.join(" · ");
 }
 
@@ -72,7 +71,7 @@ function isAllReady(state: AlpIdeState): boolean {
   return (
     state.setup.pythonAvailable &&
     state.setup.westAvailable &&
-    state.workspace.workspaceRoot !== null &&
+    // West workspace (central) is the milestone; an open project folder is optional.
     state.workspace.westInitialized &&
     state.sdk.readiness === "ready"
   );
@@ -94,7 +93,7 @@ function Brand({ subtitle }: { subtitle: string }) {
           <Icon name="bolt" size={18} />
         </span>
         <span className={styles.brandName}>
-          ALP<span className={styles.brandLab}>LAB</span>
+          Alp<span className={styles.brandLab}>LAB</span>
         </span>
       </div>
       <span className={styles.topDivider} aria-hidden="true" />
@@ -220,7 +219,7 @@ export function OverviewView() {
   if (!state) {
     return (
       <div className={styles.root}>
-        <Brand subtitle="ALP IDE" />
+        <Brand subtitle="Alp IDE" />
         <div className={styles.body}>
           <Skeleton lines={4} />
         </div>
@@ -232,7 +231,7 @@ export function OverviewView() {
 
   return (
     <div className={styles.root}>
-      <Brand subtitle="ALP IDE" />
+      <Brand subtitle="Alp IDE" />
 
       <div className={styles.body}>
         <p className={styles.lead}>
@@ -261,7 +260,7 @@ export function OverviewView() {
             />
             <StatusCard
               icon="package"
-              title="ALP SDK"
+              title="Alp SDK"
               chip={sdkChip(state)}
               meta={sdkMeta(state)}
             />
@@ -273,7 +272,7 @@ export function OverviewView() {
             <span className={styles.readyIcon} aria-hidden="true">
               <Icon name="check" size={16} />
             </span>
-            All systems are ready. You can now build and flash ALP SDK firmware.
+            All systems are ready. You can now build and flash Alp SDK firmware.
           </div>
         )}
 

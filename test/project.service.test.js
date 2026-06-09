@@ -51,6 +51,48 @@ test("resolveProjectContext honors explicit settings", () => {
   assert.equal(context.westCwd, "/custom/west");
 });
 
+test("resolveProjectContext falls back to the newest installed SDK in the cache", () => {
+  const context = resolveProjectContext(
+    {
+      workspaceFolders: [],
+      settings: {
+        sdkPath: "",
+        pythonPath: "",
+        boardYamlPath: "board.yaml",
+        westCwd: "",
+      },
+      platform: "darwin",
+      installedSdkRoots: ["/home/u/.alp/sdk/v0.6.0", "/home/u/.alp/sdk/v0.5.0"],
+    },
+    (candidatePath) =>
+      candidatePath === "/home/u/.alp/sdk/v0.6.0/scripts/alp_project.py" ||
+      candidatePath === "/home/u/.alp/sdk/v0.5.0/scripts/alp_project.py",
+  );
+
+  assert.equal(context.sdkRoot, "/home/u/.alp/sdk/v0.6.0");
+});
+
+test("resolveProjectContext prefers a sibling SDK over the cache fallback", () => {
+  const context = resolveProjectContext(
+    {
+      workspaceFolders: ["/workspace/app"],
+      settings: {
+        sdkPath: "",
+        pythonPath: "",
+        boardYamlPath: "board.yaml",
+        westCwd: "",
+      },
+      platform: "linux",
+      installedSdkRoots: ["/home/u/.alp/sdk/v0.6.0"],
+    },
+    (candidatePath) =>
+      candidatePath === "/workspace/alp-sdk/scripts/alp_project.py" ||
+      candidatePath === "/home/u/.alp/sdk/v0.6.0/scripts/alp_project.py",
+  );
+
+  assert.equal(context.sdkRoot, "/workspace/alp-sdk");
+});
+
 test("resolveProjectContext requires alpSdk.path when multiple sdk roots match", () => {
   const context = resolveProjectContext(
     {

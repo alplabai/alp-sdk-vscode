@@ -1,12 +1,22 @@
-import { useState } from "react";
-import { Button, Skeleton, Spinner, StatusChip } from "../../shared/ui";
+import { useEffect, useRef, useState } from "react";
+import {
+  Button,
+  Icon,
+  Markdown,
+  Skeleton,
+  Spinner,
+  StatusChip,
+} from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
-import type { ChipState, LocalSdkEntry, SdkStatus } from "../../types";
+import type {
+  ChipState,
+  LocalSdkEntry,
+  SdkRelease,
+  SdkStatus,
+} from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./SdkView.module.css";
 import { useSdk } from "./useSdk";
-
-type SdkTab = "active" | "local" | "download";
 
 function sdkChip(readiness: SdkStatus["readiness"]): ChipState {
   switch (readiness) {
@@ -25,14 +35,6 @@ function shortPath(p: string): string {
   return p.replace(/^\/Users\/[^/]+/, "~");
 }
 
-function localEntryChip(r: LocalSdkEntry["readiness"]): ChipState {
-  return r === "ready"
-    ? "ready"
-    : r === "partial"
-      ? "setup-required"
-      : "not-installed";
-}
-
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString(undefined, {
@@ -45,6 +47,191 @@ function formatDate(iso: string): string {
   }
 }
 
+/** Last path segment (cross-platform) — the install dir is named after the tag. */
+function pathTail(p: string): string {
+  return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+}
+
+/** The local installation matching a release tag, if any (side-by-side cache). */
+function installedFor(
+  tag: string,
+  entries: LocalSdkEntry[],
+): LocalSdkEntry | undefined {
+  return entries.find(
+    (e) =>
+      pathTail(e.path) === tag ||
+      (e.version !== null && e.version === tag.replace(/^v/, "")),
+  );
+}
+
+type SdkSource = "available" | "installed" | "linked";
+
+/** One unified row in the SDK list — a release and/or a local install. */
+interface SdkRow {
+  id: string;
+  label: string;
+  date?: string;
+  changelog?: string;
+  /** Release tag to install (only for not-yet-installed releases). */
+  installTag?: string;
+  /** Path of the local install (for activate / remove). */
+  localPath?: string;
+  isActive: boolean;
+  source: SdkSource;
+}
+
+/** Merge the remote release list with local installs into one keyed list. */
+function buildRows(
+  releases: SdkRelease[] | null,
+  locals: LocalSdkEntry[],
+  activePath: string | null,
+): SdkRow[] {
+  const rows: SdkRow[] = [];
+  const usedPaths = new Set<string>();
+
+  for (const r of releases ?? []) {
+    const local = installedFor(r.tag, locals);
+    if (local) usedPaths.add(local.path);
+    const source: SdkSource = !local
+      ? "available"
+      : local.removable
+        ? "installed"
+        : "linked";
+    rows.push({
+      id: r.tag,
+      label: r.tag,
+      date: r.publishedAt || undefined,
+      changelog: r.releaseNotes || r.releaseNotesSummary || undefined,
+      installTag: local ? undefined : r.tag,
+      localPath: local?.path,
+      isActive: !!local && local.path === activePath,
+      source,
+    });
+  }
+
+  // Local installs with no matching release (linked checkouts, manual caches).
+  for (const e of locals) {
+    if (usedPaths.has(e.path)) continue;
+    rows.push({
+      id: e.path,
+      label: e.version ?? pathTail(e.path),
+      localPath: e.path,
+      isActive: e.path === activePath,
+      source: e.removable ? "installed" : "linked",
+    });
+  }
+
+  return rows;
+}
+
+interface SdkRowCardProps {
+  row: SdkRow;
+  expanded: boolean;
+  onToggle: () => void;
+  onInstall: () => void;
+  onUse: () => void;
+  onDeactivate: () => void;
+  onRemove: () => void;
+}
+
+/** A single SDK row: version + date + state badges, state-aware actions, and an
+ *  expandable changelog. Models the VS Code Extensions-view item. */
+function SdkRowCard({
+  row,
+  expanded,
+  onToggle,
+  onInstall,
+  onUse,
+  onDeactivate,
+  onRemove,
+}: SdkRowCardProps) {
+  return (
+    <div className={styles.releaseCard} data-active={row.isActive || undefined}>
+      <div className={styles.releaseCardHead}>
+        <div className={styles.releaseTagBlock}>
+          <span className={styles.releaseTagName}>{row.label}</span>
+          {row.date && (
+            <span className={styles.releaseDate}>{formatDate(row.date)}</span>
+          )}
+          {row.source === "linked" && (
+            <span
+              className={styles.sourceBadge}
+              data-linked
+              title="Linked checkout (sibling/submodule), not Alp-managed"
+            >
+              Linked
+            </span>
+          )}
+        </div>
+        <div className={styles.releaseActions}>
+          {row.isActive && (
+            <span className={styles.activeBadge}>
+              <Icon name="check" size={12} /> Active
+            </span>
+          )}
+          {row.source === "available" ? (
+            <Button appearance="primary" onClick={onInstall}>
+              Install
+            </Button>
+          ) : (
+            <>
+              {row.isActive ? (
+                <Button
+                  appearance="secondary"
+                  title="Clear the active SDK (keeps it installed)"
+                  onClick={onDeactivate}
+                >
+                  Deactivate
+                </Button>
+              ) : (
+                <Button appearance="secondary" onClick={onUse}>
+                  Use
+                </Button>
+              )}
+              <Button
+                appearance="danger"
+                title={
+                  row.source === "linked"
+                    ? "Delete this folder from disk (added via Browse / a checkout)"
+                    : "Delete this Alp-installed SDK from disk"
+                }
+                onClick={onRemove}
+              >
+                Remove
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {row.changelog && (
+        <>
+          <button
+            type="button"
+            className={styles.changelogToggle}
+            onClick={onToggle}
+            aria-expanded={expanded}
+          >
+            <span
+              className={styles.chevron}
+              data-open={expanded || undefined}
+              aria-hidden="true"
+            >
+              <Icon name="chevronRight" size={12} />
+            </span>
+            Changelog
+          </button>
+          {expanded && (
+            <div className={styles.changelogBody}>
+              <Markdown>{row.changelog}</Markdown>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function SdkView({ compact = false }: { compact?: boolean }) {
   const {
     sdk,
@@ -54,14 +241,43 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     loadReleases,
     install,
     switchSdk,
+    uninstall,
+    deactivate,
     browseSdk,
   } = useSdk();
-  const [tab, setTab] = useState<SdkTab>("active");
-  const [selectedTag, setSelectedTag] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const localCount = sdk?.localEntries.length ?? 0;
-  const latestTag = releases?.[0]?.tag ?? "";
-  const installTarget = selectedTag || latestTag;
+  // Auto-load the release list once so the list isn't a manual step.
+  useEffect(() => {
+    if (releases === null) loadReleases();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A new release list (success or empty) ends the refresh spinner.
+  useEffect(() => {
+    setRefreshing(false);
+    if (refreshTimer.current) {
+      clearTimeout(refreshTimer.current);
+      refreshTimer.current = null;
+    }
+  }, [releases]);
+
+  // Clean up the safety timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, []);
+
+  function handleRefresh() {
+    setRefreshing(true);
+    loadReleases();
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    // Safety: clear the spinner even if the fetch fails silently (no message).
+    refreshTimer.current = setTimeout(() => setRefreshing(false), 12000);
+  }
 
   if (!sdk) {
     return (
@@ -74,6 +290,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     );
   }
 
+  // Compact (sidebar) summary: active SDK + a jump to the full manager.
   if (compact) {
     return (
       <div className={layout.section}>
@@ -118,195 +335,72 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     );
   }
 
+  const rows = buildRows(releases, sdk.localEntries, sdk.activePath);
+
   return (
     <div className={layout.section}>
-      <p className={layout.sectionTitle}>SDK Manager</p>
-
-      {/* Tab bar */}
-      <div className={styles.tabs} role="tablist">
-        <button
-          role="tab"
-          aria-selected={tab === "active"}
-          className={styles.tab}
-          onClick={() => setTab("active")}
-        >
-          Active
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "local"}
-          className={styles.tab}
-          onClick={() => setTab("local")}
-        >
-          Local
-          {localCount > 0 && (
-            <span className={styles.tabBadge}>{localCount}</span>
-          )}
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "download"}
-          className={styles.tab}
-          onClick={() => setTab("download")}
-        >
-          Download
-        </button>
+      <div className={styles.header}>
+        <p className={layout.sectionTitle}>SDK Manager</p>
+        <div className={styles.headerActions}>
+          <Button
+            appearance="secondary"
+            title="Reload the release list"
+            loading={refreshing}
+            disabled={releases === null}
+            onClick={handleRefresh}
+          >
+            Refresh
+          </Button>
+          <Button
+            appearance="secondary"
+            title="Use an SDK already on disk"
+            onClick={() => browseSdk()}
+          >
+            Browse…
+          </Button>
+        </div>
       </div>
 
-      {/* Active tab */}
-      {tab === "active" && (
-        <div className={styles.tabContent}>
-          <div className={layout.setupRow}>
-            <div className={layout.setupRowHeader}>
-              <span className={layout.setupRowLabel}>
-                {sdk.version ? `v${sdk.version}` : "Active SDK"}
-              </span>
-              <StatusChip
-                state={
-                  sdk.activePath ? sdkChip(sdk.readiness) : "not-installed"
-                }
-              />
-            </div>
-            {sdk.activePath ? (
-              <p
-                className={`${layout.setupRowDesc} ${layout.pathMono}`}
-                title={sdk.activePath}
-              >
-                {shortPath(sdk.activePath)}
-              </p>
-            ) : (
-              <p className={layout.setupRowDesc}>No active SDK configured.</p>
-            )}
-            <div className={layout.setupRowAction}>
-              <Button
-                appearance="secondary"
-                title="Browse for an SDK directory"
-                onClick={() => browseSdk()}
-              >
-                Browse…
-              </Button>
-            </div>
-          </div>
+      <p className={styles.intro}>
+        Versioned Alp SDK releases install side by side under{" "}
+        <span className={layout.pathMono}>~/.alp/sdk/</span>. Install one, then
+        activate it per project here or from the status bar.
+      </p>
+
+      {installActive && (
+        <div className={styles.installStatus}>
+          <Spinner />
+          <span className={layout.setupRowDesc}>
+            {installLog ?? "Installing…"}
+          </span>
         </div>
       )}
 
-      {/* Local tab */}
-      {tab === "local" && (
-        <div className={styles.tabContent}>
-          {localCount === 0 ? (
-            <p className={`${layout.setupRowDesc} ${styles.emptyState}`}>
-              No local SDK installations found. Use Download to get an SDK.
-            </p>
-          ) : (
-            <div className={styles.entryList}>
-              {sdk.localEntries.map((entry) => (
-                <div key={entry.path} className={styles.entry}>
-                  <div className={styles.entryHeader}>
-                    <span className={styles.entryVersion}>
-                      {entry.version ?? "unknown"}
-                    </span>
-                    <StatusChip state={localEntryChip(entry.readiness)} />
-                  </div>
-                  <p
-                    className={`${layout.setupRowDesc} ${layout.pathMono}`}
-                    title={entry.path}
-                  >
-                    {shortPath(entry.path)}
-                  </p>
-                  {entry.path !== sdk.activePath && (
-                    <div className={layout.setupRowAction}>
-                      <Button
-                        appearance="secondary"
-                        onClick={() => switchSdk(entry.path)}
-                      >
-                        Use This
-                      </Button>
-                    </div>
-                  )}
-                  {entry.path === sdk.activePath && (
-                    <p className={styles.activeLabel}>← active</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+      {releases === null ? (
+        <div className={layout.loadingRow}>
+          <Spinner />
+          <span className={layout.setupRowDesc}>Loading SDK list…</span>
         </div>
-      )}
-
-      {/* Download tab */}
-      {tab === "download" && (
-        <div className={styles.tabContent}>
-          <p className={layout.setupRowDesc}>
-            Download a versioned ALP SDK release to{" "}
-            <span className={layout.pathMono}>~/.alp/sdk/</span>.
-          </p>
-
-          {/* Install progress */}
-          {installActive && (
-            <div className={styles.installStatus}>
-              <Spinner />
-              <span className={layout.setupRowDesc}>
-                {installLog ?? "Installing…"}
-              </span>
-            </div>
-          )}
-          {!installActive && installLog && (
-            <p
-              className={`${layout.setupRowDesc} ${styles.installResult}`}
-              data-success={
-                !installLog.startsWith("Install failed") ? "" : undefined
+      ) : rows.length === 0 ? (
+        <p className={`${layout.setupRowDesc} ${styles.emptyState}`}>
+          No SDKs found. Install a release above, or Browse to an SDK on disk.
+        </p>
+      ) : (
+        <div className={styles.releaseList}>
+          {rows.map((row) => (
+            <SdkRowCard
+              key={row.id}
+              row={row}
+              expanded={expandedId === row.id}
+              onToggle={() =>
+                setExpandedId((id) => (id === row.id ? null : row.id))
               }
-            >
-              {installLog}
-            </p>
-          )}
-
-          {!installActive && (
-            <div className={styles.downloadControls}>
-              {releases === null ? (
-                <Button onClick={() => loadReleases()}>Load Releases</Button>
-              ) : releases.length === 0 ? (
-                <p className={layout.setupRowDesc}>No releases found.</p>
-              ) : (
-                <>
-                  <div className={styles.releasePicker}>
-                    <select
-                      className={styles.releaseSelect}
-                      value={installTarget}
-                      onChange={(e) => setSelectedTag(e.target.value)}
-                      aria-label="Select SDK release version"
-                    >
-                      {releases.map((r) => (
-                        <option key={r.tag} value={r.tag}>
-                          {r.tag}
-                          {r.publishedAt
-                            ? `  ·  ${formatDate(r.publishedAt)}`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      appearance="primary"
-                      onClick={() => install(installTarget)}
-                    >
-                      Install
-                    </Button>
-                  </div>
-                  {releases.find((r) => r.tag === installTarget)
-                    ?.releaseNotesSummary && (
-                    <p
-                      className={`${layout.setupRowDesc} ${styles.releaseNotes}`}
-                    >
-                      {
-                        releases.find((r) => r.tag === installTarget)!
-                          .releaseNotesSummary
-                      }
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+              onInstall={() => row.installTag && install(row.installTag)}
+              onUse={() => row.localPath && switchSdk(row.localPath)}
+              onDeactivate={() => deactivate()}
+              onRemove={() => row.localPath && uninstall(row.localPath)}
+            />
+          ))}
         </div>
       )}
     </div>

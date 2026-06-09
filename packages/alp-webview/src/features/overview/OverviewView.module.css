@@ -8,7 +8,7 @@
   padding: 0 0 var(--space-10);
 }
 
-/* ── ALP LAB branded top bar ────────────────────────────────────────────── */
+/* ── Alp LAB branded top bar ────────────────────────────────────────────── */
 .topbar {
   display: flex;
   align-items: center;
@@ -32,7 +32,7 @@
 }
 
 .brandName {
-  font-size: 15px;
+  font-size: var(--font-size-md);
   font-weight: 800;
   letter-spacing: 0.4px;
   color: var(--text-primary);
@@ -51,7 +51,7 @@
 }
 
 .topTitle {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 500;
   color: var(--text-secondary);
   letter-spacing: 0.2px;
@@ -67,14 +67,14 @@
 }
 
 .lead {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   margin: 0;
 }
 
 /* ── Section heading ────────────────────────────────────────────────────── */
 .sectionLabel {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.7px;
@@ -128,14 +128,14 @@
 }
 
 .cardTitle {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
 }
 
 .cardMeta {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.5;
@@ -200,13 +200,13 @@
 }
 
 .panelTitle {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .panelDesc {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   line-height: 1.45;
 }
@@ -266,7 +266,7 @@
 }
 
 .actionBtnLabel {
-  font-size: 12px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -285,7 +285,7 @@
   );
   border: 1px solid
     color-mix(in srgb, var(--vscode-charts-green, #89d185) 40%, transparent);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
 }
 

@@ -14,6 +14,8 @@ export interface SdkRelease {
   tarballUrl: string;
   /** First paragraph of the release body, or empty string when absent. */
   releaseNotesSummary: string;
+  /** Full release body (Markdown), for an expandable changelog. */
+  releaseNotes: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,6 +41,9 @@ export interface LocalSdkEntry {
   readiness: SdkReadinessState;
   /** Human-readable list of missing or failing checks. */
   issues: string[];
+  /** True when Alp installed this SDK (under ~/.alp/sdk) and may remove it.
+   *  External SDKs (added via Browse / sibling checkouts) are not removable. */
+  removable?: boolean;
 }
 
 // ---------------------------------------------------------------------------

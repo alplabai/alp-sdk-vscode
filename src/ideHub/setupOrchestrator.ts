@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Zero-friction setup orchestrator — runs once on extension activation and
-// shows a single non-intrusive notification when the ALP IDE environment is
+// shows a single non-intrusive notification when the Alp IDE environment is
 // not ready (python/west missing, SDK not installed, no workspace).
 //
 // The notification is gated by a fingerprint stored in globalState so it does
@@ -61,11 +61,11 @@ export async function maybeOfferSetupPanel(
         await context.globalState.update(driftKey, currentVersionFp);
         void vscode.window
           .showWarningMessage(
-            "ALP IDE: build tool versions have changed since last session. Re-verify your build environment.",
-            "Open ALP IDE",
+            "Alp IDE: build tool versions have changed since last session. Re-verify your build environment.",
+            "Open Alp IDE",
           )
           .then((action) => {
-            if (action === "Open ALP IDE") {
+            if (action === "Open Alp IDE") {
               void vscode.commands.executeCommand("alp.ideHub.focus");
             }
           });
@@ -91,16 +91,16 @@ export async function maybeOfferSetupPanel(
     const issueLabels: Record<string, string> = {
       python: "Python not found",
       west: "west not found",
-      sdk: "ALP SDK not ready",
+      sdk: "Alp SDK not ready",
       "no-workspace": "No workspace open",
     };
     const summary = issues.map((k) => issueLabels[k] ?? k).join(", ");
 
     const action = await vscode.window.showWarningMessage(
-      `ALP IDE: environment not ready — ${summary}.`,
-      "Open ALP IDE",
+      `Alp IDE: environment not ready — ${summary}.`,
+      "Open Alp IDE",
     );
-    if (action === "Open ALP IDE") {
+    if (action === "Open Alp IDE") {
       await vscode.commands.executeCommand("alp.ideHub.focus");
     }
   } catch {

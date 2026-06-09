@@ -82,7 +82,7 @@ test("createDebugTroubleshootingPanelHtml includes sections and command links", 
     },
   });
 
-  assert.match(html, /ALP Troubleshooting Panel/);
+  assert.match(html, /Alp Troubleshooting Panel/);
   assert.match(html, /Inspect: Effective Resolved Values/);
   assert.match(html, /Trace: Generation Decisions/);
   assert.match(html, /Environment: Doctor Summary/);

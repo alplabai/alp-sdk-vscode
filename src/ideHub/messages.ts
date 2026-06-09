@@ -191,6 +191,12 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
+/** The folder the user picked for the new project's parent directory. */
+export interface ProjectLocationPickedMessage {
+  type: "projectLocationPicked";
+  path: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -200,6 +206,7 @@ export type ExtToWebviewMessage =
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
   | HardwareExplorerDataMessage
+  | ProjectLocationPickedMessage
   | BuildPlanDataMessage;
 
 // ---------------------------------------------------------------------------
@@ -253,6 +260,17 @@ export interface SwitchSdkMessage {
   sdkPath: string;
 }
 
+/** Remove a local SDK (deletes its folder on disk, after confirmation). */
+export interface UninstallSdkMessage {
+  type: "uninstallSdk";
+  sdkPath: string;
+}
+
+/** Clear the active SDK (deactivate) without deleting anything. */
+export interface DeactivateSdkMessage {
+  type: "deactivateSdk";
+}
+
 export interface OpenUrlMessage {
   type: "openUrl";
   /** Target URL — must be https:// or vscode:// only. */
@@ -270,6 +288,10 @@ export interface CreateNewProjectMessage {
   templateId: string;
   moduleId: string;
   projectName: string;
+  /** Active SDK to pin for the new project (absolute path); omitted = default. */
+  sdkPath?: string;
+  /** Parent directory chosen in the wizard; omitted = prompt with a dialog. */
+  destination?: string;
 }
 
 export interface OpenExistingProjectMessage {
@@ -322,6 +344,13 @@ export interface RunBuildMessage {
   type: "runBuild";
 }
 
+/** Ask the host to open a folder picker for the new project's parent directory. */
+export interface PickProjectLocationMessage {
+  type: "pickProjectLocation";
+  /** Current selection, to seed the dialog's default location. */
+  current?: string;
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -329,9 +358,12 @@ export type WebviewToExtMessage =
   | RequestSdkReleasesMessage
   | RequestSdkInstallMessage
   | SwitchSdkMessage
+  | UninstallSdkMessage
+  | DeactivateSdkMessage
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage
+  | PickProjectLocationMessage
   | OpenExistingProjectMessage
   | SaveBoardConfigMessage
   | ConfiguratorUpdateMessage

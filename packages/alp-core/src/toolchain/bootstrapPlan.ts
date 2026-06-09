@@ -6,7 +6,8 @@ export type ToolchainFixId =
   | "python-deps"
   | "west"
   | "build-tools"
-  | "zephyr-sdk";
+  | "zephyr-sdk"
+  | "gdb";
 
 export interface BootstrapStep {
   description: string;
@@ -116,9 +117,61 @@ export function planForHost(
   };
 }
 
+/** One platform's install command, for the per-OS install guide menu. */
+export interface InstallOption {
+  os: BootstrapHost;
+  label: string;
+  command: string;
+}
+
+/** A cross-platform install guide shown as an info menu (no single command). */
+export interface InstallGuide {
+  title: string;
+  docUrl: string;
+  options: InstallOption[];
+}
+
+/**
+ * GDB install guidance. Host GDB is recommended (e.g. for native_sim debugging);
+ * embedded targets use the cross GDB shipped with the Zephyr SDK. Install differs
+ * per OS — and carries caveats on macOS — so we surface a menu, not one command.
+ */
+export const GDB_INSTALL_GUIDE: InstallGuide = {
+  title: "Install GDB",
+  docUrl: "https://docs.zephyrproject.org/latest/develop/debug/index.html",
+  options: [
+    {
+      os: "linux",
+      label: "Linux · Debian/Ubuntu (apt)",
+      command: "sudo apt-get update && sudo apt-get install -y gdb",
+    },
+    {
+      os: "linux",
+      label: "Linux · Fedora/RHEL (dnf)",
+      command: "sudo dnf install -y gdb",
+    },
+    {
+      os: "darwin",
+      label: "macOS · Homebrew (host gdb; or use the Zephyr SDK's gdb)",
+      command: "brew install gdb",
+    },
+    {
+      os: "win32",
+      label: "Windows · Scoop",
+      command: "scoop install gdb",
+    },
+    {
+      os: "win32",
+      label: "Windows · MSYS2",
+      command: "pacman -S --needed mingw-w64-x86_64-gdb",
+    },
+  ],
+};
+
 export type FixResult =
   | { kind: "command"; step: BootstrapStep }
-  | { kind: "pointer"; pointer: BootstrapPointer };
+  | { kind: "pointer"; pointer: BootstrapPointer }
+  | { kind: "guide"; guide: InstallGuide };
 
 export function fixCommand(
   fixId: ToolchainFixId,
@@ -133,5 +186,7 @@ export function fixCommand(
       return { kind: "pointer", pointer: ZEPHYR_GETTING_STARTED };
     case "zephyr-sdk":
       return { kind: "pointer", pointer: ZEPHYR_SDK_INSTALLER };
+    case "gdb":
+      return { kind: "guide", guide: GDB_INSTALL_GUIDE };
   }
 }
