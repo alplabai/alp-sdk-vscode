@@ -12,6 +12,19 @@ same version.
 
 ## Unreleased
 
+## 0.1.3
+
+- **`alp presets` SoMs now carry `cores`.** Each `data.soms[]` entry gains a
+  `cores: [{id, os}]` array derived from the SoM's `topology` (a `board:` core →
+  `zephyr`, a `machine:` core → `yocto`; fallback by core-id silicon class). The
+  VS Code New Project flow uses it to scaffold heterogeneous projects.
+- **`alp init --cores id[:os],…`.** New opt-in flag that scaffolds a
+  heterogeneous `board.yaml`: each companion core (Cortex-A/`yocto` → stock
+  image, others → app dir) plus a default RPMsg channel (`alp_default_rpmsg`,
+  `carve_out_kb: 512`) linking the app core to its first companion. OS is
+  inferred from the core-id class when omitted. Without `--cores`, the
+  single-core scaffold is unchanged (envelope + file paths identical).
+
 ## 0.1.2
 
 - **`alp presets` now returns rich SoMs.** New `data.soms` array
