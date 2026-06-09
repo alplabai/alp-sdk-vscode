@@ -247,6 +247,14 @@ function ConfirmStep({
   const rows = [
     { label: "Template", value: tpl ? `${tpl.icon} ${tpl.title}` : templateId },
     { label: "Module", value: mod?.displayName ?? moduleId },
+    ...(mod?.cores && mod.cores.length >= 2
+      ? [
+          {
+            label: "Cores",
+            value: mod.cores.map((c) => `${c.id} (${c.os})`).join(", "),
+          },
+        ]
+      : []),
     { label: "SDK", value: sdkLabel },
     { label: "Project name", value: projectName || "—" },
     {

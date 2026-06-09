@@ -115,6 +115,10 @@ export class NewProjectFlowPanel {
     }
   }
 
+  /** Cached SoM modules from the last `fetchSomModules`, so `createProject` can
+   *  resolve the chosen module's cores without re-querying `alp presets`. */
+  private somModules: E1mModule[] = [];
+
   /** SoM ("Hardware") list from the CLI's `alp presets` (the installed SDK's
    *  actual modules). Falls back to the built-in list when no SDK is resolved
    *  (presets returns an empty `soms`) so New Project works pre-SDK. */
@@ -123,17 +127,26 @@ export class NewProjectFlowPanel {
     const soms =
       (
         outcome.envelope?.data as
-          | { soms?: { sku: string; displayName: string; family: string }[] }
+          | {
+              soms?: {
+                sku: string;
+                displayName: string;
+                family: string;
+                cores?: { id: string; os: string }[];
+              }[];
+            }
           | undefined
       )?.soms ?? [];
-    if (soms.length === 0) {
-      return E1M_MODULES;
-    }
-    return soms.map((s) => ({
-      id: s.sku,
-      displayName: s.displayName || s.sku,
-      family: s.family || "other",
-    }));
+    this.somModules =
+      soms.length === 0
+        ? E1M_MODULES
+        : soms.map((s) => ({
+            id: s.sku,
+            displayName: s.displayName || s.sku,
+            family: s.family || "other",
+            cores: s.cores ?? [],
+          }));
+    return this.somModules;
   }
 
   /** Build the template picker from the CLI's real templates (single source of
@@ -241,7 +254,7 @@ export class NewProjectFlowPanel {
 
     // Delegate scaffolding to the CLI: real template files + the chosen SoM
     // written into board.yaml (alp init --som).
-    const { outcome } = await runAlpCommand(this.context, [
+    const initArgs = [
       "init",
       "--template",
       templateId,
@@ -252,7 +265,15 @@ export class NewProjectFlowPanel {
       "--som",
       moduleId,
       "--non-interactive",
-    ]);
+    ];
+    // Heterogeneous SoMs (≥2 cores) scaffold every core + a default IPC channel
+    // via `alp init --cores` (requires the CLI's --cores support; see
+    // SUPPORTED_CLI_VERSION). Single-core SoMs keep the plain --som path.
+    const cores = this.somModules.find((m) => m.id === moduleId)?.cores ?? [];
+    if (cores.length >= 2) {
+      initArgs.push("--cores", cores.map((c) => `${c.id}:${c.os}`).join(","));
+    }
+    const { outcome } = await runAlpCommand(this.context, initArgs);
     if (!outcome.envelope || !outcome.envelope.ok) {
       await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
       return;

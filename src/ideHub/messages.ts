@@ -227,6 +227,9 @@ export interface E1mModule {
   id: string;
   displayName: string;
   family: string;
+  /** Per-core topology (id + resolved OS) from `alp presets`; drives the
+   *  heterogeneous `alp init --cores` scaffold. Absent for the built-in fallback. */
+  cores?: { id: string; os: string }[];
 }
 
 // ---------------------------------------------------------------------------

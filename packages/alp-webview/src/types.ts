@@ -102,6 +102,9 @@ export interface E1mModule {
   id: string;
   displayName: string;
   family: string;
+  /** Per-core topology (id + resolved OS) from `alp presets`; shown in the
+   *  Confirm step and drives the heterogeneous `alp init --cores` scaffold. */
+  cores?: { id: string; os: string }[];
 }
 
 // ── Configurator (board.yaml) — rich model mirrored from
