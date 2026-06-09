@@ -26,7 +26,8 @@ export async function openProjectFolder(uri: vscode.Uri): Promise<void> {
 
 function commandAvailable(cmd: string): boolean {
   try {
-    cp.execSync(`${cmd} --version`, { stdio: "ignore", timeout: 3000 });
+    // Quote so an absolute venv path (possibly with spaces) is one token.
+    cp.execSync(`"${cmd}" --version`, { stdio: "ignore", timeout: 3000 });
     return true;
   } catch {
     return false;
@@ -36,7 +37,7 @@ function commandAvailable(cmd: string): boolean {
 /** Run `cmd --version` and return the first line of stdout, or null on error. */
 function commandVersion(cmd: string): string | null {
   try {
-    const out = cp.execSync(`${cmd} --version`, {
+    const out = cp.execSync(`"${cmd}" --version`, {
       stdio: "pipe",
       timeout: 3000,
     });
@@ -44,6 +45,35 @@ function commandVersion(cmd: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The `west` to probe for readiness: prefer a workspace bootstrap venv
+ * (`<dir>/.venv/bin/west`, searched up from the west cwd, then beside a
+ * ZEPHYR_BASE) over PATH — matching how builds run west. `alp bootstrap`
+ * installs west into a venv, not globally, so a PATH-only probe would wrongly
+ * report west as missing.
+ */
+function resolveWestBinary(westCwd: string | null): string {
+  const rel =
+    process.platform === "win32"
+      ? path.join("Scripts", "west.exe")
+      : path.join("bin", "west");
+  let dir = westCwd;
+  while (dir) {
+    const candidate = path.join(dir, ".venv", rel);
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Shell-agnostic: a venv beside a ZEPHYR_BASE workspace (env var, not an rc file).
+  const zephyrBase = process.env.ZEPHYR_BASE;
+  if (zephyrBase) {
+    const candidate = path.join(path.dirname(zephyrBase), ".venv", rel);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return "west";
 }
 
 function pythonCmd(): string {
@@ -62,9 +92,11 @@ export async function queryAlpIdeState(
   const actualWorkspaceRoot: string | null =
     workspaceFolders?.[0]?.uri.fsPath ?? null;
 
-  // Active SDK = the unified project/CLI resolution (alpSdk.path → sibling), so
-  // the SDK Manager UI agrees with what `--sdk-root` sends to the CLI.
-  const sdkPath = collectProjectContext().sdkRoot;
+  // Active SDK = the unified project/CLI resolution (alpSdk.path → sibling →
+  // newest cache install), so the SDK Manager UI agrees with what `--sdk-root`
+  // sends to the CLI.
+  const projectContext = collectProjectContext();
+  const sdkPath = projectContext.sdkRoot;
 
   let sdkReadiness: AlpIdeState["sdk"]["readiness"] = "unknown";
   let sdkVersion: string | null = null;
@@ -128,8 +160,9 @@ export async function queryAlpIdeState(
     : null;
 
   const pyCmd = pythonCmd();
+  const westBin = resolveWestBinary(projectContext.westCwd);
   const pythonAvailable = commandAvailable(pyCmd);
-  const westAvailable = commandAvailable("west");
+  const westAvailable = commandAvailable(westBin);
 
   return {
     sdk: {
@@ -144,7 +177,7 @@ export async function queryAlpIdeState(
       lastBootstrapAt,
       toolVersions: {
         python: pythonAvailable ? commandVersion(pyCmd) : null,
-        west: westAvailable ? commandVersion("west") : null,
+        west: westAvailable ? commandVersion(westBin) : null,
         cmake: commandVersion("cmake"),
         ninja: commandVersion("ninja"),
       },
