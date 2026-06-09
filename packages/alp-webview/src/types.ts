@@ -193,6 +193,19 @@ export interface Diagnostics {
   modules?: Record<string, LogLevelOrOff>;
 }
 
+/** An AI model to compile + package into .alpmodel (board.schema.json `models`). */
+export interface ModelEntry {
+  name: string;
+  source: string;
+  spec?: string;
+  inputs?: unknown[];
+  /** Per-backend NPU compile config (detailed calibration edited in YAML). */
+  compile?: {
+    deepx_dxm1?: Record<string, unknown>;
+    drpai?: Record<string, unknown>;
+  };
+}
+
 export interface BoardConfig {
   name?: string;
   description?: string;
@@ -203,6 +216,7 @@ export interface BoardConfig {
   populated?: Record<string, boolean>;
   chips?: string[];
   ipc?: IpcEntry[];
+  models?: ModelEntry[];
   diagnostics?: Diagnostics;
   storage?: StoragePartition[];
   security?: Security;

@@ -825,6 +825,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
   const sec = board.security?.psa;
   const ota: Partial<Ota> = board.ota ?? {};
   const ipc = board.ipc ?? [];
+  const models = board.models ?? [];
 
   return (
     <div className={`${styles.section} ${styles.wide}`}>
@@ -1312,6 +1313,115 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
           }
         >
           Add IPC channel
+        </button>
+      </AdvCard>
+
+      {/* AI models */}
+      <AdvCard title="AI models">
+        <div className={styles.partList}>
+          {models.length === 0 ? (
+            <span className={styles.selEmpty}>no models</span>
+          ) : (
+            models.map((m, i) => (
+              <div key={i} className={`${styles.partRow} ${styles.modelRow}`}>
+                <TextInput
+                  label="Model name"
+                  value={m.name}
+                  placeholder="name"
+                  onChange={(v) =>
+                    mutate(
+                      (d) => {
+                        d.models![i].name = v;
+                      },
+                      { debounce: true },
+                    )
+                  }
+                />
+                <TextInput
+                  label="Source path"
+                  value={m.source}
+                  placeholder="models/foo.tflite"
+                  onChange={(v) =>
+                    mutate(
+                      (d) => {
+                        d.models![i].source = v;
+                      },
+                      { debounce: true },
+                    )
+                  }
+                />
+                <label
+                  className={styles.modelChk}
+                  title="Compile for the DeepX DX-M1 NPU"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!m.compile?.deepx_dxm1}
+                    onChange={(e) =>
+                      mutate((d) => {
+                        const mm = d.models![i];
+                        mm.compile = mm.compile || {};
+                        if (e.target.checked)
+                          mm.compile.deepx_dxm1 = mm.compile.deepx_dxm1 || {};
+                        else {
+                          delete mm.compile.deepx_dxm1;
+                          if (!mm.compile.drpai) delete mm.compile;
+                        }
+                      })
+                    }
+                  />
+                  DeepX
+                </label>
+                <label
+                  className={styles.modelChk}
+                  title="Compile for the Renesas DRP-AI NPU"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!m.compile?.drpai}
+                    onChange={(e) =>
+                      mutate((d) => {
+                        const mm = d.models![i];
+                        mm.compile = mm.compile || {};
+                        if (e.target.checked)
+                          mm.compile.drpai = mm.compile.drpai || {};
+                        else {
+                          delete mm.compile.drpai;
+                          if (!mm.compile.deepx_dxm1) delete mm.compile;
+                        }
+                      })
+                    }
+                  />
+                  DRP-AI
+                </label>
+                <button
+                  type="button"
+                  className={styles.modX}
+                  aria-label="Remove model"
+                  onClick={() =>
+                    mutate((d) => {
+                      d.models!.splice(i, 1);
+                      if (d.models!.length === 0) delete d.models;
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+        <button
+          type="button"
+          className={styles.btn}
+          onClick={() =>
+            mutate((d) => {
+              d.models = d.models || [];
+              d.models.push({ name: "model", source: "models/model.tflite" });
+            })
+          }
+        >
+          Add model
         </button>
       </AdvCard>
     </div>
