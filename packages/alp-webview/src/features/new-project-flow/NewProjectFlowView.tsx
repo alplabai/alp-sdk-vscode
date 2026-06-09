@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
 import {
+  Button,
   Card,
   Field,
   Icon,
@@ -12,7 +13,7 @@ import {
   StepperNav,
 } from "../../shared/ui";
 import type { E1mModule, LocalSdkEntry, ProjectTemplate } from "../../types";
-import { postMessage } from "../../vscode";
+import { onMessage, postMessage } from "../../vscode";
 import styles from "./NewProjectFlowView.module.css";
 
 const STEPS: StepDef[] = [
@@ -159,9 +160,23 @@ interface NameStepProps {
   value: string;
   onChange: (v: string) => void;
   error: string;
+  destination: string;
+  onBrowse: () => void;
 }
 
-function NameStep({ value, onChange, error }: NameStepProps) {
+function NameStep({
+  value,
+  onChange,
+  error,
+  destination,
+  onBrowse,
+}: NameStepProps) {
+  const sep =
+    destination.includes("\\") && !destination.includes("/") ? "\\" : "/";
+  const fullPath = destination
+    ? `${destination.replace(/[/\\]+$/, "")}${sep}${value || "…"}`
+    : "";
+
   return (
     <>
       <p className={styles.stepHeading}>Name your project</p>
@@ -176,9 +191,28 @@ function NameStep({ value, onChange, error }: NameStepProps) {
           autoFocus
         />
       </div>
+      <div className={styles.fieldWrap}>
+        <p className={styles.groupLabel}>Location</p>
+        <div className={styles.locationRow}>
+          <span
+            className={styles.locationPath}
+            title={destination || undefined}
+          >
+            {destination || "Choose a folder…"}
+          </span>
+          <Button appearance="secondary" onClick={onBrowse}>
+            Browse…
+          </Button>
+        </div>
+      </div>
       <p className={styles.stepDesc}>
-        A new folder with this name will be created inside the directory you
-        choose in the next step.
+        {fullPath ? (
+          <>
+            The project folder will be created at <code>{fullPath}</code>.
+          </>
+        ) : (
+          "Choose the parent folder; a new folder named after the project is created inside it."
+        )}
       </p>
     </>
   );
@@ -191,6 +225,7 @@ interface ConfirmStepProps {
   moduleId: string;
   projectName: string;
   sdkLabel: string;
+  destination: string;
   templates: ProjectTemplate[];
   modules: E1mModule[];
 }
@@ -200,17 +235,26 @@ function ConfirmStep({
   moduleId,
   projectName,
   sdkLabel,
+  destination,
   templates,
   modules,
 }: ConfirmStepProps) {
   const tpl = templates.find((t) => t.id === templateId);
   const mod = modules.find((m) => m.id === moduleId);
+  const sep =
+    destination.includes("\\") && !destination.includes("/") ? "\\" : "/";
 
   const rows = [
     { label: "Template", value: tpl ? `${tpl.icon} ${tpl.title}` : templateId },
     { label: "Module", value: mod?.displayName ?? moduleId },
     { label: "SDK", value: sdkLabel },
     { label: "Project name", value: projectName || "—" },
+    {
+      label: "Location",
+      value: destination
+        ? `${destination.replace(/[/\\]+$/, "")}${sep}${projectName || "…"}`
+        : "Chosen when you click Create",
+    },
   ];
 
   return (
@@ -225,10 +269,10 @@ function ConfirmStep({
         ))}
       </Card>
       <p className={styles.stepDesc}>
-        Click <strong>Create Project</strong> to choose an output directory. A
-        folder named <code>{projectName || "…"}</code> will be created there
-        with <code>board.yaml</code>, <code>CMakeLists.txt</code>, and a starter{" "}
-        <code>src/main.c</code>.
+        Click <strong>Create Project</strong> to scaffold{" "}
+        <code>{projectName || "…"}</code> with <code>board.yaml</code>,{" "}
+        <code>CMakeLists.txt</code>, and a starter <code>src/main.c</code>
+        {destination ? "" : " — you'll choose a folder first"}.
       </p>
     </>
   );
@@ -299,6 +343,14 @@ export function NewProjectFlowView() {
   const [selectedSdk, setSelectedSdk] = useState(""); // "" = default SDK
   const [projectName, setProjectName] = useState("");
   const [nameError, setNameError] = useState("");
+  const [destination, setDestination] = useState("");
+
+  // Receive the parent folder chosen via the native picker (or the default).
+  useEffect(() => {
+    return onMessage((msg) => {
+      if (msg.type === "projectLocationPicked") setDestination(msg.path);
+    });
+  }, []);
 
   const templates = projectTemplates ?? [];
   const modules = e1mModules ?? [];
@@ -332,6 +384,13 @@ export function NewProjectFlowView() {
     }
   }
 
+  function browseLocation() {
+    postMessage({
+      type: "pickProjectLocation",
+      current: destination || undefined,
+    });
+  }
+
   function handleNext() {
     if (stepper.isLast) {
       postMessage({
@@ -340,6 +399,7 @@ export function NewProjectFlowView() {
         moduleId: selectedModule,
         projectName,
         sdkPath: selectedSdk || undefined,
+        destination: destination || undefined,
       });
     } else {
       goNext();
@@ -395,6 +455,8 @@ export function NewProjectFlowView() {
                   value={projectName}
                   onChange={handleNameChange}
                   error={nameError}
+                  destination={destination}
+                  onBrowse={browseLocation}
                 />
               )}
               {stepper.currentIndex === 4 && (
@@ -403,6 +465,7 @@ export function NewProjectFlowView() {
                   moduleId={selectedModule}
                   projectName={projectName}
                   sdkLabel={sdkLabel}
+                  destination={destination}
                   templates={templates}
                   modules={modules}
                 />

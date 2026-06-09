@@ -400,6 +400,11 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
+export interface ProjectLocationPickedMessage {
+  type: "projectLocationPicked";
+  path: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -409,6 +414,7 @@ export type ExtToWebviewMessage =
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
   | HardwareExplorerDataMessage
+  | ProjectLocationPickedMessage
   | BuildPlanDataMessage;
 
 // Webview → Extension
@@ -455,6 +461,12 @@ export interface CreateNewProjectMessage {
   projectName: string;
   /** Active SDK to pin for the new project (absolute path); omitted = default. */
   sdkPath?: string;
+  /** Parent directory chosen in the wizard; omitted = prompt with a dialog. */
+  destination?: string;
+}
+export interface PickProjectLocationMessage {
+  type: "pickProjectLocation";
+  current?: string;
 }
 export interface OpenExistingProjectMessage {
   type: "openExistingProject";
@@ -505,6 +517,7 @@ export type WebviewToExtMessage =
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage
+  | PickProjectLocationMessage
   | OpenExistingProjectMessage
   | SaveBoardConfigMessage
   | ConfiguratorUpdateMessage

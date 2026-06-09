@@ -186,6 +186,28 @@
   max-width: 400px;
 }
 
+/* ── Location field (Name step) ── */
+
+.locationRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.locationPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-input, var(--surface-hover));
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 /* ── Confirm step ── */
 
 .summaryCard {
