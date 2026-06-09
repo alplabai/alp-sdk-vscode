@@ -281,6 +281,10 @@ pub struct InitArgs {
     /// Target SoM SKU written into the generated board.yaml (e.g. E1M-AEN701).
     #[arg(long)]
     pub som: Option<String>,
+    /// Comma-separated cores for a heterogeneous project, `id[:os]`
+    /// (e.g. `m33_sm:zephyr,a55_cluster:yocto`); OS is inferred from the id when omitted.
+    #[arg(long)]
+    pub cores: Option<String>,
     /// Show planned files without writing anything.
     #[arg(long)]
     pub preview: bool,

@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 use alp_core::wizard::{
     WizardFileChangeKind, WizardPlanInput, WizardTemplateId, collect_wizard_file_changes,
-    create_scaffold_tree_preview, create_wizard_plan, list_wizard_templates, write_wizard_files,
+    create_scaffold_tree_preview, create_wizard_plan_with_cores, list_wizard_templates,
+    write_wizard_files,
 };
 use inquire::{InquireError, Select, Text};
 
@@ -86,13 +87,17 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         dest_path.join(&name)
     };
 
-    // 5. Build plan.
-    let plan = create_wizard_plan(&WizardPlanInput {
-        template_id,
-        project_name: name.clone(),
-        destination: destination.clone(),
-        som_sku: args.som.clone(),
-    });
+    // 5. Build plan (heterogeneous when --cores is given; else single-core).
+    let cores = parse_cores(args.cores.as_deref());
+    let plan = create_wizard_plan_with_cores(
+        &WizardPlanInput {
+            template_id,
+            project_name: name.clone(),
+            destination: destination.clone(),
+            som_sku: args.som.clone(),
+        },
+        &cores,
+    );
 
     // 6. Collect file changes.
     let changes = collect_wizard_file_changes(&project_root, &plan.files);
@@ -205,6 +210,36 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
 // ---------------------------------------------------------------------------
 // Resolution helpers
 // ---------------------------------------------------------------------------
+
+/// Parse `--cores` (`id[:os],…`) into `(id, os)` pairs. OS is inferred from the
+/// core-id silicon class when omitted (a* → yocto Linux, else zephyr). None/empty
+/// → no cores (single-core default).
+fn parse_cores(raw: Option<&str>) -> Vec<(String, String)> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|entry| {
+            let mut parts = entry.splitn(2, ':');
+            let id = parts.next().unwrap_or("").trim().to_string();
+            let os = parts
+                .next()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    if id.to_lowercase().starts_with('a') {
+                        "yocto".to_string()
+                    } else {
+                        "zephyr".to_string()
+                    }
+                });
+            (id, os)
+        })
+        .filter(|(id, _)| !id.is_empty())
+        .collect()
+}
 
 enum ResolveErr {
     Cancelled,

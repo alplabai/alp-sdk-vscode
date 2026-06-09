@@ -216,6 +216,16 @@ pub fn normalize_module_name(name: &str) -> Result<String, String> {
 }
 
 pub fn create_wizard_plan(input: &WizardPlanInput) -> WizardPlan {
+    create_wizard_plan_with_cores(input, &[])
+}
+
+/// Like `create_wizard_plan`, but scaffolds a heterogeneous project across the
+/// given `(core_id, os)` cores: companion cores + a default RPMsg channel land
+/// in board.yaml. An empty slice is the single-(app-)core default.
+pub fn create_wizard_plan_with_cores(
+    input: &WizardPlanInput,
+    cores: &[(String, String)],
+) -> WizardPlan {
     let def = TEMPLATE_DEFINITIONS
         .iter()
         .find(|d| d.id == input.template_id)
@@ -224,7 +234,7 @@ pub fn create_wizard_plan(input: &WizardPlanInput) -> WizardPlan {
     let files = if def.id == WizardTemplateId::HostToolingStarter {
         gen_host_tooling_files()
     } else {
-        gen_c_project_files(def, input.som_sku.as_deref())
+        gen_c_project_files(def, input.som_sku.as_deref(), cores)
     };
 
     WizardPlan {
@@ -273,11 +283,12 @@ pub fn create_scaffold_tree_preview(files: &[WizardPlannedFile]) -> String {
 fn gen_c_project_files(
     def: &WizardTemplateDefinition,
     som_sku: Option<&str>,
+    cores: &[(String, String)],
 ) -> Vec<WizardPlannedFile> {
     let mut files = vec![
         WizardPlannedFile {
             relative_path: "board.yaml".to_string(),
-            content: gen_board_yaml(def, som_sku),
+            content: gen_board_yaml(def, som_sku, cores),
         },
         WizardPlannedFile {
             relative_path: "README.md".to_string(),
@@ -339,7 +350,11 @@ fn app_core_for_sku(sku: &str) -> &'static str {
 /// are the only required top-level keys; population/OS is per-core. Template
 /// extras (libraries, connectivity, inference tuning) live under the app core's
 /// `core_entry`; project-wide diagnostics is a sanctioned top-level key.
-fn gen_board_yaml(def: &WizardTemplateDefinition, som_sku: Option<&str>) -> String {
+fn gen_board_yaml(
+    def: &WizardTemplateDefinition,
+    som_sku: Option<&str>,
+    cores: &[(String, String)],
+) -> String {
     let sku = som_sku.unwrap_or("E1M-AEN701");
     let core = app_core_for_sku(sku);
 
@@ -374,6 +389,31 @@ fn gen_board_yaml(def: &WizardTemplateDefinition, som_sku: Option<&str>) -> Stri
         // app-level arena budget is a board.yaml knob.
         s.push_str("    inference:\n");
         s.push_str("      default_arena_kib: 256\n");
+    }
+
+    // Companion cores (heterogeneous `--cores`): emit each core other than the
+    // app core. A `yocto` (Cortex-A) core boots the stock image; others get an
+    // app dir. With no `--cores` this loop is empty (single-core default).
+    for (id, os) in cores {
+        if id == core {
+            continue;
+        }
+        s.push_str(&format!("  {id}:\n"));
+        s.push_str(&format!("    os: {os}\n"));
+        if os == "yocto" {
+            s.push_str("    image: alp-image-edge\n");
+        } else if os != "off" {
+            s.push_str("    app: ./src\n");
+        }
+    }
+
+    // A default RPMsg channel links the app core to its first companion.
+    if let Some((companion, _)) = cores.iter().find(|(id, _)| id != core) {
+        s.push_str("\nipc:\n");
+        s.push_str("  - kind: rpmsg\n");
+        s.push_str("    name: alp_default_rpmsg\n");
+        s.push_str(&format!("    endpoints: [{core}, {companion}]\n"));
+        s.push_str("    carve_out_kb: 512\n");
     }
 
     if def.id == WizardTemplateId::BoardDiagnostics {
@@ -783,6 +823,44 @@ mod tests {
         let board = board_yaml_of(&plan);
         assert!(board.contains("sku: E1M-V2N101"));
         assert!(!board.contains("E1M-AEN701"));
+    }
+
+    #[test]
+    fn cores_scaffold_emits_companion_core_and_ipc() {
+        let plan = create_wizard_plan_with_cores(
+            &WizardPlanInput {
+                template_id: WizardTemplateId::MinimalApp,
+                project_name: String::new(),
+                destination: ".".to_string(),
+                som_sku: Some("E1M-V2N101".to_string()),
+            },
+            &[
+                ("m33_sm".to_string(), "zephyr".to_string()),
+                ("a55_cluster".to_string(), "yocto".to_string()),
+            ],
+        );
+        let board = board_yaml_of(&plan);
+        // App (Cortex-M) core + the Yocto companion + a default RPMsg channel.
+        assert!(board.contains("  m33_sm:"));
+        assert!(board.contains("  a55_cluster:"));
+        assert!(board.contains("os: yocto"));
+        assert!(board.contains("image: alp-image-edge"));
+        assert!(board.contains("ipc:"));
+        assert!(board.contains("name: alp_default_rpmsg"));
+        assert!(board.contains("endpoints: [m33_sm, a55_cluster]"));
+    }
+
+    #[test]
+    fn default_plan_is_single_core_no_ipc() {
+        let plan = create_wizard_plan(&WizardPlanInput {
+            template_id: WizardTemplateId::MinimalApp,
+            project_name: String::new(),
+            destination: ".".to_string(),
+            som_sku: Some("E1M-V2N101".to_string()),
+        });
+        let board = board_yaml_of(&plan);
+        assert!(!board.contains("ipc:"));
+        assert!(!board.contains("a55_cluster"));
     }
 
     #[test]
