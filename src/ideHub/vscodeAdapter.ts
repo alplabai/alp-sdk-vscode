@@ -10,6 +10,10 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
+import {
+  resolveWestBinary,
+  westWorkspaceInitialized,
+} from "../environment/vscodeAdapter";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -45,73 +49,6 @@ function commandVersion(cmd: string): string | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Candidate Zephyr-workspace dirs, most specific first — used to locate both the
- * bootstrap venv and the `.west` marker with or without a folder open. The west
- * workspace is shared/central (Zephyr's model: the SDK injects itself via
- * EXTRA_ZEPHYR_MODULES), so it usually lives outside the open project:
- *   1. the open project's west cwd + its ancestors,
- *   2. the workspace beside ZEPHYR_BASE (env var; shell-agnostic, not an rc file),
- *   3. the SDK's default isolated workspace (`<sdk-parent>/zephyrproject`),
- *   4. the conventional `~/zephyrproject`.
- */
-function westWorkspaceCandidates(
-  westCwd: string | null,
-  sdkRoot: string | null,
-): string[] {
-  const candidates: string[] = [];
-  let dir = westCwd;
-  while (dir) {
-    candidates.push(dir);
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  const zephyrBase = process.env.ZEPHYR_BASE;
-  if (zephyrBase) candidates.push(path.dirname(zephyrBase));
-  if (sdkRoot) {
-    candidates.push(path.join(path.dirname(sdkRoot), "zephyrproject"));
-  }
-  candidates.push(path.join(os.homedir(), "zephyrproject"));
-  return candidates;
-}
-
-/**
- * The `west` to probe for readiness: prefer a bootstrap venv
- * (`<workspace>/.venv/bin/west`) over PATH — matching how builds run west.
- * `alp bootstrap` installs west into a venv, not globally, so a PATH-only probe
- * would wrongly report west missing.
- */
-function resolveWestBinary(
-  westCwd: string | null,
-  sdkRoot: string | null,
-): string {
-  const rel =
-    process.platform === "win32"
-      ? path.join("Scripts", "west.exe")
-      : path.join("bin", "west");
-  for (const workspaceDir of westWorkspaceCandidates(westCwd, sdkRoot)) {
-    const candidate = path.join(workspaceDir, ".venv", rel);
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return "west";
-}
-
-/**
- * Whether an initialized west workspace (a `.west` dir) exists. Checks the shared
- * bootstrap workspace, not just the open folder — the Zephyr workspace is central
- * and the SDK builds against it via EXTRA_ZEPHYR_MODULES, so a project folder
- * need not contain `.west` itself.
- */
-function westWorkspaceInitialized(
-  westCwd: string | null,
-  sdkRoot: string | null,
-): boolean {
-  return westWorkspaceCandidates(westCwd, sdkRoot).some((workspaceDir) =>
-    fs.existsSync(path.join(workspaceDir, ".west")),
-  );
 }
 
 function pythonCmd(): string {
