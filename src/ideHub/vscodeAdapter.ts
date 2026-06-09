@@ -48,29 +48,44 @@ function commandVersion(cmd: string): string | null {
 }
 
 /**
- * The `west` to probe for readiness: prefer a workspace bootstrap venv
- * (`<dir>/.venv/bin/west`, searched up from the west cwd, then beside a
- * ZEPHYR_BASE) over PATH — matching how builds run west. `alp bootstrap`
- * installs west into a venv, not globally, so a PATH-only probe would wrongly
- * report west as missing.
+ * The `west` to probe for readiness: prefer a bootstrap venv
+ * (`<workspace>/.venv/bin/west`) over PATH — matching how builds run west.
+ * `alp bootstrap` installs west into a venv, not globally, so a PATH-only probe
+ * would wrongly report west missing. We look (in order) at: the open project's
+ * west cwd (walking up), then — so it also works with no folder open — a venv
+ * beside ZEPHYR_BASE (env var; shell-agnostic), the SDK's default isolated
+ * workspace (`<sdk-parent>/zephyrproject`), and the conventional `~/zephyrproject`.
  */
-function resolveWestBinary(westCwd: string | null): string {
+function resolveWestBinary(
+  westCwd: string | null,
+  sdkRoot: string | null,
+): string {
   const rel =
     process.platform === "win32"
       ? path.join("Scripts", "west.exe")
       : path.join("bin", "west");
+  const venvWest = (workspaceDir: string): string =>
+    path.join(workspaceDir, ".venv", rel);
+
+  // 1) Walk up from the open project's west cwd.
   let dir = westCwd;
   while (dir) {
-    const candidate = path.join(dir, ".venv", rel);
+    const candidate = venvWest(dir);
     if (fs.existsSync(candidate)) return candidate;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  // Shell-agnostic: a venv beside a ZEPHYR_BASE workspace (env var, not an rc file).
+
+  // 2) Known bootstrap-workspace locations, usable with no folder open.
+  const workspaces: string[] = [];
   const zephyrBase = process.env.ZEPHYR_BASE;
-  if (zephyrBase) {
-    const candidate = path.join(path.dirname(zephyrBase), ".venv", rel);
+  if (zephyrBase) workspaces.push(path.dirname(zephyrBase)); // reused workspace
+  if (sdkRoot) workspaces.push(path.join(path.dirname(sdkRoot), "zephyrproject"));
+  workspaces.push(path.join(os.homedir(), "zephyrproject")); // Zephyr convention
+
+  for (const workspaceDir of workspaces) {
+    const candidate = venvWest(workspaceDir);
     if (fs.existsSync(candidate)) return candidate;
   }
   return "west";
@@ -160,7 +175,10 @@ export async function queryAlpIdeState(
     : null;
 
   const pyCmd = pythonCmd();
-  const westBin = resolveWestBinary(projectContext.westCwd);
+  const westBin = resolveWestBinary(
+    projectContext.westCwd,
+    projectContext.sdkRoot,
+  );
   const pythonAvailable = commandAvailable(pyCmd);
   const westAvailable = commandAvailable(westBin);
 
