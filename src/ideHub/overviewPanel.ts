@@ -65,6 +65,22 @@ export class OverviewPanel {
       watcher.onDidChange(() => void this.refresh()),
       watcher.onDidDelete(() => void this.refresh()),
     );
+
+    // Reactivity (no reload): refresh on alpSdk config edits (SDK activate /
+    // install sets alpSdk.path), when this panel becomes the active tab, and
+    // when the window regains focus while visible (e.g. back from a bootstrap
+    // terminal) — so the status cards adapt to the new state in place.
+    this.disposables.push(
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("alpSdk")) void this.refresh();
+      }),
+      this.panel.onDidChangeViewState((e) => {
+        if (e.webviewPanel.active) void this.refresh();
+      }),
+      vscode.window.onDidChangeWindowState((s) => {
+        if (s.focused && this.panel.visible) void this.refresh();
+      }),
+    );
   }
 
   /** Open (or reveal) the overview panel. */

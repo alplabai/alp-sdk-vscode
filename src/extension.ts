@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import { resetResolvedBinary } from "./alpCli/vscodeAdapter";
 import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorEditor } from "./configurator/customEditor";
 import { registerDebugCommands } from "./debug";
@@ -36,9 +37,24 @@ export function activate(context: vscode.ExtensionContext): void {
   // One shared state source for both the native trees and the status bar, so
   // the Build & Flash tree and the status-bar Build/Flash gating never disagree.
   const stateMgr = new StateManager();
+  const refreshState = () =>
+    void stateMgr.refresh(
+      context.globalState.get<string>("alp.lastBootstrapAt") ?? null,
+    );
 
   context.subscriptions.push(
     stateMgr,
+    // Reactivity (no window reload): re-derive shared state on alpSdk config
+    // edits (SDK activate/deactivate via alpSdk.path) and when the window
+    // regains focus (e.g. after running bootstrap/install in a terminal). A
+    // cliPath edit also resets the cached CLI-binary resolution.
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("alpSdk.cliPath")) resetResolvedBinary();
+      if (e.affectsConfiguration("alpSdk")) refreshState();
+    }),
+    vscode.window.onDidChangeWindowState((s) => {
+      if (s.focused) refreshState();
+    }),
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),

@@ -59,6 +59,18 @@ export class SdkManagerPanel {
     );
 
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
+
+    // Reactivity (no reload): refresh on alpSdk config edits (activate/deactivate
+    // sets alpSdk.path) and when this panel becomes the active tab, so the SDK
+    // list reflects the current state without reopening.
+    this.disposables.push(
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("alpSdk")) void this.refresh();
+      }),
+      this.panel.onDidChangeViewState((e) => {
+        if (e.webviewPanel.active) void this.refresh();
+      }),
+    );
   }
 
   static open(context: vscode.ExtensionContext): void {
