@@ -410,6 +410,47 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
   );
 }
 
+type CoreClass = "cortex-m" | "cortex-a" | "unknown";
+
+/** Best-effort silicon class from the core ID (stopgap until the CLI emits the
+ *  SoM topology's per-core class): m33/m55/… → Cortex-M, a55/a32/… → Cortex-A. */
+function coreSiliconClass(id: string): CoreClass {
+  const s = id.toLowerCase();
+  if (/(^|[_-])m\d/.test(s)) return "cortex-m";
+  if (/(^|[_-])a\d/.test(s)) return "cortex-a";
+  return "unknown";
+}
+
+/** The runtime a core naturally runs (its SoM-topology default). */
+function naturalRuntime(id: string): string | null {
+  const cls = coreSiliconClass(id);
+  return cls === "cortex-m" ? "zephyr" : cls === "cortex-a" ? "yocto" : null;
+}
+
+/** Runtimes selectable for a core, gated by silicon class: a Cortex-A core runs
+ *  Linux (Yocto) or off — you never pick Zephyr there; a Cortex-M core runs
+ *  Zephyr (default), bare-metal, or off. Unknown ids fall back to all four. */
+function runtimeOptions(id: string): Array<[string, string]> {
+  const cls = coreSiliconClass(id);
+  if (cls === "cortex-m")
+    return [
+      ["zephyr", "Zephyr (default)"],
+      ["baremetal", "Bare-metal"],
+      ["off", "Off (skip core)"],
+    ];
+  if (cls === "cortex-a")
+    return [
+      ["yocto", "Yocto Linux (default)"],
+      ["off", "Off (skip core)"],
+    ];
+  return [
+    ["zephyr", "Zephyr"],
+    ["yocto", "Yocto Linux"],
+    ["baremetal", "Bare-metal"],
+    ["off", "Off (skip core)"],
+  ];
+}
+
 function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   const { mutate, vm } = cfg;
   const ensure = (d: BoardConfig) => {
@@ -440,27 +481,34 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
     );
   }
 
-  const enabled = core.os !== "off";
+  const currentOs = core.os || naturalRuntime(core.id) || "zephyr";
+  const enabled = currentOs !== "off";
   return (
     <div className={styles.core}>
       <div className={styles.coreHd}>
         <span className={styles.coreId}>{core.id}</span>
         <span className={styles.coreSpacer} />
-        <button
-          type="button"
-          className={styles.toggle}
-          aria-pressed={enabled}
-          onClick={() =>
+        <select
+          className={`${styles.control} ${styles.coreRuntime}`}
+          value={currentOs}
+          aria-label={`Runtime for ${core.id}`}
+          title="Runtime is fixed by the SoM's core silicon class — override only to bare-metal or off."
+          onChange={(e) => {
+            const next = e.target.value;
             mutate((d) => {
               const c = ensure(d);
-              if (enabled) c.os = "off";
-              else delete c.os;
-            })
-          }
+              // Selecting the SoM-natural OS clears the override (inherit).
+              if (next === naturalRuntime(core.id)) delete c.os;
+              else c.os = next as never;
+            });
+          }}
         >
-          <span>Enabled</span>
-          <span className={`${styles.sw} ${enabled ? styles.swOn : ""}`} />
-        </button>
+          {runtimeOptions(core.id).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </div>
       {!enabled ? (
         <div className={styles.ghostNote}>Disabled (os: off).</div>
