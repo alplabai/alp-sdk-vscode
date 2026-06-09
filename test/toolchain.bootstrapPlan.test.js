@@ -45,3 +45,20 @@ test("fixCommand maps fixIds to a command or pointer", () => {
   assert.equal(fixCommand("build-tools", "linux").kind, "pointer");
   assert.equal(fixCommand("zephyr-sdk", "linux").kind, "pointer");
 });
+
+test("fixCommand maps gdb to a per-OS install guide", () => {
+  const result = fixCommand("gdb", "linux");
+  assert.equal(result.kind, "guide");
+  assert.match(result.guide.title, /GDB/);
+  assert.ok(
+    result.guide.options.some(
+      (o) => o.os === "linux" && /apt-get/.test(o.command),
+    ),
+  );
+  assert.ok(
+    result.guide.options.some(
+      (o) => o.os === "darwin" && /brew/.test(o.command),
+    ),
+  );
+  assert.ok(result.guide.options.some((o) => o.os === "win32"));
+});

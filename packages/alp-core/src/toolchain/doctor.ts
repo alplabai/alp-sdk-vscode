@@ -80,7 +80,7 @@ export function analyzeToolchain(inputs: ToolchainInputs): ToolchainReport {
   checks.push(
     toolCheck(inputs, "dtc", "Device Tree Compiler (dtc)", true, "build-tools"),
   );
-  checks.push(toolCheck(inputs, "gdb", "GDB", false, "build-tools"));
+  checks.push(toolCheck(inputs, "gdb", "GDB", false, "gdb"));
 
   checks.push({
     id: "zephyr-sdk",
