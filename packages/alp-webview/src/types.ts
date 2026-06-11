@@ -202,10 +202,10 @@ export interface ModelEntry {
   source: string;
   spec?: string;
   inputs?: unknown[];
-  /** Per-backend NPU compile config (detailed calibration edited in YAML). */
+  /** Per-backend NPU compile configuration (paths to config/calibration/spec). */
   compile?: {
-    deepx_dxm1?: Record<string, unknown>;
-    drpai?: Record<string, unknown>;
+    deepx_dxm1?: { config: string; calibration: string };
+    drpai?: { spec: string };
   };
 }
 

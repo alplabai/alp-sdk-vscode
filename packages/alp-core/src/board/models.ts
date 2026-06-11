@@ -159,6 +159,19 @@ export interface E1mRoutes {
 
 export type PinRef = string | { e1m: string; macro?: string; doc?: string };
 
+/** An AI model to compile + package into .alpmodel (board.schema.json `models`). */
+export interface ModelEntry {
+  name: string;
+  source: string;
+  spec?: string;
+  inputs?: unknown[];
+  /** Per-backend NPU compile configuration (paths to config/calibration/spec). */
+  compile?: {
+    deepx_dxm1?: { config: string; calibration: string };
+    drpai?: { spec: string };
+  };
+}
+
 export interface BoardConfig {
   name?: string;
   description?: string;
@@ -177,6 +190,7 @@ export interface BoardConfig {
   boot?: Boot;
   ota?: Ota;
   features?: Record<string, unknown>;
+  models?: ModelEntry[];
   supported_boards?: string[];
 }
 
@@ -199,5 +213,6 @@ export const BOARD_KEY_ORDER: (keyof BoardConfig)[] = [
   "boot",
   "ota",
   "features",
+  "models",
   "supported_boards",
 ];

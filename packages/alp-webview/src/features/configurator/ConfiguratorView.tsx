@@ -1352,7 +1352,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
                 <label
                   className={styles.modelChk}
-                  title="Compile for the DeepX DX-M1 NPU"
+                  title="Compile for the DeepX DX-M1 NPU — fill the config/calibration paths in YAML"
                 >
                   <input
                     type="checkbox"
@@ -1362,7 +1362,11 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                         const mm = d.models![i];
                         mm.compile = mm.compile || {};
                         if (e.target.checked)
-                          mm.compile.deepx_dxm1 = mm.compile.deepx_dxm1 || {};
+                          // Schema requires both paths; seed empty for the user to fill.
+                          mm.compile.deepx_dxm1 = mm.compile.deepx_dxm1 || {
+                            config: "",
+                            calibration: "",
+                          };
                         else {
                           delete mm.compile.deepx_dxm1;
                           if (!mm.compile.drpai) delete mm.compile;
@@ -1374,7 +1378,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 </label>
                 <label
                   className={styles.modelChk}
-                  title="Compile for the Renesas DRP-AI NPU"
+                  title="Compile for the Renesas DRP-AI NPU — fill the spec path in YAML"
                 >
                   <input
                     type="checkbox"
@@ -1384,7 +1388,8 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                         const mm = d.models![i];
                         mm.compile = mm.compile || {};
                         if (e.target.checked)
-                          mm.compile.drpai = mm.compile.drpai || {};
+                          // Schema requires the spec path; seed empty for the user to fill.
+                          mm.compile.drpai = mm.compile.drpai || { spec: "" };
                         else {
                           delete mm.compile.drpai;
                           if (!mm.compile.deepx_dxm1) delete mm.compile;
