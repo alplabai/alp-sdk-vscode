@@ -1,7 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+
+// sha256 of metadata/schemas/board.schema.json at the alp-sdk v0.6.0 tag.
+// THE drift gate: any local edit, forward drift (re-vendoring from submodule
+// dev HEAD instead of the pinned tag), or upstream change fails here. To bump
+// the vendored schema intentionally: copy it from the NEW pinned tag
+// (`git -C alp-sdk-upstream show <tag>:metadata/schemas/board.schema.json`),
+// then update this hash from `shasum -a 256 schemas/board.schema.json`.
+const VENDORED_SCHEMA_SHA256 =
+  "a3710fc52d5b079f789ad3c28be463eb142b86ba901e4d70f5de245f17e213de";
 
 test("board.schema.json is the vendored v0.6 schema (drift/staleness gate)", () => {
   const p = path.join(__dirname, "..", "schemas", "board.schema.json");
@@ -26,6 +36,17 @@ test("board.schema.json is the vendored v0.6 schema (drift/staleness gate)", () 
   assert.ok(
     raw.includes("carve_out_kb"),
     "ipc carve-outs must use carve_out_kb",
+  );
+
+  // Byte-exact pin to the SDK tag the copy was vendored from. The key checks
+  // above only catch regressions to a PRE-v0.6 schema; this catches local
+  // edits and forward drift (e.g. re-vendoring from submodule dev HEAD) too.
+  const hash = crypto.createHash("sha256").update(raw, "utf-8").digest("hex");
+  assert.equal(
+    hash,
+    VENDORED_SCHEMA_SHA256,
+    "schemas/board.schema.json differs from the pinned SDK tag — if the bump " +
+      "is intentional, re-vendor from the new tag and update VENDORED_SCHEMA_SHA256",
   );
 });
 
