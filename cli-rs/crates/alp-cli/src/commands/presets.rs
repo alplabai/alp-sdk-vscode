@@ -146,12 +146,11 @@ fn read_soms(sdk_root: &str) -> Vec<SomEntry> {
                 .map(|t| {
                     // OS is resolved from the topology: a `board:` is a Zephyr
                     // (Cortex-M) target, a `machine:` is a Yocto (Cortex-A) one;
-                    // fall back to the core id's silicon class.
+                    // fall back to the shared silicon-class heuristic.
                     let os = match (t.board.is_some(), t.machine.is_some()) {
                         (true, _) => "zephyr",
                         (_, true) => "yocto",
-                        _ if t.id.to_lowercase().starts_with('a') => "yocto",
-                        _ => "zephyr",
+                        _ => alp_core::wizard::infer_runtime_for_core_id(&t.id),
                     };
                     SomCoreEntry {
                         id: t.id.clone(),

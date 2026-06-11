@@ -336,7 +336,7 @@ fn gen_c_project_files(
 /// Canonical Zephyr app-core id for a SoM family, taken from the SoM preset's
 /// `topology:`. `alp init` is SDK-free, so this maps by SKU prefix; the value is
 /// re-checked against the SoM catalogue by `alp validate` once an SDK resolves.
-fn app_core_for_sku(sku: &str) -> &'static str {
+pub fn app_core_for_sku(sku: &str) -> &'static str {
     if sku.starts_with("E1M-V2N") || sku.starts_with("E1M-V2M") {
         "m33_sm" // Renesas RZ/V2N, RZ/V2M
     } else if sku.starts_with("E1M-NX9") {
@@ -344,6 +344,24 @@ fn app_core_for_sku(sku: &str) -> &'static str {
     } else {
         "m55_hp" // Alif Ensemble (E1M-AEN*) + default
     }
+}
+
+/// Best-effort runtime for a core id when the topology gives no `board:` /
+/// `machine:` hint: a Cortex-A-looking id (`a<digit>` at a word start, e.g.
+/// `a55_cluster`) runs Linux (yocto); everything else defaults to Zephyr.
+/// Single owner of this heuristic — `alp presets` and `alp init` both use it,
+/// and it mirrors the IDE configurator's silicon-class gating.
+pub fn infer_runtime_for_core_id(id: &str) -> &'static str {
+    let lower = id.to_lowercase();
+    let bytes = lower.as_bytes();
+    let mut word_start = true;
+    for (i, &b) in bytes.iter().enumerate() {
+        if word_start && b == b'a' && bytes.get(i + 1).is_some_and(u8::is_ascii_digit) {
+            return "yocto";
+        }
+        word_start = b == b'_' || b == b'-';
+    }
+    "zephyr"
 }
 
 /// Emit a board.yaml conforming to the SDK board schema (v0.6+): `som` + `cores`
@@ -392,8 +410,11 @@ fn gen_board_yaml(
     }
 
     // Companion cores (heterogeneous `--cores`): emit each core other than the
-    // app core. A `yocto` (Cortex-A) core boots the stock image; others get an
-    // app dir. With no `--cores` this loop is empty (single-core default).
+    // app core. A `yocto` (Cortex-A) core boots the stock Linux image; a
+    // Zephyr/baremetal companion gets NO `app:` — it boots the SDK's stock
+    // shim, since the canonical layout names each app folder after its core ID
+    // and the scaffold creates only `./src` (the app core's). With no
+    // `--cores` this loop is empty (single-core default).
     for (id, os) in cores {
         if id == core {
             continue;
@@ -402,13 +423,12 @@ fn gen_board_yaml(
         s.push_str(&format!("    os: {os}\n"));
         if os == "yocto" {
             s.push_str("    image: alp-image-edge\n");
-        } else if os != "off" {
-            s.push_str("    app: ./src\n");
         }
     }
 
-    // A default RPMsg channel links the app core to its first companion.
-    if let Some((companion, _)) = cores.iter().find(|(id, _)| id != core) {
+    // A default RPMsg channel links the app core to its first ACTIVE companion
+    // (ipc endpoints must all have `os != off` per the board schema).
+    if let Some((companion, _)) = cores.iter().find(|(id, os)| id != core && os != "off") {
         s.push_str("\nipc:\n");
         s.push_str("  - kind: rpmsg\n");
         s.push_str("    name: alp_default_rpmsg\n");
@@ -861,6 +881,59 @@ mod tests {
         let board = board_yaml_of(&plan);
         assert!(!board.contains("ipc:"));
         assert!(!board.contains("a55_cluster"));
+    }
+
+    #[test]
+    fn zephyr_companion_boots_stock_shim_not_the_app_dir() {
+        let plan = create_wizard_plan_with_cores(
+            &WizardPlanInput {
+                template_id: WizardTemplateId::MinimalApp,
+                project_name: String::new(),
+                destination: ".".to_string(),
+                som_sku: Some("E1M-AEN701".to_string()),
+            },
+            &[
+                ("m55_hp".to_string(), "zephyr".to_string()),
+                ("m55_he".to_string(), "zephyr".to_string()),
+            ],
+        );
+        let board = board_yaml_of(&plan);
+        // Only the app core builds from ./src; a Zephyr companion gets no
+        // `app:` (it boots the SDK's stock shim) — two cores must never share
+        // one source dir.
+        assert_eq!(board.matches("app: ./src").count(), 1);
+        assert!(board.contains("  m55_he:\n    os: zephyr"));
+        assert!(board.contains("endpoints: [m55_hp, m55_he]"));
+    }
+
+    #[test]
+    fn off_companion_is_never_an_ipc_endpoint() {
+        let plan = create_wizard_plan_with_cores(
+            &WizardPlanInput {
+                template_id: WizardTemplateId::MinimalApp,
+                project_name: String::new(),
+                destination: ".".to_string(),
+                som_sku: Some("E1M-AEN701".to_string()),
+            },
+            &[
+                ("m55_hp".to_string(), "zephyr".to_string()),
+                ("m55_he".to_string(), "off".to_string()),
+            ],
+        );
+        let board = board_yaml_of(&plan);
+        assert!(board.contains("  m55_he:\n    os: off"));
+        // No active companion -> no default IPC channel at all.
+        assert!(!board.contains("ipc:"));
+    }
+
+    #[test]
+    fn runtime_inference_keys_on_silicon_class_word_starts() {
+        assert_eq!(infer_runtime_for_core_id("a55_cluster"), "yocto");
+        assert_eq!(infer_runtime_for_core_id("a32_cluster"), "yocto");
+        assert_eq!(infer_runtime_for_core_id("m33_sm"), "zephyr");
+        // 'a' not followed by a digit is NOT Cortex-A (the old starts_with('a')
+        // heuristic misclassified ids like this as yocto).
+        assert_eq!(infer_runtime_for_core_id("audio_dsp"), "zephyr");
     }
 
     #[test]

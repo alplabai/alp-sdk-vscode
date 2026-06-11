@@ -4,9 +4,9 @@
 use std::path::PathBuf;
 
 use alp_core::wizard::{
-    WizardFileChangeKind, WizardPlanInput, WizardTemplateId, collect_wizard_file_changes,
-    create_scaffold_tree_preview, create_wizard_plan_with_cores, list_wizard_templates,
-    write_wizard_files,
+    WizardFileChangeKind, WizardPlanInput, WizardTemplateId, app_core_for_sku,
+    collect_wizard_file_changes, create_scaffold_tree_preview, create_wizard_plan_with_cores,
+    infer_runtime_for_core_id, list_wizard_templates, write_wizard_files,
 };
 use inquire::{InquireError, Select, Text};
 
@@ -88,7 +88,26 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
     };
 
     // 5. Build plan (heterogeneous when --cores is given; else single-core).
-    let cores = parse_cores(args.cores.as_deref());
+    let cores = match parse_cores(args.cores.as_deref()) {
+        Ok(cores) => cores,
+        Err(msg) => return error_run(g, "init.invalid-cores", &msg),
+    };
+    // The app core's runtime is fixed (the scaffolded src/ + prj.conf are
+    // Zephyr); reject a contradictory --cores request instead of silently
+    // overriding it.
+    let app_core = app_core_for_sku(args.som.as_deref().unwrap_or("E1M-AEN701"));
+    if let Some((_, os)) = cores
+        .iter()
+        .find(|(id, os)| id.as_str() == app_core && os.as_str() != "zephyr")
+    {
+        return error_run(
+            g,
+            "init.invalid-cores",
+            &format!(
+                "Core '{app_core}' is this SoM's app core and runs zephyr; --cores requested '{os}'. Omit the entry or use {app_core}:zephyr."
+            ),
+        );
+    }
     let plan = create_wizard_plan_with_cores(
         &WizardPlanInput {
             template_id,
@@ -211,34 +230,51 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
 // Resolution helpers
 // ---------------------------------------------------------------------------
 
-/// Parse `--cores` (`id[:os],…`) into `(id, os)` pairs. OS is inferred from the
-/// core-id silicon class when omitted (a* → yocto Linux, else zephyr). None/empty
-/// → no cores (single-core default).
-fn parse_cores(raw: Option<&str>) -> Vec<(String, String)> {
+const CORE_OS_CHOICES: [&str; 4] = ["zephyr", "yocto", "baremetal", "off"];
+
+/// Parse + validate `--cores` (`id[:os],…`) into `(id, os)` pairs. OS is
+/// inferred from the core-id silicon class when omitted. Errors (exit 2) on an
+/// id outside the schema's `^[a-z][a-z0-9_]+$` pattern, an unknown OS, or a
+/// duplicate id — invalid values would otherwise flow verbatim into board.yaml.
+/// None/empty → no cores (single-core default).
+fn parse_cores(raw: Option<&str>) -> Result<Vec<(String, String)>, String> {
     let Some(raw) = raw else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    raw.split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|entry| {
-            let mut parts = entry.splitn(2, ':');
-            let id = parts.next().unwrap_or("").trim().to_string();
-            let os = parts
-                .next()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| {
-                    if id.to_lowercase().starts_with('a') {
-                        "yocto".to_string()
-                    } else {
-                        "zephyr".to_string()
-                    }
-                });
-            (id, os)
-        })
-        .filter(|(id, _)| !id.is_empty())
-        .collect()
+    let mut cores: Vec<(String, String)> = Vec::new();
+    for entry in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let mut parts = entry.splitn(2, ':');
+        let id = parts.next().unwrap_or("").trim().to_string();
+        if id.is_empty() {
+            continue;
+        }
+        let valid_id = id.len() >= 2
+            && id.as_bytes()[0].is_ascii_lowercase()
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+        if !valid_id {
+            return Err(format!(
+                "Invalid core id '{id}' in --cores (expected lowercase id matching ^[a-z][a-z0-9_]+$, e.g. m33_sm)."
+            ));
+        }
+        let os = match parts.next().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(os) => {
+                if !CORE_OS_CHOICES.contains(&os) {
+                    return Err(format!(
+                        "Invalid OS '{os}' for core '{id}' in --cores (expected one of: zephyr, yocto, baremetal, off)."
+                    ));
+                }
+                os.to_string()
+            }
+            None => infer_runtime_for_core_id(&id).to_string(),
+        };
+        if cores.iter().any(|(existing, _)| existing == &id) {
+            return Err(format!("Duplicate core id '{id}' in --cores."));
+        }
+        cores.push((id, os));
+    }
+    Ok(cores)
 }
 
 enum ResolveErr {
@@ -395,5 +431,32 @@ fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
         exit: ExitCode::RuntimeFailure,
         text,
         json,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_cores;
+
+    #[test]
+    fn parse_cores_accepts_valid_entries_and_infers_os() {
+        let cores = parse_cores(Some("m33_sm:zephyr, a55_cluster")).unwrap();
+        assert_eq!(
+            cores,
+            vec![
+                ("m33_sm".to_string(), "zephyr".to_string()),
+                ("a55_cluster".to_string(), "yocto".to_string()),
+            ]
+        );
+        assert!(parse_cores(None).unwrap().is_empty());
+        assert!(parse_cores(Some("  ,, ")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_cores_rejects_bad_id_bad_os_and_duplicates() {
+        // Schema pattern ^[a-z][a-z0-9_]+$ — invalid ids must not reach board.yaml.
+        assert!(parse_cores(Some("Weird-ID!:yocto")).is_err());
+        assert!(parse_cores(Some("m33_sm:freertos")).is_err());
+        assert!(parse_cores(Some("m33_sm,m33_sm:zephyr")).is_err());
     }
 }

@@ -20,10 +20,15 @@ same version.
   VS Code New Project flow uses it to scaffold heterogeneous projects.
 - **`alp init --cores id[:os],…`.** New opt-in flag that scaffolds a
   heterogeneous `board.yaml`: each companion core (Cortex-A/`yocto` → stock
-  image, others → app dir) plus a default RPMsg channel (`alp_default_rpmsg`,
-  `carve_out_kb: 512`) linking the app core to its first companion. OS is
-  inferred from the core-id class when omitted. Without `--cores`, the
-  single-core scaffold is unchanged (envelope + file paths identical).
+  `alp-image-edge` image; Zephyr/baremetal → no `app:`, boots the SDK's stock
+  shim) plus a default RPMsg channel (`alp_default_rpmsg`, `carve_out_kb: 512`)
+  linking the app core to its first **active** (`os != off`) companion. OS is
+  inferred from the core-id silicon class when omitted. Input is validated
+  (exit 2): core ids must match the schema's `^[a-z][a-z0-9_]+$`, OS must be
+  zephyr/yocto/baremetal/off, duplicate ids are rejected, and assigning the
+  app core a non-zephyr OS is an error (not a silent override). Without
+  `--cores`, the single-core scaffold is unchanged (envelope + file paths
+  identical).
 
 ## 0.1.2
 
