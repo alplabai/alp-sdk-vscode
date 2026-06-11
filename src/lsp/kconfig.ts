@@ -35,79 +35,111 @@ export interface KconfigCompletion {
   insertText: string; // `CONFIG_<NAME>=<value>`
 }
 
-/** Curated, non-exhaustive. Common Zephyr knobs + representative Alp SDK enables. */
+/** Curated, non-exhaustive. Common Zephyr knobs + representative Alp SDK enables.
+ *  Every ALP_* name below is verified against the SDK's zephyr/Kconfig (v0.6.0):
+ *  only real symbols — completion must never insert an undefined-symbol line. */
 export const KCONFIG_SYMBOLS: readonly KconfigSymbol[] = [
-  // ── Alp SDK ────────────────────────────────────────────────────────────────
+  // ── Alp SDK (from alp-sdk zephyr/Kconfig) ─────────────────────────────────
   {
     name: "ALP_SDK",
     type: "bool",
-    doc: "Enable the Alp SDK (pulls in the core runtime).",
+    doc: "Enable the Alp SDK on Zephyr — compiles the Zephyr backend and adds <alp/…> headers to the include path.",
     valueHint: "y",
   },
   {
-    name: "ALP_SDK_LOG_LEVEL",
-    type: "int",
-    doc: "Alp SDK log level (0=off … 4=debug).",
-    valueHint: "3",
-  },
-  {
-    name: "ALP_SDK_PERIPH_GPIO",
+    name: "ALP_SDK_RPC",
     type: "bool",
-    doc: "Enable the Alp GPIO peripheral surface (alp_gpio_*).",
+    doc: "Framed RPC over OpenAMP/RPMsg for <alp/rpc.h> (cross-core calls).",
     valueHint: "y",
   },
   {
-    name: "ALP_SDK_PERIPH_I2C",
+    name: "ALP_SDK_MPROC",
     type: "bool",
-    doc: "Enable the Alp I2C peripheral surface.",
+    doc: "Real multi-processor IPC for <alp/mproc.h> (shmem/mailbox/hwsem).",
     valueHint: "y",
   },
   {
-    name: "ALP_SDK_PERIPH_SPI",
+    name: "ALP_SDK_SECURITY",
     type: "bool",
-    doc: "Enable the Alp SPI peripheral surface.",
+    doc: "Real MbedTLS PSA Crypto backend for <alp/security.h>.",
     valueHint: "y",
   },
   {
-    name: "ALP_SDK_PERIPH_UART",
+    name: "ALP_SDK_IOT_WIFI",
     type: "bool",
-    doc: "Enable the Alp UART peripheral surface.",
+    doc: "Real Wi-Fi station via Zephyr wifi_mgmt for <alp/iot.h>.",
+    valueHint: "y",
+  },
+  {
+    name: "ALP_SDK_IOT_MQTT",
+    type: "bool",
+    doc: "Real MQTT client via Zephyr mqtt_client for <alp/iot.h>.",
+    valueHint: "y",
+  },
+  {
+    name: "ALP_SDK_BLE",
+    type: "bool",
+    doc: "Real Bluetooth host stack via Zephyr bt for <alp/ble.h>.",
+    valueHint: "y",
+  },
+  {
+    name: "ALP_SDK_INFERENCE_BACKEND_TFLM",
+    type: "bool",
+    doc: "TensorFlow Lite Micro inference backend (portable, runs on any core).",
+    valueHint: "y",
+  },
+  {
+    name: "ALP_SDK_DSP",
+    type: "bool",
+    doc: "Enable the <alp/dsp.h> standalone DSP-chain API.",
     valueHint: "y",
   },
   {
     name: "ALP_SDK_PERIPH_ADC",
     type: "bool",
-    doc: "Enable the Alp ADC peripheral surface.",
+    doc: "Enable the <alp/adc.h> wrapper.",
+    valueHint: "y",
+  },
+  {
+    name: "ALP_SDK_PERIPH_DAC",
+    type: "bool",
+    doc: "Enable the <alp/adc.h> DAC half (alp_dac_*).",
     valueHint: "y",
   },
   {
     name: "ALP_SDK_PERIPH_PWM",
     type: "bool",
-    doc: "Enable the Alp PWM peripheral surface.",
+    doc: "Enable the <alp/pwm.h> wrapper.",
     valueHint: "y",
   },
   {
-    name: "ALP_RPC",
+    name: "ALP_SDK_PERIPH_I2S",
     type: "bool",
-    doc: "Enable the cross-core RPC layer (<alp/rpc.h>, OpenAMP/RPMsg).",
+    doc: "Enable the <alp/i2s.h> wrapper.",
     valueHint: "y",
   },
   {
-    name: "ALP_INFERENCE",
+    name: "ALP_SDK_PERIPH_CAN",
     type: "bool",
-    doc: "Enable the Alp inference runtime (cpu/npu backends).",
+    doc: "Enable the <alp/can.h> wrapper (classic CAN + CAN-FD).",
     valueHint: "y",
   },
   {
-    name: "ALP_SECURITY",
+    name: "ALP_SDK_PERIPH_RTC",
     type: "bool",
-    doc: "Enable the Alp security/crypto surface (PSA-backed).",
+    doc: "Enable the <alp/rtc.h> wrapper.",
     valueHint: "y",
   },
   {
-    name: "ALP_IOT",
+    name: "ALP_SDK_PERIPH_WDT",
     type: "bool",
-    doc: "Enable the Alp IoT connectivity surface (Wi-Fi/MQTT/HTTPS).",
+    doc: "Enable the <alp/wdt.h> wrapper.",
+    valueHint: "y",
+  },
+  {
+    name: "ALP_SDK_PERIPH_TMU",
+    type: "bool",
+    doc: "Enable the <alp/tmu.h> wrapper (CORDIC math accelerator surface).",
     valueHint: "y",
   },
 
@@ -322,7 +354,9 @@ export function lintPrjConf(text: string): KconfigDiagnostic[] {
     if (sym && sym.type === "bool" && !/^[ynm]$/.test(value)) {
       out.push({
         line: i,
-        startCol: indent.length + name.length + 1,
+        // Value start: group 3 is anchored to end-of-line, so its offset is
+        // line.length - rawValue.length (correct even with spaces around `=`).
+        startCol: line.length - rawValue.length,
         endCol: line.length,
         message: `\`${name}\` is a boolean — expected \`y\`, \`n\`, or \`m\`.`,
         severity: "warning",

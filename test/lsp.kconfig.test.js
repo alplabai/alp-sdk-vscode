@@ -54,6 +54,43 @@ test("completePrjConf offers symbols in key position, none after '='", () => {
   assert.deepEqual(completePrjConf("CONFIG_LOG=y"), []);
 });
 
+test("lint diagnostics carry correct ranges (spaced + indented assignments)", () => {
+  // Spaced '=': the underline must start at the VALUE, not at the '='.
+  const spaced = lintPrjConf("CONFIG_ALP_SDK = 123");
+  assert.equal(spaced.length, 1);
+  assert.equal(spaced[0].line, 0);
+  assert.equal(spaced[0].startCol, 17); // "CONFIG_ALP_SDK = " is 17 chars
+  assert.equal(spaced[0].endCol, 20);
+  // Indented, no spaces: same value position math.
+  const indented = lintPrjConf("  CONFIG_ALP_SDK=123");
+  assert.equal(indented.length, 1);
+  assert.equal(indented[0].startCol, 17);
+  assert.equal(indented[0].endCol, 20);
+});
+
+test("curated ALP symbols match the SDK's real Kconfig names", () => {
+  // The 4 always-on peripheral surfaces have no PERIPH_* enable upstream, and
+  // there are no umbrella ALP_RPC/ALP_INFERENCE/ALP_SECURITY/ALP_IOT symbols —
+  // fabricated names here would make completion insert build-breaking lines.
+  const names = new Set(KCONFIG_SYMBOLS.map((s) => s.name));
+  for (const fabricated of [
+    "ALP_SDK_LOG_LEVEL",
+    "ALP_SDK_PERIPH_GPIO",
+    "ALP_SDK_PERIPH_I2C",
+    "ALP_SDK_PERIPH_SPI",
+    "ALP_SDK_PERIPH_UART",
+    "ALP_RPC",
+    "ALP_INFERENCE",
+    "ALP_SECURITY",
+    "ALP_IOT",
+  ]) {
+    assert.ok(!names.has(fabricated), `${fabricated} is not a real SDK symbol`);
+  }
+  for (const real of ["ALP_SDK", "ALP_SDK_RPC", "ALP_SDK_SECURITY"]) {
+    assert.ok(names.has(real), `${real} should be curated`);
+  }
+});
+
 test("hoverPrjConf returns markdown for known symbols, null otherwise", () => {
   assert.match(hoverPrjConf("CONFIG_ALP_SDK") ?? "", /CONFIG_ALP_SDK/);
   assert.match(hoverPrjConf("MAIN_STACK_SIZE") ?? "", /stack/i);
