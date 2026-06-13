@@ -15,8 +15,8 @@ same version.
 ## 0.1.5
 
 - **crates.io + `cargo binstall` distribution.** The release now publishes the
-  `alp-core` + `alp-cli` crates to crates.io (`cargo install alp-cli`), and
-  `alp-cli` carries cargo-binstall metadata so `cargo binstall alp-cli` fetches
+  `alplabai-alp-core` + `alplabai-alp-cli` crates to crates.io (`cargo install alplabai-alp-cli`), and
+  `alplabai-alp-cli` carries cargo-binstall metadata so `cargo binstall alplabai-alp-cli` fetches
   the prebuilt GitHub-release archive instead of compiling. Joins the existing
   channels (GitHub archives + the `@alplabai/alp-cli` npm shim). Gated on a
   `CARGO_REGISTRY_TOKEN` repo secret.

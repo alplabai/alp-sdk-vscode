@@ -3,8 +3,8 @@
 # Build + publish the native Rust `alp` CLI (cli-rs/). Per `cli-rs-v*` tag it:
 #   1. attaches a prebuilt `alp-<target>.tar.gz` per platform to the GitHub
 #      Release (the npm shim + cargo-binstall download these);
-#   2. publishes the `alp-core` + `alp-cli` crates to crates.io (so
-#      `cargo install alp-cli` / `cargo binstall alp-cli` work) — gated on the
+#   2. publishes the `alplabai-alp-core` + `alplabai-alp-cli` crates to crates.io (so
+#      `cargo install alplabai-alp-cli` / `cargo binstall alplabai-alp-cli` work) — gated on the
 #      CARGO_REGISTRY_TOKEN secret (skipped, not failed, when unset).
 # Triggered by `cli-rs-v*` tags (distinct from the npm shim's `cli-v*` tags).
 #
@@ -105,8 +105,8 @@ jobs:
         # alp-core first; `cargo publish` waits for it to appear on the index
         # before alp-cli (which depends on it) is published.
         run: |
-          cargo publish --package alp-core --manifest-path cli-rs/Cargo.toml --locked
-          cargo publish --package alp-cli  --manifest-path cli-rs/Cargo.toml --locked
+          cargo publish --package alplabai-alp-core --manifest-path cli-rs/Cargo.toml --locked
+          cargo publish --package alplabai-alp-cli --manifest-path cli-rs/Cargo.toml --locked
 
       - name: Note when crates.io publish was skipped
         if: ${{ env.CARGO_REGISTRY_TOKEN == '' }}
