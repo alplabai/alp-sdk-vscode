@@ -15,6 +15,11 @@ dist/**
 scripts/**
 cli-rs/**
 
+# README screenshots render from GitHub on the Marketplace (vsce rewrites the
+# relative links) — keep them out of the VSIX so it stays lean. media/icon.png
+# (the extension icon) is not under screenshots/, so it stays packaged.
+media/screenshots/**
+
 # Keep ALP IDE webview runtime bundle in the packaged extension.
 !packages/alp-webview/dist/
 !packages/alp-webview/dist/**
