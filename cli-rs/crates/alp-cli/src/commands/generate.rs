@@ -9,17 +9,26 @@ use crate::cli::GlobalArgs;
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 
+/// Every supported `--emit` mode, used as the default target set when neither
+/// `--target` nor `--all` narrows the selection.
 const ALL_EMIT_MODES: [&str; 4] = ["zephyr-conf", "dts-overlay", "cmake-args", "yocto-conf"];
 
+/// JSON `data` payload for the `generate` envelope.
 #[derive(serde::Serialize)]
 struct GenerateData {
+    /// Schema version of this payload (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// Emit modes that were requested for this run.
     targets: Vec<String>,
+    /// Workspace-relative paths of successfully written outputs.
     written: Vec<String>,
+    /// Emit modes whose generation failed.
     failed: Vec<String>,
 }
 
+/// Run `alp generate`: resolve the board and SDK roots, invoke `alp_project.py`
+/// once per emit target, and assemble the text/JSON `CommandRun` result.
 pub fn run(g: &GlobalArgs) -> CommandRun {
     let workspace_root = resolve_workspace_root(g);
     let board_path = resolve_board_path(g, &workspace_root);
@@ -146,6 +155,7 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
     CommandRun { exit, text, json }
 }
 
+/// Resolve the workspace root: the current directory, joined with `--project` if given.
 fn resolve_workspace_root(g: &GlobalArgs) -> PathBuf {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     match &g.project {
@@ -154,6 +164,8 @@ fn resolve_workspace_root(g: &GlobalArgs) -> PathBuf {
     }
 }
 
+/// Resolve the `board.yaml` path from `--board-yaml` (absolute or workspace-relative),
+/// defaulting to `<workspace_root>/board.yaml`.
 fn resolve_board_path(g: &GlobalArgs, workspace_root: &Path) -> PathBuf {
     if let Some(board) = &g.board_yaml {
         let board_path = PathBuf::from(board);
@@ -166,6 +178,8 @@ fn resolve_board_path(g: &GlobalArgs, workspace_root: &Path) -> PathBuf {
     workspace_root.join("board.yaml")
 }
 
+/// Resolve the alp-sdk root: honor `--sdk-root` if it has the loader script,
+/// otherwise probe the workspace and sibling `alp-sdk` / `alp-sdk-upstream` dirs.
 fn resolve_sdk_root(g: &GlobalArgs, workspace_root: &Path) -> Option<PathBuf> {
     if let Some(root) = &g.sdk_root {
         let candidate = PathBuf::from(root);
@@ -191,10 +205,13 @@ fn resolve_sdk_root(g: &GlobalArgs, workspace_root: &Path) -> Option<PathBuf> {
     candidates.into_iter().find(|c| has_loader_script(c))
 }
 
+/// True if `root` contains `scripts/alp_project.py`, marking it as a valid SDK root.
 fn has_loader_script(root: &Path) -> bool {
     root.join("scripts").join("alp_project.py").exists()
 }
 
+/// Resolve which emit modes to run: all modes when `all` is set or no `--target`
+/// is given, otherwise the single matching mode, or an error for an unknown target.
 fn resolve_generate_targets(target: Option<&str>, all: bool) -> Result<Vec<&'static str>, String> {
     if all || target.is_none() {
         return Ok(ALL_EMIT_MODES.to_vec());
@@ -208,6 +225,7 @@ fn resolve_generate_targets(target: Option<&str>, all: bool) -> Result<Vec<&'sta
     Err(format!("Unsupported generate target '{target}'."))
 }
 
+/// Map an emit mode to its output file under `<workspace_root>/build/generated/`.
 fn output_path_for_emit(workspace_root: &Path, emit: &str) -> PathBuf {
     let file_name = match emit {
         "zephyr-conf" => "alp.conf",
@@ -223,6 +241,8 @@ fn output_path_for_emit(workspace_root: &Path, emit: &str) -> PathBuf {
         .join(file_name)
 }
 
+/// Render `output_path` relative to `workspace_root`, falling back to the full
+/// path when it is not under the root.
 fn relative_or_full(workspace_root: &Path, output_path: &Path) -> String {
     output_path
         .strip_prefix(workspace_root)
@@ -230,6 +250,7 @@ fn relative_or_full(workspace_root: &Path, output_path: &Path) -> String {
         .unwrap_or_else(|_| output_path.to_string_lossy().to_string())
 }
 
+/// The default Python interpreter name: `python` on Windows, `python3` elsewhere.
 fn default_python_binary() -> &'static str {
     if cfg!(target_os = "windows") {
         "python"
@@ -238,6 +259,8 @@ fn default_python_binary() -> &'static str {
     }
 }
 
+/// Build the human-readable (non-JSON) output lines summarizing written/failed
+/// targets, listing each target when `--verbose` is set.
 fn generate_text_lines(g: &GlobalArgs, data: &GenerateData) -> Vec<String> {
     let mut lines = Vec::<String>::new();
     if data.failed.is_empty() {
@@ -263,6 +286,7 @@ fn generate_text_lines(g: &GlobalArgs, data: &GenerateData) -> Vec<String> {
     lines
 }
 
+/// A `GenerateData` with no targets/written/failed, used for early-failure envelopes.
 fn empty_data() -> GenerateData {
     GenerateData {
         schema_version: "1".to_string(),
@@ -272,6 +296,8 @@ fn empty_data() -> GenerateData {
     }
 }
 
+/// Build a failing `CommandRun` carrying a single `generate.{code}` error issue,
+/// emitting either the JSON envelope or the provided text lines.
 fn failure(
     g: &GlobalArgs,
     project: Project,

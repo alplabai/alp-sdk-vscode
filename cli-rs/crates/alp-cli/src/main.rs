@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `alp` — ALP CLI (Rust). Phase 0-3: validate + generate scaffolding.
-//!
-//! Output contract (CLI.md §3.2):
-//!   * JSON mode writes exactly one JSON document to stdout.
-//!   * Human-readable text goes to stderr.
+#![doc = include_str!("../README.md")]
 
 mod cli;
 mod commands;

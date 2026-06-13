@@ -20,18 +20,27 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
 
+/// Envelope `data` payload for `alp diff`: the normalize-diff result for one board.yaml.
 #[derive(serde::Serialize)]
 struct DiffData {
+    /// Schema version of this payload shape (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// Resolved path to the board.yaml that was diffed.
     #[serde(rename = "boardYamlPath")]
     board_yaml_path: String,
+    /// `true` when normalization produced no effective-config changes.
     unchanged: bool,
+    /// Number of entries in `changes`.
     #[serde(rename = "changeCount")]
     change_count: usize,
+    /// Per-path added/removed/changed entries between the parsed and normalized models.
     changes: Vec<DiffEntry>,
 }
 
+/// Run `alp diff`: resolve and read board.yaml, parse + normalize the model, and emit
+/// the JSON-tree diff as text lines and/or an envelope. Returns a success `CommandRun`
+/// (even when there are no changes); read/parse problems are routed through `failure`.
 pub fn run(g: &GlobalArgs) -> CommandRun {
     let context = resolve_cli_project_context(g);
     let project = Project {
@@ -114,6 +123,8 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
     }
 }
 
+/// Build a failed `CommandRun` with the given `exit` code, a `diff.{code}` envelope issue,
+/// and an empty-change `DiffData`. Text output is suppressed under `--json`.
 #[allow(clippy::too_many_arguments)]
 fn failure(
     g: &GlobalArgs,
@@ -144,6 +155,8 @@ fn failure(
     CommandRun { exit, text, json }
 }
 
+/// Render the human-readable diff lines: a summary header plus one `KIND path: before -> after`
+/// line per change (change lines omitted under `--quiet`); a single "no differences" line when empty.
 fn format_diff_text(data: &DiffData, g: &GlobalArgs, board_path: &str) -> Vec<String> {
     if data.changes.is_empty() {
         return vec!["diff: no effective-config differences detected.".to_string()];
@@ -168,6 +181,7 @@ fn format_diff_text(data: &DiffData, g: &GlobalArgs, board_path: &str) -> Vec<St
     lines
 }
 
+/// Map a `DiffKind` to its uppercase text label (`ADDED` / `REMOVED` / `CHANGED`).
 fn kind_label(kind: DiffKind) -> &'static str {
     match kind {
         DiffKind::Added => "ADDED",
@@ -176,6 +190,8 @@ fn kind_label(kind: DiffKind) -> &'static str {
     }
 }
 
+/// Format a diff side for display: `<undefined>` for `None`, JSON-quoted for strings, and
+/// compact JSON otherwise, truncated to 117 chars + `...` when longer than 120.
 fn format_value(value: &Option<Value>) -> String {
     match value {
         None => "<undefined>".to_string(),

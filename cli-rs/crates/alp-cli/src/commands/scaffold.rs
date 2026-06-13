@@ -18,6 +18,8 @@ use crate::exit::ExitCode;
 // JSON envelope data
 // ---------------------------------------------------------------------------
 
+/// One planned file change in the JSON envelope: a project-relative path and
+/// its `kind` (`create` / `update` / `unchanged`).
 #[derive(serde::Serialize)]
 struct FileChangeSer {
     #[serde(rename = "relativePath")]
@@ -25,6 +27,8 @@ struct FileChangeSer {
     kind: String,
 }
 
+/// `data` payload for the `scaffold` envelope: resolved inputs plus the planned
+/// file changes and (post-write) the `written` / `unchanged` path lists.
 #[derive(serde::Serialize)]
 struct ScaffoldData {
     #[serde(rename = "schemaVersion")]
@@ -47,6 +51,9 @@ struct ScaffoldData {
 // Entry point
 // ---------------------------------------------------------------------------
 
+/// Entry point for `alp scaffold`: resolve module name + template + destination,
+/// build the scaffold plan, then guard overwrites, preview, or write files —
+/// returning the `CommandRun` (exit code, human text, optional JSON envelope).
 pub fn run(g: &GlobalArgs, args: &ScaffoldArgs) -> CommandRun {
     let is_interactive = !g.non_interactive && !g.ci;
 
@@ -236,13 +243,19 @@ pub fn run(g: &GlobalArgs, args: &ScaffoldArgs) -> CommandRun {
 // Resolution helpers
 // ---------------------------------------------------------------------------
 
+/// Failure outcomes from the interactive/argument resolution helpers.
 enum ResolveErr {
+    /// User aborted an interactive prompt (Esc / Ctrl-C).
     Cancelled,
+    /// No module name supplied and none can be prompted for.
     NeedName,
+    /// An argument value was invalid (e.g. unknown template id).
     BadArg(String),
 }
 use ResolveErr::*;
 
+/// Resolve the module name from `--name`, else an interactive prompt; errors
+/// with `NeedName` when absent and non-interactive, `Cancelled` on abort.
 fn resolve_module_name(arg: Option<&str>, interactive: bool) -> Result<String, ResolveErr> {
     if let Some(s) = arg {
         return Ok(s.to_string());
@@ -260,6 +273,8 @@ fn resolve_module_name(arg: Option<&str>, interactive: bool) -> Result<String, R
     Err(NeedName)
 }
 
+/// Resolve the `ModuleTemplateId` from `--template`, else an interactive picker;
+/// defaults to `SensorDriver` when non-interactive and no flag is given.
 fn resolve_template(arg: Option<&str>, interactive: bool) -> Result<ModuleTemplateId, ResolveErr> {
     if let Some(s) = arg {
         return ModuleTemplateId::from_str(s)
@@ -289,6 +304,7 @@ fn resolve_template(arg: Option<&str>, interactive: bool) -> Result<ModuleTempla
 // Response builders
 // ---------------------------------------------------------------------------
 
+/// Build the envelope `Project` block with `destination` as the project root.
 fn make_project(destination: &str) -> Project {
     Project {
         root: Some(destination.to_string()),
@@ -296,6 +312,8 @@ fn make_project(destination: &str) -> Project {
     }
 }
 
+/// Build `ScaffoldData` for the non-write paths (overwrite guard, preview):
+/// inputs and `file_changes` are populated but `written`/`unchanged` stay empty.
 fn empty_data(
     template_id: ModuleTemplateId,
     module_name: &str,
@@ -317,6 +335,8 @@ fn empty_data(
     }
 }
 
+/// `CommandRun` for a silent runtime failure (e.g. interactive cancel): exit
+/// `RuntimeFailure`, no text, no envelope.
 fn runtime_failure_run() -> CommandRun {
     CommandRun {
         exit: ExitCode::RuntimeFailure,
@@ -325,6 +345,8 @@ fn runtime_failure_run() -> CommandRun {
     }
 }
 
+/// Build a `RuntimeFailure` `CommandRun` carrying a single error `Issue`
+/// (`code` + `message`) — empty `ScaffoldData`, human text or JSON envelope per mode.
 fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
     let project = Project {
         root: None,

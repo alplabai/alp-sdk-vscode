@@ -16,18 +16,27 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
 
+/// One carrier preset discovered under `<sdk>/metadata/carriers`: its directory
+/// name and the sorted keys populated in its `carrier.populated` map.
 #[derive(serde::Serialize)]
 struct CarrierEntry {
+    /// Carrier directory name (the entry under `metadata/carriers`).
     name: String,
+    /// Sorted keys present in the carrier's `carrier.populated` map.
     #[serde(rename = "populatedKeys")]
     populated_keys: Vec<String>,
 }
 
+/// One SoM preset discovered under `<sdk>/metadata/e1m_modules`: SKU id,
+/// display name, family, and per-core runtime topology.
 #[derive(serde::Serialize)]
 struct SomEntry {
+    /// SoM SKU id (e.g. `E1M-...`).
     sku: String,
+    /// Human-readable SoM name.
     #[serde(rename = "displayName")]
     display_name: String,
+    /// SoM family classifier.
     family: String,
     /// Per-core runtime topology (id + resolved OS), for heterogeneous scaffolding.
     cores: Vec<SomCoreEntry>,
@@ -37,30 +46,45 @@ struct SomEntry {
 /// (zephyr for a Cortex-M `board:`, yocto for a Cortex-A `machine:`).
 #[derive(serde::Serialize)]
 struct SomCoreEntry {
+    /// Core id within the SoM topology.
     id: String,
+    /// Resolved runtime for the core (`zephyr`, `yocto`, or heuristic fallback).
     os: String,
 }
 
+/// The `presets` command payload: discovered SDK presets (SKUs/SoMs, carriers)
+/// plus the built-in library/inference/log/os defaults. Serialized as the
+/// envelope `data` field.
 #[derive(serde::Serialize)]
 struct PresetsData {
+    /// Payload schema version (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// Resolved SDK root, or `None` when unresolved.
     #[serde(rename = "sdkRoot")]
     sdk_root: Option<String>,
     /// Bare SKU ids (back-compat); derived from `soms`.
     skus: Vec<String>,
     /// Rich SoM presets discovered from `<sdk>/metadata/e1m_modules/*.yaml`.
     soms: Vec<SomEntry>,
+    /// Carrier presets discovered from `<sdk>/metadata/carriers`.
     carriers: Vec<CarrierEntry>,
+    /// Built-in library defaults from `empty_preset_catalogue`.
     libraries: Vec<String>,
+    /// Built-in inference-backend defaults.
     #[serde(rename = "inferenceBackends")]
     inference_backends: Vec<String>,
+    /// Built-in log-level defaults.
     #[serde(rename = "logLevels")]
     log_levels: Vec<String>,
+    /// Built-in OS choices.
     #[serde(rename = "osChoices")]
     os_choices: Vec<String>,
 }
 
+/// Entry point for `alp presets`. Resolves the project context, discovers SoMs
+/// and carriers from the SDK root (empty + a warning issue when unresolved),
+/// merges in built-in defaults, and emits the text or JSON envelope.
 pub fn run(g: &GlobalArgs) -> CommandRun {
     let context = resolve_cli_project_context(g);
     let defaults = empty_preset_catalogue();
@@ -170,6 +194,9 @@ fn read_soms(sdk_root: &str) -> Vec<SomEntry> {
     soms
 }
 
+/// Discover carrier presets from `<sdk>/metadata/carriers`. Each subdirectory's
+/// `board.yaml` is parsed for its `carrier.populated` keys; malformed presets
+/// are skipped (matches TS). Result is sorted by carrier name.
 fn read_carriers(sdk_root: &str) -> Vec<CarrierEntry> {
     let dir = Path::new(sdk_root).join("metadata").join("carriers");
     let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -204,6 +231,8 @@ fn read_carriers(sdk_root: &str) -> Vec<CarrierEntry> {
     carriers
 }
 
+/// Render the human-readable (non-JSON) output lines: a summary count line,
+/// plus per-SKU and per-carrier lines when `g.verbose` is set.
 fn presets_text(data: &PresetsData, g: &GlobalArgs) -> Vec<String> {
     let mut lines = vec![format!(
         "presets: skus={} carriers={} libraries={}",

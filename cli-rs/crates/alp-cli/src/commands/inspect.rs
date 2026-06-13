@@ -19,20 +19,29 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::{generated_at_iso, resolve_cli_project_context};
 
+/// JSON `data` payload for the `inspect` envelope: the resolved debug context.
 #[derive(serde::Serialize)]
 struct InspectData {
+    /// Payload schema version (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// ISO timestamp the context was generated.
     #[serde(rename = "generatedAt")]
     generated_at: String,
+    /// The `--path` filter that was applied, if any.
     #[serde(rename = "focusPath")]
     focus_path: Option<String>,
+    /// Whether per-value source/detail origin was requested (`--show-origin`).
     #[serde(rename = "showOrigin")]
     show_origin: bool,
+    /// Resolved debug context values after applying the `--path` filter.
     #[serde(rename = "resolvedValues")]
     resolved_values: Vec<DebugResolvedValue>,
 }
 
+/// Run `alp inspect`: build the debug context, filter resolved values by
+/// `--path`, emit warnings for missing board.yaml / empty filter, and produce
+/// text lines or a JSON envelope per the global output mode.
 pub fn run(g: &GlobalArgs, args: &InspectArgs) -> CommandRun {
     let project = resolve_cli_project_context(g);
     let generated_at = generated_at_iso();
@@ -105,6 +114,8 @@ pub fn run(g: &GlobalArgs, args: &InspectArgs) -> CommandRun {
     }
 }
 
+/// Filter `values` to those whose `key` equals `focus` or is nested under it
+/// (matching the `focus.` dotted or `focus[` indexed prefix). `None` passes all.
 fn filter_resolved_values(
     values: Vec<DebugResolvedValue>,
     focus: Option<&str>,
@@ -122,6 +133,9 @@ fn filter_resolved_values(
     }
 }
 
+/// Render the human-readable text output: a summary line, the active `--path`,
+/// and one line per value (appending `source`/`detail` when `show_origin`).
+/// Per-value lines are suppressed under `--quiet`.
 fn inspect_text(
     values: &[DebugResolvedValue],
     focus: Option<&str>,
@@ -151,6 +165,8 @@ fn inspect_text(
     lines
 }
 
+/// Render a JSON value for text output: strings are JSON-quoted, everything
+/// else uses its compact JSON form.
 fn format_value(value: &Value) -> String {
     match value {
         Value::String(s) => serde_json::to_string(s).unwrap_or_else(|_| s.clone()),
@@ -158,6 +174,7 @@ fn format_value(value: &Value) -> String {
     }
 }
 
+/// Map a `DebugValueSource` variant to its lowercase text-output label.
 fn source_label(source: DebugValueSource) -> &'static str {
     match source {
         DebugValueSource::Workspace => "workspace",

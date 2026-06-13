@@ -14,6 +14,7 @@ use crate::cli::GlobalArgs;
 /// Resolved styling decision for one invocation.
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
+    /// Whether ANSI styling is emitted; `false` yields plain ASCII output.
     color: bool,
 }
 
@@ -28,6 +29,7 @@ impl Theme {
         Theme { color }
     }
 
+    /// `s` rendered bold when color is on, else returned unchanged.
     fn bold(&self, s: &str) -> String {
         if self.color {
             s.bold().to_string()
@@ -36,6 +38,7 @@ impl Theme {
         }
     }
 
+    /// `s` rendered dimmed when color is on, else returned unchanged.
     fn dim(&self, s: &str) -> String {
         if self.color {
             s.dimmed().to_string()
@@ -44,6 +47,7 @@ impl Theme {
         }
     }
 
+    /// `s` rendered cyan when color is on, else returned unchanged.
     fn cyan(&self, s: &str) -> String {
         if self.color {
             s.cyan().to_string()
@@ -169,6 +173,7 @@ pub fn render_report(
     lines
 }
 
+/// `word` for `n == 1`, else `word` with an `s` appended.
 fn plural(n: u32, word: &str) -> String {
     if n == 1 {
         word.to_string()

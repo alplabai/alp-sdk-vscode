@@ -21,22 +21,34 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
 
+/// `data` payload for the `bootstrap` envelope: the resolved SDK root, the
+/// `bootstrap.sh` path, and the pass-through flags forwarded to the script.
 #[derive(Serialize)]
 struct BootstrapData {
+    /// Payload schema version (`"1"`); serialized as `schemaVersion`.
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// Resolved alp-sdk root; empty on failure paths.
     #[serde(rename = "sdkRoot")]
     sdk_root: String,
+    /// Absolute path to `<sdkRoot>/scripts/bootstrap.sh`; empty on failure paths.
     #[serde(rename = "scriptPath")]
     script_path: String,
+    /// `--no-pip` flag forwarded to `bootstrap.sh` (skip Python requirements).
     #[serde(rename = "noPip")]
     no_pip: bool,
+    /// `--no-west` flag forwarded to `bootstrap.sh` (skip west init/update).
     #[serde(rename = "noWest")]
     no_west: bool,
+    /// `--print-env` flag forwarded to `bootstrap.sh` (print env, no install).
     #[serde(rename = "printEnv")]
     print_env: bool,
 }
 
+/// Runs `alp bootstrap`: resolves the SDK root, then invokes the SDK's own
+/// `scripts/bootstrap.sh` via `bash`. JSON mode captures the run into one
+/// envelope; text mode streams the install live with inherited stdio. Returns
+/// early on Windows, an unresolved SDK root, or a missing script.
 pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
     // bootstrap.sh is POSIX-only; on native Windows point at WSL2 / the docs.
     if cfg!(windows) {
@@ -149,6 +161,8 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
     }
 }
 
+/// Builds a `BootstrapData` for failure paths: empty `sdk_root`/`script_path`,
+/// but carries through the user's flag selections.
 fn empty_data(args: &BootstrapArgs) -> BootstrapData {
     BootstrapData {
         schema_version: "1".to_string(),
@@ -160,6 +174,9 @@ fn empty_data(args: &BootstrapArgs) -> BootstrapData {
     }
 }
 
+/// Assembles a `CommandRun` for an early-return failure: one `bootstrap.<code>`
+/// issue, a null project, and either the JSON envelope or the given text lines
+/// depending on `g.is_json()`.
 fn failure(
     g: &GlobalArgs,
     exit: ExitCode,

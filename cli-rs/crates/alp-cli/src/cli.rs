@@ -3,6 +3,7 @@
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+/// Top-level parsed CLI: global flags plus the selected subcommand.
 #[derive(Debug, Parser)]
 #[command(
     name = "alp",
@@ -18,6 +19,7 @@ pub struct Cli {
     pub command: Command,
 }
 
+/// Flags shared by every subcommand (project/board resolution, output format, mode toggles).
 #[derive(Debug, Clone, Args)]
 pub struct GlobalArgs {
     /// Project root (defaults to current directory).
@@ -44,15 +46,19 @@ pub struct GlobalArgs {
     #[arg(long, global = true, value_enum, default_value_t = Format::Text)]
     pub format: Format,
 
+    /// Emit additional diagnostic detail.
     #[arg(long, global = true)]
     pub verbose: bool,
 
+    /// Suppress non-essential output.
     #[arg(long, global = true)]
     pub quiet: bool,
 
+    /// Disable ANSI color in text output.
     #[arg(long = "no-color", global = true)]
     pub no_color: bool,
 
+    /// Never prompt; fail instead of asking for input.
     #[arg(long = "non-interactive", global = true)]
     pub non_interactive: bool,
 
@@ -62,17 +68,22 @@ pub struct GlobalArgs {
 }
 
 impl GlobalArgs {
+    /// True when `--format json` was selected.
     pub fn is_json(&self) -> bool {
         matches!(self.format, Format::Json)
     }
 }
 
+/// Output format selector for `--format`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Format {
+    /// Human-readable text (default).
     Text,
+    /// Machine-readable JSON envelope.
     Json,
 }
 
+/// The subcommand to dispatch; each variant maps to a command module.
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Validate schema and semantic rules for the active project.
@@ -118,6 +129,7 @@ pub enum Command {
     Renode(WestForwardArgs),
 }
 
+/// Args for commands that forward verbatim to a `west alp-*` subcommand (`image`/`flash`/`clean`/`renode`).
 #[derive(Debug, Args)]
 pub struct WestForwardArgs {
     /// Arguments forwarded verbatim to the underlying `west alp-*` command
@@ -130,6 +142,7 @@ pub struct WestForwardArgs {
     pub args: Vec<String>,
 }
 
+/// Args for `build`: plan/manifest inspection, materialisation, native build, and forwarded `west alp-build` args.
 #[derive(Debug, Args)]
 pub struct BuildArgs {
     /// Show the build plan (consumed from the SDK's `--emit build-plan`) and
@@ -172,6 +185,7 @@ pub struct BuildArgs {
     pub args: Vec<String>,
 }
 
+/// Args for `bootstrap`: toggles for the pip/west steps and an env-only dry run.
 #[derive(Debug, Args)]
 pub struct BootstrapArgs {
     /// Skip the pip dependency install step.
@@ -185,6 +199,7 @@ pub struct BootstrapArgs {
     pub print_env: bool,
 }
 
+/// Args for `sdk`: a free-form subcommand verb plus its positional argument and cache destination.
 #[derive(Debug, Args)]
 pub struct SdkArgs {
     /// Subcommand: list, install, current, or switch.
@@ -198,6 +213,7 @@ pub struct SdkArgs {
     pub destination: Option<String>,
 }
 
+/// Args for `support-bundle`: debug target/server selection, optional trace path, and output directory.
 #[derive(Debug, Args)]
 pub struct SupportBundleArgs {
     /// Debug target class (zephyr-mcu, baremetal-mcu, yocto-userspace, native-host).
@@ -209,11 +225,12 @@ pub struct SupportBundleArgs {
     /// Limit generation tracing to this config key path.
     #[arg(long)]
     pub path: Option<String>,
-    /// Output directory for the bundle (default: <workspace>/.alp-support).
+    /// Output directory for the bundle (default: `<workspace>/.alp-support`).
     #[arg(long)]
     pub destination: Option<String>,
 }
 
+/// Args for `debug-config`: debug target/server selection and a preview (no-write) toggle.
 #[derive(Debug, Args)]
 pub struct DebugConfigArgs {
     /// Debug target class (zephyr-mcu, baremetal-mcu, yocto-userspace, native-host).
@@ -227,6 +244,7 @@ pub struct DebugConfigArgs {
     pub preview: bool,
 }
 
+/// Args for `explain`: the template id to describe.
 #[derive(Debug, Args)]
 pub struct ExplainArgs {
     /// Template id to explain (project or module template).
@@ -234,6 +252,7 @@ pub struct ExplainArgs {
     pub template: Option<String>,
 }
 
+/// Args for `inspect`: an optional key-path filter and an origin-metadata toggle.
 #[derive(Debug, Args)]
 pub struct InspectArgs {
     /// Limit output to resolved values under this key path.
@@ -244,6 +263,7 @@ pub struct InspectArgs {
     pub show_origin: bool,
 }
 
+/// Args for `trace`: an optional key-path filter for the generation trace.
 #[derive(Debug, Args)]
 pub struct TraceArgs {
     /// Limit tracing to this config key path.
@@ -251,6 +271,7 @@ pub struct TraceArgs {
     pub path: Option<String>,
 }
 
+/// Args for `completion`: the target shell for the emitted script.
 #[derive(Debug, Args)]
 pub struct CompletionArgs {
     /// Target shell (bash, zsh, or fish). Defaults to bash.
@@ -258,6 +279,7 @@ pub struct CompletionArgs {
     pub shell: Option<String>,
 }
 
+/// Args for `doctor`: debug target/server selection and a build-readiness toggle.
 #[derive(Debug, Args)]
 pub struct DoctorArgs {
     /// Debug target class (zephyr-mcu, baremetal-mcu, yocto-userspace, native-host).
@@ -271,6 +293,7 @@ pub struct DoctorArgs {
     pub build: bool,
 }
 
+/// Args for `validate`: an offline-only toggle that skips the Python SDK spawn.
 #[derive(Debug, Args)]
 pub struct ValidateArgs {
     /// Run the offline structural validator only (no Python SDK spawn).
@@ -278,6 +301,7 @@ pub struct ValidateArgs {
     pub offline: bool,
 }
 
+/// Args for `init`: template, naming, destination, SoM/cores selection, and preview/force toggles.
 #[derive(Debug, Args)]
 pub struct InitArgs {
     /// Project template id (e.g. minimal-app, sensor-starter).
@@ -304,6 +328,7 @@ pub struct InitArgs {
     pub force: bool,
 }
 
+/// Args for `scaffold`: module template, name, destination, and preview/force toggles.
 #[derive(Debug, Args)]
 pub struct ScaffoldArgs {
     /// Module template id (e.g. sensor-driver, connectivity-service).

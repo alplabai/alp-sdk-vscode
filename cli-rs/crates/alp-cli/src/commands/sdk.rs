@@ -21,39 +21,48 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::generated_at_iso;
 
+/// Clone source for `sdk install` — the upstream `alp-sdk` git repository.
 const SDK_GIT_URL: &str = "https://github.com/alplabai/alp-sdk.git";
 
+/// Envelope `data` payload for `sdk list`: the queried releases.
 #[derive(Serialize)]
 struct ListData {
     subcommand: &'static str,
     releases: Vec<SdkRelease>,
 }
 
+/// Envelope `data` payload for `sdk install`: installed version, on-disk path, and readiness.
 #[derive(Serialize)]
 struct InstallData {
     subcommand: &'static str,
     version: String,
+    /// Filesystem path the SDK was cloned to (serialized as `sdkPath`).
     #[serde(rename = "sdkPath")]
     sdk_path: String,
     readiness: SdkReadinessReport,
 }
 
+/// Envelope `data` payload for `sdk current`: the active SDK, if any, plus its readiness.
 #[derive(Serialize)]
 struct CurrentData {
     subcommand: &'static str,
+    /// Active SDK path, or `None` when no SDK is configured (serialized as `sdkPath`).
     #[serde(rename = "sdkPath")]
     sdk_path: Option<String>,
     readiness: Option<SdkReadinessReport>,
 }
 
+/// Envelope `data` payload for `sdk switch`: the new active path and its resolved version.
 #[derive(Serialize)]
 struct SwitchData {
     subcommand: &'static str,
+    /// Path the active-SDK pointer now references (serialized as `sdkPath`).
     #[serde(rename = "sdkPath")]
     sdk_path: String,
     version: Option<String>,
 }
 
+/// Dispatches `alp sdk` to the matching subcommand handler; unknown subcommands fail.
 pub fn run(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
     match args.subcommand.as_deref() {
         Some("list") => run_list(g),
@@ -83,6 +92,7 @@ pub fn run(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
 
 // ── alp sdk list ────────────────────────────────────────────────────────────
 
+/// Fetches the GitHub releases and renders them as a table; surfaces fetch errors as a failure.
 fn run_list(g: &GlobalArgs) -> CommandRun {
     let pb = crate::progress::spinner(g, "Fetching ALP SDK releases…");
     let result = fetch_releases();
@@ -115,6 +125,7 @@ fn run_list(g: &GlobalArgs) -> CommandRun {
     )
 }
 
+/// GETs the GitHub releases API and parses the JSON into `SdkRelease`s via `alp-core`.
 fn fetch_releases() -> Result<Vec<SdkRelease>, String> {
     let response = ureq::get(GITHUB_RELEASES_URL)
         .set("User-Agent", "alp-cli/0")
@@ -126,6 +137,7 @@ fn fetch_releases() -> Result<Vec<SdkRelease>, String> {
     parse_remote_sdk_releases(&value)
 }
 
+/// Formats releases into human-readable lines (tag, publish date, truncated notes).
 fn format_release_table(releases: &[SdkRelease]) -> Vec<String> {
     if releases.is_empty() {
         return vec!["No SDK releases found.".to_string()];
@@ -145,6 +157,8 @@ fn format_release_table(releases: &[SdkRelease]) -> Vec<String> {
 
 // ── alp sdk install <version> ────────────────────────────────────────────────
 
+/// Clones the requested SDK version into the cache (unless already present) and reports readiness.
+/// Process exit reflects readiness (`Missing` → failure) while the envelope stays success.
 fn run_install(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
     let Some(version) = args.arg.clone() else {
         return emit_failure(
@@ -212,6 +226,7 @@ fn run_install(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
     )
 }
 
+/// Shallow-clones `SDK_GIT_URL` at the `version` tag into `dest`; returns git's stderr on failure.
 fn git_clone(version: &str, dest: &Path) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -252,6 +267,7 @@ fn git_clone(version: &str, dest: &Path) -> Result<(), String> {
 
 // ── alp sdk current ──────────────────────────────────────────────────────────
 
+/// Resolves the active SDK for the current workspace and reports its path + readiness.
 fn run_current(g: &GlobalArgs) -> CommandRun {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let sdk_path = resolve_active_sdk(
@@ -282,6 +298,8 @@ fn run_current(g: &GlobalArgs) -> CommandRun {
 
 // ── alp sdk switch <version|path> ────────────────────────────────────────────
 
+/// Repoints the active SDK to `<version|path>` (absolute path used as-is, else resolved under
+/// `sdk_root`/cache), verifying the path exists and writing the pointer file.
 fn run_switch(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
     let Some(version_or_path) = args.arg.clone() else {
         return emit_failure(
@@ -372,6 +390,7 @@ fn run_switch(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
     )
 }
 
+/// Writes the active-SDK pointer JSON (`sdkPath` + `updatedAt`) to `./.alp/sdk-path`.
 fn write_active_pointer(sdk_path: &str) -> Result<(), String> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let dir = cwd.join(".alp");
@@ -386,6 +405,7 @@ fn write_active_pointer(sdk_path: &str) -> Result<(), String> {
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
+/// Runs `alp-core`'s readiness check against `sdk_path` using real filesystem probes.
 fn readiness_for(sdk_path: &str) -> SdkReadinessReport {
     check_sdk_readiness(
         sdk_path,
@@ -394,6 +414,7 @@ fn readiness_for(sdk_path: &str) -> SdkReadinessReport {
     )
 }
 
+/// Placeholder `Missing` readiness report for failure envelopes where no real check ran.
 fn empty_readiness(sdk_path: &str) -> SdkReadinessReport {
     SdkReadinessReport {
         sdk_path: sdk_path.to_string(),
@@ -405,6 +426,7 @@ fn empty_readiness(sdk_path: &str) -> SdkReadinessReport {
     }
 }
 
+/// Default SDK cache directory: `~/.alp/sdk-cache` (uses `USERPROFILE` on Windows).
 fn default_cache_root() -> String {
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(PathBuf::from)
@@ -415,6 +437,7 @@ fn default_cache_root() -> String {
         .to_string()
 }
 
+/// Maps a `SdkReadinessState` to its lowercase display label.
 fn state_label(state: SdkReadinessState) -> &'static str {
     match state {
         SdkReadinessState::Ready => "ready",
@@ -423,6 +446,7 @@ fn state_label(state: SdkReadinessState) -> &'static str {
     }
 }
 
+/// Renders a readiness report as text lines (header, path, version, state, and any issues).
 fn format_readiness_block(header: &str, report: &SdkReadinessReport) -> Vec<String> {
     let mut lines = vec![
         header.to_string(),
@@ -445,6 +469,7 @@ fn format_readiness_block(header: &str, report: &SdkReadinessReport) -> Vec<Stri
     lines
 }
 
+/// Truncates `text` to at most `max` characters (no ellipsis); char-aware, not byte-based.
 fn truncate(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         text.to_string()
@@ -453,6 +478,7 @@ fn truncate(text: &str, max: usize) -> String {
     }
 }
 
+/// Empty `Project` for envelopes — `sdk` commands are not scoped to a board.yaml.
 fn null_project() -> Project {
     Project {
         root: None,
@@ -460,6 +486,8 @@ fn null_project() -> Project {
     }
 }
 
+/// Builds a `CommandRun` for the success path: text in non-JSON mode, an envelope (always
+/// `exitCode` 0) in JSON mode; the process `exit` may still differ from the envelope code.
 fn emit_success<T: Serialize>(
     g: &GlobalArgs,
     data: T,
@@ -482,6 +510,8 @@ fn emit_success<T: Serialize>(
     CommandRun { exit, text, json }
 }
 
+/// Builds a `CommandRun` for the failure path: emits error text or a JSON envelope carrying a
+/// single `sdk.<code>` issue and the given exit code.
 fn emit_failure<T: Serialize>(
     g: &GlobalArgs,
     data: T,
