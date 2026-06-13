@@ -1,5 +1,5 @@
 [package]
-name = "alp-core"
+name = "alplabai-alp-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
