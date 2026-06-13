@@ -48,9 +48,11 @@ export function validateBoardConfig(cfg: BoardConfig): ValidationResult {
     }
   }
 
-  if (cfg.boot?.method === "mcuboot" && !cfg.boot.signing) {
-    errors.push("boot.method 'mcuboot' requires boot.signing.");
-  }
+  // NB: `boot.method: mcuboot` without `boot.signing` is VALID — the SDK applies
+  // the SoM family's default signing (AEN -> ECDSA-P256, V2N -> RSA-2048). The
+  // SDK only rejects a signing *algorithm* that's unsupported for the family,
+  // which the full `alp validate` (Python SDK) checks; flagging missing signing
+  // here was a false positive.
 
   return { errors, warnings };
 }
