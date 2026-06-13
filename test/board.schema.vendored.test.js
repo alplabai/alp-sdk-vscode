@@ -3,13 +3,16 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { BOARD_KEY_ORDER } = require("@alp-sdk/core/board/models");
 
 // sha256 of metadata/schemas/board.schema.json at the alp-sdk v0.6.0 tag.
 // THE drift gate: any local edit, forward drift (re-vendoring from submodule
 // dev HEAD instead of the pinned tag), or upstream change fails here. To bump
 // the vendored schema intentionally: copy it from the NEW pinned tag
 // (`git -C alp-sdk-upstream show <tag>:metadata/schemas/board.schema.json`),
-// then update this hash from `shasum -a 256 schemas/board.schema.json`.
+// then recompute this hash over the LF-normalized file — portable + Windows-safe
+// (avoid `shasum`, which isn't on Windows):
+//   node -e "const s=require('fs').readFileSync('schemas/board.schema.json','utf-8').replace(/\r\n/g,'\n');console.log(require('crypto').createHash('sha256').update(s,'utf-8').digest('hex'))"
 const VENDORED_SCHEMA_SHA256 =
   "a3710fc52d5b079f789ad3c28be463eb142b86ba901e4d70f5de245f17e213de";
 
@@ -41,7 +44,14 @@ test("board.schema.json is the vendored v0.6 schema (drift/staleness gate)", () 
   // Byte-exact pin to the SDK tag the copy was vendored from. The key checks
   // above only catch regressions to a PRE-v0.6 schema; this catches local
   // edits and forward drift (e.g. re-vendoring from submodule dev HEAD) too.
-  const hash = crypto.createHash("sha256").update(raw, "utf-8").digest("hex");
+  // Normalize CRLF→LF first: with core.autocrlf=true (the Windows default) the
+  // checkout smudges the file to CRLF on disk, but the pin is the LF blob git
+  // stores — so a pristine Windows clone would otherwise fail here.
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const hash = crypto
+    .createHash("sha256")
+    .update(normalized, "utf-8")
+    .digest("hex");
   assert.equal(
     hash,
     VENDORED_SCHEMA_SHA256,
@@ -59,4 +69,23 @@ test("package.json yamlValidation points at the vendored schema", () => {
   );
   assert.ok(entry, "a yamlValidation entry for board.yaml is required");
   assert.equal(entry.url, "./schemas/board.schema.json");
+});
+
+test("BOARD_KEY_ORDER covers every vendored-schema top-level property (C1 recurrence gate)", () => {
+  // parseBoardConfig + serializeBoardConfig whitelist top-level keys on
+  // BOARD_KEY_ORDER and silently DROP anything not listed — the C1 data-loss
+  // bug (`models` was dropped). This fails the moment the vendored schema gains
+  // a top-level block the configurator would drop on round-trip; the fix is to
+  // add the key to BOARD_KEY_ORDER (packages/alp-core/src/board/models.ts).
+  const p = path.join(__dirname, "..", "schemas", "board.schema.json");
+  const schema = JSON.parse(fs.readFileSync(p, "utf-8"));
+  const schemaKeys = Object.keys(schema.properties ?? {});
+  const covered = new Set(BOARD_KEY_ORDER);
+  const dropped = schemaKeys.filter((k) => !covered.has(k));
+  assert.deepEqual(
+    dropped,
+    [],
+    `BOARD_KEY_ORDER omits schema top-level key(s) [${dropped.join(", ")}] — the ` +
+      "configurator would drop them on round-trip (C1). Add them to BOARD_KEY_ORDER.",
+  );
 });

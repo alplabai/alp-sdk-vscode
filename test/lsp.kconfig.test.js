@@ -91,6 +91,46 @@ test("curated ALP symbols match the SDK's real Kconfig names", () => {
   }
 });
 
+test("every curated ALP_* symbol is defined in the SDK's real zephyr Kconfig (drift gate)", () => {
+  // The fabricated/real check above is a fixed list — it can't catch a NEW
+  // fabrication or an upstream rename/removal. Parse the real `config <NAME>`
+  // symbols from alp-sdk-upstream's zephyr Kconfig and assert every curated ALP_*
+  // name is among them, so completion never inserts an undefined-symbol line.
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const root = path.join(__dirname, "..", "alp-sdk-upstream", "zephyr");
+  const files = ["Kconfig", "Kconfig.alp-libraries"].map((f) =>
+    path.join(root, f),
+  );
+  // Skip gracefully when the submodule isn't checked out (CI uses
+  // submodules: recursive; the rest of the suite doesn't need it).
+  if (!files.every((f) => fs.existsSync(f))) {
+    console.warn(
+      "alp-sdk-upstream not checked out — skipping the Kconfig drift gate",
+    );
+    return;
+  }
+  const defined = new Set();
+  for (const f of files) {
+    for (const line of fs.readFileSync(f, "utf-8").split(/\r?\n/)) {
+      const m = /^\s*config\s+([A-Z0-9_]+)\s*$/.exec(line);
+      if (m) defined.add(m[1]);
+    }
+  }
+  const curatedAlp = KCONFIG_SYMBOLS.map((s) => s.name).filter((n) =>
+    n.startsWith("ALP_"),
+  );
+  assert.ok(curatedAlp.length > 0, "expected curated ALP_* symbols");
+  const missing = curatedAlp.filter((n) => !defined.has(n));
+  assert.deepEqual(
+    missing,
+    [],
+    `curated ALP_* symbol(s) [${missing.join(", ")}] are not defined in the SDK's ` +
+      "zephyr Kconfig — renamed/removed upstream or fabricated; completion would " +
+      "insert undefined-symbol lines that break builds.",
+  );
+});
+
 test("hoverPrjConf returns markdown for known symbols, null otherwise", () => {
   assert.match(hoverPrjConf("CONFIG_ALP_SDK") ?? "", /CONFIG_ALP_SDK/);
   assert.match(hoverPrjConf("MAIN_STACK_SIZE") ?? "", /stack/i);

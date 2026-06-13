@@ -1,0 +1,6 @@
+# Vendored JSON schemas are byte-pinned by tests
+# (test/*.schema.vendored.test.js). Force LF on every platform so the sha256
+# gate matches on a Windows checkout (where core.autocrlf=true would otherwise
+# smudge them to CRLF on disk). The tests also normalize CRLF→LF defensively.
+schemas/board.schema.json text eol=lf
+schemas/system-manifest-v1.schema.json text eol=lf
