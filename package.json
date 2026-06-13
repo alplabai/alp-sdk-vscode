@@ -452,6 +452,7 @@
     "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm run bundle:ext",
     "package": "pnpm run vscode:prepublish && vsce package --no-dependencies",
     "package:dev": "pnpm run vscode:prepublish && vsce package --no-dependencies --pre-release",
+    "publish:vsix": "pnpm run vscode:prepublish && vsce publish --no-dependencies",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
