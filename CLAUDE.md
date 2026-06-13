@@ -116,7 +116,7 @@ one small `offline-validate-ts.mjs` cross-checks the offline validator against
 Status: all 14 commands ported + the orchestration surface (`bootstrap`, `build`/`image`/
 `flash`/`clean`/`renode`, `doctor --build`). First release `cli-rs-v0.1.0` (GitHub
 archives for linux-x64 / macOS-arm64 / windows-x64). Distributed via the
-`cli-rs/npm-shim` package (`alp-sdk`) + the VS Code extension's binary resolver
+`cli-rs/npm-shim` package (`@alplabai/alp-cli`) + the VS Code extension's binary resolver
 (`src/alpCli/`, setting `alpSdk.cliPath` → PATH → download-on-demand). The extension now
 invokes the CLI for bootstrap/build (terminal) and validate/generate/sdk-list (envelope);
 host-coupled debug commands stay in-process (see docs/EXTENSION_CLI_INTEGRATION.md §4a).

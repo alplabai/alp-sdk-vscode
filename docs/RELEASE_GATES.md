@@ -58,12 +58,12 @@ the `release-cli` CI workflow.
 Extension and CLI `MAJOR.MINOR` are kept in sync. `PATCH` may diverge for
 standalone CLI-only hotfixes.
 
-> **Native CLI migration (in progress).** The CLI is being replaced by the native
-> Rust binary in `cli-rs/`. Its releases are tagged `cli-rs-v<version>`, which
-> triggers `release-cli-rs` to build the per-platform `alp` archives. At cutover
-> the npm package `alp-sdk` becomes the `cli-rs/npm-shim` wrapper (downloading
-> that binary); until then the legacy `cli-v*` / TypeScript publish path remains
-> the shipped CLI. Both must keep the contract gate (§1.6) green.
+> **Native CLI.** The CLI is the native Rust binary in `cli-rs/`. Its releases are
+> tagged `cli-rs-v<version>`, which triggers `release-cli-rs` to build the
+> per-platform `alp` archives and publish the `alp-core`/`alp-cli` crates to
+> crates.io. The `@alplabai/alp-cli` npm package — the `cli-rs/npm-shim` wrapper
+> that downloads that binary — is published from a `cli-v<version>` tag via
+> `release-cli`. The contract gate (§1.6) must stay green.
 
 Before bumping `MAJOR`:
 - all breaking CLI flag or JSON envelope changes must be documented in `COMPATIBILITY_RULES.md`.
@@ -75,11 +75,11 @@ If a published CLI version is defective:
 
 1. **Deprecate** (preferred — keeps install history intact):
    ```
-   npm deprecate alp-sdk@<bad-version> "Defective release; upgrade to <good-version>"
+   npm deprecate @alplabai/alp-cli@<bad-version> "Defective release; upgrade to <good-version>"
    ```
 2. **Unpublish** (only within 72 h of publish and no significant downloads):
    ```
-   npm unpublish alp-sdk@<bad-version>
+   npm unpublish @alplabai/alp-cli@<bad-version>
    ```
 3. **Re-release**: cherry-pick or revert to last known good commit, bump PATCH,
    tag `cli-v<new-version>`, push to trigger automated release.

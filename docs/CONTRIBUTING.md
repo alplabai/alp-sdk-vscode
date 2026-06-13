@@ -47,7 +47,7 @@ no such caveat — removing one just deletes that cached version.
 
 ## Semver policy and release channels
 
-The `alp-sdk` npm package (CLI) follows [Semantic Versioning 2.0.0](https://semver.org/).
+The `@alplabai/alp-cli` npm package (CLI) follows [Semantic Versioning 2.0.0](https://semver.org/).
 
 | Version bump | When to use |
 |---|---|
@@ -166,12 +166,12 @@ alp --help
 
 ```bash
 # One-shot without install (always fetches latest)
-npx alp-sdk --help
+npx @alplabai/alp-cli --help
 ```
 
 ```bash
 # Pin to a specific version
-npx alp-sdk@0.3.0 --help
+npx @alplabai/alp-cli@0.1.5 --help
 ```
 
 ### For developers (local from source)
@@ -190,7 +190,7 @@ breakage from minor/patch updates:
 
 ```yaml
 - name: Install alp CLI
-  run: npm install -g @alplabai/alp-cli@0.3.0
+  run: npm install -g @alplabai/alp-cli@0.1.5
 
 - name: Validate board config
   run: alp validate --format json board.yaml
@@ -198,20 +198,19 @@ breakage from minor/patch updates:
 
 ### For offline environments / air-gapped mirrors
 
-Pack the CLI into a tarball and ship it to your internal registry or artifact
-store:
+Download the prebuilt binary archive and ship it to your internal artifact store:
 
 ```bash
-# On an internet-connected machine:
-pnpm --filter alp-sdk run cli:pack    # produces dist/alp-sdk-<version>.tgz
+# On an internet-connected machine, grab the archive for the target platform
+# from the GitHub release (tag cli-rs-v<version>):
+#   https://github.com/alplabai/alp-sdk-vscode/releases
+#   alp-<target>.tar.gz   (e.g. alp-x86_64-unknown-linux-gnu.tar.gz)
 
-# On the air-gapped machine:
-npm install -g /path/to/alp-sdk-<version>.tgz
+# On the air-gapped machine, extract it and put `alp` on PATH:
+tar -xzf alp-<target>.tar.gz -C /usr/local/bin alp
+alp --help
 ```
 
-To mirror to a private npm registry:
-
-```bash
-npm publish /path/to/alp-sdk-<version>.tgz \
-  --registry https://your-internal-registry/
-```
+The `@alplabai/alp-cli` npm package can't be used fully offline — its `postinstall`
+downloads the binary from the GitHub release — so air-gapped installs use the
+archive directly (above) or `cargo install alp-cli` against a vendored registry.

@@ -187,7 +187,7 @@ be generated in this environment without running the tool).
       for four targets (x86_64/aarch64 macOS, x86_64 linux-gnu, x86_64 windows-msvc)
       on native runners, archive each as `alp-<target>.tar.gz`, and attach to the
       GitHub release. Distinct `cli-rs-v*` tag namespace (legacy TS CLI uses `cli-v*`).
-- [x] npm shim `cli-rs/npm-shim` (package **`alp-sdk`**, bin `alp`): `postinstall.js`
+- [x] npm shim `cli-rs/npm-shim` (package **`@alplabai/alp-cli`**, bin `alp`): `postinstall.js`
       maps platform/arch → target, downloads the matching archive from the
       `cli-rs-v<version>` release (Node `fetch` + system `tar`, no deps), and
       `bin/alp.js` forwards argv to the native binary. Keeps `npm i -g @alplabai/alp-cli`
@@ -196,9 +196,9 @@ be generated in this environment without running the tool).
 - [x] `cli-rs/**` already in `.vscodeignore` — the Rust CLI + shim are excluded
       from the VSIX.
 - Release flow: bump `cli-rs/Cargo.toml` + `cli-rs/npm-shim/package.json` to the
-  same version, tag `cli-rs-v<version>`, push (builds + attaches archives), then
-  `npm publish` the shim. Publishing the shim as `alp-sdk` is held until Phase 7
-  cutover (it would replace the legacy TS package of the same name).
+  same version, tag `cli-rs-v<version>`, push (builds + attaches archives + publishes
+  the `alp-core`/`alp-cli` crates), then tag `cli-v<version>` to `npm publish` the
+  shim as `@alplabai/alp-cli` (release-cli).
 
 ## Phase 7 — Cutover
 Pre-release prep (safe now — no cli-rs release published yet):
@@ -208,11 +208,12 @@ Pre-release prep (safe now — no cli-rs release published yet):
       `GETTING_STARTED_CLI.md` (build-from-source instructions for the native
       binary); `RELEASE_GATES.md` §5 documents the `cli-rs-v*` channel.
 
-Gated on the first real `cli-rs-v<version>` release (would break users if done early):
-- [ ] Flip the published `alp-sdk` npm package to `cli-rs/npm-shim`; npm-publish it.
-- [ ] Flip install instructions (`npm i -g @alplabai/alp-cli` → native binary) once published.
-- [ ] Deprecate/retire the TS CLI entrypoint (`packages/alp-cli`); keep `alp-core`
-      (TS) for the VS Code extension + LSP.
+Gated on the first real `cli-rs-v<version>` release — DONE (0.1.5, 2026-06-13):
+- [x] Published the `cli-rs/npm-shim` to npm as `@alplabai/alp-cli`; the `alp-core`/
+      `alp-cli` crates ship on crates.io (`cargo install`/`cargo binstall`) alongside.
+- [x] Install instructions point at `npm i -g @alplabai/alp-cli` (the native binary).
+- [x] Retired the TS CLI entrypoint (`packages/alp-cli`); `alp-core` (TS) stays for
+      the VS Code extension + LSP.
 
 ## Phase 8 — Optional TUI
 - [ ] Only if a genuinely interactive dashboard is wanted (`ratatui`/`iocraft`); not required for CLI parity.

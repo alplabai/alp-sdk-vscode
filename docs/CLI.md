@@ -10,8 +10,8 @@ surface.
 > been retired. The Rust binary is feature-complete — all
 > commands below are ported and held byte-for-byte compatible with this contract
 > by the `cli-rs/contract` harness. This document is the single contract for both
-> implementations; the published `alp-sdk` npm package flips to the native binary
-> at cutover.
+> implementations; the published `@alplabai/alp-cli` npm package ships the native
+> binary.
 
 The goal is not to mirror the VS Code extension command-for-command.
 The goal is to provide a stable, scriptable, headless interface over

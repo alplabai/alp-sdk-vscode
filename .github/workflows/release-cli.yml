@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Publish the native `alp` CLI's npm shim (`cli-rs/npm-shim`, package `alp-sdk`)
-# to npm. The shim is a thin package: its `postinstall.js` downloads the
+# Publish the native `alp` CLI's npm shim (`cli-rs/npm-shim`, package
+# `@alplabai/alp-cli`) to npm. The shim is a thin package: its `postinstall.js` downloads the
 # platform binary from the matching `cli-rs-v<version>` GitHub release — so cut
 # + push that release tag FIRST (release-cli-rs.yml), then publish here.
 #
 # Triggered by a `cli-v*` tag, or manually via workflow_dispatch.
 #
 # Required repo secret (publish is SKIPPED, not failed, when unset):
-#   NPM_TOKEN — npm automation token for the `alp-sdk` package
+#   NPM_TOKEN — npm automation token for the `@alplabai/alp-cli` package
 #               (npmjs.com → Access Tokens → Automation).
 
 name: release-cli
