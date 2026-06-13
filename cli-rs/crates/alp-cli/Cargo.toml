@@ -3,16 +3,19 @@ name = "alp-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-repository.workspace = true
+repository = "https://github.com/alplabai/alp-sdk-vscode/tree/main/cli-rs"
 rust-version.workspace = true
+readme = "README.md"
 description = "The native `alp` CLI for ALP SDK embedded projects: board.yaml validate/generate, project scaffolding, toolchain bootstrap, and west build/flash with a stable JSON envelope."
 
 # cargo-binstall: fetch the prebuilt archive from the GitHub release instead of
 # compiling. The archive layout matches release-cli-rs.yml (tag `cli-rs-v<ver>`,
 # `alp-<target>.tar.gz`, binary at the root). Unlisted targets fall back to a
 # from-source `cargo install`.
+# NB: the URL is the repo root (NOT `{ repo }`) — `repository` above points at the
+# cli-rs subdirectory for crates.io, but the release assets live at the repo root.
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/cli-rs-v{ version }/alp-{ target }.tar.gz"
+pkg-url = "https://github.com/alplabai/alp-sdk-vscode/releases/download/cli-rs-v{ version }/alp-{ target }.tar.gz"
 pkg-fmt = "tgz"
 bin-dir = "{ bin }{ binary-ext }"
 
