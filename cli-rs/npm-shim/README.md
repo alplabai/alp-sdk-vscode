@@ -2,7 +2,7 @@
 
 npm distribution wrapper for the native Rust `alp` CLI. Installing this package
 downloads the platform-specific binary from the matching GitHub release and
-exposes it as the `alp` command — so `npm i -g @alplabai/alp-sdk` keeps working unchanged
+exposes it as the `alp` command — so `npm i -g @alplabai/alp-cli` keeps working unchanged
 after the CLI moves from TypeScript to Rust.
 
 ## How it works

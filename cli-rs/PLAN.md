@@ -13,7 +13,7 @@
 | Arg parsing | `clap` 4.6 (derive) | Confirmed by user; de-facto standard. |
 | Prompts | `inquire` 0.9 | For `init`/scaffold flows. alp is headless/scriptable, **not** a TUI → no ratatui. |
 | Edition | Rust 2024 | Stable since 1.85; toolchain is 1.96. |
-| Distribution | `dist` (formerly cargo-dist) | Multi-platform binaries + installers, incl. an npm shim so `npm i -g @alplabai/alp-sdk` keeps working. |
+| Distribution | `dist` (formerly cargo-dist) | Multi-platform binaries + installers, incl. an npm shim so `npm i -g @alplabai/alp-cli` keeps working. |
 | YAML | `serde_yaml` 0.9 (PoC) | Standard but unmaintained → revisit (`serde_yml` fork or `yaml-rust2`) before GA. |
 
 ### Contract invariants (must never drift from TS)
@@ -190,7 +190,7 @@ be generated in this environment without running the tool).
 - [x] npm shim `cli-rs/npm-shim` (package **`alp-sdk`**, bin `alp`): `postinstall.js`
       maps platform/arch → target, downloads the matching archive from the
       `cli-rs-v<version>` release (Node `fetch` + system `tar`, no deps), and
-      `bin/alp.js` forwards argv to the native binary. Keeps `npm i -g @alplabai/alp-sdk`
+      `bin/alp.js` forwards argv to the native binary. Keeps `npm i -g @alplabai/alp-cli`
       working. Launcher verified locally (forwards args + exit codes); downloaded
       `binary/` is gitignored.
 - [x] `cli-rs/**` already in `.vscodeignore` — the Rust CLI + shim are excluded
@@ -210,7 +210,7 @@ Pre-release prep (safe now — no cli-rs release published yet):
 
 Gated on the first real `cli-rs-v<version>` release (would break users if done early):
 - [ ] Flip the published `alp-sdk` npm package to `cli-rs/npm-shim`; npm-publish it.
-- [ ] Flip install instructions (`npm i -g @alplabai/alp-sdk` → native binary) once published.
+- [ ] Flip install instructions (`npm i -g @alplabai/alp-cli` → native binary) once published.
 - [ ] Deprecate/retire the TS CLI entrypoint (`packages/alp-cli`); keep `alp-core`
       (TS) for the VS Code extension + LSP.
 

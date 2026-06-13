@@ -1,5 +1,5 @@
 {
-  "name": "@alplabai/alp-sdk",
+  "name": "@alplabai/alp-cli",
   "version": "0.1.5",
   "description": "ALP SDK command-line tool (native `alp` binary). Installs the platform-specific binary from the matching GitHub release.",
   "bin": {
