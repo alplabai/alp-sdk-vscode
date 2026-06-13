@@ -65,7 +65,7 @@ The `alp-sdk` npm package (CLI) follows [Semantic Versioning 2.0.0](https://semv
 A version published as `next` **may** be promoted to `latest` by re-tagging:
 
 ```bash
-npm dist-tag add alp-sdk@<version> latest
+npm dist-tag add @alplabai/alp-sdk@<version> latest
 ```
 
 ### Breaking-change checklist
@@ -100,7 +100,7 @@ The `release-cli-rs.yml` workflow triggers automatically and attaches
 GitHub release. Publishing the npm shim is a separate manual step:
 
 ```bash
-cd cli-rs/npm-shim && npm publish     # alp-sdk@<version>; postinstall fetches the archive
+cd cli-rs/npm-shim && npm publish     # @alplabai/alp-sdk@<version>; postinstall fetches the archive
 ```
 
 ---
@@ -120,7 +120,7 @@ cd cli-rs/npm-shim && npm publish     # alp-sdk@<version>; postinstall fetches t
 2. Deprecate the bad version with a clear message:
 
    ```bash
-   npm deprecate alp-sdk@<bad-version> "Regression in <command>. Upgrade to <corrected>."
+   npm deprecate @alplabai/alp-sdk@<bad-version> "Regression in <command>. Upgrade to <corrected>."
    ```
 
 3. Add the bad version to the **Affected version matrix** table below.
@@ -128,7 +128,7 @@ cd cli-rs/npm-shim && npm publish     # alp-sdk@<version>; postinstall fetches t
 ### Scenario 2 — Unpublishable (within 72 h of publish, policy allows)
 
 ```bash
-npm unpublish alp-sdk@<version>
+npm unpublish @alplabai/alp-sdk@<version>
 ```
 
 > **Note:** npm allows unpublish only within 72 hours and only if no other package depends on the version. Prefer `npm deprecate` for older versions.
@@ -139,7 +139,7 @@ npm unpublish alp-sdk@<version>
 2. If the `latest` dist-tag was updated, roll it back:
 
    ```bash
-   npm dist-tag add alp-sdk@<last-good-version> latest
+   npm dist-tag add @alplabai/alp-sdk@<last-good-version> latest
    ```
 
 3. Open a post-mortem issue and document the affected version matrix.
@@ -158,7 +158,7 @@ npm unpublish alp-sdk@<version>
 
 ```bash
 # Global install (latest stable)
-npm install -g alp-sdk
+npm install -g @alplabai/alp-sdk
 
 # Check the installed version
 alp --help
@@ -190,7 +190,7 @@ breakage from minor/patch updates:
 
 ```yaml
 - name: Install alp CLI
-  run: npm install -g alp-sdk@0.3.0
+  run: npm install -g @alplabai/alp-sdk@0.3.0
 
 - name: Validate board config
   run: alp validate --format json board.yaml

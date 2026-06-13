@@ -101,7 +101,8 @@ jobs:
           node-version: "22"
       - name: Install the published shim + smoke `alp --version`
         run: |
+          PKG="$(node -p "require('./package.json').name")"
           VERSION="$(node -p "require('./package.json').version")"
           # postinstall pulls the binary from the cli-rs-v<version> GitHub release.
-          npm install -g "alp-sdk@${VERSION}"
+          npm install -g "${PKG}@${VERSION}"
           alp --version
