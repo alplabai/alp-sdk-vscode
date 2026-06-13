@@ -4,3 +4,5 @@
 # smudge them to CRLF on disk). The tests also normalize CRLF→LF defensively.
 schemas/board.schema.json text eol=lf
 schemas/system-manifest-v1.schema.json text eol=lf
+# Vendored Kconfig symbol snapshot (gated by test/lsp.kconfig.test.js).
+test/fixtures/alp-kconfig-symbols.txt text eol=lf

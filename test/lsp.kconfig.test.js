@@ -91,66 +91,36 @@ test("curated ALP symbols match the SDK's real Kconfig names", () => {
   }
 });
 
-test("every curated ALP_* symbol is defined in the SDK's real zephyr Kconfig (drift gate)", () => {
+test("every curated ALP_* symbol is a real SDK Kconfig symbol (drift gate)", () => {
   // The fabricated/real check above is a fixed list — it can't catch a NEW
-  // fabrication or an upstream rename/removal. Verify every curated ALP_* name is
-  // a real `config <NAME>` in alp-sdk-upstream's zephyr Kconfig so completion
-  // never inserts an undefined-symbol line.
+  // fabrication or an upstream rename/removal. Gate the curated ALP_* names
+  // against a VENDORED snapshot of the SDK's `config ALP_*` symbols
+  // (schemas/alp-kconfig-symbols.txt, re-vendored by scripts/vendor-kconfig-symbols.mjs).
+  // Vendored — like schemas/*.json — so CI never reads the submodule working
+  // tree (which CI checks out unreliably for the deep alp-sdk-upstream history).
   const fs = require("node:fs");
   const path = require("node:path");
-  const { execFileSync } = require("node:child_process");
-  const sub = path.join(__dirname, "..", "alp-sdk-upstream");
-  const rel = ["zephyr/Kconfig", "zephyr/Kconfig.alp-libraries"];
-  if (!fs.existsSync(path.join(sub, rel[0]))) {
-    console.warn(
-      "alp-sdk-upstream not checked out — skipping the Kconfig drift gate",
-    );
-    return;
-  }
-  // Union two reads of the PINNED submodule: the working tree AND the git objects
-  // at HEAD. CI runners sometimes leave the submodule working tree stale even
-  // when HEAD is correct (a working-tree-only read then spuriously misses a
-  // symbol); the `git show HEAD:` read is immune to that. A symbol counts as
-  // present if it appears in EITHER source.
-  const sources = [];
-  for (const p of rel) {
-    const f = path.join(sub, p);
-    if (fs.existsSync(f)) sources.push(fs.readFileSync(f, "utf-8"));
-  }
-  try {
-    for (const p of rel) {
-      sources.push(
-        execFileSync("git", ["-C", sub, "show", `HEAD:${p}`], {
-          encoding: "utf-8",
-          maxBuffer: 64 * 1024 * 1024,
-        }),
-      );
-    }
-  } catch {
-    // git or the pinned objects unavailable — fall back to the working tree.
-  }
-  const text = sources.join("\n");
+  const p = path.join(__dirname, "fixtures", "alp-kconfig-symbols.txt");
+  const vendored = new Set(
+    fs
+      .readFileSync(p, "utf-8")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s && !s.startsWith("#")),
+  );
+  assert.ok(vendored.size > 100, "vendored Kconfig symbol set looks truncated");
   const curatedAlp = KCONFIG_SYMBOLS.map((s) => s.name).filter((n) =>
     n.startsWith("ALP_"),
   );
   assert.ok(curatedAlp.length > 0, "expected curated ALP_* symbols");
-  // `config <SYM>` at a line start, tolerant of any line ending + leading
-  // whitespace; the lookahead stops `ALP_SDK_RPC` matching `ALP_SDK_RPC_…`.
-  const definedUpstream = (sym) =>
-    new RegExp(`(?:^|[\\r\\n])[ \\t]*config[ \\t]+${sym}(?![A-Z0-9_])`).test(
-      text,
-    );
-  const missing = curatedAlp.filter((n) => !definedUpstream(n));
+  const missing = curatedAlp.filter((n) => !vendored.has(n));
   assert.deepEqual(
     missing,
     [],
-    "curated ALP_* symbol(s) not found as `config <SYM>` in the SDK's zephyr " +
-      `Kconfig: ${missing
-        .map((n) => `${n} (substring present: ${text.includes(n)})`)
-        .join(
-          ", ",
-        )} — renamed/removed upstream or fabricated; completion would ` +
-      "insert undefined-symbol lines that break builds.",
+    `curated ALP_* symbol(s) [${missing.join(", ")}] are not in the vendored SDK ` +
+      "Kconfig symbol set — renamed/removed upstream or fabricated; completion " +
+      "would insert undefined-symbol lines that break builds. Re-vendor with " +
+      "scripts/vendor-kconfig-symbols.mjs, or fix the curated list in src/lsp/kconfig.ts.",
   );
 });
 
