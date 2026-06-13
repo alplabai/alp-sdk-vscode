@@ -12,6 +12,12 @@ same version.
 
 ## Unreleased
 
+- **`alp doctor --build` checks the Yocto flash prerequisite.** For a project
+  with a Yocto core, the build-readiness report now verifies `bmaptool` (the
+  preferred sparse `.wic` flasher used by `west alp-flash`) — passing when
+  present, warning to fall back to `dd`, and warning hard when neither is on
+  PATH. Zephyr-only projects are unaffected (no bmaptool check).
+
 ## 0.1.4
 
 - **`alp build --manifest [--manifest-from FILE]`.** Reads the ALP system

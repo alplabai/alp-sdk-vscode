@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Build-readiness preflight — the toolchains a build needs, keyed off the OSes
-//! the active `board.yaml` declares. Used by `alp doctor --build` (and, later,
-//! as `alp build`'s preflight).
+//! Build-readiness preflight — the toolchains a build (and the Yocto `.wic`
+//! flash) needs, keyed off the OSes the active `board.yaml` declares. Used by
+//! `alp doctor --build` (and, later, as `alp build`'s preflight).
 //!
 //! Scope boundary: `board.yaml` alone does not carry each core's *type*
 //! (Cortex-M vs Cortex-A) — that resolves from the SoM topology in the SDK
@@ -65,6 +65,10 @@ pub struct BuildToolProbe {
     pub ninja: bool,
     pub bitbake: bool,
     pub zephyr_sdk: bool,
+    /// `bmaptool` — the preferred Yocto `.wic` flasher (sparse-aware).
+    pub bmaptool: bool,
+    /// `dd` — the Yocto `.wic` flash fallback when `bmaptool` is absent.
+    pub dd: bool,
     pub is_linux: bool,
 }
 
@@ -150,6 +154,42 @@ pub fn build_readiness_report(
                 "Yocto",
                 "Install the Yocto host packages (see docs/getting-started.md).",
             );
+            // Flash prerequisite: `alp flash` writes the Yocto `.wic` to SD/eMMC
+            // via `bmaptool` (sparse-aware, preferred) and falls back to `dd`.
+            // Warn early so the gap shows at doctor time, not mid-flash.
+            let (status, detail, fix) = if probe.bmaptool {
+                (
+                    DoctorStatus::Pass,
+                    "bmaptool is available — fast sparse Yocto .wic flashing.".to_string(),
+                    None,
+                )
+            } else if probe.dd {
+                (
+                    DoctorStatus::Warn,
+                    "bmaptool not found; Yocto .wic flash falls back to dd (slower)."
+                        .to_string(),
+                    Some(
+                        "Install bmaptool for sparse .wic flashing (e.g. `apt install bmap-tools`)."
+                            .to_string(),
+                    ),
+                )
+            } else {
+                (
+                    DoctorStatus::Warn,
+                    "neither bmaptool nor dd on PATH — Yocto .wic flash (`alp flash`) will fail."
+                        .to_string(),
+                    Some(
+                        "Install bmaptool (`apt install bmap-tools`) or dd (coreutils)."
+                            .to_string(),
+                    ),
+                )
+            };
+            checks.push(DoctorCheck {
+                name: "bmaptool".to_string(),
+                status,
+                detail,
+                fix,
+            });
         } else {
             checks.push(DoctorCheck {
                 name: "yoctoHost".to_string(),
@@ -259,6 +299,8 @@ mod tests {
             ninja: true,
             bitbake: true,
             zephyr_sdk: true,
+            bmaptool: true,
+            dd: true,
             is_linux: true,
         }
     }
@@ -305,6 +347,8 @@ mod tests {
             ninja: false,
             bitbake: false,
             zephyr_sdk: false,
+            bmaptool: false,
+            dd: false,
             is_linux: true,
         };
         let report = build_readiness_report("t".to_string(), vec![BuildOs::Zephyr], &probe);
@@ -334,5 +378,33 @@ mod tests {
         };
         let report = build_readiness_report("t".to_string(), vec![BuildOs::Yocto], &probe);
         assert!(report.checks.iter().any(|c| c.name == "yoctoHost"));
+    }
+
+    #[test]
+    fn yocto_flash_checks_bmaptool() {
+        // bmaptool present → a passing flash-prereq check.
+        let pass = build_readiness_report("t".to_string(), vec![BuildOs::Yocto], &probe_all_present());
+        assert!(
+            pass.checks
+                .iter()
+                .any(|c| c.name == "bmaptool" && c.status == DoctorStatus::Pass)
+        );
+
+        // Neither bmaptool nor dd → warn + a next step (and no bmaptool check for
+        // a Zephyr-only project).
+        let probe = BuildToolProbe {
+            bmaptool: false,
+            dd: false,
+            ..probe_all_present()
+        };
+        let warn = build_readiness_report("t".to_string(), vec![BuildOs::Yocto], &probe);
+        assert!(
+            warn.checks
+                .iter()
+                .any(|c| c.name == "bmaptool" && c.status == DoctorStatus::Warn)
+        );
+        let zephyr_only =
+            build_readiness_report("t".to_string(), vec![BuildOs::Zephyr], &probe_all_present());
+        assert!(!zephyr_only.checks.iter().any(|c| c.name == "bmaptool"));
     }
 }
