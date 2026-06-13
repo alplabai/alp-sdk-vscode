@@ -364,6 +364,18 @@ export interface RunBuildMessage {
   type: "runBuild";
 }
 
+/** Build a single manifest slice (`alp build --core <id>`). */
+export interface BuildSliceMessage {
+  type: "buildSlice";
+  coreId: string;
+}
+
+/** Flash a single manifest slice (`alp flash --core <id>`). */
+export interface FlashSliceMessage {
+  type: "flashSlice";
+  coreId: string;
+}
+
 /** Ask the host to open a folder picker for the new project's parent directory. */
 export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
@@ -394,4 +406,6 @@ export type WebviewToExtMessage =
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
-  | RunBuildMessage;
+  | RunBuildMessage
+  | BuildSliceMessage
+  | FlashSliceMessage;

@@ -580,6 +580,14 @@ export interface MaterialiseBuildPlanMessage {
 export interface RunBuildMessage {
   type: "runBuild";
 }
+export interface BuildSliceMessage {
+  type: "buildSlice";
+  coreId: string;
+}
+export interface FlashSliceMessage {
+  type: "flashSlice";
+  coreId: string;
+}
 
 export type WebviewToExtMessage =
   | ReadyMessage
@@ -604,4 +612,6 @@ export type WebviewToExtMessage =
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
-  | RunBuildMessage;
+  | RunBuildMessage
+  | BuildSliceMessage
+  | FlashSliceMessage;

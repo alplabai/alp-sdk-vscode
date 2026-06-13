@@ -102,6 +102,12 @@ export class BuildPlanPanel {
       case "runBuild":
         void this.handleRunBuild();
         break;
+      case "buildSlice":
+        this.handleSliceCommand("build", msg.coreId);
+        break;
+      case "flashSlice":
+        this.handleSliceCommand("flash", msg.coreId);
+        break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
           void vscode.env.openExternal(vscode.Uri.parse(msg.url));
@@ -189,6 +195,17 @@ export class BuildPlanPanel {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     // Live build in a terminal (streams output, like `alp build`).
     await runAlpInTerminal(this.context, ["build"], { name: "alp build", cwd });
+  }
+
+  /** Build or flash a single manifest slice — `alp <verb> --core <id>` forwards
+   *  to `west alp-<verb>` for that core. The view only shows the button when the
+   *  manifest says the slice supports it, so this just runs it in a terminal. */
+  private handleSliceCommand(verb: "build" | "flash", coreId: string): void {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    void runAlpInTerminal(this.context, [verb, "--core", coreId], {
+      name: `alp ${verb} ${coreId}`,
+      cwd,
+    });
   }
 
   private dispose(): void {

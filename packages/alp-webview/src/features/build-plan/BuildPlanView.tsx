@@ -14,16 +14,25 @@ function commandLine(slice: BuildPlanSlice): string {
   return args.length > 0 ? `${tool} ${args.join(" ")}` : tool;
 }
 
+const isReady = (value?: string): boolean => !!value && value !== "TBD";
+
 /** The system manifest — the resolved per-core contract (`alp build --manifest`):
- *  slices with their runtime + flash wiring, IPC links, and helper MCUs. */
+ *  slices with their runtime + flash wiring, IPC links, and helper MCUs. The
+ *  per-slice Build/Flash buttons show/hide straight from the manifest: an
+ *  `os: off` slice has none; Flash appears only when the slice carries a real
+ *  `flash_method` (not the `TBD` placeholder). */
 function SystemManifestSection({
   manifest,
   postBuild,
   error,
+  buildSlice,
+  flashSlice,
 }: {
   manifest: SystemManifest | null;
   postBuild: boolean;
   error: string | null;
+  buildSlice: (coreId: string) => void;
+  flashSlice: (coreId: string) => void;
 }) {
   if (!manifest) {
     return error ? (
@@ -42,23 +51,46 @@ function SystemManifestSection({
         </span>
       </p>
       <ul className={styles.manifestSlices}>
-        {manifest.slices.map((s) => (
-          <li key={s.core_id} className={styles.manifestSlice}>
-            <span className={styles.coreId}>{s.core_id}</span>
-            <span className={styles.backend} data-backend={s.os}>
-              {s.os}
-            </span>
-            <span className={styles.manifestStatus} data-status={s.status}>
-              {s.status}
-            </span>
-            {s.flash_method && (
-              <span className={styles.manifestFlash}>{s.flash_method}</span>
-            )}
-            <code className={styles.manifestTarget}>
-              {s.build_dir ?? s.board ?? s.machine ?? s.image ?? s.app ?? "—"}
-            </code>
-          </li>
-        ))}
+        {manifest.slices.map((s) => {
+          const active = s.os !== "off";
+          return (
+            <li key={s.core_id} className={styles.manifestSlice}>
+              <span className={styles.coreId}>{s.core_id}</span>
+              <span className={styles.backend} data-backend={s.os}>
+                {s.os}
+              </span>
+              <span className={styles.manifestStatus} data-status={s.status}>
+                {s.status}
+              </span>
+              {s.flash_method && (
+                <span className={styles.manifestFlash}>{s.flash_method}</span>
+              )}
+              <code className={styles.manifestTarget}>
+                {s.build_dir ?? s.board ?? s.machine ?? s.image ?? s.app ?? "—"}
+              </code>
+              <span className={styles.manifestActions}>
+                {active && (
+                  <button
+                    type="button"
+                    className={styles.sliceBtn}
+                    onClick={() => buildSlice(s.core_id)}
+                  >
+                    Build
+                  </button>
+                )}
+                {active && isReady(s.flash_method) && (
+                  <button
+                    type="button"
+                    className={styles.sliceBtn}
+                    onClick={() => flashSlice(s.core_id)}
+                  >
+                    Flash
+                  </button>
+                )}
+              </span>
+            </li>
+          );
+        })}
       </ul>
       {manifest.ipc.length > 0 && (
         <div className={styles.manifestSub}>
@@ -77,6 +109,9 @@ function SystemManifestSection({
           {manifest.helper_mcus.map((mcu) => (
             <span key={mcu.name} className={styles.manifestChip}>
               {mcu.name} <em>{mcu.chip}</em>
+              {!(isReady(mcu.flash_method) && isReady(mcu.firmware_path))
+                ? " · firmware TBD"
+                : ""}
             </span>
           ))}
         </div>
@@ -128,6 +163,8 @@ export function BuildPlanView() {
     reload,
     materialise,
     build,
+    buildSlice,
+    flashSlice,
   } = useBuildPlan();
   const [expanded, setExpanded] = useState<string | null>(null);
   const toggle = (path: string) =>
@@ -294,6 +331,8 @@ export function BuildPlanView() {
             manifest={manifest}
             postBuild={manifestPostBuild}
             error={manifestError}
+            buildSlice={buildSlice}
+            flashSlice={flashSlice}
           />
         </div>
       )}
