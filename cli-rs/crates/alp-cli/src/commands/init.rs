@@ -62,7 +62,9 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
             eprintln!("Cancelled.");
             return runtime_failure_run();
         }
-        Err(BadArg(msg)) => return error_run(g, "init.invalid-template", &msg),
+        Err(BadArg(msg)) => {
+            return error_run(g, ExitCode::ValidationFailure, "init.invalid-template", &msg);
+        }
     };
 
     // 2. Resolve name (optional).
@@ -98,18 +100,19 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
     // 5. Build plan (heterogeneous when --cores is given; else single-core).
     let cores = match parse_cores(args.cores.as_deref()) {
         Ok(cores) => cores,
-        Err(msg) => return error_run(g, "init.invalid-cores", &msg),
+        Err(msg) => return error_run(g, ExitCode::ValidationFailure, "init.invalid-cores", &msg),
     };
     // The app core's runtime is fixed (the scaffolded src/ + prj.conf are
     // Zephyr); reject a contradictory --cores request instead of silently
     // overriding it.
-    let app_core = app_core_for_sku(args.som.as_deref().unwrap_or("E1M-AEN701"));
+    let app_core = app_core_for_sku(args.som.as_deref().unwrap_or(alp_core::DEFAULT_SOM_SKU));
     if let Some((_, os)) = cores
         .iter()
         .find(|(id, os)| id.as_str() == app_core && os.as_str() != "zephyr")
     {
         return error_run(
             g,
+            ExitCode::ValidationFailure,
             "init.invalid-cores",
             &format!(
                 "Core '{app_core}' is this SoM's app core and runs zephyr; --cores requested '{os}'. Omit the entry or use {app_core}:zephyr."
@@ -228,6 +231,7 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         }
         Err(e) => error_run(
             g,
+            ExitCode::WriteFailure,
             "init.write-failed",
             &format!("Failed to write files: {e}"),
         ),
@@ -243,9 +247,9 @@ const CORE_OS_CHOICES: [&str; 4] = ["zephyr", "yocto", "baremetal", "off"];
 
 /// Parse + validate `--cores` (`id[:os],…`) into `(id, os)` pairs. OS is
 /// inferred from the core-id silicon class when omitted. Errors (the
-/// `init.invalid-cores` issue, exit 1) on an id outside the schema's
-/// `^[a-z][a-z0-9_]+$` pattern, an unknown OS, or a duplicate id — invalid
-/// values would otherwise flow verbatim into board.yaml.
+/// `init.invalid-cores` issue, exit 2 — validation) on an id outside the
+/// schema's `^[a-z][a-z0-9_]+$` pattern, an unknown OS, or a duplicate id —
+/// invalid values would otherwise flow verbatim into board.yaml.
 /// None/empty → no cores (single-core default).
 fn parse_cores(raw: Option<&str>) -> Result<Vec<(String, String)>, String> {
     let Some(raw) = raw else {
@@ -292,7 +296,7 @@ enum ResolveErr {
     /// User aborted the prompt (Ctrl-C / Esc) — maps to a runtime failure.
     Cancelled,
     /// A supplied argument was invalid; carries the user-facing message
-    /// (routed through `error_run` → exit 1).
+    /// (rejected with `init.invalid-template`, exit 2 — validation).
     BadArg(String),
 }
 use ResolveErr::*;
@@ -419,9 +423,11 @@ fn runtime_failure_run() -> CommandRun {
     }
 }
 
-/// Build a `RuntimeFailure` `CommandRun` carrying a single error `Issue` (and a
-/// matching text/JSON envelope) for the given `code` and `message`.
-fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
+/// Build an error `CommandRun` carrying a single error `Issue` (and a matching
+/// text/JSON envelope) for the given `exit` code, issue `code`, and `message`.
+/// Validation errors pass `ValidationFailure` (exit 2), write errors
+/// `WriteFailure` (exit 3) — matching the CLI exit-code contract.
+fn error_run(g: &GlobalArgs, exit: ExitCode, code: &str, message: &str) -> CommandRun {
     let project = Project {
         root: None,
         board_yaml: None,
@@ -451,12 +457,12 @@ fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
             project,
             data,
             issues,
-            ExitCode::RuntimeFailure.code(),
+            exit.code(),
         )
         .to_json()
     });
     CommandRun {
-        exit: ExitCode::RuntimeFailure,
+        exit,
         text,
         json,
     }

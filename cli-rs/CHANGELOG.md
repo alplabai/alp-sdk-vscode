@@ -12,6 +12,11 @@ same version.
 
 ## Unreleased
 
+- **Fixed: `alp init` error exit codes now match the contract.** Invalid
+  `--cores` / `--template` input now exits **2** (`ValidationFailure`) and a
+  write failure exits **3** (`WriteFailure`); all three previously exited 1.
+  This restores the exit 2 the 0.1.3 notes already documented for `--cores`
+  (the JSON envelope `exitCode` and `issues` are otherwise unchanged).
 - **Registry documentation.** Both published crates now carry a crates.io README
   (`alp-cli`, `alp-core`), each crate's `repository` points at its `cli-rs`
   location, and both crates are documented with rustdoc — each crate page embeds

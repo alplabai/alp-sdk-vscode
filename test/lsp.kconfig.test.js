@@ -91,6 +91,39 @@ test("curated ALP symbols match the SDK's real Kconfig names", () => {
   }
 });
 
+test("every curated ALP_* symbol is a real SDK Kconfig symbol (drift gate)", () => {
+  // The fabricated/real check above is a fixed list — it can't catch a NEW
+  // fabrication or an upstream rename/removal. Gate the curated ALP_* names
+  // against a VENDORED snapshot of the SDK's `config ALP_*` symbols
+  // (schemas/alp-kconfig-symbols.txt, re-vendored by scripts/vendor-kconfig-symbols.mjs).
+  // Vendored — like schemas/*.json — so CI never reads the submodule working
+  // tree (which CI checks out unreliably for the deep alp-sdk-upstream history).
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const p = path.join(__dirname, "fixtures", "alp-kconfig-symbols.txt");
+  const vendored = new Set(
+    fs
+      .readFileSync(p, "utf-8")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s && !s.startsWith("#")),
+  );
+  assert.ok(vendored.size > 100, "vendored Kconfig symbol set looks truncated");
+  const curatedAlp = KCONFIG_SYMBOLS.map((s) => s.name).filter((n) =>
+    n.startsWith("ALP_"),
+  );
+  assert.ok(curatedAlp.length > 0, "expected curated ALP_* symbols");
+  const missing = curatedAlp.filter((n) => !vendored.has(n));
+  assert.deepEqual(
+    missing,
+    [],
+    `curated ALP_* symbol(s) [${missing.join(", ")}] are not in the vendored SDK ` +
+      "Kconfig symbol set — renamed/removed upstream or fabricated; completion " +
+      "would insert undefined-symbol lines that break builds. Re-vendor with " +
+      "scripts/vendor-kconfig-symbols.mjs, or fix the curated list in src/lsp/kconfig.ts.",
+  );
+});
+
 test("hoverPrjConf returns markdown for known symbols, null otherwise", () => {
   assert.match(hoverPrjConf("CONFIG_ALP_SDK") ?? "", /CONFIG_ALP_SDK/);
   assert.match(hoverPrjConf("MAIN_STACK_SIZE") ?? "", /stack/i);
