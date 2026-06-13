@@ -12,6 +12,15 @@ same version.
 
 ## Unreleased
 
+- **`alp build --manifest [--manifest-from FILE]`.** Reads the ALP system
+  manifest — the post-build IDE/tool contract (`build/system-manifest.yaml`,
+  alp-sdk v0.7.0): per-core slices + ipc + helper MCUs. `--manifest-from` reads
+  a local manifest (e.g. one `west alp-build` wrote); plain `--manifest` asks
+  the SDK for the projection (`alp_orchestrate.py --emit system-manifest`).
+  Parsed + version-guarded (schema_version 1) and emitted in the envelope so
+  the IDE consumes it without shelling python. (Per-core `alp build --core <id>`
+  already forwards to `west alp-build`.)
+
 ## 0.1.3
 
 - **`alp presets` SoMs now carry `cores`.** Each `data.soms[]` entry gains a
