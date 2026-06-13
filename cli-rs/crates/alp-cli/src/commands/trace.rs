@@ -19,19 +19,30 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::{generated_at_iso, resolve_cli_project_context};
 
+/// Envelope `data` payload for `alp trace`: the planned generation decisions
+/// plus the trace context (workflow id, focus path, target).
 #[derive(serde::Serialize)]
 struct TraceData {
+    /// Payload schema version (`"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// ISO-8601 timestamp the trace was produced.
     #[serde(rename = "generatedAt")]
     generated_at: String,
+    /// Workflow identifier; always `"cli.trace"`.
     workflow: String,
+    /// `--path` focus argument, if provided.
     #[serde(rename = "focusPath")]
     focus_path: Option<String>,
+    /// Resolved single target name, or `None` when all targets are traced.
     target: Option<String>,
+    /// One planned decision per emit target (and per focus path).
     decisions: Vec<DebugGenerationTraceDecision>,
 }
 
+/// Run `alp trace`: validate SDK root + `board.yaml`, resolve the target set,
+/// and emit a planned loader-plan decision for each emit target. Exits `2` on a
+/// missing SDK root or `board.yaml`, `5` on an unknown `--target`.
 pub fn run(g: &GlobalArgs, args: &TraceArgs) -> CommandRun {
     let context = resolve_cli_project_context(g);
     let generated_at = generated_at_iso();
@@ -162,6 +173,8 @@ pub fn run(g: &GlobalArgs, args: &TraceArgs) -> CommandRun {
     }
 }
 
+/// Resolve the emit targets to trace: all of `ALL_EMIT_MODES` when `raw` is
+/// `None`, or the single matching mode. Returns `Err` for an unknown target.
 fn resolve_targets(raw: Option<&str>) -> Result<Vec<&'static str>, String> {
     match raw {
         None => Ok(ALL_EMIT_MODES.to_vec()),
@@ -175,6 +188,8 @@ fn resolve_targets(raw: Option<&str>) -> Result<Vec<&'static str>, String> {
     }
 }
 
+/// Build a failure `CommandRun` with a single `trace.<code>` issue and a null
+/// project, matching the TS `createFailureResult` shape.
 fn failure(
     g: &GlobalArgs,
     exit: ExitCode,
@@ -201,6 +216,8 @@ fn failure(
     CommandRun { exit, text, json }
 }
 
+/// Render the human-readable (non-JSON) trace output: a decision count header
+/// plus one `[outcome] key: detail` line per decision unless `--quiet`.
 fn trace_text(decisions: &[DebugGenerationTraceDecision], g: &GlobalArgs) -> Vec<String> {
     let mut lines = vec![format!("trace: decisions={}", decisions.len())];
     if !g.quiet {
@@ -216,6 +233,7 @@ fn trace_text(decisions: &[DebugGenerationTraceDecision], g: &GlobalArgs) -> Vec
     lines
 }
 
+/// Map a `DebugTraceOutcome` to its lowercase text label for `trace_text`.
 fn outcome_label(outcome: DebugTraceOutcome) -> &'static str {
     match outcome {
         DebugTraceOutcome::Planned => "planned",

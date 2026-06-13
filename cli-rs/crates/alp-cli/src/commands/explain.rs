@@ -14,32 +14,52 @@ use crate::cli::{ExplainArgs, GlobalArgs};
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 
+/// Identifies what the explain result describes: its `kind`
+/// (`overview` / `project-template` / `module-template` / `generation-target`)
+/// and the resolved `value` (e.g. the template/target id).
 #[derive(serde::Serialize)]
 struct Selector {
+    /// Category of the explained topic.
     kind: String,
+    /// Resolved id of the explained topic (empty for an overview).
     value: String,
 }
 
+/// The catalog of all explainable ids, always emitted so callers can discover
+/// valid selectors even on a failure.
 #[derive(serde::Serialize)]
 struct Available {
+    /// `alp init` project template ids.
     #[serde(rename = "projectTemplates")]
     project_templates: Vec<String>,
+    /// `alp scaffold` module template ids.
     #[serde(rename = "moduleTemplates")]
     module_templates: Vec<String>,
+    /// Generation output target ids (the `emit` keys).
     #[serde(rename = "generationTargets")]
     generation_targets: Vec<String>,
 }
 
+/// JSON `data` payload of the `explain` envelope: the resolved selector, a
+/// one-line summary, free-form detail lines, and the `available` catalog.
 #[derive(serde::Serialize)]
 struct ExplainData {
+    /// Payload schema version (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// What this result describes.
     selector: Selector,
+    /// Human-readable one-line summary.
     summary: String,
+    /// Detail lines elaborating the summary.
     details: Vec<String>,
+    /// Catalog of all explainable ids.
     available: Available,
 }
 
+/// Runs `alp explain`: resolves `--template`/`--target` (mutually exclusive)
+/// against the wizard/module/generation catalogs, or prints an overview when
+/// neither is given. Both selectors or an unknown id yield a runtime failure.
 pub fn run(g: &GlobalArgs, args: &ExplainArgs) -> CommandRun {
     let project_templates = list_wizard_templates();
     let module_templates = list_module_templates();
@@ -201,6 +221,8 @@ pub fn run(g: &GlobalArgs, args: &ExplainArgs) -> CommandRun {
     )
 }
 
+/// Builds the detail lines for a project (`alp init`) template: description,
+/// per-template explanation, default libraries, and default feature flags.
 fn project_template_details(pt: &WizardTemplateDefinition) -> Vec<String> {
     let mut details = vec![pt.description.to_string()];
     details.extend(pt.explanation.iter().map(|s| (*s).to_string()));
@@ -217,6 +239,8 @@ fn project_template_details(pt: &WizardTemplateDefinition) -> Vec<String> {
     details
 }
 
+/// Builds the detail lines for a module (`alp scaffold`) template: description,
+/// generated function prefix, and a usage hint.
 fn module_template_details(mt: &ModuleTemplateDefinition) -> Vec<String> {
     vec![
         mt.description.to_string(),
@@ -226,6 +250,8 @@ fn module_template_details(mt: &ModuleTemplateDefinition) -> Vec<String> {
     ]
 }
 
+/// Builds the detail lines for a generation target: display name, output path,
+/// and preview label/language.
 fn generation_target_details(target: &GenerationTargetSupport) -> Vec<String> {
     vec![
         format!("Display name: {}", target.display_name),
@@ -235,6 +261,8 @@ fn generation_target_details(target: &GenerationTargetSupport) -> Vec<String> {
     ]
 }
 
+/// Formats the four wizard feature flags as `wifi=.. mqtt=.. ble=.. tls=..`,
+/// treating a `None` flag set as all-false.
 fn format_feature_flags(features: Option<&WizardFeatureFlags>) -> String {
     let (wifi, mqtt, ble, tls) = match features {
         Some(f) => (f.wifi, f.mqtt, f.ble, f.tls),
@@ -243,6 +271,7 @@ fn format_feature_flags(features: Option<&WizardFeatureFlags>) -> String {
     format!("wifi={wifi} mqtt={mqtt} ble={ble} tls={tls}")
 }
 
+/// An empty `Project` (no root, no `board.yaml`) — explain is project-agnostic.
 fn null_project() -> Project {
     Project {
         root: None,
@@ -250,6 +279,8 @@ fn null_project() -> Project {
     }
 }
 
+/// Assembles a success `CommandRun` (exit `Success`): text lines in human mode,
+/// or an `explain` envelope with `ExplainData` in JSON mode.
 fn success(
     g: &GlobalArgs,
     available: Available,
@@ -286,6 +317,9 @@ fn success(
     }
 }
 
+/// Assembles a failure `CommandRun` (exit `RuntimeFailure`) carrying an
+/// `explain.{code}` error issue: the given `text_lines` in human mode, or an
+/// envelope with empty summary/details in JSON mode.
 fn failure(
     g: &GlobalArgs,
     available: Available,
@@ -324,6 +358,8 @@ fn failure(
     }
 }
 
+/// Renders human-mode output: an `explain: {summary}` header followed by one
+/// `- {detail}` line per detail (detail lines are suppressed when `--quiet`).
 fn explain_text(summary: &str, details: &[String], g: &GlobalArgs) -> Vec<String> {
     let mut lines = vec![format!("explain: {summary}")];
     if !g.quiet {

@@ -20,19 +20,27 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
 
+/// Envelope `data` payload for `validate` — serialized into the JSON output.
 #[derive(serde::Serialize)]
 struct ValidateData {
+    /// Data-schema version of this payload (currently always `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// Validation outcome string (e.g. `clean`, `schema-violation`, `failed`).
     outcome: String,
+    /// Number of issues reported.
     #[serde(rename = "issueCount")]
     issue_count: usize,
+    /// The validator command line that was run (empty on the offline/guard paths).
     #[serde(rename = "commandLine")]
     command_line: String,
+    /// Resolved `board.yaml` path that was validated.
     #[serde(rename = "boardYamlPath")]
     board_yaml_path: String,
 }
 
+/// Entry point for `alp validate`: dispatch to the offline structural validator
+/// (`--offline`) or the Python-SDK spawn path.
 pub fn run(g: &GlobalArgs, args: &ValidateArgs) -> CommandRun {
     if args.offline {
         run_offline(g)
@@ -41,6 +49,8 @@ pub fn run(g: &GlobalArgs, args: &ValidateArgs) -> CommandRun {
     }
 }
 
+/// Map a validation `Outcome` to the stable CLI `ExitCode` (clean → success,
+/// schema/preset/revision violations → validation failure, failed → runtime failure).
 fn validation_outcome_exit_code(outcome: Outcome) -> ExitCode {
     match outcome {
         Outcome::Clean => ExitCode::Success,
@@ -78,6 +88,9 @@ fn to_cli_issues(outcome: Outcome, issues: &[alp_core::ValidationIssue]) -> Vec<
 
 // ───────────────────────────── spawn path ─────────────────────────────
 
+/// Default validation path: resolve the project, spawn the SDK's
+/// `validate_board_yaml.py`, and turn its output into a `CommandRun`. Guards on
+/// missing `board.yaml` / unresolved SDK root before spawning.
 fn run_spawn(g: &GlobalArgs) -> CommandRun {
     let context = resolve_cli_project_context(g);
 
@@ -165,6 +178,8 @@ fn run_spawn(g: &GlobalArgs) -> CommandRun {
     CommandRun { exit, text, json }
 }
 
+/// Build a `validate`-failure `CommandRun` for a pre-spawn guard (missing
+/// `board.yaml` or unresolved SDK root); emits one issue coded `validate.<code>`.
 fn validation_guard_failure(
     g: &GlobalArgs,
     project: Project,
@@ -211,6 +226,8 @@ fn validation_guard_failure(
     }
 }
 
+/// Render the human-readable (non-JSON) output lines for a validation result;
+/// suppresses per-issue/board detail under `--quiet`, appends the cmd under `--verbose`.
 fn spawn_text(
     outcome: Outcome,
     issues: &[Issue],
@@ -240,6 +257,8 @@ fn spawn_text(
 
 // ──────────────────────────── offline path ────────────────────────────
 
+/// Resolve the `board.yaml` path for the offline path: explicit `--board-yaml`
+/// if given, else `<--project|.>/board.yaml`.
 fn resolve_offline_board_path(g: &GlobalArgs) -> PathBuf {
     if let Some(b) = &g.board_yaml {
         return PathBuf::from(b);
@@ -248,6 +267,8 @@ fn resolve_offline_board_path(g: &GlobalArgs) -> PathBuf {
     Path::new(&root).join("board.yaml")
 }
 
+/// Offline validation path: read `board.yaml` and run only the structural
+/// validator (`validate_board_yaml_local`) — no Python/SDK needed.
 fn run_offline(g: &GlobalArgs) -> CommandRun {
     let board_path = resolve_offline_board_path(g);
     let board_str = board_path.to_string_lossy().to_string();
@@ -318,6 +339,8 @@ fn run_offline(g: &GlobalArgs) -> CommandRun {
     }
 }
 
+/// Build a failure `CommandRun` for the offline path (missing/unreadable
+/// `board.yaml` or validator error) with the given `exit` and one `validate.<code>` issue.
 fn offline_failure(
     g: &GlobalArgs,
     project: Project,

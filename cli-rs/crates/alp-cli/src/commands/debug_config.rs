@@ -20,22 +20,33 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::{generated_at_iso, normalize_path};
 
+/// `data` payload of the `debug-config` envelope (serialized as camelCase JSON).
 #[derive(serde::Serialize)]
 struct DebugConfigData {
+    /// Envelope data-schema version (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// ISO-8601 generation timestamp.
     #[serde(rename = "generatedAt")]
     generated_at: String,
+    /// Resolved debug target kind.
     #[serde(rename = "targetKind")]
     target_kind: DebugTargetKind,
+    /// Resolved debug server backend.
     server: DebugServerKind,
+    /// `true` when previewing only (no write performed).
     preview: bool,
+    /// Path to the `.vscode/launch.json` that was (or would be) written.
     #[serde(rename = "launchJsonPath")]
     launch_json_path: String,
+    /// `true` when an existing launch config was replaced rather than appended.
     replaced: bool,
+    /// Human-readable preview/usage notes.
     notes: Vec<String>,
 }
 
+/// Entry point for `alp debug-config`: parse target/server, build the launch
+/// draft, then preview it (`--preview`) or merge it into `.vscode/launch.json`.
 pub fn run(g: &GlobalArgs, args: &DebugConfigArgs) -> CommandRun {
     let generated_at = generated_at_iso();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -139,6 +150,8 @@ pub fn run(g: &GlobalArgs, args: &DebugConfigArgs) -> CommandRun {
     )
 }
 
+/// Build a success `CommandRun`: emit the JSON envelope (or text lines) for a
+/// completed preview or write at `ExitCode::Success`.
 #[allow(clippy::too_many_arguments)]
 fn success(
     g: &GlobalArgs,
@@ -197,6 +210,9 @@ fn success(
     }
 }
 
+/// Failure `CommandRun` for invalid kind / unsupported backend / malformed
+/// existing launch.json: exits `InternalFailure` (5) with a `zephyr-mcu`/`none`
+/// placeholder target.
 fn internal_failure(
     g: &GlobalArgs,
     generated_at: &str,
@@ -216,6 +232,9 @@ fn internal_failure(
     )
 }
 
+/// Failure `CommandRun` for a filesystem error while creating the directory or
+/// writing launch.json: exits `WriteFailure` (3), preserving the resolved
+/// target/server.
 fn write_failure(
     g: &GlobalArgs,
     generated_at: &str,
@@ -237,6 +256,8 @@ fn write_failure(
     )
 }
 
+/// Shared failure path: assemble the issue + `data` payload, emit text or a
+/// null-project JSON envelope, and return a `CommandRun` at the given `exit`.
 #[allow(clippy::too_many_arguments)]
 fn failure_envelope(
     g: &GlobalArgs,
@@ -287,6 +308,9 @@ fn failure_envelope(
     CommandRun { exit, text, json }
 }
 
+/// Render the human-readable (non-JSON) output lines for a successful preview
+/// or write, including the pretty-printed launch document and notes unless
+/// `--quiet`.
 #[allow(clippy::too_many_arguments)]
 fn debug_config_text(
     target: DebugTargetKind,

@@ -23,6 +23,9 @@ use crate::exit::ExitCode;
 use crate::style::{self, Theme};
 use crate::util::{command_on_path, generated_at_iso, resolve_cli_project_context};
 
+/// Entry point for `alp doctor`: dispatches to `--build` readiness, else resolves
+/// the debug context, validates `--target-kind`/`--server`, probes runtime
+/// capabilities, and emits the doctor report (text or JSON envelope).
 pub fn run(g: &GlobalArgs, args: &DoctorArgs) -> CommandRun {
     let generated_at = generated_at_iso();
     if args.build {
@@ -261,6 +264,8 @@ fn zephyr_sdk_detected() -> bool {
     })
 }
 
+/// Render the `--build` readiness report as human-readable lines, with the
+/// resolved OS set (e.g. `zephyr · yocto`) as the subtitle.
 fn format_build_text(g: &GlobalArgs, report: &alp_core::BuildReadinessReport) -> Vec<String> {
     let subtitle = report
         .os_set
@@ -314,6 +319,8 @@ fn project_context(context: &alp_core::DebugWorkspaceContext) -> ProjectContext 
     }
 }
 
+/// Map non-passing `DoctorCheck`s to envelope `Issue`s, prefixing the check name
+/// with `doctor.` and mapping `Fail`/`Warn` status to `error`/`warning` severity.
 fn checks_to_issues(checks: &[DoctorCheck]) -> Vec<Issue> {
     checks
         .iter()
@@ -330,6 +337,8 @@ fn checks_to_issues(checks: &[DoctorCheck]) -> Vec<Issue> {
         .collect()
 }
 
+/// Render the doctor report as human-readable lines, with `<target> · <server>`
+/// as the subtitle.
 fn format_doctor_text(g: &GlobalArgs, report: &DoctorReport) -> Vec<String> {
     let subtitle = format!(
         "{} · {}",
@@ -346,6 +355,8 @@ fn format_doctor_text(g: &GlobalArgs, report: &DoctorReport) -> Vec<String> {
     )
 }
 
+/// Build a checkless `DoctorReport` (summary `fail: 1`) for error paths, carrying
+/// the given `target`/`server` and `next_steps` hints.
 fn empty_report(
     generated_at: &str,
     target: DebugTargetKind,
@@ -366,6 +377,8 @@ fn empty_report(
     }
 }
 
+/// Build the `DoctorFailure` (exit 4) result when `server` is not supported for
+/// `target`: a `doctor.server-compatibility` issue plus an empty report.
 fn unsupported_server(
     g: &GlobalArgs,
     generated_at: &str,
@@ -414,6 +427,8 @@ fn unsupported_server(
     }
 }
 
+/// Build the `InternalFailure` (exit 5) result for an invalid `--target-kind`
+/// or `--server`: a `doctor.internal-failure` issue plus an empty report.
 fn internal_failure(g: &GlobalArgs, generated_at: &str, message: String) -> CommandRun {
     let issues = vec![Issue {
         code: "doctor.internal-failure".to_string(),
@@ -449,6 +464,8 @@ fn internal_failure(g: &GlobalArgs, generated_at: &str, message: String) -> Comm
     }
 }
 
+/// A `Project` with no resolved paths, used on error envelopes where the
+/// workspace was never resolved.
 fn null_project() -> Project {
     Project {
         root: None,

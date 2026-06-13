@@ -24,56 +24,88 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::{command_on_path, generated_at_iso, normalize_path, resolve_cli_project_context};
 
+/// Stdout envelope `data` payload for `support-bundle`: the written bundle path
+/// plus the resolved target/server and trace decision count.
 #[derive(Serialize)]
 struct SupportBundleData {
+    /// Payload schema version (always `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// ISO-8601 timestamp the command ran.
     #[serde(rename = "generatedAt")]
     generated_at: String,
+    /// Absolute path of the written bundle file (empty on failure).
     #[serde(rename = "outputPath")]
     output_path: String,
+    /// Resolved debug target kind.
     #[serde(rename = "targetKind")]
     target_kind: DebugTargetKind,
+    /// Resolved debug server kind.
     server: DebugServerKind,
+    /// Number of generation-trace decisions captured.
     #[serde(rename = "decisionCount")]
     decision_count: usize,
 }
 
 // ── bundle file payload (not part of the stdout envelope) ───────────────────
 
+/// Inspect section of the bundle file: the resolved debug workspace context and
+/// its flattened resolved values.
 #[derive(Serialize)]
 struct InspectReport<'a> {
+    /// Section schema version (always `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: &'a str,
+    /// ISO-8601 generation timestamp.
     #[serde(rename = "generatedAt")]
     generated_at: &'a str,
+    /// Resolved debug workspace context.
     context: &'a DebugWorkspaceContext,
+    /// Flattened resolved values derived from `context`.
     #[serde(rename = "resolvedValues")]
     resolved_values: Vec<alp_core::DebugResolvedValue>,
 }
 
+/// Trace section of the bundle file: the workflow id and the captured
+/// generation-trace decisions.
 #[derive(Serialize)]
 struct TraceReport<'a> {
+    /// Section schema version (always `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: &'a str,
+    /// ISO-8601 generation timestamp.
     #[serde(rename = "generatedAt")]
     generated_at: &'a str,
+    /// Workflow identifier (`"cli.support-bundle"`).
     workflow: &'a str,
+    /// Per-target generation-trace decisions.
     decisions: &'a [DebugGenerationTraceDecision],
 }
 
+/// Top-level JSON written to the bundle file: combines inspect, trace, and
+/// doctor sections plus freeform notes.
 #[derive(Serialize)]
 struct BundlePayload<'a> {
+    /// Bundle schema version (always `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: &'a str,
+    /// ISO-8601 generation timestamp.
     #[serde(rename = "generatedAt")]
     generated_at: &'a str,
+    /// Inspect report section.
     inspect: InspectReport<'a>,
+    /// Generation-trace section.
     trace: TraceReport<'a>,
+    /// Doctor report section.
     doctor: &'a DoctorReport,
+    /// Freeform metadata notes (target, server, workspace root).
     notes: Vec<String>,
 }
 
+/// Entry point for `alp support-bundle`: resolves project/target/server, builds
+/// the inspect+trace+doctor payload, writes it to a bundle file, and returns the
+/// envelope. Exit is `DoctorFailure` on unsupported backend or doctor fail count
+/// > 0, else `Success`.
 pub fn run(g: &GlobalArgs, args: &SupportBundleArgs) -> CommandRun {
     let generated_at = generated_at_iso();
     let project = resolve_cli_project_context(g);
@@ -180,6 +212,10 @@ pub fn run(g: &GlobalArgs, args: &SupportBundleArgs) -> CommandRun {
     CommandRun { exit, text, json }
 }
 
+/// Builds the generation-trace decisions: one `Planned` entry per emit target
+/// (with the loader command/output it would run) when the project context is
+/// fully resolved, otherwise a single `Failed` entry. Appends a path-focus entry
+/// when `focus` is set.
 fn create_bundle_trace_decisions(
     context: &ProjectContext,
     target: Option<&str>,
@@ -232,6 +268,8 @@ fn create_bundle_trace_decisions(
     Ok(decisions)
 }
 
+/// Resolves the emit targets to trace: all of `ALL_EMIT_MODES` when `raw` is
+/// `None`, a single validated mode when given, or an error for an unknown mode.
 fn resolve_targets(raw: Option<&str>) -> Result<Vec<&'static str>, String> {
     match raw {
         None => Ok(ALL_EMIT_MODES.to_vec()),
@@ -245,6 +283,9 @@ fn resolve_targets(raw: Option<&str>) -> Result<Vec<&'static str>, String> {
     }
 }
 
+/// Writes `content` to a timestamped `debug-support-bundle-*.json` file under
+/// `destination` (resolved against cwd) or `<workspace_root>/.alp-support`,
+/// creating the directory. Returns the written path.
 fn write_bundle(
     destination: Option<&str>,
     workspace_root: &str,
@@ -267,6 +308,7 @@ fn write_bundle(
     Ok(output_path.to_string_lossy().to_string())
 }
 
+/// Makes an ISO timestamp filename-safe by replacing `:` and `.` with `-`.
 fn timestamp_for_file(iso_timestamp: &str) -> String {
     iso_timestamp
         .chars()
@@ -274,6 +316,8 @@ fn timestamp_for_file(iso_timestamp: &str) -> String {
         .collect()
 }
 
+/// Maps non-`Pass` doctor checks to envelope `Issue`s, coding each as
+/// `support-bundle.<name>` and severity `error` for `Fail`, `warning` otherwise.
 fn doctor_checks_to_issues(checks: &[DoctorCheck]) -> Vec<Issue> {
     checks
         .iter()
@@ -290,6 +334,8 @@ fn doctor_checks_to_issues(checks: &[DoctorCheck]) -> Vec<Issue> {
         .collect()
 }
 
+/// Builds the human-readable (non-JSON) output lines: the exported path and
+/// decision count, plus a `--format json` hint when `--verbose`.
 fn support_bundle_text(output_path: &str, decision_count: usize, g: &GlobalArgs) -> Vec<String> {
     let mut lines = vec![
         format!("support-bundle: exported {output_path}"),
@@ -303,6 +349,8 @@ fn support_bundle_text(output_path: &str, decision_count: usize, g: &GlobalArgs)
     lines
 }
 
+/// Builds the `DoctorFailure` result for an unsupported server/target pairing:
+/// a `support-bundle.server-compatibility` issue and an empty-path data payload.
 fn server_incompatible(
     g: &GlobalArgs,
     generated_at: &str,
@@ -352,6 +400,8 @@ fn server_incompatible(
     }
 }
 
+/// Builds the `InternalFailure` result for an unexpected error: a
+/// `support-bundle.internal-failure` issue and a placeholder data payload.
 fn internal_failure(g: &GlobalArgs, generated_at: &str, message: String) -> CommandRun {
     let issues = vec![Issue {
         code: "support-bundle.internal-failure".to_string(),
@@ -388,6 +438,7 @@ fn internal_failure(g: &GlobalArgs, generated_at: &str, message: String) -> Comm
     }
 }
 
+/// Returns an empty envelope `Project` (no root or `board.yaml`) for failure paths.
 fn null_project() -> Project {
     Project {
         root: None,

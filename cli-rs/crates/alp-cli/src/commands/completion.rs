@@ -10,18 +10,26 @@ use crate::cli::{CompletionArgs, GlobalArgs};
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 
+/// Verbatim bash completion script, captured from the reference TS CLI.
 const BASH_SCRIPT: &str = include_str!("completion_scripts/bash.bash");
+/// Verbatim zsh completion script, captured from the reference TS CLI.
 const ZSH_SCRIPT: &str = include_str!("completion_scripts/zsh.zsh");
+/// Verbatim fish completion script, captured from the reference TS CLI.
 const FISH_SCRIPT: &str = include_str!("completion_scripts/fish.fish");
 
+/// Envelope `data` payload for `completion`: the resolved shell and its script.
 #[derive(serde::Serialize)]
 struct CompletionData {
+    /// Data schema version, serialized as `schemaVersion`; always `"1"`.
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// Resolved shell name (`bash`/`zsh`/`fish`).
     shell: String,
+    /// The emitted completion script body.
     script: String,
 }
 
+/// Build an empty `Project` (no root / `board.yaml`); `completion` is project-agnostic.
 fn null_project() -> Project {
     Project {
         root: None,
@@ -39,6 +47,7 @@ fn resolve_shell(raw: Option<&str>) -> Option<&'static str> {
     }
 }
 
+/// Select the embedded completion script for `shell`; unknown shells fall back to bash.
 fn script_for(shell: &str) -> &'static str {
     match shell {
         "zsh" => ZSH_SCRIPT,
@@ -47,6 +56,8 @@ fn script_for(shell: &str) -> &'static str {
     }
 }
 
+/// Run `alp completion`: resolve `--shell` and emit its script, or fail with
+/// `completion.shell-unsupported` (exit `RuntimeFailure`) for an unsupported shell.
 pub fn run(g: &GlobalArgs, args: &CompletionArgs) -> CommandRun {
     let Some(shell) = resolve_shell(args.shell.as_deref()) else {
         let issues = vec![Issue {

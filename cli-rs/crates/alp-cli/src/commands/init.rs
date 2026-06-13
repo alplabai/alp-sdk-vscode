@@ -19,6 +19,8 @@ use crate::exit::ExitCode;
 // JSON envelope data
 // ---------------------------------------------------------------------------
 
+/// One planned file change in the JSON envelope: its workspace-relative path and
+/// change kind (`create`/`update`/`unchanged`, from `WizardFileChangeKind`).
 #[derive(serde::Serialize)]
 struct FileChangeSer {
     #[serde(rename = "relativePath")]
@@ -26,6 +28,9 @@ struct FileChangeSer {
     kind: String,
 }
 
+/// `data` payload for the `init` envelope: the resolved template/destination,
+/// whether this was a preview, the planned `file_changes`, and post-write
+/// `written`/`unchanged` lists.
 #[derive(serde::Serialize)]
 struct InitData {
     #[serde(rename = "schemaVersion")]
@@ -44,6 +49,9 @@ struct InitData {
 // Entry point
 // ---------------------------------------------------------------------------
 
+/// Execute `alp init`: resolve template/name/destination (prompting when
+/// interactive), build the scaffold plan (heterogeneous when `--cores` is given),
+/// then preview or write files — guarding overwrites behind `--force`.
 pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
     let is_interactive = !g.non_interactive && !g.ci;
 
@@ -230,12 +238,14 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
 // Resolution helpers
 // ---------------------------------------------------------------------------
 
+/// Accepted per-core OS values for `--cores` entries (`id:os`).
 const CORE_OS_CHOICES: [&str; 4] = ["zephyr", "yocto", "baremetal", "off"];
 
 /// Parse + validate `--cores` (`id[:os],…`) into `(id, os)` pairs. OS is
-/// inferred from the core-id silicon class when omitted. Errors (exit 2) on an
-/// id outside the schema's `^[a-z][a-z0-9_]+$` pattern, an unknown OS, or a
-/// duplicate id — invalid values would otherwise flow verbatim into board.yaml.
+/// inferred from the core-id silicon class when omitted. Errors (the
+/// `init.invalid-cores` issue, exit 1) on an id outside the schema's
+/// `^[a-z][a-z0-9_]+$` pattern, an unknown OS, or a duplicate id — invalid
+/// values would otherwise flow verbatim into board.yaml.
 /// None/empty → no cores (single-core default).
 fn parse_cores(raw: Option<&str>) -> Result<Vec<(String, String)>, String> {
     let Some(raw) = raw else {
@@ -277,12 +287,18 @@ fn parse_cores(raw: Option<&str>) -> Result<Vec<(String, String)>, String> {
     Ok(cores)
 }
 
+/// Outcome of resolving an interactive/CLI input that didn't succeed.
 enum ResolveErr {
+    /// User aborted the prompt (Ctrl-C / Esc) — maps to a runtime failure.
     Cancelled,
+    /// A supplied argument was invalid; carries the user-facing message
+    /// (routed through `error_run` → exit 1).
     BadArg(String),
 }
 use ResolveErr::*;
 
+/// Resolve the template id from `--template`, an interactive picker, or the
+/// `MinimalApp` default in non-interactive mode.
 fn resolve_template(arg: Option<&str>, interactive: bool) -> Result<WizardTemplateId, ResolveErr> {
     if let Some(s) = arg {
         return WizardTemplateId::from_str(s)
@@ -308,6 +324,8 @@ fn resolve_template(arg: Option<&str>, interactive: bool) -> Result<WizardTempla
     Ok(WizardTemplateId::MinimalApp)
 }
 
+/// Resolve the optional project name from `--name` or an interactive prompt;
+/// empty means scaffold directly into the destination.
 fn resolve_name(arg: Option<&str>, interactive: bool) -> Result<String, ResolveErr> {
     if let Some(s) = arg {
         return Ok(s.to_string());
@@ -327,6 +345,8 @@ fn resolve_name(arg: Option<&str>, interactive: bool) -> Result<String, ResolveE
     Ok(String::new())
 }
 
+/// Resolve the destination directory, preferring `--destination`, then the
+/// global `--project`, then an interactive prompt, defaulting to `.`.
 fn resolve_destination(
     arg: Option<&str>,
     project: Option<&str>,
@@ -361,6 +381,8 @@ fn resolve_destination(
 // Response builders
 // ---------------------------------------------------------------------------
 
+/// Build the envelope `Project` block, recording `destination` as the root
+/// (no `board.yaml` exists yet at init time).
 fn make_project(destination: &str) -> Project {
     Project {
         root: Some(destination.to_string()),
@@ -368,6 +390,8 @@ fn make_project(destination: &str) -> Project {
     }
 }
 
+/// Build an `InitData` payload with empty `written`/`unchanged` lists, used for
+/// preview and overwrite-guard responses where no files are actually written.
 fn empty_data(
     template_id: WizardTemplateId,
     destination: &str,
@@ -385,6 +409,8 @@ fn empty_data(
     }
 }
 
+/// A bare `RuntimeFailure` result with no text/JSON, returned when the user
+/// cancels an interactive prompt.
 fn runtime_failure_run() -> CommandRun {
     CommandRun {
         exit: ExitCode::RuntimeFailure,
@@ -393,6 +419,8 @@ fn runtime_failure_run() -> CommandRun {
     }
 }
 
+/// Build a `RuntimeFailure` `CommandRun` carrying a single error `Issue` (and a
+/// matching text/JSON envelope) for the given `code` and `message`.
 fn error_run(g: &GlobalArgs, code: &str, message: &str) -> CommandRun {
     let project = Project {
         root: None,

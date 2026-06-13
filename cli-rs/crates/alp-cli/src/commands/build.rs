@@ -25,14 +25,20 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
 
+/// Envelope `data` for the `west`-delegating path: the `alp-*` command run, its
+/// cwd, and the forwarded args.
 #[derive(Serialize)]
 struct BuildData {
+    /// Envelope `data` schema version (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// The `west alp-*` command invoked (e.g. `alp-build`).
     #[serde(rename = "westCommand")]
     west_command: String,
+    /// Working directory the `west` command ran in.
     #[serde(rename = "westCwd")]
     west_cwd: String,
+    /// Passthrough args forwarded verbatim after the subcommand.
     args: Vec<String>,
 }
 
@@ -208,22 +214,31 @@ fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
     execute_slices(g, project, &plan, &base)
 }
 
+/// Per-slice outcome of a `--native` run, folded into the envelope.
 #[derive(Serialize)]
 struct SliceResult {
+    /// The core this slice builds (e.g. `m55_hp`).
     #[serde(rename = "coreId")]
     core_id: String,
+    /// Build backend for the slice (`zephyr` / `yocto` / `baremetal`).
     backend: String,
+    /// Outcome: `"ok"`, `"failed"`, or `"skipped"` (no command).
     status: String, // "ok" | "failed" | "skipped"
+    /// Process exit code, when the tool actually launched.
     #[serde(skip_serializing_if = "Option::is_none")]
     rc: Option<i32>,
 }
 
+/// Envelope `data` for a `--native` build: the base dir plus each slice result.
 #[derive(Serialize)]
 struct BuildRunData {
+    /// Envelope `data` schema version (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// Project build-tree base the slices ran under.
     #[serde(rename = "baseDir")]
     base_dir: String,
+    /// Outcome of each slice, in plan order.
     slices: Vec<SliceResult>,
 }
 
@@ -420,6 +435,8 @@ fn invoke_sdk_emit(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Render the acquired build plan without executing: JSON emits the plan in an
+/// envelope; text emits `summarize_plan`.
 fn show_plan_run(g: &GlobalArgs, project: Project, plan: &BuildPlan) -> CommandRun {
     if g.is_json() {
         let json =
@@ -438,15 +455,21 @@ fn show_plan_run(g: &GlobalArgs, project: Project, plan: &BuildPlan) -> CommandR
     }
 }
 
+/// Envelope `data` for a `--materialise` run: where files were written and which.
 #[derive(Serialize)]
 struct MaterialiseData {
+    /// Envelope `data` schema version (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     schema_version: String,
+    /// Base dir the artefacts were written under.
     #[serde(rename = "baseDir")]
     base_dir: String,
+    /// Relative paths of every artefact written.
     written: Vec<String>,
 }
 
+/// Build the success `CommandRun` after materialising: JSON envelope or a text
+/// listing of the written files.
 fn materialise_ok_run(
     g: &GlobalArgs,
     project: Project,
@@ -481,6 +504,8 @@ fn materialise_ok_run(
     }
 }
 
+/// Build a failure `CommandRun` carrying a single `Issue` (`code`/`message`) at
+/// the given `exit`: JSON emits a null-data envelope; text emits `build: <msg>`.
 fn plan_error_run(
     g: &GlobalArgs,
     project: Project,
@@ -537,13 +562,17 @@ fn materialise_plan(plan: &BuildPlan, base: &Path) -> Result<Vec<String>, Materi
     Ok(written)
 }
 
+/// Failure modes of `materialise_plan`.
 #[derive(Debug)]
 enum MaterialiseError {
+    /// Artefact path was absolute or contained `..` (rejected before writing).
     UnsafePath(String),
+    /// I/O error while creating dirs or writing the artefact at this path.
     Io(String, std::io::Error),
 }
 
 impl MaterialiseError {
+    /// Human-readable, single-line description of the failure for the envelope.
     fn message(&self) -> String {
         match self {
             MaterialiseError::UnsafePath(p) => {
@@ -658,6 +687,7 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
     }
 }
 
+/// Build an `error`-severity envelope `Issue` with code `<subcommand>.failed`.
 fn issue(subcommand: &str, message: String) -> Issue {
     Issue {
         code: format!("{subcommand}.failed"),
@@ -666,6 +696,8 @@ fn issue(subcommand: &str, message: String) -> Issue {
     }
 }
 
+/// Map a `west` launch I/O error to a user-facing message — special-casing
+/// `NotFound` with a bootstrap/PATH hint.
 fn west_launch_error(e: &std::io::Error) -> String {
     if e.kind() == std::io::ErrorKind::NotFound {
         "west not found on PATH — run `alp bootstrap` and ensure west is on PATH.".to_string()
