@@ -19,6 +19,7 @@ pub mod preview;
 pub mod project;
 pub mod sdk;
 pub mod sdk_catalogue;
+pub mod system_manifest;
 pub mod validate;
 pub mod wizard;
 
