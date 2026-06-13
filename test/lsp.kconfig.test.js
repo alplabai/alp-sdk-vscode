@@ -129,7 +129,9 @@ test("every curated ALP_* symbol is defined in the SDK's real zephyr Kconfig (dr
     "curated ALP_* symbol(s) not found as `config <SYM>` in the SDK's zephyr " +
       `Kconfig: ${missing
         .map((n) => `${n} (bare-substring present: ${text.includes(n)})`)
-        .join(", ")} — renamed/removed upstream or fabricated; completion would ` +
+        .join(
+          ", ",
+        )} — renamed/removed upstream or fabricated; completion would ` +
       "insert undefined-symbol lines that break builds.",
   );
 });
