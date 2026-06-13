@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Build + publish the VS Code extension (.vsix) to the VS Code Marketplace and
+# Open VSX. Triggered by a `v*` tag (the extension version in package.json, e.g.
+# v0.3.0), or manually via workflow_dispatch.
+#
+# Required repo secrets (publish is SKIPPED, not failed, when a secret is unset):
+#   VSCE_PAT  — Azure DevOps PAT for the `alplabai` Marketplace publisher
+#               (https://dev.azure.com → User settings → Personal Access Tokens,
+#                scope: Marketplace ▸ Manage). Used by `vsce publish`.
+#   OVSX_PAT  — Open VSX access token (https://open-vsx.org → user → Access
+#               Tokens). Used by `ovsx publish`. Optional — omit to skip Open VSX.
+#
+# Release flow: bump package.json `version`, ensure the targeted CLI release is
+# published (the extension downloads it on demand — SUPPORTED_CLI_VERSION must
+# match a published cli-rs-v<version>), commit, then `git tag v<version>` + push.
+
+name: release-vsix
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to the Marketplace + Open VSX
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package_and_publish:
+    name: package + publish vsix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+      # Publish on a pushed tag, or a manual run with publish=true.
+      SHOULD_PUBLISH: ${{ github.event_name == 'push' || inputs.publish == true }}
+
+    steps:
+      - name: Checkout (with submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile (extension + CLI bundle + webview)
+        run: pnpm run compile
+
+      - name: Unit / integration tests
+        run: node --test "test/*.test.js"
+
+      - name: Package (.vsix)
+        run: pnpm exec vsce package --no-dependencies --out alp-sdk.vsix
+
+      - name: Upload vsix artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alp-sdk-vsix
+          path: alp-sdk.vsix
+          retention-days: 30
+
+      - name: Publish to VS Code Marketplace
+        if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
+        run: pnpm exec vsce publish --no-dependencies --packagePath alp-sdk.vsix
+        # VSCE_PAT is read from the environment by vsce.
+
+      - name: Publish to Open VSX
+        if: ${{ env.SHOULD_PUBLISH == 'true' && env.OVSX_PAT != '' }}
+        run: npx --yes ovsx publish alp-sdk.vsix --pat "$OVSX_PAT"
+
+      - name: Note when publish was skipped
+        if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT == '' }}
+        run: echo "::warning::VSCE_PAT not set — built the .vsix but skipped Marketplace publish. Add the VSCE_PAT repo secret to enable it."
