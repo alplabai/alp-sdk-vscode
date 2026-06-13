@@ -483,6 +483,11 @@
   white-space: nowrap;
   color: var(--text-secondary);
 }
+/* Enabled NPU compile target whose required path(s) are still empty. */
+.modelChkWarn {
+  color: var(--vscode-errorForeground, #f48771);
+  font-weight: 600;
+}
 
 /* ── buttons ────────────────────────────────────────────────────────── */
 .btn {

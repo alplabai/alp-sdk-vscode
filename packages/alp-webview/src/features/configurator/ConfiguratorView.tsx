@@ -5,6 +5,7 @@ import type {
   ChipChoice,
   ConfiguratorViewModel,
   CorePanel,
+  ModelEntry,
   Ota,
 } from "../../types";
 import styles from "./ConfiguratorView.module.css";
@@ -413,12 +414,31 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
 type CoreClass = "cortex-m" | "cortex-a" | "unknown";
 
 /** Best-effort silicon class from the core ID (stopgap until the CLI emits the
- *  SoM topology's per-core class): m33/m55/… → Cortex-M, a55/a32/… → Cortex-A. */
+ *  SoM topology's per-core class): m33/m55/… → Cortex-M, a55/a32/… → Cortex-A.
+ *  KEEP IN SYNC with Rust `infer_runtime_for_core_id`
+ *  (`cli-rs/crates/alp-core/src/wizard/service.rs`): same `a<digit>`/`m<digit>`
+ *  word-start heuristic. Difference by design: there an unknown id defaults to
+ *  `zephyr` (it must pick a runtime); here it returns "unknown" so the UI offers
+ *  all OS options. */
 function coreSiliconClass(id: string): CoreClass {
   const s = id.toLowerCase();
   if (/(^|[_-])m\d/.test(s)) return "cortex-m";
   if (/(^|[_-])a\d/.test(s)) return "cortex-a";
   return "unknown";
+}
+
+/** DeepX NPU compile target enabled but missing its config/calibration path(s).
+ *  A configurator-time gate so the user fixes it here instead of hitting a
+ *  downstream `alp generate` file-not-found. */
+function deepxPathMissing(m: ModelEntry): boolean {
+  const d = m.compile?.deepx_dxm1;
+  return !!d && (!d.config.trim() || !d.calibration.trim());
+}
+
+/** DRP-AI NPU compile target enabled but missing its spec path. */
+function drpaiPathMissing(m: ModelEntry): boolean {
+  const d = m.compile?.drpai;
+  return !!d && !d.spec.trim();
 }
 
 /** The runtime a core naturally runs (its SoM-topology default). */
@@ -1351,8 +1371,14 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                   }
                 />
                 <label
-                  className={styles.modelChk}
-                  title="Compile for the DeepX DX-M1 NPU — fill the config/calibration paths in YAML"
+                  className={`${styles.modelChk}${
+                    deepxPathMissing(m) ? " " + styles.modelChkWarn : ""
+                  }`}
+                  title={
+                    deepxPathMissing(m)
+                      ? "DeepX is enabled but its config/calibration paths are empty — fill them in the YAML, or `alp generate` fails with file-not-found."
+                      : "Compile for the DeepX DX-M1 NPU — fill the config/calibration paths in YAML"
+                  }
                 >
                   <input
                     type="checkbox"
@@ -1377,8 +1403,14 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                   DeepX
                 </label>
                 <label
-                  className={styles.modelChk}
-                  title="Compile for the Renesas DRP-AI NPU — fill the spec path in YAML"
+                  className={`${styles.modelChk}${
+                    drpaiPathMissing(m) ? " " + styles.modelChkWarn : ""
+                  }`}
+                  title={
+                    drpaiPathMissing(m)
+                      ? "DRP-AI is enabled but its spec path is empty — fill it in the YAML, or `alp generate` fails with file-not-found."
+                      : "Compile for the Renesas DRP-AI NPU — fill the spec path in YAML"
+                  }
                 >
                   <input
                     type="checkbox"

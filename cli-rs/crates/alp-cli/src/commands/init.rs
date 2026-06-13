@@ -105,7 +105,7 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
     // The app core's runtime is fixed (the scaffolded src/ + prj.conf are
     // Zephyr); reject a contradictory --cores request instead of silently
     // overriding it.
-    let app_core = app_core_for_sku(args.som.as_deref().unwrap_or("E1M-AEN701"));
+    let app_core = app_core_for_sku(args.som.as_deref().unwrap_or(alp_core::DEFAULT_SOM_SKU));
     if let Some((_, os)) = cores
         .iter()
         .find(|(id, os)| id.as_str() == app_core && os.as_str() != "zephyr")

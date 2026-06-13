@@ -359,8 +359,13 @@ pub fn app_core_for_sku(sku: &str) -> &'static str {
 /// Best-effort runtime for a core id when the topology gives no `board:` /
 /// `machine:` hint: a Cortex-A-looking id (`a<digit>` at a word start, e.g.
 /// `a55_cluster`) runs Linux (yocto); everything else defaults to Zephyr.
-/// Single owner of this heuristic — `alp presets` and `alp init` both use it,
-/// and it mirrors the IDE configurator's silicon-class gating.
+/// Single owner of this heuristic — `alp presets` and `alp init` both use it.
+/// KEEP IN SYNC with the IDE configurator's `coreSiliconClass`
+/// (`packages/alp-webview/src/features/configurator/ConfiguratorView.tsx`): same
+/// `a<digit>`/`m<digit>` word-start test. The one intentional difference is the
+/// fallback — here an unrecognized id defaults to `zephyr` (a concrete runtime
+/// must be picked), whereas the configurator returns `unknown` to offer all OS
+/// options. Covered by the `infer_runtime_*` unit tests below.
 pub fn infer_runtime_for_core_id(id: &str) -> &'static str {
     let lower = id.to_lowercase();
     let bytes = lower.as_bytes();
@@ -383,7 +388,7 @@ fn gen_board_yaml(
     som_sku: Option<&str>,
     cores: &[(String, String)],
 ) -> String {
-    let sku = som_sku.unwrap_or("E1M-AEN701");
+    let sku = som_sku.unwrap_or(crate::DEFAULT_SOM_SKU);
     let core = app_core_for_sku(sku);
 
     let mut s = String::new();
@@ -456,7 +461,7 @@ fn gen_board_yaml(
 }
 
 fn gen_readme(def: &WizardTemplateDefinition, som_sku: Option<&str>) -> String {
-    let sku = som_sku.unwrap_or("E1M-AEN701");
+    let sku = som_sku.unwrap_or(crate::DEFAULT_SOM_SKU);
     let mut s = String::new();
     s.push_str("# ALP Starter Project\n\n");
     s.push_str(&format!("Template: {}\n", def.id.as_str()));
