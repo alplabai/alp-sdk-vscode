@@ -5,13 +5,25 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+description = "The native `alp` CLI for ALP SDK embedded projects: board.yaml validate/generate, project scaffolding, toolchain bootstrap, and west build/flash with a stable JSON envelope."
+
+# cargo-binstall: fetch the prebuilt archive from the GitHub release instead of
+# compiling. The archive layout matches release-cli-rs.yml (tag `cli-rs-v<ver>`,
+# `alp-<target>.tar.gz`, binary at the root). Unlisted targets fall back to a
+# from-source `cargo install`.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/cli-rs-v{ version }/alp-{ target }.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"
 
 [[bin]]
 name = "alp"
 path = "src/main.rs"
 
 [dependencies]
-alp-core = { path = "../alp-core" }
+# path for local builds; version lets crates.io resolve the dep. Keep the
+# version in lockstep with the workspace on a minor/major bump.
+alp-core = { path = "../alp-core", version = "0.1.4" }
 clap.workspace = true
 inquire.workspace = true
 serde.workspace = true

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+description = "Pure domain logic for the ALP SDK tooling: board.yaml model/validate, build-plan + system-manifest contracts, presets, and debug/doctor reports. Shared by the `alp` CLI."
 
 [dependencies]
 serde.workspace = true

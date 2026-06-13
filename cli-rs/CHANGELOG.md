@@ -12,6 +12,12 @@ same version.
 
 ## Unreleased
 
+- **crates.io + `cargo binstall` distribution.** The release now publishes the
+  `alp-core` + `alp-cli` crates to crates.io (`cargo install alp-cli`), and
+  `alp-cli` carries cargo-binstall metadata so `cargo binstall alp-cli` fetches
+  the prebuilt GitHub-release archive instead of compiling. Joins the existing
+  channels (GitHub archives + the `alp-sdk` npm shim). Gated on a
+  `CARGO_REGISTRY_TOKEN` repo secret.
 - **`alp doctor --build` checks the Yocto flash prerequisite.** For a project
   with a Yocto core, the build-readiness report now verifies `bmaptool` (the
   preferred sparse `.wic` flasher used by `west alp-flash`) — passing when
