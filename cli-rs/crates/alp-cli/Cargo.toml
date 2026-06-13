@@ -1,5 +1,5 @@
 [package]
-name = "alplabai-alp-cli"
+name = "alp-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -21,10 +21,9 @@ name = "alp"
 path = "src/main.rs"
 
 [dependencies]
-# Renamed crate (alplabai- prefix; crates.io has no @scope), imported as
-# `alp_core` via the dependency key. path for local builds; version lets
-# crates.io resolve it. Keep the version in lockstep with the workspace.
-alp-core = { package = "alplabai-alp-core", path = "../alp-core", version = "0.1.5" }
+# path for local builds; version lets crates.io resolve the dep. Keep the
+# version in lockstep with the workspace on a minor/major bump.
+alp-core = { path = "../alp-core", version = "0.1.5" }
 clap.workspace = true
 inquire.workspace = true
 serde.workspace = true
