@@ -93,31 +93,49 @@ test("curated ALP symbols match the SDK's real Kconfig names", () => {
 
 test("every curated ALP_* symbol is defined in the SDK's real zephyr Kconfig (drift gate)", () => {
   // The fabricated/real check above is a fixed list — it can't catch a NEW
-  // fabrication or an upstream rename/removal. Parse the real `config <NAME>`
-  // symbols from alp-sdk-upstream's zephyr Kconfig and assert every curated ALP_*
-  // name is among them, so completion never inserts an undefined-symbol line.
+  // fabrication or an upstream rename/removal. Verify every curated ALP_* name is
+  // a real `config <NAME>` in alp-sdk-upstream's zephyr Kconfig so completion
+  // never inserts an undefined-symbol line.
   const fs = require("node:fs");
   const path = require("node:path");
-  const root = path.join(__dirname, "..", "alp-sdk-upstream", "zephyr");
-  const files = ["Kconfig", "Kconfig.alp-libraries"].map((f) =>
-    path.join(root, f),
-  );
-  // Skip gracefully when the submodule isn't checked out (CI uses
-  // submodules: recursive; the rest of the suite doesn't need it).
-  if (!files.every((f) => fs.existsSync(f))) {
+  const { execFileSync } = require("node:child_process");
+  const sub = path.join(__dirname, "..", "alp-sdk-upstream");
+  const rel = ["zephyr/Kconfig", "zephyr/Kconfig.alp-libraries"];
+  if (!fs.existsSync(path.join(sub, rel[0]))) {
     console.warn(
       "alp-sdk-upstream not checked out — skipping the Kconfig drift gate",
     );
     return;
   }
-  const text = files.map((f) => fs.readFileSync(f, "utf-8")).join("\n");
+  // Union two reads of the PINNED submodule: the working tree AND the git objects
+  // at HEAD. CI runners sometimes leave the submodule working tree stale even
+  // when HEAD is correct (a working-tree-only read then spuriously misses a
+  // symbol); the `git show HEAD:` read is immune to that. A symbol counts as
+  // present if it appears in EITHER source.
+  const sources = [];
+  for (const p of rel) {
+    const f = path.join(sub, p);
+    if (fs.existsSync(f)) sources.push(fs.readFileSync(f, "utf-8"));
+  }
+  try {
+    for (const p of rel) {
+      sources.push(
+        execFileSync("git", ["-C", sub, "show", `HEAD:${p}`], {
+          encoding: "utf-8",
+          maxBuffer: 64 * 1024 * 1024,
+        }),
+      );
+    }
+  } catch {
+    // git or the pinned objects unavailable — fall back to the working tree.
+  }
+  const text = sources.join("\n");
   const curatedAlp = KCONFIG_SYMBOLS.map((s) => s.name).filter((n) =>
     n.startsWith("ALP_"),
   );
   assert.ok(curatedAlp.length > 0, "expected curated ALP_* symbols");
-  // Match `config <SYM>` at a line start, tolerant of any line ending + leading
+  // `config <SYM>` at a line start, tolerant of any line ending + leading
   // whitespace; the lookahead stops `ALP_SDK_RPC` matching `ALP_SDK_RPC_…`.
-  // (Scans the whole text instead of splitting into lines, which proved fragile.)
   const definedUpstream = (sym) =>
     new RegExp(`(?:^|[\\r\\n])[ \\t]*config[ \\t]+${sym}(?![A-Z0-9_])`).test(
       text,
@@ -128,7 +146,7 @@ test("every curated ALP_* symbol is defined in the SDK's real zephyr Kconfig (dr
     [],
     "curated ALP_* symbol(s) not found as `config <SYM>` in the SDK's zephyr " +
       `Kconfig: ${missing
-        .map((n) => `${n} (bare-substring present: ${text.includes(n)})`)
+        .map((n) => `${n} (substring present: ${text.includes(n)})`)
         .join(
           ", ",
         )} — renamed/removed upstream or fabricated; completion would ` +
