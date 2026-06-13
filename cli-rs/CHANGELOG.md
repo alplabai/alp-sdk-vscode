@@ -12,6 +12,8 @@ same version.
 
 ## Unreleased
 
+## 0.1.4
+
 - **`alp build --manifest [--manifest-from FILE]`.** Reads the ALP system
   manifest — the post-build IDE/tool contract (`build/system-manifest.yaml`,
   alp-sdk v0.7.0): per-core slices + ipc + helper MCUs. `--manifest-from` reads
