@@ -12,6 +12,8 @@ same version.
 
 ## Unreleased
 
+## 0.1.6
+
 - **Fixed: `alp init` error exit codes now match the contract.** Invalid
   `--cores` / `--template` input now exits **2** (`ValidationFailure`) and a
   write failure exits **3** (`WriteFailure`); all three previously exited 1.
@@ -23,8 +25,8 @@ same version.
   its README (`#![doc = include_str!("../README.md")]`) and every module/type/field
   carries a `///` doc-comment, so [docs.rs/alp-core](https://docs.rs/alp-core) and
   [docs.rs/alp-cli](https://docs.rs/alp-cli) render a complete reference (the
-  `alp-cli` binary page builds with `--document-private-items`). Takes effect on
-  the next publish.
+  `alp-cli` binary page builds with `--document-private-items`). First rendered
+  on crates.io / docs.rs from this release.
 
 ## 0.1.5
 
