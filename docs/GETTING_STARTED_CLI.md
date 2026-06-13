@@ -6,32 +6,32 @@ This guide covers the terminal-first ALP CLI workflow. Two usage modes are
 supported: **standalone install** (npm, recommended for end users and CI) and
 **development from source** (build from this repository).
 
-> **Heads up (migration in progress).** The `alp-sdk` npm package currently ships
-> the TypeScript CLI. A native Rust binary (`cli-rs/`) is feature-complete and
-> will replace it at cutover — the `alp` command and its flags/output stay the
-> same, so the workflow below is unchanged. To try the native binary today, build
-> from source: `cargo build --release --manifest-path cli-rs/Cargo.toml` →
+> **Note.** The `@alplabai/alp-cli` npm package ships the native Rust binary
+> (`cli-rs/`); the former TypeScript CLI has been retired. The `alp` command and
+> its flags/output are held byte-for-byte compatible with this guide. To run the
+> binary from source instead, build it:
+> `cargo build --release --manifest-path cli-rs/Cargo.toml` →
 > `cli-rs/target/release/alp`.
 
 ## 0. Standalone Install
 
-Install the `alp-sdk` npm package to get the `alp` command globally:
+Install the `@alplabai/alp-cli` npm package to get the `alp` command globally:
 
 ```bash
-npm install -g alp-sdk
+npm install -g @alplabai/alp-cli
 alp --help
 ```
 
 Or use without installing via npx:
 
 ```bash
-npx alp-sdk --help
+npx @alplabai/alp-cli --help
 ```
 
 For CI environments, pin to an exact version to ensure reproducibility:
 
 ```bash
-npm install -g alp-sdk@0.3.0
+npm install -g @alplabai/alp-cli@0.1.5
 ```
 
 For air-gapped or offline environments, download the tarball from the
@@ -39,7 +39,7 @@ For air-gapped or offline environments, download the tarball from the
 and install from the local file:
 
 ```bash
-npm install -g alp-sdk          # the npm shim downloads the matching release binary
+npm install -g @alplabai/alp-cli   # the npm shim downloads the matching release binary
 ```
 
 The `alp` command below is the native Rust binary. For development from source,
