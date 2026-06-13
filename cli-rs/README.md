@@ -22,7 +22,7 @@ emits a **stable JSON envelope** with a fixed exit-code matrix, so it scripts cl
 ## Install
 
 Pick whichever matches your toolchain — all install the same `alp` binary at version
-`0.1.5`.
+`0.1.6`.
 
 ### npm (no Rust toolchain needed)
 

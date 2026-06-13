@@ -171,7 +171,7 @@ npx @alplabai/alp-cli --help
 
 ```bash
 # Pin to a specific version
-npx @alplabai/alp-cli@0.1.5 --help
+npx @alplabai/alp-cli@0.1.6 --help
 ```
 
 ### For developers (local from source)
@@ -190,7 +190,7 @@ breakage from minor/patch updates:
 
 ```yaml
 - name: Install alp CLI
-  run: npm install -g @alplabai/alp-cli@0.1.5
+  run: npm install -g @alplabai/alp-cli@0.1.6
 
 - name: Validate board config
   run: alp validate --format json board.yaml

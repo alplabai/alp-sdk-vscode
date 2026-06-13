@@ -31,7 +31,7 @@ npx @alplabai/alp-cli --help
 For CI environments, pin to an exact version to ensure reproducibility:
 
 ```bash
-npm install -g @alplabai/alp-cli@0.1.5
+npm install -g @alplabai/alp-cli@0.1.6
 ```
 
 For air-gapped or offline environments, download the tarball from the
