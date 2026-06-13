@@ -12,16 +12,22 @@ use serde::Serialize;
 
 use crate::project::ProjectContext;
 
+/// Class of debug target a project produces; drives which servers and checks apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DebugTargetKind {
+    /// Zephyr RTOS firmware on an MCU.
     ZephyrMcu,
+    /// Bare-metal firmware on an MCU.
     BaremetalMcu,
+    /// A userspace process on a Yocto/Linux image.
     YoctoUserspace,
+    /// A native executable on the host machine.
     NativeHost,
 }
 
 impl DebugTargetKind {
+    /// The kebab-case wire string for this kind (matches the serde representation).
     pub fn as_str(self) -> &'static str {
         match self {
             DebugTargetKind::ZephyrMcu => "zephyr-mcu",
@@ -32,17 +38,24 @@ impl DebugTargetKind {
     }
 }
 
+/// Debug-server / GDB backend used to attach to a target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DebugServerKind {
+    /// SEGGER J-Link GDB server.
     Jlink,
+    /// OpenOCD.
     Openocd,
+    /// pyOCD.
     Pyocd,
+    /// A remote `gdbserver` (Yocto userspace).
     Gdbserver,
+    /// No server (native-host debugging).
     None,
 }
 
 impl DebugServerKind {
+    /// The lowercase wire string for this kind (matches the serde representation).
     pub fn as_str(self) -> &'static str {
         match self {
             DebugServerKind::Jlink => "jlink",
@@ -54,11 +67,15 @@ impl DebugServerKind {
     }
 }
 
+/// Outcome of a single doctor check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DoctorStatus {
+    /// Check passed.
     Pass,
+    /// Non-fatal issue (degraded but usable).
     Warn,
+    /// Blocking failure.
     Fail,
 }
 
@@ -91,6 +108,7 @@ pub fn parse_server_kind(raw: Option<&str>) -> Result<DebugServerKind, String> {
     }
 }
 
+/// The debug servers valid for a given target kind.
 pub fn server_choices_for_target(target: DebugTargetKind) -> &'static [DebugServerKind] {
     match target {
         DebugTargetKind::ZephyrMcu | DebugTargetKind::BaremetalMcu => &[
@@ -103,26 +121,38 @@ pub fn server_choices_for_target(target: DebugTargetKind) -> &'static [DebugServ
     }
 }
 
+/// Whether `server` is among the valid choices for `target`.
 pub fn is_server_supported_for_target(target: DebugTargetKind, server: DebugServerKind) -> bool {
     server_choices_for_target(target).contains(&server)
 }
 
+/// Which VS Code debugger extensions are installed in the host.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DebuggerExtensionsState {
+    /// `marus25.cortex-debug` is installed.
     pub cortex_debug: bool,
+    /// `ms-vscode.cpptools` is installed.
     pub cpp_tools: bool,
+    /// `vadimcn.vscode-lldb` is installed.
     #[serde(rename = "codeLLDB")]
     pub code_lldb: bool,
 }
 
+/// Probed availability of debug tooling on the host (PATH lookups + interpreter).
 #[derive(Debug, Clone)]
 pub struct DebugRuntimeCapabilities {
+    /// The configured Python interpreter is on PATH.
     pub python_available: bool,
+    /// Resolved J-Link GDB-server executable name, if found.
     pub jlink_executable: Option<String>,
+    /// Resolved OpenOCD executable name, if found.
     pub open_ocd_executable: Option<String>,
+    /// Resolved pyOCD executable name, if found.
     pub pyocd_executable: Option<String>,
+    /// Resolved GDB executable name, if found.
     pub gdb_executable: Option<String>,
+    /// Resolved LLDB executable name, if found.
     pub lldb_executable: Option<String>,
 }
 
@@ -132,13 +162,21 @@ pub struct DebugRuntimeCapabilities {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DebugWorkspaceContext {
+    /// ISO-8601 timestamp the context was created.
     pub generated_at: String,
+    /// Active workspace folder, if any.
     pub workspace_root: Option<String>,
+    /// Resolved alp-sdk checkout root.
     pub sdk_root: Option<String>,
+    /// Resolved `board.yaml` path.
     pub board_yaml_path: Option<String>,
+    /// Working directory used for `west` commands.
     pub west_cwd: Option<String>,
+    /// Python interpreter used for loader/validation scripts.
     pub python_binary: String,
+    /// Whether `board.yaml` exists at the resolved path (probed).
     pub board_yaml_exists: bool,
+    /// Installed-extension state for the host.
     pub debugger_extensions: DebuggerExtensionsState,
 }
 
@@ -168,22 +206,34 @@ pub fn create_debug_workspace_context(
 
 // ───────────────────────── inspect: resolved values ─────────────────────────
 
+/// Where a resolved `alp inspect` value originated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DebugValueSource {
+    /// Derived from the active workspace folder.
     Workspace,
+    /// From an explicit extension/user setting.
     Setting,
+    /// A built-in default.
     Default,
+    /// Probed at runtime (e.g. file existence).
     Runtime,
+    /// Computed from other values.
     Derived,
+    /// Could not be resolved.
     Unresolved,
 }
 
+/// A single resolved project value surfaced by `alp inspect`.
 #[derive(Debug, Clone, Serialize)]
 pub struct DebugResolvedValue {
+    /// Stable key (e.g. `workspaceRoot`).
     pub key: String,
+    /// The resolved value (string, bool, or null).
     pub value: serde_json::Value,
+    /// How the value was obtained.
     pub source: DebugValueSource,
+    /// Human-readable explanation.
     pub detail: String,
 }
 
@@ -284,20 +334,29 @@ pub fn collect_resolved_values(context: &DebugWorkspaceContext) -> Vec<DebugReso
 
 // ───────────────────────── trace: generation decisions ─────────────────────
 
+/// Result of a single generation decision in an `alp trace`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DebugTraceOutcome {
+    /// Output was planned but not written.
     Planned,
+    /// Output was written to disk.
     Written,
+    /// Generation failed.
     Failed,
 }
 
+/// One generation decision recorded by `alp trace`.
 #[derive(Debug, Clone, Serialize)]
 pub struct DebugGenerationTraceDecision {
+    /// Identifier of the artifact (e.g. `zephyr-conf`).
     pub key: String,
+    /// What happened to the artifact.
     pub outcome: DebugTraceOutcome,
+    /// Target path, when an output path applies.
     #[serde(rename = "outputPath", skip_serializing_if = "Option::is_none")]
     pub output_path: Option<String>,
+    /// Human-readable explanation.
     pub detail: String,
 }
 
@@ -323,11 +382,16 @@ pub fn collect_runtime_capabilities_from_commands(
     }
 }
 
+/// A single doctor check with its status and an optional remediation.
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorCheck {
+    /// Stable check name (e.g. `boardYaml`).
     pub name: String,
+    /// The check outcome.
     pub status: DoctorStatus,
+    /// Human-readable detail for the outcome.
     pub detail: String,
+    /// Suggested fix; omitted from JSON when absent (e.g. on `Pass`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fix: Option<String>,
 }
@@ -343,22 +407,33 @@ impl DoctorCheck {
     }
 }
 
+/// Per-status check counts for a doctor report.
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorSummary {
+    /// Number of passing checks.
     pub pass: u32,
+    /// Number of warning checks.
     pub warn: u32,
+    /// Number of failing checks.
     pub fail: u32,
 }
 
+/// Full `alp doctor` report for a target/server combination.
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorReport {
+    /// ISO-8601 timestamp the report was generated.
     #[serde(rename = "generatedAt")]
     pub generated_at: String,
+    /// Target kind the report was run for.
     #[serde(rename = "targetKind")]
     pub target_kind: DebugTargetKind,
+    /// Server backend the report was run for.
     pub server: DebugServerKind,
+    /// Aggregate pass/warn/fail counts.
     pub summary: DoctorSummary,
+    /// Individual checks in evaluation order.
     pub checks: Vec<DoctorCheck>,
+    /// Deduplicated remediation steps for non-passing checks.
     #[serde(rename = "nextSteps")]
     pub next_steps: Vec<String>,
 }

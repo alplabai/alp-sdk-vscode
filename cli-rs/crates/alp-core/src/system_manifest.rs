@@ -23,14 +23,19 @@ pub const SYSTEM_MANIFEST_SCHEMA_VERSION: u32 = 1;
 /// Resolved hardware identity for the project.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct HwInfo {
+    /// Resolved board SKU (e.g. `E1M-AEN701`).
     #[serde(default)]
     pub sku: String,
+    /// System-on-Module hardware revision, if declared.
     #[serde(default)]
     pub som_hw_rev: Option<String>,
+    /// Carrier/EVK board name, if declared.
     #[serde(default)]
     pub board_name: Option<String>,
+    /// Carrier/EVK board hardware revision, if declared.
     #[serde(default)]
     pub board_hw_rev: Option<String>,
+    /// Resolved silicon id (e.g. `alif:ensemble:e7`), if declared.
     #[serde(default)]
     pub silicon: Option<String>,
 }
@@ -39,28 +44,39 @@ pub struct HwInfo {
 /// build, run, debug, and flash it without re-deriving anything.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Slice {
+    /// Core identifier this image targets (e.g. `m55_hp`, `a32_cluster`).
     pub core_id: String,
     /// Resolved runtime (`zephyr` | `yocto` | `baremetal` | `off`); the
     /// value-set is owned by `board.schema.json` `cores.<core>.os`.
     pub os: String,
+    /// Application source path or app/recipe name for this image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
+    /// Yocto image name, when `os` is `yocto`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
+    /// Yocto machine, when `os` is `yocto`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
+    /// Zephyr board target, when `os` is `zephyr`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
+    /// Resolved toolchain id for building this image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toolchain: Option<String>,
+    /// Build output directory for this image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build_dir: Option<String>,
+    /// Path to the built firmware/image artefact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_artefact: Option<String>,
+    /// Build/flash status (e.g. `pending`, `built`, `blocked`).
     #[serde(default)]
     pub status: String,
+    /// Path to this slice's build log, if produced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_path: Option<String>,
+    /// Human-readable explanation when `status` indicates a problem.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// Schema-required, but the emitter omits it for `off`/`pending` slices.
@@ -84,12 +100,17 @@ impl Slice {
 /// true` here) and ignored.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IpcLink {
+    /// Link name.
     pub name: String,
+    /// Transport kind (e.g. `rpmsg`, `mailbox`).
     pub kind: String,
+    /// Core ids participating in the link.
     #[serde(default)]
     pub endpoints: Vec<String>,
+    /// Link status (e.g. `blocked`), when not implicitly OK.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// Explanation when `status` is `blocked`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
@@ -97,10 +118,14 @@ pub struct IpcLink {
 /// An on-module helper MCU (e.g. the GD32 bridge) that ships its own firmware.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HelperMcu {
+    /// Helper MCU name.
     pub name: String,
+    /// Chip part id (e.g. `cc3501e`).
     pub chip: String,
+    /// Path to the helper's firmware image, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub firmware_path: Option<String>,
+    /// Flash method id for this helper, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flash_method: Option<String>,
     /// An object, or the string `"TBD"` when the recipe isn't finalized.
@@ -111,15 +136,21 @@ pub struct HelperMcu {
 /// The whole manifest — the deserialization target for `build/system-manifest.yaml`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SystemManifest {
+    /// Schema major version; guarded against `SYSTEM_MANIFEST_SCHEMA_VERSION`.
     pub schema_version: u32,
+    /// Identifier of the tool/script that emitted this manifest.
     #[serde(default)]
     pub generated_by: String,
+    /// Resolved hardware identity.
     #[serde(default)]
     pub hw_info: HwInfo,
+    /// Per-core images.
     #[serde(default)]
     pub slices: Vec<Slice>,
+    /// Inter-core links.
     #[serde(default)]
     pub ipc: Vec<IpcLink>,
+    /// On-module helper MCUs.
     #[serde(default)]
     pub helper_mcus: Vec<HelperMcu>,
     /// Inter-image boot sequencing — opaque until a SoM declares `boot_order`.
@@ -145,8 +176,10 @@ impl SystemManifest {
 /// Why a system-manifest could not be consumed.
 #[derive(Debug, thiserror::Error)]
 pub enum SystemManifestError {
+    /// The document is not valid YAML or doesn't match the manifest shape.
     #[error("system-manifest is not valid YAML: {0}")]
     Parse(String),
+    /// `schema_version` differs from the version this CLI consumes.
     #[error(
         "unsupported system-manifest schema_version {found} (this CLI consumes v{supported}); \
          upgrade the CLI or the SDK so the versions match"

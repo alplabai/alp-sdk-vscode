@@ -7,17 +7,22 @@
 use serde::Serialize;
 use serde_json::Value;
 
+/// GitHub Releases API endpoint for the `alplabai/alp-sdk` repository.
 pub const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/alplabai/alp-sdk/releases";
 
 const LOADER_SCRIPT_RELATIVE: &str = "scripts/alp_project.py";
 const VERSION_FILE_RELATIVE: &str = "VERSION";
 const METADATA_DIR_RELATIVE: &str = "metadata";
 
+/// A single SDK release entry parsed from the GitHub Releases API.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SdkRelease {
+    /// Release tag name (e.g. `v1.5.0`).
     pub tag: String,
+    /// ISO-8601 publish timestamp from GitHub.
     pub published_at: String,
+    /// URL of the source tarball for this release.
     pub tarball_url: String,
     /// First paragraph of the release body (compact headline).
     pub release_notes_summary: String,
@@ -65,22 +70,33 @@ fn extract_first_paragraph(body: &str) -> String {
     }
 }
 
+/// Overall readiness of a local SDK path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SdkReadinessState {
+    /// Loader script present and no issues found.
     Ready,
+    /// Loader script present but some non-fatal issues exist.
     Partial,
+    /// Loader script absent — not a valid SDK root.
     Missing,
 }
 
+/// Result of inspecting a local SDK path for readiness.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SdkReadinessReport {
+    /// The inspected SDK root path.
     pub sdk_path: String,
+    /// Trimmed contents of the `VERSION` file, if present and non-empty.
     pub version: Option<String>,
+    /// Whether `scripts/alp_project.py` exists under the SDK root.
     pub loader_script_present: bool,
+    /// Whether the `metadata/` directory exists under the SDK root.
     pub metadata_present: bool,
+    /// Computed readiness verdict.
     pub state: SdkReadinessState,
+    /// Human-readable descriptions of any problems found.
     pub issues: Vec<String>,
 }
 

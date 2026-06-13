@@ -34,12 +34,16 @@ pub const BUILD_PLAN_SCHEMA_VERSION: u32 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
+    /// Zephyr RTOS build (`west`).
     Zephyr,
+    /// Yocto/OpenEmbedded build (`bitbake`).
     Yocto,
+    /// Bare-metal build (`cmake`).
     Baremetal,
 }
 
 impl Backend {
+    /// The lowercase wire string for this backend (matches the serde encoding).
     pub fn as_str(self) -> &'static str {
         match self {
             Backend::Zephyr => "zephyr",
@@ -53,7 +57,9 @@ impl Backend {
 /// `contents` is REQUIRED — the CLI byte-writes it; it never derives content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneratedFile {
+    /// Destination path (relative to the build root) the consumer writes to.
     pub path: String,
+    /// Verbatim file body to write; never derived by the consumer.
     pub contents: String,
 }
 
@@ -61,8 +67,11 @@ pub struct GeneratedFile {
 /// **not frozen** — it comes from the emit and will grow (e.g. `--sysbuild`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolStep {
+    /// Executable to run (e.g. `west`, `bitbake`, `cmake`).
     pub tool: String,
+    /// Arguments passed to `tool`, in order.
     pub args: Vec<String>,
+    /// Working directory the invocation runs in.
     pub cwd: String,
 }
 
@@ -83,15 +92,20 @@ impl ToolStep {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildSlice {
+    /// Identifier of the core this slice builds (e.g. `m55_hp`).
     pub core_id: String,
+    /// Build backend driving this slice.
     pub backend: Backend,
+    /// Output directory for this slice's build.
     pub build_dir: String,
+    /// Per-slice config files to materialise before running `command`.
     #[serde(default)]
     pub config_artefacts: Vec<GeneratedFile>,
     /// `None` when the planner cannot build this core yet (paired with a
     /// `no-command` warning); the slice is reported, never dropped.
     #[serde(default)]
     pub command: Option<ToolStep>,
+    /// Environment overrides applied when running `command`.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
 }
@@ -100,10 +114,12 @@ pub struct BuildSlice {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanWarning {
+    /// Machine-readable warning code (e.g. `no-command`).
     pub code: String,
     /// Set when the warning is about a specific core (e.g. `no-command`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub core_id: Option<String>,
+    /// Human-readable warning text.
     pub message: String,
 }
 
@@ -111,15 +127,23 @@ pub struct PlanWarning {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildPlan {
+    /// Plan schema version; must equal `BUILD_PLAN_SCHEMA_VERSION` to be consumed.
     pub schema_version: u32,
+    /// Tool/script that emitted the plan (e.g. `scripts/alp_orchestrate.py`).
     #[serde(default)]
     pub generated_by: String,
+    /// Path to the source `board.yaml` the plan was derived from.
     pub board_yaml: String,
+    /// Board SKU the plan targets.
     pub sku: String,
+    /// Root directory for all build output.
     pub build_root: String,
+    /// One slice per non-`off` core, sorted by `coreId`.
     pub slices: Vec<BuildSlice>,
+    /// Cross-slice generated files (e.g. IPC headers, DTS overlays).
     #[serde(default)]
     pub shared_artefacts: Vec<GeneratedFile>,
+    /// Non-fatal planner notes.
     #[serde(default)]
     pub warnings: Vec<PlanWarning>,
 }
@@ -142,8 +166,10 @@ impl BuildPlan {
 /// Why a build-plan JSON could not be consumed.
 #[derive(Debug, thiserror::Error)]
 pub enum BuildPlanError {
+    /// The document failed JSON deserialization; holds the parse error text.
     #[error("build plan is not valid JSON: {0}")]
     Json(String),
+    /// The plan's `schemaVersion` differs from the version this CLI consumes.
     #[error(
         "unsupported build-plan schemaVersion {found} (this CLI consumes v{supported}); \
          upgrade the CLI or the SDK so the versions match"

@@ -12,14 +12,20 @@ use crate::model::BoardModel;
 /// envelope and the TS implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
+    /// Validation passed with no issues.
     Clean,
+    /// SoM/preset could not be resolved (validator exit 2); treated as a warning.
     MissingPreset,
+    /// Schema/structural violation (validator exit 1).
     SchemaViolation,
+    /// Hardware-revision incompatibility (validator exit 3).
     HardwareRevision,
+    /// Validation could not be completed (validator crashed / unknown exit status).
     Failed,
 }
 
 impl Outcome {
+    /// Stable string identifier for this outcome, as emitted in the CLI envelope.
     pub fn as_str(self) -> &'static str {
         match self {
             Outcome::Clean => "clean",
@@ -31,6 +37,7 @@ impl Outcome {
     }
 }
 
+/// Per-issue severity level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Error,
@@ -39,6 +46,7 @@ pub enum Severity {
 }
 
 impl Severity {
+    /// Stable lowercase string identifier for this severity.
     pub fn as_str(self) -> &'static str {
         match self {
             Severity::Error => "error",
@@ -48,20 +56,24 @@ impl Severity {
     }
 }
 
+/// A single validation finding: human-readable `message` plus its `severity`.
 #[derive(Debug, Clone)]
 pub struct ValidationIssue {
     pub message: String,
     pub severity: Severity,
 }
 
+/// Aggregate validation result: overall `outcome` plus the list of `issues`.
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
     pub outcome: Outcome,
     pub issues: Vec<ValidationIssue>,
 }
 
+/// Error returned when board.yaml text cannot be parsed into a `BoardModel`.
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
+    /// The input was not syntactically valid YAML.
     #[error("board.yaml is not valid YAML: {0}")]
     Yaml(#[from] serde_yaml::Error),
 }
@@ -124,7 +136,9 @@ pub fn validate_board_yaml_local(text: &str) -> Result<ValidationResult, ParseEr
 pub struct ValidatorExecution {
     /// Process exit status; `None` if the process was killed / never started.
     pub status: Option<i32>,
+    /// Captured standard output of the validator process.
     pub stdout: String,
+    /// Captured standard error; the source of structured issues.
     pub stderr: String,
 }
 

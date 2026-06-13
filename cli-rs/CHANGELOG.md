@@ -12,6 +12,13 @@ same version.
 
 ## Unreleased
 
+- **Registry documentation.** Both published crates now carry a crates.io README
+  (`alp-cli`, `alp-core`), each crate's `repository` points at its `cli-rs`
+  location, and the `alp-core` public API is documented with rustdoc — its crate
+  page embeds the README (`#![doc = include_str!("../README.md")]`) and every
+  public module/type/field carries a `///` doc-comment, so [docs.rs](https://docs.rs/alp-core)
+  renders a complete API reference. Takes effect on the next publish.
+
 ## 0.1.5
 
 - **crates.io + `cargo binstall` distribution.** The release now publishes the
