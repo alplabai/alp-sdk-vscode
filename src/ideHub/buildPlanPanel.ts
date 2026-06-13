@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { runAlpCommand, runAlpInTerminal } from "../alpCli/vscodeAdapter";
 import {
   type BuildPlanData,
   type ExtToWebviewMessage,
+  type SystemManifest,
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
@@ -58,14 +61,21 @@ export class BuildPlanPanel {
 
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
 
-    // Re-request the plan when board.yaml changes under the active workspace.
-    const watcher = vscode.workspace.createFileSystemWatcher("**/board.yaml");
-    this.disposables.push(
-      watcher,
-      watcher.onDidChange(() => void this.handleRequestBuildPlan()),
-      watcher.onDidCreate(() => void this.handleRequestBuildPlan()),
-      watcher.onDidDelete(() => void this.handleRequestBuildPlan()),
-    );
+    // Re-request the plan + manifest when board.yaml or the emitted manifest
+    // changes under the active workspace (a build refreshes the manifest).
+    const refresh = () => {
+      void this.handleRequestBuildPlan();
+      void this.handleRequestSystemManifest();
+    };
+    for (const glob of ["**/board.yaml", "**/system-manifest.yaml"]) {
+      const watcher = vscode.workspace.createFileSystemWatcher(glob);
+      this.disposables.push(
+        watcher,
+        watcher.onDidChange(refresh),
+        watcher.onDidCreate(refresh),
+        watcher.onDidDelete(refresh),
+      );
+    }
   }
 
   /** Open (or reveal) the build-plan panel. */
@@ -84,6 +94,7 @@ export class BuildPlanPanel {
         break;
       case "requestBuildPlan":
         void this.handleRequestBuildPlan();
+        void this.handleRequestSystemManifest();
         break;
       case "materialiseBuildPlan":
         void this.handleMaterialiseBuildPlan();
@@ -119,6 +130,36 @@ export class BuildPlanPanel {
       // or the runtime message so the view can explain the empty state.
       const error = envelope?.issues?.[0]?.message ?? outcome.message;
       msg = { type: "buildPlanData", plan: null, error };
+    }
+    void this.panel.webview.postMessage(msg);
+  }
+
+  /** Fetch the system manifest — the post-build IDE/tool contract. Prefers the
+   *  populated `build/system-manifest.yaml` (`--manifest-from`) when a build has
+   *  written one; otherwise asks the SDK for the pre-build projection
+   *  (`--manifest`). Posts a `systemManifestData` message either way. */
+  private async handleRequestSystemManifest(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const built = cwd
+      ? path.join(cwd, "build", "system-manifest.yaml")
+      : undefined;
+    const postBuild = Boolean(built && fs.existsSync(built));
+    const args = postBuild
+      ? ["build", "--manifest-from", built as string]
+      : ["build", "--manifest"];
+
+    const { outcome } = await runAlpCommand(this.context, args, cwd);
+    const envelope = outcome.envelope;
+    let msg: ExtToWebviewMessage;
+    if (envelope && envelope.ok) {
+      msg = {
+        type: "systemManifestData",
+        manifest: envelope.data as SystemManifest,
+        postBuild,
+      };
+    } else {
+      const error = envelope?.issues?.[0]?.message ?? outcome.message;
+      msg = { type: "systemManifestData", manifest: null, postBuild, error };
     }
     void this.panel.webview.postMessage(msg);
   }

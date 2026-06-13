@@ -417,6 +417,64 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
+// --- System manifest (mirrors @alp-sdk/core/systemManifest/models; the
+// post-build IDE/tool contract from `alp build --manifest`) ---
+export interface ManifestHwInfo {
+  sku: string;
+  som_hw_rev?: string | null;
+  board_name?: string | null;
+  board_hw_rev?: string | null;
+  silicon?: string | null;
+}
+export interface ManifestSlice {
+  core_id: string;
+  os: string;
+  app?: string;
+  image?: string;
+  machine?: string;
+  board?: string;
+  toolchain?: string;
+  build_dir?: string;
+  output_artefact?: string;
+  status: string;
+  log_path?: string;
+  reason?: string;
+  flash_method?: string;
+  flash_args?: Record<string, unknown>;
+}
+export interface ManifestIpcLink {
+  name: string;
+  kind: string;
+  endpoints: string[];
+  status?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+export interface ManifestHelperMcu {
+  name: string;
+  chip: string;
+  firmware_path?: string;
+  flash_method?: string;
+  flash_args?: Record<string, unknown> | string;
+  [key: string]: unknown;
+}
+export interface SystemManifest {
+  schema_version: number;
+  generated_by: string;
+  hw_info: ManifestHwInfo;
+  slices: ManifestSlice[];
+  ipc: ManifestIpcLink[];
+  helper_mcus: ManifestHelperMcu[];
+  boot_order: unknown[];
+  storage?: unknown[];
+}
+export interface SystemManifestDataMessage {
+  type: "systemManifestData";
+  manifest: SystemManifest | null;
+  postBuild: boolean;
+  error?: string;
+}
+
 export interface ProjectLocationPickedMessage {
   type: "projectLocationPicked";
   path: string;
@@ -432,7 +490,8 @@ export type ExtToWebviewMessage =
   | ToolchainReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
-  | BuildPlanDataMessage;
+  | BuildPlanDataMessage
+  | SystemManifestDataMessage;
 
 // Webview → Extension
 export interface ReadyMessage {

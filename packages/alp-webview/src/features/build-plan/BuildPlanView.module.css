@@ -307,3 +307,110 @@
 .warnMsg {
   line-height: 1.4;
 }
+
+/* ── System manifest section (the post-build IDE/tool contract) ───────────── */
+.backend[data-backend="off"] {
+  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  color: var(--text-secondary);
+}
+
+.manifestBadge {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
+  color: var(--text-secondary);
+}
+
+.manifestNote {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.manifestSlices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.manifestSlice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.manifestStatus {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  color: var(--text-secondary);
+}
+.manifestStatus[data-status="ok"] {
+  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
+  color: var(--status-ok);
+}
+.manifestStatus[data-status="failed"] {
+  background: color-mix(
+    in srgb,
+    var(--status-error, var(--status-warn)) 20%,
+    transparent
+  );
+  color: var(--status-error, var(--status-warn));
+}
+
+.manifestFlash {
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.manifestTarget {
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+}
+
+.manifestSub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.manifestSubTitle {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.manifestChip {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono, monospace);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm, 4px);
+  background: var(
+    --surface-raised,
+    color-mix(in srgb, var(--text-secondary) 8%, transparent)
+  );
+}
+.manifestChip em {
+  font-style: normal;
+  color: var(--text-secondary);
+}
