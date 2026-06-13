@@ -7,13 +7,19 @@ use crate::model::{BoardModel, normalize_board_model};
 pub use crate::project::ProjectContext;
 use crate::validate::{ParseError, parse_board_model};
 
+/// Serializable effective-config preview payload (mirrors the LSP preview JSON).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EffectiveConfigPreviewPayload {
+    /// Payload schema version; currently always `"1"`.
     pub schema_version: String,
+    /// Timestamp the payload was generated (caller-supplied, ISO-8601 string).
     pub generated_at: String,
+    /// Path to the source `board.yaml`.
     pub board_yaml_path: String,
+    /// Resolved project context (workspace/SDK roots, west cwd, python binary).
     pub project_context: ProjectContext,
+    /// Parsed and normalized board model — the effective configuration.
     pub effective_config: BoardModel,
 }
 

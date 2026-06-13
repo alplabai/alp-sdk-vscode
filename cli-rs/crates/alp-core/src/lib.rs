@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `alp-core` — shared, IO-free board logic for the ALP toolchain.
-//!
-//! This crate is the Rust home of the board model, parsing, and
-//! validation. It contains no terminal, filesystem-walking, or process
-//! logic so it can be reused by the CLI today and (later) bridged to the
-//! TypeScript extension/LSP via napi-rs or WASM.
+#![doc = include_str!("../README.md")]
 
 pub mod build_plan;
 pub mod build_readiness;

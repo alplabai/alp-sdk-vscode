@@ -8,28 +8,43 @@ use std::path::Path;
 
 use serde::Serialize;
 
+/// User-configured override settings; empty strings mean "fall back to defaults / auto-discovery".
 #[derive(Debug, Clone, Default)]
 pub struct ProjectSettings {
+    /// Explicit SDK root; honored only if it contains the loader marker, else yields no `sdk_root`.
     pub sdk_path: String,
+    /// Explicit Python interpreter; empty falls back to the per-platform default.
     pub python_path: String,
+    /// `board.yaml` location; resolved relative to the workspace root when not absolute.
     pub board_yaml_path: String,
+    /// Working directory for `west` invocations; empty falls back to the workspace root.
     pub west_cwd: String,
 }
 
+/// All inputs needed to resolve a `ProjectContext` in one pass.
 #[derive(Debug, Clone)]
 pub struct ProjectResolutionInput {
+    /// Open workspace folders; the first is treated as the workspace root.
     pub workspace_folders: Vec<String>,
+    /// User-configured overrides.
     pub settings: ProjectSettings,
+    /// Host platform flag, selecting the default Python binary name.
     pub is_windows: bool,
 }
 
+/// Resolved project context shared by every CLI/IDE surface; serialized as camelCase JSON.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectContext {
+    /// First workspace folder, or `None` when no folder is open.
     pub workspace_root: Option<String>,
+    /// Detected/configured SDK root, or `None` when absent or ambiguous.
     pub sdk_root: Option<String>,
+    /// Absolute path to `board.yaml`, or `None` without a workspace root.
     pub board_yaml_path: Option<String>,
+    /// Working directory for `west`, or `None` without a workspace root.
     pub west_cwd: Option<String>,
+    /// Python interpreter to invoke (configured value or platform default).
     pub python_binary: String,
 }
 

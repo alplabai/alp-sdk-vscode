@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wizard and module-scaffold domain logic.
 
+/// Filesystem I/O: diff detection against existing files and writing planned changes.
 pub mod filesystem;
+/// Domain types for the project wizard and module scaffold.
 pub mod models;
+/// Template registry, file-content generators, and planning logic.
 pub mod service;
 
 pub use filesystem::{collect_wizard_file_changes, write_wizard_files};

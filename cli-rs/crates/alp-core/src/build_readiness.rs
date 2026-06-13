@@ -17,11 +17,15 @@ use serde::Serialize;
 use crate::debug::{DoctorCheck, DoctorStatus, DoctorSummary};
 use crate::model::BoardModel;
 
+/// A build backend a `board.yaml` can target. Serializes lowercase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BuildOs {
+    /// Zephyr RTOS build (west + CMake + Ninja + Zephyr SDK).
     Zephyr,
+    /// Yocto Linux image build (Linux-only; bitbake).
     Yocto,
+    /// Baremetal build (CMake + a vendor toolchain).
     Baremetal,
 }
 
@@ -60,28 +64,42 @@ pub fn board_os_set(board: &BoardModel) -> Vec<BuildOs> {
 /// Host build-tool presence (probed by the caller; kept IO-free here).
 #[derive(Debug, Clone, Copy)]
 pub struct BuildToolProbe {
+    /// `west` is on PATH (Zephyr build driver).
     pub west: bool,
+    /// `cmake` is on PATH (Zephyr/baremetal build generator).
     pub cmake: bool,
+    /// `ninja` is on PATH (Zephyr build backend).
     pub ninja: bool,
+    /// `bitbake` is on PATH (Yocto build driver).
     pub bitbake: bool,
+    /// Zephyr SDK toolchain detected (via env / install dir, not PATH).
     pub zephyr_sdk: bool,
     /// `bmaptool` — the preferred Yocto `.wic` flasher (sparse-aware).
     pub bmaptool: bool,
     /// `dd` — the Yocto `.wic` flash fallback when `bmaptool` is absent.
     pub dd: bool,
+    /// Host is Linux (gates Yocto builds, which are Linux-only).
     pub is_linux: bool,
 }
 
+/// The build-readiness preflight result: declared OS set, per-tool checks, a
+/// pass/warn/fail summary, and deduped remediation steps. Serializes camelCase.
 #[derive(Debug, Clone, Serialize)]
 pub struct BuildReadinessReport {
+    /// Report envelope schema version (currently `"1"`).
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
+    /// Timestamp the report was generated (supplied by the caller).
     #[serde(rename = "generatedAt")]
     pub generated_at: String,
+    /// The build OSes this report's checks cover.
     #[serde(rename = "osSet")]
     pub os_set: Vec<BuildOs>,
+    /// Aggregate pass/warn/fail counts over `checks`.
     pub summary: DoctorSummary,
+    /// Per-tool readiness checks.
     pub checks: Vec<DoctorCheck>,
+    /// Deduped fix hints for every non-passing check.
     #[serde(rename = "nextSteps")]
     pub next_steps: Vec<String>,
 }

@@ -182,14 +182,18 @@ static MODULE_TEMPLATE_DEFINITIONS: &[ModuleTemplateDefinition] = &[
 // Public API
 // ---------------------------------------------------------------------------
 
+/// All registered project-wizard templates, in registry order.
 pub fn list_wizard_templates() -> Vec<&'static WizardTemplateDefinition> {
     TEMPLATE_DEFINITIONS.iter().collect()
 }
 
+/// All registered module-scaffold templates, in registry order.
 pub fn list_module_templates() -> Vec<&'static ModuleTemplateDefinition> {
     MODULE_TEMPLATE_DEFINITIONS.iter().collect()
 }
 
+/// Lowercase `name` and collapse runs of non-`[a-z0-9]` chars into single `_`
+/// separators (no leading/trailing). `Err` if nothing remains.
 pub fn normalize_module_name(name: &str) -> Result<String, String> {
     let lower = name.trim().to_lowercase();
 
@@ -215,6 +219,8 @@ pub fn normalize_module_name(name: &str) -> Result<String, String> {
     }
 }
 
+/// Plan the file set for a single-(app-)core project from `input`. Convenience
+/// wrapper over `create_wizard_plan_with_cores` with no companion cores.
 pub fn create_wizard_plan(input: &WizardPlanInput) -> WizardPlan {
     create_wizard_plan_with_cores(input, &[])
 }
@@ -243,6 +249,8 @@ pub fn create_wizard_plan_with_cores(
     }
 }
 
+/// Plan the source/header/README file set for a module scaffold. Normalizes the
+/// requested module name first; returns `Err` if the name normalizes to empty.
 pub fn create_module_scaffold_plan(
     input: &ModuleScaffoldInput,
 ) -> Result<ModuleScaffoldPlan, String> {
@@ -260,6 +268,8 @@ pub fn create_module_scaffold_plan(
     })
 }
 
+/// Render planned files as an ASCII `tree`-style preview, paths sorted
+/// lexicographically with the last entry marked by `` `-- ``.
 pub fn create_scaffold_tree_preview(files: &[WizardPlannedFile]) -> String {
     let mut paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
     paths.sort();

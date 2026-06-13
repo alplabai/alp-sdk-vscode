@@ -10,20 +10,29 @@
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+/// Classifies a single `DiffEntry`. Serializes lowercase (`added`/`removed`/`changed`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DiffKind {
+    /// Key/element present only in `after`.
     Added,
+    /// Key/element present only in `before`.
     Removed,
+    /// Leaf value present in both but unequal.
     Changed,
 }
 
+/// One difference at a given path. `before`/`after` are omitted from JSON when `None`.
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffEntry {
+    /// Dotted/bracketed location, e.g. `models.foo` or `cores[0].name`; `<root>` for a top-level scalar change.
     pub path: String,
+    /// Whether the entry was added, removed, or changed.
     pub kind: DiffKind,
+    /// Value at `path` in `before`; `None` for `Added`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<Value>,
+    /// Value at `path` in `after`; `None` for `Removed`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<Value>,
 }

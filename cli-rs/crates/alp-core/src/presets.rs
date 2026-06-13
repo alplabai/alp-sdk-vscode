@@ -6,12 +6,17 @@
 /// SDK-independent preset defaults (libraries, inference backends, log levels,
 /// OS choices). SKUs and carriers are discovered separately from the SDK root.
 pub struct PresetCatalogueDefaults {
+    /// Selectable third-party library identifiers (e.g. `etl`, `lvgl`).
     pub libraries: Vec<String>,
+    /// Inference backend choices (e.g. `auto`, `cpu`, `ethos_u`).
     pub inference_backends: Vec<String>,
+    /// Log verbosity levels, ordered most to least severe.
     pub log_levels: Vec<String>,
+    /// Target OS choices (`zephyr`, `yocto`, `baremetal`).
     pub os_choices: Vec<String>,
 }
 
+/// Builds the `PresetCatalogueDefaults` with the fixed SDK-independent defaults.
 pub fn empty_preset_catalogue() -> PresetCatalogueDefaults {
     let owned = |items: &[&str]| items.iter().map(|s| (*s).to_string()).collect();
     PresetCatalogueDefaults {

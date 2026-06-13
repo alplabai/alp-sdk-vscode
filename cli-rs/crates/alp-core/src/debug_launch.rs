@@ -129,9 +129,13 @@ pub fn launch_preview_document(draft: Value) -> Value {
     })
 }
 
+/// Result of merging a draft into `launch.json`: the serialized document plus
+/// whether a same-named configuration was overwritten.
 #[derive(Debug)]
 pub struct LaunchJsonWritePlan {
+    /// Pretty-printed `launch.json` content, trailing newline included.
     pub content: String,
+    /// `true` if an existing same-named configuration was replaced; `false` if appended.
     pub replaced: bool,
 }
 
