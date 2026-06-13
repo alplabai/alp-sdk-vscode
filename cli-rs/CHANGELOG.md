@@ -7,7 +7,7 @@ rewrite of the legacy TypeScript CLI (`packages/alp-cli`); the JSON envelope and
 exit codes are byte-for-byte compatible (gated by the contract harness).
 
 The native CLI is versioned and tagged independently of the VS Code extension:
-release tags are `cli-rs-v<version>`, and the npm shim (`alp-sdk`) carries the
+release tags are `cli-rs-v<version>`, and the npm shim (`@alplabai/alp-cli`) carries the
 same version.
 
 ## Unreleased
@@ -18,7 +18,7 @@ same version.
   `alp-core` + `alp-cli` crates to crates.io (`cargo install alp-cli`), and
   `alp-cli` carries cargo-binstall metadata so `cargo binstall alp-cli` fetches
   the prebuilt GitHub-release archive instead of compiling. Joins the existing
-  channels (GitHub archives + the `alp-sdk` npm shim). Gated on a
+  channels (GitHub archives + the `@alplabai/alp-cli` npm shim). Gated on a
   `CARGO_REGISTRY_TOKEN` repo secret.
 - **`alp doctor --build` checks the Yocto flash prerequisite.** For a project
   with a Yocto core, the build-readiness report now verifies `bmaptool` (the
@@ -131,5 +131,5 @@ TypeScript CLI plus the new build/bootstrap surface.
   `release-cli-rs` workflow on `cli-rs-v*` tags. Intel macOS
   (`x86_64-apple-darwin`) is not prebuilt — GitHub's Intel runners stall the
   release; Intel-mac users build from source (`cargo build --release`).
-- npm shim package `alp-sdk` downloads the matching archive in its postinstall
+- npm shim package `@alplabai/alp-cli` downloads the matching archive in its postinstall
   step (no runtime dependencies) and forwards `argv` to the native binary.
