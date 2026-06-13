@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { createLaunchJsonWritePlan } from "@alp-sdk/core/debug/launchJsonCore";
 import {
@@ -7,6 +9,8 @@ import {
   DebugServerKind,
   DebugTargetKind,
 } from "@alp-sdk/core/debug/models";
+import type { ManifestSlice } from "@alp-sdk/core/systemManifest/models";
+import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
 import { createDebugTroubleshootingPanelHtml } from "@alp-sdk/core/debug/panelHtml";
 import {
   buildDebugPreflightReport,
@@ -60,6 +64,40 @@ async function pickServer(
   return pick?.server ?? "jlink";
 }
 
+/** Debug target → the manifest slice `os` it builds for. native-host is a host
+ *  sim with no per-core slice. */
+const TARGET_OS: Partial<Record<DebugTargetKind, string>> = {
+  "zephyr-mcu": "zephyr",
+  "baremetal-mcu": "baremetal",
+  "yocto-userspace": "yocto",
+};
+
+/** The system-manifest slice whose runtime matches the debug target, read from
+ *  the post-build `build/system-manifest.yaml` when present, so createDebugProfile
+ *  points at the per-core build dir / built artefact instead of the generic
+ *  single-core default. Returns undefined pre-build (graceful fallback) or for
+ *  native-host. For a multi-core runtime (e.g. two Zephyr cores) it picks the
+ *  first slice — typically the app core, which leads the manifest. */
+function resolveManifestSlice(
+  workspaceRoot: string | null,
+  targetKind: DebugTargetKind,
+): ManifestSlice | undefined {
+  const os = TARGET_OS[targetKind];
+  if (!os || !workspaceRoot) return undefined;
+  const manifestPath = path.join(
+    workspaceRoot,
+    "build",
+    "system-manifest.yaml",
+  );
+  if (!fs.existsSync(manifestPath)) return undefined;
+  try {
+    const manifest = parseSystemManifest(fs.readFileSync(manifestPath, "utf8"));
+    return manifest.slices.find((slice) => slice.os === os);
+  } catch {
+    return undefined;
+  }
+}
+
 async function inspectProjectState(): Promise<void> {
   const snapshot = createInspectReport(collectWorkspaceDebugContext());
   log("alp.inspectProjectState: generated project-state snapshot");
@@ -92,7 +130,11 @@ async function debugPreflight(): Promise<void> {
 
   let profile;
   try {
-    profile = createDebugProfile(targetKind, server);
+    profile = createDebugProfile(
+      targetKind,
+      server,
+      resolveManifestSlice(context.workspaceRoot, targetKind),
+    );
   } catch (error) {
     await vscode.window.showErrorMessage(formatDebugError(error));
     return;
@@ -133,6 +175,7 @@ async function configureDebugProfile(): Promise<void> {
     new Date().toISOString(),
     targetKind,
     server,
+    resolveManifestSlice(context.workspaceRoot, targetKind),
   );
 
   let writePlan;
@@ -175,7 +218,11 @@ async function exportSupportBundle(): Promise<void> {
 
   let profile;
   try {
-    profile = createDebugProfile(targetKind, server);
+    profile = createDebugProfile(
+      targetKind,
+      server,
+      resolveManifestSlice(context.workspaceRoot, targetKind),
+    );
   } catch (error) {
     await vscode.window.showErrorMessage(formatDebugError(error));
     return;
@@ -238,7 +285,11 @@ async function openDebugTroubleshootingPanel(): Promise<void> {
 
   let profile;
   try {
-    profile = createDebugProfile(targetKind, server);
+    profile = createDebugProfile(
+      targetKind,
+      server,
+      resolveManifestSlice(context.workspaceRoot, targetKind),
+    );
   } catch (error) {
     await vscode.window.showErrorMessage(formatDebugError(error));
     return;

@@ -82,6 +82,48 @@ test("createDebugProfile defines reusable profile metadata", () => {
   assert.equal(host.os, "host");
 });
 
+test("createDebugProfile derives the per-core path from a manifest slice", () => {
+  // A heterogeneous Zephyr slice: build_dir set, not yet built.
+  const slice = {
+    core_id: "m55_hp",
+    os: "zephyr",
+    build_dir: "build/m55_hp-zephyr",
+    status: "pending",
+  };
+  const profile = createDebugProfile("zephyr-mcu", "openocd", slice);
+  assert.equal(
+    profile.executablePath,
+    "${workspaceFolder}/build/m55_hp-zephyr/zephyr/zephyr.elf",
+  );
+
+  // A built slice: prefer its actual output_artefact.
+  const built = {
+    ...slice,
+    output_artefact: "build/m55_hp-zephyr/zephyr/zephyr.elf",
+    status: "ok",
+  };
+  assert.equal(
+    createDebugProfile("zephyr-mcu", "jlink", built).executablePath,
+    "${workspaceFolder}/build/m55_hp-zephyr/zephyr/zephyr.elf",
+  );
+
+  // No slice → the generic single-core default is unchanged.
+  assert.equal(
+    createDebugProfile("zephyr-mcu", "openocd").executablePath,
+    "${workspaceFolder}/build/app/zephyr/zephyr.elf",
+  );
+
+  // A slice with no build_dir/output_artefact also falls back.
+  assert.equal(
+    createDebugProfile("baremetal-mcu", "jlink", {
+      core_id: "m33",
+      os: "baremetal",
+      status: "pending",
+    }).executablePath,
+    "${workspaceFolder}/build/baremetal/app.elf",
+  );
+});
+
 test("createInspectReport returns a copy of the workspace context", () => {
   const context = createDebugContext();
   const report = createInspectReport(context);
