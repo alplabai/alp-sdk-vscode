@@ -16,6 +16,7 @@ use std::process::Command;
 
 use alp_core::ProjectContext;
 use alp_core::build_plan::{BuildPlan, parse_build_plan, summarize_plan};
+use alp_core::system_manifest::{parse_system_manifest, summarize_manifest};
 use serde::Serialize;
 
 use super::CommandRun;
@@ -39,12 +40,77 @@ struct BuildData {
 /// materialise → execute); `--plan` / `--materialise` consume + show/write the
 /// plan; otherwise delegate to `west alp-build` (the Wave A2 behavior).
 pub fn run_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
-    if args.native {
+    if args.manifest || args.manifest_from.is_some() {
+        manifest_command(g, args)
+    } else if args.native {
         native_build(g, args)
     } else if args.plan || args.plan_from.is_some() || args.materialise {
         plan_command(g, args)
     } else {
         run(g, "build", &args.args)
+    }
+}
+
+/// `alp build --manifest [--manifest-from FILE]` — the post-build IDE/tool
+/// contract (`build/system-manifest.yaml`). With `--manifest-from` we read a
+/// local manifest (e.g. one `west alp-build` already wrote); otherwise we ask
+/// the SDK for the projection (`alp_orchestrate.py --emit system-manifest`,
+/// status: pending). Either way we parse + version-guard it and emit the
+/// manifest in the envelope (the IDE reads this instead of shelling python).
+fn manifest_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
+    let context = resolve_cli_project_context(g);
+    let project = Project {
+        root: context.workspace_root.clone(),
+        board_yaml: context.board_yaml_path.clone(),
+    };
+
+    let yaml = match &args.manifest_from {
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                return plan_error_run(
+                    g,
+                    project,
+                    "build.manifest-unavailable",
+                    format!("failed to read manifest file `{path}`: {e}"),
+                    ExitCode::RuntimeFailure,
+                );
+            }
+        },
+        None => match invoke_sdk_emit(&context, "system-manifest", "build.manifest-unavailable") {
+            Ok(s) => s,
+            Err((code, message)) => {
+                return plan_error_run(g, project, code, message, ExitCode::RuntimeFailure);
+            }
+        },
+    };
+
+    match parse_system_manifest(&yaml) {
+        Ok(manifest) => {
+            if g.is_json() {
+                let json =
+                    Envelope::new("build", project, &manifest, Vec::new(), ExitCode::Success.code())
+                        .to_json();
+                CommandRun {
+                    exit: ExitCode::Success,
+                    text: Vec::new(),
+                    json: Some(json),
+                }
+            } else {
+                CommandRun {
+                    exit: ExitCode::Success,
+                    text: summarize_manifest(&manifest),
+                    json: None,
+                }
+            }
+        }
+        Err(e) => plan_error_run(
+            g,
+            project,
+            "build.manifest-invalid",
+            e.to_string(),
+            ExitCode::RuntimeFailure,
+        ),
     }
 }
 
@@ -71,7 +137,7 @@ fn acquire_plan(
                 format!("failed to read plan file `{path}`: {e}"),
             )
         })?,
-        None => invoke_sdk_emit(context)?,
+        None => invoke_sdk_emit(context, "build-plan", "build.plan-unavailable")?,
     };
     parse_build_plan(&json).map_err(|e| ("build.plan-invalid", e.to_string()))
 }
@@ -289,16 +355,24 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
 /// truth — we only run + parse it. Works against whatever SDK checkout is
 /// resolved (`--sdk-root` / settings / bootstrap); the schema-version guard in
 /// `parse_build_plan` rejects an incompatible emit.
-fn invoke_sdk_emit(context: &ProjectContext) -> Result<String, (&'static str, String)> {
+/// Invoke the SDK's `alp_orchestrate.py --emit <emit>` for the project's
+/// board.yaml and return its stdout. `emit` is the emit kind (`build-plan` /
+/// `system-manifest`); `err_code` is the envelope issue code used for every
+/// failure on this path so each caller keeps its own stable code.
+fn invoke_sdk_emit(
+    context: &ProjectContext,
+    emit: &str,
+    err_code: &'static str,
+) -> Result<String, (&'static str, String)> {
     let sdk_root = context.sdk_root.as_deref().ok_or((
-        "build.plan-unavailable",
-        "no alp-sdk checkout found — pass `--sdk-root <PATH>`, set it in settings, or run \
-         `alp bootstrap`. The build plan comes from the SDK's `alp_orchestrate.py --emit \
-         build-plan` (ADR 0014)."
-            .to_string(),
+        err_code,
+        format!(
+            "no alp-sdk checkout found — pass `--sdk-root <PATH>`, set it in settings, or run \
+             `alp bootstrap`. The {emit} comes from the SDK's `alp_orchestrate.py --emit {emit}`."
+        ),
     ))?;
     let board_yaml = context.board_yaml_path.as_deref().ok_or((
-        "build.plan-unavailable",
+        err_code,
         "no board.yaml found — pass `--board-yaml <PATH>` or run from a project.".to_string(),
     ))?;
     let script = Path::new(sdk_root)
@@ -306,20 +380,20 @@ fn invoke_sdk_emit(context: &ProjectContext) -> Result<String, (&'static str, St
         .join("alp_orchestrate.py");
     if !script.is_file() {
         return Err((
-            "build.plan-unavailable",
+            err_code,
             format!(
                 "the SDK at `{sdk_root}` has no `scripts/alp_orchestrate.py` — pin to an SDK \
-                 release that ships `--emit build-plan` (ADR 0014)."
+                 release that ships `--emit {emit}`."
             ),
         ));
     }
     let output = Command::new(&context.python_binary)
         .arg(&script)
-        .args(["--input", board_yaml, "--emit", "build-plan"])
+        .args(["--input", board_yaml, "--emit", emit])
         .output()
         .map_err(|e| {
             (
-                "build.plan-unavailable",
+                err_code,
                 format!(
                     "failed to run `{} {}`: {e}",
                     context.python_binary,
@@ -331,9 +405,9 @@ fn invoke_sdk_emit(context: &ProjectContext) -> Result<String, (&'static str, St
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();
         return Err((
-            "build.plan-unavailable",
+            err_code,
             format!(
-                "the SDK build-plan emit failed (rc {}){}",
+                "the SDK {emit} emit failed (rc {}){}",
                 output.status.code().unwrap_or(-1),
                 if stderr.is_empty() {
                     String::new()

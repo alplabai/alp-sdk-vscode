@@ -8,6 +8,7 @@ import type {
   SdkRelease,
 } from "@alp-sdk/core/sdk/models";
 import type { SocCore, SomPreset } from "@alp-sdk/core/sdkCatalogue/models";
+import type { SystemManifest } from "@alp-sdk/core/systemManifest/models";
 import type { ToolchainFixId } from "@alp-sdk/core/toolchain/bootstrapPlan";
 import type { ToolchainReport } from "@alp-sdk/core/toolchain/doctor";
 
@@ -19,6 +20,7 @@ export type {
   SdkRelease,
   SocCore,
   SomPreset,
+  SystemManifest,
   ToolchainFixId,
   ToolchainReport,
 };
@@ -191,6 +193,20 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
+/** The system manifest — the post-build IDE/tool contract (`alp build
+ *  --manifest`). Pushed alongside the build plan: the plan is the planner's
+ *  pre-build intent, the manifest is the resolved per-core slices + ipc +
+ *  helper MCUs (post-build when `build/system-manifest.yaml` exists, else the
+ *  SDK's pre-build projection). */
+export interface SystemManifestDataMessage {
+  type: "systemManifestData";
+  manifest: SystemManifest | null;
+  /** True when `manifest` is the populated `build/system-manifest.yaml`;
+   *  false when it's the SDK's pre-build projection (slices `status: pending`). */
+  postBuild: boolean;
+  error?: string;
+}
+
 /** The folder the user picked for the new project's parent directory. */
 export interface ProjectLocationPickedMessage {
   type: "projectLocationPicked";
@@ -207,7 +223,8 @@ export type ExtToWebviewMessage =
   | ToolchainReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
-  | BuildPlanDataMessage;
+  | BuildPlanDataMessage
+  | SystemManifestDataMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -227,6 +244,9 @@ export interface E1mModule {
   id: string;
   displayName: string;
   family: string;
+  /** Per-core topology (id + resolved OS) from `alp presets`; drives the
+   *  heterogeneous `alp init --cores` scaffold. Absent for the built-in fallback. */
+  cores?: { id: string; os: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +364,18 @@ export interface RunBuildMessage {
   type: "runBuild";
 }
 
+/** Build a single manifest slice (`alp build --core <id>`). */
+export interface BuildSliceMessage {
+  type: "buildSlice";
+  coreId: string;
+}
+
+/** Flash a single manifest slice (`alp flash --core <id>`). */
+export interface FlashSliceMessage {
+  type: "flashSlice";
+  coreId: string;
+}
+
 /** Ask the host to open a folder picker for the new project's parent directory. */
 export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
@@ -374,4 +406,6 @@ export type WebviewToExtMessage =
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
-  | RunBuildMessage;
+  | RunBuildMessage
+  | BuildSliceMessage
+  | FlashSliceMessage;

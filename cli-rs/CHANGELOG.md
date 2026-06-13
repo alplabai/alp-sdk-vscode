@@ -12,6 +12,41 @@ same version.
 
 ## Unreleased
 
+- **`alp doctor --build` checks the Yocto flash prerequisite.** For a project
+  with a Yocto core, the build-readiness report now verifies `bmaptool` (the
+  preferred sparse `.wic` flasher used by `west alp-flash`) — passing when
+  present, warning to fall back to `dd`, and warning hard when neither is on
+  PATH. Zephyr-only projects are unaffected (no bmaptool check).
+
+## 0.1.4
+
+- **`alp build --manifest [--manifest-from FILE]`.** Reads the ALP system
+  manifest — the post-build IDE/tool contract (`build/system-manifest.yaml`,
+  alp-sdk v0.7.0): per-core slices + ipc + helper MCUs. `--manifest-from` reads
+  a local manifest (e.g. one `west alp-build` wrote); plain `--manifest` asks
+  the SDK for the projection (`alp_orchestrate.py --emit system-manifest`).
+  Parsed + version-guarded (schema_version 1) and emitted in the envelope so
+  the IDE consumes it without shelling python. (Per-core `alp build --core <id>`
+  already forwards to `west alp-build`.)
+
+## 0.1.3
+
+- **`alp presets` SoMs now carry `cores`.** Each `data.soms[]` entry gains a
+  `cores: [{id, os}]` array derived from the SoM's `topology` (a `board:` core →
+  `zephyr`, a `machine:` core → `yocto`; fallback by core-id silicon class). The
+  VS Code New Project flow uses it to scaffold heterogeneous projects.
+- **`alp init --cores id[:os],…`.** New opt-in flag that scaffolds a
+  heterogeneous `board.yaml`: each companion core (Cortex-A/`yocto` → stock
+  `alp-image-edge` image; Zephyr/baremetal → no `app:`, boots the SDK's stock
+  shim) plus a default RPMsg channel (`alp_default_rpmsg`, `carve_out_kb: 512`)
+  linking the app core to its first **active** (`os != off`) companion. OS is
+  inferred from the core-id silicon class when omitted. Input is validated
+  (exit 2): core ids must match the schema's `^[a-z][a-z0-9_]+$`, OS must be
+  zephyr/yocto/baremetal/off, duplicate ids are rejected, and assigning the
+  app core a non-zephyr OS is an error (not a silent override). Without
+  `--cores`, the single-core scaffold is unchanged (envelope + file paths
+  identical).
+
 ## 0.1.2
 
 - **`alp presets` now returns rich SoMs.** New `data.soms` array

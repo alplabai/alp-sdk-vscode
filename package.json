@@ -44,7 +44,8 @@
     "onCommand:alp.newProjectWizard",
     "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
-    "workspaceContains:**/board.yaml"
+    "workspaceContains:**/board.yaml",
+    "workspaceContains:**/prj*.conf"
   ],
   "main": "./out/extension.js",
   "icon": "media/icon.png",
@@ -398,6 +399,10 @@
       {
         "fileMatch": "board.yaml",
         "url": "./schemas/board.schema.json"
+      },
+      {
+        "fileMatch": "system-manifest.yaml",
+        "url": "./schemas/system-manifest-v1.schema.json"
       }
     ],
     "snippets": [

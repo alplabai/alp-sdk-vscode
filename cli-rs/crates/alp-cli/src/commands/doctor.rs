@@ -97,6 +97,8 @@ fn run_build_readiness(g: &GlobalArgs, generated_at: &str) -> CommandRun {
         ninja: command_on_path("ninja"),
         bitbake: command_on_path("bitbake"),
         zephyr_sdk: zephyr_sdk_detected(),
+        bmaptool: command_on_path("bmaptool"),
+        dd: command_on_path("dd"),
         is_linux: cfg!(target_os = "linux"),
     };
 

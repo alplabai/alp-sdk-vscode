@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Button, Card, EmptyState, Icon, Skeleton } from "../../shared/ui";
-import type { BuildPlanGeneratedFile, BuildPlanSlice } from "../../types";
+import type {
+  BuildPlanGeneratedFile,
+  BuildPlanSlice,
+  SystemManifest,
+} from "../../types";
 import styles from "./BuildPlanView.module.css";
 import { useBuildPlan } from "./useBuildPlan";
 
@@ -8,6 +12,112 @@ function commandLine(slice: BuildPlanSlice): string {
   if (!slice.command) return "(no command — not buildable yet)";
   const { tool, args } = slice.command;
   return args.length > 0 ? `${tool} ${args.join(" ")}` : tool;
+}
+
+const isReady = (value?: string): boolean => !!value && value !== "TBD";
+
+/** The system manifest — the resolved per-core contract (`alp build --manifest`):
+ *  slices with their runtime + flash wiring, IPC links, and helper MCUs. The
+ *  per-slice Build/Flash buttons show/hide straight from the manifest: an
+ *  `os: off` slice has none; Flash appears only when the slice carries a real
+ *  `flash_method` (not the `TBD` placeholder). */
+function SystemManifestSection({
+  manifest,
+  postBuild,
+  error,
+  buildSlice,
+  flashSlice,
+}: {
+  manifest: SystemManifest | null;
+  postBuild: boolean;
+  error: string | null;
+  buildSlice: (coreId: string) => void;
+  flashSlice: (coreId: string) => void;
+}) {
+  if (!manifest) {
+    return error ? (
+      <section className={styles.section}>
+        <p className={styles.sectionTitle}>System manifest</p>
+        <p className={styles.manifestNote}>{error}</p>
+      </section>
+    ) : null;
+  }
+  return (
+    <section className={styles.section}>
+      <p className={styles.sectionTitle}>
+        System manifest{" "}
+        <span className={styles.manifestBadge}>
+          {postBuild ? "post-build" : "projection"}
+        </span>
+      </p>
+      <ul className={styles.manifestSlices}>
+        {manifest.slices.map((s) => {
+          const active = s.os !== "off";
+          return (
+            <li key={s.core_id} className={styles.manifestSlice}>
+              <span className={styles.coreId}>{s.core_id}</span>
+              <span className={styles.backend} data-backend={s.os}>
+                {s.os}
+              </span>
+              <span className={styles.manifestStatus} data-status={s.status}>
+                {s.status}
+              </span>
+              {s.flash_method && (
+                <span className={styles.manifestFlash}>{s.flash_method}</span>
+              )}
+              <code className={styles.manifestTarget}>
+                {s.build_dir ?? s.board ?? s.machine ?? s.image ?? s.app ?? "—"}
+              </code>
+              <span className={styles.manifestActions}>
+                {active && (
+                  <button
+                    type="button"
+                    className={styles.sliceBtn}
+                    onClick={() => buildSlice(s.core_id)}
+                  >
+                    Build
+                  </button>
+                )}
+                {active && isReady(s.flash_method) && (
+                  <button
+                    type="button"
+                    className={styles.sliceBtn}
+                    onClick={() => flashSlice(s.core_id)}
+                  >
+                    Flash
+                  </button>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {manifest.ipc.length > 0 && (
+        <div className={styles.manifestSub}>
+          <span className={styles.manifestSubTitle}>IPC</span>
+          {manifest.ipc.map((link) => (
+            <span key={link.name} className={styles.manifestChip}>
+              {link.name} <em>{link.kind}</em> [{link.endpoints.join(" ↔ ")}]
+              {link.status && link.status !== "ok" ? ` · ${link.status}` : ""}
+            </span>
+          ))}
+        </div>
+      )}
+      {manifest.helper_mcus.length > 0 && (
+        <div className={styles.manifestSub}>
+          <span className={styles.manifestSubTitle}>Helper MCUs</span>
+          {manifest.helper_mcus.map((mcu) => (
+            <span key={mcu.name} className={styles.manifestChip}>
+              {mcu.name} <em>{mcu.chip}</em>
+              {!(isReady(mcu.flash_method) && isReady(mcu.firmware_path))
+                ? " · firmware TBD"
+                : ""}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 /** A generated file: a toggle showing its path; expands to its contents. */
@@ -43,7 +153,19 @@ function FileRow({
 }
 
 export function BuildPlanView() {
-  const { plan, error, loading, reload, materialise, build } = useBuildPlan();
+  const {
+    plan,
+    error,
+    loading,
+    manifest,
+    manifestPostBuild,
+    manifestError,
+    reload,
+    materialise,
+    build,
+    buildSlice,
+    flashSlice,
+  } = useBuildPlan();
   const [expanded, setExpanded] = useState<string | null>(null);
   const toggle = (path: string) =>
     setExpanded((cur) => (cur === path ? null : path));
@@ -204,6 +326,14 @@ export function BuildPlanView() {
               </ul>
             </section>
           )}
+
+          <SystemManifestSection
+            manifest={manifest}
+            postBuild={manifestPostBuild}
+            error={manifestError}
+            buildSlice={buildSlice}
+            flashSlice={flashSlice}
+          />
         </div>
       )}
     </div>

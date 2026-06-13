@@ -19,6 +19,8 @@ cli-rs/target/
 # Byte-for-byte compared fixtures/snapshots — formatting would break tests
 cli-rs/contract/
 test/golden/
+# Real SDK `--emit` output, parsed verbatim by the manifest tests
+test/fixtures/*.yaml
 
 # Vendored board schema — must stay byte-identical to the submodule (CI cmp)
 schemas/

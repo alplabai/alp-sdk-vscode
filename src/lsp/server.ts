@@ -45,6 +45,12 @@ import {
   detectV2StructuralIssues,
   normalizeProjectSettings,
 } from "./service";
+import {
+  completePrjConf,
+  hoverPrjConf,
+  isPrjConfPath,
+  lintPrjConf,
+} from "./kconfig";
 
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
 
@@ -110,12 +116,28 @@ connection.onInitialized(() => {
 
   connection.onDidOpenTextDocument((params) => {
     documentCache.set(params.textDocument.uri, params.textDocument.text);
+    const filePath = uriToFsPath(params.textDocument.uri);
+    if (filePath && isPrjConfPath(filePath)) {
+      validatePrjConf(params.textDocument.uri, params.textDocument.text);
+      return;
+    }
     void validateDocument(params.textDocument.uri, params.textDocument.text);
   });
 
   connection.onDidChangeTextDocument((params) => {
     const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath || !isBoardYamlPath(filePath)) {
+    if (!filePath) {
+      return;
+    }
+    // prj.conf: cheap, local lint → re-validate live on every change.
+    if (isPrjConfPath(filePath)) {
+      const current = getDocumentText(params.textDocument.uri, filePath);
+      const updated = applyContentChanges(current, params.contentChanges);
+      documentCache.set(params.textDocument.uri, updated);
+      validatePrjConf(params.textDocument.uri, updated);
+      return;
+    }
+    if (!isBoardYamlPath(filePath)) {
       return;
     }
 
@@ -126,7 +148,16 @@ connection.onInitialized(() => {
 
   connection.onDidSaveTextDocument((params) => {
     const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath || !isBoardYamlPath(filePath)) {
+    if (!filePath) {
+      return;
+    }
+    if (isPrjConfPath(filePath)) {
+      const persisted = readDocumentText(filePath);
+      documentCache.set(params.textDocument.uri, persisted);
+      validatePrjConf(params.textDocument.uri, persisted);
+      return;
+    }
+    if (!isBoardYamlPath(filePath)) {
       return;
     }
 
@@ -145,7 +176,24 @@ connection.onInitialized(() => {
 
   connection.onCompletion((params): CompletionItem[] => {
     const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath || !isBoardYamlPath(filePath)) {
+    if (!filePath) {
+      return [];
+    }
+    if (isPrjConfPath(filePath)) {
+      const text = getDocumentText(params.textDocument.uri, filePath);
+      const linePrefix = lineTextAt(text, params.position.line).slice(
+        0,
+        params.position.character,
+      );
+      return completePrjConf(linePrefix).map((c) => ({
+        label: c.label,
+        insertText: c.insertText,
+        detail: c.detail,
+        documentation: c.doc,
+        kind: CompletionItemKind.Constant,
+      }));
+    }
+    if (!isBoardYamlPath(filePath)) {
       return [];
     }
 
@@ -161,7 +209,22 @@ connection.onInitialized(() => {
 
   connection.onHover((params): Hover | null => {
     const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath || !isBoardYamlPath(filePath)) {
+    if (!filePath) {
+      return null;
+    }
+    if (isPrjConfPath(filePath)) {
+      const text = getDocumentText(params.textDocument.uri, filePath);
+      const word = wordAt(
+        text,
+        params.position.line,
+        params.position.character,
+      );
+      const markdown = word ? hoverPrjConf(word) : null;
+      return markdown
+        ? { contents: { kind: MarkupKind.Markdown, value: markdown } }
+        : null;
+    }
+    if (!isBoardYamlPath(filePath)) {
       return null;
     }
 
@@ -507,6 +570,46 @@ function uriToFsPath(uri: string): string | null {
   } catch {
     return null;
   }
+}
+
+// ── prj.conf (Kconfig fragment) helpers ──────────────────────────────────────
+
+/** Lint a prj.conf and publish the diagnostics. */
+function validatePrjConf(uri: string, text: string): void {
+  const diagnostics: Diagnostic[] = lintPrjConf(text).map((d) => ({
+    range: {
+      start: { line: d.line, character: d.startCol },
+      end: { line: d.line, character: d.endCol },
+    },
+    message: d.message,
+    severity:
+      d.severity === "error"
+        ? DiagnosticSeverity.Error
+        : DiagnosticSeverity.Warning,
+    source: "alp-kconfig",
+  }));
+  connection.sendDiagnostics({ uri, diagnostics });
+}
+
+/** The text of a 0-based line. */
+function lineTextAt(text: string, line: number): string {
+  return text.split(/\r?\n/)[line] ?? "";
+}
+
+/** The CONFIG_ symbol under the cursor on a line, if any. */
+function wordAt(text: string, line: number, character: number): string | null {
+  const lineText = lineTextAt(text, line);
+  const re = /CONFIG_[A-Z0-9_]+/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(lineText)) !== null) {
+    if (
+      character >= match.index &&
+      character <= match.index + match[0].length
+    ) {
+      return match[0];
+    }
+  }
+  return null;
 }
 
 connection.listen();

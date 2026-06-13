@@ -260,6 +260,13 @@
 .coreSpacer {
   flex: 1;
 }
+/* Per-core Runtime selector in the card header — constrain the full-width
+ * .control to a compact, content-sized dropdown. */
+.coreRuntime {
+  width: auto;
+  min-width: 168px;
+  flex: 0 0 auto;
+}
 .coreInherit {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
@@ -464,6 +471,17 @@
 }
 .ipcRow {
   grid-template-columns: 1.2fr 1fr 1.6fr 0.8fr 24px;
+}
+.modelRow {
+  grid-template-columns: 1.2fr 1.6fr auto auto 24px;
+}
+.modelChk {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  color: var(--text-secondary);
 }
 
 /* ── buttons ────────────────────────────────────────────────────────── */

@@ -35,9 +35,17 @@ export function startLanguageServer(context: vscode.ExtensionContext): void {
   };
 
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: "yaml" }],
+    documentSelector: [
+      { scheme: "file", language: "yaml" },
+      // Zephyr Kconfig fragments (prj.conf, prj_debug.conf, …) — matched by
+      // pattern, independent of the language id VS Code assigns them.
+      { scheme: "file", pattern: "**/prj*.conf" },
+    ],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/board.yaml"),
+      fileEvents: [
+        vscode.workspace.createFileSystemWatcher("**/board.yaml"),
+        vscode.workspace.createFileSystemWatcher("**/prj*.conf"),
+      ],
     },
   };
 

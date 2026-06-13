@@ -102,6 +102,9 @@ export interface E1mModule {
   id: string;
   displayName: string;
   family: string;
+  /** Per-core topology (id + resolved OS) from `alp presets`; shown in the
+   *  Confirm step and drives the heterogeneous `alp init --cores` scaffold. */
+  cores?: { id: string; os: string }[];
 }
 
 // ── Configurator (board.yaml) — rich model mirrored from
@@ -193,6 +196,19 @@ export interface Diagnostics {
   modules?: Record<string, LogLevelOrOff>;
 }
 
+/** An AI model to compile + package into .alpmodel (board.schema.json `models`). */
+export interface ModelEntry {
+  name: string;
+  source: string;
+  spec?: string;
+  inputs?: unknown[];
+  /** Per-backend NPU compile configuration (paths to config/calibration/spec). */
+  compile?: {
+    deepx_dxm1?: { config: string; calibration: string };
+    drpai?: { spec: string };
+  };
+}
+
 export interface BoardConfig {
   name?: string;
   description?: string;
@@ -203,6 +219,7 @@ export interface BoardConfig {
   populated?: Record<string, boolean>;
   chips?: string[];
   ipc?: IpcEntry[];
+  models?: ModelEntry[];
   diagnostics?: Diagnostics;
   storage?: StoragePartition[];
   security?: Security;
@@ -400,6 +417,64 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
+// --- System manifest (mirrors @alp-sdk/core/systemManifest/models; the
+// post-build IDE/tool contract from `alp build --manifest`) ---
+export interface ManifestHwInfo {
+  sku: string;
+  som_hw_rev?: string | null;
+  board_name?: string | null;
+  board_hw_rev?: string | null;
+  silicon?: string | null;
+}
+export interface ManifestSlice {
+  core_id: string;
+  os: string;
+  app?: string;
+  image?: string;
+  machine?: string;
+  board?: string;
+  toolchain?: string;
+  build_dir?: string;
+  output_artefact?: string;
+  status: string;
+  log_path?: string;
+  reason?: string;
+  flash_method?: string;
+  flash_args?: Record<string, unknown>;
+}
+export interface ManifestIpcLink {
+  name: string;
+  kind: string;
+  endpoints: string[];
+  status?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+export interface ManifestHelperMcu {
+  name: string;
+  chip: string;
+  firmware_path?: string;
+  flash_method?: string;
+  flash_args?: Record<string, unknown> | string;
+  [key: string]: unknown;
+}
+export interface SystemManifest {
+  schema_version: number;
+  generated_by: string;
+  hw_info: ManifestHwInfo;
+  slices: ManifestSlice[];
+  ipc: ManifestIpcLink[];
+  helper_mcus: ManifestHelperMcu[];
+  boot_order: unknown[];
+  storage?: unknown[];
+}
+export interface SystemManifestDataMessage {
+  type: "systemManifestData";
+  manifest: SystemManifest | null;
+  postBuild: boolean;
+  error?: string;
+}
+
 export interface ProjectLocationPickedMessage {
   type: "projectLocationPicked";
   path: string;
@@ -415,7 +490,8 @@ export type ExtToWebviewMessage =
   | ToolchainReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
-  | BuildPlanDataMessage;
+  | BuildPlanDataMessage
+  | SystemManifestDataMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -504,6 +580,14 @@ export interface MaterialiseBuildPlanMessage {
 export interface RunBuildMessage {
   type: "runBuild";
 }
+export interface BuildSliceMessage {
+  type: "buildSlice";
+  coreId: string;
+}
+export interface FlashSliceMessage {
+  type: "flashSlice";
+  coreId: string;
+}
 
 export type WebviewToExtMessage =
   | ReadyMessage
@@ -528,4 +612,6 @@ export type WebviewToExtMessage =
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
-  | RunBuildMessage;
+  | RunBuildMessage
+  | BuildSliceMessage
+  | FlashSliceMessage;

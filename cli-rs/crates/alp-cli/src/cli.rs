@@ -151,6 +151,17 @@ pub struct BuildArgs {
     /// delegating to `west alp-build`.
     #[arg(long)]
     pub native: bool,
+    /// Show the system manifest — the post-build IDE/tool contract
+    /// (`build/system-manifest.yaml`): per-core slices + ipc + helper MCUs.
+    /// Without `--manifest-from`, asks the SDK for the projection
+    /// (`alp_orchestrate.py --emit system-manifest`).
+    #[arg(long)]
+    pub manifest: bool,
+    /// Read the system manifest from a YAML file instead of invoking the SDK
+    /// (e.g. the `build/system-manifest.yaml` a build already wrote). Implies
+    /// `--manifest`.
+    #[arg(long = "manifest-from", value_name = "FILE")]
+    pub manifest_from: Option<String>,
     /// Arguments forwarded verbatim to `west alp-build` (app path, `--core <id>`,
     /// `--sequential`, `-b <board>`) when not using `--plan`.
     #[arg(
@@ -281,6 +292,10 @@ pub struct InitArgs {
     /// Target SoM SKU written into the generated board.yaml (e.g. E1M-AEN701).
     #[arg(long)]
     pub som: Option<String>,
+    /// Comma-separated cores for a heterogeneous project, `id[:os]`
+    /// (e.g. `m33_sm:zephyr,a55_cluster:yocto`); OS is inferred from the id when omitted.
+    #[arg(long)]
+    pub cores: Option<String>,
     /// Show planned files without writing anything.
     #[arg(long)]
     pub preview: bool,

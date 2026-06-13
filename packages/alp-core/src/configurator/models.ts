@@ -12,8 +12,11 @@ export interface CoreEntry {
 
 export interface IpcCarveOut {
   name: string;
+  kind?: string;
   endpoints: string[];
-  size_kib: number;
+  /** Shared-memory size in KiB (board.schema.json v0.6 field `carve_out_kb`). */
+  carve_out_kb: number;
+  cacheable?: boolean;
 }
 
 export interface BoardModel {

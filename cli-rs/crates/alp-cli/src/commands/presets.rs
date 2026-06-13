@@ -29,6 +29,16 @@ struct SomEntry {
     #[serde(rename = "displayName")]
     display_name: String,
     family: String,
+    /// Per-core runtime topology (id + resolved OS), for heterogeneous scaffolding.
+    cores: Vec<SomCoreEntry>,
+}
+
+/// One core of a SoM's topology: its id and the runtime it naturally runs
+/// (zephyr for a Cortex-M `board:`, yocto for a Cortex-A `machine:`).
+#[derive(serde::Serialize)]
+struct SomCoreEntry {
+    id: String,
+    os: String,
 }
 
 #[derive(serde::Serialize)]
@@ -130,10 +140,29 @@ fn read_soms(sdk_root: &str) -> Vec<SomEntry> {
             };
             let text = std::fs::read_to_string(&yaml_path).ok()?;
             let som = parse_som_preset(&text).ok()?;
+            let cores = som
+                .topology
+                .iter()
+                .map(|t| {
+                    // OS is resolved from the topology: a `board:` is a Zephyr
+                    // (Cortex-M) target, a `machine:` is a Yocto (Cortex-A) one;
+                    // fall back to the shared silicon-class heuristic.
+                    let os = match (t.board.is_some(), t.machine.is_some()) {
+                        (true, _) => "zephyr",
+                        (_, true) => "yocto",
+                        _ => alp_core::wizard::infer_runtime_for_core_id(&t.id),
+                    };
+                    SomCoreEntry {
+                        id: t.id.clone(),
+                        os: os.to_string(),
+                    }
+                })
+                .collect();
             Some(SomEntry {
                 sku: som.sku,
                 display_name: som.display_name,
                 family: som.family,
+                cores,
             })
         })
         .collect();

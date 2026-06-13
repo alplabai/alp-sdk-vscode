@@ -1,0 +1,56 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const {
+  parseSystemManifest,
+  SystemManifestError,
+} = require("../packages/alp-core/dist/systemManifest/service.js");
+const {
+  isActiveSlice,
+} = require("../packages/alp-core/dist/systemManifest/models.js");
+
+// Ground truth: the real `--emit system-manifest` output for the heterogeneous
+// AEN701 example (off A-core + two Zephyr M-cores + a helper MCU).
+const FIXTURE = fs.readFileSync(
+  path.join(__dirname, "fixtures", "system-manifest.aen701.yaml"),
+  "utf-8",
+);
+
+test("parseSystemManifest reads the real AEN701 manifest", () => {
+  const m = parseSystemManifest(FIXTURE);
+  assert.equal(m.schema_version, 1);
+  assert.equal(m.hw_info.sku, "E1M-AEN701");
+  assert.equal(m.slices.length, 3);
+  // a32 is os: off -> not active; both M55 cores are.
+  assert.equal(m.slices.filter(isActiveSlice).length, 2);
+
+  const a32 = m.slices.find((s) => s.core_id === "a32_cluster");
+  assert.equal(a32.os, "off");
+  assert.equal(a32.flash_method, undefined); // omitted by emitter, tolerated
+
+  const hp = m.slices.find((s) => s.core_id === "m55_hp");
+  assert.equal(hp.flash_method, "zephyr_west_flash");
+
+  // Helper MCU keeps its string flash_args + the undeclared `note` field.
+  assert.equal(m.helper_mcus.length, 1);
+  assert.equal(m.helper_mcus[0].chip, "cc3501e");
+  assert.equal(m.helper_mcus[0].flash_args, "TBD");
+});
+
+test("parseSystemManifest tolerates unknown additive-v1 fields", () => {
+  const m = parseSystemManifest(`${FIXTURE}\nfuture_block:\n  anything: 1\n`);
+  assert.equal(m.slices.length, 3);
+});
+
+test("parseSystemManifest rejects an unsupported schema_version", () => {
+  assert.throws(
+    () => parseSystemManifest("schema_version: 2\nslices: []\n"),
+    SystemManifestError,
+  );
+  assert.throws(
+    () => parseSystemManifest("slices: []\n"), // missing schema_version
+    SystemManifestError,
+  );
+});

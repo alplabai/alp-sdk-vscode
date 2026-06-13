@@ -410,6 +410,67 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
   );
 }
 
+type CoreClass = "cortex-m" | "cortex-a" | "unknown";
+
+/** Best-effort silicon class from the core ID (stopgap until the CLI emits the
+ *  SoM topology's per-core class): m33/m55/… → Cortex-M, a55/a32/… → Cortex-A. */
+function coreSiliconClass(id: string): CoreClass {
+  const s = id.toLowerCase();
+  if (/(^|[_-])m\d/.test(s)) return "cortex-m";
+  if (/(^|[_-])a\d/.test(s)) return "cortex-a";
+  return "unknown";
+}
+
+/** The runtime a core naturally runs (its SoM-topology default). */
+function naturalRuntime(id: string): string | null {
+  const cls = coreSiliconClass(id);
+  return cls === "cortex-m" ? "zephyr" : cls === "cortex-a" ? "yocto" : null;
+}
+
+/** Runtimes selectable for a core, gated by silicon class: a Cortex-A core runs
+ *  Linux (Yocto) or off — you never pick Zephyr there; a Cortex-M core runs
+ *  Zephyr (default), bare-metal, or off. Unknown ids fall back to all four. */
+function runtimeOptions(id: string): Array<[string, string]> {
+  const cls = coreSiliconClass(id);
+  if (cls === "cortex-m")
+    return [
+      ["zephyr", "Zephyr (default)"],
+      ["baremetal", "Bare-metal"],
+      ["off", "Off (skip core)"],
+    ];
+  if (cls === "cortex-a")
+    return [
+      ["yocto", "Yocto Linux (default)"],
+      ["off", "Off (skip core)"],
+    ];
+  return [
+    ["zephyr", "Zephyr"],
+    ["yocto", "Yocto Linux"],
+    ["baremetal", "Bare-metal"],
+    ["off", "Off (skip core)"],
+  ];
+}
+
+/** Per-core peripheral classes (board.schema.json `core_entry.peripherals` enum). */
+const PERIPHERAL_CHOICES = [
+  "adc",
+  "can",
+  "counter",
+  "emmc",
+  "ethernet",
+  "flash",
+  "gpio",
+  "i2c",
+  "i2s",
+  "pwm",
+  "rtc",
+  "sensor",
+  "spi",
+  "uart",
+  "usb",
+  "watchdog",
+];
+
 function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   const { mutate, vm } = cfg;
   const ensure = (d: BoardConfig) => {
@@ -440,27 +501,34 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
     );
   }
 
-  const enabled = core.os !== "off";
+  const currentOs = core.os || naturalRuntime(core.id) || "zephyr";
+  const enabled = currentOs !== "off";
   return (
     <div className={styles.core}>
       <div className={styles.coreHd}>
         <span className={styles.coreId}>{core.id}</span>
         <span className={styles.coreSpacer} />
-        <button
-          type="button"
-          className={styles.toggle}
-          aria-pressed={enabled}
-          onClick={() =>
+        <select
+          className={`${styles.control} ${styles.coreRuntime}`}
+          value={currentOs}
+          aria-label={`Runtime for ${core.id}`}
+          title="Runtime is fixed by the SoM's core silicon class — override only to bare-metal or off."
+          onChange={(e) => {
+            const next = e.target.value;
             mutate((d) => {
               const c = ensure(d);
-              if (enabled) c.os = "off";
-              else delete c.os;
-            })
-          }
+              // Selecting the SoM-natural OS clears the override (inherit).
+              if (next === naturalRuntime(core.id)) delete c.os;
+              else c.os = next as never;
+            });
+          }}
         >
-          <span>Enabled</span>
-          <span className={`${styles.sw} ${enabled ? styles.swOn : ""}`} />
-        </button>
+          {runtimeOptions(core.id).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </div>
       {!enabled ? (
         <div className={styles.ghostNote}>Disabled (os: off).</div>
@@ -538,6 +606,23 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
                 );
               })}
             </div>
+          </Field>
+          <Field
+            label="Peripherals"
+            hint="Peripheral subsystems this core uses directly — enables the matching Zephyr Kconfig / Yocto package."
+          >
+            <TagSelector
+              all={PERIPHERAL_CHOICES}
+              selected={core.peripherals}
+              placeholder="Add peripheral…"
+              onChange={(next) =>
+                mutate((d) => {
+                  const c = ensure(d);
+                  if (next.length) c.peripherals = next;
+                  else delete c.peripherals;
+                })
+              }
+            />
           </Field>
           <Field label="Libraries">
             <TagSelector
@@ -740,6 +825,7 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
   const sec = board.security?.psa;
   const ota: Partial<Ota> = board.ota ?? {};
   const ipc = board.ipc ?? [];
+  const models = board.models ?? [];
 
   return (
     <div className={`${styles.section} ${styles.wide}`}>
@@ -1227,6 +1313,120 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
           }
         >
           Add IPC channel
+        </button>
+      </AdvCard>
+
+      {/* AI models */}
+      <AdvCard title="AI models">
+        <div className={styles.partList}>
+          {models.length === 0 ? (
+            <span className={styles.selEmpty}>no models</span>
+          ) : (
+            models.map((m, i) => (
+              <div key={i} className={`${styles.partRow} ${styles.modelRow}`}>
+                <TextInput
+                  label="Model name"
+                  value={m.name}
+                  placeholder="name"
+                  onChange={(v) =>
+                    mutate(
+                      (d) => {
+                        d.models![i].name = v;
+                      },
+                      { debounce: true },
+                    )
+                  }
+                />
+                <TextInput
+                  label="Source path"
+                  value={m.source}
+                  placeholder="models/foo.tflite"
+                  onChange={(v) =>
+                    mutate(
+                      (d) => {
+                        d.models![i].source = v;
+                      },
+                      { debounce: true },
+                    )
+                  }
+                />
+                <label
+                  className={styles.modelChk}
+                  title="Compile for the DeepX DX-M1 NPU — fill the config/calibration paths in YAML"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!m.compile?.deepx_dxm1}
+                    onChange={(e) =>
+                      mutate((d) => {
+                        const mm = d.models![i];
+                        mm.compile = mm.compile || {};
+                        if (e.target.checked)
+                          // Schema requires both paths; seed empty for the user to fill.
+                          mm.compile.deepx_dxm1 = mm.compile.deepx_dxm1 || {
+                            config: "",
+                            calibration: "",
+                          };
+                        else {
+                          delete mm.compile.deepx_dxm1;
+                          if (!mm.compile.drpai) delete mm.compile;
+                        }
+                      })
+                    }
+                  />
+                  DeepX
+                </label>
+                <label
+                  className={styles.modelChk}
+                  title="Compile for the Renesas DRP-AI NPU — fill the spec path in YAML"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!m.compile?.drpai}
+                    onChange={(e) =>
+                      mutate((d) => {
+                        const mm = d.models![i];
+                        mm.compile = mm.compile || {};
+                        if (e.target.checked)
+                          // Schema requires the spec path; seed empty for the user to fill.
+                          mm.compile.drpai = mm.compile.drpai || { spec: "" };
+                        else {
+                          delete mm.compile.drpai;
+                          if (!mm.compile.deepx_dxm1) delete mm.compile;
+                        }
+                      })
+                    }
+                  />
+                  DRP-AI
+                </label>
+                <button
+                  type="button"
+                  className={styles.modX}
+                  aria-label="Remove model"
+                  onClick={() =>
+                    mutate((d) => {
+                      d.models!.splice(i, 1);
+                      if (d.models!.length === 0) delete d.models;
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+        <button
+          type="button"
+          className={styles.btn}
+          onClick={() =>
+            mutate((d) => {
+              d.models = d.models || [];
+              d.models.push({ name: "model", source: "models/model.tflite" });
+            })
+          }
+        >
+          Add model
         </button>
       </AdvCard>
     </div>
