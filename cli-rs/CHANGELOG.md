@@ -12,6 +12,8 @@ same version.
 
 ## Unreleased
 
+## 0.1.5
+
 - **crates.io + `cargo binstall` distribution.** The release now publishes the
   `alp-core` + `alp-cli` crates to crates.io (`cargo install alp-cli`), and
   `alp-cli` carries cargo-binstall metadata so `cargo binstall alp-cli` fetches
