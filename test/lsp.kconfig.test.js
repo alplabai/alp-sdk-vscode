@@ -110,23 +110,26 @@ test("every curated ALP_* symbol is defined in the SDK's real zephyr Kconfig (dr
     );
     return;
   }
-  const defined = new Set();
-  for (const f of files) {
-    for (const line of fs.readFileSync(f, "utf-8").split(/\r?\n/)) {
-      const m = /^\s*config\s+([A-Z0-9_]+)\s*$/.exec(line);
-      if (m) defined.add(m[1]);
-    }
-  }
+  const text = files.map((f) => fs.readFileSync(f, "utf-8")).join("\n");
   const curatedAlp = KCONFIG_SYMBOLS.map((s) => s.name).filter((n) =>
     n.startsWith("ALP_"),
   );
   assert.ok(curatedAlp.length > 0, "expected curated ALP_* symbols");
-  const missing = curatedAlp.filter((n) => !defined.has(n));
+  // Match `config <SYM>` at a line start, tolerant of any line ending + leading
+  // whitespace; the lookahead stops `ALP_SDK_RPC` matching `ALP_SDK_RPC_…`.
+  // (Scans the whole text instead of splitting into lines, which proved fragile.)
+  const definedUpstream = (sym) =>
+    new RegExp(`(?:^|[\\r\\n])[ \\t]*config[ \\t]+${sym}(?![A-Z0-9_])`).test(
+      text,
+    );
+  const missing = curatedAlp.filter((n) => !definedUpstream(n));
   assert.deepEqual(
     missing,
     [],
-    `curated ALP_* symbol(s) [${missing.join(", ")}] are not defined in the SDK's ` +
-      "zephyr Kconfig — renamed/removed upstream or fabricated; completion would " +
+    "curated ALP_* symbol(s) not found as `config <SYM>` in the SDK's zephyr " +
+      `Kconfig: ${missing
+        .map((n) => `${n} (bare-substring present: ${text.includes(n)})`)
+        .join(", ")} — renamed/removed upstream or fabricated; completion would ` +
       "insert undefined-symbol lines that break builds.",
   );
 });
