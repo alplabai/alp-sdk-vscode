@@ -9,6 +9,11 @@ test/**
 **/*.map
 
 node_modules/**
+# Python venvs (e.g. an SDK bootstrap .venv) must never land in the VSIX — they
+# add thousands of files. CI's fresh checkout has none, but exclude defensively
+# so a local `pnpm run package`/`install:vscode` stays lean too.
+.venv/**
+**/.venv/**
 packages/**
 alp-sdk-upstream/**
 dist/**
