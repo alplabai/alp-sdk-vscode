@@ -1,9 +1,9 @@
 {
   "name": "alp-sdk",
-  "displayName": "Alp SDK",
+  "displayName": "Alp IDE",
   "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for Alp SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "AlpLabAI",
   "license": "Apache-2.0",
   "repository": {
@@ -68,7 +68,7 @@
     "walkthroughs": [
       {
         "id": "alpGettingStarted",
-        "title": "Get started with Alp SDK",
+        "title": "Get started with Alp IDE",
         "description": "Install the SDK, bootstrap your toolchain, open a project, and build — all from here.",
         "featuredFor": [
           "**/board.yaml"
@@ -412,7 +412,7 @@
       }
     ],
     "configuration": {
-      "title": "Alp SDK",
+      "title": "Alp IDE",
       "properties": {
         "alpSdk.path": {
           "type": "string",
