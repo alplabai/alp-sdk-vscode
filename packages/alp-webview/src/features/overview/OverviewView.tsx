@@ -1,3 +1,8 @@
+// The ALP LAB brand tile (a copy of the extension's media/icon.png). Imported
+// with `?inline` so Vite embeds it as a base64 data URI in the bundle — it then
+// renders in every webview panel (sidebar included) with no host-side
+// localResourceRoots/asWebviewUri plumbing, and CSP already allows `data:` imgs.
+import brandIcon from "../../assets/brand-icon.png?inline";
 import { useAppContext } from "../../shared/AppContext";
 import type { IconName } from "../../shared/ui";
 import { Icon, Skeleton, StatusChip } from "../../shared/ui";
@@ -89,9 +94,7 @@ function Brand({ subtitle }: { subtitle: string }) {
   return (
     <header className={styles.topbar}>
       <div className={styles.brand}>
-        <span className={styles.bolt} aria-hidden="true">
-          <Icon name="bolt" size={18} />
-        </span>
+        <img className={styles.brandIcon} src={brandIcon} alt="ALP LAB" />
         <span className={styles.brandName}>
           Alp<span className={styles.brandLab}>LAB</span>
         </span>
