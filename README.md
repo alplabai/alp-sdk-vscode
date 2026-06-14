@@ -1,4 +1,4 @@
-# Alp SDK VS Code extension
+# Alp IDE — VS Code extension
 
 First-class IDE support for projects built against the
 [Alp SDK](https://github.com/alplabai/alp-sdk):
