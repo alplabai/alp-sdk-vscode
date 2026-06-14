@@ -30,7 +30,7 @@
 
 .subtitle code,
 .cmd {
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--text-mono);
   color: var(--text-mono, var(--text-primary));
 }
 

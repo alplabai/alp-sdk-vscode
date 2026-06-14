@@ -16,6 +16,76 @@ First-class IDE support for projects built against the
   launch-profile planning, and support-bundle surfaces are available
   without embedding debugger implementation into the extension.
 
+## Screenshots
+
+### ALP IDE Hub
+
+![ALP IDE Hub overview dashboard](media/screenshots/01-ide-hub-overview.png)
+
+_Workspace readiness at a glance — environment, west workspace and Alp SDK status, board-configurator / hardware-explorer / toolchain-doctor panels, and quick actions._
+
+### Create a new project
+
+![New Project — choose a template](media/screenshots/02-new-project-template.png)
+
+_Step 1 — pick a starter template: minimal, sensor, IoT, edge-AI, board-diagnostics, or host-tooling._
+
+![New Project — pick an E1M module](media/screenshots/03-new-project-hardware.png)
+
+_Step 2 — choose the target E1M module, grouped by vendor (Alif Ensemble, NXP i.MX 9, Renesas RZ/V2N)._
+
+![New Project — choose an SDK](media/screenshots/04-new-project-sdk.png)
+
+_Step 3 — scaffold against the active SDK or a pinned release._
+
+![New Project — name and location](media/screenshots/05-new-project-name-empty.png)
+
+_Step 4 — name the project and choose its parent folder._
+
+![New Project — live create-at path](media/screenshots/06-new-project-name-filled.png)
+
+_The "will be created at …" path updates live as you type the project name._
+
+![New Project — review and create](media/screenshots/07-new-project-confirm.png)
+
+_Step 5 — review template, module, cores, SDK, name and location, then scaffold `board.yaml`, `CMakeLists.txt` and a starter `src/main.c`._
+
+### Configure `board.yaml`
+
+![Configurator — project and hardware](media/screenshots/08-configurator-project-hardware.png)
+
+_Project & Hardware — SoM SKU, carrier/board preset, and the resolved compute/inference cores + on-module accelerators._
+
+![Configurator — per-core OS and libraries](media/screenshots/09-configurator-cores.png)
+
+_Cores — per-core OS (Zephyr / Yocto), app directory, inference arena, connectivity, peripherals and libraries._
+
+![Configurator — linked chip drivers](media/screenshots/10-configurator-chips.png)
+
+_Chips — link project-wide chip drivers, filtered to the selected SoM family._
+
+![Configurator — diagnostics and logging](media/screenshots/11-configurator-diagnostics.png)
+
+_Diagnostics — default log level, `alp_last_error()` storage, and per-module log-level overrides._
+
+![Configurator — boot, signing, storage and IPC](media/screenshots/12-configurator-advanced.png)
+
+_Advanced — bootloader, image signing, storage partitions, PSA security, OTA provider, and inter-core IPC / RPMsg carve-outs._
+
+![Configurator — validation summary](media/screenshots/13-configurator-review.png)
+
+_Review — live "board.yaml is valid" with the effective SoM, board, and active cores._
+
+![Configurator — effective config preview](media/screenshots/14-configurator-preview-config.png)
+
+_Preview the resolved `projectContext` + `effectiveConfig` as JSON before building._
+
+### Manage SDK releases
+
+![SDK Manager — install and switch](media/screenshots/15-sdk-manager.png)
+
+_List, install, activate and remove versioned Alp SDK releases, each with an expandable changelog._
+
 ## Install
 
 VS Code Marketplace: search for "Alp SDK".  Or grab the latest

@@ -59,13 +59,17 @@ test("iot.tls with mbedtls present is fine", () => {
   assert.deepEqual(r.errors, []);
 });
 
-test("mcuboot without signing is an error", () => {
+test("mcuboot without explicit signing is valid (SDK defaults the family signing)", () => {
+  // The SoM family supplies the default signing (AEN -> ECDSA-P256), so an
+  // mcuboot board.yaml that omits boot.signing is valid — not an error.
   const r = validateBoardConfig({
     som: { sku: "E1M-AEN701" },
     cores: { m55_hp: { app: "./src" } },
     boot: { method: "mcuboot" },
   });
-  assert.ok(
-    r.errors.some((e) => /mcuboot.*signing|signing.*required/i.test(e)),
+  assert.equal(
+    r.errors.some((e) => /signing/i.test(e)),
+    false,
+    "mcuboot without signing must not error (the SDK defaults it)",
   );
 });

@@ -14,6 +14,11 @@
 # Release flow: bump package.json `version`, ensure the targeted CLI release is
 # published (the extension downloads it on demand — SUPPORTED_CLI_VERSION must
 # match a published cli-rs-v<version>), commit, then `git tag v<version>` + push.
+#
+# Pre-release vs stable follows the VS Code convention encoded in the version: an
+# ODD minor (0.3.x, 0.5.x) publishes as `--pre-release` (beta channel); an EVEN
+# minor (0.4.x, 1.0.x) publishes as a stable release. No flag to flip — just the
+# version number.
 
 name: release-vsix
 
@@ -69,8 +74,19 @@ jobs:
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 
+      - name: Resolve pre-release flag (VS Code convention — odd minor = pre-release)
+        run: |
+          MINOR=$(node -p "require('./package.json').version.split('.')[1]")
+          if [ "$((MINOR % 2))" -eq 1 ]; then
+            echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
+            echo "::notice::version 0.$MINOR.x → publishing as a PRE-RELEASE (odd minor)."
+          else
+            echo "PRERELEASE_FLAG=" >> "$GITHUB_ENV"
+            echo "::notice::version 0.$MINOR.x → publishing as a STABLE release (even minor)."
+          fi
+
       - name: Package (.vsix)
-        run: pnpm exec vsce package --no-dependencies --out alp-sdk.vsix
+        run: pnpm exec vsce package --no-dependencies $PRERELEASE_FLAG --out alp-sdk.vsix
 
       - name: Upload vsix artefact
         uses: actions/upload-artifact@v4
@@ -81,12 +97,12 @@ jobs:
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
-        run: pnpm exec vsce publish --no-dependencies --packagePath alp-sdk.vsix
+        run: pnpm exec vsce publish --no-dependencies $PRERELEASE_FLAG --packagePath alp-sdk.vsix
         # VSCE_PAT is read from the environment by vsce.
 
       - name: Publish to Open VSX
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.OVSX_PAT != '' }}
-        run: npx --yes ovsx publish alp-sdk.vsix --pat "$OVSX_PAT"
+        run: npx --yes ovsx publish alp-sdk.vsix $PRERELEASE_FLAG --pat "$OVSX_PAT"
 
       - name: Note when publish was skipped
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT == '' }}
