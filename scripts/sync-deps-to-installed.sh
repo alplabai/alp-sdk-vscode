@@ -3,8 +3,17 @@
 # Run this after re-installing the VSIX to ensure deps are present.
 set -euo pipefail
 
-EXT_DIR=~/.vscode/extensions/alplabai.alp-sdk-0.3.0
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/node_modules"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve the installed extension dir from package.json's version — VS Code folders
+# the extension under the LOWERCASE publisher (alplabai.alp-sdk-<version>), even
+# though the manifest publisher is the canonical AlpLabAI. Fall back to the newest
+# installed alp-sdk dir if that exact version is not present.
+VERSION="$(node -p "require('$ROOT/package.json').version")"
+EXT_DIR=~/.vscode/extensions/alplabai.alp-sdk-$VERSION
+if [ ! -d "$EXT_DIR" ]; then
+  EXT_DIR=$(ls -d ~/.vscode/extensions/alplabai.alp-sdk-* 2>/dev/null | sort -V | tail -1)
+fi
+SRC="$ROOT/node_modules"
 PNPM="$SRC/.pnpm"
 DEST="$EXT_DIR/node_modules"
 
