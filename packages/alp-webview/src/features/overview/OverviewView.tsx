@@ -1,8 +1,10 @@
-// The ALP LAB brand tile (a copy of the extension's media/icon.png). Imported
-// with `?inline` so Vite embeds it as a base64 data URI in the bundle — it then
-// renders in every webview panel (sidebar included) with no host-side
-// localResourceRoots/asWebviewUri plumbing, and CSP already allows `data:` imgs.
-import brandIcon from "../../assets/brand-icon.png?inline";
+// The ALP LAB wordmark logo (a copy of media/alplab-logo-white.svg: bolt + "ALP
+// LAB"). Imported with `?inline` so Vite embeds it as a data URI in the bundle —
+// no host-side localResourceRoots/asWebviewUri plumbing. The asset is a single
+// flat colour, so we paint it via CSS `mask` in `--text-primary` instead of an
+// <img>: that keeps it visible on light themes too (a white SVG would vanish on
+// the theme-coloured header), while still reading near-white on dark themes.
+import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import type { IconName } from "../../shared/ui";
 import { Icon, Skeleton, StatusChip } from "../../shared/ui";
@@ -93,12 +95,15 @@ function run(command: string) {
 function Brand({ subtitle }: { subtitle: string }) {
   return (
     <header className={styles.topbar}>
-      <div className={styles.brand}>
-        <img className={styles.brandIcon} src={brandIcon} alt="ALP LAB" />
-        <span className={styles.brandName}>
-          Alp<span className={styles.brandLab}>LAB</span>
-        </span>
-      </div>
+      <span
+        className={styles.brandLogo}
+        style={{
+          maskImage: `url("${alplabLogo}")`,
+          WebkitMaskImage: `url("${alplabLogo}")`,
+        }}
+        role="img"
+        aria-label="ALP LAB"
+      />
       <span className={styles.topDivider} aria-hidden="true" />
       <span className={styles.topTitle}>{subtitle}</span>
     </header>
