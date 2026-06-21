@@ -1,7 +1,7 @@
 # A policy/metadata/template engine + per-SoM bundle architecture (reproduces the SDK emit from data)
 
 **Branch:** `proof/pmt-aen701` (off `spike/partition-allocator-rust`)
-**Module:** `cli-rs/crates/alp-core/src/proof_aen701/` (a module tree, not one file) · **Tests:** 25, all green
+**Module:** `cli-rs/crates/alp-core/src/proof_aen701/` (a module tree, not one file) · **Tests:** 28, all green
 **Context:** [alplabai/alp-sdk#235](https://github.com/alplabai/alp-sdk/issues/235)
 
 ## What this proves
@@ -26,13 +26,15 @@ spike_fixtures/
   som/E1M-AEN701/
     bundle.yaml         # the MANIFEST + version gates (loaded FIRST)
     policy.json         # the build RULES (schemaVersion-checked)
+    pin-policy.json     # the PIN/peripheral validation RULES (separate from build policy)
     som.yaml            # the SoM METADATA (facts)
     templates/          # every output SHAPE, as data
       local.conf.tmpl  kconfig.tmpl  system_ipc.h.tmpl
       dts-reservations.dtsi.tmpl  dts-partitions.dtsi.tmpl
-  e7.json  e1m-evk.yaml           # SHARED metadata (per-silicon / per-carrier, not per-SoM)
-  templates/board-routes.h.tmpl   # SHARED (board-level) shape
-  oracle/                         # the captured SDK emit (parity ground truth)
+  e7.json  e1m-evk.yaml                  # SHARED metadata (per-silicon / per-carrier)
+  pinmux.alif-ensemble-e7.yaml           # SHARED per-silicon pin-mux CAPABILITY (facts)
+  templates/board-routes.h.tmpl          # SHARED (board-level) shape
+  oracle/                                # the captured SDK emit (parity ground truth)
 ```
 
 ### Versioning (validated against Helm / OCI / npm / Cargo / Yocto)
@@ -67,6 +69,10 @@ style: one clear early error, not a runtime mis-derive.
 | — | **ALP-B013** E1M pad double-claimed (minus allowlist) | ERROR (blocks) |
 | — | **ALP-B014** pad dispatches via a mediator the SoM lacks | ERROR (blocks) |
 | — | pin/pad **compose** (board roles + SoM dispatch) → `routes.h` | structural |
+| — | **ALP-P001** silicon pad cannot carry the assigned signal | ERROR (blocks) |
+| — | **ALP-P002** two owners contend for one pad | ERROR (blocks) |
+| — | **ALP-P003** two peripherals drive one alternate-function block | ERROR (blocks) |
+| — | pin-mux **validation source** (`valid_pads_for` / `functions_of` / `pad_supports`) | API |
 
 The headline parity: `CONFIG_ALP_SOC_ALIF_ENSEMBLE_E7` is **computed** from the silicon ref
 (`ALP_SOC_ + silicon.upper().replace(':','_')`) — the `_SILICON_TO_KCONFIG` table dissolves
@@ -82,7 +88,9 @@ proof_aen701/
   macros.rs      check_schema_version! (version gate) · vars! (writer var maps)
   ── PARSER (deserialize → structs + gates + validation) ──
   metadata.rs    board.yaml / SoM / board-def / SoC structs (serde IS the parser)
-  policy.rs      Policy (rules as data) + load_policy (schemaVersion gate)
+  policy.rs      Policy (build rules as data) + load_policy (schemaVersion gate)
+  pinmux.rs      pin-mux CAPABILITY (metadata) + PinPolicy (rules) + validation API
+                 + the pin rule engine (ALP-P001/P002/P003)
   bundle.rs      bundle.yaml manifest + load_bundle (schema/sdk-compat gate) + Templates
   validate.rs    Diagnostic{code,severity,message,hint} + ALP-B010/B011/B013/B014
   ── WRITER (data → config-file strings) ──
@@ -105,6 +113,16 @@ proof_aen701/
   minus the policy `padDualClaimAllowlist`) + **ALP-B014** (a pad dispatching via a mediator
   the SoM does not populate). Messages are plain, greppable strings — exactly what a user
   reads to fix their `board.yaml`.
+- **Pin-mux capability (separate metadata + pin policy)** — "which pin can carry which
+  peripheral signal" is a **silicon FACT**, so it lives in a per-silicon `pinmux.<silicon>.yaml`
+  (METADATA: pad→signals, peripheral→signal→pads, alternate-function blocks), while the
+  validation **rules** (conflict severities, the B013 allowlist) live in a **separate**
+  `pin-policy.json` — *not* in the build policy. The rule engine reads both and produces
+  capability diagnostics (**ALP-P001** pad can't carry the signal · **ALP-P002** pad contention
+  · **ALP-P003** alternate-function-block conflict) **and** a **validation source** the CLI +
+  VS Code extension query (`valid_pads_for(periph, signal)` → the legal pins a picker offers;
+  `pad_supports(pad, signal)` → live edit validation). This is what lifts pin config from a
+  text editor to a **validated, advanced pin-mux UI**.
 
 ## Rust macros — applied where they earn it
 
@@ -143,5 +161,5 @@ proof_aen701/
 ## Run it
 
 ```
-cargo test -p alp-core proof_aen701   # 25 tests
+cargo test -p alp-core proof_aen701   # 28 tests
 ```
