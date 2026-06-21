@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! **PROOF BENCH** (branch `proof/pmt-aen701`). Reproduce the SDK's
-//! `alp_orchestrate.py --emit build-plan` for **E1M-AEN701** from
-//! **policy / metadata / template DATA alone**, parity-gated byte-for-byte
-//! against the real SDK emit captured under `spike_fixtures/oracle/`.
+//! `alp_orchestrate.py --emit` for **E1M-AEN701** from **policy / metadata /
+//! template DATA alone**, parity-gated against the real SDK emit captured under
+//! `spike_fixtures/oracle/`. Thesis: per-silicon build knowledge is DATA, not
+//! hardcoded code (issue alplabai/alp-sdk#235).
 //!
-//! Thesis (issue alplabai/alp-sdk#235): per-silicon build knowledge is data, not
-//! hardcoded Python. Each stage proves one more artefact derives from data:
-//!   * **Stage A** — `a32_cluster` Yocto `local.conf`, byte-identical.
-//!   * **Stage B** — the full `a32_cluster` build-plan `BuildSlice`.
-//!   * **Stage C** — `m55_he` Zephyr `alp.conf` (Kconfig fragment), byte-identical,
-//!     including `CONFIG_ALP_SOC_ALIF_ENSEMBLE_E7` **computed** from the silicon ref
-//!     (no `_SILICON_TO_KCONFIG` table — the dissolution the RFC argues for).
+//! The engine holds **no** silicon/board/OS config knowledge: the Kconfig
+//! symbols, chip→subsystem map, library expansions, log-level table, flash
+//! recipes and inference dispatchers all come from `spike_fixtures/policy.json`,
+//! deserialized into `Policy`. Swapping a policy value changes the output with no
+//! code change (`policy_change_alters_output`); the default policy reproduces the
+//! SDK emit byte-for-byte (Stages A–F).
 //!
-//! Layers kept explicit: METADATA (board.yaml + SoM preset + board def + SoC spec),
-//! POLICY (the derivation rules — inline here; externalised to policy.json later),
-//! TEMPLATE/ENGINE (resolve → render → build-plan slice).
+//! Layers: METADATA (board.yaml + SoM preset + board def + SoC spec) · POLICY
+//! (`policy.json` → `Policy`) · TEMPLATE/ENGINE (resolve → render → assemble).
 #![allow(dead_code)] // proof bench: the engine's only caller is its #[cfg(test)] parity suite
+#![allow(clippy::too_many_arguments)] // assemblers take the 4 metadata inputs + policy + runtime paths
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -165,26 +165,99 @@ struct SocCore {
 }
 
 // ===========================================================================
-// POLICY — the per-silicon rules (inline now; externalised to policy.json later)
+// POLICY — the per-silicon/board/OS build rules, loaded from DATA (policy.json).
+// The engine reads these and applies them generically; NO silicon/board/OS
+// config knowledge is hardcoded in the engine. (RFC #235: rules are data.)
 // ===========================================================================
 
-/// on_module scalar fields that are NOT chip slugs (alp_orchestrate.py:2582).
-const ON_MODULE_NON_CHIP: &[&str] = &[
-    "silicon",
-    "ethernet_phy_count",
-    "i2c_devices",
-    "ospi_memories",
-    "nor_flash",
-    "emmc",
-];
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Policy {
+    base_kconfig: Vec<String>,
+    soc_symbol_prefix: String,
+    board_define_prefix: String,
+    chip_kconfig_prefix: String,
+    yocto_lib_prefix: String,
+    block_slugs: Vec<String>,
+    on_module_non_chip: Vec<String>,
+    log_levels: BTreeMap<String, u8>,
+    peripheral_subsystems: BTreeMap<String, String>,
+    chip_subsystems: BTreeMap<String, Vec<String>>,
+    library_kconfig: BTreeMap<String, Vec<String>>,
+    flash: BTreeMap<String, FlashPolicy>,
+    inference: InferencePolicy,
+}
 
-/// Slugs that are SDK *blocks* (CONFIG_ALP_SDK_BLOCK_*) not chip drivers
-/// (alp_orchestrate.py:2868).
-const BLOCK_SLUGS: &[&str] = &["button_led", "pdm_mic"];
+#[derive(Debug, Clone, Deserialize)]
+struct FlashPolicy {
+    method: String,
+    #[serde(default)]
+    args: BTreeMap<String, String>,
+}
 
-/// A Yocto library name → its bitbake recipe (alp_orchestrate.py:3294).
-fn lib_to_recipe(lib: &str) -> String {
-    format!("lib-{}", lib.replace('_', "-"))
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InferencePolicy {
+    tflm_backend: String,
+    tflm_kernel: BTreeMap<String, String>,
+    ethos_backend: BTreeMap<String, String>,
+    ethos_variant_prefix: String,
+}
+
+impl Policy {
+    /// **The `_SILICON_TO_KCONFIG` dissolution** — the SoC symbol is *computed*
+    /// from the silicon ref + the policy prefix; no lookup table. The membership
+    /// allowlist is "the SoC spec exists" (the caller already has it).
+    fn soc_symbol(&self, silicon: &str) -> String {
+        format!(
+            "{}{}",
+            self.soc_symbol_prefix,
+            silicon.to_uppercase().replace(':', "_")
+        )
+    }
+    /// A chip/block slug → its Kconfig symbol (block vs chip from the policy set).
+    fn chip_symbol(&self, slug: &str) -> String {
+        let kind = if self.block_slugs.iter().any(|b| b == slug) {
+            "BLOCK"
+        } else {
+            "CHIP"
+        };
+        format!(
+            "{}{}_{}",
+            self.chip_kconfig_prefix,
+            kind,
+            slug.to_uppercase()
+        )
+    }
+    /// A Yocto library name → its bitbake recipe.
+    fn lib_recipe(&self, lib: &str) -> String {
+        format!("{}{}", self.yocto_lib_prefix, lib.replace('_', "-"))
+    }
+    /// The Zephyr subsystems a chip needs (empty for an unknown chip).
+    fn subsystems_of(&self, slug: &str) -> Vec<String> {
+        self.chip_subsystems.get(slug).cloned().unwrap_or_default()
+    }
+    /// (flash_method, flash_args) for an OS; `$machine` in an arg is substituted.
+    fn flash_for(&self, os: &str, machine: Option<&str>) -> (String, BTreeMap<String, String>) {
+        match self.flash.get(os) {
+            Some(fp) => {
+                let args = fp
+                    .args
+                    .iter()
+                    .map(|(k, v)| {
+                        let val = if v == "$machine" {
+                            machine.unwrap_or("").to_string()
+                        } else {
+                            v.clone()
+                        };
+                        (k.clone(), val)
+                    })
+                    .collect();
+                (fp.method.clone(), args)
+            }
+            None => (String::new(), BTreeMap::new()),
+        }
+    }
 }
 
 /// MACHINE: topology value, else `e1m-<sku sans e1m->` (alp_orchestrate.py:3285).
@@ -195,74 +268,28 @@ fn yocto_machine(topo_machine: Option<&str>, sku: &str) -> String {
     }
 }
 
-/// **The `_SILICON_TO_KCONFIG` dissolution.** The SoC Kconfig symbol is *computed*
-/// from the silicon ref — no lookup table. `alif:ensemble:e7` → `ALP_SOC_ALIF_ENSEMBLE_E7`.
-/// The membership allowlist is "the SoC spec exists" (checked by the caller), exactly
-/// as the maintainer noted; this replaces the hand-synced 8-entry Python dict.
-fn silicon_soc_symbol(silicon: &str) -> String {
-    format!("ALP_SOC_{}", silicon.to_uppercase().replace(':', "_"))
-}
-
-/// Board name → the `ALP_BOARD_*` compile-define suffix (alp_orchestrate.py:536).
+/// Board name → the compile-define suffix (alp_orchestrate.py:536), e.g. `E1M_EVK`.
 fn board_define_slug(name: &str) -> String {
     name.to_lowercase().replace('-', "_").to_uppercase()
 }
 
-/// A chip/block slug → its Kconfig symbol (alp_orchestrate.py:2870).
-fn slug_kconfig(slug: &str) -> String {
-    let kind = if BLOCK_SLUGS.contains(&slug) {
-        "BLOCK"
-    } else {
-        "CHIP"
-    };
-    format!("CONFIG_ALP_SDK_{kind}_{}", slug.to_uppercase())
-}
-
-/// `diagnostics.log_level` → `CONFIG_LOG_DEFAULT_LEVEL` (alp_orchestrate.py:2817).
-fn log_level_n(level: &str) -> Option<u8> {
-    match level {
-        "error" => Some(1),
-        "warn" => Some(2),
-        "info" => Some(3),
-        "debug" | "trace" => Some(4),
-        _ => None,
+/// The TFLM kernel policy key for a core's vector extension (neon/helium/ref).
+fn tflm_kernel_key(soc: &SocSpec, core_id: &str) -> &'static str {
+    for c in &soc.cores {
+        if c.id == core_id {
+            return match c
+                .vector_extension
+                .as_deref()
+                .map(str::to_lowercase)
+                .as_deref()
+            {
+                Some("neon") => "neon",
+                Some("helium") => "helium",
+                _ => "ref",
+            };
+        }
     }
-}
-
-/// A chip slug → the Zephyr subsystems it needs (alp_project.py:601). Only the
-/// slugs reachable on this board are encoded; an unknown slug needs none.
-fn chip_subsystems(slug: &str) -> &'static [&'static str] {
-    match slug {
-        "cc3501e" | "ssd1331" => &["SPI", "GPIO"],
-        "tas2563" => &["I2C", "GPIO"],
-        "button_led" | "cam_mux_pi3wvr626" => &["GPIO"],
-        "lsm6dso" | "ssd1306" | "bme280" | "lis2dw12" | "ov5640" | "icm42670" | "bmi323"
-        | "bmp581" | "tmp112" | "rv3028c7" | "optiga_trust_m" | "eeprom_24c128" | "tcal9538"
-        | "ina236" => &["I2C"],
-        _ => &[],
-    }
-}
-
-/// A library name → its Kconfig symbols, in declaration order (alp_project.py:711).
-/// An unknown library yields no symbols (the caller emits a TODO instead).
-fn library_kconfig(lib: &str) -> &'static [&'static str] {
-    match lib {
-        "cmsis_dsp" => &[
-            "CONFIG_CMSIS_DSP=y",
-            "CONFIG_CMSIS_DSP_BASICMATH=y",
-            "CONFIG_CMSIS_DSP_COMPLEXMATH=y",
-            "CONFIG_CMSIS_DSP_CONTROLLER=y",
-            "CONFIG_CMSIS_DSP_FASTMATH=y",
-            "CONFIG_CMSIS_DSP_FILTERING=y",
-            "CONFIG_CMSIS_DSP_INTERPOLATION=y",
-            "CONFIG_CMSIS_DSP_MATRIX=y",
-            "CONFIG_CMSIS_DSP_STATISTICS=y",
-            "CONFIG_CMSIS_DSP_SUPPORT=y",
-            "CONFIG_CMSIS_DSP_TRANSFORM=y",
-            "CONFIG_ALP_CMSIS_DSP_SCALAR=y",
-        ],
-        _ => &[],
-    }
+    "ref"
 }
 
 // ===========================================================================
@@ -279,7 +306,7 @@ struct YoctoSlice {
 fn resolve_yocto_slice(board: &BoardYaml, som: &SomPreset, core_id: &str) -> Option<YoctoSlice> {
     let topo = som.topology.get(core_id)?;
     if topo.machine.is_none() || topo.board.is_some() {
-        return None; // backend selection (POLICY): `machine` ⇒ Yocto
+        return None; // backend selection: a `machine` ⇒ Yocto
     }
     let core = board.cores.get(core_id)?;
     Some(YoctoSlice {
@@ -290,14 +317,14 @@ fn resolve_yocto_slice(board: &BoardYaml, som: &SomPreset, core_id: &str) -> Opt
     })
 }
 
-fn render_yocto_local_conf(s: &YoctoSlice) -> String {
+fn render_yocto_local_conf(s: &YoctoSlice, p: &Policy) -> String {
     let mut lines = vec![
         "# Auto-generated by scripts/alp_orchestrate.py -- append to local.conf.".to_string(),
         format!("# Per-core slice `{}` (image: {})", s.core_id, s.image),
         format!("MACHINE = \"{}\"", s.machine),
     ];
     if !s.libraries.is_empty() {
-        let recipes: Vec<String> = s.libraries.iter().map(|l| lib_to_recipe(l)).collect();
+        let recipes: Vec<String> = s.libraries.iter().map(|l| p.lib_recipe(l)).collect();
         lines.push(format!("IMAGE_INSTALL:append = \" {}\"", recipes.join(" ")));
     }
     lines.push(format!("# bitbake target: {}", s.image));
@@ -310,6 +337,7 @@ fn build_yocto_slice(
     core_id: &str,
     build_root: &str,
     sdk_root: &str,
+    p: &Policy,
 ) -> Option<BuildSlice> {
     let slice = resolve_yocto_slice(board, som, core_id)?;
     let build_dir = format!("{build_root}/{core_id}-yocto");
@@ -319,7 +347,7 @@ fn build_yocto_slice(
         build_dir: build_dir.clone(),
         config_artefacts: vec![GeneratedFile {
             path: format!("{build_dir}/local.conf"),
-            contents: render_yocto_local_conf(&slice),
+            contents: render_yocto_local_conf(&slice, p),
         }],
         command: Some(ToolStep {
             tool: "bitbake".to_string(),
@@ -334,12 +362,12 @@ fn build_yocto_slice(
 // ENGINE — Zephyr Kconfig fragment (Stage C)
 // ===========================================================================
 
-/// The SoM-intrinsic chip set: scalar `on_module` fields (minus non-chip keys) +
-/// `helper_firmware[].chip`. Deduped + sorted (BTreeSet).
-fn som_chip_set(som: &SomPreset) -> BTreeSet<String> {
+/// SoM-intrinsic chip set: scalar `on_module` fields (minus the policy's non-chip
+/// keys) + `helper_firmware[].chip`. Deduped + sorted.
+fn som_chip_set(som: &SomPreset, p: &Policy) -> BTreeSet<String> {
     let mut chips = BTreeSet::new();
     for (key, val) in &som.on_module {
-        if ON_MODULE_NON_CHIP.contains(&key.as_str()) {
+        if p.on_module_non_chip.iter().any(|k| k == key) {
             continue;
         }
         if let Some(s) = val.as_str() {
@@ -354,34 +382,15 @@ fn som_chip_set(som: &SomPreset) -> BTreeSet<String> {
     chips
 }
 
-/// The TFLM kernel symbol for a core (alp_orchestrate.py:3036): Helium ⇒ HELIUM,
-/// Neon/Cortex-A ⇒ NEON, else REF.
-fn tflm_kernel(soc: &SocSpec, core_id: &str) -> &'static str {
-    for c in &soc.cores {
-        if c.id == core_id {
-            return match c
-                .vector_extension
-                .as_deref()
-                .map(str::to_lowercase)
-                .as_deref()
-            {
-                Some("neon") => "NEON",
-                Some("helium") => "HELIUM",
-                _ => "REF",
-            };
-        }
-    }
-    "REF"
-}
-
-/// Render the per-core Zephyr Kconfig fragment (`alp.conf`), byte-for-byte as the
-/// SDK emits it — derived entirely from the four metadata inputs.
+/// Render the per-core Zephyr Kconfig fragment (`alp.conf`) — every CONFIG line
+/// comes from the metadata + the `Policy`; nothing is hardcoded in the engine.
 fn render_zephyr_alp_conf(
     core_id: &str,
     board: &BoardYaml,
     som: &SomPreset,
     board_def: &BoardDef,
     soc: &SocSpec,
+    p: &Policy,
 ) -> String {
     let sku = &board.som.sku;
     let mut lines: Vec<String> = Vec::new();
@@ -393,24 +402,21 @@ fn render_zephyr_alp_conf(
     ));
     lines.push(String::new());
 
-    // 2. Base defaults
-    lines.push("CONFIG_ALP_SDK=y".to_string());
-    lines.push("CONFIG_LOG=y".to_string());
-    lines.push("CONFIG_PRINTK=y".to_string());
-    lines.push("CONFIG_THREAD_LOCAL_STORAGE=y".to_string());
+    // 2. Base defaults (from policy) + the log level (policy table)
+    lines.extend(p.base_kconfig.iter().cloned());
     if let Some(n) = board
         .diagnostics
         .as_ref()
         .and_then(|d| d.log_level.as_deref())
-        .and_then(log_level_n)
+        .and_then(|lvl| p.log_levels.get(lvl).copied())
     {
         lines.push(format!("CONFIG_LOG_DEFAULT_LEVEL={n}"));
     }
     lines.push(String::new());
 
-    // 3. SoM silicon — CONFIG symbol COMPUTED from the silicon ref (no table)
+    // 3. SoM silicon — CONFIG symbol COMPUTED from the silicon ref + policy prefix
     lines.push(format!("# SoM silicon ({} via {sku})", som.silicon));
-    lines.push(format!("CONFIG_{}=y", silicon_soc_symbol(&som.silicon)));
+    lines.push(format!("CONFIG_{}=y", p.soc_symbol(&som.silicon)));
     lines.push(String::new());
 
     // 4. Cross-EVK board facade selector
@@ -419,22 +425,22 @@ fn render_zephyr_alp_conf(
             .to_string(),
     );
     lines.push(format!(
-        "CONFIG_COMPILER_OPT=\"-DALP_BOARD_{}\"",
+        "CONFIG_COMPILER_OPT=\"-D{}{}\"",
+        p.board_define_prefix,
         board_define_slug(&board_def.name)
     ));
     lines.push(String::new());
 
-    // collect Zephyr subsystems as we walk the enabled chips
-    let mut subsystems: BTreeSet<&'static str> = BTreeSet::new();
+    let mut subsystems: BTreeSet<String> = BTreeSet::new();
 
     // 5. SoM-intrinsic chip drivers
-    let som_chips = som_chip_set(som);
+    let som_chips = som_chip_set(som, p);
     lines.push(format!(
         "# SoM-intrinsic chip drivers (from `{sku}` on_module + helper_firmware)"
     ));
     for chip in &som_chips {
-        lines.push(format!("{}=y", slug_kconfig(chip)));
-        subsystems.extend(chip_subsystems(chip));
+        lines.push(format!("{}=y", p.chip_symbol(chip)));
+        subsystems.extend(p.subsystems_of(chip));
     }
     lines.push(String::new());
 
@@ -446,25 +452,21 @@ fn render_zephyr_alp_conf(
         }
         lines.push(format!(
             "{}={}",
-            slug_kconfig(chip),
+            p.chip_symbol(chip),
             if *on { "y" } else { "n" }
         ));
         if *on {
-            subsystems.extend(chip_subsystems(chip));
+            subsystems.extend(p.subsystems_of(chip));
         }
     }
     lines.push(String::new());
 
     // 7. Zephyr subsystems (chip drivers + the core's declared peripherals)
     if let Some(core) = board.cores.get(core_id) {
-        for p in &core.peripherals {
-            // minimal peripheral→subsystem map (only what this board needs)
-            match p.as_str() {
-                "i2c" => subsystems.insert("I2C"),
-                "spi" => subsystems.insert("SPI"),
-                "gpio" => subsystems.insert("GPIO"),
-                _ => false,
-            };
+        for periph in &core.peripherals {
+            if let Some(sub) = p.peripheral_subsystems.get(periph) {
+                subsystems.insert(sub.clone());
+            }
         }
     }
     if !subsystems.is_empty() {
@@ -484,25 +486,22 @@ fn render_zephyr_alp_conf(
             let mut libs = core.libraries.clone();
             libs.sort();
             for lib in &libs {
-                let kcs = library_kconfig(lib);
-                if kcs.is_empty() {
-                    lines.push(format!(
+                match p.library_kconfig.get(lib) {
+                    Some(kcs) => lines.extend(kcs.iter().cloned()),
+                    None => lines.push(format!(
                         "# TODO: wire library '{lib}' once its v0.4 enable lands"
-                    ));
-                } else {
-                    lines.extend(kcs.iter().map(|s| s.to_string()));
+                    )),
                 }
             }
             lines.push(String::new());
         }
     }
 
-    // 9. Inference dispatchers (from SoM capabilities)
-    let mut inf = vec!["CONFIG_ALP_SDK_INFERENCE_BACKEND_TFLM=y".to_string()];
-    inf.push(format!(
-        "CONFIG_ALP_SDK_INFERENCE_TFLM_KERNEL_{}=y",
-        tflm_kernel(soc, core_id)
-    ));
+    // 9. Inference dispatchers (from SoM capabilities + the policy symbol set)
+    let mut inf = vec![format!("{}=y", p.inference.tflm_backend)];
+    if let Some(sym) = p.inference.tflm_kernel.get(tflm_kernel_key(soc, core_id)) {
+        inf.push(format!("{sym}=y"));
+    }
     let variants: BTreeSet<String> = som
         .inference
         .npu_population
@@ -510,17 +509,18 @@ fn render_zephyr_alp_conf(
         .filter_map(|e| e.variant.as_ref().map(|v| v.to_lowercase()))
         .collect();
     if !variants.is_empty() {
-        let backend = if som.silicon == "nxp:imx9:imx93" {
-            "N93"
-        } else {
-            "AEN"
-        };
-        inf.push(format!(
-            "CONFIG_ALP_SDK_INFERENCE_BACKEND_ETHOS_U_{backend}=y"
-        ));
+        if let Some(b) = p
+            .inference
+            .ethos_backend
+            .get(&som.silicon)
+            .or_else(|| p.inference.ethos_backend.get("default"))
+        {
+            inf.push(format!("{b}=y"));
+        }
         for v in &variants {
             inf.push(format!(
-                "CONFIG_ALP_SDK_INFERENCE_ETHOS_U_VARIANT_{}=y",
+                "{}{}=y",
+                p.inference.ethos_variant_prefix,
                 v.to_uppercase()
             ));
         }
@@ -535,17 +535,15 @@ fn render_zephyr_alp_conf(
 }
 
 // ===========================================================================
-// ENGINE — shared artefacts (Stage D): IPC contract header + DTS overlays
+// ENGINE — shared artefacts (Stage D): IPC contract header + DTS overlays.
+// These carry no per-silicon CONFIG knowledge (structural text + the blocked
+// reason), so they don't consume the Policy.
 // ===========================================================================
 
-/// True when an rpmsg channel can't be allocated because the SoM mailbox
-/// controller is unset/TBD (alp_orchestrate.py:1336).
 fn rpmsg_blocked(ch: &IpcChannel, mailbox: &Mailbox) -> bool {
     ch.kind == "rpmsg" && matches!(mailbox.controller.as_deref(), None | Some("TBD"))
 }
 
-/// The carve-out BLOCKED reason — embeds the SKU twice (alp_orchestrate.py:1339).
-/// Note the deliberate double space after `metadata.`.
 fn rpmsg_block_reason(sku: &str, controller: Option<&str>) -> String {
     let state = if controller.is_none() { "unset" } else { "TBD" };
     format!(
@@ -553,7 +551,6 @@ fn rpmsg_block_reason(sku: &str, controller: Option<&str>) -> String {
     )
 }
 
-/// `build/generated/alp/system_ipc.h` — the IPC contract header.
 fn render_system_ipc_h(board: &BoardYaml, som: &SomPreset) -> String {
     let sku = &board.som.sku;
     let controller = som.mailbox.controller.as_deref();
@@ -585,8 +582,6 @@ fn render_system_ipc_h(board: &BoardYaml, som: &SomPreset) -> String {
                 "/* IPC channel '{}' is blocked; fix the SoM metadata before depending on this channel at runtime. */",
                 ch.name
             ));
-            // Spacing is literal in the SDK's f-strings (7 spaces for the 4-char
-            // suffixes, 4 for the 7-char ones — values land in one column).
             lines.push(format!("#define ALP_IPC_{up}_NAME       \"{}\"", ch.name));
             lines.push(format!(
                 "#define ALP_IPC_{up}_ADDR       0x0u  /* stub: blocked */"
@@ -610,7 +605,6 @@ fn render_system_ipc_h(board: &BoardYaml, som: &SomPreset) -> String {
     format!("{}\n", lines.join("\n"))
 }
 
-/// `build/generated/dts-reservations.dtsi` — the reserved-memory overlay.
 fn render_dts_reservations(board: &BoardYaml, som: &SomPreset) -> String {
     let sku = &board.som.sku;
     let controller = som.mailbox.controller.as_deref();
@@ -640,7 +634,6 @@ fn render_dts_reservations(board: &BoardYaml, som: &SomPreset) -> String {
     format!("{}\n", lines.join("\n"))
 }
 
-/// `build/generated/dts-partitions.dtsi` — the storage-partition overlay.
 fn render_dts_partitions(board: &BoardYaml) -> String {
     let mut lines: Vec<String> = vec![
         "/*".into(),
@@ -661,9 +654,6 @@ fn render_dts_partitions(board: &BoardYaml) -> String {
 // ENGINE — Zephyr build-plan slice + the full plan assembly (Stage F)
 // ===========================================================================
 
-/// Assemble a Zephyr core's `BuildSlice` (`west build -b <board> <app>`).
-/// `app_abs` (the on-disk app dir) + `sdk_root` are runtime path inputs, threaded
-/// in; everything else (board target, the rendered alp.conf, build dir) derives.
 fn build_zephyr_slice(
     board: &BoardYaml,
     som: &SomPreset,
@@ -673,6 +663,7 @@ fn build_zephyr_slice(
     build_root: &str,
     app_abs: &str,
     sdk_root: &str,
+    p: &Policy,
 ) -> Option<BuildSlice> {
     let topo = som.topology.get(core_id)?;
     let board_target = topo.board.clone()?;
@@ -683,7 +674,7 @@ fn build_zephyr_slice(
         build_dir: build_dir.clone(),
         config_artefacts: vec![GeneratedFile {
             path: format!("{build_dir}/alp.conf"),
-            contents: render_zephyr_alp_conf(core_id, board, som, board_def, soc),
+            contents: render_zephyr_alp_conf(core_id, board, som, board_def, soc, p),
         }],
         command: Some(ToolStep {
             tool: "west".to_string(),
@@ -699,9 +690,6 @@ fn build_zephyr_slice(
     })
 }
 
-/// Assemble the WHOLE `BuildPlan` from data: every slice (Yocto + Zephyr) + the
-/// three shared artefacts + the envelope. `board_yaml`/`sdk_root`/`zephyr_apps`
-/// are the runtime path inputs (where files live on disk); all else is derived.
 fn assemble_full_plan(
     board: &BoardYaml,
     som: &SomPreset,
@@ -710,6 +698,7 @@ fn assemble_full_plan(
     board_yaml: &str,
     sdk_root: &str,
     zephyr_apps: &BTreeMap<String, String>,
+    p: &Policy,
 ) -> BuildPlan {
     let build_root = "build";
     let mut slices = Vec::new();
@@ -718,13 +707,13 @@ fn assemble_full_plan(
             continue;
         };
         if topo.machine.is_some() {
-            if let Some(s) = build_yocto_slice(board, som, &c.id, build_root, sdk_root) {
+            if let Some(s) = build_yocto_slice(board, som, &c.id, build_root, sdk_root, p) {
                 slices.push(s);
             }
         } else if topo.board.is_some() {
             let app = zephyr_apps.get(&c.id).cloned().unwrap_or_default();
             if let Some(s) = build_zephyr_slice(
-                board, som, board_def, soc, &c.id, build_root, &app, sdk_root,
+                board, som, board_def, soc, &c.id, build_root, &app, sdk_root, p,
             ) {
                 slices.push(s);
             }
@@ -757,10 +746,8 @@ fn assemble_full_plan(
 }
 
 // ===========================================================================
-// MODEL — the system-manifest (Stage E). Compared STRUCTURALLY: the YAML text
-// formatting (PyYAML folding/width) is an emit detail, not the engine's
-// derivation. Parsing the oracle into this model and asserting struct equality
-// proves the manifest CONTENT is derived from data.
+// MODEL — the system-manifest (Stage E). Compared STRUCTURALLY (PyYAML text
+// formatting is an emit detail, not the engine's derivation).
 // ===========================================================================
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -824,37 +811,17 @@ struct HelperMcu {
     note: Option<String>,
 }
 
-// ===========================================================================
-// ENGINE — assemble the system-manifest from metadata (Stage E)
-// ===========================================================================
-
-/// (flash_method, flash_args) per OS (alp_orchestrate.py:3533). `runner: openocd`
-/// is the SDK's canonical Zephyr runner constant.
-fn flash_recipe(os: &str, machine: Option<&str>) -> (String, BTreeMap<String, String>) {
-    match os {
-        "yocto" => (
-            "yocto_wic_to_sd_or_emmc".into(),
-            BTreeMap::from([("target".into(), machine.unwrap_or("").into())]),
-        ),
-        "zephyr" => (
-            "zephyr_west_flash".into(),
-            BTreeMap::from([("runner".into(), "openocd".into())]),
-        ),
-        _ => ("baremetal_cmake_flash".into(), BTreeMap::new()),
-    }
-}
-
 fn build_system_manifest(
     board: &BoardYaml,
     som: &SomPreset,
     board_def: &BoardDef,
     soc: &SocSpec,
+    p: &Policy,
 ) -> SystemManifest {
     let hw_info = HwInfo {
         sku: board.som.sku.clone(),
         som_hw_rev: board.som.hw_rev.clone().unwrap_or_default(),
         board_name: board_def.name.clone(),
-        // board hw_rev: the board.yaml top-level value, else the board def default.
         board_hw_rev: board
             .hw_rev
             .clone()
@@ -870,7 +837,6 @@ fn build_system_manifest(
             continue;
         };
         let bc = board.cores.get(&c.id);
-        // OS (POLICY): a topology `machine` ⇒ Yocto, a `board` ⇒ Zephyr.
         let os = if topo.machine.is_some() {
             "yocto"
         } else {
@@ -880,7 +846,7 @@ fn build_system_manifest(
             .and_then(|x| x.app.clone())
             .or_else(|| topo.app.clone())
             .unwrap_or_default();
-        let (flash_method, flash_args) = flash_recipe(os, topo.machine.as_deref());
+        let (flash_method, flash_args) = p.flash_for(os, topo.machine.as_deref());
         slices.push(ManifestSlice {
             core_id: c.id.clone(),
             os: os.to_string(),
@@ -895,7 +861,6 @@ fn build_system_manifest(
         });
     }
 
-    // IPC carve-outs, sorted by name; blocked when the SoM mailbox is TBD.
     let controller = som.mailbox.controller.as_deref();
     let mut ipc: Vec<ManifestIpc> = board
         .ipc
@@ -917,7 +882,6 @@ fn build_system_manifest(
         .collect();
     ipc.sort_by(|a, b| a.name.cmp(&b.name));
 
-    // Helper MCUs from the SoM `helper_firmware` block.
     let helper_mcus = som
         .helper_firmware
         .iter()
@@ -956,6 +920,7 @@ mod tests {
     const SOM_PRESET: &str = include_str!("spike_fixtures/E1M-AEN701.yaml");
     const BOARD_DEF: &str = include_str!("spike_fixtures/e1m-evk.yaml");
     const SOC_SPEC: &str = include_str!("spike_fixtures/e7.json");
+    const POLICY_JSON: &str = include_str!("spike_fixtures/policy.json");
     const ORACLE_BUILD_PLAN: &str = include_str!("spike_fixtures/oracle/rpmsg-aen.build-plan");
     const ORACLE_MANIFEST: &str = include_str!("spike_fixtures/oracle/rpmsg-aen.system-manifest");
 
@@ -966,6 +931,10 @@ mod tests {
             serde_yaml::from_str(BOARD_DEF).unwrap(),
             serde_json::from_str(SOC_SPEC).unwrap(),
         )
+    }
+
+    fn policy() -> Policy {
+        serde_json::from_str(POLICY_JSON).unwrap()
     }
 
     fn oracle_artefact(core_id: &str) -> String {
@@ -982,67 +951,6 @@ mod tests {
             .to_string()
     }
 
-    #[test]
-    fn metadata_deserialises() {
-        let (board, som, board_def, soc) = load();
-        assert_eq!(board.som.sku, "E1M-AEN701");
-        assert_eq!(som.silicon, "alif:ensemble:e7");
-        assert_eq!(board_def.name, "E1M-EVK");
-        assert!(soc.cores.iter().any(|c| c.id == "m55_he"));
-    }
-
-    /// STAGE A — a32_cluster local.conf byte-for-byte from data.
-    #[test]
-    fn a32_cluster_local_conf_matches_sdk_emit_byte_for_byte() {
-        let (board, som, ..) = load();
-        let slice = resolve_yocto_slice(&board, &som, "a32_cluster").unwrap();
-        assert_eq!(
-            render_yocto_local_conf(&slice),
-            oracle_artefact("a32_cluster")
-        );
-    }
-
-    /// STAGE B — the full a32_cluster build-plan slice equals the SDK emit
-    /// (env.ALP_SDK_ROOT is a runtime path, threaded in from the oracle).
-    #[test]
-    fn a32_cluster_full_slice_matches_sdk_emit() {
-        let (board, som, ..) = load();
-        let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN).unwrap();
-        let oracle_slice = plan["slices"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|s| s["coreId"] == "a32_cluster")
-            .unwrap();
-        let sdk_root = oracle_slice["env"]["ALP_SDK_ROOT"].as_str().unwrap();
-        let ours = build_yocto_slice(&board, &som, "a32_cluster", "build", sdk_root).unwrap();
-        assert_eq!(&serde_json::to_value(&ours).unwrap(), oracle_slice);
-    }
-
-    /// STAGE C — the m55_he Zephyr alp.conf, byte-for-byte from data. Includes the
-    /// `_SILICON_TO_KCONFIG` dissolution (CONFIG_ALP_SOC_ALIF_ENSEMBLE_E7 computed),
-    /// SoM/board chip drivers, subsystems, and SoM-capability inference dispatchers.
-    #[test]
-    fn m55_he_alp_conf_matches_sdk_emit_byte_for_byte() {
-        let (board, som, board_def, soc) = load();
-        let ours = render_zephyr_alp_conf("m55_he", &board, &som, &board_def, &soc);
-        assert_eq!(
-            ours,
-            oracle_artefact("m55_he"),
-            "the m55_he Kconfig fragment must equal the SDK emit byte-for-byte"
-        );
-    }
-
-    /// STAGE C (m55_hp) — completes the Zephyr side: same as m55_he plus the
-    /// CMSIS_DSP libraries section (board.yaml `libraries: [cmsis_dsp]` → 12 lines).
-    #[test]
-    fn m55_hp_alp_conf_matches_sdk_emit_byte_for_byte() {
-        let (board, som, board_def, soc) = load();
-        let ours = render_zephyr_alp_conf("m55_hp", &board, &som, &board_def, &soc);
-        assert_eq!(ours, oracle_artefact("m55_hp"));
-    }
-
-    /// Pull a `sharedArtefacts[].contents` by path from the captured emit.
     fn oracle_shared(path: &str) -> String {
         let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN).unwrap();
         plan["sharedArtefacts"]
@@ -1056,9 +964,70 @@ mod tests {
             .to_string()
     }
 
-    /// STAGE D — the three SHARED artefacts, all byte-for-byte. AEN's mailbox
-    /// controller is TBD, so the rpmsg carve-out is BLOCKED; the engine reproduces
-    /// the blocked stubs + the exact reason string (SKU embedded twice).
+    fn sort_plan(p: &mut BuildPlan) {
+        p.slices.sort_by(|a, b| a.core_id.cmp(&b.core_id));
+        p.shared_artefacts.sort_by(|a, b| a.path.cmp(&b.path));
+    }
+
+    #[test]
+    fn metadata_and_policy_deserialise() {
+        let (board, som, board_def, soc) = load();
+        assert_eq!(board.som.sku, "E1M-AEN701");
+        assert_eq!(som.silicon, "alif:ensemble:e7");
+        assert_eq!(board_def.name, "E1M-EVK");
+        assert!(soc.cores.iter().any(|c| c.id == "m55_he"));
+        assert_eq!(policy().soc_symbol_prefix, "ALP_SOC_");
+    }
+
+    /// STAGE A — a32_cluster local.conf byte-for-byte from data.
+    #[test]
+    fn a32_cluster_local_conf_matches_sdk_emit_byte_for_byte() {
+        let (board, som, ..) = load();
+        let slice = resolve_yocto_slice(&board, &som, "a32_cluster").unwrap();
+        assert_eq!(
+            render_yocto_local_conf(&slice, &policy()),
+            oracle_artefact("a32_cluster")
+        );
+    }
+
+    /// STAGE B — the full a32_cluster build-plan slice (env.ALP_SDK_ROOT threaded).
+    #[test]
+    fn a32_cluster_full_slice_matches_sdk_emit() {
+        let (board, som, ..) = load();
+        let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN).unwrap();
+        let oracle_slice = plan["slices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["coreId"] == "a32_cluster")
+            .unwrap();
+        let sdk_root = oracle_slice["env"]["ALP_SDK_ROOT"].as_str().unwrap();
+        let ours =
+            build_yocto_slice(&board, &som, "a32_cluster", "build", sdk_root, &policy()).unwrap();
+        assert_eq!(&serde_json::to_value(&ours).unwrap(), oracle_slice);
+    }
+
+    /// STAGE C — the m55_he Zephyr alp.conf, byte-for-byte from data + policy.
+    #[test]
+    fn m55_he_alp_conf_matches_sdk_emit_byte_for_byte() {
+        let (board, som, board_def, soc) = load();
+        assert_eq!(
+            render_zephyr_alp_conf("m55_he", &board, &som, &board_def, &soc, &policy()),
+            oracle_artefact("m55_he")
+        );
+    }
+
+    /// STAGE C (m55_hp) — completes the Zephyr side (CMSIS_DSP libraries section).
+    #[test]
+    fn m55_hp_alp_conf_matches_sdk_emit_byte_for_byte() {
+        let (board, som, board_def, soc) = load();
+        assert_eq!(
+            render_zephyr_alp_conf("m55_hp", &board, &som, &board_def, &soc, &policy()),
+            oracle_artefact("m55_hp")
+        );
+    }
+
+    /// STAGE D — the three SHARED artefacts, byte-for-byte (blocked-IPC path).
     #[test]
     fn system_ipc_h_matches_sdk_emit_byte_for_byte() {
         let (board, som, ..) = load();
@@ -1086,37 +1055,21 @@ mod tests {
         );
     }
 
-    /// STAGE E — the system-manifest CONTENT matches the SDK emit (structural:
-    /// hw_info, the 3 slices in SoC-core order with their flash recipes, the
-    /// blocked ipc, and the helper MCU). Parsed into the same model, so PyYAML's
-    /// text formatting is out of scope.
+    /// STAGE E — the system-manifest content (structural).
     #[test]
     fn system_manifest_content_matches_sdk_emit() {
         let (board, som, board_def, soc) = load();
-        let ours = build_system_manifest(&board, &som, &board_def, &soc);
+        let ours = build_system_manifest(&board, &som, &board_def, &soc, &policy());
         let oracle: SystemManifest = serde_yaml::from_str(ORACLE_MANIFEST).unwrap();
-        assert_eq!(
-            ours, oracle,
-            "the system-manifest content must match the SDK emit"
-        );
+        assert_eq!(ours, oracle);
     }
 
-    /// Order is an emit detail, not a derivation: normalise before comparing.
-    fn sort_plan(p: &mut BuildPlan) {
-        p.slices.sort_by(|a, b| a.core_id.cmp(&b.core_id));
-        p.shared_artefacts.sort_by(|a, b| a.path.cmp(&b.path));
-    }
-
-    /// STAGE F — the WHOLE build-plan, in one assert. The engine reproduces every
-    /// slice (config + command + env) AND all three shared artefacts. Runtime path
-    /// inputs (boardYaml, ALP_SDK_ROOT, the on-disk app dirs in the west commands)
-    /// are threaded from the oracle; slice/artefact order is normalised. Every
-    /// field the engine DERIVES equals the SDK emit.
+    /// STAGE F — the WHOLE build-plan, one assert (runtime paths threaded; order
+    /// normalised).
     #[test]
     fn full_build_plan_matches_sdk_emit() {
         let (board, som, board_def, soc) = load();
         let oracle: BuildPlan = serde_json::from_str(ORACLE_BUILD_PLAN).unwrap();
-
         let sdk_root = oracle
             .slices
             .iter()
@@ -1142,34 +1095,36 @@ mod tests {
             &oracle.board_yaml,
             &sdk_root,
             &zephyr_apps,
+            &policy(),
         );
         let mut oracle = oracle;
         sort_plan(&mut ours);
         sort_plan(&mut oracle);
-
         assert_eq!(
             serde_json::to_value(&ours).unwrap(),
-            serde_json::to_value(&oracle).unwrap(),
-            "the full build-plan must match the SDK emit"
+            serde_json::to_value(&oracle).unwrap()
         );
     }
 
-    /// The `_SILICON_TO_KCONFIG` dissolution, isolated: computed, not table-driven.
+    /// The `_SILICON_TO_KCONFIG` dissolution, isolated: computed from the policy
+    /// prefix + the silicon ref, not a table.
     #[test]
     fn silicon_symbol_is_computed_not_table() {
-        assert_eq!(
-            silicon_soc_symbol("alif:ensemble:e7"),
-            "ALP_SOC_ALIF_ENSEMBLE_E7"
-        );
-        assert_eq!(
-            silicon_soc_symbol("nxp:imx9:imx93"),
-            "ALP_SOC_NXP_IMX9_IMX93"
-        );
+        let p = policy();
+        assert_eq!(p.soc_symbol("alif:ensemble:e7"), "ALP_SOC_ALIF_ENSEMBLE_E7");
+        assert_eq!(p.soc_symbol("nxp:imx9:imx93"), "ALP_SOC_NXP_IMX9_IMX93");
     }
 
+    /// **The "it's really data" proof.** Mutate ONE policy value and the engine's
+    /// output changes predictably — with no engine code change. Here: a different
+    /// SoC-symbol prefix flips every `CONFIG_ALP_SOC_*` line.
     #[test]
-    fn library_recipe_transform() {
-        assert_eq!(lib_to_recipe("mbedtls"), "lib-mbedtls");
-        assert_eq!(lib_to_recipe("nlohmann_json"), "lib-nlohmann-json");
+    fn policy_change_alters_output() {
+        let (board, som, board_def, soc) = load();
+        let mut p = policy();
+        p.soc_symbol_prefix = "VENDOR_SOC_".to_string();
+        let out = render_zephyr_alp_conf("m55_he", &board, &som, &board_def, &soc, &p);
+        assert!(out.contains("CONFIG_VENDOR_SOC_ALIF_ENSEMBLE_E7=y"));
+        assert!(!out.contains("CONFIG_ALP_SOC_ALIF_ENSEMBLE_E7=y"));
     }
 }
