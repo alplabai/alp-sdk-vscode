@@ -31,6 +31,8 @@ use crate::build_plan::{Backend, BuildSlice, GeneratedFile, ToolStep};
 struct BoardYaml {
     som: BoardSom,
     #[serde(default)]
+    hw_rev: Option<String>, // top-level board hw_rev (overrides the board def default)
+    #[serde(default)]
     cores: BTreeMap<String, BoardCore>,
     #[serde(default)]
     diagnostics: Option<Diagnostics>,
@@ -51,10 +53,14 @@ struct IpcChannel {
 #[derive(Debug, Clone, Deserialize)]
 struct BoardSom {
     sku: String,
+    #[serde(default)]
+    hw_rev: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 struct BoardCore {
+    #[serde(default)]
+    app: Option<String>,
     #[serde(default)]
     image: Option<String>,
     #[serde(default)]
@@ -97,15 +103,27 @@ struct Mailbox {
 #[derive(Debug, Clone, Deserialize)]
 struct TopoCore {
     #[serde(default)]
+    app: Option<String>,
+    #[serde(default)]
     machine: Option<String>,
     #[serde(default)]
     board: Option<String>,
+    #[serde(default)]
+    toolchain: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct HelperFw {
     #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
     chip: Option<String>,
+    #[serde(default)]
+    firmware_path: Option<String>,
+    #[serde(default)]
+    flash_method: Option<String>,
+    #[serde(default)]
+    flash_args: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -127,6 +145,8 @@ struct NpuEntry {
 #[derive(Debug, Clone, Deserialize)]
 struct BoardDef {
     name: String,
+    #[serde(default)]
+    default_hw_rev: Option<String>,
     #[serde(default)]
     populated: BTreeMap<String, bool>,
 }
@@ -603,6 +623,190 @@ fn render_dts_partitions(board: &BoardYaml) -> String {
     format!("{}\n", lines.join("\n"))
 }
 
+// ===========================================================================
+// MODEL — the system-manifest (Stage E). Compared STRUCTURALLY: the YAML text
+// formatting (PyYAML folding/width) is an emit detail, not the engine's
+// derivation. Parsing the oracle into this model and asserting struct equality
+// proves the manifest CONTENT is derived from data.
+// ===========================================================================
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct SystemManifest {
+    schema_version: u32,
+    generated_by: String,
+    hw_info: HwInfo,
+    slices: Vec<ManifestSlice>,
+    #[serde(default)]
+    ipc: Vec<ManifestIpc>,
+    #[serde(default)]
+    helper_mcus: Vec<HelperMcu>,
+    #[serde(default)]
+    boot_order: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct HwInfo {
+    sku: String,
+    som_hw_rev: String,
+    board_name: String,
+    board_hw_rev: String,
+    silicon: String,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct ManifestSlice {
+    core_id: String,
+    os: String,
+    app: String,
+    #[serde(default)]
+    image: Option<String>,
+    #[serde(default)]
+    machine: Option<String>,
+    #[serde(default)]
+    board: Option<String>,
+    toolchain: String,
+    status: String,
+    flash_method: String,
+    flash_args: BTreeMap<String, String>,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct ManifestIpc {
+    name: String,
+    kind: String,
+    endpoints: Vec<String>,
+    status: String,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct HelperMcu {
+    name: String,
+    chip: String,
+    firmware_path: String,
+    flash_method: String,
+    flash_args: String,
+    #[serde(default)]
+    note: Option<String>,
+}
+
+// ===========================================================================
+// ENGINE — assemble the system-manifest from metadata (Stage E)
+// ===========================================================================
+
+/// (flash_method, flash_args) per OS (alp_orchestrate.py:3533). `runner: openocd`
+/// is the SDK's canonical Zephyr runner constant.
+fn flash_recipe(os: &str, machine: Option<&str>) -> (String, BTreeMap<String, String>) {
+    match os {
+        "yocto" => (
+            "yocto_wic_to_sd_or_emmc".into(),
+            BTreeMap::from([("target".into(), machine.unwrap_or("").into())]),
+        ),
+        "zephyr" => (
+            "zephyr_west_flash".into(),
+            BTreeMap::from([("runner".into(), "openocd".into())]),
+        ),
+        _ => ("baremetal_cmake_flash".into(), BTreeMap::new()),
+    }
+}
+
+fn build_system_manifest(
+    board: &BoardYaml,
+    som: &SomPreset,
+    board_def: &BoardDef,
+    soc: &SocSpec,
+) -> SystemManifest {
+    let hw_info = HwInfo {
+        sku: board.som.sku.clone(),
+        som_hw_rev: board.som.hw_rev.clone().unwrap_or_default(),
+        board_name: board_def.name.clone(),
+        // board hw_rev: the board.yaml top-level value, else the board def default.
+        board_hw_rev: board
+            .hw_rev
+            .clone()
+            .or_else(|| board_def.default_hw_rev.clone())
+            .unwrap_or_default(),
+        silicon: som.silicon.clone(),
+    };
+
+    // Slice order follows the SoC spec's core list (a32_cluster, m55_hp, m55_he).
+    let mut slices = Vec::new();
+    for c in &soc.cores {
+        let Some(topo) = som.topology.get(&c.id) else {
+            continue;
+        };
+        let bc = board.cores.get(&c.id);
+        // OS (POLICY): a topology `machine` ⇒ Yocto, a `board` ⇒ Zephyr.
+        let os = if topo.machine.is_some() { "yocto" } else { "zephyr" };
+        let app = bc
+            .and_then(|x| x.app.clone())
+            .or_else(|| topo.app.clone())
+            .unwrap_or_default();
+        let (flash_method, flash_args) = flash_recipe(os, topo.machine.as_deref());
+        slices.push(ManifestSlice {
+            core_id: c.id.clone(),
+            os: os.to_string(),
+            app,
+            image: bc.and_then(|x| x.image.clone()),
+            machine: topo.machine.clone(),
+            board: topo.board.clone(),
+            toolchain: topo.toolchain.clone().unwrap_or_default(),
+            status: "pending".to_string(),
+            flash_method,
+            flash_args,
+        });
+    }
+
+    // IPC carve-outs, sorted by name; blocked when the SoM mailbox is TBD.
+    let controller = som.mailbox.controller.as_deref();
+    let mut ipc: Vec<ManifestIpc> = board
+        .ipc
+        .iter()
+        .map(|ch| {
+            let blocked = rpmsg_blocked(ch, &som.mailbox);
+            ManifestIpc {
+                name: ch.name.clone(),
+                kind: ch.kind.clone(),
+                endpoints: ch.endpoints.clone(),
+                status: if blocked { "blocked".into() } else { "ready".into() },
+                reason: blocked.then(|| rpmsg_block_reason(&board.som.sku, controller)),
+            }
+        })
+        .collect();
+    ipc.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Helper MCUs from the SoM `helper_firmware` block.
+    let helper_mcus = som
+        .helper_firmware
+        .iter()
+        .map(|hf| {
+            let firmware_path = hf.firmware_path.clone().unwrap_or_default();
+            let note = (firmware_path == "TBD").then(|| {
+                "firmware_path TBD; populated when the upstream firmware release lands".to_string()
+            });
+            HelperMcu {
+                name: hf.name.clone().unwrap_or_default(),
+                chip: hf.chip.clone().unwrap_or_default(),
+                firmware_path,
+                flash_method: hf.flash_method.clone().unwrap_or_default(),
+                flash_args: hf.flash_args.clone().unwrap_or_default(),
+                note,
+            }
+        })
+        .collect();
+
+    SystemManifest {
+        schema_version: 1,
+        generated_by: "scripts/alp_orchestrate.py".to_string(),
+        hw_info,
+        slices,
+        ipc,
+        helper_mcus,
+        boot_order: Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,6 +816,7 @@ mod tests {
     const BOARD_DEF: &str = include_str!("spike_fixtures/e1m-evk.yaml");
     const SOC_SPEC: &str = include_str!("spike_fixtures/e7.json");
     const ORACLE_BUILD_PLAN: &str = include_str!("spike_fixtures/oracle/rpmsg-aen.build-plan");
+    const ORACLE_MANIFEST: &str = include_str!("spike_fixtures/oracle/rpmsg-aen.system-manifest");
 
     fn load() -> (BoardYaml, SomPreset, BoardDef, SocSpec) {
         (
@@ -735,6 +940,18 @@ mod tests {
             render_dts_partitions(&board),
             oracle_shared("build/generated/dts-partitions.dtsi")
         );
+    }
+
+    /// STAGE E — the system-manifest CONTENT matches the SDK emit (structural:
+    /// hw_info, the 3 slices in SoC-core order with their flash recipes, the
+    /// blocked ipc, and the helper MCU). Parsed into the same model, so PyYAML's
+    /// text formatting is out of scope.
+    #[test]
+    fn system_manifest_content_matches_sdk_emit() {
+        let (board, som, board_def, soc) = load();
+        let ours = build_system_manifest(&board, &som, &board_def, &soc);
+        let oracle: SystemManifest = serde_yaml::from_str(ORACLE_MANIFEST).unwrap();
+        assert_eq!(ours, oracle, "the system-manifest content must match the SDK emit");
     }
 
     /// The `_SILICON_TO_KCONFIG` dissolution, isolated: computed, not table-driven.
