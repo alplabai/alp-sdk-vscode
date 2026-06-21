@@ -52,10 +52,14 @@ into a rule, with "the SoC spec exists" as the allowlist (exactly as the maintai
 - **METADATA** — `board.yaml` + the SoM preset (`E1M-AEN701.yaml`: topology, on_module,
   helper_firmware, inference, mailbox) + the board def (`e1m-evk.yaml`: name, populated) +
   the SoC spec (`e7.json`: cores, vector_extension).
-- **POLICY** — the derivation rules, each cited to `alp_orchestrate.py`/`alp_project.py`
-  (silicon→Kconfig, board→define, lib→recipe, chip→subsystem, flash recipe, the blocked
-  carve-out reason, …). Inline for now; the spike's `policy_engine_spike.rs` already proves
-  these externalise to a `policy.json`.
+- **POLICY** — the derivation rules, **loaded from `spike_fixtures/policy.json`** into a
+  `Policy` struct: the base Kconfig set, the SoC/board/chip symbol prefixes, the
+  chip→subsystem map, the library expansions (CMSIS_DSP), the log-level table, the
+  peripheral→subsystem map, the flash recipes (with a `$machine` placeholder), and the
+  inference symbol set. **The engine holds no silicon/board/OS config knowledge** — it reads
+  `Policy` and applies it generically. `policy_change_alters_output` swaps one policy value
+  (the SoC-symbol prefix) and shows the output changes with **no engine code change** — the
+  load-bearing "rules are data" proof; the *default* policy still reproduces the emit exactly.
 - **TEMPLATE** — the textual shapes (`local.conf`, `alp.conf`, the IPC/DTS headers) the engine fills.
 - **ENGINE** — `resolve → derive → render → assemble`, producing the **shipped** `BuildPlan`
   type the CLI's consumer already parses.
