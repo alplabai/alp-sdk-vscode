@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "_comment": "Pin/peripheral VALIDATION RULES (POLICY) — deliberately a SEPARATE set from the build policy.json (issue alplabai/alp-sdk#235). Silicon FACTS (which pad carries which signal) live in the per-silicon pinmux METADATA; the RULES (what counts as a conflict, how severe, what's allowlisted) live here. Different owner, different lifecycle. The rule engine reads pinmux + this -> diagnostics + a validation source for the CLI/extension.",
+  "conflictSeverity": {
+    "padFunctionUnsupported": "error",
+    "padContention": "error",
+    "exclusivityViolation": "error"
+  },
+  "_padDualClaimAllowlistComment": "Moved here from build policy.json: E1M pads legitimately bound to two roles in e1m_routes (a muxed pad whose two functions are never opened at once). Drives ALP-B013.",
+  "padDualClaimAllowlist": ["E1M_PWM1"]
+}

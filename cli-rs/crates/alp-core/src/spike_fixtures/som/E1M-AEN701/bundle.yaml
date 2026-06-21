@@ -25,6 +25,9 @@ layers:
   policy:
     path: policy.json
     schema: 1
+  pinPolicy:
+    path: pin-policy.json
+    schema: 1
   templates:
     localConf:       { path: templates/local.conf.tmpl,            schema: 1 }
     kconfig:         { path: templates/kconfig.tmpl,               schema: 1 }

@@ -1,0 +1,35 @@
+# Per-silicon PIN-MUX CAPABILITY table (METADATA — a silicon FACT, not a rule).
+# Structured from the datasheet/HWRM (the SDK ships this as the per-silicon TSVs
+# metadata/e1m_modules/aen/from-alif.tsv + from-cc3501e.tsv). Shared by every
+# board on this silicon — it is the authoritative source for "which pin can carry
+# which peripheral signal", so the rule engine validates pin configs against it
+# and the CLI/VS Code extension drives an advanced pin-mux UI from it.
+#
+# Representative subset for the proof (a few peripherals + their candidate pads);
+# the real table is the full Alif E7 pad list.
+schema_version: 1
+silicon: alif:ensemble:e7
+
+# Each silicon pad → the peripheral signal functions it can mux to.
+pads:
+  P0_2: [GPIO, I2C0_SCL, UART0_TX]
+  P0_3: [GPIO, I2C0_SDA, UART0_RX]
+  P1_0: [GPIO, SPI0_MOSI, I2C1_SDA]
+  P1_1: [GPIO, SPI0_MISO, I2C1_SCL]
+  P1_2: [GPIO, SPI0_SCLK]
+  P3_4: [GPIO, I2C0_SCL]
+  P3_5: [GPIO, I2C0_SDA]
+
+# Inverse view: each peripheral signal → its candidate pads. This is what powers
+# `valid_pads_for(peripheral, signal)` — the dropdown of legal pins in the UI.
+peripherals:
+  i2c0: { scl: [P0_2, P3_4], sda: [P0_3, P3_5] }
+  i2c1: { scl: [P1_1], sda: [P1_0] }
+  spi0: { mosi: [P1_0], miso: [P1_1], sclk: [P1_2] }
+  uart0: { tx: [P0_2], rx: [P0_3] }
+
+# Alternate-function blocks: pads wired through one mux block that may serve only
+# ONE peripheral at a time (datasheet HWRM pin-mux). Using pads in the same block
+# for two DIFFERENT peripherals is an exclusivity violation (ALP-P003).
+exclusivity_groups:
+  - [P1_0, P1_1] # SPI0 OR I2C1 through this block, never a mix

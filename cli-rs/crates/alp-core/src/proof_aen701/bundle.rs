@@ -10,6 +10,7 @@
 use serde::Deserialize;
 
 use super::macros::check_schema_version;
+use super::pinmux::SUPPORTED_PIN_POLICY_SCHEMA;
 use super::policy::SUPPORTED_POLICY_SCHEMA;
 
 /// The SoM bundle's output TEMPLATES (`templates/*.tmpl`) — the shapes the engine
@@ -49,6 +50,9 @@ pub(crate) struct BundleManifest {
 pub(crate) struct BundleLayers {
     pub(crate) metadata: LayerRef,
     pub(crate) policy: LayerRef,
+    /// The pin/peripheral validation rules — a SEPARATE layer from the build
+    /// policy (silicon pin facts + their rules are their own concern).
+    pub(crate) pin_policy: LayerRef,
     pub(crate) templates: TemplateLayers,
 }
 
@@ -100,6 +104,11 @@ pub(crate) fn load_bundle(yaml: &str, sdk_version: &str) -> Result<BundleManifes
         SUPPORTED_METADATA_SCHEMA
     );
     check_schema_version!("policy", m.layers.policy.schema, SUPPORTED_POLICY_SCHEMA);
+    check_schema_version!(
+        "pin-policy",
+        m.layers.pin_policy.schema,
+        SUPPORTED_PIN_POLICY_SCHEMA
+    );
     for (name, layer) in m.template_layers() {
         check_schema_version!(name, layer.schema, SUPPORTED_TEMPLATE_SCHEMA);
     }

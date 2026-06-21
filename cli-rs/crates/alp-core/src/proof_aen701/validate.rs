@@ -16,6 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::metadata::*;
+use super::pinmux::PinPolicy;
 use super::policy::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,9 +151,10 @@ fn som_mediators(som: &SomPreset) -> BTreeSet<String> {
 }
 
 /// **ALP-B013** — an E1M pad bound to two different roles in `e1m_routes` is a
-/// conflict (ERROR), unless the pad is in the policy's `padDualClaimAllowlist`
+/// conflict (ERROR), unless the pad is in the pin policy's `padDualClaimAllowlist`
 /// (a muxed pad whose two functions are never opened at once, e.g. `E1M_PWM1`).
-pub(crate) fn check_pad_conflicts(board_def: &BoardDef, p: &Policy) -> Vec<Diagnostic> {
+/// The allowlist is a pin RULE, so it comes from the pin policy, not the build policy.
+pub(crate) fn check_pad_conflicts(board_def: &BoardDef, pin_policy: &PinPolicy) -> Vec<Diagnostic> {
     // Stable order: BTreeMap of pad → the macros that claim it.
     let mut claims: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for entries in board_def.e1m_routes.values() {
@@ -165,7 +167,7 @@ pub(crate) fn check_pad_conflicts(board_def: &BoardDef, p: &Policy) -> Vec<Diagn
     }
     let mut diags = Vec::new();
     for (pad, macros) in &claims {
-        if macros.len() > 1 && !p.pad_dual_claim_allowlist.iter().any(|a| a == pad) {
+        if macros.len() > 1 && !pin_policy.pad_dual_claim_allowlist.iter().any(|a| a == pad) {
             diags.push(Diagnostic {
                 code: "ALP-B013",
                 severity: Severity::Error,
@@ -221,11 +223,12 @@ pub(crate) fn check_all(
     board_def: &BoardDef,
     soc: &SocSpec,
     p: &Policy,
+    pin_policy: &PinPolicy,
 ) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
     diags.extend(check_som_supported(board, som, board_def));
     diags.extend(check_peripherals(board, som, soc, p));
-    diags.extend(check_pad_conflicts(board_def, p));
+    diags.extend(check_pad_conflicts(board_def, pin_policy));
     diags.extend(check_route_dispatch(som));
     diags
 }

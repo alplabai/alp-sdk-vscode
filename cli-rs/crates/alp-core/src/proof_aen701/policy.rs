@@ -28,10 +28,9 @@ pub(crate) struct Policy {
     /// (empty ⇒ always-present software abstraction, e.g. `sensor`).
     #[serde(default)]
     pub(crate) peripheral_aliases: BTreeMap<String, Vec<String>>,
-    /// ALP-B013 allowlist: E1M pads legitimately bound to two roles (a muxed pad
-    /// whose two functions are never opened at once).
-    #[serde(default)]
-    pub(crate) pad_dual_claim_allowlist: Vec<String>,
+    // NOTE: pad/pin rules (the ALP-B013 allowlist, conflict severities) live in
+    // the SEPARATE pin-policy.json (see `pinmux::PinPolicy`), not in the build
+    // policy — silicon pin facts + their rules are their own concern.
     pub(crate) chip_subsystems: BTreeMap<String, Vec<String>>,
     pub(crate) library_kconfig: BTreeMap<String, Vec<String>>,
     pub(crate) flash: BTreeMap<String, FlashPolicy>,

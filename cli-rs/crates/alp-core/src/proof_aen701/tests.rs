@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use super::assemble::*;
 use super::bundle::*;
 use super::metadata::*;
+use super::pinmux::*;
 use super::policy::*;
 use super::render::*;
 use super::validate::*;
@@ -28,6 +29,9 @@ const DTS_RES_TMPL: &str =
 const DTS_PART_TMPL: &str =
     include_str!("../spike_fixtures/som/E1M-AEN701/templates/dts-partitions.dtsi.tmpl");
 const BUNDLE_YAML: &str = include_str!("../spike_fixtures/som/E1M-AEN701/bundle.yaml");
+const PIN_POLICY_JSON: &str = include_str!("../spike_fixtures/som/E1M-AEN701/pin-policy.json");
+// Per-silicon pin-mux CAPABILITY table (shared metadata, next to the SoC spec).
+const PINMUX_YAML: &str = include_str!("../spike_fixtures/pinmux.alif-ensemble-e7.yaml");
 // Board-level (SoM-agnostic) shared template — the routing header shape.
 const ROUTES_H_TMPL: &str = include_str!("../spike_fixtures/templates/board-routes.h.tmpl");
 const BOARD_DEF: &str = include_str!("../spike_fixtures/e1m-evk.yaml");
@@ -46,6 +50,14 @@ fn load() -> (BoardYaml, SomPreset, BoardDef, SocSpec) {
 
 fn policy() -> Policy {
     load_policy(POLICY_JSON).unwrap()
+}
+
+fn pin_policy() -> PinPolicy {
+    load_pin_policy(PIN_POLICY_JSON).unwrap()
+}
+
+fn pinmux() -> PinMux {
+    load_pinmux(PINMUX_YAML).unwrap()
 }
 
 /// The bundle's templates, as the engine would load them from `templates/`.
@@ -135,10 +147,12 @@ fn bundle_manifest_loads_and_gates() {
     // The manifest declares stable paths (NOT version-embedded filenames).
     assert_eq!(m.layers.policy.path, "policy.json");
     assert_eq!(m.layers.metadata.path, "som.yaml");
+    assert_eq!(m.layers.pin_policy.path, "pin-policy.json");
     assert_eq!(m.layers.templates.kconfig.path, "templates/kconfig.tmpl");
     // Each declared layer schema is one the engine understands.
     assert_eq!(m.layers.policy.schema, SUPPORTED_POLICY_SCHEMA);
     assert_eq!(m.layers.metadata.schema, SUPPORTED_METADATA_SCHEMA);
+    assert_eq!(m.layers.pin_policy.schema, SUPPORTED_PIN_POLICY_SCHEMA);
     for (_name, layer) in m.template_layers() {
         assert_eq!(layer.schema, SUPPORTED_TEMPLATE_SCHEMA);
     }
@@ -179,6 +193,7 @@ fn bundle_manifest_paths_match_real_files() {
     let checks = [
         (&m.layers.policy.path, POLICY_JSON),
         (&m.layers.metadata.path, SOM_PRESET),
+        (&m.layers.pin_policy.path, PIN_POLICY_JSON),
         (&m.layers.templates.local_conf.path, LOCAL_CONF_TMPL),
         (&m.layers.templates.kconfig.path, KCONFIG_TMPL),
         (&m.layers.templates.system_ipc_h.path, IPC_TMPL),
@@ -367,7 +382,7 @@ fn policy_change_alters_output() {
 #[test]
 fn canonical_board_has_no_compat_diagnostics() {
     let (board, som, board_def, soc) = load();
-    let diags = check_all(&board, &som, &board_def, &soc, &policy());
+    let diags = check_all(&board, &som, &board_def, &soc, &policy(), &pin_policy());
     assert!(diags.is_empty(), "expected a clean board, got: {diags:?}");
 }
 
@@ -480,8 +495,8 @@ fn routes_header_renders_from_template() {
 #[test]
 fn alp_b013_flags_unallowlisted_pad_double_claim() {
     let (_, _, mut board_def, _) = load();
-    // Canonical: only E1M_PWM1 is dual-claimed, and it's allowlisted.
-    assert!(check_pad_conflicts(&board_def, &policy()).is_empty());
+    // Canonical: only E1M_PWM1 is dual-claimed, and it's allowlisted (in pin-policy).
+    assert!(check_pad_conflicts(&board_def, &pin_policy()).is_empty());
     // Add a second claim on an already-bound pad (E1M_I2C0).
     board_def
         .e1m_routes
@@ -494,7 +509,7 @@ fn alp_b013_flags_unallowlisted_pad_double_claim() {
             active_low: None,
             board_alias: None,
         });
-    let diags = check_pad_conflicts(&board_def, &policy());
+    let diags = check_pad_conflicts(&board_def, &pin_policy());
     let d = diags
         .iter()
         .find(|d| d.code == "ALP-B013")
@@ -521,5 +536,109 @@ fn alp_b014_flags_unpopulated_mediator() {
         diags
             .iter()
             .all(|d| d.code == "ALP-B014" && d.is_blocking() && d.message.contains("cc3501e"))
+    );
+}
+
+// === Phase 5 — pin-mux capability (separate pin METADATA + pin POLICY) ===
+
+/// The pin POLICY is its own versioned set (separate from the build policy) and
+/// the per-silicon pin-mux is METADATA — both load + version-check independently.
+#[test]
+fn pin_policy_and_pinmux_load_and_version_check() {
+    assert_eq!(pin_policy().schema_version, SUPPORTED_PIN_POLICY_SCHEMA);
+    assert_eq!(pinmux().silicon, "alif:ensemble:e7");
+    let bumped = PIN_POLICY_JSON.replacen("\"schemaVersion\": 1", "\"schemaVersion\": 9", 1);
+    assert!(
+        load_pin_policy(&bumped).is_err(),
+        "unknown pin-policy schema rejected"
+    );
+    let bad = PINMUX_YAML.replacen("schema_version: 1", "schema_version: 9", 1);
+    assert!(load_pinmux(&bad).is_err(), "unknown pinmux schema rejected");
+    // The build-policy allowlist MOVED to the pin policy.
+    assert_eq!(
+        pin_policy().pad_dual_claim_allowlist,
+        vec!["E1M_PWM1".to_string()]
+    );
+}
+
+/// **The validation source** the CLI + VS Code extension drive an advanced
+/// pin-mux UI from: which pads a signal may use, what a pad can do, is an
+/// assignment legal — all answered from the pin-mux metadata.
+#[test]
+fn pinmux_is_a_validation_source_for_the_ui() {
+    let m = pinmux();
+    // The picker: which pads can host I2C0's SDA signal?
+    assert_eq!(m.valid_pads_for("i2c0", "sda"), vec!["P0_3", "P3_5"]);
+    // What functions can this pad mux to?
+    assert!(m.functions_of("P0_3").contains(&"I2C0_SDA".to_string()));
+    // Live assignment validity (called on every edit):
+    assert!(m.pad_supports("P0_3", "I2C0_SDA"));
+    assert!(!m.pad_supports("P0_3", "SPI0_MOSI")); // P0_3 cannot do SPI
+    assert!(m.valid_pads_for("nope", "x").is_empty());
+}
+
+/// **The pin rule engine** — a clean config produces nothing; the three
+/// capability conflicts each fire with a semantic, blocking diagnostic.
+#[test]
+fn pin_rule_engine_flags_capability_conflicts() {
+    let m = pinmux();
+    let p = pin_policy();
+    let asn = |pad: &str, sig: &str, owner: &str| PinAssignment {
+        pad: pad.into(),
+        signal: sig.into(),
+        owner: owner.into(),
+    };
+
+    // Clean: I2C0 on its valid, distinct pads.
+    let clean = [
+        asn("P0_3", "I2C0_SDA", "i2c0"),
+        asn("P0_2", "I2C0_SCL", "i2c0"),
+    ];
+    assert!(check_assignments(&m, &p, &clean).is_empty());
+
+    // ALP-P001 — a signal the pad physically cannot carry.
+    let d = check_assignments(&m, &p, &[asn("P0_3", "SPI0_MOSI", "spi0")]);
+    assert!(d.iter().any(|d| d.code == "ALP-P001"
+        && d.is_blocking()
+        && d.message.contains("SPI0_MOSI")
+        && d.message.contains("P0_3")));
+
+    // ALP-P002 — two owners contend for one pad.
+    let d = check_assignments(
+        &m,
+        &p,
+        &[
+            asn("P0_3", "I2C0_SDA", "i2c0"),
+            asn("P0_3", "UART0_RX", "uart0"),
+        ],
+    );
+    assert!(
+        d.iter()
+            .any(|d| d.code == "ALP-P002" && d.message.contains("P0_3"))
+    );
+
+    // ALP-P003 — two different peripherals drive one alternate-function block (P1_0/P1_1).
+    let d = check_assignments(
+        &m,
+        &p,
+        &[
+            asn("P1_0", "SPI0_MOSI", "spi0"),
+            asn("P1_1", "I2C1_SCL", "i2c1"),
+        ],
+    );
+    assert!(
+        d.iter()
+            .any(|d| d.code == "ALP-P003" && d.message.contains("spi0"))
+    );
+
+    // Same block, ONE peripheral → fine (SPI0 across both pads of the block).
+    let ok = [
+        asn("P1_0", "SPI0_MOSI", "spi0"),
+        asn("P1_1", "SPI0_MISO", "spi0"),
+    ];
+    assert!(
+        check_assignments(&m, &p, &ok)
+            .iter()
+            .all(|d| d.code != "ALP-P003")
     );
 }
