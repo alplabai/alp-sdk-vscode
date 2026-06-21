@@ -21,6 +21,8 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use crate::build_plan::{Backend, BuildSlice, GeneratedFile, ToolStep};
+
 // ===========================================================================
 // METADATA — board.yaml (the consumer's project file)
 // ===========================================================================
@@ -131,6 +133,36 @@ fn render_yocto_local_conf(s: &YoctoSlice) -> String {
     format!("{}\n", lines.join("\n"))
 }
 
+/// Assemble the full build-plan slice for a Yocto core — the shipped `BuildSlice`
+/// the SDK's consumer accepts (`build/<core>-yocto/`, a `bitbake <image>` step).
+/// `sdk_root` is a runtime input (where the SDK lives on disk), not derived
+/// per-silicon knowledge, so it's threaded in rather than guessed.
+fn build_yocto_slice(
+    board: &BoardYaml,
+    som: &SomPreset,
+    core_id: &str,
+    build_root: &str,
+    sdk_root: &str,
+) -> Option<BuildSlice> {
+    let slice = resolve_yocto_slice(board, som, core_id)?;
+    let build_dir = format!("{build_root}/{core_id}-yocto");
+    Some(BuildSlice {
+        core_id: core_id.to_string(),
+        backend: Backend::Yocto,
+        build_dir: build_dir.clone(),
+        config_artefacts: vec![GeneratedFile {
+            path: format!("{build_dir}/local.conf"),
+            contents: render_yocto_local_conf(&slice),
+        }],
+        command: Some(ToolStep {
+            tool: "bitbake".to_string(),
+            args: vec![slice.image.clone()],
+            cwd: build_dir,
+        }),
+        env: BTreeMap::from([("ALP_SDK_ROOT".to_string(), sdk_root.to_string())]),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,6 +210,35 @@ mod tests {
             ours,
             oracle_artefact("a32_cluster"),
             "engine output must equal the SDK emit byte-for-byte"
+        );
+    }
+
+    /// STAGE B — the *full* a32_cluster build-plan slice (coreId / backend /
+    /// buildDir / configArtefacts / command / env) equals the SDK emit. The only
+    /// environment-specific field (env.ALP_SDK_ROOT, an absolute path) is a
+    /// runtime input, so the oracle's value is threaded in; every *derived* field
+    /// then matches exactly.
+    #[test]
+    fn a32_cluster_full_slice_matches_sdk_emit() {
+        let board: BoardYaml = serde_yaml::from_str(BOARD_YAML).unwrap();
+        let som: SomPreset = serde_yaml::from_str(SOM_PRESET).unwrap();
+
+        let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN).unwrap();
+        let oracle_slice = plan["slices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["coreId"] == "a32_cluster")
+            .unwrap();
+        let sdk_root = oracle_slice["env"]["ALP_SDK_ROOT"].as_str().unwrap();
+
+        let ours = build_yocto_slice(&board, &som, "a32_cluster", "build", sdk_root)
+            .expect("a32_cluster builds as a Yocto slice");
+        let ours_json = serde_json::to_value(&ours).unwrap();
+
+        assert_eq!(
+            &ours_json, oracle_slice,
+            "the full a32_cluster slice must equal the SDK emit"
         );
     }
 
