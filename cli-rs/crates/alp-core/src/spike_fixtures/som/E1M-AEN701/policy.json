@@ -35,6 +35,12 @@
     "spi": "SPI",
     "gpio": "GPIO"
   },
+  "_peripheralAliasesComment": "Peripheral-coverage aliasing for the ALP-B010 SoC-inventory check (RFC #235: rules are data). A declared peripheral kind is 'present on the silicon' if a SoC-JSON peripherals[] key matches it directly, OR matches it with a variant suffix (i2c->i2c_lp, can->can_fd, adc->adc_12bit — handled generically as <kind>_*), OR resolves through one of these aliases. An empty alias list means a pure software abstraction that is ALWAYS available (e.g. `sensor`).",
+  "peripheralAliases": {
+    "counter": ["timer"],
+    "pwm": ["pwm", "timer"],
+    "sensor": []
+  },
   "chipSubsystems": {
     "cc3501e": [
       "SPI",

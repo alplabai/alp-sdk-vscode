@@ -27,10 +27,11 @@
 #![allow(clippy::too_many_arguments)] // assemblers take the 4 metadata inputs + policy + runtime paths
 
 pub(crate) mod macros; // declarative macros, imported by path (not #[macro_use])
-// PARSER layer (deserialize → structs + version gates)
+// PARSER layer (deserialize → structs + version gates + semantic validation)
 pub(crate) mod bundle;
 pub(crate) mod metadata;
 pub(crate) mod policy;
+pub(crate) mod validate;
 // WRITER layer (data → config-file strings)
 pub(crate) mod assemble;
 pub(crate) mod render;

@@ -11,6 +11,7 @@ use super::bundle::*;
 use super::metadata::*;
 use super::policy::*;
 use super::render::*;
+use super::validate::*;
 use crate::build_plan::{Backend, BuildPlan};
 
 const BOARD_YAML: &str = include_str!("../spike_fixtures/oracle/rpmsg-aen.board.yaml");
@@ -355,4 +356,73 @@ fn policy_change_alters_output() {
     let out = render_zephyr_alp_conf("m55_he", &board, &som, &board_def, &soc, &p, KCONFIG_TMPL);
     assert!(out.contains("CONFIG_VENDOR_SOC_ALIF_ENSEMBLE_E7=y"));
     assert!(!out.contains("CONFIG_ALP_SOC_ALIF_ENSEMBLE_E7=y"));
+}
+
+// === Phase 3 — peripheral + carrier compatibility (semantic diagnostics) ===
+
+/// The canonical board is CLEAN: m55_hp's `i2c` is on the E7, the SoM family is
+/// hosted by the EVK — no diagnostics, nothing blocking.
+#[test]
+fn canonical_board_has_no_compat_diagnostics() {
+    let (board, som, board_def, soc) = load();
+    let diags = check_all(&board, &som, &board_def, &soc, &policy());
+    assert!(diags.is_empty(), "expected a clean board, got: {diags:?}");
+}
+
+/// Peripheral coverage is policy-driven against the SoC inventory: direct hits,
+/// variant suffixes (`i2c`→`i2c_lp`, `can`→`can_fd`, `adc`→`adc_12bit`), and the
+/// policy aliases (`counter`→`timer*`, `pwm`→`pwm|timer`, `sensor`→always).
+#[test]
+fn peripheral_coverage_matches_soc_inventory() {
+    let (.., soc) = load();
+    let p = policy();
+    for present in [
+        "i2c", "spi", "uart", "gpio", "can", "adc", "counter", "pwm", "sensor",
+    ] {
+        assert!(
+            soc_has_peripheral(&soc, &p, present),
+            "'{present}' should resolve on the E7"
+        );
+    }
+    // `flash`/`emmc` are in the board schema enum but NOT in the E7 inventory.
+    assert!(!soc_has_peripheral(&soc, &p, "flash"));
+    assert!(!soc_has_peripheral(&soc, &p, "emmc"));
+}
+
+/// **ALP-B010** — a declared peripheral absent from the silicon raises a
+/// non-blocking WARNING with a semantic message + a fix hint.
+#[test]
+fn alp_b010_warns_on_peripheral_not_on_silicon() {
+    let (mut board, som, _board_def, soc) = load();
+    board
+        .cores
+        .get_mut("m55_hp")
+        .unwrap()
+        .peripherals
+        .push("flash".to_string());
+    let diags = check_peripherals(&board, &som, &soc, &policy());
+    let d = diags
+        .iter()
+        .find(|d| d.code == "ALP-B010")
+        .expect("ALP-B010 must fire for 'flash' on the E7");
+    assert_eq!(d.severity, Severity::Warning);
+    assert!(!d.is_blocking(), "coverage gaps must NOT block the build");
+    assert!(d.message.contains("'flash'") && d.message.contains("alif:ensemble:e7"));
+    assert!(d.hint.as_ref().unwrap().contains("metadata/socs/"));
+}
+
+/// **ALP-B011** — a SoM whose family the carrier cannot host is a BLOCKING error
+/// with a semantic message.
+#[test]
+fn alp_b011_blocks_unsupported_som_on_carrier() {
+    let (board, mut som, board_def, _soc) = load();
+    // Canonical: alif-ensemble SoM on the EVK (hosts alif-ensemble + nxp-imx9).
+    assert!(check_som_supported(&board, &som, &board_def).is_none());
+    // Swap the SoM family to one the EVK does not host.
+    som.family = Some("renesas-rzv".to_string());
+    let d = check_som_supported(&board, &som, &board_def).expect("ALP-B011 must fire");
+    assert_eq!(d.code, "ALP-B011");
+    assert_eq!(d.severity, Severity::Error);
+    assert!(d.is_blocking());
+    assert!(d.message.contains("renesas-rzv") && d.message.contains("E1M-AEN701"));
 }

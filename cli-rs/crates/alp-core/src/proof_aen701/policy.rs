@@ -24,6 +24,10 @@ pub(crate) struct Policy {
     pub(crate) on_module_non_chip: Vec<String>,
     pub(crate) log_levels: BTreeMap<String, u8>,
     pub(crate) peripheral_subsystems: BTreeMap<String, String>,
+    /// ALP-B010 coverage aliases: kind → SoC-inventory kinds that satisfy it
+    /// (empty ⇒ always-present software abstraction, e.g. `sensor`).
+    #[serde(default)]
+    pub(crate) peripheral_aliases: BTreeMap<String, Vec<String>>,
     pub(crate) chip_subsystems: BTreeMap<String, Vec<String>>,
     pub(crate) library_kconfig: BTreeMap<String, Vec<String>>,
     pub(crate) flash: BTreeMap<String, FlashPolicy>,

@@ -65,6 +65,10 @@ pub(crate) struct Diagnostics {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SomPreset {
     pub(crate) silicon: String,
+    /// SoM family (e.g. `alif-ensemble`) — matched against a board's
+    /// `hosts_som_families` for the ALP-B011 carrier-support check.
+    #[serde(default)]
+    pub(crate) family: Option<String>,
     #[serde(default)]
     pub(crate) topology: BTreeMap<String, TopoCore>,
     #[serde(default)]
@@ -130,12 +134,21 @@ pub(crate) struct BoardDef {
     pub(crate) default_hw_rev: Option<String>,
     #[serde(default)]
     pub(crate) populated: BTreeMap<String, bool>,
+    /// SoM families this carrier can host (e.g. `[alif-ensemble, nxp-imx9]`) —
+    /// the ALP-B011 check rejects a SoM whose family is absent.
+    #[serde(default)]
+    pub(crate) hosts_som_families: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SocSpec {
     #[serde(default)]
     pub(crate) cores: Vec<SocCore>,
+    /// The silicon's peripheral inventory: instance-kind → count (e.g.
+    /// `i2c: 4`, `can_fd: 1`). Drives the ALP-B010 coverage check. Empty for a
+    /// SoC whose datasheet ingestion is still pending.
+    #[serde(default)]
+    pub(crate) peripherals: BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
