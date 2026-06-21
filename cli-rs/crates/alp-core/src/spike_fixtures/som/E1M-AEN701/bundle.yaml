@@ -1,0 +1,19 @@
+# Per-SoM, self-contained, VERSIONED P/M/T bundle (proof of the proposed
+# architecture for issue alplabai/alp-sdk#235). A new silicon module ships as
+# one of these folders: its metadata (facts), its build policy (rules), and its
+# output templates (shapes) — each independently versioned so they can evolve.
+# A generic engine resolves a SoM → loads this bundle → produces the build plan.
+som: E1M-AEN701
+bundle_version: "1.0.0"
+
+# Independently-versioned layers. The engine accepts a known schema and rejects
+# an unknown one (fail loud, never silently mis-derive).
+schemas:
+  policy: 1 # policy.json
+  metadata: 1 # som.yaml
+  template: 1 # templates/*.tmpl
+
+# Shared metadata the engine resolves outside the SoM bundle (NOT per-SoM):
+#   silicon → metadata/socs/<vendor>/<family>/<part>.json   (per-silicon, shared)
+#   board   → metadata/boards/<preset>.yaml                 (per-carrier, shared)
+# Only the SoM's own facts + its policy/templates live here.

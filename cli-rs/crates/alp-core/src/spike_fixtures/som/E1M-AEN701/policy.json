@@ -1,47 +1,102 @@
 {
+  "schemaVersion": 1,
   "_comment": "Proof bench POLICY — the per-silicon/board/OS build rules as DATA, not hardcoded engine code (issue alplabai/alp-sdk#235). The engine reads this and applies it generically; swapping a value changes the output with no code change. Default values reproduce the SDK's v0.6.0-55 emit for E1M-AEN701 byte-for-byte.",
-
   "baseKconfig": [
     "CONFIG_ALP_SDK=y",
     "CONFIG_LOG=y",
     "CONFIG_PRINTK=y",
     "CONFIG_THREAD_LOCAL_STORAGE=y"
   ],
-
   "socSymbolPrefix": "ALP_SOC_",
   "boardDefinePrefix": "ALP_BOARD_",
   "chipKconfigPrefix": "CONFIG_ALP_SDK_",
   "yoctoLibPrefix": "lib-",
-
-  "blockSlugs": ["button_led", "pdm_mic"],
-  "onModuleNonChip": ["silicon", "ethernet_phy_count", "i2c_devices", "ospi_memories", "nor_flash", "emmc"],
-
-  "logLevels": { "error": 1, "warn": 2, "info": 3, "debug": 4, "trace": 4 },
-
-  "peripheralSubsystems": { "i2c": "I2C", "spi": "SPI", "gpio": "GPIO" },
-
-  "chipSubsystems": {
-    "cc3501e": ["SPI", "GPIO"],
-    "ssd1331": ["SPI", "GPIO"],
-    "tas2563": ["I2C", "GPIO"],
-    "button_led": ["GPIO"],
-    "cam_mux_pi3wvr626": ["GPIO"],
-    "lsm6dso": ["I2C"],
-    "ssd1306": ["I2C"],
-    "bme280": ["I2C"],
-    "lis2dw12": ["I2C"],
-    "ov5640": ["I2C"],
-    "icm42670": ["I2C"],
-    "bmi323": ["I2C"],
-    "bmp581": ["I2C"],
-    "tmp112": ["I2C"],
-    "rv3028c7": ["I2C"],
-    "optiga_trust_m": ["I2C"],
-    "eeprom_24c128": ["I2C"],
-    "tcal9538": ["I2C"],
-    "ina236": ["I2C"]
+  "blockSlugs": [
+    "button_led",
+    "pdm_mic"
+  ],
+  "onModuleNonChip": [
+    "silicon",
+    "ethernet_phy_count",
+    "i2c_devices",
+    "ospi_memories",
+    "nor_flash",
+    "emmc"
+  ],
+  "logLevels": {
+    "error": 1,
+    "warn": 2,
+    "info": 3,
+    "debug": 4,
+    "trace": 4
   },
-
+  "peripheralSubsystems": {
+    "i2c": "I2C",
+    "spi": "SPI",
+    "gpio": "GPIO"
+  },
+  "chipSubsystems": {
+    "cc3501e": [
+      "SPI",
+      "GPIO"
+    ],
+    "ssd1331": [
+      "SPI",
+      "GPIO"
+    ],
+    "tas2563": [
+      "I2C",
+      "GPIO"
+    ],
+    "button_led": [
+      "GPIO"
+    ],
+    "cam_mux_pi3wvr626": [
+      "GPIO"
+    ],
+    "lsm6dso": [
+      "I2C"
+    ],
+    "ssd1306": [
+      "I2C"
+    ],
+    "bme280": [
+      "I2C"
+    ],
+    "lis2dw12": [
+      "I2C"
+    ],
+    "ov5640": [
+      "I2C"
+    ],
+    "icm42670": [
+      "I2C"
+    ],
+    "bmi323": [
+      "I2C"
+    ],
+    "bmp581": [
+      "I2C"
+    ],
+    "tmp112": [
+      "I2C"
+    ],
+    "rv3028c7": [
+      "I2C"
+    ],
+    "optiga_trust_m": [
+      "I2C"
+    ],
+    "eeprom_24c128": [
+      "I2C"
+    ],
+    "tcal9538": [
+      "I2C"
+    ],
+    "ina236": [
+      "I2C"
+    ]
+  },
   "libraryKconfig": {
     "cmsis_dsp": [
       "CONFIG_CMSIS_DSP=y",
@@ -58,13 +113,24 @@
       "CONFIG_ALP_CMSIS_DSP_SCALAR=y"
     ]
   },
-
   "flash": {
-    "yocto": { "method": "yocto_wic_to_sd_or_emmc", "args": { "target": "$machine" } },
-    "zephyr": { "method": "zephyr_west_flash", "args": { "runner": "openocd" } },
-    "baremetal": { "method": "baremetal_cmake_flash", "args": {} }
+    "yocto": {
+      "method": "yocto_wic_to_sd_or_emmc",
+      "args": {
+        "target": "$machine"
+      }
+    },
+    "zephyr": {
+      "method": "zephyr_west_flash",
+      "args": {
+        "runner": "openocd"
+      }
+    },
+    "baremetal": {
+      "method": "baremetal_cmake_flash",
+      "args": {}
+    }
   },
-
   "inference": {
     "tflmBackend": "CONFIG_ALP_SDK_INFERENCE_BACKEND_TFLM",
     "tflmKernel": {
