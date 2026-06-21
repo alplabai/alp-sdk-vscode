@@ -17,6 +17,7 @@ pub mod model;
 pub mod presets;
 pub mod preview;
 pub mod project;
+pub mod proof_aen701; // PROOF BENCH (issue alplabai/alp-sdk#235)
 pub mod sdk;
 pub mod sdk_catalogue;
 pub mod system_manifest;
