@@ -41,6 +41,8 @@
     "pwm": ["pwm", "timer"],
     "sensor": []
   },
+  "_padDualClaimAllowlistComment": "E1M pads legitimately bound to two roles in a board's e1m_routes (a muxed pad whose two functions are never opened at once). Any pad NOT listed here that appears twice raises ALP-B013. E1M_PWM1 carries both EVK_PWM_LED_BLUE and EVK_ARD_PWM1 on the EVK by design. Mirrors the SDK's check_pin_conflicts.py ALLOWLIST.",
+  "padDualClaimAllowlist": ["E1M_PWM1"],
   "chipSubsystems": {
     "cc3501e": [
       "SPI",

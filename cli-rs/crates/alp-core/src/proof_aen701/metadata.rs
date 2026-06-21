@@ -65,10 +65,17 @@ pub(crate) struct Diagnostics {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SomPreset {
     pub(crate) silicon: String,
+    #[serde(default)]
+    pub(crate) sku: Option<String>,
     /// SoM family (e.g. `alif-ensemble`) — matched against a board's
     /// `hosts_som_families` for the ALP-B011 carrier-support check.
     #[serde(default)]
     pub(crate) family: Option<String>,
+    /// SoM-specific pad dispatch: which E1M pads reach the host SoC via an
+    /// on-module mediator (e.g. the CC3501E) instead of directly. Composed with
+    /// the board's `e1m_routes` (board-agnostic roles) at codegen time.
+    #[serde(default)]
+    pub(crate) pad_routes: Vec<PadRoute>,
     #[serde(default)]
     pub(crate) topology: BTreeMap<String, TopoCore>,
     #[serde(default)]
@@ -85,6 +92,19 @@ pub(crate) struct SomPreset {
 pub(crate) struct Mailbox {
     #[serde(default)]
     pub(crate) controller: Option<String>,
+}
+
+/// One SoM-specific pad dispatch entry: the E1M pad reaches the SoC via
+/// `dispatch` (an on-module mediator chip, or `direct`), optionally at the
+/// mediator's `dispatch_pin`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct PadRoute {
+    pub(crate) e1m: String,
+    pub(crate) dispatch: String,
+    #[serde(default)]
+    pub(crate) dispatch_pin: Option<u32>,
+    #[serde(default)]
+    pub(crate) doc: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -138,6 +158,27 @@ pub(crate) struct BoardDef {
     /// the ALP-B011 check rejects a SoM whose family is absent.
     #[serde(default)]
     pub(crate) hosts_som_families: Vec<String>,
+    /// Board-agnostic E1M-pad routing, by section (`gpio`, `buses`, `pwm`, …).
+    /// Each entry binds an E1M pad to a board-side macro; composed with the SoM's
+    /// `pad_routes` to produce the per-pad dispatch, and checked for pad
+    /// double-claims (ALP-B013).
+    #[serde(default)]
+    pub(crate) e1m_routes: BTreeMap<String, Vec<RouteEntry>>,
+}
+
+/// One board-side pad binding: an E1M pad → a board macro (with optional
+/// Doxygen `doc`, `active_low`, and a portable `board_alias`).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct RouteEntry {
+    pub(crate) e1m: String,
+    #[serde(rename = "macro")]
+    pub(crate) macro_name: String,
+    #[serde(default)]
+    pub(crate) doc: Option<String>,
+    #[serde(default)]
+    pub(crate) active_low: Option<bool>,
+    #[serde(default)]
+    pub(crate) board_alias: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

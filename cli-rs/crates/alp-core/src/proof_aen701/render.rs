@@ -340,3 +340,71 @@ pub(crate) fn render_dts_partitions(board: &BoardYaml, tmpl: &str) -> String {
     )]);
     render_template(tmpl, &vars, &no_lists())
 }
+
+// --- board E1M-pad routing header (compose board roles + SoM dispatch) ---
+
+/// One fully-resolved route: a board-agnostic role (`macro_name` → `e1m` pad)
+/// joined with the SoM's dispatch (`direct`, or a mediator + optional pin).
+pub(crate) struct ComposedRoute {
+    pub(crate) e1m: String,
+    pub(crate) macro_name: String,
+    pub(crate) dispatch: String,
+    pub(crate) dispatch_pin: Option<u32>,
+}
+
+/// Compose the board's `e1m_routes` (board-agnostic roles) with the SoM's
+/// `pad_routes` (per-pad dispatch). A pad absent from `pad_routes` is `direct`.
+/// This is what makes a board.yaml SoM-swappable: the roles stay the same; only
+/// the SoM's dispatch differs. Order follows the board's route sections.
+pub(crate) fn compose_routes(board_def: &BoardDef, som: &SomPreset) -> Vec<ComposedRoute> {
+    let dispatch: BTreeMap<&str, &PadRoute> = som
+        .pad_routes
+        .iter()
+        .map(|pr| (pr.e1m.as_str(), pr))
+        .collect();
+    let mut out = Vec::new();
+    for entries in board_def.e1m_routes.values() {
+        for e in entries {
+            let (disp, pin) = match dispatch.get(e.e1m.as_str()) {
+                Some(pr) => (pr.dispatch.clone(), pr.dispatch_pin),
+                None => ("direct".to_string(), None),
+            };
+            out.push(ComposedRoute {
+                e1m: e.e1m.clone(),
+                macro_name: e.macro_name.clone(),
+                dispatch: disp,
+                dispatch_pin: pin,
+            });
+        }
+    }
+    out
+}
+
+/// Render the board's pad-routing header (`alp_<board>_routes.h`) from a template.
+/// The engine composes the roles + dispatch and precomputes the per-line dispatch
+/// comment (so the template stays flat — no nested conditionals); the template
+/// owns the `#define` shape + the include guard. No output text in the engine.
+pub(crate) fn render_board_routes_h(board_def: &BoardDef, som: &SomPreset, tmpl: &str) -> String {
+    let rows: Vec<Row> = compose_routes(board_def, som)
+        .iter()
+        .map(|r| {
+            let comment = match (r.dispatch.as_str(), r.dispatch_pin) {
+                ("direct", _) => String::new(),
+                (m, Some(pin)) => format!("  /* via {m} pin {pin} */"),
+                (m, None) => format!("  /* via {m} */"),
+            };
+            Row::from([
+                ("macro", r.macro_name.clone()),
+                ("e1m", r.e1m.clone()),
+                ("dispatchComment", comment),
+            ])
+        })
+        .collect();
+    let guard = format!("ALP_{}_ROUTES_H", board_define_slug(&board_def.name));
+    let vars = BTreeMap::from([
+        ("board", board_def.name.clone()),
+        ("sku", som.sku.clone().unwrap_or_default()),
+        ("guard", guard),
+    ]);
+    render_template(tmpl, &vars, &BTreeMap::from([("routes", rows)]))
+}

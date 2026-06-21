@@ -28,6 +28,8 @@ const DTS_RES_TMPL: &str =
 const DTS_PART_TMPL: &str =
     include_str!("../spike_fixtures/som/E1M-AEN701/templates/dts-partitions.dtsi.tmpl");
 const BUNDLE_YAML: &str = include_str!("../spike_fixtures/som/E1M-AEN701/bundle.yaml");
+// Board-level (SoM-agnostic) shared template — the routing header shape.
+const ROUTES_H_TMPL: &str = include_str!("../spike_fixtures/templates/board-routes.h.tmpl");
 const BOARD_DEF: &str = include_str!("../spike_fixtures/e1m-evk.yaml");
 const SOC_SPEC: &str = include_str!("../spike_fixtures/e7.json");
 const ORACLE_BUILD_PLAN: &str = include_str!("../spike_fixtures/oracle/rpmsg-aen.build-plan");
@@ -425,4 +427,99 @@ fn alp_b011_blocks_unsupported_som_on_carrier() {
     assert_eq!(d.severity, Severity::Error);
     assert!(d.is_blocking());
     assert!(d.message.contains("renesas-rzv") && d.message.contains("E1M-AEN701"));
+}
+
+// === Phase 4 — pin/pad routing (compose + conflicts + the routing header) ===
+
+/// The engine COMPOSES board-agnostic roles (`e1m_routes`) with the SoM's
+/// per-pad dispatch (`pad_routes`): a pad in `pad_routes` carries its mediator +
+/// pin; a pad absent from it is `direct`. This is what makes board.yaml
+/// SoM-swappable.
+#[test]
+fn compose_attaches_som_dispatch_to_board_roles() {
+    let (_, som, board_def, _) = load();
+    let routes = compose_routes(&board_def, &som);
+    let io15 = routes
+        .iter()
+        .find(|r| r.e1m == "E1M_GPIO_IO15")
+        .expect("BMI323 INT1 pad");
+    assert_eq!(io15.macro_name, "EVK_PIN_BMI323_INT1");
+    assert_eq!(io15.dispatch, "cc3501e");
+    assert_eq!(io15.dispatch_pin, Some(14));
+    // A pad the SoM does not redirect stays direct.
+    let i2c0 = routes.iter().find(|r| r.e1m == "E1M_I2C0").unwrap();
+    assert_eq!(i2c0.dispatch, "direct");
+    assert_eq!(i2c0.dispatch_pin, None);
+}
+
+/// The routing header is policy/template-driven (no output text in the engine):
+/// direct pads emit a plain `#define`, dispatched pads carry a `via <mediator>`
+/// comment the engine precomputes.
+#[test]
+fn routes_header_renders_from_template() {
+    let (_, som, board_def, _) = load();
+    let out = render_board_routes_h(&board_def, &som, ROUTES_H_TMPL);
+    assert!(out.contains("#ifndef ALP_E1M_EVK_ROUTES_H"));
+    assert!(
+        out.contains("#define EVK_I2C_BUS_SENSORS E1M_I2C0\n"),
+        "direct pad: no dispatch comment"
+    );
+    assert!(
+        out.contains("#define EVK_PIN_BMI323_INT1 E1M_GPIO_IO15  /* via cc3501e pin 14 */"),
+        "dispatched pad with a mediator pin"
+    );
+    assert!(
+        out.contains("#define EVK_SPI_BUS_ARDUINO E1M_SPI1  /* via cc3501e */"),
+        "dispatched pad without a pin"
+    );
+}
+
+/// **ALP-B013** — a pad bound to two roles is a conflict, UNLESS allowlisted.
+/// The EVK's only dual-claim (`E1M_PWM1`) is allowlisted, so the canonical board
+/// is clean; an unlisted double-claim blocks.
+#[test]
+fn alp_b013_flags_unallowlisted_pad_double_claim() {
+    let (_, _, mut board_def, _) = load();
+    // Canonical: only E1M_PWM1 is dual-claimed, and it's allowlisted.
+    assert!(check_pad_conflicts(&board_def, &policy()).is_empty());
+    // Add a second claim on an already-bound pad (E1M_I2C0).
+    board_def
+        .e1m_routes
+        .get_mut("buses")
+        .unwrap()
+        .push(RouteEntry {
+            e1m: "E1M_I2C0".to_string(),
+            macro_name: "EVK_FAKE_DUP".to_string(),
+            doc: None,
+            active_low: None,
+            board_alias: None,
+        });
+    let diags = check_pad_conflicts(&board_def, &policy());
+    let d = diags
+        .iter()
+        .find(|d| d.code == "ALP-B013")
+        .expect("B013 fires");
+    assert!(d.is_blocking());
+    assert!(d.message.contains("E1M_I2C0") && d.message.contains("EVK_FAKE_DUP"));
+}
+
+/// **ALP-B014** — a pad that dispatches via a mediator the SoM does not populate
+/// is unroutable (blocking). Canonical AEN populates the CC3501E, so it's clean;
+/// strip the mediator and every CC3501E-dispatched pad reports B014.
+#[test]
+fn alp_b014_flags_unpopulated_mediator() {
+    let (_, mut som, _, _) = load();
+    assert!(
+        check_route_dispatch(&som).is_empty(),
+        "the CC3501E mediator is populated on the AEN SoM"
+    );
+    som.on_module.remove("wifi_ble"); // the cc3501e on-module entry
+    som.helper_firmware.clear(); // the cc3501e helper MCU
+    let diags = check_route_dispatch(&som);
+    assert!(!diags.is_empty());
+    assert!(
+        diags
+            .iter()
+            .all(|d| d.code == "ALP-B014" && d.is_blocking() && d.message.contains("cc3501e"))
+    );
 }
