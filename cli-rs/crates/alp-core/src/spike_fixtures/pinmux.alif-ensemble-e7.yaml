@@ -1,35 +1,101 @@
 # Per-silicon PIN-MUX CAPABILITY table (METADATA — a silicon FACT, not a rule).
-# Structured from the datasheet/HWRM (the SDK ships this as the per-silicon TSVs
-# metadata/e1m_modules/aen/from-alif.tsv + from-cc3501e.tsv). Shared by every
-# board on this silicon — it is the authoritative source for "which pin can carry
-# which peripheral signal", so the rule engine validates pin configs against it
-# and the CLI/VS Code extension drives an advanced pin-mux UI from it.
+# DERIVED VERBATIM from the SDK's authoritative pinout TSVs:
+#   metadata/e1m_modules/aen/from-alif.tsv     (pads the Alif SoC owns directly)
+#   metadata/e1m_modules/aen/from-cc3501e.tsv  (pads the on-module CC3501E owns)
+# Each E1M connector pad carries one standardized function landing on a silicon pad
+# — the authoritative answer to "which pin can carry which peripheral signal". The
+# rule engine validates pin configs against it; the CLI/VS Code extension drive an
+# advanced pin-mux UI from it. Shared by every board on this silicon.
 #
-# Representative subset for the proof (a few peripherals + their candidate pads);
-# the real table is the full Alif E7 pad list.
+# Schema: e1m_pad -> { function, owner (alif|cc3501e), silicon_pad, peripheral }.
 schema_version: 1
 silicon: alif:ensemble:e7
 
-# Each silicon pad → the peripheral signal functions it can mux to.
 pads:
-  P0_2: [GPIO, I2C0_SCL, UART0_TX]
-  P0_3: [GPIO, I2C0_SDA, UART0_RX]
-  P1_0: [GPIO, SPI0_MOSI, I2C1_SDA]
-  P1_1: [GPIO, SPI0_MISO, I2C1_SCL]
-  P1_2: [GPIO, SPI0_SCLK]
-  P3_4: [GPIO, I2C0_SCL]
-  P3_5: [GPIO, I2C0_SDA]
-
-# Inverse view: each peripheral signal → its candidate pads. This is what powers
-# `valid_pads_for(peripheral, signal)` — the dropdown of legal pins in the UI.
-peripherals:
-  i2c0: { scl: [P0_2, P3_4], sda: [P0_3, P3_5] }
-  i2c1: { scl: [P1_1], sda: [P1_0] }
-  spi0: { mosi: [P1_0], miso: [P1_1], sclk: [P1_2] }
-  uart0: { tx: [P0_2], rx: [P0_3] }
-
-# Alternate-function blocks: pads wired through one mux block that may serve only
-# ONE peripheral at a time (datasheet HWRM pin-mux). Using pads in the same block
-# for two DIFFERENT peripherals is an exclusivity violation (ALP-P003).
-exclusivity_groups:
-  - [P1_0, P1_1] # SPI0 OR I2C1 through this block, never a mix
+  A10:  { function: ENC0_X,          owner: alif,     silicon: P3_0,                 peripheral: QEC0_X_A }
+  A12:  { function: ANA_S6,          owner: alif,     silicon: P1_6,                 peripheral: ANA_S14 }
+  A13:  { function: ANA_S4,          owner: alif,     silicon: P0_6,                 peripheral: ANA_S6 }
+  A14:  { function: ANA_S2,          owner: alif,     silicon: P0_2,                 peripheral: ANA_S2 }
+  A15:  { function: ANA_S0,          owner: alif,     silicon: P0_0,                 peripheral: ANA_S0 }
+  A16:  { function: DAC0,            owner: alif,     silicon: P2_2,                 peripheral: DAC_0 }
+  A19:  { function: CAN_STBY,        owner: alif,     silicon: "P7_3/SCP3_A",        peripheral: CAN_STBY_A }
+  A3:   { function: PWM6,            owner: alif,     silicon: P10_7,                peripheral: UT3_T1_C }
+  A31:  { function: BL_LED_A,        owner: alif,     silicon: P5_5,                 peripheral: UT2_T1_B }
+  A4:   { function: PWM4,            owner: alif,     silicon: P11_5,                peripheral: UT6_T1_C }
+  A5:   { function: PWM2,            owner: alif,     silicon: P2_5,                 peripheral: UT10_T1_A }
+  A6:   { function: PWM0,            owner: alif,     silicon: P12_7,                peripheral: UT11_T1_C }
+  A7:   { function: ENC3_X,          owner: alif,     silicon: "P4_1/JTAG0_TDATA1",  peripheral: QEC3_X_A }
+  A8:   { function: ENC2_X,          owner: alif,     silicon: P13_6,                peripheral: QEC2_X_C }
+  A9:   { function: ENC1_X,          owner: alif,     silicon: P3_3,                 peripheral: QEC1_X_A }
+  AA1:  { function: PDM_C0,          owner: alif,     silicon: P6_1,                 peripheral: PDM_C0_C }
+  AA2:  { function: PDM_D0,          owner: alif,     silicon: P6_0,                 peripheral: PDM_D0_C }
+  AA32: { function: CAM_D5,          owner: alif,     silicon: P8_4,                 peripheral: CAM_D4 }
+  AB1:  { function: PDM_C1,          owner: alif,     silicon: P11_4,                peripheral: PDM_C2_B }
+  AB2:  { function: PDM_D1,          owner: alif,     silicon: P5_4,                 peripheral: PDM_D2_B }
+  AB32: { function: CAM_D6,          owner: alif,     silicon: "P8_5/JTAG1_TCK",     peripheral: CAM_D5 }
+  AC32: { function: CAM_D7,          owner: alif,     silicon: "P8_6/JTAG1_TMS",     peripheral: CAM_D6 }
+  AD2:  { function: I2C0_SDA,        owner: alif,     silicon: P5_7,                 peripheral: I2C2_SDA_C }
+  AD32: { function: CAM_D8,          owner: alif,     silicon: "P8_7/JTAG1_TDI",     peripheral: CAM_D7 }
+  AD33: { function: I2S0_SDI,        owner: alif,     silicon: P9_2,                 peripheral: I2S3_SDI_A }
+  AD34: { function: I2S0_SDO,        owner: alif,     silicon: "P9_3/HFXO_OUT_B",    peripheral: I2S3_SDO_A }
+  AE2:  { function: I2C0_SCL,        owner: alif,     silicon: P5_6,                 peripheral: I2C2_SCL_C }
+  AE33: { function: I2S0_SCLK,       owner: alif,     silicon: P9_4,                 peripheral: I2S3_SCLK_A }
+  AE34: { function: I2S0_WS,         owner: alif,     silicon: P9_5,                 peripheral: I2S3_WS_A }
+  AG10: { function: SPI1_SCLK,       owner: cc3501e,  silicon: GPIO_32,              peripheral: SPI1.SCK }
+  AG11: { function: SD_CLK,          owner: alif,     silicon: P14_1,                peripheral: SD_CLK }
+  AG12: { function: SD_D0,           owner: alif,     silicon: P13_0,                peripheral: SD_D0 }
+  AG13: { function: SD_D2,           owner: alif,     silicon: P13_2,                peripheral: SD_D2 }
+  AG14: { function: SD_DET,          owner: alif,     silicon: P14_3,                peripheral: SD_DET }
+  AG16: { function: IO4,             owner: alif,     silicon: P4.3,                 peripheral: GPIO }
+  AG17: { function: I2C1_SCL,        owner: alif,     silicon: "P3_7/JTAG0_TRACECLK", peripheral: I2C1_SCL_B }
+  AG18: { function: IO6,             owner: alif,     silicon: P9.7 }
+  AG2:  { function: IO3,             owner: alif,     silicon: P3.2,                 peripheral: GPIO }
+  AG33: { function: IO8,             owner: alif,     silicon: P7.1 }
+  AG34: { function: IO7,             owner: alif,     silicon: P4.0 }
+  AG4:  { function: UART1_TX,        owner: alif,     silicon: P1_3,                 peripheral: UART3_TX_A }
+  AG5:  { function: I3C_SCL,         owner: alif,     silicon: "P7_7_FLEX/SCP3_C",   peripheral: I3C_SCL_D }
+  AG6:  { function: I2S1_SDO,        owner: alif,     silicon: P13_5,                peripheral: LPI2S_SDO_C }
+  AG7:  { function: I2S1_WS,         owner: alif,     silicon: P2_7,                 peripheral: LPI2S_WS_A }
+  AG8:  { function: SPI1_MISO,       owner: cc3501e,  silicon: GPIO_34,              peripheral: SPI1.MISO }
+  AG9:  { function: SPI1_MOSI,       owner: cc3501e,  silicon: GPIO_33,              peripheral: SPI1.MOSI }
+  AH11: { function: SD_CMD,          owner: alif,     silicon: P14_0,                peripheral: SD_CMD }
+  AH12: { function: SD_RST,          owner: alif,     silicon: P14_2,                peripheral: SD_RST }
+  AH13: { function: SD_D1,           owner: alif,     silicon: P13_1,                peripheral: SD_D1 }
+  AH14: { function: SD_D3,           owner: alif,     silicon: P13_3,                peripheral: SD_D3 }
+  AH17: { function: I2C1_SDA,        owner: alif,     silicon: "P7_2/SCP2_A",        peripheral: I2C1_SDA_C }
+  AH18: { function: IO5,             owner: alif,     silicon: P14.7 }
+  AH33: { function: IO10,            owner: alif,     silicon: P9.1 }
+  AH4:  { function: UART1_RX,        owner: alif,     silicon: P1_2,                 peripheral: UART3_RX_A }
+  AH5:  { function: I3C_SDA,         owner: alif,     silicon: "P7_6_FLEX/SCP2_C",   peripheral: I3C_SDA_D }
+  AH6:  { function: I2S1_SDI,        owner: alif,     silicon: P13_4,                peripheral: LPI2S_SDI_C }
+  AH7:  { function: I2S1_SCLK,       owner: alif,     silicon: P2_6,                 peripheral: LPI2S_SCLK_A }
+  AH8:  { function: SPI1_CS1,        owner: cc3501e,  silicon: GPIO_15,              peripheral: SPI1.CS1 }
+  AH9:  { function: SPI1_CS0,        owner: cc3501e,  silicon: GPIO_31,              peripheral: SPI1.CS0 }
+  B10:  { function: ENC0_Y,          owner: alif,     silicon: P3_1,                 peripheral: QEC0_Y_A }
+  B12:  { function: ANA_S7,          owner: alif,     silicon: P1_7,                 peripheral: ANA_S15 }
+  B13:  { function: ANA_S5,          owner: alif,     silicon: P1_0,                 peripheral: ANA_S8 }
+  B14:  { function: ANA_S3,          owner: alif,     silicon: P0_3,                 peripheral: ANA_S3 }
+  B15:  { function: ANA_S1,          owner: alif,     silicon: P0_1,                 peripheral: ANA_S1 }
+  B16:  { function: DAC1,            owner: alif,     silicon: P2_3,                 peripheral: DAC_1 }
+  B18:  { function: "CAN0H/CAN0_TX", owner: alif,     silicon: P0_5,                 peripheral: CAN_TXD_B }
+  B19:  { function: "CAN0L/CAN0_RX", owner: alif,     silicon: P0_4,                 peripheral: CAN_RXD_B }
+  B3:   { function: PWM7,            owner: alif,     silicon: P10_6,                peripheral: UT3_T0_C }
+  B4:   { function: PWM5,            owner: alif,     silicon: P1_4,                 peripheral: UT6_T0_A }
+  B5:   { function: PWM3,            owner: alif,     silicon: P2_4,                 peripheral: UT10_T0_A }
+  B6:   { function: PWM1,            owner: alif,     silicon: P12_6,                peripheral: UT11_T0_C }
+  B7:   { function: ENC3_Y,          owner: alif,     silicon: "P4_2/JTAG0_TDATA2",  peripheral: QEC3_Y_A }
+  B8:   { function: ENC2_Y,          owner: alif,     silicon: P13_7,                peripheral: QEC2_Y_C }
+  B9:   { function: ENC1_Y,          owner: alif,     silicon: "P9_0/JTAG1_TDO",     peripheral: QEC1_Y_B }
+  F2:   { function: UART0_TX,        owner: alif,     silicon: P3_5,                 peripheral: UART5_TX_A }
+  G2:   { function: UART0_RX,        owner: alif,     silicon: P3_4,                 peripheral: UART5_RX_A }
+  L1:   { function: SPI0_MISO,       owner: alif,     silicon: P5_0,                 peripheral: SPI0_MISO_B }
+  L2:   { function: IO0,             owner: alif,     silicon: P7.0 }
+  M1:   { function: SPI0_CS0,        owner: alif,     silicon: P5_2,                 peripheral: SPI0_SS0_C }
+  M2:   { function: SPI0_MOSI,       owner: alif,     silicon: P5_1,                 peripheral: SPI0_MOSI_B }
+  N1:   { function: SPI0_CS1,        owner: alif,     silicon: "P3_6/HFXO_OUT_A",    peripheral: SPI0_SS2_B }
+  W2:   { function: IO2,             owner: alif,     silicon: P12.5,                peripheral: GPIO }
+  X1:   { function: "JTAG_TCK/SWDCLK", owner: alif,     silicon: "P4_4/JTAG0_TCK",     peripheral: "JTAG_TCK/SWDCLK" }
+  X2:   { function: JTAG_TDI,        owner: alif,     silicon: "P4_6/JTAG0_TDI",     peripheral: JTAG_TDI }
+  Y1:   { function: "JTAG_TMS/SWDIO", owner: alif,     silicon: "P4_5/JTAG0_TMS",     peripheral: "JTAG_TMS/SWDIO" }
+  Y2:   { function: JTAG_TDO,        owner: alif,     silicon: "P4_7/JTAG0_TDO",     peripheral: JTAG_TDO }
+  Z2:   { function: AUDIO_CLK,       owner: alif,     silicon: P9_6,                 peripheral: AUDIO_CLK_B }

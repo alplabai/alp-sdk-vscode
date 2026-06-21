@@ -562,19 +562,28 @@ fn pin_policy_and_pinmux_load_and_version_check() {
 }
 
 /// **The validation source** the CLI + VS Code extension drive an advanced
-/// pin-mux UI from: which pads a signal may use, what a pad can do, is an
-/// assignment legal — all answered from the pin-mux metadata.
+/// pin-mux UI from — answered straight from the real TSV-derived pin-mux: what a
+/// pad carries, every pad of a peripheral, who owns it, the silicon pad.
 #[test]
 fn pinmux_is_a_validation_source_for_the_ui() {
     let m = pinmux();
-    // The picker: which pads can host I2C0's SDA signal?
-    assert_eq!(m.valid_pads_for("i2c0", "sda"), vec!["P0_3", "P3_5"]);
-    // What functions can this pad mux to?
-    assert!(m.functions_of("P0_3").contains(&"I2C0_SDA".to_string()));
-    // Live assignment validity (called on every edit):
-    assert!(m.pad_supports("P0_3", "I2C0_SDA"));
-    assert!(!m.pad_supports("P0_3", "SPI0_MOSI")); // P0_3 cannot do SPI
-    assert!(m.valid_pads_for("nope", "x").is_empty());
+    assert_eq!(
+        m.pads.len(),
+        87,
+        "the full E1M-AEN pinout (from-alif + from-cc3501e)"
+    );
+    // What function does this E1M pad carry?
+    assert_eq!(m.function_of("AD2"), Some("I2C0_SDA"));
+    assert_eq!(m.function_of("AG9"), Some("SPI1_MOSI"));
+    // The picker: every E1M pad of a peripheral (sorted).
+    assert_eq!(m.pads_for_peripheral("I2C0"), vec!["AD2", "AE2"]);
+    assert_eq!(m.pads_for_peripheral("UART0"), vec!["F2", "G2"]);
+    // Owner: SPI1 lands on the on-module CC3501E, I2C0 on the Alif SoC directly.
+    assert_eq!(m.owner_of("AG9"), Some("cc3501e"));
+    assert_eq!(m.owner_of("AD2"), Some("alif"));
+    assert_eq!(m.silicon_pad_of("AD2"), Some("P5_7"));
+    assert_eq!(m.pad_for_function("SPI1_MOSI"), Some("AG9"));
+    assert!(!m.is_known("ZZ9"));
 }
 
 /// **The pin rule engine** — a clean config produces nothing; the three
@@ -583,62 +592,63 @@ fn pinmux_is_a_validation_source_for_the_ui() {
 fn pin_rule_engine_flags_capability_conflicts() {
     let m = pinmux();
     let p = pin_policy();
-    let asn = |pad: &str, sig: &str, owner: &str| PinAssignment {
+    let asn = |pad: &str, func: &str, owner: &str| PinAssignment {
         pad: pad.into(),
-        signal: sig.into(),
+        function: func.into(),
         owner: owner.into(),
     };
 
-    // Clean: I2C0 on its valid, distinct pads.
+    // Clean: I2C0 on its real pads.
     let clean = [
-        asn("P0_3", "I2C0_SDA", "i2c0"),
-        asn("P0_2", "I2C0_SCL", "i2c0"),
+        asn("AD2", "I2C0_SDA", "i2c0"),
+        asn("AE2", "I2C0_SCL", "i2c0"),
     ];
     assert!(check_assignments(&m, &p, &clean).is_empty());
 
-    // ALP-P001 — a signal the pad physically cannot carry.
-    let d = check_assignments(&m, &p, &[asn("P0_3", "SPI0_MOSI", "spi0")]);
+    // ALP-P001 — an E1M pad that does not exist on this silicon.
+    let d = check_assignments(&m, &p, &[asn("ZZ9", "I2C0_SDA", "i2c0")]);
+    assert!(
+        d.iter()
+            .any(|d| d.code == "ALP-P001" && d.message.contains("does not exist"))
+    );
+
+    // ALP-P001 — a real pad driven with the wrong function.
+    let d = check_assignments(&m, &p, &[asn("AD2", "SPI1_MOSI", "spi1")]);
     assert!(d.iter().any(|d| d.code == "ALP-P001"
         && d.is_blocking()
-        && d.message.contains("SPI0_MOSI")
-        && d.message.contains("P0_3")));
+        && d.message.contains("AD2")
+        && d.message.contains("I2C0_SDA")));
 
-    // ALP-P002 — two owners contend for one pad.
+    // ALP-P002 — two owners contend for one E1M pad.
     let d = check_assignments(
         &m,
         &p,
         &[
-            asn("P0_3", "I2C0_SDA", "i2c0"),
-            asn("P0_3", "UART0_RX", "uart0"),
+            asn("AD2", "I2C0_SDA", "i2c0"),
+            asn("AD2", "I2C0_SDA", "other"),
         ],
     );
     assert!(
         d.iter()
-            .any(|d| d.code == "ALP-P002" && d.message.contains("P0_3"))
+            .any(|d| d.code == "ALP-P002" && d.message.contains("AD2"))
     );
 
-    // ALP-P003 — two different peripherals drive one alternate-function block (P1_0/P1_1).
+    // ALP-P003 — two E1M pads on one silicon pad. The AEN pinout has no such
+    // collision (each E1M pad is a distinct silicon pad), so exercise it on a
+    // tiny synthetic pin-mux where two pads share P1_0.
+    let collide = load_pinmux(concat!(
+        "schema_version: 1\nsilicon: test\npads:\n",
+        "  PA: { function: F_A, owner: alif, silicon: P1_0 }\n",
+        "  PB: { function: F_B, owner: alif, silicon: P1_0 }\n",
+    ))
+    .unwrap();
     let d = check_assignments(
-        &m,
+        &collide,
         &p,
-        &[
-            asn("P1_0", "SPI0_MOSI", "spi0"),
-            asn("P1_1", "I2C1_SCL", "i2c1"),
-        ],
+        &[asn("PA", "F_A", "a"), asn("PB", "F_B", "b")],
     );
     assert!(
         d.iter()
-            .any(|d| d.code == "ALP-P003" && d.message.contains("spi0"))
-    );
-
-    // Same block, ONE peripheral → fine (SPI0 across both pads of the block).
-    let ok = [
-        asn("P1_0", "SPI0_MOSI", "spi0"),
-        asn("P1_1", "SPI0_MISO", "spi0"),
-    ];
-    assert!(
-        check_assignments(&m, &p, &ok)
-            .iter()
-            .all(|d| d.code != "ALP-P003")
+            .any(|d| d.code == "ALP-P003" && d.message.contains("P1_0"))
     );
 }

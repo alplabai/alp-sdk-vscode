@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! **PARSER layer — the pin/peripheral domain, kept apart from the build policy.**
 //! Two separate sources (RFC #235): a per-silicon pin-mux CAPABILITY table
-//! ([`PinMux`], METADATA — a silicon fact: which pad carries which signal) and a
-//! pin VALIDATION [`PinPolicy`] (the rules: conflict severities + allowlists).
-//! The rule engine reads both → semantic [`Diagnostic`]s **and** a query API
-//! (`functions_of` / `valid_pads_for` / `pad_supports`) that is the validation
-//! source the CLI + VS Code extension drive an advanced pin-mux UI from.
+//! ([`PinMux`], METADATA — a silicon fact: which E1M pad carries which function,
+//! and where it lands on silicon, derived verbatim from the SDK's `from-*.tsv`
+//! pinout) and a pin VALIDATION [`PinPolicy`] (the rules: conflict severities +
+//! allowlists). The rule engine reads both → semantic [`Diagnostic`]s **and** a
+//! query API (`function_of` / `pads_for_peripheral` / `owner_of`) that is the
+//! validation source the CLI + VS Code extension drive an advanced pin-mux UI from.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
@@ -18,21 +19,27 @@ pub(crate) const SUPPORTED_PINMUX_SCHEMA: u32 = 1;
 pub(crate) const SUPPORTED_PIN_POLICY_SCHEMA: u32 = 1;
 
 /// The per-silicon pin-mux capability table (METADATA). Authoritative answer to
-/// "which pin can carry which peripheral signal".
+/// "which pin can carry which peripheral signal" — one entry per E1M connector pad.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct PinMux {
     pub(crate) schema_version: u32,
     pub(crate) silicon: String,
-    /// pad → the signal functions it can mux to (e.g. `P0_3 → [GPIO, I2C0_SDA]`).
+    /// E1M pad (the connector ball, e.g. `AD2`) → its standardized function.
     #[serde(default)]
-    pub(crate) pads: BTreeMap<String, Vec<String>>,
-    /// peripheral → signal → candidate pads (the inverse, for `valid_pads_for`).
+    pub(crate) pads: BTreeMap<String, PadFunction>,
+}
+
+/// One E1M pad's fixed function: what signal it carries, who owns it (the Alif SoC
+/// directly, or the on-module CC3501E), the silicon pad it lands on, and the
+/// silicon peripheral instance.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct PadFunction {
+    pub(crate) function: String,
+    pub(crate) owner: String,
+    /// The silicon pad (e.g. `P5_7`, or `GPIO_33` on the CC3501E).
+    pub(crate) silicon: String,
     #[serde(default)]
-    pub(crate) peripherals: BTreeMap<String, BTreeMap<String, Vec<String>>>,
-    /// Alternate-function blocks: pads that may serve only one peripheral at a
-    /// time. Using a block for two different peripherals is ALP-P003.
-    #[serde(default)]
-    pub(crate) exclusivity_groups: Vec<Vec<String>>,
+    pub(crate) peripheral: Option<String>,
 }
 
 /// The pin/peripheral VALIDATION rules (POLICY) — separate from the build policy.
@@ -62,40 +69,53 @@ pub(crate) fn load_pin_policy(json: &str) -> Result<PinPolicy, String> {
     Ok(p)
 }
 
+/// The silicon pad ignoring its alternate-function suffix (`P4_1/JTAG0_TDATA1` →
+/// `P4_1`) — two E1M pads sharing a base silicon pad are mutually exclusive.
+fn base_silicon(pad: &str) -> &str {
+    pad.split('/').next().unwrap_or(pad)
+}
+
 impl PinMux {
     // --- the validation-source query API (CLI + extension) ---
 
-    /// Every signal function `pad` can mux to (empty if the pad is unknown).
-    pub(crate) fn functions_of(&self, pad: &str) -> Vec<String> {
-        self.pads.get(pad).cloned().unwrap_or_default()
+    /// The standardized function on an E1M `pad` (`None` if the pad is unknown).
+    pub(crate) fn function_of(&self, pad: &str) -> Option<&str> {
+        self.pads.get(pad).map(|f| f.function.as_str())
     }
 
-    /// The candidate pads a `peripheral`'s `signal` can route to — the legal set
-    /// a pin-picker offers (empty if unknown).
-    pub(crate) fn valid_pads_for(&self, peripheral: &str, signal: &str) -> Vec<String> {
-        self.peripherals
-            .get(peripheral)
-            .and_then(|sigs| sigs.get(signal))
-            .cloned()
-            .unwrap_or_default()
+    /// Who reaches the silicon for this E1M `pad`: `alif` (direct) or `cc3501e`
+    /// (dispatched through the on-module coprocessor).
+    pub(crate) fn owner_of(&self, pad: &str) -> Option<&str> {
+        self.pads.get(pad).map(|f| f.owner.as_str())
     }
 
-    /// Can `pad` physically carry `signal`? The single assignment-validity check
-    /// the extension calls on every edit.
-    pub(crate) fn pad_supports(&self, pad: &str, signal: &str) -> bool {
-        self.pads
-            .get(pad)
-            .is_some_and(|fns| fns.iter().any(|f| f == signal))
+    /// The silicon pad an E1M `pad` lands on.
+    pub(crate) fn silicon_pad_of(&self, pad: &str) -> Option<&str> {
+        self.pads.get(pad).map(|f| f.silicon.as_str())
     }
 
-    /// All pads that can carry `signal` (across every peripheral) — used to
-    /// suggest alternatives in an ALP-P001 hint.
-    fn pads_with_signal(&self, signal: &str) -> Vec<String> {
+    /// The E1M pad carrying exactly `function` (functions are unique per pad).
+    pub(crate) fn pad_for_function(&self, function: &str) -> Option<&str> {
         self.pads
             .iter()
-            .filter(|(_, fns)| fns.iter().any(|f| f == signal))
+            .find(|(_, f)| f.function == function)
+            .map(|(pad, _)| pad.as_str())
+    }
+
+    /// Every E1M pad whose function belongs to `peripheral` (a function prefix,
+    /// e.g. `I2C0` → `[AD2, AE2]`, `SPI1` → the CC3501E pads). The legal set a
+    /// pin-picker offers for a peripheral — sorted, deterministic.
+    pub(crate) fn pads_for_peripheral(&self, peripheral: &str) -> Vec<String> {
+        self.pads
+            .iter()
+            .filter(|(_, f)| f.function.starts_with(peripheral))
             .map(|(pad, _)| pad.clone())
             .collect()
+    }
+
+    /// Is `pad` a known E1M pad on this silicon?
+    pub(crate) fn is_known(&self, pad: &str) -> bool {
+        self.pads.contains_key(pad)
     }
 }
 
@@ -110,21 +130,21 @@ impl PinPolicy {
 }
 
 /// One concrete pin assignment a board/app makes: `owner` (the peripheral or
-/// role claiming it) puts `signal` on silicon `pad`.
+/// role) drives `function` on E1M `pad`.
 #[derive(Debug, Clone)]
 pub(crate) struct PinAssignment {
     pub(crate) pad: String,
-    pub(crate) signal: String,
+    pub(crate) function: String,
     pub(crate) owner: String,
 }
 
 /// **The pin rule engine** — validate a set of pin assignments against the
-/// silicon pin-mux (facts) + the pin policy (rules). This is exactly what the
+/// silicon pin-mux (facts) + the pin policy (rules). Exactly what the
 /// CLI/extension calls to validate a pin configuration before a build.
 ///
-/// - **ALP-P001** — the pad physically cannot carry the signal.
-/// - **ALP-P002** — two owners contend for one pad (a pad carries one function).
-/// - **ALP-P003** — two different peripherals use one alternate-function block.
+/// - **ALP-P001** — an unknown E1M pad, or a function the pad does not carry.
+/// - **ALP-P002** — two owners contend for one E1M pad.
+/// - **ALP-P003** — two E1M pads share one silicon pad (mutually exclusive).
 pub(crate) fn check_assignments(
     pinmux: &PinMux,
     policy: &PinPolicy,
@@ -132,31 +152,37 @@ pub(crate) fn check_assignments(
 ) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
 
-    // P001 — signal not supported by the pad.
+    // P001 — unknown pad, or a function the pad cannot carry.
     for a in assignments {
-        if !pinmux.pad_supports(&a.pad, &a.signal) {
-            diags.push(Diagnostic {
+        match pinmux.function_of(&a.pad) {
+            None => diags.push(Diagnostic {
                 code: "ALP-P001",
                 severity: policy.severity("padFunctionUnsupported", Severity::Error),
                 message: format!(
-                    "'{}' assigns {} to pad {}, but that pad cannot carry it on silicon {} \
-                     (supports: {:?})",
-                    a.owner,
-                    a.signal,
-                    a.pad,
-                    pinmux.silicon,
-                    pinmux.functions_of(&a.pad)
+                    "'{}' uses E1M pad {}, which does not exist on silicon {}",
+                    a.owner, a.pad, pinmux.silicon
                 ),
-                hint: Some(format!(
-                    "move {} to a pad that supports it: {:?}",
-                    a.signal,
-                    pinmux.pads_with_signal(&a.signal)
-                )),
-            });
+                hint: Some("check the E1M pad name against the silicon's pin-mux".to_string()),
+            }),
+            Some(real) if real != a.function => diags.push(Diagnostic {
+                code: "ALP-P001",
+                severity: policy.severity("padFunctionUnsupported", Severity::Error),
+                message: format!(
+                    "'{}' drives {} on E1M pad {}, but that pad carries {} on silicon {}",
+                    a.owner, a.function, a.pad, real, pinmux.silicon
+                ),
+                hint: pinmux.pad_for_function(&a.function).map(|p| {
+                    format!(
+                        "function {} is on E1M pad {} — use that pad instead",
+                        a.function, p
+                    )
+                }),
+            }),
+            Some(_) => {}
         }
     }
 
-    // P002 — two assignments contend for the same pad.
+    // P002 — two assignments contend for the same E1M pad.
     let mut by_pad: BTreeMap<&str, Vec<&PinAssignment>> = BTreeMap::new();
     for a in assignments {
         by_pad.entry(a.pad.as_str()).or_default().push(a);
@@ -165,48 +191,42 @@ pub(crate) fn check_assignments(
         if claims.len() > 1 {
             let who = claims
                 .iter()
-                .map(|a| format!("{} ({})", a.signal, a.owner))
+                .map(|a| format!("{} ({})", a.function, a.owner))
                 .collect::<Vec<_>>()
                 .join(", ");
             diags.push(Diagnostic {
                 code: "ALP-P002",
                 severity: policy.severity("padContention", Severity::Error),
                 message: format!(
-                    "pad {pad} is claimed by multiple signals: {who} — a pad carries one \
+                    "E1M pad {pad} is claimed by multiple owners: {who} — a pad carries one \
                      function at a time"
                 ),
-                hint: Some(
-                    "move one signal to another candidate pad (see valid_pads_for)".to_string(),
-                ),
+                hint: Some("give one owner a different pad (see pads_for_peripheral)".to_string()),
             });
         }
     }
 
-    // P003 — an alternate-function block driven by two different peripherals.
-    for group in &pinmux.exclusivity_groups {
-        let mut owners: Vec<&str> = assignments
-            .iter()
-            .filter(|a| group.iter().any(|g| g == &a.pad))
-            .map(|a| a.owner.as_str())
-            .collect();
-        owners.sort_unstable();
-        owners.dedup();
-        if owners.len() > 1 {
+    // P003 — two DIFFERENT E1M pads landing on one silicon pad are mutually
+    // exclusive (only one can be muxed in). Derived from the `silicon` fact.
+    let mut by_silicon: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for a in assignments {
+        if let Some(sil) = pinmux.silicon_pad_of(&a.pad) {
+            by_silicon
+                .entry(base_silicon(sil))
+                .or_default()
+                .insert(a.pad.as_str());
+        }
+    }
+    for (sil, pads) in &by_silicon {
+        if pads.len() > 1 {
             diags.push(Diagnostic {
                 code: "ALP-P003",
                 severity: policy.severity("exclusivityViolation", Severity::Error),
                 message: format!(
-                    "pads {:?} are one alternate-function block, but {} different peripherals \
-                     drive it: {} — a block serves one peripheral at a time",
-                    group,
-                    owners.len(),
-                    owners.join(", ")
+                    "E1M pads {:?} all land on silicon pad {sil} — only one can be muxed in at a time",
+                    pads
                 ),
-                hint: Some(
-                    "route all signals in this block through one peripheral, or move a \
-                     peripheral to a different block"
-                        .to_string(),
-                ),
+                hint: Some("drop all but one of these pads — they are the same physical pin".to_string()),
             });
         }
     }
