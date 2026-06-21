@@ -652,3 +652,57 @@ fn pin_rule_engine_flags_capability_conflicts() {
             .any(|d| d.code == "ALP-P003" && d.message.contains("P1_0"))
     );
 }
+
+/// The board↔pin-mux BRIDGE resolves board-facing E1M names (`E1M_I2C0`, the
+/// whole bus) to per-signal functions — via the `aliases` map, with a bare-name
+/// fallback (`E1M_PWM1` → `PWM1`); an unrecognized name is `None`.
+#[test]
+fn board_pin_bridge_resolves_e1m_names() {
+    let m = pinmux();
+    assert_eq!(
+        m.resolve_e1m("E1M_I2C0"),
+        Some(vec!["I2C0_SDA".to_string(), "I2C0_SCL".to_string()])
+    );
+    assert_eq!(m.resolve_e1m("E1M_PWM1"), Some(vec!["PWM1".to_string()])); // bare fallback
+    assert_eq!(m.resolve_e1m("E1M_NOPE"), None);
+}
+
+/// **End-to-end (no synthetic input)** — the canonical board.yaml's REAL `pins`
+/// (just `E1M_I2C0`) bridge to their silicon pads and validate clean; bad pins
+/// produce real diagnostics.
+#[test]
+fn canonical_board_pins_validate_end_to_end() {
+    let m = pinmux();
+    let p = pin_policy();
+    let mk = |name: &str| RouteEntry {
+        e1m: name.to_string(),
+        macro_name: "X".to_string(),
+        doc: None,
+        active_low: None,
+        board_alias: None,
+    };
+
+    // Real board.yaml: E1M_I2C0 -> I2C0_SDA (AD2) + I2C0_SCL (AE2). Clean.
+    let (board, ..) = load();
+    assert_eq!(
+        board.pins.len(),
+        1,
+        "the canonical board uses one active pin"
+    );
+    assert!(check_board_pins(&board, &m, &p).is_empty());
+
+    // An unknown E1M name -> ALP-P004.
+    let (mut bad, ..) = load();
+    bad.pins.push(mk("E1M_NOPE"));
+    let d = check_board_pins(&bad, &m, &p);
+    assert!(
+        d.iter()
+            .any(|d| d.code == "ALP-P004" && d.message.contains("E1M_NOPE"))
+    );
+
+    // The same bus claimed twice -> a silicon pad claimed twice -> ALP-P002.
+    let (mut dup, ..) = load();
+    dup.pins.push(mk("E1M_I2C0"));
+    let d = check_board_pins(&dup, &m, &p);
+    assert!(d.iter().any(|d| d.code == "ALP-P002"));
+}

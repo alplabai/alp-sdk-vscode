@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Deserialize;
 
 use super::macros::check_schema_version;
+use super::metadata::BoardYaml;
 use super::validate::{Diagnostic, Severity};
 
 pub(crate) const SUPPORTED_PINMUX_SCHEMA: u32 = 1;
@@ -27,6 +28,10 @@ pub(crate) struct PinMux {
     /// E1M pad (the connector ball, e.g. `AD2`) → its standardized function.
     #[serde(default)]
     pub(crate) pads: BTreeMap<String, PadFunction>,
+    /// Board-facing E1M name (`E1M_I2C0`, the whole bus) → the per-signal
+    /// functions it covers (`[I2C0_SDA, I2C0_SCL]`). The board↔pin-mux bridge.
+    #[serde(default)]
+    pub(crate) aliases: BTreeMap<String, Vec<String>>,
 }
 
 /// One E1M pad's fixed function: what signal it carries, who owns it (the Alif SoC
@@ -116,6 +121,19 @@ impl PinMux {
     /// Is `pad` a known E1M pad on this silicon?
     pub(crate) fn is_known(&self, pad: &str) -> bool {
         self.pads.contains_key(pad)
+    }
+
+    /// **The board↔pin-mux bridge** — resolve a board-facing E1M name (`E1M_I2C0`)
+    /// to the per-signal functions it covers. Tries the `aliases` map first
+    /// (grouped names → signal sets), then falls back to a bare `E1M_`-stripped
+    /// name that is itself a known function (`E1M_PWM1` → `PWM1`). `None` if the
+    /// name resolves to neither (→ ALP-P004).
+    pub(crate) fn resolve_e1m(&self, name: &str) -> Option<Vec<String>> {
+        if let Some(funcs) = self.aliases.get(name) {
+            return Some(funcs.clone());
+        }
+        let bare = name.strip_prefix("E1M_").unwrap_or(name);
+        self.pad_for_function(bare).map(|_| vec![bare.to_string()])
     }
 }
 
@@ -231,5 +249,50 @@ pub(crate) fn check_assignments(
         }
     }
 
+    diags
+}
+
+/// **End-to-end board pin validation** — the real pipeline: read a `board.yaml`'s
+/// active `pins`, BRIDGE each E1M name to its pin-mux functions (`resolve_e1m`),
+/// resolve those to silicon pads, and run the rule engine. A name that bridges to
+/// nothing is **ALP-P004**. Functions the silicon does not own directly (CC3501E-
+/// dispatched, absent from `pads`) are skipped here — they are validated via the
+/// SoM `pad_routes` (ALP-B014). This is what a CLI/extension calls to validate a
+/// board's pin config against the silicon, with no synthetic input.
+pub(crate) fn check_board_pins(
+    board: &BoardYaml,
+    pinmux: &PinMux,
+    policy: &PinPolicy,
+) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+    let mut assignments = Vec::new();
+    for pin in &board.pins {
+        match pinmux.resolve_e1m(&pin.e1m) {
+            Some(funcs) => {
+                for f in &funcs {
+                    if let Some(pad) = pinmux.pad_for_function(f) {
+                        assignments.push(PinAssignment {
+                            pad: pad.to_string(),
+                            function: f.clone(),
+                            owner: pin.e1m.clone(),
+                        });
+                    }
+                }
+            }
+            None => diags.push(Diagnostic {
+                code: "ALP-P004",
+                severity: policy.severity("unknownBoardPin", Severity::Error),
+                message: format!(
+                    "board pin '{}' is not a known E1M pad on silicon {} (no pin-mux entry or alias)",
+                    pin.e1m, pinmux.silicon
+                ),
+                hint: Some(
+                    "check the E1M name against the silicon's pin-mux `pads` + `aliases`"
+                        .to_string(),
+                ),
+            }),
+        }
+    }
+    diags.extend(check_assignments(pinmux, policy, &assignments));
     diags
 }

@@ -99,3 +99,20 @@ pads:
   Y1:   { function: "JTAG_TMS/SWDIO", owner: alif,     silicon: "P4_5/JTAG0_TMS",     peripheral: "JTAG_TMS/SWDIO" }
   Y2:   { function: JTAG_TDO,        owner: alif,     silicon: "P4_7/JTAG0_TDO",     peripheral: JTAG_TDO }
   Z2:   { function: AUDIO_CLK,       owner: alif,     silicon: P9_6,                 peripheral: AUDIO_CLK_B }
+
+# Board-facing E1M pad names -> the silicon pin-mux functions they cover. board.yaml
+# and `e1m_routes` use GROUPED names (E1M_I2C0 = the whole bus); the `pads` table
+# above is keyed per-signal e1m_function (I2C0_SDA). This bridges the two so a real
+# board config validates end-to-end. A name absent here falls back to its bare
+# `E1M_`-stripped function (E1M_PWM1 -> PWM1); a name resolving to neither is ALP-P004.
+aliases:
+  E1M_I2C0:  [I2C0_SDA, I2C0_SCL]
+  E1M_I2C1:  [I2C1_SDA, I2C1_SCL]
+  E1M_I3C0:  [I3C_SDA, I3C_SCL]
+  E1M_SPI1:  [SPI1_MOSI, SPI1_MISO, SPI1_SCLK, SPI1_CS0, SPI1_CS1] # CC3501E-owned
+  E1M_UART0: [UART0_TX, UART0_RX]
+  E1M_UART1: [UART1_TX, UART1_RX]
+  E1M_I2S0:  [I2S0_SCLK, I2S0_WS, I2S0_SDI, I2S0_SDO]
+  E1M_I2S1:  [I2S1_SCLK, I2S1_WS, I2S1_SDI, I2S1_SDO]
+  E1M_CAN0:  ["CAN0H/CAN0_TX", "CAN0L/CAN0_RX"]
+  E1M_ENC0:  [ENC0_X, ENC0_Y]

@@ -25,6 +25,10 @@ pub(crate) struct BoardYaml {
     pub(crate) ipc: Vec<IpcChannel>,
     #[serde(default)]
     pub(crate) storage: Vec<serde_yaml::Value>,
+    /// The E1M pads this app actively uses (a subset of the board's `e1m_routes`)
+    /// — the input to end-to-end pin-mux validation.
+    #[serde(default)]
+    pub(crate) pins: Vec<RouteEntry>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
