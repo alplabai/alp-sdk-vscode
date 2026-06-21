@@ -15,6 +15,7 @@
 //! Layers kept explicit: METADATA (board.yaml + SoM preset + board def + SoC spec),
 //! POLICY (the derivation rules — inline here; externalised to policy.json later),
 //! TEMPLATE/ENGINE (resolve → render → build-plan slice).
+#![allow(dead_code)] // proof bench: the engine's only caller is its #[cfg(test)] parity suite
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -194,6 +195,28 @@ fn chip_subsystems(slug: &str) -> &'static [&'static str] {
         "lsm6dso" | "ssd1306" | "bme280" | "lis2dw12" | "ov5640" | "icm42670"
         | "bmi323" | "bmp581" | "tmp112" | "rv3028c7" | "optiga_trust_m"
         | "eeprom_24c128" | "tcal9538" | "ina236" => &["I2C"],
+        _ => &[],
+    }
+}
+
+/// A library name → its Kconfig symbols, in declaration order (alp_project.py:711).
+/// An unknown library yields no symbols (the caller emits a TODO instead).
+fn library_kconfig(lib: &str) -> &'static [&'static str] {
+    match lib {
+        "cmsis_dsp" => &[
+            "CONFIG_CMSIS_DSP=y",
+            "CONFIG_CMSIS_DSP_BASICMATH=y",
+            "CONFIG_CMSIS_DSP_COMPLEXMATH=y",
+            "CONFIG_CMSIS_DSP_CONTROLLER=y",
+            "CONFIG_CMSIS_DSP_FASTMATH=y",
+            "CONFIG_CMSIS_DSP_FILTERING=y",
+            "CONFIG_CMSIS_DSP_INTERPOLATION=y",
+            "CONFIG_CMSIS_DSP_MATRIX=y",
+            "CONFIG_CMSIS_DSP_STATISTICS=y",
+            "CONFIG_CMSIS_DSP_SUPPORT=y",
+            "CONFIG_CMSIS_DSP_TRANSFORM=y",
+            "CONFIG_ALP_CMSIS_DSP_SCALAR=y",
+        ],
         _ => &[],
     }
 }
@@ -399,7 +422,25 @@ fn render_zephyr_alp_conf(
         lines.push(String::new());
     }
 
-    // 7.5 Inference dispatchers (from SoM capabilities)
+    // 8. Libraries declared on the core (board.yaml `libraries:`), sorted
+    if let Some(core) = board.cores.get(core_id) {
+        if !core.libraries.is_empty() {
+            lines.push(format!("# Libraries declared on core `{core_id}`"));
+            let mut libs = core.libraries.clone();
+            libs.sort();
+            for lib in &libs {
+                let kcs = library_kconfig(lib);
+                if kcs.is_empty() {
+                    lines.push(format!("# TODO: wire library '{lib}' once its v0.4 enable lands"));
+                } else {
+                    lines.extend(kcs.iter().map(|s| s.to_string()));
+                }
+            }
+            lines.push(String::new());
+        }
+    }
+
+    // 9. Inference dispatchers (from SoM capabilities)
     let mut inf = vec!["CONFIG_ALP_SDK_INFERENCE_BACKEND_TFLM=y".to_string()];
     inf.push(format!(
         "CONFIG_ALP_SDK_INFERENCE_TFLM_KERNEL_{}=y",
@@ -507,6 +548,15 @@ mod tests {
             oracle_artefact("m55_he"),
             "the m55_he Kconfig fragment must equal the SDK emit byte-for-byte"
         );
+    }
+
+    /// STAGE C (m55_hp) — completes the Zephyr side: same as m55_he plus the
+    /// CMSIS_DSP libraries section (board.yaml `libraries: [cmsis_dsp]` → 12 lines).
+    #[test]
+    fn m55_hp_alp_conf_matches_sdk_emit_byte_for_byte() {
+        let (board, som, board_def, soc) = load();
+        let ours = render_zephyr_alp_conf("m55_hp", &board, &som, &board_def, &soc);
+        assert_eq!(ours, oracle_artefact("m55_hp"));
     }
 
     /// The `_SILICON_TO_KCONFIG` dissolution, isolated: computed, not table-driven.
