@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::macros::vars;
 use super::metadata::*;
 use super::policy::*;
 use super::template::*;
@@ -84,12 +85,12 @@ pub(crate) fn render_yocto_local_conf(s: &YoctoSlice, p: &Policy, tmpl: &str) ->
             .collect::<Vec<_>>()
             .join(" ")
     };
-    let vars = BTreeMap::from([
-        ("core", s.core_id.clone()),
-        ("image", s.image.clone()),
-        ("machine", s.machine.clone()),
-        ("imageInstall", image_install),
-    ]);
+    let vars = vars! {
+        "core" => s.core_id.clone(),
+        "image" => s.image.clone(),
+        "machine" => s.machine.clone(),
+        "imageInstall" => image_install,
+    };
     render_template(tmpl, &vars, &no_lists())
 }
 
@@ -225,29 +226,16 @@ pub(crate) fn render_zephyr_alp_conf(
         .map(|n| n.to_string())
         .unwrap_or_default();
 
-    let vars = BTreeMap::from([
-        ("core", core_id.to_string()),
-        ("silicon", som.silicon.clone()),
-        ("sku", board.som.sku.clone()),
-        ("socSymbol", p.soc_symbol(&som.silicon)),
-        (
-            "boardDefine",
-            format!(
-                "{}{}",
-                p.board_define_prefix,
-                board_define_slug(&board_def.name)
-            ),
-        ),
-        ("logLevel", log_level),
-        (
-            "hasSubsystems",
-            if subsystem_rows.is_empty() { "" } else { "1" }.to_string(),
-        ),
-        (
-            "hasLibraries",
-            if library_rows.is_empty() { "" } else { "1" }.to_string(),
-        ),
-    ]);
+    let vars = vars! {
+        "core" => core_id.to_string(),
+        "silicon" => som.silicon.clone(),
+        "sku" => board.som.sku.clone(),
+        "socSymbol" => p.soc_symbol(&som.silicon),
+        "boardDefine" => format!("{}{}", p.board_define_prefix, board_define_slug(&board_def.name)),
+        "logLevel" => log_level,
+        "hasSubsystems" => if subsystem_rows.is_empty() { "" } else { "1" }.to_string(),
+        "hasLibraries" => if library_rows.is_empty() { "" } else { "1" }.to_string(),
+    };
     let lists = BTreeMap::from([
         (
             "baseKconfig",
@@ -307,7 +295,7 @@ pub(crate) fn render_system_ipc_h(board: &BoardYaml, som: &SomPreset, tmpl: &str
         .collect();
     render_template(
         tmpl,
-        &BTreeMap::from([("sku", sku.clone())]),
+        &vars! { "sku" => sku.clone() },
         &BTreeMap::from([("channels", channels)]),
     )
 }
@@ -334,10 +322,9 @@ pub(crate) fn render_dts_reservations(board: &BoardYaml, som: &SomPreset, tmpl: 
 }
 
 pub(crate) fn render_dts_partitions(board: &BoardYaml, tmpl: &str) -> String {
-    let vars = BTreeMap::from([(
-        "noStorage",
-        if board.storage.is_empty() { "1" } else { "" }.to_string(),
-    )]);
+    let vars = vars! {
+        "noStorage" => if board.storage.is_empty() { "1" } else { "" }.to_string(),
+    };
     render_template(tmpl, &vars, &no_lists())
 }
 
@@ -401,10 +388,10 @@ pub(crate) fn render_board_routes_h(board_def: &BoardDef, som: &SomPreset, tmpl:
         })
         .collect();
     let guard = format!("ALP_{}_ROUTES_H", board_define_slug(&board_def.name));
-    let vars = BTreeMap::from([
-        ("board", board_def.name.clone()),
-        ("sku", som.sku.clone().unwrap_or_default()),
-        ("guard", guard),
-    ]);
+    let vars = vars! {
+        "board" => board_def.name.clone(),
+        "sku" => som.sku.clone().unwrap_or_default(),
+        "guard" => guard,
+    };
     render_template(tmpl, &vars, &BTreeMap::from([("routes", rows)]))
 }

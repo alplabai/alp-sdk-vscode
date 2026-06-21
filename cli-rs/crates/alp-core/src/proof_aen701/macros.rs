@@ -35,3 +35,22 @@ macro_rules! check_schema_version {
 }
 
 pub(crate) use check_schema_version;
+
+/// WRITER-layer ergonomics: build a template's scalar var map
+/// (`BTreeMap<&str, String>`) without the `BTreeMap::from([(…)])` noise. Each
+/// value must already be a `String` (the generators compute them):
+///
+/// ```ignore
+/// let v = vars! { "core" => core_id.to_string(), "machine" => machine };
+/// ```
+///
+/// This is the one macro that earns its place in the writer — it removes pure
+/// boilerplate without hiding logic. The generators themselves stay plain
+/// functions (readable, debuggable), per the design memo.
+macro_rules! vars {
+    ($($k:expr => $v:expr),* $(,)?) => {
+        std::collections::BTreeMap::from([$(($k, $v)),*])
+    };
+}
+
+pub(crate) use vars;

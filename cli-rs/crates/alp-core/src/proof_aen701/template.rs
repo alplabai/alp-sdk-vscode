@@ -40,7 +40,15 @@ pub(crate) fn render_template(
         s = format!("{}{}{}", &s[..start], out, &s[end + close.len()..]);
     }
     // Top-level `{{#if}}` + `{{var}}` with the global vars.
-    apply_vars(&s, vars)
+    let out = apply_vars(&s, vars);
+    // Drift guard: a surviving `{{…}}` means the engine forgot to supply a var
+    // the template references (or a malformed tag). Debug-only — zero release cost.
+    debug_assert!(
+        !out.contains("{{"),
+        "template left an unresolved placeholder (engine/template drift): {:?}",
+        out.split("{{").nth(1).and_then(|r| r.split("}}").next())
+    );
+    out
 }
 
 /// Resolve `{{#if key}} … {{/if}}` (kept when the var is non-empty) then `{{key}}`
