@@ -5,15 +5,20 @@
 //! `spike_fixtures/oracle/`. Thesis: per-silicon build knowledge is DATA, not
 //! hardcoded code (issue alplabai/alp-sdk#235).
 //!
-//! The engine holds **no** silicon/board/OS config knowledge: the Kconfig
-//! symbols, chip→subsystem map, library expansions, log-level table, flash
-//! recipes and inference dispatchers all come from `spike_fixtures/policy.json`,
-//! deserialized into `Policy`. Swapping a policy value changes the output with no
-//! code change (`policy_change_alters_output`); the default policy reproduces the
-//! SDK emit byte-for-byte (Stages A–F).
+//! **Architecture (not just a proof):** each SoM ships a self-contained, versioned
+//! bundle under `spike_fixtures/som/<SKU>/` — `bundle.yaml` (per-layer schema
+//! versions), `policy.json` (the build rules, `schemaVersion`-checked), `som.yaml`
+//! (metadata), and `templates/*.tmpl` (every output shape, as DATA). The engine
+//! holds **no** silicon/board/OS knowledge and **no output text**: it resolves a
+//! SoM, version-checks the policy, computes the CONFIG lists/vars, and fills the
+//! bundle templates. A new silicon = a new bundle folder; a generic engine + the
+//! shared metadata (SoC/board) do the rest. Swapping a policy value changes the
+//! output with no code change (`policy_change_alters_output`); the default bundle
+//! reproduces the SDK emit byte-for-byte (Stages A–F).
 //!
-//! Layers: METADATA (board.yaml + SoM preset + board def + SoC spec) · POLICY
-//! (`policy.json` → `Policy`) · TEMPLATE/ENGINE (resolve → render → assemble).
+//! Layers: METADATA (board.yaml + the bundle `som.yaml` + shared board/SoC) ·
+//! POLICY (`policy.json` → `Policy`) · TEMPLATE (`templates/*.tmpl`) · ENGINE
+//! (resolve → compute → render → assemble).
 #![allow(dead_code)] // proof bench: the engine's only caller is its #[cfg(test)] parity suite
 #![allow(clippy::too_many_arguments)] // assemblers take the 4 metadata inputs + policy + runtime paths
 
@@ -278,11 +283,48 @@ fn load_policy(json: &str) -> Result<Policy, String> {
     Ok(p)
 }
 
+/// One `{{#each}}` row: a map of row-local `{{key}}` → value.
+type Row = BTreeMap<&'static str, String>;
+
 /// A tiny template renderer — the TEMPLATE layer is DATA (a `.tmpl` in the SoM
-/// bundle), not engine code. Supports `{{var}}` substitution and `{{#if key}} …
-/// {{/if}}` blocks (kept when the var is non-empty). The engine computes the
-/// vars from policy + metadata; the template owns the output *shape*.
-fn render_template(tmpl: &str, vars: &BTreeMap<&str, String>) -> String {
+/// bundle), not engine code. Supports `{{var}}` substitution, `{{#if key}} …
+/// {{/if}}` (kept when the var is non-empty), and `{{#each list}} … {{/each}}`
+/// (the inner block emitted once per row, with the row's `{{key}}`s substituted).
+/// The engine computes the vars/lists from policy + metadata; the template owns
+/// the output *shape*.
+fn render_template(
+    tmpl: &str,
+    vars: &BTreeMap<&str, String>,
+    lists: &BTreeMap<&str, Vec<Row>>,
+) -> String {
+    let mut s = tmpl.to_string();
+    // {{#each name}} … {{/each}} — expand once per row; each row's block is
+    // resolved with the ROW's own vars, so `{{#if rowKey}}` works per row.
+    while let Some(start) = s.find("{{#each ") {
+        let hdr_end = s[start..]
+            .find("}}")
+            .map(|i| start + i + 2)
+            .expect("unterminated {{#each");
+        let name = s[start + 8..hdr_end - 2].trim().to_string();
+        let close = "{{/each}}";
+        let end = s[hdr_end..]
+            .find(close)
+            .map(|i| hdr_end + i)
+            .expect("missing {{/each}}");
+        let inner = s[hdr_end..end].to_string();
+        let mut out = String::new();
+        for row in lists.get(name.as_str()).map(Vec::as_slice).unwrap_or(&[]) {
+            out.push_str(&apply_vars(&inner, row));
+        }
+        s = format!("{}{}{}", &s[..start], out, &s[end + close.len()..]);
+    }
+    // Top-level `{{#if}}` + `{{var}}` with the global vars.
+    apply_vars(&s, vars)
+}
+
+/// Resolve `{{#if key}} … {{/if}}` (kept when the var is non-empty) then `{{key}}`
+/// for a single var map. Used both at the top level and per `{{#each}}` row.
+fn apply_vars(tmpl: &str, vars: &BTreeMap<&str, String>) -> String {
     let mut s = tmpl.to_string();
     while let Some(start) = s.find("{{#if ") {
         let hdr_end = s[start..]
@@ -307,6 +349,21 @@ fn render_template(tmpl: &str, vars: &BTreeMap<&str, String>) -> String {
         s = s.replace(&format!("{{{{{k}}}}}"), v);
     }
     s
+}
+
+/// No `{{#each}}` lists (a convenience for templates that only use vars/ifs).
+fn no_lists() -> BTreeMap<&'static str, Vec<Row>> {
+    BTreeMap::new()
+}
+
+/// The SoM bundle's output TEMPLATES (`templates/*.tmpl`) — the shapes the engine
+/// fills. Loaded from the bundle alongside its policy + metadata.
+struct Templates {
+    local_conf: String,
+    kconfig: String,
+    system_ipc_h: String,
+    dts_reservations: String,
+    dts_partitions: String,
 }
 
 /// MACHINE: topology value, else `e1m-<sku sans e1m->` (alp_orchestrate.py:3285).
@@ -385,7 +442,7 @@ fn render_yocto_local_conf(s: &YoctoSlice, p: &Policy, tmpl: &str) -> String {
         ("machine", s.machine.clone()),
         ("imageInstall", image_install),
     ]);
-    render_template(tmpl, &vars)
+    render_template(tmpl, &vars, &no_lists())
 }
 
 fn build_yocto_slice(
@@ -440,8 +497,10 @@ fn som_chip_set(som: &SomPreset, p: &Policy) -> BTreeSet<String> {
     chips
 }
 
-/// Render the per-core Zephyr Kconfig fragment (`alp.conf`) — every CONFIG line
-/// comes from the metadata + the `Policy`; nothing is hardcoded in the engine.
+/// Render the per-core Zephyr Kconfig fragment (`alp.conf`) from the SoM bundle's
+/// `templates/kconfig.tmpl`. The engine computes the CONFIG lists/vars from policy
+/// + metadata; the template owns the section structure + line shapes. No output
+/// text is hardcoded in the engine.
 fn render_zephyr_alp_conf(
     core_id: &str,
     board: &BoardYaml,
@@ -449,77 +508,37 @@ fn render_zephyr_alp_conf(
     board_def: &BoardDef,
     soc: &SocSpec,
     p: &Policy,
+    tmpl: &str,
 ) -> String {
-    let sku = &board.som.sku;
-    let mut lines: Vec<String> = Vec::new();
-
-    // 1. Header
-    lines.push("# Auto-generated by scripts/alp_orchestrate.py -- do not edit.".to_string());
-    lines.push(format!(
-        "# Per-core Kconfig fragment for slice `{core_id}` (zephyr)."
-    ));
-    lines.push(String::new());
-
-    // 2. Base defaults (from policy) + the log level (policy table)
-    lines.extend(p.base_kconfig.iter().cloned());
-    if let Some(n) = board
-        .diagnostics
-        .as_ref()
-        .and_then(|d| d.log_level.as_deref())
-        .and_then(|lvl| p.log_levels.get(lvl).copied())
-    {
-        lines.push(format!("CONFIG_LOG_DEFAULT_LEVEL={n}"));
-    }
-    lines.push(String::new());
-
-    // 3. SoM silicon — CONFIG symbol COMPUTED from the silicon ref + policy prefix
-    lines.push(format!("# SoM silicon ({} via {sku})", som.silicon));
-    lines.push(format!("CONFIG_{}=y", p.soc_symbol(&som.silicon)));
-    lines.push(String::new());
-
-    // 4. Cross-EVK board facade selector
-    lines.push(
-        "# Cross-EVK board facade selector (<alp/board.h>); CONFIG_COMPILER_OPT is single-value (do not also set in prj.conf)."
-            .to_string(),
-    );
-    lines.push(format!(
-        "CONFIG_COMPILER_OPT=\"-D{}{}\"",
-        p.board_define_prefix,
-        board_define_slug(&board_def.name)
-    ));
-    lines.push(String::new());
-
     let mut subsystems: BTreeSet<String> = BTreeSet::new();
 
-    // 5. SoM-intrinsic chip drivers
+    // SoM-intrinsic chips (collecting their subsystems)
     let som_chips = som_chip_set(som, p);
-    lines.push(format!(
-        "# SoM-intrinsic chip drivers (from `{sku}` on_module + helper_firmware)"
-    ));
-    for chip in &som_chips {
-        lines.push(format!("{}=y", p.chip_symbol(chip)));
-        subsystems.extend(p.subsystems_of(chip));
-    }
-    lines.push(String::new());
+    let som_chip_rows: Vec<Row> = som_chips
+        .iter()
+        .map(|c| {
+            subsystems.extend(p.subsystems_of(c));
+            Row::from([("symbol", p.chip_symbol(c))])
+        })
+        .collect();
 
-    // 6. Board-populated chip drivers (skip ones already emitted as SoM =y)
-    lines.push("# Board-populated chip drivers (from the resolved board definition)".to_string());
-    for (chip, on) in &board_def.populated {
-        if *on && som_chips.contains(chip) {
-            continue;
-        }
-        lines.push(format!(
-            "{}={}",
-            p.chip_symbol(chip),
-            if *on { "y" } else { "n" }
-        ));
-        if *on {
-            subsystems.extend(p.subsystems_of(chip));
-        }
-    }
-    lines.push(String::new());
+    // Board-populated chips (skip SoM dups; collect subsystems for enabled ones)
+    let board_chip_rows: Vec<Row> = board_def
+        .populated
+        .iter()
+        .filter(|(chip, on)| !(**on && som_chips.contains(*chip)))
+        .map(|(chip, on)| {
+            if *on {
+                subsystems.extend(p.subsystems_of(chip));
+            }
+            Row::from([
+                ("symbol", p.chip_symbol(chip)),
+                ("value", if *on { "y".into() } else { "n".into() }),
+            ])
+        })
+        .collect();
 
-    // 7. Zephyr subsystems (chip drivers + the core's declared peripherals)
+    // Peripherals → subsystems, then the sorted subsystem rows
     if let Some(core) = board.cores.get(core_id) {
         for periph in &core.peripherals {
             if let Some(sub) = p.peripheral_subsystems.get(periph) {
@@ -527,35 +546,30 @@ fn render_zephyr_alp_conf(
             }
         }
     }
-    if !subsystems.is_empty() {
-        lines.push(format!(
-            "# Zephyr subsystems required on core `{core_id}` (chip drivers + peripherals)"
-        ));
-        for s in &subsystems {
-            lines.push(format!("CONFIG_{s}=y"));
-        }
-        lines.push(String::new());
-    }
+    let subsystem_rows: Vec<Row> = subsystems
+        .iter()
+        .map(|s| Row::from([("name", s.clone())]))
+        .collect();
 
-    // 8. Libraries declared on the core (board.yaml `libraries:`), sorted
+    // Libraries (sorted) → policy Kconfig lines (or a TODO)
+    let mut library_rows: Vec<Row> = Vec::new();
     if let Some(core) = board.cores.get(core_id) {
-        if !core.libraries.is_empty() {
-            lines.push(format!("# Libraries declared on core `{core_id}`"));
-            let mut libs = core.libraries.clone();
-            libs.sort();
-            for lib in &libs {
-                match p.library_kconfig.get(lib) {
-                    Some(kcs) => lines.extend(kcs.iter().cloned()),
-                    None => lines.push(format!(
-                        "# TODO: wire library '{lib}' once its v0.4 enable lands"
-                    )),
+        let mut libs = core.libraries.clone();
+        libs.sort();
+        for lib in &libs {
+            match p.library_kconfig.get(lib) {
+                Some(kcs) => {
+                    library_rows.extend(kcs.iter().map(|l| Row::from([("line", l.clone())])))
                 }
+                None => library_rows.push(Row::from([(
+                    "line",
+                    format!("# TODO: wire library '{lib}' once its v0.4 enable lands"),
+                )])),
             }
-            lines.push(String::new());
         }
     }
 
-    // 9. Inference dispatchers (from SoM capabilities + the policy symbol set)
+    // Inference dispatchers (policy symbol set + SoM/SoC facts)
     let mut inf = vec![format!("{}=y", p.inference.tflm_backend)];
     if let Some(sym) = p.inference.tflm_kernel.get(tflm_kernel_key(soc, core_id)) {
         inf.push(format!("{sym}=y"));
@@ -583,13 +597,54 @@ fn render_zephyr_alp_conf(
             ));
         }
     }
-    lines.push(
-        "# Inference dispatchers (from SoM capabilities -- customer does not pick)".to_string(),
-    );
-    lines.extend(inf);
-    lines.push(String::new());
+    let inference_rows: Vec<Row> = inf.into_iter().map(|l| Row::from([("line", l)])).collect();
 
-    format!("{}\n", lines.join("\n"))
+    let log_level = board
+        .diagnostics
+        .as_ref()
+        .and_then(|d| d.log_level.as_deref())
+        .and_then(|lvl| p.log_levels.get(lvl))
+        .map(|n| n.to_string())
+        .unwrap_or_default();
+
+    let vars = BTreeMap::from([
+        ("core", core_id.to_string()),
+        ("silicon", som.silicon.clone()),
+        ("sku", board.som.sku.clone()),
+        ("socSymbol", p.soc_symbol(&som.silicon)),
+        (
+            "boardDefine",
+            format!(
+                "{}{}",
+                p.board_define_prefix,
+                board_define_slug(&board_def.name)
+            ),
+        ),
+        ("logLevel", log_level),
+        (
+            "hasSubsystems",
+            if subsystem_rows.is_empty() { "" } else { "1" }.to_string(),
+        ),
+        (
+            "hasLibraries",
+            if library_rows.is_empty() { "" } else { "1" }.to_string(),
+        ),
+    ]);
+    let lists = BTreeMap::from([
+        (
+            "baseKconfig",
+            p.base_kconfig
+                .iter()
+                .map(|l| Row::from([("line", l.clone())]))
+                .collect::<Vec<_>>(),
+        ),
+        ("somChips", som_chip_rows),
+        ("boardChips", board_chip_rows),
+        ("subsystems", subsystem_rows),
+        ("libraryLines", library_rows),
+        ("inference", inference_rows),
+    ]);
+    render_template(tmpl, &vars, &lists)
 }
 
 // ===========================================================================
@@ -609,103 +664,65 @@ fn rpmsg_block_reason(sku: &str, controller: Option<&str>) -> String {
     )
 }
 
-fn render_system_ipc_h(board: &BoardYaml, som: &SomPreset) -> String {
+fn render_system_ipc_h(board: &BoardYaml, som: &SomPreset, tmpl: &str) -> String {
     let sku = &board.som.sku;
     let controller = som.mailbox.controller.as_deref();
-    let mut lines: Vec<String> = vec![
-        "/*".into(),
-        " * Auto-generated by scripts/alp_orchestrate.py -- do not edit.".into(),
-        " * Regenerate after changes to board.yaml `ipc:` or the SoM's".into(),
-        " * memory_map / mailbox blocks.".into(),
-        " */".into(),
-        String::new(),
-        "#ifndef ALP_SYSTEM_IPC_H".into(),
-        "#define ALP_SYSTEM_IPC_H".into(),
-        String::new(),
-        format!("#define ALP_IPC_SKU \"{sku}\""),
-        String::new(),
-    ];
-    for ch in &board.ipc {
-        lines.push(format!(
-            "/* {} channel '{}' -- endpoints {} */",
-            ch.kind,
-            ch.name,
-            ch.endpoints.join(", ")
-        ));
-        if rpmsg_blocked(ch, &som.mailbox) {
-            let reason = rpmsg_block_reason(sku, controller);
-            let up = ch.name.to_uppercase();
-            lines.push(format!("/* BLOCKED: {reason} */"));
-            lines.push(format!(
-                "/* IPC channel '{}' is blocked; fix the SoM metadata before depending on this channel at runtime. */",
-                ch.name
-            ));
-            lines.push(format!("#define ALP_IPC_{up}_NAME       \"{}\"", ch.name));
-            lines.push(format!(
-                "#define ALP_IPC_{up}_ADDR       0x0u  /* stub: blocked */"
-            ));
-            lines.push(format!(
-                "#define ALP_IPC_{up}_SIZE       0x0u  /* stub: blocked */"
-            ));
-            lines.push(format!(
-                "#define ALP_IPC_{up}_SRC_EPT    0x0u  /* stub: blocked */"
-            ));
-            lines.push(format!(
-                "#define ALP_IPC_{up}_DST_EPT    0x0u  /* stub: blocked */"
-            ));
-            lines.push(format!(
-                "#define ALP_IPC_{up}_MBOX_CH    0u    /* stub: blocked */"
-            ));
-        }
-    }
-    lines.push(String::new());
-    lines.push("#endif /* ALP_SYSTEM_IPC_H */".into());
-    format!("{}\n", lines.join("\n"))
+    let channels: Vec<Row> = board
+        .ipc
+        .iter()
+        .map(|ch| {
+            let blocked = rpmsg_blocked(ch, &som.mailbox);
+            Row::from([
+                ("kind", ch.kind.clone()),
+                ("name", ch.name.clone()),
+                ("up", ch.name.to_uppercase()),
+                ("endpoints", ch.endpoints.join(", ")),
+                ("blocked", if blocked { "1".into() } else { String::new() }),
+                (
+                    "reason",
+                    if blocked {
+                        rpmsg_block_reason(sku, controller)
+                    } else {
+                        String::new()
+                    },
+                ),
+            ])
+        })
+        .collect();
+    render_template(
+        tmpl,
+        &BTreeMap::from([("sku", sku.clone())]),
+        &BTreeMap::from([("channels", channels)]),
+    )
 }
 
-fn render_dts_reservations(board: &BoardYaml, som: &SomPreset) -> String {
+fn render_dts_reservations(board: &BoardYaml, som: &SomPreset, tmpl: &str) -> String {
     let sku = &board.som.sku;
     let controller = som.mailbox.controller.as_deref();
-    let mut lines: Vec<String> = vec![
-        "/*".into(),
-        " * Auto-generated by scripts/alp_orchestrate.py -- do not edit.".into(),
-        " * Regenerate after changes to board.yaml `ipc:` or the SoM's".into(),
-        " * memory_map block.  #include this file from your kernel /".into(),
-        " * Zephyr DT.".into(),
-        " */".into(),
-        String::new(),
-        "/ {".into(),
-        "    reserved-memory {".into(),
-        "        #address-cells = <2>;".into(),
-        "        #size-cells = <2>;".into(),
-        String::new(),
-    ];
-    for ch in &board.ipc {
-        if rpmsg_blocked(ch, &som.mailbox) {
-            let reason = rpmsg_block_reason(sku, controller);
-            lines.push(format!("        /* BLOCKED: {} -- {reason} */", ch.name));
-            lines.push(String::new());
-        }
-    }
-    lines.push("    };".into());
-    lines.push("};".into());
-    format!("{}\n", lines.join("\n"))
+    let blocked: Vec<Row> = board
+        .ipc
+        .iter()
+        .filter(|ch| rpmsg_blocked(ch, &som.mailbox))
+        .map(|ch| {
+            Row::from([
+                ("name", ch.name.clone()),
+                ("reason", rpmsg_block_reason(sku, controller)),
+            ])
+        })
+        .collect();
+    render_template(
+        tmpl,
+        &BTreeMap::new(),
+        &BTreeMap::from([("blocked", blocked)]),
+    )
 }
 
-fn render_dts_partitions(board: &BoardYaml) -> String {
-    let mut lines: Vec<String> = vec![
-        "/*".into(),
-        " * Auto-generated by scripts/alp_orchestrate.py -- do not edit.".into(),
-        " * Regenerate after changes to board.yaml `storage:` or the SoM's".into(),
-        " * memory_map / on_module.ospi_memories blocks.  #include this file".into(),
-        " * from your Zephyr DT.".into(),
-        " */".into(),
-        String::new(),
-    ];
-    if board.storage.is_empty() {
-        lines.push("/* No `storage:` entries declared in board.yaml; nothing to emit. */".into());
-    }
-    format!("{}\n", lines.join("\n"))
+fn render_dts_partitions(board: &BoardYaml, tmpl: &str) -> String {
+    let vars = BTreeMap::from([(
+        "noStorage",
+        if board.storage.is_empty() { "1" } else { "" }.to_string(),
+    )]);
+    render_template(tmpl, &vars, &no_lists())
 }
 
 // ===========================================================================
@@ -722,6 +739,7 @@ fn build_zephyr_slice(
     app_abs: &str,
     sdk_root: &str,
     p: &Policy,
+    kconfig_tmpl: &str,
 ) -> Option<BuildSlice> {
     let topo = som.topology.get(core_id)?;
     let board_target = topo.board.clone()?;
@@ -732,7 +750,7 @@ fn build_zephyr_slice(
         build_dir: build_dir.clone(),
         config_artefacts: vec![GeneratedFile {
             path: format!("{build_dir}/alp.conf"),
-            contents: render_zephyr_alp_conf(core_id, board, som, board_def, soc, p),
+            contents: render_zephyr_alp_conf(core_id, board, som, board_def, soc, p, kconfig_tmpl),
         }],
         command: Some(ToolStep {
             tool: "west".to_string(),
@@ -757,7 +775,7 @@ fn assemble_full_plan(
     sdk_root: &str,
     zephyr_apps: &BTreeMap<String, String>,
     p: &Policy,
-    local_conf_tmpl: &str,
+    t: &Templates,
 ) -> BuildPlan {
     let build_root = "build";
     let mut slices = Vec::new();
@@ -767,14 +785,14 @@ fn assemble_full_plan(
         };
         if topo.machine.is_some() {
             if let Some(s) =
-                build_yocto_slice(board, som, &c.id, build_root, sdk_root, p, local_conf_tmpl)
+                build_yocto_slice(board, som, &c.id, build_root, sdk_root, p, &t.local_conf)
             {
                 slices.push(s);
             }
         } else if topo.board.is_some() {
             let app = zephyr_apps.get(&c.id).cloned().unwrap_or_default();
             if let Some(s) = build_zephyr_slice(
-                board, som, board_def, soc, &c.id, build_root, &app, sdk_root, p,
+                board, som, board_def, soc, &c.id, build_root, &app, sdk_root, p, &t.kconfig,
             ) {
                 slices.push(s);
             }
@@ -783,15 +801,15 @@ fn assemble_full_plan(
     let shared_artefacts = vec![
         GeneratedFile {
             path: "build/generated/alp/system_ipc.h".to_string(),
-            contents: render_system_ipc_h(board, som),
+            contents: render_system_ipc_h(board, som, &t.system_ipc_h),
         },
         GeneratedFile {
             path: "build/generated/dts-reservations.dtsi".to_string(),
-            contents: render_dts_reservations(board, som),
+            contents: render_dts_reservations(board, som, &t.dts_reservations),
         },
         GeneratedFile {
             path: "build/generated/dts-partitions.dtsi".to_string(),
-            contents: render_dts_partitions(board),
+            contents: render_dts_partitions(board, &t.dts_partitions),
         },
     ];
     BuildPlan {
@@ -984,6 +1002,13 @@ mod tests {
     const POLICY_JSON: &str = include_str!("spike_fixtures/som/E1M-AEN701/policy.json");
     const LOCAL_CONF_TMPL: &str =
         include_str!("spike_fixtures/som/E1M-AEN701/templates/local.conf.tmpl");
+    const KCONFIG_TMPL: &str = include_str!("spike_fixtures/som/E1M-AEN701/templates/kconfig.tmpl");
+    const IPC_TMPL: &str =
+        include_str!("spike_fixtures/som/E1M-AEN701/templates/system_ipc.h.tmpl");
+    const DTS_RES_TMPL: &str =
+        include_str!("spike_fixtures/som/E1M-AEN701/templates/dts-reservations.dtsi.tmpl");
+    const DTS_PART_TMPL: &str =
+        include_str!("spike_fixtures/som/E1M-AEN701/templates/dts-partitions.dtsi.tmpl");
     const BOARD_DEF: &str = include_str!("spike_fixtures/e1m-evk.yaml");
     const SOC_SPEC: &str = include_str!("spike_fixtures/e7.json");
     const ORACLE_BUILD_PLAN: &str = include_str!("spike_fixtures/oracle/rpmsg-aen.build-plan");
@@ -1000,6 +1025,17 @@ mod tests {
 
     fn policy() -> Policy {
         load_policy(POLICY_JSON).unwrap()
+    }
+
+    /// The bundle's templates, as the engine would load them from `templates/`.
+    fn templates() -> Templates {
+        Templates {
+            local_conf: LOCAL_CONF_TMPL.to_string(),
+            kconfig: KCONFIG_TMPL.to_string(),
+            system_ipc_h: IPC_TMPL.to_string(),
+            dts_reservations: DTS_RES_TMPL.to_string(),
+            dts_partitions: DTS_PART_TMPL.to_string(),
+        }
     }
 
     fn oracle_artefact(core_id: &str) -> String {
@@ -1097,7 +1133,15 @@ mod tests {
     fn m55_he_alp_conf_matches_sdk_emit_byte_for_byte() {
         let (board, som, board_def, soc) = load();
         assert_eq!(
-            render_zephyr_alp_conf("m55_he", &board, &som, &board_def, &soc, &policy()),
+            render_zephyr_alp_conf(
+                "m55_he",
+                &board,
+                &som,
+                &board_def,
+                &soc,
+                &policy(),
+                KCONFIG_TMPL
+            ),
             oracle_artefact("m55_he")
         );
     }
@@ -1107,7 +1151,15 @@ mod tests {
     fn m55_hp_alp_conf_matches_sdk_emit_byte_for_byte() {
         let (board, som, board_def, soc) = load();
         assert_eq!(
-            render_zephyr_alp_conf("m55_hp", &board, &som, &board_def, &soc, &policy()),
+            render_zephyr_alp_conf(
+                "m55_hp",
+                &board,
+                &som,
+                &board_def,
+                &soc,
+                &policy(),
+                KCONFIG_TMPL
+            ),
             oracle_artefact("m55_hp")
         );
     }
@@ -1117,7 +1169,7 @@ mod tests {
     fn system_ipc_h_matches_sdk_emit_byte_for_byte() {
         let (board, som, ..) = load();
         assert_eq!(
-            render_system_ipc_h(&board, &som),
+            render_system_ipc_h(&board, &som, IPC_TMPL),
             oracle_shared("build/generated/alp/system_ipc.h")
         );
     }
@@ -1126,7 +1178,7 @@ mod tests {
     fn dts_reservations_matches_sdk_emit_byte_for_byte() {
         let (board, som, ..) = load();
         assert_eq!(
-            render_dts_reservations(&board, &som),
+            render_dts_reservations(&board, &som, DTS_RES_TMPL),
             oracle_shared("build/generated/dts-reservations.dtsi")
         );
     }
@@ -1135,7 +1187,7 @@ mod tests {
     fn dts_partitions_matches_sdk_emit_byte_for_byte() {
         let (board, ..) = load();
         assert_eq!(
-            render_dts_partitions(&board),
+            render_dts_partitions(&board, DTS_PART_TMPL),
             oracle_shared("build/generated/dts-partitions.dtsi")
         );
     }
@@ -1181,7 +1233,7 @@ mod tests {
             &sdk_root,
             &zephyr_apps,
             &policy(),
-            LOCAL_CONF_TMPL,
+            &templates(),
         );
         let mut oracle = oracle;
         sort_plan(&mut ours);
@@ -1209,7 +1261,8 @@ mod tests {
         let (board, som, board_def, soc) = load();
         let mut p = policy();
         p.soc_symbol_prefix = "VENDOR_SOC_".to_string();
-        let out = render_zephyr_alp_conf("m55_he", &board, &som, &board_def, &soc, &p);
+        let out =
+            render_zephyr_alp_conf("m55_he", &board, &som, &board_def, &soc, &p, KCONFIG_TMPL);
         assert!(out.contains("CONFIG_VENDOR_SOC_ALIF_ENSEMBLE_E7=y"));
         assert!(!out.contains("CONFIG_ALP_SOC_ALIF_ENSEMBLE_E7=y"));
     }
