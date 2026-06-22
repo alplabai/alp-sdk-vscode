@@ -35,6 +35,66 @@ pub(crate) struct Policy {
     pub(crate) library_kconfig: BTreeMap<String, Vec<String>>,
     pub(crate) flash: BTreeMap<String, FlashPolicy>,
     pub(crate) inference: InferencePolicy,
+    /// Filesystem profiles for the storage-mounts writer (zero C literals leak in).
+    #[serde(default)]
+    pub(crate) storage: StoragePolicy,
+    /// Secure-boot / TF-M rule data (signing algos, swap modes, attestation roots).
+    #[serde(default)]
+    pub(crate) secure: SecurePolicy,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoragePolicy {
+    /// fs name → its Zephyr mount profile; `{name}`/`{mount}` placeholders are
+    /// filled by the engine. The C struct skeleton is data, not engine literal.
+    #[serde(default)]
+    pub(crate) fs_profiles: BTreeMap<String, FsProfile>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FsProfile {
+    /// The `#include` line emitted once when any mount uses this fs.
+    #[serde(default)]
+    pub(crate) include: String,
+    /// The `.type` value (`FS_LITTLEFS`, `FS_FATFS`, `FS_EXT2`).
+    #[serde(default)]
+    pub(crate) fs_type: String,
+    /// The per-mount declaration line (`{name}`-templated); empty ⇒ none (ext4).
+    #[serde(default)]
+    pub(crate) declare: String,
+    /// The `.fs_data` value (`{name}`-templated); empty ⇒ omit the `.fs_data` line.
+    #[serde(default)]
+    pub(crate) fs_data: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SecurePolicy {
+    /// signing algorithm → SB_CONFIG line(s) (`\n`-joined for RSA's two lines).
+    #[serde(default)]
+    pub(crate) signing_algorithms: BTreeMap<String, String>,
+    /// MCUboot swap mode → SB_CONFIG line.
+    #[serde(default)]
+    pub(crate) swap_algorithms: BTreeMap<String, String>,
+    /// `boot.build_type` → canonical CMake TF-M build type.
+    #[serde(default)]
+    pub(crate) tfm_build_type_aliases: BTreeMap<String, String>,
+    /// PSA persistent-slot count default when the board omits it.
+    #[serde(default)]
+    pub(crate) tfm_default_persistent_slots: u32,
+    /// attestation root → its comment lines + the CONFIG symbol (none ⇒ absent).
+    #[serde(default)]
+    pub(crate) attestation_roots: BTreeMap<String, AttestationRoot>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct AttestationRoot {
+    #[serde(default)]
+    pub(crate) comment: Vec<String>,
+    #[serde(default)]
+    pub(crate) config: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

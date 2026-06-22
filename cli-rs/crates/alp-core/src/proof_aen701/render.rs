@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::carveout::resolve_carve_outs;
 use super::macros::vars;
 use super::metadata::*;
+use super::partition::{ResolvedPartition, resolve_storage_partitions};
 use super::policy::*;
 use super::template::*;
 
@@ -361,11 +362,166 @@ pub(crate) fn render_dts_reservations(
     )
 }
 
-pub(crate) fn render_dts_partitions(board: &BoardYaml, tmpl: &str) -> String {
-    let vars = vars! {
-        "noStorage" => if board.storage.is_empty() { "1" } else { "" }.to_string(),
-    };
-    render_template(tmpl, &vars, &no_lists())
+/// Render the `dts-partitions.dtsi` overlay from the RESOLVED storage partitions
+/// (`partition.rs`): a `fixed-partitions` child node per flash device decorated by
+/// its `dt_label`, each partition base-sorted; blocked entries become comments;
+/// no `storage:` ⇒ the "nothing to emit" stub. The template supplies the header
+/// banner (DATA); the engine mirrors the SDK's `emit_dts_partitions` line list.
+pub(crate) fn render_dts_partitions(
+    board: &BoardYaml,
+    som: &SomPreset,
+    soc: &SocSpec,
+    tmpl: &str,
+) -> String {
+    let partitions = resolve_storage_partitions(board, som, soc);
+    let header = tmpl.trim_end();
+    let mut body: Vec<String> = Vec::new();
+
+    if partitions.is_empty() {
+        body.push("/* No `storage:` entries declared in board.yaml; nothing to emit. */".into());
+        body.push(String::new());
+    } else {
+        // Group resolved partitions by dt_label (BTreeMap → sorted); blocked
+        // entries get a standalone comment block.
+        let mut by_label: BTreeMap<String, Vec<&ResolvedPartition>> = BTreeMap::new();
+        let mut blocked: Vec<&ResolvedPartition> = Vec::new();
+        for p in &partitions {
+            if p.blocked {
+                blocked.push(p);
+            } else {
+                by_label.entry(p.dt_label.clone()).or_default().push(p);
+            }
+        }
+        for (label, parts) in &by_label {
+            body.push(format!("&{label} {{"));
+            body.push("    partitions {".into());
+            body.push("        compatible = \"fixed-partitions\";".into());
+            body.push("        #address-cells = <1>;".into());
+            body.push("        #size-cells = <1>;".into());
+            body.push(String::new());
+            let mut sorted = parts.clone();
+            sorted.sort_by_key(|p| p.base_kib);
+            for p in sorted {
+                let base = p.base_kib * 1024;
+                let size = p.size_kib * 1024;
+                body.push(format!(
+                    "        {}_partition: partition@{:x} {{",
+                    p.name, base
+                ));
+                body.push(format!("            label = \"{}\";", p.name));
+                body.push(format!("            reg = <0x{base:x} 0x{size:x}>;"));
+                body.push("        };".into());
+                body.push(String::new());
+            }
+            body.push("    };".into());
+            body.push("};".into());
+            body.push(String::new());
+        }
+        if !blocked.is_empty() {
+            body.push(
+                "/* Blocked storage entries -- see system-manifest.yaml for details. */".into(),
+            );
+            for p in &blocked {
+                let reason = if p.reason.is_empty() {
+                    "unknown reason"
+                } else {
+                    &p.reason
+                };
+                body.push(format!("/* BLOCKED: {} -- {} */", p.name, reason));
+            }
+            body.push(String::new());
+        }
+    }
+    format!("{}\n\n{}", header, body.join("\n"))
+}
+
+/// Render `storage_mount_table.c` — a static `fs_mount_t[]` from the resolved
+/// partitions that declare a `mount:` (non-`raw`). The per-fs C shape (include,
+/// `.type`, declaration, `.fs_data`) is POLICY data with `{name}`/`{mount}`
+/// placeholders; the engine carries zero fs literals. The Zephyr scaffolding
+/// (clang-format markers, base includes, the table) is the writer's known shape.
+pub(crate) fn render_storage_mounts_c(
+    board: &BoardYaml,
+    som: &SomPreset,
+    soc: &SocSpec,
+    p: &Policy,
+    tmpl: &str,
+) -> String {
+    let partitions = resolve_storage_partitions(board, som, soc);
+    let mountable: Vec<&ResolvedPartition> = partitions
+        .iter()
+        .filter(|p| !p.blocked && p.mount.is_some() && p.fs != "raw")
+        .collect();
+
+    let header = tmpl.trim_end();
+    let mut lines: Vec<String> = vec![
+        "/* clang-format off */".into(),
+        String::new(),
+        "#include <zephyr/fs/fs.h>".into(),
+        "#include <zephyr/storage/flash_map.h>".into(),
+        String::new(),
+    ];
+
+    if mountable.is_empty() {
+        lines.push("/* No mountable storage[] entries declared; emitting empty table. */".into());
+        lines.push(String::new());
+        lines.push("const struct fs_mount_t *alp_storage_mounts[] = { 0 };".into());
+        lines.push("const size_t alp_storage_mount_count = 0;".into());
+        lines.push("/* clang-format on */".into());
+        lines.push(String::new());
+        return format!("{}\n{}", header, lines.join("\n"));
+    }
+
+    // Per-fs includes — first occurrence in mountable order.
+    let mut fs_seen: BTreeSet<&str> = BTreeSet::new();
+    for part in &mountable {
+        if fs_seen.insert(part.fs.as_str()) {
+            if let Some(prof) = p.storage.fs_profiles.get(&part.fs) {
+                if !prof.include.is_empty() {
+                    lines.push(prof.include.clone());
+                }
+            }
+        }
+    }
+    lines.push(String::new());
+
+    // Per-partition mount block (shape from policy, name/mount filled here).
+    for part in &mountable {
+        let name = &part.name;
+        let mount = part.mount.as_deref().unwrap_or_default();
+        if let Some(prof) = p.storage.fs_profiles.get(&part.fs) {
+            if !prof.declare.is_empty() {
+                lines.push(prof.declare.replace("{name}", name));
+            }
+            lines.push(format!("static struct fs_mount_t alp_mnt_{name} = {{"));
+            lines.push(format!("    .type = {},", prof.fs_type));
+            if !prof.fs_data.is_empty() {
+                lines.push(format!(
+                    "    .fs_data = {},",
+                    prof.fs_data.replace("{name}", name)
+                ));
+            }
+            lines.push(format!(
+                "    .storage_dev = (void *)FIXED_PARTITION_ID({name}_partition),"
+            ));
+            lines.push(format!("    .mnt_point = \"{mount}\","));
+            lines.push("};".into());
+        }
+        lines.push(String::new());
+    }
+
+    lines.push("const struct fs_mount_t *alp_storage_mounts[] = {".into());
+    for part in &mountable {
+        lines.push(format!("    &alp_mnt_{},", part.name));
+    }
+    lines.push("};".into());
+    lines.push(format!(
+        "const size_t alp_storage_mount_count = {};",
+        mountable.len()
+    ));
+    lines.push("/* clang-format on */".into());
+    lines.push(String::new());
+    format!("{}\n{}", header, lines.join("\n"))
 }
 
 // --- board E1M-pad routing header (compose board roles + SoM dispatch) ---

@@ -23,12 +23,113 @@ pub(crate) struct BoardYaml {
     pub(crate) diagnostics: Option<Diagnostics>,
     #[serde(default)]
     pub(crate) ipc: Vec<IpcChannel>,
+    /// Storage partition declarations (typed) — the input to the bottom-up
+    /// partition allocator (`partition.rs`), mirroring the SDK `storage:` block.
     #[serde(default)]
-    pub(crate) storage: Vec<serde_yaml::Value>,
+    pub(crate) storage: Vec<StorageEntry>,
+    /// Secure-boot / MCUboot config (signing, slot sizes, swap algorithm).
+    #[serde(default)]
+    pub(crate) boot: Option<BootBlock>,
+    /// PSA crypto / TF-M secure-world config.
+    #[serde(default)]
+    pub(crate) security: Option<SecurityBlock>,
+    /// OTA update fabric (project-wide); drives the `# OTA` alp.conf section.
+    #[serde(default)]
+    pub(crate) ota: Option<OtaBlock>,
     /// The E1M pads this app actively uses (a subset of the board's `e1m_routes`)
     /// — the input to end-to-end pin-mux validation.
     #[serde(default)]
     pub(crate) pins: Vec<RouteEntry>,
+}
+
+/// One `storage:` entry, verbatim from board.yaml (mirrors the SDK `StorageEntry`).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct StorageEntry {
+    pub(crate) name: String,
+    pub(crate) size_kib: u64,
+    pub(crate) fs: String, // littlefs | fat | ext4 | raw
+    #[serde(default)]
+    pub(crate) mount: Option<String>,
+    #[serde(default)]
+    pub(crate) flash_device: Option<String>,
+    /// Explicit offset override (page-aligned); the allocator honours it verbatim.
+    #[serde(default)]
+    pub(crate) offset_kib: Option<u64>,
+}
+
+/// `boot:` — secure-boot / MCUboot driver (drives the sysbuild SB_CONFIG lines).
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct BootBlock {
+    #[serde(default)]
+    pub(crate) method: Option<String>, // mcuboot | none
+    #[serde(default)]
+    pub(crate) signing: Option<SigningBlock>,
+    #[serde(default)]
+    pub(crate) slots: Option<BootSlots>,
+    #[serde(default)]
+    pub(crate) swap_algorithm: Option<String>, // scratch | move | overwrite
+    #[serde(default)]
+    pub(crate) scratch_size_kib: Option<u64>,
+    #[serde(default)]
+    pub(crate) anti_rollback: Option<bool>,
+    /// Shared with TF-M (P2): the CMake build flavour.
+    #[serde(default)]
+    pub(crate) build_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SigningBlock {
+    #[serde(default)]
+    pub(crate) algorithm: Option<String>,
+    #[serde(default)]
+    pub(crate) key_file: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct BootSlots {
+    #[serde(default)]
+    pub(crate) primary: Option<SlotSize>,
+    #[serde(default)]
+    pub(crate) secondary: Option<SlotSize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SlotSize {
+    #[serde(default)]
+    pub(crate) size_kib: Option<u64>,
+}
+
+/// `security:` — PSA crypto + TF-M secure partition.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SecurityBlock {
+    #[serde(default)]
+    pub(crate) psa: Option<PsaBlock>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct PsaBlock {
+    #[serde(default)]
+    pub(crate) tfm: Option<bool>,
+    #[serde(default)]
+    pub(crate) persistent_slots: Option<u32>,
+    #[serde(default)]
+    pub(crate) its_storage: Option<String>,
+    #[serde(default)]
+    pub(crate) ps_storage: Option<String>,
+    #[serde(default)]
+    pub(crate) attestation_root: Option<String>, // none | optiga_trust_m | tfm_internal
+}
+
+/// `ota:` — kept as an opaque presence/field bag for the comment-only alp.conf
+/// section (live Mender wiring is a v0.7+ upstream gap; we reproduce the comments).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct OtaBlock {
+    #[serde(default)]
+    pub(crate) provider: Option<String>,
+    #[serde(default)]
+    pub(crate) artifact_name: Option<String>,
+    #[serde(default)]
+    pub(crate) poll_interval_s: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -61,6 +162,10 @@ pub(crate) struct MemRegion {
     pub(crate) accessible_from: Vec<String>,
     #[serde(default)]
     pub(crate) cacheable: Option<bool>,
+    /// The Zephyr DT label the storage overlay decorates (`&<dt_label>`); falls
+    /// back to `name` when unset. Derived regions carry no explicit label.
+    #[serde(default)]
+    pub(crate) dt_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -100,6 +205,10 @@ pub(crate) struct Diagnostics {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SomPreset {
     pub(crate) silicon: String,
+    /// The SoC variant order-code (e.g. `AE722F80F55D5LS`) — selects the SoC
+    /// `variants[]` entry whose MRAM/SRAM banks seed the derived memory map.
+    #[serde(default)]
+    pub(crate) silicon_variant: Option<String>,
     #[serde(default)]
     pub(crate) sku: Option<String>,
     /// SoM family (e.g. `alif-ensemble`) — matched against a board's
@@ -258,6 +367,23 @@ pub(crate) struct SocSpec {
     /// declares no explicit `memory_map:`.
     #[serde(default)]
     pub(crate) memory_regions: Vec<MemRegion>,
+    /// SoC order-code variants (mram_mb + per-bank SRAM). When the SoM declares
+    /// no `memory_map:` and the SoC no `memory_regions`, the selected variant's
+    /// MRAM + SRAM banks seed the derived memory map (the Alif/AEN path).
+    #[serde(default)]
+    pub(crate) variants: Vec<SocVariant>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SocVariant {
+    #[serde(default)]
+    pub(crate) order_code: String,
+    #[serde(default)]
+    pub(crate) mram_mb: Option<f64>,
+    /// Per-bank SRAM sizes in KiB; bank names with a `_<CORE>_(ITCM|DTCM)` suffix
+    /// become per-core non-cacheable regions, the rest shared + cacheable.
+    #[serde(default)]
+    pub(crate) sram_banks_kb: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -36,7 +36,9 @@ pub(crate) mod validate;
 // WRITER layer (data → config-file strings)
 pub(crate) mod assemble;
 pub(crate) mod carveout;
+pub(crate) mod partition;
 pub(crate) mod render;
+pub(crate) mod secure;
 pub(crate) mod template;
 
 // Each module imports the specific siblings it depends on (`use super::<m>::*`);

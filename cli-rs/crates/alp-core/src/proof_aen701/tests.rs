@@ -12,6 +12,7 @@ use super::metadata::*;
 use super::pinmux::*;
 use super::policy::*;
 use super::render::*;
+use super::secure::*;
 use super::validate::*;
 use crate::build_plan::{Backend, BuildPlan};
 
@@ -38,6 +39,70 @@ const BOARD_DEF: &str = include_str!("../spike_fixtures/e1m-evk.yaml");
 const SOC_SPEC: &str = include_str!("../spike_fixtures/e7.json");
 const ORACLE_BUILD_PLAN: &str = include_str!("../spike_fixtures/oracle/rpmsg-aen.build-plan");
 const ORACLE_MANIFEST: &str = include_str!("../spike_fixtures/oracle/rpmsg-aen.system-manifest");
+
+// === production-deployment — the storage / secure-boot / TF-M board ===
+// SAME SoM (E1M-AEN701) + engine; the RICH board.yaml declares `storage:`,
+// `boot:`, `security:`, `ota:` — exercising the 4 planner paths the RPMsg boards
+// leave dormant. Oracle captured from `alp_orchestrate.py --emit` at v0.7.0.
+const BOARD_YAML_PD: &str = include_str!("../spike_fixtures/oracle/prod-deploy.board.yaml");
+const ORACLE_DTS_PART_PD: &str =
+    include_str!("../spike_fixtures/oracle/prod-deploy.dts-partitions");
+const ORACLE_STORAGE_MOUNTS_PD: &str =
+    include_str!("../spike_fixtures/oracle/prod-deploy.storage-mounts-c");
+const ORACLE_TFM_PD: &str = include_str!("../spike_fixtures/oracle/prod-deploy.tfm-sysbuild-conf");
+
+fn load_pd() -> (BoardYaml, SomPreset, BoardDef, SocSpec) {
+    (
+        serde_yaml::from_str(BOARD_YAML_PD).unwrap(),
+        serde_yaml::from_str(SOM_PRESET).unwrap(), // SAME E1M-AEN701 SoM bundle
+        serde_yaml::from_str(BOARD_DEF).unwrap(),
+        serde_json::from_str(SOC_SPEC).unwrap(),
+    )
+}
+
+const STORAGE_MOUNTS_TMPL: &str =
+    include_str!("../spike_fixtures/som/E1M-AEN701/templates/storage-mounts.c.tmpl");
+const TFM_TMPL: &str =
+    include_str!("../spike_fixtures/som/E1M-AEN701/templates/tfm-sysbuild.conf.tmpl");
+
+/// **Storage allocator parity (P1).** The bottom-up partition allocator places the
+/// 5 `storage:` entries on the variant-derived `mram_main` region (5.5 MiB) and the
+/// engine reproduces the `dts-partitions` overlay byte-for-byte — the same DATA→
+/// resolved-addresses shape as the IPC carve-out, on a different allocation axis.
+#[test]
+fn prod_deploy_dts_partitions_resolved_matches_sdk_emit() {
+    let (board, som, _, soc) = load_pd();
+    assert_eq!(
+        render_dts_partitions(&board, &som, &soc, DTS_PART_TMPL),
+        ORACLE_DTS_PART_PD
+    );
+}
+
+/// **Storage mounts writer (P1).** The `fs_mount_t[]` table reproduces byte-for-
+/// byte: only `mount:`-bearing non-raw partitions (the two littlefs mounts), the
+/// per-fs include emitted once, the FIXED_PARTITION_ID wiring — all from the
+/// resolved partitions + the policy fs profiles (zero C fs literals in the engine).
+#[test]
+fn prod_deploy_storage_mounts_c_matches_sdk_emit() {
+    let (board, som, _, soc) = load_pd();
+    assert_eq!(
+        render_storage_mounts_c(&board, &som, &soc, &policy(), STORAGE_MOUNTS_TMPL),
+        ORACLE_STORAGE_MOUNTS_PD
+    );
+}
+
+/// **TF-M secure-world writer (P2).** The TF-M sysbuild conf reproduces byte-for-
+/// byte from `security.psa:` + `boot.build_type`: build-type canonicalisation,
+/// PSA slot count, ITS/PS backing stores, and the OPTIGA attestation root — all
+/// policy-keyed, the engine never names a secure symbol.
+#[test]
+fn prod_deploy_tfm_sysbuild_conf_matches_sdk_emit() {
+    let (board, _, _, _) = load_pd();
+    assert_eq!(
+        render_tfm_sysbuild_conf(&board, &policy(), TFM_TMPL),
+        ORACLE_TFM_PD
+    );
+}
 
 fn load() -> (BoardYaml, SomPreset, BoardDef, SocSpec) {
     (
@@ -355,9 +420,9 @@ fn dts_reservations_matches_sdk_emit_byte_for_byte() {
 
 #[test]
 fn dts_partitions_matches_sdk_emit_byte_for_byte() {
-    let (board, ..) = load();
+    let (board, som, _, soc) = load();
     assert_eq!(
-        render_dts_partitions(&board, DTS_PART_TMPL),
+        render_dts_partitions(&board, &som, &soc, DTS_PART_TMPL),
         oracle_shared("build/generated/dts-partitions.dtsi")
     );
 }

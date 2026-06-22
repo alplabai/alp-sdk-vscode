@@ -149,5 +149,62 @@
       "nxp:imx9:imx93": "CONFIG_ALP_SDK_INFERENCE_BACKEND_ETHOS_U_N93"
     },
     "npuVariantPrefix": "CONFIG_ALP_SDK_INFERENCE_ETHOS_U_VARIANT_"
+  },
+  "_storageComment": "Filesystem profiles for the storage-mounts.c writer; the C struct skeleton is DATA here ({name}/{mount} filled by the engine) so the engine carries zero fs literals.",
+  "storage": {
+    "fsProfiles": {
+      "littlefs": {
+        "include": "#include <zephyr/fs/littlefs.h>",
+        "fsType": "FS_LITTLEFS",
+        "declare": "FS_LITTLEFS_DECLARE_DEFAULT_CONFIG(alp_lfs_{name});",
+        "fsData": "&alp_lfs_{name}"
+      },
+      "fat": {
+        "include": "#include <ff.h>",
+        "fsType": "FS_FATFS",
+        "declare": "static FATFS alp_fat_{name};",
+        "fsData": "&alp_fat_{name}"
+      },
+      "ext4": {
+        "include": "#include <zephyr/fs/ext2.h>",
+        "fsType": "FS_EXT2",
+        "declare": "",
+        "fsData": ""
+      }
+    }
+  },
+  "_secureComment": "Secure-boot (MCUboot) + TF-M rule data: signing/swap Kconfig maps, TF-M build-type aliases, PSA attestation roots. Keyed by board.yaml `boot:`/`security.psa:` values; zero secure literals in the engine.",
+  "secure": {
+    "signingAlgorithms": {
+      "ecdsa_p256": "SB_CONFIG_MCUBOOT_SIGNATURE_TYPE_ECDSA_P256=y",
+      "rsa2048": "SB_CONFIG_MCUBOOT_SIGNATURE_TYPE_RSA=y\nSB_CONFIG_MCUBOOT_SIGNATURE_TYPE_RSA_LEN=2048",
+      "rsa3072": "SB_CONFIG_MCUBOOT_SIGNATURE_TYPE_RSA=y\nSB_CONFIG_MCUBOOT_SIGNATURE_TYPE_RSA_LEN=3072",
+      "ed25519": "SB_CONFIG_MCUBOOT_SIGNATURE_TYPE_ED25519=y"
+    },
+    "swapAlgorithms": {
+      "scratch": "SB_CONFIG_MCUBOOT_MODE_SWAP_USING_SCRATCH=y",
+      "move": "SB_CONFIG_MCUBOOT_MODE_SWAP_USING_MOVE=y",
+      "overwrite": "SB_CONFIG_MCUBOOT_MODE_OVERWRITE_ONLY=y"
+    },
+    "tfmBuildTypeAliases": {
+      "debug": "Debug",
+      "minsizerel": "MinSizeRel",
+      "min_size_rel": "MinSizeRel",
+      "release": "Release"
+    },
+    "tfmDefaultPersistentSlots": 16,
+    "attestationRoots": {
+      "optiga_trust_m": {
+        "comment": [
+          "# Attestation root anchored in OPTIGA Trust M (on-module secure element).",
+          "# See src/security/optiga_trust_m_bridge.c for the PSA <-> OPTIGA bridge driver."
+        ],
+        "config": "CONFIG_ALP_SDK_PSA_ATTESTATION_OPTIGA=y"
+      },
+      "tfm_internal": {
+        "comment": [],
+        "config": "CONFIG_ALP_SDK_PSA_ATTESTATION_TFM_INTERNAL=y"
+      }
+    }
   }
 }

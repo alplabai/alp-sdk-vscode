@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::metadata::*;
 
-const PAGE: u64 = 4096;
+pub(crate) const PAGE: u64 = 4096;
 
 /// FNV-1a 32-bit — the SDK's endpoint-ID hash (`alp_orchestrate.py:_fnv1a_32`).
 pub(crate) fn fnv1a_32(data: &[u8]) -> u32 {
@@ -37,7 +37,7 @@ pub(crate) struct ResolvedCarveOut {
     pub(crate) mbox_ch: u32,
 }
 
-fn region_size_bytes(r: &MemRegion) -> Option<u64> {
+pub(crate) fn region_size_bytes(r: &MemRegion) -> Option<u64> {
     if let Some(m) = r.size_mib {
         return Some(m * 1024 * 1024);
     }
@@ -47,18 +47,77 @@ fn region_size_bytes(r: &MemRegion) -> Option<u64> {
 fn align_down(v: u64, a: u64) -> u64 {
     v - (v % a)
 }
-fn align_up(v: u64, a: u64) -> u64 {
+pub(crate) fn align_up(v: u64, a: u64) -> u64 {
     v.div_ceil(a) * a
 }
 
-/// The effective region table: the SoM `memory_map:` wins; else the SoC's
-/// `memory_regions`; else empty (the SRAM-bank-derived path is out of scope — the
-/// AEN bench blocks earlier on its TBD mailbox).
-fn resolve_memory_map(som: &SomPreset, soc: &SocSpec) -> Vec<MemRegion> {
+/// The effective region table (the SDK's `resolve_memory_map`, 3-tier precedence):
+/// the SoM `memory_map:` (verbatim override); else the SoC's explicit
+/// `memory_regions` (authoritative bases, e.g. V2N OCRAM); else DERIVE from the
+/// selected SoC variant's MRAM + SRAM banks (the Alif/AEN path). Shared by the
+/// carve-out allocator and the storage-partition allocator.
+pub(crate) fn resolve_memory_map(som: &SomPreset, soc: &SocSpec) -> Vec<MemRegion> {
     if !som.memory_map.is_empty() {
         return som.memory_map.clone();
     }
-    soc.memory_regions.clone()
+    if !soc.memory_regions.is_empty() {
+        return soc.memory_regions.clone();
+    }
+    derive_memory_map_from_variant(som, soc)
+}
+
+/// Tier 3: each named SRAM bank becomes one region, the MRAM becomes one region.
+/// Per-core TCM banks (suffix `_<CORE>_(ITCM|DTCM)`) get `accessible_from: [core]`
+/// and non-cacheable; the rest are shared and cacheable. Bases stay unset (the
+/// silicon defaults them, so emitters that need a base like the carve-out block on
+/// it; the storage allocator is offset-within-device, so it does not).
+fn derive_memory_map_from_variant(som: &SomPreset, soc: &SocSpec) -> Vec<MemRegion> {
+    let Some(variant) = som
+        .silicon_variant
+        .as_deref()
+        .and_then(|oc| soc.variants.iter().find(|v| v.order_code == oc))
+        .or_else(|| soc.variants.first())
+    else {
+        return Vec::new();
+    };
+    let cores: Vec<String> = soc.cores.iter().map(|c| c.id.clone()).collect();
+    let mut regions = Vec::new();
+
+    if let Some(mb) = variant.mram_mb {
+        if mb > 0.0 {
+            regions.push(MemRegion {
+                name: "mram_main".to_string(),
+                base: None,
+                size_kib: Some((mb * 1024.0) as u64),
+                size_mib: None,
+                accessible_from: cores.clone(),
+                cacheable: Some(true),
+                dt_label: None,
+            });
+        }
+    }
+    for (bank, &size_kib) in &variant.sram_banks_kb {
+        if size_kib == 0 {
+            continue;
+        }
+        let upper = bank.to_uppercase();
+        let accessible = cores
+            .iter()
+            .find(|c| upper.contains(&format!("_{}_", c.to_uppercase())))
+            .map(|c| vec![c.clone()])
+            .unwrap_or_else(|| cores.clone());
+        let is_tcm = upper.contains("ITCM") || upper.contains("DTCM");
+        regions.push(MemRegion {
+            name: bank.to_lowercase(),
+            base: None,
+            size_kib: Some(size_kib),
+            size_mib: None,
+            accessible_from: accessible,
+            cacheable: Some(!is_tcm),
+            dt_label: None,
+        });
+    }
+    regions
 }
 
 /// The rpmsg block reason (spec §6.4): an unset/TBD controller, or no channel

@@ -124,7 +124,7 @@ pub(crate) fn assemble_full_plan(
         },
         GeneratedFile {
             path: "build/generated/dts-partitions.dtsi".to_string(),
-            contents: render_dts_partitions(board, &t.dts_partitions),
+            contents: render_dts_partitions(board, som, soc, &t.dts_partitions),
         },
     ];
     BuildPlan {
