@@ -1,7 +1,8 @@
 # A policy/metadata/template engine + per-SoM bundle architecture (reproduces the SDK emit from data)
 
 **Branch:** `proof/pmt-aen701` (off `spike/partition-allocator-rust`)
-**Module:** `cli-rs/crates/alp-core/src/proof_aen701/` (a module tree, not one file) · **Tests:** 28, all green
+**Module:** `cli-rs/crates/alp-core/src/proof_aen701/` (a module tree, not one file) · **Tests:** 36, all green
+**Silicons proven:** E7 (E1M-AEN701) **and** E8 (E1M-AEN801, the lead part) — same engine, new bundle
 **Context:** [alplabai/alp-sdk#235](https://github.com/alplabai/alp-sdk/issues/235)
 
 ## What this proves
@@ -53,7 +54,24 @@ entry gate: it validates the manifest format, every layer schema, and the SDK-co
 (a tiny dependency-free semver-range check) **before any layer is read** — npm-peerDependencies
 style: one clear early error, not a runtime mis-derive.
 
-## Parity + behaviour — 25 tests
+## E8/AEN801 — the universality proof (a second silicon, vs the v0.7.0 emit)
+
+The maintainer's decisive ask: reproduce the bench on the **lead part, AEN801 (E8)** —
+different core mix, **Ethos-U85** — against its `--emit`. Done, against the **v0.7.0 tag**:
+
+- The **only** new authored data is `som/E1M-AEN801/som.yaml` (E8 SoM metadata) + the shared
+  `e8.json`. `policy.json`, `pin-policy.json`, and **every template are byte-identical to E7**
+  (asserted in `e8_bundle_reuses_the_e7_shapes`).
+- The **same** `assemble_full_plan` reproduces the **whole E8 build-plan in one assert**
+  (`e8_full_build_plan_matches_sdk_emit`) — **zero engine-code change**. The E8 SoC symbol
+  (`CONFIG_ALP_SOC_ALIF_ENSEMBLE_E8`) and the **Ethos-U85** dispatcher fall straight out of the
+  new SoM metadata (E7 emits U55 only; E8 adds U85) — `e8_m55_hp_alp_conf_…byte_for_byte`.
+- **ALP-B012** keeps the **known-silicon allowlist**: the computed SoC symbol stays
+  non-emitting for an out-of-catalogue `silicon:` (membership = a matching `SocSpec.ref`).
+
+**New silicon = a versioned data folder, not planner edits — now proven on two parts.**
+
+## Parity + behaviour — 36 tests
 
 | Stage | Artefact / check | Result |
 |---|---|---|
@@ -139,8 +157,9 @@ proof_aen701/
 
 ## Honest scope / caveats (not hidden)
 
-- **One SoM** (E1M-AEN701) — the load-bearing case (heterogeneous A32+M55, NPU, blocked IPC,
-  CC3501E pad dispatch). Other SoMs are more bundle folders, not more engine code — not proven here yet.
+- **Two silicons** (E7/AEN701 + E8/AEN801) — the load-bearing cases (heterogeneous A32+M55, NPU
+  incl. Ethos-U85, blocked IPC, CC3501E pad dispatch). A third SoM is more bundle folders, not more
+  engine code. The board↔silicon alias bridge is still partly hand-maintained.
 - **Runtime path inputs are threaded, not derived** — `boardYaml`, `ALP_SDK_ROOT`, the on-disk
   `west` app dirs are environment-specific; the oracle's values are threaded, every *derived* field is matched.
 - **The manifest is compared structurally** — it is YAML; PyYAML formatting is an emit detail. The build-plan (JSON) is byte-for-byte.
@@ -161,5 +180,5 @@ proof_aen701/
 ## Run it
 
 ```
-cargo test -p alp-core proof_aen701   # 28 tests
+cargo test -p alp-core proof_aen701   # 36 tests (E7 + E8)
 ```
