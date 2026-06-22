@@ -64,6 +64,9 @@ const STORAGE_MOUNTS_TMPL: &str =
     include_str!("../spike_fixtures/som/E1M-AEN701/templates/storage-mounts.c.tmpl");
 const TFM_TMPL: &str =
     include_str!("../spike_fixtures/som/E1M-AEN701/templates/tfm-sysbuild.conf.tmpl");
+const SYSBUILD_TMPL: &str =
+    include_str!("../spike_fixtures/som/E1M-AEN701/templates/sysbuild.conf.tmpl");
+const ORACLE_SYSBUILD_PD: &str = include_str!("../spike_fixtures/oracle/prod-deploy.sysbuild-conf");
 
 /// **Storage allocator parity (P1).** The bottom-up partition allocator places the
 /// 5 `storage:` entries on the variant-derived `mram_main` region (5.5 MiB) and the
@@ -101,6 +104,21 @@ fn prod_deploy_tfm_sysbuild_conf_matches_sdk_emit() {
     assert_eq!(
         render_tfm_sysbuild_conf(&board, &policy(), TFM_TMPL),
         ORACLE_TFM_PD
+    );
+}
+
+/// **MCUboot signing writer (P3 / the 4th audit path).** The `alp_sysbuild.conf`
+/// reproduces byte-for-byte from `boot:`: the signing algorithm, key-file path,
+/// primary/secondary/scratch slot sizes (`size_kib*1024`), swap mode, and
+/// anti-rollback counter — signing algos + swap modes keyed by `policy.secure`,
+/// the engine never names an SB_CONFIG symbol. (The signed *image* is imgtool's
+/// job; only the conf the build consumes is reproduced.)
+#[test]
+fn prod_deploy_sysbuild_conf_matches_sdk_emit() {
+    let (board, _, _, _) = load_pd();
+    assert_eq!(
+        render_sysbuild_conf(&board, &policy(), SYSBUILD_TMPL),
+        ORACLE_SYSBUILD_PD
     );
 }
 

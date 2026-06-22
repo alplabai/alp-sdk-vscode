@@ -68,3 +68,72 @@ pub(crate) fn render_tfm_sysbuild_conf(board: &BoardYaml, p: &Policy, tmpl: &str
 
     format!("{}\n\n{}\n", header, lines.join("\n"))
 }
+
+/// Render the MCUboot sysbuild conf from `boot:` (the SDK's `emit_sysbuild_conf`,
+/// P3 — the signing path). `""` when the project omits `boot:` (stock per-family
+/// defaults apply). The signing algorithm + swap mode map to SB_CONFIG via
+/// `policy.secure`; slot/scratch sizes are `size_kib * 1024`. The engine never
+/// names a signing symbol. (The signed *artefact* itself is imgtool's job — out
+/// of scope; only the conf the build consumes is reproduced.)
+pub(crate) fn render_sysbuild_conf(board: &BoardYaml, p: &Policy, tmpl: &str) -> String {
+    let Some(boot) = board.boot.as_ref() else {
+        return String::new();
+    };
+    let method = boot.method.as_deref().unwrap_or("mcuboot").to_lowercase();
+    if method == "none" {
+        return "# Auto-generated from board.yaml `boot:` block.\nSB_CONFIG_BOOTLOADER_MCUBOOT=n\n"
+            .to_string();
+    }
+    if method != "mcuboot" {
+        return String::new();
+    }
+
+    let header = tmpl.trim_end();
+    let mut lines: Vec<String> = vec!["SB_CONFIG_BOOTLOADER_MCUBOOT=y".into()];
+
+    if let Some(sign) = &boot.signing {
+        if let Some(algo) = sign.algorithm.as_deref() {
+            if let Some(kc) = p.secure.signing_algorithms.get(&algo.to_lowercase()) {
+                lines.push(kc.clone()); // RSA carries two `\n`-joined lines
+            }
+        }
+        if let Some(kf) = sign.key_file.as_deref().filter(|s| !s.is_empty()) {
+            lines.push(format!("SB_CONFIG_BOOT_SIGNATURE_KEY_FILE=\"{kf}\""));
+        }
+    }
+    if let Some(slots) = &boot.slots {
+        if let Some(sz) = slots.primary.as_ref().and_then(|s| s.size_kib) {
+            lines.push(format!(
+                "SB_CONFIG_BOOT_PRIMARY_PARTITION_SIZE={}",
+                sz * 1024
+            ));
+        }
+        if let Some(sz) = slots.secondary.as_ref().and_then(|s| s.size_kib) {
+            lines.push(format!(
+                "SB_CONFIG_BOOT_SECONDARY_PARTITION_SIZE={}",
+                sz * 1024
+            ));
+        }
+    }
+    let swap = boot
+        .swap_algorithm
+        .as_deref()
+        .unwrap_or("scratch")
+        .to_lowercase();
+    if let Some(kc) = p.secure.swap_algorithms.get(&swap) {
+        lines.push(kc.clone());
+    }
+    if swap == "scratch" {
+        if let Some(sz) = boot.scratch_size_kib {
+            lines.push(format!(
+                "SB_CONFIG_BOOT_SCRATCH_PARTITION_SIZE={}",
+                sz * 1024
+            ));
+        }
+    }
+    if boot.anti_rollback == Some(true) {
+        lines.push("SB_CONFIG_BOOT_COUNTERS_MCUBOOT=y".into());
+    }
+
+    format!("{}\n\n{}\n", header, lines.join("\n"))
+}
