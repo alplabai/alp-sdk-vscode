@@ -170,18 +170,23 @@ proof_aen701/
   engine branch. The per-core build SLICES reproduce byte-for-byte for both vendors; NXP and other
   accelerators (DEEPX, no-NPU parts) are not yet exercised. The board↔silicon alias bridge is still
   partly hand-maintained.
-- **Big planner paths the bench does NOT reproduce yet:** the **resolved IPC carve-out / memory-map
-  allocation** (the AEN boards leave `mailbox` TBD → blocked; V2N has a live mailbox → the SDK runs
-  the allocator, which the bench scopes out), OSPI/storage partitions, the ISP/camera path, PSA/TF-M,
-  MCUboot signing. These are vendor-agnostic allocator/derivation pieces (the carve-out exists in the
-  `spike/partition-allocator-rust` branch), not per-vendor code — the next step toward full parity.
+- **The resolved IPC carve-out / memory-map allocator IS reproduced** (`carveout.rs`): V2N has a live
+  `mailbox.controller`, so the engine resolves the memory map (SoM `memory_map` → SoC `memory_regions`),
+  picks the region (`accessible_from` ⊇ endpoints, cacheable rank), allocates **top-down page-aligned**,
+  and derives the endpoint IDs (`0x400 | (fnv1a_32(name) & 0xFF)`, `dst=src+1`) + the mailbox channel —
+  reproducing the SDK's `resolve_carve_outs` from DATA. V2N reproduces the **whole** build-plan
+  byte-for-byte *including* the carve-out (`alp_default_rpmsg` @ `0x00010000`, 512 KiB OCRAM,
+  `SRC/DST_EPT 0x4e6/0x4e7`); AEN/E8 stay on the blocked stub (their `mailbox` is TBD).
+- **Big planner paths the bench does NOT reproduce yet:** OSPI/storage partitions, the ISP/camera path,
+  PSA/TF-M, MCUboot signing. These are vendor-agnostic, board-feature-gated derivations (none exercised
+  by the RPMsg boards), not per-vendor code — the remaining steps toward full parity.
 - **Runtime path inputs are threaded, not derived** — `boardYaml`, `ALP_SDK_ROOT`, the on-disk
   `west` app dirs are environment-specific; the oracle's values are threaded, every *derived* field is matched.
 - **The manifest is compared structurally** — it is YAML; PyYAML formatting is an emit detail. The build-plan (JSON) is byte-for-byte.
 - **`routes.h` is structural** — the SDK's `gen_board_header.py` output is not in the `--emit`
   oracle, so the routing header is asserted structurally (the right `#define`s + dispatch comments), not byte-for-byte.
-- **Blocked IPC path only** — AEN's `mailbox.controller` is TBD, so the carve-out is blocked
-  (matching the oracle); the resolved path is the spike's `carve_out_spike.rs`, not wired in here.
+- **Both IPC paths reproduced** — AEN/E8's `mailbox.controller` is TBD → blocked stub (matching the
+  oracle); V2N's is live → the allocator resolves real addresses (`carveout.rs`), also matching the oracle.
 
 ## What it means for the RFC
 
