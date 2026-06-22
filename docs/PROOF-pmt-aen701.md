@@ -177,9 +177,27 @@ proof_aen701/
   reproducing the SDK's `resolve_carve_outs` from DATA. V2N reproduces the **whole** build-plan
   byte-for-byte *including* the carve-out (`alp_default_rpmsg` @ `0x00010000`, 512 KiB OCRAM,
   `SRC/DST_EPT 0x4e6/0x4e7`); AEN/E8 stay on the blocked stub (their `mailbox` is TBD).
-- **Big planner paths the bench does NOT reproduce yet:** OSPI/storage partitions, the ISP/camera path,
-  PSA/TF-M, MCUboot signing. These are vendor-agnostic, board-feature-gated derivations (none exercised
-  by the RPMsg boards), not per-vendor code — the remaining steps toward full parity.
+- **The remaining named planner paths ARE reproduced** (byte-for-byte vs the SDK `production-deployment`
+  oracle — SKU `E1M-AEN701`, same SoM bundle, a richer board.yaml that declares `storage:`/`boot:`/
+  `security:`/`ota:`):
+  - **OSPI/storage partitions** (`partition.rs`): the bottom-up bump allocator places the 5 `storage:`
+    entries on the variant-derived `mram_main` region (5.5 MiB) → the `dts-partitions` overlay +
+    `storage_mount_table.c` reproduce exactly. The 3rd memory-map tier (SoM `memory_map` → SoC
+    `memory_regions` → **derive from the SoC variant's MRAM + SRAM banks**) also closes the carve-out's
+    last derivation gap.
+  - **PSA/TF-M** (`secure.rs`): `tfm-sysbuild.conf` from `security.psa:` + `boot.build_type` — build-type
+    canonicalisation, PSA slot count, ITS/PS backing stores, OPTIGA attestation — all `policy.secure`-keyed.
+  - **MCUboot signing** (`secure.rs`): `alp_sysbuild.conf` from `boot:` — signing algo, key-file, slot/
+    scratch sizes, swap mode, anti-rollback. (The signed *image* is imgtool's job; only the conf is reproduced.)
+  - **ISP/camera was a mis-identification, not a gap:** the SDK has no ISP planner path (the 22 "isp"
+    grep hits were all "di**sp**atch"); cameras (OV5640, cam-mux) are ordinary `CHIP_<NAME>` drivers the
+    engine already reproduces. Of the four originally-named gaps, three were real paths (now done) and
+    one was already covered.
+- **The full per-slice `alp.conf` is the broader-planner frontier, not the four paths:** its storage +
+  OTA sections are reproduced in isolation, but the complete slice file also interleaves `iot:`,
+  `cores.<id>.memory:`/`power:`, `diagnostics.modules:`, and top-level project `chips:` — separate board
+  features beyond the named paths. Those, plus host-path normalization on the build-plan envelope, are
+  the remaining work for a whole-build-plan byte diff on a maximal board (named here, not hidden).
 - **Runtime path inputs are threaded, not derived** — `boardYaml`, `ALP_SDK_ROOT`, the on-disk
   `west` app dirs are environment-specific; the oracle's values are threaded, every *derived* field is matched.
 - **The manifest is compared structurally** — it is YAML; PyYAML formatting is an emit detail. The build-plan (JSON) is byte-for-byte.
