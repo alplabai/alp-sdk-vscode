@@ -12,11 +12,11 @@
 {{#each channels}}/* {{kind}} channel '{{name}}' -- endpoints {{endpoints}} */
 {{#if blocked}}/* BLOCKED: {{reason}} */
 /* IPC channel '{{name}}' is blocked; fix the SoM metadata before depending on this channel at runtime. */
-#define ALP_IPC_{{up}}_NAME       "{{name}}"
-#define ALP_IPC_{{up}}_ADDR       0x0u  /* stub: blocked */
-#define ALP_IPC_{{up}}_SIZE       0x0u  /* stub: blocked */
-#define ALP_IPC_{{up}}_SRC_EPT    0x0u  /* stub: blocked */
-#define ALP_IPC_{{up}}_DST_EPT    0x0u  /* stub: blocked */
-#define ALP_IPC_{{up}}_MBOX_CH    0u    /* stub: blocked */
-{{/if}}{{/each}}
+{{/if}}#define ALP_IPC_{{up}}_NAME       "{{name}}"
+#define ALP_IPC_{{up}}_ADDR       {{addr}}
+#define ALP_IPC_{{up}}_SIZE       {{size}}
+#define ALP_IPC_{{up}}_SRC_EPT    {{srcEpt}}
+#define ALP_IPC_{{up}}_DST_EPT    {{dstEpt}}
+#define ALP_IPC_{{up}}_MBOX_CH    {{mboxCh}}
+{{/each}}
 #endif /* ALP_SYSTEM_IPC_H */

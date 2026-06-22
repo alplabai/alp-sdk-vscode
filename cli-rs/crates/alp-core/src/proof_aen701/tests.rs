@@ -337,18 +337,18 @@ fn m55_hp_alp_conf_matches_sdk_emit_byte_for_byte() {
 /// STAGE D — the three SHARED artefacts, byte-for-byte (blocked-IPC path).
 #[test]
 fn system_ipc_h_matches_sdk_emit_byte_for_byte() {
-    let (board, som, ..) = load();
+    let (board, som, _, soc) = load();
     assert_eq!(
-        render_system_ipc_h(&board, &som, IPC_TMPL),
+        render_system_ipc_h(&board, &som, &soc, IPC_TMPL),
         oracle_shared("build/generated/alp/system_ipc.h")
     );
 }
 
 #[test]
 fn dts_reservations_matches_sdk_emit_byte_for_byte() {
-    let (board, som, ..) = load();
+    let (board, som, _, soc) = load();
     assert_eq!(
-        render_dts_reservations(&board, &som, DTS_RES_TMPL),
+        render_dts_reservations(&board, &som, &soc, DTS_RES_TMPL),
         oracle_shared("build/generated/dts-reservations.dtsi")
     );
 }
@@ -996,19 +996,14 @@ fn v2n_m33_alp_conf_matches_sdk_emit_byte_for_byte() {
     assert_eq!(out, oracle_v2n_artefact("m33_sm"));
 }
 
-/// **CROSS-VENDOR build config — the universality result.** The per-core build
-/// SLICES (`alp.conf` / `local.conf`) the engine generates reproduce byte-for-byte
-/// for a Renesas part with the SAME engine + a new `som/E1M-V2N101/` bundle. Two
-/// vendors (Alif + Renesas) from one zero-literal engine.
-///
-/// The shared IPC carve-out artefacts are intentionally NOT asserted here: V2N
-/// declares a RESOLVED `mailbox.controller`, so the SDK runs its carve-out
-/// allocator (real addresses, FNV-1a endpoint IDs, the reserved-memory region) —
-/// the audit's known unreproduced planner piece (the AEN bench hits the same gap
-/// on its *blocked* mailbox). That allocator is the next step, and it is
-/// vendor-agnostic (it belongs in the engine + policy, not per-vendor code).
+/// **CROSS-VENDOR FULL parity — the universality result, WHOLE.** The entire V2N
+/// build-plan reproduces byte-for-byte with the SAME engine + a new
+/// `som/E1M-V2N101/` bundle, INCLUDING the **resolved IPC carve-out**: V2N has a
+/// live `mailbox.controller`, so the allocator runs — real `ADDR`/`SIZE`/FNV-1a
+/// endpoint IDs in `system_ipc.h` and the `reserved-memory` region in the DT
+/// overlay. Two vendors, one zero-literal engine, real addresses.
 #[test]
-fn v2n_build_slices_match_sdk_emit() {
+fn v2n_full_build_plan_matches_sdk_emit() {
     let (board, som, board_def, soc) = load_v2n();
     let oracle: BuildPlan = serde_json::from_str(ORACLE_BUILD_PLAN_V2N).unwrap();
     let sdk_root = oracle
@@ -1027,7 +1022,7 @@ fn v2n_build_slices_match_sdk_emit() {
             )
         })
         .collect();
-    let ours = assemble_full_plan(
+    let mut ours = assemble_full_plan(
         &board,
         &som,
         &board_def,
@@ -1038,14 +1033,35 @@ fn v2n_build_slices_match_sdk_emit() {
         &policy_v2n(),
         &templates_v2n(),
     );
-    let mut a = ours.slices;
-    a.sort_by(|x, y| x.core_id.cmp(&y.core_id));
-    let mut b = oracle.slices;
-    b.sort_by(|x, y| x.core_id.cmp(&y.core_id));
+    let mut oracle = oracle;
+    sort_plan(&mut ours);
+    sort_plan(&mut oracle);
     assert_eq!(
-        serde_json::to_value(&a).unwrap(),
-        serde_json::to_value(&b).unwrap()
+        serde_json::to_value(&ours).unwrap(),
+        serde_json::to_value(&oracle).unwrap()
     );
+}
+
+/// The carve-out ALLOCATOR, isolated: `alp_default_rpmsg` (512 KiB) lands top-down
+/// in the OCRAM region at `0x00010000`, with FNV-1a endpoint IDs `0x4e6`/`0x4e7`
+/// and mailbox channel `0` — all derived from data, reproducing the SDK's resolved
+/// (non-blocked) `system_ipc.h`.
+#[test]
+fn v2n_resolved_carve_out_has_real_addresses() {
+    let (board, som, _, soc) = load_v2n();
+    let ipc = render_system_ipc_h(&board, &som, &soc, IPC_TMPL);
+    assert!(
+        ipc.contains("_ADDR       0x00010000u"),
+        "OCRAM base, top-down"
+    );
+    assert!(ipc.contains("_SIZE       0x00080000u"), "512 KiB");
+    assert!(
+        ipc.contains("_SRC_EPT    0x000004e6u"),
+        "FNV-1a low byte | 0x400"
+    );
+    assert!(ipc.contains("_DST_EPT    0x000004e7u"), "src + 1");
+    assert!(ipc.contains("_MBOX_CH    0u"));
+    assert!(!ipc.contains("stub: blocked"), "resolved, not blocked");
 }
 
 /// **CROSS-VENDOR structured data.** The Renesas GD32 bridge's helper-MCU

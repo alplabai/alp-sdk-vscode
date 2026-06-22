@@ -116,11 +116,11 @@ pub(crate) fn assemble_full_plan(
     let shared_artefacts = vec![
         GeneratedFile {
             path: "build/generated/alp/system_ipc.h".to_string(),
-            contents: render_system_ipc_h(board, som, &t.system_ipc_h),
+            contents: render_system_ipc_h(board, som, soc, &t.system_ipc_h),
         },
         GeneratedFile {
             path: "build/generated/dts-reservations.dtsi".to_string(),
-            contents: render_dts_reservations(board, som, &t.dts_reservations),
+            contents: render_dts_reservations(board, som, soc, &t.dts_reservations),
         },
         GeneratedFile {
             path: "build/generated/dts-partitions.dtsi".to_string(),

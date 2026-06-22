@@ -35,6 +35,7 @@ pub(crate) mod policy;
 pub(crate) mod validate;
 // WRITER layer (data → config-file strings)
 pub(crate) mod assemble;
+pub(crate) mod carveout;
 pub(crate) mod render;
 pub(crate) mod template;
 

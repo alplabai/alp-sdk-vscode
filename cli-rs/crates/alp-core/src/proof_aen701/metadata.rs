@@ -37,6 +37,37 @@ pub(crate) struct IpcChannel {
     pub(crate) name: String,
     #[serde(default)]
     pub(crate) endpoints: Vec<String>,
+    #[serde(default)]
+    pub(crate) carve_out_kb: Option<u32>,
+    #[serde(default)]
+    pub(crate) cacheable: Option<bool>,
+    /// Explicit carve-out base (page-aligned); overrides the allocator.
+    #[serde(default)]
+    pub(crate) address: Option<u64>,
+}
+
+/// One memory region (a SoM `memory_map:` entry or a SoC `memory_regions[]`):
+/// where the carve-out allocator places IPC buffers.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct MemRegion {
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) base: Option<u64>,
+    #[serde(default)]
+    pub(crate) size_kib: Option<u64>,
+    #[serde(default)]
+    pub(crate) size_mib: Option<u64>,
+    #[serde(default)]
+    pub(crate) accessible_from: Vec<String>,
+    #[serde(default)]
+    pub(crate) cacheable: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct MailboxChannel {
+    pub(crate) id: u32,
+    #[serde(default)]
+    pub(crate) reserved_for: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -90,12 +121,18 @@ pub(crate) struct SomPreset {
     pub(crate) inference: Inference,
     #[serde(default)]
     pub(crate) mailbox: Mailbox,
+    /// Explicit per-SoM memory regions (non-stock partitioning); when absent the
+    /// allocator falls back to the SoC's `memory_regions`.
+    #[serde(default)]
+    pub(crate) memory_map: Vec<MemRegion>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub(crate) struct Mailbox {
     #[serde(default)]
     pub(crate) controller: Option<String>,
+    #[serde(default)]
+    pub(crate) channels: Vec<MailboxChannel>,
 }
 
 /// One SoM-specific pad dispatch entry: the E1M pad reaches the SoC via
@@ -216,6 +253,11 @@ pub(crate) struct SocSpec {
     /// accelerator-agnostic; the backend symbol is policy data keyed by silicon.
     #[serde(default)]
     pub(crate) npus: Vec<SocNpu>,
+    /// SoC-level memory regions with authoritative bases (e.g. RZ/V2N OCRAM at
+    /// `0x00010000`) — the carve-out allocator's region table when the SoM
+    /// declares no explicit `memory_map:`.
+    #[serde(default)]
+    pub(crate) memory_regions: Vec<MemRegion>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

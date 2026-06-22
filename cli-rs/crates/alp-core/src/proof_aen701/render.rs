@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::carveout::resolve_carve_outs;
 use super::macros::vars;
 use super::metadata::*;
 use super::policy::*;
@@ -272,56 +273,91 @@ pub(crate) fn rpmsg_block_reason(sku: &str, controller: Option<&str>) -> String 
     )
 }
 
-pub(crate) fn render_system_ipc_h(board: &BoardYaml, som: &SomPreset, tmpl: &str) -> String {
-    let sku = &board.som.sku;
-    let controller = som.mailbox.controller.as_deref();
-    let channels: Vec<Row> = board
-        .ipc
+/// Render the IPC contract header from the RESOLVED carve-outs. A HW-mapped
+/// mailbox yields real `ADDR`/`SIZE`/endpoint-ID `#define`s (the allocator did the
+/// work); a TBD/blocked mailbox yields `0x0u` stubs + the BLOCKED comment. The
+/// engine precomputes each field string; the template owns the shape.
+pub(crate) fn render_system_ipc_h(
+    board: &BoardYaml,
+    som: &SomPreset,
+    soc: &SocSpec,
+    tmpl: &str,
+) -> String {
+    let channels: Vec<Row> = resolve_carve_outs(board, som, soc)
         .iter()
-        .map(|ch| {
-            let blocked = rpmsg_blocked(ch, &som.mailbox);
-            Row::from([
-                ("kind", ch.kind.clone()),
-                ("name", ch.name.clone()),
-                ("up", ch.name.to_uppercase()),
-                ("endpoints", ch.endpoints.join(", ")),
-                ("blocked", if blocked { "1".into() } else { String::new() }),
+        .map(|c| {
+            let (addr, size, src, dst, mbox) = if c.blocked {
                 (
-                    "reason",
-                    if blocked {
-                        rpmsg_block_reason(sku, controller)
-                    } else {
-                        String::new()
-                    },
+                    "0x0u  /* stub: blocked */".to_string(),
+                    "0x0u  /* stub: blocked */".to_string(),
+                    "0x0u  /* stub: blocked */".to_string(),
+                    "0x0u  /* stub: blocked */".to_string(),
+                    "0u    /* stub: blocked */".to_string(),
+                )
+            } else {
+                (
+                    format!("0x{:08x}u", c.base),
+                    format!("0x{:08x}u", c.size),
+                    format!("0x{:08x}u", c.src_ept),
+                    format!("0x{:08x}u", c.dst_ept),
+                    format!("{}u", c.mbox_ch),
+                )
+            };
+            Row::from([
+                ("kind", c.kind.clone()),
+                ("name", c.name.clone()),
+                ("up", c.name.to_uppercase()),
+                ("endpoints", c.endpoints.join(", ")),
+                (
+                    "blocked",
+                    if c.blocked { "1".into() } else { String::new() },
                 ),
+                ("reason", c.reason.clone()),
+                ("addr", addr),
+                ("size", size),
+                ("srcEpt", src),
+                ("dstEpt", dst),
+                ("mboxCh", mbox),
             ])
         })
         .collect();
     render_template(
         tmpl,
-        &vars! { "sku" => sku.clone() },
+        &vars! { "sku" => board.som.sku.clone() },
         &BTreeMap::from([("channels", channels)]),
     )
 }
 
-pub(crate) fn render_dts_reservations(board: &BoardYaml, som: &SomPreset, tmpl: &str) -> String {
-    let sku = &board.som.sku;
-    let controller = som.mailbox.controller.as_deref();
-    let blocked: Vec<Row> = board
-        .ipc
+/// Render the DT `reserved-memory` overlay from the resolved carve-outs: a real
+/// `shared-dma-pool` region per allocated channel, or a `BLOCKED` comment per
+/// stubbed one. The engine precomputes each node block; the template frames them.
+pub(crate) fn render_dts_reservations(
+    board: &BoardYaml,
+    som: &SomPreset,
+    soc: &SocSpec,
+    tmpl: &str,
+) -> String {
+    let rows: Vec<Row> = resolve_carve_outs(board, som, soc)
         .iter()
-        .filter(|ch| rpmsg_blocked(ch, &som.mailbox))
-        .map(|ch| {
-            Row::from([
-                ("name", ch.name.clone()),
-                ("reason", rpmsg_block_reason(sku, controller)),
-            ])
+        .map(|c| {
+            let block = if c.blocked {
+                format!("        /* BLOCKED: {} -- {} */\n\n", c.name, c.reason)
+            } else {
+                format!(
+                    "        {n}: {n}@{ah:x} {{\n            compatible = \"shared-dma-pool\";\n            reg = <0x0 0x{addr:08x} 0x0 0x{size:08x}>;\n            no-map;\n            label = \"{n}\";\n        }};\n\n",
+                    n = c.name,
+                    ah = c.base,
+                    addr = c.base,
+                    size = c.size
+                )
+            };
+            Row::from([("block", block)])
         })
         .collect();
     render_template(
         tmpl,
         &BTreeMap::new(),
-        &BTreeMap::from([("blocked", blocked)]),
+        &BTreeMap::from([("carveouts", rows)]),
     )
 }
 

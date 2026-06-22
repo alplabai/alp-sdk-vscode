@@ -10,7 +10,5 @@
         #address-cells = <2>;
         #size-cells = <2>;
 
-{{#each blocked}}        /* BLOCKED: {{name}} -- {{reason}} */
-
-{{/each}}    };
+{{#each carveouts}}{{block}}{{/each}}    };
 };
