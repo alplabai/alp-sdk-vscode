@@ -214,6 +214,32 @@ pub(crate) fn check_route_dispatch(som: &SomPreset) -> Vec<Diagnostic> {
     diags
 }
 
+/// **ALP-B012** — the **known-silicon allowlist assertion**. The SoC symbol is
+/// *computed* (`prefix + silicon.upper()`), so the engine must refuse to emit it
+/// for a silicon it has no SoC spec for — otherwise a typo'd / out-of-catalogue
+/// `silicon:` ref would silently yield a bogus `CONFIG_ALP_SOC_*`. Membership =
+/// "a SoC spec resolved and its `ref` matches" (per the maintainer's #235 note:
+/// keep the allowlist, don't reduce it to a bare formula).
+pub(crate) fn check_silicon_known(som: &SomPreset, soc: &SocSpec) -> Option<Diagnostic> {
+    if soc.soc_ref.is_empty() || soc.soc_ref == som.silicon {
+        return None;
+    }
+    Some(Diagnostic {
+        code: "ALP-B012",
+        severity: Severity::Error,
+        message: format!(
+            "SoM silicon '{}' does not match the resolved SoC spec '{}' — the computed SoC symbol \
+             must not be emitted for an out-of-catalogue silicon",
+            som.silicon, soc.soc_ref
+        ),
+        hint: Some(
+            "ensure `silicon:` resolves to a metadata/socs/<vendor>/<family>/<part>.json whose \
+             `ref` matches"
+                .to_string(),
+        ),
+    })
+}
+
 /// Run every compatibility check, in a stable order. The caller decides what to
 /// do with the result (the engine surfaces warnings on the build plan; a
 /// blocking diagnostic ⇒ refuse the build).
@@ -226,6 +252,7 @@ pub(crate) fn check_all(
     pin_policy: &PinPolicy,
 ) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
+    diags.extend(check_silicon_known(som, soc));
     diags.extend(check_som_supported(board, som, board_def));
     diags.extend(check_peripherals(board, som, soc, p));
     diags.extend(check_pad_conflicts(board_def, pin_policy));

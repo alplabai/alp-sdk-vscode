@@ -187,6 +187,10 @@ pub(crate) struct RouteEntry {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SocSpec {
+    /// The silicon ref this spec describes (e.g. `alif:ensemble:e7`) — the
+    /// known-silicon membership token for the ALP-B012 allowlist check.
+    #[serde(default, rename = "ref")]
+    pub(crate) soc_ref: String,
     #[serde(default)]
     pub(crate) cores: Vec<SocCore>,
     /// The silicon's peripheral inventory: instance-kind → count (e.g.

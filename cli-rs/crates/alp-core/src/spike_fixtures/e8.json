@@ -1,0 +1,249 @@
+{
+  "soc_spec_version": 1,
+  "ref": "alif:ensemble:e8",
+  "vendor": "Alif Semiconductor",
+  "family": "Ensemble",
+  "part": "E8",
+  "status": "released",
+  "pending_alif_datasheet": false,
+  "datasheet": {
+    "version": "1.0",
+    "extracted_at": "2026-05-11",
+    "source": "Alif_E8_Datasheet_v1.0.pdf",
+    "doc_id": "ADTS0013"
+  },
+  "hwrm": {
+    "version": "0.3",
+    "source": "Confidential-Alif_E8_HWRM_v0.3.pdf",
+    "confidential": true
+  },
+  "errata": [
+    {
+      "version": "2.0",
+      "source": "AERR0012-Ensemble-E4-E6-E8-Errata-v2.0.pdf",
+      "doc_id": "AERR0012",
+      "published": "2026-04",
+      "title_quirk": "PDF title says 'Ensemble E2, E4, E8 Errata' but the scope section names E4, E6, E8 -- 'E2' is a transcription error in the source PDF title.",
+      "items": [
+        {
+          "id": "ER001",
+          "title": "Clock pre-scale divider for RTC is incorrectly reset",
+          "affected_revisions": ["A0"],
+          "resolution": "Fixed in silicon revision A1",
+          "consequence": "POR_N assertion or STOP-mode wake resets the RTC clock pre-scaler divider while VDD_VBATT is sufficient.  RTC reverts to its default 32 kHz rate; the firmware-configured rate (typically 1 Hz) is lost.  Firmware can re-write the divider but the elapsed-time accuracy is gone.",
+          "workaround": "Use silicon revision A1"
+        },
+        {
+          "id": "ER002",
+          "title": "RTC time drifts while POR_N reset signal is asserted",
+          "affected_revisions": ["A1"],
+          "resolution": "No fix planned for future silicon revision",
+          "consequence": "While POR_N is asserted, the RTC clock source switches from the high-accuracy 32 kHz LFXO to the lower-accuracy LFRC (~5 % offset).  After de-assertion the source switches back to LFXO.  RTC accuracy drifts proportional to total POR_N hold time -- a 20 s POR_N assertion incurs ~1 s of RTC error.",
+          "workaround": "Use an external real-time clock source if high accuracy is required"
+        },
+        {
+          "id": "ER003",
+          "title": "STOP mode current is higher than specification",
+          "affected_revisions": ["A0"],
+          "resolution": "Fixed in silicon revision A1",
+          "consequence": "Current entering VDD_BATT at 3.3 V in STOP mode is approximately 2 uA higher than the value specified in Table 5-5 of the E4 / E6 / E8 datasheets.  Reduces VDD_BATT battery life.",
+          "workaround": "Use silicon revision A1, STOP mode current is as specified in the datasheet"
+        },
+        {
+          "id": "ER004",
+          "title": "External reset supervisor is required in some situations",
+          "affected_revisions": ["All"],
+          "resolution": "No fix planned for future silicon revision",
+          "consequence": "During the initial 10 ms cold-boot ramp at VDD_MAIN + VDD_BUCK, the supply voltage must rise monotonically and must never dip below 1.65 V once 1.65 V is reached.  Violations can permanently damage the SoC.",
+          "workaround": "Use an external reset supervisor that drives POR_N active (low) while the supply is below 1.65 V.  See Alif Application Note AAPN0036 (PCB Layout Guidelines for Ensemble E4 / E6 / E8) for the reference circuit."
+        }
+      ]
+    }
+  ],
+  "cores": [
+    {
+      "id": "a32_cluster",
+      "type": "cortex-a32",
+      "count": 2,
+      "freq_mhz": 800,
+      "isa": "Armv8-A",
+      "trustzone": true,
+      "vector_extension": "Neon",
+      "fpu": "double-precision",
+      "l1_kb": 32,
+      "l2_kb": 512,
+      "shared_l2": true,
+      "mmu": true
+    },
+    {
+      "id": "m55_hp",
+      "type": "cortex-m55",
+      "subtype": "high-perf",
+      "count": 1,
+      "freq_mhz": 400,
+      "tcm_kb": 1280,
+      "isa": "Armv8.1-M",
+      "trustzone": true,
+      "vector_extension": "Helium",
+      "fpu": "double-precision"
+    },
+    {
+      "id": "m55_he",
+      "type": "cortex-m55",
+      "subtype": "high-efficiency",
+      "count": 1,
+      "freq_mhz": 160,
+      "tcm_kb": 512,
+      "isa": "Armv8.1-M",
+      "trustzone": true,
+      "vector_extension": "Helium",
+      "fpu": "double-precision"
+    }
+  ],
+  "npus": [
+    {
+      "type": "ethos-u85",
+      "subtype": "generative",
+      "mac_per_cycle": 256,
+      "freq_mhz": 400,
+      "gops": 204,
+      "supports": ["RNN", "CNN", "Transformer"]
+    },
+    {
+      "type": "ethos-u55",
+      "subtype": "high-perf",
+      "mac_per_cycle": 256,
+      "freq_mhz": 400,
+      "gops": 204,
+      "supports": ["RNN", "CNN"]
+    },
+    {
+      "type": "ethos-u55",
+      "subtype": "high-efficiency",
+      "mac_per_cycle": 128,
+      "freq_mhz": 160,
+      "gops": 46,
+      "supports": ["RNN", "CNN"]
+    }
+  ],
+  "soc_ram_kb": 9984,
+  "inference_arena_sram_kib": 0,
+  "soc_flash_mb": 5.5,
+  "always_on_sram_kb": 4,
+  "peripherals": {
+    "i2c": 4,
+    "i2c_lp": 2,
+    "spi": 4,
+    "spi_lp": 1,
+    "uart": 8,
+    "uart_lp": 1,
+    "i2s": 4,
+    "i2s_lp": 1,
+    "pdm": 4,
+    "pdm_lp": 4,
+    "ethernet": 1,
+    "usb_2": 1,
+    "sdio": 1,
+    "can_fd": 1,
+    "i3c": 1,
+    "i3c_lp": 1,
+    "mipi_csi2": 1,
+    "mipi_dsi": 1,
+    "cpi_parallel": 1,
+    "cpi_lp": 1,
+    "dpi_parallel": 1,
+    "adc_12bit": 3,
+    "adc_24bit": 1,
+    "dac_12bit": 2,
+    "comparator_hs": 4,
+    "comparator_lp": 1,
+    "gpio_18v": 136,
+    "gpio_18v_or_33v": 8,
+    "timer_32bit": 12,
+    "timer_lp_32bit": 3,
+    "watchdog": 4,
+    "timer_lp": 4,
+    "rtc": 1,
+    "encoder_quadrature": 4,
+    "isp": 1,
+    "jpeg_encoder": 1
+  },
+  "capabilities": {
+    "ethos_u55_count": 2,
+    "ethos_u85_count": 1,
+    "helium_mve":      true,
+    "neon":            true,
+    "gpu2d":           true,
+    "dave2d":          true,
+    "cryptocell":      true,
+    "inline_aes":      true,
+    "hexspi_dma":      true,
+    "dma2d":           true
+  },
+  "external_memory_interfaces": [
+    {
+      "kind": "HexSPI",
+      "count": 2,
+      "max_mbps_sdr": 400,
+      "max_mbps_ddr": 800,
+      "supports": ["XIP", "AES inline", "HyperBus"]
+    },
+    {
+      "kind": "SD/eMMC",
+      "count": 1,
+      "spec": "SD v4.2 / eMMC v5.1",
+      "dma": true
+    }
+  ],
+  "power": {
+    "stop_ua": 1.3,
+    "active_ua_per_mhz": 29
+  },
+  "operating_temp_c": {
+    "ambient": [-40, 85]
+  },
+  "packages": ["WLCSP216 0.5mm", "FBGA194 0.5mm"],
+  "variants": [
+    {
+      "order_code": "AE822FA0E5597BS0",
+      "package": "WLCSP216",
+      "temperature_grade": "standard",
+      "mram_mb": 5.5,
+      "sram_kb": 9984,
+      "sram_banks_kb": {
+        "SRAM0": 4096, "SRAM1": 4096,
+        "SRAM2_M55_HP_ITCM": 256, "SRAM3_M55_HP_DTCM": 1024,
+        "SRAM4_M55_HE_ITCM": 256, "SRAM5_M55_HE_DTCM": 256
+      },
+      "gpio_18v": 136,
+      "optional_features": { "npu_hg": true, "isp": true, "jpeg_encoder": true },
+      "shipment_suffixes": ["-T", "-Y"]
+    },
+    {
+      "order_code": "AE822FA0E5597LS0",
+      "package": "FBGA194",
+      "temperature_grade": "standard",
+      "mram_mb": 5.5,
+      "sram_kb": 9984,
+      "sram_banks_kb": {
+        "SRAM0": 4096, "SRAM1": 4096,
+        "SRAM2_M55_HP_ITCM": 256, "SRAM3_M55_HP_DTCM": 1024,
+        "SRAM4_M55_HE_ITCM": 256, "SRAM5_M55_HE_DTCM": 256
+      },
+      "gpio_18v": 120,
+      "optional_features": { "npu_hg": true, "isp": true, "jpeg_encoder": true },
+      "shipment_suffixes": ["-T", "-Y"],
+      "alp_module_skus": ["E1M-AEN801"]
+    }
+  ],
+  "notes": [
+    "Datasheet v1.0 released (Alif_E8_Datasheet_v1.0.pdf, ADTS0013, 2026-05-11) -- supersedes the prior v0.51 pre-release reference.  Peripheral counts above were ingested against v0.51 and remain provisional; reconcile against v1.0 in the next dedicated re-ingest pass.",
+    "HWRM v0.3 is Alif-confidential -- referenced here for traceability; the file itself stays out of git.",
+    "Errata AERR0012 v2.0 covers E4/E6/E8 jointly; individual `items` list is pending ingestion against the errata doc.",
+    "E8 adds 1× Ethos-U85 NPU (Generative AI, supports Transformers) on top of the E7 NPU pair.",
+    "E8 swaps OctalSPI for HexSPI (16-bit, 400 MB/s SDR / 800 MB/s DDR) -- a different external-memory protocol than E3/E7.",
+    "E8 ships an ISP and JPEG encoder (E3/E7 do not).",
+    "WLCSP216 package exposes 136× 1.8-V GPIOs; FBGA194 exposes 120 (note: 'GPIO[0-14]' subset on FBGA per datasheet table 7-1).",
+    "AE822FA0E5597LS0 is the variant Alp Lab uses on the E1M-AEN801 module SKU."
+  ]
+}

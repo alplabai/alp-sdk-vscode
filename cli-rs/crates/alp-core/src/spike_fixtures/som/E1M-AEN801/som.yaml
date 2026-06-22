@@ -1,0 +1,120 @@
+# Stock preset for E1M-AEN801 (the SoM, NOT the EVK board).
+# See E1M-AEN701.yaml header for the file's role + the
+# project memory note governing what stays TBD.
+
+schema_version: 1
+
+sku: E1M-AEN801
+family: alif-ensemble
+silicon: alif:ensemble:e8
+silicon_variant: AE822FA0E5597LS0        # see metadata/socs/alif/ensemble/e8.json variants[]
+
+display_name: "E1M-AEN801 (Alif Ensemble E8 -- 2x A32 + 2x M55 + 3x Ethos-U, preliminary)"
+
+on_module:
+  silicon:              alif:ensemble:e8       # 2x A32, dual-NPU 204 GOPS, includes Ethos-U85
+  wifi_ble:             cc3501e
+  secure_element:       optiga_trust_m
+  rtc_external:         rv3028c7
+  temperature_sensor:   tmp112
+  eeprom:               eeprom_24c128
+  ospi_memories:
+    ospi0:
+      chip:           TBD            # part MPN pending HW design freeze
+      assembled:      optional       # BOM variant
+      capacity_mbit:  TBD            # density pending HW design freeze
+      role:           app_storage
+    ospi1:
+      chip:           TBD
+      assembled:      optional
+      capacity_mbit:  TBD
+      role:           data_log
+
+inference:
+  preferred_backend:    ethos_u                # E8 ships Ethos-U85 alongside two U55s.
+  ethos_u_variant:      u85                    # primary.
+  npu_population:
+    - { variant: u55, role: NPU-HE, paired_with: M55-HE }
+    - { variant: u55, role: NPU-HP, paired_with: M55-HP }
+    - { variant: u85, role: NPU-HG, paired_with: HG-subsystem }
+
+capabilities:
+  optiga_trust_m:       true
+
+topology:
+  a32_cluster:
+    app: alp-image-edge
+    machine: e1m-aen801-a32             # Yocto MACHINE
+    toolchain: poky-glibc
+  m55_hp:
+    app: alp-stock-shim
+    board: alp_e1m_aen801_m55_hp        # Zephyr board target
+    toolchain: arm-zephyr-eabi
+  m55_he:
+    app: alp-stock-shim
+    board: alp_e1m_aen801_m55_he        # Zephyr board target
+    toolchain: arm-zephyr-eabi
+
+# Memory layout (SRAM banks + MRAM) is derived from the SoC variant
+# resolved via `silicon_variant:` -- see metadata/socs/<vendor>/<family>/<part>.json
+# `variants[].sram_banks_kb` + `mram_mb`. Declare a memory_map: block
+# here ONLY for non-stock partitioning (none of the current 11 SKUs
+# need one).
+
+# Alif IPC controller name TBD pending the hand-written HW config.
+mailbox:
+  controller: TBD
+  channels:
+    - { id: 0, reserved_for: alp_default_rpmsg }
+    - { id: 1, reserved_for: app }
+    - { id: 2, reserved_for: app }
+    - { id: 3, reserved_for: power_mgmt }
+
+# E1M pads / instances that route through the on-module CC3501E
+# coprocessor instead of through the Alif Ensemble silicon.  Apps
+# using these pads via `alp_gpio_open()` / `alp_spi_open()` etc.
+# get CC3501E command dispatch automatically; the board-side
+# role (e.g. EVK_PIN_BMI323_INT1) stays SoM-agnostic.
+#
+# Source of truth:
+#   - metadata/e1m_modules/aen/from-cc3501e.tsv  (SPI1 bus)
+#   - AEN family hardware design (IO11/13/15..21 termination)
+pad_routes:
+  # SPI1 inter-chip bus -- CC3501E hosts the SPI peripheral.
+  - { e1m: E1M_SPI1,      dispatch: cc3501e,
+      doc: "Inter-chip SPI1 fast path; CC3501E acts as SPI peripheral." }
+
+  # GPIO pads that physically terminate on CC3501E (not on Alif silicon).
+  - { e1m: E1M_GPIO_IO11, dispatch: cc3501e, dispatch_pin: 2,
+      doc: "CC3501E GPIO_2." }
+  - { e1m: E1M_GPIO_IO13, dispatch: cc3501e, dispatch_pin: 13,
+      doc: "CC3501E GPIO_13." }
+  - { e1m: E1M_GPIO_IO15, dispatch: cc3501e, dispatch_pin: 14,
+      doc: "CC3501E GPIO_14." }
+  - { e1m: E1M_GPIO_IO16, dispatch: cc3501e, dispatch_pin: 16,
+      doc: "CC3501E GPIO_16." }
+  - { e1m: E1M_GPIO_IO17, dispatch: cc3501e, dispatch_pin: 17,
+      doc: "CC3501E GPIO_17." }
+  - { e1m: E1M_GPIO_IO18, dispatch: cc3501e, dispatch_pin: 18,
+      doc: "CC3501E GPIO_18." }
+  - { e1m: E1M_GPIO_IO19, dispatch: cc3501e, dispatch_pin: 19,
+      doc: "CC3501E GPIO_19." }
+  - { e1m: E1M_GPIO_IO20, dispatch: cc3501e, dispatch_pin: 26,
+      doc: "CC3501E GPIO_26." }
+  - { e1m: E1M_GPIO_IO21, dispatch: cc3501e, dispatch_pin: 30,
+      doc: "CC3501E GPIO_30." }
+
+helper_firmware:
+  - name:          cc3501e_otp
+    chip:          cc3501e
+    firmware_path: TBD
+    flash_method:  TBD
+    flash_args:    TBD
+
+default_hw_rev:         r1                  # see metadata/e1m_modules/<family>/hw-revisions.yaml
+
+default_board:        E1M-EVK
+
+status:
+  preliminary:          true                   # E8 datasheet v0.51 (preliminary)
+  partial_hw_config:    true

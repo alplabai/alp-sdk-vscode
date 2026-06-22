@@ -71,6 +71,67 @@ fn templates() -> Templates {
     }
 }
 
+// === E8 / AEN801 — the universality proof (maintainer's decisive ask on #235) ===
+// SAME engine, SAME templates + build policy as E7; ONLY the SoM metadata
+// (som.yaml) + the SoC spec (e8.json) differ. Oracle captured from the real
+// `alp_orchestrate.py --emit` at the **v0.7.0** tag (per ADR 0014: parity vs a tag).
+const BOARD_YAML_E8: &str = include_str!("../spike_fixtures/oracle/rpmsg-aen801.board.yaml");
+const SOM_E8: &str = include_str!("../spike_fixtures/som/E1M-AEN801/som.yaml");
+const POLICY_E8: &str = include_str!("../spike_fixtures/som/E1M-AEN801/policy.json");
+const SOC_E8: &str = include_str!("../spike_fixtures/e8.json");
+const KCONFIG_TMPL_E8: &str =
+    include_str!("../spike_fixtures/som/E1M-AEN801/templates/kconfig.tmpl");
+const ORACLE_BUILD_PLAN_E8: &str = include_str!("../spike_fixtures/oracle/rpmsg-aen801.build-plan");
+const ORACLE_MANIFEST_E8: &str =
+    include_str!("../spike_fixtures/oracle/rpmsg-aen801.system-manifest");
+
+fn load_e8() -> (BoardYaml, SomPreset, BoardDef, SocSpec) {
+    (
+        serde_yaml::from_str(BOARD_YAML_E8).unwrap(),
+        serde_yaml::from_str(SOM_E8).unwrap(),
+        serde_yaml::from_str(BOARD_DEF).unwrap(), // the SAME E1M-EVK board def as E7
+        serde_json::from_str(SOC_E8).unwrap(),
+    )
+}
+
+fn policy_e8() -> Policy {
+    load_policy(POLICY_E8).unwrap()
+}
+
+/// The E8 bundle's templates, loaded from `som/E1M-AEN801/templates/` — byte-
+/// identical to E7's (asserted in `e8_bundle_reuses_the_e7_shapes`).
+fn templates_e8() -> Templates {
+    Templates {
+        local_conf: include_str!("../spike_fixtures/som/E1M-AEN801/templates/local.conf.tmpl")
+            .to_string(),
+        kconfig: KCONFIG_TMPL_E8.to_string(),
+        system_ipc_h: include_str!("../spike_fixtures/som/E1M-AEN801/templates/system_ipc.h.tmpl")
+            .to_string(),
+        dts_reservations: include_str!(
+            "../spike_fixtures/som/E1M-AEN801/templates/dts-reservations.dtsi.tmpl"
+        )
+        .to_string(),
+        dts_partitions: include_str!(
+            "../spike_fixtures/som/E1M-AEN801/templates/dts-partitions.dtsi.tmpl"
+        )
+        .to_string(),
+    }
+}
+
+fn oracle_e8_artefact(core_id: &str) -> String {
+    let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN_E8).unwrap();
+    plan["slices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["coreId"] == core_id)
+        .unwrap_or_else(|| panic!("E8 oracle has no slice {core_id}"))["configArtefacts"][0]
+        ["contents"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
 fn oracle_artefact(core_id: &str) -> String {
     let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN).unwrap();
     plan["slices"]
@@ -444,6 +505,23 @@ fn alp_b011_blocks_unsupported_som_on_carrier() {
     assert!(d.message.contains("renesas-rzv") && d.message.contains("E1M-AEN701"));
 }
 
+/// **ALP-B012** — the known-silicon allowlist (maintainer's #2 condition): the
+/// computed SoC symbol stays non-emitting for an out-of-catalogue silicon. A
+/// silicon matching its SoC spec is clean; a mismatch blocks.
+#[test]
+fn alp_b012_blocks_out_of_catalogue_silicon() {
+    let (_, som, _, soc) = load();
+    // Canonical: som.silicon == soc.ref (alif:ensemble:e7) → clean.
+    assert!(check_silicon_known(&som, &soc).is_none());
+    // An out-of-catalogue silicon ref → blocking ALP-B012, no bogus symbol emitted.
+    let mut bad = som;
+    bad.silicon = "acme:foo:z99".to_string();
+    let d = check_silicon_known(&bad, &soc).expect("B012 fires for unknown silicon");
+    assert_eq!(d.code, "ALP-B012");
+    assert!(d.is_blocking());
+    assert!(d.message.contains("acme:foo:z99"));
+}
+
 // === Phase 4 — pin/pad routing (compose + conflicts + the routing header) ===
 
 /// The engine COMPOSES board-agnostic roles (`e1m_routes`) with the SoM's
@@ -705,4 +783,104 @@ fn canonical_board_pins_validate_end_to_end() {
     dup.pins.push(mk("E1M_I2C0"));
     let d = check_board_pins(&dup, &m, &p);
     assert!(d.iter().any(|d| d.code == "ALP-P002"));
+}
+
+// === E8 / AEN801 parity — the universality proof (issue #235, maintainer ask) ===
+
+/// A NEW silicon's SoC symbol is computed by the SAME rule — no table, no engine
+/// edit. `_SILICON_TO_KCONFIG` truly dissolved across silicons.
+#[test]
+fn e8_silicon_symbol_is_computed() {
+    assert_eq!(
+        policy_e8().soc_symbol("alif:ensemble:e8"),
+        "ALP_SOC_ALIF_ENSEMBLE_E8"
+    );
+}
+
+/// The E8 bundle reuses E7's EXACT build rules + output shapes — only the SoM
+/// metadata (`som.yaml`) + the SoC spec (`e8.json`) differ. That is what makes the
+/// engine "universal": same data surfaces, new silicon.
+#[test]
+fn e8_bundle_reuses_the_e7_shapes() {
+    assert_eq!(
+        POLICY_E8, POLICY_JSON,
+        "E8 build policy is byte-identical to E7"
+    );
+    assert_eq!(
+        KCONFIG_TMPL_E8, KCONFIG_TMPL,
+        "E8 kconfig template is byte-identical to E7"
+    );
+}
+
+/// **STAGE C (E8)** — m55_hp Zephyr `alp.conf`, byte-for-byte from data. The E8
+/// silicon symbol AND the **Ethos-U85** dispatcher fall out of the new SoM
+/// metadata with the SAME engine + template (E7 emits U55 only; E8 adds U85).
+#[test]
+fn e8_m55_hp_alp_conf_matches_sdk_emit_byte_for_byte() {
+    let (board, som, board_def, soc) = load_e8();
+    let out = render_zephyr_alp_conf(
+        "m55_hp",
+        &board,
+        &som,
+        &board_def,
+        &soc,
+        &policy_e8(),
+        KCONFIG_TMPL_E8,
+    );
+    assert_eq!(out, oracle_e8_artefact("m55_hp"));
+    assert!(out.contains("CONFIG_ALP_SOC_ALIF_ENSEMBLE_E8=y"));
+    assert!(out.contains("CONFIG_ALP_SDK_INFERENCE_ETHOS_U_VARIANT_U85=y"));
+}
+
+/// **STAGE E (E8)** — the E8 system-manifest content, structural.
+#[test]
+fn e8_system_manifest_matches_sdk_emit() {
+    let (board, som, board_def, soc) = load_e8();
+    let ours = build_system_manifest(&board, &som, &board_def, &soc, &policy_e8());
+    let oracle: SystemManifest = serde_yaml::from_str(ORACLE_MANIFEST_E8).unwrap();
+    assert_eq!(ours, oracle);
+}
+
+/// **STAGE F (E8) — the decisive ask.** The WHOLE E8 build-plan reproduced in one
+/// assert with ZERO engine-code change vs E7: the same `assemble_full_plan`, a new
+/// `som/E1M-AEN801/` bundle + `e8.json`. Universality proven where it counts.
+#[test]
+fn e8_full_build_plan_matches_sdk_emit() {
+    let (board, som, board_def, soc) = load_e8();
+    let oracle: BuildPlan = serde_json::from_str(ORACLE_BUILD_PLAN_E8).unwrap();
+    let sdk_root = oracle
+        .slices
+        .iter()
+        .find_map(|s| s.env.get("ALP_SDK_ROOT").cloned())
+        .unwrap();
+    let zephyr_apps: BTreeMap<String, String> = oracle
+        .slices
+        .iter()
+        .filter(|s| matches!(s.backend, Backend::Zephyr))
+        .map(|s| {
+            (
+                s.core_id.clone(),
+                s.command.as_ref().unwrap().args.last().unwrap().clone(),
+            )
+        })
+        .collect();
+
+    let mut ours = assemble_full_plan(
+        &board,
+        &som,
+        &board_def,
+        &soc,
+        &oracle.board_yaml,
+        &sdk_root,
+        &zephyr_apps,
+        &policy_e8(),
+        &templates_e8(),
+    );
+    let mut oracle = oracle;
+    sort_plan(&mut ours);
+    sort_plan(&mut oracle);
+    assert_eq!(
+        serde_json::to_value(&ours).unwrap(),
+        serde_json::to_value(&oracle).unwrap()
+    );
 }
