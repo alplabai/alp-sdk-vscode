@@ -188,30 +188,34 @@ pub(crate) fn render_zephyr_alp_conf(
         }
     }
 
-    // Inference dispatchers (policy symbol set + SoM/SoC facts)
+    // Inference dispatchers (policy symbols + SoM/SoC facts). Accelerator-AGNOSTIC:
+    // the backend is emitted when the SILICON declares an NPU (`soc.npus`), keyed
+    // by silicon in the policy — Ethos-U on Alif, DRP-AI on Renesas, … the engine
+    // never names a vendor. Per-NPU variants follow when the SoM lists them
+    // (Ethos-U has `npu_population[].variant`; DRP-AI has none).
     let mut inf = vec![format!("{}=y", p.inference.tflm_backend)];
     if let Some(sym) = p.inference.tflm_kernel.get(tflm_kernel_key(soc, core_id)) {
         inf.push(format!("{sym}=y"));
     }
-    let variants: BTreeSet<String> = som
-        .inference
-        .npu_population
-        .iter()
-        .filter_map(|e| e.variant.as_ref().map(|v| v.to_lowercase()))
-        .collect();
-    if !variants.is_empty() {
+    if !soc.npus.is_empty() {
         if let Some(b) = p
             .inference
-            .ethos_backend
+            .accelerator_backend
             .get(&som.silicon)
-            .or_else(|| p.inference.ethos_backend.get("default"))
+            .or_else(|| p.inference.accelerator_backend.get("default"))
         {
             inf.push(format!("{b}=y"));
         }
+        let variants: BTreeSet<String> = som
+            .inference
+            .npu_population
+            .iter()
+            .filter_map(|e| e.variant.as_ref().map(|v| v.to_lowercase()))
+            .collect();
         for v in &variants {
             inf.push(format!(
                 "{}{}=y",
-                p.inference.ethos_variant_prefix,
+                p.inference.npu_variant_prefix,
                 v.to_uppercase()
             ));
         }
@@ -336,7 +340,7 @@ pub(crate) struct ComposedRoute {
     pub(crate) e1m: String,
     pub(crate) macro_name: String,
     pub(crate) dispatch: String,
-    pub(crate) dispatch_pin: Option<u32>,
+    pub(crate) dispatch_pin: Option<String>,
 }
 
 /// Compose the board's `e1m_routes` (board-agnostic roles) with the SoM's
@@ -353,7 +357,10 @@ pub(crate) fn compose_routes(board_def: &BoardDef, som: &SomPreset) -> Vec<Compo
     for entries in board_def.e1m_routes.values() {
         for e in entries {
             let (disp, pin) = match dispatch.get(e.e1m.as_str()) {
-                Some(pr) => (pr.dispatch.clone(), pr.dispatch_pin),
+                Some(pr) => (
+                    pr.dispatch.clone(),
+                    pr.dispatch_pin.as_ref().and_then(pin_to_string),
+                ),
                 None => ("direct".to_string(), None),
             };
             out.push(ComposedRoute {
@@ -375,7 +382,7 @@ pub(crate) fn render_board_routes_h(board_def: &BoardDef, som: &SomPreset, tmpl:
     let rows: Vec<Row> = compose_routes(board_def, som)
         .iter()
         .map(|r| {
-            let comment = match (r.dispatch.as_str(), r.dispatch_pin) {
+            let comment = match (r.dispatch.as_str(), &r.dispatch_pin) {
                 ("direct", _) => String::new(),
                 (m, Some(pin)) => format!("  /* via {m} pin {pin} */"),
                 (m, None) => format!("  /* via {m} */"),

@@ -105,10 +105,20 @@ pub(crate) struct Mailbox {
 pub(crate) struct PadRoute {
     pub(crate) e1m: String,
     pub(crate) dispatch: String,
+    /// The mediator pin — a NUMBER on the Alif CC3501E (`14`) or a NAME on the
+    /// Renesas GD32 bridge (`PA11`). Kept as a raw value so the schema is
+    /// vendor-neutral; stringified at render time.
     #[serde(default)]
-    pub(crate) dispatch_pin: Option<u32>,
+    pub(crate) dispatch_pin: Option<serde_yaml::Value>,
     #[serde(default)]
     pub(crate) doc: Option<String>,
+}
+
+/// Stringify a `dispatch_pin` raw value (number → `"14"`, name → `"PA11"`).
+pub(crate) fn pin_to_string(v: &serde_yaml::Value) -> Option<String> {
+    v.as_u64()
+        .map(|n| n.to_string())
+        .or_else(|| v.as_str().map(String::from))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -133,8 +143,11 @@ pub(crate) struct HelperFw {
     pub(crate) firmware_path: Option<String>,
     #[serde(default)]
     pub(crate) flash_method: Option<String>,
+    /// Flash arguments — a bare string on Alif (`TBD`) or a structured map on the
+    /// Renesas GD32 bridge (`{interface, target, base}`). Vendor-neutral raw value,
+    /// passed through to the manifest verbatim.
     #[serde(default)]
-    pub(crate) flash_args: Option<String>,
+    pub(crate) flash_args: Option<serde_yaml::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -198,6 +211,17 @@ pub(crate) struct SocSpec {
     /// SoC whose datasheet ingestion is still pending.
     #[serde(default)]
     pub(crate) peripherals: BTreeMap<String, u32>,
+    /// The on-die AI accelerators (Ethos-U on Alif, DRP-AI on Renesas, …). Its
+    /// presence (not its vendor) gates the inference backend — the engine stays
+    /// accelerator-agnostic; the backend symbol is policy data keyed by silicon.
+    #[serde(default)]
+    pub(crate) npus: Vec<SocNpu>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SocNpu {
+    #[serde(default, rename = "type")]
+    pub(crate) kind: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

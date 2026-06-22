@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "_comment": "Proof bench POLICY — the per-silicon/board/OS build rules as DATA, not hardcoded engine code (issue alplabai/alp-sdk#235). The engine reads this and applies it generically; swapping a value changes the output with no code change. Default values reproduce the SDK's v0.6.0-55 emit for E1M-AEN701 byte-for-byte.",
+  "_comment": "Proof bench POLICY for the Renesas RZ/V2N family (cross-vendor). SAME schema as the Alif policy; only the genuinely vendor-specific values differ: the accelerator backend (DRP-AI, not Ethos-U) and the +adc/+pwm peripheral subsystems the V2N m33 core uses. Reproduces the SDK v0.7.0 --emit for E1M-V2N101 byte-for-byte with the SAME engine.",
   "baseKconfig": [
     "CONFIG_ALP_SDK=y",
     "CONFIG_LOG=y",
@@ -33,12 +33,19 @@
   "peripheralSubsystems": {
     "i2c": "I2C",
     "spi": "SPI",
-    "gpio": "GPIO"
+    "gpio": "GPIO",
+    "adc": "ADC",
+    "pwm": "PWM"
   },
-  "_peripheralAliasesComment": "Peripheral-coverage aliasing for the ALP-B010 SoC-inventory check (RFC #235: rules are data). A declared peripheral kind is 'present on the silicon' if a SoC-JSON peripherals[] key matches it directly, OR matches it with a variant suffix (i2c->i2c_lp, can->can_fd, adc->adc_12bit — handled generically as <kind>_*), OR resolves through one of these aliases. An empty alias list means a pure software abstraction that is ALWAYS available (e.g. `sensor`).",
+  "_peripheralAliasesComment": "Peripheral-coverage aliasing for the ALP-B010 SoC-inventory check (RFC #235: rules are data). A declared peripheral kind is 'present on the silicon' if a SoC-JSON peripherals[] key matches it directly, OR matches it with a variant suffix (i2c->i2c_lp, can->can_fd, adc->adc_12bit \u2014 handled generically as <kind>_*), OR resolves through one of these aliases. An empty alias list means a pure software abstraction that is ALWAYS available (e.g. `sensor`).",
   "peripheralAliases": {
-    "counter": ["timer"],
-    "pwm": ["pwm", "timer"],
+    "counter": [
+      "timer"
+    ],
+    "pwm": [
+      "pwm",
+      "timer"
+    ],
     "sensor": []
   },
   "chipSubsystems": {
@@ -145,8 +152,7 @@
       "ref": "CONFIG_ALP_SDK_INFERENCE_TFLM_KERNEL_REF"
     },
     "acceleratorBackend": {
-      "default": "CONFIG_ALP_SDK_INFERENCE_BACKEND_ETHOS_U_AEN",
-      "nxp:imx9:imx93": "CONFIG_ALP_SDK_INFERENCE_BACKEND_ETHOS_U_N93"
+      "renesas:rzv2n:n44": "CONFIG_ALP_SDK_INFERENCE_BACKEND_DRPAI_V2N"
     },
     "npuVariantPrefix": "CONFIG_ALP_SDK_INFERENCE_ETHOS_U_VARIANT_"
   }

@@ -199,7 +199,9 @@ pub(crate) struct HelperMcu {
     pub(crate) chip: String,
     pub(crate) firmware_path: String,
     pub(crate) flash_method: String,
-    pub(crate) flash_args: String,
+    /// Vendor-neutral: a string on Alif, a `{interface,target,base}` map on the
+    /// Renesas GD32 bridge — passed through from the SoM verbatim.
+    pub(crate) flash_args: serde_yaml::Value,
     #[serde(default)]
     pub(crate) note: Option<String>,
 }
@@ -288,7 +290,7 @@ pub(crate) fn build_system_manifest(
                 chip: hf.chip.clone().unwrap_or_default(),
                 firmware_path,
                 flash_method: hf.flash_method.clone().unwrap_or_default(),
-                flash_args: hf.flash_args.clone().unwrap_or_default(),
+                flash_args: hf.flash_args.clone().unwrap_or(serde_yaml::Value::Null),
                 note,
             }
         })

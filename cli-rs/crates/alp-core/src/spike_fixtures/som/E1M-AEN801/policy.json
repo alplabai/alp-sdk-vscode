@@ -144,10 +144,10 @@
       "helium": "CONFIG_ALP_SDK_INFERENCE_TFLM_KERNEL_HELIUM",
       "ref": "CONFIG_ALP_SDK_INFERENCE_TFLM_KERNEL_REF"
     },
-    "ethosBackend": {
+    "acceleratorBackend": {
       "default": "CONFIG_ALP_SDK_INFERENCE_BACKEND_ETHOS_U_AEN",
       "nxp:imx9:imx93": "CONFIG_ALP_SDK_INFERENCE_BACKEND_ETHOS_U_N93"
     },
-    "ethosVariantPrefix": "CONFIG_ALP_SDK_INFERENCE_ETHOS_U_VARIANT_"
+    "npuVariantPrefix": "CONFIG_ALP_SDK_INFERENCE_ETHOS_U_VARIANT_"
   }
 }

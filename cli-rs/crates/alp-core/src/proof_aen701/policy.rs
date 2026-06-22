@@ -49,8 +49,13 @@ pub(crate) struct FlashPolicy {
 pub(crate) struct InferencePolicy {
     pub(crate) tflm_backend: String,
     pub(crate) tflm_kernel: BTreeMap<String, String>,
-    pub(crate) ethos_backend: BTreeMap<String, String>,
-    pub(crate) ethos_variant_prefix: String,
+    /// The AI-accelerator backend Kconfig, keyed by silicon ref (with a
+    /// `default`). Vendor-neutral: `default`→Ethos-U on Alif, `renesas:rzv2n:n44`
+    /// →DRP-AI, … — the engine looks it up by silicon, it does not know "Ethos".
+    pub(crate) accelerator_backend: BTreeMap<String, String>,
+    /// Prefix for per-NPU variant symbols (Ethos-U `…_VARIANT_U85`); only used
+    /// when the SoM lists `npu_population[].variant` (DRP-AI has none).
+    pub(crate) npu_variant_prefix: String,
 }
 
 impl Policy {

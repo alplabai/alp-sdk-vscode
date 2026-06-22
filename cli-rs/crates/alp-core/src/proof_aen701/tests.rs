@@ -538,7 +538,7 @@ fn compose_attaches_som_dispatch_to_board_roles() {
         .expect("BMI323 INT1 pad");
     assert_eq!(io15.macro_name, "EVK_PIN_BMI323_INT1");
     assert_eq!(io15.dispatch, "cc3501e");
-    assert_eq!(io15.dispatch_pin, Some(14));
+    assert_eq!(io15.dispatch_pin, Some("14".to_string()));
     // A pad the SoM does not redirect stays direct.
     let i2c0 = routes.iter().find(|r| r.e1m == "E1M_I2C0").unwrap();
     assert_eq!(i2c0.dispatch, "direct");
@@ -882,5 +882,188 @@ fn e8_full_build_plan_matches_sdk_emit() {
     assert_eq!(
         serde_json::to_value(&ours).unwrap(),
         serde_json::to_value(&oracle).unwrap()
+    );
+}
+
+// === V2N / E1M-V2N101 — the CROSS-VENDOR proof (Renesas RZ/V2N: DRP-AI, a55+m33) ===
+// A genuinely different VENDOR. The SAME zero-literal engine + the SAME output
+// templates reproduce it; the policy differs ONLY in vendor-specific VALUES
+// (DRP-AI backend, +adc/+pwm subsystems) — same SCHEMA. Oracle from --emit at v0.7.0.
+const BOARD_YAML_V2N: &str = include_str!("../spike_fixtures/oracle/rpmsg-v2n.board.yaml");
+const SOM_V2N: &str = include_str!("../spike_fixtures/som/E1M-V2N101/som.yaml");
+const POLICY_V2N: &str = include_str!("../spike_fixtures/som/E1M-V2N101/policy.json");
+const SOC_V2N: &str = include_str!("../spike_fixtures/n44.json");
+const BOARD_DEF_V2N: &str = include_str!("../spike_fixtures/e1m-x-evk.yaml");
+const KCONFIG_TMPL_V2N: &str =
+    include_str!("../spike_fixtures/som/E1M-V2N101/templates/kconfig.tmpl");
+const ORACLE_BUILD_PLAN_V2N: &str = include_str!("../spike_fixtures/oracle/rpmsg-v2n.build-plan");
+const ORACLE_MANIFEST_V2N: &str =
+    include_str!("../spike_fixtures/oracle/rpmsg-v2n.system-manifest");
+
+fn load_v2n() -> (BoardYaml, SomPreset, BoardDef, SocSpec) {
+    (
+        serde_yaml::from_str(BOARD_YAML_V2N).unwrap(),
+        serde_yaml::from_str(SOM_V2N).unwrap(),
+        serde_yaml::from_str(BOARD_DEF_V2N).unwrap(), // a DIFFERENT board (E1M-X-EVK)
+        serde_json::from_str(SOC_V2N).unwrap(),
+    )
+}
+
+fn policy_v2n() -> Policy {
+    load_policy(POLICY_V2N).unwrap()
+}
+
+fn templates_v2n() -> Templates {
+    Templates {
+        local_conf: include_str!("../spike_fixtures/som/E1M-V2N101/templates/local.conf.tmpl")
+            .to_string(),
+        kconfig: KCONFIG_TMPL_V2N.to_string(),
+        system_ipc_h: include_str!("../spike_fixtures/som/E1M-V2N101/templates/system_ipc.h.tmpl")
+            .to_string(),
+        dts_reservations: include_str!(
+            "../spike_fixtures/som/E1M-V2N101/templates/dts-reservations.dtsi.tmpl"
+        )
+        .to_string(),
+        dts_partitions: include_str!(
+            "../spike_fixtures/som/E1M-V2N101/templates/dts-partitions.dtsi.tmpl"
+        )
+        .to_string(),
+    }
+}
+
+fn oracle_v2n_artefact(core_id: &str) -> String {
+    let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN_V2N).unwrap();
+    plan["slices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["coreId"] == core_id)
+        .unwrap_or_else(|| panic!("V2N oracle has no slice {core_id}"))["configArtefacts"][0]
+        ["contents"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+/// **CROSS-VENDOR.** A Renesas part's SoC symbol is computed by the SAME rule.
+#[test]
+fn v2n_silicon_symbol_is_computed() {
+    assert_eq!(
+        policy_v2n().soc_symbol("renesas:rzv2n:n44"),
+        "ALP_SOC_RENESAS_RZV2N_N44"
+    );
+}
+
+/// The cross-vendor bundle reuses the SAME engine + the SAME output templates; the
+/// policy differs ONLY in vendor-specific VALUES (DRP-AI backend, +adc/+pwm) — same
+/// SCHEMA, parsed by the same `Policy`. No Ethos symbols leak onto a DRP-AI part.
+#[test]
+fn v2n_reuses_engine_and_templates_only_data_differs() {
+    assert_eq!(
+        KCONFIG_TMPL_V2N, KCONFIG_TMPL,
+        "V2N templates byte-identical to Alif's"
+    );
+    assert!(policy_v2n().peripheral_subsystems.contains_key("adc"));
+    let (board, som, board_def, soc) = load_v2n();
+    let out = render_zephyr_alp_conf(
+        "m33_sm",
+        &board,
+        &som,
+        &board_def,
+        &soc,
+        &policy_v2n(),
+        KCONFIG_TMPL_V2N,
+    );
+    assert!(out.contains("CONFIG_ALP_SDK_INFERENCE_BACKEND_DRPAI_V2N=y"));
+    assert!(!out.contains("ETHOS"), "no Ethos symbols on a DRP-AI part");
+}
+
+/// **STAGE C (V2N)** — m33_sm Zephyr alp.conf, byte-for-byte from data, for a
+/// different VENDOR: DRP-AI (not Ethos), the a55+m33 core mix, the computed Renesas
+/// SoC symbol, and the V2N chip set all reproduce with the SAME engine.
+#[test]
+fn v2n_m33_alp_conf_matches_sdk_emit_byte_for_byte() {
+    let (board, som, board_def, soc) = load_v2n();
+    let out = render_zephyr_alp_conf(
+        "m33_sm",
+        &board,
+        &som,
+        &board_def,
+        &soc,
+        &policy_v2n(),
+        KCONFIG_TMPL_V2N,
+    );
+    assert_eq!(out, oracle_v2n_artefact("m33_sm"));
+}
+
+/// **CROSS-VENDOR build config — the universality result.** The per-core build
+/// SLICES (`alp.conf` / `local.conf`) the engine generates reproduce byte-for-byte
+/// for a Renesas part with the SAME engine + a new `som/E1M-V2N101/` bundle. Two
+/// vendors (Alif + Renesas) from one zero-literal engine.
+///
+/// The shared IPC carve-out artefacts are intentionally NOT asserted here: V2N
+/// declares a RESOLVED `mailbox.controller`, so the SDK runs its carve-out
+/// allocator (real addresses, FNV-1a endpoint IDs, the reserved-memory region) —
+/// the audit's known unreproduced planner piece (the AEN bench hits the same gap
+/// on its *blocked* mailbox). That allocator is the next step, and it is
+/// vendor-agnostic (it belongs in the engine + policy, not per-vendor code).
+#[test]
+fn v2n_build_slices_match_sdk_emit() {
+    let (board, som, board_def, soc) = load_v2n();
+    let oracle: BuildPlan = serde_json::from_str(ORACLE_BUILD_PLAN_V2N).unwrap();
+    let sdk_root = oracle
+        .slices
+        .iter()
+        .find_map(|s| s.env.get("ALP_SDK_ROOT").cloned())
+        .unwrap();
+    let zephyr_apps: BTreeMap<String, String> = oracle
+        .slices
+        .iter()
+        .filter(|s| matches!(s.backend, Backend::Zephyr))
+        .map(|s| {
+            (
+                s.core_id.clone(),
+                s.command.as_ref().unwrap().args.last().unwrap().clone(),
+            )
+        })
+        .collect();
+    let ours = assemble_full_plan(
+        &board,
+        &som,
+        &board_def,
+        &soc,
+        &oracle.board_yaml,
+        &sdk_root,
+        &zephyr_apps,
+        &policy_v2n(),
+        &templates_v2n(),
+    );
+    let mut a = ours.slices;
+    a.sort_by(|x, y| x.core_id.cmp(&y.core_id));
+    let mut b = oracle.slices;
+    b.sort_by(|x, y| x.core_id.cmp(&y.core_id));
+    assert_eq!(
+        serde_json::to_value(&a).unwrap(),
+        serde_json::to_value(&b).unwrap()
+    );
+}
+
+/// **CROSS-VENDOR structured data.** The Renesas GD32 bridge's helper-MCU
+/// `flash_args` is a `{interface, target, base}` MAP (Alif's is a bare string) —
+/// it flows through the manifest verbatim, proving the metadata schema is
+/// vendor-neutral (no Alif-shaped string assumption).
+#[test]
+fn v2n_manifest_carries_structured_flash_args() {
+    let (board, som, board_def, soc) = load_v2n();
+    let m = build_system_manifest(&board, &som, &board_def, &soc, &policy_v2n());
+    assert_eq!(m.hw_info.silicon, "renesas:rzv2n:n44");
+    let hf = m
+        .helper_mcus
+        .iter()
+        .find(|h| h.chip == "gd32g553")
+        .expect("the GD32 bridge helper MCU");
+    assert_eq!(
+        hf.flash_args.get("interface").and_then(|v| v.as_str()),
+        Some("cmsis-dap")
     );
 }
