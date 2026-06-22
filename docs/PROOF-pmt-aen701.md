@@ -2,7 +2,7 @@
 
 **Branch:** `proof/pmt-aen701` (off `spike/partition-allocator-rust`)
 **Module:** `cli-rs/crates/alp-core/src/proof_aen701/` (a module tree, not one file) · **Tests:** 36, all green
-**Silicons proven:** E7 (E1M-AEN701) **and** E8 (E1M-AEN801, the lead part) — same engine, new bundle
+**Proven:** two Alif Ensemble parts (E7 + E8, the lead part) reproduce the emit from data — same engine, new bundle. **Same-family**, not yet cross-vendor.
 **Context:** [alplabai/alp-sdk#235](https://github.com/alplabai/alp-sdk/issues/235)
 
 ## What this proves
@@ -69,7 +69,14 @@ different core mix, **Ethos-U85** — against its `--emit`. Done, against the **
 - **ALP-B012** keeps the **known-silicon allowlist**: the computed SoC symbol stays
   non-emitting for an out-of-catalogue `silicon:` (membership = a matching `SocSpec.ref`).
 
-**New silicon = a versioned data folder, not planner edits — now proven on two parts.**
+**Honest scope of the E8 result.** E7 and E8 are the **same family on the same board**: the two
+`board.yaml`s are byte-identical bar the `sku:`, the topology is identical, and the derived delta is
+just the SoC symbol + the U85 line + machine/board name strings. This proves **data-driven part
+addition *within the Alif Ensemble family*** — it does **not** exercise E8's actual differentiators
+(ISP/camera, HexSPI, a resolved carve-out, OSPI/storage) since this RPMsg board leaves
+`memory_map`/`mailbox` TBD, and it is **not** a cross-vendor (Renesas/NXP) result. "New part = a
+versioned data folder, not planner edits" is proven for a **second same-family part**, not as
+vendor-agnostic universality.
 
 ## Parity + behaviour — 36 tests
 
@@ -157,9 +164,14 @@ proof_aen701/
 
 ## Honest scope / caveats (not hidden)
 
-- **Two silicons** (E7/AEN701 + E8/AEN801) — the load-bearing cases (heterogeneous A32+M55, NPU
-  incl. Ethos-U85, blocked IPC, CC3501E pad dispatch). A third SoM is more bundle folders, not more
-  engine code. The board↔silicon alias bridge is still partly hand-maintained.
+- **Two same-family parts** (E7/AEN701 + E8/AEN801, both Alif Ensemble, same E1M-EVK board) — the
+  engine *code* is zero-literal (audited), but only **same-family** data-driven part addition is
+  proven; **cross-vendor (Renesas/NXP) is unproven**, and a cross-vendor port is a new policy schema,
+  not just a new folder. The board↔silicon alias bridge is still partly hand-maintained.
+- **Big planner paths the bench does NOT reproduce** (both boards leave `memory_map`/`mailbox` TBD,
+  no `storage:`): the resolved IPC carve-out / memory-map allocation, OSPI/storage partitions, the
+  ISP/camera path, PSA/TF-M, MCUboot signing, and the Yocto-slice `local.conf` derivation. The bench
+  covers roughly the build-config + manifest surface on the blocked-IPC path, not the whole planner.
 - **Runtime path inputs are threaded, not derived** — `boardYaml`, `ALP_SDK_ROOT`, the on-disk
   `west` app dirs are environment-specific; the oracle's values are threaded, every *derived* field is matched.
 - **The manifest is compared structurally** — it is YAML; PyYAML formatting is an emit detail. The build-plan (JSON) is byte-for-byte.
