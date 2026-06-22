@@ -2,7 +2,7 @@
 
 **Branch:** `proof/pmt-aen701` (off `spike/partition-allocator-rust`)
 **Module:** `cli-rs/crates/alp-core/src/proof_aen701/` (a module tree, not one file) · **Tests:** 36, all green
-**Proven:** two Alif Ensemble parts (E7 + E8, the lead part) reproduce the emit from data — same engine, new bundle. **Same-family**, not yet cross-vendor.
+**Proven:** the build config reproduces from data for **two vendors** — Alif Ensemble (E7 + E8) **and Renesas RZ/V2N** (DRP-AI, a55+m33, GD32 bridge) — same zero-literal engine, new bundle, vendor-neutral schema.
 **Context:** [alplabai/alp-sdk#235](https://github.com/alplabai/alp-sdk/issues/235)
 
 ## What this proves
@@ -164,14 +164,17 @@ proof_aen701/
 
 ## Honest scope / caveats (not hidden)
 
-- **Two same-family parts** (E7/AEN701 + E8/AEN801, both Alif Ensemble, same E1M-EVK board) — the
-  engine *code* is zero-literal (audited), but only **same-family** data-driven part addition is
-  proven; **cross-vendor (Renesas/NXP) is unproven**, and a cross-vendor port is a new policy schema,
-  not just a new folder. The board↔silicon alias bridge is still partly hand-maintained.
-- **Big planner paths the bench does NOT reproduce** (both boards leave `memory_map`/`mailbox` TBD,
-  no `storage:`): the resolved IPC carve-out / memory-map allocation, OSPI/storage partitions, the
-  ISP/camera path, PSA/TF-M, MCUboot signing, and the Yocto-slice `local.conf` derivation. The bench
-  covers roughly the build-config + manifest surface on the blocked-IPC path, not the whole planner.
+- **Two vendors, build config only** (Alif Ensemble E7+E8 + Renesas RZ/V2N). The cross-vendor port
+  generalized three Alif-shaped schemas as DATA (inference `acceleratorBackend` keyed by silicon +
+  gated on `soc.npus`; `dispatch_pin` number-or-name; `flash_args` string-or-map) — no per-vendor
+  engine branch. The per-core build SLICES reproduce byte-for-byte for both vendors; NXP and other
+  accelerators (DEEPX, no-NPU parts) are not yet exercised. The board↔silicon alias bridge is still
+  partly hand-maintained.
+- **Big planner paths the bench does NOT reproduce yet:** the **resolved IPC carve-out / memory-map
+  allocation** (the AEN boards leave `mailbox` TBD → blocked; V2N has a live mailbox → the SDK runs
+  the allocator, which the bench scopes out), OSPI/storage partitions, the ISP/camera path, PSA/TF-M,
+  MCUboot signing. These are vendor-agnostic allocator/derivation pieces (the carve-out exists in the
+  `spike/partition-allocator-rust` branch), not per-vendor code — the next step toward full parity.
 - **Runtime path inputs are threaded, not derived** — `boardYaml`, `ALP_SDK_ROOT`, the on-disk
   `west` app dirs are environment-specific; the oracle's values are threaded, every *derived* field is matched.
 - **The manifest is compared structurally** — it is YAML; PyYAML formatting is an emit detail. The build-plan (JSON) is byte-for-byte.
@@ -192,5 +195,5 @@ proof_aen701/
 ## Run it
 
 ```
-cargo test -p alp-core proof_aen701   # 36 tests (E7 + E8)
+cargo test -p alp-core proof_aen701   # 41 tests (E7 + E8 + V2N)
 ```
