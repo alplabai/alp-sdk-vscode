@@ -1,7 +1,7 @@
 # A policy/metadata/template engine + per-SoM bundle architecture (reproduces the SDK emit from data)
 
 **Branch:** `proof/pmt-aen701` (off `spike/partition-allocator-rust`)
-**Module:** `cli-rs/crates/alp-core/src/proof_aen701/` (a module tree, not one file) · **Tests:** 36, all green
+**Module:** `cli-rs/crates/alp-core/src/proof_aen701/` (a module tree, not one file) · **Tests:** 41, all green
 **Proven:** the build config reproduces from data for **two vendors** — Alif Ensemble (E7 + E8) **and Renesas RZ/V2N** (DRP-AI, a55+m33, GD32 bridge) — same zero-literal engine, new bundle, vendor-neutral schema.
 **Context:** [alplabai/alp-sdk#235](https://github.com/alplabai/alp-sdk/issues/235)
 
@@ -78,7 +78,7 @@ addition *within the Alif Ensemble family*** — it does **not** exercise E8's a
 versioned data folder, not planner edits" is proven for a **second same-family part**, not as
 vendor-agnostic universality.
 
-## Parity + behaviour — 36 tests
+## Parity + behaviour — 41 tests (E7 + E8 + V2N cross-vendor)
 
 | Stage | Artefact / check | Result |
 |---|---|---|
