@@ -193,11 +193,16 @@ proof_aen701/
     grep hits were all "di**sp**atch"); cameras (OV5640, cam-mux) are ordinary `CHIP_<NAME>` drivers the
     engine already reproduces. Of the four originally-named gaps, three were real paths (now done) and
     one was already covered.
-- **The full per-slice `alp.conf` is the broader-planner frontier, not the four paths:** its storage +
-  OTA sections are reproduced in isolation, but the complete slice file also interleaves `iot:`,
-  `cores.<id>.memory:`/`power:`, `diagnostics.modules:`, and top-level project `chips:` — separate board
-  features beyond the named paths. Those, plus host-path normalization on the build-plan envelope, are
-  the remaining work for a whole-build-plan byte diff on a maximal board (named here, not hidden).
+- **The WHOLE build-plan reproduces byte-for-byte on the feature-maximal board.** The frontier beyond the
+  four paths is now closed: the entire `production-deployment` build-plan (the per-slice `alp.conf` AND
+  every shared artefact) matches the SDK emit. `render_zephyr_alp_conf` grew the five board-feature
+  sections the SDK's `_slice_alp_conf` appends (per-slice memory tuning, power profile, storage Kconfig,
+  OTA client, per-module log levels — each emitting nothing when its block is absent, so the RPMsg boards
+  stay byte-identical); `assemble_full_plan` wires the MCUboot `alp_sysbuild.conf` + TF-M `tfm.conf` shared
+  artefacts (gated on `boot:`/`security.psa.tfm:`); slice emission honours `os: off` (an unused M55-HE gets
+  no slice); the empty-`ipc:` stubs land in `system_ipc.h` + `dts-reservations`. Only the environment paths
+  (`ALP_SDK_ROOT`, the `west` app dir) are threaded from the oracle; every *derived* field is matched. The
+  `iot:` block is verified to emit nothing into `alp.conf` in v0.7.0 (not a hidden omission).
 - **Runtime path inputs are threaded, not derived** — `boardYaml`, `ALP_SDK_ROOT`, the on-disk
   `west` app dirs are environment-specific; the oracle's values are threaded, every *derived* field is matched.
 - **The manifest is compared structurally** — it is YAML; PyYAML formatting is an emit detail. The build-plan (JSON) is byte-for-byte.
