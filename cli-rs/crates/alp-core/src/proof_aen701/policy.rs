@@ -193,3 +193,32 @@ pub(crate) fn load_policy(json: &str) -> Result<Policy, String> {
     check_schema_version!("policy", p.schema_version, SUPPORTED_POLICY_SCHEMA);
     Ok(p)
 }
+
+/// **P/M/T improvement #1 — silicon profiles.** A thin per-silicon overlay: the
+/// genuinely silicon-specific datum (the accelerator backend) that composes onto
+/// the SHARED `engine-policy.json`. Everything else in the policy is silicon-
+/// agnostic (proven byte-identical across Alif E7/E8, Renesas RZ/V2N, NXP i.MX93),
+/// so adding a silicon is a ~3-line overlay, not a copied policy. Extensible: future
+/// per-silicon knobs (TF-M boundary core, …) join here, never in the engine.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SiliconProfile {
+    /// silicon ref (or `default`) → accelerator-backend Kconfig; merged into the
+    /// shared policy's `inference.acceleratorBackend`.
+    #[serde(default)]
+    pub(crate) accelerator_backend: BTreeMap<String, String>,
+}
+
+/// Compose the shared engine-policy with a per-silicon overlay → the effective
+/// `Policy`. The overlay's entries win on collision (a silicon may override a
+/// shared default). This is the load-time split that kills per-SoM policy drift.
+pub(crate) fn compose_policy(engine_json: &str, profile_json: &str) -> Result<Policy, String> {
+    let mut policy = load_policy(engine_json)?;
+    let profile: SiliconProfile =
+        serde_json::from_str(profile_json).map_err(|e| format!("invalid silicon profile: {e}"))?;
+    policy
+        .inference
+        .accelerator_backend
+        .extend(profile.accelerator_backend);
+    Ok(policy)
+}

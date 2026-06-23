@@ -1411,3 +1411,100 @@ fn imx93_full_build_plan_matches_sdk_emit() {
         serde_json::to_value(&oracle).unwrap()
     );
 }
+
+// === P/M/T improvement #1 — SILICON PROFILES (the prototype that turns the
+// "policy is silicon-agnostic" claim into a demonstrated result). ONE shared
+// engine-policy.json + a ~3-line per-silicon overlay reproduces all three vendors. ===
+const ENGINE_POLICY: &str = include_str!("../spike_fixtures/policy/engine-policy.json");
+const SILICON_ALIF: &str = include_str!("../spike_fixtures/policy/silicon/alif-ensemble.json");
+const SILICON_NXP: &str = include_str!("../spike_fixtures/policy/silicon/nxp-imx9.json");
+const SILICON_RENESAS: &str = include_str!("../spike_fixtures/policy/silicon/renesas-rzv2n.json");
+
+/// **The split is LOSSLESS, across all three vendors.** ONE shared `engine-policy.json`
+/// composed with a thin per-silicon overlay reproduces the build config byte-for-byte
+/// for Alif (Ethos-U via `default`), NXP i.MX 93 (Ethos-U N93), and Renesas RZ/V2N
+/// (DRP-AI) — the SAME engine, the SAME shared policy, only the overlay differs.
+/// Today each SoM copies a full policy; this proves it could be shared-core + overlay.
+#[test]
+fn silicon_profiles_compose_and_reproduce_all_three_vendors() {
+    // Alif Ensemble E7 (m55_hp) — Ethos-U via the `default` backend.
+    let (board, som, board_def, soc) = load();
+    let alif = compose_policy(ENGINE_POLICY, SILICON_ALIF).unwrap();
+    assert_eq!(
+        render_zephyr_alp_conf(
+            "m55_hp",
+            &board,
+            &som,
+            &board_def,
+            &soc,
+            &alif,
+            KCONFIG_TMPL
+        ),
+        oracle_artefact("m55_hp"),
+        "Alif: shared engine-policy + alif overlay"
+    );
+
+    // NXP i.MX 93 (m33) — Ethos-U65, NXP backend.
+    let (board, som, board_def, soc) = load_imx93();
+    let nxp = compose_policy(ENGINE_POLICY, SILICON_NXP).unwrap();
+    let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN_IMX93).unwrap();
+    let want_nxp = plan["slices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["coreId"] == "m33")
+        .unwrap()["configArtefacts"][0]["contents"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        render_zephyr_alp_conf(
+            "m33",
+            &board,
+            &som,
+            &board_def,
+            &soc,
+            &nxp,
+            KCONFIG_TMPL_IMX93
+        ),
+        want_nxp,
+        "NXP: the SAME engine-policy + nxp overlay"
+    );
+
+    // Renesas RZ/V2N (m33_sm) — DRP-AI.
+    let (board, som, board_def, soc) = load_v2n();
+    let renesas = compose_policy(ENGINE_POLICY, SILICON_RENESAS).unwrap();
+    assert_eq!(
+        render_zephyr_alp_conf(
+            "m33_sm",
+            &board,
+            &som,
+            &board_def,
+            &soc,
+            &renesas,
+            KCONFIG_TMPL_V2N
+        ),
+        oracle_v2n_artefact("m33_sm"),
+        "Renesas: the SAME engine-policy + renesas overlay"
+    );
+}
+
+/// The per-silicon delta is genuinely thin: each overlay carries exactly ONE
+/// `acceleratorBackend` entry, and the shared engine-policy makes NO silicon
+/// assumption (its `acceleratorBackend` is empty). The shared layer is ~250 lines;
+/// adding a silicon is a one-entry overlay, not a copied policy.
+#[test]
+fn silicon_overlay_is_a_one_entry_delta() {
+    for prof in [SILICON_ALIF, SILICON_NXP, SILICON_RENESAS] {
+        let p: SiliconProfile = serde_json::from_str(prof).unwrap();
+        assert_eq!(
+            p.accelerator_backend.len(),
+            1,
+            "overlay = a single backend entry"
+        );
+    }
+    let engine = load_policy(ENGINE_POLICY).unwrap();
+    assert!(
+        engine.inference.accelerator_backend.is_empty(),
+        "the shared engine-policy makes no silicon assumption"
+    );
+}

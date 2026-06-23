@@ -1,0 +1,6 @@
+{
+  "_comment": "Silicon overlay — NXP i.MX 9 family. Ethos-U, NXP-side backend registry.",
+  "acceleratorBackend": {
+    "nxp:imx9:imx93": "CONFIG_ALP_SDK_INFERENCE_BACKEND_ETHOS_U_N93"
+  }
+}

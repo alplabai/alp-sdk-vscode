@@ -1,0 +1,6 @@
+{
+  "_comment": "Silicon overlay — Alif Ensemble (E3..E8). Ethos-U via the `default` fallback.",
+  "acceleratorBackend": {
+    "default": "CONFIG_ALP_SDK_INFERENCE_BACKEND_ETHOS_U_AEN"
+  }
+}

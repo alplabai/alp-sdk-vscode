@@ -1,0 +1,6 @@
+{
+  "_comment": "Silicon overlay — Renesas RZ/V2N. DRP-AI (not Ethos-U).",
+  "acceleratorBackend": {
+    "renesas:rzv2n:n44": "CONFIG_ALP_SDK_INFERENCE_BACKEND_DRPAI_V2N"
+  }
+}

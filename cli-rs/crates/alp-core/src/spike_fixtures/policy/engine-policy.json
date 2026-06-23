@@ -1,0 +1,250 @@
+{
+  "schemaVersion": 1,
+  "_comment": "SHARED engine-policy (issue #235, P/M/T improvement #1): the silicon-AGNOSTIC build rules. Byte-identical across Alif E7/E8, Renesas RZ/V2N, NXP i.MX93 (proven). The only genuinely per-silicon datum -- the accelerator backend -- moves to silicon/<family>.json overlays composed at load.",
+  "baseKconfig": [
+    "CONFIG_ALP_SDK=y",
+    "CONFIG_LOG=y",
+    "CONFIG_PRINTK=y",
+    "CONFIG_THREAD_LOCAL_STORAGE=y"
+  ],
+  "socSymbolPrefix": "ALP_SOC_",
+  "boardDefinePrefix": "ALP_BOARD_",
+  "chipKconfigPrefix": "CONFIG_ALP_SDK_",
+  "yoctoLibPrefix": "lib-",
+  "blockSlugs": [
+    "button_led",
+    "pdm_mic"
+  ],
+  "onModuleNonChip": [
+    "silicon",
+    "ethernet_phy_count",
+    "i2c_devices",
+    "ospi_memories",
+    "nor_flash",
+    "emmc"
+  ],
+  "logLevels": {
+    "off": 0,
+    "error": 1,
+    "warn": 2,
+    "info": 3,
+    "debug": 4,
+    "trace": 4
+  },
+  "peripheralSubsystems": {
+    "i2c": "I2C",
+    "spi": "SPI",
+    "gpio": "GPIO",
+    "adc": "ADC",
+    "pwm": "PWM"
+  },
+  "_peripheralAliasesComment": "Peripheral-coverage aliasing for the ALP-B010 SoC-inventory check (RFC #235: rules are data). A declared peripheral kind is 'present on the silicon' if a SoC-JSON peripherals[] key matches it directly, OR matches it with a variant suffix (i2c->i2c_lp, can->can_fd, adc->adc_12bit \u2014 handled generically as <kind>_*), OR resolves through one of these aliases. An empty alias list means a pure software abstraction that is ALWAYS available (e.g. `sensor`).",
+  "peripheralAliases": {
+    "counter": [
+      "timer"
+    ],
+    "pwm": [
+      "pwm",
+      "timer"
+    ],
+    "sensor": []
+  },
+  "chipSubsystems": {
+    "cc3501e": [
+      "SPI",
+      "GPIO"
+    ],
+    "ssd1331": [
+      "SPI",
+      "GPIO"
+    ],
+    "tas2563": [
+      "I2C",
+      "GPIO"
+    ],
+    "button_led": [
+      "GPIO"
+    ],
+    "cam_mux_pi3wvr626": [
+      "GPIO"
+    ],
+    "lsm6dso": [
+      "I2C"
+    ],
+    "ssd1306": [
+      "I2C"
+    ],
+    "bme280": [
+      "I2C"
+    ],
+    "lis2dw12": [
+      "I2C"
+    ],
+    "ov5640": [
+      "I2C"
+    ],
+    "icm42670": [
+      "I2C"
+    ],
+    "bmi323": [
+      "I2C"
+    ],
+    "bmp581": [
+      "I2C"
+    ],
+    "tmp112": [
+      "I2C"
+    ],
+    "rv3028c7": [
+      "I2C"
+    ],
+    "optiga_trust_m": [
+      "I2C"
+    ],
+    "eeprom_24c128": [
+      "I2C"
+    ],
+    "tcal9538": [
+      "I2C"
+    ],
+    "ina236": [
+      "I2C"
+    ]
+  },
+  "libraryKconfig": {
+    "etl": [
+      "# etl: include path + etl_profile.h via the v0.4 loader hook"
+    ],
+    "fmt": [
+      "# fmt: include path + fmt_config.h via the v0.4 loader hook"
+    ],
+    "nlohmann_json": [
+      "# nlohmann_json: include path + json_config.h via the v0.4 loader hook"
+    ],
+    "doctest": [
+      "# doctest: include path + doctest_config.h via the v0.4 loader hook"
+    ],
+    "lvgl": [
+      "CONFIG_LVGL=y",
+      "CONFIG_ALP_LVGL_SW_BLIT=y"
+    ],
+    "mbedtls": [
+      "CONFIG_MBEDTLS=y",
+      "CONFIG_MBEDTLS_BUILTIN=y",
+      "CONFIG_ALP_MBEDTLS_PURE_C=y"
+    ],
+    "cmsis_dsp": [
+      "CONFIG_CMSIS_DSP=y",
+      "CONFIG_CMSIS_DSP_BASICMATH=y",
+      "CONFIG_CMSIS_DSP_COMPLEXMATH=y",
+      "CONFIG_CMSIS_DSP_CONTROLLER=y",
+      "CONFIG_CMSIS_DSP_FASTMATH=y",
+      "CONFIG_CMSIS_DSP_FILTERING=y",
+      "CONFIG_CMSIS_DSP_INTERPOLATION=y",
+      "CONFIG_CMSIS_DSP_MATRIX=y",
+      "CONFIG_CMSIS_DSP_STATISTICS=y",
+      "CONFIG_CMSIS_DSP_SUPPORT=y",
+      "CONFIG_CMSIS_DSP_TRANSFORM=y",
+      "CONFIG_ALP_CMSIS_DSP_SCALAR=y"
+    ]
+  },
+  "flash": {
+    "yocto": {
+      "method": "yocto_wic_to_sd_or_emmc",
+      "args": {
+        "target": "$machine"
+      }
+    },
+    "zephyr": {
+      "method": "zephyr_west_flash",
+      "args": {
+        "runner": "openocd"
+      }
+    },
+    "baremetal": {
+      "method": "baremetal_cmake_flash",
+      "args": {}
+    }
+  },
+  "inference": {
+    "tflmBackend": "CONFIG_ALP_SDK_INFERENCE_BACKEND_TFLM",
+    "tflmKernel": {
+      "neon": "CONFIG_ALP_SDK_INFERENCE_TFLM_KERNEL_NEON",
+      "helium": "CONFIG_ALP_SDK_INFERENCE_TFLM_KERNEL_HELIUM",
+      "ref": "CONFIG_ALP_SDK_INFERENCE_TFLM_KERNEL_REF"
+    },
+    "acceleratorBackend": {},
+    "npuVariantPrefix": "CONFIG_ALP_SDK_INFERENCE_ETHOS_U_VARIANT_"
+  },
+  "_storageComment": "Filesystem profiles for the storage-mounts.c writer; the C struct skeleton is DATA here ({name}/{mount} filled by the engine) so the engine carries zero fs literals.",
+  "storage": {
+    "fsProfiles": {
+      "littlefs": {
+        "include": "#include <zephyr/fs/littlefs.h>",
+        "fsType": "FS_LITTLEFS",
+        "declare": "FS_LITTLEFS_DECLARE_DEFAULT_CONFIG(alp_lfs_{name});",
+        "fsData": "&alp_lfs_{name}"
+      },
+      "fat": {
+        "include": "#include <ff.h>",
+        "fsType": "FS_FATFS",
+        "declare": "static FATFS alp_fat_{name};",
+        "fsData": "&alp_fat_{name}"
+      },
+      "ext4": {
+        "include": "#include <zephyr/fs/ext2.h>",
+        "fsType": "FS_EXT2",
+        "declare": "",
+        "fsData": ""
+      }
+    },
+    "fsKconfig": {
+      "littlefs": [
+        "CONFIG_FILE_SYSTEM=y",
+        "CONFIG_FILE_SYSTEM_LITTLEFS=y"
+      ],
+      "fat": [
+        "CONFIG_FILE_SYSTEM=y",
+        "CONFIG_FAT_FILESYSTEM_ELM=y"
+      ],
+      "ext4": [
+        "CONFIG_FILE_SYSTEM=y",
+        "CONFIG_FILE_SYSTEM_EXT2=y"
+      ]
+    }
+  },
+  "_secureComment": "Secure-boot (MCUboot) + TF-M rule data: signing/swap Kconfig maps, TF-M build-type aliases, PSA attestation roots. Keyed by board.yaml `boot:`/`security.psa:` values; zero secure literals in the engine.",
+  "secure": {
+    "signingAlgorithms": {
+      "ecdsa_p256": "SB_CONFIG_MCUBOOT_SIGNATURE_TYPE_ECDSA_P256=y",
+      "rsa2048": "SB_CONFIG_MCUBOOT_SIGNATURE_TYPE_RSA=y\nSB_CONFIG_MCUBOOT_SIGNATURE_TYPE_RSA_LEN=2048",
+      "rsa3072": "SB_CONFIG_MCUBOOT_SIGNATURE_TYPE_RSA=y\nSB_CONFIG_MCUBOOT_SIGNATURE_TYPE_RSA_LEN=3072",
+      "ed25519": "SB_CONFIG_MCUBOOT_SIGNATURE_TYPE_ED25519=y"
+    },
+    "swapAlgorithms": {
+      "scratch": "SB_CONFIG_MCUBOOT_MODE_SWAP_USING_SCRATCH=y",
+      "move": "SB_CONFIG_MCUBOOT_MODE_SWAP_USING_MOVE=y",
+      "overwrite": "SB_CONFIG_MCUBOOT_MODE_OVERWRITE_ONLY=y"
+    },
+    "tfmBuildTypeAliases": {
+      "debug": "Debug",
+      "minsizerel": "MinSizeRel",
+      "min_size_rel": "MinSizeRel",
+      "release": "Release"
+    },
+    "tfmDefaultPersistentSlots": 16,
+    "attestationRoots": {
+      "optiga_trust_m": {
+        "comment": [
+          "# Attestation root anchored in OPTIGA Trust M (on-module secure element).",
+          "# See src/security/optiga_trust_m_bridge.c for the PSA <-> OPTIGA bridge driver."
+        ],
+        "config": "CONFIG_ALP_SDK_PSA_ATTESTATION_OPTIGA=y"
+      },
+      "tfm_internal": {
+        "comment": [],
+        "config": "CONFIG_ALP_SDK_PSA_ATTESTATION_TFM_INTERNAL=y"
+      }
+    }
+  }
+}
