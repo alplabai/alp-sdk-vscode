@@ -414,6 +414,11 @@ pub(crate) struct SocSpec {
     /// MRAM + SRAM banks seed the derived memory map (the Alif/AEN path).
     #[serde(default)]
     pub(crate) variants: Vec<SocVariant>,
+    /// Silicon capability matrix (`ethos_u65_count`, `drp_ai`, `neon`, …). Drives
+    /// the inference NPU-variant fallback for SoMs that don't list a
+    /// `npu_population[]` (e.g. i.MX 93 → `ethos_u65_count: 1` ⇒ variant U65).
+    #[serde(default)]
+    pub(crate) capabilities: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

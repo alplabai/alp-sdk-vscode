@@ -1,0 +1,40 @@
+# Per-SoM, self-contained, VERSIONED P/M/T bundle MANIFEST (proof of the proposed
+# architecture for issue alplabai/alp-sdk#235). The engine loads THIS file FIRST,
+# checks `schemaVersion` (rejects an unknown manifest format) and `sdkCompatRange`
+# (rejects an SDK it cannot serve), THEN loads each layer by its declared `path`.
+#
+# Filenames are STABLE and declared here — never embedded in the names
+# (NOT som.v0.7.0.yaml): release history lives in git tags, not parallel in-tree
+# copies. Three orthogonal version axes (validated against Helm/OCI/npm/Yocto):
+#   schemaVersion  — the manifest FORMAT (this file). Bumps rarely; engine-checked.
+#   bundleVersion  — CONTENT semver. Bumps on policy/template/metadata edits only,
+#                    NEVER because the SDK moved (that is sdkCompatRange's job).
+#   sdkCompatRange — which SDK releases this bundle serves (cf. npm peerDependencies
+#                    / Yocto LAYERSERIES_COMPAT), checked at load time.
+schemaVersion: 1
+som: E1M-NX9101
+bundleVersion: "1.0.0"
+sdkCompatRange: ">=0.6.0,<1.0.0"
+
+# Independently-versioned layers, each addressed by a stable `path`. The engine
+# accepts a known per-layer `schema` and rejects an unknown one (fail loud).
+layers:
+  metadata:
+    path: som.yaml
+    schema: 1
+  policy:
+    path: policy.json
+    schema: 1
+  pinPolicy:
+    path: pin-policy.json
+    schema: 1
+  templates:
+    localConf:       { path: templates/local.conf.tmpl,            schema: 1 }
+    kconfig:         { path: templates/kconfig.tmpl,               schema: 1 }
+    systemIpcH:      { path: templates/system_ipc.h.tmpl,          schema: 1 }
+    dtsReservations: { path: templates/dts-reservations.dtsi.tmpl, schema: 1 }
+    dtsPartitions:   { path: templates/dts-partitions.dtsi.tmpl,   schema: 1 }
+
+# Shared metadata the engine resolves OUTSIDE the SoM bundle (NOT per-SoM):
+#   silicon → metadata/socs/<vendor>/<family>/<part>.json   (per-silicon, shared)
+#   board   → metadata/boards/<preset>.yaml                 (per-carrier, shared)

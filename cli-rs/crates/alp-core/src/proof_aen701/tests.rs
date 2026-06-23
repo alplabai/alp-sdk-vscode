@@ -1258,3 +1258,156 @@ fn v2n_manifest_carries_structured_flash_args() {
         Some("cmsis-dap")
     );
 }
+
+// === rpmsg-imx93 — the THIRD silicon family (NXP i.MX 93: 2x Cortex-A55 +
+// Cortex-M33 + Ethos-U65). SAME engine + SAME build policy + SAME templates as
+// Alif; ONLY the SoM metadata (E1M-NX9101) + the SoC spec (imx93.json) differ.
+// Proves the P/M/T standard spans Alif + Renesas + NXP. Oracle from the v0.7.0 emit.
+const BOARD_YAML_IMX93: &str = include_str!("../spike_fixtures/oracle/rpmsg-imx93.board.yaml");
+const SOM_IMX93: &str = include_str!("../spike_fixtures/som/E1M-NX9101/som.yaml");
+const POLICY_IMX93: &str = include_str!("../spike_fixtures/som/E1M-NX9101/policy.json");
+const SOC_IMX93: &str = include_str!("../spike_fixtures/imx93.json");
+const KCONFIG_TMPL_IMX93: &str =
+    include_str!("../spike_fixtures/som/E1M-NX9101/templates/kconfig.tmpl");
+const LOCAL_CONF_TMPL_IMX93: &str =
+    include_str!("../spike_fixtures/som/E1M-NX9101/templates/local.conf.tmpl");
+const ORACLE_BUILD_PLAN_IMX93: &str =
+    include_str!("../spike_fixtures/oracle/rpmsg-imx93.build-plan");
+
+fn load_imx93() -> (BoardYaml, SomPreset, BoardDef, SocSpec) {
+    (
+        serde_yaml::from_str(BOARD_YAML_IMX93).unwrap(),
+        serde_yaml::from_str(SOM_IMX93).unwrap(),
+        serde_yaml::from_str(BOARD_DEF).unwrap(), // the SAME E1M-EVK board def
+        serde_json::from_str(SOC_IMX93).unwrap(),
+    )
+}
+
+fn policy_imx93() -> Policy {
+    load_policy(POLICY_IMX93).unwrap()
+}
+
+fn templates_imx93() -> Templates {
+    Templates {
+        local_conf: LOCAL_CONF_TMPL_IMX93.to_string(),
+        kconfig: KCONFIG_TMPL_IMX93.to_string(),
+        system_ipc_h: include_str!("../spike_fixtures/som/E1M-NX9101/templates/system_ipc.h.tmpl")
+            .to_string(),
+        dts_reservations: include_str!(
+            "../spike_fixtures/som/E1M-NX9101/templates/dts-reservations.dtsi.tmpl"
+        )
+        .to_string(),
+        dts_partitions: include_str!(
+            "../spike_fixtures/som/E1M-NX9101/templates/dts-partitions.dtsi.tmpl"
+        )
+        .to_string(),
+        sysbuild_conf: include_str!(
+            "../spike_fixtures/som/E1M-NX9101/templates/sysbuild.conf.tmpl"
+        )
+        .to_string(),
+        tfm_sysbuild_conf: include_str!(
+            "../spike_fixtures/som/E1M-NX9101/templates/tfm-sysbuild.conf.tmpl"
+        )
+        .to_string(),
+    }
+}
+
+/// **THIRD vendor — the build policy + templates are byte-identical to Alif's.**
+/// NXP i.MX 93 reuses E1M-AEN701's `policy.json` + `kconfig.tmpl` verbatim; only
+/// the SoM metadata + SoC spec differ. The P/M/T standard is silicon-family-agnostic.
+#[test]
+fn imx93_reuses_the_alif_build_policy() {
+    assert_eq!(
+        POLICY_IMX93, POLICY_JSON,
+        "NXP build policy is byte-identical to Alif's"
+    );
+    assert_eq!(
+        KCONFIG_TMPL_IMX93, KCONFIG_TMPL,
+        "NXP kconfig template is byte-identical to Alif's"
+    );
+}
+
+/// The COMPUTED NXP silicon symbol (`nxp:imx9:imx93` → `ALP_SOC_NXP_IMX9_IMX93`) —
+/// no table, just `soc_symbol_prefix + silicon.upper().replace(':','_')`.
+#[test]
+fn imx93_silicon_symbol_is_computed() {
+    assert_eq!(
+        policy_imx93().soc_symbol("nxp:imx9:imx93"),
+        "ALP_SOC_NXP_IMX9_IMX93"
+    );
+}
+
+/// **CROSS-VENDOR (3rd family) m33 alp.conf, byte-for-byte.** The Cortex-M33 Zephyr
+/// slice reproduces exactly: the NXP silicon symbol, the PCA9451A PMIC chip (the
+/// `TBD` wifi/PHY entries are dropped), the ADC/PWM subsystems, and the **Ethos-U65
+/// dispatch derived from the `ethos_u65_count` capability fallback** — the SoM lists
+/// no `npu_population[]`, yet the same engine reaches the U65 variant from DATA.
+#[test]
+fn imx93_m33_alp_conf_matches_sdk_emit_byte_for_byte() {
+    let (board, som, board_def, soc) = load_imx93();
+    let plan: serde_json::Value = serde_json::from_str(ORACLE_BUILD_PLAN_IMX93).unwrap();
+    let want = plan["slices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["coreId"] == "m33")
+        .unwrap()["configArtefacts"][0]["contents"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        render_zephyr_alp_conf(
+            "m33",
+            &board,
+            &som,
+            &board_def,
+            &soc,
+            &policy_imx93(),
+            KCONFIG_TMPL_IMX93
+        ),
+        want
+    );
+}
+
+/// **WHOLE build-plan, byte-for-byte — THREE vendors from one engine.** The entire
+/// rpmsg-imx93 build-plan (the a55 Yocto `local.conf` + the m33 Zephyr `alp.conf` +
+/// the blocked-IPC shared artefacts — NX9101's `mailbox.controller` is TBD) reproduces
+/// from the SAME engine + the NX9101 bundle. Alif + Renesas + NXP, one zero-literal engine.
+#[test]
+fn imx93_full_build_plan_matches_sdk_emit() {
+    let (board, som, board_def, soc) = load_imx93();
+    let oracle: BuildPlan = serde_json::from_str(ORACLE_BUILD_PLAN_IMX93).unwrap();
+    let sdk_root = oracle
+        .slices
+        .iter()
+        .find_map(|s| s.env.get("ALP_SDK_ROOT").cloned())
+        .unwrap();
+    let zephyr_apps: BTreeMap<String, String> = oracle
+        .slices
+        .iter()
+        .filter(|s| matches!(s.backend, Backend::Zephyr))
+        .map(|s| {
+            (
+                s.core_id.clone(),
+                s.command.as_ref().unwrap().args.last().unwrap().clone(),
+            )
+        })
+        .collect();
+    let mut ours = assemble_full_plan(
+        &board,
+        &som,
+        &board_def,
+        &soc,
+        &oracle.board_yaml,
+        &sdk_root,
+        &zephyr_apps,
+        &policy_imx93(),
+        &templates_imx93(),
+    );
+    let mut oracle = oracle;
+    sort_plan(&mut ours);
+    sort_plan(&mut oracle);
+    assert_eq!(
+        serde_json::to_value(&ours).unwrap(),
+        serde_json::to_value(&oracle).unwrap()
+    );
+}

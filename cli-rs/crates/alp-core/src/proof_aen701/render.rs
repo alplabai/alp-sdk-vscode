@@ -107,7 +107,11 @@ pub(crate) fn som_chip_set(som: &SomPreset, p: &Policy) -> BTreeSet<String> {
             continue;
         }
         if let Some(s) = val.as_str() {
-            chips.insert(s.to_string());
+            // Unpopulated / pending chips (`TBD`, empty) are not real drivers —
+            // an i.MX 93 SoM with `wifi_ble: TBD` emits no CHIP_TBD.
+            if !s.is_empty() && s != "TBD" {
+                chips.insert(s.to_string());
+            }
         }
     }
     for hf in &som.helper_firmware {
@@ -208,12 +212,30 @@ pub(crate) fn render_zephyr_alp_conf(
         {
             inf.push(format!("{b}=y"));
         }
-        let variants: BTreeSet<String> = som
+        let mut variants: BTreeSet<String> = som
             .inference
             .npu_population
             .iter()
             .filter_map(|e| e.variant.as_ref().map(|v| v.to_lowercase()))
             .collect();
+        // Capability-count fallback for SoMs that don't list `npu_population[]`
+        // (e.g. i.MX 93 declares only `ethos_u65_count: 1`). Vendor-neutral: keyed
+        // by the count name, not the silicon.
+        for (cap, variant) in [
+            ("ethos_u55_count", "u55"),
+            ("ethos_u65_count", "u65"),
+            ("ethos_u85_count", "u85"),
+        ] {
+            if soc
+                .capabilities
+                .get(cap)
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                > 0
+            {
+                variants.insert(variant.to_string());
+            }
+        }
         for v in &variants {
             inf.push(format!(
                 "{}{}=y",
