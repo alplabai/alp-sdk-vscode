@@ -21,6 +21,11 @@ pub(crate) struct Templates {
     pub(crate) system_ipc_h: String,
     pub(crate) dts_reservations: String,
     pub(crate) dts_partitions: String,
+    /// MCUboot sysbuild conf banner (P3); emitted into the build-plan only when
+    /// the board declares a `boot:` block.
+    pub(crate) sysbuild_conf: String,
+    /// TF-M sysbuild conf banner (P2); emitted only when `security.psa.tfm: true`.
+    pub(crate) tfm_sysbuild_conf: String,
 }
 
 // --- the bundle.yaml manifest (the engine's entry gate) ---

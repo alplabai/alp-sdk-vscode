@@ -232,6 +232,8 @@ pub(crate) fn render_zephyr_alp_conf(
         .map(|n| n.to_string())
         .unwrap_or_default();
 
+    let extra_sections = render_slice_extra_sections(core_id, board, som, soc, p);
+
     let vars = vars! {
         "core" => core_id.to_string(),
         "silicon" => som.silicon.clone(),
@@ -241,6 +243,7 @@ pub(crate) fn render_zephyr_alp_conf(
         "logLevel" => log_level,
         "hasSubsystems" => if subsystem_rows.is_empty() { "" } else { "1" }.to_string(),
         "hasLibraries" => if library_rows.is_empty() { "" } else { "1" }.to_string(),
+        "extraSections" => extra_sections,
     };
     let lists = BTreeMap::from([
         (
@@ -257,6 +260,195 @@ pub(crate) fn render_zephyr_alp_conf(
         ("inference", inference_rows),
     ]);
     render_template(tmpl, &vars, &lists)
+}
+
+/// The board-feature sections appended after `# Inference …` (the SDK's
+/// `_slice_alp_conf` tail): per-slice memory tuning, power profile, storage
+/// partitions, OTA client, per-module log levels. Each emits nothing when its
+/// board.yaml block is absent — a board without them (the RPMsg bench) stays
+/// byte-identical. The silicon/fs-specific bits (fs→Kconfig, level→N) are policy;
+/// the section shapes are board-feature (not silicon) writer text.
+fn render_slice_extra_sections(
+    core_id: &str,
+    board: &BoardYaml,
+    som: &SomPreset,
+    soc: &SocSpec,
+    p: &Policy,
+) -> String {
+    let bc = board.cores.get(core_id);
+    let mut sections: Vec<(String, Vec<String>)> = Vec::new();
+
+    // Per-slice memory tuning.
+    let mut mem: Vec<String> = Vec::new();
+    if let Some(m) = bc.and_then(|c| c.memory.as_ref()) {
+        if let Some(n) = m.stack_kib.filter(|&n| n != 0) {
+            mem.push(format!("CONFIG_MAIN_STACK_SIZE={}", n * 1024));
+        }
+        if let Some(n) = m.isr_stack_kib.filter(|&n| n != 0) {
+            mem.push(format!("CONFIG_ISR_STACK_SIZE={}", n * 1024));
+        }
+        if let Some(n) = m.heap_kib {
+            mem.push(format!("CONFIG_HEAP_MEM_POOL_SIZE={}", n * 1024));
+        }
+    }
+    if !mem.is_empty() {
+        sections.push((
+            "# Per-slice memory tuning (board.yaml cores.<id>.memory:)".into(),
+            mem,
+        ));
+    }
+
+    // Per-slice power-management profile (sleep/wakeup land as hint comments).
+    let mut pwr: Vec<String> = Vec::new();
+    if let Some(pw) = bc.and_then(|c| c.power.as_ref()) {
+        let sleep = pw
+            .sleep_mode
+            .as_deref()
+            .unwrap_or("disabled")
+            .to_lowercase();
+        if sleep != "disabled" {
+            pwr.push("CONFIG_PM=y".into());
+            pwr.push("CONFIG_PM_DEVICE=y".into());
+            pwr.push(format!("# Sleep target: {sleep}"));
+        }
+        for wake in &pw.wakeup_sources {
+            if wake.starts_with("E1M_") {
+                pwr.push(format!(
+                    "# wakeup source: {wake} (per-silicon Kconfig pending)"
+                ));
+            } else {
+                pwr.push(format!(
+                    "# wakeup source: {wake} (DT wakeup-source; + pm_device_wakeup_enable() pending v0.7)"
+                ));
+            }
+        }
+    }
+    if !pwr.is_empty() {
+        sections.push((
+            "# Per-slice power-management profile (board.yaml cores.<id>.power:)".into(),
+            pwr,
+        ));
+    }
+
+    // Storage partitions: per-fs Kconfig (policy) + per-littlefs mount hint comments.
+    let parts = resolve_storage_partitions(board, som, soc);
+    if !parts.is_empty() {
+        let ok: Vec<&ResolvedPartition> = parts.iter().filter(|p| !p.blocked).collect();
+        let fs_seen: BTreeSet<&str> = ok.iter().map(|p| p.fs.as_str()).collect();
+        let mut fs_kc: BTreeSet<String> = BTreeSet::new();
+        for fs in &fs_seen {
+            if let Some(ls) = p.storage.fs_kconfig.get(*fs) {
+                fs_kc.extend(ls.iter().cloned());
+            }
+        }
+        if !fs_kc.is_empty() || !ok.is_empty() {
+            let mut body: Vec<String> = fs_kc.into_iter().collect(); // sorted
+            for part in &ok {
+                if part.fs == "littlefs" {
+                    body.push(format!(
+                        "# partition[{0}] -> mount at runtime via FIXED_PARTITION_ID({0}_partition)",
+                        part.name
+                    ));
+                }
+            }
+            for part in parts.iter().filter(|p| p.blocked) {
+                let reason = if part.reason.is_empty() {
+                    "unknown reason"
+                } else {
+                    &part.reason
+                };
+                body.push(format!("# BLOCKED storage[{}]: {}", part.name, reason));
+            }
+            sections.push(("# Storage partitions (board.yaml `storage:`)".into(), body));
+        }
+    }
+
+    // OTA Zephyr client (provider-driven). mender → hint comments (v0.7 pending);
+    // hawkbit / mcumgr → live CONFIG (faithful to the SDK; only mender is oracle-verified).
+    if let Some(ota) = board.ota.as_ref() {
+        let provider = ota.provider.as_deref().unwrap_or("").to_lowercase();
+        if matches!(provider.as_str(), "mender" | "hawkbit" | "mcumgr") {
+            let srv = ota.server.as_ref();
+            let mut body: Vec<String> = Vec::new();
+            match provider.as_str() {
+                "mender" => {
+                    body.push("# Mender-MCU-client wiring is pending the v0.7 OTA module".into());
+                    body.push("# (mender-mcu-client west group activation).".into());
+                    body.push("# CONFIG_MENDER_MCU_CLIENT=y".into());
+                    if let Some(url) = srv.and_then(|s| s.url.as_deref()) {
+                        body.push(format!("# CONFIG_MENDER_SERVER_URL=\"{url}\""));
+                    }
+                    if let Some(t) = srv.and_then(|s| s.tenant.as_deref()) {
+                        body.push(format!("# CONFIG_MENDER_TENANT_TOKEN=\"{t}\""));
+                    }
+                    if let Some(a) = ota.artifact_name.as_deref() {
+                        body.push(format!("# CONFIG_MENDER_ARTIFACT_NAME=\"{a}\""));
+                    }
+                    if let Some(poll) = ota.poll_interval_s.filter(|&n| n > 0) {
+                        body.push(format!("# CONFIG_MENDER_UPDATE_POLL_INTERVAL={poll}"));
+                    }
+                }
+                "hawkbit" => {
+                    body.push("CONFIG_HAWKBIT=y".into());
+                    body.push("CONFIG_HAWKBIT_SHELL=y".into());
+                    if let Some(url) = srv.and_then(|s| s.url.as_deref()) {
+                        body.push(format!("CONFIG_HAWKBIT_SERVER=\"{url}\""));
+                    }
+                    if let Some(poll) = ota.poll_interval_s.filter(|&n| n > 0) {
+                        body.push(format!("CONFIG_HAWKBIT_POLL_INTERVAL={poll}"));
+                    }
+                }
+                _ => {
+                    body.push("CONFIG_MCUMGR=y".into());
+                    body.push("CONFIG_MCUMGR_GRP_IMG=y".into());
+                    body.push("CONFIG_MCUMGR_GRP_OS=y".into());
+                    body.push("# MCUmgr transport (UART/BLE/UDP) is the app's call;".into());
+                    body.push(
+                        "# enable the matching CONFIG_MCUMGR_TRANSPORT_* in your prj.conf.".into(),
+                    );
+                }
+            }
+            sections.push((
+                format!("# OTA Zephyr client (board.yaml `ota.provider: {provider}`)"),
+                body,
+            ));
+        }
+    }
+
+    // Per-module log-level overrides (ALP_* downgraded to hint comments).
+    let mut diag: Vec<String> = Vec::new();
+    if let Some(d) = board.diagnostics.as_ref() {
+        for (module, lvl) in &d.modules {
+            if let Some(n) = p.log_levels.get(&lvl.to_lowercase()) {
+                let stem = module.to_uppercase();
+                if stem.starts_with("ALP_") {
+                    diag.push(format!(
+                        "# CONFIG_{stem}_LOG_LEVEL={n} (pending LOG_MODULE_REGISTER on this SDK module)"
+                    ));
+                } else {
+                    diag.push(format!("CONFIG_{stem}_LOG_LEVEL={n}"));
+                }
+            }
+        }
+    }
+    if !diag.is_empty() {
+        sections.push((
+            "# Per-module log-level overrides (board.yaml diagnostics.modules:)".into(),
+            diag,
+        ));
+    }
+
+    // Each section: header + body + a trailing blank line (the SDK's `lines.append("")`).
+    sections
+        .iter()
+        .map(|(header, body)| {
+            if body.is_empty() {
+                format!("{header}\n\n")
+            } else {
+                format!("{header}\n{}\n\n", body.join("\n"))
+            }
+        })
+        .collect()
 }
 
 // --- shared artefacts (Stage D): IPC contract header + DTS overlays ---
@@ -324,7 +516,10 @@ pub(crate) fn render_system_ipc_h(
         .collect();
     render_template(
         tmpl,
-        &vars! { "sku" => board.som.sku.clone() },
+        &vars! {
+            "sku" => board.som.sku.clone(),
+            "noChannels" => if channels.is_empty() { "1" } else { "" }.to_string(),
+        },
         &BTreeMap::from([("channels", channels)]),
     )
 }
@@ -357,7 +552,7 @@ pub(crate) fn render_dts_reservations(
         .collect();
     render_template(
         tmpl,
-        &BTreeMap::new(),
+        &vars! { "noCarveouts" => if rows.is_empty() { "1" } else { "" }.to_string() },
         &BTreeMap::from([("carveouts", rows)]),
     )
 }

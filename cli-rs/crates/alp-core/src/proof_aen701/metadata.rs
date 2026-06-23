@@ -130,6 +130,16 @@ pub(crate) struct OtaBlock {
     pub(crate) artifact_name: Option<String>,
     #[serde(default)]
     pub(crate) poll_interval_s: Option<u64>,
+    #[serde(default)]
+    pub(crate) server: Option<OtaServer>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct OtaServer {
+    #[serde(default)]
+    pub(crate) url: Option<String>,
+    #[serde(default)]
+    pub(crate) tenant: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -184,6 +194,11 @@ pub(crate) struct BoardSom {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub(crate) struct BoardCore {
+    /// Board-side OS override (`zephyr` | `yocto` | `baremetal` | `off`); `off`
+    /// skips the core entirely (no build slice), even though the SoM topology
+    /// still lists it.
+    #[serde(default)]
+    pub(crate) os: Option<String>,
     #[serde(default)]
     pub(crate) app: Option<String>,
     #[serde(default)]
@@ -192,12 +207,39 @@ pub(crate) struct BoardCore {
     pub(crate) libraries: Vec<String>,
     #[serde(default)]
     pub(crate) peripherals: Vec<String>,
+    /// Per-slice memory tuning → CONFIG_MAIN_STACK_SIZE / ISR / HEAP.
+    #[serde(default)]
+    pub(crate) memory: Option<CoreMemory>,
+    /// Per-slice power-management profile → CONFIG_PM + sleep/wakeup hints.
+    #[serde(default)]
+    pub(crate) power: Option<CorePower>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct CoreMemory {
+    #[serde(default)]
+    pub(crate) stack_kib: Option<u64>,
+    #[serde(default)]
+    pub(crate) isr_stack_kib: Option<u64>,
+    #[serde(default)]
+    pub(crate) heap_kib: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct CorePower {
+    #[serde(default)]
+    pub(crate) sleep_mode: Option<String>,
+    #[serde(default)]
+    pub(crate) wakeup_sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct Diagnostics {
     #[serde(default)]
     pub(crate) log_level: Option<String>,
+    /// Per-module log-level overrides → the `diagnostics.modules:` alp.conf section.
+    #[serde(default)]
+    pub(crate) modules: BTreeMap<String, String>,
 }
 
 // --- the SoM preset (topology + on-module facts + inference) ---

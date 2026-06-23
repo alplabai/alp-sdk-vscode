@@ -10,5 +10,6 @@
         #address-cells = <2>;
         #size-cells = <2>;
 
-{{#each carveouts}}{{block}}{{/each}}    };
+{{#if noCarveouts}}        /* No ipc[] carve-outs declared. */
+{{/if}}{{#each carveouts}}{{block}}{{/each}}    };
 };

@@ -24,6 +24,7 @@
     "emmc"
   ],
   "logLevels": {
+    "off": 0,
     "error": 1,
     "warn": 2,
     "info": 3,
@@ -104,6 +105,12 @@
     ]
   },
   "libraryKconfig": {
+    "etl": ["# etl: include path + etl_profile.h via the v0.4 loader hook"],
+    "fmt": ["# fmt: include path + fmt_config.h via the v0.4 loader hook"],
+    "nlohmann_json": ["# nlohmann_json: include path + json_config.h via the v0.4 loader hook"],
+    "doctest": ["# doctest: include path + doctest_config.h via the v0.4 loader hook"],
+    "lvgl": ["CONFIG_LVGL=y", "CONFIG_ALP_LVGL_SW_BLIT=y"],
+    "mbedtls": ["CONFIG_MBEDTLS=y", "CONFIG_MBEDTLS_BUILTIN=y", "CONFIG_ALP_MBEDTLS_PURE_C=y"],
     "cmsis_dsp": [
       "CONFIG_CMSIS_DSP=y",
       "CONFIG_CMSIS_DSP_BASICMATH=y",
@@ -171,6 +178,11 @@
         "declare": "",
         "fsData": ""
       }
+    },
+    "fsKconfig": {
+      "littlefs": ["CONFIG_FILE_SYSTEM=y", "CONFIG_FILE_SYSTEM_LITTLEFS=y"],
+      "fat": ["CONFIG_FILE_SYSTEM=y", "CONFIG_FAT_FILESYSTEM_ELM=y"],
+      "ext4": ["CONFIG_FILE_SYSTEM=y", "CONFIG_FILE_SYSTEM_EXT2=y"]
     }
   },
   "_secureComment": "Secure-boot (MCUboot) + TF-M rule data: signing/swap Kconfig maps, TF-M build-type aliases, PSA attestation roots. Keyed by board.yaml `boot:`/`security.psa:` values; zero secure literals in the engine.",

@@ -9,7 +9,8 @@
 
 #define ALP_IPC_SKU "{{sku}}"
 
-{{#each channels}}/* {{kind}} channel '{{name}}' -- endpoints {{endpoints}} */
+{{#if noChannels}}/* No ipc[] entries declared in board.yaml; nothing to emit. */
+{{/if}}{{#each channels}}/* {{kind}} channel '{{name}}' -- endpoints {{endpoints}} */
 {{#if blocked}}/* BLOCKED: {{reason}} */
 /* IPC channel '{{name}}' is blocked; fix the SoM metadata before depending on this channel at runtime. */
 {{/if}}#define ALP_IPC_{{up}}_NAME       "{{name}}"

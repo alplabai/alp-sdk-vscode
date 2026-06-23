@@ -67,6 +67,9 @@ const TFM_TMPL: &str =
 const SYSBUILD_TMPL: &str =
     include_str!("../spike_fixtures/som/E1M-AEN701/templates/sysbuild.conf.tmpl");
 const ORACLE_SYSBUILD_PD: &str = include_str!("../spike_fixtures/oracle/prod-deploy.sysbuild-conf");
+const ORACLE_ALP_CONF_PD: &str =
+    include_str!("../spike_fixtures/oracle/prod-deploy.alp-conf.m55_hp");
+const ORACLE_BUILD_PLAN_PD: &str = include_str!("../spike_fixtures/oracle/prod-deploy.build-plan");
 
 /// **Storage allocator parity (P1).** The bottom-up partition allocator places the
 /// 5 `storage:` entries on the variant-derived `mram_main` region (5.5 MiB) and the
@@ -122,6 +125,77 @@ fn prod_deploy_sysbuild_conf_matches_sdk_emit() {
     );
 }
 
+/// **WHOLE per-slice `alp.conf`, byte-for-byte (the maximal-board result).** The
+/// full `m55_hp` slice — base + chips + subsystems + libraries + inference PLUS the
+/// five board-feature sections (memory tuning, power profile, storage Kconfig, OTA
+/// client, per-module log levels) — reproduces exactly from the SAME engine +
+/// template. The RPMsg boards (no such blocks) stay byte-identical: the sections
+/// emit nothing. This is the "leave no gap" slice for a feature-maximal board.
+#[test]
+fn prod_deploy_full_alp_conf_matches_sdk_emit_byte_for_byte() {
+    let (board, som, board_def, soc) = load_pd();
+    assert_eq!(
+        render_zephyr_alp_conf(
+            "m55_hp",
+            &board,
+            &som,
+            &board_def,
+            &soc,
+            &policy(),
+            KCONFIG_TMPL
+        ),
+        ORACLE_ALP_CONF_PD
+    );
+}
+
+/// **THE WHOLE BUILD-PLAN, byte-for-byte — "leave no gap" on a feature-maximal
+/// board.** The entire `production-deployment` build-plan reproduces from the SAME
+/// engine + the AEN701 bundle: the per-slice `alp.conf` (with all five feature
+/// sections) AND every shared artefact — `system_ipc.h`, the two DTS overlays, the
+/// resolved storage `dts-partitions`, the MCUboot `alp_sysbuild.conf` (P3), and the
+/// TF-M `tfm.conf` (P2). Only the environment-specific paths (`ALP_SDK_ROOT`, the
+/// `west` app dir) are threaded from the oracle; every *derived* field is matched.
+#[test]
+fn prod_deploy_full_build_plan_matches_sdk_emit() {
+    let (board, som, board_def, soc) = load_pd();
+    let oracle: BuildPlan = serde_json::from_str(ORACLE_BUILD_PLAN_PD).unwrap();
+    let sdk_root = oracle
+        .slices
+        .iter()
+        .find_map(|s| s.env.get("ALP_SDK_ROOT").cloned())
+        .unwrap();
+    let zephyr_apps: BTreeMap<String, String> = oracle
+        .slices
+        .iter()
+        .filter(|s| matches!(s.backend, Backend::Zephyr))
+        .map(|s| {
+            (
+                s.core_id.clone(),
+                s.command.as_ref().unwrap().args.last().unwrap().clone(),
+            )
+        })
+        .collect();
+
+    let mut ours = assemble_full_plan(
+        &board,
+        &som,
+        &board_def,
+        &soc,
+        &oracle.board_yaml,
+        &sdk_root,
+        &zephyr_apps,
+        &policy(),
+        &templates(),
+    );
+    let mut oracle = oracle;
+    sort_plan(&mut ours);
+    sort_plan(&mut oracle);
+    assert_eq!(
+        serde_json::to_value(&ours).unwrap(),
+        serde_json::to_value(&oracle).unwrap()
+    );
+}
+
 fn load() -> (BoardYaml, SomPreset, BoardDef, SocSpec) {
     (
         serde_yaml::from_str(BOARD_YAML).unwrap(),
@@ -151,6 +225,8 @@ fn templates() -> Templates {
         system_ipc_h: IPC_TMPL.to_string(),
         dts_reservations: DTS_RES_TMPL.to_string(),
         dts_partitions: DTS_PART_TMPL.to_string(),
+        sysbuild_conf: SYSBUILD_TMPL.to_string(),
+        tfm_sysbuild_conf: TFM_TMPL.to_string(),
     }
 }
 
@@ -196,6 +272,14 @@ fn templates_e8() -> Templates {
         .to_string(),
         dts_partitions: include_str!(
             "../spike_fixtures/som/E1M-AEN801/templates/dts-partitions.dtsi.tmpl"
+        )
+        .to_string(),
+        sysbuild_conf: include_str!(
+            "../spike_fixtures/som/E1M-AEN801/templates/sysbuild.conf.tmpl"
+        )
+        .to_string(),
+        tfm_sysbuild_conf: include_str!(
+            "../spike_fixtures/som/E1M-AEN801/templates/tfm-sysbuild.conf.tmpl"
         )
         .to_string(),
     }
@@ -1009,6 +1093,14 @@ fn templates_v2n() -> Templates {
         .to_string(),
         dts_partitions: include_str!(
             "../spike_fixtures/som/E1M-V2N101/templates/dts-partitions.dtsi.tmpl"
+        )
+        .to_string(),
+        sysbuild_conf: include_str!(
+            "../spike_fixtures/som/E1M-V2N101/templates/sysbuild.conf.tmpl"
+        )
+        .to_string(),
+        tfm_sysbuild_conf: include_str!(
+            "../spike_fixtures/som/E1M-V2N101/templates/tfm-sysbuild.conf.tmpl"
         )
         .to_string(),
     }

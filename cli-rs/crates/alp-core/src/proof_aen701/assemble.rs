@@ -12,6 +12,7 @@ use super::bundle::*;
 use super::metadata::*;
 use super::policy::*;
 use super::render::*;
+use super::secure::{render_sysbuild_conf, render_tfm_sysbuild_conf};
 use crate::build_plan::{Backend, BuildPlan, BuildSlice, GeneratedFile, ToolStep};
 
 // --- build-plan slices + the full plan (Stage B/F) ---
@@ -98,6 +99,12 @@ pub(crate) fn assemble_full_plan(
         let Some(topo) = som.topology.get(&c.id) else {
             continue;
         };
+        // `os: off` skips the core entirely (the SoM topology still lists every
+        // silicon core, but an unused one — e.g. the M55-HE on a HP-only build —
+        // gets no slice).
+        if board.cores.get(&c.id).and_then(|bc| bc.os.as_deref()) == Some("off") {
+            continue;
+        }
         if topo.machine.is_some() {
             if let Some(s) =
                 build_yocto_slice(board, som, &c.id, build_root, sdk_root, p, &t.local_conf)
@@ -113,7 +120,7 @@ pub(crate) fn assemble_full_plan(
             }
         }
     }
-    let shared_artefacts = vec![
+    let mut shared_artefacts = vec![
         GeneratedFile {
             path: "build/generated/alp/system_ipc.h".to_string(),
             contents: render_system_ipc_h(board, som, soc, &t.system_ipc_h),
@@ -127,6 +134,22 @@ pub(crate) fn assemble_full_plan(
             contents: render_dts_partitions(board, som, soc, &t.dts_partitions),
         },
     ];
+    // Secure-world shared artefacts — present only when the board opts in
+    // (MCUboot `boot:` / TF-M `security.psa.tfm:`); both render empty otherwise.
+    let sysbuild = render_sysbuild_conf(board, p, &t.sysbuild_conf);
+    if !sysbuild.is_empty() {
+        shared_artefacts.push(GeneratedFile {
+            path: "build/alp_sysbuild.conf".to_string(),
+            contents: sysbuild,
+        });
+    }
+    let tfm = render_tfm_sysbuild_conf(board, p, &t.tfm_sysbuild_conf);
+    if !tfm.is_empty() {
+        shared_artefacts.push(GeneratedFile {
+            path: "build/sysbuild/tfm/tfm.conf".to_string(),
+            contents: tfm,
+        });
+    }
     BuildPlan {
         schema_version: 1,
         generated_by: "scripts/alp_orchestrate.py".to_string(),

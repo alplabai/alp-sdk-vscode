@@ -50,6 +50,10 @@ pub(crate) struct StoragePolicy {
     /// filled by the engine. The C struct skeleton is data, not engine literal.
     #[serde(default)]
     pub(crate) fs_profiles: BTreeMap<String, FsProfile>,
+    /// fs name → the per-slice `alp.conf` Kconfig lines that enable it (distinct
+    /// from `fsProfiles` — e.g. fat → `CONFIG_FAT_FILESYSTEM_ELM`, not `<ff.h>`).
+    #[serde(default)]
+    pub(crate) fs_kconfig: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
