@@ -37,6 +37,7 @@ pub(crate) mod validate;
 pub(crate) mod assemble;
 pub(crate) mod carveout;
 pub(crate) mod partition;
+pub(crate) mod readiness;
 pub(crate) mod render;
 pub(crate) mod secure;
 pub(crate) mod template;

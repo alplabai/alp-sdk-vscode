@@ -8,9 +8,11 @@ use std::collections::BTreeMap;
 
 use super::assemble::*;
 use super::bundle::*;
+use super::carveout::resolve_carve_outs;
 use super::metadata::*;
 use super::pinmux::*;
 use super::policy::*;
+use super::readiness::*;
 use super::render::*;
 use super::secure::*;
 use super::validate::*;
@@ -1507,4 +1509,75 @@ fn silicon_overlay_is_a_one_entry_delta() {
         engine.inference.accelerator_backend.is_empty(),
         "the shared engine-policy makes no silicon assumption"
     );
+}
+
+// === P/M/T improvement #3 — SoM READINESS / bring-up contract (the cross-cutting
+// "what's pending + what it blocks" view the SDK emits per-board but never aggregates;
+// each finding carries a structured CODE = improvement #2). ===
+
+/// **A fully HW-mapped SoM reports ready.** Renesas RZ/V2N has a live mailbox
+/// (`renesas_mhu`), a resolved silicon_variant, and explicit SoC memory regions, so
+/// the readiness report has ZERO blocking findings — every output resolves.
+#[test]
+fn readiness_v2n_is_fully_ready() {
+    let (_, som, _, soc) = load_v2n();
+    let r = compute_readiness(&som, &soc);
+    assert!(r.blocking().is_empty(), "V2N: no blocking findings");
+    assert!(r.is_ready(), "V2N is bring-up ready");
+    assert!(!r.preliminary && !r.partial_hw_config);
+}
+
+/// **A partially-mapped SoM reports exactly what's pending.** AEN701 is released
+/// silicon, but `mailbox.controller` is TBD (→ IPC stubs) and its OSPI capacities are
+/// TBD (→ storage-on-OSPI blocks); its silicon_variant IS resolved. Each finding
+/// names a CODE + the outputs it blocks + the fix.
+#[test]
+fn readiness_aen_blocks_ipc_and_ospi_storage() {
+    let (_, som, _, soc) = load();
+    let r = compute_readiness(&som, &soc);
+    assert!(r.has_code("MAILBOX_TBD"), "mailbox TBD surfaced");
+    assert!(
+        r.has_code("OSPI_CAPACITY_TBD"),
+        "ospi capacities TBD surfaced"
+    );
+    assert!(!r.has_code("SILICON_VARIANT_TBD"), "variant is resolved");
+    assert!(!r.is_ready());
+    let mb = r.findings.iter().find(|f| f.code == "MAILBOX_TBD").unwrap();
+    assert!(mb.blocks.iter().any(|b| b.contains("system_ipc.h")));
+}
+
+/// **A preliminary SoM reports its full bring-up gap.** NX9101 (i.MX 93, preliminary)
+/// has TWO blocking findings — silicon_variant TBD (→ no memory map → storage blocks)
+/// + mailbox TBD (→ IPC stubs) — plus informational pending BOM/memory fields.
+#[test]
+fn readiness_nx9101_is_preliminary_with_two_blockers() {
+    let (_, som, _, soc) = load_imx93();
+    let r = compute_readiness(&som, &soc);
+    assert!(r.preliminary && r.partial_hw_config);
+    assert!(r.has_code("SILICON_VARIANT_TBD") && r.has_code("MAILBOX_TBD"));
+    assert_eq!(
+        r.blocking().len(),
+        2,
+        "variant + mailbox block; the rest is informational"
+    );
+    assert!(r.has_code("CHIP_PENDING") && r.has_code("MEMORY_SIZE_TBD"));
+    assert!(r.findings.iter().filter(|f| !f.blocking).count() >= 4);
+}
+
+/// **The readiness report tracks the resolver — it is NOT a hand-maintained list.**
+/// For every SoM, a `MAILBOX_TBD` blocking finding exists IFF the carve-out allocator
+/// actually blocks that board's IPC. Same fact, coded once, surfaced to the IDE.
+#[test]
+fn readiness_mailbox_finding_matches_the_carveout_resolver() {
+    for (board, som, _, soc) in [load(), load_v2n(), load_imx93()] {
+        let says_blocked = compute_readiness(&som, &soc).has_code("MAILBOX_TBD");
+        let actually_blocks = resolve_carve_outs(&board, &som, &soc)
+            .iter()
+            .any(|c| c.blocked);
+        assert_eq!(
+            says_blocked, actually_blocks,
+            "readiness <-> resolver agree for {}",
+            board.som.sku
+        );
+    }
 }

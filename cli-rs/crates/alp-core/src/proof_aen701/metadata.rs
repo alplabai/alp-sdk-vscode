@@ -276,6 +276,22 @@ pub(crate) struct SomPreset {
     /// allocator falls back to the SoC's `memory_regions`.
     #[serde(default)]
     pub(crate) memory_map: Vec<MemRegion>,
+    /// Bring-up status (released vs preliminary; HW-config completeness) — read by
+    /// the readiness report (`readiness.rs`).
+    #[serde(default)]
+    pub(crate) status: SomStatus,
+    /// On-module memory sizing (`dram_mbit` / `flash_mbit`); `TBD` until the HW
+    /// design freezes. Informational for the readiness report (no build-config block).
+    #[serde(default)]
+    pub(crate) memory: BTreeMap<String, serde_yaml::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct SomStatus {
+    #[serde(default)]
+    pub(crate) preliminary: bool,
+    #[serde(default)]
+    pub(crate) partial_hw_config: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
