@@ -164,11 +164,14 @@ proof_aen701/
 
 ## Honest scope / caveats (not hidden)
 
-- **Two vendors, build config only** (Alif Ensemble E7+E8 + Renesas RZ/V2N). The cross-vendor port
-  generalized three Alif-shaped schemas as DATA (inference `acceleratorBackend` keyed by silicon +
-  gated on `soc.npus`; `dispatch_pin` number-or-name; `flash_args` string-or-map) — no per-vendor
-  engine branch. The per-core build SLICES reproduce byte-for-byte for both vendors; NXP and other
-  accelerators (DEEPX, no-NPU parts) are not yet exercised. The board↔silicon alias bridge is still
+- **Three silicon families, whole build-plan** (Alif Ensemble E7+E8 + Renesas RZ/V2N + **NXP i.MX 93**).
+  The cross-vendor port generalized the Alif-shaped schemas as DATA — no per-vendor engine branch:
+  inference `acceleratorBackend` keyed by silicon + gated on `soc.npus`; `dispatch_pin` number-or-name;
+  `flash_args` string-or-map; the inference **NPU-variant capability-count fallback** (`ethos_u65_count`
+  → U65 for a SoM with no `npu_population[]`); and dropping `TBD`/empty `on_module` chips. **The NXP build
+  policy + `kconfig` template are byte-identical to Alif's** — only the SoM metadata + SoC spec differ;
+  the whole `rpmsg-imx93` build-plan (a55 Yocto + m33 Zephyr + blocked IPC) reproduces byte-for-byte.
+  Still not exercised: DEEPX (V2M) and a truly no-NPU part. The board↔silicon alias bridge is still
   partly hand-maintained.
 - **The resolved IPC carve-out / memory-map allocator IS reproduced** (`carveout.rs`): V2N has a live
   `mailbox.controller`, so the engine resolves the memory map (SoM `memory_map` → SoC `memory_regions`),
