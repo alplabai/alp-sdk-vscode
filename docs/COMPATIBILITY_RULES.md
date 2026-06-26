@@ -44,3 +44,28 @@ Before merging a potentially breaking change:
 1. Update this document and CLI.md if contract changes.
 2. Update golden/integration tests for the new contract.
 3. Add migration notes in release communication.
+
+## 5. SDK Version Compatibility Log
+
+The extension + CLI **consume** the SDK planner over the JSON `--emit` seam (ADR 0014);
+they do not re-implement it, so an SDK minor bump flows through without code changes as
+long as the consumed contracts hold. Record each assessed SDK release here.
+
+- **alp-sdk v0.8.0 — compatible, no product change required** (assessed 2026-06-24).
+  - `metadata/schemas/board.schema.json` + `board-preset.schema.json`: **unchanged** → the
+    vendored `schemas/board.schema.json` stays correct; no re-vendor.
+  - `scripts/validate_board_yaml.py` / `validate_metadata.py`: **unchanged** → the CLI's
+    offline validator (`@alp-sdk/core`) does not drift.
+  - `--emit` shapes (7) + the `system-manifest-v1` schema: **unchanged** → the manifest
+    reader + the build-plan envelope stay valid.
+  - SoM catalogue is sourced at runtime via `alp presets` (smoke-tested against a v0.8.0
+    checkout: 11 SKUs, version `0.8.0`); the CLI reads `metadata/sdk_version.yaml` at
+    runtime — no pinned version to bump.
+  - The one planner-behaviour change (`stock-shim-unimplemented`: a Zephyr core whose
+    `app: alp-stock-shim` now emits `command: null` + a warning) is rendered generically by
+    the Build Plan view (`command: null` + warnings were already first-class). The SDK's own
+    warning message is actionable ("Override `cores.<id>.app` with a real app"), so no
+    special-casing is needed.
+  - Forward-looking (additive, not required): v0.8.0 adds an `ADC`/`DAC` E1M pin class and
+    camera-sensor DTS bindings — the configurator / pin-mux could surface these as new
+    routing/chip options. Tracked separately, not a compatibility concern.

@@ -41,6 +41,29 @@ test("board.schema.json is the vendored v0.6 schema (drift/staleness gate)", () 
     "ipc carve-outs must use carve_out_kb",
   );
 
+  // Pin-class lock (#26): the configurator + YAML LSP rely on the vendored schema
+  // to validate `e1m_routes` pin classes. The byte-exact SHA pin below catches
+  // drift, but an *intentional* re-vendor just bumps the hash — this asserts a
+  // re-vendor can't silently drop a pin class the extension depends on. v0.8.0
+  // exercises the `adc`/`dac` class (alp_project.py's alp-adc/alp-dac buckets);
+  // see docs/COMPATIBILITY_RULES.md §5.
+  const e1mRoutes = (schema.$defs ?? {}).e1m_routes ?? {};
+  for (const cls of [
+    "gpio",
+    "buses",
+    "pwm",
+    "adc",
+    "dac",
+    "i2s",
+    "can",
+    "qenc",
+  ]) {
+    assert.ok(
+      (e1mRoutes.properties ?? {})[cls],
+      `vendored schema e1m_routes must support the '${cls}' pin class — a re-vendor dropped it`,
+    );
+  }
+
   // Byte-exact pin to the SDK tag the copy was vendored from. The key checks
   // above only catch regressions to a PRE-v0.6 schema; this catches local
   // edits and forward drift (e.g. re-vendoring from submodule dev HEAD) too.
