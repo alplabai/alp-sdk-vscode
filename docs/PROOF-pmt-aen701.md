@@ -164,6 +164,15 @@ proof_aen701/
 
 ## Honest scope / caveats (not hidden)
 
+- **The engine survives a real SDK minor bump (v0.7.0 → v0.8.0), byte-for-byte.** The bench is
+  canonically pinned to **v0.7.0** (parity-vs-a-tag, ADR 0014); v0.8.0 is an **additive forward-port**
+  (`oracle/v080/`, `v080_rpmsg_aen_build_plan_matches_sdk_emit`). v0.8.0 changed 1222 files, but the drift
+  that touches our reproduced output is **metadata fill-in + exactly one small planner-logic gate**: the
+  EVK board preset de-populated LSM6DSO/SSD1306 (DATA → re-captured fixture), and the stock-shim
+  `command: null` + `stock-shim-unimplemented` warning (#49) plus the renamed `alif_mhuv2` mailbox hint —
+  the two version-specific *behaviours*, captured as one `SdkProfile` (a bool + a string), default `v070()`.
+  The SAME engine reproduces BOTH v0.7.0 (canonical) and v0.8.0 (additive) build-plans byte-for-byte —
+  the P/M/T thesis (derivations in code, version-deltas as data) validated across a version boundary.
 - **Three silicon families, whole build-plan** (Alif Ensemble E7+E8 + Renesas RZ/V2N + **NXP i.MX 93**).
   The cross-vendor port generalized the Alif-shaped schemas as DATA — no per-vendor engine branch:
   inference `acceleratorBackend` keyed by silicon + gated on `soc.npus`; `dispatch_pin` number-or-name;

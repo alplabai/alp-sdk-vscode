@@ -13,7 +13,7 @@ use super::metadata::*;
 use super::policy::*;
 use super::render::*;
 use super::secure::{render_sysbuild_conf, render_tfm_sysbuild_conf};
-use crate::build_plan::{Backend, BuildPlan, BuildSlice, GeneratedFile, ToolStep};
+use crate::build_plan::{Backend, BuildPlan, BuildSlice, GeneratedFile, PlanWarning, ToolStep};
 
 // --- build-plan slices + the full plan (Stage B/F) ---
 
@@ -92,9 +92,11 @@ pub(crate) fn assemble_full_plan(
     zephyr_apps: &BTreeMap<String, String>,
     p: &Policy,
     t: &Templates,
+    profile: &SdkProfile,
 ) -> BuildPlan {
     let build_root = "build";
     let mut slices = Vec::new();
+    let mut warnings: Vec<PlanWarning> = Vec::new();
     for c in &soc.cores {
         let Some(topo) = som.topology.get(&c.id) else {
             continue;
@@ -113,9 +115,31 @@ pub(crate) fn assemble_full_plan(
             }
         } else if topo.board.is_some() {
             let app = zephyr_apps.get(&c.id).cloned().unwrap_or_default();
-            if let Some(s) = build_zephyr_slice(
+            if let Some(mut s) = build_zephyr_slice(
                 board, som, board_def, soc, &c.id, build_root, &app, sdk_root, p, &t.kconfig,
             ) {
+                // v0.8.0 (#49): a Zephyr core still on the stock M-core shim has no
+                // buildable image in the SDK tree, so the planner emits NO command +
+                // a `stock-shim-unimplemented` warning instead of a real `west build`.
+                let logical_app = board
+                    .cores
+                    .get(&c.id)
+                    .and_then(|bc| bc.app.clone())
+                    .or_else(|| topo.app.clone());
+                if profile.stock_shim_unbuilt
+                    && logical_app.as_deref() == Some(SdkProfile::STOCK_SHIM_APP)
+                {
+                    s.command = None;
+                    warnings.push(PlanWarning {
+                        code: "stock-shim-unimplemented".to_string(),
+                        core_id: Some(c.id.clone()),
+                        message: format!(
+                            "core '{0}' uses the stock M-core shim (app: {1}); its image body is not in the SDK tree yet (issue #49). Override cores.{0}.app with a real app to build this core.",
+                            c.id,
+                            SdkProfile::STOCK_SHIM_APP
+                        ),
+                    });
+                }
                 slices.push(s);
             }
         }
@@ -123,11 +147,11 @@ pub(crate) fn assemble_full_plan(
     let mut shared_artefacts = vec![
         GeneratedFile {
             path: "build/generated/alp/system_ipc.h".to_string(),
-            contents: render_system_ipc_h(board, som, soc, &t.system_ipc_h),
+            contents: render_system_ipc_h(board, som, soc, profile, &t.system_ipc_h),
         },
         GeneratedFile {
             path: "build/generated/dts-reservations.dtsi".to_string(),
-            contents: render_dts_reservations(board, som, soc, &t.dts_reservations),
+            contents: render_dts_reservations(board, som, soc, profile, &t.dts_reservations),
         },
         GeneratedFile {
             path: "build/generated/dts-partitions.dtsi".to_string(),
@@ -158,7 +182,7 @@ pub(crate) fn assemble_full_plan(
         build_root: build_root.to_string(),
         slices,
         shared_artefacts,
-        warnings: Vec::new(),
+        warnings,
     }
 }
 

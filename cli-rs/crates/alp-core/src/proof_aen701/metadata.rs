@@ -9,6 +9,47 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+/// Which SDK release's `--emit` the engine targets. The bench is **canonically
+/// pinned to v0.7.0**; v0.8.0 is an ADDITIVE forward-port — the SAME engine
+/// reproduces it given this profile + the v0.8.0 DATA. The profile captures the
+/// only two version-specific *behaviours* (everything else that drifted is
+/// metadata): the stock-shim command gate (#49) and the example Alif mailbox node
+/// in the blocked-IPC hint. So "what changed across the version boundary" is
+/// itself data, and the engine stays version-agnostic.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SdkProfile {
+    /// v0.8.0: a Zephyr core on the stock M-core shim (`app: alp-stock-shim`)
+    /// emits `command: null` + a `stock-shim-unimplemented` warning instead of a
+    /// real `west build` (v0.7.0 emitted the build command).
+    pub(crate) stock_shim_unbuilt: bool,
+    /// The example Alif mailbox node named in the blocked-IPC hint — `alif_evtrtr`
+    /// at v0.7.0, renamed to `alif_mhuv2` at v0.8.0.
+    pub(crate) alif_mailbox_example: &'static str,
+}
+
+impl SdkProfile {
+    pub(crate) const STOCK_SHIM_APP: &'static str = "alp-stock-shim";
+
+    pub(crate) fn v070() -> Self {
+        Self {
+            stock_shim_unbuilt: false,
+            alif_mailbox_example: "alif_evtrtr",
+        }
+    }
+    pub(crate) fn v080() -> Self {
+        Self {
+            stock_shim_unbuilt: true,
+            alif_mailbox_example: "alif_mhuv2",
+        }
+    }
+}
+
+impl Default for SdkProfile {
+    fn default() -> Self {
+        Self::v070()
+    }
+}
+
 // --- board.yaml (the consumer's project file) ---
 
 #[derive(Debug, Clone, Deserialize)]

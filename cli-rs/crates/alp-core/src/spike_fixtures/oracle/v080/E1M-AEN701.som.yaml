@@ -1,0 +1,164 @@
+# Stock preset for E1M-AEN701 (the SoM, NOT the EVK board).
+#
+# This file lists ONLY components physically populated on the
+# E1M-AEN module PCB -- silicon, on-module radio, on-module
+# secure element + RTC + temperature sensor + EEPROM.  Board-
+# side parts (IMUs, barometers, OLEDs, cameras, current monitors,
+# speaker amps...) live in metadata/boards/e1m-evk.yaml.
+#
+# Per the project memory note "pending exact hardware configurations
+# -- the user will hand-write authoritative pin assignments and
+# per-SoM HW config later; mark unknowns TBD, never invent values",
+# memory capacities below stay TBD until the user supplies them
+# authoritatively from the AEN module datasheet.
+
+schema_version: 1
+
+sku: E1M-AEN701
+family: alif-ensemble
+silicon: alif:ensemble:e7
+silicon_variant: AE722F80F55D5LS         # see metadata/socs/alif/ensemble/e7.json variants[]
+
+display_name: "E1M-AEN701 (Alif Ensemble E7)"
+
+# On-module components only.  These are fixed at SoM-fab time; you
+# cannot DNI them after ordering.  The component IDs match the
+# chip-driver names in chips/<part>/ so the loader can flip the
+# corresponding CONFIG_ALP_SDK_CHIP_<NAME>=y at build time.
+on_module:
+  silicon:              alif:ensemble:e7    # 2x Cortex-A32 + 2x Cortex-M55 + 1x Ethos-U55
+  wifi_ble:             cc3501e             # TI CC3501E Wi-Fi 6 + BLE 5.4 coprocessor
+  secure_element:       optiga_trust_m      # Infineon SLS32AIA010
+  rtc_external:         rv3028c7            # Micro Crystal ultra-low-power RTC
+  temperature_sensor:   tmp112              # TI TMP112 on the slave-only LPI2C0 (Tier-3 SE; ADR 0017)
+  eeprom:               eeprom_24c128       # Onsemi N24S128C4DYT3G (128-Kbit I2C)
+  ospi_memories:
+    ospi0:
+      chip:           MX25UM25645GXDI00   # Macronix OctaFlash (xSPI NOR)
+      assembled:      optional            # BOM variant
+      capacity_mbit:  256                 # 256 Mbit (32 MiB)
+      chip_select:    0                   # OSPI0 CS0
+      role:           app_storage
+    ospi1:
+      chip:           TBD            # OSPI1 controller unused on this SoM: both OSPI devices
+      assembled:      optional       # share the OSPI0 octal bus (NOR = CS0, HyperRAM = CS1)
+      capacity_mbit:  TBD
+      role:           data_log
+  # External HyperRAM -- volatile XIP / scratch RAM, separate from the
+  # NOR flash above.  Shares the OSPI0 octal controller with the flash,
+  # separated only by chip-select (NOR flash = CS0, HyperRAM = CS1).
+  hyperram:
+    chip:           W958D8NBYA5I    # Winbond OctalRAM (HyperBus)
+    capacity_mbit:  256             # 256 Mbit (32 MiB)
+    interface:      ospi0
+    chip_select:    1
+
+# Inference defaults -- silicon-determined.  `preferred_backend` is
+# consumed by the build to set the default per-handle dispatcher when
+# the app doesn't pin one; customers cannot countermand it via
+# board.yaml (per the v0.6 schema cleanup -- `inference.backend` was
+# removed as a customer field).  Apps still pick at runtime via
+# `alp_inference_open(.backend = ...)`.
+inference:
+  preferred_backend:    ethos_u             # Ethos-U55 NPU on-die.
+  ethos_u_variant:      u55                 # vs u65 on i.MX 93.
+  npu_population:
+    - { variant: u55, role: NPU-HE, paired_with: M55-HE }       # E7 carries two U55s; no U85.
+    - { variant: u55, role: NPU-HP, paired_with: M55-HP }
+
+capabilities:
+  optiga_trust_m:       true
+
+# Standard board the SoM mounts on for development.  Consumers
+# can pick any board or write their own in board.yaml.
+topology:
+  a32_cluster:
+    app: alp-image-edge
+    machine: e1m-aen701-a32             # Yocto MACHINE
+    toolchain: poky-glibc
+  m55_hp:
+    app: alp-stock-shim
+    board: alp_e1m_aen701_m55_hp        # Zephyr board target
+    toolchain: arm-zephyr-eabi
+  m55_he:
+    app: alp-stock-shim
+    board: alp_e1m_aen701_m55_he        # Zephyr board target
+    toolchain: arm-zephyr-eabi
+
+# Memory layout (SRAM banks + MRAM) is derived from the SoC variant
+# resolved via `silicon_variant:` -- see metadata/socs/<vendor>/<family>/<part>.json
+# `variants[].sram_banks_kb` + `mram_mb`. Declare a memory_map: block
+# here ONLY for non-stock partitioning (none of the current 11 SKUs
+# need one).
+
+# Alif IPC controller name TBD pending the hand-written HW config.
+# Strong candidate (DO NOT promote to truth yet): the Zephyr binding is
+# almost certainly `alif_mhuv2` (Arm MHU) -- AEN exposes MHU0 + MHU1 with a
+# 32-byte payload limit (see docs/tutorials/15-mproc-mailbox.md).
+# Corroborated by the Alif Linux BSP: meta-alif-ensemble + linux_alif enable
+# Arm MHUv2 (apss-mhu -> mhuv2.cfg), so the inter-core mailbox IP is MHUv2.
+# Still confirm the exact Zephyr binding name against the Alif hand-written
+# HW-config doc + generated board DTS before it replaces TBD; see the bench
+# step in docs/bring-up-aen.md "§6 mailbox controller".
+mailbox:
+  controller: TBD                          # candidate: alif_mhuv2 -- confirm vs Alif HW config before committing
+  channels:
+    - { id: 0, reserved_for: alp_default_rpmsg }
+    - { id: 1, reserved_for: app }
+    - { id: 2, reserved_for: app }
+    - { id: 3, reserved_for: power_mgmt }
+
+# E1M pads / instances that route through the on-module CC3501E
+# coprocessor instead of through the Alif Ensemble silicon.  Apps
+# using these pads via `alp_gpio_open()` / `alp_spi_open()` etc.
+# get CC3501E command dispatch automatically; the board-side
+# role (e.g. EVK_PIN_BMI323_INT1) stays SoM-agnostic.
+#
+# Source of truth:
+#   - metadata/e1m_modules/aen/from-cc3501e.tsv  (SPI1 bus)
+#   - AEN family hardware design (IO11/13/15..21 termination)
+pad_routes:
+  # SPI1 inter-chip bus -- CC3501E hosts the SPI peripheral.
+  - { e1m: E1M_SPI1,      dispatch: cc3501e,
+      doc: "Inter-chip SPI1 fast path; CC3501E acts as SPI peripheral." }
+
+  # GPIO pads that physically terminate on CC3501E (not on Alif silicon).
+  - { e1m: E1M_GPIO_IO11, dispatch: cc3501e, dispatch_pin: 2,
+      doc: "CC3501E GPIO_2." }
+  - { e1m: E1M_GPIO_IO13, dispatch: cc3501e, dispatch_pin: 13,
+      doc: "CC3501E GPIO_13." }
+  - { e1m: E1M_GPIO_IO15, dispatch: cc3501e, dispatch_pin: 14,
+      doc: "CC3501E GPIO_14." }
+  - { e1m: E1M_GPIO_IO16, dispatch: cc3501e, dispatch_pin: 16,
+      doc: "CC3501E GPIO_16." }
+  - { e1m: E1M_GPIO_IO17, dispatch: cc3501e, dispatch_pin: 17,
+      doc: "CC3501E GPIO_17." }
+  - { e1m: E1M_GPIO_IO18, dispatch: cc3501e, dispatch_pin: 18,
+      doc: "CC3501E GPIO_18." }
+  - { e1m: E1M_GPIO_IO19, dispatch: cc3501e, dispatch_pin: 19,
+      doc: "CC3501E GPIO_19." }
+  - { e1m: E1M_GPIO_IO20, dispatch: cc3501e, dispatch_pin: 26,
+      doc: "CC3501E GPIO_26." }
+  - { e1m: E1M_GPIO_IO21, dispatch: cc3501e, dispatch_pin: 30,
+      doc: "CC3501E GPIO_30." }
+
+# On-module helper MCUs.  CC3501E is the TI Wi-Fi 6 + BLE 5.4
+# coprocessor wired to the Alif over SPI1.  Firmware is embedded in
+# alp-sdk at `firmware/cc3501e/` (ADR 0015); a signed binary built on
+# the bench lands in `firmware/cc3501e/prebuilt/` and its version
+# replaces TBD here.
+helper_firmware:
+  - name:          cc3501e_otp
+    chip:          cc3501e
+    firmware_path: TBD                       # populated when firmware/cc3501e/ cuts its first bench binary
+    flash_method:  TBD                       # cc3501e_usb_bootloader or alif_spi_relay; see firmware/cc3501e/flash.py
+    flash_args:    TBD
+
+default_hw_rev:         r1                  # see metadata/e1m_modules/<family>/hw-revisions.yaml
+
+default_board:        E1M-EVK
+
+# Status flags for tooling
+status:
+  preliminary:          false               # released silicon
+  partial_hw_config:    true                # memory fields still TBD

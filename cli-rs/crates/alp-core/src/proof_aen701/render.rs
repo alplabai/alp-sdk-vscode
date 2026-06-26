@@ -496,9 +496,10 @@ pub(crate) fn render_system_ipc_h(
     board: &BoardYaml,
     som: &SomPreset,
     soc: &SocSpec,
+    profile: &SdkProfile,
     tmpl: &str,
 ) -> String {
-    let channels: Vec<Row> = resolve_carve_outs(board, som, soc)
+    let channels: Vec<Row> = resolve_carve_outs(board, som, soc, profile)
         .iter()
         .map(|c| {
             let (addr, size, src, dst, mbox) = if c.blocked {
@@ -553,9 +554,10 @@ pub(crate) fn render_dts_reservations(
     board: &BoardYaml,
     som: &SomPreset,
     soc: &SocSpec,
+    profile: &SdkProfile,
     tmpl: &str,
 ) -> String {
-    let rows: Vec<Row> = resolve_carve_outs(board, som, soc)
+    let rows: Vec<Row> = resolve_carve_outs(board, som, soc, profile)
         .iter()
         .map(|c| {
             let block = if c.blocked {

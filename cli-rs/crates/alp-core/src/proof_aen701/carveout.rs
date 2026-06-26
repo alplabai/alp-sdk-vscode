@@ -122,7 +122,12 @@ fn derive_memory_map_from_variant(som: &SomPreset, soc: &SocSpec) -> Vec<MemRegi
 
 /// The rpmsg block reason (spec §6.4): an unset/TBD controller, or no channel
 /// reserved for `alp_default_rpmsg`. `None` ⇒ the mailbox is HW-mapped.
-fn mailbox_block_reason(sku: &str, mailbox: &Mailbox, ipc: &[IpcChannel]) -> Option<String> {
+fn mailbox_block_reason(
+    sku: &str,
+    mailbox: &Mailbox,
+    ipc: &[IpcChannel],
+    alif_example: &str,
+) -> Option<String> {
     if !ipc.iter().any(|e| e.kind == "rpmsg") {
         return None;
     }
@@ -134,7 +139,7 @@ fn mailbox_block_reason(sku: &str, mailbox: &Mailbox, ipc: &[IpcChannel]) -> Opt
                 "TBD"
             };
             Some(format!(
-                "SoM {sku} mailbox controller is {state}; carve-out resolution requires authoritative mailbox metadata.  Fill `mailbox.controller:` in metadata/e1m_modules/{sku}.yaml with the vendor mailbox node name (e.g. `renesas_mhu`, `nxp_mu`, `alif_evtrtr`) or remove the rpmsg entries from board.yaml."
+                "SoM {sku} mailbox controller is {state}; carve-out resolution requires authoritative mailbox metadata.  Fill `mailbox.controller:` in metadata/e1m_modules/{sku}.yaml with the vendor mailbox node name (e.g. `renesas_mhu`, `nxp_mu`, `{alif_example}`) or remove the rpmsg entries from board.yaml."
             ))
         }
         Some(_) => {
@@ -174,12 +179,18 @@ pub(crate) fn resolve_carve_outs(
     board: &BoardYaml,
     som: &SomPreset,
     soc: &SocSpec,
+    profile: &SdkProfile,
 ) -> Vec<ResolvedCarveOut> {
     if board.ipc.is_empty() {
         return Vec::new();
     }
     let memory_map = resolve_memory_map(som, soc);
-    let block_reason = mailbox_block_reason(&board.som.sku, &som.mailbox, &board.ipc);
+    let block_reason = mailbox_block_reason(
+        &board.som.sku,
+        &som.mailbox,
+        &board.ipc,
+        profile.alif_mailbox_example,
+    );
 
     let mut sorted: Vec<&IpcChannel> = board.ipc.iter().collect();
     sorted.sort_by(|a, b| a.name.cmp(&b.name));

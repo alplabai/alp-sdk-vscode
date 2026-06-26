@@ -188,6 +188,7 @@ fn prod_deploy_full_build_plan_matches_sdk_emit() {
         &zephyr_apps,
         &policy(),
         &templates(),
+        &SdkProfile::v070(),
     );
     let mut oracle = oracle;
     sort_plan(&mut ours);
@@ -508,7 +509,7 @@ fn m55_hp_alp_conf_matches_sdk_emit_byte_for_byte() {
 fn system_ipc_h_matches_sdk_emit_byte_for_byte() {
     let (board, som, _, soc) = load();
     assert_eq!(
-        render_system_ipc_h(&board, &som, &soc, IPC_TMPL),
+        render_system_ipc_h(&board, &som, &soc, &SdkProfile::v070(), IPC_TMPL),
         oracle_shared("build/generated/alp/system_ipc.h")
     );
 }
@@ -517,7 +518,7 @@ fn system_ipc_h_matches_sdk_emit_byte_for_byte() {
 fn dts_reservations_matches_sdk_emit_byte_for_byte() {
     let (board, som, _, soc) = load();
     assert_eq!(
-        render_dts_reservations(&board, &som, &soc, DTS_RES_TMPL),
+        render_dts_reservations(&board, &som, &soc, &SdkProfile::v070(), DTS_RES_TMPL),
         oracle_shared("build/generated/dts-reservations.dtsi")
     );
 }
@@ -573,6 +574,7 @@ fn full_build_plan_matches_sdk_emit() {
         &zephyr_apps,
         &policy(),
         &templates(),
+        &SdkProfile::v070(),
     );
     let mut oracle = oracle;
     sort_plan(&mut ours);
@@ -1044,6 +1046,7 @@ fn e8_full_build_plan_matches_sdk_emit() {
         &zephyr_apps,
         &policy_e8(),
         &templates_e8(),
+        &SdkProfile::v070(),
     );
     let mut oracle = oracle;
     sort_plan(&mut ours);
@@ -1209,6 +1212,7 @@ fn v2n_full_build_plan_matches_sdk_emit() {
         &zephyr_apps,
         &policy_v2n(),
         &templates_v2n(),
+        &SdkProfile::v070(),
     );
     let mut oracle = oracle;
     sort_plan(&mut ours);
@@ -1226,7 +1230,7 @@ fn v2n_full_build_plan_matches_sdk_emit() {
 #[test]
 fn v2n_resolved_carve_out_has_real_addresses() {
     let (board, som, _, soc) = load_v2n();
-    let ipc = render_system_ipc_h(&board, &som, &soc, IPC_TMPL);
+    let ipc = render_system_ipc_h(&board, &som, &soc, &SdkProfile::v070(), IPC_TMPL);
     assert!(
         ipc.contains("_ADDR       0x00010000u"),
         "OCRAM base, top-down"
@@ -1404,6 +1408,7 @@ fn imx93_full_build_plan_matches_sdk_emit() {
         &zephyr_apps,
         &policy_imx93(),
         &templates_imx93(),
+        &SdkProfile::v070(),
     );
     let mut oracle = oracle;
     sort_plan(&mut ours);
@@ -1571,7 +1576,7 @@ fn readiness_nx9101_is_preliminary_with_two_blockers() {
 fn readiness_mailbox_finding_matches_the_carveout_resolver() {
     for (board, som, _, soc) in [load(), load_v2n(), load_imx93()] {
         let says_blocked = compute_readiness(&som, &soc).has_code("MAILBOX_TBD");
-        let actually_blocks = resolve_carve_outs(&board, &som, &soc)
+        let actually_blocks = resolve_carve_outs(&board, &som, &soc, &SdkProfile::v070())
             .iter()
             .any(|c| c.blocked);
         assert_eq!(
@@ -1580,4 +1585,71 @@ fn readiness_mailbox_finding_matches_the_carveout_resolver() {
             board.som.sku
         );
     }
+}
+
+// === v0.8.0 FORWARD-PORT — additive (the bench stays canonically pinned to v0.7.0). ===
+// The SAME engine reproduces the v0.8.0 emit given the v0.8.0 DATA + SdkProfile::v080().
+const BOARD_YAML_AEN_V080: &str =
+    include_str!("../spike_fixtures/oracle/v080/rpmsg-aen.board.yaml");
+const SOM_AEN_V080: &str = include_str!("../spike_fixtures/oracle/v080/E1M-AEN701.som.yaml");
+const BOARD_DEF_V080: &str = include_str!("../spike_fixtures/oracle/v080/e1m-evk.yaml");
+const SOC_AEN_V080: &str = include_str!("../spike_fixtures/oracle/v080/e7.json");
+const ORACLE_BUILD_PLAN_AEN_V080: &str =
+    include_str!("../spike_fixtures/oracle/v080/rpmsg-aen.build-plan");
+
+/// **The engine tracks a real SDK minor bump (v0.7.0 → v0.8.0), byte-for-byte.** The
+/// bench stays canonically pinned to v0.7.0; this ADDITIVELY proves the SAME engine
+/// reproduces the v0.8.0 `rpmsg-aen` build-plan given the v0.8.0 DATA (the EVK board
+/// preset de-populated LSM6DSO/SSD1306) + `SdkProfile::v080()` — which carries the
+/// only two version-specific *behaviours*: the stock-shim `command: null` gate (#49,
+/// on m55_he) + a `stock-shim-unimplemented` warning, and the renamed `alif_mhuv2`
+/// mailbox hint. v0.8.0 drift = metadata fill-in + one small planner-logic gate; the
+/// rest (Kconfig rules, allocator, secure) is unchanged DATA/engine.
+#[test]
+fn v080_rpmsg_aen_build_plan_matches_sdk_emit() {
+    let board: BoardYaml = serde_yaml::from_str(BOARD_YAML_AEN_V080).unwrap();
+    let som: SomPreset = serde_yaml::from_str(SOM_AEN_V080).unwrap();
+    let board_def: BoardDef = serde_yaml::from_str(BOARD_DEF_V080).unwrap();
+    let soc: SocSpec = serde_json::from_str(SOC_AEN_V080).unwrap();
+    let oracle: BuildPlan = serde_json::from_str(ORACLE_BUILD_PLAN_AEN_V080).unwrap();
+
+    let sdk_root = oracle
+        .slices
+        .iter()
+        .find_map(|s| s.env.get("ALP_SDK_ROOT").cloned())
+        .unwrap();
+    // m55_he has `command: null` at v0.8.0 (stock-shim) — skip it when threading apps.
+    let zephyr_apps: BTreeMap<String, String> = oracle
+        .slices
+        .iter()
+        .filter(|s| matches!(s.backend, Backend::Zephyr))
+        .filter_map(|s| {
+            s.command.as_ref().map(|c| {
+                (
+                    s.core_id.clone(),
+                    c.args.last().cloned().unwrap_or_default(),
+                )
+            })
+        })
+        .collect();
+
+    let mut ours = assemble_full_plan(
+        &board,
+        &som,
+        &board_def,
+        &soc,
+        &oracle.board_yaml,
+        &sdk_root,
+        &zephyr_apps,
+        &policy(),
+        &templates(),
+        &SdkProfile::v080(),
+    );
+    let mut oracle = oracle;
+    sort_plan(&mut ours);
+    sort_plan(&mut oracle);
+    assert_eq!(
+        serde_json::to_value(&ours).unwrap(),
+        serde_json::to_value(&oracle).unwrap()
+    );
 }
