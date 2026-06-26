@@ -401,7 +401,8 @@ mod tests {
     #[test]
     fn yocto_flash_checks_bmaptool() {
         // bmaptool present → a passing flash-prereq check.
-        let pass = build_readiness_report("t".to_string(), vec![BuildOs::Yocto], &probe_all_present());
+        let pass =
+            build_readiness_report("t".to_string(), vec![BuildOs::Yocto], &probe_all_present());
         assert!(
             pass.checks
                 .iter()
