@@ -1,0 +1,174 @@
+# Stock preset for E1M-V2N101 (the SoM, not the board).
+#
+# Lists the chip drivers, I2C device addresses, memory capacity,
+# and default board for this SKU; `scripts/alp_project.py` and
+# the alp-studio pin allocator read it at build time.
+
+schema_version: 1
+
+sku: E1M-V2N101
+family: renesas-rzv2n
+silicon: renesas:rzv2n:n44
+silicon_variant: R9A09G056N44GBG         # see metadata/socs/renesas/rzv2n/n44.json variants[]
+
+display_name: "E1M-V2N101 (Renesas RZ/V2N)"
+
+on_module:
+  silicon:              renesas:rzv2n:n44      # quad Cortex-A55 + Cortex-M33 + DRP-AI3
+  pmic_main:            act8760
+  pmic_secondary:       da9292
+  clock_generator:      clk_5l35023b
+  rtc_external:         rv3028c7
+  temperature_sensor:   tmp112
+  eeprom:               eeprom_24c128
+  secure_element:       optiga_trust_m
+  wifi_ble:             murata_lbee5hy2fy
+  supervisor_mcu:       gd32g553
+  ethernet_phy:         rtl8211fdi
+  ethernet_phy_count:   2
+  nor_flash:            xspi                   # on-module via Renesas xSPI0
+  emmc:                 sd0                    # on-module via Renesas SD0
+
+  i2c_devices:
+    brd_i2c:
+      bus_master: renesas-rzv2n
+      devices:
+        - { chip: rv3028c7,         role: rtc,                       address_7bit: "0x52" }
+        - { chip: optiga_trust_m,   role: secure_element,            address_7bit: "0x30" }
+        - { chip: tmp112,           role: temp_sensor,               address_7bit: "0x40" }
+        - { chip: clk_5l35023b,     role: clock_generator,           address_7bit: "0x68" }
+        - { chip: gd32g553,         role: supervisor_mcu_i2c_slave,  address_7bit: "0x70" }
+        - { chip: act8760,          role: pmic_main_page0,           address_7bit: "0x25" }
+        - { chip: act8760,          role: pmic_main_page1,           address_7bit: "0x26" }
+        - { chip: da9292,           role: pmic_secondary,            address_7bit: "0x1E" }
+        - { chip: tps628640,        role: lpddr4x_0v6,               address_7bit: "0x4D", assembled: optional }
+    e1m_i2c0:
+      bus_master: renesas-rzv2n
+      devices:
+        - { chip: eeprom_24c128,    role: eeprom,                    address_7bit: "0x50" }
+
+memory:
+  dram_mbit:            32768                  # 32 Gbit LPDDR4X
+  flash_mbit:           32768                  # 32 Gbit eMMC 5.1
+
+inference:
+  preferred_backend:    drpai                  # DRP-AI3 on-die
+
+capabilities:
+  cau:                  true       # GD32G553 supervisor's CAU accessible via bridge.
+  optiga_trust_m:       true       # Populated on the V2N SoM.
+  quadspi_dma:          true       # GD32-side QuadSPI accessible via bridge.
+  tmu_cordic:           true       # GD32 bridge TMU CORDIC.
+  tmu_fft:              true       # GD32 bridge TMU FFT.
+  tmu_fac:              true       # GD32 bridge TMU FAC.
+
+topology:
+  a55_cluster:
+    app: alp-image-edge
+    machine: e1m-v2n101-a55           # Yocto MACHINE
+    toolchain: poky-glibc
+  m33_sm:
+    app: alp-stock-shim
+    board: alp_e1m_v2n101_m33_sm      # Zephyr board target
+    toolchain: arm-zephyr-eabi
+
+# Memory layout (SRAM banks + MRAM) is derived from the SoC variant
+# resolved via `silicon_variant:` -- see metadata/socs/<vendor>/<family>/<part>.json
+# `variants[].sram_banks_kb` + `mram_mb`. Declare a memory_map: block
+# here ONLY for non-stock partitioning (none of the current 11 SKUs
+# need one).
+
+mailbox:
+  controller: renesas_mhu
+  channels:
+    - { id: 0, reserved_for: alp_default_rpmsg }
+    - { id: 1, reserved_for: app }
+    - { id: 2, reserved_for: app }
+    - { id: 3, reserved_for: power_mgmt }
+
+# E1M pads / instances that route through the on-module GD32G553
+# IO MCU (the V2N family's peripheral bridge).  RZ/V2N silicon
+# does not own the E1M PWM / encoder / ADC / DAC channels; the
+# GD32 fills those gaps and proxies them over the inter-chip
+# SPI + I2C bridge.  Apps using these channels via the portable
+# `<alp/...>` surface get the bridge dispatch automatically.
+#
+# Source of truth: metadata/e1m_modules/v2n/gd32-io-mcu-map.tsv
+pad_routes:
+  # All eight E1M-X PWM channels via GD32.
+  - { e1m: E1M_X_PWM0, dispatch: gd32_bridge, dispatch_pin: PA11 }
+  - { e1m: E1M_X_PWM1, dispatch: gd32_bridge, dispatch_pin: PB1 }
+  - { e1m: E1M_X_PWM2, dispatch: gd32_bridge, dispatch_pin: PB14 }
+  - { e1m: E1M_X_PWM3, dispatch: gd32_bridge, dispatch_pin: PC5 }
+  - { e1m: E1M_X_PWM4, dispatch: gd32_bridge, dispatch_pin: PC10 }
+  - { e1m: E1M_X_PWM5, dispatch: gd32_bridge, dispatch_pin: PC11 }
+  - { e1m: E1M_X_PWM6, dispatch: gd32_bridge, dispatch_pin: PC12 }
+  - { e1m: E1M_X_PWM7, dispatch: gd32_bridge, dispatch_pin: PD0 }
+
+  # All four quadrature encoders via GD32 (X / Y pads paired by
+  # the GD32 timer-encoder hardware).
+  - { e1m: E1M_X_ENC0, dispatch: gd32_bridge, dispatch_pin: "PA0/PB3"  }
+  - { e1m: E1M_X_ENC1, dispatch: gd32_bridge, dispatch_pin: "PC6/PC7"  }
+  - { e1m: E1M_X_ENC2, dispatch: gd32_bridge, dispatch_pin: "PB6/PB7"  }
+  - { e1m: E1M_X_ENC3, dispatch: gd32_bridge, dispatch_pin: "PB2/PA1"  }
+
+  # All eight ADC channels via GD32.
+  - { e1m: E1M_X_ADC0, dispatch: gd32_bridge, dispatch_pin: PD9  }
+  - { e1m: E1M_X_ADC1, dispatch: gd32_bridge, dispatch_pin: PB12 }
+  - { e1m: E1M_X_ADC2, dispatch: gd32_bridge, dispatch_pin: PE13 }
+  - { e1m: E1M_X_ADC3, dispatch: gd32_bridge, dispatch_pin: PE11 }
+  - { e1m: E1M_X_ADC4, dispatch: gd32_bridge, dispatch_pin: PC4  }
+  - { e1m: E1M_X_ADC5, dispatch: gd32_bridge, dispatch_pin: PA5  }
+  - { e1m: E1M_X_ADC6, dispatch: gd32_bridge, dispatch_pin: PA2  }
+  - { e1m: E1M_X_ADC7, dispatch: gd32_bridge, dispatch_pin: PA3  }
+
+  # Both DAC outputs via GD32.
+  - { e1m: E1M_X_DAC0, dispatch: gd32_bridge, dispatch_pin: PA4 }
+  - { e1m: E1M_X_DAC1, dispatch: gd32_bridge, dispatch_pin: PA6 }
+
+  # Selected E1M-X GPIO pads via GD32 (the IOs not driven from the
+  # Renesas side -- see the TSV for the full set).
+  - { e1m: E1M_X_GPIO_IO8,  dispatch: gd32_bridge, dispatch_pin: PB10 }
+  - { e1m: E1M_X_GPIO_IO9,  dispatch: gd32_bridge, dispatch_pin: PA7  }
+  - { e1m: E1M_X_GPIO_IO10, dispatch: gd32_bridge, dispatch_pin: PA12 }
+  - { e1m: E1M_X_GPIO_IO11, dispatch: gd32_bridge, dispatch_pin: PB0  }
+  - { e1m: E1M_X_GPIO_IO12, dispatch: gd32_bridge, dispatch_pin: PC1  }
+  - { e1m: E1M_X_GPIO_IO13, dispatch: gd32_bridge, dispatch_pin: PF1  }
+  - { e1m: E1M_X_GPIO_IO14, dispatch: gd32_bridge, dispatch_pin: PB5  }
+  - { e1m: E1M_X_GPIO_IO16, dispatch: gd32_bridge, dispatch_pin: PC0  }
+  - { e1m: E1M_X_GPIO_IO24, dispatch: gd32_bridge, dispatch_pin: PC14 }
+  - { e1m: E1M_X_GPIO_IO25, dispatch: gd32_bridge, dispatch_pin: PC15 }
+
+  # E1M-X form-factor GPIO extensions (IO27..IO35, IO33 absent on V2N).
+  # See `E1M_X_GPIO_IO27..IO35` in <alp/e1m_x_pinout.h>.
+  # Source: metadata/e1m_modules/v2n/gd32-io-mcu-map.tsv
+  - { e1m: E1M_X_GPIO_IO27, dispatch: gd32_bridge, dispatch_pin: PB11 }
+  - { e1m: E1M_X_GPIO_IO28, dispatch: gd32_bridge, dispatch_pin: PC2  }
+  - { e1m: E1M_X_GPIO_IO29, dispatch: gd32_bridge, dispatch_pin: PD11 }
+  - { e1m: E1M_X_GPIO_IO30, dispatch: gd32_bridge, dispatch_pin: PD10 }
+  - { e1m: E1M_X_GPIO_IO31, dispatch: gd32_bridge, dispatch_pin: PE12 }
+  - { e1m: E1M_X_GPIO_IO32, dispatch: gd32_bridge, dispatch_pin: PD2  }
+  - { e1m: E1M_X_GPIO_IO34, dispatch: gd32_bridge, dispatch_pin: PD8  }
+  - { e1m: E1M_X_GPIO_IO35, dispatch: gd32_bridge, dispatch_pin: PD1  }
+
+# On-module helper MCUs whose firmware images the orchestrator
+# registers into the system manifest so the customer's flash flow
+# covers them.  These are NOT heterogeneous-compute peers (they
+# don't appear in `topology:`); they're independently-flashed
+# supervisor MCUs.
+helper_firmware:
+  - name:          gd32_bridge
+    chip:          gd32g553
+    firmware_path: firmware/gd32-bridge/build/gd32/gd32-bridge.bin
+    flash_method:  swd_probe
+    flash_args:
+      interface: cmsis-dap
+      target:    gd32g553
+      base:      "0x08000000"
+
+default_hw_rev:         r1
+default_board:        E1M-X-EVK
+
+status:
+  preliminary:          false
+  partial_hw_config:    false

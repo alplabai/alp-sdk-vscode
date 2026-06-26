@@ -1653,3 +1653,122 @@ fn v080_rpmsg_aen_build_plan_matches_sdk_emit() {
         serde_json::to_value(&oracle).unwrap()
     );
 }
+
+// --- v0.8.0 forward-port extended to the other vendors + the feature-maximal board
+// (additive; v0.7.0 stays canonical). Same engine + SdkProfile::v080() + the v0.8.0 DATA. ---
+const BOARD_YAML_IMX93_V080: &str =
+    include_str!("../spike_fixtures/oracle/v080/rpmsg-imx93.board.yaml");
+const SOM_IMX93_V080: &str = include_str!("../spike_fixtures/oracle/v080/E1M-NX9101.som.yaml");
+const SOC_IMX93_V080: &str = include_str!("../spike_fixtures/oracle/v080/imx93.json");
+const ORACLE_BUILD_PLAN_IMX93_V080: &str =
+    include_str!("../spike_fixtures/oracle/v080/rpmsg-imx93.build-plan");
+const BOARD_YAML_PD_V080: &str =
+    include_str!("../spike_fixtures/oracle/v080/prod-deploy.board.yaml");
+const ORACLE_BUILD_PLAN_PD_V080: &str =
+    include_str!("../spike_fixtures/oracle/v080/prod-deploy.build-plan");
+const BOARD_YAML_V2N_V080: &str =
+    include_str!("../spike_fixtures/oracle/v080/rpmsg-v2n.board.yaml");
+const SOM_V2N_V080: &str = include_str!("../spike_fixtures/oracle/v080/E1M-V2N101.som.yaml");
+const SOC_V2N_V080: &str = include_str!("../spike_fixtures/oracle/v080/n44.json");
+const BOARD_DEF_V2N_V080: &str = include_str!("../spike_fixtures/oracle/v080/e1m-x-evk.yaml");
+const ORACLE_BUILD_PLAN_V2N_V080: &str =
+    include_str!("../spike_fixtures/oracle/v080/rpmsg-v2n.build-plan");
+
+/// Assemble the v0.8.0 plan with `SdkProfile::v080()` and assert byte-for-byte
+/// against the oracle (host paths threaded; `command: null` slices skipped).
+fn assert_v080_build_plan(
+    board: &BoardYaml,
+    som: &SomPreset,
+    board_def: &BoardDef,
+    soc: &SocSpec,
+    oracle: BuildPlan,
+    p: &Policy,
+    t: &Templates,
+) {
+    let sdk_root = oracle
+        .slices
+        .iter()
+        .find_map(|s| s.env.get("ALP_SDK_ROOT").cloned())
+        .unwrap();
+    let zephyr_apps: BTreeMap<String, String> = oracle
+        .slices
+        .iter()
+        .filter(|s| matches!(s.backend, Backend::Zephyr))
+        .filter_map(|s| {
+            s.command.as_ref().map(|c| {
+                (
+                    s.core_id.clone(),
+                    c.args.last().cloned().unwrap_or_default(),
+                )
+            })
+        })
+        .collect();
+    let mut ours = assemble_full_plan(
+        board,
+        som,
+        board_def,
+        soc,
+        &oracle.board_yaml,
+        &sdk_root,
+        &zephyr_apps,
+        p,
+        t,
+        &SdkProfile::v080(),
+    );
+    let mut oracle = oracle;
+    sort_plan(&mut ours);
+    sort_plan(&mut oracle);
+    assert_eq!(
+        serde_json::to_value(&ours).unwrap(),
+        serde_json::to_value(&oracle).unwrap()
+    );
+}
+
+/// **NXP i.MX 93 at v0.8.0.** The m33 slice picks up the EVK chip-drop
+/// (LSM6DSO/SSD1306) + the renamed `alif_mhuv2` mailbox hint — reproduced by the
+/// SAME engine + the NX9101 bundle + the v0.8.0 DATA.
+#[test]
+fn v080_imx93_build_plan_matches_sdk_emit() {
+    assert_v080_build_plan(
+        &serde_yaml::from_str(BOARD_YAML_IMX93_V080).unwrap(),
+        &serde_yaml::from_str(SOM_IMX93_V080).unwrap(),
+        &serde_yaml::from_str(BOARD_DEF_V080).unwrap(), // e1m-evk (v0.8.0 populated drop)
+        &serde_json::from_str(SOC_IMX93_V080).unwrap(),
+        serde_json::from_str(ORACLE_BUILD_PLAN_IMX93_V080).unwrap(),
+        &policy_imx93(),
+        &templates_imx93(),
+    );
+}
+
+/// **The feature-maximal board at v0.8.0.** The whole `production-deployment`
+/// build-plan (storage + boot + security + ota) reproduces; the m55_hp slice picks
+/// up the EVK chip-drop, the rest is unchanged DATA.
+#[test]
+fn v080_prod_deploy_build_plan_matches_sdk_emit() {
+    assert_v080_build_plan(
+        &serde_yaml::from_str(BOARD_YAML_PD_V080).unwrap(),
+        &serde_yaml::from_str(SOM_AEN_V080).unwrap(), // SAME AEN701 SoM
+        &serde_yaml::from_str(BOARD_DEF_V080).unwrap(),
+        &serde_json::from_str(SOC_AEN_V080).unwrap(),
+        serde_json::from_str(ORACLE_BUILD_PLAN_PD_V080).unwrap(),
+        &policy(),
+        &templates(),
+    );
+}
+
+/// **Renesas RZ/V2N at v0.8.0 — the no-drift control.** V2N uses the E1M-X-EVK board
+/// def (not the de-populated E1M-EVK) and resolves its IPC, so its v0.8.0 emit is
+/// unchanged from v0.7.0; the SAME engine reproduces it, confirming the bump is
+/// localized to the Alif-EVK boards.
+#[test]
+fn v080_v2n_build_plan_matches_sdk_emit() {
+    assert_v080_build_plan(
+        &serde_yaml::from_str(BOARD_YAML_V2N_V080).unwrap(),
+        &serde_yaml::from_str(SOM_V2N_V080).unwrap(),
+        &serde_yaml::from_str(BOARD_DEF_V2N_V080).unwrap(),
+        &serde_json::from_str(SOC_V2N_V080).unwrap(),
+        serde_json::from_str(ORACLE_BUILD_PLAN_V2N_V080).unwrap(),
+        &policy_v2n(),
+        &templates_v2n(),
+    );
+}
