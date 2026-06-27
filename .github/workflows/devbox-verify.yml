@@ -24,10 +24,10 @@ name: devbox-verify
 on:
   pull_request:
     branches: [main]
-    paths: ['cli-rs/**', '.github/workflows/devbox-verify.yml']
+    paths: ["cli-rs/**", ".github/workflows/devbox-verify.yml"]
   push:
     branches: [main, dev]
-    paths: ['cli-rs/**', '.github/workflows/devbox-verify.yml']
+    paths: ["cli-rs/**", ".github/workflows/devbox-verify.yml"]
   workflow_dispatch:
 
 concurrency:
