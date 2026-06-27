@@ -47,6 +47,12 @@ make shell           # poke around inside (SDK mounted at /work/alp-sdk)
 `make verify` prints a summary and exits non-zero iff a **gating** leg fails
 (the advisory Renode result never affects the exit code).
 
+CI runs the gating suite via `.github/workflows/devbox-verify.yml` on `cli-rs/**`
+changes. Because the committed submodule gitlink is skewed (a backup commit with
+no examples), CI pins the SDK to a **release tag** (`v0.8.1`) and overrides
+`DEVBOX_EXAMPLES` to that release's `examples/aen/...` layout — the in-image
+defaults target the older dev-layout examples used in local checkouts.
+
 ## How it's wired (and why)
 
 - **The SDK is bind-mounted, not baked in.** `-v <repo>/alp-sdk-upstream:/work/alp-sdk:ro`

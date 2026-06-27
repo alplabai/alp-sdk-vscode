@@ -34,6 +34,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # The superproject's committed submodule gitlink is a skewed "backup-pre-scrub"
+  # commit that lacks the example tree (the documented CI submodule-skew — it cost
+  # earlier cycles). So we pin the SDK to a real RELEASE here: reproducible, and
+  # the example overrides target that release's `examples/aen/...` layout (the
+  # in-image defaults target the older dev-layout used in local checkouts).
+  SDK_REF: v0.8.1
+  DEVBOX_EXAMPLES: examples/aen/aen-analog-validate
+  DEVBOX_HANDOFF_EXAMPLE: examples/aen/aen-analog-validate
+
 jobs:
   devbox:
     name: devbox · native_sim build + alp->west handoff + gdb-sim
@@ -44,14 +54,19 @@ jobs:
       - name: Checkout (with the alp-sdk submodule)
         uses: actions/checkout@v4
         with:
-          # The verify run bind-mounts alp-sdk-upstream/ as the SDK under test.
           submodules: recursive
+
+      - name: Pin the alp-sdk submodule to a stable release (gitlink is skewed)
+        run: |
+          set -euo pipefail
+          cd alp-sdk-upstream
+          git fetch --depth=1 origin tag "$SDK_REF"
+          git -c advice.detachedHead=false checkout "$SDK_REF"
+          echo "SDK pinned to $(git describe --tags --always)"
 
       - name: Build the gating image + run the hardware-free verify suite
         run: make -C cli-rs/devbox verify
 
-      # Surface the SDK SHA the run actually verified (the submodule is known to
-      # drift in CI — see the repo's COMPATIBILITY notes), for traceability.
       - name: Record verified SDK SHA
         if: always()
         run: |

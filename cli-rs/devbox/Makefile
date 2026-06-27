@@ -20,7 +20,11 @@ ENGINE  ?= podman
 # The submodule's .git is a file (points into the parent repo), invisible inside
 # a bind-mount — so stamp the SHA host-side and pass it in.
 SDK_SHA := $(shell git -C $(SDK) describe --tags --always --dirty 2>/dev/null || echo unknown)
-MOUNT   := -v $(SDK):/work/alp-sdk:ro -e DEVBOX_SDK_SHA=$(SDK_SHA)
+# Optional single-value overrides, forwarded only when set (CI pins the SDK to a
+# release tag and points these at a release example — the in-image defaults
+# target the dev-layout examples).
+override_env := $(if $(DEVBOX_EXAMPLES),-e DEVBOX_EXAMPLES=$(DEVBOX_EXAMPLES)) $(if $(DEVBOX_HANDOFF_EXAMPLE),-e DEVBOX_HANDOFF_EXAMPLE=$(DEVBOX_HANDOFF_EXAMPLE))
+MOUNT   := -v $(SDK):/work/alp-sdk:ro -e DEVBOX_SDK_SHA=$(SDK_SHA) $(override_env)
 
 .PHONY: build build-renode verify verify-renode shell clean help
 
