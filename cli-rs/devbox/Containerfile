@@ -1,0 +1,178 @@
+# syntax=docker/dockerfile:1
+# SPDX-License-Identifier: Apache-2.0
+#
+# alp devbox — a hardware-free build / debug-simulation verification container.
+#
+# Proves, with NO target hardware, that:
+#   (1) the alp SDK's Zephyr slices actually COMPILE + RUN on native_sim
+#       (a real host build through twister — mirrors the SDK's pr-twister.yml),
+#   (2) the `alp` CLI correctly hands off to the SDK orchestrator / `west`
+#       (the ADR-0014 JSON seam: `alp doctor --build` + `alp build --plan`),
+#   (3) a native_sim ELF is host-gdb debuggable — the one honest, non-misleading
+#       "debug via simulation" story available today, and
+#   (4) [ADVISORY] a generic Cortex-M boots under Renode — a deliberate STAND-IN
+#       for the Alif / Renesas / NXP M-cores, NOT the real silicon (no Ethos-U
+#       NPU, no DRP-AI, no heterogeneous A+M boot is modeled). This mirrors the
+#       SDK's own pr-renode-dual-os.yml stance: advisory, never a release gate.
+#
+# WHERE THE SDK COMES FROM: it is NOT baked in. The SDK is bind-mounted at run
+# time (`-v <repo>/alp-sdk-upstream:/work/alp-sdk:ro`) so the proof reflects the
+# exact checked-out submodule SHA and survives SDK edits without an image rebuild.
+#
+# WHY alp IS COMPILED HERE: the host's cli-rs/target/release/alp is a macOS
+# mach-o binary and cannot run in a linux container, so the linux `alp` is
+# cargo-built from this repo's cli-rs workspace in stage 1 below.
+#
+# BUILD CONTEXT must be cli-rs/ (so the cargo sources are reachable):
+#   podman build --target devbox        -f cli-rs/devbox/Containerfile -t alp-devbox        cli-rs
+#   podman build --target devbox-renode -f cli-rs/devbox/Containerfile -t alp-devbox:renode cli-rs
+# (see cli-rs/devbox/Makefile + README.md).
+
+# ===========================================================================
+# Stage 1 — build the linux `alp` binary from this repo's cli-rs workspace.
+# ===========================================================================
+FROM rust:1-bookworm AS alp-builder
+WORKDIR /src
+# Copy only what cargo needs (Cargo.lock pins the dep graph for reproducibility).
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo build --release -p alp-cli --bin alp \
+    && /src/target/release/alp --version
+# -> /src/target/release/alp
+
+# ===========================================================================
+# Stage 2 — devbox runtime: the native_sim toolchain + alp + verify scripts.
+# This is the GATING image (build + handoff + gdb-sim). It never depends on
+# the arm / Renode layers, so those cannot break the core proof.
+# ===========================================================================
+FROM ubuntu:24.04 AS devbox
+
+ARG ZEPHYR_VERSION=v4.4.0
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Host build tools. Mirrors pr-twister.yml's apt set, with two deltas:
+#  + cmake  : GitHub's ubuntu-latest preinstalls it; a clean ubuntu:24.04 does not.
+#  + git/curl/wget/ca-certificates : west fetch + (renode leg) downloads.
+#  + gdb    : the host-gdb debug-sim leg.
+#  - gcc-multilib / g++-multilib : DROPPED. They provide x86 32-bit support for
+#    the 32-bit `native_sim` board; we build `native_sim/native/64` (64-bit,
+#    host word size), which needs only the plain host gcc. Dropping them also
+#    makes the image arch-portable (the multilib packages don't exist on arm64).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake ninja-build gperf ccache dfu-util device-tree-compiler \
+        python3 python3-dev python3-pip python3-venv python3-setuptools python3-wheel \
+        libffi-dev libssl-dev xz-utils file make gcc g++ \
+        libsdl2-dev libmagic1 \
+        git curl wget ca-certificates gdb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python tooling in an isolated venv (ubuntu 24.04 is PEP-668 externally-managed).
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv "$VIRTUAL_ENV"
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+RUN pip install --no-cache-dir west
+
+# Zephyr workspace, host-gcc only (ZEPHYR_TOOLCHAIN_VARIANT=host) — the exact
+# native_sim recipe from pr-twister.yml. Pinned to ${ZEPHYR_VERSION}; the SDK
+# bumps this intentionally (west.yml / VERSIONS.md). Do NOT track main.
+#
+# Network-resilient: a full `west init -m <zephyr>` clones the entire Zephyr repo
+# in one shot and a single TCP blip kills the whole layer (`fatal: early EOF`).
+# Instead we shallow-clone Zephyr (small, retried) and `west init -l`, then run
+# the (idempotent, resumable) `west update` in a retry loop so a transient
+# disconnect just continues where it left off.
+ENV ZEPHYRPROJECT=/opt/zephyrproject
+ENV ZEPHYR_TOOLCHAIN_VARIANT=host
+RUN set -eu \
+    && git config --global http.postBuffer 1048576000 \
+    && git config --global http.lowSpeedLimit 1000 \
+    && git config --global http.lowSpeedTime 120 \
+    && mkdir -p "$ZEPHYRPROJECT" && cd "$ZEPHYRPROJECT" \
+    && for i in 1 2 3 4 5; do \
+         git clone --depth 1 --branch "${ZEPHYR_VERSION}" \
+             https://github.com/zephyrproject-rtos/zephyr zephyr && break \
+         || { echo "zephyr clone attempt $i failed; retry"; rm -rf zephyr; sleep 5; }; \
+       done \
+    && test -d zephyr/.git \
+    && west init -l zephyr \
+    && for i in 1 2 3 4 5; do \
+         west update --narrow -o=--depth=1 && break \
+         || { echo "west update attempt $i failed; retry"; sleep 5; }; \
+       done \
+    && west zephyr-export
+ENV ZEPHYR_BASE=${ZEPHYRPROJECT}/zephyr
+
+# Zephyr Python deps (cmake, dtc bindings, …) + the alp loader's jsonschema.
+# Separate layer so a pip blip doesn't re-clone Zephyr.
+RUN pip install --no-cache-dir -r "${ZEPHYR_BASE}/scripts/requirements.txt" \
+    && pip install --no-cache-dir jsonschema
+
+# The linux alp binary + the verification scripts.
+COPY --from=alp-builder /src/target/release/alp /usr/local/bin/alp
+COPY devbox/scripts /opt/devbox/scripts
+RUN chmod +x /opt/devbox/scripts/*.sh
+
+# Run-time contract: mount the SDK at $ALP_SDK; $DEVBOX_EXAMPLES picks what builds.
+ENV ALP_SDK=/work/alp-sdk
+ENV DEVBOX_EXAMPLES="examples/peripheral-io/hello-world examples/peripheral-io/uart-hello-world"
+ENV DEVBOX_HANDOFF_EXAMPLE="examples/peripheral-io/hello-world"
+WORKDIR /work
+LABEL org.opencontainers.image.title="alp-devbox" \
+      org.opencontainers.image.description="Hardware-free alp build + debug-sim verification (native_sim + alp->west handoff + host-gdb)"
+CMD ["/opt/devbox/scripts/verify-all.sh"]
+
+# ===========================================================================
+# Stage 3 — devbox-renode: + arm-zephyr-eabi (minimal Zephyr SDK) + Renode,
+# for the ADVISORY generic-Cortex boot-smoke ONLY. Layered last so a failure
+# in this heavy / fiddly leg never blocks the gating native_sim proof above.
+# ===========================================================================
+FROM devbox AS devbox-renode
+
+# Must match Zephyr's SDK_VERSION (zephyr/SDK_VERSION) for the pinned Zephyr —
+# v4.4.0 requires 1.0.1. An older SDK fails `find_package(Zephyr-sdk 1.0)` and,
+# because ZEPHYR_SDK_INSTALL_DIR is then exported, breaks even the host build.
+ARG ZEPHYR_SDK_VERSION=1.0.1
+# Renode 1.16.1 is the first release shipping a NATIVE arm64 portable build
+# (`linux-arm64-portable-dotnet`), so the advisory leg runs natively on Apple
+# Silicon. The SDK's own x86 CI pins 1.15.3 (no arm64 asset) — independent of
+# this generic-Cortex stand-in, so the version need not match.
+ARG RENODE_VERSION=1.16.1
+
+# .NET runtime deps for Renode's portable-dotnet bundle (headless).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libicu74 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# arm-zephyr-eabi cross toolchain (minimal Zephyr SDK) — used ONLY to build the
+# generic Cortex-M ELF that Renode boots. The native_sim proof never uses it.
+# Arch-aware: picks the x86_64 or aarch64 host bundle for the build platform.
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) host=x86_64 ;; \
+      arm64) host=aarch64 ;; \
+      *) echo "unsupported arch for Zephyr SDK"; exit 1 ;; \
+    esac; \
+    cd /opt; \
+    wget -q "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${ZEPHYR_SDK_VERSION}/zephyr-sdk-${ZEPHYR_SDK_VERSION}_linux-${host}_minimal.tar.xz"; \
+    tar xf "zephyr-sdk-${ZEPHYR_SDK_VERSION}_linux-${host}_minimal.tar.xz"; \
+    rm "zephyr-sdk-${ZEPHYR_SDK_VERSION}_linux-${host}_minimal.tar.xz"; \
+    cd "zephyr-sdk-${ZEPHYR_SDK_VERSION}"; \
+    ./setup.sh -t arm-zephyr-eabi -c
+ENV ZEPHYR_SDK_INSTALL_DIR=/opt/zephyr-sdk-${ZEPHYR_SDK_VERSION}
+
+# Renode portable build (bundles its own .NET runtime). Arch-aware asset:
+# arm64 uses the native arm64 portable-dotnet bundle (1.16.x+); amd64 uses the
+# classic linux-portable bundle.
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) asset="renode-${RENODE_VERSION}.linux-portable.tar.gz" ;; \
+      arm64) asset="renode-${RENODE_VERSION}.linux-arm64-portable-dotnet.tar.gz" ;; \
+      *) echo "unsupported arch for Renode"; exit 1 ;; \
+    esac; \
+    cd /opt; \
+    wget -q "https://github.com/renode/renode/releases/download/v${RENODE_VERSION}/${asset}"; \
+    mkdir -p /opt/renode; \
+    tar xf "${asset}" -C /opt/renode --strip-components=1; \
+    rm "${asset}"; \
+    test -x /opt/renode/renode || ls -la /opt/renode
+ENV PATH="/opt/renode:$PATH"

@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Hardware-free build / debug-sim gate for the native `alp` CLI.
+#
+# Builds the devbox gating image (cli-rs/devbox) and runs `make verify`, which
+# proves — with NO target hardware — that the alp toolchain still:
+#   1. compiles + runs an SDK example on native_sim/native/64 (real twister build,
+#      host gcc — the SDK's pr-twister.yml recipe, reproduced),
+#   2. drives the SDK build path end-to-end (`alp doctor --build` + `alp build
+#      --plan` across the ADR-0014 JSON seam), and
+#   3. produces a host-gdb-debuggable native_sim ELF.
+#
+# This catches integration regressions the offline unit + contract tests cannot:
+# a broken `alp build`, a broken SDK build path, or a broken CLI->west handoff.
+#
+# The advisory generic-Cortex Renode leg (devbox-renode target) is NOT run here:
+# it needs the heavy arm-zephyr-eabi SDK + Renode and is a stand-in, not a gate.
+#
+# Scoped to cli-rs/** so the ~12-min image build only runs when the CLI / harness
+# actually changes. podman is pre-installed on ubuntu-latest.
+
+name: devbox-verify
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["cli-rs/**", ".github/workflows/devbox-verify.yml"]
+  push:
+    branches: [main, dev]
+    paths: ["cli-rs/**", ".github/workflows/devbox-verify.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The superproject's committed submodule gitlink is a skewed "backup-pre-scrub"
+  # commit that lacks the example tree (the documented CI submodule-skew — it cost
+  # earlier cycles). So we pin the SDK to a real RELEASE here: reproducible, and
+  # the example overrides target that release's `examples/aen/...` layout (the
+  # in-image defaults target the older dev-layout used in local checkouts).
+  SDK_REF: v0.8.1
+  DEVBOX_EXAMPLES: examples/aen/aen-analog-validate
+  DEVBOX_HANDOFF_EXAMPLE: examples/aen/aen-analog-validate
+
+jobs:
+  devbox:
+    name: devbox · native_sim build + alp->west handoff + gdb-sim
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout (with the alp-sdk submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Pin the alp-sdk submodule to a stable release (gitlink is skewed)
+        run: |
+          set -euo pipefail
+          cd alp-sdk-upstream
+          git fetch --depth=1 origin tag "$SDK_REF"
+          git -c advice.detachedHead=false checkout "$SDK_REF"
+          echo "SDK pinned to $(git describe --tags --always)"
+
+      - name: Build the gating image + run the hardware-free verify suite
+        run: make -C cli-rs/devbox verify
+
+      - name: Record verified SDK SHA
+        if: always()
+        run: |
+          git -C alp-sdk-upstream describe --tags --always --dirty 2>/dev/null \
+            | sed 's/^/verified SDK: /' || echo "verified SDK: unknown"

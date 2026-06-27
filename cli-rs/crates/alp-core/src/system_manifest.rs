@@ -5,7 +5,9 @@
 //! folder layout + build/flash wiring instead of re-deriving from board.yaml +
 //! the SoM presets.
 //!
-//! Vendored schema: `schemas/system-manifest-v1.schema.json` (alp-sdk v0.7.0).
+//! Vendored schema: `schemas/system-manifest-v1.schema.json` (alp-sdk v0.7.0;
+//! verified unchanged through v0.8.0 — the `--emit system-manifest` contract did
+//! not move, so the tolerant reader stays valid).
 //!
 //! TOLERANT READER (the stability policy negotiated in alp-sdk#106):
 //! `schema_version` 1 is additive-only; a breaking change ships as v2 through a
