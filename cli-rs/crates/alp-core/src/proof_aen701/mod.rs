@@ -36,6 +36,7 @@ pub(crate) mod validate;
 // WRITER layer (data → config-file strings)
 pub(crate) mod assemble;
 pub(crate) mod carveout;
+pub(crate) mod hwrev;
 pub(crate) mod partition;
 pub(crate) mod readiness;
 pub(crate) mod render;

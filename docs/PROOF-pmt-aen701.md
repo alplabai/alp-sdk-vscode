@@ -78,7 +78,7 @@ addition *within the Alif Ensemble family*** — it does **not** exercise E8's a
 versioned data folder, not planner edits" is proven for a **second same-family part**, not as
 vendor-agnostic universality.
 
-## Parity + behaviour — 41 tests (E7 + E8 + V2N cross-vendor)
+## Parity + behaviour — 64 tests (E7 + E8 + V2N cross-vendor + hw-rev axis)
 
 | Stage | Artefact / check | Result |
 |---|---|---|
@@ -223,6 +223,31 @@ proof_aen701/
 - **Both IPC paths reproduced** — AEN/E8's `mailbox.controller` is TBD → blocked stub (matching the
   oracle); V2N's is live → the allocator resolves real addresses (`carveout.rs`), also matching the oracle.
 
+## SoM hardware-revision axis (alp-sdk#235, 2026-06-28 round) — honestly split
+
+The maintainer asked: *"if your engine threads `hw_rev` from the oracle, reproduce two
+revisions of one SKU that differ in emitted config."* Investigating v0.8.1 splits this into
+what is **real** vs what is **forward-spec** — and the bench labels both:
+
+- **REAL (already reproduced).** v0.8.1's `--emit` threads `hw_rev` into
+  `hw_info.{som_hw_rev,board_hw_rev}`; `build_system_manifest` reproduces that byte-for-byte.
+  But the config is **rev-agnostic**: forcing a board.yaml `r1`→`r2` against
+  `alp_orchestrate.py --emit system-manifest` changes a **single line** (`som_hw_rev: r1`→`r2`);
+  slices / ipc / helper-MCUs / flash are byte-identical. `hw_rev_is_stamped_but_config_is_rev_agnostic`
+  encodes this. The public `hw-revisions.yaml` carries the rev table + a human `changes:` log, but
+  **no per-rev routing delta**, and the resolver never consumes one.
+
+- **FORWARD-SPEC (a mechanism, not a reproduction).** `hwrev.rs` + a `hw-revisions.yaml` bundle add
+  the missing `(sku, hw_rev)` pad-route override the proposal needs: overlay a rev's
+  `pad_route_overrides` onto the SoM's base `pad_routes` so an old-rev customer's build emits the old
+  pinout. `rev_keyed_override_emits_differentiated_routes` shows the **same engine** emit a different
+  `routes.h` for `r1` vs `r2`. The real r1->r2 delta is PUBLIC on the SDK's `dev` (`hw-revisions-v1`:
+  IO8/IO10 -> CC3501E, IO21 unrouted) but only as `changes:` prose — not machine-readable, and
+  `--emit` doesn't apply it; only the raw netlist CSV is private. The bench's E7-era board_def carries
+  different CC3501E pads, so the `r2` fixture re-routes IO16/17/18 — same mechanism, bench-renderable
+  pads. This is **not** byte-for-byte against `--emit` — the emit is rev-agnostic regardless of rev.
+  Ready to gate the moment the SDK makes the per-rev delta machine-readable and applies it at emit.
+
 ## What it means for the RFC
 
 - The engine **consumes the SDK's `--emit` as the parity oracle** — ADR 0014's JSON seam is
@@ -235,5 +260,5 @@ proof_aen701/
 ## Run it
 
 ```
-cargo test -p alp-core proof_aen701   # 41 tests (E7 + E8 + V2N)
+cargo test -p alp-core proof_aen701   # 64 tests (E7 + E8 + V2N + hw-rev axis)
 ```

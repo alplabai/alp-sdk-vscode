@@ -1,0 +1,25 @@
+# E1M-AEN family hardware revisions — BENCH FIXTURE for alp-sdk#235.
+#
+# Mirrors the SDK's metadata/e1m_modules/aen/hw-revisions.yaml (rev table +
+# human `changes:` log), EXTENDED with the machine-readable `pad_route_overrides:`
+# the forward-spec proposes. The real r1->r2 delta is PUBLIC on the SDK's `dev`
+# (hw-revisions-v1: IO8/IO10 -> CC3501E, IO21 unrouted) but only as `changes:`
+# prose — not machine-readable, and `--emit` doesn't apply it. The bench's E7-era
+# board_def carries different CC3501E pads than R2's IO8/IO10/IO21, so r2 below
+# re-routes IO16/17/18 instead: the SAME mechanism on bench-renderable pads.
+# Not a reproduction — a spec against the seam.
+family: aen
+hw_revisions:
+  r1:
+    status: production
+    changes:
+      - "Initial production routing (bench board)."
+    # No pad_route_overrides: r1 emits exactly the SoM's base pad_routes.
+  r2:
+    status: production
+    changes:
+      - "Production PCB re-routed 3 CC3501E GPIO control lines vs r1."
+    pad_route_overrides:
+      - { e1m: E1M_GPIO_IO16, dispatch: cc3501e, dispatch_pin: 20, doc: "CC3501E GPIO_20 (re-routed on r2; was GPIO_16 on r1)." }
+      - { e1m: E1M_GPIO_IO17, dispatch: cc3501e, dispatch_pin: 21, doc: "CC3501E GPIO_21 (re-routed on r2; was GPIO_17 on r1)." }
+      - { e1m: E1M_GPIO_IO18, dispatch: cc3501e, dispatch_pin: 22, doc: "CC3501E GPIO_22 (re-routed on r2; was GPIO_18 on r1)." }

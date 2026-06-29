@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use super::assemble::*;
 use super::bundle::*;
 use super::carveout::resolve_carve_outs;
+use super::hwrev::*;
 use super::metadata::*;
 use super::pinmux::*;
 use super::policy::*;
@@ -1771,4 +1772,93 @@ fn v080_v2n_build_plan_matches_sdk_emit() {
         &policy_v2n(),
         &templates_v2n(),
     );
+}
+
+// === SoM hardware-revision axis (alp-sdk#235, 2026-06-28 round) ===
+// Two halves, honestly separated:
+//   (1) REAL — what v0.8.1's --emit actually does: thread hw_rev into the stamp,
+//       and NOTHING else (config is rev-agnostic). Verified live, encoded here.
+//   (2) FORWARD-SPEC — the proposed (sku, hw_rev) routing-override layer the SDK
+//       does NOT apply yet (see hwrev.rs). A spec against the seam, not a
+//       reproduction: the r2 delta is constructed to match the documented
+//       CC3501E 3-GPIO re-route the SDK's private parity gate caught.
+
+const HW_REVISIONS_AEN: &str = include_str!("../spike_fixtures/som/E1M-AEN701/hw-revisions.yaml");
+
+/// **REAL.** v0.8.1 stamps `hw_rev` into `hw_info.{som,board}_hw_rev` but emits
+/// rev-agnostic config: forcing a board.yaml `r1`→`r2` changes ONLY the stamp.
+/// (Confirmed live against `alp_orchestrate.py --emit system-manifest`: the diff
+/// was a single line, `som_hw_rev: r1` → `r2`.) The engine reproduces that.
+#[test]
+fn hw_rev_is_stamped_but_config_is_rev_agnostic() {
+    let (board, som, board_def, soc) = load_e8();
+    let mk = |rev: &str| {
+        let mut b = board.clone();
+        b.som.hw_rev = Some(rev.to_string());
+        b.hw_rev = Some(rev.to_string());
+        build_system_manifest(&b, &som, &board_def, &soc, &policy_e8())
+    };
+    let m1 = mk("r1");
+    let mut m2 = mk("r2");
+
+    // The stamp tracks the requested rev...
+    assert_eq!(m1.hw_info.som_hw_rev, "r1");
+    assert_eq!(m2.hw_info.som_hw_rev, "r2");
+    assert_eq!(m2.hw_info.board_hw_rev, "r2");
+
+    // ...and once the two stamp fields are normalised, the manifests are equal:
+    // the slices / ipc / helper-MCUs / flash config do NOT depend on the rev.
+    m2.hw_info.som_hw_rev = m1.hw_info.som_hw_rev.clone();
+    m2.hw_info.board_hw_rev = m1.hw_info.board_hw_rev.clone();
+    assert_eq!(
+        m1, m2,
+        "v0.8.1 emit is rev-agnostic in config; only the hw_rev stamp differs"
+    );
+}
+
+/// **FORWARD-SPEC.** The proposed override layer: the SAME engine + a rev-keyed
+/// bundle emits a DIFFERENT `routes.h` for two revisions of ONE SKU. NOT a
+/// byte-for-byte reproduction — v0.8.1 doesn't apply this yet (see the test
+/// above) and the real delta is in the SDK's private netlist; the r2 override is
+/// constructed to match its shape. Ready to gate against `--emit` once the SDK
+/// publishes per-rev `changes:` deltas and applies them.
+#[test]
+fn rev_keyed_override_emits_differentiated_routes() {
+    let (_, som, board_def, _) = load();
+    let table: HwRevisions = serde_yaml::from_str(HW_REVISIONS_AEN).unwrap();
+
+    let r1 = render_board_routes_h(&board_def, &apply_hw_rev(&som, &table, "r1"), ROUTES_H_TMPL);
+    let r2 = render_board_routes_h(&board_def, &apply_hw_rev(&som, &table, "r2"), ROUTES_H_TMPL);
+
+    // Two revisions of one SKU emit different routing — the whole point.
+    assert_ne!(
+        r1, r2,
+        "rev-keyed override must differentiate the emitted routes.h"
+    );
+
+    // r1 keeps the baseline CC3501E pins for the three control lines...
+    for pin in ["pin 16", "pin 17", "pin 18"] {
+        assert!(
+            r1.contains(&format!("/* via cc3501e {pin} */")),
+            "r1 baseline missing {pin}"
+        );
+    }
+    // ...r2 re-routes exactly those three (16->20, 17->21, 18->22)...
+    for (old, new) in [
+        ("pin 16", "pin 20"),
+        ("pin 17", "pin 21"),
+        ("pin 18", "pin 22"),
+    ] {
+        assert!(
+            r2.contains(&format!("/* via cc3501e {new} */")),
+            "r2 should re-route to {new}"
+        );
+        assert!(
+            !r2.contains(&format!("/* via cc3501e {old} */")),
+            "r2 should drop the old {old}"
+        );
+    }
+    // ...and a pad we did NOT touch (E1M_GPIO_IO15 -> cc3501e pin 14) is unchanged.
+    assert!(r1.contains("/* via cc3501e pin 14 */"));
+    assert!(r2.contains("/* via cc3501e pin 14 */"));
 }
