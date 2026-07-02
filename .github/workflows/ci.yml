@@ -7,9 +7,9 @@ name: ci
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 concurrency:
@@ -30,10 +30,10 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Set up Node 22
+      - name: Set up Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -84,10 +84,10 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Set up Node 22
+      - name: Set up Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "pnpm"
 
       - name: Set up Rust
