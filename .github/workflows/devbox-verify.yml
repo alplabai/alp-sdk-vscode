@@ -51,6 +51,24 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Free up runner disk (Podman + Zephyr image build is disk-heavy)
+        run: |
+          set -eu
+          # ubuntu-latest preinstalls ~25 GB of toolchains this job never uses
+          # (Android SDK, .NET, Haskell/GHC, CodeQL). Building the devbox image —
+          # which clones Zephyr + `west update` into a container layer — has
+          # intermittently hit "no space left on device" on the root fs where
+          # Podman stores layers. Reclaiming these up front (~20 GB) prevents it.
+          echo "before:"; df -h / | tail -1
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost || true
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          echo "after:"; df -h / | tail -1
+
       - name: Checkout (with the alp-sdk submodule)
         uses: actions/checkout@v4
         with:
