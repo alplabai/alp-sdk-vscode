@@ -354,25 +354,32 @@ function createComplianceDiagnostics(
     return [];
   }
 
-  const sku = boardConfig?.som?.sku;
-  if (typeof sku !== "string" || !sku) {
+  // Defense in depth: malformed board.yaml content (e.g. non-array route
+  // sections/pins) must never let a compliance-check failure drop the
+  // pre-existing Python-validator diagnostics for the whole document.
+  try {
+    const sku = boardConfig?.som?.sku;
+    if (typeof sku !== "string" || !sku) {
+      return [];
+    }
+
+    const table = loadPinmuxTable(sdkRoot, sku);
+    if (!table) {
+      return [];
+    }
+
+    return checkE1mCompliance(boardConfig, table).map((issue) => ({
+      range: findTokenRange(documentText, issue.token),
+      message: issue.message,
+      severity:
+        issue.severity === "error"
+          ? DiagnosticSeverity.Error
+          : DiagnosticSeverity.Warning,
+      source: "alp-sdk",
+    }));
+  } catch {
     return [];
   }
-
-  const table = loadPinmuxTable(sdkRoot, sku);
-  if (!table) {
-    return [];
-  }
-
-  return checkE1mCompliance(boardConfig, table).map((issue) => ({
-    range: findTokenRange(documentText, issue.token),
-    message: issue.message,
-    severity:
-      issue.severity === "error"
-        ? DiagnosticSeverity.Error
-        : DiagnosticSeverity.Warning,
-    source: "alp-sdk",
-  }));
 }
 
 function mapDiagnosticSeverity(

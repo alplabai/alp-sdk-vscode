@@ -47,6 +47,12 @@ test("loadPinmuxTable returns null for unknown SKUs without touching the filesys
   assert.strictEqual(table, null);
 });
 
+test("loadPinmuxTable returns null for a readable-but-corrupt/empty table (no pads)", () => {
+  clearPinmuxTableCache();
+  const table = loadPinmuxTable("/sdk", "E1M-AEN701", () => "family: 3\npads: nope");
+  assert.strictEqual(table, null);
+});
+
 test("loadPinmuxTable caches per sdkRoot + family", () => {
   clearPinmuxTableCache();
   let reads = 0;

@@ -51,7 +51,11 @@ export function loadPinmuxTable(
   let table: PinmuxTable | null = null;
   try {
     const filePath = path.join(sdkRoot, "metadata", "pinmux", `${family}.yaml`);
-    table = parsePinmuxTable(readFile(filePath));
+    const parsed = parsePinmuxTable(readFile(filePath));
+    // A readable-but-corrupt or empty table parses to a truthy object with
+    // no pads. Treat that as absent so callers don't flood false "not
+    // available" diagnostics against a broken/empty capability table.
+    table = parsed && parsed.pads.length === 0 ? null : parsed;
   } catch {
     table = null;
   }

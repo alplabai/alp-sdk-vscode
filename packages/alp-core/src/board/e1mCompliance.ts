@@ -68,7 +68,11 @@ function collectE1mRefs(cfg: BoardConfig): E1mRef[] {
 
   if (cfg.e1m_routes) {
     for (const section of ROUTE_SECTIONS) {
-      for (const entry of cfg.e1m_routes[section] ?? []) {
+      const entries = cfg.e1m_routes[section];
+      if (!Array.isArray(entries)) {
+        continue;
+      }
+      for (const entry of entries) {
         if (entry && typeof entry.e1m === "string") {
           refs.push({ name: entry.e1m });
         }
@@ -76,11 +80,13 @@ function collectE1mRefs(cfg: BoardConfig): E1mRef[] {
     }
   }
 
-  for (const pin of cfg.pins ?? []) {
-    if (typeof pin === "string") {
-      refs.push({ name: pin });
-    } else if (pin && typeof pin.e1m === "string") {
-      refs.push({ name: pin.e1m });
+  if (Array.isArray(cfg.pins)) {
+    for (const pin of cfg.pins) {
+      if (typeof pin === "string") {
+        refs.push({ name: pin });
+      } else if (pin && typeof pin.e1m === "string") {
+        refs.push({ name: pin.e1m });
+      }
     }
   }
 
@@ -98,9 +104,11 @@ export function checkE1mCompliance(
   table: PinmuxTable,
 ): E1mComplianceIssue[] {
   const issues: E1mComplianceIssue[] = [];
-  const claims = new Map<string, string>();
+  const claims = new Map<string, { refIndex: number; name: string }>();
 
-  for (const ref of collectE1mRefs(cfg)) {
+  const refs = collectE1mRefs(cfg);
+  for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
+    const ref = refs[refIndex];
     const normalized = normalizeE1mName(ref.name);
     if (!normalized) {
       continue;
@@ -118,14 +126,14 @@ export function checkE1mCompliance(
 
     for (const pad of pads) {
       const existing = claims.get(pad.e1mPad);
-      if (existing && existing !== ref.name) {
+      if (existing && existing.refIndex !== refIndex) {
         issues.push({
-          message: `${ref.name}: E1M pad ${pad.e1mPad} is already claimed by ${existing} — the E1M standard allows one owner per pad.`,
+          message: `${ref.name}: E1M pad ${pad.e1mPad} is already claimed by ${existing.name} — the E1M standard allows one owner per pad.`,
           severity: "error",
           token: ref.name,
         });
       } else {
-        claims.set(pad.e1mPad, ref.name);
+        claims.set(pad.e1mPad, { refIndex, name: ref.name });
       }
     }
   }
