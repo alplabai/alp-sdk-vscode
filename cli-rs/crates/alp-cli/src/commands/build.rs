@@ -370,8 +370,9 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
 /// truth — we only run + parse it. Works against whatever SDK checkout is
 /// resolved (`--sdk-root` / settings / bootstrap); the schema-version guard in
 /// `parse_build_plan` rejects an incompatible emit.
-/// Invoke the SDK's `alp_orchestrate.py --emit <emit>` for the project's
-/// board.yaml and return its stdout. `emit` is the emit kind (`build-plan` /
+/// Invoke the SDK's `alp_orchestrate --emit <emit>` (module form, scripts/ on
+/// PYTHONPATH) for the project's board.yaml and return its stdout. `emit` is the
+/// emit kind (`build-plan` /
 /// `system-manifest`); `err_code` is the envelope issue code used for every
 /// failure on this path so each caller keeps its own stable code.
 fn invoke_sdk_emit(
@@ -383,36 +384,54 @@ fn invoke_sdk_emit(
         err_code,
         format!(
             "no alp-sdk checkout found — pass `--sdk-root <PATH>`, set it in settings, or run \
-             `alp bootstrap`. The {emit} comes from the SDK's `alp_orchestrate.py --emit {emit}`."
+             `alp bootstrap`. The {emit} comes from the SDK's `alp_orchestrate --emit {emit}`."
         ),
     ))?;
     let board_yaml = context.board_yaml_path.as_deref().ok_or((
         err_code,
         "no board.yaml found — pass `--board-yaml <PATH>` or run from a project.".to_string(),
     ))?;
-    let script = Path::new(sdk_root)
-        .join("scripts")
-        .join("alp_orchestrate.py");
-    if !script.is_file() {
+    let scripts_dir = Path::new(sdk_root).join("scripts");
+    // Invoke the planner as a module (`python -m alp_orchestrate`) with scripts/
+    // on PYTHONPATH — the same way the SDK's own west_commands do. That resolves
+    // both the modern package layout (scripts/alp_orchestrate/) and the legacy
+    // flat module (scripts/alp_orchestrate.py), so the CLI works against any SDK
+    // release. Gate on either being present so the error is clear.
+    let has_planner = scripts_dir.join("alp_orchestrate.py").is_file()
+        || scripts_dir
+            .join("alp_orchestrate")
+            .join("__init__.py")
+            .is_file();
+    if !has_planner {
         return Err((
             err_code,
             format!(
-                "the SDK at `{sdk_root}` has no `scripts/alp_orchestrate.py` — pin to an SDK \
-                 release that ships `--emit {emit}`."
+                "the SDK at `{sdk_root}` has no `alp_orchestrate` planner under scripts/ — pin \
+                 to an SDK release that ships `--emit {emit}`."
             ),
         ));
     }
+    // Prepend scripts/ to PYTHONPATH, preserving any value the caller set.
+    let mut path_entries = vec![scripts_dir.clone()];
+    if let Some(existing) = std::env::var_os("PYTHONPATH") {
+        path_entries.extend(std::env::split_paths(&existing));
+    }
+    let pythonpath = std::env::join_paths(path_entries).map_err(|e| {
+        (
+            err_code,
+            format!("failed to build PYTHONPATH for the SDK planner: {e}"),
+        )
+    })?;
     let output = Command::new(&context.python_binary)
-        .arg(&script)
-        .args(["--input", board_yaml, "--emit", emit])
+        .args(["-m", "alp_orchestrate", "--input", board_yaml, "--emit", emit])
+        .env("PYTHONPATH", &pythonpath)
         .output()
         .map_err(|e| {
             (
                 err_code,
                 format!(
-                    "failed to run `{} {}`: {e}",
-                    context.python_binary,
-                    script.display()
+                    "failed to run `{} -m alp_orchestrate --emit {emit}`: {e}",
+                    context.python_binary
                 ),
             )
         })?;
