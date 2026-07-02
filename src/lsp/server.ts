@@ -30,6 +30,9 @@ import {
   createValidatorPlan,
   isBoardYamlPath,
 } from "@alp-sdk/core/validation/service";
+import { checkE1mCompliance } from "@alp-sdk/core/board/e1mCompliance";
+import { parseBoardConfig } from "@alp-sdk/core/board/parse";
+import { loadPinmuxTable } from "../pinmux/loader";
 import {
   BoardYamlCompletionSuggestion,
   BoardYamlDocumentSymbolNode,
@@ -43,6 +46,7 @@ import {
   createEffectiveConfigPreviewPayload,
   createIssueRange,
   detectV2StructuralIssues,
+  findTokenRange,
   normalizeProjectSettings,
 } from "./service";
 import {
@@ -362,6 +366,11 @@ async function validateDocument(
     return;
   }
 
+  const complianceDiagnostics = createComplianceDiagnostics(
+    documentText,
+    context.sdkRoot,
+  );
+
   const plan = createValidatorPlan(context, filePath);
   const execution = executeValidatorPlanWithSpawn(context, plan, cp.spawnSync);
   connection.console.log(`$ ${plan.commandLine} (rv=${execution.status})`);
@@ -370,12 +379,15 @@ async function validateDocument(
   const v2Issues = detectV2StructuralIssues(documentText);
 
   if (validation.outcome === "clean" && v2Issues.length === 0) {
-    connection.sendDiagnostics({ uri, diagnostics: [] });
+    connection.sendDiagnostics({ uri, diagnostics: complianceDiagnostics });
     return;
   }
 
   const allIssues = [...validation.issues, ...v2Issues];
-  const diagnostics = createDiagnostics(documentText, allIssues);
+  const diagnostics = [
+    ...createDiagnostics(documentText, allIssues),
+    ...complianceDiagnostics,
+  ];
   connection.sendDiagnostics({ uri, diagnostics });
 }
 
@@ -390,6 +402,42 @@ function createDiagnostics(
     range: createIssueRange(documentText, issue.message),
     message: createDiagnosticMessageWithContext(issue.message, documentText),
     severity: mapDiagnosticSeverity(issue.severity),
+    source: "alp-sdk",
+  }));
+}
+
+function createComplianceDiagnostics(
+  documentText: string,
+  sdkRoot: string | null | undefined,
+): Diagnostic[] {
+  if (!sdkRoot) {
+    return [];
+  }
+
+  let boardConfig;
+  try {
+    boardConfig = parseBoardConfig(documentText);
+  } catch {
+    return [];
+  }
+
+  const sku = boardConfig?.som?.sku;
+  if (typeof sku !== "string" || !sku) {
+    return [];
+  }
+
+  const table = loadPinmuxTable(sdkRoot, sku);
+  if (!table) {
+    return [];
+  }
+
+  return checkE1mCompliance(boardConfig, table).map((issue) => ({
+    range: findTokenRange(documentText, issue.token),
+    message: issue.message,
+    severity:
+      issue.severity === "error"
+        ? DiagnosticSeverity.Error
+        : DiagnosticSeverity.Warning,
     source: "alp-sdk",
   }));
 }
