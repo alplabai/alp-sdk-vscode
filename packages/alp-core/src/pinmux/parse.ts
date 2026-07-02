@@ -29,7 +29,10 @@ export function parsePinmuxTable(text: string): PinmuxTable {
       }
 
       const pad = entry as Record<string, unknown>;
-      if (typeof pad.e1m_pad !== "string" || typeof pad.e1m_function !== "string") {
+      if (
+        typeof pad.e1m_pad !== "string" ||
+        typeof pad.e1m_function !== "string"
+      ) {
         continue;
       }
 
@@ -38,7 +41,9 @@ export function parsePinmuxTable(text: string): PinmuxTable {
         e1mFunction: pad.e1m_function,
         owner: typeof pad.owner === "string" ? pad.owner : "",
         siliconPeripheral:
-          typeof pad.silicon_peripheral === "string" ? pad.silicon_peripheral : "",
+          typeof pad.silicon_peripheral === "string"
+            ? pad.silicon_peripheral
+            : "",
         siliconPad: typeof pad.silicon_pad === "string" ? pad.silicon_pad : "",
       });
     }

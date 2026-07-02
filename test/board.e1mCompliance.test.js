@@ -10,11 +10,41 @@ const TABLE = {
   family: "aen",
   displayName: "E1M-AEN (Alif Ensemble)",
   pads: [
-    { e1mPad: "A3", e1mFunction: "PWM6", owner: "alif", siliconPeripheral: "UT3_T1_C", siliconPad: "P10_7" },
-    { e1mPad: "AG2", e1mFunction: "IO3", owner: "alif", siliconPeripheral: "GPIO", siliconPad: "P3.2" },
-    { e1mPad: "A14", e1mFunction: "ANA_S2", owner: "alif", siliconPeripheral: "ANA_S2", siliconPad: "P0_2" },
-    { e1mPad: "A7", e1mFunction: "ENC3_X", owner: "alif", siliconPeripheral: "QEC3_X_A", siliconPad: "P4_1" },
-    { e1mPad: "B7", e1mFunction: "ENC3_Y", owner: "alif", siliconPeripheral: "QEC3_Y_A", siliconPad: "P4_2" },
+    {
+      e1mPad: "A3",
+      e1mFunction: "PWM6",
+      owner: "alif",
+      siliconPeripheral: "UT3_T1_C",
+      siliconPad: "P10_7",
+    },
+    {
+      e1mPad: "AG2",
+      e1mFunction: "IO3",
+      owner: "alif",
+      siliconPeripheral: "GPIO",
+      siliconPad: "P3.2",
+    },
+    {
+      e1mPad: "A14",
+      e1mFunction: "ANA_S2",
+      owner: "alif",
+      siliconPeripheral: "ANA_S2",
+      siliconPad: "P0_2",
+    },
+    {
+      e1mPad: "A7",
+      e1mFunction: "ENC3_X",
+      owner: "alif",
+      siliconPeripheral: "QEC3_X_A",
+      siliconPad: "P4_1",
+    },
+    {
+      e1mPad: "B7",
+      e1mFunction: "ENC3_Y",
+      owner: "alif",
+      siliconPeripheral: "QEC3_Y_A",
+      siliconPad: "P4_2",
+    },
   ],
 };
 
@@ -23,23 +53,41 @@ function boardWith(routes, pins) {
 }
 
 test("normalizeE1mName handles primary, GPIO-secondary, X-connector and ADC forms", () => {
-  assert.deepStrictEqual(normalizeE1mName("E1M_PWM6"), { fn: "PWM6", gpioSecondary: false });
-  assert.deepStrictEqual(normalizeE1mName("E1M_GPIO_PWM6"), { fn: "PWM6", gpioSecondary: true });
-  assert.deepStrictEqual(normalizeE1mName("E1M_X_UART2"), { fn: "UART2", gpioSecondary: false });
-  assert.deepStrictEqual(normalizeE1mName("E1M_ADC2"), { fn: "ANA_S2", gpioSecondary: false });
+  assert.deepStrictEqual(normalizeE1mName("E1M_PWM6"), {
+    fn: "PWM6",
+    gpioSecondary: false,
+  });
+  assert.deepStrictEqual(normalizeE1mName("E1M_GPIO_PWM6"), {
+    fn: "PWM6",
+    gpioSecondary: true,
+  });
+  assert.deepStrictEqual(normalizeE1mName("E1M_X_UART2"), {
+    fn: "UART2",
+    gpioSecondary: false,
+  });
+  assert.deepStrictEqual(normalizeE1mName("E1M_ADC2"), {
+    fn: "ANA_S2",
+    gpioSecondary: false,
+  });
   assert.strictEqual(normalizeE1mName("not-a-pad"), null);
 });
 
 test("valid references produce no issues", () => {
   const cfg = boardWith(
-    { pwm: [{ e1m: "E1M_PWM6", macro: "LED" }], gpio: [{ e1m: "E1M_GPIO_IO3", macro: "BTN" }] },
+    {
+      pwm: [{ e1m: "E1M_PWM6", macro: "LED" }],
+      gpio: [{ e1m: "E1M_GPIO_IO3", macro: "BTN" }],
+    },
     ["E1M_ADC2"],
   );
   assert.deepStrictEqual(checkE1mCompliance(cfg, TABLE), []);
 });
 
 test("unknown function on the family is an error", () => {
-  const cfg = boardWith({ pwm: [{ e1m: "E1M_PWM9", macro: "LED" }] }, undefined);
+  const cfg = boardWith(
+    { pwm: [{ e1m: "E1M_PWM9", macro: "LED" }] },
+    undefined,
+  );
   const issues = checkE1mCompliance(cfg, TABLE);
   assert.strictEqual(issues.length, 1);
   assert.strictEqual(issues[0].severity, "error");
@@ -50,7 +98,10 @@ test("unknown function on the family is an error", () => {
 
 test("two references claiming the same pad is an error", () => {
   const cfg = boardWith(
-    { pwm: [{ e1m: "E1M_PWM6", macro: "LED" }], gpio: [{ e1m: "E1M_GPIO_PWM6", macro: "BTN" }] },
+    {
+      pwm: [{ e1m: "E1M_PWM6", macro: "LED" }],
+      gpio: [{ e1m: "E1M_GPIO_PWM6", macro: "BTN" }],
+    },
     undefined,
   );
   const issues = checkE1mCompliance(cfg, TABLE);
@@ -65,7 +116,10 @@ test("two references claiming the same pad is an error", () => {
 
 test("prefix functions claim all matching pads (ENC3 takes X and Y)", () => {
   const cfg = boardWith(
-    { qenc: [{ e1m: "E1M_ENC3", macro: "WHEEL" }], gpio: [{ e1m: "E1M_GPIO_ENC3_X", macro: "BTN" }] },
+    {
+      qenc: [{ e1m: "E1M_ENC3", macro: "WHEEL" }],
+      gpio: [{ e1m: "E1M_GPIO_ENC3_X", macro: "BTN" }],
+    },
     undefined,
   );
   const issues = checkE1mCompliance(cfg, TABLE);
@@ -81,7 +135,10 @@ test("pins accepts bare strings and objects", () => {
 });
 
 test("malformed names and empty config are ignored", () => {
-  const cfg = boardWith({ gpio: [{ e1m: "TOTALLY_WRONG", macro: "X" }] }, undefined);
+  const cfg = boardWith(
+    { gpio: [{ e1m: "TOTALLY_WRONG", macro: "X" }] },
+    undefined,
+  );
   assert.deepStrictEqual(checkE1mCompliance(cfg, TABLE), []);
   assert.deepStrictEqual(
     checkE1mCompliance({ som: { sku: "E1M-AEN701" }, cores: {} }, TABLE),

@@ -33,12 +33,18 @@ test("parsePinmuxTable keeps GPIO-only pads with empty silicon_peripheral", () =
 });
 
 test("parsePinmuxTable tolerates empty or malformed input", () => {
-  assert.deepStrictEqual(parsePinmuxTable(""), { family: "", displayName: undefined, pads: [] });
+  assert.deepStrictEqual(parsePinmuxTable(""), {
+    family: "",
+    displayName: undefined,
+    pads: [],
+  });
   assert.deepStrictEqual(parsePinmuxTable("family: 3\npads: nope"), {
     family: "",
     displayName: undefined,
     pads: [],
   });
-  const missingKeys = parsePinmuxTable("family: aen\npads:\n  - { e1m_pad: \"A3\" }");
+  const missingKeys = parsePinmuxTable(
+    'family: aen\npads:\n  - { e1m_pad: "A3" }',
+  );
   assert.strictEqual(missingKeys.pads.length, 0);
 });

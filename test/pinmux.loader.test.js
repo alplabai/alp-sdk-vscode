@@ -8,7 +8,8 @@ const {
   clearPinmuxTableCache,
 } = require("../out/pinmux/loader.js");
 
-const SAMPLE = 'family: aen\npads:\n  - { e1m_pad: "A3", e1m_function: "PWM6", owner: "alif", silicon_peripheral: "UT3_T1_C", silicon_pad: "P10_7" }\n';
+const SAMPLE =
+  'family: aen\npads:\n  - { e1m_pad: "A3", e1m_function: "PWM6", owner: "alif", silicon_peripheral: "UT3_T1_C", silicon_pad: "P10_7" }\n';
 
 test("pinmuxFamilyForSku maps known SKU prefixes", () => {
   assert.strictEqual(pinmuxFamilyForSku("E1M-AEN701"), "aen");
@@ -26,7 +27,10 @@ test("loadPinmuxTable reads metadata/pinmux/<family>.yaml under the SDK root", (
     return SAMPLE;
   });
   assert.strictEqual(seen.length, 1);
-  assert.strictEqual(seen[0], path.join("/sdk", "metadata", "pinmux", "aen.yaml"));
+  assert.strictEqual(
+    seen[0],
+    path.join("/sdk", "metadata", "pinmux", "aen.yaml"),
+  );
   assert.strictEqual(table.family, "aen");
   assert.strictEqual(table.pads.length, 1);
 });
@@ -49,7 +53,11 @@ test("loadPinmuxTable returns null for unknown SKUs without touching the filesys
 
 test("loadPinmuxTable returns null for a readable-but-corrupt/empty table (no pads)", () => {
   clearPinmuxTableCache();
-  const table = loadPinmuxTable("/sdk", "E1M-AEN701", () => "family: 3\npads: nope");
+  const table = loadPinmuxTable(
+    "/sdk",
+    "E1M-AEN701",
+    () => "family: 3\npads: nope",
+  );
   assert.strictEqual(table, null);
 });
 

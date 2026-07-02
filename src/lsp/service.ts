@@ -908,7 +908,10 @@ export interface TokenRange {
 }
 
 /** Locate the first occurrence of a token in the document; document start when absent. */
-export function findTokenRange(documentText: string, token: string): TokenRange {
+export function findTokenRange(
+  documentText: string,
+  token: string,
+): TokenRange {
   if (token) {
     const lines = documentText.split(/\r?\n/);
     for (let line = 0; line < lines.length; line += 1) {
