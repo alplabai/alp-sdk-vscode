@@ -2,6 +2,7 @@
 
 import * as vscode from "vscode";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
+import { writeAlpSetting } from "./settingsWrite";
 
 /**
  * Set the active SDK via the `alpSdk.path` setting — the single source project
@@ -15,9 +16,8 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
   const target = hasWorkspace
     ? vscode.ConfigurationTarget.Workspace
     : vscode.ConfigurationTarget.Global;
-  await vscode.workspace
-    .getConfiguration("alpSdk")
-    .update("path", sdkPath, target);
+  const written = await writeAlpSetting("path", sdkPath, target);
+  if (!written) return;
   await vscode.commands.executeCommand("alp.views.refresh");
   void vscode.window.showInformationMessage(
     hasWorkspace
@@ -34,14 +34,45 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
 export async function clearActiveSdk(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("alpSdk");
   const inspected = cfg.inspect<string>("path");
-  if (inspected?.workspaceValue !== undefined) {
-    await cfg.update("path", undefined, vscode.ConfigurationTarget.Workspace);
+  const hadWorkspace = inspected?.workspaceValue !== undefined;
+  const hadGlobal = inspected?.globalValue !== undefined;
+  if (!hadWorkspace && !hadGlobal) {
+    void vscode.window.showInformationMessage("Alp: no active SDK to clear.");
+    return;
   }
-  if (inspected?.globalValue !== undefined) {
-    await cfg.update("path", undefined, vscode.ConfigurationTarget.Global);
-  }
+
+  // A scope that wasn't set counts as "already clear"; only an attempted write
+  // that didn't land marks a scope as still-set. writeAlpSetting has already
+  // told the user how to recover in that case.
+  const workspaceCleared = hadWorkspace
+    ? await writeAlpSetting(
+        "path",
+        undefined,
+        vscode.ConfigurationTarget.Workspace,
+      )
+    : true;
+  const globalCleared = hadGlobal
+    ? await writeAlpSetting(
+        "path",
+        undefined,
+        vscode.ConfigurationTarget.Global,
+      )
+    : true;
+
+  if (!workspaceCleared && !globalCleared) return; // nothing changed
   await vscode.commands.executeCommand("alp.views.refresh");
-  void vscode.window.showInformationMessage("Alp: active SDK cleared.");
+
+  if (workspaceCleared && globalCleared) {
+    void vscode.window.showInformationMessage("Alp: active SDK cleared.");
+  } else {
+    const stillSet = !workspaceCleared
+      ? "this project's"
+      : "the global default";
+    void vscode.window.showWarningMessage(
+      `Alp: ${stillSet} SDK setting still points at an SDK — save that ` +
+        "settings file and run Deactivate again to finish clearing it.",
+    );
+  }
 }
 
 /** Last path segment (cross-platform); the cache dir is named after the tag. */
