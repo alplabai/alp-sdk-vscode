@@ -327,4 +327,20 @@ test("createBoardYamlQuickFixes still offers add-os fix for v1 documents", () =>
   const fixes = createBoardYamlQuickFixes(doc, "FAIL os missing");
   const titles = fixes.map((f) => f.title);
   assert(titles.includes("Add missing os field"), "Should offer os fix for v1");
+
+test("findTokenRange locates the first occurrence of a token", () => {
+  const { findTokenRange } = require("../out/lsp/service.js");
+  const doc = "som:\n  sku: E1M-AEN701\ne1m_routes:\n  pwm:\n    - e1m: E1M_PWM9\n";
+  const range = findTokenRange(doc, "E1M_PWM9");
+  assert.deepStrictEqual(range, {
+    start: { line: 4, character: 11 },
+    end: { line: 4, character: 19 },
+  });
+});
+
+test("findTokenRange falls back to document start when the token is absent", () => {
+  const { findTokenRange } = require("../out/lsp/service.js");
+  const fallback = { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } };
+  assert.deepStrictEqual(findTokenRange("som:\n", "E1M_PWM9"), fallback);
+  assert.deepStrictEqual(findTokenRange("anything", ""), fallback);
 });
