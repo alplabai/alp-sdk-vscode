@@ -901,3 +901,29 @@ function leadingWhitespace(lineText: string): number {
 function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
+
+export interface TokenRange {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+}
+
+/** Locate the first occurrence of a token in the document; document start when absent. */
+export function findTokenRange(
+  documentText: string,
+  token: string,
+): TokenRange {
+  if (token) {
+    const lines = documentText.split(/\r?\n/);
+    for (let line = 0; line < lines.length; line += 1) {
+      const character = lines[line].indexOf(token);
+      if (character >= 0) {
+        return {
+          start: { line, character },
+          end: { line, character: character + token.length },
+        };
+      }
+    }
+  }
+
+  return { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } };
+}
