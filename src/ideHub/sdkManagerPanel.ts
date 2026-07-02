@@ -9,6 +9,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
+import { writeAlpSetting } from "../sdk/settingsWrite";
 import {
   emptyAlpIdeState,
   PROTOCOL_VERSION,
@@ -183,30 +184,63 @@ export class SdkManagerPanel {
     }
 
     // Clear the active SDK setting if it pointed at the removed install, so
-    // nothing dangles after removal.
+    // nothing dangles after removal. The folder is already gone, so a failure
+    // to clear the pointer must not abort the flow — it downgrades the final
+    // message instead of throwing (which, on this fire-and-forget handler,
+    // would become an unhandled rejection and skip the refresh).
     const cfg = vscode.workspace.getConfiguration("alpSdk");
     const inspected = cfg.inspect<string>("path");
-    if (
+    const needWorkspace = Boolean(
       inspected?.workspaceValue &&
-      path.resolve(inspected.workspaceValue) === target
-    ) {
-      await cfg.update("path", undefined, vscode.ConfigurationTarget.Workspace);
-    }
-    if (
-      inspected?.globalValue &&
-      path.resolve(inspected.globalValue) === target
-    ) {
-      await cfg.update("path", undefined, vscode.ConfigurationTarget.Global);
+      path.resolve(inspected.workspaceValue) === target,
+    );
+    const needGlobal = Boolean(
+      inspected?.globalValue && path.resolve(inspected.globalValue) === target,
+    );
+
+    let pointerCleared = true;
+    try {
+      if (needWorkspace) {
+        pointerCleared =
+          (await writeAlpSetting(
+            "path",
+            undefined,
+            vscode.ConfigurationTarget.Workspace,
+          )) && pointerCleared;
+      }
+      if (needGlobal) {
+        pointerCleared =
+          (await writeAlpSetting(
+            "path",
+            undefined,
+            vscode.ConfigurationTarget.Global,
+          )) && pointerCleared;
+      }
+    } catch {
+      pointerCleared = false;
     }
 
-    void vscode.window.showInformationMessage(`Alp: removed SDK ${name}.`);
+    if (pointerCleared) {
+      void vscode.window.showInformationMessage(`Alp: removed SDK ${name}.`);
+    } else {
+      void vscode.window.showWarningMessage(
+        `Alp: removed SDK ${name}, but its active-SDK setting couldn't be ` +
+          "cleared — save your settings file, then run Deactivate to finish.",
+      );
+    }
     await vscode.commands.executeCommand("alp.views.refresh");
     await this.refresh();
   }
 
   /** Deactivate — clear the active SDK without deleting anything. */
   private async handleDeactivateSdk(): Promise<void> {
-    await clearActiveSdk();
+    try {
+      await clearActiveSdk();
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Alp: failed to deactivate SDK — ${String(err)}`,
+      );
+    }
     await this.refresh();
   }
 
