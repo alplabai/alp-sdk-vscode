@@ -88,3 +88,32 @@ test("malformed names and empty config are ignored", () => {
     [],
   );
 });
+
+test("non-array pins never throws and yields no issues", () => {
+  const cfg = { som: { sku: "E1M-AEN701" }, cores: {}, pins: 42 };
+  assert.doesNotThrow(() => checkE1mCompliance(cfg, TABLE));
+  assert.deepStrictEqual(checkE1mCompliance(cfg, TABLE), []);
+});
+
+test("non-array route section never throws and yields no issues", () => {
+  const cfg = { som: { sku: "E1M-AEN701" }, cores: {}, e1m_routes: { pwm: 5 } };
+  assert.doesNotThrow(() => checkE1mCompliance(cfg, TABLE));
+  assert.deepStrictEqual(checkE1mCompliance(cfg, TABLE), []);
+});
+
+test("identical-token double-claim of one physical pad is flagged (R2)", () => {
+  const cfg = boardWith(
+    {
+      pwm: [
+        { e1m: "E1M_PWM6", macro: "LED" },
+        { e1m: "E1M_PWM6", macro: "FAN" },
+      ],
+    },
+    undefined,
+  );
+  const issues = checkE1mCompliance(cfg, TABLE);
+  assert.strictEqual(issues.length, 1);
+  assert.strictEqual(issues[0].severity, "error");
+  assert.match(issues[0].message, /A3/);
+  assert.match(issues[0].message, /one owner per pad/);
+});
