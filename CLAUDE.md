@@ -36,7 +36,7 @@ out/, dist/, *.vsix       Build artifacts — gitignored, do not commit
 
 ## Build / test / package
 
-Toolchain: pnpm 11, Node 22+ (CI uses 22; local may be newer), TypeScript 6,
+Toolchain: pnpm 11, Node 24 (CI pins 24; local may differ), TypeScript 6,
 esbuild (extension bundle), Vite (webview, invoked as `vp build`), `vsce` (packaging).
 
 ```bash
