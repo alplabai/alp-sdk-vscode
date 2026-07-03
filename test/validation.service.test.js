@@ -147,6 +147,36 @@ test("analyzeValidationResult WARN lines become warnings", () => {
   assert.equal(result.issues[0].message, "hw_compat: minor version mismatch");
 });
 
+test("analyzeValidationResult reclassifies a crashed validator (exit 1 traceback) as failed", () => {
+  // A missing python dep crashes the validator, which exits 1 — the same code as
+  // a real schema violation. It must be an infra failure, not a verdict. (#38)
+  const result = analyzeValidationResult({
+    status: 1,
+    stdout: "",
+    stderr: [
+      "Traceback (most recent call last):",
+      '  File "/sdk/scripts/validate_board_yaml.py", line 7, in <module>',
+      "    import jsonschema",
+      "ModuleNotFoundError: No module named 'jsonschema'",
+      "",
+    ].join("\n"),
+  });
+
+  assert.equal(result.outcome, "failed");
+  assert.deepEqual(result.issues, []); // a traceback yields no parseable diagnostics
+});
+
+test("analyzeValidationResult keeps a genuine schema violation (exit 1, no traceback)", () => {
+  const result = analyzeValidationResult({
+    status: 1,
+    stdout: "",
+    stderr: "FAIL som preset: no preset for E1M-NX9999\n",
+  });
+
+  assert.equal(result.outcome, "schema-violation");
+  assert.equal(result.issues.length, 1);
+});
+
 // --- validateBoardYamlLocally v2 structural pre-checks ---
 
 const V1_ZEPHYR_YAML = `\

@@ -44,7 +44,14 @@ export function createValidatorPlan(
 export function analyzeValidationResult(
   execution: ValidatorExecutionResult,
 ): ValidationResult {
-  const outcome = classifyValidationOutcome(execution.status);
+  let outcome = classifyValidationOutcome(execution.status);
+  // A crashed validator (exit 1 with a Python traceback) collides with a genuine
+  // schema violation on exit code alone. Reclassify it as `failed` (infra) so a
+  // broken validator environment is never surfaced as a real board.yaml verdict.
+  // (issue #38)
+  if (outcome === "schema-violation" && isInterpreterCrash(execution.stderr)) {
+    outcome = "failed";
+  }
   return {
     outcome,
     issues: parseValidationIssues(
@@ -60,6 +67,21 @@ function classifyValidationOutcome(status: number | null): ValidationOutcome {
   if (status === 3) return "hardware-revision";
   if (status === 1) return "schema-violation";
   return "failed";
+}
+
+/**
+ * True when validator stderr is an unhandled interpreter/environment crash (a
+ * Python traceback) rather than a validation verdict. The validator exits 1 both
+ * for a genuine schema violation AND when it crashes (e.g. a missing `jsonschema`
+ * dep); a real validation failure never prints a traceback, so this header tells
+ * a broken validator environment apart from a "board.yaml is invalid" result.
+ */
+function isInterpreterCrash(stderr: string): boolean {
+  return stderr
+    .split(/\r?\n/)
+    .some((line) =>
+      line.trimStart().startsWith("Traceback (most recent call last):"),
+    );
 }
 
 function severityForOutcome(outcome: ValidationOutcome): ValidationSeverity {
