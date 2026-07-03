@@ -161,10 +161,30 @@ fn severity_for_outcome(outcome: Outcome) -> Severity {
     }
 }
 
+/// True when validator stderr is an unhandled interpreter/environment crash
+/// rather than a validation verdict — detected by the Python traceback header.
+/// The validator exits 1 both for a genuine schema violation AND when it crashes
+/// (e.g. `ImportError: jsonschema` on a host missing the deps); a real
+/// validation failure never prints a traceback, so this header reliably tells a
+/// broken validator environment apart from a "board.yaml is invalid" result.
+fn is_interpreter_crash(stderr: &str) -> bool {
+    stderr.lines().any(|line| {
+        line.trim_start()
+            .starts_with("Traceback (most recent call last):")
+    })
+}
+
 /// Classify + parse a validator execution into a [`ValidationResult`]
 /// (TS `analyzeValidationResult`).
 pub fn analyze_validation_result(execution: &ValidatorExecution) -> ValidationResult {
-    let outcome = classify_validation_outcome(execution.status);
+    let mut outcome = classify_validation_outcome(execution.status);
+    // A crashed validator (exit 1 with a Python traceback) collides with a
+    // genuine schema violation on exit code alone. Reclassify it as `Failed`
+    // (infra, exit 1) so a broken validator environment is never surfaced to
+    // consumers as a real board.yaml verdict (exit 2). (issue #38)
+    if outcome == Outcome::SchemaViolation && is_interpreter_crash(&execution.stderr) {
+        outcome = Outcome::Failed;
+    }
     let issues = parse_validation_issues(&execution.stderr, severity_for_outcome(outcome));
     ValidationResult { outcome, issues }
 }
@@ -569,5 +589,55 @@ ipc:
         assert!(parse_rich_header("error[B005]: nope").is_none());
         assert!(parse_rich_header("error[ALP-B005]: ok").is_some());
         assert!(parse_rich_header("note[ALP-Z9]: hi").is_some());
+    }
+
+    #[test]
+    fn crashed_validator_reclassifies_exit1_traceback_as_failed() {
+        // A missing python dep: the validator crashes with a traceback and exits
+        // 1 — the same exit code as a real schema violation. It must NOT be a
+        // schema-violation verdict; a broken env is an infra failure. (issue #38)
+        let stderr = "Traceback (most recent call last):\n  File \"/sdk/scripts/validate_board_yaml.py\", line 7, in <module>\n    import jsonschema\nModuleNotFoundError: No module named 'jsonschema'\n";
+        let execution = ValidatorExecution {
+            status: Some(1),
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+        };
+        let result = analyze_validation_result(&execution);
+        assert_eq!(result.outcome, Outcome::Failed);
+        // A traceback yields no parseable diagnostics.
+        assert!(result.issues.is_empty());
+    }
+
+    #[test]
+    fn genuine_schema_violation_on_exit1_stays_schema_violation() {
+        // A real validation failure (no traceback) is unchanged by the crash guard.
+        let stderr = "FAIL som preset: no preset for E1M-NX9999\n";
+        let execution = ValidatorExecution {
+            status: Some(1),
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+        };
+        let result = analyze_validation_result(&execution);
+        assert_eq!(result.outcome, Outcome::SchemaViolation);
+        assert_eq!(result.issues.len(), 1);
+    }
+
+    #[test]
+    fn crash_guard_detects_indented_traceback_and_ignores_other_exits() {
+        assert!(is_interpreter_crash(
+            "  Traceback (most recent call last):\n    ...\n"
+        ));
+        assert!(!is_interpreter_crash("FAIL som preset: nope\n"));
+        // The guard only fires on the exit-1 collision; a traceback on a
+        // non-schema-violation exit code leaves that outcome untouched.
+        let execution = ValidatorExecution {
+            status: Some(2),
+            stdout: String::new(),
+            stderr: "Traceback (most recent call last):\n".to_string(),
+        };
+        assert_eq!(
+            analyze_validation_result(&execution).outcome,
+            Outcome::MissingPreset
+        );
     }
 }
