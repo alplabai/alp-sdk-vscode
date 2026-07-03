@@ -76,9 +76,14 @@ jobs:
 
       - name: Set up cargo-zigbuild (Linux cross builds)
         if: matrix.zigbuild_target
-        # pipx (preinstalled on the runner) pulls the ziglang wheel with it, so
-        # no separate zig install; plain pip is blocked by PEP 668 on 24.04.
-        run: pipx install cargo-zigbuild
+        # Must be a pip --user install, NOT pipx: cargo-zigbuild finds zig via
+        # `zig` on PATH or `python3 -m ziglang`, and pipx isolates the ziglang
+        # wheel inside its venv where neither works ("Failed to find zig").
+        # --break-system-packages sidesteps PEP 668 on the 24.04 runner; the
+        # user site keeps ziglang importable by the system python3.
+        run: |
+          pip3 install --user --break-system-packages cargo-zigbuild
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Build (release, optimized profile)
         shell: bash
