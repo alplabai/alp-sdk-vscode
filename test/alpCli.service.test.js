@@ -123,12 +123,17 @@ test("classifyOutcome sets severity by kind and prefers the first issue", () => 
   assert.equal(classifyOutcome(3, null).severity, "error"); // write
 });
 
-test("releaseAssetForTarget mirrors the three published targets", () => {
+test("releaseAssetForTarget mirrors the published targets", () => {
   const linux = releaseAssetForTarget("linux", "x64");
   assert.equal(linux.target, "x86_64-unknown-linux-gnu");
   assert.equal(linux.tag, `cli-rs-v${SUPPORTED_CLI_VERSION}`);
   assert.ok(linux.url.endsWith("/alp-x86_64-unknown-linux-gnu.tar.gz"));
 
+  // arm64 Linux ships the static musl build (runs on glibc hosts too).
+  assert.equal(
+    releaseAssetForTarget("linux", "arm64").target,
+    "aarch64-unknown-linux-musl",
+  );
   assert.equal(
     releaseAssetForTarget("darwin", "arm64").target,
     "aarch64-apple-darwin",
