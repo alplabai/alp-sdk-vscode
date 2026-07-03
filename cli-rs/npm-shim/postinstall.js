@@ -22,6 +22,7 @@ function resolveTarget() {
   // `cargo build --release --manifest-path cli-rs/Cargo.toml`.
   const targets = {
     "linux/x64": "x86_64-unknown-linux-gnu",
+    "linux/arm64": "aarch64-unknown-linux-musl", // static — runs on glibc hosts too
     "darwin/arm64": "aarch64-apple-darwin",
     "win32/x64": "x86_64-pc-windows-msvc",
   };

@@ -15,7 +15,7 @@ import {
 
 /** The CLI version this extension build targets for download-on-demand. Must
  *  match a published `cli-rs-v<version>` release tag. */
-export const SUPPORTED_CLI_VERSION = "0.1.7";
+export const SUPPORTED_CLI_VERSION = "0.1.8";
 
 /** The repo whose GitHub releases host the prebuilt `alp` archives. */
 const RELEASE_REPO = "alplabai/alp-sdk-vscode";
@@ -24,6 +24,7 @@ const RELEASE_REPO = "alplabai/alp-sdk-vscode";
  *  Intel macOS (`darwin/x64`) has no prebuilt archive (build from source). */
 const TARGETS: Readonly<Record<string, string>> = {
   "linux/x64": "x86_64-unknown-linux-gnu",
+  "linux/arm64": "aarch64-unknown-linux-musl", // static — runs on glibc hosts too
   "darwin/arm64": "aarch64-apple-darwin",
   "win32/x64": "x86_64-pc-windows-msvc",
 };
