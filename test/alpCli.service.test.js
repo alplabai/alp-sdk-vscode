@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 
 const {
   decideBinarySource,
+  isNativeAlpVersionOutput,
   classifyExitCode,
   parseEnvelope,
   classifyOutcome,
@@ -151,4 +152,50 @@ test("binaryName is platform-specific", () => {
   assert.equal(binaryName("win32"), "alp.exe");
   assert.equal(binaryName("linux"), "alp");
   assert.equal(binaryName("darwin"), "alp");
+});
+
+test("isNativeAlpVersionOutput accepts native clap output, rejects the Python click CLI", () => {
+  // Native (Rust/clap): `alp <MAJOR.MINOR.PATCH>`.
+  for (const out of [
+    "alp 0.1.3",
+    "alp 0.1.6\n",
+    "alp 10.20.30",
+    "alp 0.2.0 (abc1234)", // tolerate a future build-metadata suffix
+    "  alp 0.1.3  ", // surrounding whitespace
+    "alp 0.1.3\r\n", // CRLF
+    "\nalp 0.1.3", // leading blank line
+  ]) {
+    assert.equal(
+      isNativeAlpVersionOutput(out),
+      true,
+      `expected native: ${JSON.stringify(out)}`,
+    );
+  }
+
+  // Upstream SDK's Python `alp` (click `version_option(prog_name="alp")`):
+  // `alp, version X` — the shadowing binary this check exists to reject.
+  for (const out of ["alp, version 0.8.1", "alp, version 0.8.1\n"]) {
+    assert.equal(
+      isNativeAlpVersionOutput(out),
+      false,
+      `expected click rejected: ${JSON.stringify(out)}`,
+    );
+  }
+
+  // Garbage / unrelated / partial → not the native CLI.
+  for (const out of [
+    "",
+    "   ",
+    "python 3.11.5",
+    "alpine 3.19", // must not partial-match the `alp` prefix
+    "alp", // name only, no version
+    "alp 0.1", // two components, not MAJOR.MINOR.PATCH
+    "usage: alp [OPTIONS]", // click help/error text
+  ]) {
+    assert.equal(
+      isNativeAlpVersionOutput(out),
+      false,
+      `expected rejected: ${JSON.stringify(out)}`,
+    );
+  }
 });
