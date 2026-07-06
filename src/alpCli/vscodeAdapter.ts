@@ -19,7 +19,7 @@ import {
   runAlp,
 } from "./adapterCore";
 import { CliOutcome } from "./models";
-import { binaryName } from "./service";
+import { binaryName, isNativeAlpVersionOutput } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log } from "../util";
 
@@ -224,8 +224,28 @@ function spawnAlp(command: string, args: string[], cwd?: string): SpawnResult {
 }
 
 function commandOnPath(command: string): boolean {
-  const probe = cp.spawnSync(command, ["--version"], { stdio: "ignore" });
-  return !probe.error;
+  const probe = cp.spawnSync(command, ["--version"], { encoding: "utf8" });
+  if (probe.error) {
+    return false;
+  }
+  // A runnable `alp` is not enough. The SDK's bootstrap.sh pip-installs a Python
+  // `alp` (click) into the workspace venv; with that venv active it shadows the
+  // native binary on PATH and exits 0 on `--version`, but it does not emit the
+  // JSON envelope — accepting it would make every envelope command silently fail
+  // (parseEnvelope → null). Verify identity from `--version` so a shadowing
+  // Python `alp` is treated as "not on PATH" and resolution falls through to the
+  // cached/downloaded native binary.
+  if (command === "alp" && !isNativeAlpVersionOutput(probe.stdout ?? "")) {
+    const found =
+      (probe.stdout ?? "").trim().split(/\r?\n/, 1)[0] ||
+      "(no --version output)";
+    log(
+      `alp on PATH is not the native CLI (found: ${found}); ` +
+        "using the cached/downloaded binary instead.",
+    );
+    return false;
+  }
+  return true;
 }
 
 function extractTarGz(archiveFile: string, destDir: string): Promise<void> {

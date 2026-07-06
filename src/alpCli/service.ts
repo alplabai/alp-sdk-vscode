@@ -15,7 +15,7 @@ import {
 
 /** The CLI version this extension build targets for download-on-demand. Must
  *  match a published `cli-rs-v<version>` release tag. */
-export const SUPPORTED_CLI_VERSION = "0.1.8";
+export const SUPPORTED_CLI_VERSION = "0.1.9";
 
 /** The repo whose GitHub releases host the prebuilt `alp` archives. */
 const RELEASE_REPO = "alplabai/alp-sdk-vscode";
@@ -53,6 +53,24 @@ export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
     return "cached";
   }
   return "download";
+}
+
+/**
+ * True when `alp --version` stdout is the NATIVE (Rust/clap) CLI — e.g.
+ * `alp 0.1.3`. Rejects the upstream SDK's Python `alp` (click), which prints
+ * `alp, version 0.8.1`: `bootstrap.sh` pip-installs that into the workspace
+ * venv, where — with the venv active — it shadows the native binary on PATH. It
+ * exits 0 on `--version` (so a plain runnable check passes) but does not emit
+ * the JSON envelope, so accepting it makes every envelope command silently fail
+ * (`parseEnvelope` → null). Callers treat a non-native PATH `alp` as "not on
+ * PATH" so resolution falls through to the cached/downloaded native binary.
+ *
+ * Version-agnostic (any MAJOR.MINOR.PATCH) and tolerant of a trailing suffix
+ * (e.g. a future `alp 0.2.0 (abc1234)`); only the first line is inspected.
+ */
+export function isNativeAlpVersionOutput(stdout: string): boolean {
+  const firstLine = stdout.trim().split(/\r?\n/, 1)[0] ?? "";
+  return /^alp \d+\.\d+\.\d+/.test(firstLine);
 }
 
 export function classifyExitCode(code: number): CliExitKind {

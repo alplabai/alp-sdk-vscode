@@ -43,6 +43,33 @@ The CLI should expose these top-level command families:
 - `alp support-bundle`
 - `alp debug-config`
 
+### 2.1 Relation to the SDK's `west alp-*` commands (two doors, one engine)
+
+The SDK registers its own west-extension commands (`west alp-build`, `alp-image`,
+`alp-flash`, `alp-clean`, `alp-renode`, and on newer SDKs `alp-emit`, `alp-size`).
+The name parity with this CLI is deliberate and is NOT a competing
+implementation:
+
+- **`alp X` is the portable counterpart of `west alp-X`.** For the overlapping
+  verbs (`build`/`image`/`flash`/`clean`/`renode`) the native CLI shells out to
+  the west command verbatim — orchestration logic lives in exactly one place,
+  the SDK's `alp_orchestrate` package. Inside a west workspace both doors work
+  and drive the same engine; the native door adds the JSON envelope, stable
+  exit codes, and works without the user knowing west.
+- **CLI-only verbs** (`validate`, `generate`, `init`, `scaffold`, `doctor`,
+  `diff`, `presets`, `inspect`, `trace`, `debug-config`, `support-bundle`,
+  `sdk`, `explain`, `completion`, `bootstrap`) have no west counterpart — they
+  are the schema/generate/inspect surface the IDE consumes via the envelope.
+- **West-only commands** (`alp-emit`, `alp-size`) are SDK-side inspectors; the
+  CLI consumes the same `--emit` seam internally (ADR-0014) instead of
+  wrapping `alp-emit`.
+
+Where a CLI verb re-implements domain logic natively (e.g. `validate
+--offline`, `diff`, the loader/context readers) instead of shelling out, that
+Rust↔Python↔TS parity surface is gated by the conformance harness
+(`cli-rs/contract/run.sh` + `offline-validate-ts.mjs`) — drift there is a test
+failure, not a runtime surprise.
+
 ## 3. Global Behavior
 
 ### 3.1 Common flags

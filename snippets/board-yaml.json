@@ -59,17 +59,16 @@
     ],
     "description": "Override the carrier preset's populated defaults (per-chip true/false)."
   },
-  "Per-core inference backend block (v2)": {
+  "Per-core inference tuning block (v2)": {
     "prefix": "alp-inference",
     "body": [
       "cores:",
       "  ${1:m55_hp}:",
       "    os: ${2|zephyr,baremetal|}",
       "    inference:",
-      "      backend: ${3|auto,cpu,ethos_u,drpai,deepx_dx|}",
-      "      default_arena_kib: ${4:128}"
+      "      default_arena_kib: ${3:128}"
     ],
-    "description": "Inference backend declared per-core inside the cores: block (schema v2). Use the canonical core ID that runs inference (e.g. m55_hp, m55_he)."
+    "description": "Per-core inference tuning inside the cores: block (schema v2). Only `default_arena_kib` is a board.yaml field — the NPU backend is picked at runtime via alp_inference_open(.backend=...), not declared here. Use the canonical core ID that runs inference (e.g. m55_hp, m55_he)."
   },
   "Per-core IoT feature toggles (v2)": {
     "prefix": "alp-iot",

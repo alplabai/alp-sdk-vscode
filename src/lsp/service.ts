@@ -5,6 +5,7 @@ import {
   parseBoardModel,
 } from "@alp-sdk/core/configurator/service";
 import { ProjectContext, ProjectSettings } from "@alp-sdk/core/project/models";
+import type { SdkCompletionCatalog } from "./sdkCatalog";
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   sdkPath: "",
@@ -310,11 +311,12 @@ export function createBoardYamlCompletionSuggestions(
   documentText: string,
   line: number,
   character: number,
+  catalog?: SdkCompletionCatalog,
 ): BoardYamlCompletionSuggestion[] {
   const lines = splitLines(documentText);
   const valueContext = resolveValueContext(lines, line, character);
   if (valueContext) {
-    const choices = resolveValueChoices(valueContext.path);
+    const choices = resolveValueChoices(valueContext.path, catalog);
     return toValueSuggestions(choices, valueContext.prefix);
   }
 
@@ -332,6 +334,7 @@ export function createBoardYamlHoverInfo(
   documentText: string,
   line: number,
   character: number,
+  catalog?: SdkCompletionCatalog,
 ): BoardYamlHoverInfo | null {
   const lines = splitLines(documentText);
   const path = resolvePathAtPosition(lines, line, character);
@@ -339,7 +342,17 @@ export function createBoardYamlHoverInfo(
     return null;
   }
 
-  return FIELD_DOCS[path] ?? null;
+  const info = FIELD_DOCS[path] ?? null;
+  if (info && catalog) {
+    // Show the active SDK's SKUs / libraries in hover, not the built-in list.
+    if (path === "som.sku" && catalog.skus.length > 0) {
+      return { ...info, allowedValues: catalog.skus };
+    }
+    if (path === "libraries[]" && catalog.libraries.length > 0) {
+      return { ...info, allowedValues: catalog.libraries };
+    }
+  }
+  return info;
 }
 
 export function createBoardYamlDocumentSymbols(
@@ -795,7 +808,21 @@ function resolveKeyChoices(
   return CHILD_KEYS[containerPath] ?? [];
 }
 
-function resolveValueChoices(path: string): readonly string[] {
+function resolveValueChoices(
+  path: string,
+  catalog?: SdkCompletionCatalog,
+): readonly string[] {
+  // Concrete value lists come from the selected SDK's metadata when scanned
+  // (see sdkCatalog.ts); fall back to the built-in defaults when no SDK is
+  // active or the scan is empty.
+  if (catalog) {
+    if (path === "som.sku" && catalog.skus.length > 0) {
+      return catalog.skus;
+    }
+    if (path === "libraries[]" && catalog.libraries.length > 0) {
+      return catalog.libraries;
+    }
+  }
   return VALUE_CHOICES[path] ?? [];
 }
 
