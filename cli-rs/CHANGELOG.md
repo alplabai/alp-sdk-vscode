@@ -12,6 +12,16 @@ same version.
 
 ## Unreleased
 
+## 0.1.10
+
+- **Added: `alp presets` now returns `boardLibraries`** — the ADR-0018 curated
+  libraries discovered from `<sdk>/metadata/libraries/*.yaml` (the values a
+  board.yaml top-level `libraries:` entry names). Additive: the existing
+  `libraries` field (built-in per-core `cores.<id>.libraries` token defaults) is
+  unchanged. Empty when the SDK root is unresolved. This makes the SDK's real
+  library set a single CLI-sourced surface for all consumers (IDE completion,
+  Studio) instead of a hardcoded/duplicated scan.
+
 ## 0.1.9
 
 - **Added: `alp generate --target carrier-netlist`.** The `generate` emit
