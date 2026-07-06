@@ -8,6 +8,8 @@ import {
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
+import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { catalogFromPresets } from "./sdkCatalog";
 
 let client: LanguageClient | undefined;
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
@@ -56,7 +58,36 @@ export function startLanguageServer(context: vscode.ExtensionContext): void {
     clientOptions,
   );
   context.subscriptions.push(client);
-  void client.start();
+  void client.start().then(() => pushSdkCatalog(context));
+
+  // Re-push the completion catalog whenever the active SDK / CLI path changes.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("alpSdk")) {
+        void pushSdkCatalog(context);
+      }
+    }),
+  );
+}
+
+/**
+ * Fetch the board.yaml completion catalog from `alp presets` (SKUs +
+ * `boardLibraries`) and push it to the language server via the
+ * `alp/updateSdkCatalog` notification. Best-effort: any CLI/SDK failure leaves
+ * the server on its previous (or empty) catalog, so completion degrades to the
+ * built-in defaults rather than erroring.
+ */
+async function pushSdkCatalog(context: vscode.ExtensionContext): Promise<void> {
+  if (!client) {
+    return;
+  }
+  try {
+    const { outcome } = await runAlpCommand(context, ["presets"]);
+    const catalog = catalogFromPresets(outcome.envelope?.data);
+    await client.sendNotification("alp/updateSdkCatalog", catalog);
+  } catch {
+    // Best-effort — the server keeps its current catalog.
+  }
 }
 
 export async function stopLanguageServer(): Promise<void> {

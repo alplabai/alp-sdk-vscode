@@ -72,10 +72,6 @@ const ISSUE_KEY_ALIASES: ReadonlyArray<{
     keys: ["som", "som_preset", "som-preset", "som_variant", "som-variant"],
   },
   {
-    pattern: /\bcarrier\b/i,
-    keys: ["carrier", "carrier_preset", "carrier-preset"],
-  },
-  {
     pattern: /\bhw[\s_-]*rev\b/i,
     keys: ["hw_rev", "hw-rev"],
   },
@@ -92,7 +88,8 @@ const ISSUE_KEY_ALIASES: ReadonlyArray<{
 const TOP_LEVEL_KEYS: readonly string[] = [
   "schema_version",
   "som",
-  "carrier",
+  "preset",
+  "populated",
   "os",
   "inference",
   "libraries",
@@ -102,7 +99,8 @@ const TOP_LEVEL_KEYS: readonly string[] = [
 const TOP_LEVEL_KEYS_V2: readonly string[] = [
   "schema_version",
   "som",
-  "carrier",
+  "preset",
+  "populated",
   "cores",
   "ipc",
   "inference",
@@ -113,28 +111,20 @@ const TOP_LEVEL_KEYS_V2: readonly string[] = [
 
 const CHILD_KEYS: Readonly<Record<string, readonly string[]>> = {
   som: ["sku"],
-  carrier: ["name", "populated"],
-  inference: ["backend", "default_arena_kib"],
+  inference: ["default_arena_kib"],
   iot: ["wifi", "mqtt", "ble", "tls"],
   diagnostics: ["last_error", "log_level"],
-  "carrier.populated": ["wifi", "mqtt", "ble", "tls"],
 };
 
 const VALUE_CHOICES: Readonly<Record<string, readonly string[]>> = {
   os: ["zephyr", "yocto", "baremetal"],
   "som.sku": ["E1M-AEN701"],
-  "carrier.name": ["E1M-EVK"],
-  "inference.backend": ["auto", "cpu", "ethos_u", "drpai", "deepx_dx"],
   "diagnostics.log_level": ["error", "warn", "info", "debug", "trace"],
   "diagnostics.last_error": ["true", "false"],
   "iot.wifi": ["true", "false"],
   "iot.mqtt": ["true", "false"],
   "iot.ble": ["true", "false"],
   "iot.tls": ["true", "false"],
-  "carrier.populated.wifi": ["true", "false"],
-  "carrier.populated.mqtt": ["true", "false"],
-  "carrier.populated.ble": ["true", "false"],
-  "carrier.populated.tls": ["true", "false"],
   "libraries[]": [
     "etl",
     "fmt",
@@ -174,19 +164,15 @@ const FIELD_DOCS: Readonly<Record<string, BoardYamlHoverInfo>> = {
     defaultValue: "E1M-AEN701",
     allowedValues: VALUE_CHOICES["som.sku"],
   },
-  carrier: {
-    title: "carrier",
-    description: "Carrier-board settings block.",
+  preset: {
+    title: "preset",
+    description:
+      "Reference to a shared board definition at metadata/boards/<preset>.yaml.",
   },
-  "carrier.name": {
-    title: "carrier.name",
-    description: "Selected carrier preset name.",
-    defaultValue: "E1M-EVK",
-    allowedValues: VALUE_CHOICES["carrier.name"],
-  },
-  "carrier.populated": {
-    title: "carrier.populated",
-    description: "Populated optional peripherals on the selected carrier.",
+  populated: {
+    title: "populated",
+    description:
+      "Inline board-side chip-driver / block-helper population (keys are chip/block names; each `true` enables the driver).",
   },
   os: {
     title: "os",
@@ -197,12 +183,6 @@ const FIELD_DOCS: Readonly<Record<string, BoardYamlHoverInfo>> = {
   inference: {
     title: "inference",
     description: "Inference runtime and memory configuration.",
-  },
-  "inference.backend": {
-    title: "inference.backend",
-    description: "Preferred inference backend.",
-    defaultValue: "auto",
-    allowedValues: VALUE_CHOICES["inference.backend"],
   },
   "inference.default_arena_kib": {
     title: "inference.default_arena_kib",
@@ -481,16 +461,6 @@ export function createBoardYamlQuickFixes(
     );
   }
 
-  if (message.includes("carrier") && !hasTopLevelKey(lines, "carrier")) {
-    fixes.push(
-      createAppendFix(
-        documentText,
-        "Add missing carrier.name block",
-        "carrier:\n  name: E1M-EVK\n",
-      ),
-    );
-  }
-
   // Only suggest adding os: for v1 documents; v2 uses cores: block
   if (!isV2 && message.includes("os") && !hasTopLevelKey(lines, "os")) {
     fixes.push(
@@ -548,16 +518,12 @@ function detectRelevantContextPaths(issueMessage: string): string[] {
     paths.push("som.sku");
   }
 
-  if (lowerMessage.includes("carrier")) {
-    paths.push("carrier.name");
-  }
-
   if (lowerMessage.includes("os")) {
     paths.push("os");
   }
 
   if (paths.length === 0) {
-    paths.push("som.sku", "carrier.name", "os");
+    paths.push("som.sku", "os");
   }
 
   return paths;
