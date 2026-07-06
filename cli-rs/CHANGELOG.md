@@ -12,6 +12,17 @@ same version.
 
 ## Unreleased
 
+## 0.1.11
+
+- **Added: `alp init --template zephyr-app`** — a real, west-buildable Zephyr
+  application scaffold (alplabai/alp-sdk-vscode#39). Emits a Zephyr `CMakeLists.txt`
+  that runs the SDK loader on board.yaml (`alp_project.py --emit zephyr-conf` →
+  `OVERLAY_CONFIG`), an intentionally-empty `prj.conf` (config is declarative in
+  board.yaml), and a hello-world `src/main.c` — mirroring the SDK's curated
+  `examples/peripheral-io/hello-world`. Unlike the plain-CMake starters it drops
+  `src/CMakeLists.txt` / `include/app` (Zephyr wires `target_sources(app …)`
+  directly), so Alp Studio can own scaffolding instead of copying the example tree.
+
 ## 0.1.10
 
 - **Added: `alp presets` now returns `boardLibraries`** — the ADR-0018 curated
