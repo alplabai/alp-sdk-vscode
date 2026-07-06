@@ -7,9 +7,6 @@
       "som:",
       "  sku: ${1|E1M-AEN301,E1M-AEN401,E1M-AEN501,E1M-AEN601,E1M-AEN701,E1M-AEN801,E1M-V2N101,E1M-V2N102,E1M-V2M101,E1M-V2M102,E1M-NX9101|}",
       "",
-      "carrier:",
-      "  name: ${2|E1M-EVK,E1M-X-EVK|}",
-      "",
       "cores:",
       "  ${3:a55_cluster}:",
       "    os: ${4|yocto,zephyr,baremetal,off|}",
@@ -27,9 +24,6 @@
       "",
       "som:",
       "  sku: ${1|E1M-V2N101,E1M-V2N102,E1M-AEN701,E1M-AEN801|}",
-      "",
-      "carrier:",
-      "  name: ${2|E1M-EVK,E1M-X-EVK|}",
       "",
       "cores:",
       "  ${3:a55_cluster}:",
@@ -49,15 +43,10 @@
     ],
     "description": "Heterogeneous dual-core board.yaml (schema v2): A-cluster (Yocto) + M-class (Zephyr) with RPMsg IPC carve-out."
   },
-  "Carrier populated-override block": {
-    "prefix": "alp-carrier-populated",
-    "body": [
-      "carrier:",
-      "  name: ${1|E1M-EVK,E1M-X-EVK|}",
-      "  populated:",
-      "    ${2:lsm6dso}: ${3|true,false|}"
-    ],
-    "description": "Override the carrier preset's populated defaults (per-chip true/false)."
+  "Board populated-override block": {
+    "prefix": "alp-populated",
+    "body": ["populated:", "  ${1:lsm6dso}: ${2|true,false|}"],
+    "description": "Top-level board-side chip/block population override (keys are chip/block names; per-entry true/false)."
   },
   "Per-core inference tuning block (v2)": {
     "prefix": "alp-inference",
