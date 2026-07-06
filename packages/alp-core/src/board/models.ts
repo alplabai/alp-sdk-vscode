@@ -183,6 +183,9 @@ export interface BoardConfig {
   e1m_routes?: E1mRoutes;
   pins?: PinRef[];
   chips?: string[];
+  /** Project-wide curated third-party libraries (ADR 0018), board.schema.json
+   * `libraries`. Distinct from the per-core `cores.<id>.libraries` token list. */
+  libraries?: string[];
   ipc?: IpcEntry[];
   diagnostics?: Diagnostics;
   storage?: StoragePartition[];
@@ -206,6 +209,7 @@ export const BOARD_KEY_ORDER: (keyof BoardConfig)[] = [
   "e1m_routes",
   "pins",
   "chips",
+  "libraries",
   "ipc",
   "diagnostics",
   "storage",
