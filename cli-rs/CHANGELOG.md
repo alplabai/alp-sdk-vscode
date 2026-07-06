@@ -12,6 +12,16 @@ same version.
 
 ## Unreleased
 
+## 0.1.9
+
+- **Added: `alp generate --target carrier-netlist`.** The `generate` emit
+  allowlist now includes `carrier-netlist`, the deterministic carrier netlist +
+  BOM handoff (written to `build/generated/carrier-netlist.json`) that Alp
+  Studio consumes for its netlist-first board export (alp-sdk#419). It is a
+  `generate`-only board export — deliberately not a `trace` / `support-bundle`
+  target, since a netlist is not part of a build. Requires an SDK checkout that
+  carries alp-sdk#419 at `--sdk-root`.
+
 ## 0.1.6
 
 - **Fixed: `alp init` error exit codes now match the contract.** Invalid
