@@ -11,6 +11,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WizardTemplateId {
     MinimalApp,
+    ZephyrApp,
     SensorStarter,
     IotStarter,
     EdgeAiStarter,
@@ -23,6 +24,7 @@ impl WizardTemplateId {
     pub fn as_str(self) -> &'static str {
         match self {
             WizardTemplateId::MinimalApp => "minimal-app",
+            WizardTemplateId::ZephyrApp => "zephyr-app",
             WizardTemplateId::SensorStarter => "sensor-starter",
             WizardTemplateId::IotStarter => "iot-starter",
             WizardTemplateId::EdgeAiStarter => "edge-ai-starter",
@@ -35,6 +37,7 @@ impl WizardTemplateId {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "minimal-app" => Some(WizardTemplateId::MinimalApp),
+            "zephyr-app" => Some(WizardTemplateId::ZephyrApp),
             "sensor-starter" => Some(WizardTemplateId::SensorStarter),
             "iot-starter" => Some(WizardTemplateId::IotStarter),
             "edge-ai-starter" => Some(WizardTemplateId::EdgeAiStarter),

@@ -32,6 +32,22 @@ static TEMPLATE_DEFINITIONS: &[WizardTemplateDefinition] = &[
         ],
     },
     WizardTemplateDefinition {
+        id: WizardTemplateId::ZephyrApp,
+        label: "Zephyr app",
+        description:
+            "West-buildable Zephyr application wired to board.yaml via the SDK loader.",
+        libs: &[],
+        features: None,
+        prj_conf_extras: &[],
+        feature_files: &[],
+        body_line1: "Alp SDK Zephyr app starting",
+        body_line2: "add your application logic",
+        explanation: &[
+            "Real Zephyr app: find_package(Zephyr) + board.yaml -> alp.conf via OVERLAY_CONFIG.",
+            "Build with `west build -b <board>` after `export ALP_SDK_ROOT=<your alp-sdk checkout>`.",
+        ],
+    },
+    WizardTemplateDefinition {
         id: WizardTemplateId::SensorStarter,
         label: "Sensor starter",
         description: "Sensor polling skeleton with diagnostics-friendly logging.",
@@ -295,6 +311,13 @@ fn gen_c_project_files(
     som_sku: Option<&str>,
     cores: &[(String, String)],
 ) -> Vec<WizardPlannedFile> {
+    // The zephyr-app template emits a real, west-buildable Zephyr scaffold
+    // (find_package(Zephyr) + board.yaml -> OVERLAY_CONFIG) instead of the
+    // plain-CMake starter the other templates share.
+    if def.id == WizardTemplateId::ZephyrApp {
+        return gen_zephyr_project_files(def, som_sku, cores);
+    }
+
     let mut files = vec![
         WizardPlannedFile {
             relative_path: "board.yaml".to_string(),
@@ -341,6 +364,115 @@ fn gen_c_project_files(
     }
 
     files
+}
+
+/// Emit the west-buildable Zephyr scaffold for the `zephyr-app` template: a real
+/// Zephyr `CMakeLists.txt` that runs the SDK loader on board.yaml
+/// (`alp_project.py --emit zephyr-conf` -> `OVERLAY_CONFIG`), an intentionally
+/// empty `prj.conf` (config is declarative in board.yaml), and a hello-world
+/// `src/main.c`. No `src/CMakeLists.txt` / `include/app` (Zephyr wires
+/// `target_sources(app ...)` directly). Mirrors the SDK's curated
+/// `examples/peripheral-io/hello-world`.
+fn gen_zephyr_project_files(
+    def: &WizardTemplateDefinition,
+    som_sku: Option<&str>,
+    cores: &[(String, String)],
+) -> Vec<WizardPlannedFile> {
+    vec![
+        WizardPlannedFile {
+            relative_path: "board.yaml".to_string(),
+            content: gen_board_yaml(def, som_sku, cores),
+        },
+        WizardPlannedFile {
+            relative_path: "README.md".to_string(),
+            content: gen_readme(def, som_sku),
+        },
+        WizardPlannedFile {
+            relative_path: "prj.conf".to_string(),
+            content: gen_zephyr_prj_conf(),
+        },
+        WizardPlannedFile {
+            relative_path: "CMakeLists.txt".to_string(),
+            content: gen_zephyr_cmake(),
+        },
+        WizardPlannedFile {
+            relative_path: "src/main.c".to_string(),
+            content: gen_zephyr_main_c(),
+        },
+    ]
+}
+
+fn gen_zephyr_cmake() -> String {
+    r#"# SPDX-License-Identifier: Apache-2.0
+
+cmake_minimum_required(VERSION 3.20)
+
+# A scaffolded project lives outside the SDK tree, so ALP_SDK_ROOT must point at
+# your alp-sdk checkout: `export ALP_SDK_ROOT=/path/to/alp-sdk`.
+if(DEFINED ENV{ALP_SDK_ROOT})
+    set(ALP_SDK_ROOT $ENV{ALP_SDK_ROOT})
+else()
+    message(FATAL_ERROR "ALP_SDK_ROOT is not set. Point it at your alp-sdk checkout.")
+endif()
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+# Derive CONFIG_* from board.yaml via the SDK loader, before Zephyr config.
+set(_alp_generated ${CMAKE_BINARY_DIR}/generated/alp.conf)
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} ${ALP_SDK_ROOT}/scripts/alp_project.py
+            --input ${CMAKE_CURRENT_SOURCE_DIR}/board.yaml
+            --emit zephyr-conf
+            --output ${_alp_generated}
+    RESULT_VARIABLE _alp_rv
+    ERROR_VARIABLE _alp_stderr
+)
+if(NOT _alp_rv EQUAL 0)
+    message(FATAL_ERROR "alp_project.py failed (rv=${_alp_rv}); check board.yaml.\nstderr: ${_alp_stderr}")
+endif()
+
+# Layer the generated CONFIG_* over prj.conf via OVERLAY_CONFIG.
+list(APPEND OVERLAY_CONFIG ${_alp_generated})
+
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(alp_app LANGUAGES C)
+
+target_sources(app PRIVATE src/main.c)
+"#
+    .to_string()
+}
+
+fn gen_zephyr_prj_conf() -> String {
+    r#"# SPDX-License-Identifier: Apache-2.0
+#
+# Intentionally empty. Every CONFIG_* this app needs is derived from board.yaml
+# by scripts/alp_project.py and layered in via OVERLAY_CONFIG (see CMakeLists.txt).
+# Add app-specific tuning knobs here only when they are NOT feature-selection --
+# everything declarative belongs in board.yaml.
+"#
+    .to_string()
+}
+
+fn gen_zephyr_main_c() -> String {
+    r#"/* SPDX-License-Identifier: Apache-2.0 */
+
+#include <zephyr/kernel.h>
+#include <stdio.h>
+
+int main(void)
+{
+    printf("[app] Alp SDK Zephyr app starting\n");
+
+    for (int tick = 0; tick < 5; tick++) {
+        printf("[app] tick %d\n", tick);
+        k_msleep(500);
+    }
+
+    printf("[app] done\n");
+    return 0;
+}
+"#
+    .to_string()
 }
 
 /// Canonical Zephyr app-core id for a SoM family, taken from the SoM preset's
@@ -801,8 +933,33 @@ mod tests {
     }
 
     #[test]
-    fn list_templates_has_six_entries() {
-        assert_eq!(list_wizard_templates().len(), 6);
+    fn list_templates_has_seven_entries() {
+        assert_eq!(list_wizard_templates().len(), 7);
+    }
+
+    #[test]
+    fn zephyr_app_scaffold_is_west_buildable() {
+        let plan = create_wizard_plan(&WizardPlanInput {
+            template_id: WizardTemplateId::ZephyrApp,
+            project_name: "zdemo".to_string(),
+            destination: ".".to_string(),
+            som_sku: Some("E1M-AEN701".to_string()),
+        });
+        let by_path = |p: &str| {
+            plan.files
+                .iter()
+                .find(|f| f.relative_path == p)
+                .map(|f| f.content.as_str())
+        };
+        let cmake = by_path("CMakeLists.txt").expect("CMakeLists.txt is generated");
+        assert!(cmake.contains("find_package(Zephyr REQUIRED"));
+        assert!(cmake.contains("--emit zephyr-conf"));
+        assert!(cmake.contains("OVERLAY_CONFIG"));
+        assert!(cmake.contains("target_sources(app PRIVATE src/main.c)"));
+        // Zephyr wires target_sources directly -- no plain-CMake src/CMakeLists.txt.
+        assert!(by_path("src/CMakeLists.txt").is_none());
+        assert!(by_path("src/main.c").is_some());
+        assert!(by_path("board.yaml").is_some());
     }
 
     #[test]
