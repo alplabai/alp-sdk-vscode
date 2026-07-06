@@ -11,7 +11,20 @@ use crate::exit::ExitCode;
 
 /// Every supported `--emit` mode, used as the default target set when neither
 /// `--target` nor `--all` narrows the selection.
-const ALL_EMIT_MODES: [&str; 4] = ["zephyr-conf", "dts-overlay", "cmake-args", "yocto-conf"];
+///
+/// `carrier-netlist` is a board-level export — the deterministic carrier
+/// netlist + BOM handoff Alp Studio consumes (alp-sdk#419) — not a per-core
+/// build config like the other four. It is intentionally a `generate` target
+/// only: it is NOT in `alp_core::ALL_EMIT_MODES` (the set `trace` /
+/// `support-bundle` enumerate), because those model the *build* generation a
+/// slice runs, and a netlist is not part of a build.
+const ALL_EMIT_MODES: [&str; 5] = [
+    "zephyr-conf",
+    "dts-overlay",
+    "cmake-args",
+    "yocto-conf",
+    "carrier-netlist",
+];
 
 /// JSON `data` payload for the `generate` envelope.
 #[derive(serde::Serialize)]
@@ -232,6 +245,7 @@ fn output_path_for_emit(workspace_root: &Path, emit: &str) -> PathBuf {
         "dts-overlay" => "alp.overlay",
         "cmake-args" => "alp-cmake-args.txt",
         "yocto-conf" => "alp-yocto.conf",
+        "carrier-netlist" => "carrier-netlist.json",
         _ => "alp.out",
     };
 
@@ -340,5 +354,19 @@ mod tests {
     fn target_resolution_rejects_unknown_target() {
         let err = resolve_generate_targets(Some("unknown"), false).unwrap_err();
         assert!(err.contains("Unsupported generate target"));
+    }
+
+    #[test]
+    fn target_resolution_accepts_carrier_netlist() {
+        // The Studio netlist handoff (alp-sdk#419) must reach the SDK spawn,
+        // not be rejected at the allowlist. See ALL_EMIT_MODES.
+        let resolved = resolve_generate_targets(Some("carrier-netlist"), false).unwrap();
+        assert_eq!(resolved, vec!["carrier-netlist"]);
+    }
+
+    #[test]
+    fn carrier_netlist_writes_a_json_artefact() {
+        let path = output_path_for_emit(Path::new("/ws"), "carrier-netlist");
+        assert!(path.ends_with("build/generated/carrier-netlist.json"));
     }
 }
