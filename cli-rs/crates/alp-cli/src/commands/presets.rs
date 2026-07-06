@@ -69,8 +69,15 @@ struct PresetsData {
     soms: Vec<SomEntry>,
     /// Carrier presets discovered from `<sdk>/metadata/carriers`.
     carriers: Vec<CarrierEntry>,
-    /// Built-in library defaults from `empty_preset_catalogue`.
+    /// Built-in library defaults from `empty_preset_catalogue` (the per-core
+    /// `cores.<id>.libraries` token set).
     libraries: Vec<String>,
+    /// ADR-0018 curated libraries discovered from
+    /// `<sdk>/metadata/libraries/*.yaml` — the values a board.yaml top-level
+    /// `libraries:` entry names (distinct from the per-core `libraries` tokens
+    /// above). Empty when the SDK root is unresolved.
+    #[serde(rename = "boardLibraries")]
+    board_libraries: Vec<String>,
     /// Built-in inference-backend defaults.
     #[serde(rename = "inferenceBackends")]
     inference_backends: Vec<String>,
@@ -89,9 +96,13 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
     let context = resolve_cli_project_context(g);
     let defaults = empty_preset_catalogue();
 
-    let (soms, carriers) = match &context.sdk_root {
-        Some(root) => (read_soms(root), read_carriers(root)),
-        None => (Vec::new(), Vec::new()),
+    let (soms, carriers, board_libraries) = match &context.sdk_root {
+        Some(root) => (
+            read_soms(root),
+            read_carriers(root),
+            read_board_libraries(root),
+        ),
+        None => (Vec::new(), Vec::new(), Vec::new()),
     };
     let skus: Vec<String> = soms.iter().map(|s| s.sku.clone()).collect();
 
@@ -113,6 +124,7 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
         soms,
         carriers,
         libraries: defaults.libraries,
+        board_libraries,
         inference_backends: defaults.inference_backends,
         log_levels: defaults.log_levels,
         os_choices: defaults.os_choices,
@@ -231,14 +243,40 @@ fn read_carriers(sdk_root: &str) -> Vec<CarrierEntry> {
     carriers
 }
 
+/// Discover the ADR-0018 curated libraries from `<sdk>/metadata/libraries`: the
+/// stem of each `<name>.yaml` manifest (`README*` + non-yaml entries skipped),
+/// sorted + de-duplicated. These are the values a board.yaml top-level
+/// `libraries:` entry names — distinct from the built-in per-core token
+/// defaults in `libraries`.
+fn read_board_libraries(sdk_root: &str) -> Vec<String> {
+    let dir = Path::new(sdk_root).join("metadata").join("libraries");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".yaml") || name.to_ascii_lowercase().starts_with("readme") {
+                return None;
+            }
+            Some(name.trim_end_matches(".yaml").to_string())
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// Render the human-readable (non-JSON) output lines: a summary count line,
 /// plus per-SKU and per-carrier lines when `g.verbose` is set.
 fn presets_text(data: &PresetsData, g: &GlobalArgs) -> Vec<String> {
     let mut lines = vec![format!(
-        "presets: skus={} carriers={} libraries={}",
+        "presets: skus={} carriers={} libraries={} boardLibraries={}",
         data.skus.len(),
         data.carriers.len(),
-        data.libraries.len()
+        data.libraries.len(),
+        data.board_libraries.len()
     )];
     if g.verbose {
         for sku in &data.skus {
@@ -249,4 +287,22 @@ fn presets_text(data: &PresetsData, g: &GlobalArgs) -> Vec<String> {
         }
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FIXTURE_SDK: &str =
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../contract/fixtures/presets/sdk-present");
+
+    #[test]
+    fn read_board_libraries_lists_yaml_stems_sorted_and_skips_readme() {
+        assert_eq!(read_board_libraries(FIXTURE_SDK), vec!["aws-iot", "lvgl"]);
+    }
+
+    #[test]
+    fn read_board_libraries_empty_when_dir_missing() {
+        assert!(read_board_libraries("/no/such/sdk/root").is_empty());
+    }
 }
