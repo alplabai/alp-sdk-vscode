@@ -57,7 +57,7 @@ test("createIssueRange maps som-related validator messages to som line", () => {
   const documentText = [
     "project:",
     "  som: E1M-NX1234",
-    "  carrier: C1",
+    "  preset: C1",
     "  hw_rev: r1",
   ].join("\n");
 
@@ -76,7 +76,7 @@ test("createIssueRange maps explicit hw_rev field failures", () => {
   const documentText = [
     "project:",
     "  som: E1M-NX1234",
-    "  carrier: C1",
+    "  preset: C1",
     "  hw_rev: r1",
   ].join("\n");
 
@@ -125,8 +125,8 @@ test("createBoardYamlCompletionSuggestions suggests nested keys", () => {
   const suggestions = createBoardYamlCompletionSuggestions(documentText, 1, 2);
   const labels = suggestions.map((item) => item.label);
 
-  assert(labels.includes("backend"));
-  assert(labels.includes("default_arena_kib"));
+  // `backend` is NOT a board.yaml field (runtime-only) — only arena tuning is.
+  assert.deepEqual(labels, ["default_arena_kib"]);
 });
 
 test("createBoardYamlHoverInfo returns docs for core fields", () => {
@@ -194,12 +194,11 @@ test("createBoardYamlQuickFixes does not suggest som block when present", () => 
 test("createBoardYamlQuickFixes can suggest multiple missing fields", () => {
   const fixes = createBoardYamlQuickFixes(
     "schema_version: 1\n",
-    "FAIL som carrier os mismatch",
+    "FAIL som os mismatch",
   );
 
   const titles = fixes.map((item) => item.title);
   assert(titles.includes("Add missing som.sku block"));
-  assert(titles.includes("Add missing carrier.name block"));
   assert(titles.includes("Add missing os field"));
 });
 
@@ -236,13 +235,7 @@ test("createEffectiveConfigPreviewPayload returns normalized config with context
 test("createDiagnosticMessageWithContext enriches issue with effective context", () => {
   const message = createDiagnosticMessageWithContext(
     "FAIL som preset: missing preset",
-    [
-      "som:",
-      "  sku: E1M-AEN701",
-      "carrier:",
-      "  name: E1M-EVK",
-      "os: zephyr",
-    ].join("\n"),
+    ["som:", "  sku: E1M-AEN701", "preset: E1M-EVK", "os: zephyr"].join("\n"),
   );
 
   assert.match(message, /^FAIL som preset: missing preset/m);
