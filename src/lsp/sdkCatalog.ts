@@ -1,72 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Derives the concrete board.yaml value lists the LSP completes against — SoM
-// SKUs and curated libraries — from the SELECTED SDK's P/M/T metadata rather
-// than a hardcoded table, so the lists track whatever SDK is active. The scan
-// is run once per activation / SDK switch and cached by the server (see
-// server.ts); it never runs per document open.
+// The board.yaml completion catalog — the concrete value lists (SoM SKUs, ADR-0018
+// libraries) the LSP completes against. It is sourced from `alp presets` (the
+// single CLI surface for the active SDK's metadata) and pushed to the LSP server
+// by the client (see client.ts); there is no direct metadata scan here, so the
+// CLI is the one source shared with the New Project flow, the Configurator, and
+// Alp Studio.
 
-import * as fs from "fs";
-import * as path from "path";
-
-/** Concrete value lists derived from an SDK's `metadata/`, fed to board.yaml
- *  completion/hover so `som.sku` / `libraries[]` reflect the active SDK. */
+/** Concrete value lists derived from the active SDK via `alp presets`. */
 export interface SdkCompletionCatalog {
-  /** SoM SKUs, one per `metadata/e1m_modules/<SKU>.yaml`. */
+  /** SoM SKUs (`alp presets` `soms[].sku`). */
   skus: readonly string[];
-  /** Curated library names, one per `metadata/libraries/<name>.yaml`. */
+  /** ADR-0018 board libraries (`alp presets` `boardLibraries`). */
   libraries: readonly string[];
 }
 
-/** The degraded catalog used before the first scan / when no SDK is selected. */
+/** The degraded catalog used before the first push / when no SDK (or CLI) is
+ *  available — completion then falls back to the built-in defaults. */
 export const EMPTY_SDK_CATALOG: SdkCompletionCatalog = {
   skus: [],
   libraries: [],
 };
 
-/** Map metadata directory listings to a catalog. Pure (no fs): a file
- *  `E1M-AEN701.yaml` yields the SKU `E1M-AEN701`; non-`.yaml` and `README*`
- *  entries are dropped, and the result is sorted + de-duplicated. */
-export function deriveSdkCatalog(
-  e1mModuleFiles: readonly string[],
-  libraryFiles: readonly string[],
-): SdkCompletionCatalog {
-  return {
-    skus: yamlStems(e1mModuleFiles),
-    libraries: yamlStems(libraryFiles),
-  };
+/** The subset of the `alp presets` envelope `data` payload the catalog needs. */
+interface PresetsData {
+  soms?: { sku?: string }[];
+  boardLibraries?: string[];
 }
 
-function yamlStems(files: readonly string[]): string[] {
-  const stems = files
-    .filter(
-      (name) =>
-        name.endsWith(".yaml") && !name.toLowerCase().startsWith("readme"),
-    )
-    .map((name) => name.slice(0, -".yaml".length));
-  return [...new Set(stems)].sort();
-}
-
-/** Scan `<sdkRoot>/metadata/{e1m_modules,libraries}` for the completion catalog.
- *  A missing SDK, missing dirs, or an unreadable tree degrades to empty lists —
- *  this never throws (the LSP falls back to its built-in defaults). */
-export function scanSdkCompletionCatalog(
-  sdkRoot: string | null | undefined,
-): SdkCompletionCatalog {
-  if (!sdkRoot) {
-    return EMPTY_SDK_CATALOG;
-  }
-  const metadata = path.join(sdkRoot, "metadata");
-  return deriveSdkCatalog(
-    readDirSafe(path.join(metadata, "e1m_modules")),
-    readDirSafe(path.join(metadata, "libraries")),
+/** Build the completion catalog from an `alp presets` `data` payload. Pure +
+ *  tolerant: a missing/degenerate payload (or an old CLI without
+ *  `boardLibraries`) collapses to empty lists rather than throwing. */
+export function catalogFromPresets(data: unknown): SdkCompletionCatalog {
+  const payload = (data ?? {}) as PresetsData;
+  const skus = (payload.soms ?? [])
+    .map((som) => som?.sku)
+    .filter((sku): sku is string => typeof sku === "string" && sku.length > 0);
+  const libraries = (payload.boardLibraries ?? []).filter(
+    (name): name is string => typeof name === "string" && name.length > 0,
   );
-}
-
-function readDirSafe(dir: string): string[] {
-  try {
-    return fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
+  return { skus, libraries };
 }
