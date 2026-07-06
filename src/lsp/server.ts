@@ -2,7 +2,7 @@
 
 import * as cp from "child_process";
 import * as fs from "fs";
-import { fileURLToPath, pathToFileURL } from "url";
+import { fileURLToPath } from "url";
 import {
   CodeAction,
   CodeActionKind,
@@ -55,11 +55,7 @@ import {
   isPrjConfPath,
   lintPrjConf,
 } from "./kconfig";
-import {
-  EMPTY_SDK_CATALOG,
-  scanSdkCompletionCatalog,
-  SdkCompletionCatalog,
-} from "./sdkCatalog";
+import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
 
@@ -68,33 +64,18 @@ let hasConfigurationCapability = false;
 let workspaceFolderPaths: string[] = [];
 const documentCache = new Map<string, string>();
 
-// Concrete completion value lists (SoM SKUs, curated libraries) scanned once
-// from the selected SDK's metadata and cached — refreshed on activation and on
-// SDK switch (config change), never per document open. See sdkCatalog.ts.
+// The board.yaml completion catalog (SoM SKUs + libraries). The client pushes it
+// from `alp presets` (the single CLI source — see client.ts) via the
+// `alp/updateSdkCatalog` notification; before the first push it stays empty and
+// completion falls back to the built-in defaults in service.ts.
 let sdkCatalog: SdkCompletionCatalog = EMPTY_SDK_CATALOG;
 
-async function refreshSdkCatalog(): Promise<void> {
-  // Never rejects: any failure (config read, resolution) degrades to the empty
-  // catalog so the fire-and-forget callers can't raise an unhandled rejection.
-  try {
-    const scopeUri =
-      workspaceFolderPaths.length > 0
-        ? pathToFileURL(workspaceFolderPaths[0]).toString()
-        : "";
-    const settings = await readProjectSettings(scopeUri);
-    const context = resolveProjectContext(
-      {
-        workspaceFolders: workspaceFolderPaths,
-        settings,
-        platform: process.platform,
-      },
-      fs.existsSync,
-    );
-    sdkCatalog = scanSdkCompletionCatalog(context.sdkRoot);
-  } catch {
-    sdkCatalog = EMPTY_SDK_CATALOG;
-  }
-}
+connection.onNotification(
+  "alp/updateSdkCatalog",
+  (catalog: SdkCompletionCatalog | null) => {
+    sdkCatalog = catalog ?? EMPTY_SDK_CATALOG;
+  },
+);
 
 connection.onInitialize((params: InitializeParams): InitializeResult => {
   hasConfigurationCapability = Boolean(
@@ -132,15 +113,6 @@ connection.onInitialized(() => {
     );
   }
 
-  // Scan the selected SDK's metadata once now, and again whenever the active
-  // SDK setting changes — so completion tracks the SDK without re-scanning per
-  // document open.
-  void refreshSdkCatalog();
-
-  connection.onDidChangeConfiguration(() => {
-    void refreshSdkCatalog();
-  });
-
   connection.workspace.onDidChangeWorkspaceFolders((event) => {
     const removed = new Set(
       event.removed
@@ -158,8 +130,6 @@ connection.onInitialized(() => {
         workspaceFolderPaths.push(folderPath);
       }
     }
-
-    void refreshSdkCatalog();
   });
 
   connection.onDidOpenTextDocument((params) => {
