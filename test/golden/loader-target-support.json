@@ -18,6 +18,15 @@
     }
   },
   {
+    "emit": "native-sim-overlay",
+    "displayName": "native_sim overlay",
+    "outputRelativePath": "boards/native_sim_native_64.overlay",
+    "preview": {
+      "label": "native_sim overlay preview",
+      "languageId": "dts"
+    }
+  },
+  {
     "emit": "cmake-args",
     "displayName": "CMake args",
     "outputRelativePath": "build/generated/alp-cmake-args.txt",

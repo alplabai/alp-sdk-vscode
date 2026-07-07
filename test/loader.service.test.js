@@ -60,11 +60,17 @@ test("listGenerationTargetSupport exposes all supported targets with preview met
 
   assert.deepEqual(
     targets.map((target) => target.emit),
-    ["zephyr-conf", "dts-overlay", "cmake-args", "yocto-conf"],
+    [
+      "zephyr-conf",
+      "dts-overlay",
+      "native-sim-overlay",
+      "cmake-args",
+      "yocto-conf",
+    ],
   );
   assert.deepEqual(
     targets.map((target) => target.preview.languageId),
-    ["properties", "dts", "plaintext", "properties"],
+    ["properties", "dts", "dts", "plaintext", "properties"],
   );
 });
 
