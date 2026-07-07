@@ -12,6 +12,16 @@ same version.
 
 ## Unreleased
 
+## 0.1.12
+
+- **Changed: `alp init --board-yaml <path>`** now emits the caller's board.yaml
+  verbatim instead of the generated stub, for every template that produces one. A
+  missing/unreadable path fails with `init.board-yaml-unreadable`, and pairing the
+  flag with a template that emits no board.yaml (`host-tooling-starter`) fails with
+  `init.board-yaml-unsupported` — both exit 2, before any file is written, so the
+  caller's file is never silently dropped. This lets Alp Studio pass a
+  fully-resolved board.yaml through `alp init` (alplabai/alp-sdk-vscode#64, gap 1).
+
 ## 0.1.11
 
 - **Added: `alp init --template zephyr-app`** — a real, west-buildable Zephyr
