@@ -15,6 +15,10 @@ import {
 } from "./wizard";
 import { registerProjectView } from "./projectView";
 import { registerHardwareExplorerCommand } from "./hardwareExplorerPanel";
+import {
+    maybeOfferSdkConnect,
+    registerSdkConnectCommand,
+} from "./sdkConnect";
 import { registerSdkStatusCommands } from "./sdkStatus";
 import { registerToolchainCommands } from "./toolchain";
 import { registerOnboardingCommands } from "./onboarding";
@@ -34,12 +38,14 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerDebugCommands(),
     ...registerProjectView(),
     registerHardwareExplorerCommand(context),
+    registerSdkConnectCommand(),
     ...registerSdkStatusCommands(),
     ...registerToolchainCommands(context),
     ...registerOnboardingCommands(),
     ...registerGeneratedConfigCommands(),
   );
 
+  void maybeOfferSdkConnect(context);
   void maybeOfferFirstRunWizard(context);
 }
 
