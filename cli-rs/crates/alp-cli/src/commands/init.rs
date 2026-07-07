@@ -119,7 +119,7 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
             ),
         );
     }
-    let plan = create_wizard_plan_with_cores(
+    let mut plan = create_wizard_plan_with_cores(
         &WizardPlanInput {
             template_id,
             project_name: name.clone(),
@@ -128,6 +128,45 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         },
         &cores,
     );
+
+    // 5b. Honor --board-yaml: emit the caller's board.yaml verbatim instead of the
+    // generated stub. This lets Alp Studio adopt `alp init` as its project render --
+    // it passes a fully-resolved board.yaml and expects it copied through untouched
+    // (alp-sdk-vscode#64). Templates that emit no board.yaml (host-tooling-starter)
+    // have nothing to override, so pairing them with --board-yaml is a hard error
+    // rather than a silent no-op that would drop the caller's file.
+    if let Some(path) = g.board_yaml.as_deref() {
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                let mut applied = false;
+                for file in plan.files.iter_mut() {
+                    if file.relative_path == "board.yaml" {
+                        file.content = content.clone();
+                        applied = true;
+                    }
+                }
+                if !applied {
+                    return error_run(
+                        g,
+                        ExitCode::ValidationFailure,
+                        "init.board-yaml-unsupported",
+                        &format!(
+                            "--board-yaml was given but template '{}' emits no board.yaml to override.",
+                            template_id.as_str()
+                        ),
+                    );
+                }
+            }
+            Err(err) => {
+                return error_run(
+                    g,
+                    ExitCode::ValidationFailure,
+                    "init.board-yaml-unreadable",
+                    &format!("--board-yaml '{path}' could not be read: {err}"),
+                );
+            }
+        }
+    }
 
     // 6. Collect file changes.
     let changes = collect_wizard_file_changes(&project_root, &plan.files);

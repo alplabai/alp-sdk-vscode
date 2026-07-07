@@ -14,13 +14,15 @@ use crate::exit::ExitCode;
 ///
 /// `carrier-netlist` is a board-level export — the deterministic carrier
 /// netlist + BOM handoff Alp Studio consumes (alp-sdk#419) — not a per-core
-/// build config like the other four. It is intentionally a `generate` target
-/// only: it is NOT in `alp_core::ALL_EMIT_MODES` (the set `trace` /
-/// `support-bundle` enumerate), because those model the *build* generation a
-/// slice runs, and a netlist is not part of a build.
-const ALL_EMIT_MODES: [&str; 5] = [
+/// build config. `native-sim-overlay` is a Zephyr board overlay (the canonical
+/// `alp,pin-array` on `zephyr,gpio-emul`) that makes a GPIO app resolve under
+/// `native_sim`. Both are intentionally `generate` targets only: neither is in
+/// `alp_core::ALL_EMIT_MODES` (the set `trace` / `support-bundle` enumerate),
+/// because those model the *build* generation a slice runs.
+const ALL_EMIT_MODES: [&str; 6] = [
     "zephyr-conf",
     "dts-overlay",
+    "native-sim-overlay",
     "cmake-args",
     "yocto-conf",
     "carrier-netlist",
@@ -238,8 +240,18 @@ fn resolve_generate_targets(target: Option<&str>, all: bool) -> Result<Vec<&'sta
     Err(format!("Unsupported generate target '{target}'."))
 }
 
-/// Map an emit mode to its output file under `<workspace_root>/build/generated/`.
+/// Map an emit mode to its output file. Most land under
+/// `<workspace_root>/build/generated/` (ephemeral build artifacts), but the
+/// `native_sim` overlay is a Zephyr board overlay: it must live at
+/// `boards/native_sim_native_64.overlay` in the app source tree so
+/// `west build -b native_sim/native/64` auto-discovers it.
 fn output_path_for_emit(workspace_root: &Path, emit: &str) -> PathBuf {
+    if emit == "native-sim-overlay" {
+        return workspace_root
+            .join("boards")
+            .join("native_sim_native_64.overlay");
+    }
+
     let file_name = match emit {
         "zephyr-conf" => "alp.conf",
         "dts-overlay" => "alp.overlay",
@@ -368,5 +380,21 @@ mod tests {
     fn carrier_netlist_writes_a_json_artefact() {
         let path = output_path_for_emit(Path::new("/ws"), "carrier-netlist");
         assert!(path.ends_with("build/generated/carrier-netlist.json"));
+    }
+
+    #[test]
+    fn target_resolution_accepts_native_sim_overlay() {
+        // The native_sim overlay emit (alp-sdk#438) must reach the SDK spawn.
+        let resolved = resolve_generate_targets(Some("native-sim-overlay"), false).unwrap();
+        assert_eq!(resolved, vec!["native-sim-overlay"]);
+    }
+
+    #[test]
+    fn native_sim_overlay_writes_a_board_overlay() {
+        // Zephyr auto-discovers boards/<board>.overlay in the app source tree,
+        // NOT build/generated -- so `west build -b native_sim/native/64` picks
+        // it up and native_sim GPIO resolves.
+        let path = output_path_for_emit(Path::new("/ws"), "native-sim-overlay");
+        assert!(path.ends_with("boards/native_sim_native_64.overlay"));
     }
 }
