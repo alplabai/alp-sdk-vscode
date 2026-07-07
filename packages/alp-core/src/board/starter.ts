@@ -16,8 +16,17 @@ export function buildStarterBoardConfig(sku: string, coreIds: string[]): BoardCo
     cores[id] = index === 0 ? { os: "zephyr", app: "app" } : { os: "off" };
   });
   return {
-    name: `${sku} project`,
+    name: boardNameFromSku(sku),
     som: { sku },
     cores,
   };
+}
+
+function boardNameFromSku(sku: string): string {
+  const stem = sku
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const safeStem = /^[A-Za-z]/.test(stem) ? stem : `board_${stem || "project"}`;
+  return `${safeStem}_project`;
 }
