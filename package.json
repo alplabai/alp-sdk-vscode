@@ -134,6 +134,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.generateNativeSimOverlay",
+        "title": "Alp: Generate native_sim overlay (native-sim-overlay)",
+        "category": "Alp"
+      },
+      {
         "command": "alp.generateCmakeArgs",
         "title": "Alp: Generate alp-cmake-args.txt (cmake-args)",
         "category": "Alp"

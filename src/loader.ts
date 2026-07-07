@@ -168,6 +168,9 @@ export function registerLoaderCommands(
     vscode.commands.registerCommand("alp.generateDtsOverlay", () =>
       runLoader(context, "dts-overlay"),
     ),
+    vscode.commands.registerCommand("alp.generateNativeSimOverlay", () =>
+      runLoader(context, "native-sim-overlay"),
+    ),
     vscode.commands.registerCommand("alp.generateCmakeArgs", () =>
       runLoader(context, "cmake-args"),
     ),
