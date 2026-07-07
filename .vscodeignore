@@ -3,6 +3,18 @@
 .vscode/**
 .vscode-test/**
 
+# Local tooling / agent artefacts — never ship in the VSIX. They exist only on
+# developer machines (a fresh CI checkout has none), and vsce packages by the
+# working tree, not .gitignore, so they must be excluded explicitly (#70).
+.agents/**
+.claude/**
+.code-review-graph/**
+.superpowers/**
+.scratch/**
+AGENTS.md
+.prettierignore
+*.vsix
+
 src/**
 test/**
 **/*.ts
