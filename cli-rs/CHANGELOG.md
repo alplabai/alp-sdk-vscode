@@ -12,6 +12,17 @@ same version.
 
 ## Unreleased
 
+## 0.1.13
+
+- **Added: `alp generate --target native-sim-overlay`** — wraps the SDK's
+  `alp_project.py --emit native-sim-overlay` (alplabai/alp-sdk#438) to write a
+  native_sim board overlay (the canonical `alp,pin-array` on `zephyr,gpio-emul`)
+  so a GPIO app resolves under `west build -b native_sim/native/64`. Unlike the
+  other emits it lands at `boards/native_sim_native_64.overlay` in the app source
+  tree (Zephyr auto-discovers it), not `build/generated/`. Included in
+  `generate --all`. Requires an SDK whose loader supports the emit (v0.9.0+);
+  older SDKs report `generate.emit-failed`.
+
 ## 0.1.12
 
 - **Changed: `alp init --board-yaml <path>`** now emits the caller's board.yaml

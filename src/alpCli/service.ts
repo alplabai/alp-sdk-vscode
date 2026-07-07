@@ -15,7 +15,7 @@ import {
 
 /** The CLI version this extension build targets for download-on-demand. Must
  *  match a published `cli-rs-v<version>` release tag. */
-export const SUPPORTED_CLI_VERSION = "0.1.12";
+export const SUPPORTED_CLI_VERSION = "0.1.13";
 
 /** The repo whose GitHub releases host the prebuilt `alp` archives. */
 const RELEASE_REPO = "alplabai/alp-sdk-vscode";
