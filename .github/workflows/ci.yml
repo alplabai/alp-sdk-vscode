@@ -61,6 +61,31 @@ jobs:
           path: alp-sdk.vsix
           retention-days: 30
 
+      - name: Gate — VSIX ships only allowlisted top-level paths (#70)
+        run: |
+          # Fail if anything outside the runtime allowlist enters the VSIX, so
+          # local tooling/agent artefacts (.agents, .claude, .code-review-graph,
+          # .superpowers, .scratch, AGENTS.md, ...) or stray files can never leak
+          # into the Marketplace package. Top-level only, per the acceptance
+          # criteria; sub-paths are governed by .vscodeignore.
+          # Lowercase for a case-robust compare: vsce normalises README/LICENSE
+          # (e.g. LICENSE -> LICENSE.txt) and case can differ across platforms.
+          unzip -Z1 alp-sdk.vsix \
+            | sed -n 's#^extension/##p' \
+            | sed -E 's#/.*##' \
+            | grep -v '^$' \
+            | tr '[:upper:]' '[:lower:]' \
+            | sort -u > vsix-top.txt
+          printf '%s\n' license license.txt readme.md media out package.json packages schemas snippets \
+            | sort -u > vsix-allow.txt
+          unexpected="$(comm -23 vsix-top.txt vsix-allow.txt)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::VSIX contains unexpected top-level paths (see #70):"
+            echo "$unexpected"
+            exit 1
+          fi
+          echo "VSIX top-level contents OK: $(paste -sd' ' vsix-top.txt)"
+
       - name: Vendored schema present + valid
         run: |
           # The board schema ships vendored in the VSIX (the submodule is
