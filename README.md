@@ -15,6 +15,9 @@ First-class IDE support for projects built against the
 * **Debug-aware orchestration.** Inspect, doctor, preflight,
   launch-profile planning, and support-bundle surfaces are available
   without embedding debugger implementation into the extension.
+  The VS Code companion stack uses Cortex-Debug, MCU Peripheral Viewer,
+  MemoryView, C/C++, and CodeLLDB for breakpoints, memory inspection,
+  peripheral/register views, and host/native debug sessions.
 
 ## Install
 

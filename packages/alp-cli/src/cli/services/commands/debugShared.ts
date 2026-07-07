@@ -50,6 +50,8 @@ export function resolveCliDebugContext(
     boardYamlExists: input.pathExists,
     debuggerExtensions: {
       cortexDebug: true,
+      peripheralViewer: true,
+      memoryView: true,
       cppTools: true,
       codeLLDB: true,
     },

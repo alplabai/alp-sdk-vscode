@@ -18,6 +18,7 @@ import {
     DebugTargetChoice,
     DebugTargetKind,
     DebugWorkspaceContext,
+    DebuggerExtensionsState,
     DoctorCheck,
     DoctorReport,
     LaunchConfigurationDraft,
@@ -41,6 +42,32 @@ const YOCTO_SERVER_CHOICES: ReadonlyArray<DebugServerChoice> = [
 
 const NATIVE_SERVER_CHOICES: ReadonlyArray<DebugServerChoice> = [
   { label: "local", server: "none" },
+];
+
+const MCU_COMPANION_VIEWERS: ReadonlyArray<{
+  key: keyof Pick<
+    DebuggerExtensionsState,
+    "peripheralViewer" | "memoryView"
+  >;
+  name: string;
+  installedDetail: string;
+  missingDetail: string;
+  fix: string;
+}> = [
+  {
+    key: "peripheralViewer",
+    name: "peripheralViewerExtension",
+    installedDetail: "mcu-debug.peripheral-viewer is installed.",
+    missingDetail: "mcu-debug.peripheral-viewer is not installed.",
+    fix: "Install mcu-debug.peripheral-viewer for SVD-backed peripheral/register views.",
+  },
+  {
+    key: "memoryView",
+    name: "memoryViewExtension",
+    installedDetail: "mcu-debug.memory-view is installed.",
+    missingDetail: "mcu-debug.memory-view is not installed.",
+    fix: "Install mcu-debug.memory-view for low-level memory inspection.",
+  },
 ];
 
 export const DEBUG_TARGET_CHOICES: ReadonlyArray<DebugTargetChoice> = [
@@ -193,6 +220,7 @@ export function buildDebugPreflightReport(
     createExecutableCheck(profile, context, dependencies),
   ];
 
+  checks.push(...createMcuCompanionViewerPreflightChecks(profile, context));
   checks.push(
     ...createProfileConfigurationChecks(profile, context, dependencies),
   );
@@ -278,6 +306,7 @@ export function buildDoctorReport(
           ? undefined
           : "Install marus25.cortex-debug.",
       });
+      checks.push(...createMcuCompanionViewerDoctorChecks(context));
       checks.push(createBackendCheck(request.server, runtime));
       break;
     case "yocto-userspace":
@@ -373,6 +402,7 @@ export function createDebugProfile(
         executablePath: "${workspaceFolder}/build/app/zephyr/zephyr.elf",
         cwd: "${workspaceFolder}",
         preLaunchTask: "alp: build active target",
+        svdFile: "<resolved-svd>",
       };
 
       switch (server) {
@@ -451,7 +481,7 @@ export function debugProfileToLaunchDraft(
 ): LaunchConfigurationDraft {
   switch (profile.targetKind) {
     case "zephyr-mcu": {
-      const base: LaunchConfigurationDraft = {
+      const base: LaunchConfigurationDraft = withSvdLaunchFields({
         name: profile.name,
         type: profile.adapter,
         request: "launch",
@@ -459,7 +489,7 @@ export function debugProfileToLaunchDraft(
         executable: profile.executablePath,
         runToEntryPoint: "main",
         preLaunchTask: profile.preLaunchTask,
-      };
+      }, profile);
 
       if (profile.server === "openocd") {
         return {
@@ -485,7 +515,7 @@ export function debugProfileToLaunchDraft(
       };
     }
     case "baremetal-mcu":
-      return {
+      return withSvdLaunchFields({
         name: profile.name,
         type: profile.adapter,
         request: "launch",
@@ -494,9 +524,8 @@ export function debugProfileToLaunchDraft(
         executable: profile.executablePath,
         device: profile.device,
         interface: profile.interface,
-        svdFile: profile.svdFile,
         preLaunchTask: profile.preLaunchTask,
-      };
+      }, profile);
     case "yocto-userspace":
       return {
         name: profile.name,
@@ -542,6 +571,39 @@ function createDoctorReport(
   };
 }
 
+function createMcuCompanionViewerDoctorChecks(
+  context: DebugWorkspaceContext,
+): DoctorCheck[] {
+  return MCU_COMPANION_VIEWERS.map((viewer) => {
+    const installed = context.debuggerExtensions[viewer.key];
+    return {
+      name: viewer.name,
+      status: installed ? "pass" : "warn",
+      detail: installed ? viewer.installedDetail : viewer.missingDetail,
+      fix: installed ? undefined : viewer.fix,
+    };
+  });
+}
+
+function createMcuCompanionViewerPreflightChecks(
+  profile: DebugProfile,
+  context: DebugWorkspaceContext,
+): PreflightCheck[] {
+  if (!isMcuTarget(profile.targetKind)) {
+    return [];
+  }
+
+  return MCU_COMPANION_VIEWERS.map((viewer) => {
+    const installed = context.debuggerExtensions[viewer.key];
+    return {
+      name: viewer.name,
+      status: installed ? "pass" : "warn",
+      detail: installed ? viewer.installedDetail : viewer.missingDetail,
+      fix: installed ? undefined : viewer.fix,
+    };
+  });
+}
+
 function createBackendCheck(
   server: DebugServerKind,
   runtime: DebugRuntimeCapabilities,
@@ -575,6 +637,21 @@ function resolveBackendExecutable(
   }
 }
 
+function withSvdLaunchFields(
+  draft: LaunchConfigurationDraft,
+  profile: DebugProfile,
+): LaunchConfigurationDraft {
+  if (!profile.svdFile) {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    svdFile: profile.svdFile,
+    svdPath: profile.svdFile,
+  };
+}
+
 function supportsServerForTarget(
   targetKind: DebugTargetKind,
   server: DebugServerKind,
@@ -582,6 +659,10 @@ function supportsServerForTarget(
   return serverChoicesForTarget(targetKind).some(
     (choice) => choice.server === server,
   );
+}
+
+function isMcuTarget(targetKind: DebugTargetKind): boolean {
+  return targetKind === "zephyr-mcu" || targetKind === "baremetal-mcu";
 }
 
 function serverLabel(server: DebugServerKind): string {
@@ -828,14 +909,16 @@ function createProfileConfigurationChecks(
     );
   }
 
-  if (profile.targetKind === "baremetal-mcu") {
-    checks.push(
-      createResolvedValueCheck(
-        "svdFile",
-        profile.svdFile,
-        "Resolve SVD file path before launch.",
-      ),
-    );
+  if (isMcuTarget(profile.targetKind)) {
+    const resolved = isResolvedValue(profile.svdFile);
+    checks.push({
+      name: "svdFile",
+      status: resolved ? "pass" : "warn",
+      detail: profile.svdFile ?? "<unset>",
+      fix: resolved
+        ? undefined
+        : "Resolve SVD file path to enable peripheral/register views.",
+    });
   }
 
   if (profile.targetKind === "yocto-userspace") {

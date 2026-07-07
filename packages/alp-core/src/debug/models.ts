@@ -32,6 +32,8 @@ export interface DebugServerChoice {
 
 export interface DebuggerExtensionsState {
   cortexDebug: boolean;
+  peripheralViewer: boolean;
+  memoryView: boolean;
   cppTools: boolean;
   codeLLDB: boolean;
 }

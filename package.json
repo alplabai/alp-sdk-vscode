@@ -19,14 +19,20 @@
   },
   "categories": [
     "Programming Languages",
+    "Debuggers",
     "Snippets",
     "Other"
   ],
   "keywords": [
     "alp-sdk",
     "embedded",
+    "debug",
     "zephyr",
     "yocto",
+    "cortex-debug",
+    "svd",
+    "memory",
+    "peripheral",
     "alif",
     "renesas",
     "nxp"
@@ -41,6 +47,13 @@
   "icon": "media/icon.png",
   "extensionDependencies": [
     "redhat.vscode-yaml"
+  ],
+  "extensionPack": [
+    "marus25.cortex-debug",
+    "mcu-debug.peripheral-viewer",
+    "mcu-debug.memory-view",
+    "ms-vscode.cpptools",
+    "vadimcn.vscode-lldb"
   ],
   "contributes": {
     "commands": [

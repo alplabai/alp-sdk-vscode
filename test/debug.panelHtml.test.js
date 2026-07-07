@@ -24,6 +24,8 @@ test("createDebugTroubleshootingPanelHtml includes sections and command links", 
         pythonBinary: "python3",
         debuggerExtensions: {
           cortexDebug: true,
+          peripheralViewer: true,
+          memoryView: true,
           cppTools: true,
           codeLLDB: true,
         },

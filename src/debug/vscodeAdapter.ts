@@ -19,6 +19,8 @@ export function collectWorkspaceDebugContext(): DebugWorkspaceContext {
     boardYamlExists: (path) => fs.existsSync(path),
     debuggerExtensions: {
       cortexDebug: hasExtension("marus25.cortex-debug"),
+      peripheralViewer: hasExtension("mcu-debug.peripheral-viewer"),
+      memoryView: hasExtension("mcu-debug.memory-view"),
       cppTools: hasExtension("ms-vscode.cpptools"),
       codeLLDB: hasExtension("vadimcn.vscode-lldb"),
     },
