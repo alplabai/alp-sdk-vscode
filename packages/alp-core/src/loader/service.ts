@@ -31,6 +31,18 @@ const GENERATION_TARGET_CATALOG: readonly GenerationTargetSupport[] = [
     },
   },
   {
+    // native_sim GPIO emulation. Unlike the build/generated artefacts this
+    // lands in the app source tree (boards/), where Zephyr auto-discovers it
+    // for `west build -b native_sim/native/64`.
+    emit: "native-sim-overlay",
+    displayName: "native_sim overlay",
+    outputRelativePath: "boards/native_sim_native_64.overlay",
+    preview: {
+      label: "native_sim overlay preview",
+      languageId: "dts",
+    },
+  },
+  {
     emit: "cmake-args",
     displayName: "CMake args",
     outputRelativePath: "build/generated/alp-cmake-args.txt",
@@ -62,9 +74,14 @@ const GENERATION_TARGETS_BY_EMIT: Readonly<
   ),
 );
 
-export const ALL_EMIT_MODES: readonly EmitMode[] = [
-  ...GENERATION_TARGET_CATALOG.map((target) => target.emit),
-];
+// The build-config emits regenerated together (the build-prep fallback set +
+// "generate all"'s build outputs). `native-sim-overlay` is deliberately
+// excluded: it is a source-tree board overlay for native_sim only, produced on
+// demand by its own target -- not part of a silicon build's generated config.
+export const ALL_EMIT_MODES: readonly EmitMode[] =
+  GENERATION_TARGET_CATALOG.filter(
+    (target) => target.emit !== "native-sim-overlay",
+  ).map((target) => target.emit);
 
 /**
  * Resolves the set of emit modes that are actually needed for the given

@@ -6,7 +6,8 @@ export type EmitMode =
   | "zephyr-conf"
   | "cmake-args"
   | "yocto-conf"
-  | "dts-overlay";
+  | "dts-overlay"
+  | "native-sim-overlay";
 
 export type LoaderWorkspaceContext = ProjectContext;
 
