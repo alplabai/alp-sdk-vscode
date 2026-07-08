@@ -9,15 +9,28 @@ import { BoardConfig, CoreEntry } from "./models";
  * inline routing is set, so the result passes validateBoardConfig and the user
  * picks a preset afterward in the configurator.
  */
-export function buildStarterBoardConfig(sku: string, coreIds: string[]): BoardConfig {
+export function buildStarterBoardConfig(
+  sku: string,
+  coreIds: string[],
+): BoardConfig {
   const ids = coreIds.length > 0 ? coreIds : ["app"];
   const cores: Record<string, CoreEntry> = {};
   ids.forEach((id, index) => {
     cores[id] = index === 0 ? { os: "zephyr", app: "app" } : { os: "off" };
   });
   return {
-    name: `${sku} project`,
+    name: boardNameFromSku(sku),
     som: { sku },
     cores,
   };
+}
+
+function boardNameFromSku(sku: string): string {
+  const stem = sku
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  const base = /^[A-Za-z]/.test(stem) ? stem : stem ? `board_${stem}` : "board";
+  return base.endsWith("_project") ? base : `${base}_project`;
 }
