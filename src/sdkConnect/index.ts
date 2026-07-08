@@ -28,7 +28,11 @@ async function setSdkPath(sdkPath: string): Promise<void> {
   await vscode.workspace
     .getConfiguration("alpSdk")
     .update("path", sdkPath, vscode.ConfigurationTarget.Global);
-  await vscode.commands.executeCommand("setContext", "alpSdk.sdkConnected", true);
+  await vscode.commands.executeCommand(
+    "setContext",
+    "alpSdk.sdkConnected",
+    true,
+  );
   await vscode.commands.executeCommand("alp.refreshProjectView");
   vscode.window.showInformationMessage(`Alp SDK connected: ${sdkPath}`);
 }
@@ -50,7 +54,9 @@ async function cloneSdk(): Promise<void> {
       install,
     );
     if (choice === install) {
-      void vscode.env.openExternal(vscode.Uri.parse("https://git-scm.com/downloads"));
+      void vscode.env.openExternal(
+        vscode.Uri.parse("https://git-scm.com/downloads"),
+      );
     }
     return;
   }
@@ -103,7 +109,9 @@ async function cloneSdk(): Promise<void> {
         await setSdkPath(dest);
       }
     } catch (err) {
-      vscode.window.showErrorMessage(`Alp: failed to connect cloned SDK. ${String(err)}`);
+      vscode.window.showErrorMessage(
+        `Alp: failed to connect cloned SDK. ${String(err)}`,
+      );
     }
   });
 
@@ -113,7 +121,9 @@ async function cloneSdk(): Promise<void> {
     await vscode.tasks.executeTask(task);
   } catch (err) {
     endListener.dispose();
-    vscode.window.showErrorMessage(`Alp: could not start the clone task. ${String(err)}`);
+    vscode.window.showErrorMessage(
+      `Alp: could not start the clone task. ${String(err)}`,
+    );
   }
 }
 
@@ -158,17 +168,23 @@ export function registerSdkConnectCommand(): vscode.Disposable {
 }
 
 /** One-time activation prompt; also seeds the alpSdk.sdkConnected context key. */
+/**
+ * Offer to connect the SDK on activation. Returns `true` when a prompt was
+ * shown to the user, so the caller can suppress a second stacked first-run
+ * prompt (the new-project wizard) on the same activation. Returns `false` when
+ * nothing was shown (already connected, or previously dismissed).
+ */
 export async function maybeOfferSdkConnect(
   context: vscode.ExtensionContext,
-): Promise<void> {
+): Promise<boolean> {
   const connected = isSdkConnected();
   await vscode.commands.executeCommand(
     "setContext",
     "alpSdk.sdkConnected",
     connected,
   );
-  if (connected) return;
-  if (context.globalState.get<boolean>(PROMPT_DISMISSED_KEY)) return;
+  if (connected) return false;
+  if (context.globalState.get<boolean>(PROMPT_DISMISSED_KEY)) return false;
 
   const CONNECT = "Connect SDK";
   const LATER = "Later";
@@ -184,4 +200,5 @@ export async function maybeOfferSdkConnect(
   } else if (choice === NEVER) {
     await context.globalState.update(PROMPT_DISMISSED_KEY, true);
   }
+  return true;
 }

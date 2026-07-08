@@ -105,6 +105,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.connectSdk",
+        "title": "Alp: Connect SDK",
+        "category": "Alp"
+      },
+      {
         "command": "alp.scaffoldModule",
         "title": "Alp: Scaffold module",
         "category": "Alp"
