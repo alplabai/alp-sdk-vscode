@@ -13,13 +13,17 @@ test("SDK_MARKER is the loader script path", () => {
 });
 
 test("candidateSdkPaths: workspace, siblings, then common dev roots, in order", () => {
-  const ws = path.join("C:", "repos", "alp-sdk-vscode");
-  const home = path.join("C:", "Users", "dev");
+  // Use paths that are absolute on the running platform: candidateSdkPaths
+  // resolves the workspace's parent, so a relative input (e.g. a Windows
+  // "C:/repos" literal on POSIX) would get prefixed with the CWD and fail.
+  const repos = path.resolve(path.sep, "repos");
+  const ws = path.join(repos, "alp-sdk-vscode");
+  const home = path.resolve(path.sep, "Users", "dev");
   const got = candidateSdkPaths(ws, home);
   assert.deepEqual(got, [
     ws,
-    path.join("C:", "repos", "alp-sdk"),
-    path.join("C:", "repos", "alp_sdk"),
+    path.join(repos, "alp-sdk"),
+    path.join(repos, "alp_sdk"),
     path.join(home, "Documents", "GitHub", "alp-sdk"),
     path.join(home, "GitHub", "alp-sdk"),
     path.join(home, "src", "alp-sdk"),
@@ -39,7 +43,10 @@ test("isSdkRoot: true only when the loader script exists", () => {
   const root = path.join("x", "alp-sdk");
   const present = (p) => p === path.join(root, SDK_MARKER);
   assert.equal(isSdkRoot(root, present), true);
-  assert.equal(isSdkRoot(root, () => false), false);
+  assert.equal(
+    isSdkRoot(root, () => false),
+    false,
+  );
   const onlyDir = (p) => p === path.join(root, "scripts");
   assert.equal(isSdkRoot(root, onlyDir), false);
 });
@@ -48,5 +55,8 @@ test("detectSdkRoots: keeps only valid candidates, preserving order", () => {
   const a = path.join("a", "alp-sdk");
   const b = path.join("b", "alp-sdk");
   const valid = new Set([path.join(b, SDK_MARKER)]);
-  assert.deepEqual(detectSdkRoots([a, b], (p) => valid.has(p)), [b]);
+  assert.deepEqual(
+    detectSdkRoots([a, b], (p) => valid.has(p)),
+    [b],
+  );
 });
