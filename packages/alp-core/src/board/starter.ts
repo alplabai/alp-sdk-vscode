@@ -27,6 +27,7 @@ function boardNameFromSku(sku: string): string {
     .trim()
     .replace(/[^A-Za-z0-9_-]+/g, "_")
     .replace(/^_+|_+$/g, "");
-  const safeStem = /^[A-Za-z]/.test(stem) ? stem : `board_${stem || "project"}`;
-  return `${safeStem}_project`;
+
+  const base = /^[A-Za-z]/.test(stem) ? stem : stem ? `board_${stem}` : "board";
+  return base.endsWith("_project") ? base : `${base}_project`;
 }
