@@ -7,9 +7,29 @@ This guide covers the fastest path to a productive ALP SDK workflow inside VS Co
 ## 1. Prerequisites
 
 - VS Code 1.85+
-- Node.js 20+ (for local extension development)
+- Node.js 20+ (for local extension development only — end users don't need it)
 - A workspace that includes your ALP project with board.yaml
 - ALP SDK checkout (recommended as sibling folder: ../alp-sdk)
+- Python 3 and `west` on `PATH` for the build / generate / validate flows — the
+  extension's `alp` CLI shells out to the SDK's `scripts/alp_project.py` (and
+  `west`) for those; the SDK's `bootstrap` provides them. Run
+  **Alp: Toolchain doctor** to check.
+
+### The `alp` CLI is auto-provisioned
+
+The native `alp` CLI is **not** bundled in the VSIX and needs no manual install.
+The extension resolves it, in order:
+
+1. the `alpSdk.cliPath` setting (point it at a local build to override),
+2. `alp` on your `PATH`,
+3. a previously cached copy in the extension's global storage,
+4. otherwise it **downloads the matching `cli-rs-v<version>` release** into
+   global storage on first use (needs network access).
+
+> **Intel macOS (`darwin/x64`) has no prebuilt release binary.** Build it from
+> source — `cargo build --release --manifest-path cli-rs/Cargo.toml` — and set
+> `alpSdk.cliPath` to `cli-rs/target/release/alp` (or put an `alp` on `PATH`).
+> Apple-silicon macOS, Linux (x64/arm64) and Windows x64 download automatically.
 
 ## 2. Install and Open
 
