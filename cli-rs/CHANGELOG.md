@@ -12,6 +12,17 @@ same version.
 
 ## Unreleased
 
+## 0.1.14
+
+- **Changed: debug envelope parity with the extension.** `alp doctor` /
+  `alp inspect` / `alp support-bundle` now mirror the extension's widened debug
+  surface (alplabai/alp-sdk-vscode#83): `DebuggerExtensionsState` gains
+  `peripheralViewer` + `memoryView`, the zephyr/baremetal MCU doctor report adds
+  non-failing `peripheralViewerExtension` / `memoryViewExtension` checks (warn +
+  fix when `mcu-debug.peripheral-viewer` / `mcu-debug.memory-view` are absent),
+  and MCU launch drafts emit both `svdFile` and `svdPath`. Keeps the standalone
+  `alp` JSON byte-compatible with the in-process TS output (alplabai/alp-sdk-vscode#88).
+
 ## 0.1.13
 
 - **Added: `alp generate --target native-sim-overlay`** — wraps the SDK's

@@ -51,6 +51,8 @@ pub fn run(g: &GlobalArgs, args: &InspectArgs) -> CommandRun {
         |path| Path::new(path).exists(),
         DebuggerExtensionsState {
             cortex_debug: true,
+            peripheral_viewer: true,
+            memory_view: true,
             cpp_tools: true,
             code_lldb: true,
         },

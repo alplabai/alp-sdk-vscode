@@ -47,6 +47,8 @@ pub fn create_launch_draft(
                     "executable": "${workspaceFolder}/build/app/zephyr/zephyr.elf",
                     "runToEntryPoint": "main",
                     "preLaunchTask": "alp: build active target",
+                    "svdFile": "<resolved-svd>",
+                    "svdPath": "<resolved-svd>",
                     "servertype": "openocd",
                     "configFiles": ["<resolved-openocd-board-cfg>"],
                 }),
@@ -58,6 +60,8 @@ pub fn create_launch_draft(
                     "executable": "${workspaceFolder}/build/app/zephyr/zephyr.elf",
                     "runToEntryPoint": "main",
                     "preLaunchTask": "alp: build active target",
+                    "svdFile": "<resolved-svd>",
+                    "svdPath": "<resolved-svd>",
                     "servertype": "pyocd",
                     "targetId": "<resolved-target-id>",
                 }),
@@ -69,6 +73,8 @@ pub fn create_launch_draft(
                     "executable": "${workspaceFolder}/build/app/zephyr/zephyr.elf",
                     "runToEntryPoint": "main",
                     "preLaunchTask": "alp: build active target",
+                    "svdFile": "<resolved-svd>",
+                    "svdPath": "<resolved-svd>",
                     "servertype": "jlink",
                     "device": "<resolved-device>",
                     "interface": "swd",
@@ -84,8 +90,9 @@ pub fn create_launch_draft(
             "executable": "${workspaceFolder}/build/baremetal/app.elf",
             "device": "<resolved-device>",
             "interface": "swd",
-            "svdFile": "<resolved-svd>",
             "preLaunchTask": "alp: build baremetal target",
+            "svdFile": "<resolved-svd>",
+            "svdPath": "<resolved-svd>",
         }),
         DebugTargetKind::YoctoUserspace => json!({
             "name": "ALP: Yocto Remote Debug",
@@ -234,6 +241,48 @@ mod tests {
         assert!(json.ends_with(
             "\"servertype\":\"jlink\",\"device\":\"<resolved-device>\",\"interface\":\"swd\"}"
         ));
+    }
+
+    #[test]
+    fn zephyr_drafts_emit_svd_file_and_path_before_servertype() {
+        for server in [
+            DebugServerKind::Jlink,
+            DebugServerKind::Openocd,
+            DebugServerKind::Pyocd,
+        ] {
+            let draft = create_launch_draft(DebugTargetKind::ZephyrMcu, server).unwrap();
+            assert_eq!(draft["svdFile"], "<resolved-svd>");
+            assert_eq!(draft["svdPath"], "<resolved-svd>");
+            // Key order: svdFile + svdPath sit after preLaunchTask, before servertype.
+            let json = serde_json::to_string(&draft).unwrap();
+            assert!(json.contains(
+                "\"preLaunchTask\":\"alp: build active target\",\"svdFile\":\"<resolved-svd>\",\"svdPath\":\"<resolved-svd>\",\"servertype\":"
+            ));
+        }
+    }
+
+    #[test]
+    fn baremetal_draft_emits_svd_file_and_path_after_prelaunch() {
+        let draft =
+            create_launch_draft(DebugTargetKind::BaremetalMcu, DebugServerKind::Jlink).unwrap();
+        assert_eq!(draft["svdFile"], "<resolved-svd>");
+        assert_eq!(draft["svdPath"], "<resolved-svd>");
+        let json = serde_json::to_string(&draft).unwrap();
+        assert!(json.ends_with(
+            "\"preLaunchTask\":\"alp: build baremetal target\",\"svdFile\":\"<resolved-svd>\",\"svdPath\":\"<resolved-svd>\"}"
+        ));
+    }
+
+    #[test]
+    fn non_mcu_drafts_omit_svd_fields() {
+        for (target, server) in [
+            (DebugTargetKind::YoctoUserspace, DebugServerKind::Gdbserver),
+            (DebugTargetKind::NativeHost, DebugServerKind::None),
+        ] {
+            let draft = create_launch_draft(target, server).unwrap();
+            assert!(draft.get("svdFile").is_none());
+            assert!(draft.get("svdPath").is_none());
+        }
     }
 
     #[test]

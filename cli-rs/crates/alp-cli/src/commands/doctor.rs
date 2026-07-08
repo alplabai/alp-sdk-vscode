@@ -296,6 +296,8 @@ fn resolve_context(g: &GlobalArgs, generated_at: &str) -> alp_core::DebugWorkspa
     // probe VS Code), matching the TS CLI's resolveCliDebugContext.
     let extensions = DebuggerExtensionsState {
         cortex_debug: true,
+        peripheral_viewer: true,
+        memory_view: true,
         cpp_tools: true,
         code_lldb: true,
     };
