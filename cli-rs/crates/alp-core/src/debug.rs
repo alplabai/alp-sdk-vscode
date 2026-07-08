@@ -132,6 +132,10 @@ pub fn is_server_supported_for_target(target: DebugTargetKind, server: DebugServ
 pub struct DebuggerExtensionsState {
     /// `marus25.cortex-debug` is installed.
     pub cortex_debug: bool,
+    /// `mcu-debug.peripheral-viewer` is installed.
+    pub peripheral_viewer: bool,
+    /// `mcu-debug.memory-view` is installed.
+    pub memory_view: bool,
     /// `ms-vscode.cpptools` is installed.
     pub cpp_tools: bool,
     /// `vadimcn.vscode-lldb` is installed.
@@ -438,6 +442,62 @@ pub struct DoctorReport {
     pub next_steps: Vec<String>,
 }
 
+/// A companion viewer extension surfaced as an MCU debug-readiness check.
+/// Mirror of one TS `MCU_COMPANION_VIEWERS` entry.
+struct McuCompanionViewer {
+    /// Reads the installed flag for this viewer from the probed extensions state.
+    installed: fn(&DebuggerExtensionsState) -> bool,
+    /// Stable check name (e.g. `peripheralViewerExtension`).
+    name: &'static str,
+    /// Detail shown when the viewer is installed.
+    installed_detail: &'static str,
+    /// Detail shown when the viewer is missing.
+    missing_detail: &'static str,
+    /// Remediation shown when the viewer is missing.
+    fix: &'static str,
+}
+
+/// Mirror of TS `MCU_COMPANION_VIEWERS`: the SVD-backed debug companion viewers
+/// (`mcu-debug.peripheral-viewer`, `mcu-debug.memory-view`) checked for MCU targets.
+const MCU_COMPANION_VIEWERS: [McuCompanionViewer; 2] = [
+    McuCompanionViewer {
+        installed: |ext| ext.peripheral_viewer,
+        name: "peripheralViewerExtension",
+        installed_detail: "mcu-debug.peripheral-viewer is installed.",
+        missing_detail: "mcu-debug.peripheral-viewer is not installed.",
+        fix: "Install mcu-debug.peripheral-viewer for SVD-backed peripheral/register views.",
+    },
+    McuCompanionViewer {
+        installed: |ext| ext.memory_view,
+        name: "memoryViewExtension",
+        installed_detail: "mcu-debug.memory-view is installed.",
+        missing_detail: "mcu-debug.memory-view is not installed.",
+        fix: "Install mcu-debug.memory-view for low-level memory inspection.",
+    },
+];
+
+/// Mirror of TS `createMcuCompanionViewerDoctorChecks`: one `pass`/`warn` check
+/// per MCU companion viewer, warning (never failing) when a viewer is missing.
+fn create_mcu_companion_viewer_checks(extensions: &DebuggerExtensionsState) -> Vec<DoctorCheck> {
+    MCU_COMPANION_VIEWERS
+        .iter()
+        .map(|viewer| {
+            let installed = (viewer.installed)(extensions);
+            DoctorCheck::new(
+                viewer.name,
+                status_pass_warn(installed),
+                if installed {
+                    viewer.installed_detail
+                } else {
+                    viewer.missing_detail
+                }
+                .to_string(),
+                fix_when(!installed, viewer.fix),
+            )
+        })
+        .collect()
+}
+
 /// Mirror of TS `buildDoctorReport`.
 pub fn build_doctor_report(
     context: &DebugWorkspaceContext,
@@ -522,6 +582,9 @@ pub fn build_doctor_report(
                 }
                 .to_string(),
                 fix_when(!installed, "Install marus25.cortex-debug."),
+            ));
+            checks.extend(create_mcu_companion_viewer_checks(
+                &context.debugger_extensions,
             ));
             checks.push(create_backend_check(server, runtime));
         }
@@ -685,6 +748,8 @@ mod tests {
     fn extensions_all_installed() -> DebuggerExtensionsState {
         DebuggerExtensionsState {
             cortex_debug: true,
+            peripheral_viewer: true,
+            memory_view: true,
             cpp_tools: true,
             code_lldb: true,
         }
@@ -862,5 +927,136 @@ mod tests {
         assert!(json.contains("\"nextSteps\":[]"));
         // pass checks omit the optional `fix` field.
         assert!(!json.contains("\"fix\""));
+    }
+
+    fn extensions_missing_viewers() -> DebuggerExtensionsState {
+        DebuggerExtensionsState {
+            cortex_debug: true,
+            peripheral_viewer: false,
+            memory_view: false,
+            cpp_tools: true,
+            code_lldb: true,
+        }
+    }
+
+    #[test]
+    fn extensions_state_serializes_new_viewer_fields_as_camel_case() {
+        let json = serde_json::to_string(&extensions_all_installed()).unwrap();
+        assert!(json.contains("\"cortexDebug\":true"));
+        assert!(json.contains("\"peripheralViewer\":true"));
+        assert!(json.contains("\"memoryView\":true"));
+        assert!(json.contains("\"cppTools\":true"));
+        assert!(json.contains("\"codeLLDB\":true"));
+    }
+
+    #[test]
+    fn zephyr_emits_companion_viewer_checks_between_cortex_and_backend() {
+        let report = build_doctor_report(
+            &healthy_context(),
+            DebugTargetKind::ZephyrMcu,
+            DebugServerKind::Jlink,
+            &runtime_all_present(),
+        );
+        let names: Vec<&str> = report.checks.iter().map(|c| c.name.as_str()).collect();
+        // Ordering: cortexDebugExtension, then the two viewers, then the backend.
+        let cortex = names.iter().position(|n| *n == "cortexDebugExtension");
+        let peripheral = names.iter().position(|n| *n == "peripheralViewerExtension");
+        let memory = names.iter().position(|n| *n == "memoryViewExtension");
+        let backend = names.iter().position(|n| *n == "jlinkBackend");
+        assert!(cortex < peripheral);
+        assert!(peripheral < memory);
+        assert!(memory < backend);
+
+        let peripheral_check = &report.checks[peripheral.unwrap()];
+        assert_eq!(peripheral_check.status, DoctorStatus::Pass);
+        assert_eq!(
+            peripheral_check.detail,
+            "mcu-debug.peripheral-viewer is installed."
+        );
+        assert!(peripheral_check.fix.is_none());
+
+        let memory_check = &report.checks[memory.unwrap()];
+        assert_eq!(memory_check.status, DoctorStatus::Pass);
+        assert_eq!(memory_check.detail, "mcu-debug.memory-view is installed.");
+        assert!(memory_check.fix.is_none());
+    }
+
+    #[test]
+    fn baremetal_missing_companion_viewers_warn_with_fix() {
+        let mut ctx = healthy_context();
+        ctx.debugger_extensions = extensions_missing_viewers();
+        let report = build_doctor_report(
+            &ctx,
+            DebugTargetKind::BaremetalMcu,
+            DebugServerKind::Openocd,
+            &runtime_all_present(),
+        );
+        let peripheral = report
+            .checks
+            .iter()
+            .find(|c| c.name == "peripheralViewerExtension")
+            .expect("peripheral viewer check present");
+        assert_eq!(peripheral.status, DoctorStatus::Warn);
+        assert_eq!(
+            peripheral.detail,
+            "mcu-debug.peripheral-viewer is not installed."
+        );
+        assert_eq!(
+            peripheral.fix.as_deref(),
+            Some("Install mcu-debug.peripheral-viewer for SVD-backed peripheral/register views.")
+        );
+
+        let memory = report
+            .checks
+            .iter()
+            .find(|c| c.name == "memoryViewExtension")
+            .expect("memory view check present");
+        assert_eq!(memory.status, DoctorStatus::Warn);
+        assert_eq!(memory.detail, "mcu-debug.memory-view is not installed.");
+        assert_eq!(
+            memory.fix.as_deref(),
+            Some("Install mcu-debug.memory-view for low-level memory inspection.")
+        );
+
+        // Both missing-viewer fixes surface as deduplicated next steps.
+        assert!(
+            report
+                .next_steps
+                .iter()
+                .any(|s| s.contains("mcu-debug.peripheral-viewer"))
+        );
+        assert!(
+            report
+                .next_steps
+                .iter()
+                .any(|s| s.contains("mcu-debug.memory-view"))
+        );
+    }
+
+    #[test]
+    fn non_mcu_targets_omit_companion_viewer_checks() {
+        for (target, server) in [
+            (DebugTargetKind::YoctoUserspace, DebugServerKind::Gdbserver),
+            (DebugTargetKind::NativeHost, DebugServerKind::None),
+        ] {
+            let report =
+                build_doctor_report(&healthy_context(), target, server, &runtime_all_present());
+            assert!(
+                !report
+                    .checks
+                    .iter()
+                    .any(|c| c.name == "peripheralViewerExtension"),
+                "{} must not emit peripheralViewerExtension",
+                target.as_str()
+            );
+            assert!(
+                !report
+                    .checks
+                    .iter()
+                    .any(|c| c.name == "memoryViewExtension"),
+                "{} must not emit memoryViewExtension",
+                target.as_str()
+            );
+        }
     }
 }
