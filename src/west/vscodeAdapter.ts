@@ -13,6 +13,15 @@ export function collectWestWorkspaceContext(): WestWorkspaceContext {
   return collectProjectContext();
 }
 
+/** True when the project already carries the native_sim GPIO overlay that
+ *  `alp generate --target native-sim-overlay` writes, so a native_sim run can
+ *  skip regenerating it. */
+export function nativeSimOverlayExists(workspaceRoot: string): boolean {
+  return fs.existsSync(
+    path.join(workspaceRoot, "boards", "native_sim_native_64.overlay"),
+  );
+}
+
 /**
  * Locate the `west` from the workspace's bootstrap venv (`<dir>/.venv/bin/west`,
  * searched from the west cwd upward). `alp bootstrap` installs west into a venv
