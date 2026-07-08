@@ -53,6 +53,11 @@ Primary adapter strategy:
 
 - `marus25.cortex-debug`
 
+Companion IDE viewers:
+
+- `mcu-debug.peripheral-viewer` for SVD-backed peripheral/register views
+- `mcu-debug.memory-view` for low-level memory inspection
+
 Primary server/probe backends:
 
 - `J-Link`
@@ -146,9 +151,11 @@ The correct product strategy is:
 2. **Use `cppdbg` + `gdbserver` as the primary Yocto userspace debug
    story.**
 3. **Use `CodeLLDB` as the primary host/native debug story.**
-4. **Generate or provide debug configurations instead of reinventing a
+4. **Use MemoryView and MCU Peripheral Viewer for low-level memory,
+   register, and peripheral inspection.**
+5. **Generate or provide debug configurations instead of reinventing a
    debugger.**
-5. **Make debug preflight and troubleshooting part of the product.**
+6. **Make debug preflight and troubleshooting part of the product.**
 
 ## 6. Surface Ownership
 

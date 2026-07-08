@@ -27,6 +27,8 @@ function createDebugContext(overrides = {}) {
     pythonBinary: "python3",
     debuggerExtensions: {
       cortexDebug: true,
+      peripheralViewer: true,
+      memoryView: true,
       cppTools: true,
       codeLLDB: true,
     },
@@ -69,11 +71,13 @@ test("createDebugProfile defines reusable profile metadata", () => {
 
   assert.equal(zephyr.adapter, "cortex-debug");
   assert.equal(zephyr.os, "zephyr");
+  assert.equal(zephyr.svdFile, "<resolved-svd>");
   assert.deepEqual(zephyr.openOcdConfigFiles, ["<resolved-openocd-board-cfg>"]);
 
   assert.equal(baremetal.adapter, "cortex-debug");
   assert.equal(baremetal.os, "baremetal");
   assert.equal(baremetal.interface, "swd");
+  assert.equal(baremetal.svdFile, "<resolved-svd>");
 
   assert.equal(yocto.adapter, "cppdbg");
   assert.equal(yocto.server, "gdbserver");
@@ -241,6 +245,8 @@ test("buildDoctorReport summarizes zephyr doctor state", () => {
     createDebugContext({
       debuggerExtensions: {
         cortexDebug: false,
+        peripheralViewer: true,
+        memoryView: true,
         cppTools: true,
         codeLLDB: true,
       },
@@ -251,7 +257,7 @@ test("buildDoctorReport summarizes zephyr doctor state", () => {
 
   assert.equal(report.targetKind, "zephyr-mcu");
   assert.equal(report.server, "openocd");
-  assert.equal(report.summary.pass, 3);
+  assert.equal(report.summary.pass, 5);
   assert.equal(report.summary.warn, 2);
   assert.equal(report.summary.fail, 1);
   assert.deepEqual(report.nextSteps, [
@@ -259,6 +265,76 @@ test("buildDoctorReport summarizes zephyr doctor state", () => {
     "Install marus25.cortex-debug.",
     "Install openocd and make sure it is on PATH.",
   ]);
+});
+
+test("buildDoctorReport warns for missing MCU debug viewer extensions", () => {
+  const report = buildDoctorReport(
+    createDebugContext({
+      debuggerExtensions: {
+        cortexDebug: true,
+        peripheralViewer: false,
+        memoryView: false,
+        cppTools: true,
+        codeLLDB: true,
+      },
+    }),
+    { targetKind: "baremetal-mcu", server: "jlink" },
+    createRuntime(),
+  );
+
+  assert.equal(report.summary.fail, 0);
+  assert.equal(report.summary.warn, 2);
+  assert.ok(
+    report.checks.some(
+      (check) =>
+        check.name === "peripheralViewerExtension" &&
+        check.status === "warn",
+    ),
+  );
+  assert.ok(
+    report.checks.some(
+      (check) => check.name === "memoryViewExtension" && check.status === "warn",
+    ),
+  );
+  assert.deepEqual(report.nextSteps, [
+    "Install mcu-debug.peripheral-viewer for SVD-backed peripheral/register views.",
+    "Install mcu-debug.memory-view for low-level memory inspection.",
+  ]);
+});
+
+test("buildDebugPreflightReport keeps MCU viewer gaps non-blocking", () => {
+  const profile = {
+    ...createDebugProfile("zephyr-mcu", "jlink"),
+    device: "M55",
+    executablePath: "${workspaceFolder}/build/app/zephyr/zephyr.elf",
+  };
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext({
+      debuggerExtensions: {
+        cortexDebug: true,
+        peripheralViewer: false,
+        memoryView: false,
+        cppTools: true,
+        codeLLDB: true,
+      },
+    }),
+    profile,
+    createRuntime(),
+    {
+      pathExists: (filePath) =>
+        filePath.endsWith(path.join("build", "app", "zephyr", "zephyr.elf")),
+    },
+  );
+
+  assert.equal(report.canLaunch, true);
+  assert.equal(report.summary.fail, 0);
+  assert.ok(report.summary.warn >= 3);
+  assert.ok(
+    report.checks.some(
+      (check) => check.name === "svdFile" && check.status === "warn",
+    ),
+  );
 });
 
 test("createLaunchPreview generates a Zephyr J-Link draft", () => {
@@ -274,6 +350,8 @@ test("createLaunchPreview generates a Zephyr J-Link draft", () => {
   assert.equal(config.type, "cortex-debug");
   assert.equal(config.servertype, "jlink");
   assert.equal(config.interface, "swd");
+  assert.equal(config.svdFile, "<resolved-svd>");
+  assert.equal(config.svdPath, "<resolved-svd>");
   assert.match(config.name, /Zephyr Debug/);
 });
 
@@ -288,6 +366,7 @@ test("createLaunchPreview generates a Zephyr OpenOCD draft", () => {
   assert.equal(config.type, "cortex-debug");
   assert.equal(config.servertype, "openocd");
   assert.deepEqual(config.configFiles, ["<resolved-openocd-board-cfg>"]);
+  assert.equal(config.svdPath, "<resolved-svd>");
 });
 
 test("createLaunchPreview generates a baremetal draft", () => {
@@ -301,6 +380,8 @@ test("createLaunchPreview generates a baremetal draft", () => {
   assert.equal(config.type, "cortex-debug");
   assert.equal(config.servertype, "jlink");
   assert.equal(config.executable, "${workspaceFolder}/build/baremetal/app.elf");
+  assert.equal(config.svdFile, "<resolved-svd>");
+  assert.equal(config.svdPath, "<resolved-svd>");
 });
 
 test("createLaunchPreview generates a Yocto gdbserver draft", () => {
