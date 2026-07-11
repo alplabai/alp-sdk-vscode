@@ -42,6 +42,7 @@ The CLI should expose these top-level command families:
 - `alp doctor`
 - `alp support-bundle`
 - `alp debug-config`
+- `alp pinmux`
 
 ### 2.1 Relation to the SDK's `west alp-*` commands (two doors, one engine)
 
@@ -295,6 +296,30 @@ Required behavior:
 Suggested flags:
 
 - `--shell <bash|zsh|fish>`
+
+### 4.11 `alp pinmux`
+
+Purpose:
+
+- surface the E1M pinmux capability table (E1M pad → silicon function) for a SoM
+  family, as the single source the extension/LSP consume instead of reading
+  `metadata/pinmux/<family>.yaml` directly
+
+Required behavior:
+
+- resolve the family from `--family <stem>` or by mapping `--sku <sku>`
+  (`E1M-AEN*` → `aen`, `E1M-V2N*` → `v2n`, `E1M-V2M*` → `v2n-m1`,
+  `E1M-NX9*` → `imx93`)
+- read `<sdk>/metadata/pinmux/<family>.yaml` and emit its pads (`e1mPad`,
+  `e1mFunction`, `owner`, `siliconPeripheral`, `siliconPad`) in the envelope
+  `data`, matching the extension's `PinmuxTable`
+- fail soft (exit 0 + a warning issue) when the SDK root is unresolved, the SKU
+  has no known family, or the family has no generated table — pads is then empty
+
+Suggested flags:
+
+- `--sku <sku>`
+- `--family <stem>`
 
 ## 5. JSON Contract Shape
 

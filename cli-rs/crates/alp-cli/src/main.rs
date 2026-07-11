@@ -27,6 +27,7 @@ fn main() {
         Command::Completion(args) => commands::completion::run(&global, &args),
         Command::Diff => commands::diff::run(&global),
         Command::Presets => commands::presets::run(&global),
+        Command::Pinmux(args) => commands::pinmux::run(&global, &args),
         Command::Explain(args) => commands::explain::run(&global, &args),
         Command::Inspect(args) => commands::inspect::run(&global, &args),
         Command::Trace(args) => commands::trace::run(&global, &args),

@@ -102,6 +102,8 @@ pub enum Command {
     Diff,
     /// List SDK presets (SKUs, carriers) and built-in catalogue defaults.
     Presets,
+    /// Show the E1M pinmux capability table (E1M pad → silicon function) for a SoM family.
+    Pinmux(PinmuxArgs),
     /// Explain a project/module template or a generation target.
     Explain(ExplainArgs),
     /// Inspect resolved project/debug context values.
@@ -127,6 +129,18 @@ pub enum Command {
     Clean(WestForwardArgs),
     /// Boot the system manifest in Renode (`west alp-renode`).
     Renode(WestForwardArgs),
+}
+
+/// Args for `pinmux`: the family target, resolved from an explicit `--family`
+/// stem or mapped from a `--sku`.
+#[derive(Debug, Args)]
+pub struct PinmuxArgs {
+    /// SoM SKU to resolve the pinmux family from (e.g. `E1M-AEN701`).
+    #[arg(long)]
+    pub sku: Option<String>,
+    /// Pinmux family stem directly (e.g. `aen`, `v2n`); overrides `--sku`.
+    #[arg(long)]
+    pub family: Option<String>,
 }
 
 /// Args for commands that forward verbatim to a `west alp-*` subcommand (`image`/`flash`/`clean`/`renode`).
