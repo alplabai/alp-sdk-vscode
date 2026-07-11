@@ -33,6 +33,8 @@ pub mod generate;
 pub mod init;
 /// `alp inspect` — inspect resolved project/debug context values.
 pub mod inspect;
+/// `alp pinmux` — the E1M pinmux capability table (E1M pad → silicon function) for a SoM family.
+pub mod pinmux;
 /// `alp presets` — list SDK presets (SKUs/SoMs, carriers) + built-in catalogue defaults.
 pub mod presets;
 /// `alp scaffold` — scaffold a module into an existing project.

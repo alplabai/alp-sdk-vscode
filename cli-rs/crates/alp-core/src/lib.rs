@@ -14,6 +14,7 @@ pub mod debug_launch;
 pub mod diff;
 pub mod loader;
 pub mod model;
+pub mod pinmux;
 pub mod presets;
 pub mod preview;
 pub mod project;
@@ -49,6 +50,7 @@ pub use loader::{
     generation_target_support, list_generation_target_support,
 };
 pub use model::{BoardModel, normalize_board_model};
+pub use pinmux::{PinmuxPad, PinmuxTable, parse_pinmux_table, pinmux_family_for_sku};
 pub use presets::{PresetCatalogueDefaults, empty_preset_catalogue};
 pub use preview::{EffectiveConfigPreviewPayload, create_effective_config_preview_payload};
 pub use project::{
