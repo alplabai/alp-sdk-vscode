@@ -135,6 +135,35 @@
   line-height: 1.4;
 }
 
+/* ── Example domain filter chips ── */
+
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-4);
+}
+.filterChip {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-widget, var(--border-default));
+  border-radius: var(--radius-pill, 999px);
+  cursor: pointer;
+  transition:
+    background var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out);
+}
+.filterChip:hover {
+  background: var(--surface-hover);
+}
+.filterChip[data-selected] {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+  background: color-mix(in srgb, var(--border-focus) 10%, transparent);
+}
+
 /* ── Module list ── */
 
 .moduleGroup {

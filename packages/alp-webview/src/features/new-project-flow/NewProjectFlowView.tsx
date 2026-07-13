@@ -5,6 +5,7 @@ import { useStepper } from "../../shared/hooks/useStepper";
 import {
   Button,
   Card,
+  EmptyState,
   Field,
   Icon,
   Skeleton,
@@ -43,6 +44,34 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
   const starters = templates.filter((t) => t.category === "starter");
   const examples = templates.filter((t) => t.category === "example");
 
+  // Search + domain filter are purely presentational — they only decide which
+  // example cards render, so the state stays local to this step.
+  const [query, setQuery] = useState("");
+  const [domain, setDomain] = useState(""); // "" = all domains
+
+  // Domains are the first segment of each example's sourceDir (audio, ai, …).
+  const domains = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of examples) {
+      const d = t.sourceDir?.split("/")[0];
+      if (d) set.add(d);
+    }
+    return Array.from(set).sort();
+  }, [examples]);
+
+  const filteredExamples = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return examples.filter((t) => {
+      const d = t.sourceDir?.split("/")[0] ?? "";
+      if (domain && d !== domain) return false;
+      if (!q) return true;
+      return [t.title, t.description, t.sourceDir ?? "", t.id]
+        .join("\n")
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [examples, query, domain]);
+
   return (
     <>
       <p className={styles.stepHeading}>Choose a project type</p>
@@ -66,16 +95,60 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
       {examples.length > 0 && (
         <>
           <p className={styles.groupLabel}>Examples</p>
-          <div className={styles.templateGrid}>
-            {examples.map((t) => (
-              <TemplateCard
-                key={t.id}
-                template={t}
-                selected={selected === t.id}
-                onSelect={onSelect}
-              />
-            ))}
+          <div className={styles.fieldWrap}>
+            <Field
+              label="Search examples"
+              placeholder="Search by name, description, or path…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
+          {domains.length > 1 && (
+            <div
+              className={styles.filterChips}
+              role="group"
+              aria-label="Filter examples by domain"
+            >
+              <button
+                type="button"
+                className={styles.filterChip}
+                data-selected={domain === "" ? "" : undefined}
+                aria-pressed={domain === ""}
+                onClick={() => setDomain("")}
+              >
+                All
+              </button>
+              {domains.map((d) => (
+                <button
+                  type="button"
+                  key={d}
+                  className={styles.filterChip}
+                  data-selected={domain === d ? "" : undefined}
+                  aria-pressed={domain === d}
+                  onClick={() => setDomain(d)}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
+          {filteredExamples.length > 0 ? (
+            <div className={styles.templateGrid}>
+              {filteredExamples.map((t) => (
+                <TemplateCard
+                  key={t.id}
+                  template={t}
+                  selected={selected === t.id}
+                  onSelect={onSelect}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No examples match"
+              description="Try a different search term or clear the domain filter."
+            />
+          )}
         </>
       )}
     </>
