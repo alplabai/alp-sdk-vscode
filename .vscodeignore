@@ -3,6 +3,9 @@
 .vscode/**
 .vscode-test/**
 .claude/**
+.agents/**
+.code-review-graph/**
+.superpowers/**
 .scratch/**
 .venv/**
 
@@ -23,14 +26,17 @@ scripts/**
 .gitignore
 .gitmodules
 .npmrc
+*.vsix
 tsconfig.json
 pnpm-workspace.yaml
 pnpm-lock.yaml
 package-lock.json
 vite.config.ts
 
+AGENTS.md
 BACKLOG.md
 CLI.md
+CLAUDE.md
 DEBUG.md
 PLAN.md
 ARCHITECTURE_RULES.md

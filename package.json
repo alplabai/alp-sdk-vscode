@@ -331,8 +331,8 @@
     "install:vscode": "bash ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",
     "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm --filter ./packages/alp-cli run compile && pnpm run bundle:ext",
-    "package": "pnpm run vscode:prepublish && vsce package --no-dependencies",
-    "package:dev": "pnpm run vscode:prepublish && vsce package --no-dependencies --pre-release"
+    "package": "vsce package --no-dependencies",
+    "package:dev": "vsce package --no-dependencies --pre-release"
   },
   "dependencies": {
     "@alp-sdk/core": "workspace:*",
