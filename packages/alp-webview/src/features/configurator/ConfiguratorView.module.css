@@ -569,3 +569,32 @@
 .footSpacer {
   flex: 1;
 }
+
+/* ── validation banner (blocking errors, above the footer) ──────────────── */
+.vBanner {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-widget);
+  background: color-mix(
+    in srgb,
+    var(--vscode-errorForeground, #f48771) 10%,
+    transparent
+  );
+  max-height: 140px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.vBannerHead {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--vscode-errorForeground, #f48771);
+}
+.vBannerList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+.vBannerList li {
+  margin-bottom: 2px;
+}
