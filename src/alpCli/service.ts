@@ -73,6 +73,39 @@ export function isNativeAlpVersionOutput(stdout: string): boolean {
   return /^alp \d+\.\d+\.\d+/.test(firstLine);
 }
 
+/**
+ * Extract the `MAJOR.MINOR.PATCH` version from `alp --version` stdout
+ * (e.g. `alp 0.1.14` or `alp 0.1.14 (abc1234)`), or `null` when the output is
+ * not the native CLI's version line.
+ */
+export function parseAlpVersion(stdout: string): string | null {
+  const firstLine = stdout.trim().split(/\r?\n/, 1)[0] ?? "";
+  const match = /^alp (\d+)\.(\d+)\.(\d+)/.exec(firstLine);
+  return match ? `${match[1]}.${match[2]}.${match[3]}` : null;
+}
+
+/**
+ * True when the `installed` version is strictly older than `supported`
+ * (tuple compare over numeric `MAJOR.MINOR.PATCH` — no semver dep). An
+ * unparseable/`null` installed version is treated as "unknown, not behind" so a
+ * probe hiccup never nags the user.
+ */
+export function isCliBehind(
+  installed: string | null,
+  supported: string = SUPPORTED_CLI_VERSION,
+): boolean {
+  if (!installed) return false;
+  const a = installed.split(".").map(Number);
+  const b = supported.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    if (ai < bi) return true;
+    if (ai > bi) return false;
+  }
+  return false;
+}
+
 export function classifyExitCode(code: number): CliExitKind {
   return EXIT_KINDS[code] ?? "unknown";
 }

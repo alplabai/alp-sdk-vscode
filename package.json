@@ -243,6 +243,12 @@
         "icon": "$(output)"
       },
       {
+        "command": "alp.updateCli",
+        "title": "Alp: Update the alp CLI",
+        "category": "Alp",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
         "category": "Alp"

@@ -82,7 +82,7 @@ export async function resolveAlpBinary(
   }
 }
 
-async function downloadCli(deps: ResolveDeps): Promise<void> {
+export async function downloadCli(deps: ResolveDeps): Promise<void> {
   const asset = releaseAssetForTarget(deps.platform, deps.arch);
   if (!asset) {
     throw new Error(

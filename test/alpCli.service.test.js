@@ -5,6 +5,8 @@ const assert = require("node:assert/strict");
 const {
   decideBinarySource,
   isNativeAlpVersionOutput,
+  parseAlpVersion,
+  isCliBehind,
   classifyExitCode,
   parseEnvelope,
   classifyOutcome,
@@ -12,6 +14,21 @@ const {
   binaryName,
   SUPPORTED_CLI_VERSION,
 } = require("../out/alpCli/service.js");
+
+test("parseAlpVersion extracts MAJOR.MINOR.PATCH and tolerates a suffix", () => {
+  assert.equal(parseAlpVersion("alp 0.1.14"), "0.1.14");
+  assert.equal(parseAlpVersion("alp 0.1.14 (abc1234)\n"), "0.1.14");
+  assert.equal(parseAlpVersion("alp, version 0.8.1"), null); // python click CLI
+  assert.equal(parseAlpVersion(""), null);
+});
+
+test("isCliBehind compares numeric version tuples", () => {
+  assert.equal(isCliBehind("0.1.11", "0.1.14"), true);
+  assert.equal(isCliBehind("0.1.14", "0.1.14"), false);
+  assert.equal(isCliBehind("0.2.0", "0.1.14"), false);
+  assert.equal(isCliBehind("1.0.0", "0.1.14"), false);
+  assert.equal(isCliBehind(null, "0.1.14"), false); // unknown → not behind
+});
 
 test("decideBinarySource follows the locked order", () => {
   assert.equal(
