@@ -1542,8 +1542,16 @@ function ReviewSection({ cfg }: { cfg: UseConfigurator }) {
 export function ConfiguratorView() {
   const cfg = useConfigurator();
   const [active, setActive] = useState<ConfiguratorSection>("project");
-  const { sdkConnected, dirty, validation, boardPath, save, reload, preview } =
-    cfg;
+  const {
+    sdkConnected,
+    dirty,
+    validation,
+    boardPath,
+    status,
+    save,
+    reload,
+    preview,
+  } = cfg;
 
   const validClass = validation.errors.length ? styles.vErr : styles.vOk;
   const validText = validation.errors.length
@@ -1645,6 +1653,11 @@ export function ConfiguratorView() {
         <span className={`${styles.valid} ${validClass}`} role="status">
           {validText}
         </span>
+        {status ? (
+          <span className={styles.statusMsg} role="status" aria-live="polite">
+            {status}
+          </span>
+        ) : null}
         <span className={styles.footSpacer} />
         <button type="button" className={styles.btn} onClick={preview}>
           Preview
