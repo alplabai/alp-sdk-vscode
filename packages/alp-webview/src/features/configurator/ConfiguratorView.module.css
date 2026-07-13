@@ -241,7 +241,10 @@
   border: 1px solid var(--border-widget);
   border-radius: var(--radius-lg);
   background: var(--surface-bg);
-  overflow: hidden;
+  /* No overflow:hidden — it clipped the TagSelector dropdown (.dd) where it
+   * extends past the card's bottom edge. The border-radius still clips the
+   * card's own border/background; children are rectangular + transparent so
+   * nothing pokes out of the rounded corners. */
 }
 .coreGhost {
   opacity: 0.82;
