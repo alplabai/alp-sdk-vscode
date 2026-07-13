@@ -251,6 +251,7 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
     let text_mode = !g.is_json();
     let mut results: Vec<SliceResult> = Vec::new();
     let mut any_failed = false;
+    let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
 
     for slice in &plan.slices {
         let backend = slice.backend.as_str().to_string();
@@ -286,7 +287,7 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
             continue;
         }
         let tool = if cmd.tool == "west" {
-            west_program(base)
+            west_program(base, sdk_root.as_deref())
         } else {
             cmd.tool.clone()
         };
@@ -609,25 +610,54 @@ fn west_argv(subcommand: &str, passthrough: &[String]) -> Vec<String> {
     argv
 }
 
-/// Resolve the `west` program to launch. Prefer a workspace Python venv created
-/// by `alp bootstrap` (`<dir>/.venv/bin/west`, searched from `start` upward) so
-/// builds use the hermetic west rather than a (possibly broken) global one.
-/// Falls back to `"west"` on PATH when no venv is found — so environments with
-/// no venv (CI, the contract harness) behave exactly as before.
-fn west_program(start: &str) -> String {
+/// Resolve the `west` program to launch. Prefer a Python venv created by
+/// `alp bootstrap` so builds use the hermetic west rather than a (possibly broken
+/// or absent) global one, in this order:
+///   1. a `.venv` in the project tree, searched from `start` upward;
+///   2. the workspace venv derived from `$ZEPHYR_BASE` (`<ZEPHYR_BASE>/../.venv`),
+///      so an activated-but-not-on-PATH workspace still resolves;
+///   3. the SDK's canonical `<sdk-parent>/zephyrproject/.venv` — bootstrap.sh's
+///      default `WORKSPACE_DIR` — so `alp --sdk-root <X> build` finds the
+///      bootstrapped west WITHOUT the user activating the venv first.
+/// Falls back to `"west"` on PATH when none resolve (CI, an activated venv, the
+/// contract harness) — behaving exactly as before in those environments.
+fn west_program(start: &str, sdk_root: Option<&Path>) -> String {
     let (sub, exe) = if cfg!(windows) {
         ("Scripts", "west.exe")
     } else {
         ("bin", "west")
     };
+    let venv_west = |dir: &Path| dir.join(".venv").join(sub).join(exe);
+
+    // 1. A `.venv` in the project tree.
     let mut dir = Some(Path::new(start));
     while let Some(d) = dir {
-        let candidate = d.join(".venv").join(sub).join(exe);
+        let candidate = venv_west(d);
         if candidate.is_file() {
             return candidate.to_string_lossy().into_owned();
         }
         dir = d.parent();
     }
+
+    // 2. The workspace venv from $ZEPHYR_BASE (workspace = ZEPHYR_BASE/..).
+    if let Ok(zephyr_base) = std::env::var("ZEPHYR_BASE") {
+        if let Some(workspace) = Path::new(&zephyr_base).parent() {
+            let candidate = venv_west(workspace);
+            if candidate.is_file() {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+
+    // 3. The SDK's canonical `<sdk-parent>/zephyrproject/.venv` bootstrap default.
+    if let Some(parent) = sdk_root.and_then(|s| s.parent()) {
+        let candidate = venv_west(&parent.join("zephyrproject"));
+        if candidate.is_file() {
+            return candidate.to_string_lossy().into_owned();
+        }
+    }
+
+    // 4. Fall back to `west` on PATH.
     "west".to_string()
 }
 
@@ -642,7 +672,8 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
 
     let argv = west_argv(subcommand, passthrough);
     let west_command = argv[0].clone();
-    let west_bin = west_program(&west_cwd);
+    let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
+    let west_bin = west_program(&west_cwd, sdk_root.as_deref());
     let data = BuildData {
         schema_version: "1".to_string(),
         west_command: west_command.clone(),
@@ -851,5 +882,81 @@ mod tests {
         assert!(base.join("build/c1").is_dir());
 
         std::fs::remove_dir_all(&base).ok();
+    }
+}
+
+#[cfg(test)]
+mod west_program_tests {
+    use super::west_program;
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("alp-westp-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        d
+    }
+
+    fn venv_parts() -> (&'static str, &'static str) {
+        if cfg!(windows) {
+            ("Scripts", "west.exe")
+        } else {
+            ("bin", "west")
+        }
+    }
+
+    #[test]
+    fn finds_project_tree_venv_searching_upward() {
+        let root = tmp("proj");
+        let (sub, exe) = venv_parts();
+        let venv_bin = root.join(".venv").join(sub);
+        std::fs::create_dir_all(&venv_bin).unwrap();
+        let west = venv_bin.join(exe);
+        std::fs::write(&west, "").unwrap();
+        let cwd = root.join("a").join("b");
+        std::fs::create_dir_all(&cwd).unwrap();
+
+        // No sdk_root needed — the project-tree venv is found by the upward walk.
+        assert_eq!(
+            west_program(&cwd.to_string_lossy(), None),
+            west.to_string_lossy()
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn resolves_bootstrap_workspace_from_sdk_root() {
+        // Step 2 ($ZEPHYR_BASE) is checked before the sdk-root default; skip when
+        // an activated env would take precedence so the assertion stays deterministic.
+        if std::env::var_os("ZEPHYR_BASE").is_some() {
+            return;
+        }
+        let root = tmp("sdk");
+        let (sub, exe) = venv_parts();
+        let sdk = root.join("sdk-root");
+        std::fs::create_dir_all(&sdk).unwrap();
+        // Canonical bootstrap layout: <sdk-parent>/zephyrproject/.venv/<sub>/west.
+        let venv_bin = root.join("zephyrproject").join(".venv").join(sub);
+        std::fs::create_dir_all(&venv_bin).unwrap();
+        let west = venv_bin.join(exe);
+        std::fs::write(&west, "").unwrap();
+        // A cwd with no project-tree venv above it.
+        let cwd = root.join("elsewhere");
+        std::fs::create_dir_all(&cwd).unwrap();
+
+        assert_eq!(
+            west_program(&cwd.to_string_lossy(), Some(sdk.as_path())),
+            west.to_string_lossy()
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn falls_back_to_path_west_when_nothing_resolves() {
+        let root = tmp("none");
+        std::fs::create_dir_all(&root).unwrap();
+        // Only assert the no-signal default when no ambient $ZEPHYR_BASE could win.
+        if std::env::var_os("ZEPHYR_BASE").is_none() {
+            assert_eq!(west_program(&root.to_string_lossy(), None), "west");
+        }
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
