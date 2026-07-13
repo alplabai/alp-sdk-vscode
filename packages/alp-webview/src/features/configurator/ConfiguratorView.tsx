@@ -1550,17 +1550,15 @@ export function ConfiguratorView() {
     ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""} — resolve to save`
     : validation.warnings.length
       ? `⚠ ${validation.warnings.length} warning${validation.warnings.length > 1 ? "s" : ""}`
-      : dirty
-        ? "✓ Valid — ready to save"
-        : "✓ Valid";
+      : "✓ Valid — ready to save";
 
-  // Explain why the Save button is disabled so the action is never a dead end.
+  // A valid board can always be saved — persisting an unchanged/first-time config
+  // is a harmless (idempotent) write. Only validation errors block Save, so the
+  // action is never a dead end for a valid config.
   const saveTitle =
     validation.errors.length > 0
       ? `Resolve ${validation.errors.length} validation error${validation.errors.length > 1 ? "s" : ""} before saving (see the list above).`
-      : !dirty
-        ? "No changes to save."
-        : "Save board.yaml";
+      : "Save board.yaml";
 
   function renderSection() {
     if (!cfg.loaded) {
@@ -1657,7 +1655,7 @@ export function ConfiguratorView() {
         <button
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
-          disabled={!dirty || validation.errors.length > 0}
+          disabled={validation.errors.length > 0}
           title={saveTitle}
           onClick={save}
         >
