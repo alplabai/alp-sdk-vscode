@@ -25,6 +25,8 @@ pub mod debug_config;
 pub mod diff;
 /// `alp doctor` — diagnose debug readiness (`--build` runs the build-readiness preflight).
 pub mod doctor;
+/// `alp examples` — list the SDK's ready-made example projects (for `init --from-example`).
+pub mod examples;
 /// `alp explain` — explain a project/module template or a generation target.
 pub mod explain;
 /// `alp generate` — Zephyr conf / DTS overlay / CMake args / Yocto conf codegen.

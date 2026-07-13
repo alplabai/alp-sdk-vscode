@@ -23,6 +23,7 @@ fn main() {
         Command::Generate => commands::generate::run(&global),
         Command::Init(args) => commands::init::run(&global, &args),
         Command::Scaffold(args) => commands::scaffold::run(&global, &args),
+        Command::Examples => commands::examples::run(&global),
         Command::Doctor(args) => commands::doctor::run(&global, &args),
         Command::Completion(args) => commands::completion::run(&global, &args),
         Command::Diff => commands::diff::run(&global),

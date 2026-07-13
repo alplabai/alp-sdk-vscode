@@ -53,6 +53,50 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     out
 }
 
+/// Resolve the workspace root from `--project` (joined to CWD) or CWD itself.
+/// Unnormalized join, matching the resolution `generate`/`init`/`examples` use
+/// before probing for the SDK checkout.
+pub fn cli_workspace_root(g: &GlobalArgs) -> PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match &g.project {
+        Some(project) => cwd.join(project),
+        None => cwd,
+    }
+}
+
+/// True if `root` contains `scripts/alp_project.py`, marking it a valid SDK root.
+pub fn has_loader_script(root: &Path) -> bool {
+    root.join("scripts").join("alp_project.py").exists()
+}
+
+/// Resolve the alp-sdk root: honor `--sdk-root` when it has the loader script,
+/// otherwise probe the workspace and sibling `alp-sdk` / `alp-sdk-upstream` dirs.
+/// Shared by `generate` (codegen), `init --from-example`, and `examples`.
+pub fn resolve_sdk_root(g: &GlobalArgs, workspace_root: &Path) -> Option<PathBuf> {
+    if let Some(root) = &g.sdk_root {
+        let candidate = PathBuf::from(root);
+        if has_loader_script(&candidate) {
+            return Some(candidate);
+        }
+        return None;
+    }
+
+    let parent = workspace_root.parent().map(Path::to_path_buf);
+    let candidates = [
+        workspace_root.to_path_buf(),
+        parent
+            .as_ref()
+            .map(|p| p.join("alp-sdk"))
+            .unwrap_or_else(|| PathBuf::from("alp-sdk")),
+        parent
+            .as_ref()
+            .map(|p| p.join("alp-sdk-upstream"))
+            .unwrap_or_else(|| PathBuf::from("alp-sdk-upstream")),
+    ];
+
+    candidates.into_iter().find(|c| has_loader_script(c))
+}
+
 /// Resolve the project context from the global args, mirroring the TS commands'
 /// `path.resolve(cwd, project) + resolveProjectContext` boilerplate. Shared by
 /// `validate`, `diff`, `presets`, and `doctor`.
