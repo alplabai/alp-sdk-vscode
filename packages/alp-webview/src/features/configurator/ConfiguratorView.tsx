@@ -1547,10 +1547,20 @@ export function ConfiguratorView() {
 
   const validClass = validation.errors.length ? styles.vErr : styles.vOk;
   const validText = validation.errors.length
-    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""}: ${validation.errors[0]}`
+    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""} — resolve to save`
     : validation.warnings.length
       ? `⚠ ${validation.warnings.length} warning${validation.warnings.length > 1 ? "s" : ""}`
-      : "✓ Valid";
+      : dirty
+        ? "✓ Valid — ready to save"
+        : "✓ Valid";
+
+  // Explain why the Save button is disabled so the action is never a dead end.
+  const saveTitle =
+    validation.errors.length > 0
+      ? `Resolve ${validation.errors.length} validation error${validation.errors.length > 1 ? "s" : ""} before saving (see the list above).`
+      : !dirty
+        ? "No changes to save."
+        : "Save board.yaml";
 
   function renderSection() {
     if (!cfg.loaded) {
@@ -1618,6 +1628,21 @@ export function ConfiguratorView() {
         <main className={styles.main}>{renderSection()}</main>
       </div>
 
+      {validation.errors.length > 0 && (
+        <div className={styles.vBanner} role="alert">
+          <p className={styles.vBannerHead}>
+            {validation.errors.length} item
+            {validation.errors.length > 1 ? "s" : ""} to resolve before you can
+            save board.yaml:
+          </p>
+          <ul className={styles.vBannerList}>
+            {validation.errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <footer className={styles.footer}>
         <span className={`${styles.valid} ${validClass}`} role="status">
           {validText}
@@ -1633,6 +1658,7 @@ export function ConfiguratorView() {
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
           disabled={!dirty || validation.errors.length > 0}
+          title={saveTitle}
           onClick={save}
         >
           Save board.yaml
