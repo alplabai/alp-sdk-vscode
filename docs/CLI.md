@@ -35,6 +35,7 @@ The CLI should expose these top-level command families:
 - `alp validate`
 - `alp generate`
 - `alp init`
+- `alp examples`
 - `alp scaffold`
 - `alp completion`
 - `alp inspect`
@@ -162,16 +163,28 @@ Purpose:
 Required behavior:
 
 - support non-interactive template selection
+- copy an existing SDK example verbatim via `--from-example`
 - emit the planned project tree before write when requested
 - make overwrite policy explicit
 
 Suggested flags:
 
 - `--template <name>`
+- `--from-example <category/name>` (mutually exclusive with `--template`)
 - `--name <project-name>`
 - `--destination <path>`
 - `--preview`
 - `--force`
+
+`alp examples` lists the SDK's ready-made example projects
+(`{ id, sourceDir, title, description }`) discovered under
+`<sdk>/examples/<category>/<name>/` (directories carrying a `board.yaml`); an
+unresolved SDK root yields an empty `examples` list rather than an error.
+`alp init --from-example <sourceDir>` then copies one verbatim into the
+destination — the example ships its own `board.yaml`, so `--som`/`--cores` do not
+apply. Errors: unknown/empty example → exit 2 (`init.example-not-found` /
+`init.invalid-example`); unresolved SDK → exit 2 (`init.sdk-root-unresolved`);
+unreadable files → exit 1 (`init.example-unreadable`).
 
 ### 4.4 `alp scaffold`
 
@@ -363,6 +376,8 @@ The following command payloads map to shared-core contracts:
 - `alp support-bundle` -> `DebugSupportBundlePayload`
 - `alp generate` -> generation summary shaped from loader batch
   (`written`, `failed`) with deterministic ordering
+- `alp examples` -> `{ examples: [{ id, sourceDir, title, description }] }`
+  (empty when no SDK root resolves)
 
 ## 6. Non-Interactive Requirements
 

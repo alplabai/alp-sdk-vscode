@@ -94,6 +94,8 @@ pub enum Command {
     Init(InitArgs),
     /// Scaffold a module into an existing project.
     Scaffold(ScaffoldArgs),
+    /// List the SDK's ready-made example projects (source for `alp init --from-example`).
+    Examples,
     /// Diagnose debug readiness for a target/server combination.
     Doctor(DoctorArgs),
     /// Emit a shell completion script (bash, zsh, or fish).
@@ -321,6 +323,15 @@ pub struct InitArgs {
     /// Project template id (e.g. minimal-app, sensor-starter).
     #[arg(long)]
     pub template: Option<String>,
+    /// Copy an existing SDK example project verbatim instead of expanding a
+    /// template. Value is the example's `category/name` source dir under the SDK
+    /// `examples/` directory (e.g. `audio/i2s-tone`); see `alp examples`.
+    #[arg(
+        long = "from-example",
+        value_name = "SOURCE_DIR",
+        conflicts_with = "template"
+    )]
+    pub from_example: Option<String>,
     /// Project name; creates a sub-directory when provided.
     #[arg(long)]
     pub name: Option<String>,

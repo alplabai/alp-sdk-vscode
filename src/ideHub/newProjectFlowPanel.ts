@@ -119,6 +119,10 @@ export class NewProjectFlowPanel {
    *  resolve the chosen module's cores without re-querying `alp presets`. */
   private somModules: E1mModule[] = [];
 
+  /** Cached templates from the last `fetchTemplates`, so `createProject` can
+   *  resolve a chosen example's `sourceDir` without re-querying the CLI. */
+  private templates: ProjectTemplate[] = [];
+
   /** SoM ("Hardware") list from the CLI's `alp presets` (the installed SDK's
    *  actual modules). Falls back to the built-in list when no SDK is resolved
    *  (presets returns an empty `soms`) so New Project works pre-SDK. */
@@ -178,6 +182,36 @@ export class NewProjectFlowPanel {
         icon: "📦",
       });
     }
+
+    // Append the SDK's ready-made example projects (`alp examples` → category
+    // "example"), so users can scaffold from a real example, not just a starter.
+    // Empty when no SDK resolves — the picker simply shows no Examples section.
+    const examplesRes = await runAlpCommand(this.context, ["examples"]);
+    const examples =
+      (
+        examplesRes.outcome.envelope?.data as
+          | {
+              examples?: {
+                id: string;
+                sourceDir: string;
+                title?: string;
+                description?: string;
+              }[];
+            }
+          | undefined
+      )?.examples ?? [];
+    for (const ex of examples) {
+      templates.push({
+        id: ex.id,
+        title: ex.title || ex.id,
+        description: ex.description ?? "",
+        category: "example",
+        icon: "🧪",
+        sourceDir: ex.sourceDir,
+      });
+    }
+
+    this.templates = templates;
     return templates;
   }
 
@@ -252,26 +286,51 @@ export class NewProjectFlowPanel {
       return;
     }
 
-    // Delegate scaffolding to the CLI: real template files + the chosen SoM
-    // written into board.yaml (alp init --som).
-    const initArgs = [
-      "init",
-      "--template",
-      templateId,
-      "--name",
-      projectName,
-      "--destination",
-      parentDir,
-      "--som",
-      moduleId,
-      "--non-interactive",
-    ];
+    // Delegate scaffolding to the CLI. An example template (sourceDir set) is
+    // copied verbatim via `alp init --from-example` — it ships its own board.yaml,
+    // so --som/--cores don't apply. A starter template is expanded via
+    // `alp init --template --som` with the chosen SoM written into board.yaml.
+    const sourceDir = this.templates.find(
+      (t) => t.id === templateId,
+    )?.sourceDir;
+    const initArgs = sourceDir
+      ? [
+          "init",
+          "--from-example",
+          sourceDir,
+          "--name",
+          projectName,
+          "--destination",
+          parentDir,
+          "--non-interactive",
+        ]
+      : [
+          "init",
+          "--template",
+          templateId,
+          "--name",
+          projectName,
+          "--destination",
+          parentDir,
+          "--som",
+          moduleId,
+          "--non-interactive",
+        ];
     // Heterogeneous SoMs (≥2 cores) scaffold every core + a default IPC channel
     // via `alp init --cores` (requires the CLI's --cores support; see
     // SUPPORTED_CLI_VERSION). Single-core SoMs keep the plain --som path.
-    const cores = this.somModules.find((m) => m.id === moduleId)?.cores ?? [];
-    if (cores.length >= 2) {
-      initArgs.push("--cores", cores.map((c) => `${c.id}:${c.os}`).join(","));
+    if (!sourceDir) {
+      const cores = this.somModules.find((m) => m.id === moduleId)?.cores ?? [];
+      if (cores.length >= 2) {
+        initArgs.push("--cores", cores.map((c) => `${c.id}:${c.os}`).join(","));
+      }
+    }
+    // Source the scaffold from the SDK the user picked in the wizard (the same one
+    // pinned below), overriding runAlpCommand's active-SDK injection — so an
+    // example is copied from, and validated against, the selected SDK rather than
+    // whatever SDK happens to be globally active.
+    if (sdkPath) {
+      initArgs.push("--sdk-root", sdkPath);
     }
     const { outcome } = await runAlpCommand(this.context, initArgs);
     if (!outcome.envelope || !outcome.envelope.ok) {

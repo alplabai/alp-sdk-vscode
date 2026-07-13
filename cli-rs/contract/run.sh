@@ -288,7 +288,7 @@ run_command_fixture() {
   rm -f "$raw" "$json" "$stderr"
 }
 
-for command_name in completion diff presets explain inspect trace debug-config support-bundle sdk bootstrap; do
+for command_name in completion diff presets examples explain inspect trace debug-config support-bundle sdk bootstrap; do
   command_root="$SCRIPT_DIR/fixtures/$command_name"
   [[ -d "$command_root" ]] || continue
   for case_dir in "$command_root"/*; do

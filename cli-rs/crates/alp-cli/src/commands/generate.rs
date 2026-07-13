@@ -45,7 +45,7 @@ struct GenerateData {
 /// Run `alp generate`: resolve the board and SDK roots, invoke `alp_project.py`
 /// once per emit target, and assemble the text/JSON `CommandRun` result.
 pub fn run(g: &GlobalArgs) -> CommandRun {
-    let workspace_root = resolve_workspace_root(g);
+    let workspace_root = crate::util::cli_workspace_root(g);
     let board_path = resolve_board_path(g, &workspace_root);
 
     // Keep as-given strings for JSON (reproducible in golden fixtures).
@@ -71,7 +71,7 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
         );
     }
 
-    let Some(sdk_root) = resolve_sdk_root(g, &workspace_root) else {
+    let Some(sdk_root) = crate::util::resolve_sdk_root(g, &workspace_root) else {
         return failure(
             g,
             project,
@@ -170,15 +170,6 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
     CommandRun { exit, text, json }
 }
 
-/// Resolve the workspace root: the current directory, joined with `--project` if given.
-fn resolve_workspace_root(g: &GlobalArgs) -> PathBuf {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    match &g.project {
-        Some(project) => cwd.join(project),
-        None => cwd,
-    }
-}
-
 /// Resolve the `board.yaml` path from `--board-yaml` (absolute or workspace-relative),
 /// defaulting to `<workspace_root>/board.yaml`.
 fn resolve_board_path(g: &GlobalArgs, workspace_root: &Path) -> PathBuf {
@@ -191,38 +182,6 @@ fn resolve_board_path(g: &GlobalArgs, workspace_root: &Path) -> PathBuf {
     }
 
     workspace_root.join("board.yaml")
-}
-
-/// Resolve the alp-sdk root: honor `--sdk-root` if it has the loader script,
-/// otherwise probe the workspace and sibling `alp-sdk` / `alp-sdk-upstream` dirs.
-fn resolve_sdk_root(g: &GlobalArgs, workspace_root: &Path) -> Option<PathBuf> {
-    if let Some(root) = &g.sdk_root {
-        let candidate = PathBuf::from(root);
-        if has_loader_script(&candidate) {
-            return Some(candidate);
-        }
-        return None;
-    }
-
-    let parent = workspace_root.parent().map(Path::to_path_buf);
-    let candidates = [
-        workspace_root.to_path_buf(),
-        parent
-            .as_ref()
-            .map(|p| p.join("alp-sdk"))
-            .unwrap_or_else(|| PathBuf::from("alp-sdk")),
-        parent
-            .as_ref()
-            .map(|p| p.join("alp-sdk-upstream"))
-            .unwrap_or_else(|| PathBuf::from("alp-sdk-upstream")),
-    ];
-
-    candidates.into_iter().find(|c| has_loader_script(c))
-}
-
-/// True if `root` contains `scripts/alp_project.py`, marking it as a valid SDK root.
-fn has_loader_script(root: &Path) -> bool {
-    root.join("scripts").join("alp_project.py").exists()
 }
 
 /// Resolve which emit modes to run: all modes when `all` is set or no `--target`
