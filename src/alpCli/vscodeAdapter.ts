@@ -15,11 +15,18 @@ import {
   ResolveDeps,
   ResolvedBinary,
   SpawnResult,
+  downloadCli,
   resolveAlpBinary,
   runAlp,
 } from "./adapterCore";
 import { CliOutcome } from "./models";
-import { binaryName, isNativeAlpVersionOutput } from "./service";
+import {
+  SUPPORTED_CLI_VERSION,
+  binaryName,
+  isCliBehind,
+  isNativeAlpVersionOutput,
+  parseAlpVersion,
+} from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log } from "../util";
 
@@ -90,6 +97,111 @@ export async function resolveAlpBinaryForContext(
   }
   resolved = await resolveAlpBinary(buildResolveDeps(context));
   return resolved;
+}
+
+/** One-shot per window: run once to avoid nagging on every command. */
+let versionChecked = false;
+
+/**
+ * Probe the resolved `alp` binary's version and, when it's older than the
+ * version this extension targets, warn once with an actionable path — the
+ * silent cause of missing features (e.g. project examples) when a stale CLI is
+ * pinned via `alpSdk.cliPath` or left cached from an older extension build.
+ * Never throws: an unresolvable binary or unparseable version is a no-op.
+ */
+export async function checkCliVersion(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  if (versionChecked) {
+    return;
+  }
+  versionChecked = true;
+
+  let binary: ResolvedBinary;
+  try {
+    binary = await resolveAlpBinaryForContext(context);
+  } catch {
+    return; // resolution failure is surfaced by the command that triggered it
+  }
+  // Probe directly (not runAlpCommand, which appends `--format json`).
+  const probe = cp.spawnSync(binary.command, ["--version"], {
+    encoding: "utf8",
+  });
+  const version = parseAlpVersion(probe.stdout ?? "");
+  if (!isCliBehind(version, SUPPORTED_CLI_VERSION)) {
+    return;
+  }
+  log(
+    `[cli] resolved alp ${version} is older than supported ${SUPPORTED_CLI_VERSION} (source: ${binary.source})`,
+  );
+
+  if (binary.source === "cliPath") {
+    // A user-pinned cliPath wins over the managed download, so we can't update
+    // it — point the user at the setting (mirror surfaceResolutionError).
+    const choice = await vscode.window.showWarningMessage(
+      `The alp CLI at alpSdk.cliPath is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing. Update that binary, or clear the override to use the managed CLI.`,
+      "Open Settings",
+    );
+    if (choice === "Open Settings") {
+      await vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "alpSdk.cliPath",
+      );
+    }
+    return;
+  }
+
+  const choice = await vscode.window.showWarningMessage(
+    `The alp CLI is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing.`,
+    "Update",
+  );
+  if (choice === "Update") {
+    await vscode.commands.executeCommand("alp.updateCli");
+  }
+}
+
+/**
+ * Force-download the pinned `alp` release into the extension cache and reset
+ * resolution so the next command uses it. A set `alpSdk.cliPath` wins over the
+ * download, so guide the user to Settings instead of downloading a binary that
+ * won't be used.
+ */
+export async function updateAlpCli(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const deps = buildResolveDeps(context);
+  if (deps.cliPathSetting) {
+    const choice = await vscode.window.showWarningMessage(
+      "alpSdk.cliPath is set, so the managed CLI download won't be used. Clear the override to let the extension manage the alp CLI, or update that binary yourself.",
+      "Open Settings",
+    );
+    if (choice === "Open Settings") {
+      await vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "alpSdk.cliPath",
+      );
+    }
+    return;
+  }
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Updating the alp CLI to ${SUPPORTED_CLI_VERSION}…`,
+      },
+      async () => {
+        await downloadCli(deps);
+        resetResolvedBinary();
+        versionChecked = false;
+      },
+    );
+    void vscode.window.showInformationMessage(
+      `Alp CLI updated to ${SUPPORTED_CLI_VERSION}.`,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(`Alp CLI update failed: ${message}`);
+  }
 }
 
 /**
