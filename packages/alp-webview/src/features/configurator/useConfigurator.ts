@@ -83,7 +83,7 @@ export function useConfigurator(): UseConfigurator {
         }
       } else if (msg.type === "configuratorSaved") {
         setBaseline(fingerprint(boardRef.current));
-        setStatus(`Saved ${msg.boardPath}`);
+        setStatus("Saved ✓");
       }
     });
     postMessage({ type: "ready" });

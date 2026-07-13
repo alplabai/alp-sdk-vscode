@@ -566,6 +566,10 @@
 .vErr {
   color: var(--vscode-errorForeground, #f48771);
 }
+.statusMsg {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
 .footSpacer {
   flex: 1;
 }

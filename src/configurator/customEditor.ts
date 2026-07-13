@@ -124,8 +124,20 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
           });
           break;
         case "saveBoardConfig":
-          // Native save; onDidSaveTextDocument posts the configuratorSaved ack.
-          void document.save();
+          // Native save when there are unsaved edits (onDidSaveTextDocument posts
+          // the configuratorSaved ack). When the document is already clean —
+          // webview edits are written to the doc on every change, so a valid
+          // unchanged board is already persisted — document.save() no-ops and
+          // never acks, leaving the user with no feedback. Ack directly instead.
+          if (document.isDirty) {
+            void document.save();
+          } else {
+            const ack: ExtToWebviewMessage = {
+              type: "configuratorSaved",
+              boardPath: document.uri.fsPath,
+            };
+            void panel.webview.postMessage(ack);
+          }
           break;
         case "reloadConfigurator":
           postRender(parse());
