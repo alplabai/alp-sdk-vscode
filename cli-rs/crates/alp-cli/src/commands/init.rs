@@ -7,7 +7,7 @@ use alp_core::wizard::{
     ExampleReadError, WizardFileChangeKind, WizardPlanInput, WizardPlannedFile, WizardTemplateId,
     app_core_for_sku, collect_wizard_file_changes, create_scaffold_tree_preview,
     create_wizard_plan_with_cores, infer_runtime_for_core_id, list_wizard_templates,
-    read_example_tree, write_wizard_files,
+    read_example_tree, retarget_board_yaml_som, write_wizard_files,
 };
 use inquire::{InquireError, Select, Text};
 
@@ -316,6 +316,25 @@ fn run_from_example(
                 &format!("Example '{src}' could not be read: {detail}"),
             );
         }
+    };
+
+    // Retarget the copied board.yaml onto the chosen SoM (--som), so a user can
+    // scaffold an example onto their own SoM instead of the example's default.
+    let files: Vec<WizardPlannedFile> = match args.som.as_deref() {
+        Some(sku) => files
+            .into_iter()
+            .map(|f| {
+                if f.relative_path == "board.yaml" {
+                    WizardPlannedFile {
+                        content: retarget_board_yaml_som(&f.content, sku),
+                        ..f
+                    }
+                } else {
+                    f
+                }
+            })
+            .collect(),
+        None => files,
     };
 
     let template_id = format!("example:{src}");

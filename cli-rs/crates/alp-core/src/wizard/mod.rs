@@ -17,5 +17,5 @@ pub use service::{
     app_core_for_sku, create_module_scaffold_plan, create_scaffold_tree_preview,
     create_wizard_plan, create_wizard_plan_with_cores, example_description_from_readme,
     example_id_from_source_dir, example_title_from_readme, infer_runtime_for_core_id,
-    list_module_templates, list_wizard_templates, normalize_module_name,
+    list_module_templates, list_wizard_templates, normalize_module_name, retarget_board_yaml_som,
 };

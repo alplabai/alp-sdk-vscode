@@ -278,6 +278,43 @@ fn title_case_leaf(source_dir: &str) -> String {
         .join(" ")
 }
 
+/// Rewrite the `som.sku` value in a board.yaml's raw text to `sku`, preserving
+/// comments and formatting. Finds the top-level `som:` block and replaces the
+/// first `sku:` line under it (keeping its indentation and any trailing inline
+/// comment). Returns the text unchanged if no `som.sku` line is found. Used to
+/// retarget an example onto the user's chosen SoM (`alp init --from-example --som`).
+pub fn retarget_board_yaml_som(content: &str, sku: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    let mut in_som = false;
+    let mut done = false;
+    for line in content.lines() {
+        if !done {
+            let trimmed = line.trim_start();
+            let is_top_level = !line.is_empty() && !line.starts_with([' ', '\t']);
+            if is_top_level {
+                // A new top-level key: entering `som:`, or leaving it.
+                in_som = trimmed.starts_with("som:");
+            } else if in_som && trimmed.starts_with("sku:") {
+                let indent = &line[..line.len() - trimmed.len()];
+                let comment = line.find('#').map(|i| &line[i..]).unwrap_or("");
+                lines.push(if comment.is_empty() {
+                    format!("{indent}sku: {sku}")
+                } else {
+                    format!("{indent}sku: {sku}  {comment}")
+                });
+                done = true;
+                continue;
+            }
+        }
+        lines.push(line.to_string());
+    }
+    let mut result = lines.join("\n");
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
 /// Lowercase `name` and collapse runs of non-`[a-z0-9]` chars into single `_`
 /// separators (no leading/trailing). `Err` if nothing remains.
 pub fn normalize_module_name(name: &str) -> Result<String, String> {
@@ -1382,6 +1419,20 @@ mod example_catalog_tests {
         assert_eq!(
             example_id_from_source_dir("audio/i2s-tone"),
             "audio/i2s-tone"
+        );
+    }
+
+    #[test]
+    fn retarget_som_rewrites_only_the_som_sku() {
+        let src = "# header\nsom:\n  sku: E1M-AEN701\npreset: e1m-evk\n";
+        assert_eq!(
+            super::retarget_board_yaml_som(src, "E1M-AEN801"),
+            "# header\nsom:\n  sku: E1M-AEN801\npreset: e1m-evk\n"
+        );
+        // No som.sku → unchanged.
+        assert_eq!(
+            super::retarget_board_yaml_som("foo: bar\n", "X"),
+            "foo: bar\n"
         );
     }
 }
