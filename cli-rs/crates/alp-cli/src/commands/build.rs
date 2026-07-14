@@ -11,7 +11,7 @@
 //! Text mode inherits stdio so the build streams live in the caller's terminal;
 //! JSON mode captures + emits a single envelope.
 
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use alp_core::ProjectContext;
@@ -649,16 +649,58 @@ fn west_program(start: &str, sdk_root: Option<&Path>) -> String {
         }
     }
 
-    // 3. The SDK's canonical `<sdk-parent>/zephyrproject/.venv` bootstrap default.
+    // 3. The SDK workspace venv derived from `--sdk-root`. Post-alp-sdk#782 the
+    //    workspace topdir is the SDK's parent (`west init -l <alp-sdk>`), so the
+    //    venv is `<sdk-parent>/.venv`; older bootstraps used
+    //    `<sdk-parent>/zephyrproject/.venv`. Check both.
     if let Some(parent) = sdk_root.and_then(|s| s.parent()) {
-        let candidate = venv_west(&parent.join("zephyrproject"));
-        if candidate.is_file() {
-            return candidate.to_string_lossy().into_owned();
+        for workspace in [parent.to_path_buf(), parent.join("zephyrproject")] {
+            let candidate = venv_west(&workspace);
+            if candidate.is_file() {
+                return candidate.to_string_lossy().into_owned();
+            }
         }
     }
 
     // 4. Fall back to `west` on PATH.
     "west".to_string()
+}
+
+/// Resolve the west workspace topdir — the directory holding `.west/`. `west alp-*`
+/// are extension commands discovered *only* from a workspace manifest, so they must
+/// be launched from inside the workspace, not the app dir. Checks: the project tree
+/// upward (app inside a workspace), then `$ZEPHYR_BASE/..`, then the SDK-derived
+/// layouts — `<sdk-parent>` (alp-sdk-manifest topdir, post-alp-sdk#782) and the
+/// legacy `<sdk-parent>/zephyrproject`. `None` when no workspace is found (the
+/// caller then keeps the pre-existing behavior of running in the app dir).
+fn west_workspace_dir(start: &str, sdk_root: Option<&Path>) -> Option<PathBuf> {
+    let is_workspace = |dir: &Path| dir.join(".west").is_dir();
+
+    // 1. The project tree (if the app lives inside a workspace).
+    let mut dir = Some(Path::new(start));
+    while let Some(d) = dir {
+        if is_workspace(d) {
+            return Some(d.to_path_buf());
+        }
+        dir = d.parent();
+    }
+    // 2. `$ZEPHYR_BASE/..` (the workspace topdir).
+    if let Ok(zephyr_base) = std::env::var("ZEPHYR_BASE") {
+        if let Some(workspace) = Path::new(&zephyr_base).parent() {
+            if is_workspace(workspace) {
+                return Some(workspace.to_path_buf());
+            }
+        }
+    }
+    // 3. SDK-derived layouts.
+    if let Some(parent) = sdk_root.and_then(|s| s.parent()) {
+        for workspace in [parent.to_path_buf(), parent.join("zephyrproject")] {
+            if is_workspace(&workspace) {
+                return Some(workspace);
+            }
+        }
+    }
+    None
 }
 
 /// `subcommand` is the bare alp verb (`build`/`image`/`flash`/`clean`/`renode`).
@@ -670,14 +712,30 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
         .or_else(|| context.workspace_root.clone())
         .unwrap_or_else(|| ".".to_string());
 
-    let argv = west_argv(subcommand, passthrough);
-    let west_command = argv[0].clone();
     let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
     let west_bin = west_program(&west_cwd, sdk_root.as_deref());
+    // `west alp-*` are extension commands discovered only from a workspace
+    // manifest, so run them from the workspace topdir (holding `.west/`), not the
+    // app dir. When a workspace resolves, pass the project dir as the `app_path`
+    // positional the alp-* commands require — unless the caller already gave a
+    // positional (e.g. `alp build <app>`). No workspace → keep the old app-dir cwd.
+    let workspace = west_workspace_dir(&west_cwd, sdk_root.as_deref());
+    let run_cwd = workspace
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| west_cwd.clone());
+    let mut argv = west_argv(subcommand, passthrough);
+    if workspace.is_some() && !passthrough.iter().any(|a| !a.starts_with('-')) {
+        let app = std::fs::canonicalize(&west_cwd)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| west_cwd.clone());
+        argv.insert(1, app);
+    }
+    let west_command = argv[0].clone();
     let data = BuildData {
         schema_version: "1".to_string(),
         west_command: west_command.clone(),
-        west_cwd: west_cwd.clone(),
+        west_cwd: run_cwd.clone(),
         args: passthrough.to_vec(),
     };
     let project = Project {
@@ -688,7 +746,7 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
     if g.is_json() {
         let result = Command::new(&west_bin)
             .args(&argv)
-            .current_dir(&west_cwd)
+            .current_dir(&run_cwd)
             .output();
         let (exit, issues) = match result {
             Ok(out) if out.status.success() => (ExitCode::Success, Vec::new()),
@@ -716,7 +774,7 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
         // Text mode: stream the build live (inherited stdio).
         let status = Command::new(&west_bin)
             .args(&argv)
-            .current_dir(&west_cwd)
+            .current_dir(&run_cwd)
             .status();
         let (exit, line) = match status {
             Ok(s) if s.success() => (ExitCode::Success, format!("{subcommand}: complete.")),
@@ -887,7 +945,7 @@ mod tests {
 
 #[cfg(test)]
 mod west_program_tests {
-    use super::west_program;
+    use super::{west_program, west_workspace_dir};
 
     fn tmp(tag: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("alp-westp-{tag}-{}", std::process::id()));
@@ -957,6 +1015,28 @@ mod west_program_tests {
         if std::env::var_os("ZEPHYR_BASE").is_none() {
             assert_eq!(west_program(&root.to_string_lossy(), None), "west");
         }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn workspace_dir_resolves_topdir_from_sdk_root() {
+        // Step 2 ($ZEPHYR_BASE) precedes the sdk-root layouts; skip when set.
+        if std::env::var_os("ZEPHYR_BASE").is_some() {
+            return;
+        }
+        let root = tmp("ws");
+        // alp-sdk#782 layout: workspace topdir = the SDK checkout's parent.
+        let workspace = root.join("workspace");
+        let sdk = workspace.join("alp-sdk");
+        std::fs::create_dir_all(&sdk).unwrap();
+        std::fs::create_dir_all(workspace.join(".west")).unwrap();
+        let cwd = root.join("external-app"); // not inside any workspace
+        std::fs::create_dir_all(&cwd).unwrap();
+
+        assert_eq!(
+            west_workspace_dir(&cwd.to_string_lossy(), Some(sdk.as_path())),
+            Some(workspace)
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
