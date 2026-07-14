@@ -325,6 +325,12 @@ export class NewProjectFlowPanel {
         initArgs.push("--cores", cores.map((c) => `${c.id}:${c.os}`).join(","));
       }
     }
+    // Examples copy their own board.yaml verbatim; when the user picks a SoM,
+    // retarget the copied board.yaml to it (alp init --from-example --som), so an
+    // example can be scaffolded onto the user's SoM instead of its default.
+    if (sourceDir && moduleId) {
+      initArgs.push("--som", moduleId);
+    }
     // Source the scaffold from the SDK the user picked in the wizard (the same one
     // pinned below), overriding runAlpCommand's active-SDK injection — so an
     // example is copied from, and validated against, the selected SDK rather than
