@@ -293,6 +293,7 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
         };
         let mut command = Command::new(&tool);
         command.args(&cmd.args).current_dir(&cwd).envs(&slice.env);
+        with_venv_on_path(&mut command, &tool);
 
         let (status, rc) = if text_mode {
             match command.status() {
@@ -703,6 +704,27 @@ fn west_workspace_dir(start: &str, sdk_root: Option<&Path>) -> Option<PathBuf> {
     None
 }
 
+/// When `tool` is a resolved venv `west` (an absolute path), prepend its
+/// directory to `command`'s `PATH`. `west alp-*` spawns `alp_orchestrate`, which
+/// spawns nested `west build`/`bitbake` that resolve `west` via PATH — without
+/// this, they fail with "west not found in PATH" and silently skip the slice
+/// unless the user activated the venv. A bare `"west"` (PATH fallback) is left as-is.
+fn with_venv_on_path(command: &mut Command, tool: &str) {
+    let bin = Path::new(tool);
+    if !bin.is_absolute() {
+        return;
+    }
+    let Some(dir) = bin.parent() else {
+        return;
+    };
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = vec![dir.to_path_buf()];
+    paths.extend(std::env::split_paths(&existing));
+    if let Ok(joined) = std::env::join_paths(paths) {
+        command.env("PATH", joined);
+    }
+}
+
 /// `subcommand` is the bare alp verb (`build`/`image`/`flash`/`clean`/`renode`).
 pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandRun {
     let context = resolve_cli_project_context(g);
@@ -744,10 +766,10 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
     };
 
     if g.is_json() {
-        let result = Command::new(&west_bin)
-            .args(&argv)
-            .current_dir(&run_cwd)
-            .output();
+        let mut cmd = Command::new(&west_bin);
+        cmd.args(&argv).current_dir(&run_cwd);
+        with_venv_on_path(&mut cmd, &west_bin);
+        let result = cmd.output();
         let (exit, issues) = match result {
             Ok(out) if out.status.success() => (ExitCode::Success, Vec::new()),
             Ok(_) => (
@@ -772,10 +794,10 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
         }
     } else {
         // Text mode: stream the build live (inherited stdio).
-        let status = Command::new(&west_bin)
-            .args(&argv)
-            .current_dir(&run_cwd)
-            .status();
+        let mut cmd = Command::new(&west_bin);
+        cmd.args(&argv).current_dir(&run_cwd);
+        with_venv_on_path(&mut cmd, &west_bin);
+        let status = cmd.status();
         let (exit, line) = match status {
             Ok(s) if s.success() => (ExitCode::Success, format!("{subcommand}: complete.")),
             Ok(_) => (
