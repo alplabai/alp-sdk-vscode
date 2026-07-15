@@ -17,7 +17,8 @@ use alp_core::{
 };
 
 use super::CommandRun;
-use crate::cli::{DoctorArgs, GlobalArgs};
+use crate::cli::{BootstrapArgs, DoctorArgs, GlobalArgs};
+use crate::commands::build::probe_build_preflight;
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::style::{self, Theme};
@@ -29,7 +30,7 @@ use crate::util::{command_on_path, generated_at_iso, resolve_cli_project_context
 pub fn run(g: &GlobalArgs, args: &DoctorArgs) -> CommandRun {
     let generated_at = generated_at_iso();
     if args.build {
-        return run_build_readiness(g, &generated_at);
+        return run_build_readiness(g, &generated_at, args.fix);
     }
     let context = resolve_context(g, &generated_at);
 
@@ -83,8 +84,27 @@ pub fn run(g: &GlobalArgs, args: &DoctorArgs) -> CommandRun {
 /// the active `board.yaml` (explicit core `os:` fields; all three when none are
 /// declared), probes host build tools, and reports per-OS toolchain readiness.
 /// Advisory only — the authoritative per-core resolution stays `west alp-build`.
-fn run_build_readiness(g: &GlobalArgs, generated_at: &str) -> CommandRun {
-    let context = resolve_cli_project_context(g);
+fn run_build_readiness(g: &GlobalArgs, generated_at: &str, fix: bool) -> CommandRun {
+    let mut context = resolve_cli_project_context(g);
+
+    // `--fix`: when no Zephyr workspace is resolved, bootstrap one on demand
+    // (reuses a compatible Zephyr, else bootstraps), then re-resolve the context.
+    if fix
+        && probe_build_preflight(g, &context)
+            .iter()
+            .any(|c| c.name == "workspace" && c.status == DoctorStatus::Fail)
+    {
+        let _ = crate::commands::bootstrap::run(
+            g,
+            &BootstrapArgs {
+                no_pip: false,
+                no_west: false,
+                print_env: false,
+            },
+        );
+        context = resolve_cli_project_context(g);
+    }
+
     let resolved_project = Project {
         root: context.workspace_root.clone(),
         board_yaml: context.board_yaml_path.clone(),
@@ -111,6 +131,18 @@ fn run_build_readiness(g: &GlobalArgs, generated_at: &str) -> CommandRun {
         &mut report.summary,
         context.sdk_root.as_deref(),
     );
+
+    // Real gate: prepend the project/workspace readiness (can a build even
+    // start?) ahead of the host-tool probes, sharing `alp build`'s pre-flight
+    // checks so `doctor` and `build` agree on what "ready" means.
+    for check in probe_build_preflight(g, &context).into_iter().rev() {
+        match check.status {
+            DoctorStatus::Pass => report.summary.pass += 1,
+            DoctorStatus::Warn => report.summary.warn += 1,
+            DoctorStatus::Fail => report.summary.fail += 1,
+        }
+        report.checks.insert(0, check);
+    }
 
     let exit = if report.summary.fail > 0 {
         ExitCode::DoctorFailure

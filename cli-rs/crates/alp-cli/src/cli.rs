@@ -312,6 +312,10 @@ pub struct DoctorArgs {
     /// Run the build-readiness preflight instead of the debug-readiness checks.
     #[arg(long)]
     pub build: bool,
+    /// With `--build`: auto-repair a fixable blocker — run `alp bootstrap` when no
+    /// Zephyr workspace is resolved, then re-check.
+    #[arg(long)]
+    pub fix: bool,
 }
 
 /// Args for `validate`: an offline-only toggle that skips the Python SDK spawn.

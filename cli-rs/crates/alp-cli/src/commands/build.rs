@@ -233,11 +233,10 @@ fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
     execute_slices(g, project, &plan, &base)
 }
 
-/// Text-mode build pre-flight: probe the prerequisites `alp build` needs and, if
-/// any block the build, return a colorful readiness report to short-circuit with;
-/// `None` means all clear — proceed. Reuses the pure `alp_core::preflight` checks
-/// so `alp doctor` can share them.
-fn preflight_gate(g: &GlobalArgs, context: &ProjectContext) -> Option<CommandRun> {
+/// Probe the build prerequisites (SDK / board.yaml / workspace / west) into the
+/// pure `alp_core::preflight` checks. Shared by `alp build`'s pre-flight gate and
+/// `alp doctor --build` so both speak the same readiness language.
+pub(crate) fn probe_build_preflight(g: &GlobalArgs, context: &ProjectContext) -> Vec<DoctorCheck> {
     let base = base_dir(context);
     let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
     let workspace = west_workspace_dir(&base, sdk_root.as_deref());
@@ -261,8 +260,14 @@ fn preflight_gate(g: &GlobalArgs, context: &ProjectContext) -> Option<CommandRun
             .map(|p| p.to_string_lossy().into_owned()),
         west_available,
     };
+    build_preflight_checks(&input)
+}
 
-    let checks = build_preflight_checks(&input);
+/// Text-mode build pre-flight: run the shared checks and, if any block the build,
+/// return a colorful readiness report to short-circuit with; `None` means all
+/// clear — proceed.
+fn preflight_gate(g: &GlobalArgs, context: &ProjectContext) -> Option<CommandRun> {
+    let checks = probe_build_preflight(g, context);
     if !preflight_blocked(&checks) {
         return None;
     }
