@@ -340,7 +340,13 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
                 Ok(s) if s.success() => ("ok", s.code()),
                 Ok(s) => ("failed", s.code()),
                 Err(e) => {
-                    eprintln!("   launch error: {e}");
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        eprintln!(
+                            "   {tool} not found on PATH — install it to build this {backend} slice"
+                        );
+                    } else {
+                        eprintln!("   launch error: {e}");
+                    }
                     ("failed", None)
                 }
             }
