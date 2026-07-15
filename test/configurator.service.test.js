@@ -22,7 +22,10 @@ test("normalizeBoardModel drops empty optional blocks", () => {
   assert.equal(normalized.libraries, undefined);
   assert.equal(normalized.iot, undefined);
   assert.equal(normalized.inference, undefined);
-  assert.deepEqual(normalized.carrier, { name: "E1M-EVK" });
+  // #109: the retired `carrier:` is mapped onto the SDK-schema top-level
+  // `preset:` (lowercase slug), and the empty `populated` is dropped.
+  assert.equal(normalized.carrier, undefined);
+  assert.equal(normalized.preset, "e1m-evk");
 });
 
 test("createBoardYaml serializes the normalized model", () => {
