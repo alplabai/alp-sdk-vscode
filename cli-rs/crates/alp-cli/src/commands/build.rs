@@ -25,7 +25,7 @@ use alp_core::system_manifest::{parse_system_manifest, summarize_manifest};
 use serde::Serialize;
 
 use super::CommandRun;
-use crate::cli::{BuildArgs, GlobalArgs};
+use crate::cli::{BootstrapArgs, BuildArgs, GlobalArgs};
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
@@ -196,21 +196,29 @@ fn plan_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
 /// still settling on the SDK side; we run whatever command the emit gives, so a
 /// build before C4 lands may not yet apply the per-slice config.)
 fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
-    let context = resolve_cli_project_context(g);
-    let project = Project {
-        root: context.workspace_root.clone(),
-        board_yaml: context.board_yaml_path.clone(),
-    };
+    let mut context = resolve_cli_project_context(g);
 
-    // Order-independent pre-flight: in text mode, if a prerequisite is missing
-    // (no SDK / board.yaml / workspace), show a colorful, actionable readiness
-    // report and stop — instead of proceeding to a raw west/CMake error. JSON
-    // mode keeps its stable envelope; the same errors surface from acquire_plan.
+    // Order-independent pre-flight (text mode only). Before blocking on a missing
+    // prerequisite, collapse the flow: if the SDK and board.yaml are present but
+    // no Zephyr workspace is resolved, bootstrap one on demand so `alp build`
+    // alone gets from a fresh checkout to a build. Then, if anything still blocks
+    // (no SDK / board.yaml, or a bootstrap that didn't produce a workspace), show
+    // a colorful, actionable readiness report and stop — instead of proceeding to
+    // a raw west/CMake error. JSON mode keeps its stable envelope; the same
+    // errors surface from acquire_plan.
     if !g.is_json() {
+        if let Some(updated) = maybe_auto_bootstrap(g, &context) {
+            context = updated;
+        }
         if let Some(blocked) = preflight_gate(g, &context) {
             return blocked;
         }
     }
+
+    let project = Project {
+        root: context.workspace_root.clone(),
+        board_yaml: context.board_yaml_path.clone(),
+    };
 
     let plan = match acquire_plan(&context, args) {
         Ok(plan) => plan,
@@ -281,6 +289,38 @@ fn preflight_gate(g: &GlobalArgs, context: &ProjectContext) -> Option<CommandRun
     })
 }
 
+/// Text-mode convenience that collapses `init → switch → bootstrap → build`:
+/// when the SDK and board.yaml are present but no Zephyr workspace is resolved,
+/// bootstrap one on demand (reuses a compatible Zephyr, else bootstraps) and
+/// return the re-resolved context. Returns `None` — leaving the readiness gate
+/// to guide the user — when the workspace is already resolved, or when the SDK
+/// or board.yaml is missing (bootstrap needs the SDK, so those are surfaced
+/// first rather than triggering a doomed bootstrap). Bootstrap streams live via
+/// inherited stdio, so the returned summary is intentionally discarded.
+fn maybe_auto_bootstrap(g: &GlobalArgs, context: &ProjectContext) -> Option<ProjectContext> {
+    let checks = probe_build_preflight(g, context);
+    let is_fail = |name: &str| {
+        checks
+            .iter()
+            .any(|c| c.name == name && c.status == DoctorStatus::Fail)
+    };
+    if !is_fail("workspace") || is_fail("sdk") || is_fail("boardYaml") {
+        return None;
+    }
+    eprintln!(
+        "No Zephyr workspace yet — bootstrapping (reuse a compatible Zephyr, else bootstrap one)…"
+    );
+    let _ = crate::commands::bootstrap::run(
+        g,
+        &BootstrapArgs {
+            no_pip: false,
+            no_west: false,
+            print_env: false,
+        },
+    );
+    Some(resolve_cli_project_context(g))
+}
+
 /// Per-slice outcome of a `--native` run, folded into the envelope.
 #[derive(Serialize)]
 struct SliceResult {
@@ -339,6 +379,7 @@ fn zephyr_env_overrides(
 fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str) -> CommandRun {
     let base_path = Path::new(base);
     let text_mode = !g.is_json();
+    let theme = crate::style::Theme::from_args(g);
     let mut results: Vec<SliceResult> = Vec::new();
     let mut any_failed = false;
     let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
@@ -355,7 +396,13 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
         let backend = slice.backend.as_str().to_string();
         let Some(cmd) = &slice.command else {
             if text_mode {
-                eprintln!("→ {} [{}]: (no command — skipped)", slice.core_id, backend);
+                eprintln!(
+                    "{}",
+                    theme.slice_result(
+                        DoctorStatus::Warn,
+                        &format!("{} [{}] — no command, skipped", slice.core_id, backend)
+                    )
+                );
             }
             results.push(SliceResult {
                 core_id: slice.core_id.clone(),
@@ -367,13 +414,22 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
         };
 
         if text_mode {
-            eprintln!("→ {} [{}]: {}", slice.core_id, backend, cmd.display());
+            eprintln!(
+                "{}",
+                theme.slice_start(&slice.core_id, &backend, &cmd.display())
+            );
         }
         let cwd = base_path.join(&cmd.cwd);
         // The build dir must exist before the tool runs (west/cmake build there).
         if let Err(e) = std::fs::create_dir_all(&cwd) {
             if text_mode {
-                eprintln!("   [failed] cannot create build dir {}: {e}", cwd.display());
+                eprintln!(
+                    "{}",
+                    theme.slice_result(
+                        DoctorStatus::Fail,
+                        &format!("cannot create build dir {}: {e}", cwd.display())
+                    )
+                );
             }
             any_failed = true;
             results.push(SliceResult {
@@ -424,8 +480,16 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
             any_failed = true;
         }
         if text_mode {
-            let rc_note = rc.map(|c| format!(" (rc={c})")).unwrap_or_default();
-            eprintln!("   [{status}]{rc_note}");
+            let ds = if status == "ok" {
+                DoctorStatus::Pass
+            } else {
+                DoctorStatus::Fail
+            };
+            let note = match rc {
+                Some(c) => format!("{status} (rc={c})"),
+                None => status.to_string(),
+            };
+            eprintln!("{}", theme.slice_result(ds, &note));
         }
         results.push(SliceResult {
             core_id: slice.core_id.clone(),
