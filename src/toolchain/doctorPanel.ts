@@ -6,7 +6,7 @@ import {
   type WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
-import { buildToolchainReport, runToolchainFix } from "../toolchain";
+import { buildToolchainReportViaCli, runToolchainFix } from "../toolchain";
 
 const PANEL_VIEW_TYPE = "alpToolchainDoctor";
 const PANEL_TITLE = "Alp Toolchain Doctor";
@@ -14,12 +14,13 @@ const PANEL_TITLE = "Alp Toolchain Doctor";
 class ToolchainDoctorPanel {
   private static current: ToolchainDoctorPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
+  private readonly context: vscode.ExtensionContext;
   private readonly disposables: vscode.Disposable[] = [];
 
   static show(context: vscode.ExtensionContext): void {
     if (ToolchainDoctorPanel.current) {
       ToolchainDoctorPanel.current.panel.reveal(vscode.ViewColumn.Active);
-      ToolchainDoctorPanel.current.refresh();
+      void ToolchainDoctorPanel.current.refresh();
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -47,6 +48,7 @@ class ToolchainDoctorPanel {
     context: vscode.ExtensionContext,
   ) {
     this.panel = panel;
+    this.context = context;
     this.panel.webview.html = buildWebviewHtml(
       this.panel.webview,
       context.extensionUri,
@@ -62,10 +64,11 @@ class ToolchainDoctorPanel {
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
 
-  private refresh(): void {
+  private async refresh(): Promise<void> {
+    const { report } = await buildToolchainReportViaCli(this.context);
     const message: ExtToWebviewMessage = {
       type: "toolchainReport",
-      report: buildToolchainReport(),
+      report,
     };
     void this.panel.webview.postMessage(message);
   }
@@ -74,7 +77,7 @@ class ToolchainDoctorPanel {
     switch (msg.type) {
       case "ready":
       case "reloadToolchain":
-        this.refresh();
+        void this.refresh();
         break;
       case "runToolchainFix":
         runToolchainFix(msg.fixId);

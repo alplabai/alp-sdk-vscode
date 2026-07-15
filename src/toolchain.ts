@@ -8,9 +8,12 @@ import {
 } from "@alp-sdk/core/toolchain/bootstrapPlan";
 import {
   analyzeToolchain,
+  DoctorCheck,
+  DoctorCheckStatus,
   ToolchainReport,
 } from "@alp-sdk/core/toolchain/doctor";
 import * as vscode from "vscode";
+import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import { showToolchainDoctorPanel } from "./toolchain/doctorPanel";
 import { collectToolchainInputs } from "./toolchain/vscodeAdapter";
 import { log } from "./util";
@@ -111,13 +114,138 @@ export function buildToolchainReport(): ToolchainReport {
   return analyzeToolchain(collectToolchainInputs());
 }
 
+// ── CLI-backed doctor (single source of truth: `alp doctor --build`) ──────────
+
+/** A check in the CLI's `doctor` envelope `data.checks[]` (see CLI.md). */
+interface CliDoctorCheck {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+  fix?: string;
+}
+
+/** The `data` payload of an `alp doctor --build --format json` envelope. */
+interface CliDoctorData {
+  checks: CliDoctorCheck[];
+  summary: { pass: number; warn: number; fail: number };
+  nextSteps: string[];
+}
+
+/** CLI check status → the webview's tri-state. `fail` is a hard-required miss. */
+const CLI_STATUS: Record<CliDoctorCheck["status"], DoctorCheckStatus> = {
+  pass: "ok",
+  warn: "warn",
+  fail: "missing",
+};
+
+/** Human labels for the CLI's terse check ids; unknown ids fall back to the id. */
+const CLI_LABELS: Readonly<Record<string, string>> = {
+  sdk: "alp-sdk",
+  boardYaml: "board.yaml",
+  workspace: "Zephyr workspace",
+  westResolved: "west (workspace)",
+  west: "west",
+  cmake: "CMake",
+  ninja: "Ninja",
+  zephyrSdk: "Zephyr SDK",
+  bitbake: "BitBake",
+  dd: "dd",
+  vendorToolchain: "Vendor toolchain",
+  sdkProvenance: "SDK provenance",
+};
+
+/** Validate the untrusted envelope `data` before mapping it (boundary check). */
+function isCliDoctorData(value: unknown): value is CliDoctorData {
+  if (typeof value !== "object" || value === null) return false;
+  const o = value as Record<string, unknown>;
+  const summary = o.summary as Record<string, unknown> | undefined;
+  if (
+    !Array.isArray(o.checks) ||
+    !summary ||
+    typeof summary.fail !== "number"
+  ) {
+    return false;
+  }
+  return o.checks.every((c) => {
+    const cc = c as Record<string, unknown>;
+    return (
+      typeof cc.name === "string" &&
+      typeof cc.status === "string" &&
+      typeof cc.detail === "string"
+    );
+  });
+}
+
+/** Map the CLI doctor report onto the webview's `ToolchainReport` shape so the
+ *  existing panel renders it unchanged. The CLI drives fixes itself
+ *  (`doctor --build --fix`), so no per-check `fixId` is attached. */
+function mapCliDoctorToReport(data: CliDoctorData): ToolchainReport {
+  const checks: DoctorCheck[] = data.checks.map((c) => ({
+    id: c.name,
+    label: CLI_LABELS[c.name] ?? c.name,
+    status: CLI_STATUS[c.status] ?? "warn",
+    detail: c.fix ? `${c.detail} — ${c.fix}` : c.detail,
+    required: c.status !== "warn",
+  }));
+  return {
+    checks,
+    ok: data.summary.fail === 0,
+    missingRequired: data.summary.fail,
+  };
+}
+
+/**
+ * Build the toolchain report from the native CLI (`alp doctor --build`), the
+ * single source of truth for build readiness. Falls back to the in-process
+ * checks when the CLI is unavailable or emits no usable envelope, so the panel
+ * always shows something. `canFix` is true when the only-fixable gap — a missing
+ * Zephyr workspace — is present, which `alp doctor --build --fix` can bootstrap.
+ */
+export async function buildToolchainReportViaCli(
+  context: vscode.ExtensionContext,
+): Promise<{ report: ToolchainReport; fromCli: boolean; canFix: boolean }> {
+  const { outcome } = await runAlpCommand(context, ["doctor", "--build"]);
+  const data = outcome.envelope?.data;
+  if (outcome.envelope && isCliDoctorData(data)) {
+    const canFix = data.checks.some(
+      (c) => c.name === "workspace" && c.status === "fail",
+    );
+    return { report: mapCliDoctorToReport(data), fromCli: true, canFix };
+  }
+  log(
+    `[toolchain] CLI doctor unavailable (${outcome.message}); using in-process checks.`,
+  );
+  return { report: buildToolchainReport(), fromCli: false, canFix: false };
+}
+
+/** Offer to bootstrap a missing Zephyr workspace via `alp doctor --build --fix`
+ *  (streams live in a terminal). After it finishes the user re-runs the panel's
+ *  "Re-run" to see the green report. */
+async function offerBootstrapFix(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const choice = await vscode.window.showWarningMessage(
+    "No Zephyr workspace yet — a build can't start until one is bootstrapped.",
+    "Bootstrap now",
+  );
+  if (choice === "Bootstrap now") {
+    await runAlpInTerminal(context, ["doctor", "--build", "--fix"], {
+      name: "Alp Bootstrap",
+    });
+  }
+}
+
 function registerDoctorCommand(
   context: vscode.ExtensionContext,
 ): vscode.Disposable {
-  return vscode.commands.registerCommand("alp.toolchainDoctor", () => {
-    const report = buildToolchainReport();
+  return vscode.commands.registerCommand("alp.toolchainDoctor", async () => {
+    const { report, fromCli, canFix } =
+      await buildToolchainReportViaCli(context);
     reportToOutput(report);
     showToolchainDoctorPanel(context);
+    if (fromCli && canFix) {
+      void offerBootstrapFix(context);
+    }
   });
 }
 
