@@ -472,7 +472,7 @@ ipc:
                 sku: Some("E1M-AEN701".to_string()),
             }),
             carrier: Some(Carrier {
-                name: Some("E1M-EVK".to_string()),
+                name: Some("e1m-evk".to_string()),
                 populated: Some(BTreeMap::new()),
             }),
             inference: Some(Inference::default()),

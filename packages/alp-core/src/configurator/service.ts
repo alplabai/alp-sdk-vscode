@@ -27,7 +27,9 @@ export function createDefaultBoardModel(): BoardModel {
   return {
     schema_version: 1,
     som: { sku: "E1M-AEN701" },
-    carrier: { name: "E1M-EVK" },
+    // Lowercase slug: the SDK preset pattern is `^[a-z][a-z0-9-]*$`. Serialized
+    // as top-level `preset:` (not the retired `carrier:`) — see normalizeBoardModel.
+    carrier: { name: "e1m-evk" },
     os: "zephyr",
     diagnostics: { log_level: "info" },
   };
@@ -86,6 +88,22 @@ export function normalizeBoardModel(model: BoardModel): BoardModel {
   // v2: top-level os: has no meaning — remove it if present
   if (normalized.schema_version >= 2 && normalized.os !== undefined) {
     delete normalized.os;
+  }
+
+  // The SDK board schema retired the configurator's `carrier:` key in favor of a
+  // top-level `preset:` (a lowercase slug matching `^[a-z][a-z0-9-]*$`) plus
+  // `populated:` (mutually exclusive with preset). Map carrier onto the
+  // schema-valid keys on the way out so the emitted board.yaml validates against
+  // the SDK's own schema (issue #109); the retired key is dropped.
+  if (normalized.carrier) {
+    const name = normalized.carrier.name?.trim();
+    const populated = normalized.carrier.populated;
+    if (name) {
+      normalized.preset = name.toLowerCase();
+    } else if (populated && Object.keys(populated).length > 0) {
+      normalized.populated = populated;
+    }
+    delete normalized.carrier;
   }
 
   return normalized;

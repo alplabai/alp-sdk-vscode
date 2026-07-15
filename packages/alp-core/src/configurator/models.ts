@@ -22,7 +22,14 @@ export interface IpcCarveOut {
 export interface BoardModel {
   schema_version: number;
   som: { sku: string };
+  /** Retired: the configurator still edits `carrier`, but it is mapped onto the
+   *  SDK-schema `preset` / `populated` on serialize (see normalizeBoardModel). */
   carrier?: { name: string; populated?: Record<string, boolean> };
+  /** SDK board.schema.json top-level carrier preset (lowercase slug). Emitted in
+   *  place of the retired `carrier:` key; mutually exclusive with `populated`. */
+  preset?: string;
+  /** SDK board.schema.json inline pin population (mutually exclusive with preset). */
+  populated?: Record<string, boolean>;
   /** v1 only. Absent in schema_version >= 2 (use `cores` instead). */
   os?: string;
   /** v2 only. Per-core runtime + app mapping. */
