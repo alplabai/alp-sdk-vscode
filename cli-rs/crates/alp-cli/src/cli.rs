@@ -191,6 +191,11 @@ pub struct BuildArgs {
     /// `--manifest`.
     #[arg(long = "manifest-from", value_name = "FILE")]
     pub manifest_from: Option<String>,
+    /// Legacy path: delegate to the SDK's `west alp-build` extension instead of
+    /// the default plan-driven native build. Requires a workspace where alp-sdk
+    /// is the west manifest topdir; the default build no longer needs that.
+    #[arg(long)]
+    pub west: bool,
     /// Arguments forwarded verbatim to `west alp-build` (app path, `--core <id>`,
     /// `--sequential`, `-b <board>`) when not using `--plan`.
     #[arg(
@@ -307,6 +312,10 @@ pub struct DoctorArgs {
     /// Run the build-readiness preflight instead of the debug-readiness checks.
     #[arg(long)]
     pub build: bool,
+    /// With `--build`: auto-repair a fixable blocker — run `alp bootstrap` when no
+    /// Zephyr workspace is resolved, then re-check.
+    #[arg(long)]
+    pub fix: bool,
 }
 
 /// Args for `validate`: an offline-only toggle that skips the Python SDK spawn.

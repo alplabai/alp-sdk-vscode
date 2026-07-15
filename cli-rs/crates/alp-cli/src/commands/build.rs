@@ -16,11 +16,16 @@ use std::process::Command;
 
 use alp_core::ProjectContext;
 use alp_core::build_plan::{BuildPlan, parse_build_plan, summarize_plan};
+use alp_core::debug::{DoctorCheck, DoctorStatus};
+use alp_core::preflight::{
+    PreflightInput, build_preflight_checks, preflight_blocked, preflight_next_steps,
+    preflight_summary,
+};
 use alp_core::system_manifest::{parse_system_manifest, summarize_manifest};
 use serde::Serialize;
 
 use super::CommandRun;
-use crate::cli::{BuildArgs, GlobalArgs};
+use crate::cli::{BootstrapArgs, BuildArgs, GlobalArgs};
 use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
@@ -48,12 +53,16 @@ struct BuildData {
 pub fn run_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
     if args.manifest || args.manifest_from.is_some() {
         manifest_command(g, args)
-    } else if args.native {
-        native_build(g, args)
+    } else if args.west {
+        // Legacy escape hatch: delegate to `west alp-build` (needs alp-sdk as the
+        // west manifest topdir). The default build no longer requires that.
+        run(g, "build", &args.args)
     } else if args.plan || args.plan_from.is_some() || args.materialise {
         plan_command(g, args)
     } else {
-        run(g, "build", &args.args)
+        // Default (and `--native`): consume the SDK build-plan and run each slice's
+        // command directly, so no `west alp-build` extension command is needed.
+        native_build(g, args)
     }
 }
 
@@ -187,7 +196,25 @@ fn plan_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
 /// still settling on the SDK side; we run whatever command the emit gives, so a
 /// build before C4 lands may not yet apply the per-slice config.)
 fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
-    let context = resolve_cli_project_context(g);
+    let mut context = resolve_cli_project_context(g);
+
+    // Order-independent pre-flight (text mode only). Before blocking on a missing
+    // prerequisite, collapse the flow: if the SDK and board.yaml are present but
+    // no Zephyr workspace is resolved, bootstrap one on demand so `alp build`
+    // alone gets from a fresh checkout to a build. Then, if anything still blocks
+    // (no SDK / board.yaml, or a bootstrap that didn't produce a workspace), show
+    // a colorful, actionable readiness report and stop — instead of proceeding to
+    // a raw west/CMake error. JSON mode keeps its stable envelope; the same
+    // errors surface from acquire_plan.
+    if !g.is_json() {
+        if let Some(updated) = maybe_auto_bootstrap(g, &context) {
+            context = updated;
+        }
+        if let Some(blocked) = preflight_gate(g, &context) {
+            return blocked;
+        }
+    }
+
     let project = Project {
         root: context.workspace_root.clone(),
         board_yaml: context.board_yaml_path.clone(),
@@ -212,6 +239,86 @@ fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
     }
 
     execute_slices(g, project, &plan, &base)
+}
+
+/// Probe the build prerequisites (SDK / board.yaml / workspace / west) into the
+/// pure `alp_core::preflight` checks. Shared by `alp build`'s pre-flight gate and
+/// `alp doctor --build` so both speak the same readiness language.
+pub(crate) fn probe_build_preflight(g: &GlobalArgs, context: &ProjectContext) -> Vec<DoctorCheck> {
+    let base = base_dir(context);
+    let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
+    let workspace = west_workspace_dir(&base, sdk_root.as_deref());
+    let west = west_program(&base, sdk_root.as_deref());
+    let west_available = if Path::new(&west).is_absolute() {
+        Path::new(&west).exists()
+    } else {
+        crate::util::command_on_path(&west)
+    };
+
+    let input = PreflightInput {
+        sdk_root: sdk_root
+            .as_deref()
+            .map(|p| p.to_string_lossy().into_owned()),
+        board_yaml_present: context
+            .board_yaml_path
+            .as_deref()
+            .is_some_and(|p| Path::new(p).exists()),
+        workspace_dir: workspace
+            .as_deref()
+            .map(|p| p.to_string_lossy().into_owned()),
+        west_available,
+    };
+    build_preflight_checks(&input)
+}
+
+/// Text-mode build pre-flight: run the shared checks and, if any block the build,
+/// return a colorful readiness report to short-circuit with; `None` means all
+/// clear — proceed.
+fn preflight_gate(g: &GlobalArgs, context: &ProjectContext) -> Option<CommandRun> {
+    let checks = probe_build_preflight(g, context);
+    if !preflight_blocked(&checks) {
+        return None;
+    }
+    let summary = preflight_summary(&checks);
+    let steps = preflight_next_steps(&checks);
+    let text = crate::style::render_report(g, "Build readiness", "", &checks, &summary, &steps);
+    Some(CommandRun {
+        exit: ExitCode::ValidationFailure,
+        text,
+        json: None,
+    })
+}
+
+/// Text-mode convenience that collapses `init → switch → bootstrap → build`:
+/// when the SDK and board.yaml are present but no Zephyr workspace is resolved,
+/// bootstrap one on demand (reuses a compatible Zephyr, else bootstraps) and
+/// return the re-resolved context. Returns `None` — leaving the readiness gate
+/// to guide the user — when the workspace is already resolved, or when the SDK
+/// or board.yaml is missing (bootstrap needs the SDK, so those are surfaced
+/// first rather than triggering a doomed bootstrap). Bootstrap streams live via
+/// inherited stdio, so the returned summary is intentionally discarded.
+fn maybe_auto_bootstrap(g: &GlobalArgs, context: &ProjectContext) -> Option<ProjectContext> {
+    let checks = probe_build_preflight(g, context);
+    let is_fail = |name: &str| {
+        checks
+            .iter()
+            .any(|c| c.name == name && c.status == DoctorStatus::Fail)
+    };
+    if !is_fail("workspace") || is_fail("sdk") || is_fail("boardYaml") {
+        return None;
+    }
+    eprintln!(
+        "No Zephyr workspace yet — bootstrapping (reuse a compatible Zephyr, else bootstrap one)…"
+    );
+    let _ = crate::commands::bootstrap::run(
+        g,
+        &BootstrapArgs {
+            no_pip: false,
+            no_west: false,
+            print_env: false,
+        },
+    );
+    Some(resolve_cli_project_context(g))
 }
 
 /// Per-slice outcome of a `--native` run, folded into the envelope.
@@ -242,6 +349,29 @@ struct BuildRunData {
     slices: Vec<SliceResult>,
 }
 
+/// Environment overrides that let `alp build` run a plan slice with no manual
+/// setup: `ZEPHYR_BASE` (the resolved workspace's zephyr) and
+/// `EXTRA_ZEPHYR_MODULES` (the alp-sdk checkout, so `west build -b <alp-board>`
+/// finds the SDK's boards). Never overrides a key the plan's slice env pins.
+fn zephyr_env_overrides(
+    zephyr_base: Option<&Path>,
+    sdk_root: Option<&Path>,
+    slice_env: &std::collections::BTreeMap<String, String>,
+) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    if !slice_env.contains_key("ZEPHYR_BASE") {
+        if let Some(base) = zephyr_base {
+            out.push(("ZEPHYR_BASE", base.to_string_lossy().into_owned()));
+        }
+    }
+    if !slice_env.contains_key("EXTRA_ZEPHYR_MODULES") {
+        if let Some(sdk) = sdk_root {
+            out.push(("EXTRA_ZEPHYR_MODULES", sdk.to_string_lossy().into_owned()));
+        }
+    }
+    out
+}
+
 /// Run each slice's `ToolStep` sequentially under `base`. Text mode streams each
 /// build live (inherited stdio) with per-slice headers; JSON mode captures and
 /// folds per-slice results into the envelope. Commandless slices are skipped.
@@ -249,15 +379,30 @@ struct BuildRunData {
 fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str) -> CommandRun {
     let base_path = Path::new(base);
     let text_mode = !g.is_json();
+    let theme = crate::style::Theme::from_args(g);
     let mut results: Vec<SliceResult> = Vec::new();
     let mut any_failed = false;
     let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
+    // Auto-manage the build env so `alp build` needs no manual
+    // `source .venv/activate` / `export ZEPHYR_BASE`: derive ZEPHYR_BASE from the
+    // resolved workspace and pass the alp-sdk checkout as an extra Zephyr module,
+    // so `west build -b <alp-board>` finds the SDK's boards without the user
+    // wiring `-DEXTRA_ZEPHYR_MODULES`. The plan's per-slice env still wins.
+    let zephyr_base = west_workspace_dir(base, sdk_root.as_deref())
+        .map(|ws| ws.join("zephyr"))
+        .filter(|z| z.is_dir());
 
     for slice in &plan.slices {
         let backend = slice.backend.as_str().to_string();
         let Some(cmd) = &slice.command else {
             if text_mode {
-                eprintln!("→ {} [{}]: (no command — skipped)", slice.core_id, backend);
+                eprintln!(
+                    "{}",
+                    theme.slice_result(
+                        DoctorStatus::Warn,
+                        &format!("{} [{}] — no command, skipped", slice.core_id, backend)
+                    )
+                );
             }
             results.push(SliceResult {
                 core_id: slice.core_id.clone(),
@@ -269,13 +414,22 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
         };
 
         if text_mode {
-            eprintln!("→ {} [{}]: {}", slice.core_id, backend, cmd.display());
+            eprintln!(
+                "{}",
+                theme.slice_start(&slice.core_id, &backend, &cmd.display())
+            );
         }
         let cwd = base_path.join(&cmd.cwd);
         // The build dir must exist before the tool runs (west/cmake build there).
         if let Err(e) = std::fs::create_dir_all(&cwd) {
             if text_mode {
-                eprintln!("   [failed] cannot create build dir {}: {e}", cwd.display());
+                eprintln!(
+                    "{}",
+                    theme.slice_result(
+                        DoctorStatus::Fail,
+                        &format!("cannot create build dir {}: {e}", cwd.display())
+                    )
+                );
             }
             any_failed = true;
             results.push(SliceResult {
@@ -293,6 +447,11 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
         };
         let mut command = Command::new(&tool);
         command.args(&cmd.args).current_dir(&cwd).envs(&slice.env);
+        for (key, value) in
+            zephyr_env_overrides(zephyr_base.as_deref(), sdk_root.as_deref(), &slice.env)
+        {
+            command.env(key, value);
+        }
         with_venv_on_path(&mut command, &tool);
 
         let (status, rc) = if text_mode {
@@ -300,7 +459,13 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
                 Ok(s) if s.success() => ("ok", s.code()),
                 Ok(s) => ("failed", s.code()),
                 Err(e) => {
-                    eprintln!("   launch error: {e}");
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        eprintln!(
+                            "   {tool} not found on PATH — install it to build this {backend} slice"
+                        );
+                    } else {
+                        eprintln!("   launch error: {e}");
+                    }
                     ("failed", None)
                 }
             }
@@ -315,8 +480,16 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
             any_failed = true;
         }
         if text_mode {
-            let rc_note = rc.map(|c| format!(" (rc={c})")).unwrap_or_default();
-            eprintln!("   [{status}]{rc_note}");
+            let ds = if status == "ok" {
+                DoctorStatus::Pass
+            } else {
+                DoctorStatus::Fail
+            };
+            let note = match rc {
+                Some(c) => format!("{status} (rc={c})"),
+                None => status.to_string(),
+            };
+            eprintln!("{}", theme.slice_result(ds, &note));
         }
         results.push(SliceResult {
             core_id: slice.core_id.clone(),
@@ -354,14 +527,44 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
             json: Some(json),
         }
     } else {
-        let ok = results.iter().filter(|r| r.status == "ok").count();
-        let failed = results.iter().filter(|r| r.status == "failed").count();
-        let skipped = results.iter().filter(|r| r.status == "skipped").count();
+        // Colorful per-slice recap: each slice as a check (ok / skipped / failed),
+        // a colored summary line, and next-step hints when something failed.
+        let checks: Vec<DoctorCheck> = results
+            .iter()
+            .map(|r| {
+                let (status, detail) = match r.status.as_str() {
+                    "ok" => (DoctorStatus::Pass, r.backend.clone()),
+                    "skipped" => (DoctorStatus::Warn, format!("{} (no command)", r.backend)),
+                    _ => (
+                        DoctorStatus::Fail,
+                        match r.rc {
+                            Some(code) => format!("{} (rc={code})", r.backend),
+                            None => format!("{} (did not run)", r.backend),
+                        },
+                    ),
+                };
+                DoctorCheck {
+                    name: r.core_id.clone(),
+                    status,
+                    detail,
+                    fix: None,
+                }
+            })
+            .collect();
+        let summary = preflight_summary(&checks);
+        let next_steps = if summary.fail > 0 {
+            vec![
+                "see the streamed logs above for each failed slice".to_string(),
+                "install any missing tool (west / bitbake) or fix the app's Zephyr CMakeLists"
+                    .to_string(),
+            ]
+        } else {
+            Vec::new()
+        };
+        let text = crate::style::render_report(g, "Build", "", &checks, &summary, &next_steps);
         CommandRun {
             exit,
-            text: vec![format!(
-                "build: {ok} ok, {failed} failed, {skipped} skipped"
-            )],
+            text,
             json: None,
         }
     }
@@ -385,8 +588,9 @@ fn invoke_sdk_emit(
     let sdk_root = context.sdk_root.as_deref().ok_or((
         err_code,
         format!(
-            "no alp-sdk checkout found — pass `--sdk-root <PATH>`, set it in settings, or run \
-             `alp bootstrap`. The {emit} comes from the SDK's `alp_orchestrate --emit {emit}`."
+            "no alp-sdk checkout found — pass `--sdk-root <PATH>`, pin one with \
+             `alp sdk switch <version|path>`, set it in settings, or run `alp bootstrap`. The \
+             {emit} comes from the SDK's `alp_orchestrate --emit {emit}`."
         ),
     ))?;
     let board_yaml = context.board_yaml_path.as_deref().ok_or((
@@ -839,6 +1043,48 @@ fn west_launch_error(e: &std::io::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn slice_env(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn env_overrides_set_base_and_modules_when_absent() {
+        let got = zephyr_env_overrides(
+            Some(Path::new("/ws/zephyr")),
+            Some(Path::new("/sdk")),
+            &slice_env(&[("ALP_SDK_ROOT", "/sdk")]),
+        );
+        assert_eq!(
+            got,
+            vec![
+                ("ZEPHYR_BASE", "/ws/zephyr".to_string()),
+                ("EXTRA_ZEPHYR_MODULES", "/sdk".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn env_overrides_respect_plan_pinned_keys() {
+        // The plan already pins both -> nothing is overridden.
+        let got = zephyr_env_overrides(
+            Some(Path::new("/ws/zephyr")),
+            Some(Path::new("/sdk")),
+            &slice_env(&[
+                ("ZEPHYR_BASE", "/pinned"),
+                ("EXTRA_ZEPHYR_MODULES", "/pinned-mod"),
+            ]),
+        );
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn env_overrides_empty_when_nothing_resolved() {
+        assert!(zephyr_env_overrides(None, None, &slice_env(&[])).is_empty());
+    }
 
     #[test]
     fn forwards_args_after_the_west_command() {

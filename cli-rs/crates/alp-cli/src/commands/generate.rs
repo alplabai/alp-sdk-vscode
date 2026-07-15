@@ -77,7 +77,8 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
             project,
             ExitCode::ValidationFailure,
             "sdk-root-unresolved",
-            "alp-sdk root is unresolved. Use --sdk-root or place project near alp-sdk checkout.",
+            "alp-sdk root is unresolved. Use --sdk-root, pin one with `alp sdk switch \
+             <version|path>`, or place the project near an alp-sdk checkout.",
             empty_data(),
             vec!["generate: alp-sdk root is unresolved.".to_string()],
         );

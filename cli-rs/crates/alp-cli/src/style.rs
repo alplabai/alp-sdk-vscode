@@ -111,6 +111,27 @@ impl Theme {
             String::new(),
         ]
     }
+
+    /// A colored "building" header for a live per-slice build step: an accent
+    /// arrow, the bold `core [backend]` label, and the dimmed command. Bracketing
+    /// the tool's own streamed output with `slice_result` gives a colorful,
+    /// live-progress feel without a spinner (builds run sequentially).
+    pub fn slice_start(&self, core: &str, backend: &str, command: &str) -> String {
+        let arrow = if self.color {
+            "▶".cyan().bold().to_string()
+        } else {
+            "→".to_string()
+        };
+        let head = self.bold(&format!("{core} [{backend}]"));
+        format!("  {arrow} building {head}  {}", self.dim(command))
+    }
+
+    /// A colored result line for a finished (or skipped) slice: the status glyph
+    /// followed by the note (`ok (rc=0)`, `no command — skipped`, …). Indented to
+    /// sit under its `slice_start` header.
+    pub fn slice_result(&self, status: DoctorStatus, note: &str) -> String {
+        format!("    {} {note}", self.glyph(status))
+    }
 }
 
 /// Render a doctor-style report (heading + aligned checks + colored summary +
@@ -282,6 +303,24 @@ mod tests {
         let lines = render_report(&args(true, false), "t", "sub", &checks, &summary, &[]);
         assert!(lines.iter().all(|l| !l.contains("west")));
         assert!(lines.iter().any(|l| l.contains("1 passed")));
+    }
+
+    #[test]
+    fn slice_start_and_result_are_plain_when_color_off() {
+        let theme = Theme { color: false };
+        let start = theme.slice_start("m55_hp", "zephyr", "west build -b alp_e1m app");
+        assert!(start.contains("building m55_hp [zephyr]"));
+        assert!(start.contains("west build -b alp_e1m app"));
+        assert!(start.contains('→') && !start.contains('▶'));
+
+        let ok = theme.slice_result(DoctorStatus::Pass, "ok (rc=0)");
+        assert!(ok.contains("[+]") && ok.contains("ok (rc=0)"));
+        let bad = theme.slice_result(DoctorStatus::Fail, "failed (rc=1)");
+        assert!(bad.contains("[x]") && bad.contains("failed (rc=1)"));
+
+        for line in [&start, &ok, &bad] {
+            assert!(!line.contains('\u{1b}'), "no ANSI when color off: {line}");
+        }
     }
 
     #[test]

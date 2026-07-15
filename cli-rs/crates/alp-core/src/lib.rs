@@ -15,6 +15,7 @@ pub mod diff;
 pub mod loader;
 pub mod model;
 pub mod pinmux;
+pub mod preflight;
 pub mod presets;
 pub mod preview;
 pub mod project;
@@ -51,6 +52,10 @@ pub use loader::{
 };
 pub use model::{BoardModel, normalize_board_model};
 pub use pinmux::{PinmuxPad, PinmuxTable, parse_pinmux_table, pinmux_family_for_sku};
+pub use preflight::{
+    PreflightInput, build_preflight_checks, preflight_blocked, preflight_next_steps,
+    preflight_summary,
+};
 pub use presets::{PresetCatalogueDefaults, empty_preset_catalogue};
 pub use preview::{EffectiveConfigPreviewPayload, create_effective_config_preview_payload};
 pub use project::{
