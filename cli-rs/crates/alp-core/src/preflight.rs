@@ -58,10 +58,10 @@ pub fn build_preflight_checks(input: &PreflightInput) -> Vec<DoctorCheck> {
     });
 
     checks.push(if input.west_available {
-        pass("west", "west resolved".to_string())
+        pass("westResolved", "west resolved".to_string())
     } else {
         warn(
-            "west",
+            "westResolved",
             "west not found — run `alp bootstrap` to create the workspace venv",
             "alp bootstrap",
         )
@@ -196,7 +196,7 @@ mod tests {
         };
         let checks = build_preflight_checks(&input);
         assert!(!preflight_blocked(&checks));
-        let west = checks.iter().find(|c| c.name == "west").unwrap();
+        let west = checks.iter().find(|c| c.name == "westResolved").unwrap();
         assert_eq!(west.status, DoctorStatus::Warn);
     }
 }
