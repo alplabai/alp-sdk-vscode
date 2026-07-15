@@ -16,6 +16,11 @@ use std::process::Command;
 
 use alp_core::ProjectContext;
 use alp_core::build_plan::{BuildPlan, parse_build_plan, summarize_plan};
+use alp_core::debug::{DoctorCheck, DoctorStatus};
+use alp_core::preflight::{
+    PreflightInput, build_preflight_checks, preflight_blocked, preflight_next_steps,
+    preflight_summary,
+};
 use alp_core::system_manifest::{parse_system_manifest, summarize_manifest};
 use serde::Serialize;
 
@@ -197,6 +202,16 @@ fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
         board_yaml: context.board_yaml_path.clone(),
     };
 
+    // Order-independent pre-flight: in text mode, if a prerequisite is missing
+    // (no SDK / board.yaml / workspace), show a colorful, actionable readiness
+    // report and stop — instead of proceeding to a raw west/CMake error. JSON
+    // mode keeps its stable envelope; the same errors surface from acquire_plan.
+    if !g.is_json() {
+        if let Some(blocked) = preflight_gate(g, &context) {
+            return blocked;
+        }
+    }
+
     let plan = match acquire_plan(&context, args) {
         Ok(plan) => plan,
         Err((code, message)) => {
@@ -216,6 +231,49 @@ fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
     }
 
     execute_slices(g, project, &plan, &base)
+}
+
+/// Text-mode build pre-flight: probe the prerequisites `alp build` needs and, if
+/// any block the build, return a colorful readiness report to short-circuit with;
+/// `None` means all clear — proceed. Reuses the pure `alp_core::preflight` checks
+/// so `alp doctor` can share them.
+fn preflight_gate(g: &GlobalArgs, context: &ProjectContext) -> Option<CommandRun> {
+    let base = base_dir(context);
+    let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
+    let workspace = west_workspace_dir(&base, sdk_root.as_deref());
+    let west = west_program(&base, sdk_root.as_deref());
+    let west_available = if Path::new(&west).is_absolute() {
+        Path::new(&west).exists()
+    } else {
+        crate::util::command_on_path(&west)
+    };
+
+    let input = PreflightInput {
+        sdk_root: sdk_root
+            .as_deref()
+            .map(|p| p.to_string_lossy().into_owned()),
+        board_yaml_present: context
+            .board_yaml_path
+            .as_deref()
+            .is_some_and(|p| Path::new(p).exists()),
+        workspace_dir: workspace
+            .as_deref()
+            .map(|p| p.to_string_lossy().into_owned()),
+        west_available,
+    };
+
+    let checks = build_preflight_checks(&input);
+    if !preflight_blocked(&checks) {
+        return None;
+    }
+    let summary = preflight_summary(&checks);
+    let steps = preflight_next_steps(&checks);
+    let text = crate::style::render_report(g, "Build readiness", "", &checks, &summary, &steps);
+    Some(CommandRun {
+        exit: ExitCode::ValidationFailure,
+        text,
+        json: None,
+    })
 }
 
 /// Per-slice outcome of a `--native` run, folded into the envelope.
@@ -400,14 +458,44 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
             json: Some(json),
         }
     } else {
-        let ok = results.iter().filter(|r| r.status == "ok").count();
-        let failed = results.iter().filter(|r| r.status == "failed").count();
-        let skipped = results.iter().filter(|r| r.status == "skipped").count();
+        // Colorful per-slice recap: each slice as a check (ok / skipped / failed),
+        // a colored summary line, and next-step hints when something failed.
+        let checks: Vec<DoctorCheck> = results
+            .iter()
+            .map(|r| {
+                let (status, detail) = match r.status.as_str() {
+                    "ok" => (DoctorStatus::Pass, r.backend.clone()),
+                    "skipped" => (DoctorStatus::Warn, format!("{} (no command)", r.backend)),
+                    _ => (
+                        DoctorStatus::Fail,
+                        match r.rc {
+                            Some(code) => format!("{} (rc={code})", r.backend),
+                            None => format!("{} (did not run)", r.backend),
+                        },
+                    ),
+                };
+                DoctorCheck {
+                    name: r.core_id.clone(),
+                    status,
+                    detail,
+                    fix: None,
+                }
+            })
+            .collect();
+        let summary = preflight_summary(&checks);
+        let next_steps = if summary.fail > 0 {
+            vec![
+                "see the streamed logs above for each failed slice".to_string(),
+                "install any missing tool (west / bitbake) or fix the app's Zephyr CMakeLists"
+                    .to_string(),
+            ]
+        } else {
+            Vec::new()
+        };
+        let text = crate::style::render_report(g, "Build", "", &checks, &summary, &next_steps);
         CommandRun {
             exit,
-            text: vec![format!(
-                "build: {ok} ok, {failed} failed, {skipped} skipped"
-            )],
+            text,
             json: None,
         }
     }
