@@ -71,7 +71,8 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
             g,
             ExitCode::ValidationFailure,
             "sdk-root-unresolved",
-            "alp-sdk root is unresolved. Use --sdk-root or run `alp sdk install <version>` first.",
+            "alp-sdk root is unresolved. Use --sdk-root, pin one with `alp sdk switch \
+             <version|path>`, or run `alp sdk install <version>` first.",
             empty_data(args),
             vec!["bootstrap: alp-sdk root is unresolved.".to_string()],
         );

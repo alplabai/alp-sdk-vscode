@@ -385,8 +385,9 @@ fn invoke_sdk_emit(
     let sdk_root = context.sdk_root.as_deref().ok_or((
         err_code,
         format!(
-            "no alp-sdk checkout found — pass `--sdk-root <PATH>`, set it in settings, or run \
-             `alp bootstrap`. The {emit} comes from the SDK's `alp_orchestrate --emit {emit}`."
+            "no alp-sdk checkout found — pass `--sdk-root <PATH>`, pin one with \
+             `alp sdk switch <version|path>`, set it in settings, or run `alp bootstrap`. The \
+             {emit} comes from the SDK's `alp_orchestrate --emit {emit}`."
         ),
     ))?;
     let board_yaml = context.board_yaml_path.as_deref().ok_or((
