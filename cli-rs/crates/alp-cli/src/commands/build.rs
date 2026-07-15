@@ -48,12 +48,16 @@ struct BuildData {
 pub fn run_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
     if args.manifest || args.manifest_from.is_some() {
         manifest_command(g, args)
-    } else if args.native {
-        native_build(g, args)
+    } else if args.west {
+        // Legacy escape hatch: delegate to `west alp-build` (needs alp-sdk as the
+        // west manifest topdir). The default build no longer requires that.
+        run(g, "build", &args.args)
     } else if args.plan || args.plan_from.is_some() || args.materialise {
         plan_command(g, args)
     } else {
-        run(g, "build", &args.args)
+        // Default (and `--native`): consume the SDK build-plan and run each slice's
+        // command directly, so no `west alp-build` extension command is needed.
+        native_build(g, args)
     }
 }
 
@@ -242,6 +246,29 @@ struct BuildRunData {
     slices: Vec<SliceResult>,
 }
 
+/// Environment overrides that let `alp build` run a plan slice with no manual
+/// setup: `ZEPHYR_BASE` (the resolved workspace's zephyr) and
+/// `EXTRA_ZEPHYR_MODULES` (the alp-sdk checkout, so `west build -b <alp-board>`
+/// finds the SDK's boards). Never overrides a key the plan's slice env pins.
+fn zephyr_env_overrides(
+    zephyr_base: Option<&Path>,
+    sdk_root: Option<&Path>,
+    slice_env: &std::collections::BTreeMap<String, String>,
+) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    if !slice_env.contains_key("ZEPHYR_BASE") {
+        if let Some(base) = zephyr_base {
+            out.push(("ZEPHYR_BASE", base.to_string_lossy().into_owned()));
+        }
+    }
+    if !slice_env.contains_key("EXTRA_ZEPHYR_MODULES") {
+        if let Some(sdk) = sdk_root {
+            out.push(("EXTRA_ZEPHYR_MODULES", sdk.to_string_lossy().into_owned()));
+        }
+    }
+    out
+}
+
 /// Run each slice's `ToolStep` sequentially under `base`. Text mode streams each
 /// build live (inherited stdio) with per-slice headers; JSON mode captures and
 /// folds per-slice results into the envelope. Commandless slices are skipped.
@@ -252,6 +279,14 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
     let mut results: Vec<SliceResult> = Vec::new();
     let mut any_failed = false;
     let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
+    // Auto-manage the build env so `alp build` needs no manual
+    // `source .venv/activate` / `export ZEPHYR_BASE`: derive ZEPHYR_BASE from the
+    // resolved workspace and pass the alp-sdk checkout as an extra Zephyr module,
+    // so `west build -b <alp-board>` finds the SDK's boards without the user
+    // wiring `-DEXTRA_ZEPHYR_MODULES`. The plan's per-slice env still wins.
+    let zephyr_base = west_workspace_dir(base, sdk_root.as_deref())
+        .map(|ws| ws.join("zephyr"))
+        .filter(|z| z.is_dir());
 
     for slice in &plan.slices {
         let backend = slice.backend.as_str().to_string();
@@ -293,6 +328,11 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
         };
         let mut command = Command::new(&tool);
         command.args(&cmd.args).current_dir(&cwd).envs(&slice.env);
+        for (key, value) in
+            zephyr_env_overrides(zephyr_base.as_deref(), sdk_root.as_deref(), &slice.env)
+        {
+            command.env(key, value);
+        }
         with_venv_on_path(&mut command, &tool);
 
         let (status, rc) = if text_mode {
@@ -840,6 +880,48 @@ fn west_launch_error(e: &std::io::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn slice_env(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn env_overrides_set_base_and_modules_when_absent() {
+        let got = zephyr_env_overrides(
+            Some(Path::new("/ws/zephyr")),
+            Some(Path::new("/sdk")),
+            &slice_env(&[("ALP_SDK_ROOT", "/sdk")]),
+        );
+        assert_eq!(
+            got,
+            vec![
+                ("ZEPHYR_BASE", "/ws/zephyr".to_string()),
+                ("EXTRA_ZEPHYR_MODULES", "/sdk".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn env_overrides_respect_plan_pinned_keys() {
+        // The plan already pins both -> nothing is overridden.
+        let got = zephyr_env_overrides(
+            Some(Path::new("/ws/zephyr")),
+            Some(Path::new("/sdk")),
+            &slice_env(&[
+                ("ZEPHYR_BASE", "/pinned"),
+                ("EXTRA_ZEPHYR_MODULES", "/pinned-mod"),
+            ]),
+        );
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn env_overrides_empty_when_nothing_resolved() {
+        assert!(zephyr_env_overrides(None, None, &slice_env(&[])).is_empty());
+    }
 
     #[test]
     fn forwards_args_after_the_west_command() {
