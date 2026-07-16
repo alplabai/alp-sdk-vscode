@@ -73,3 +73,52 @@ test("mcuboot without explicit signing is valid (SDK defaults the family signing
     "mcuboot without signing must not error (the SDK defaults it)",
   );
 });
+
+test("ipc channel with fewer than two endpoints is an error (#109)", () => {
+  const r = validateBoardConfig({
+    som: { sku: "E1M-AEN701" },
+    cores: { m55_hp: { app: "./src" }, m55_he: { app: "./he" } },
+    ipc: [
+      { name: "ch0", kind: "rpmsg", endpoints: ["m55_hp"], carve_out_kb: 64 },
+    ],
+  });
+  assert.ok(
+    r.errors.some((e) => /ipc 'ch0'.*at least 2 endpoints/i.test(e)),
+    `expected a too-few-endpoints error, got: ${JSON.stringify(r.errors)}`,
+  );
+});
+
+test("ipc endpoint referencing an undeclared core is an error (#109)", () => {
+  const r = validateBoardConfig({
+    som: { sku: "E1M-AEN701" },
+    cores: { m55_hp: { app: "./src" }, m55_he: { app: "./he" } },
+    ipc: [
+      {
+        name: "ch0",
+        kind: "rpmsg",
+        endpoints: ["m55_hp", "core_a"],
+        carve_out_kb: 64,
+      },
+    ],
+  });
+  assert.ok(
+    r.errors.some((e) => /endpoint 'core_a' is not a declared core/i.test(e)),
+    `expected an undeclared-core error, got: ${JSON.stringify(r.errors)}`,
+  );
+});
+
+test("ipc channel with two declared-core endpoints is valid (#109)", () => {
+  const r = validateBoardConfig({
+    som: { sku: "E1M-AEN701" },
+    cores: { m55_hp: { app: "./src" }, m55_he: { app: "./he" } },
+    ipc: [
+      {
+        name: "ch0",
+        kind: "rpmsg",
+        endpoints: ["m55_hp", "m55_he"],
+        carve_out_kb: 64,
+      },
+    ],
+  });
+  assert.equal(r.errors.length, 0, JSON.stringify(r.errors));
+});
