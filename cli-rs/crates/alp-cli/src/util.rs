@@ -37,6 +37,20 @@ pub fn command_on_path(command: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether a build tool resolves on this host: an absolute path (e.g. a venv
+/// `west`) must exist on disk; a bare name must be on PATH. The single gate
+/// predicate shared by the build pre-flight probe and the slice executor —
+/// keep them answering the same question so preflight verdicts match what
+/// actually runs.
+pub fn tool_available(tool: &str) -> bool {
+    let path = Path::new(tool);
+    if path.is_absolute() {
+        path.exists()
+    } else {
+        command_on_path(tool)
+    }
+}
+
 /// Lexically normalize a path (collapse `.` and `..`) without touching the
 /// filesystem, mirroring Node's `path.resolve` behavior on the joined result.
 pub fn normalize_path(path: &Path) -> PathBuf {

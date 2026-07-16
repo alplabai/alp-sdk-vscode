@@ -103,9 +103,14 @@ fn manifest_command(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
     match parse_system_manifest(&yaml) {
         Ok(manifest) => {
             if g.is_json() {
-                let json =
-                    Envelope::new("build", project, &manifest, Vec::new(), ExitCode::Success.code())
-                        .to_json();
+                let json = Envelope::new(
+                    "build",
+                    project,
+                    &manifest,
+                    Vec::new(),
+                    ExitCode::Success.code(),
+                )
+                .to_json();
                 CommandRun {
                     exit: ExitCode::Success,
                     text: Vec::new(),
@@ -249,11 +254,7 @@ pub(crate) fn probe_build_preflight(g: &GlobalArgs, context: &ProjectContext) ->
     let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
     let workspace = west_workspace_dir(&base, sdk_root.as_deref());
     let west = west_program(&base, sdk_root.as_deref());
-    let west_available = if Path::new(&west).is_absolute() {
-        Path::new(&west).exists()
-    } else {
-        crate::util::command_on_path(&west)
-    };
+    let west_available = crate::util::tool_available(&west);
 
     let input = PreflightInput {
         sdk_root: sdk_root
@@ -321,6 +322,11 @@ fn maybe_auto_bootstrap(g: &GlobalArgs, context: &ProjectContext) -> Option<Proj
     Some(resolve_cli_project_context(g))
 }
 
+/// `SliceResult.reason` for a plan slice that carries no command. The recap
+/// keys its `(no command)` rendering off this exact string — keep producer and
+/// renderer on the one constant.
+const SKIP_REASON_NO_COMMAND: &str = "no command";
+
 /// Per-slice outcome of a `--native` run, folded into the envelope.
 #[derive(Serialize)]
 struct SliceResult {
@@ -329,11 +335,15 @@ struct SliceResult {
     core_id: String,
     /// Build backend for the slice (`zephyr` / `yocto` / `baremetal`).
     backend: String,
-    /// Outcome: `"ok"`, `"failed"`, or `"skipped"` (no command).
+    /// Outcome: `"ok"`, `"failed"`, or `"skipped"` (no command, or the slice's
+    /// tool is not on this host).
     status: String, // "ok" | "failed" | "skipped"
     /// Process exit code, when the tool actually launched.
     #[serde(skip_serializing_if = "Option::is_none")]
     rc: Option<i32>,
+    /// Why the slice was skipped (verbatim, e.g. the missing-tool reason).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
 }
 
 /// Envelope `data` for a `--native` build: the base dir plus each slice result.
@@ -409,6 +419,7 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
                 backend,
                 status: "skipped".to_string(),
                 rc: None,
+                reason: Some(SKIP_REASON_NO_COMMAND.to_string()),
             });
             continue;
         };
@@ -437,6 +448,7 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
                 backend,
                 status: "failed".to_string(),
                 rc: None,
+                reason: None,
             });
             continue;
         }
@@ -445,6 +457,37 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
         } else {
             cmd.tool.clone()
         };
+
+        // SDK parity (alp-sdk#114 / orchestrator.py:299): a build tool that's
+        // simply not installed on this host is normal — non-Zephyr dev boxes
+        // won't have `bitbake`, non-Linux boxes may lack the vendor toolchain.
+        // Treat it as skipped (exit 0), not failed, and say why.
+        if !crate::util::tool_available(&tool) {
+            // The SDK's verbatim reason wording. "not found in PATH" assumes a
+            // PATH-resolved tool; an absolute `tool` here is effectively
+            // unreachable (west_program only returns venv paths it verified
+            // with `is_file()`).
+            let reason =
+                format!("{tool} not found in PATH; this is normal on non-{backend} dev hosts");
+            if text_mode {
+                eprintln!(
+                    "{}",
+                    theme.slice_result(
+                        DoctorStatus::Warn,
+                        &format!("{} [{}] — {}", slice.core_id, backend, reason)
+                    )
+                );
+            }
+            results.push(SliceResult {
+                core_id: slice.core_id.clone(),
+                backend,
+                status: "skipped".to_string(),
+                rc: None,
+                reason: Some(reason),
+            });
+            continue;
+        }
+
         let mut command = Command::new(&tool);
         command.args(&cmd.args).current_dir(&cwd).envs(&slice.env);
         for (key, value) in
@@ -496,6 +539,7 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
             backend,
             status: status.to_string(),
             rc,
+            reason: None,
         });
     }
 
@@ -534,7 +578,12 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
             .map(|r| {
                 let (status, detail) = match r.status.as_str() {
                     "ok" => (DoctorStatus::Pass, r.backend.clone()),
-                    "skipped" => (DoctorStatus::Warn, format!("{} (no command)", r.backend)),
+                    "skipped" => match r.reason.as_deref() {
+                        Some(reason) if reason != SKIP_REASON_NO_COMMAND => {
+                            (DoctorStatus::Warn, format!("{} — {reason}", r.backend))
+                        }
+                        _ => (DoctorStatus::Warn, format!("{} (no command)", r.backend)),
+                    },
                     _ => (
                         DoctorStatus::Fail,
                         match r.rc {
@@ -629,7 +678,14 @@ fn invoke_sdk_emit(
         )
     })?;
     let output = Command::new(&context.python_binary)
-        .args(["-m", "alp_orchestrate", "--input", board_yaml, "--emit", emit])
+        .args([
+            "-m",
+            "alp_orchestrate",
+            "--input",
+            board_yaml,
+            "--emit",
+            emit,
+        ])
         .env("PYTHONPATH", &pythonpath)
         .output()
         .map_err(|e| {
@@ -824,6 +880,7 @@ fn west_argv(subcommand: &str, passthrough: &[String]) -> Vec<String> {
 ///   3. the SDK's canonical `<sdk-parent>/zephyrproject/.venv` — bootstrap.sh's
 ///      default `WORKSPACE_DIR` — so `alp --sdk-root <X> build` finds the
 ///      bootstrapped west WITHOUT the user activating the venv first.
+///
 /// Falls back to `"west"` on PATH when none resolve (CI, an activated venv, the
 /// contract harness) — behaving exactly as before in those environments.
 fn west_program(start: &str, sdk_root: Option<&Path>) -> String {
@@ -1204,8 +1261,95 @@ mod tests {
         assert_eq!(slices.len(), 2);
         assert_eq!(slices[0]["status"], "ok");
         assert_eq!(slices[1]["status"], "skipped");
+        assert_eq!(slices[1]["reason"], "no command");
         // The build dir for the runnable slice was created.
         assert!(base.join("build/c1").is_dir());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn native_execute_skips_missing_tool_and_exits_zero() {
+        // SDK parity (alp-sdk#114): a slice whose build tool isn't on this host
+        // (e.g. `bitbake` on a non-Yocto dev box) is skipped, not failed — the
+        // whole run still exits 0.
+        use clap::Parser;
+        let g = crate::cli::Cli::parse_from(["alp", "--format", "json", "validate"]).global;
+
+        let json = r#"{
+          "schemaVersion": 1, "boardYaml": "b", "sku": "S", "buildRoot": "build",
+          "slices": [
+            { "coreId": "a32_cluster", "backend": "yocto", "buildDir": "build/a32",
+              "command": { "tool": "alp-missing-tool-e114", "args": [], "cwd": "build/a32" } },
+            { "coreId": "c2", "backend": "zephyr", "buildDir": "build/c2", "command": null }
+          ],
+          "sharedArtefacts": []
+        }"#;
+        let plan = parse_build_plan(json).unwrap();
+        let base = unique_temp_dir("alp-exec-missing-tool");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let project = Project {
+            root: None,
+            board_yaml: None,
+        };
+        let run = execute_slices(&g, project, &plan, base.to_str().unwrap());
+        assert_eq!(run.exit.code(), 0);
+
+        let env: serde_json::Value = serde_json::from_str(run.json.as_deref().unwrap()).unwrap();
+        assert_eq!(env["ok"], true);
+        let slices = env["data"]["slices"].as_array().unwrap();
+        assert_eq!(slices[0]["status"], "skipped");
+        let reason = slices[0]["reason"].as_str().unwrap();
+        assert!(
+            reason.contains("not found in PATH; this is normal on non-"),
+            "got: {reason}"
+        );
+        assert!(env["issues"].as_array().unwrap().is_empty());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn native_execute_reports_failed_for_a_real_nonzero_exit() {
+        // A genuinely present tool that exits nonzero is still "failed" (exit 1)
+        // — the missing-tool skip path above must not swallow real failures.
+        use clap::Parser;
+        let g = crate::cli::Cli::parse_from(["alp", "--format", "json", "validate"]).global;
+
+        let (tool, args) = if cfg!(windows) {
+            ("cmd", r#"["/C", "exit", "1"]"#)
+        } else {
+            ("sh", r#"["-c", "exit 1"]"#)
+        };
+        let json = format!(
+            r#"{{
+              "schemaVersion": 1, "boardYaml": "b", "sku": "S", "buildRoot": "build",
+              "slices": [
+                {{ "coreId": "c1", "backend": "zephyr", "buildDir": "build/c1",
+                   "command": {{ "tool": "{tool}", "args": {args}, "cwd": "build/c1" }} }}
+              ],
+              "sharedArtefacts": []
+            }}"#
+        );
+        let plan = parse_build_plan(&json).unwrap();
+        let base = unique_temp_dir("alp-exec-failing-tool");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let project = Project {
+            root: None,
+            board_yaml: None,
+        };
+        let run = execute_slices(&g, project, &plan, base.to_str().unwrap());
+        assert_eq!(run.exit.code(), 1);
+
+        let env: serde_json::Value = serde_json::from_str(run.json.as_deref().unwrap()).unwrap();
+        assert_eq!(env["ok"], false);
+        let slices = env["data"]["slices"].as_array().unwrap();
+        assert_eq!(slices[0]["status"], "failed");
+        assert_eq!(slices[0]["rc"], 1);
 
         std::fs::remove_dir_all(&base).ok();
     }
