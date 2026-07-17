@@ -82,10 +82,19 @@ export class NewProjectFlowPanel {
     };
     void this.panel.webview.postMessage(stateMsg);
 
+    await this.reloadCatalog();
+  }
+
+  /** Re-fetch the template + SoM catalog against a wizard-selected SDK and push
+   *  it to the webview, so the Examples/Hardware lists match the SDK the project
+   *  will be scaffolded from (an example's `sourceDir` is relative to that SDK's
+   *  `examples/`). Without this the lists come from the ambient SDK and
+   *  `alp init --from-example` fails with "was not found" on a divergent pick. */
+  private async reloadCatalog(sdkPath?: string): Promise<void> {
     const catalogMsg: ExtToWebviewMessage = {
       type: "projectTemplatesData",
-      templates: await this.fetchTemplates(),
-      modules: await this.fetchSomModules(),
+      templates: await this.fetchTemplates(sdkPath),
+      modules: await this.fetchSomModules(sdkPath),
     };
     void this.panel.webview.postMessage(catalogMsg);
   }
@@ -126,8 +135,9 @@ export class NewProjectFlowPanel {
   /** SoM ("Hardware") list from the CLI's `alp presets` (the installed SDK's
    *  actual modules). Falls back to the built-in list when no SDK is resolved
    *  (presets returns an empty `soms`) so New Project works pre-SDK. */
-  private async fetchSomModules(): Promise<E1mModule[]> {
-    const { outcome } = await runAlpCommand(this.context, ["presets"]);
+  private async fetchSomModules(sdkPath?: string): Promise<E1mModule[]> {
+    const args = sdkPath ? ["--sdk-root", sdkPath, "presets"] : ["presets"];
+    const { outcome } = await runAlpCommand(this.context, args);
     const soms =
       (
         outcome.envelope?.data as
@@ -170,8 +180,9 @@ export class NewProjectFlowPanel {
 
   /** Build the template picker from the CLI's real templates (single source of
    *  truth): `alp explain` lists ids, then per-id explain gives title/blurb. */
-  private async fetchTemplates(): Promise<ProjectTemplate[]> {
-    const overview = await runAlpCommand(this.context, ["explain"]);
+  private async fetchTemplates(sdkPath?: string): Promise<ProjectTemplate[]> {
+    const root = sdkPath ? ["--sdk-root", sdkPath] : [];
+    const overview = await runAlpCommand(this.context, [...root, "explain"]);
     const ids =
       (
         overview.outcome.envelope?.data as
@@ -182,6 +193,7 @@ export class NewProjectFlowPanel {
     const templates: ProjectTemplate[] = [];
     for (const id of ids) {
       const detail = await runAlpCommand(this.context, [
+        ...root,
         "explain",
         "--template",
         id,
@@ -201,7 +213,10 @@ export class NewProjectFlowPanel {
     // Append the SDK's ready-made example projects (`alp examples` → category
     // "example"), so users can scaffold from a real example, not just a starter.
     // Empty when no SDK resolves — the picker simply shows no Examples section.
-    const examplesRes = await runAlpCommand(this.context, ["examples"]);
+    const examplesRes = await runAlpCommand(this.context, [
+      ...root,
+      "examples",
+    ]);
     const examples =
       (
         examplesRes.outcome.envelope?.data as
@@ -250,6 +265,10 @@ export class NewProjectFlowPanel {
           msg.sdkPath,
           msg.destination,
         );
+        break;
+
+      case "reloadProjectTemplates":
+        await this.reloadCatalog(msg.sdkPath);
         break;
 
       case "closePanel":

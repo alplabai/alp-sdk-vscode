@@ -77,3 +77,47 @@ test("createLaunchPreview output can be persisted into launch.json", () => {
   assert.equal(parsed.configurations[0].type, "cortex-debug");
   assert.match(parsed.configurations[0].name, /Zephyr Debug/);
 });
+
+test("createLaunchJsonWritePlan accepts JSONC comments and trailing commas", () => {
+  const jsonc = [
+    "{",
+    "  // Use IntelliSense to learn about possible attributes.",
+    '  "version": "0.2.0",',
+    "  /* block comment */",
+    '  "configurations": [',
+    "    {",
+    '      "name": "Unrelated Debug",',
+    '      "type": "cppdbg",',
+    '      "request": "launch",',
+    "    },",
+    "  ],",
+    "}",
+  ].join("\n");
+
+  const plan = createLaunchJsonWritePlan(jsonc, createConfiguration());
+  const parsed = JSON.parse(plan.content);
+
+  assert.equal(plan.replaced, false);
+  assert.equal(parsed.configurations.length, 2);
+  assert.equal(parsed.configurations[0].name, "Unrelated Debug");
+  assert.equal(parsed.configurations[1].name, "ALP: Zephyr Debug (J-Link)");
+});
+
+test("createLaunchJsonWritePlan preserves // sequences inside string values", () => {
+  const existing = JSON.stringify({
+    version: "0.2.0",
+    configurations: [
+      {
+        name: "Web",
+        type: "chrome",
+        request: "launch",
+        url: "http://localhost:3000",
+      },
+    ],
+  });
+
+  const plan = createLaunchJsonWritePlan(existing, createConfiguration());
+  const parsed = JSON.parse(plan.content);
+
+  assert.equal(parsed.configurations[0].url, "http://localhost:3000");
+});
