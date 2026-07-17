@@ -167,7 +167,6 @@ export interface DebugProfile {
   os: DebugProfileOs;
   executablePath: string;
   cwd: string;
-  preLaunchTask?: string;
   device?: string;
   interface?: "swd" | "jtag";
   svdFile?: string;

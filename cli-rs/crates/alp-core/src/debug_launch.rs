@@ -46,7 +46,6 @@ pub fn create_launch_draft(
                     "cwd": "${workspaceFolder}",
                     "executable": "${workspaceFolder}/build/app/zephyr/zephyr.elf",
                     "runToEntryPoint": "main",
-                    "preLaunchTask": "alp: build active target",
                     "svdFile": "<resolved-svd>",
                     "svdPath": "<resolved-svd>",
                     "servertype": "openocd",
@@ -59,7 +58,6 @@ pub fn create_launch_draft(
                     "cwd": "${workspaceFolder}",
                     "executable": "${workspaceFolder}/build/app/zephyr/zephyr.elf",
                     "runToEntryPoint": "main",
-                    "preLaunchTask": "alp: build active target",
                     "svdFile": "<resolved-svd>",
                     "svdPath": "<resolved-svd>",
                     "servertype": "pyocd",
@@ -72,7 +70,6 @@ pub fn create_launch_draft(
                     "cwd": "${workspaceFolder}",
                     "executable": "${workspaceFolder}/build/app/zephyr/zephyr.elf",
                     "runToEntryPoint": "main",
-                    "preLaunchTask": "alp: build active target",
                     "svdFile": "<resolved-svd>",
                     "svdPath": "<resolved-svd>",
                     "servertype": "jlink",
@@ -90,7 +87,6 @@ pub fn create_launch_draft(
             "executable": "${workspaceFolder}/build/baremetal/app.elf",
             "device": "<resolved-device>",
             "interface": "swd",
-            "preLaunchTask": "alp: build baremetal target",
             "svdFile": "<resolved-svd>",
             "svdPath": "<resolved-svd>",
         }),
@@ -104,7 +100,6 @@ pub fn create_launch_draft(
             "miDebuggerServerAddress": "<host>:<port>",
             "miDebuggerPath": "<resolved-gdb>",
             "setupCommands": [{ "text": "-enable-pretty-printing" }],
-            "preLaunchTask": "alp: deploy and start gdbserver",
         }),
         DebugTargetKind::NativeHost => json!({
             "name": "ALP: Native Sim Debug",
@@ -112,7 +107,6 @@ pub fn create_launch_draft(
             "request": "launch",
             "program": "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "alp: build native_sim target",
         }),
     };
     Ok(draft)
@@ -253,23 +247,23 @@ mod tests {
             let draft = create_launch_draft(DebugTargetKind::ZephyrMcu, server).unwrap();
             assert_eq!(draft["svdFile"], "<resolved-svd>");
             assert_eq!(draft["svdPath"], "<resolved-svd>");
-            // Key order: svdFile + svdPath sit after preLaunchTask, before servertype.
+            // Key order: svdFile + svdPath sit after runToEntryPoint, before servertype.
             let json = serde_json::to_string(&draft).unwrap();
             assert!(json.contains(
-                "\"preLaunchTask\":\"alp: build active target\",\"svdFile\":\"<resolved-svd>\",\"svdPath\":\"<resolved-svd>\",\"servertype\":"
+                "\"svdFile\":\"<resolved-svd>\",\"svdPath\":\"<resolved-svd>\",\"servertype\":"
             ));
         }
     }
 
     #[test]
-    fn baremetal_draft_emits_svd_file_and_path_after_prelaunch() {
+    fn baremetal_draft_emits_svd_file_and_path_after_interface() {
         let draft =
             create_launch_draft(DebugTargetKind::BaremetalMcu, DebugServerKind::Jlink).unwrap();
         assert_eq!(draft["svdFile"], "<resolved-svd>");
         assert_eq!(draft["svdPath"], "<resolved-svd>");
         let json = serde_json::to_string(&draft).unwrap();
         assert!(json.ends_with(
-            "\"preLaunchTask\":\"alp: build baremetal target\",\"svdFile\":\"<resolved-svd>\",\"svdPath\":\"<resolved-svd>\"}"
+            "\"interface\":\"swd\",\"svdFile\":\"<resolved-svd>\",\"svdPath\":\"<resolved-svd>\"}"
         ));
     }
 
