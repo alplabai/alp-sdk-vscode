@@ -646,6 +646,17 @@ fn invoke_sdk_emit(
         err_code,
         "no board.yaml found — pass `--board-yaml <PATH>` or run from a project.".to_string(),
     ))?;
+    // The SDK bakes the planner's `sys.executable` into every Zephyr slice
+    // command as `-DPython3_EXECUTABLE=<...>` (alp-sdk#787), so the planner must
+    // run under the west-capable workspace venv python — not a bare PATH
+    // `python3`, which may lack the `west` module entirely (sibling of the #106
+    // venv-on-PATH fix for the west child). Fall back to the configured/resolved
+    // `context.python_binary` only when no workspace venv resolves.
+    let planner_python = venv_python(
+        &base_dir(context),
+        context.sdk_root.as_deref().map(Path::new),
+    )
+    .unwrap_or_else(|| context.python_binary.clone());
     let scripts_dir = Path::new(sdk_root).join("scripts");
     // Invoke the planner as a module (`python -m alp_orchestrate`) with scripts/
     // on PYTHONPATH — the same way the SDK's own west_commands do. That resolves
@@ -677,7 +688,7 @@ fn invoke_sdk_emit(
             format!("failed to build PYTHONPATH for the SDK planner: {e}"),
         )
     })?;
-    let output = Command::new(&context.python_binary)
+    let output = Command::new(&planner_python)
         .args([
             "-m",
             "alp_orchestrate",
@@ -691,10 +702,7 @@ fn invoke_sdk_emit(
         .map_err(|e| {
             (
                 err_code,
-                format!(
-                    "failed to run `{} -m alp_orchestrate --emit {emit}`: {e}",
-                    context.python_binary
-                ),
+                format!("failed to run `{planner_python} -m alp_orchestrate --emit {emit}`: {e}"),
             )
         })?;
     if !output.status.success() {
@@ -871,32 +879,36 @@ fn west_argv(subcommand: &str, passthrough: &[String]) -> Vec<String> {
     argv
 }
 
-/// Resolve the `west` program to launch. Prefer a Python venv created by
-/// `alp bootstrap` so builds use the hermetic west rather than a (possibly broken
-/// or absent) global one, in this order:
+/// Locate the workspace `.venv` directory whose `west` is actually present —
+/// the one search shared by `west_program` (the venv's `west` binary) and
+/// `venv_python` (the venv's `python`, used by `invoke_sdk_emit`). Prefer a
+/// Python venv created by `alp bootstrap` so builds use the hermetic west
+/// rather than a (possibly broken or absent) global one, in this order:
 ///   1. a `.venv` in the project tree, searched from `start` upward;
 ///   2. the workspace venv derived from `$ZEPHYR_BASE` (`<ZEPHYR_BASE>/../.venv`),
 ///      so an activated-but-not-on-PATH workspace still resolves;
 ///   3. the SDK's canonical `<sdk-parent>/zephyrproject/.venv` — bootstrap.sh's
 ///      default `WORKSPACE_DIR` — so `alp --sdk-root <X> build` finds the
-///      bootstrapped west WITHOUT the user activating the venv first.
+///      bootstrapped venv WITHOUT the user activating it first.
 ///
-/// Falls back to `"west"` on PATH when none resolve (CI, an activated venv, the
-/// contract harness) — behaving exactly as before in those environments.
-fn west_program(start: &str, sdk_root: Option<&Path>) -> String {
-    let (sub, exe) = if cfg!(windows) {
+/// Gated on `west` actually being present under the candidate `.venv` (not
+/// just the directory existing) — that's what makes this the west-CAPABLE venv
+/// both callers need. `None` when none resolve (CI, an activated venv, the
+/// contract harness).
+fn find_workspace_venv(start: &str, sdk_root: Option<&Path>) -> Option<PathBuf> {
+    let (sub, west_exe) = if cfg!(windows) {
         ("Scripts", "west.exe")
     } else {
         ("bin", "west")
     };
-    let venv_west = |dir: &Path| dir.join(".venv").join(sub).join(exe);
+    let has_west = |venv: &Path| venv.join(sub).join(west_exe).is_file();
 
     // 1. A `.venv` in the project tree.
     let mut dir = Some(Path::new(start));
     while let Some(d) = dir {
-        let candidate = venv_west(d);
-        if candidate.is_file() {
-            return candidate.to_string_lossy().into_owned();
+        let candidate = d.join(".venv");
+        if has_west(&candidate) {
+            return Some(candidate);
         }
         dir = d.parent();
     }
@@ -904,9 +916,9 @@ fn west_program(start: &str, sdk_root: Option<&Path>) -> String {
     // 2. The workspace venv from $ZEPHYR_BASE (workspace = ZEPHYR_BASE/..).
     if let Ok(zephyr_base) = std::env::var("ZEPHYR_BASE") {
         if let Some(workspace) = Path::new(&zephyr_base).parent() {
-            let candidate = venv_west(workspace);
-            if candidate.is_file() {
-                return candidate.to_string_lossy().into_owned();
+            let candidate = workspace.join(".venv");
+            if has_west(&candidate) {
+                return Some(candidate);
             }
         }
     }
@@ -917,15 +929,51 @@ fn west_program(start: &str, sdk_root: Option<&Path>) -> String {
     //    `<sdk-parent>/zephyrproject/.venv`. Check both.
     if let Some(parent) = sdk_root.and_then(|s| s.parent()) {
         for workspace in [parent.to_path_buf(), parent.join("zephyrproject")] {
-            let candidate = venv_west(&workspace);
-            if candidate.is_file() {
-                return candidate.to_string_lossy().into_owned();
+            let candidate = workspace.join(".venv");
+            if has_west(&candidate) {
+                return Some(candidate);
             }
         }
     }
 
-    // 4. Fall back to `west` on PATH.
-    "west".to_string()
+    None
+}
+
+/// Resolve the `west` program to launch: the west-capable workspace venv's
+/// `west` binary (see `find_workspace_venv`), falling back to `"west"` on PATH
+/// when none resolve (CI, an activated venv, the contract harness) — behaving
+/// exactly as before in those environments.
+fn west_program(start: &str, sdk_root: Option<&Path>) -> String {
+    let (sub, exe) = if cfg!(windows) {
+        ("Scripts", "west.exe")
+    } else {
+        ("bin", "west")
+    };
+    find_workspace_venv(start, sdk_root)
+        .map(|venv| venv.join(sub).join(exe).to_string_lossy().into_owned())
+        .unwrap_or_else(|| "west".to_string())
+}
+
+/// Resolve the west-capable workspace venv's `python` (see
+/// `find_workspace_venv`), if one resolves. The SDK planner
+/// (`alp_orchestrate`) bakes its own `sys.executable` into every Zephyr slice
+/// command as `-DPython3_EXECUTABLE=<...>`, so `invoke_sdk_emit` must run the
+/// planner under this python — not a bare PATH `python3`, which may lack the
+/// `west` module entirely (alp-sdk#787; sibling of the #106 venv-on-PATH fix
+/// for the west child). `None` when no workspace venv resolves — the caller
+/// then falls back to `context.python_binary`.
+fn venv_python(start: &str, sdk_root: Option<&Path>) -> Option<String> {
+    let (sub, exe) = if cfg!(windows) {
+        ("Scripts", "python.exe")
+    } else {
+        ("bin", "python")
+    };
+    find_workspace_venv(start, sdk_root).and_then(|venv| {
+        let candidate = venv.join(sub).join(exe);
+        candidate
+            .is_file()
+            .then(|| candidate.to_string_lossy().into_owned())
+    })
 }
 
 /// Resolve the west workspace topdir — the directory holding `.west/`. `west alp-*`
@@ -1357,7 +1405,7 @@ mod tests {
 
 #[cfg(test)]
 mod west_program_tests {
-    use super::{west_program, west_workspace_dir};
+    use super::{venv_python, west_program, west_workspace_dir};
 
     fn tmp(tag: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("alp-westp-{tag}-{}", std::process::id()));
@@ -1370,6 +1418,14 @@ mod west_program_tests {
             ("Scripts", "west.exe")
         } else {
             ("bin", "west")
+        }
+    }
+
+    fn python_parts() -> (&'static str, &'static str) {
+        if cfg!(windows) {
+            ("Scripts", "python.exe")
+        } else {
+            ("bin", "python")
         }
     }
 
@@ -1426,6 +1482,59 @@ mod west_program_tests {
         // Only assert the no-signal default when no ambient $ZEPHYR_BASE could win.
         if std::env::var_os("ZEPHYR_BASE").is_none() {
             assert_eq!(west_program(&root.to_string_lossy(), None), "west");
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn venv_python_finds_python_next_to_a_west_capable_venv() {
+        let root = tmp("pyvenv");
+        let (west_sub, west_exe) = venv_parts();
+        let (py_sub, py_exe) = python_parts();
+        // west_sub == py_sub on every platform ("bin" or "Scripts") — a real venv
+        // has both binaries in the same dir; write via each name to prove
+        // `venv_python` isn't just reusing `west_program`'s west path.
+        let venv_bin = root.join(".venv").join(west_sub);
+        std::fs::create_dir_all(&venv_bin).unwrap();
+        std::fs::write(venv_bin.join(west_exe), "").unwrap();
+        assert_eq!(west_sub, py_sub);
+        let python = root.join(".venv").join(py_sub).join(py_exe);
+        std::fs::write(&python, "").unwrap();
+        let cwd = root.join("a").join("b");
+        std::fs::create_dir_all(&cwd).unwrap();
+
+        assert_eq!(
+            venv_python(&cwd.to_string_lossy(), None),
+            Some(python.to_string_lossy().into_owned())
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn venv_python_is_none_when_no_west_capable_venv_resolves() {
+        let root = tmp("pyvenv-none");
+        std::fs::create_dir_all(&root).unwrap();
+        // Only assert when no ambient $ZEPHYR_BASE could win — mirrors the
+        // `falls_back_to_path_west_when_nothing_resolves` west_program test.
+        if std::env::var_os("ZEPHYR_BASE").is_none() {
+            assert_eq!(venv_python(&root.to_string_lossy(), None), None);
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn venv_python_is_none_when_west_capable_venv_lacks_python() {
+        // A west-capable venv resolves (find_workspace_venv's west-gate passes),
+        // but its python binary is absent — venv_python must return None, not a
+        // path to a file that doesn't exist (else invoke_sdk_emit would spawn a
+        // nonexistent python).
+        let root = tmp("pyvenv-nopy");
+        let (sub, west_exe) = venv_parts();
+        let venv_bin = root.join(".venv").join(sub);
+        std::fs::create_dir_all(&venv_bin).unwrap();
+        std::fs::write(venv_bin.join(west_exe), "").unwrap(); // west present, python absent
+        if std::env::var_os("ZEPHYR_BASE").is_none() {
+            assert_eq!(venv_python(&root.to_string_lossy(), None), None);
         }
         std::fs::remove_dir_all(&root).unwrap();
     }

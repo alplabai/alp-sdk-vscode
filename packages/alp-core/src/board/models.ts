@@ -173,6 +173,11 @@ export interface ModelEntry {
 }
 
 export interface BoardConfig {
+  /** board.yaml schema version (board.schema.json `schemaVersion`, integer >= 1).
+   * Lazy: absent means v1 permanently — only a scripts/alp_migrate step writes
+   * the key when bumping to v2+. Modeled so the configurator preserves it on
+   * round-trip instead of silently dropping it (C1 data-loss gate). */
+  schemaVersion?: number;
   name?: string;
   description?: string;
   preset?: string;
@@ -199,6 +204,7 @@ export interface BoardConfig {
 
 /** Top-level key order used by serializeBoardConfig (mirrors board.schema.json). */
 export const BOARD_KEY_ORDER: (keyof BoardConfig)[] = [
+  "schemaVersion",
   "name",
   "description",
   "preset",

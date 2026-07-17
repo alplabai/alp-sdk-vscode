@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { BOARD_KEY_ORDER } = require("@alp-sdk/core/board/models");
 
-// sha256 of metadata/schemas/board.schema.json at the alp-sdk v0.9.0 tag.
+// sha256 of metadata/schemas/board.schema.json at the alp-sdk v0.11.0 tag.
 // THE drift gate: any local edit, forward drift (re-vendoring from submodule
 // dev HEAD instead of the pinned tag), or upstream change fails here. To bump
 // the vendored schema intentionally: copy it from the NEW pinned tag
@@ -14,9 +14,9 @@ const { BOARD_KEY_ORDER } = require("@alp-sdk/core/board/models");
 // (avoid `shasum`, which isn't on Windows):
 //   node -e "const s=require('fs').readFileSync('schemas/board.schema.json','utf-8').replace(/\r\n/g,'\n');console.log(require('crypto').createHash('sha256').update(s,'utf-8').digest('hex'))"
 const VENDORED_SCHEMA_SHA256 =
-  "57c7425a30969397130e527264a34cdd5050aae2890d48afb567623c739fecf4";
+  "d9393ab0d1c3df5550a84acc30639eddabb90ce35a080d7a6ec122cac999b3b8";
 
-test("board.schema.json is the vendored v0.9 schema (drift/staleness gate)", () => {
+test("board.schema.json is the vendored v0.11 schema (drift/staleness gate)", () => {
   const p = path.join(__dirname, "..", "schemas", "board.schema.json");
   assert.ok(fs.existsSync(p), "schemas/board.schema.json must exist");
   const raw = fs.readFileSync(p, "utf-8");
@@ -27,7 +27,7 @@ test("board.schema.json is the vendored v0.9 schema (drift/staleness gate)", () 
   // Staleness gate: the vendored copy must carry the v0.6 structure. `models`
   // and `supported_boards` are top-level blocks added in v0.6; a regression to a
   // pre-v0.6 schema (which lacked them) fails here — re-vendor from the SDK
-  // (`git -C alp-sdk-upstream show v0.9.0:metadata/schemas/board.schema.json`).
+  // (`git -C alp-sdk-upstream show v0.11.0:metadata/schemas/board.schema.json`).
   const props = schema.properties ?? {};
   for (const key of ["som", "cores", "ipc", "models", "supported_boards"]) {
     assert.ok(
@@ -44,7 +44,7 @@ test("board.schema.json is the vendored v0.9 schema (drift/staleness gate)", () 
   // Pin-class lock (#26): the configurator + YAML LSP rely on the vendored schema
   // to validate `e1m_routes` pin classes. The byte-exact SHA pin below catches
   // drift, but an *intentional* re-vendor just bumps the hash — this asserts a
-  // re-vendor can't silently drop a pin class the extension depends on. v0.9.0
+  // re-vendor can't silently drop a pin class the extension depends on. v0.11.0
   // exercises the `adc`/`dac` class (alp_project.py's alp-adc/alp-dac buckets);
   // see docs/COMPATIBILITY_RULES.md §5.
   const e1mRoutes = (schema.$defs ?? {}).e1m_routes ?? {};
