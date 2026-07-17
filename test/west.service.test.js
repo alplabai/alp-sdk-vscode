@@ -27,7 +27,15 @@ test("createWestBuildPlan builds the expected west command", () => {
 
   assert.deepEqual(plan, {
     terminalName: "alp · west build",
-    command: "west build -b alp_e1m_evk_aen examples/gpio-button-led -p auto",
+    args: [
+      "west",
+      "build",
+      "-b",
+      "alp_e1m_evk_aen",
+      "examples/gpio-button-led",
+      "-p",
+      "auto",
+    ],
     westCwd: "/workspace/app",
     env: {
       EXTRA_ZEPHYR_MODULES: "/workspace/sdk",
@@ -40,7 +48,7 @@ test("createWestFlashPlan preserves cwd and uses an empty env without sdkRoot", 
 
   assert.deepEqual(plan, {
     terminalName: "alp · west flash",
-    command: "west flash",
+    args: ["west", "flash"],
     westCwd: "/workspace/app",
     env: {},
   });
@@ -50,7 +58,7 @@ test("createWestNativeRunPlan uses west build -t run", () => {
   const plan = createWestNativeRunPlan(createWestContext());
 
   assert.equal(plan.terminalName, "alp · west run");
-  assert.equal(plan.command, "west build -t run");
+  assert.deepEqual(plan.args, ["west", "build", "-t", "run"]);
   assert.deepEqual(plan.env, {
     EXTRA_ZEPHYR_MODULES: "/workspace/sdk",
   });
@@ -67,10 +75,15 @@ test("createWestBuildPreparation creates validator + generation plans", () => {
     "/workspace/app/board.yaml",
   );
   assert.equal(preparation.loaderPlans.length, 4);
-  assert.equal(
-    preparation.westPlan.command,
-    "west build -b alp_e1m_evk_aen examples/gpio-button-led -p auto",
-  );
+  assert.deepEqual(preparation.westPlan.args, [
+    "west",
+    "build",
+    "-b",
+    "alp_e1m_evk_aen",
+    "examples/gpio-button-led",
+    "-p",
+    "auto",
+  ]);
 });
 
 test("createWestBuildPreparation fails when board.yaml path is unresolved", () => {
