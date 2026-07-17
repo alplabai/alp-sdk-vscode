@@ -54,17 +54,12 @@ export function analyzeValidationResult(
   }
   return {
     outcome,
-    issues: parseValidationIssues(
-      execution.stderr,
-      severityForOutcome(outcome),
-    ),
+    issues: parseValidationIssues(execution.stderr, "error"),
   };
 }
 
 function classifyValidationOutcome(status: number | null): ValidationOutcome {
   if (status === 0) return "clean";
-  if (status === 2) return "missing-preset";
-  if (status === 3) return "hardware-revision";
   if (status === 1) return "schema-violation";
   return "failed";
 }
@@ -82,10 +77,6 @@ function isInterpreterCrash(stderr: string): boolean {
     .some((line) =>
       line.trimStart().startsWith("Traceback (most recent call last):"),
     );
-}
-
-function severityForOutcome(outcome: ValidationOutcome): ValidationSeverity {
-  return outcome === "missing-preset" ? "warning" : "error";
 }
 
 /**

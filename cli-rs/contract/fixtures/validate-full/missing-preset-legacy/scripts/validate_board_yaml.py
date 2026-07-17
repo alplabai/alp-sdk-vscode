@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Hermetic contract stub: emits legacy FAIL/WARN diagnostics on stderr and
-# exits 2 (missing-preset), exercising the legacy line parser + continuation.
+# exits 1 -- the only non-clean code v0.10+ validate_board_yaml.py emits --
+# exercising the legacy line parser + continuation. (#172)
 import sys
 
 sys.stderr.write(
@@ -9,4 +10,4 @@ sys.stderr.write(
     "WARN hw_compat: minor version mismatch\n"
     "board.yaml: missing-preset\n"
 )
-sys.exit(2)
+sys.exit(1)
