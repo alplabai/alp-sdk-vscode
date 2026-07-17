@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { checkSdkReadiness } from "@alp-sdk/core/sdk/service";
+import { checkSdkReadiness, switchActiveSdk } from "@alp-sdk/core/sdk/service";
 import * as fs from "fs";
 import * as vscode from "vscode";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
+import { collectProjectContext } from "../project/vscodeAdapter";
 import { writeAlpSetting } from "./settingsWrite";
 
 /**
@@ -39,6 +40,25 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
     : vscode.ConfigurationTarget.Global;
   const written = await writeAlpSetting("path", sdkPath, target);
   if (!written) return;
+
+  // Mirror the choice into the shared `.alp/sdk-path` pointer so the CLI
+  // (`alp sdk current`/`switch`) and the extension agree on the active SDK.
+  // Best-effort: the setting write above is authoritative — a pointer-write
+  // failure (read-only tree, no workspace) must not break activation.
+  const workspaceRoot = collectProjectContext().workspaceRoot;
+  if (workspaceRoot) {
+    try {
+      switchActiveSdk(
+        workspaceRoot,
+        sdkPath,
+        (p, content) => fs.writeFileSync(p, content),
+        (p) => fs.mkdirSync(p, { recursive: true }),
+      );
+    } catch {
+      // Pointer mirror is best-effort; the setting write is the source of truth.
+    }
+  }
+
   await vscode.commands.executeCommand("alp.views.refresh");
   void vscode.window.showInformationMessage(
     hasWorkspace

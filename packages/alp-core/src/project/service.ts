@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
+import { resolveActiveSdk } from "../sdk/service";
 import { ProjectContext, ProjectResolutionInput } from "./models";
 
 export function resolveProjectContext(
   input: ProjectResolutionInput,
   pathExists: (candidatePath: string) => boolean,
+  readFile: (candidatePath: string) => string = () => "",
 ): ProjectContext {
   // Resolve all runtime inputs once so every surface reads the same project context.
   const workspaceRoot = resolveWorkspaceRoot(
@@ -17,10 +19,12 @@ export function resolveProjectContext(
   return {
     workspaceRoot,
     sdkRoot: resolveSdkRoot(
+      workspaceRoot,
       input.workspaceFolders,
       input.settings.sdkPath,
       input.installedSdkRoots ?? [],
       pathExists,
+      readFile,
     ),
     boardYamlPath: resolveBoardYamlPath(
       workspaceRoot,
@@ -50,10 +54,12 @@ function resolveWorkspaceRoot(
 }
 
 function resolveSdkRoot(
+  workspaceRoot: string | null,
   workspaceFolders: readonly string[],
   configuredSdkPath: string,
   installedSdkRoots: readonly string[],
   pathExists: (candidatePath: string) => boolean,
+  readFile: (candidatePath: string) => string,
 ): string | null {
   // Prefer explicit SDK path, but only if it contains the loader entrypoint.
   const trimmedConfiguredPath = configuredSdkPath.trim();
@@ -61,6 +67,17 @@ function resolveSdkRoot(
     return containsLoaderScript(trimmedConfiguredPath, pathExists)
       ? trimmedConfiguredPath
       : null;
+  }
+
+  // Shared `.alp/sdk-path` pointer, written by `alp sdk switch` and the
+  // extension's "Select active SDK". Sits below the explicit setting but above
+  // auto-discovery, and only when it still points at a valid SDK root — a stale
+  // pointer falls through so it can't lock out auto-discovery.
+  if (workspaceRoot) {
+    const pointer = resolveActiveSdk(workspaceRoot, pathExists, readFile);
+    if (pointer && containsLoaderScript(pointer, pathExists)) {
+      return pointer;
+    }
   }
 
   // Auto-discovery is valid only when exactly one SDK root is detected.
