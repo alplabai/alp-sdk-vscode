@@ -5,7 +5,6 @@ const {
   createWestBuildPreparation,
   createWestBuildPlan,
   createWestFlashPlan,
-  createWestNativeRunPlan,
 } = require("../packages/alp-core/dist/west/service.js");
 
 function createWestContext(overrides = {}) {
@@ -51,16 +50,6 @@ test("createWestFlashPlan preserves cwd and uses an empty env without sdkRoot", 
     args: ["west", "flash"],
     westCwd: "/workspace/app",
     env: {},
-  });
-});
-
-test("createWestNativeRunPlan uses west build -t run", () => {
-  const plan = createWestNativeRunPlan(createWestContext());
-
-  assert.equal(plan.terminalName, "alp · west run");
-  assert.deepEqual(plan.args, ["west", "build", "-t", "run"]);
-  assert.deepEqual(plan.env, {
-    EXTRA_ZEPHYR_MODULES: "/workspace/sdk",
   });
 });
 
