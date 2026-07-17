@@ -1572,6 +1572,17 @@ export function ConfiguratorView() {
     if (!cfg.loaded) {
       return <p className={styles.secHelp}>Loading board.yaml…</p>;
     }
+    if (cfg.parseError) {
+      return (
+        <div className={styles.section}>
+          <SectionLabel
+            text="board.yaml could not be parsed"
+            hint="Fix the YAML syntax in the text editor (Reopen Editor With… → Text Editor), then reopen the configurator. Editing is disabled here so your file is never overwritten."
+          />
+          <p className={`${styles.secHelp} ${styles.err}`}>{cfg.parseError}</p>
+        </div>
+      );
+    }
     if (!sdkConnected) {
       return (
         <div className={styles.section}>
