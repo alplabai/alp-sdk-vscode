@@ -35,12 +35,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The superproject's committed submodule gitlink is a skewed "backup-pre-scrub"
-  # commit that lacks the example tree (the documented CI submodule-skew — it cost
-  # earlier cycles). So we pin the SDK to a real RELEASE here: reproducible, and
-  # the example overrides target that release's `examples/aen/...` layout (the
-  # in-image defaults target the older dev-layout used in local checkouts).
-  SDK_REF: v0.8.1
+  # The committed submodule gitlink now tracks a real release (v0.11.0). We still
+  # pin the SDK to a tagged RELEASE here for a reproducible, shallow fetch that
+  # does not depend on the superproject's gitlink history; the example overrides
+  # target that release's `examples/aen/...` layout.
+  SDK_REF: v0.11.0
   DEVBOX_EXAMPLES: examples/aen/aen-analog-validate
   DEVBOX_HANDOFF_EXAMPLE: examples/aen/aen-analog-validate
 
