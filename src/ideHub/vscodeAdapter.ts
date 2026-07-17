@@ -134,7 +134,18 @@ export async function queryAlpIdeState(
 
   const cacheRoot = sdkCacheRoot();
   const searchRoots = [cacheRoot];
-  if (actualWorkspaceRoot) searchRoots.push(actualWorkspaceRoot);
+  if (actualWorkspaceRoot) {
+    searchRoots.push(actualWorkspaceRoot);
+    // The documented sibling layout: an SDK checked out next to the project.
+    searchRoots.push(path.resolve(actualWorkspaceRoot, "..", "alp-sdk"));
+  }
+  // Always include the resolved active SDK so the picker and SDK Manager list
+  // the SDK the extension is actually driving, even when it lives outside the
+  // cache and workspace (sibling checkout or an alpSdk.path pin). Seeding it as
+  // a root keeps localEntries in step with the resolution chain; listLocalSdkEntries
+  // de-dupes via its `seen` set and the removable flag below keys off the cache
+  // prefix, so an external checkout lands as non-removable.
+  if (sdkPath) searchRoots.push(sdkPath);
 
   const discoveredEntries = listLocalSdkEntries(
     searchRoots,
