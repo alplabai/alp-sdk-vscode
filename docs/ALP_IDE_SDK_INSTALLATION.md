@@ -78,10 +78,10 @@ You can also set the path manually in VS Code settings:
 
 ---
 
-## 5. Bootstrap (west init + west update)
+## 5. Bootstrap (create the Zephyr workspace)
 
-After installing the SDK, a **west workspace** must be initialised to fetch
-the Zephyr kernel, HAL modules, and toolchains.  This is called "bootstrapping."
+After installing the SDK, a **Zephyr workspace** must be created to fetch the
+Zephyr kernel, HAL modules, and toolchains.  This is called "bootstrapping."
 
 ### Via the GUI
 
@@ -89,21 +89,27 @@ the Zephyr kernel, HAL modules, and toolchains.  This is called "bootstrapping."
    — or —
    Open the **Open Existing Project** wizard and use **Initialise & Activate**.
 
-2. The extension runs:
+2. The extension runs `alp bootstrap`, which invokes `scripts/bootstrap.sh` in
+   the SDK. That creates a sibling `zephyrproject/` workspace from the upstream
+   Zephyr manifest and installs `west` + Zephyr's Python requirements into a
+   workspace virtual environment:
    ```
-   west init -l <sdk-path>/manifest
+   west init -m https://github.com/zephyrproject-rtos/zephyr --mr <version> .
    west update
    ```
 3. Progress is shown in the Output panel (`ALP SDK` channel).
 4. When complete, the west chip in the sidebar changes to **Ready**.
 
+Manual fallback (no extension): `bash <sdk-path>/scripts/bootstrap.sh`
+(`--no-pip` / `--no-west` / `--print-env` are supported).
+
 ### Via the Command Palette
 
 ```
-Alp: Run bootstrap
+Alp: Bootstrap SDK environment
 ```
 
-This re-runs `west init` + `west update` and refreshes the sidebar state.
+This re-runs `alp bootstrap` and refreshes the sidebar state.
 
 ---
 

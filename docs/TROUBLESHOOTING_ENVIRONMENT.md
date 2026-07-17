@@ -22,7 +22,7 @@ This guide covers runtime and toolchain problems across CLI and VS Code workflow
 
 Run doctor in JSON mode:
 
-node ./out/cli/main.js doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json > doctor-report.json
+alp doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json > doctor-report.json
 
 Use report output to verify:
 
