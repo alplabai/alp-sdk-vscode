@@ -8,7 +8,7 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml } from "./webviewHtml";
+import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.existing-project-flow";
 const PANEL_TITLE = "Alp IDE — Open Project";
@@ -91,7 +91,7 @@ export class ExistingProjectFlowPanel {
         break;
 
       case "runCommand":
-        void vscode.commands.executeCommand(msg.command);
+        runWebviewCommand(msg.command);
         if (msg.command === "alp.bootstrap") {
           const now = new Date().toISOString();
           void this.context.globalState.update("alp.lastBootstrapAt", now);
