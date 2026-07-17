@@ -26,7 +26,7 @@ path = "src/main.rs"
 [dependencies]
 # path for local builds; version lets crates.io resolve the dep. Keep the
 # version in lockstep with the workspace on a minor/major bump.
-alp-core = { path = "../alp-core", version = "0.1.8" }
+alp-core = { path = "../alp-core", version = "0.2.0" }
 clap.workspace = true
 inquire.workspace = true
 serde.workspace = true

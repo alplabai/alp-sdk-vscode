@@ -12,6 +12,44 @@ same version.
 
 ## Unreleased
 
+## 0.2.0
+
+The smart-build release: `alp build` "just works" from a clean checkout, and
+mixed Zephyr+Yocto projects report honestly on non-Linux dev hosts.
+
+- **Added: plan-driven native `alp build` by default** (alplabai/alp-sdk-vscode#110).
+  `alp build` now consumes the SDK build-plan and runs each core's slice command
+  directly (`west build -b <board> <app>` / `bitbake` / CMake) instead of the
+  `west alp-build` extension command (moved behind `--west`). It auto-injects
+  `ZEPHYR_BASE` + `EXTRA_ZEPHYR_MODULES` from the resolved workspace, so no
+  manual `source .venv/activate` / `export` is needed. Colorful, order-independent
+  pre-flight readiness gate + per-slice recap, live per-slice build progress, and
+  auto-bootstrap-on-demand when no Zephyr workspace is resolved yet.
+- **Added: `alp doctor --build`** — a real build-readiness gate (SDK / board.yaml
+  / workspace / west resolution + host toolchains) with `--fix` to bootstrap a
+  workspace on demand.
+- **Added: `alp pinmux`** — the E1M pinmux capability-table envelope (alplabai/alp-sdk-vscode#95).
+- **Added: scaffold projects from SDK examples** — `alp examples` (searchable
+  list) and `alp init --from-example <name> [--som <sku>]` to clone + retarget a
+  shipped example onto a chosen SoM (alplabai/alp-sdk-vscode#97, #98, #107).
+- **Fixed: a skipped slice is no longer counted as failed** (alplabai/alp-sdk-vscode#114).
+  A build tool absent from PATH (e.g. `bitbake` on macOS) is now reported as
+  `skipped` with the reason verbatim (`bitbake not found in PATH; this is normal
+  on non-yocto dev hosts`) and excluded from the failed tally — a mixed project
+  with green Zephyr slices reports green and exits 0.
+- **Fixed: the SDK planner runs under the workspace venv python** (alplabai/alp-sdk-vscode#117).
+  The planner's `sys.executable` is baked into each Zephyr slice as
+  `-DPython3_EXECUTABLE` (alplabai/alp-sdk#787); running it under a bare PATH
+  `python3` that lacks the `west` module broke `west.cmake`'s `import
+  west.version`. `alp build` now prefers the west-capable workspace venv python
+  (sibling of the #106 venv-on-PATH fix).
+- **Fixed: honor the `alp sdk switch` pointer when resolving the SDK root**
+  (alplabai/alp-sdk-vscode#108).
+- **Fixed: nested build tools resolve** — the venv bin is on the `west` child
+  PATH (alplabai/alp-sdk-vscode#106); `west alp-*` runs from the workspace topdir
+  with the app dir passed (alplabai/alp-sdk-vscode#104); the bootstrap workspace
+  `west` resolves without activating the venv (alplabai/alp-sdk-vscode#102).
+
 ## 0.1.14
 
 - **Changed: debug envelope parity with the extension.** `alp doctor` /
