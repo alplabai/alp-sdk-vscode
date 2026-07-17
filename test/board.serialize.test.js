@@ -71,3 +71,56 @@ test("models: block round-trips through parse -> serialize (no data loss)", () =
   const reparsed = parseBoardConfig(out);
   assert.deepEqual(reparsed, parsed);
 });
+
+// #142: a hand-authored comment must survive a single configurator change.
+test("serializeBoardConfig preserves comments on a single-field change", () => {
+  const prior = [
+    "som:",
+    "  # pin rationale: E1 bus reserved for TBD sensor",
+    "  sku: E1M-AEN701",
+    "cores:",
+    "  m55_hp:",
+    "    app: ./src",
+    "",
+  ].join("\n");
+
+  const cfg = parseBoardConfig(prior);
+  cfg.som.sku = "E1M-AEN801";
+  const out = serializeBoardConfig(cfg, prior);
+
+  assert.ok(
+    out.includes("# pin rationale: E1 bus reserved for TBD sensor"),
+    "comment must survive a single-field change",
+  );
+  assert.ok(out.includes("E1M-AEN801"), "the changed field must be applied");
+  assert.deepEqual(parseBoardConfig(out), cfg);
+});
+
+// #142: a comment inside an UNCHANGED sequence (chips:/models:) must survive a
+// change to an unrelated field — the else-branch guard must not rebuild the
+// untouched sequence node.
+test("serializeBoardConfig keeps a comment inside an unchanged list", () => {
+  const prior = [
+    "som:",
+    "  sku: E1M-AEN701",
+    "cores:",
+    "  m55_hp:",
+    "    app: ./src",
+    "chips:",
+    "  # imu shares the E1 bus with the codec",
+    "  - lsm6dso",
+    "  - bmp390",
+    "",
+  ].join("\n");
+
+  const cfg = parseBoardConfig(prior);
+  cfg.som.sku = "E1M-AEN801"; // change something else entirely
+  const out = serializeBoardConfig(cfg, prior);
+
+  assert.ok(
+    out.includes("# imu shares the E1 bus with the codec"),
+    "comment inside the unchanged chips: list must survive",
+  );
+  assert.ok(out.includes("E1M-AEN801"), "the changed field must be applied");
+  assert.deepEqual(parseBoardConfig(out), cfg);
+});
