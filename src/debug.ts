@@ -159,16 +159,31 @@ async function debugPreflight(): Promise<void> {
   }
 }
 
-async function configureDebugProfile(): Promise<void> {
+/** The outcome of generating (or refreshing) the launch profile, shared by the
+ *  "configure profile" and "start debugging" commands. */
+interface LaunchProfileResult {
+  workspaceRoot: string;
+  configName: string;
+  launchPath: string;
+  relPath: string;
+  replaced: boolean;
+  report: ReturnType<typeof buildDebugPreflightReport>;
+  notes: readonly string[];
+}
+
+/** Prompt for target/server, write the launch.json profile, and return what a
+ *  caller needs to report status or start a session. Null when the user
+ *  cancelled or no workspace is open (a message is shown for the latter). */
+async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
   const targetKind = await pickTargetKind();
-  if (!targetKind) return;
+  if (!targetKind) return null;
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
   if (!context.workspaceRoot) {
     await vscode.window.showErrorMessage(
       "Alp: no workspace folder is open, cannot write launch.json.",
     );
-    return;
+    return null;
   }
 
   const slice = resolveManifestSlice(context.workspaceRoot, targetKind);
@@ -178,25 +193,24 @@ async function configureDebugProfile(): Promise<void> {
     server,
     slice,
   );
+  const configuration = preview.launch.configurations[0]!;
 
   let writePlan;
   try {
     writePlan = createLaunchJsonWritePlan(
       readLaunchJson(context.workspaceRoot),
-      preview.launch.configurations[0]!,
+      configuration,
     );
   } catch (error) {
     await vscode.window.showErrorMessage(formatDebugError(error));
-    return;
+    return null;
   }
 
   const launchPath = writeLaunchJson(context.workspaceRoot, writePlan.content);
   log(
-    `alp.configureDebugProfile: ${writePlan.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
+    `alp debug: ${writePlan.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
 
-  const doc = await vscode.workspace.openTextDocument(launchPath);
-  await vscode.window.showTextDocument(doc, { preview: false });
   const report = buildDebugPreflightReport(
     new Date().toISOString(),
     context,
@@ -204,22 +218,115 @@ async function configureDebugProfile(): Promise<void> {
     collectRuntimeCapabilities(),
     { pathExists: fileExists },
   );
-  const relPath = vscode.workspace.asRelativePath(launchPath);
-  const verb = writePlan.replaced ? "updated" : "wrote";
-  if (report.canLaunch) {
-    await vscode.window.showInformationMessage(`Alp: ${verb} ${relPath}.`);
+
+  return {
+    workspaceRoot: context.workspaceRoot,
+    configName: String(configuration.name),
+    launchPath,
+    relPath: vscode.workspace.asRelativePath(launchPath),
+    replaced: writePlan.replaced,
+    report,
+    notes: preview.notes,
+  };
+}
+
+async function configureDebugProfile(): Promise<void> {
+  const result = await writeLaunchProfile();
+  if (!result) return;
+
+  const doc = await vscode.workspace.openTextDocument(result.launchPath);
+  await vscode.window.showTextDocument(doc, { preview: false });
+
+  const verb = result.replaced ? "updated" : "wrote";
+  if (result.report.canLaunch) {
+    await vscode.window.showInformationMessage(
+      `Alp: ${verb} ${result.relPath}.`,
+    );
     return;
   }
 
-  for (const note of preview.notes) log(note);
-  const unresolved = report.checks
+  for (const note of result.notes) log(note);
+  const unresolved = result.report.checks
     .filter((check) => check.status === "fail")
     .map((check) => check.name)
     .join(", ");
   await vscode.window.showWarningMessage(
-    `Alp: ${verb} ${relPath}, but it is not launchable yet — resolve: ${unresolved}. ${report.nextSteps.join(" ")}`,
+    `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
   );
   showOutput();
+}
+
+/** Debug-adapter extension required per server. cortex-debug drives the on-chip
+ *  servers (J-Link/OpenOCD/pyOCD); the Yocto remote path uses cppdbg (cpptools).
+ *  These ship in the extension pack, but a user can disable one — offer to
+ *  (re)install rather than let the session fail with "unknown debug type". */
+function requiredDebugExtension(configName: string): {
+  id: string;
+  label: string;
+} {
+  return /Yocto/i.test(configName)
+    ? { id: "ms-vscode.cpptools", label: "C/C++ (cpptools)" }
+    : { id: "marus25.cortex-debug", label: "Cortex-Debug" };
+}
+
+async function ensureDebugExtension(configName: string): Promise<boolean> {
+  const { id, label } = requiredDebugExtension(configName);
+  if (vscode.extensions.getExtension(id)) return true;
+  const choice = await vscode.window.showWarningMessage(
+    `Alp: the ${label} extension (${id}) is required to debug this target but is not installed.`,
+    "Install",
+    "Cancel",
+  );
+  if (choice !== "Install") return false;
+  await vscode.commands.executeCommand(
+    "workbench.extensions.installExtension",
+    id,
+  );
+  // installExtension resolves once installed; getExtension then sees it.
+  return vscode.extensions.getExtension(id) !== undefined;
+}
+
+/** First-class "Debug": generate/refresh the launch profile, make sure the
+ *  debug-adapter extension is present, then start the session. */
+async function startDebugging(): Promise<void> {
+  const result = await writeLaunchProfile();
+  if (!result) return;
+
+  if (!(await ensureDebugExtension(result.configName))) {
+    await vscode.window.showWarningMessage(
+      `Alp: cannot start debugging without ${requiredDebugExtension(result.configName).label}.`,
+    );
+    return;
+  }
+
+  if (!result.report.canLaunch) {
+    for (const note of result.notes) log(note);
+    const unresolved = result.report.checks
+      .filter((check) => check.status === "fail")
+      .map((check) => check.name)
+      .join(", ");
+    const choice = await vscode.window.showWarningMessage(
+      `Alp: ${result.relPath} is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
+      "Start Anyway",
+      "Show Details",
+    );
+    if (choice === "Show Details") {
+      showOutput();
+      return;
+    }
+    if (choice !== "Start Anyway") return;
+  }
+
+  const folder = vscode.workspace.workspaceFolders?.find(
+    (candidate) => candidate.uri.fsPath === result.workspaceRoot,
+  );
+  const started = await vscode.debug.startDebugging(folder, result.configName);
+  if (!started) {
+    await vscode.window.showErrorMessage(
+      `Alp: VS Code declined to start "${result.configName}" — check the Debug Console and launch.json.`,
+    );
+    showOutput();
+  }
 }
 
 async function exportSupportBundle(): Promise<void> {
@@ -433,6 +540,7 @@ export function registerDebugCommands(): vscode.Disposable[] {
     vscode.commands.registerCommand("alp.configureDebugProfile", () =>
       configureDebugProfile(),
     ),
+    vscode.commands.registerCommand("alp.debug", () => startDebugging()),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>
       exportSupportBundle(),
     ),
