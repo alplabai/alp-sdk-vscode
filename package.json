@@ -440,7 +440,8 @@
         "alpSdk.boardYamlPath": {
           "type": "string",
           "default": "board.yaml",
-          "description": "Path (relative to the workspace root) of the board.yaml the loader operates on."
+          "scope": "resource",
+          "description": "Path (relative to its workspace folder) of the board.yaml the loader operates on. Settable per-folder via .vscode/settings.json in a multi-root workspace."
         },
         "alpSdk.westCwd": {
           "type": "string",
@@ -469,7 +470,8 @@
     "package:dev": "vsce package --no-dependencies --pre-release",
     "publish:vsix": "vsce publish --no-dependencies",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -490,6 +492,7 @@
     "@types/react": "^19.2.15",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^6.0.2",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
     "prettier": "^3.8.3",

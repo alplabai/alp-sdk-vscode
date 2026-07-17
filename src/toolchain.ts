@@ -210,7 +210,12 @@ function mapCliDoctorToReport(data: CliDoctorData): ToolchainReport {
  */
 export async function buildToolchainReportViaCli(
   context: vscode.ExtensionContext,
-): Promise<{ report: ToolchainReport; fromCli: boolean; canFix: boolean }> {
+): Promise<{
+  report: ToolchainReport;
+  fromCli: boolean;
+  canFix: boolean;
+  reason?: string;
+}> {
   const { outcome } = await runAlpCommand(context, ["doctor", "--build"]);
   const data = outcome.envelope?.data;
   if (outcome.envelope && isCliDoctorData(data)) {
@@ -219,10 +224,14 @@ export async function buildToolchainReportViaCli(
     );
     return { report: mapCliDoctorToReport(data), fromCli: true, canFix };
   }
-  log(
-    `[toolchain] CLI doctor unavailable (${outcome.message}); using in-process checks.`,
-  );
-  return { report: buildToolchainReport(), fromCli: false, canFix: false };
+  const reason = `CLI build gate did not run (${outcome.message}); showing local in-process checks only.`;
+  log(`[toolchain] ${reason}`);
+  return {
+    report: buildToolchainReport(),
+    fromCli: false,
+    canFix: false,
+    reason,
+  };
 }
 
 /** Offer to bootstrap a missing Zephyr workspace via `alp doctor --build --fix`
