@@ -25,5 +25,9 @@ test/fixtures/*.yaml
 # Vendored board schema — must stay byte-identical to the submodule (CI cmp)
 schemas/
 
+# Vendored example projects — user-project content (SDK-emitted board.yaml etc),
+# kept verbatim, not subject to the extension's code style
+examples/
+
 # Hand-maintained prose docs — not subject to code formatting
 *.md

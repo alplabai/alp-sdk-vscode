@@ -51,6 +51,7 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 
 docs/**
+examples/**
 CLAUDE.md
 readme.md
 
