@@ -49,16 +49,14 @@ run the full wizard:
 
 ### Step 1 — Template
 
-Choose from the project template grid:
+The template grid is generated dynamically from the active SDK, so the exact
+cards depend on the SDK version. It has two groups:
 
-| Template | Category | Description |
-|----------|----------|-------------|
-| Blank Application | Starter | Minimal `CMakeLists.txt`, `prj.conf`, `board.yaml`, `src/main.c` |
-| GPIO Peripheral | Example | Button input + LED output with pin allocation |
-| LVGL UI Application | Example | Touchscreen UI with LVGL widgets |
-| IoT Dashboard | Example | Sensor data aggregation + cloud reporting |
-| AI Object Detection | Example | DRP-AI3 / Ethos-U55 real-time inference |
-| Audio Processing | Example | I2S capture + PDM microphone playback |
+- **Starters** — the CLI project templates (`alp init` `--template`): _Minimal
+  app_, _Zephyr app_, _Sensor starter_, _IoT starter_, _Edge AI starter_,
+  _Board diagnostics_, and _Host tooling starter_.
+- **Examples** — one card per SDK example, titled from each example's README
+  (e.g. `gpio-button-led`, `lvgl-widgets-demo`, `iot-dashboard`).
 
 Click a template card to select it (the card highlights with a blue border).
 

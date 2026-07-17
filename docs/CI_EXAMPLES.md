@@ -8,19 +8,17 @@ This document provides copy-paste examples for running the ALP CLI in CI.
 
 Use the same baseline flow in every CI system:
 
-1. Install dependencies.
-2. Compile the extension sources (produces out/cli/main.js).
-3. Run CLI commands with --format json.
-4. Upload generated JSON reports as build artifacts.
+1. Install the native `alp` CLI (`npm install -g @alplabai/alp-cli`, or download the release binary).
+2. Run CLI commands with --format json.
+3. Upload generated JSON reports as build artifacts.
 
 Recommended command sequence:
 
 ```bash
-npm ci
-npm run compile
-node ./out/cli/main.js validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
-node ./out/cli/main.js generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
-node ./out/cli/main.js doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
+npm install -g @alplabai/alp-cli
+alp validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
+alp generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
+alp doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
 ```
 
 ## 2. GitHub Actions Example
@@ -50,22 +48,19 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Compile
-        run: npm run compile
+      - name: Install the alp CLI
+        run: npm install -g @alplabai/alp-cli
 
       - name: Validate board config
         run: |
-          node ./out/cli/main.js validate \
+          alp validate \
             --project . \
             --sdk-root "$ALP_SDK_ROOT" \
             --format json > validate-report.json
 
       - name: Generate all outputs
         run: |
-          node ./out/cli/main.js generate \
+          alp generate \
             --project . \
             --sdk-root "$ALP_SDK_ROOT" \
             --all \
@@ -73,7 +68,7 @@ jobs:
 
       - name: Run doctor preflight
         run: |
-          node ./out/cli/main.js doctor \
+          alp doctor \
             --project . \
             --sdk-root "$ALP_SDK_ROOT" \
             --target-kind native-host \
@@ -102,11 +97,10 @@ alp_cli_verify:
   variables:
     ALP_SDK_ROOT: "$CI_PROJECT_DIR/alp-sdk-upstream"
   script:
-    - npm ci
-    - npm run compile
-    - node ./out/cli/main.js validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
-    - node ./out/cli/main.js generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
-    - node ./out/cli/main.js doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
+    - npm install -g @alplabai/alp-cli
+    - alp validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
+    - alp generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
+    - alp doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
   artifacts:
     when: always
     paths:
