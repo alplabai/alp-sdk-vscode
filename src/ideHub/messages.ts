@@ -383,6 +383,14 @@ export interface PickProjectLocationMessage {
   current?: string;
 }
 
+/** Re-fetch the template + SoM catalog against a wizard-selected SDK, so the
+ *  Examples/Hardware lists match the SDK the project is scaffolded from. */
+export interface ReloadProjectTemplatesMessage {
+  type: "reloadProjectTemplates";
+  /** Selected SDK root to source the catalog from; omitted = active/default. */
+  sdkPath?: string;
+}
+
 export type WebviewToExtMessage =
   | ReadyMessage
   | RunCommandMessage
@@ -396,6 +404,7 @@ export type WebviewToExtMessage =
   | ClosePanelMessage
   | CreateNewProjectMessage
   | PickProjectLocationMessage
+  | ReloadProjectTemplatesMessage
   | OpenExistingProjectMessage
   | SaveBoardConfigMessage
   | ConfiguratorUpdateMessage
