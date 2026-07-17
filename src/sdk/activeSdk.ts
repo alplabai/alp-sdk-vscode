@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { checkSdkReadiness } from "@alp-sdk/core/sdk/service";
+import * as fs from "fs";
 import * as vscode from "vscode";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
 import { writeAlpSetting } from "./settingsWrite";
@@ -12,6 +14,25 @@ import { writeAlpSetting } from "./settingsWrite";
  * native trees + status bar afterwards.
  */
 export async function setActiveSdk(sdkPath: string): Promise<void> {
+  // Probe readiness before writing: a folder that is not an SDK root (missing
+  // scripts/alp_project.py) would poison alpSdk.path — resolveSdkRoot rejects it
+  // AND skips auto-discovery of a valid sibling. Surface the error, write nothing.
+  const report = checkSdkReadiness(
+    sdkPath,
+    (p) => fs.existsSync(p),
+    (p) => {
+      try {
+        return fs.readFileSync(p, "utf8");
+      } catch {
+        return "";
+      }
+    },
+  );
+  if (report.state === "missing") {
+    void vscode.window.showErrorMessage(report.issues.join(" "));
+    return;
+  }
+
   const hasWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
   const target = hasWorkspace
     ? vscode.ConfigurationTarget.Workspace

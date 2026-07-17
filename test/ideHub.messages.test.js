@@ -185,3 +185,14 @@ test("E1mModule family is a non-empty string", () => {
   };
   assert.ok(m.family.length > 0);
 });
+
+test("reloadProjectTemplates message carries an optional sdkPath", () => {
+  /** @type {import("../out/ideHub/messages.js").ReloadProjectTemplatesMessage} */
+  const withSdk = { type: "reloadProjectTemplates", sdkPath: "/opt/alp-sdk" };
+  assert.equal(withSdk.type, "reloadProjectTemplates");
+  assert.equal(withSdk.sdkPath, "/opt/alp-sdk");
+
+  /** @type {import("../out/ideHub/messages.js").ReloadProjectTemplatesMessage} */
+  const defaultSdk = { type: "reloadProjectTemplates" };
+  assert.equal(defaultSdk.sdkPath, undefined);
+});

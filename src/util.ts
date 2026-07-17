@@ -12,6 +12,33 @@ export function showOutput(): void {
   OUTPUT.show(true);
 }
 
+/**
+ * Launch `argv` in a dedicated integrated terminal, running the executable
+ * directly via `shellPath`/`shellArgs` (no intermediate shell). VS Code passes
+ * the args to the OS as an argv array, so a path containing whitespace never has
+ * to be quoted — sidestepping the per-shell quoting that broke PowerShell (which
+ * parses a leading quoted token in expression mode). Any prior terminal of the
+ * same name is disposed so a re-run reuses one named slot instead of piling up.
+ */
+export function runInTerminal(options: {
+  name: string;
+  argv: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+}): void {
+  vscode.window.terminals
+    .find((terminal) => terminal.name === options.name)
+    ?.dispose();
+  const terminal = vscode.window.createTerminal({
+    name: options.name,
+    cwd: options.cwd,
+    env: options.env,
+    shellPath: options.argv[0],
+    shellArgs: options.argv.slice(1),
+  });
+  terminal.show(true);
+}
+
 /** Show an info/warn message tied to a follow-up action. */
 export async function offerAction(
   message: string,

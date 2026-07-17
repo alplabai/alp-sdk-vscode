@@ -3,19 +3,24 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  VENDORED_SDK_TAG,
+  SYSTEM_MANIFEST_SCHEMA_SHA256,
+} = require("./vendored-sdk-tag");
 
 // sha256 of metadata/schemas/system-manifest-v1.schema.json at the alp-sdk
-// v0.7.0 tag. THE drift gate (same policy as board.schema): any local edit,
-// forward drift (re-vendoring from submodule dev HEAD), or upstream change
-// fails here. To bump the vendored schema intentionally:
+// VENDORED_SDK_TAG tag. THE drift gate (same policy as board.schema): any local
+// edit, forward drift (re-vendoring from submodule dev HEAD), or upstream change
+// fails here. The tag and both vendored-schema hashes live in
+// ./vendored-sdk-tag.js, so the board and system-manifest copies can never green
+// while disagreeing on tag. To bump the vendored schema intentionally:
 //   git -C alp-sdk-upstream show <tag>:metadata/schemas/system-manifest-v1.schema.json \
 //     > schemas/system-manifest-v1.schema.json
-// then recompute over the LF-normalized file — portable + Windows-safe:
+// then recompute over the LF-normalized file — portable + Windows-safe — and
+// update ./vendored-sdk-tag.js:
 //   node -e "const s=require('fs').readFileSync('schemas/system-manifest-v1.schema.json','utf-8').replace(/\r\n/g,'\n');console.log(require('crypto').createHash('sha256').update(s,'utf-8').digest('hex'))"
-const VENDORED_SCHEMA_SHA256 =
-  "4b231d756e57f9822dc9ac12b327d6ed10685863d879f02c89f070fe77bf2326";
 
-test("system-manifest-v1 schema is vendored from alp-sdk v0.7.0 (drift gate)", () => {
+test(`system-manifest-v1 schema is vendored from alp-sdk ${VENDORED_SDK_TAG} (drift gate)`, () => {
   const p = path.join(
     __dirname,
     "..",
@@ -53,7 +58,7 @@ test("system-manifest-v1 schema is vendored from alp-sdk v0.7.0 (drift gate)", (
     .digest("hex");
   assert.equal(
     hash,
-    VENDORED_SCHEMA_SHA256,
-    "vendored system-manifest schema drifted — re-vendor from the pinned tag + update the hash",
+    SYSTEM_MANIFEST_SCHEMA_SHA256,
+    "vendored system-manifest schema drifted — re-vendor from the pinned tag + update ./vendored-sdk-tag.js",
   );
 });
