@@ -17,11 +17,15 @@ export function createWestBuildPlan(
   context: WestWorkspaceContext,
   input: WestBuildInput,
 ): WestCommandPlan {
-  return createWestCommandPlan(
-    context,
-    "alp · west build",
-    `west build -b ${input.board} ${input.example} -p auto`,
-  );
+  return createWestCommandPlan(context, "alp · west build", [
+    "west",
+    "build",
+    "-b",
+    input.board,
+    input.example,
+    "-p",
+    "auto",
+  ]);
 }
 
 export function createWestBuildPreparation(
@@ -44,69 +48,77 @@ export function createWestBuildPreparation(
 export function createWestFlashPlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west flash", "west flash");
+  return createWestCommandPlan(context, "alp · west flash", ["west", "flash"]);
 }
 
 export function createWestUpdatePlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west update", "west update");
+  return createWestCommandPlan(context, "alp · west update", [
+    "west",
+    "update",
+  ]);
 }
 
 export function createWestNativeRunPlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west run", "west build -t run");
+  return createWestCommandPlan(context, "alp · west run", [
+    "west",
+    "build",
+    "-t",
+    "run",
+  ]);
 }
 
 export function createWestAlpImagePlan(
   context: WestWorkspaceContext,
   appPath: string,
 ): WestCommandPlan {
-  return createWestCommandPlan(
-    context,
-    "alp · west alp-image",
-    `west alp-image ${appPath}`,
-  );
+  return createWestCommandPlan(context, "alp · west alp-image", [
+    "west",
+    "alp-image",
+    appPath,
+  ]);
 }
 
 export function createWestAlpFlashPlan(
   context: WestWorkspaceContext,
   appPath: string,
 ): WestCommandPlan {
-  return createWestCommandPlan(
-    context,
-    "alp · west alp-flash",
-    `west alp-flash ${appPath}`,
-  );
+  return createWestCommandPlan(context, "alp · west alp-flash", [
+    "west",
+    "alp-flash",
+    appPath,
+  ]);
 }
 
 export function createWestAlpCleanPlan(
   context: WestWorkspaceContext,
   appPath: string,
 ): WestCommandPlan {
-  return createWestCommandPlan(
-    context,
-    "alp · west alp-clean",
-    `west alp-clean ${appPath}`,
-  );
+  return createWestCommandPlan(context, "alp · west alp-clean", [
+    "west",
+    "alp-clean",
+    appPath,
+  ]);
 }
 
 export function createWestAlpRenodePlan(
   context: WestWorkspaceContext,
   appPath: string,
 ): WestCommandPlan {
-  return createWestCommandPlan(
-    context,
-    "alp · west alp-renode",
-    `west alp-renode ${appPath}`,
-  );
+  return createWestCommandPlan(context, "alp · west alp-renode", [
+    "west",
+    "alp-renode",
+    appPath,
+  ]);
 }
 
 function createWestCommandPlan(
   context: WestWorkspaceContext,
   terminalName: string,
-  command: string,
+  args: string[],
 ): WestCommandPlan {
   const env: Record<string, string> = {};
   if (context.sdkRoot) {
@@ -115,7 +127,7 @@ function createWestCommandPlan(
 
   return {
     terminalName,
-    command,
+    args,
     westCwd: context.westCwd,
     env,
   };

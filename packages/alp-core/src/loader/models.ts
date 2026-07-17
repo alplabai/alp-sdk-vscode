@@ -7,7 +7,8 @@ export type EmitMode =
   | "cmake-args"
   | "yocto-conf"
   | "dts-overlay"
-  | "native-sim-overlay";
+  | "native-sim-overlay"
+  | "carrier-netlist";
 
 export type LoaderWorkspaceContext = ProjectContext;
 
