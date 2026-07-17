@@ -2,20 +2,20 @@
 
 import * as vscode from "vscode";
 import { BuildTreeProvider } from "./build";
-import { ProjectsTreeProvider } from "./projects";
-import { SdkTreeProvider } from "./sdk";
-import { SetupTreeProvider } from "./setup";
+import { EnvironmentTreeProvider } from "./environment";
+import { ProjectsWorkspacesTreeProvider } from "./projectsWorkspaces";
 import type { StateManager } from "./stateManager";
-import { WorkspacesTreeProvider } from "./workspaces";
 
 export function registerTreeViews(
   context: vscode.ExtensionContext,
   stateMgr: StateManager,
 ): vscode.Disposable[] {
-  const setupProvider = new SetupTreeProvider(stateMgr);
-  const workspacesProvider = new WorkspacesTreeProvider(stateMgr);
-  const projectsProvider = new ProjectsTreeProvider(stateMgr);
-  const sdkProvider = new SdkTreeProvider(stateMgr);
+  // Environment = Setup + SDK; Projects & Workspaces = Projects + Workspaces.
+  // Each composite provider owns + disposes its two constituent providers.
+  const environmentProvider = new EnvironmentTreeProvider(stateMgr);
+  const projectsWorkspacesProvider = new ProjectsWorkspacesTreeProvider(
+    stateMgr,
+  );
   const buildProvider = new BuildTreeProvider(stateMgr);
 
   const getLastBootstrapAt = (): string | null =>
@@ -29,26 +29,16 @@ export function registerTreeViews(
     vscode.workspace.createFileSystemWatcher("**/board.yaml");
 
   const disposables: vscode.Disposable[] = [
-    setupProvider,
-    workspacesProvider,
-    projectsProvider,
-    sdkProvider,
+    environmentProvider,
+    projectsWorkspacesProvider,
     buildProvider,
     boardYamlWatcher,
     vscode.window.createTreeView("alp-ide.setup", {
-      treeDataProvider: setupProvider,
-      showCollapseAll: false,
-    }),
-    vscode.window.createTreeView("alp-ide.workspaces", {
-      treeDataProvider: workspacesProvider,
+      treeDataProvider: environmentProvider,
       showCollapseAll: false,
     }),
     vscode.window.createTreeView("alp-ide.projects", {
-      treeDataProvider: projectsProvider,
-      showCollapseAll: false,
-    }),
-    vscode.window.createTreeView("alp-ide.sdk", {
-      treeDataProvider: sdkProvider,
+      treeDataProvider: projectsWorkspacesProvider,
       showCollapseAll: false,
     }),
     vscode.window.createTreeView("alp-ide.build", {
