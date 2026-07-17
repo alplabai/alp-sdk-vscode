@@ -52,6 +52,13 @@
   "extensionDependencies": [
     "redhat.vscode-yaml"
   ],
+  "extensionPack": [
+    "marus25.cortex-debug",
+    "mcu-debug.peripheral-viewer",
+    "mcu-debug.memory-view",
+    "ms-vscode.cpptools",
+    "vadimcn.vscode-lldb"
+  ],
   "contributes": {
     "customEditors": [
       {
@@ -282,6 +289,12 @@
         "command": "alp.configureDebugProfile",
         "title": "Alp: Configure debug profile (launch.json)",
         "category": "Alp"
+      },
+      {
+        "command": "alp.debug",
+        "title": "Alp: Debug (generate profile + start session)",
+        "category": "Alp",
+        "icon": "$(debug-alt)"
       },
       {
         "command": "alp.exportSupportBundle",

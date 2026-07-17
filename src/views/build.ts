@@ -60,6 +60,12 @@ const BUILD_ACTIONS: Array<{
     command: "alp.westAlpFlash",
   },
   {
+    label: "Debug",
+    description: "generate profile + start a debug session",
+    icon: "debug-alt",
+    command: "alp.debug",
+  },
+  {
     label: "Renode",
     description: "simulate in Renode",
     icon: "beaker",
