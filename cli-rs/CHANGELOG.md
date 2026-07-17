@@ -12,6 +12,16 @@ same version.
 
 ## Unreleased
 
+- **Changed: unified the SDK install root to `~/.alp/sdk`** (alplabai/alp-sdk-vscode#121,
+  stage 1). `alp sdk install <version>` now installs into `~/.alp/sdk/<version>` (was
+  `~/.alp/sdk-cache/`), converging with the VS Code extension's install location so both
+  surfaces resolve the same SDKs. `alp sdk switch <version>` resolves the unified root
+  and falls back to the legacy `~/.alp/sdk-cache/<version>` as a **read-only probe** for
+  SDKs installed by the previous CLI (nothing writes there any more). Home resolution now
+  **errors** when `HOME`/`USERPROFILE` is unset instead of silently using `"."` — which
+  would land `~/.alp` writes in the current project directory. Prerequisite for zero-flag
+  default-SDK resolution (the remaining stages of #121).
+
 ## 0.2.0
 
 The smart-build release: `alp build` "just works" from a clean checkout, and

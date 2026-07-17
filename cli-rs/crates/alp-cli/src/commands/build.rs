@@ -251,7 +251,13 @@ fn native_build(g: &GlobalArgs, args: &BuildArgs) -> CommandRun {
 /// `alp doctor --build` so both speak the same readiness language.
 pub(crate) fn probe_build_preflight(g: &GlobalArgs, context: &ProjectContext) -> Vec<DoctorCheck> {
     let base = base_dir(context);
-    let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
+    // Resolve the SDK against the SAME (walk-up-discovered) root the context used,
+    // not raw cwd — otherwise `alp build`/`doctor --build` from a project subdir
+    // find board.yaml (via context) but miss the `.alp/sdk-path` pointer.
+    let sdk_root = match context.workspace_root.as_deref() {
+        Some(root) => crate::util::resolve_sdk_root(g, Path::new(root)),
+        None => crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g)),
+    };
     let workspace = west_workspace_dir(&base, sdk_root.as_deref());
     let west = west_program(&base, sdk_root.as_deref());
     let west_available = crate::util::tool_available(&west);
@@ -392,7 +398,9 @@ fn execute_slices(g: &GlobalArgs, project: Project, plan: &BuildPlan, base: &str
     let theme = crate::style::Theme::from_args(g);
     let mut results: Vec<SliceResult> = Vec::new();
     let mut any_failed = false;
-    let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
+    // Resolve the SDK against the walk-up-discovered project root (`base`), not raw
+    // cwd — so `alp build` from a project subdir still injects the SDK modules.
+    let sdk_root = crate::util::resolve_sdk_root(g, base_path);
     // Auto-manage the build env so `alp build` needs no manual
     // `source .venv/activate` / `export ZEPHYR_BASE`: derive ZEPHYR_BASE from the
     // resolved workspace and pass the alp-sdk checkout as an extra Zephyr module,
@@ -1043,7 +1051,9 @@ pub fn run(g: &GlobalArgs, subcommand: &str, passthrough: &[String]) -> CommandR
         .or_else(|| context.workspace_root.clone())
         .unwrap_or_else(|| ".".to_string());
 
-    let sdk_root = crate::util::resolve_sdk_root(g, &crate::util::cli_workspace_root(g));
+    // Resolve the SDK against the context-derived workspace (`west_cwd`), not raw
+    // cwd, so `alp build --west` works from a project subdir too.
+    let sdk_root = crate::util::resolve_sdk_root(g, Path::new(&west_cwd));
     let west_bin = west_program(&west_cwd, sdk_root.as_deref());
     // `west alp-*` are extension commands discovered only from a workspace
     // manifest, so run them from the workspace topdir (holding `.west/`), not the

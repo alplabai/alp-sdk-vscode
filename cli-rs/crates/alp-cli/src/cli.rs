@@ -229,7 +229,7 @@ pub struct SdkArgs {
     /// Positional argument (version for install, version|path for switch).
     #[arg(value_name = "ARG")]
     pub arg: Option<String>,
-    /// Cache root for `install` (default: ~/.alp/sdk-cache).
+    /// Install root for `install` (default: ~/.alp/sdk).
     #[arg(long)]
     pub destination: Option<String>,
 }

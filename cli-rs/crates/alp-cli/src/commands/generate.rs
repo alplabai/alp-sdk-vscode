@@ -45,7 +45,7 @@ struct GenerateData {
 /// Run `alp generate`: resolve the board and SDK roots, invoke `alp_project.py`
 /// once per emit target, and assemble the text/JSON `CommandRun` result.
 pub fn run(g: &GlobalArgs) -> CommandRun {
-    let workspace_root = crate::util::cli_workspace_root(g);
+    let workspace_root = crate::util::cli_project_root(g);
     let board_path = resolve_board_path(g, &workspace_root);
 
     // Keep as-given strings for JSON (reproducible in golden fixtures).

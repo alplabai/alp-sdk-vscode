@@ -179,8 +179,28 @@ fn run_install(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
         );
     };
 
-    let cache_root = args.destination.clone().unwrap_or_else(default_cache_root);
-    let dest_path = Path::new(&cache_root).join(&version);
+    let install_root = match args.destination.clone() {
+        Some(dest) => dest,
+        None => match crate::util::alp_sdk_root() {
+            Ok(root) => root.to_string_lossy().to_string(),
+            Err(message) => {
+                return emit_failure(
+                    g,
+                    InstallData {
+                        subcommand: "install",
+                        version: version.clone(),
+                        sdk_path: String::new(),
+                        readiness: empty_readiness(""),
+                    },
+                    ExitCode::RuntimeFailure,
+                    "home-unresolved",
+                    message.clone(),
+                    vec![format!("sdk install: {message}")],
+                );
+            }
+        },
+    };
+    let dest_path = Path::new(&install_root).join(&version);
     let dest_str = dest_path.to_string_lossy().to_string();
 
     let already_installed = dest_path.join("scripts").join("alp_project.py").exists();
@@ -321,13 +341,26 @@ fn run_switch(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
 
     let sdk_path = if Path::new(&version_or_path).is_absolute() {
         version_or_path.clone()
+    } else if let Some(root) = g.sdk_root.clone() {
+        root
     } else {
-        g.sdk_root.clone().unwrap_or_else(|| {
-            Path::new(&default_cache_root())
-                .join(&version_or_path)
-                .to_string_lossy()
-                .to_string()
-        })
+        match resolve_version_dir(&version_or_path) {
+            Ok(path) => path,
+            Err(message) => {
+                return emit_failure(
+                    g,
+                    SwitchData {
+                        subcommand: "switch",
+                        sdk_path: String::new(),
+                        version: None,
+                    },
+                    ExitCode::RuntimeFailure,
+                    "home-unresolved",
+                    message.clone(),
+                    vec![format!("sdk switch: {message}")],
+                );
+            }
+        }
     };
 
     if !Path::new(&sdk_path).exists() {
@@ -426,15 +459,32 @@ fn empty_readiness(sdk_path: &str) -> SdkReadinessReport {
     }
 }
 
-/// Default SDK cache directory: `~/.alp/sdk-cache` (uses `USERPROFILE` on Windows).
-fn default_cache_root() -> String {
-    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".alp")
-        .join("sdk-cache")
-        .to_string_lossy()
-        .to_string()
+/// Resolve `<version>` to an on-disk SDK directory: the unified `~/.alp/sdk/<version>`,
+/// falling back to the legacy `~/.alp/sdk-cache/<version>` read-probe when only that
+/// exists (SDKs installed by the pre-unification CLI). Returns the canonical
+/// (unified) path when neither exists, so the caller's not-found error names the
+/// expected location. Errors only if the home directory is unresolvable.
+fn resolve_version_dir(version: &str) -> Result<String, String> {
+    let canonical = crate::util::alp_sdk_root()?.join(version);
+    let legacy = crate::util::alp_sdk_legacy_root()?.join(version);
+    Ok(resolve_version_dir_in(&canonical, &legacy, &|p| p.exists()))
+}
+
+/// Pure core of [`resolve_version_dir`]: canonical (unified) first, then the legacy
+/// read-probe, then canonical when neither exists. Filesystem access is injected so
+/// the branch selection is testable without touching `~/.alp`.
+fn resolve_version_dir_in(
+    canonical: &Path,
+    legacy: &Path,
+    exists: &impl Fn(&Path) -> bool,
+) -> String {
+    if exists(canonical) {
+        return canonical.to_string_lossy().to_string();
+    }
+    if exists(legacy) {
+        return legacy.to_string_lossy().to_string();
+    }
+    canonical.to_string_lossy().to_string()
 }
 
 /// Maps a `SdkReadinessState` to its lowercase display label.
@@ -530,4 +580,34 @@ fn emit_failure<T: Serialize>(
         .is_json()
         .then(|| Envelope::new("sdk", null_project(), data, issues, exit.code()).to_json());
     CommandRun { exit, text, json }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CANON: &str = "/home/x/.alp/sdk/v0.11.0";
+    const LEGACY: &str = "/home/x/.alp/sdk-cache/v0.11.0";
+
+    #[test]
+    fn version_dir_prefers_the_unified_root_when_it_exists() {
+        // Both present -> unified wins; legacy is a fallback, never preferred.
+        let got = resolve_version_dir_in(Path::new(CANON), Path::new(LEGACY), &|_| true);
+        assert_eq!(got, CANON);
+    }
+
+    #[test]
+    fn version_dir_falls_back_to_legacy_when_only_legacy_exists() {
+        let got = resolve_version_dir_in(Path::new(CANON), Path::new(LEGACY), &|p| {
+            p == Path::new(LEGACY)
+        });
+        assert_eq!(got, LEGACY);
+    }
+
+    #[test]
+    fn version_dir_returns_canonical_when_neither_exists() {
+        // Not-found path: name the canonical (unified) location, not the legacy probe.
+        let got = resolve_version_dir_in(Path::new(CANON), Path::new(LEGACY), &|_| false);
+        assert_eq!(got, CANON);
+    }
 }
