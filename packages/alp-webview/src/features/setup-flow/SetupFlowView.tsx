@@ -147,7 +147,7 @@ function SdkStep({ state }: { state: AlpIdeState }) {
             onClick={() =>
               postMessage({
                 type: "runCommand",
-                command: "alp.ideHub.focus",
+                command: "alp.openSdkManager",
               })
             }
           >
