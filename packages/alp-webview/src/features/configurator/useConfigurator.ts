@@ -133,12 +133,8 @@ export function useConfigurator(): UseConfigurator {
   const validation = vm?.validation ?? EMPTY_VALIDATION;
 
   const save = useCallback(() => {
-    if (validation.errors.length > 0) {
-      setStatus("Resolve validation errors before saving.");
-      return;
-    }
     postMessage({ type: "saveBoardConfig" });
-  }, [validation.errors.length]);
+  }, []);
 
   const reload = useCallback(() => {
     expectEcho.current = false;

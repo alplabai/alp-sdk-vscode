@@ -1555,18 +1555,10 @@ export function ConfiguratorView() {
 
   const validClass = validation.errors.length ? styles.vErr : styles.vOk;
   const validText = validation.errors.length
-    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""} — resolve to save`
+    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""}`
     : validation.warnings.length
       ? `⚠ ${validation.warnings.length} warning${validation.warnings.length > 1 ? "s" : ""}`
       : "✓ Valid — ready to save";
-
-  // A valid board can always be saved — persisting an unchanged/first-time config
-  // is a harmless (idempotent) write. Only validation errors block Save, so the
-  // action is never a dead end for a valid config.
-  const saveTitle =
-    validation.errors.length > 0
-      ? `Resolve ${validation.errors.length} validation error${validation.errors.length > 1 ? "s" : ""} before saving (see the list above).`
-      : "Save board.yaml";
 
   function renderSection() {
     if (!cfg.loaded) {
@@ -1648,9 +1640,8 @@ export function ConfiguratorView() {
       {validation.errors.length > 0 && (
         <div className={styles.vBanner} role="alert">
           <p className={styles.vBannerHead}>
-            {validation.errors.length} item
-            {validation.errors.length > 1 ? "s" : ""} to resolve before you can
-            save board.yaml:
+            This board.yaml has {validation.errors.length} validation error
+            {validation.errors.length > 1 ? "s" : ""}:
           </p>
           <ul className={styles.vBannerList}>
             {validation.errors.map((e, i) => (
@@ -1679,8 +1670,7 @@ export function ConfiguratorView() {
         <button
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
-          disabled={validation.errors.length > 0}
-          title={saveTitle}
+          title="Save board.yaml"
           onClick={save}
         >
           Save board.yaml
