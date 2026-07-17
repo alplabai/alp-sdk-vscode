@@ -97,10 +97,6 @@ async function commandVersion(
   }
 }
 
-function pythonCmd(): string {
-  return process.platform === "win32" ? "python" : "python3";
-}
-
 /** Default directory for versioned SDK installations. */
 export function sdkCacheRoot(): string {
   return path.join(os.homedir(), ".alp", "sdk");
@@ -174,7 +170,7 @@ export async function queryAlpIdeState(
     ? path.join(actualWorkspaceRoot, "board.yaml")
     : null;
 
-  const pyCmd = pythonCmd();
+  const pyCmd = projectContext.pythonBinary;
   const westBin = resolveWestBinary(
     projectContext.westCwd,
     projectContext.sdkRoot,
