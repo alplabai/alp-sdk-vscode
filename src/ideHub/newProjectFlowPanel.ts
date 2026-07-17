@@ -141,15 +141,30 @@ export class NewProjectFlowPanel {
             }
           | undefined
       )?.soms ?? [];
-    this.somModules =
-      soms.length === 0
-        ? E1M_MODULES
-        : soms.map((s) => ({
-            id: s.sku,
-            displayName: s.displayName || s.sku,
-            family: s.family || "other",
-            cores: s.cores ?? [],
-          }));
+    if (soms.length === 0) {
+      // No SDK resolved: `alp presets` returns built-in defaults with an empty
+      // `soms` and a `presets.sdk-root-unresolved` warning. Fall back to the
+      // static catalog — which carries no `cores`, so a heterogeneous SoM would
+      // scaffold as single-core with no IPC. Surface the CLI's (otherwise
+      // discarded) warning so that topology gap isn't silent.
+      if (
+        outcome.envelope?.issues?.some(
+          (i) => i.code === "presets.sdk-root-unresolved",
+        )
+      ) {
+        void vscode.window.showWarningMessage(
+          "Alp: no SDK resolved, so the Hardware list can't report core topology — a multi-core SoM (e.g. E1M-V2N101) will scaffold as single-core with no IPC. Select an SDK for full multi-core scaffolding.",
+        );
+      }
+      this.somModules = E1M_MODULES;
+      return this.somModules;
+    }
+    this.somModules = soms.map((s) => ({
+      id: s.sku,
+      displayName: s.displayName || s.sku,
+      family: s.family || "other",
+      cores: s.cores ?? [],
+    }));
     return this.somModules;
   }
 
