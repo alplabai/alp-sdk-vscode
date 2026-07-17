@@ -293,8 +293,10 @@ fn presets_text(data: &PresetsData, g: &GlobalArgs) -> Vec<String> {
 mod tests {
     use super::*;
 
-    const FIXTURE_SDK: &str =
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../../contract/fixtures/presets/sdk-present");
+    const FIXTURE_SDK: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../contract/fixtures/presets/sdk-present"
+    );
 
     #[test]
     fn read_board_libraries_lists_yaml_stems_sorted_and_skips_readme() {

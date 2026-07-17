@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `alp init` — initialize a new ALP project from a template.
 
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use alp_core::wizard::{
-    WizardFileChangeKind, WizardPlanInput, WizardTemplateId, app_core_for_sku,
-    collect_wizard_file_changes, create_scaffold_tree_preview, create_wizard_plan_with_cores,
-    infer_runtime_for_core_id, list_wizard_templates, write_wizard_files,
+    ExampleReadError, WizardFileChangeKind, WizardPlanInput, WizardPlannedFile, WizardTemplateId,
+    app_core_for_sku, collect_wizard_file_changes, create_scaffold_tree_preview,
+    create_wizard_plan_with_cores, infer_runtime_for_core_id, list_wizard_templates,
+    read_example_tree, retarget_board_yaml_som, write_wizard_files,
 };
 use inquire::{InquireError, Select, Text};
 
@@ -55,6 +56,14 @@ struct InitData {
 pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
     let is_interactive = !g.non_interactive && !g.ci;
 
+    // From-example path: copy an existing SDK example verbatim. Short-circuits
+    // before template resolution so it never engages the non-interactive
+    // MinimalApp default; --som/--cores are ignored (the example ships its own
+    // board.yaml).
+    if let Some(src) = args.from_example.as_deref() {
+        return run_from_example(g, args, src, is_interactive);
+    }
+
     // 1. Resolve template.
     let template_id = match resolve_template(args.template.as_deref(), is_interactive) {
         Ok(id) => id,
@@ -63,7 +72,12 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
             return runtime_failure_run();
         }
         Err(BadArg(msg)) => {
-            return error_run(g, ExitCode::ValidationFailure, "init.invalid-template", &msg);
+            return error_run(
+                g,
+                ExitCode::ValidationFailure,
+                "init.invalid-template",
+                &msg,
+            );
         }
     };
 
@@ -168,8 +182,178 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         }
     }
 
-    // 6. Collect file changes.
-    let changes = collect_wizard_file_changes(&project_root, &plan.files);
+    // 6-9. Diff, guard overwrites, preview, write (shared with the from-example path).
+    finish(
+        g,
+        args,
+        template_id.as_str(),
+        &destination,
+        &project_root,
+        &plan.files,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// From-example path + shared finish
+// ---------------------------------------------------------------------------
+
+/// From-example path: resolve name/destination, locate the example under the SDK
+/// `examples/` tree, read it verbatim, and hand off to `finish`. `--som`/`--cores`
+/// are ignored — the example carries its own `board.yaml`.
+fn run_from_example(
+    g: &GlobalArgs,
+    args: &InitArgs,
+    src: &str,
+    is_interactive: bool,
+) -> CommandRun {
+    let src = src.trim();
+    if src.is_empty() {
+        return error_run(
+            g,
+            ExitCode::ValidationFailure,
+            "init.invalid-example",
+            "--from-example requires a non-empty example source directory.",
+        );
+    }
+    // Reject absolute paths and `..` traversal — the source must stay under the
+    // SDK examples/ directory.
+    let src_path = Path::new(src);
+    if src_path.is_absolute()
+        || src_path.components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::Prefix(_) | Component::RootDir
+            )
+        })
+    {
+        return error_run(
+            g,
+            ExitCode::ValidationFailure,
+            "init.invalid-example",
+            &format!(
+                "Invalid example '{src}': must be a relative path under the SDK examples/ directory."
+            ),
+        );
+    }
+
+    // Resolve name + destination + project root (same as the template path).
+    let name = match resolve_name(args.name.as_deref(), is_interactive) {
+        Ok(n) => n,
+        Err(_) => {
+            eprintln!("Cancelled.");
+            return runtime_failure_run();
+        }
+    };
+    let destination = match resolve_destination(
+        args.destination.as_deref(),
+        g.project.as_deref(),
+        is_interactive,
+    ) {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("Cancelled.");
+            return runtime_failure_run();
+        }
+    };
+    let dest_path = PathBuf::from(&destination);
+    let project_root = if name.is_empty() {
+        dest_path.clone()
+    } else {
+        dest_path.join(&name)
+    };
+
+    // Locate the SDK examples/ root.
+    let workspace_root = crate::util::cli_workspace_root(g);
+    let Some(sdk_root) = crate::util::resolve_sdk_root(g, &workspace_root) else {
+        return error_run(
+            g,
+            ExitCode::ValidationFailure,
+            "init.sdk-root-unresolved",
+            "alp-sdk root is unresolved. Use --sdk-root or run near an alp-sdk checkout to copy an example.",
+        );
+    };
+    let examples_root = sdk_root.join("examples");
+    let example_dir = examples_root.join(src);
+    // Containment guard: canonicalize and require the resolved example to stay
+    // inside examples/. Defeats directory-symlink escapes and rooted-but-driveless
+    // paths (e.g. `/foo` on Windows) that the lexical check above can miss — both
+    // would otherwise resolve outside the SDK tree and get copied verbatim.
+    let contained = match (examples_root.canonicalize(), example_dir.canonicalize()) {
+        (Ok(root), Ok(dir)) => dir.starts_with(&root),
+        _ => false,
+    };
+    if !contained {
+        return error_run(
+            g,
+            ExitCode::ValidationFailure,
+            "init.example-not-found",
+            &format!("Example '{src}' was not found under the SDK examples/ directory."),
+        );
+    }
+    let files = match read_example_tree(&example_dir) {
+        Ok(files) if files.is_empty() => {
+            return error_run(
+                g,
+                ExitCode::ValidationFailure,
+                "init.example-not-found",
+                &format!("Example '{src}' contains no files to copy."),
+            );
+        }
+        Ok(files) => files,
+        Err(ExampleReadError::NotFound) => {
+            return error_run(
+                g,
+                ExitCode::ValidationFailure,
+                "init.example-not-found",
+                &format!("Example '{src}' was not found under the SDK examples/ directory."),
+            );
+        }
+        Err(ExampleReadError::Unreadable(detail)) => {
+            return error_run(
+                g,
+                ExitCode::RuntimeFailure,
+                "init.example-unreadable",
+                &format!("Example '{src}' could not be read: {detail}"),
+            );
+        }
+    };
+
+    // Retarget the copied board.yaml onto the chosen SoM (--som), so a user can
+    // scaffold an example onto their own SoM instead of the example's default.
+    let files: Vec<WizardPlannedFile> = match args.som.as_deref() {
+        Some(sku) => files
+            .into_iter()
+            .map(|f| {
+                if f.relative_path == "board.yaml" {
+                    WizardPlannedFile {
+                        content: retarget_board_yaml_som(&f.content, sku),
+                        ..f
+                    }
+                } else {
+                    f
+                }
+            })
+            .collect(),
+        None => files,
+    };
+
+    let template_id = format!("example:{src}");
+    finish(g, args, &template_id, &destination, &project_root, &files)
+}
+
+/// Diff the planned `files` against `project_root`, then guard overwrites,
+/// preview, or write — shared by the template and from-example paths. `template_id`
+/// is recorded verbatim in the envelope (e.g. `minimal-app` or `example:audio/i2s-tone`).
+fn finish(
+    g: &GlobalArgs,
+    args: &InitArgs,
+    template_id: &str,
+    destination: &str,
+    project_root: &Path,
+    files: &[WizardPlannedFile],
+) -> CommandRun {
+    // Collect file changes.
+    let changes = collect_wizard_file_changes(project_root, files);
     let file_changes_ser: Vec<FileChangeSer> = changes
         .iter()
         .map(|c| FileChangeSer {
@@ -182,10 +366,10 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         .iter()
         .any(|c| c.kind == WizardFileChangeKind::Update);
 
-    // 7. Guard against unforced overwrites.
+    // Guard against unforced overwrites.
     if has_updates && !args.force {
-        let project = make_project(&destination);
-        let data = empty_data(template_id, &destination, args.preview, file_changes_ser);
+        let project = make_project(destination);
+        let data = empty_data(template_id, destination, args.preview, file_changes_ser);
         let issues = vec![Issue {
             code: "init.would-overwrite".to_string(),
             severity: "error".to_string(),
@@ -207,18 +391,15 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         };
     }
 
-    // 8. Preview mode — show plan, no writes.
+    // Preview mode — show plan, no writes.
     if args.preview {
-        let tree = create_scaffold_tree_preview(&plan.files);
-        let project = make_project(&destination);
-        let data = empty_data(template_id, &destination, true, file_changes_ser);
+        let tree = create_scaffold_tree_preview(files);
+        let project = make_project(destination);
+        let data = empty_data(template_id, destination, true, file_changes_ser);
         let text = if g.is_json() {
             vec![]
         } else {
-            vec![
-                format!("init: preview for template '{}'", template_id.as_str()),
-                tree,
-            ]
+            vec![format!("init: preview for template '{template_id}'"), tree]
         };
         let json = g.is_json().then(|| {
             Envelope::new("init", project, data, vec![], ExitCode::Success.code()).to_json()
@@ -230,14 +411,14 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
         };
     }
 
-    // 9. Write files.
-    match write_wizard_files(&project_root, &plan.files) {
+    // Write files.
+    match write_wizard_files(project_root, files) {
         Ok(result) => {
-            let project = make_project(&destination);
+            let project = make_project(destination);
             let data = InitData {
                 schema_version: "1".to_string(),
-                template_id: template_id.as_str().to_string(),
-                destination: destination.clone(),
+                template_id: template_id.to_string(),
+                destination: destination.to_string(),
                 preview: false,
                 file_changes: file_changes_ser,
                 written: result.written.clone(),
@@ -250,7 +431,7 @@ pub fn run(g: &GlobalArgs, args: &InitArgs) -> CommandRun {
                     format!(
                         "init: created '{}' from template '{}'",
                         project_root.display(),
-                        template_id.as_str()
+                        template_id
                     ),
                     format!(
                         "  written: {}, unchanged: {}",
@@ -436,14 +617,14 @@ fn make_project(destination: &str) -> Project {
 /// Build an `InitData` payload with empty `written`/`unchanged` lists, used for
 /// preview and overwrite-guard responses where no files are actually written.
 fn empty_data(
-    template_id: WizardTemplateId,
+    template_id: &str,
     destination: &str,
     preview: bool,
     file_changes: Vec<FileChangeSer>,
 ) -> InitData {
     InitData {
         schema_version: "1".to_string(),
-        template_id: template_id.as_str().to_string(),
+        template_id: template_id.to_string(),
         destination: destination.to_string(),
         preview,
         file_changes,
@@ -490,21 +671,10 @@ fn error_run(g: &GlobalArgs, exit: ExitCode, code: &str, message: &str) -> Comma
     } else {
         vec![format!("init: {message}")]
     };
-    let json = g.is_json().then(|| {
-        Envelope::new(
-            "init",
-            project,
-            data,
-            issues,
-            exit.code(),
-        )
-        .to_json()
-    });
-    CommandRun {
-        exit,
-        text,
-        json,
-    }
+    let json = g
+        .is_json()
+        .then(|| Envelope::new("init", project, data, issues, exit.code()).to_json());
+    CommandRun { exit, text, json }
 }
 
 #[cfg(test)]

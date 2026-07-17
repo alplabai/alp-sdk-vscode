@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { resetResolvedBinary } from "./alpCli/vscodeAdapter";
+import {
+  checkCliVersion,
+  resetResolvedBinary,
+  updateAlpCli,
+} from "./alpCli/vscodeAdapter";
 import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorEditor } from "./configurator/customEditor";
 import { registerDebugCommands } from "./debug";
@@ -102,10 +106,16 @@ export function activate(context: vscode.ExtensionContext): void {
       ),
     ),
     vscode.commands.registerCommand("alp.showOutput", () => showOutput()),
+    vscode.commands.registerCommand("alp.updateCli", () =>
+      updateAlpCli(context),
+    ),
   );
 
   void maybeOfferFirstRunWizard(context);
   void maybeOfferSetupPanel(context);
+  // Warn once if the resolved alp CLI is older than this build expects (the
+  // silent cause of missing features like project examples).
+  void checkCliVersion(context);
 }
 
 export async function deactivate(): Promise<void> {

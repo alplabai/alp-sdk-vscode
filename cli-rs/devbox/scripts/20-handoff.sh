@@ -24,7 +24,12 @@ BOARD_YAML="$ALP_SDK/$EX/board.yaml"
 ok=1
 
 echo "== (a) alp doctor --build =="
-if alp doctor --build --format json >/tmp/doctor.json 2>/tmp/doctor.err; then
+# Pass the SDK + board.yaml context (same as leg (b)): since alp-sdk-vscode#110
+# `alp doctor --build` is a real project-readiness gate that exits non-zero when
+# the SDK / board.yaml / Zephyr workspace can't be resolved. A context-free
+# invocation is not-ready by construction, so give it the mounted SDK + the
+# example board.yaml this container is set up to build.
+if alp doctor --build --sdk-root "$ALP_SDK" --board-yaml "$BOARD_YAML" --format json >/tmp/doctor.json 2>/tmp/doctor.err; then
   python3 - <<'PY' || ok=0
 import json,sys
 d=json.load(open("/tmp/doctor.json"))

@@ -48,6 +48,28 @@ export function validateBoardConfig(cfg: BoardConfig): ValidationResult {
     }
   }
 
+  // IPC carve-outs: the SDK schema requires each channel to name at least two
+  // endpoints (minItems: 2), and validate_board_yaml.py rejects an endpoint that
+  // does not reference a declared core. Catch both here so the configurator flags
+  // them before the board.yaml is fed to the SDK (issue #109 Bug B) — otherwise
+  // the failure only surfaces later as `ipc/*/endpoints: [...] is too short` or an
+  // unknown-core reference from `alp build --plan`.
+  const declaredCores = new Set(Object.keys(cfg.cores ?? {}));
+  for (const entry of cfg.ipc ?? []) {
+    const label = entry.name ? `ipc '${entry.name}'` : "ipc channel";
+    const endpoints = entry.endpoints ?? [];
+    if (endpoints.length < 2) {
+      errors.push(
+        `${label}: needs at least 2 endpoints (has ${endpoints.length}).`,
+      );
+    }
+    for (const endpoint of endpoints) {
+      if (!declaredCores.has(endpoint)) {
+        errors.push(`${label}: endpoint '${endpoint}' is not a declared core.`);
+      }
+    }
+  }
+
   // NB: `boot.method: mcuboot` without `boot.signing` is VALID — the SDK applies
   // the SoM family's default signing (AEN -> ECDSA-P256, V2N -> RSA-2048). The
   // SDK only rejects a signing *algorithm* that's unsupported for the family,

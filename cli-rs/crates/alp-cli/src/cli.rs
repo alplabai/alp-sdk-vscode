@@ -94,6 +94,8 @@ pub enum Command {
     Init(InitArgs),
     /// Scaffold a module into an existing project.
     Scaffold(ScaffoldArgs),
+    /// List the SDK's ready-made example projects (source for `alp init --from-example`).
+    Examples,
     /// Diagnose debug readiness for a target/server combination.
     Doctor(DoctorArgs),
     /// Emit a shell completion script (bash, zsh, or fish).
@@ -102,6 +104,8 @@ pub enum Command {
     Diff,
     /// List SDK presets (SKUs, carriers) and built-in catalogue defaults.
     Presets,
+    /// Show the E1M pinmux capability table (E1M pad → silicon function) for a SoM family.
+    Pinmux(PinmuxArgs),
     /// Explain a project/module template or a generation target.
     Explain(ExplainArgs),
     /// Inspect resolved project/debug context values.
@@ -127,6 +131,18 @@ pub enum Command {
     Clean(WestForwardArgs),
     /// Boot the system manifest in Renode (`west alp-renode`).
     Renode(WestForwardArgs),
+}
+
+/// Args for `pinmux`: the family target, resolved from an explicit `--family`
+/// stem or mapped from a `--sku`.
+#[derive(Debug, Args)]
+pub struct PinmuxArgs {
+    /// SoM SKU to resolve the pinmux family from (e.g. `E1M-AEN701`).
+    #[arg(long)]
+    pub sku: Option<String>,
+    /// Pinmux family stem directly (e.g. `aen`, `v2n`); overrides `--sku`.
+    #[arg(long)]
+    pub family: Option<String>,
 }
 
 /// Args for commands that forward verbatim to a `west alp-*` subcommand (`image`/`flash`/`clean`/`renode`).
@@ -175,6 +191,11 @@ pub struct BuildArgs {
     /// `--manifest`.
     #[arg(long = "manifest-from", value_name = "FILE")]
     pub manifest_from: Option<String>,
+    /// Legacy path: delegate to the SDK's `west alp-build` extension instead of
+    /// the default plan-driven native build. Requires a workspace where alp-sdk
+    /// is the west manifest topdir; the default build no longer needs that.
+    #[arg(long)]
+    pub west: bool,
     /// Arguments forwarded verbatim to `west alp-build` (app path, `--core <id>`,
     /// `--sequential`, `-b <board>`) when not using `--plan`.
     #[arg(
@@ -291,6 +312,10 @@ pub struct DoctorArgs {
     /// Run the build-readiness preflight instead of the debug-readiness checks.
     #[arg(long)]
     pub build: bool,
+    /// With `--build`: auto-repair a fixable blocker — run `alp bootstrap` when no
+    /// Zephyr workspace is resolved, then re-check.
+    #[arg(long)]
+    pub fix: bool,
 }
 
 /// Args for `validate`: an offline-only toggle that skips the Python SDK spawn.
@@ -307,6 +332,15 @@ pub struct InitArgs {
     /// Project template id (e.g. minimal-app, sensor-starter).
     #[arg(long)]
     pub template: Option<String>,
+    /// Copy an existing SDK example project verbatim instead of expanding a
+    /// template. Value is the example's `category/name` source dir under the SDK
+    /// `examples/` directory (e.g. `audio/i2s-tone`); see `alp examples`.
+    #[arg(
+        long = "from-example",
+        value_name = "SOURCE_DIR",
+        conflicts_with = "template"
+    )]
+    pub from_example: Option<String>,
     /// Project name; creates a sub-directory when provided.
     #[arg(long)]
     pub name: Option<String>,

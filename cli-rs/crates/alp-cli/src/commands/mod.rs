@@ -25,6 +25,8 @@ pub mod debug_config;
 pub mod diff;
 /// `alp doctor` — diagnose debug readiness (`--build` runs the build-readiness preflight).
 pub mod doctor;
+/// `alp examples` — list the SDK's ready-made example projects (for `init --from-example`).
+pub mod examples;
 /// `alp explain` — explain a project/module template or a generation target.
 pub mod explain;
 /// `alp generate` — Zephyr conf / DTS overlay / CMake args / Yocto conf codegen.
@@ -33,6 +35,8 @@ pub mod generate;
 pub mod init;
 /// `alp inspect` — inspect resolved project/debug context values.
 pub mod inspect;
+/// `alp pinmux` — the E1M pinmux capability table (E1M pad → silicon function) for a SoM family.
+pub mod pinmux;
 /// `alp presets` — list SDK presets (SKUs/SoMs, carriers) + built-in catalogue defaults.
 pub mod presets;
 /// `alp scaffold` — scaffold a module into an existing project.

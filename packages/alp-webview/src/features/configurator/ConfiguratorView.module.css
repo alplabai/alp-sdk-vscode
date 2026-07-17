@@ -241,7 +241,10 @@
   border: 1px solid var(--border-widget);
   border-radius: var(--radius-lg);
   background: var(--surface-bg);
-  overflow: hidden;
+  /* No overflow:hidden — it clipped the TagSelector dropdown (.dd) where it
+   * extends past the card's bottom edge. The border-radius still clips the
+   * card's own border/background; children are rectangular + transparent so
+   * nothing pokes out of the rounded corners. */
 }
 .coreGhost {
   opacity: 0.82;
@@ -563,6 +566,39 @@
 .vErr {
   color: var(--vscode-errorForeground, #f48771);
 }
+.statusMsg {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
 .footSpacer {
   flex: 1;
+}
+
+/* ── validation banner (blocking errors, above the footer) ──────────────── */
+.vBanner {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-widget);
+  background: color-mix(
+    in srgb,
+    var(--vscode-errorForeground, #f48771) 10%,
+    transparent
+  );
+  max-height: 140px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.vBannerHead {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--vscode-errorForeground, #f48771);
+}
+.vBannerList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+.vBannerList li {
+  margin-bottom: 2px;
 }

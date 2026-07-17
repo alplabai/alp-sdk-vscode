@@ -1542,15 +1542,31 @@ function ReviewSection({ cfg }: { cfg: UseConfigurator }) {
 export function ConfiguratorView() {
   const cfg = useConfigurator();
   const [active, setActive] = useState<ConfiguratorSection>("project");
-  const { sdkConnected, dirty, validation, boardPath, save, reload, preview } =
-    cfg;
+  const {
+    sdkConnected,
+    dirty,
+    validation,
+    boardPath,
+    status,
+    save,
+    reload,
+    preview,
+  } = cfg;
 
   const validClass = validation.errors.length ? styles.vErr : styles.vOk;
   const validText = validation.errors.length
-    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""}: ${validation.errors[0]}`
+    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""} — resolve to save`
     : validation.warnings.length
       ? `⚠ ${validation.warnings.length} warning${validation.warnings.length > 1 ? "s" : ""}`
-      : "✓ Valid";
+      : "✓ Valid — ready to save";
+
+  // A valid board can always be saved — persisting an unchanged/first-time config
+  // is a harmless (idempotent) write. Only validation errors block Save, so the
+  // action is never a dead end for a valid config.
+  const saveTitle =
+    validation.errors.length > 0
+      ? `Resolve ${validation.errors.length} validation error${validation.errors.length > 1 ? "s" : ""} before saving (see the list above).`
+      : "Save board.yaml";
 
   function renderSection() {
     if (!cfg.loaded) {
@@ -1618,10 +1634,30 @@ export function ConfiguratorView() {
         <main className={styles.main}>{renderSection()}</main>
       </div>
 
+      {validation.errors.length > 0 && (
+        <div className={styles.vBanner} role="alert">
+          <p className={styles.vBannerHead}>
+            {validation.errors.length} item
+            {validation.errors.length > 1 ? "s" : ""} to resolve before you can
+            save board.yaml:
+          </p>
+          <ul className={styles.vBannerList}>
+            {validation.errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <footer className={styles.footer}>
         <span className={`${styles.valid} ${validClass}`} role="status">
           {validText}
         </span>
+        {status ? (
+          <span className={styles.statusMsg} role="status" aria-live="polite">
+            {status}
+          </span>
+        ) : null}
         <span className={styles.footSpacer} />
         <button type="button" className={styles.btn} onClick={preview}>
           Preview
@@ -1632,7 +1668,8 @@ export function ConfiguratorView() {
         <button
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
-          disabled={!dirty || validation.errors.length > 0}
+          disabled={validation.errors.length > 0}
+          title={saveTitle}
           onClick={save}
         >
           Save board.yaml

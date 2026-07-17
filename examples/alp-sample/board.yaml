@@ -1,0 +1,41 @@
+preset: e1m-evk
+som:
+  sku: E1M-AEN801
+cores:
+  m55_hp:
+    os: zephyr
+    app: ./src
+  a32_cluster:
+    os: yocto
+    image: alp-image-edge
+    peripherals:
+      - emmc
+  m55_he:
+    os: zephyr
+chips:
+  - bme280
+  - as5048a_b
+  - ar0234
+ipc:
+  - kind: rpmsg
+    name: alp_default_rpmsg
+    endpoints:
+      - m55_hp
+      - a32_cluster
+    carve_out_kb: 512
+  - kind: rpmsg
+    name: alp_rpmsg
+    endpoints:
+      - m55_hp
+      - m55_he
+    carve_out_kb: 256
+storage:
+  - name: data
+    size_kib: 64
+models:
+  - name: model
+    source: models/model.tflite
+    compile:
+      deepx_dxm1:
+        config: ''
+        calibration: ''

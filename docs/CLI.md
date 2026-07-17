@@ -35,6 +35,7 @@ The CLI should expose these top-level command families:
 - `alp validate`
 - `alp generate`
 - `alp init`
+- `alp examples`
 - `alp scaffold`
 - `alp completion`
 - `alp inspect`
@@ -42,6 +43,7 @@ The CLI should expose these top-level command families:
 - `alp doctor`
 - `alp support-bundle`
 - `alp debug-config`
+- `alp pinmux`
 
 ### 2.1 Relation to the SDK's `west alp-*` commands (two doors, one engine)
 
@@ -161,16 +163,28 @@ Purpose:
 Required behavior:
 
 - support non-interactive template selection
+- copy an existing SDK example verbatim via `--from-example`
 - emit the planned project tree before write when requested
 - make overwrite policy explicit
 
 Suggested flags:
 
 - `--template <name>`
+- `--from-example <category/name>` (mutually exclusive with `--template`)
 - `--name <project-name>`
 - `--destination <path>`
 - `--preview`
 - `--force`
+
+`alp examples` lists the SDK's ready-made example projects
+(`{ id, sourceDir, title, description }`) discovered under
+`<sdk>/examples/<category>/<name>/` (directories carrying a `board.yaml`); an
+unresolved SDK root yields an empty `examples` list rather than an error.
+`alp init --from-example <sourceDir>` then copies one verbatim into the
+destination — the example ships its own `board.yaml`, so `--som`/`--cores` do not
+apply. Errors: unknown/empty example → exit 2 (`init.example-not-found` /
+`init.invalid-example`); unresolved SDK → exit 2 (`init.sdk-root-unresolved`);
+unreadable files → exit 1 (`init.example-unreadable`).
 
 ### 4.4 `alp scaffold`
 
@@ -296,6 +310,30 @@ Suggested flags:
 
 - `--shell <bash|zsh|fish>`
 
+### 4.11 `alp pinmux`
+
+Purpose:
+
+- surface the E1M pinmux capability table (E1M pad → silicon function) for a SoM
+  family, as the single source the extension/LSP consume instead of reading
+  `metadata/pinmux/<family>.yaml` directly
+
+Required behavior:
+
+- resolve the family from `--family <stem>` or by mapping `--sku <sku>`
+  (`E1M-AEN*` → `aen`, `E1M-V2N*` → `v2n`, `E1M-V2M*` → `v2n-m1`,
+  `E1M-NX9*` → `imx93`)
+- read `<sdk>/metadata/pinmux/<family>.yaml` and emit its pads (`e1mPad`,
+  `e1mFunction`, `owner`, `siliconPeripheral`, `siliconPad`) in the envelope
+  `data`, matching the extension's `PinmuxTable`
+- fail soft (exit 0 + a warning issue) when the SDK root is unresolved, the SKU
+  has no known family, or the family has no generated table — pads is then empty
+
+Suggested flags:
+
+- `--sku <sku>`
+- `--family <stem>`
+
 ## 5. JSON Contract Shape
 
 The CLI should return a stable top-level envelope for JSON output.
@@ -338,6 +376,8 @@ The following command payloads map to shared-core contracts:
 - `alp support-bundle` -> `DebugSupportBundlePayload`
 - `alp generate` -> generation summary shaped from loader batch
   (`written`, `failed`) with deterministic ordering
+- `alp examples` -> `{ examples: [{ id, sourceDir, title, description }] }`
+  (empty when no SDK root resolves)
 
 ## 6. Non-Interactive Requirements
 

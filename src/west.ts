@@ -17,11 +17,13 @@ import {
 } from "@alp-sdk/core/west/service";
 import * as vscode from "vscode";
 
-import { runAlpInTerminal } from "./alpCli/vscodeAdapter";
+import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import {
   collectWestWorkspaceContext,
   executeWestPlan,
+  nativeSimOverlayExists,
 } from "./west/vscodeAdapter";
+import { log } from "./util";
 
 function westCwd(): string | undefined {
   const context = collectWestWorkspaceContext();
@@ -92,8 +94,31 @@ function westUpdate(): void {
   executeWestPlan(createWestUpdatePlan(collectWestWorkspaceContext()));
 }
 
-function westRunNativeSim(): void {
+async function westRunNativeSim(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  await ensureNativeSimOverlay(context);
   executeWestPlan(createWestNativeRunPlan(collectWestWorkspaceContext()));
+}
+
+/** Generate `boards/native_sim_native_64.overlay` on demand before a native_sim
+ *  run so a GPIO app resolves its pins under host emulation (issue #86).
+ *  Best-effort: a non-GPIO app doesn't need it, and an older SDK may not ship
+ *  the emit, so a failure is logged and the run proceeds regardless. */
+async function ensureNativeSimOverlay(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const root = collectWestWorkspaceContext().workspaceRoot;
+  if (!root || nativeSimOverlayExists(root)) return;
+
+  const { outcome } = await runAlpCommand(context, [
+    "generate",
+    "--target",
+    "native-sim-overlay",
+  ]);
+  if (!outcome.ok) {
+    log(`[native_sim] overlay generation skipped: ${outcome.message}`);
+  }
 }
 
 export function registerWestCommands(
@@ -104,7 +129,7 @@ export function registerWestCommands(
     vscode.commands.registerCommand("alp.westFlash", () => westFlash()),
     vscode.commands.registerCommand("alp.westUpdate", () => westUpdate()),
     vscode.commands.registerCommand("alp.westRunNativeSim", () =>
-      westRunNativeSim(),
+      westRunNativeSim(context),
     ),
     vscode.commands.registerCommand("alp.westAlpImage", () =>
       alpImage(context),

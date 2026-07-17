@@ -5,6 +5,7 @@ import { useStepper } from "../../shared/hooks/useStepper";
 import {
   Button,
   Card,
+  EmptyState,
   Field,
   Icon,
   Skeleton,
@@ -43,6 +44,34 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
   const starters = templates.filter((t) => t.category === "starter");
   const examples = templates.filter((t) => t.category === "example");
 
+  // Search + domain filter are purely presentational — they only decide which
+  // example cards render, so the state stays local to this step.
+  const [query, setQuery] = useState("");
+  const [domain, setDomain] = useState(""); // "" = all domains
+
+  // Domains are the first segment of each example's sourceDir (audio, ai, …).
+  const domains = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of examples) {
+      const d = t.sourceDir?.split("/")[0];
+      if (d) set.add(d);
+    }
+    return Array.from(set).sort();
+  }, [examples]);
+
+  const filteredExamples = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return examples.filter((t) => {
+      const d = t.sourceDir?.split("/")[0] ?? "";
+      if (domain && d !== domain) return false;
+      if (!q) return true;
+      return [t.title, t.description, t.sourceDir ?? "", t.id]
+        .join("\n")
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [examples, query, domain]);
+
   return (
     <>
       <p className={styles.stepHeading}>Choose a project type</p>
@@ -66,16 +95,60 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
       {examples.length > 0 && (
         <>
           <p className={styles.groupLabel}>Examples</p>
-          <div className={styles.templateGrid}>
-            {examples.map((t) => (
-              <TemplateCard
-                key={t.id}
-                template={t}
-                selected={selected === t.id}
-                onSelect={onSelect}
-              />
-            ))}
+          <div className={styles.fieldWrap}>
+            <Field
+              label="Search examples"
+              placeholder="Search by name, description, or path…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
+          {domains.length > 1 && (
+            <div
+              className={styles.filterChips}
+              role="group"
+              aria-label="Filter examples by domain"
+            >
+              <button
+                type="button"
+                className={styles.filterChip}
+                data-selected={domain === "" ? "" : undefined}
+                aria-pressed={domain === ""}
+                onClick={() => setDomain("")}
+              >
+                All
+              </button>
+              {domains.map((d) => (
+                <button
+                  type="button"
+                  key={d}
+                  className={styles.filterChip}
+                  data-selected={domain === d ? "" : undefined}
+                  aria-pressed={domain === d}
+                  onClick={() => setDomain(d)}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
+          {filteredExamples.length > 0 ? (
+            <div className={styles.templateGrid}>
+              {filteredExamples.map((t) => (
+                <TemplateCard
+                  key={t.id}
+                  template={t}
+                  selected={selected === t.id}
+                  onSelect={onSelect}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No examples match"
+              description="Try a different search term or clear the domain filter."
+            />
+          )}
         </>
       )}
     </>
@@ -244,17 +317,25 @@ function ConfirmStep({
   const sep =
     destination.includes("\\") && !destination.includes("/") ? "\\" : "/";
 
+  // An example ships its own board.yaml, so `alp init --from-example` ignores the
+  // chosen SoM/cores — don't summarize hardware config that won't be applied.
+  const isExample = !!tpl?.sourceDir;
+
   const rows = [
     { label: "Template", value: tpl ? `${tpl.icon} ${tpl.title}` : templateId },
-    { label: "Module", value: mod?.displayName ?? moduleId },
-    ...(mod?.cores && mod.cores.length >= 2
-      ? [
-          {
-            label: "Cores",
-            value: mod.cores.map((c) => `${c.id} (${c.os})`).join(", "),
-          },
-        ]
-      : []),
+    ...(isExample
+      ? []
+      : [
+          { label: "Module", value: mod?.displayName ?? moduleId },
+          ...(mod?.cores && mod.cores.length >= 2
+            ? [
+                {
+                  label: "Cores",
+                  value: mod.cores.map((c) => `${c.id} (${c.os})`).join(", "),
+                },
+              ]
+            : []),
+        ]),
     { label: "SDK", value: sdkLabel },
     { label: "Project name", value: projectName || "—" },
     {
@@ -278,8 +359,18 @@ function ConfirmStep({
       </Card>
       <p className={styles.stepDesc}>
         Click <strong>Create Project</strong> to scaffold{" "}
-        <code>{projectName || "…"}</code> with <code>board.yaml</code>,{" "}
-        <code>CMakeLists.txt</code>, and a starter <code>src/main.c</code>
+        <code>{projectName || "…"}</code>{" "}
+        {isExample ? (
+          <>
+            by copying the selected example verbatim (its own{" "}
+            <code>board.yaml</code>, sources, and build files)
+          </>
+        ) : (
+          <>
+            with <code>board.yaml</code>, <code>CMakeLists.txt</code>, and a
+            starter <code>src/main.c</code>
+          </>
+        )}
         {destination ? "" : " — you'll choose a folder first"}.
       </p>
     </>
@@ -373,15 +464,28 @@ export function NewProjectFlowView() {
       pathTail(selectedSdk))
     : "Default";
 
+  // Examples ship their own board.yaml, so the Hardware (SoM) step is optional
+  // for them — don't block Next on a module the scaffold will ignore.
+  const selectedIsExample = useMemo(
+    () => templates.some((t) => t.id === selectedTemplate && !!t.sourceDir),
+    [templates, selectedTemplate],
+  );
+
   const canAdvance = useMemo(() => {
     return [
       selectedTemplate !== "",
-      selectedModule !== "",
+      selectedModule !== "" || selectedIsExample,
       true, // SDK step — default is always valid
       projectName !== "" && nameValid,
       true,
     ];
-  }, [selectedTemplate, selectedModule, projectName, nameValid]);
+  }, [
+    selectedTemplate,
+    selectedModule,
+    selectedIsExample,
+    projectName,
+    nameValid,
+  ]);
 
   function handleNameChange(v: string) {
     setProjectName(v);
