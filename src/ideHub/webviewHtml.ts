@@ -23,6 +23,16 @@ export function buildWebviewHtml(
     ),
   );
 
+  const styleUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      extensionUri,
+      "packages",
+      "alp-webview",
+      "dist",
+      "main.css",
+    ),
+  );
+
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -31,6 +41,7 @@ export function buildWebviewHtml(
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
   <title>Alp IDE</title>
+  <link rel="stylesheet" href="${styleUri}"/>
 </head>
 <body data-alp-mode="${mode}" style="margin:0;padding:0">
   <div id="root">
