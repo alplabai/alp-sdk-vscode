@@ -112,3 +112,25 @@ test("resolveProjectContext requires alpSdk.path when multiple sdk roots match",
 
   assert.equal(context.sdkRoot, null);
 });
+
+test("resolveProjectContext targets the multi-root folder holding board.yaml", () => {
+  const context = resolveProjectContext(
+    {
+      workspaceFolders: ["/workspace/docs", "/workspace/firmware"],
+      settings: {
+        sdkPath: "/custom/sdk",
+        pythonPath: "",
+        boardYamlPath: "board.yaml",
+        westCwd: "",
+      },
+      platform: "linux",
+    },
+    (candidatePath) =>
+      candidatePath === "/workspace/firmware/board.yaml" ||
+      candidatePath === "/custom/sdk/scripts/alp_project.py",
+  );
+
+  assert.equal(context.workspaceRoot, "/workspace/firmware");
+  assert.equal(context.boardYamlPath, "/workspace/firmware/board.yaml");
+  assert.equal(context.westCwd, "/workspace/firmware");
+});

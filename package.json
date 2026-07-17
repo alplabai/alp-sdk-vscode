@@ -440,7 +440,8 @@
         "alpSdk.boardYamlPath": {
           "type": "string",
           "default": "board.yaml",
-          "description": "Path (relative to the workspace root) of the board.yaml the loader operates on."
+          "scope": "resource",
+          "description": "Path (relative to its workspace folder) of the board.yaml the loader operates on. Settable per-folder via .vscode/settings.json in a multi-root workspace."
         },
         "alpSdk.westCwd": {
           "type": "string",
