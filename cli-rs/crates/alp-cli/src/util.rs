@@ -163,15 +163,50 @@ pub fn resolve_sdk_root(g: &GlobalArgs, workspace_root: &Path) -> Option<PathBuf
     candidates.into_iter().find(|c| has_loader_script(c))
 }
 
+/// Discover the project root for a board.yaml-consuming command. An explicit
+/// `--project` wins. An explicit `--board-yaml` keeps `cwd` as the root, so the
+/// board file and `.alp/sdk-path` resolve relative to where the user invoked
+/// (unchanged behavior). With NEITHER flag, walk UP from `cwd` to the nearest
+/// ancestor that holds a `board.yaml` — so a bare `alp build` works from any
+/// subdirectory of a project, the way git finds `.git`. Falls back to `cwd`
+/// when no marker is found, preserving the "no board.yaml — run `alp init`"
+/// error. `has_board_yaml` is injected for tests.
+fn discover_workspace_root(
+    cwd: &Path,
+    project_arg: Option<&str>,
+    board_yaml_arg: Option<&str>,
+    has_board_yaml: &impl Fn(&Path) -> bool,
+) -> PathBuf {
+    if let Some(project) = project_arg {
+        return normalize_path(&cwd.join(project));
+    }
+    if board_yaml_arg.is_some() {
+        return normalize_path(cwd);
+    }
+    let start = normalize_path(cwd);
+    let mut dir = Some(start.as_path());
+    while let Some(current) = dir {
+        if has_board_yaml(current) {
+            return current.to_path_buf();
+        }
+        dir = current.parent();
+    }
+    start
+}
+
 /// Resolve the project context from the global args, mirroring the TS commands'
 /// `path.resolve(cwd, project) + resolveProjectContext` boilerplate. Shared by
 /// `validate`, `diff`, `presets`, and `doctor`.
 pub fn resolve_cli_project_context(g: &GlobalArgs) -> ProjectContext {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let project_arg = g.project.clone().unwrap_or_else(|| ".".to_string());
-    let workspace_root = normalize_path(&cwd.join(&project_arg))
-        .to_string_lossy()
-        .to_string();
+    let workspace_root = discover_workspace_root(
+        &cwd,
+        g.project.as_deref(),
+        g.board_yaml.as_deref(),
+        &|dir| dir.join("board.yaml").exists(),
+    )
+    .to_string_lossy()
+    .to_string();
 
     let settings = ProjectSettings {
         // `--sdk-root` > `.alp/sdk-path` pointer > `""` (core auto-discovery).
@@ -331,5 +366,44 @@ mod tests {
             PathBuf::from("/home/x/.alp/sdk"),
             PathBuf::from("/home/x/.alp/sdk-cache")
         );
+    }
+
+    #[test]
+    fn workspace_root_honors_explicit_project_arg() {
+        // --project wins; no walk-up, no board.yaml probe.
+        let got = discover_workspace_root(Path::new("/w/sub"), Some("proj"), None, &|_| false);
+        assert_eq!(got, PathBuf::from("/w/sub/proj"));
+    }
+
+    #[test]
+    fn workspace_root_keeps_cwd_when_board_yaml_arg_given() {
+        // Explicit --board-yaml preserves cwd-relative resolution; never walks up.
+        let got = discover_workspace_root(Path::new("/w/sub"), None, Some("board.yaml"), &|_| true);
+        assert_eq!(got, PathBuf::from("/w/sub"));
+    }
+
+    #[test]
+    fn workspace_root_walks_up_to_nearest_board_yaml() {
+        // cwd is two levels below the project root at /w.
+        let got = discover_workspace_root(Path::new("/w/a/b"), None, None, &|dir| {
+            dir == Path::new("/w")
+        });
+        assert_eq!(got, PathBuf::from("/w"));
+    }
+
+    #[test]
+    fn workspace_root_prefers_the_innermost_project() {
+        // board.yaml at both /w and /w/a -> nearest (/w/a) wins.
+        let got = discover_workspace_root(Path::new("/w/a/b"), None, None, &|dir| {
+            dir == Path::new("/w/a") || dir == Path::new("/w")
+        });
+        assert_eq!(got, PathBuf::from("/w/a"));
+    }
+
+    #[test]
+    fn workspace_root_falls_back_to_cwd_when_no_marker() {
+        // Not inside any project -> cwd, so the caller still emits the not-found error.
+        let got = discover_workspace_root(Path::new("/w/a/b"), None, None, &|_| false);
+        assert_eq!(got, PathBuf::from("/w/a/b"));
     }
 }
