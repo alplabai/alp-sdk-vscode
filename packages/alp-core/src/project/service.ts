@@ -8,7 +8,11 @@ export function resolveProjectContext(
   pathExists: (candidatePath: string) => boolean,
 ): ProjectContext {
   // Resolve all runtime inputs once so every surface reads the same project context.
-  const workspaceRoot = resolveWorkspaceRoot(input.workspaceFolders);
+  const workspaceRoot = resolveWorkspaceRoot(
+    input.workspaceFolders,
+    input.settings.boardYamlPath,
+    pathExists,
+  );
 
   return {
     workspaceRoot,
@@ -32,8 +36,17 @@ export function resolveProjectContext(
 
 function resolveWorkspaceRoot(
   workspaceFolders: readonly string[],
+  configuredBoardYamlPath: string,
+  pathExists: (candidatePath: string) => boolean,
 ): string | null {
-  return workspaceFolders.length > 0 ? workspaceFolders[0]! : null;
+  if (workspaceFolders.length === 0) return null;
+  // Multi-root: target the folder that actually holds the configured board.yaml
+  // so the loader, Projects tree, and west all operate on the same project —
+  // not blindly workspaceFolders[0]. Falls back to the first folder.
+  const folderWithBoardYaml = workspaceFolders.find((folder) =>
+    pathExists(resolveBoardYamlPath(folder, configuredBoardYamlPath)!),
+  );
+  return folderWithBoardYaml ?? workspaceFolders[0]!;
 }
 
 function resolveSdkRoot(

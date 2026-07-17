@@ -1,5 +1,0 @@
-carrier:
-  name: E1M-EVK
-  populated:
-    wifi: true
-    ble: false

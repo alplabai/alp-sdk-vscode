@@ -44,7 +44,21 @@ export function loadPinmuxTable(
     return null;
   }
 
-  const cacheKey = `${sdkRoot}::${family}`;
+  const filePath = path.join(sdkRoot, "metadata", "pinmux", `${family}.yaml`);
+
+  // Key the cache on the table file's mtime so an in-place edit of
+  // metadata/pinmux/<family>.yaml (routine when working on alp-sdk itself) is
+  // picked up on the next validation instead of surviving until an LSP
+  // restart. mtime is best-effort: an absent file or an injected readFile
+  // leaves it 0, which is harmless.
+  let mtimeMs = 0;
+  try {
+    mtimeMs = fs.statSync(filePath).mtimeMs;
+  } catch {
+    mtimeMs = 0;
+  }
+
+  const cacheKey = `${sdkRoot}::${family}::${mtimeMs}`;
   const cached = tableCache.get(cacheKey);
   if (cached !== undefined) {
     return cached;
@@ -52,7 +66,6 @@ export function loadPinmuxTable(
 
   let table: PinmuxTable | null = null;
   try {
-    const filePath = path.join(sdkRoot, "metadata", "pinmux", `${family}.yaml`);
     const parsed = parsePinmuxTable(readFile(filePath));
     // Drop rows the SDK generator left as "TBD" sentinels (every pad-first V2N
     // row today carries no real E1M pad->function mapping). A table left with
@@ -67,7 +80,12 @@ export function loadPinmuxTable(
     table = null;
   }
 
-  tableCache.set(cacheKey, table);
+  // Only cache a real table. A null (SDK not populated yet, or a transient
+  // read error) must not stick — the next call re-reads, so a populated SDK is
+  // picked up without an LSP restart.
+  if (table !== null) {
+    tableCache.set(cacheKey, table);
+  }
   return table;
 }
 
