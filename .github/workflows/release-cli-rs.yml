@@ -9,7 +9,7 @@
 # Triggered by `cli-rs-v*` tags (distinct from the npm shim's `cli-v*` tags).
 #
 # Release flow: bump cli-rs/Cargo.toml + cli-rs/npm-shim/package.json to the same
-# version, tag `cli-rs-v<version>`, push. This workflow builds the five targets
+# version, tag `cli-rs-v<version>`, push. This workflow builds the six targets
 # and attaches `alp-<target>.tar.gz` to the GitHub Release for that tag.
 #
 # Linux targets are cross-built with cargo-zigbuild on ubuntu-latest (#37):
@@ -21,11 +21,10 @@
 #     `cargo binstall` falls back to on hosts the gnu asset doesn't fit.
 # The CLI's TLS stack is rustls/ring (no OpenSSL), so musl needs no extra deps.
 #
-# Note: x86_64-apple-darwin (Intel mac) is intentionally not built — GitHub's
-# macos-13 Intel runners are scarce and stall the release for tens of minutes.
-# Intel-mac users build from source (`cargo build --release`). To restore it,
-# cross-compile on macos-14: add `{ target: x86_64-apple-darwin, os: macos-14 }`
-# and pass `--target x86_64-apple-darwin` (the macOS toolchain builds both arches).
+# Note: x86_64-apple-darwin (Intel mac) is cross-compiled on the same macos-14
+# runner as aarch64-apple-darwin (the macOS toolchain builds both arches) — no
+# extra runner needed, unlike the scarce Intel macos-13 runners that stalled
+# the release for tens of minutes when this was tried natively.
 
 name: release-cli-rs
 
@@ -61,6 +60,8 @@ jobs:
             os: ubuntu-latest
             zigbuild_target: aarch64-unknown-linux-musl
           - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-apple-darwin
             os: macos-14
           - target: x86_64-pc-windows-msvc
             os: windows-latest

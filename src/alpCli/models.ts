@@ -42,7 +42,12 @@ export interface CliOutcome {
 }
 
 /** How the `alp` binary was (or will be) located. */
-export type BinarySource = "cliPath" | "path" | "cached" | "download";
+export type BinarySource =
+  | "cliPath"
+  | "path"
+  | "bundled"
+  | "cached"
+  | "download";
 
 export interface BinaryResolutionInput {
   /** The `alpSdk.cliPath` setting value (may be ""). */
@@ -51,6 +56,9 @@ export interface BinaryResolutionInput {
   cliPathExists: boolean;
   /** Whether `alp` is on PATH. */
   onPath: boolean;
+  /** Whether a `bin/alp[.exe]` staged in the extension install exists (only
+   *  true in a platform-specific VSIX built with `vsce package --target`). */
+  bundledExists: boolean;
   /** Whether a previously downloaded binary exists in global storage. */
   cachedExists: boolean;
 }

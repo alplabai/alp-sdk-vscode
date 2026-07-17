@@ -70,6 +70,14 @@ function cacheDirFor(context: vscode.ExtensionContext): string {
 function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
   const cacheDir = cacheDirFor(context);
   const platform = process.platform;
+  // Only present in a platform-specific VSIX (`vsce package --target <triple>`
+  // stages `bin/alp[.exe]` into the extension install); the universal VSIX
+  // ships no `bin/`, so this is always absent there.
+  const bundledBinaryPath = path.join(
+    context.extensionPath,
+    "bin",
+    binaryName(platform),
+  );
   return {
     cliPathSetting: vscode.workspace
       .getConfiguration("alpSdk")
@@ -79,6 +87,8 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     arch: process.arch,
     cacheDir,
     cachedBinaryPath: path.join(cacheDir, binaryName(platform)),
+    bundledBinaryPath,
+    bundledExists: fs.existsSync(bundledBinaryPath),
     fileExists: fs.existsSync,
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
