@@ -428,11 +428,13 @@
         "alpSdk.path": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Path to the alp-sdk repository checkout.  When empty, the extension searches the workspace for the SDK root (a directory containing scripts/alp_project.py)."
         },
         "alpSdk.pythonPath": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Python interpreter to use for the loader + validator.  Defaults to `python3` (POSIX) / `python` (Windows)."
         },
         "alpSdk.boardYamlPath": {
@@ -443,11 +445,13 @@
         "alpSdk.westCwd": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Working directory for `west build/flash/run`.  When empty, defaults to the workspace root."
         },
         "alpSdk.cliPath": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Path to the native `alp` CLI binary. When empty, the extension uses `alp` on PATH, then falls back to downloading the matching release into its global storage. Point this at a local dev build (e.g. `cli-rs/target/release/alp`) to override."
         }
       }

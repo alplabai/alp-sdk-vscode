@@ -5,11 +5,13 @@ import {
   listLocalSdkEntries,
 } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
+import { promisify } from "util";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
+import { log } from "../util";
 import {
   resolveWestBinary,
   westWorkspaceInitialized,
@@ -28,25 +30,69 @@ export async function openProjectFolder(uri: vscode.Uri): Promise<void> {
   });
 }
 
-function commandAvailable(cmd: string): boolean {
-  try {
-    // Quote so an absolute venv path (possibly with spaces) is one token.
-    cp.execSync(`"${cmd}" --version`, { stdio: "ignore", timeout: 3000 });
-    return true;
-  } catch {
-    return false;
-  }
+const execFileAsync = promisify(cp.execFile);
+
+let loginShellPathPromise: Promise<string | undefined> | undefined;
+
+function errText(err: unknown): string {
+  const e = err as NodeJS.ErrnoException & { signal?: string };
+  if (e.code === "ENOENT") return "not found on PATH";
+  if (e.code === "EACCES") return "not executable";
+  if (e.signal === "SIGTERM") return "timed out after 3000 ms";
+  return e.message ?? String(err);
 }
 
-/** Run `cmd --version` and return the first line of stdout, or null on error. */
-function commandVersion(cmd: string): string | null {
+/**
+ * The ext-host runs under a non-login PATH, so on Remote-SSH tools that live on
+ * the user's `~/.bashrc` (or `~/.zshrc`) PATH read as "Not found" even though the
+ * integrated (login) terminal builds fine. Resolve the real login-shell PATH
+ * once per window so detection matches execution; on any failure fall back to
+ * the inherited env. Windows has no login-shell concept — its process PATH is
+ * authoritative there.
+ */
+function loginShellPath(): Promise<string | undefined> {
+  if (process.platform === "win32") return Promise.resolve(undefined);
+  if (!loginShellPathPromise) {
+    loginShellPathPromise = (async () => {
+      const shell = vscode.env.shell;
+      if (!shell) return undefined;
+      try {
+        const { stdout } = await execFileAsync(
+          shell,
+          ["-l", "-i", "-c", 'printf "%s" "$PATH"'],
+          { timeout: 3000 },
+        );
+        return stdout.trim() || undefined;
+      } catch (err) {
+        log(
+          `alp: could not resolve login-shell PATH from ${shell}: ${errText(err)}`,
+        );
+        return undefined;
+      }
+    })();
+  }
+  return loginShellPathPromise;
+}
+
+/**
+ * Run `cmd --version` with no shell — a venv path with a space / `$` / backtick
+ * is passed as one argv token, not re-parsed — and return the first stdout line,
+ * or null. A non-null version already proves availability. On failure the cause
+ * is discriminated and logged; the old silent catch reported a proven-present
+ * tool as "Not found" with nothing to debug from.
+ */
+async function commandVersion(
+  cmd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string | null> {
   try {
-    const out = cp.execSync(`"${cmd}" --version`, {
-      stdio: "pipe",
+    const { stdout } = await execFileAsync(cmd, ["--version"], {
       timeout: 3000,
+      env,
     });
-    return out.toString("utf8").trim().split("\n")[0] ?? null;
-  } catch {
+    return stdout.trim().split("\n")[0] ?? null;
+  } catch (err) {
+    log(`alp: probe "${cmd} --version" failed: ${errText(err)}`);
     return null;
   }
 }
@@ -139,8 +185,23 @@ export async function queryAlpIdeState(
     projectContext.westCwd,
     projectContext.sdkRoot,
   );
-  const pythonAvailable = commandAvailable(pyCmd);
-  const westAvailable = commandAvailable(westBin);
+
+  // One env, one parallel batch: the probes no longer block the event loop (they
+  // were up to six synchronous spawns per window-focus / save / settings edit)
+  // and detection uses the same PATH the build will.
+  const shellPath = await loginShellPath();
+  const probeEnv: NodeJS.ProcessEnv = shellPath
+    ? { ...process.env, PATH: shellPath }
+    : process.env;
+  const [pythonVersion, westVersion, cmakeVersion, ninjaVersion] =
+    await Promise.all([
+      commandVersion(pyCmd, probeEnv),
+      commandVersion(westBin, probeEnv),
+      commandVersion("cmake", probeEnv),
+      commandVersion("ninja", probeEnv),
+    ]);
+  const pythonAvailable = pythonVersion !== null;
+  const westAvailable = westVersion !== null;
 
   return {
     sdk: {
@@ -154,10 +215,10 @@ export async function queryAlpIdeState(
       westAvailable,
       lastBootstrapAt,
       toolVersions: {
-        python: pythonAvailable ? commandVersion(pyCmd) : null,
-        west: westAvailable ? commandVersion(westBin) : null,
-        cmake: commandVersion("cmake"),
-        ninja: commandVersion("ninja"),
+        python: pythonVersion,
+        west: westVersion,
+        cmake: cmakeVersion,
+        ninja: ninjaVersion,
       },
     },
     workspace: {

@@ -113,6 +113,18 @@ connection.onInitialized(() => {
     );
   }
 
+  connection.onDidChangeConfiguration(() => {
+    for (const uri of documentCache.keys()) {
+      void validateDocument(uri);
+    }
+  });
+
+  connection.onDidChangeWatchedFiles(() => {
+    for (const uri of documentCache.keys()) {
+      void validateDocument(uri);
+    }
+  });
+
   connection.workspace.onDidChangeWorkspaceFolders((event) => {
     const removed = new Set(
       event.removed
