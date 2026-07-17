@@ -21,6 +21,26 @@ async function main() {
   // a dedicated user-data / extensions dir shared between the install step and
   // the test run (so the installed dependency is actually visible at runtime).
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "alp-e2e-ws-"));
+
+  // Seed the workspace with a minimal valid board.yaml so the project-backed
+  // surfaces (configurator, validate, generate) have real input to resolve.
+  fs.writeFileSync(
+    path.join(workspace, "board.yaml"),
+    [
+      "som:",
+      "  sku: E1M-AEN801",
+      "cores:",
+      "  m55_hp:",
+      "    app: ./src",
+      "",
+    ].join("\n"),
+  );
+
+  // Point the extension at the real SDK checkout (sibling of this repo by
+  // convention) when present, so SDK-backed commands resolve instead of no-op.
+  const sdkRoot = path.resolve(extensionDevelopmentPath, "..", "alp-sdk");
+  process.env.ALP_E2E_SDK_ROOT = fs.existsSync(sdkRoot) ? sdkRoot : "";
+
   const testRoot = path.resolve(__dirname, "../../.vscode-test");
   const userDataDir = path.join(testRoot, "user-data");
   const extensionsDir = path.join(testRoot, "extensions");
@@ -63,6 +83,10 @@ async function main() {
       "--extensions-dir",
       extensionsDir,
     ],
+    // Cross into the extension-host process (separate from this launcher).
+    extensionTestsEnv: {
+      ALP_E2E_SDK_ROOT: process.env.ALP_E2E_SDK_ROOT || "",
+    },
   });
 }
 

@@ -11,16 +11,42 @@ const vscode = require("vscode");
 
 const EXT_ID = "AlpLabAI.alp-sdk";
 
-// Commands that open a panel / refresh / show output — safe to invoke in a
-// headless run (no prompt that blocks, no filesystem mutation, no flash).
-const SAFE_COMMANDS = [
-  "alp.showOutput",
-  "alp.openOverview",
-  "alp.openSetupFlow",
-  "alp.openSdkManager",
-  "alp.views.refresh",
-  "alp.showBuildPlan",
-];
+// Commands that legitimately do not resolve within the short probe window: they
+// either open a modal quick-pick/input (no user in a headless run) or kick off
+// long-running work (shell out to the SDK's Python emitters / bootstrap). For
+// these the "button" is proven by the handler running without throwing — full
+// completion is covered separately by the CLI functional suite. Only a
+// command OUTSIDE this set that hangs is a regression.
+const SLOW_OR_PROMPTING = new Set([
+  // prompt for target/SoM/server/path
+  "alp.newProjectWizard",
+  "alp.openExistingProject",
+  "alp.scaffoldModule",
+  "alp.configureDebugProfile",
+  "alp.debug",
+  "alp.debugDoctor",
+  "alp.debugPreflight",
+  "alp.exportSupportBundle",
+  "alp.switchWorkspace",
+  "alp.selectSdk",
+  // spawn a west/flash terminal or wait on it
+  "alp.westBuild",
+  "alp.westAlpImage",
+  "alp.westAlpFlash",
+  "alp.westAlpClean",
+  "alp.westAlpRenode",
+  "alp.westRunNativeSim",
+  // shell out to the SDK Python emitters / validator (seconds), or bootstrap
+  "alp.generateZephyrConf",
+  "alp.generateDtsOverlay",
+  "alp.generateNativeSimOverlay",
+  "alp.generateCmakeArgs",
+  "alp.generateYoctoConf",
+  "alp.generateAll",
+  "alp.validateBoardYaml",
+  "alp.installDependencies",
+  "alp.openDebugTroubleshootingPanel",
+]);
 
 async function runChecks() {
   const results = [];
@@ -50,6 +76,21 @@ async function runChecks() {
     assert.equal(ext.isActive, true);
   });
 
+  // Point the extension at the real SDK (when the launcher found one) so the
+  // SDK-backed commands resolve against a real checkout, not a no-op.
+  const sdkRoot = process.env.ALP_E2E_SDK_ROOT;
+  if (sdkRoot && fs.existsSync(sdkRoot)) {
+    await check("alpSdk.path resolves the real SDK checkout", async () => {
+      await vscode.workspace
+        .getConfiguration("alpSdk")
+        .update("path", sdkRoot, vscode.ConfigurationTarget.Workspace);
+      assert.equal(
+        vscode.workspace.getConfiguration("alpSdk").get("path"),
+        sdkRoot,
+      );
+    });
+  }
+
   // Every command the manifest contributes must actually be registered.
   const manifest = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, "../../../package.json"), "utf-8"),
@@ -66,14 +107,45 @@ async function runChecks() {
     },
   );
 
-  // Invoke the safe "button" commands — these are what the sidebar tree items
-  // fire. Executing them must not throw.
-  for (const cmd of SAFE_COMMANDS) {
-    await check(`command executes: ${cmd}`, async () => {
+  // Drive EVERY contributed command — the real "do the buttons work" test.
+  // A prompting command (quick-pick/input) never resolves headless, so we race
+  // it against a timeout: resolving is a full pass, timing out means the handler
+  // was reached and opened its prompt (pass for a prompting command, but a
+  // regression for one we expect to complete), and a synchronous/async throw is
+  // a FAIL. Terminal-spawning commands (west/flash) return immediately after
+  // creating the terminal, so they complete without hardware.
+  const withTimeout = (p, ms) =>
+    Promise.race([
+      p.then(() => "resolved"),
+      new Promise((r) => setTimeout(() => r("timeout"), ms)),
+    ]);
+  let drivenOk = 0;
+  const unexpectedTimeouts = [];
+  for (const cmd of contributed) {
+    if (cmd === "alp.updateCli") continue; // network download — skip in CI
+    await check(`command runs: ${cmd}`, async () => {
       assert.ok(registered.has(cmd), `${cmd} not registered`);
-      await vscode.commands.executeCommand(cmd);
+      let outcome;
+      try {
+        outcome = await withTimeout(
+          Promise.resolve(vscode.commands.executeCommand(cmd)),
+          2500,
+        );
+      } catch (err) {
+        throw new Error(`threw: ${err && err.message ? err.message : err}`);
+      }
+      if (outcome === "timeout" && !SLOW_OR_PROMPTING.has(cmd)) {
+        unexpectedTimeouts.push(cmd);
+      }
+      drivenOk += 1;
     });
   }
+  console.log(
+    `  drove ${drivenOk}/${contributed.length - 1} commands without throwing` +
+      (unexpectedTimeouts.length
+        ? ` (unexpected hangs: ${unexpectedTimeouts.join(", ")})`
+        : ""),
+  );
 
   // The five contributed views must exist (their providers registered at activation).
   await check("all 5 tree views are contributed", () => {
