@@ -71,3 +71,13 @@ test("parseBoardConfig defaults missing som/cores rather than throwing", () => {
   assert.deepEqual(c.cores, {});
   assert.equal(c.name, "empty");
 });
+
+test("parseBoardConfig throws on malformed YAML but not on empty input (#127)", () => {
+  // Empty / whitespace-only input is a valid empty board, never a throw — the
+  // configurator relies on this to tell "new file" from "broken file" so it
+  // never overwrites an unreadable board.yaml with a stub.
+  assert.deepEqual(parseBoardConfig("").cores, {});
+  assert.deepEqual(parseBoardConfig("   \n").cores, {});
+  // A real syntax error must throw so the caller can refuse to overwrite it.
+  assert.throws(() => parseBoardConfig('name: "unterminated'));
+});
