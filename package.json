@@ -170,12 +170,12 @@
       },
       {
         "command": "alp.westFlash",
-        "title": "Alp: West flash",
+        "title": "Alp: Flash single domain (west flash)",
         "category": "Alp"
       },
       {
         "command": "alp.westUpdate",
-        "title": "Alp: West update (fetch and update modules)",
+        "title": "Alp: Update west manifest (west update)",
         "category": "Alp"
       },
       {
@@ -190,7 +190,7 @@
       },
       {
         "command": "alp.westAlpFlash",
-        "title": "Alp: Flash (all slices)",
+        "title": "Alp: Flash all slices",
         "category": "Alp"
       },
       {
@@ -309,11 +309,6 @@
         "category": "Alp"
       },
       {
-        "command": "alp.newProjectWizard",
-        "title": "Alp: New Project Wizard",
-        "category": "Alp"
-      },
-      {
         "command": "alp.openExistingProject",
         "title": "Alp: Open Existing Alp Project",
         "category": "Alp"
@@ -384,6 +379,20 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "alp.views.refresh",
+          "when": "false"
+        },
+        {
+          "command": "alp.ideHub.focus",
+          "when": "false"
+        },
+        {
+          "command": "alp.openOverview",
+          "when": "false"
+        }
+      ],
       "view/title": [
         {
           "command": "alp.views.refresh",
