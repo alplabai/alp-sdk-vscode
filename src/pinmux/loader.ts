@@ -16,7 +16,9 @@ const SKU_PINMUX_FAMILY: ReadonlyArray<readonly [RegExp, string]> = [
   [/^E1M-AEN/, "aen"],
   [/^E1M-NX9/, "imx93"],
   [/^E1M-V2N/, "v2n"],
-  [/^E1M-V2M/, "v2n-m1"],
+  // V2M is the same PCB/E1M edge as V2N (the M1 delta is SoM-internal DEEPX
+  // nets, not an edge pinout), so it shares the v2n capability table.
+  [/^E1M-V2M/, "v2n"],
 ];
 
 export function pinmuxFamilyForSku(sku: string): string | null {
@@ -52,9 +54,14 @@ export function loadPinmuxTable(
   try {
     const filePath = path.join(sdkRoot, "metadata", "pinmux", `${family}.yaml`);
     const parsed = parsePinmuxTable(readFile(filePath));
-    // A readable-but-corrupt or empty table parses to a truthy object with
-    // no pads. Treat that as absent so callers don't flood false "not
-    // available" diagnostics against a broken/empty capability table.
+    // Drop rows the SDK generator left as "TBD" sentinels (every pad-first V2N
+    // row today carries no real E1M pad->function mapping). A table left with
+    // no usable pads — or a readable-but-corrupt/empty one — is treated as
+    // absent so callers fail soft (no check, like imx93) instead of flooding
+    // false "not available"/duplicate-pad diagnostics against sentinel rows.
+    if (parsed) {
+      parsed.pads = parsed.pads.filter((pad) => pad.e1mPad !== "TBD");
+    }
     table = parsed && parsed.pads.length === 0 ? null : parsed;
   } catch {
     table = null;
