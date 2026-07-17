@@ -9,14 +9,14 @@ const {
 test("parseBoardSummary extracts sku, carrier, and os", () => {
   const summary = parseBoardSummary(`
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 carrier:
   name: E1M-EVK
 os: zephyr
 `);
 
   assert.deepEqual(summary, {
-    sku: "E1M-AEN701",
+    sku: "E1M-AEN801",
     carrier: "E1M-EVK",
     os: "zephyr",
   });
@@ -31,14 +31,14 @@ test("createStatusBarPresentation renders empty state", () => {
 
 test("createStatusBarPresentation renders populated summary", () => {
   const presentation = createStatusBarPresentation({
-    sku: "E1M-AEN701",
+    sku: "E1M-AEN801",
     carrier: "E1M-EVK",
     os: "zephyr",
   });
 
   assert.equal(
     presentation.text,
-    "$(circuit-board) E1M-AEN701 · E1M-EVK · zephyr",
+    "$(circuit-board) E1M-AEN801 · E1M-EVK · zephyr",
   );
   assert.equal(presentation.command, "alp.openConfigurator");
 });

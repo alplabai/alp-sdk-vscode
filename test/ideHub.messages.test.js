@@ -129,8 +129,8 @@ test("projectTemplatesData message shape matches contract", () => {
     ],
     modules: [
       {
-        id: "E1M-AEN701",
-        displayName: "E1M-AEN701 (Alif Ensemble E7)",
+        id: "E1M-AEN801",
+        displayName: "E1M-AEN801 (Alif Ensemble E8)",
         family: "alif-ensemble",
       },
     ],
@@ -145,12 +145,12 @@ test("createNewProject message carries templateId, moduleId, projectName", () =>
   const msg = {
     type: "createNewProject",
     templateId: "blank-app",
-    moduleId: "E1M-AEN701",
+    moduleId: "E1M-AEN801",
     projectName: "my-sensor-app",
   };
   assert.equal(msg.type, "createNewProject");
   assert.equal(msg.templateId, "blank-app");
-  assert.equal(msg.moduleId, "E1M-AEN701");
+  assert.equal(msg.moduleId, "E1M-AEN801");
   assert.equal(msg.projectName, "my-sensor-app");
 });
 

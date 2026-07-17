@@ -33,7 +33,7 @@ clippy `-D warnings` clean:
   canonical vectors;
 - registry tables — `sku→family` is genuine data, `silicon→Kconfig` is a pure
   rule (no table);
-- the **real** `E1M-AEN701.yaml` + `socs/.../e7.json` deserialize into structs
+- the **real** `E1M-AEN801.yaml` + `socs/.../e7.json` deserialize into structs
   (incl. real `TBD` values, the 3-core `topology`, TCM-suffixed banks);
 - a `{{#each}}` template renders a DTS overlay + a Kconfig fragment from data;
 - a **policy-as-data engine** — zero hardcoded rules; the default policy

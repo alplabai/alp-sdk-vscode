@@ -260,7 +260,7 @@ const TABLE = {
 };
 
 function boardWith(routes, pins) {
-  return { som: { sku: "E1M-AEN701" }, cores: {}, e1m_routes: routes, pins };
+  return { som: { sku: "E1M-AEN801" }, cores: {}, e1m_routes: routes, pins };
 }
 
 test("normalizeE1mName handles primary, GPIO-secondary, X-connector and ADC forms", () => {
@@ -325,7 +325,7 @@ test("malformed names and empty config are ignored", () => {
   const cfg = boardWith({ gpio: [{ e1m: "TOTALLY_WRONG", macro: "X" }] }, undefined);
   assert.deepStrictEqual(checkE1mCompliance(cfg, TABLE), []);
   assert.deepStrictEqual(
-    checkE1mCompliance({ som: { sku: "E1M-AEN701" }, cores: {} }, TABLE),
+    checkE1mCompliance({ som: { sku: "E1M-AEN801" }, cores: {} }, TABLE),
     [],
   );
 });
@@ -531,7 +531,7 @@ const {
 const SAMPLE = 'family: aen\npads:\n  - { e1m_pad: "A3", e1m_function: "PWM6", owner: "alif", silicon_peripheral: "UT3_T1_C", silicon_pad: "P10_7" }\n';
 
 test("pinmuxFamilyForSku maps known SKU prefixes", () => {
-  assert.strictEqual(pinmuxFamilyForSku("E1M-AEN701"), "aen");
+  assert.strictEqual(pinmuxFamilyForSku("E1M-AEN801"), "aen");
   assert.strictEqual(pinmuxFamilyForSku("E1M-NX9101"), "imx93");
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2N101"), "v2n");
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2M102"), "v2n-m1");
@@ -541,7 +541,7 @@ test("pinmuxFamilyForSku maps known SKU prefixes", () => {
 test("loadPinmuxTable reads metadata/pinmux/<family>.yaml under the SDK root", () => {
   clearPinmuxTableCache();
   const seen = [];
-  const table = loadPinmuxTable("/sdk", "E1M-AEN701", (filePath) => {
+  const table = loadPinmuxTable("/sdk", "E1M-AEN801", (filePath) => {
     seen.push(filePath);
     return SAMPLE;
   });
@@ -574,7 +574,7 @@ test("loadPinmuxTable caches per sdkRoot + family", () => {
     reads += 1;
     return SAMPLE;
   };
-  loadPinmuxTable("/sdk", "E1M-AEN701", readFile);
+  loadPinmuxTable("/sdk", "E1M-AEN801", readFile);
   loadPinmuxTable("/sdk", "E1M-AEN301", readFile); // same family -> cached
   assert.strictEqual(reads, 1);
 });
@@ -698,7 +698,7 @@ Append to `test/lsp.service.test.js`:
 ```js
 test("findTokenRange locates the first occurrence of a token", () => {
   const { findTokenRange } = require("../out/lsp/service.js");
-  const doc = "som:\n  sku: E1M-AEN701\ne1m_routes:\n  pwm:\n    - e1m: E1M_PWM9\n";
+  const doc = "som:\n  sku: E1M-AEN801\ne1m_routes:\n  pwm:\n    - e1m: E1M_PWM9\n";
   const range = findTokenRange(doc, "E1M_PWM9");
   assert.deepStrictEqual(range, {
     start: { line: 4, character: 11 },
@@ -872,7 +872,7 @@ Expected: compile clean, all tests PASS, bundle emits `out/extension.js` + `out/
 - [ ] **Step 5: Manual smoke test**
 
 1. Open this repo in VS Code, press F5 (Extension Development Host).
-2. In the dev host, open a workspace containing the alp-sdk checkout and a `board.yaml` with `som: { sku: E1M-AEN701 }`.
+2. In the dev host, open a workspace containing the alp-sdk checkout and a `board.yaml` with `som: { sku: E1M-AEN801 }`.
 3. Add under `e1m_routes:` → `pwm:` an entry `- { e1m: E1M_PWM9, macro: LED }` — expect an error diagnostic on `E1M_PWM9`: `E1M function "PWM9" is not available on the aen SoM family.`
 4. Change it to `E1M_PWM6` and add a `gpio:` entry `- { e1m: E1M_GPIO_PWM6, macro: BTN }` — expect a one-owner-per-pad error on `E1M_GPIO_PWM6` naming pad `A3`.
 5. Remove the gpio entry — expect all compliance diagnostics to clear.

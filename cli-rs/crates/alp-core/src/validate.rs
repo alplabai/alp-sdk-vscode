@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn v1_board_passes_without_errors() {
-        let text = "som:\n  sku: E1M-AEN701\npreset: e1m-evk\n";
+        let text = "som:\n  sku: E1M-AEN801\npreset: e1m-evk\n";
         let r = validate_board_yaml_local(text).unwrap();
         assert_eq!(r.outcome, Outcome::Clean);
         assert!(r.issues.is_empty());
@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn v2_clean_board_passes() {
         let text =
-            "schema_version: 2\nsom:\n  sku: E1M-AEN701\ncores:\n  m55_hp:\n    app: ./src\n";
+            "schema_version: 2\nsom:\n  sku: E1M-AEN801\ncores:\n  m55_hp:\n    app: ./src\n";
         let r = validate_board_yaml_local(text).unwrap();
         assert_eq!(r.outcome, Outcome::Clean);
     }
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn v2_without_cores_is_rejected() {
-        let text = "schema_version: 2\nsom:\n  sku: E1M-AEN701\n";
+        let text = "schema_version: 2\nsom:\n  sku: E1M-AEN801\n";
         let r = validate_board_yaml_local(text).unwrap();
         assert_eq!(r.outcome, Outcome::SchemaViolation);
         assert_eq!(r.issues.len(), 1);
@@ -422,7 +422,7 @@ mod tests {
         let text = r#"
 schema_version: 2
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 cores:
   m55_hp:
     os: zephyr
@@ -453,7 +453,7 @@ ipc:
         let model = BoardModel {
             schema_version: Some(1),
             som: Some(Som {
-                sku: Some("E1M-AEN701".to_string()),
+                sku: Some("E1M-AEN801".to_string()),
             }),
             carrier: Some(Carrier {
                 name: Some("e1m-evk".to_string()),

@@ -137,7 +137,7 @@ pads:
 
     #[test]
     fn sku_to_family_prefix_map() {
-        assert_eq!(pinmux_family_for_sku("E1M-AEN701"), Some("aen"));
+        assert_eq!(pinmux_family_for_sku("E1M-AEN801"), Some("aen"));
         assert_eq!(pinmux_family_for_sku("E1M-V2N44"), Some("v2n"));
         assert_eq!(pinmux_family_for_sku("E1M-V2M01"), Some("v2n-m1"));
         assert_eq!(pinmux_family_for_sku("E1M-NX93"), Some("imx93"));

@@ -3,7 +3,7 @@
 
 const EDGEAI = `
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 preset: e1m-evk
 pins:
   - { e1m: E1M_I2C0, macro: EVK_I2C_BUS_SENSORS, doc: "Shared sensor bus" }
@@ -36,7 +36,7 @@ cores:
 
 const PRODUCTION = `
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 preset: e1m-evk
 cores:
   a32_cluster:

@@ -10,8 +10,8 @@ import type { E1mModule } from "./messages";
 
 export const E1M_MODULES: E1mModule[] = [
   {
-    id: "E1M-AEN701",
-    displayName: "E1M-AEN701 (Alif Ensemble E7)",
+    id: "E1M-AEN801",
+    displayName: "E1M-AEN801 (Alif Ensemble E8)",
     family: "alif-ensemble",
   },
   {
@@ -32,11 +32,6 @@ export const E1M_MODULES: E1mModule[] = [
   {
     id: "E1M-AEN601",
     displayName: "E1M-AEN601 (Alif Ensemble E6)",
-    family: "alif-ensemble",
-  },
-  {
-    id: "E1M-AEN801",
-    displayName: "E1M-AEN801 (Alif Ensemble E8)",
     family: "alif-ensemble",
   },
   {

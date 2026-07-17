@@ -137,7 +137,7 @@ pub enum Command {
 /// stem or mapped from a `--sku`.
 #[derive(Debug, Args)]
 pub struct PinmuxArgs {
-    /// SoM SKU to resolve the pinmux family from (e.g. `E1M-AEN701`).
+    /// SoM SKU to resolve the pinmux family from (e.g. `E1M-AEN801`).
     #[arg(long)]
     pub sku: Option<String>,
     /// Pinmux family stem directly (e.g. `aen`, `v2n`); overrides `--sku`.
@@ -347,7 +347,7 @@ pub struct InitArgs {
     /// Destination directory (default: current directory or --project).
     #[arg(long)]
     pub destination: Option<String>,
-    /// Target SoM SKU written into the generated board.yaml (e.g. E1M-AEN701).
+    /// Target SoM SKU written into the generated board.yaml (e.g. E1M-AEN801).
     #[arg(long)]
     pub som: Option<String>,
     /// Comma-separated cores for a heterogeneous project, `id[:os]`

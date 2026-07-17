@@ -13,10 +13,10 @@ function catalogue() {
   return {
     soms: [
       {
-        sku: "E1M-AEN701",
-        displayName: "E1M-AEN701 (Alif Ensemble E7)",
+        sku: "E1M-AEN801",
+        displayName: "E1M-AEN801 (Alif Ensemble E8)",
         family: "alif-ensemble",
-        silicon: "alif:ensemble:e7",
+        silicon: "alif:ensemble:e8",
         preferredBackend: "ethos_u",
         capabilities: {},
         defaultBoard: "E1M-EVK",
@@ -66,7 +66,7 @@ function catalogue() {
     libraries: [{ id: "etl" }, { id: "mbedtls" }],
     socs: [
       {
-        ref: "alif:ensemble:e7",
+        ref: "alif:ensemble:e8",
         vendor: "Alif",
         family: "Ensemble",
         part: "E7",
@@ -80,7 +80,7 @@ function catalogue() {
 test("VM for an AEN board derives hardware, accelerators, carriers, cores", () => {
   const vm = buildConfiguratorViewModel(parseBoardConfig(EDGEAI), catalogue());
   assert.equal(vm.sdkConnected, true);
-  assert.equal(vm.som.selected, "E1M-AEN701");
+  assert.equal(vm.som.selected, "E1M-AEN801");
   assert.equal(vm.hardware.preferredBackend, "ethos_u");
   assert.deepEqual(
     vm.hardware.cores.map((c) => c.id),

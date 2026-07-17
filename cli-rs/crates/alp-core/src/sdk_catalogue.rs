@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 /// A System-on-Module (SoM) preset derived from an SDK `som` definition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SomPreset {
-    /// Module SKU, e.g. `E1M-AEN701`.
+    /// Module SKU, e.g. `E1M-AEN801`.
     pub sku: String,
     /// Human-readable module name (falls back to `sku` when absent).
     pub display_name: String,
@@ -688,8 +688,8 @@ mod tests {
         SdkCatalogue {
             soms: vec![
                 SomPreset {
-                    sku: "E1M-AEN701".to_string(),
-                    display_name: "E1M-AEN701".to_string(),
+                    sku: "E1M-AEN801".to_string(),
+                    display_name: "E1M-AEN801".to_string(),
                     family: "aen".to_string(),
                     silicon: "alif-e7".to_string(),
                     silicon_variant: None,
@@ -765,9 +765,9 @@ mod tests {
     #[test]
     fn derives_board_and_core_helpers() {
         let c = fixture_catalogue();
-        assert_eq!(boards_for_som(&c, "E1M-AEN701").len(), 1);
+        assert_eq!(boards_for_som(&c, "E1M-AEN801").len(), 1);
         assert_eq!(
-            core_ids_for_som(&c, "E1M-AEN701"),
+            core_ids_for_som(&c, "E1M-AEN801"),
             vec!["m55_hp".to_string()]
         );
         assert!(boards_for_som(&c, "UNKNOWN").is_empty());
@@ -780,8 +780,8 @@ mod tests {
         let avail = accelerator_availability(som);
         assert!(avail.iter().any(|a| a.id == "ethos_u" && a.available));
         assert!(avail.iter().any(|a| a.id == "deepx_dxm1" && a.available));
-        assert_eq!(chip_family_for_sku("E1M-AEN701"), Some("aen"));
-        assert_eq!(chips_for_som(&c, "E1M-AEN701").len(), 1);
+        assert_eq!(chip_family_for_sku("E1M-AEN801"), Some("aen"));
+        assert_eq!(chips_for_som(&c, "E1M-AEN801").len(), 1);
     }
 
     #[test]
@@ -814,7 +814,7 @@ mod tests {
         );
 
         let som = parse_som_preset(
-            "sku: E1M-AEN701\ndisplay_name: E1M AEN701\nfamily: aen\nsilicon: alif-e7\ninference:\n  preferred_backend: ethos_u\ncapabilities: { deepx_dx: true }\ntopology:\n  m55_hp: { app: ./src }\non_module:\n  i2c_devices:\n    i2c0:\n      devices:\n        - chip: ina236\n          role: sensor\n          address_7bit: '0x40'\nstatus:\n  preliminary: true\n",
+            "sku: E1M-AEN801\ndisplay_name: E1M AEN801\nfamily: aen\nsilicon: alif-e7\ninference:\n  preferred_backend: ethos_u\ncapabilities: { deepx_dx: true }\ntopology:\n  m55_hp: { app: ./src }\non_module:\n  i2c_devices:\n    i2c0:\n      devices:\n        - chip: ina236\n          role: sensor\n          address_7bit: '0x40'\nstatus:\n  preliminary: true\n",
         )
         .unwrap();
         assert_eq!(som.topology_core_ids, vec!["m55_hp".to_string()]);
@@ -831,7 +831,7 @@ mod tests {
         let c = fixture_catalogue();
         let board = &c.boards[0];
         let overlay = BTreeMap::from([("chip-a".to_string(), false)]);
-        let choices = effective_chip_choices(&c, "E1M-AEN701", Some(board), Some(&overlay));
+        let choices = effective_chip_choices(&c, "E1M-AEN801", Some(board), Some(&overlay));
         assert_eq!(choices.len(), 1);
         assert!(!choices[0].enabled);
 

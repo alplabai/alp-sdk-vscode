@@ -26,7 +26,7 @@ export function createEmptyPresetCatalogue(): PresetCatalogue {
 export function createDefaultBoardModel(): BoardModel {
   return {
     schema_version: 1,
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     // Lowercase slug: the SDK preset pattern is `^[a-z][a-z0-9-]*$`. Serialized
     // as top-level `preset:` (not the retired `carrier:`) — see normalizeBoardModel.
     carrier: { name: "e1m-evk" },

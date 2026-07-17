@@ -253,7 +253,7 @@ mod tests {
       "schemaVersion": 1,
       "generatedBy": "scripts/alp_orchestrate.py",
       "boardYaml": "/proj/board.yaml",
-      "sku": "E1M-AEN701",
+      "sku": "E1M-AEN801",
       "buildRoot": "build",
       "slices": [
         {
@@ -286,7 +286,7 @@ mod tests {
         let plan = parse_build_plan(SAMPLE).expect("sample should parse");
         assert_eq!(plan.schema_version, 1);
         assert_eq!(plan.generated_by, "scripts/alp_orchestrate.py");
-        assert_eq!(plan.sku, "E1M-AEN701");
+        assert_eq!(plan.sku, "E1M-AEN801");
         // One slice per core, sorted by coreId (m55_he before m55_hp).
         assert_eq!(
             plan.slices
@@ -389,7 +389,7 @@ mod tests {
     fn summary_lists_each_slice() {
         let plan = parse_build_plan(SAMPLE).unwrap();
         let joined = summarize_plan(&plan).join("\n");
-        assert!(joined.contains("E1M-AEN701"));
+        assert!(joined.contains("E1M-AEN801"));
         assert!(joined.contains("m55_he [baremetal] cmake -S he_app -B build/m55_he-baremetal"));
         assert!(joined.contains("m55_hp [zephyr] west build -b alif_e7_dk_rtss_hp app"));
         assert!(joined.contains("shared artefacts (3):"));

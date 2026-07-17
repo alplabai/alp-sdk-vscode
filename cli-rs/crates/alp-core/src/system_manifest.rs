@@ -25,7 +25,7 @@ pub const SYSTEM_MANIFEST_SCHEMA_VERSION: u32 = 1;
 /// Resolved hardware identity for the project.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct HwInfo {
-    /// Resolved board SKU (e.g. `E1M-AEN701`).
+    /// Resolved board SKU (e.g. `E1M-AEN801`).
     #[serde(default)]
     pub sku: String,
     /// System-on-Module hardware revision, if declared.
@@ -37,7 +37,7 @@ pub struct HwInfo {
     /// Carrier/EVK board hardware revision, if declared.
     #[serde(default)]
     pub board_hw_rev: Option<String>,
-    /// Resolved silicon id (e.g. `alif:ensemble:e7`), if declared.
+    /// Resolved silicon id (e.g. `alif:ensemble:e8`), if declared.
     #[serde(default)]
     pub silicon: Option<String>,
 }
@@ -232,19 +232,19 @@ pub fn summarize_manifest(m: &SystemManifest) -> Vec<String> {
 mod tests {
     use super::*;
 
-    // The real `--emit system-manifest` output for the heterogeneous AEN701
+    // The real `--emit system-manifest` output for the heterogeneous AEN801
     // example: an `off` A-core slice WITHOUT flash_method/flash_args, two Zephyr
     // slices WITH them, and a helper MCU whose flash_args is the string "TBD"
     // plus an undeclared `note` field — all the tolerant-reader corner cases.
-    const AEN701: &str = r#"
+    const AEN801: &str = r#"
 schema_version: 1
 generated_by: scripts/alp_orchestrate.py
 hw_info:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
   som_hw_rev: r1
   board_name: E1M-EVK
   board_hw_rev: r1
-  silicon: alif:ensemble:e7
+  silicon: alif:ensemble:e8
 slices:
 - core_id: a32_cluster
   os: 'off'
@@ -283,11 +283,11 @@ boot_order: []
 
     #[test]
     fn parses_the_real_aen701_manifest() {
-        let m = parse_system_manifest(AEN701).expect("valid manifest");
+        let m = parse_system_manifest(AEN801).expect("valid manifest");
         assert_eq!(m.schema_version, 1);
         assert_eq!(m.generated_by, "scripts/alp_orchestrate.py");
-        assert_eq!(m.hw_info.sku, "E1M-AEN701");
-        assert_eq!(m.hw_info.silicon.as_deref(), Some("alif:ensemble:e7"));
+        assert_eq!(m.hw_info.sku, "E1M-AEN801");
+        assert_eq!(m.hw_info.silicon.as_deref(), Some("alif:ensemble:e8"));
         assert_eq!(m.slices.len(), 3);
 
         // The `off` slice omits flash_method/flash_args — tolerated as None.
@@ -309,7 +309,7 @@ boot_order: []
 
     #[test]
     fn rejects_unsupported_schema_version() {
-        let yaml = AEN701.replace("schema_version: 1", "schema_version: 2");
+        let yaml = AEN801.replace("schema_version: 1", "schema_version: 2");
         let err = parse_system_manifest(&yaml).unwrap_err();
         assert!(matches!(
             err,
@@ -320,14 +320,14 @@ boot_order: []
     #[test]
     fn tolerates_unknown_additive_fields() {
         // A future additive-v1 block at the root must be ignored, not rejected.
-        let yaml = format!("{AEN701}\nfuture_block:\n  anything: 1\n");
+        let yaml = format!("{AEN801}\nfuture_block:\n  anything: 1\n");
         let m = parse_system_manifest(&yaml).expect("unknown fields tolerated");
         assert_eq!(m.slices.len(), 3);
     }
 
     #[test]
     fn round_trips_through_serde() {
-        let m = parse_system_manifest(AEN701).unwrap();
+        let m = parse_system_manifest(AEN801).unwrap();
         let yaml = serde_yaml::to_string(&m).unwrap();
         let reparsed = parse_system_manifest(&yaml).unwrap();
         assert_eq!(m, reparsed);

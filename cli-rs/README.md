@@ -66,7 +66,7 @@ This is the path for any platform without a prebuilt archive — notably **Intel
 
 ```bash
 # Scaffold a project for a specific module
-alp init --template sensor-starter --som E1M-AEN701 --name my-board
+alp init --template sensor-starter --som E1M-AEN801 --name my-board
 
 # Validate board.yaml (schema + semantic rules; never writes)
 alp validate

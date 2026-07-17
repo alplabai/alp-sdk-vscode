@@ -161,7 +161,7 @@ test("missing som.sku and empty cores are errors", () => {
 
 test("preset is mutually exclusive with inline populated", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" } },
     preset: "e1m-evk",
     populated: { lsm6dso: true },
@@ -171,7 +171,7 @@ test("preset is mutually exclusive with inline populated", () => {
 
 test("iot.tls without mbedtls/bearssl on the same core is an error", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src", iot: { tls: true }, libraries: ["fmt"] } },
   });
   assert.ok(r.errors.some((e) => /m55_hp.*tls.*mbedtls|tls.*requires/i.test(e)));
@@ -179,7 +179,7 @@ test("iot.tls without mbedtls/bearssl on the same core is an error", () => {
 
 test("iot.tls with mbedtls present is fine", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src", iot: { tls: true }, libraries: ["mbedtls"] } },
   });
   assert.deepEqual(r.errors, []);
@@ -187,7 +187,7 @@ test("iot.tls with mbedtls present is fine", () => {
 
 test("mcuboot without signing is an error", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" } },
     boot: { method: "mcuboot" },
   });
