@@ -30,12 +30,13 @@ test("isCliBehind compares numeric version tuples", () => {
   assert.equal(isCliBehind(null, "0.1.14"), false); // unknown → not behind
 });
 
-test("decideBinarySource follows the locked order", () => {
+test("decideBinarySource follows the resolution order", () => {
   assert.equal(
     decideBinarySource({
       cliPathSetting: "/x/alp",
       cliPathExists: true,
       onPath: true,
+      bundledExists: true,
       cachedExists: true,
     }),
     "cliPath",
@@ -45,6 +46,7 @@ test("decideBinarySource follows the locked order", () => {
       cliPathSetting: "/x/alp",
       cliPathExists: false,
       onPath: true,
+      bundledExists: true,
       cachedExists: true,
     }),
     "path",
@@ -54,6 +56,7 @@ test("decideBinarySource follows the locked order", () => {
       cliPathSetting: "",
       cliPathExists: false,
       onPath: false,
+      bundledExists: false,
       cachedExists: true,
     }),
     "cached",
@@ -63,9 +66,58 @@ test("decideBinarySource follows the locked order", () => {
       cliPathSetting: "",
       cliPathExists: false,
       onPath: false,
+      bundledExists: false,
       cachedExists: false,
     }),
     "download",
+  );
+});
+
+test("decideBinarySource: bundled wins over cached/download but loses to cliPath/path", () => {
+  // bundled beats cached and download when nothing higher-priority resolves.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: false,
+      bundledExists: true,
+      cachedExists: true,
+    }),
+    "bundled",
+  );
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: false,
+      bundledExists: true,
+      cachedExists: false,
+    }),
+    "bundled",
+  );
+
+  // an explicit, existing cliPath still wins over a bundled binary.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "/x/alp",
+      cliPathExists: true,
+      onPath: false,
+      bundledExists: true,
+      cachedExists: true,
+    }),
+    "cliPath",
+  );
+
+  // `alp` on PATH still wins over a bundled binary.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: true,
+      bundledExists: true,
+      cachedExists: true,
+    }),
+    "path",
   );
 });
 
@@ -161,8 +213,13 @@ test("releaseAssetForTarget mirrors the published targets", () => {
     "x86_64-pc-windows-msvc",
   );
 
-  // Intel macOS has no prebuilt archive.
+  // Intel macOS has no download asset wired yet: the archive is built by
+  // release-cli-rs.yml but not offered for download-on-demand until a release
+  // carries it and SUPPORTED_CLI_VERSION points at that release.
   assert.equal(releaseAssetForTarget("darwin", "x64"), null);
+
+  // A host with no published target (e.g. 32-bit ARM Linux) has no asset.
+  assert.equal(releaseAssetForTarget("linux", "arm"), null);
 });
 
 test("binaryName is platform-specific", () => {

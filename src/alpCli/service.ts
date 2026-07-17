@@ -20,8 +20,12 @@ export const SUPPORTED_CLI_VERSION = "0.1.14";
 /** The repo whose GitHub releases host the prebuilt `alp` archives. */
 const RELEASE_REPO = "alplabai/alp-sdk-vscode";
 
-/** Host platform/arch → rust target triple. Mirrors the npm shim's postinstall;
- *  Intel macOS (`darwin/x64`) has no prebuilt archive (build from source). */
+/** Host platform/arch → rust target triple. Mirrors the npm shim's postinstall.
+ *  Intel macOS (`darwin/x64`) is intentionally absent here: its archive is now
+ *  built by release-cli-rs.yml, but download-on-demand is NOT wired until a
+ *  published release actually carries `alp-x86_64-apple-darwin.tar.gz` AND
+ *  `SUPPORTED_CLI_VERSION` points at that release — otherwise the download would
+ *  404. Until then Intel mac uses `alpSdk.cliPath` or a bundled VSIX. */
 const TARGETS: Readonly<Record<string, string>> = {
   "linux/x64": "x86_64-unknown-linux-gnu",
   "linux/arm64": "aarch64-unknown-linux-musl", // static — runs on glibc hosts too
@@ -39,8 +43,9 @@ const EXIT_KINDS: Readonly<Record<number, CliExitKind>> = {
 };
 
 /**
- * Resolution order (locked, see EXTENSION_CLI_INTEGRATION.md §5):
- * explicit `alpSdk.cliPath` → `alp` on PATH → cached download → download.
+ * Resolution order (see EXTENSION_CLI_INTEGRATION.md §5): explicit
+ * `alpSdk.cliPath` → `alp` on PATH → bundled `bin/alp[.exe]` (platform-specific
+ * VSIX) → cached download → download.
  */
 export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   if (input.cliPathSetting && input.cliPathExists) {
@@ -48,6 +53,9 @@ export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   }
   if (input.onPath) {
     return "path";
+  }
+  if (input.bundledExists) {
+    return "bundled";
   }
   if (input.cachedExists) {
     return "cached";

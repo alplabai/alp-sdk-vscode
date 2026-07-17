@@ -32,6 +32,14 @@ dist/**
 scripts/**
 cli-rs/**
 
+# NOTE: `bin/**` (root-level) is intentionally NOT excluded. The universal job
+# in release-vsix.yml stages nothing there, so it ships nothing extra; the
+# darwin-arm64 job stages the prebuilt `alp` binary at `bin/alp` before
+# `vsce package --target darwin-arm64` so it ships in that targeted VSIX (the
+# extension's `bundled` resolver source, src/alpCli, reads it from
+# `<extensionPath>/bin/`). Do not add a `bin/**` exclusion above, and don't
+# confuse this with `cli-rs/**` above (the excluded Rust *source* workspace).
+
 # README screenshots render from GitHub on the Marketplace (vsce rewrites the
 # relative links) — keep them out of the VSIX so it stays lean. media/icon.png
 # (the extension icon) is not under screenshots/, so it stays packaged.

@@ -13,6 +13,8 @@ function baseDeps(overrides = {}) {
     arch: "x64",
     cacheDir: "/cache/cli",
     cachedBinaryPath: "/cache/cli/alp",
+    bundledBinaryPath: "/ext/bin/alp",
+    bundledExists: false,
     fileExists: (p) => existing.has(p),
     commandOnPath: () => false,
     ensureDir: () => {
@@ -50,6 +52,28 @@ test("resolveAlpBinary: PATH when cliPath unset", async () => {
   assert.deepEqual(r, { command: "alp", source: "path" });
 });
 
+test("resolveAlpBinary: bundled binary when not on PATH (platform-specific VSIX)", async () => {
+  const { deps, calls } = baseDeps({
+    bundledExists: true,
+    existing: ["/cache/cli/alp"], // cached also exists — bundled must still win
+  });
+  const r = await resolveAlpBinary(deps);
+  assert.deepEqual(r, { command: "/ext/bin/alp", source: "bundled" });
+  assert.equal(calls.download, 0);
+  assert.equal(calls.chmod, 1); // non-windows → chmod +x the bundled binary
+});
+
+test("resolveAlpBinary: windows bundled binary skips chmod", async () => {
+  const { deps, calls } = baseDeps({
+    platform: "win32",
+    bundledBinaryPath: "/ext/bin/alp.exe",
+    bundledExists: true,
+  });
+  const r = await resolveAlpBinary(deps);
+  assert.deepEqual(r, { command: "/ext/bin/alp.exe", source: "bundled" });
+  assert.equal(calls.chmod, 0);
+});
+
 test("resolveAlpBinary: cached binary when not on PATH", async () => {
   const { deps, calls } = baseDeps({ existing: ["/cache/cli/alp"] });
   const r = await resolveAlpBinary(deps);
@@ -69,7 +93,8 @@ test("resolveAlpBinary: downloads when nothing else resolves", async () => {
 });
 
 test("resolveAlpBinary: throws on unsupported host (no prebuilt asset)", async () => {
-  const { deps } = baseDeps({ platform: "darwin", arch: "x64" });
+  // linux/arm (32-bit) is not in TARGETS, so it has no download asset.
+  const { deps } = baseDeps({ platform: "linux", arch: "arm" });
   await assert.rejects(() => resolveAlpBinary(deps), /No prebuilt alp CLI/);
 });
 

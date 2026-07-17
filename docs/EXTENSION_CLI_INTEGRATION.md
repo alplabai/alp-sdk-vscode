@@ -1,6 +1,8 @@
 # Extension ↔ CLI Integration Plan
 
-Last revised: 2026-06-02. Status: **decisions locked (§8); not yet implemented.**
+Last revised: 2026-07-17. Status: **decisions locked (§8) except binary
+resolution (§5, revised — hybrid bundled + universal VSIX); not yet fully
+implemented.**
 
 How the VS Code extension should consume the native `alp` CLI so that command
 behavior has a single source of truth — instead of being reimplemented per
@@ -105,15 +107,38 @@ result is reproducible from `board.yaml` + the SDK + PATH (validate, generate,
 sdk, …) are delegated. If a future need arises, the extension could pass its
 observed extension state to the CLI via flags — out of scope for now.
 
-## 5. Binary resolution (locked)
+## 5. Binary resolution (hybrid: bundled + universal)
 
-**Decision (locked): `alpSdk.cliPath` setting → PATH → download-on-demand.**
-`resolveAlpBinary()` resolves in that order: an explicit `alpSdk.cliPath`
-(also serves dev builds: `cli-rs/target/release/alp`), then `alp` on PATH, then
-a download into `globalStorage` (the `cli-rs/npm-shim/postinstall.js` logic) for
-the host target; if all fail, surface a one-click "install the ALP CLI" action.
-This keeps a single universal VSIX (no per-platform bundling) and reuses the
-shim's download path. Per-platform-bundled VSIXes are explicitly **not** pursued.
+**Decision: `alpSdk.cliPath` setting → PATH → bundled `bin/alp[.exe]` → cached
+download → download-on-demand.** `resolveAlpBinary()` resolves in that order:
+an explicit `alpSdk.cliPath` (also serves dev builds:
+`cli-rs/target/release/alp`); then `alp` on PATH; then a binary staged at
+`<extensionPath>/bin/alp[.exe]` — present only in a platform-specific VSIX
+built with `vsce package --target <triple>`; then a previously downloaded
+binary cached in `globalStorage`; then a fresh download (the
+`cli-rs/npm-shim/postinstall.js` logic) for the host target. If all of those
+fail, surface a one-click "install the ALP CLI" action.
+
+Two VSIX shapes ship side by side:
+
+- **Platform-specific VSIXes** (`--target darwin-arm64`, and eventually the
+  other four `release-cli-rs.yml` targets) embed `bin/alp[.exe]` for that host.
+  First run needs no network call, no GitHub reachability, no proxy config —
+  the `bundled` resolver source picks the binary up directly.
+- **The universal (binary-less) VSIX** keeps download-on-demand as the
+  fallback. It is also the sideload / air-gapped artifact: a single package
+  that works with any host once `alpSdk.cliPath` is pointed at a local build,
+  and the one to hand-install where the managed download can't run anyway.
+
+**Reversal rationale:** the original "single universal VSIX, no per-platform
+bundling" call (§8, item 1) assumed a first-run download-on-demand was
+acceptable UX. It isn't offline or behind a proxy that blocks GitHub
+releases — the extension activates, but every CLI-backed command fails until
+a human fixes network access, with no local fallback to point at. Bundling the
+binary for platforms already built in CI (`release-cli-rs.yml`) removes that
+first-run dependency for the common case, while the universal VSIX remains for
+sideload and air-gapped environments where a smaller download matters more
+than a zero-network first run.
 
 ## 6. Incremental rollout
 
@@ -271,8 +296,10 @@ extension and terminal a single `alp build` entry point.
 
 No open items — this plan is frozen; revisit only if an assumption breaks.
 
-1. **Binary distribution** → `alpSdk.cliPath` → PATH → download-on-demand into
-   `globalStorage` (§5). Single universal VSIX; no per-platform bundling.
+1. **Binary distribution** → `alpSdk.cliPath` → PATH → bundled `bin/alp[.exe]`
+   → cached → download-on-demand into `globalStorage` (§5; superseded 2026-07 —
+   platform-specific VSIXes now bundle the CLI; the universal VSIX stays
+   binary-less for sideload/air-gapped installs and keeps download-on-demand).
 2. **`alp build` scope** → the full set `build`/`image`/`flash`/`clean`/`renode`,
    mirroring the SDK's `west alp-*` commands 1:1 (the extension already exposes
    all five). Done together to avoid a half-migrated extension.

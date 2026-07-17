@@ -19,6 +19,18 @@
 # ODD minor (0.3.x, 0.5.x) publishes as `--pre-release` (beta channel); an EVEN
 # minor (0.4.x, 1.0.x) publishes as a stable release. No flag to flip — just the
 # version number.
+#
+# A second, additive job (`package_darwin_arm64`) packages + publishes a
+# darwin-arm64-targeted VSIX with the `alp` CLI bundled at `bin/alp` (the
+# extension's `bundled` resolver source, src/alpCli — see
+# docs/EXTENSION_CLI_INTEGRATION.md §5, picks it up with no first-run
+# download). It downloads the prebuilt aarch64-apple-darwin archive from the
+# `cli-rs-v<SUPPORTED_CLI_VERSION>` release (src/alpCli/service.ts is the
+# source of truth for the version), reuses the same VSCE_PAT secret and
+# SHOULD_PUBLISH gate as the universal job, and always publishes
+# `--pre-release` (it's the first bundled-CLI VSIX, regardless of the
+# odd/even-minor convention above). The universal (binary-less) job stays
+# unchanged and independent.
 
 name: release-vsix
 
@@ -107,3 +119,78 @@ jobs:
       - name: Note when publish was skipped
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT == '' }}
         run: echo "::warning::VSCE_PAT not set — built the .vsix but skipped Marketplace publish. Add the VSCE_PAT repo secret to enable it."
+
+  package_darwin_arm64:
+    name: package + publish vsix (darwin-arm64, bundled CLI)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      # Publish on a pushed tag, or a manual run with publish=true (same gate
+      # as the universal job).
+      SHOULD_PUBLISH: ${{ github.event_name == 'push' || inputs.publish == true }}
+
+    steps:
+      - name: Checkout (with submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile (extension + CLI bundle + webview)
+        run: pnpm run compile
+
+      - name: Unit / integration tests
+        run: node --test "test/*.test.js"
+
+      - name: Resolve pinned CLI version (mirrors SUPPORTED_CLI_VERSION in src/alpCli/service.ts)
+        id: cli_version
+        run: |
+          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not resolve SUPPORTED_CLI_VERSION from src/alpCli/service.ts"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "::notice::Bundling alp CLI cli-rs-v$VERSION (aarch64-apple-darwin)"
+
+      - name: Download + stage the aarch64-apple-darwin alp binary
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.cli_version.outputs.version }}"
+          URL="https://github.com/alplabai/alp-sdk-vscode/releases/download/cli-rs-v${VERSION}/alp-aarch64-apple-darwin.tar.gz"
+          curl -fsSL "$URL" -o alp-aarch64-apple-darwin.tar.gz
+          mkdir -p bin
+          tar -xzf alp-aarch64-apple-darwin.tar.gz -C bin
+          chmod +x bin/alp
+
+      - name: Package (.vsix, darwin-arm64, bundled CLI)
+        run: pnpm exec vsce package --no-dependencies --target darwin-arm64 --pre-release --out alp-sdk-darwin-arm64.vsix
+
+      - name: Upload vsix artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alp-sdk-vsix-darwin-arm64
+          path: alp-sdk-darwin-arm64.vsix
+          retention-days: 30
+
+      - name: Publish to VS Code Marketplace
+        if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
+        run: pnpm exec vsce publish --no-dependencies --target darwin-arm64 --pre-release --packagePath alp-sdk-darwin-arm64.vsix
+        # VSCE_PAT is read from the environment by vsce.
+
+      - name: Note when publish was skipped
+        if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT == '' }}
+        run: echo "::warning::VSCE_PAT not set — built the darwin-arm64 .vsix but skipped Marketplace publish. Add the VSCE_PAT repo secret to enable it."

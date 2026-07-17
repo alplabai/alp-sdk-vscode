@@ -35,6 +35,11 @@ export interface ResolveDeps {
   cacheDir: string;
   /** Absolute path the cached binary would live at (cacheDir + binaryName). */
   cachedBinaryPath: string;
+  /** Absolute path a `bin/alp[.exe]` staged in the extension install would
+   *  live at — only present in a platform-specific VSIX. */
+  bundledBinaryPath: string;
+  /** Whether `bundledBinaryPath` exists on disk. */
+  bundledExists: boolean;
   fileExists: (path: string) => boolean;
   commandOnPath: (command: string) => boolean;
   ensureDir: (dir: string) => void;
@@ -62,6 +67,7 @@ export async function resolveAlpBinary(
     cliPathExists:
       Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
     onPath: deps.commandOnPath("alp"),
+    bundledExists: deps.bundledExists,
     cachedExists: deps.fileExists(deps.cachedBinaryPath),
   };
 
@@ -71,6 +77,11 @@ export async function resolveAlpBinary(
       return { command: deps.cliPathSetting, source };
     case "path":
       return { command: "alp", source };
+    case "bundled":
+      if (deps.platform !== "win32") {
+        deps.chmodExec(deps.bundledBinaryPath);
+      }
+      return { command: deps.bundledBinaryPath, source };
     case "cached":
       return { command: deps.cachedBinaryPath, source };
     case "download":
