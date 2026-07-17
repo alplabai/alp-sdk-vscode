@@ -22,7 +22,7 @@ test("createWestFlashPlan preserves cwd and uses an empty env without sdkRoot", 
 
   assert.deepEqual(plan, {
     terminalName: "alp · west flash",
-    command: "west flash",
+    args: ["west", "flash"],
     westCwd: "/workspace/app",
     env: {},
   });
@@ -32,7 +32,7 @@ test("createWestNativeRunPlan uses west build -t run", () => {
   const plan = createWestNativeRunPlan(createWestContext());
 
   assert.equal(plan.terminalName, "alp · west run");
-  assert.equal(plan.command, "west build -t run");
+  assert.deepEqual(plan.args, ["west", "build", "-t", "run"]);
   assert.deepEqual(plan.env, {
     EXTRA_ZEPHYR_MODULES: "/workspace/sdk",
   });

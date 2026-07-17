@@ -29,7 +29,7 @@ import {
   parseAlpVersion,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log } from "../util";
+import { log, runInTerminal } from "../util";
 
 /** Bare binary name (not the full resolved path) for readable log lines. */
 function binaryLabel(command: string): string {
@@ -357,25 +357,11 @@ export async function runAlpInTerminal(
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (terminal: ${options.name})`,
   );
-  const terminal = vscode.window.createTerminal({
+  runInTerminal({
     name: options.name,
+    argv: [binary.command, ...finalArgs],
     cwd: options.cwd,
   });
-  terminal.show(true);
-  terminal.sendText(formatCommandLine(binary.command, finalArgs));
-}
-
-function formatCommandLine(command: string, args: string[]): string {
-  return [command, ...args].map(quoteToken).join(" ");
-}
-
-/** Minimal cross-shell quoting: wrap tokens with whitespace (e.g. a global-
- *  storage path containing "Application Support") in double quotes. */
-function quoteToken(token: string): string {
-  if (token.length === 0) {
-    return '""';
-  }
-  return /\s/.test(token) ? `"${token}"` : token;
 }
 
 async function surfaceResolutionError(error: unknown): Promise<void> {

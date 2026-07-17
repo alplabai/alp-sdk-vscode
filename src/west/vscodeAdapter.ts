@@ -2,8 +2,8 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
+import { runInTerminal } from "../util";
 import {
   WestCommandPlan,
   WestWorkspaceContext,
@@ -47,29 +47,17 @@ function findWorkspaceVenvWest(
   }
 }
 
-/** Quote a path for the shell only when it contains whitespace. */
-function quoteIfNeeded(p: string): string {
-  return /\s/.test(p) ? `"${p}"` : p;
-}
-
 export function executeWestPlan(plan: WestCommandPlan): void {
-  const existing = vscode.window.terminals.find(
-    (terminal) => terminal.name === plan.terminalName,
-  );
-  const terminal =
-    existing ??
-    vscode.window.createTerminal({
-      name: plan.terminalName,
-      cwd: plan.westCwd ?? undefined,
-      env: plan.env,
-    });
-  terminal.show(true);
-
   // Prefer the workspace venv's west over PATH (hermetic; see findWorkspaceVenvWest).
   const venvWest = findWorkspaceVenvWest(plan.westCwd);
-  const command =
-    venvWest && /^\s*west\b/.test(plan.command)
-      ? plan.command.replace(/^(\s*)west\b/, `$1${quoteIfNeeded(venvWest)}`)
-      : plan.command;
-  terminal.sendText(command);
+  const argv =
+    venvWest && plan.args[0] === "west"
+      ? [venvWest, ...plan.args.slice(1)]
+      : plan.args;
+  runInTerminal({
+    name: plan.terminalName,
+    argv,
+    cwd: plan.westCwd ?? undefined,
+    env: plan.env,
+  });
 }

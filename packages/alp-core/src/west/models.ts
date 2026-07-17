@@ -6,7 +6,7 @@ export type WestWorkspaceContext = ProjectContext;
 
 export interface WestCommandPlan {
   terminalName: string;
-  command: string;
+  args: string[];
   westCwd: string | null;
   env: Record<string, string>;
 }
