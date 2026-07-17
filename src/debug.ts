@@ -171,11 +171,12 @@ async function configureDebugProfile(): Promise<void> {
     return;
   }
 
+  const slice = resolveManifestSlice(context.workspaceRoot, targetKind);
   const preview = createLaunchPreview(
     new Date().toISOString(),
     targetKind,
     server,
-    resolveManifestSlice(context.workspaceRoot, targetKind),
+    slice,
   );
 
   let writePlan;
@@ -196,9 +197,29 @@ async function configureDebugProfile(): Promise<void> {
 
   const doc = await vscode.workspace.openTextDocument(launchPath);
   await vscode.window.showTextDocument(doc, { preview: false });
-  await vscode.window.showInformationMessage(
-    `Alp: ${writePlan.replaced ? "updated" : "wrote"} ${vscode.workspace.asRelativePath(launchPath)}.`,
+  const report = buildDebugPreflightReport(
+    new Date().toISOString(),
+    context,
+    createDebugProfile(targetKind, server, slice),
+    collectRuntimeCapabilities(),
+    { pathExists: fileExists },
   );
+  const relPath = vscode.workspace.asRelativePath(launchPath);
+  const verb = writePlan.replaced ? "updated" : "wrote";
+  if (report.canLaunch) {
+    await vscode.window.showInformationMessage(`Alp: ${verb} ${relPath}.`);
+    return;
+  }
+
+  for (const note of preview.notes) log(note);
+  const unresolved = report.checks
+    .filter((check) => check.status === "fail")
+    .map((check) => check.name)
+    .join(", ");
+  await vscode.window.showWarningMessage(
+    `Alp: ${verb} ${relPath}, but it is not launchable yet — resolve: ${unresolved}. ${report.nextSteps.join(" ")}`,
+  );
+  showOutput();
 }
 
 async function exportSupportBundle(): Promise<void> {
