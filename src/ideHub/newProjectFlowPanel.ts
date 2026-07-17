@@ -16,6 +16,7 @@ import {
 import { E1M_MODULES } from "./projectScaffold";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
+import { log, showOutput } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
 const PANEL_TITLE = "Alp IDE — New Project";
@@ -183,6 +184,18 @@ export class NewProjectFlowPanel {
   private async fetchTemplates(sdkPath?: string): Promise<ProjectTemplate[]> {
     const root = sdkPath ? ["--sdk-root", sdkPath] : [];
     const overview = await runAlpCommand(this.context, [...root, "explain"]);
+    if (overview.outcome.envelope === null) {
+      // `runAlpCommand` never throws: an unresolvable/failed CLI returns a
+      // null-envelope error outcome. Without surfacing it the template step
+      // renders blank with no trace (issue #129) — mirror the loader's null
+      // check and point the user at the setting / output channel. A resolved
+      // SDK with no templates returns a non-null envelope, so it falls through
+      // to the webview's empty-state instead.
+      log(`[new-project] ${overview.outcome.message}`);
+      void this.surfaceTemplateError(overview.outcome.message);
+      this.templates = [];
+      return this.templates;
+    }
     const ids =
       (
         overview.outcome.envelope?.data as
@@ -243,6 +256,25 @@ export class NewProjectFlowPanel {
 
     this.templates = templates;
     return templates;
+  }
+
+  /** Surface a CLI-unavailable failure from `fetchTemplates` (mirrors the
+   *  alpCli adapter's `surfaceResolutionError`, plus a "Show Output" action)
+   *  instead of leaving the template step silently blank. */
+  private async surfaceTemplateError(message: string): Promise<void> {
+    const choice = await vscode.window.showErrorMessage(
+      message,
+      "Open Settings",
+      "Show Output",
+    );
+    if (choice === "Open Settings") {
+      await vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "alpSdk.cliPath",
+      );
+    } else if (choice === "Show Output") {
+      showOutput();
+    }
   }
 
   private async handleMessage(msg: WebviewToExtMessage): Promise<void> {
