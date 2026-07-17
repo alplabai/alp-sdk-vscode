@@ -44,7 +44,6 @@ cores:
   m55_hp:
     app: ./src
     iot: { wifi: true, mqtt: true, tls: true }
-    libraries: [mbedtls]
     memory: { stack_kib: 8, heap_kib: 64, isr_stack_kib: 4 }
     power:
       sleep_mode: standby
@@ -54,6 +53,7 @@ cores:
 chips:
   - optiga_trust_m
   - eeprom_24c128
+libraries: [mbedtls]
 boot:
   method: mcuboot
   signing: { algorithm: ecdsa_p256, key_file: keys/prod_ecdsa_p256.pub.pem }

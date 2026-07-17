@@ -125,6 +125,22 @@ test("VM for a V2M board lights DeepX and offers the deepx chip", () => {
   assert.ok(vm.chips.some((c) => c.chipId === "deepx_dxm1"));
 });
 
+// #165: libraries are declared ONCE at the top level (ADR 0018); a CorePanel's
+// `libraries` must be the top-level array resolved for that core id, honoring
+// `cores:` scoping -- not a (removed) `cores.<id>.libraries` field.
+test("CorePanel.libraries resolves the top-level libraries[] scoped to each core", () => {
+  const board = parseBoardConfig(EDGEAI);
+  board.libraries = [
+    "etl", // project-wide: every core
+    { name: "mbedtls", cores: ["m55_hp"] }, // scoped: only m55_hp
+  ];
+  const vm = buildConfiguratorViewModel(board, catalogue());
+  const m55hp = vm.cores.find((c) => c.id === "m55_hp");
+  const a32 = vm.cores.find((c) => c.id === "a32_cluster");
+  assert.deepEqual(m55hp.libraries, ["etl", "mbedtls"]);
+  assert.deepEqual(a32.libraries, ["etl"]);
+});
+
 test("VM with an empty catalogue reports disconnected and null hardware", () => {
   const empty = {
     soms: [],

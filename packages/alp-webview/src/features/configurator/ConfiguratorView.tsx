@@ -5,6 +5,7 @@ import type {
   ChipChoice,
   ConfiguratorViewModel,
   CorePanel,
+  LibraryEntry,
   ModelEntry,
   Ota,
 } from "../../types";
@@ -491,6 +492,84 @@ const PERIPHERAL_CHOICES = [
   "watchdog",
 ];
 
+/** Names of the top-level `libraries[]` entries effective for `coreId`.
+ * Mirrors `librariesForCore` in `@alp-sdk/core/board/models` (separate
+ * webview build, kept in sync manually — see types.ts header comment). */
+function librariesForCore(
+  libraries: LibraryEntry[] | undefined,
+  coreId: string,
+): string[] {
+  return (libraries ?? [])
+    .filter(
+      (entry) =>
+        typeof entry === "string" ||
+        entry.cores === undefined ||
+        entry.cores.includes(coreId),
+    )
+    .map((entry) => (typeof entry === "string" ? entry : entry.name));
+}
+
+/** Apply a per-core library-name pick (this core's Libraries TagSelector) onto
+ * the top-level `libraries[]` array. Mirrors `applyCoreLibrarySelection` in
+ * `@alp-sdk/core/board/models` (same manual-sync caveat as above).
+ *
+ * Removing a *project-wide* entry (bare string / no `cores`) from a single
+ * core's picker can't be expressed as "exclude just this core" — the schema
+ * has no such primitive — so it is narrowed to the other ids in `allCoreIds`
+ * (dropped entirely if that leaves none). `allCoreIds` is the SoM topology's
+ * full core list (`vm.cores`, including topology-inherited cores with no
+ * board.yaml override); narrowing still silently drops the library for any
+ * core NOT in that list. */
+function applyCoreLibrarySelection(
+  libraries: LibraryEntry[] | undefined,
+  coreId: string,
+  nextNames: string[],
+  allCoreIds: string[],
+): LibraryEntry[] {
+  const next = libraries ? [...libraries] : [];
+  const currentNames = librariesForCore(next, coreId);
+  const nextSet = new Set(nextNames);
+  const indexOf = (name: string) =>
+    next.findIndex((e) =>
+      typeof e === "string" ? e === name : e.name === name,
+    );
+
+  for (const name of currentNames) {
+    if (nextSet.has(name)) continue;
+    const idx = indexOf(name);
+    if (idx === -1) continue;
+    const entry = next[idx];
+    if (typeof entry === "string" || entry.cores === undefined) {
+      const others = allCoreIds.filter((id) => id !== coreId);
+      if (others.length === 0) next.splice(idx, 1);
+      else next[idx] = { name, cores: others };
+    } else {
+      const cores = entry.cores.filter((id) => id !== coreId);
+      if (cores.length === 0) next.splice(idx, 1);
+      else next[idx] = { ...entry, cores };
+    }
+  }
+
+  for (const name of nextNames) {
+    if (currentNames.includes(name)) continue;
+    const idx = indexOf(name);
+    if (idx === -1) {
+      next.push({ name, cores: [coreId] });
+    } else {
+      const entry = next[idx];
+      if (
+        typeof entry !== "string" &&
+        entry.cores !== undefined &&
+        !entry.cores.includes(coreId)
+      ) {
+        next[idx] = { ...entry, cores: [...entry.cores, coreId] };
+      }
+    }
+  }
+
+  return next;
+}
+
 function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   const { mutate, vm } = cfg;
   const ensure = (d: BoardConfig) => {
@@ -651,9 +730,16 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
               placeholder="Add library…"
               onChange={(next) =>
                 mutate((d) => {
-                  const c = ensure(d);
-                  if (next.length) c.libraries = next;
-                  else delete c.libraries;
+                  ensure(d);
+                  const allCoreIds = (vm?.cores ?? []).map((c) => c.id);
+                  const libraries = applyCoreLibrarySelection(
+                    d.libraries,
+                    core.id,
+                    next,
+                    allCoreIds,
+                  );
+                  if (libraries.length) d.libraries = libraries;
+                  else delete d.libraries;
                 })
               }
             />

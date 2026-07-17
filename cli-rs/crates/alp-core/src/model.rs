@@ -13,8 +13,11 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BoardModel {
     /// Schema revision. Absent in YAML is treated as v1 (matches TS, where
-    /// `model.schema_version >= 2` is false for `undefined`).
-    #[serde(default)]
+    /// `model.schema_version >= 2` is false for `undefined`). The board.yaml
+    /// key is camelCase `schemaVersion` (alp-sdk scripts/alp_migrate/__init__.py
+    /// reads `doc.get("schemaVersion")`); without this rename a real
+    /// board.yaml's version was silently dropped and negotiation stuck at v1.
+    #[serde(default, rename = "schemaVersion")]
     pub schema_version: Option<u32>,
 
     /// System-on-module selection.
@@ -229,4 +232,31 @@ pub fn normalize_board_model(mut model: BoardModel) -> BoardModel {
     }
 
     model
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schema_version_reads_camel_case_yaml_key() {
+        // Real board.yaml writes `schemaVersion` (camelCase); without the
+        // `#[serde(rename = "schemaVersion")]` on `schema_version` this key
+        // is silently ignored (unknown fields are dropped) and
+        // `effective_schema_version()` gets stuck at 1 forever.
+        let yaml = "schemaVersion: 2\nsom:\n  sku: E1M-AEN801\n";
+        let model: BoardModel =
+            serde_yaml::from_str(yaml).expect("board.yaml with schemaVersion parses");
+        assert_eq!(model.schema_version, Some(2));
+        assert_eq!(model.effective_schema_version(), 2);
+    }
+
+    #[test]
+    fn schema_version_absent_defaults_to_v1() {
+        let yaml = "som:\n  sku: E1M-AEN801\n";
+        let model: BoardModel =
+            serde_yaml::from_str(yaml).expect("board.yaml without schemaVersion parses");
+        assert_eq!(model.schema_version, None);
+        assert_eq!(model.effective_schema_version(), 1);
+    }
 }

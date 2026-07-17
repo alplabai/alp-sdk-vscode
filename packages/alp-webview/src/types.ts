@@ -129,10 +129,15 @@ export interface CoreEntry {
   app?: string;
   image?: string;
   peripherals?: string[];
-  libraries?: string[];
   inference?: CoreInference;
   iot?: CoreIot;
 }
+
+/** A top-level `libraries[]` entry (ADR 0018, board.schema.json `libraries`).
+ * A bare name is shorthand for a project-wide `{name}`; the object form scopes
+ * the pick to `cores` (omitted = project-wide). There is no per-core
+ * `cores.<id>.libraries` field. */
+export type LibraryEntry = string | { name: string; cores?: string[] };
 
 export interface StoragePartition {
   name: string;
@@ -218,6 +223,7 @@ export interface BoardConfig {
   cores: Record<string, CoreEntry>;
   populated?: Record<string, boolean>;
   chips?: string[];
+  libraries?: LibraryEntry[];
   ipc?: IpcEntry[];
   models?: ModelEntry[];
   diagnostics?: Diagnostics;

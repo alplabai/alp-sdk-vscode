@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { BoardConfig } from "../board/models";
+import { BoardConfig, librariesForCore } from "../board/models";
 import { validateBoardConfig, ValidationResult } from "../board/validate";
 import {
   acceleratorAvailability,
@@ -124,7 +124,7 @@ export function buildConfiguratorViewModel(
       app: core?.app,
       image: core?.image,
       peripherals: core?.peripherals ?? [],
-      libraries: core?.libraries ?? [],
+      libraries: librariesForCore(board.libraries, id),
       iot: {
         wifi: Boolean(iot.wifi),
         mqtt: Boolean(iot.mqtt),

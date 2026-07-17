@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { BoardConfig } from "./models";
+import { BoardConfig, librariesForCore } from "./models";
 
 export interface ValidationResult {
   errors: string[];
@@ -38,7 +38,7 @@ export function validateBoardConfig(cfg: BoardConfig): ValidationResult {
 
   for (const [coreId, core] of Object.entries(cfg.cores ?? {})) {
     if (core.iot?.tls) {
-      const libraries = core.libraries ?? [];
+      const libraries = librariesForCore(cfg.libraries, coreId);
       const hasTlsLib = TLS_LIBRARIES.some((lib) => libraries.includes(lib));
       if (!hasTlsLib) {
         errors.push(

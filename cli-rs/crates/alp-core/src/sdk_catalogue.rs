@@ -87,6 +87,13 @@ pub struct I2cDevice {
 pub struct TopologyCore {
     /// Core id (the topology map key), e.g. `m55_hp`.
     pub id: String,
+    /// Schema-authoritative runtime for this core (som-preset-v1.schema.json
+    /// enum: `yocto` | `zephyr` | `baremetal` | `off`). Absent on legacy
+    /// presets that only declare `board:`/`machine:`; callers should prefer
+    /// this field when present and fall back to the board/machine heuristic
+    /// otherwise.
+    #[serde(default)]
+    pub os: Option<String>,
     /// Optional application source path for this core.
     #[serde(default)]
     pub app: Option<String>,
@@ -485,6 +492,7 @@ pub fn parse_som_preset(text: &str) -> Result<SomPreset, serde_yaml::Error> {
                     let node_map = node.as_mapping();
                     Some(TopologyCore {
                         id,
+                        os: node_map.and_then(|m| str_clean(yget(m, "os"))),
                         app: node_map.and_then(|m| str_clean(yget(m, "app"))),
                         image: node_map.and_then(|m| str_clean(yget(m, "image"))),
                         machine: node_map.and_then(|m| str_clean(yget(m, "machine"))),

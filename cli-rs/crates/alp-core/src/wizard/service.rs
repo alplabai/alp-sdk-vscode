@@ -619,9 +619,11 @@ pub fn infer_runtime_for_core_id(id: &str) -> &'static str {
 }
 
 /// Emit a board.yaml conforming to the SDK board schema (v0.6+): `som` + `cores`
-/// are the only required top-level keys; population/OS is per-core. Template
-/// extras (libraries, connectivity, inference tuning) live under the app core's
-/// `core_entry`; project-wide diagnostics is a sanctioned top-level key.
+/// are the only required top-level keys; population/OS is per-core. Per ADR-0018
+/// libraries are declared ONCE at the top level (`cores.<id>.libraries` was
+/// removed from the schema); template extras that remain per-core (connectivity,
+/// inference tuning) live under the app core's `core_entry`; project-wide
+/// diagnostics is a sanctioned top-level key.
 fn gen_board_yaml(
     def: &WizardTemplateDefinition,
     som_sku: Option<&str>,
@@ -640,13 +642,6 @@ fn gen_board_yaml(
     s.push_str(&format!("  {core}:\n"));
     s.push_str("    os: zephyr\n");
     s.push_str("    app: ./src\n");
-
-    if !def.libs.is_empty() {
-        s.push_str("    libraries:\n");
-        for lib in def.libs {
-            s.push_str(&format!("      - {lib}\n"));
-        }
-    }
 
     if let Some(f) = &def.features {
         s.push_str("    iot:\n");
@@ -677,6 +672,18 @@ fn gen_board_yaml(
         s.push_str(&format!("    os: {os}\n"));
         if os == "yocto" {
             s.push_str("    image: alp-image-edge\n");
+        }
+    }
+
+    // ADR-0018: the single top-level `libraries:` block. Every template lib is
+    // generated code the template wires into the app core's own src/features
+    // (e.g. mbedtls for the IoT starter's connectivity_pipeline.c), so each
+    // entry is scoped to just that core rather than emitted project-wide.
+    if !def.libs.is_empty() {
+        s.push_str("\nlibraries:\n");
+        for lib in def.libs {
+            s.push_str(&format!("  - name: {lib}\n"));
+            s.push_str(&format!("    cores: [{core}]\n"));
         }
     }
 
@@ -1236,6 +1243,7 @@ mod tests {
             "ota",
             "chips",
             "features",
+            "libraries",
         ];
 
         // One per SoM family: the app core must match the family's topology.
@@ -1268,14 +1276,7 @@ mod tests {
             // Required keys present; pre-v0.6 keys gone.
             assert!(map.contains_key("som"), "missing som:\n{yaml}");
             assert!(map.contains_key("cores"), "missing cores:\n{yaml}");
-            for forbidden in [
-                "schema_version",
-                "carrier",
-                "os",
-                "libraries",
-                "iot",
-                "inference",
-            ] {
+            for forbidden in ["schema_version", "carrier", "os", "iot", "inference"] {
                 assert!(
                     !map.contains_key(forbidden),
                     "forbidden top-level `{forbidden}`:\n{yaml}"
@@ -1299,6 +1300,68 @@ mod tests {
                 cores.contains_key(want_core),
                 "expected app core `{want_core}`:\n{yaml}"
             );
+        }
+    }
+
+    #[test]
+    fn board_yaml_libraries_are_top_level_not_per_core() {
+        // ADR-0018: libraries are declared ONCE at the top level. The schema
+        // removed `cores.<id>.libraries` (`core_entry` is
+        // `additionalProperties: false` and no longer lists it) -- emitting it
+        // there now FAILS `alp validate`. Cover every template that carries
+        // `libs` in its registry entry.
+        let cases = [
+            (WizardTemplateId::SensorStarter, None, "fmt"),
+            (WizardTemplateId::IotStarter, None, "mbedtls"),
+            (
+                WizardTemplateId::EdgeAiStarter,
+                Some("E1M-V2N101".to_string()),
+                "cmsis_dsp",
+            ),
+            (
+                WizardTemplateId::BoardDiagnostics,
+                Some("E1M-NX9101".to_string()),
+                "doctest",
+            ),
+        ];
+
+        for (template_id, som_sku, want_lib) in cases {
+            let plan = create_wizard_plan(&WizardPlanInput {
+                template_id,
+                project_name: String::new(),
+                destination: ".".to_string(),
+                som_sku,
+            });
+            let yaml = board_yaml_of(&plan);
+            let doc: serde_yaml::Value =
+                serde_yaml::from_str(yaml).expect("generated board.yaml parses as YAML");
+            let map = doc.as_mapping().expect("board.yaml is a mapping");
+
+            let libraries = map
+                .get("libraries")
+                .and_then(|v| v.as_sequence())
+                .unwrap_or_else(|| panic!("missing top-level `libraries:` for {template_id:?}:\n{yaml}"));
+            assert!(
+                libraries.iter().any(|entry| entry
+                    .as_mapping()
+                    .and_then(|m| m.get("name"))
+                    .and_then(|n| n.as_str())
+                    == Some(want_lib)),
+                "expected `{want_lib}` in top-level libraries for {template_id:?}:\n{yaml}"
+            );
+
+            let cores = map
+                .get("cores")
+                .and_then(|c| c.as_mapping())
+                .expect("cores is a mapping");
+            for (core_id, entry) in cores {
+                if let Some(core_map) = entry.as_mapping() {
+                    assert!(
+                        !core_map.contains_key("libraries"),
+                        "forbidden per-core `libraries:` under `{core_id:?}` for {template_id:?}:\n{yaml}"
+                    );
+                }
+            }
         }
     }
 

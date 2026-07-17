@@ -197,17 +197,23 @@ fn read_soms(sdk_root: &str) -> Vec<SomEntry> {
                 .topology
                 .iter()
                 .map(|t| {
-                    // OS is resolved from the topology: a `board:` is a Zephyr
-                    // (Cortex-M) target, a `machine:` is a Yocto (Cortex-A) one;
-                    // fall back to the shared silicon-class heuristic.
-                    let os = match (t.board.is_some(), t.machine.is_some()) {
-                        (true, _) => "zephyr",
-                        (_, true) => "yocto",
-                        _ => alp_core::wizard::infer_runtime_for_core_id(&t.id),
-                    };
+                    // Prefer the schema-authoritative `topology.<core>.os`
+                    // (som-preset-v1.schema.json enum) when the preset sets
+                    // it. Legacy presets that only declare `board:`/
+                    // `machine:` fall back to the board/machine heuristic: a
+                    // `board:` is a Zephyr (Cortex-M) target, a `machine:` is
+                    // a Yocto (Cortex-A) one; otherwise the shared
+                    // silicon-class heuristic decides.
+                    let os = t.os.clone().unwrap_or_else(|| {
+                        match (t.board.is_some(), t.machine.is_some()) {
+                            (true, _) => "zephyr".to_string(),
+                            (_, true) => "yocto".to_string(),
+                            _ => alp_core::wizard::infer_runtime_for_core_id(&t.id).to_string(),
+                        }
+                    });
                     SomCoreEntry {
                         id: t.id.clone(),
-                        os: os.to_string(),
+                        os,
                     }
                 })
                 .collect();
