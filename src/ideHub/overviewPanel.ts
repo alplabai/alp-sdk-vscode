@@ -8,7 +8,7 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml } from "./webviewHtml";
+import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.overview";
 const PANEL_TITLE = "Alp IDE Overview";
@@ -112,7 +112,7 @@ export class OverviewPanel {
         void this.refresh();
         break;
       case "runCommand":
-        void vscode.commands.executeCommand(msg.command);
+        runWebviewCommand(msg.command);
         if (msg.command === "alp.installDependencies") {
           const now = new Date().toISOString();
           void this.context.globalState.update("alp.lastBootstrapAt", now);
