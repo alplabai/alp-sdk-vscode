@@ -40,7 +40,7 @@ async function pickAppPath(value: string): Promise<string | undefined> {
 // ── CLI-backed orchestrator workflow (alp build/image/flash/clean/renode) ─────
 
 async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/gpio-button-led");
+  const app = await pickAppPath("examples/peripheral-io/gpio-button-led");
   if (!app) return;
   await runAlpInTerminal(context, ["build", app], {
     name: "Alp Build",
@@ -49,7 +49,7 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
 }
 
 async function alpImage(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/rpmsg-v2n");
+  const app = await pickAppPath("examples/multicore/rpmsg-v2n");
   if (!app) return;
   await runAlpInTerminal(context, ["image", app], {
     name: "Alp Image",
@@ -58,7 +58,7 @@ async function alpImage(context: vscode.ExtensionContext): Promise<void> {
 }
 
 async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/rpmsg-v2n");
+  const app = await pickAppPath("examples/multicore/rpmsg-v2n");
   if (!app) return;
   await runAlpInTerminal(context, ["flash", app], {
     name: "Alp Flash",
@@ -67,7 +67,7 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
 }
 
 async function alpClean(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/rpmsg-v2n");
+  const app = await pickAppPath("examples/multicore/rpmsg-v2n");
   if (!app) return;
   await runAlpInTerminal(context, ["clean", app], {
     name: "Alp Clean",
@@ -76,7 +76,7 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
 }
 
 async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/rpmsg-v2n");
+  const app = await pickAppPath("examples/multicore/rpmsg-v2n");
   if (!app) return;
   await runAlpInTerminal(context, ["renode", app], {
     name: "Alp Renode",
