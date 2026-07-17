@@ -40,6 +40,13 @@ export function runToolchainFix(fixId: ToolchainFixId): void {
     void showInstallGuide(result.guide);
     return;
   }
+  if (result.kind === "bootstrap") {
+    // `alp bootstrap` installs west + Zephyr's Python deps into a venv (PEP-668
+    // safe). If the CLI can't be resolved, runAlpInTerminal surfaces a clear
+    // error + Open Settings action rather than silently failing.
+    void vscode.commands.executeCommand("alp.installDependencies");
+    return;
+  }
   const term = vscode.window.createTerminal({ name: "Alp toolchain fix" });
   term.show(true);
   term.sendText(`# ${result.step.description}`);
