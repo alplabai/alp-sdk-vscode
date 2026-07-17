@@ -121,7 +121,7 @@ baremetal dispatch). Trailing args after the command are forwarded verbatim — 
 | --- | --- |
 | `alp doctor` | Diagnose debug readiness for a `--target-kind`/`--server` pair. `--build` runs the build-readiness preflight instead (host toolchains per backend; includes the Yocto `bmaptool`/`dd` flash check). |
 | `alp sdk list` | List available + installed SDK releases. |
-| `alp sdk install <version>` | Install an SDK release into the cache (`--destination`, default `~/.alp/sdk-cache`). |
+| `alp sdk install <version>` | Install an SDK release into `~/.alp/sdk/<version>` (`--destination` to override). |
 | `alp sdk current` | Show the active SDK install and its readiness. |
 | `alp sdk switch <version\|path>` | Switch the active SDK to an installed version or path. |
 

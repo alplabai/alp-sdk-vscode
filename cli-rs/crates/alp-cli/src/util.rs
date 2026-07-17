@@ -193,6 +193,42 @@ pub fn resolve_cli_project_context(g: &GlobalArgs) -> ProjectContext {
     )
 }
 
+// ── ~/.alp home + SDK install roots (issue #121 stage 1) ──────────────────────
+
+/// Resolve the user's home directory: `HOME` on Unix, `USERPROFILE` on Windows.
+///
+/// Errors instead of silently falling back to `"."`: a `"."` fallback lands
+/// `~/.alp/...` writes in the current project directory — for a global-pointer
+/// write that means overwriting the project's own `.alp/sdk-path` pin (issue #121
+/// footgun #4). Callers surface the error as a command failure.
+pub fn alp_home() -> Result<PathBuf, String> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    home_from_env(std::env::var_os(var), var)
+}
+
+/// Pure core of [`alp_home`]: maps a raw env value to a home path, rejecting a
+/// missing or empty value. Split out so the erroring behavior is testable without
+/// mutating the process environment (which races under the parallel test runner).
+fn home_from_env(raw: Option<std::ffi::OsString>, var: &str) -> Result<PathBuf, String> {
+    raw.map(PathBuf::from)
+        .filter(|home| !home.as_os_str().is_empty())
+        .ok_or_else(|| format!("cannot resolve the home directory ({var} is unset)"))
+}
+
+/// The unified SDK install root, `~/.alp/sdk`. `alp sdk install <version>` writes
+/// each release here and `alp sdk switch <version>` resolves versions here — this
+/// converges with the VS Code extension's install location (issue #121 stage 1).
+pub fn alp_sdk_root() -> Result<PathBuf, String> {
+    Ok(alp_home()?.join(".alp").join("sdk"))
+}
+
+/// The legacy pre-unification install root, `~/.alp/sdk-cache`. Kept as a
+/// READ-ONLY probe so SDKs installed by the previous CLI stay resolvable; nothing
+/// writes here any more.
+pub fn alp_sdk_legacy_root() -> Result<PathBuf, String> {
+    Ok(alp_home()?.join(".alp").join("sdk-cache"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +297,39 @@ mod tests {
     fn no_arg_and_no_pointer_yields_empty() {
         let got = effective_sdk_path_with(None, "/work", &|_| true, &|_| false, &|_| None);
         assert_eq!(got, "");
+    }
+
+    #[test]
+    fn home_from_env_rejects_missing_or_empty() {
+        // #121 footgun #4: an unresolvable home must NOT fall back to "." (which
+        // would land ~/.alp writes in the current project dir).
+        assert!(home_from_env(None, "HOME").is_err());
+        assert!(home_from_env(Some(std::ffi::OsString::new()), "HOME").is_err());
+    }
+
+    #[test]
+    fn home_from_env_accepts_a_set_value() {
+        assert_eq!(
+            home_from_env(Some(std::ffi::OsString::from("/home/x")), "HOME").unwrap(),
+            PathBuf::from("/home/x")
+        );
+    }
+
+    #[test]
+    fn sdk_root_and_legacy_root_are_distinct_under_dot_alp() {
+        // The unified install root and the legacy read-probe must never collide.
+        let home = PathBuf::from("/home/x");
+        assert_eq!(
+            home.join(".alp").join("sdk"),
+            PathBuf::from("/home/x/.alp/sdk")
+        );
+        assert_eq!(
+            home.join(".alp").join("sdk-cache"),
+            PathBuf::from("/home/x/.alp/sdk-cache")
+        );
+        assert_ne!(
+            PathBuf::from("/home/x/.alp/sdk"),
+            PathBuf::from("/home/x/.alp/sdk-cache")
+        );
     }
 }
