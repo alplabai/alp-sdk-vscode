@@ -171,17 +171,27 @@ export const GDB_INSTALL_GUIDE: InstallGuide = {
 export type FixResult =
   | { kind: "command"; step: BootstrapStep }
   | { kind: "pointer"; pointer: BootstrapPointer }
-  | { kind: "guide"; guide: InstallGuide };
+  | { kind: "guide"; guide: InstallGuide }
+  // Delegate to `alp bootstrap` (installs west + Zephyr's Python deps into a
+  // venv). Used for python-deps/west on non-win32 hosts, where a global
+  // `pip install --user` aborts under PEP 668 (externally-managed-environment).
+  | { kind: "bootstrap" };
 
 export function fixCommand(
   fixId: ToolchainFixId,
   host: BootstrapHost,
 ): FixResult {
   switch (fixId) {
+    // A global `pip install --user` aborts on PEP 668 hosts (Ubuntu 23.04+/
+    // Debian 12+), so route these to `alp bootstrap` (venv install) off win32.
     case "python-deps":
-      return { kind: "command", step: pythonDepsStep(host) };
+      return host === "win32"
+        ? { kind: "command", step: pythonDepsStep(host) }
+        : { kind: "bootstrap" };
     case "west":
-      return { kind: "command", step: westStep(host) };
+      return host === "win32"
+        ? { kind: "command", step: westStep(host) }
+        : { kind: "bootstrap" };
     case "build-tools":
       return { kind: "pointer", pointer: ZEPHYR_GETTING_STARTED };
     case "zephyr-sdk":
