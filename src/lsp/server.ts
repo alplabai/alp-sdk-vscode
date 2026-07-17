@@ -390,7 +390,23 @@ async function validateDocument(
   );
 
   if (!context.sdkRoot) {
-    connection.sendDiagnostics({ uri, diagnostics: [] });
+    const v2Issues = detectV2StructuralIssues(documentText);
+    connection.sendDiagnostics({
+      uri,
+      diagnostics: [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 },
+          },
+          message:
+            "Alp SDK not resolved — full board.yaml validation is disabled. Set alpSdk.path.",
+          severity: DiagnosticSeverity.Warning,
+          source: "alp-sdk",
+        },
+        ...createDiagnostics(documentText, v2Issues),
+      ],
+    });
     return;
   }
 
