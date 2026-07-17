@@ -2,7 +2,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { resolveAlpBinary, runAlp } = require("../out/alpCli/adapterCore.js");
+const {
+  resolveAlpBinary,
+  runAlp,
+  runAlpAsync,
+} = require("../out/alpCli/adapterCore.js");
 
 function baseDeps(overrides = {}) {
   const existing = new Set(overrides.existing ?? []);
@@ -201,6 +205,79 @@ test("runAlp: falls back to the envelope's exitCode when status is null", () => 
     stderr: "",
   });
   const { outcome } = runAlp("alp", ["generate"], spawn);
+  assert.equal(outcome.exitCode, 3);
+  assert.equal(outcome.kind, "write");
+});
+
+// ── runAlpAsync (mirrors the runAlp cases above, with a Promise-returning
+// spawn stub — the async path used for network-bound commands like `sdk
+// install` that must not block the extension host). ─────────────────────────
+
+function spawnReturningAsync(result) {
+  const seen = {};
+  const spawn = async (command, args, cwd) => {
+    seen.command = command;
+    seen.args = args;
+    seen.cwd = cwd;
+    return result;
+  };
+  return { spawn, seen };
+}
+
+test("runAlpAsync: appends --format json and classifies success", async () => {
+  const { spawn, seen } = spawnReturningAsync({
+    status: 0,
+    stdout: envelope(),
+    stderr: "",
+  });
+  const { outcome } = await runAlpAsync(
+    "alp",
+    ["sdk", "install"],
+    spawn,
+    "/cwd",
+  );
+  assert.deepEqual(seen.args, ["sdk", "install", "--format", "json"]);
+  assert.equal(seen.cwd, "/cwd");
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.kind, "success");
+});
+
+test("runAlpAsync: validation exit maps to a warning with the first issue", async () => {
+  const { spawn } = spawnReturningAsync({
+    status: 2,
+    stdout: envelope({
+      ok: false,
+      exitCode: 2,
+      issues: [{ code: "v", severity: "error", message: "schema error" }],
+    }),
+    stderr: "",
+  });
+  const { outcome } = await runAlpAsync("alp", ["validate"], spawn);
+  assert.equal(outcome.kind, "validation");
+  assert.equal(outcome.severity, "warning");
+  assert.equal(outcome.message, "schema error");
+});
+
+test("runAlpAsync: spawn error yields an unknown/error outcome (no throw)", async () => {
+  const { spawn } = spawnReturningAsync({
+    status: null,
+    stdout: "",
+    stderr: "",
+    error: new Error("spawn alp ENOENT"),
+  });
+  const { outcome } = await runAlpAsync("alp", ["doctor"], spawn);
+  assert.equal(outcome.kind, "unknown");
+  assert.equal(outcome.severity, "error");
+  assert.match(outcome.message, /Could not run the alp CLI/);
+});
+
+test("runAlpAsync: falls back to the envelope's exitCode when status is null", async () => {
+  const { spawn } = spawnReturningAsync({
+    status: null,
+    stdout: envelope({ ok: false, exitCode: 3 }),
+    stderr: "",
+  });
+  const { outcome } = await runAlpAsync("alp", ["generate"], spawn);
   assert.equal(outcome.exitCode, 3);
   assert.equal(outcome.kind, "write");
 });

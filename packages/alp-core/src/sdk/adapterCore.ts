@@ -30,21 +30,6 @@ export type SdkHttpFetch = (
 ) => Promise<unknown>;
 
 // ---------------------------------------------------------------------------
-// SDK install (git clone or tarball extract)
-// ---------------------------------------------------------------------------
-
-/**
- * Clone or extract a specific SDK version into `destPath`.
- *
- * Node concrete: `git clone --branch <version> --depth 1 <repo> <dest>`.
- * Test double:   resolve immediately, optionally create marker files.
- */
-export type SdkInstallAdapter = (
-  version: string,
-  destPath: string,
-) => Promise<void>;
-
-// ---------------------------------------------------------------------------
 // Filesystem (sync — matches existing project/service.ts style)
 // ---------------------------------------------------------------------------
 

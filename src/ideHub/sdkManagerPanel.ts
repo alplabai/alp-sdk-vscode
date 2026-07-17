@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
 import type { SdkRelease } from "@alp-sdk/core/sdk/models";
-import { installSdkRelease } from "@alp-sdk/core/sdk/service";
-import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { runAlpCommand, runAlpCommandAsync } from "../alpCli/vscodeAdapter";
 import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
 import { writeAlpSetting } from "../sdk/settingsWrite";
 import {
@@ -276,25 +273,6 @@ export class SdkManagerPanel {
       return;
     }
 
-    const gitInstallAdapter: SdkInstallAdapter = (ver, destPath) =>
-      new Promise<void>((resolve, reject) => {
-        const proc = cp.spawn("git", [
-          "clone",
-          "--branch",
-          ver,
-          "--depth",
-          "1",
-          "https://github.com/alplabai/alp-sdk.git",
-          destPath,
-        ]);
-        proc.on("exit", (code) =>
-          code === 0
-            ? resolve()
-            : reject(new Error(`git clone exited with code ${code}`)),
-        );
-        proc.on("error", reject);
-      });
-
     const sendProgress = (
       log: string,
       done: boolean,
@@ -311,6 +289,9 @@ export class SdkManagerPanel {
 
     sendProgress(`Installing SDK ${version}…`, false);
 
+    // Explicitly pin `--destination` to the cache root the extension reads
+    // (~/.alp/sdk) — the CLI's own default install root has differed across
+    // versions, and a mismatch would install correctly but never show up here.
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -318,28 +299,63 @@ export class SdkManagerPanel {
         cancellable: false,
       },
       async () => {
-        try {
-          await installSdkRelease(
-            version,
-            cacheRoot,
-            gitInstallAdapter,
-            (p) => fs.existsSync(p),
-            (p) => {
-              try {
-                return fs.readFileSync(p, "utf8");
-              } catch {
-                return "";
-              }
-            },
-          );
-          sendProgress(`SDK ${version} installed successfully.`, true, true);
-          await this.refresh();
-        } catch (err) {
-          sendProgress(`Install failed: ${String(err)}`, true, false);
+        // Uses the ASYNC envelope runner (cp.spawn), not runAlpCommand's
+        // spawnSync — a git-clone install is network-bound (tens of seconds to
+        // minutes) and spawnSync would freeze the extension host for the
+        // duration.
+        const { outcome } = await runAlpCommandAsync(this.context, [
+          "sdk",
+          "install",
+          version,
+          "--destination",
+          cacheRoot,
+        ]);
+        const envelope = outcome.envelope;
+
+        // Never branch on `outcome.ok` here: the CLI's success-path envelope
+        // always carries exitCode 0 even when the process exit reflects a
+        // post-clone readiness failure (see cli-rs sdk.rs `run_install` /
+        // `emit_success`) — `outcome.ok` alone would misreport a completed
+        // clone of an incomplete SDK as a failed install.
+        if (!envelope) {
+          sendProgress(`Install failed: ${outcome.message}`, true, false);
           void vscode.window.showErrorMessage(
-            `Alp: SDK install failed — ${String(err)}`,
+            `Alp: SDK install failed — ${outcome.message}`,
+          );
+          return;
+        }
+
+        if (!envelope.ok) {
+          const message = envelope.issues[0]?.message ?? outcome.message;
+          sendProgress(`Install failed: ${message}`, true, false);
+          void vscode.window.showErrorMessage(
+            `Alp: SDK install failed — ${message}`,
+          );
+          return;
+        }
+
+        const readiness = (envelope.data as { readiness?: { state?: string } })
+          .readiness?.state;
+
+        if (readiness === "missing") {
+          // The folder landed but the SDK looks incomplete — a warning, not a
+          // hard failure: the install itself succeeded.
+          sendProgress(
+            `SDK ${version} installed, but it looks incomplete.`,
+            true,
+            true,
+          );
+          void vscode.window.showWarningMessage(
+            `Alp: SDK ${version} installed, but it looks incomplete — check ` +
+              "the Local tab for details.",
+          );
+        } else {
+          sendProgress(`SDK ${version} installed successfully.`, true, true);
+          void vscode.window.showInformationMessage(
+            `Alp: SDK ${version} installed.`,
           );
         }
+        await this.refresh();
       },
     );
   }

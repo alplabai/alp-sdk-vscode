@@ -26,6 +26,15 @@ export type SpawnFn = (
   cwd?: string,
 ) => SpawnResult;
 
+/** Async counterpart of `SpawnFn` (e.g. `cp.spawn`-backed) for commands whose
+ *  process must not block the extension host's event loop (network-bound
+ *  installs, long builds). Never rejects — mirrors `SpawnResult` on error. */
+export type SpawnFnAsync = (
+  command: string,
+  args: string[],
+  cwd?: string,
+) => Promise<SpawnResult>;
+
 /** Seams the resolver needs; the adapter supplies real fs/net/process impls. */
 export interface ResolveDeps {
   cliPathSetting: string;
@@ -111,17 +120,14 @@ export async function downloadCli(deps: ResolveDeps): Promise<void> {
 }
 
 /**
- * Run an envelope-mode command: `alp <args...> --format json`. Parses the
- * envelope and classifies the outcome. A spawn failure (e.g. ENOENT) yields an
- * `unknown`/error outcome rather than throwing.
+ * Shared post-spawn logic for `runAlp`/`runAlpAsync`: a spawn failure (e.g.
+ * ENOENT) yields an `unknown`/error outcome rather than throwing; otherwise
+ * parse the envelope and classify the outcome.
  */
-export function runAlp(
-  command: string,
-  args: string[],
-  spawn: SpawnFn,
-  cwd?: string,
-): { outcome: CliOutcome; raw: SpawnResult } {
-  const raw = spawn(command, [...args, "--format", "json"], cwd);
+function outcomeFromSpawnResult(raw: SpawnResult): {
+  outcome: CliOutcome;
+  raw: SpawnResult;
+} {
   if (raw.error) {
     return {
       outcome: {
@@ -139,6 +145,36 @@ export function runAlp(
   // Prefer the process exit code; fall back to the envelope's own field.
   const exitCode = raw.status ?? envelope?.exitCode ?? 1;
   return { outcome: classifyOutcome(exitCode, envelope), raw };
+}
+
+/**
+ * Run an envelope-mode command: `alp <args...> --format json`. Parses the
+ * envelope and classifies the outcome. A spawn failure (e.g. ENOENT) yields an
+ * `unknown`/error outcome rather than throwing.
+ */
+export function runAlp(
+  command: string,
+  args: string[],
+  spawn: SpawnFn,
+  cwd?: string,
+): { outcome: CliOutcome; raw: SpawnResult } {
+  const raw = spawn(command, [...args, "--format", "json"], cwd);
+  return outcomeFromSpawnResult(raw);
+}
+
+/**
+ * Async counterpart of `runAlp`, for commands whose spawn must not block the
+ * event loop (e.g. a network-bound `sdk install`). Behaves identically
+ * otherwise — same `--format json` append, same envelope parse/classify.
+ */
+export async function runAlpAsync(
+  command: string,
+  args: string[],
+  spawn: SpawnFnAsync,
+  cwd?: string,
+): Promise<{ outcome: CliOutcome; raw: SpawnResult }> {
+  const raw = await spawn(command, [...args, "--format", "json"], cwd);
+  return outcomeFromSpawnResult(raw);
 }
 
 function joinPosix(dir: string, file: string): string {

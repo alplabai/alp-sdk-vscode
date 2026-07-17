@@ -7,7 +7,6 @@ import {
   Readdir,
   ReadFile,
   SdkHttpFetch,
-  SdkInstallAdapter,
   WriteFile,
 } from "./adapterCore";
 import {
@@ -88,38 +87,6 @@ function extractFirstParagraph(body: string): string {
   // Take text up to the first blank line.
   const blankLine = trimmed.indexOf("\n\n");
   return blankLine === -1 ? trimmed : trimmed.slice(0, blankLine).trim();
-}
-
-// ---------------------------------------------------------------------------
-// SDK installation
-// ---------------------------------------------------------------------------
-
-/**
- * Clone or extract a specific SDK version into `cacheRoot/<version>`.
- * Returns a readiness report so surfaces can display the result immediately.
- *
- * @param version     - tag name, e.g. "v1.5.0"
- * @param cacheRoot   - parent directory for the versioned SDK subdirectory
- * @param install     - injectable install adapter (git clone, tarball extract…)
- * @param pathExists  - injectable filesystem existence check
- * @param readFile    - injectable file reader (for VERSION and readiness checks)
- */
-export async function installSdkRelease(
-  version: string,
-  cacheRoot: string,
-  install: SdkInstallAdapter,
-  pathExists: PathExists,
-  readFile: ReadFile,
-): Promise<SdkReadinessReport> {
-  const destPath = path.join(cacheRoot, version);
-
-  if (pathExists(path.join(destPath, LOADER_SCRIPT_RELATIVE))) {
-    // Already installed — skip download, return current readiness.
-    return checkSdkReadiness(destPath, pathExists, readFile);
-  }
-
-  await install(version, destPath);
-  return checkSdkReadiness(destPath, pathExists, readFile);
 }
 
 // ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ import {
   downloadCli,
   resolveAlpBinary,
   runAlp,
+  runAlpAsync,
 } from "./adapterCore";
 import { CliOutcome } from "./models";
 import {
@@ -270,6 +271,68 @@ export async function runAlpCommand(
 }
 
 /**
+ * Async counterpart of `runAlpCommand`, for envelope commands whose process
+ * must not block the event loop (e.g. a network-bound `sdk install` — a
+ * `spawnSync` call would freeze the extension host for the whole clone).
+ * Mirrors `runAlpCommand` exactly otherwise: same binary resolution, same
+ * `--sdk-root` injection, same logging.
+ */
+export async function runAlpCommandAsync(
+  context: vscode.ExtensionContext,
+  args: string[],
+  cwd?: string,
+): Promise<{ outcome: CliOutcome; raw: SpawnResult }> {
+  let binary: ResolvedBinary;
+  try {
+    binary = await resolveAlpBinaryForContext(context);
+  } catch (error) {
+    // Never throw: a resolution failure becomes an error outcome so callers
+    // can present it uniformly (the message already points at alpSdk.cliPath).
+    const message = error instanceof Error ? error.message : String(error);
+    log(`[cli] ✗ CLI unavailable: ${message}`);
+    return {
+      outcome: {
+        exitCode: -1,
+        kind: "unknown",
+        ok: false,
+        severity: "error",
+        message: `Alp CLI unavailable: ${message}`,
+        envelope: null,
+      },
+      raw: {
+        status: null,
+        stdout: "",
+        stderr: "",
+        error: error instanceof Error ? error : new Error(message),
+      },
+    };
+  }
+  const finalArgs = withSdkRoot(args);
+  log(
+    `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")} --format json` +
+      (cwd ? `  (cwd: ${cwd})` : ""),
+  );
+  const result = await runAlpAsync(
+    binary.command,
+    finalArgs,
+    spawnAlpAsync,
+    cwd,
+  );
+  const { outcome, raw } = result;
+  if (outcome.ok) {
+    log(`[cli] → ok (exit ${outcome.exitCode})`);
+  } else {
+    log(
+      `[cli] → ${outcome.severity} (exit ${outcome.exitCode}): ${outcome.message}`,
+    );
+    if (raw.stderr && raw.stderr.trim()) {
+      log(`[cli]   stderr: ${clip(raw.stderr)}`);
+    }
+  }
+  return result;
+}
+
+/**
  * Run an `alp` command in a VS Code integrated terminal (terminal mode, per
  * EXTENSION_CLI_INTEGRATION.md §3): live output, interactive prompts, long
  * builds. Resolves the binary first; if it can't, surfaces a one-click action
@@ -343,6 +406,38 @@ function spawnAlp(command: string, args: string[], cwd?: string): SpawnResult {
     stderr: result.stderr ?? "",
     error: result.error,
   };
+}
+
+/**
+ * Async counterpart of `spawnAlp` (`cp.spawn`, not `spawnSync`) — for
+ * network-bound commands (e.g. `sdk install`) that must not block the
+ * extension host's event loop. Never rejects: a spawn failure resolves with
+ * `status: null` + `error`, mirroring `SpawnResult`.
+ */
+function spawnAlpAsync(
+  command: string,
+  args: string[],
+  cwd?: string,
+): Promise<SpawnResult> {
+  return new Promise((resolve) => {
+    const child = cp.spawn(command, args, { cwd });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("close", (code) => {
+      resolve({ status: code, stdout, stderr });
+    });
+    child.on("error", (error) => {
+      resolve({ status: null, stdout, stderr, error });
+    });
+  });
 }
 
 function commandOnPath(command: string): boolean {
