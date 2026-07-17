@@ -31,7 +31,8 @@ struct BootstrapData {
     /// Resolved alp-sdk root; empty on failure paths.
     #[serde(rename = "sdkRoot")]
     sdk_root: String,
-    /// Absolute path to `<sdkRoot>/scripts/bootstrap.sh`; empty on failure paths.
+    /// Absolute path to the host's `<sdkRoot>/scripts/bootstrap.{sh,ps1}`; empty
+    /// on failure paths.
     #[serde(rename = "scriptPath")]
     script_path: String,
     /// `--no-pip` flag forwarded to `bootstrap.sh` (skip Python requirements).
@@ -46,25 +47,13 @@ struct BootstrapData {
 }
 
 /// Runs `alp bootstrap`: resolves the SDK root, then invokes the SDK's own
-/// `scripts/bootstrap.sh` via `bash`. JSON mode captures the run into one
+/// native bootstrap script for this host — `scripts/bootstrap.sh` via `bash` on
+/// POSIX, `scripts/bootstrap.ps1` via `pwsh -File` on Windows (flags mapped to
+/// `-NoPip`/`-NoWest`/`-PrintEnv`). JSON mode captures the run into one
 /// envelope; text mode streams the install live with inherited stdio. Returns
-/// early on Windows, an unresolved SDK root, or a missing script.
+/// early on an unresolved SDK root or a missing script (on Windows, a missing
+/// `bootstrap.ps1` means the SDK predates native-Windows bootstrap).
 pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
-    // bootstrap.sh is POSIX-only; on native Windows point at WSL2 / the docs.
-    if cfg!(windows) {
-        return failure(
-            g,
-            ExitCode::RuntimeFailure,
-            "windows-unsupported",
-            "bootstrap.sh is POSIX-only. On Windows use WSL2 (Ubuntu) or follow the native steps in docs/cross-platform-setup.md §4.",
-            empty_data(args),
-            vec![
-                "bootstrap: not supported on native Windows.".to_string(),
-                "Use WSL2 (Ubuntu) or docs/cross-platform-setup.md §4.".to_string(),
-            ],
-        );
-    }
-
     let context = resolve_cli_project_context(g);
     let Some(sdk_root) = context.sdk_root.clone() else {
         return failure(
@@ -78,29 +67,49 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
         );
     };
 
-    let script = Path::new(&sdk_root).join("scripts").join("bootstrap.sh");
+    let windows = cfg!(windows);
+    let script_name = if windows {
+        "bootstrap.ps1"
+    } else {
+        "bootstrap.sh"
+    };
+    let script = Path::new(&sdk_root).join("scripts").join(script_name);
     let script_str = script.to_string_lossy().to_string();
     if !script.exists() {
+        if windows {
+            // The SDK is too old to ship the native-Windows twin — not a Windows
+            // refusal, a stale checkout.
+            return failure(
+                g,
+                ExitCode::RuntimeFailure,
+                "windows-unsupported",
+                &format!("scripts/bootstrap.ps1 not found at {script_str}; this alp-sdk predates native-Windows bootstrap. Update to an SDK that ships scripts/bootstrap.ps1, or use WSL2 (Ubuntu) — see docs/cross-platform-setup.md §4."),
+                empty_data(args),
+                vec![
+                    "bootstrap: this alp-sdk predates native-Windows bootstrap (no scripts/bootstrap.ps1)."
+                        .to_string(),
+                    "Update the SDK, or use WSL2 (Ubuntu) — docs/cross-platform-setup.md §4."
+                        .to_string(),
+                ],
+            );
+        }
         return failure(
             g,
             ExitCode::RuntimeFailure,
             "script-missing",
-            &format!("bootstrap.sh not found at {script_str}; is this a valid alp-sdk checkout?"),
+            &format!("{script_name} not found at {script_str}; is this a valid alp-sdk checkout?"),
             empty_data(args),
             vec![format!("bootstrap: {script_str} not found.")],
         );
     }
 
-    let mut sh_args: Vec<String> = vec![script_str.clone()];
-    if args.no_pip {
-        sh_args.push("--no-pip".to_string());
-    }
-    if args.no_west {
-        sh_args.push("--no-west".to_string());
-    }
-    if args.print_env {
-        sh_args.push("--print-env".to_string());
-    }
+    let (program, cmd_args) = bootstrap_command(
+        windows,
+        &script_str,
+        args.no_pip,
+        args.no_west,
+        args.print_env,
+    );
 
     let data = BootstrapData {
         schema_version: "1".to_string(),
@@ -117,8 +126,8 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
 
     if g.is_json() {
         // Capture the run; emit exactly one envelope on stdout.
-        let code = Command::new("bash")
-            .args(&sh_args)
+        let code = Command::new(&program)
+            .args(&cmd_args)
             .output()
             .ok()
             .and_then(|o| o.status.code());
@@ -129,7 +138,7 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
                 vec![Issue {
                     code: "bootstrap.failed".to_string(),
                     severity: "error".to_string(),
-                    message: "bootstrap.sh reported a failure; re-run without --format json to see the log."
+                    message: "the bootstrap script reported a failure; re-run without --format json to see the log."
                         .to_string(),
                 }],
             ),
@@ -142,7 +151,7 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
         }
     } else {
         // Text mode: stream the install live (inherited stdio).
-        let status = Command::new("bash").args(&sh_args).status();
+        let status = Command::new(&program).args(&cmd_args).status();
         let (exit, line) = match status {
             Ok(s) if s.success() => (ExitCode::Success, "bootstrap: complete.".to_string()),
             Ok(_) => (
@@ -151,7 +160,7 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
             ),
             Err(e) => (
                 ExitCode::RuntimeFailure,
-                format!("bootstrap: failed to launch bash: {e}"),
+                format!("bootstrap: failed to launch {program}: {e}"),
             ),
         };
         CommandRun {
@@ -159,6 +168,46 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
             text: vec![line],
             json: None,
         }
+    }
+}
+
+/// Selects the interpreter and argv for the SDK's bootstrap script. On Windows
+/// the SDK ships `scripts/bootstrap.ps1` (run via `pwsh -File`, flags mapped to
+/// `-NoPip`/`-NoWest`/`-PrintEnv`); elsewhere `scripts/bootstrap.sh` (run via
+/// `bash` with the POSIX `--no-pip`/`--no-west`/`--print-env` flags). `script`
+/// is the already-resolved absolute script path. `windows` is `cfg!(windows)`,
+/// passed explicitly so both mappings stay unit-testable on any host.
+fn bootstrap_command(
+    windows: bool,
+    script: &str,
+    no_pip: bool,
+    no_west: bool,
+    print_env: bool,
+) -> (String, Vec<String>) {
+    if windows {
+        let mut args = vec!["-File".to_string(), script.to_string()];
+        if no_pip {
+            args.push("-NoPip".to_string());
+        }
+        if no_west {
+            args.push("-NoWest".to_string());
+        }
+        if print_env {
+            args.push("-PrintEnv".to_string());
+        }
+        ("pwsh".to_string(), args)
+    } else {
+        let mut args = vec![script.to_string()];
+        if no_pip {
+            args.push("--no-pip".to_string());
+        }
+        if no_west {
+            args.push("--no-west".to_string());
+        }
+        if print_env {
+            args.push("--print-env".to_string());
+        }
+        ("bash".to_string(), args)
     }
 }
 
@@ -201,4 +250,29 @@ fn failure(
         .is_json()
         .then(|| Envelope::new("bootstrap", project, data, issues, exit.code()).to_json());
     CommandRun { exit, text, json }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_uses_pwsh_and_maps_flags_to_switches() {
+        let (program, args) = bootstrap_command(true, "s.ps1", true, false, true);
+        assert_eq!(program, "pwsh");
+        assert_eq!(args, ["-File", "s.ps1", "-NoPip", "-PrintEnv"]);
+    }
+
+    #[test]
+    fn posix_uses_bash_and_maps_flags_to_long_options() {
+        let (program, args) = bootstrap_command(false, "s.sh", false, true, false);
+        assert_eq!(program, "bash");
+        assert_eq!(args, ["s.sh", "--no-west"]);
+    }
+
+    #[test]
+    fn no_flags_forwards_only_the_script() {
+        let (_program, args) = bootstrap_command(false, "s.sh", false, false, false);
+        assert_eq!(args, ["s.sh"]);
+    }
 }

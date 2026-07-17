@@ -96,3 +96,20 @@ test("E1M-V2M SKUs resolve to the v2n pinmux family (same E1M edge)", () => {
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2M101"), "v2n");
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2M102"), "v2n");
 });
+
+test("loadPinmuxTable does not cache a null miss (retries once the SDK populates)", () => {
+  clearPinmuxTableCache();
+  const first = loadPinmuxTable("/sdk", "E1M-AEN701", () => {
+    throw new Error("ENOENT"); // SDK submodule not populated yet
+  });
+  assert.strictEqual(first, null);
+
+  // A later call must re-read rather than return a stuck null.
+  let reads = 0;
+  const second = loadPinmuxTable("/sdk", "E1M-AEN701", () => {
+    reads += 1;
+    return 'family: aen\npads:\n  - { e1m_pad: "B7", e1m_function: "I2C0", owner: "alif", silicon_peripheral: "I2C0", silicon_pad: "P1" }\n';
+  });
+  assert.strictEqual(reads, 1);
+  assert.ok(second && second.pads.length === 1);
+});
