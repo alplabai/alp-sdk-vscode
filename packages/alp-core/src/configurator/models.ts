@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { LibraryEntry } from "../board/models";
+
 export interface CoreEntry {
   os: "zephyr" | "yocto" | "baremetal" | "off";
   app?: string;
   image?: string;
   peripherals?: string[];
-  libraries?: string[];
   inference?: { backend?: string; default_arena_kib?: number };
   iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
 }
@@ -20,6 +21,10 @@ export interface IpcCarveOut {
 }
 
 export interface BoardModel {
+  /** board.yaml `schemaVersion` (camelCase in the contract, board.schema.json).
+   * `parseBoardModel` aliases the parsed `schemaVersion` onto this legacy
+   * snake_case field at the yaml.load boundary, so every reader here keeps
+   * querying `schema_version`. */
   schema_version: number;
   som: { sku: string };
   /** Retired: the configurator still edits `carrier`, but it is mapped onto the
@@ -37,7 +42,9 @@ export interface BoardModel {
   /** v2 only. Cross-core IPC shared-memory carve-outs. */
   ipc?: IpcCarveOut[];
   inference?: { backend?: string; default_arena_kib?: number };
-  libraries?: string[];
+  /** Top-level `libraries[]` (ADR 0018, board.schema.json). The single place
+   * libraries are declared -- there is no per-core `cores.<id>.libraries`. */
+  libraries?: LibraryEntry[];
   iot?: { wifi?: boolean; mqtt?: boolean; ble?: boolean; tls?: boolean };
   diagnostics?: { last_error?: boolean; log_level?: string };
   [key: string]: unknown;

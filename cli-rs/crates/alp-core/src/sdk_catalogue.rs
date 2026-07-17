@@ -835,6 +835,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_som_preset_reads_topology_core_os() {
+        let som = parse_som_preset(
+            "sku: E1M-V2N101\nfamily: v2n\nsilicon: rz-v2n\ntopology:\n  m33_sm: { os: baremetal }\n",
+        )
+        .unwrap();
+        assert_eq!(som.topology.len(), 1);
+        assert_eq!(som.topology[0].id, "m33_sm");
+        assert_eq!(som.topology[0].os, Some("baremetal".to_string()));
+    }
+
+    #[test]
     fn computes_effective_chip_overlays() {
         let c = fixture_catalogue();
         let board = &c.boards[0];

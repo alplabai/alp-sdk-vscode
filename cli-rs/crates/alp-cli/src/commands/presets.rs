@@ -8,7 +8,9 @@
 
 use std::path::Path;
 
-use alp_core::{empty_preset_catalogue, parse_board_model, parse_board_preset, parse_som_preset};
+use alp_core::{
+    TopologyCore, empty_preset_catalogue, parse_board_model, parse_board_preset, parse_som_preset,
+};
 
 use super::CommandRun;
 use crate::cli::GlobalArgs;
@@ -196,25 +198,9 @@ fn read_soms(sdk_root: &str) -> Vec<SomEntry> {
             let cores = som
                 .topology
                 .iter()
-                .map(|t| {
-                    // Prefer the schema-authoritative `topology.<core>.os`
-                    // (som-preset-v1.schema.json enum) when the preset sets
-                    // it. Legacy presets that only declare `board:`/
-                    // `machine:` fall back to the board/machine heuristic: a
-                    // `board:` is a Zephyr (Cortex-M) target, a `machine:` is
-                    // a Yocto (Cortex-A) one; otherwise the shared
-                    // silicon-class heuristic decides.
-                    let os = t.os.clone().unwrap_or_else(|| {
-                        match (t.board.is_some(), t.machine.is_some()) {
-                            (true, _) => "zephyr".to_string(),
-                            (_, true) => "yocto".to_string(),
-                            _ => alp_core::wizard::infer_runtime_for_core_id(&t.id).to_string(),
-                        }
-                    });
-                    SomCoreEntry {
-                        id: t.id.clone(),
-                        os,
-                    }
+                .map(|t| SomCoreEntry {
+                    id: t.id.clone(),
+                    os: resolve_core_os(t),
                 })
                 .collect();
             Some(SomEntry {
@@ -227,6 +213,22 @@ fn read_soms(sdk_root: &str) -> Vec<SomEntry> {
         .collect();
     soms.sort_by(|a, b| a.sku.cmp(&b.sku));
     soms
+}
+
+/// Resolve the effective runtime for a topology core. Prefers the
+/// schema-authoritative `topology.<core>.os` (som-preset-v1.schema.json enum)
+/// when the preset sets it. Legacy presets that only declare `board:`/
+/// `machine:` fall back to the board/machine heuristic: a `board:` is a
+/// Zephyr (Cortex-M) target, a `machine:` is a Yocto (Cortex-A) one;
+/// otherwise the shared silicon-class heuristic decides.
+fn resolve_core_os(t: &TopologyCore) -> String {
+    t.os.clone().unwrap_or_else(|| {
+        match (t.board.is_some(), t.machine.is_some()) {
+            (true, _) => "zephyr".to_string(),
+            (_, true) => "yocto".to_string(),
+            _ => alp_core::wizard::infer_runtime_for_core_id(&t.id).to_string(),
+        }
+    })
 }
 
 /// Discover board presets from the SDK. The current SDK layout (v0.11+) ships
@@ -379,5 +381,41 @@ mod tests {
         let (carriers, found) = read_carriers("/no/such/sdk/root");
         assert!(carriers.is_empty());
         assert!(!found);
+    }
+
+    fn topology_core(
+        os: Option<&str>,
+        board: Option<&str>,
+        machine: Option<&str>,
+    ) -> TopologyCore {
+        TopologyCore {
+            id: "m33".to_string(),
+            os: os.map(str::to_string),
+            app: None,
+            image: None,
+            machine: machine.map(str::to_string),
+            board: board.map(str::to_string),
+            toolchain: None,
+        }
+    }
+
+    #[test]
+    fn resolve_core_os_prefers_explicit_os_over_board_machine_heuristic() {
+        // A `board:` alone would heuristically infer "zephyr" (see the
+        // board/machine fallback below) -- an explicit `os:` must win.
+        let core = topology_core(Some("baremetal"), Some("some-board"), None);
+        assert_eq!(resolve_core_os(&core), "baremetal");
+    }
+
+    #[test]
+    fn resolve_core_os_falls_back_to_board_machine_heuristic() {
+        assert_eq!(
+            resolve_core_os(&topology_core(None, Some("some-board"), None)),
+            "zephyr"
+        );
+        assert_eq!(
+            resolve_core_os(&topology_core(None, None, Some("some-machine"))),
+            "yocto"
+        );
     }
 }

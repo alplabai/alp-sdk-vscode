@@ -30,8 +30,8 @@ cores:
     os: "off"
   m33_sm:
     app: ./src
-    libraries:
-      - cmsis_dsp
+libraries:
+  - { name: cmsis_dsp, cores: [m33_sm] }
 `;
 
 const PRODUCTION = `
