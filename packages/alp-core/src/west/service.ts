@@ -60,17 +60,6 @@ export function createWestUpdatePlan(
   ]);
 }
 
-export function createWestNativeRunPlan(
-  context: WestWorkspaceContext,
-): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west run", [
-    "west",
-    "build",
-    "-t",
-    "run",
-  ]);
-}
-
 export function createWestAlpImagePlan(
   context: WestWorkspaceContext,
   appPath: string,

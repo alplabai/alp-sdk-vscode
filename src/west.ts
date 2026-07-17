@@ -12,7 +12,6 @@
 
 import {
   createWestFlashPlan,
-  createWestNativeRunPlan,
   createWestUpdatePlan,
 } from "@alp-sdk/core/west/service";
 import * as vscode from "vscode";
@@ -98,7 +97,14 @@ async function westRunNativeSim(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   await ensureNativeSimOverlay(context);
-  executeWestPlan(createWestNativeRunPlan(collectWestWorkspaceContext()));
+  // Route through the CLI (`alp run`) so the SDK owns the board target and
+  // build dir — a bare `west build -t run` has no `-b`/`-d`, so it aborts on an
+  // unbuilt project or reuses a prior silicon `build/` dir, and never lands the
+  // binary where the native_sim debug config looks (issue #131).
+  await runAlpInTerminal(context, ["run"], {
+    name: "Alp Run (native_sim)",
+    cwd: westCwd(),
+  });
 }
 
 /** Generate `boards/native_sim_native_64.overlay` on demand before a native_sim
