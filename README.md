@@ -221,7 +221,7 @@ points at the vendored path. Its presence + structure (`$id`, `required`) are
 enforced by `test/board.schema.vendored.test.js` and the CI "vendored schema"
 check.
 
-> **Schema v2 (alp-sdk v0.6+):** `board.yaml` now uses `schema_version: 2`
+> **Schema v2 (requires alp-sdk v0.10.0+):** `board.yaml` now uses `schema_version: 2`
 > with a per-core `cores:` block replacing the top-level `os:` field.
 > Use the `alp-board-min` or `alp-board-hetero` snippet to get a
 > valid starting point.
