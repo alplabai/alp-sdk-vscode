@@ -13,7 +13,7 @@ export interface WestBuildInput {
 
 export interface WestCommandPlan {
   terminalName: string;
-  command: string;
+  args: string[];
   westCwd: string | null;
   env: Record<string, string>;
 }
