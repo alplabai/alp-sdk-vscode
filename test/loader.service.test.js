@@ -66,11 +66,12 @@ test("listGenerationTargetSupport exposes all supported targets with preview met
       "native-sim-overlay",
       "cmake-args",
       "yocto-conf",
+      "carrier-netlist",
     ],
   );
   assert.deepEqual(
     targets.map((target) => target.preview.languageId),
-    ["properties", "dts", "dts", "plaintext", "properties"],
+    ["properties", "dts", "dts", "plaintext", "properties", "json"],
   );
 });
 
