@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { execFileSync } from "child_process";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import {
   resolveVenvPython,
@@ -34,6 +37,43 @@ function probePythonDep(pythonBin: string, module: string): boolean {
   }
 }
 
+/**
+ * Locate a Zephyr SDK install without spawning anything. Mirrors the native
+ * CLI's `zephyr_sdk_detected()` (cli-rs/crates/alp-cli/src/commands/doctor.rs):
+ * honor ZEPHYR_SDK_INSTALL_DIR, else accept the CMake package registry the
+ * SDK's setup.sh registers (`~/.cmake/packages/Zephyr-sdk`) — which it does even
+ * when it never exports the env var (the Remote-SSH / non-login-shell case) —
+ * else a `zephyr-sdk-*` directory under the usual roots (home + `/opt`). Returns
+ * the detected path (surfaced as the check's detail), or undefined when none is
+ * found. `env`/`homeDir` are injectable so the detection can be unit-tested.
+ */
+export function detectZephyrSdkDir(
+  env: NodeJS.ProcessEnv = process.env,
+  homeDir: string = os.homedir(),
+): string | undefined {
+  if (env.ZEPHYR_SDK_INSTALL_DIR) {
+    return env.ZEPHYR_SDK_INSTALL_DIR;
+  }
+  const registry = path.join(homeDir, ".cmake", "packages", "Zephyr-sdk");
+  if (fs.existsSync(registry)) {
+    return registry;
+  }
+  // install there is correctly reported, not a false positive.
+  for (const root of [homeDir, "/opt"]) {
+    try {
+      const hit = fs
+        .readdirSync(root)
+        .find((name) => name.startsWith("zephyr-sdk"));
+      if (hit) {
+        return path.join(root, hit);
+      }
+    } catch {
+      // root absent / unreadable — keep scanning
+    }
+  }
+  return undefined;
+}
+
 export function collectToolchainInputs(): ToolchainInputs {
   const context = collectProjectContext();
   // west + Zephyr's Python deps live in the bootstrap venv, not globally — probe
@@ -56,7 +96,7 @@ export function collectToolchainInputs(): ToolchainInputs {
       jsonschema: probePythonDep(depPython, "jsonschema"),
     },
     env: {
-      zephyrSdkDir: process.env.ZEPHYR_SDK_INSTALL_DIR || undefined,
+      zephyrSdkDir: detectZephyrSdkDir(),
       zephyrBase: process.env.ZEPHYR_BASE || undefined,
     },
     sdkConnected: context.sdkRoot !== null,
