@@ -49,9 +49,9 @@ test("E1M_MODULES displayName starts with module id", () => {
   }
 });
 
-test("E1M_MODULES contains flagship E1M-AEN701", () => {
-  const flagship = E1M_MODULES.find((m) => m.id === "E1M-AEN701");
-  assert.ok(flagship, "E1M-AEN701 not found");
+test("E1M_MODULES contains flagship E1M-AEN801", () => {
+  const flagship = E1M_MODULES.find((m) => m.id === "E1M-AEN801");
+  assert.ok(flagship, "E1M-AEN801 not found");
   assert.equal(flagship.family, "alif-ensemble");
 });
 

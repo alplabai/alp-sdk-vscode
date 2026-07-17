@@ -27,9 +27,9 @@ test("catalogFromPresets tolerates a missing / degenerate payload", () => {
   assert.deepEqual(catalogFromPresets({}), EMPTY_SDK_CATALOG);
   // An old CLI without boardLibraries, and non-string / empty entries dropped.
   const catalog = catalogFromPresets({
-    soms: [{ sku: "E1M-AEN701" }, {}, { sku: "" }, { sku: 42 }],
+    soms: [{ sku: "E1M-AEN801" }, {}, { sku: "" }, { sku: 42 }],
   });
-  assert.deepEqual(catalog.skus, ["E1M-AEN701"]);
+  assert.deepEqual(catalog.skus, ["E1M-AEN801"]);
   assert.deepEqual(catalog.libraries, []);
 });
 
@@ -51,7 +51,7 @@ test("som.sku value completion falls back to the built-in list without a catalog
   const labels = createBoardYamlCompletionSuggestions(doc, 1, 7).map(
     (s) => s.label,
   );
-  assert.deepEqual(labels, ["E1M-AEN701"]);
+  assert.deepEqual(labels, ["E1M-AEN801"]);
 });
 
 test("libraries[] value completion uses the pushed SDK catalog when present", () => {
@@ -65,7 +65,7 @@ test("libraries[] value completion uses the pushed SDK catalog when present", ()
 });
 
 test("som.sku hover surfaces the pushed catalog's allowed values", () => {
-  const doc = ["som:", "  sku: E1M-AEN701"].join("\n");
+  const doc = ["som:", "  sku: E1M-AEN801"].join("\n");
   const catalog = { skus: ["E1M-AEN401", "E1M-V2N101"], libraries: [] };
   const hover = createBoardYamlHoverInfo(doc, 1, 5, catalog);
   assert.ok(hover, "hover info expected on som.sku");

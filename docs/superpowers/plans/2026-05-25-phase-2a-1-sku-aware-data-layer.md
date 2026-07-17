@@ -65,13 +65,13 @@ const { parseSomPreset } = require("../packages/alp-core/dist/sdkCatalogue/parse
 
 const AEN = `
 schema_version: 1
-sku: E1M-AEN701
+sku: E1M-AEN801
 family: alif-ensemble
-silicon: alif:ensemble:e7
+silicon: alif:ensemble:e8
 silicon_variant: AE722F80F55D5LS
-display_name: "E1M-AEN701 (Alif Ensemble E7)"
+display_name: "E1M-AEN801 (Alif Ensemble E8)"
 on_module:
-  silicon: alif:ensemble:e7
+  silicon: alif:ensemble:e8
   wifi_ble: cc3501e
   secure_element: optiga_trust_m
 inference:
@@ -123,9 +123,9 @@ status:
 
 test("parseSomPreset maps an AEN preset", () => {
   const s = parseSomPreset(AEN);
-  assert.equal(s.sku, "E1M-AEN701");
+  assert.equal(s.sku, "E1M-AEN801");
   assert.equal(s.family, "alif-ensemble");
-  assert.equal(s.silicon, "alif:ensemble:e7");
+  assert.equal(s.silicon, "alif:ensemble:e8");
   assert.equal(s.siliconVariant, "AE722F80F55D5LS");
   assert.equal(s.preferredBackend, "ethos_u");
   assert.equal(s.defaultBoard, "E1M-EVK");
@@ -478,7 +478,7 @@ const { parseSocSpec } = require("../packages/alp-core/dist/sdkCatalogue/parse.j
 
 const SOC = JSON.stringify({
   soc_spec_version: 1,
-  ref: "alif:ensemble:e7",
+  ref: "alif:ensemble:e8",
   vendor: "Alif Semiconductor",
   family: "Ensemble",
   part: "E7",
@@ -490,7 +490,7 @@ const SOC = JSON.stringify({
 
 test("parseSocSpec maps ref + cores", () => {
   const s = parseSocSpec(SOC);
-  assert.equal(s.ref, "alif:ensemble:e7");
+  assert.equal(s.ref, "alif:ensemble:e8");
   assert.equal(s.part, "E7");
   assert.deepEqual(s.cores, [
     { id: "a32_cluster", type: "cortex-a32", count: 2, freqMhz: 800 },
@@ -573,14 +573,14 @@ const {
 
 function som(partial) {
   return {
-    sku: "E1M-AEN701", displayName: "", family: "alif-ensemble", silicon: "",
+    sku: "E1M-AEN801", displayName: "", family: "alif-ensemble", silicon: "",
     capabilities: {}, topologyCoreIds: ["m55_hp", "m55_he"], onModule: [],
     preliminary: false, ...partial,
   };
 }
 
 const catalogue = {
-  soms: [som({ sku: "E1M-AEN701", family: "alif-ensemble" })],
+  soms: [som({ sku: "E1M-AEN801", family: "alif-ensemble" })],
   boards: [
     { name: "e1m-evk", displayName: "", hostsSomFamilies: ["alif-ensemble", "nxp-imx9"], populated: { lsm6dso: true } },
     { name: "e1m-x-evk", displayName: "", hostsSomFamilies: ["renesas-rzv2n"], populated: {} },
@@ -589,7 +589,7 @@ const catalogue = {
 };
 
 test("boardsForSom filters boards by the SoM family", () => {
-  const boards = boardsForSom(catalogue, "E1M-AEN701");
+  const boards = boardsForSom(catalogue, "E1M-AEN801");
   assert.deepEqual(boards.map((b) => b.name), ["e1m-evk"]);
 });
 
@@ -614,7 +614,7 @@ test("acceleratorAvailability lights deepx for a V2M SoM", () => {
 
 test("chipDefaults returns the board populated map; coreIdsForSom returns topology ids", () => {
   assert.deepEqual(chipDefaults(catalogue.boards[0]), { lsm6dso: true });
-  assert.deepEqual(coreIdsForSom(catalogue, "E1M-AEN701"), ["m55_hp", "m55_he"]);
+  assert.deepEqual(coreIdsForSom(catalogue, "E1M-AEN801"), ["m55_hp", "m55_he"]);
 });
 ```
 
@@ -709,15 +709,15 @@ function writeTree(root) {
   fs.mkdirSync(path.join(m, "library-profiles", "etl"), { recursive: true });
   fs.mkdirSync(path.join(m, "library-profiles", "fmt"), { recursive: true });
 
-  fs.writeFileSync(path.join(m, "e1m_modules", "E1M-AEN701.yaml"),
-    "sku: E1M-AEN701\nfamily: alif-ensemble\nsilicon: alif:ensemble:e7\ndisplay_name: AEN701\ninference:\n  preferred_backend: ethos_u\ntopology:\n  m55_hp: { app: x }\ndefault_board: E1M-EVK\nstatus: { preliminary: false }\n");
+  fs.writeFileSync(path.join(m, "e1m_modules", "E1M-AEN801.yaml"),
+    "sku: E1M-AEN801\nfamily: alif-ensemble\nsilicon: alif:ensemble:e8\ndisplay_name: AEN801\ninference:\n  preferred_backend: ethos_u\ntopology:\n  m55_hp: { app: x }\ndefault_board: E1M-EVK\nstatus: { preliminary: false }\n");
   fs.writeFileSync(path.join(m, "e1m_modules", "README.md"), "# not a sku\n");
   fs.writeFileSync(path.join(m, "boards", "e1m-evk.yaml"),
     "name: e1m-evk\ndisplay_name: EVK\nhosts_som_families: [alif-ensemble]\npopulated: { lsm6dso: true }\n");
   fs.writeFileSync(path.join(m, "chips", "lsm6dso.yaml"),
     "chip_id: lsm6dso\ndisplay_name: LSM6DSO\nvendor: st\nbus: i2c\nfamilies: [aen]\n");
   fs.writeFileSync(path.join(m, "socs", "alif", "ensemble", "e7.json"),
-    JSON.stringify({ ref: "alif:ensemble:e7", vendor: "Alif", family: "Ensemble", part: "E7", cores: [] }));
+    JSON.stringify({ ref: "alif:ensemble:e8", vendor: "Alif", family: "Ensemble", part: "E7", cores: [] }));
   fs.writeFileSync(path.join(m, "sdk_version.yaml"), 'version: "0.6.0"\nstatus: development\n');
 }
 
@@ -726,7 +726,7 @@ test("loadSdkCatalogue reads the real metadata layout", () => {
   try {
     writeTree(root);
     const cat = loadSdkCatalogue(root);
-    assert.deepEqual(cat.soms.map((s) => s.sku), ["E1M-AEN701"]); // README.md ignored
+    assert.deepEqual(cat.soms.map((s) => s.sku), ["E1M-AEN801"]); // README.md ignored
     assert.deepEqual(cat.boards.map((b) => b.name), ["e1m-evk"]);
     assert.deepEqual(cat.chips.map((c) => c.chipId), ["lsm6dso"]);
     assert.deepEqual(cat.libraries.map((l) => l.id).sort(), ["etl", "fmt"]);

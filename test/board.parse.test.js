@@ -13,7 +13,7 @@ const {
 
 test("parseBoardConfig maps the EDGEAI example", () => {
   const c = parseBoardConfig(EDGEAI);
-  assert.equal(c.som.sku, "E1M-AEN701");
+  assert.equal(c.som.sku, "E1M-AEN801");
   assert.equal(c.preset, "e1m-evk");
   assert.deepEqual(Object.keys(c.cores), ["a32_cluster", "m55_hp"]);
   assert.equal(c.cores.a32_cluster.os, "off");

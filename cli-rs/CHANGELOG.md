@@ -195,7 +195,7 @@ mixed Zephyr+Yocto projects report honestly on non-Linux dev hosts.
 
 - **`alp init --som <sku>`** — scaffold a project whose `board.yaml` targets a
   specific SoM. The SKU is written verbatim into `som.sku` (default
-  `E1M-AEN701` when omitted); it is not validated against the SDK catalogue
+  `E1M-AEN801` when omitted); it is not validated against the SDK catalogue
   here — `alp validate` owns that — so `init` stays SDK-free. Lets the VS Code
   New Project flow delegate scaffolding (template + hardware) entirely to the CLI.
 

@@ -4,7 +4,7 @@
 /// Default SoM SKU written into a scaffolded `board.yaml` when none is supplied
 /// (`alp init` without `--som`). Single source of truth for the literal, shared
 /// by the wizard (`wizard::service`) and the CLI's app-core guard.
-pub const DEFAULT_SOM_SKU: &str = "E1M-AEN701";
+pub const DEFAULT_SOM_SKU: &str = "E1M-AEN801";
 
 pub mod build_plan;
 pub mod build_readiness;

@@ -1,11 +1,11 @@
 schema_version: 1
 generated_by: scripts/alp_orchestrate.py
 hw_info:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
   som_hw_rev: r1
   board_name: E1M-EVK
   board_hw_rev: r1
-  silicon: alif:ensemble:e7
+  silicon: alif:ensemble:e8
 slices:
 - core_id: a32_cluster
   os: 'off'
@@ -41,5 +41,5 @@ helper_mcus:
   note: firmware_path TBD; populated when the upstream firmware release lands
 boot_order: []
 
-# boot_order is empty -- add a `boot_order:` list to metadata/e1m_modules/E1M-AEN701.yaml when the
+# boot_order is empty -- add a `boot_order:` list to metadata/e1m_modules/E1M-AEN801.yaml when the
 # bring-up order is finalised.

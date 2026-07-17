@@ -16,8 +16,8 @@ function writeTree(root) {
   fs.mkdirSync(path.join(m, "library-profiles", "fmt"), { recursive: true });
 
   fs.writeFileSync(
-    path.join(m, "e1m_modules", "E1M-AEN701.yaml"),
-    "sku: E1M-AEN701\nfamily: alif-ensemble\nsilicon: alif:ensemble:e7\ndisplay_name: AEN701\ninference:\n  preferred_backend: ethos_u\ntopology:\n  m55_hp: { app: x }\ndefault_board: E1M-EVK\nstatus: { preliminary: false }\n",
+    path.join(m, "e1m_modules", "E1M-AEN801.yaml"),
+    "sku: E1M-AEN801\nfamily: alif-ensemble\nsilicon: alif:ensemble:e8\ndisplay_name: AEN801\ninference:\n  preferred_backend: ethos_u\ntopology:\n  m55_hp: { app: x }\ndefault_board: E1M-EVK\nstatus: { preliminary: false }\n",
   );
   fs.writeFileSync(path.join(m, "e1m_modules", "README.md"), "# not a sku\n");
   fs.writeFileSync(
@@ -31,7 +31,7 @@ function writeTree(root) {
   fs.writeFileSync(
     path.join(m, "socs", "alif", "ensemble", "e7.json"),
     JSON.stringify({
-      ref: "alif:ensemble:e7",
+      ref: "alif:ensemble:e8",
       vendor: "Alif",
       family: "Ensemble",
       part: "E7",
@@ -51,7 +51,7 @@ test("loadSdkCatalogue reads the real metadata layout", () => {
     const cat = loadSdkCatalogue(root);
     assert.deepEqual(
       cat.soms.map((s) => s.sku),
-      ["E1M-AEN701"],
+      ["E1M-AEN801"],
     ); // README.md ignored
     assert.deepEqual(
       cat.boards.map((b) => b.name),
@@ -87,8 +87,8 @@ test("loadSdkCatalogue isolates a bad file: valid presets still load, logError f
     const e1m = path.join(root, "metadata", "e1m_modules");
     fs.mkdirSync(e1m, { recursive: true });
     fs.writeFileSync(
-      path.join(e1m, "E1M-AEN701.yaml"),
-      "sku: E1M-AEN701\nfamily: alif-ensemble\nsilicon: alif:ensemble:e7\ndisplay_name: AEN701\ntopology:\n  m55_hp: { app: x }\nstatus: { preliminary: false }\n",
+      path.join(e1m, "E1M-AEN801.yaml"),
+      "sku: E1M-AEN801\nfamily: alif-ensemble\nsilicon: alif:ensemble:e8\ndisplay_name: AEN801\ntopology:\n  m55_hp: { app: x }\nstatus: { preliminary: false }\n",
     );
     // Unclosed flow mapping -> js-yaml throws on load.
     fs.writeFileSync(path.join(e1m, "E1M-BAD.yaml"), "sku: { unterminated\n");
@@ -98,7 +98,7 @@ test("loadSdkCatalogue isolates a bad file: valid presets still load, logError f
 
     assert.deepEqual(
       cat.soms.map((s) => s.sku),
-      ["E1M-AEN701"],
+      ["E1M-AEN801"],
     ); // good one loaded
     assert.equal(errors.length, 1);
     assert.match(errors[0], /E1M-BAD\.yaml/);

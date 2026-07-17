@@ -49,7 +49,7 @@ const TABLE = {
 };
 
 function boardWith(routes, pins) {
-  return { som: { sku: "E1M-AEN701" }, cores: {}, e1m_routes: routes, pins };
+  return { som: { sku: "E1M-AEN801" }, cores: {}, e1m_routes: routes, pins };
 }
 
 test("normalizeE1mName handles primary, GPIO-secondary, X-connector and ADC forms", () => {
@@ -141,19 +141,19 @@ test("malformed names and empty config are ignored", () => {
   );
   assert.deepStrictEqual(checkE1mCompliance(cfg, TABLE), []);
   assert.deepStrictEqual(
-    checkE1mCompliance({ som: { sku: "E1M-AEN701" }, cores: {} }, TABLE),
+    checkE1mCompliance({ som: { sku: "E1M-AEN801" }, cores: {} }, TABLE),
     [],
   );
 });
 
 test("non-array pins never throws and yields no issues", () => {
-  const cfg = { som: { sku: "E1M-AEN701" }, cores: {}, pins: 42 };
+  const cfg = { som: { sku: "E1M-AEN801" }, cores: {}, pins: 42 };
   assert.doesNotThrow(() => checkE1mCompliance(cfg, TABLE));
   assert.deepStrictEqual(checkE1mCompliance(cfg, TABLE), []);
 });
 
 test("non-array route section never throws and yields no issues", () => {
-  const cfg = { som: { sku: "E1M-AEN701" }, cores: {}, e1m_routes: { pwm: 5 } };
+  const cfg = { som: { sku: "E1M-AEN801" }, cores: {}, e1m_routes: { pwm: 5 } };
   assert.doesNotThrow(() => checkE1mCompliance(cfg, TABLE));
   assert.deepStrictEqual(checkE1mCompliance(cfg, TABLE), []);
 });

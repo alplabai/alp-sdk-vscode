@@ -1224,7 +1224,7 @@ mod tests {
     const SAMPLE_PLAN: &str = r#"{
       "schemaVersion": 1,
       "boardYaml": "/p/board.yaml",
-      "sku": "E1M-AEN701",
+      "sku": "E1M-AEN801",
       "buildRoot": "build",
       "slices": [
         { "coreId": "m55_hp", "backend": "zephyr", "buildDir": "build/m55_hp-zephyr",

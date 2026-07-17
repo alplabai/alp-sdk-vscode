@@ -50,8 +50,8 @@ const {
 } = require("../packages/alp-core/dist/boardSummary/service.js");
 
 test("parseBoardSummary reads sku + preset from a v0.6 board.yaml", () => {
-  const s = parseBoardSummary("som:\n  sku: E1M-AEN701\npreset: e1m-evk\ncores:\n  m55_hp: { app: ./src }\n");
-  assert.deepEqual(s, { sku: "E1M-AEN701", preset: "e1m-evk" });
+  const s = parseBoardSummary("som:\n  sku: E1M-AEN801\npreset: e1m-evk\ncores:\n  m55_hp: { app: ./src }\n");
+  assert.deepEqual(s, { sku: "E1M-AEN801", preset: "e1m-evk" });
 });
 
 test("parseBoardSummary omits preset in inline mode", () => {
@@ -70,8 +70,8 @@ test("createStatusBarPresentation renders empty state", () => {
 });
 
 test("createStatusBarPresentation renders sku + preset", () => {
-  const p = createStatusBarPresentation({ sku: "E1M-AEN701", preset: "e1m-evk" });
-  assert.equal(p.text, "$(circuit-board) E1M-AEN701 · e1m-evk");
+  const p = createStatusBarPresentation({ sku: "E1M-AEN801", preset: "e1m-evk" });
+  assert.equal(p.text, "$(circuit-board) E1M-AEN801 · e1m-evk");
   assert.equal(p.command, "alp.openConfigurator");
 });
 
@@ -163,21 +163,21 @@ em-dash test with these (matching the new summary shape `{sku, preset}`):
 
 ```javascript
 test("buildProjectNodes maps sku + preset to the Project section", () => {
-  const [project] = buildProjectNodes({ sku: "E1M-AEN701", preset: "e1m-evk" });
+  const [project] = buildProjectNodes({ sku: "E1M-AEN801", preset: "e1m-evk" });
   assert.deepEqual(
     project.children.map((child) => [child.label, child.description]),
     [
-      ["SoM", "E1M-AEN701"],
+      ["SoM", "E1M-AEN801"],
       ["Preset", "e1m-evk"],
     ],
   );
 });
 
 test("buildProjectNodes renders an em dash for a missing preset", () => {
-  const [project] = buildProjectNodes({ sku: "E1M-AEN701" });
+  const [project] = buildProjectNodes({ sku: "E1M-AEN801" });
   assert.deepEqual(
     project.children.map((child) => child.description),
-    ["E1M-AEN701", "—"],
+    ["E1M-AEN801", "—"],
   );
 });
 ```
@@ -215,7 +215,7 @@ Replace `.scratch/board.yaml` with EXACTLY:
 
 ```yaml
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 preset: e1m-evk
 cores:
   a32_cluster:
@@ -352,10 +352,10 @@ test("save then load round-trips a v0.6 board", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alpio-"));
   try {
     const file = path.join(dir, "board.yaml");
-    const cfg = { som: { sku: "E1M-AEN701" }, cores: { m55_hp: { app: "./src" } }, preset: "e1m-evk" };
+    const cfg = { som: { sku: "E1M-AEN801" }, cores: { m55_hp: { app: "./src" } }, preset: "e1m-evk" };
     saveBoardConfigToFile(file, cfg);
     const loaded = loadBoardConfigFromFile(file);
-    assert.equal(loaded.som.sku, "E1M-AEN701");
+    assert.equal(loaded.som.sku, "E1M-AEN801");
     assert.equal(loaded.preset, "e1m-evk");
     assert.deepEqual(Object.keys(loaded.cores), ["m55_hp"]);
   } finally {

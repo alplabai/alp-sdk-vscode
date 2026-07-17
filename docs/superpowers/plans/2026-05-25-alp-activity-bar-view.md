@@ -92,7 +92,7 @@ test("buildProjectNodes returns no roots when there is no board (welcome view sh
 
 test("buildProjectNodes returns Project / Actions / Debug sections for a board", () => {
   const roots = buildProjectNodes({
-    sku: "E1M-AEN701",
+    sku: "E1M-AEN801",
     carrier: "E1M-EVK",
     os: "zephyr",
   });
@@ -106,7 +106,7 @@ test("buildProjectNodes returns Project / Actions / Debug sections for a board",
 
 test("buildProjectNodes maps sku/carrier/os to the Project section", () => {
   const [project] = buildProjectNodes({
-    sku: "E1M-AEN701",
+    sku: "E1M-AEN801",
     carrier: "E1M-EVK",
     os: "zephyr",
   });
@@ -114,7 +114,7 @@ test("buildProjectNodes maps sku/carrier/os to the Project section", () => {
   assert.deepEqual(
     project.children.map((child) => [child.label, child.description]),
     [
-      ["SoM", "E1M-AEN701"],
+      ["SoM", "E1M-AEN801"],
       ["Carrier", "E1M-EVK"],
       ["OS", "zephyr"],
     ],
@@ -122,16 +122,16 @@ test("buildProjectNodes maps sku/carrier/os to the Project section", () => {
 });
 
 test("buildProjectNodes renders an em dash for missing carrier/os", () => {
-  const [project] = buildProjectNodes({ sku: "E1M-AEN701" });
+  const [project] = buildProjectNodes({ sku: "E1M-AEN801" });
 
   assert.deepEqual(
     project.children.map((child) => child.description),
-    ["E1M-AEN701", "—", "—"],
+    ["E1M-AEN801", "—", "—"],
   );
 });
 
 test("buildProjectNodes wires actions to existing commands, Configure board first", () => {
-  const roots = buildProjectNodes({ sku: "E1M-AEN701" });
+  const roots = buildProjectNodes({ sku: "E1M-AEN801" });
   const actions = roots.find((node) => node.label === "Actions");
   const debug = roots.find((node) => node.label === "Debug");
 

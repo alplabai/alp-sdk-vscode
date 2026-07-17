@@ -12,7 +12,7 @@ const SAMPLE =
   'family: aen\npads:\n  - { e1m_pad: "A3", e1m_function: "PWM6", owner: "alif", silicon_peripheral: "UT3_T1_C", silicon_pad: "P10_7" }\n';
 
 test("pinmuxFamilyForSku maps known SKU prefixes", () => {
-  assert.strictEqual(pinmuxFamilyForSku("E1M-AEN701"), "aen");
+  assert.strictEqual(pinmuxFamilyForSku("E1M-AEN801"), "aen");
   assert.strictEqual(pinmuxFamilyForSku("E1M-NX9101"), "imx93");
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2N101"), "v2n");
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2M102"), "v2n");
@@ -22,7 +22,7 @@ test("pinmuxFamilyForSku maps known SKU prefixes", () => {
 test("loadPinmuxTable reads metadata/pinmux/<family>.yaml under the SDK root", () => {
   clearPinmuxTableCache();
   const seen = [];
-  const table = loadPinmuxTable("/sdk", "E1M-AEN701", (filePath) => {
+  const table = loadPinmuxTable("/sdk", "E1M-AEN801", (filePath) => {
     seen.push(filePath);
     return SAMPLE;
   });
@@ -55,7 +55,7 @@ test("loadPinmuxTable returns null for a readable-but-corrupt/empty table (no pa
   clearPinmuxTableCache();
   const table = loadPinmuxTable(
     "/sdk",
-    "E1M-AEN701",
+    "E1M-AEN801",
     () => "family: 3\npads: nope",
   );
   assert.strictEqual(table, null);
@@ -68,7 +68,7 @@ test("loadPinmuxTable caches per sdkRoot + family", () => {
     reads += 1;
     return SAMPLE;
   };
-  loadPinmuxTable("/sdk", "E1M-AEN701", readFile);
+  loadPinmuxTable("/sdk", "E1M-AEN801", readFile);
   loadPinmuxTable("/sdk", "E1M-AEN301", readFile); // same family -> cached
   assert.strictEqual(reads, 1);
 });
@@ -99,14 +99,14 @@ test("E1M-V2M SKUs resolve to the v2n pinmux family (same E1M edge)", () => {
 
 test("loadPinmuxTable does not cache a null miss (retries once the SDK populates)", () => {
   clearPinmuxTableCache();
-  const first = loadPinmuxTable("/sdk", "E1M-AEN701", () => {
+  const first = loadPinmuxTable("/sdk", "E1M-AEN801", () => {
     throw new Error("ENOENT"); // SDK submodule not populated yet
   });
   assert.strictEqual(first, null);
 
   // A later call must re-read rather than return a stuck null.
   let reads = 0;
-  const second = loadPinmuxTable("/sdk", "E1M-AEN701", () => {
+  const second = loadPinmuxTable("/sdk", "E1M-AEN801", () => {
     reads += 1;
     return 'family: aen\npads:\n  - { e1m_pad: "B7", e1m_function: "I2C0", owner: "alif", silicon_peripheral: "I2C0", silicon_pad: "P1" }\n';
   });

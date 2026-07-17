@@ -23,12 +23,12 @@ test("loadBoardSummaryWithDependencies parses board.yaml contents", () => {
   const summary = loadBoardSummaryWithDependencies("/workspace/board.yaml", {
     existsSync: () => true,
     readFileSync: () =>
-      "som:\n  sku: E1M-AEN701\ncarrier:\n  name: E1M-EVK\nos: zephyr\n",
+      "som:\n  sku: E1M-AEN801\ncarrier:\n  name: E1M-EVK\nos: zephyr\n",
     log: () => {},
   });
 
   assert.deepEqual(summary, {
-    sku: "E1M-AEN701",
+    sku: "E1M-AEN801",
     carrier: "E1M-EVK",
     os: "zephyr",
   });

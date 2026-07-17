@@ -14,13 +14,13 @@ test("save then load round-trips a v0.6 board", () => {
   try {
     const file = path.join(dir, "board.yaml");
     const cfg = {
-      som: { sku: "E1M-AEN701" },
+      som: { sku: "E1M-AEN801" },
       cores: { m55_hp: { app: "./src" } },
       preset: "e1m-evk",
     };
     saveBoardConfigToFile(file, cfg);
     const loaded = loadBoardConfigFromFile(file);
-    assert.equal(loaded.som.sku, "E1M-AEN701");
+    assert.equal(loaded.som.sku, "E1M-AEN801");
     assert.equal(loaded.preset, "e1m-evk");
     assert.deepEqual(Object.keys(loaded.cores), ["m55_hp"]);
   } finally {

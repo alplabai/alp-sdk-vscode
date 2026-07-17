@@ -30,7 +30,7 @@ for (const [name, text] of [
 test("serializeBoardConfig emits canonical top-level order (name, then som before cores)", () => {
   const yamlText = serializeBoardConfig({
     name: "demo",
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" } },
     chips: ["lsm6dso"],
   });
@@ -77,7 +77,7 @@ test("serializeBoardConfig preserves comments on a single-field change", () => {
   const prior = [
     "som:",
     "  # pin rationale: E1 bus reserved for TBD sensor",
-    "  sku: E1M-AEN701",
+    "  sku: E1M-AEN801",
     "cores:",
     "  m55_hp:",
     "    app: ./src",
@@ -102,7 +102,7 @@ test("serializeBoardConfig preserves comments on a single-field change", () => {
 test("serializeBoardConfig keeps a comment inside an unchanged list", () => {
   const prior = [
     "som:",
-    "  sku: E1M-AEN701",
+    "  sku: E1M-AEN801",
     "cores:",
     "  m55_hp:",
     "    app: ./src",

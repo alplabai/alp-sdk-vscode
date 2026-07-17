@@ -118,7 +118,7 @@ const CHILD_KEYS: Readonly<Record<string, readonly string[]>> = {
 
 const VALUE_CHOICES: Readonly<Record<string, readonly string[]>> = {
   os: ["zephyr", "yocto", "baremetal"],
-  "som.sku": ["E1M-AEN701"],
+  "som.sku": ["E1M-AEN801"],
   "diagnostics.log_level": ["error", "warn", "info", "debug", "trace"],
   "diagnostics.last_error": ["true", "false"],
   "iot.wifi": ["true", "false"],
@@ -161,7 +161,7 @@ const FIELD_DOCS: Readonly<Record<string, BoardYamlHoverInfo>> = {
   "som.sku": {
     title: "som.sku",
     description: "Selected SoM preset identifier.",
-    defaultValue: "E1M-AEN701",
+    defaultValue: "E1M-AEN801",
     allowedValues: VALUE_CHOICES["som.sku"],
   },
   preset: {
@@ -456,7 +456,7 @@ export function createBoardYamlQuickFixes(
       createAppendFix(
         documentText,
         "Add missing som.sku block",
-        "som:\n  sku: E1M-AEN701\n",
+        "som:\n  sku: E1M-AEN801\n",
       ),
     );
   }

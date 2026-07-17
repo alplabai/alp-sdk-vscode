@@ -1050,7 +1050,7 @@ mod tests {
             template_id: WizardTemplateId::ZephyrApp,
             project_name: "zdemo".to_string(),
             destination: ".".to_string(),
-            som_sku: Some("E1M-AEN701".to_string()),
+            som_sku: Some("E1M-AEN801".to_string()),
         });
         let by_path = |p: &str| {
             plan.files
@@ -1108,7 +1108,7 @@ mod tests {
             destination: ".".to_string(),
             som_sku: None,
         });
-        assert!(board_yaml_of(&plan).contains("sku: E1M-AEN701"));
+        assert!(board_yaml_of(&plan).contains("sku: E1M-AEN801"));
     }
 
     #[test]
@@ -1121,7 +1121,7 @@ mod tests {
         });
         let board = board_yaml_of(&plan);
         assert!(board.contains("sku: E1M-V2N101"));
-        assert!(!board.contains("E1M-AEN701"));
+        assert!(!board.contains("E1M-AEN801"));
     }
 
     #[test]
@@ -1169,7 +1169,7 @@ mod tests {
                 template_id: WizardTemplateId::MinimalApp,
                 project_name: String::new(),
                 destination: ".".to_string(),
-                som_sku: Some("E1M-AEN701".to_string()),
+                som_sku: Some("E1M-AEN801".to_string()),
             },
             &[
                 ("m55_hp".to_string(), "zephyr".to_string()),
@@ -1192,7 +1192,7 @@ mod tests {
                 template_id: WizardTemplateId::MinimalApp,
                 project_name: String::new(),
                 destination: ".".to_string(),
-                som_sku: Some("E1M-AEN701".to_string()),
+                som_sku: Some("E1M-AEN801".to_string()),
             },
             &[
                 ("m55_hp".to_string(), "zephyr".to_string()),
@@ -1424,7 +1424,7 @@ mod example_catalog_tests {
 
     #[test]
     fn retarget_som_rewrites_only_the_som_sku() {
-        let src = "# header\nsom:\n  sku: E1M-AEN701\npreset: e1m-evk\n";
+        let src = "# header\nsom:\n  sku: E1M-AEN801\npreset: e1m-evk\n";
         assert_eq!(
             super::retarget_board_yaml_som(src, "E1M-AEN801"),
             "# header\nsom:\n  sku: E1M-AEN801\npreset: e1m-evk\n"

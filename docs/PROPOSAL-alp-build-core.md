@@ -277,7 +277,7 @@ them against the SDK's own test expectations:
 | IPC carve-out allocator (hardest) | 7/7 parity (base/size/endpoint), FNV-1a pinned to canonical vectors |
 | Registry tables | `sku→family` = genuine data (JSON); `silicon→Kconfig` = a pure rule (no table) |
 | Input-resolution (`_resolve_flash_device`) | ~90 % data lookup + unit-convert + validate |
-| Real metadata deserialize | the **actual** `E1M-AEN701.yaml` + `socs/.../e7.json` parse into structs (real `TBD` values, 3-core `topology`, TCM-suffixed banks) |
+| Real metadata deserialize | the **actual** `E1M-AEN801.yaml` + `socs/.../e7.json` parse into structs (real `TBD` values, 3-core `topology`, TCM-suffixed banks) |
 | Template / render | a `{{#each}}` engine renders a DTS partitions overlay + a Kconfig fragment from data |
 | Engine → `BuildPlan` assemble | real SoM `topology` → a `BuildPlan` the **shipped consumer** (`parse_build_plan`) accepts (round-trip) |
 | **Policy-driven engine (the load-bearing proof)** | engine has **zero hardcoded rules** — see below |
@@ -303,7 +303,7 @@ policy-driven engine → a `BuildPlan` the shipped consumer accepts**:
 
 - **Proven (feasibility):** both allocators + the memory-map derivation +
   registry data/rule + input-resolution + **policy-as-data** (the engine runs on
-  loaded rules) + **real-file deserialize** (the actual `E1M-AEN701.yaml` /
+  loaded rules) + **real-file deserialize** (the actual `E1M-AEN801.yaml` /
   `e7.json`) + **template render** + **engine→`BuildPlan` assemble** that round-
   trips through `parse_build_plan`. All parity-checked against the SDK's own
   expectations; clippy `-D warnings` clean.
