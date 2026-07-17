@@ -78,6 +78,20 @@ pub fn cli_workspace_root(g: &GlobalArgs) -> PathBuf {
     }
 }
 
+/// The walk-up-discovered project root, for a board.yaml-consuming command that
+/// resolves the board/SDK roots itself (e.g. `generate`) rather than going through
+/// [`resolve_cli_project_context`]. Same discovery rule: `--project`/`--board-yaml`
+/// pin as before, otherwise walk up to the nearest ancestor holding a `board.yaml`.
+pub fn cli_project_root(g: &GlobalArgs) -> PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    discover_workspace_root(
+        &cwd,
+        g.project.as_deref(),
+        g.board_yaml.as_deref(),
+        &|dir| dir.join("board.yaml").exists(),
+    )
+}
+
 /// True if `root` contains `scripts/alp_project.py`, marking it a valid SDK root.
 pub fn has_loader_script(root: &Path) -> bool {
     root.join("scripts").join("alp_project.py").exists()
@@ -163,15 +177,50 @@ pub fn resolve_sdk_root(g: &GlobalArgs, workspace_root: &Path) -> Option<PathBuf
     candidates.into_iter().find(|c| has_loader_script(c))
 }
 
+/// Discover the project root for a board.yaml-consuming command. An explicit
+/// `--project` wins. An explicit `--board-yaml` keeps `cwd` as the root, so the
+/// board file and `.alp/sdk-path` resolve relative to where the user invoked
+/// (unchanged behavior). With NEITHER flag, walk UP from `cwd` to the nearest
+/// ancestor that holds a `board.yaml` — so a bare `alp build` works from any
+/// subdirectory of a project, the way git finds `.git`. Falls back to `cwd`
+/// when no marker is found, preserving the "no board.yaml — run `alp init`"
+/// error. `has_board_yaml` is injected for tests.
+fn discover_workspace_root(
+    cwd: &Path,
+    project_arg: Option<&str>,
+    board_yaml_arg: Option<&str>,
+    has_board_yaml: &impl Fn(&Path) -> bool,
+) -> PathBuf {
+    if let Some(project) = project_arg {
+        return normalize_path(&cwd.join(project));
+    }
+    if board_yaml_arg.is_some() {
+        return normalize_path(cwd);
+    }
+    let start = normalize_path(cwd);
+    let mut dir = Some(start.as_path());
+    while let Some(current) = dir {
+        if has_board_yaml(current) {
+            return current.to_path_buf();
+        }
+        dir = current.parent();
+    }
+    start
+}
+
 /// Resolve the project context from the global args, mirroring the TS commands'
 /// `path.resolve(cwd, project) + resolveProjectContext` boilerplate. Shared by
 /// `validate`, `diff`, `presets`, and `doctor`.
 pub fn resolve_cli_project_context(g: &GlobalArgs) -> ProjectContext {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let project_arg = g.project.clone().unwrap_or_else(|| ".".to_string());
-    let workspace_root = normalize_path(&cwd.join(&project_arg))
-        .to_string_lossy()
-        .to_string();
+    let workspace_root = discover_workspace_root(
+        &cwd,
+        g.project.as_deref(),
+        g.board_yaml.as_deref(),
+        &|dir| dir.join("board.yaml").exists(),
+    )
+    .to_string_lossy()
+    .to_string();
 
     let settings = ProjectSettings {
         // `--sdk-root` > `.alp/sdk-path` pointer > `""` (core auto-discovery).
@@ -191,6 +240,42 @@ pub fn resolve_cli_project_context(g: &GlobalArgs) -> ProjectContext {
         },
         |p| Path::new(p).exists(),
     )
+}
+
+// ── ~/.alp home + SDK install roots (issue #121 stage 1) ──────────────────────
+
+/// Resolve the user's home directory: `HOME` on Unix, `USERPROFILE` on Windows.
+///
+/// Errors instead of silently falling back to `"."`: a `"."` fallback lands
+/// `~/.alp/...` writes in the current project directory — for a global-pointer
+/// write that means overwriting the project's own `.alp/sdk-path` pin (issue #121
+/// footgun #4). Callers surface the error as a command failure.
+pub fn alp_home() -> Result<PathBuf, String> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    home_from_env(std::env::var_os(var), var)
+}
+
+/// Pure core of [`alp_home`]: maps a raw env value to a home path, rejecting a
+/// missing or empty value. Split out so the erroring behavior is testable without
+/// mutating the process environment (which races under the parallel test runner).
+fn home_from_env(raw: Option<std::ffi::OsString>, var: &str) -> Result<PathBuf, String> {
+    raw.map(PathBuf::from)
+        .filter(|home| !home.as_os_str().is_empty())
+        .ok_or_else(|| format!("cannot resolve the home directory ({var} is unset)"))
+}
+
+/// The unified SDK install root, `~/.alp/sdk`. `alp sdk install <version>` writes
+/// each release here and `alp sdk switch <version>` resolves versions here — this
+/// converges with the VS Code extension's install location (issue #121 stage 1).
+pub fn alp_sdk_root() -> Result<PathBuf, String> {
+    Ok(alp_home()?.join(".alp").join("sdk"))
+}
+
+/// The legacy pre-unification install root, `~/.alp/sdk-cache`. Kept as a
+/// READ-ONLY probe so SDKs installed by the previous CLI stay resolvable; nothing
+/// writes here any more.
+pub fn alp_sdk_legacy_root() -> Result<PathBuf, String> {
+    Ok(alp_home()?.join(".alp").join("sdk-cache"))
 }
 
 #[cfg(test)]
@@ -261,5 +346,78 @@ mod tests {
     fn no_arg_and_no_pointer_yields_empty() {
         let got = effective_sdk_path_with(None, "/work", &|_| true, &|_| false, &|_| None);
         assert_eq!(got, "");
+    }
+
+    #[test]
+    fn home_from_env_rejects_missing_or_empty() {
+        // #121 footgun #4: an unresolvable home must NOT fall back to "." (which
+        // would land ~/.alp writes in the current project dir).
+        assert!(home_from_env(None, "HOME").is_err());
+        assert!(home_from_env(Some(std::ffi::OsString::new()), "HOME").is_err());
+    }
+
+    #[test]
+    fn home_from_env_accepts_a_set_value() {
+        assert_eq!(
+            home_from_env(Some(std::ffi::OsString::from("/home/x")), "HOME").unwrap(),
+            PathBuf::from("/home/x")
+        );
+    }
+
+    #[test]
+    fn sdk_root_and_legacy_root_are_distinct_under_dot_alp() {
+        // The unified install root and the legacy read-probe must never collide.
+        let home = PathBuf::from("/home/x");
+        assert_eq!(
+            home.join(".alp").join("sdk"),
+            PathBuf::from("/home/x/.alp/sdk")
+        );
+        assert_eq!(
+            home.join(".alp").join("sdk-cache"),
+            PathBuf::from("/home/x/.alp/sdk-cache")
+        );
+        assert_ne!(
+            PathBuf::from("/home/x/.alp/sdk"),
+            PathBuf::from("/home/x/.alp/sdk-cache")
+        );
+    }
+
+    #[test]
+    fn workspace_root_honors_explicit_project_arg() {
+        // --project wins; no walk-up, no board.yaml probe.
+        let got = discover_workspace_root(Path::new("/w/sub"), Some("proj"), None, &|_| false);
+        assert_eq!(got, PathBuf::from("/w/sub/proj"));
+    }
+
+    #[test]
+    fn workspace_root_keeps_cwd_when_board_yaml_arg_given() {
+        // Explicit --board-yaml preserves cwd-relative resolution; never walks up.
+        let got = discover_workspace_root(Path::new("/w/sub"), None, Some("board.yaml"), &|_| true);
+        assert_eq!(got, PathBuf::from("/w/sub"));
+    }
+
+    #[test]
+    fn workspace_root_walks_up_to_nearest_board_yaml() {
+        // cwd is two levels below the project root at /w.
+        let got = discover_workspace_root(Path::new("/w/a/b"), None, None, &|dir| {
+            dir == Path::new("/w")
+        });
+        assert_eq!(got, PathBuf::from("/w"));
+    }
+
+    #[test]
+    fn workspace_root_prefers_the_innermost_project() {
+        // board.yaml at both /w and /w/a -> nearest (/w/a) wins.
+        let got = discover_workspace_root(Path::new("/w/a/b"), None, None, &|dir| {
+            dir == Path::new("/w/a") || dir == Path::new("/w")
+        });
+        assert_eq!(got, PathBuf::from("/w/a"));
+    }
+
+    #[test]
+    fn workspace_root_falls_back_to_cwd_when_no_marker() {
+        // Not inside any project -> cwd, so the caller still emits the not-found error.
+        let got = discover_workspace_root(Path::new("/w/a/b"), None, None, &|_| false);
+        assert_eq!(got, PathBuf::from("/w/a/b"));
     }
 }
