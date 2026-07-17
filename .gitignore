@@ -23,3 +23,6 @@ coverage/
 
 # Transient Claude Code runtime locks
 .claude/scheduled_tasks.lock
+
+# VS Code e2e test runtime (downloaded VS Code + user data)
+.vscode-test/

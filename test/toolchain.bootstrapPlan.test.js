@@ -32,9 +32,9 @@ test("planForHost baremetal lists vendor pointers", () => {
 });
 
 test("fixCommand maps fixIds to a command or pointer", () => {
-  assert.equal(fixCommand("python-deps", "linux").kind, "command");
+  assert.equal(fixCommand("python-deps", "win32").kind, "command");
   assert.match(
-    fixCommand("python-deps", "linux").step.command,
+    fixCommand("python-deps", "win32").step.command,
     /pyyaml jsonschema/,
   );
   assert.equal(fixCommand("west", "win32").kind, "command");
@@ -44,6 +44,13 @@ test("fixCommand maps fixIds to a command or pointer", () => {
   );
   assert.equal(fixCommand("build-tools", "linux").kind, "pointer");
   assert.equal(fixCommand("zephyr-sdk", "linux").kind, "pointer");
+});
+
+test("fixCommand routes non-win32 python-deps/west to bootstrap (PEP 668-safe)", () => {
+  for (const host of ["linux", "darwin"]) {
+    assert.equal(fixCommand("python-deps", host).kind, "bootstrap");
+    assert.equal(fixCommand("west", host).kind, "bootstrap");
+  }
 });
 
 test("fixCommand maps gdb to a per-OS install guide", () => {
