@@ -107,6 +107,9 @@ jobs:
           path: alp-sdk.vsix
           retention-days: 30
 
+      - name: Gate — VSIX ships only allowlisted top-level paths (#70)
+        run: bash scripts/check-vsix-allowlist.sh alp-sdk.vsix
+
       - name: Publish to VS Code Marketplace
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
         run: pnpm exec vsce publish --no-dependencies $PRERELEASE_FLAG --packagePath alp-sdk.vsix
@@ -185,6 +188,9 @@ jobs:
           name: alp-sdk-vsix-darwin-arm64
           path: alp-sdk-darwin-arm64.vsix
           retention-days: 30
+
+      - name: Gate — VSIX ships only allowlisted top-level paths (#70)
+        run: bash scripts/check-vsix-allowlist.sh alp-sdk-darwin-arm64.vsix
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
