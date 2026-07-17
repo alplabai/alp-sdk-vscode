@@ -651,16 +651,31 @@ pub fn chip_family_for_sku(sku: &str) -> Option<&'static str> {
     None
 }
 
+/// Vendor family slugs some SDK chip manifests carry in `families` instead of the
+/// short SoM family slug (e.g. the i.MX 9 Murata radios tag `nxp-imx9`, not
+/// `imx93`); returned aliases are accepted alongside the short slug.
+fn family_aliases(family: &str) -> &'static [&'static str] {
+    match family {
+        "imx93" => &["nxp-imx9"],
+        _ => &[],
+    }
+}
+
 /// Chips in `catalogue` whose `families` include the chip family resolved from `sku`.
 pub fn chips_for_som(catalogue: &SdkCatalogue, sku: &str) -> Vec<ChipDef> {
     let Some(family) = chip_family_for_sku(sku) else {
         return Vec::new();
     };
 
+    let aliases = family_aliases(family);
     catalogue
         .chips
         .iter()
-        .filter(|chip| chip.families.iter().any(|f| f == family))
+        .filter(|chip| {
+            chip.families
+                .iter()
+                .any(|f| f == family || aliases.contains(&f.as_str()))
+        })
         .cloned()
         .collect()
 }
@@ -732,6 +747,15 @@ mod tests {
                     driver_status: None,
                     kconfig: None,
                 },
+                ChipDef {
+                    chip_id: "murata-imx9".to_string(),
+                    display_name: "Murata Wi-Fi/BLE".to_string(),
+                    families: vec!["nxp-imx9".to_string()],
+                    vendor: None,
+                    bus: None,
+                    driver_status: None,
+                    kconfig: None,
+                },
             ],
             socs: vec![],
             sdk_version: None,
@@ -758,6 +782,16 @@ mod tests {
         assert!(avail.iter().any(|a| a.id == "deepx_dxm1" && a.available));
         assert_eq!(chip_family_for_sku("E1M-AEN701"), Some("aen"));
         assert_eq!(chips_for_som(&c, "E1M-AEN701").len(), 1);
+    }
+
+    #[test]
+    fn chips_for_som_accepts_vendor_family_alias() {
+        let c = fixture_catalogue();
+        let ids: Vec<_> = chips_for_som(&c, "E1M-NX9101")
+            .into_iter()
+            .map(|chip| chip.chip_id)
+            .collect();
+        assert_eq!(ids, vec!["murata-imx9".to_string()]);
     }
 
     #[test]
