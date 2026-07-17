@@ -3,7 +3,7 @@
 // TS mirror of the ALP **system manifest** (`build/system-manifest.yaml`) — the
 // IDE/tool contract emitted by `west alp-build`. Mirrors, field-for-field, the
 // Rust model in cli-rs/crates/alp-core/src/system_manifest.rs and the vendored
-// schema schemas/system-manifest-v1.schema.json (alp-sdk v0.7.0). Kept in sync
+// schema schemas/system-manifest-v1.schema.json (alp-sdk v0.11.0). Kept in sync
 // MANUALLY — change all three together.
 //
 // TOLERANT READER (the stability policy from alp-sdk#106): `schema_version` 1 is
@@ -20,6 +20,13 @@ export interface ManifestHwInfo {
   board_name?: string | null;
   board_hw_rev?: string | null;
   silicon?: string | null;
+  /** Resolved features.hw_info.eeprom manifest location (present when declared in board.yaml). */
+  eeprom?: {
+    bus: string;
+    bus_id: number;
+    addr_7bit: number;
+    offset: number;
+  };
 }
 
 export type SliceStatus = "pending" | "ok" | "failed" | "skipped";
@@ -31,6 +38,8 @@ export interface ManifestSlice {
   os: string;
   app?: string;
   image?: string;
+  /** Yocto bitbake recipe packaging an app-only Yocto slice's `app:` source dir. */
+  recipe?: string;
   machine?: string;
   board?: string;
   toolchain?: string;
