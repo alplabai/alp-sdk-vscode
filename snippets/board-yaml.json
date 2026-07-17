@@ -73,16 +73,13 @@
     ],
     "description": "IoT feature toggles declared per-core inside the cores: block (schema v2)."
   },
-  "Per-core libraries enable list (v2)": {
+  "Project libraries list": {
     "prefix": "alp-libraries",
     "body": [
-      "cores:",
-      "  ${1:m33_sm}:",
-      "    os: ${2|zephyr,baremetal|}",
-      "    libraries:",
-      "      - ${3|etl,fmt,nlohmann_json,doctest,lvgl,mbedtls,cmsis_dsp,littlefs|}"
+      "libraries:",
+      "  - ${1|etl,fmt,nlohmann-json,doctest,lvgl,mbedtls,cmsis-dsp,littlefs|}"
     ],
-    "description": "Libraries declared per-core inside the cores: block (schema v2)."
+    "description": "Top-level curated third-party libraries to pull into the project (ADR 0018). Each entry is a canonical manifest name (metadata/libraries/<name>.yaml); add `cores: [<id>]` to scope one to specific cores, or omit for project-wide."
   },
   "IPC carve-out block (v2)": {
     "prefix": "alp-ipc",
