@@ -47,9 +47,9 @@ function parseLaunchJsonOrDefault(content: string | null): LaunchJsonDocument {
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(content);
+    parsed = JSON.parse(stripJsonc(content));
   } catch {
-    throw new Error("Alp: .vscode/launch.json is not valid JSON.");
+    throw new Error("Alp: .vscode/launch.json is not valid JSON or JSONC.");
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -73,6 +73,77 @@ function parseLaunchJsonOrDefault(content: string | null): LaunchJsonDocument {
     version,
     configurations,
   };
+}
+
+function stripJsonc(content: string): string {
+  const out: string[] = [];
+  let inString = false;
+  let i = 0;
+  while (i < content.length) {
+    const char = content[i];
+    const next = content[i + 1];
+
+    if (inString) {
+      out.push(char);
+      if (char === "\\") {
+        if (next !== undefined) {
+          out.push(next);
+        }
+        i += 2;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      out.push(char);
+      i += 1;
+      continue;
+    }
+
+    if (char === "/" && next === "/") {
+      i += 2;
+      while (i < content.length && content[i] !== "\n") {
+        i += 1;
+      }
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      i += 2;
+      while (i < content.length) {
+        if (content[i] === "*" && content[i + 1] === "/") {
+          i += 2;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    if (char === "}" || char === "]") {
+      let j = out.length - 1;
+      while (j >= 0 && /\s/.test(out[j])) {
+        j -= 1;
+      }
+      if (j >= 0 && out[j] === ",") {
+        out[j] = "";
+      }
+      out.push(char);
+      i += 1;
+      continue;
+    }
+
+    out.push(char);
+    i += 1;
+  }
+
+  return out.join("");
 }
 
 function configurationName(configuration: LaunchConfigurationDraft): string {
