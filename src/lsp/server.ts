@@ -353,6 +353,7 @@ connection.onInitialized(() => {
         platform: process.platform,
       },
       fs.existsSync,
+      readDocumentText,
     );
 
     return {
@@ -387,6 +388,7 @@ async function validateDocument(
       platform: process.platform,
     },
     fs.existsSync,
+    readDocumentText,
   );
 
   if (!context.sdkRoot) {

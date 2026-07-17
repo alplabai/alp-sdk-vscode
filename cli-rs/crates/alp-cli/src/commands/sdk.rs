@@ -6,7 +6,7 @@
 //! SDK, and `switch <version|path>` repoints it. Network/filesystem effects
 //! live here; parsing + readiness logic is in `alp-core::sdk`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use alp_core::{
@@ -289,9 +289,11 @@ fn git_clone(version: &str, dest: &Path) -> Result<(), String> {
 
 /// Resolves the active SDK for the current workspace and reports its path + readiness.
 fn run_current(g: &GlobalArgs) -> CommandRun {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    // Anchor on the walk-up project root (same as `switch` and the build/generate
+    // resolvers) so `sdk current` from a subdirectory sees a pointer `switch` wrote.
+    let root = crate::util::cli_project_root(g);
     let sdk_path = resolve_active_sdk(
-        &cwd.to_string_lossy(),
+        &root.to_string_lossy(),
         |p| Path::new(p).exists(),
         |p| std::fs::read_to_string(p).ok(),
     );
@@ -381,7 +383,7 @@ fn run_switch(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
         );
     }
 
-    if let Err(message) = write_active_pointer(&sdk_path) {
+    if let Err(message) = write_active_pointer(g, &sdk_path) {
         return emit_failure(
             g,
             SwitchData {
@@ -424,9 +426,11 @@ fn run_switch(g: &GlobalArgs, args: &SdkArgs) -> CommandRun {
 }
 
 /// Writes the active-SDK pointer JSON (`sdkPath` + `updatedAt`) to `./.alp/sdk-path`.
-fn write_active_pointer(sdk_path: &str) -> Result<(), String> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let dir = cwd.join(".alp");
+fn write_active_pointer(g: &GlobalArgs, sdk_path: &str) -> Result<(), String> {
+    // Write the pointer at the walk-up project root's `.alp/sdk-path` — the same
+    // root the SDK resolvers read, so a `switch` from a subdirectory lands where
+    // a later resolve looks.
+    let dir = crate::util::cli_project_root(g).join(".alp");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let pointer = serde_json::json!({ "sdkPath": sdk_path, "updatedAt": generated_at_iso() });
     let content = format!(
