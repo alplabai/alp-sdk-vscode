@@ -547,6 +547,11 @@ export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
   current?: string;
 }
+export interface ReloadProjectTemplatesMessage {
+  type: "reloadProjectTemplates";
+  /** Selected SDK root to source the catalog from; omitted = active/default. */
+  sdkPath?: string;
+}
 export interface OpenExistingProjectMessage {
   type: "openExistingProject";
   activate: boolean;
@@ -605,6 +610,7 @@ export type WebviewToExtMessage =
   | ClosePanelMessage
   | CreateNewProjectMessage
   | PickProjectLocationMessage
+  | ReloadProjectTemplatesMessage
   | OpenExistingProjectMessage
   | SaveBoardConfigMessage
   | ConfiguratorUpdateMessage

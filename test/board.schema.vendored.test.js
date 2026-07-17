@@ -5,19 +5,20 @@ const fs = require("node:fs");
 const path = require("node:path");
 const yaml = require("js-yaml");
 const { BOARD_KEY_ORDER } = require("@alp-sdk/core/board/models");
+const { VENDORED_SDK_TAG, BOARD_SCHEMA_SHA256 } = require("./vendored-sdk-tag");
 
-// sha256 of metadata/schemas/board.schema.json at the alp-sdk v0.11.0 tag.
-// THE drift gate: any local edit, forward drift (re-vendoring from submodule
-// dev HEAD instead of the pinned tag), or upstream change fails here. To bump
-// the vendored schema intentionally: copy it from the NEW pinned tag
-// (`git -C alp-sdk-upstream show <tag>:metadata/schemas/board.schema.json`),
-// then recompute this hash over the LF-normalized file — portable + Windows-safe
-// (avoid `shasum`, which isn't on Windows):
+// sha256 of metadata/schemas/board.schema.json at the alp-sdk VENDORED_SDK_TAG
+// tag. THE drift gate: any local edit, forward drift (re-vendoring from submodule
+// dev HEAD instead of the pinned tag), or upstream change fails here. The tag and
+// both vendored-schema hashes live in ./vendored-sdk-tag.js, so the board and
+// system-manifest copies can never green while disagreeing on tag. To bump the
+// vendored schema intentionally: copy it from the NEW pinned tag
+// (`git -C alp-sdk-upstream show <tag>:metadata/schemas/board.schema.json`), then
+// recompute the hash over the LF-normalized file — portable + Windows-safe
+// (avoid `shasum`, which isn't on Windows) — and update ./vendored-sdk-tag.js:
 //   node -e "const s=require('fs').readFileSync('schemas/board.schema.json','utf-8').replace(/\r\n/g,'\n');console.log(require('crypto').createHash('sha256').update(s,'utf-8').digest('hex'))"
-const VENDORED_SCHEMA_SHA256 =
-  "d9393ab0d1c3df5550a84acc30639eddabb90ce35a080d7a6ec122cac999b3b8";
 
-test("board.schema.json is the vendored v0.11 schema (drift/staleness gate)", () => {
+test(`board.schema.json is the vendored ${VENDORED_SDK_TAG} schema (drift/staleness gate)`, () => {
   const p = path.join(__dirname, "..", "schemas", "board.schema.json");
   assert.ok(fs.existsSync(p), "schemas/board.schema.json must exist");
   const raw = fs.readFileSync(p, "utf-8");
@@ -78,9 +79,9 @@ test("board.schema.json is the vendored v0.11 schema (drift/staleness gate)", ()
     .digest("hex");
   assert.equal(
     hash,
-    VENDORED_SCHEMA_SHA256,
+    BOARD_SCHEMA_SHA256,
     "schemas/board.schema.json differs from the pinned SDK tag — if the bump " +
-      "is intentional, re-vendor from the new tag and update VENDORED_SCHEMA_SHA256",
+      "is intentional, re-vendor from the new tag and update ./vendored-sdk-tag.js",
   );
 });
 
