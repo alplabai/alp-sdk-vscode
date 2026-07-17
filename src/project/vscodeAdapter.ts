@@ -54,7 +54,12 @@ function installedSdkRoots(): string[] {
 }
 
 function readProjectSettings(): ProjectSettings {
-  const config = vscode.workspace.getConfiguration("alpSdk");
+  // Resource-scoped so a multi-root folder's .vscode/settings.json can override
+  // boardYamlPath; falls back to window scope when no editor is active.
+  const config = vscode.workspace.getConfiguration(
+    "alpSdk",
+    vscode.window.activeTextEditor?.document.uri,
+  );
   return {
     sdkPath: config.get<string>("path", ""),
     pythonPath: config.get<string>("pythonPath", ""),

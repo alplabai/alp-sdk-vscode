@@ -7,6 +7,7 @@ import {
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { buildToolchainReportViaCli, runToolchainFix } from "../toolchain";
+import { showOutput } from "../util";
 
 const PANEL_VIEW_TYPE = "alpToolchainDoctor";
 const PANEL_TITLE = "Alp Toolchain Doctor";
@@ -65,12 +66,35 @@ class ToolchainDoctorPanel {
   }
 
   private async refresh(): Promise<void> {
-    const { report } = await buildToolchainReportViaCli(this.context);
+    const { report, fromCli, reason } = await buildToolchainReportViaCli(
+      this.context,
+    );
     const message: ExtToWebviewMessage = {
       type: "toolchainReport",
       report,
     };
     void this.panel.webview.postMessage(message);
+    if (!fromCli) {
+      void this.warnFallback(reason);
+    }
+  }
+
+  /** The CLI build gate couldn't run, so this report comes from the weaker
+   *  in-process probes — which can read "toolchain OK" without checking the
+   *  build-critical items. The report looks identical, so surface the
+   *  provenance (and reason) or the user trusts a gate that never ran. */
+  private async warnFallback(reason: string | undefined): Promise<void> {
+    const detail = reason ? `: ${reason}` : ".";
+    const choice = await vscode.window.showWarningMessage(
+      `Build gate did not run — showing local checks only${detail}`,
+      "Show Output",
+      "Update CLI",
+    );
+    if (choice === "Show Output") {
+      showOutput();
+    } else if (choice === "Update CLI") {
+      await vscode.commands.executeCommand("alp.updateCli");
+    }
   }
 
   private onMessage(msg: WebviewToExtMessage): void {
