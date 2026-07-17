@@ -127,6 +127,9 @@ export interface ConfiguratorRenderMessage {
   board: BoardConfig;
   boardPath: string;
   sdkConnected: boolean;
+  /** Non-null when the document is unparseable YAML: the board is the stub,
+   *  the view must show the error, and edits are blocked (issue #127). */
+  parseError?: string | null;
 }
 
 export interface ConfiguratorSavedMessage {
