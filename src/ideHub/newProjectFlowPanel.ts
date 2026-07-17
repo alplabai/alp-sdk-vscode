@@ -15,7 +15,7 @@ import {
 } from "./messages";
 import { E1M_MODULES } from "./projectScaffold";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml } from "./webviewHtml";
+import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
 const PANEL_TITLE = "Alp IDE — New Project";
@@ -283,7 +283,7 @@ export class NewProjectFlowPanel {
         break;
 
       case "runCommand":
-        void vscode.commands.executeCommand(msg.command);
+        runWebviewCommand(msg.command);
         break;
     }
   }

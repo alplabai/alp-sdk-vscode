@@ -14,12 +14,8 @@ use crate::model::BoardModel;
 pub enum Outcome {
     /// Validation passed with no issues.
     Clean,
-    /// SoM/preset could not be resolved (validator exit 2); treated as a warning.
-    MissingPreset,
-    /// Schema/structural violation (validator exit 1).
+    /// Any structural/semantic violation the validator rejects (exit 1).
     SchemaViolation,
-    /// Hardware-revision incompatibility (validator exit 3).
-    HardwareRevision,
     /// Validation could not be completed (validator crashed / unknown exit status).
     Failed,
 }
@@ -29,9 +25,7 @@ impl Outcome {
     pub fn as_str(self) -> &'static str {
         match self {
             Outcome::Clean => "clean",
-            Outcome::MissingPreset => "missing-preset",
             Outcome::SchemaViolation => "schema-violation",
-            Outcome::HardwareRevision => "hardware-revision",
             Outcome::Failed => "failed",
         }
     }
@@ -146,18 +140,8 @@ pub struct ValidatorExecution {
 pub fn classify_validation_outcome(status: Option<i32>) -> Outcome {
     match status {
         Some(0) => Outcome::Clean,
-        Some(2) => Outcome::MissingPreset,
-        Some(3) => Outcome::HardwareRevision,
         Some(1) => Outcome::SchemaViolation,
         _ => Outcome::Failed,
-    }
-}
-
-fn severity_for_outcome(outcome: Outcome) -> Severity {
-    if outcome == Outcome::MissingPreset {
-        Severity::Warning
-    } else {
-        Severity::Error
     }
 }
 
@@ -181,11 +165,11 @@ pub fn analyze_validation_result(execution: &ValidatorExecution) -> ValidationRe
     // A crashed validator (exit 1 with a Python traceback) collides with a
     // genuine schema violation on exit code alone. Reclassify it as `Failed`
     // (infra, exit 1) so a broken validator environment is never surfaced to
-    // consumers as a real board.yaml verdict (exit 2). (issue #38)
+    // consumers as a real board.yaml verdict. (issue #38)
     if outcome == Outcome::SchemaViolation && is_interpreter_crash(&execution.stderr) {
         outcome = Outcome::Failed;
     }
-    let issues = parse_validation_issues(&execution.stderr, severity_for_outcome(outcome));
+    let issues = parse_validation_issues(&execution.stderr, Severity::Error);
     ValidationResult { outcome, issues }
 }
 
@@ -506,11 +490,10 @@ ipc:
             classify_validation_outcome(Some(1)),
             Outcome::SchemaViolation
         );
-        assert_eq!(classify_validation_outcome(Some(2)), Outcome::MissingPreset);
-        assert_eq!(
-            classify_validation_outcome(Some(3)),
-            Outcome::HardwareRevision
-        );
+        // v0.10+ validate_board_yaml.py returns only {0,1}; the pin-era 2/3 and
+        // any other non-zero exit collapse onto `Failed`. (#172)
+        assert_eq!(classify_validation_outcome(Some(2)), Outcome::Failed);
+        assert_eq!(classify_validation_outcome(Some(3)), Outcome::Failed);
         assert_eq!(classify_validation_outcome(Some(9)), Outcome::Failed);
         assert_eq!(classify_validation_outcome(None), Outcome::Failed);
     }
@@ -537,19 +520,20 @@ ipc:
     fn analyze_parses_legacy_fail_warn_with_continuation() {
         let stderr = "FAIL som preset: no preset for E1M-NX9999\n     expected shared definition at metadata/boards/...\nWARN hw_compat: minor version mismatch\n";
         let execution = ValidatorExecution {
-            status: Some(2),
+            status: Some(1),
             stdout: String::new(),
             stderr: stderr.to_string(),
         };
         let result = analyze_validation_result(&execution);
-        assert_eq!(result.outcome, Outcome::MissingPreset);
+        assert_eq!(result.outcome, Outcome::SchemaViolation);
         assert_eq!(result.issues.len(), 2);
-        // FAIL line folds in its indented continuation; severity follows outcome.
+        // FAIL line folds in its indented continuation; a schema-violation
+        // verdict makes it an error.
         assert_eq!(
             result.issues[0].message,
             "som preset: no preset for E1M-NX9999  expected shared definition at metadata/boards/..."
         );
-        assert_eq!(result.issues[0].severity, Severity::Warning); // missing-preset outcome
+        assert_eq!(result.issues[0].severity, Severity::Error);
         // WARN line is always a warning regardless of outcome.
         assert_eq!(result.issues[1].severity, Severity::Warning);
         assert_eq!(
@@ -562,7 +546,7 @@ ipc:
     fn analyze_skips_summary_lines_and_keeps_hints() {
         let stderr = "board.yaml: missing-preset\nhint: run `alp presets` to list valid SKUs\n";
         let execution = ValidatorExecution {
-            status: Some(2),
+            status: Some(1),
             stdout: String::new(),
             stderr: stderr.to_string(),
         };
@@ -631,13 +615,13 @@ ipc:
         // The guard only fires on the exit-1 collision; a traceback on a
         // non-schema-violation exit code leaves that outcome untouched.
         let execution = ValidatorExecution {
-            status: Some(2),
+            status: Some(9),
             stdout: String::new(),
             stderr: "Traceback (most recent call last):\n".to_string(),
         };
         assert_eq!(
             analyze_validation_result(&execution).outcome,
-            Outcome::MissingPreset
+            Outcome::Failed
         );
     }
 }

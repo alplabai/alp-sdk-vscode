@@ -94,7 +94,7 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       // Never overwrite a document we could not parse — the in-memory board is
       // the EMPTY_BOARD stub, not the user's file (issue #127).
       if (parseError) return;
-      const next = serializeBoardConfig(board);
+      const next = serializeBoardConfig(board, document.getText());
       if (next === document.getText()) return;
       lastWrittenText = next;
       const edit = new vscode.WorkspaceEdit();

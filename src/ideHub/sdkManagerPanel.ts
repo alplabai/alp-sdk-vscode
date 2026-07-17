@@ -17,7 +17,7 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { queryAlpIdeState, sdkCacheRoot } from "./vscodeAdapter";
-import { buildWebviewHtml } from "./webviewHtml";
+import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.sdk-manager";
 const PANEL_TITLE = "Alp IDE — SDK Manager";
@@ -102,7 +102,7 @@ export class SdkManagerPanel {
         void this.refresh();
         break;
       case "runCommand":
-        void vscode.commands.executeCommand(msg.command);
+        runWebviewCommand(msg.command);
         break;
       case "selectSdkPath":
         void this.handleSelectSdkPath();

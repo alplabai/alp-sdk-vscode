@@ -50,13 +50,11 @@ pub fn run(g: &GlobalArgs, args: &ValidateArgs) -> CommandRun {
 }
 
 /// Map a validation `Outcome` to the stable CLI `ExitCode` (clean → success,
-/// schema/preset/revision violations → validation failure, failed → runtime failure).
+/// schema violation → validation failure, failed → runtime failure).
 fn validation_outcome_exit_code(outcome: Outcome) -> ExitCode {
     match outcome {
         Outcome::Clean => ExitCode::Success,
-        Outcome::MissingPreset | Outcome::SchemaViolation | Outcome::HardwareRevision => {
-            ExitCode::ValidationFailure
-        }
+        Outcome::SchemaViolation => ExitCode::ValidationFailure,
         Outcome::Failed => ExitCode::RuntimeFailure,
     }
 }
@@ -388,14 +386,6 @@ mod tests {
         );
         assert_eq!(
             validation_outcome_exit_code(Outcome::SchemaViolation),
-            ExitCode::ValidationFailure
-        );
-        assert_eq!(
-            validation_outcome_exit_code(Outcome::MissingPreset),
-            ExitCode::ValidationFailure
-        );
-        assert_eq!(
-            validation_outcome_exit_code(Outcome::HardwareRevision),
             ExitCode::ValidationFailure
         );
         assert_eq!(

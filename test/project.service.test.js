@@ -134,3 +134,51 @@ test("resolveProjectContext targets the multi-root folder holding board.yaml", (
   assert.equal(context.boardYamlPath, "/workspace/firmware/board.yaml");
   assert.equal(context.westCwd, "/workspace/firmware");
 });
+
+test("resolveProjectContext honors a .alp/sdk-path pointer when alpSdk.path is unset", () => {
+  const context = resolveProjectContext(
+    {
+      workspaceFolders: ["/workspace/app"],
+      settings: {
+        sdkPath: "",
+        pythonPath: "",
+        boardYamlPath: "board.yaml",
+        westCwd: "",
+      },
+      platform: "linux",
+    },
+    (candidatePath) =>
+      candidatePath === "/workspace/app/.alp/sdk-path" ||
+      candidatePath === "/opt/alp-sdk/scripts/alp_project.py",
+    (candidatePath) =>
+      candidatePath === "/workspace/app/.alp/sdk-path"
+        ? JSON.stringify({ sdkPath: "/opt/alp-sdk" })
+        : "",
+  );
+
+  assert.equal(context.sdkRoot, "/opt/alp-sdk");
+});
+
+test("resolveProjectContext ignores a stale .alp/sdk-path pointer and auto-discovers", () => {
+  const context = resolveProjectContext(
+    {
+      workspaceFolders: ["/workspace/app"],
+      settings: {
+        sdkPath: "",
+        pythonPath: "",
+        boardYamlPath: "board.yaml",
+        westCwd: "",
+      },
+      platform: "linux",
+    },
+    (candidatePath) =>
+      candidatePath === "/workspace/app/.alp/sdk-path" ||
+      candidatePath === "/workspace/alp-sdk/scripts/alp_project.py",
+    (candidatePath) =>
+      candidatePath === "/workspace/app/.alp/sdk-path"
+        ? JSON.stringify({ sdkPath: "/stale/sdk" })
+        : "",
+  );
+
+  assert.equal(context.sdkRoot, "/workspace/alp-sdk");
+});

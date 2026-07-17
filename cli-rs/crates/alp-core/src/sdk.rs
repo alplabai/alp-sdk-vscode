@@ -12,6 +12,8 @@ pub const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/alplabai/alp
 
 const LOADER_SCRIPT_RELATIVE: &str = "scripts/alp_project.py";
 const VERSION_FILE_RELATIVE: &str = "VERSION";
+/// Canonical SDK version file — `metadata/sdk_version.yaml` (`version: X`).
+const SDK_VERSION_FILE_RELATIVE: &str = "metadata/sdk_version.yaml";
 const METADATA_DIR_RELATIVE: &str = "metadata";
 
 /// A single SDK release entry parsed from the GitHub Releases API.
@@ -88,7 +90,8 @@ pub enum SdkReadinessState {
 pub struct SdkReadinessReport {
     /// The inspected SDK root path.
     pub sdk_path: String,
-    /// Trimmed contents of the `VERSION` file, if present and non-empty.
+    /// SDK version: trimmed `VERSION` file if present, else the `version:` value
+    /// from `metadata/sdk_version.yaml` (the file every real release ships).
     pub version: Option<String>,
     /// Whether `scripts/alp_project.py` exists under the SDK root.
     pub loader_script_present: bool,
@@ -138,6 +141,17 @@ pub fn check_sdk_readiness(
         }
     }
 
+    // Fall back to the SDK's canonical metadata/sdk_version.yaml (`version: X`) —
+    // no shipped alp-sdk release carries a top-level VERSION file.
+    if version.is_none() {
+        let sdk_version_file = join(SDK_VERSION_FILE_RELATIVE);
+        if path_exists(&sdk_version_file) {
+            if let Some(contents) = read_file(&sdk_version_file) {
+                version = parse_sdk_version_yaml(&contents);
+            }
+        }
+    }
+
     let state = if !loader_script_present {
         SdkReadinessState::Missing
     } else if !issues.is_empty() {
@@ -154,6 +168,25 @@ pub fn check_sdk_readiness(
         state,
         issues,
     }
+}
+
+/// Extract a `version: X` value from a `metadata/sdk_version.yaml` document
+/// (mirror of TS `parseSdkVersionYaml`). Returns the first non-empty value,
+/// stripping surrounding quotes; ignores blank and `#` comment lines.
+fn parse_sdk_version_yaml(text: &str) -> Option<String> {
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("version:") {
+            let value = rest.trim().trim_matches('"').trim_matches('\'').trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// Read the active-SDK pointer (`.alp/sdk-path`) under `workspace_root`, if any
@@ -223,6 +256,27 @@ mod tests {
         );
         assert_eq!(report.state, SdkReadinessState::Ready);
         assert_eq!(report.version.as_deref(), Some("v1.5.0"));
+        assert!(report.issues.is_empty());
+    }
+
+    #[test]
+    fn readiness_version_falls_back_to_sdk_version_yaml() {
+        // No top-level VERSION file (no shipped release has one); the version is
+        // resolved from the canonical metadata/sdk_version.yaml header.
+        let report = check_sdk_readiness(
+            "/sdk",
+            |p| {
+                p.ends_with("alp_project.py")
+                    || p.ends_with("metadata")
+                    || p.ends_with("sdk_version.yaml")
+            },
+            |p| {
+                p.ends_with("sdk_version.yaml")
+                    .then(|| "# release version\nversion: \"0.11.0\"\n".to_string())
+            },
+        );
+        assert_eq!(report.state, SdkReadinessState::Ready);
+        assert_eq!(report.version.as_deref(), Some("0.11.0"));
         assert!(report.issues.is_empty());
     }
 

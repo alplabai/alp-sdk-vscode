@@ -34,30 +34,14 @@ test("createValidatorPlan builds the expected validator command", () => {
   assert.match(plan.commandLine, /python3 .*validate_board_yaml.py --input/);
 });
 
-test("analyzeValidationResult classifies missing-preset warnings", () => {
-  const result = analyzeValidationResult({
-    status: 2,
-    stdout: "",
-    stderr: "FAIL som preset: missing preset\nsummary: missing-preset\n",
-  });
-
-  assert.equal(result.outcome, "missing-preset");
-  assert.deepEqual(result.issues, [
-    { message: "som preset: missing preset", severity: "warning" },
-  ]);
-});
-
-test("analyzeValidationResult classifies hardware-revision failures", () => {
-  const result = analyzeValidationResult({
-    status: 3,
-    stdout: "",
-    stderr: "FAIL hw_rev: unsupported revision\nsummary: hardware-revision\n",
-  });
-
-  assert.equal(result.outcome, "hardware-revision");
-  assert.deepEqual(result.issues, [
-    { message: "hw_rev: unsupported revision", severity: "error" },
-  ]);
+test("analyzeValidationResult treats out-of-contract exit codes as failed", () => {
+  // v0.10+ validate_board_yaml.py returns only {0,1}; any other non-zero exit
+  // (the pin-era 2/3) is a failed verdict now, not a specific outcome. (#172)
+  for (const status of [2, 3, 9]) {
+    const result = analyzeValidationResult({ status, stdout: "", stderr: "" });
+    assert.equal(result.outcome, "failed");
+    assert.deepEqual(result.issues, []);
+  }
 });
 
 test("analyzeValidationResult classifies hint lines as suggestions", () => {
@@ -77,14 +61,14 @@ test("analyzeValidationResult classifies hint lines as suggestions", () => {
 
 test("analyzeValidationResult combines FAIL continuation lines", () => {
   const result = analyzeValidationResult({
-    status: 2,
+    status: 1,
     stdout: "",
     stderr:
       "FAIL board: `preset: my-board` does not resolve\n" +
       "     expected shared definition at metadata/boards/my-board.yaml\n",
   });
 
-  assert.equal(result.outcome, "missing-preset");
+  assert.equal(result.outcome, "schema-violation");
   assert.equal(result.issues.length, 1);
   assert.match(result.issues[0].message, /preset: my-board.*does not resolve/);
   assert.match(result.issues[0].message, /expected shared definition/);
@@ -102,9 +86,9 @@ test("analyzeValidationResult parses ALP-B* rich error block", () => {
     "",
   ].join("\n");
 
-  const result = analyzeValidationResult({ status: 2, stdout: "", stderr });
+  const result = analyzeValidationResult({ status: 1, stdout: "", stderr });
 
-  assert.equal(result.outcome, "missing-preset");
+  assert.equal(result.outcome, "schema-violation");
   assert.equal(result.issues.length, 1);
   const issue = result.issues[0];
   assert.equal(issue.code, "ALP-B005");

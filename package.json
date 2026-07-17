@@ -88,7 +88,7 @@
           {
             "id": "alp.walkthrough.bootstrap",
             "title": "Bootstrap your toolchain",
-            "description": "Install the host tools the build needs — Python, west, CMake, Ninja — for your OS.\n[Bootstrap toolchain](command:alp.installDependencies)",
+            "description": "Create the Zephyr workspace and install west + Zephyr Python deps into a workspace venv. Run Alp: Toolchain doctor to check host prerequisites (Python, CMake, Ninja).\n[Bootstrap toolchain](command:alp.installDependencies)",
             "media": {
               "markdown": "media/walkthroughs/02-bootstrap.md"
             },

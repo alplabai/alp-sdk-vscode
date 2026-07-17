@@ -12,7 +12,13 @@ import {
 import { resolveProjectContext } from "@alp-sdk/core/project/service";
 
 export function collectProjectContext(): ProjectContext {
-  return resolveProjectContext(createResolutionInput(), fs.existsSync);
+  return resolveProjectContext(createResolutionInput(), fs.existsSync, (p) => {
+    try {
+      return fs.readFileSync(p, "utf8");
+    } catch {
+      return "";
+    }
+  });
 }
 
 function createResolutionInput(): ProjectResolutionInput {

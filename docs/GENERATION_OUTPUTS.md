@@ -36,15 +36,15 @@ Use:
 
 Generate one target:
 
-node ./out/cli/main.js generate --project . --sdk-root ../alp-sdk --target zephyr-conf
+alp generate --project . --sdk-root ../alp-sdk --target zephyr-conf
 
 Generate all targets:
 
-node ./out/cli/main.js generate --project . --sdk-root ../alp-sdk --all
+alp generate --project . --sdk-root ../alp-sdk --all
 
 CI-friendly JSON envelope:
 
-node ./out/cli/main.js generate --project . --sdk-root ../alp-sdk --all --format json > generate-report.json
+alp generate --project . --sdk-root ../alp-sdk --all --format json > generate-report.json
 
 ## 5. Determinism Expectations
 

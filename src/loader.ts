@@ -135,16 +135,6 @@ async function runValidator(context: vscode.ExtensionContext): Promise<void> {
     case "clean":
       await vscode.window.showInformationMessage("Alp: board.yaml is clean.");
       return;
-    case "missing-preset":
-      await vscode.window.showWarningMessage(
-        "Alp: board.yaml has missing-preset failures.  See the Alp SDK output channel.",
-      );
-      return;
-    case "hardware-revision":
-      await vscode.window.showErrorMessage(
-        "Alp: board.yaml hardware revision is incompatible with the current SDK.  See the Alp SDK output channel.",
-      );
-      return;
     case "schema-violation":
       await vscode.window.showErrorMessage(
         "Alp: board.yaml schema violation.  See the Alp SDK output channel.",
