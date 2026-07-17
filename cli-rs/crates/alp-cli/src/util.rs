@@ -78,6 +78,20 @@ pub fn cli_workspace_root(g: &GlobalArgs) -> PathBuf {
     }
 }
 
+/// The walk-up-discovered project root, for a board.yaml-consuming command that
+/// resolves the board/SDK roots itself (e.g. `generate`) rather than going through
+/// [`resolve_cli_project_context`]. Same discovery rule: `--project`/`--board-yaml`
+/// pin as before, otherwise walk up to the nearest ancestor holding a `board.yaml`.
+pub fn cli_project_root(g: &GlobalArgs) -> PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    discover_workspace_root(
+        &cwd,
+        g.project.as_deref(),
+        g.board_yaml.as_deref(),
+        &|dir| dir.join("board.yaml").exists(),
+    )
+}
+
 /// True if `root` contains `scripts/alp_project.py`, marking it a valid SDK root.
 pub fn has_loader_script(root: &Path) -> bool {
     root.join("scripts").join("alp_project.py").exists()
