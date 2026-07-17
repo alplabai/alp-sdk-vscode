@@ -30,13 +30,13 @@ const BUILD_ACTIONS: Array<{
   command: string;
 }> = [
   {
-    label: "West Build",
+    label: "Build",
     description: "validate + generate + build",
     icon: "play",
     command: "alp.westBuild",
   },
   {
-    label: "West Flash",
+    label: "Flash device (west)",
     description: "flash connected device",
     icon: "zap",
     command: "alp.westFlash",
@@ -48,31 +48,31 @@ const BUILD_ACTIONS: Array<{
     command: "alp.westRunNativeSim",
   },
   {
-    label: "Alp Image",
+    label: "Image",
     description: "assemble image bundle",
     icon: "package",
     command: "alp.westAlpImage",
   },
   {
-    label: "Alp Flash",
+    label: "Flash",
     description: "flash all slices",
     icon: "rocket",
     command: "alp.westAlpFlash",
   },
   {
-    label: "Renode Simulate",
+    label: "Renode",
     description: "simulate in Renode",
     icon: "beaker",
     command: "alp.westAlpRenode",
   },
   {
-    label: "West Update",
+    label: "Update modules (west)",
     description: "fetch & update modules",
     icon: "sync",
     command: "alp.westUpdate",
   },
   {
-    label: "Clean Build",
+    label: "Clean",
     description: "remove build directory",
     icon: "trash",
     command: "alp.westAlpClean",
