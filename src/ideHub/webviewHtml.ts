@@ -77,7 +77,7 @@ export function buildWebviewHtml(
  * A webview is untrusted input, so anything outside this set is refused rather
  * than forwarded to `vscode.commands.executeCommand`.
  */
-const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
+export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.bootstrap",
   "alp.ideHub.focus",
   "alp.installDependencies",

@@ -78,6 +78,28 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     "bin",
     binaryName(platform),
   );
+  // A locally-built CLI under the extension path — present when running from a
+  // source checkout (F5 / dev host / `code --extensionDevelopmentPath`), where
+  // no `bin/` is staged and a network download may be unavailable. Prefer a
+  // release build over debug. Lets the CLI-backed buttons work out of the box
+  // in a checkout instead of failing with "Alp CLI unavailable".
+  const localBuildBinaryPath =
+    [
+      path.join(
+        context.extensionPath,
+        "cli-rs",
+        "target",
+        "release",
+        binaryName(platform),
+      ),
+      path.join(
+        context.extensionPath,
+        "cli-rs",
+        "target",
+        "debug",
+        binaryName(platform),
+      ),
+    ].find((candidate) => fs.existsSync(candidate)) ?? null;
   return {
     cliPathSetting: vscode.workspace
       .getConfiguration("alpSdk")
@@ -89,6 +111,7 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     cachedBinaryPath: path.join(cacheDir, binaryName(platform)),
     bundledBinaryPath,
     bundledExists: fs.existsSync(bundledBinaryPath),
+    localBuildBinaryPath,
     fileExists: fs.existsSync,
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),

@@ -57,6 +57,9 @@ export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   if (input.bundledExists) {
     return "bundled";
   }
+  if (input.localBuildExists) {
+    return "localBuild";
+  }
   if (input.cachedExists) {
     return "cached";
   }

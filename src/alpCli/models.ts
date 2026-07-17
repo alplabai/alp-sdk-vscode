@@ -46,6 +46,7 @@ export type BinarySource =
   | "cliPath"
   | "path"
   | "bundled"
+  | "localBuild"
   | "cached"
   | "download";
 
@@ -59,6 +60,10 @@ export interface BinaryResolutionInput {
   /** Whether a `bin/alp[.exe]` staged in the extension install exists (only
    *  true in a platform-specific VSIX built with `vsce package --target`). */
   bundledExists: boolean;
+  /** Whether a locally-built `cli-rs/target/{release,debug}/alp[.exe]` exists
+   *  under the extension path — true when running from a source checkout, so
+   *  the CLI resolves without a network download. */
+  localBuildExists: boolean;
   /** Whether a previously downloaded binary exists in global storage. */
   cachedExists: boolean;
 }

@@ -485,7 +485,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js",
-    "test:e2e:cli": "bash test/e2e/cli-smoke.sh"
+    "test:e2e:cli": "bash test/e2e/cli-smoke.sh",
+    "test:e2e:webview": "node test/webview/run.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -509,6 +510,7 @@
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
+    "jsdom": "^25.0.1",
     "prettier": "^3.8.3",
     "typescript": "^7.0.2"
   }
