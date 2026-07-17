@@ -80,21 +80,10 @@ export async function queryAlpIdeState(
     const report = checkSdkReadiness(
       sdkPath,
       (p) => fs.existsSync(p),
-      (p) => {
-        try {
-          return fs.readFileSync(p, "utf8");
-        } catch {
-          return "";
-        }
-      },
+      (p) => fs.readFileSync(p, "utf8"),
     );
     sdkReadiness = report.state;
     sdkVersion = report.version;
-  }
-
-  const versionFile = sdkPath ? path.join(sdkPath, "VERSION") : null;
-  if (versionFile && sdkVersion === null && fs.existsSync(versionFile)) {
-    sdkVersion = fs.readFileSync(versionFile, "utf8").trim();
   }
 
   const cacheRoot = sdkCacheRoot();
@@ -104,13 +93,7 @@ export async function queryAlpIdeState(
   const discoveredEntries = listLocalSdkEntries(
     searchRoots,
     (p) => fs.existsSync(p),
-    (p) => {
-      try {
-        return fs.readFileSync(p, "utf8");
-      } catch {
-        return "";
-      }
-    },
+    (p) => fs.readFileSync(p, "utf8"),
     (p) => {
       try {
         return fs.readdirSync(p);
