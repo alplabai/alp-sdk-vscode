@@ -3,12 +3,12 @@
 //!
 //! Mirrors TS `runPresetsCommand`: built-in library/inference/log/os defaults
 //! come from `empty_preset_catalogue`; SKUs and carriers are discovered from
-//! `<sdk>/metadata/e1m_modules` and `<sdk>/metadata/carriers`. An unresolved
+//! `<sdk>/metadata/e1m_modules` and `<sdk>/metadata/boards`. An unresolved
 //! SDK root is a warning (not a failure) — defaults are still returned.
 
 use std::path::Path;
 
-use alp_core::{empty_preset_catalogue, parse_board_model, parse_som_preset};
+use alp_core::{empty_preset_catalogue, parse_board_model, parse_board_preset, parse_som_preset};
 
 use super::CommandRun;
 use crate::cli::GlobalArgs;
@@ -16,13 +16,15 @@ use crate::envelope::{Envelope, Issue, Project};
 use crate::exit::ExitCode;
 use crate::util::resolve_cli_project_context;
 
-/// One carrier preset discovered under `<sdk>/metadata/carriers`: its directory
-/// name and the sorted keys populated in its `carrier.populated` map.
+/// One board preset discovered under `<sdk>/metadata/boards` (flat `<name>.yaml`
+/// with a top-level `populated:` map). Serialized as the envelope `carriers`
+/// entry for back-compat: its preset name and the sorted populated keys.
 #[derive(serde::Serialize)]
 struct CarrierEntry {
-    /// Carrier directory name (the entry under `metadata/carriers`).
+    /// Board preset name (the `<name>.yaml` file stem under `metadata/boards`,
+    /// or the directory name under the pin-era `metadata/carriers` fallback).
     name: String,
-    /// Sorted keys present in the carrier's `carrier.populated` map.
+    /// Sorted keys present in the board's `populated` map.
     #[serde(rename = "populatedKeys")]
     populated_keys: Vec<String>,
 }
@@ -67,7 +69,8 @@ struct PresetsData {
     skus: Vec<String>,
     /// Rich SoM presets discovered from `<sdk>/metadata/e1m_modules/*.yaml`.
     soms: Vec<SomEntry>,
-    /// Carrier presets discovered from `<sdk>/metadata/carriers`.
+    /// Board presets discovered from `<sdk>/metadata/boards` (pin-era
+    /// `metadata/carriers` as a fallback). Field name kept for back-compat.
     carriers: Vec<CarrierEntry>,
     /// Built-in library defaults from `empty_preset_catalogue` (the per-core
     /// `cores.<id>.libraries` token set).
@@ -96,13 +99,19 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
     let context = resolve_cli_project_context(g);
     let defaults = empty_preset_catalogue();
 
-    let (soms, carriers, board_libraries) = match &context.sdk_root {
-        Some(root) => (
-            read_soms(root),
-            read_carriers(root),
-            read_board_libraries(root),
-        ),
-        None => (Vec::new(), Vec::new(), Vec::new()),
+    let (soms, carriers, carriers_found, board_libraries) = match &context.sdk_root {
+        Some(root) => {
+            let (carriers, carriers_found) = read_carriers(root);
+            (
+                read_soms(root),
+                carriers,
+                carriers_found,
+                read_board_libraries(root),
+            )
+        }
+        // Unresolved root is already reported below; treat as "found" so the
+        // boards-dir-missing warning is not emitted on top of it.
+        None => (Vec::new(), Vec::new(), true, Vec::new()),
     };
     let skus: Vec<String> = soms.iter().map(|s| s.sku.clone()).collect();
 
@@ -113,6 +122,14 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
             severity: "warning".to_string(),
             message:
                 "alp-sdk root is unresolved. Returning built-in defaults and empty SDK preset lists."
+                    .to_string(),
+        });
+    } else if !carriers_found {
+        issues.push(Issue {
+            code: "presets.boards-dir-missing".to_string(),
+            severity: "warning".to_string(),
+            message:
+                "No board presets found: neither metadata/boards/ nor metadata/carriers/ exists under the SDK root."
                     .to_string(),
         });
     }
@@ -206,13 +223,47 @@ fn read_soms(sdk_root: &str) -> Vec<SomEntry> {
     soms
 }
 
-/// Discover carrier presets from `<sdk>/metadata/carriers`. Each subdirectory's
-/// `board.yaml` is parsed for its `carrier.populated` keys; malformed presets
-/// are skipped (matches TS). Result is sorted by carrier name.
-fn read_carriers(sdk_root: &str) -> Vec<CarrierEntry> {
-    let dir = Path::new(sdk_root).join("metadata").join("carriers");
+/// Discover board presets from the SDK. The current SDK layout (v0.11+) ships
+/// flat `<sdk>/metadata/boards/<name>.yaml` files with a top-level `populated:`
+/// map, parsed via the shared `parse_board_preset` (mirroring the TS
+/// `parseBoardPreset`); the pin-era `<sdk>/metadata/carriers/<name>/board.yaml`
+/// layout (`carrier.populated`) is kept only as a fallback. Malformed presets
+/// are skipped (matches TS). Result is sorted by name. The returned bool is
+/// `false` only when NEITHER layout directory exists — letting the caller warn
+/// instead of reporting an empty list as success.
+fn read_carriers(sdk_root: &str) -> (Vec<CarrierEntry>, bool) {
+    let meta = Path::new(sdk_root).join("metadata");
+
+    // Primary: flat `metadata/boards/<name>.yaml` with a top-level `populated:`.
+    if let Ok(entries) = std::fs::read_dir(meta.join("boards")) {
+        let mut carriers: Vec<CarrierEntry> = Vec::new();
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".yaml") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(entry.path()) else {
+                continue;
+            };
+            // Ignore malformed board presets in listing mode (matches TS).
+            let Ok(preset) = parse_board_preset(&text) else {
+                continue;
+            };
+            let mut populated_keys: Vec<String> = preset.populated.into_keys().collect();
+            populated_keys.sort();
+            carriers.push(CarrierEntry {
+                name: name.trim_end_matches(".yaml").to_string(),
+                populated_keys,
+            });
+        }
+        carriers.sort_by(|a, b| a.name.cmp(&b.name));
+        return (carriers, true);
+    }
+
+    // Fallback: pin-era `metadata/carriers/<name>/board.yaml` (`carrier.populated`).
+    let dir = meta.join("carriers");
     let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Vec::new();
+        return (Vec::new(), false);
     };
     let mut carriers: Vec<CarrierEntry> = Vec::new();
     for entry in entries.filter_map(Result::ok) {
@@ -224,7 +275,6 @@ fn read_carriers(sdk_root: &str) -> Vec<CarrierEntry> {
         let Ok(text) = std::fs::read_to_string(&board) else {
             continue;
         };
-        // Ignore malformed carrier presets in listing mode (matches TS).
         let Ok(model) = parse_board_model(&text) else {
             continue;
         };
@@ -240,7 +290,7 @@ fn read_carriers(sdk_root: &str) -> Vec<CarrierEntry> {
         });
     }
     carriers.sort_by(|a, b| a.name.cmp(&b.name));
-    carriers
+    (carriers, true)
 }
 
 /// Discover the ADR-0018 curated libraries from `<sdk>/metadata/libraries`: the
@@ -306,5 +356,22 @@ mod tests {
     #[test]
     fn read_board_libraries_empty_when_dir_missing() {
         assert!(read_board_libraries("/no/such/sdk/root").is_empty());
+    }
+
+    #[test]
+    fn read_carriers_reads_flat_boards_layout() {
+        let (carriers, found) = read_carriers(FIXTURE_SDK);
+        assert!(found);
+        let names: Vec<&str> = carriers.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["bare", "e1m-evk"]);
+        let evk = carriers.iter().find(|c| c.name == "e1m-evk").unwrap();
+        assert_eq!(evk.populated_keys, vec!["ble", "wifi"]);
+    }
+
+    #[test]
+    fn read_carriers_reports_missing_when_no_layout() {
+        let (carriers, found) = read_carriers("/no/such/sdk/root");
+        assert!(carriers.is_empty());
+        assert!(!found);
     }
 }

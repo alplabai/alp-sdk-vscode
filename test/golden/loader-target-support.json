@@ -43,5 +43,14 @@
       "label": "Yocto config preview",
       "languageId": "properties"
     }
+  },
+  {
+    "emit": "carrier-netlist",
+    "displayName": "Carrier netlist",
+    "outputRelativePath": "build/generated/carrier-netlist.json",
+    "preview": {
+      "label": "Carrier netlist preview",
+      "languageId": "json"
+    }
   }
 ]
