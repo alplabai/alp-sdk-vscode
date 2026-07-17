@@ -86,8 +86,6 @@ export async function maybeOfferSetupPanel(
     const lastShown = context.globalState.get<string>(ORCHESTRATOR_KEY, "");
     if (lastShown === fingerprint) return;
 
-    await context.globalState.update(ORCHESTRATOR_KEY, fingerprint);
-
     const issueLabels: Record<string, string> = {
       python: "Python not found",
       west: "west not found",
@@ -99,7 +97,15 @@ export async function maybeOfferSetupPanel(
     const action = await vscode.window.showWarningMessage(
       `Alp IDE: environment not ready — ${summary}.`,
       "Open Alp IDE",
+      "Don't show again",
     );
+
+    // Only record the fingerprint once the user actually responded; an
+    // auto-dismissed toast returns undefined and is left unrecorded so it is
+    // retried on the next activation rather than lost for the install lifetime.
+    if (action !== undefined) {
+      await context.globalState.update(ORCHESTRATOR_KEY, fingerprint);
+    }
     if (action === "Open Alp IDE") {
       await vscode.commands.executeCommand("alp.ideHub.focus");
     }

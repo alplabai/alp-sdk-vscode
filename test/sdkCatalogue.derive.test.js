@@ -129,3 +129,24 @@ test("chipsForSom filters chips by the SKU's family token", () => {
   );
   assert.deepEqual(chipsForSom(cat, "E1M-NOPE"), []);
 });
+
+test("chipsForSom accepts the vendor family alias (nxp-imx9) for i.MX 9", () => {
+  const cat = {
+    soms: [],
+    boards: [],
+    libraries: [],
+    socs: [],
+    chips: [
+      { chipId: "imx_only", displayName: "", families: ["imx93"] },
+      {
+        chipId: "murata_lbee5pl2dl",
+        displayName: "",
+        families: ["nxp-imx9"],
+      },
+    ],
+  };
+  assert.deepEqual(
+    chipsForSom(cat, "E1M-NX9101").map((c) => c.chipId),
+    ["imx_only", "murata_lbee5pl2dl"],
+  );
+});

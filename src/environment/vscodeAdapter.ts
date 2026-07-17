@@ -18,7 +18,8 @@ import * as path from "path";
  * EXTRA_ZEPHYR_MODULES), so it usually lives outside the open project:
  *   1. the open project's west cwd + its ancestors,
  *   2. the workspace beside ZEPHYR_BASE (env var; shell-agnostic, not an rc file),
- *   3. the SDK's default isolated workspace (`<sdk-parent>/zephyrproject`),
+ *   3. the SDK's parent (`<sdk-parent>`, the v0.11 bootstrap topdir) and its
+ *      legacy isolated workspace (`<sdk-parent>/zephyrproject`),
  *   4. the conventional `~/zephyrproject`.
  */
 export function westWorkspaceCandidates(
@@ -36,7 +37,9 @@ export function westWorkspaceCandidates(
   const zephyrBase = process.env.ZEPHYR_BASE;
   if (zephyrBase) candidates.push(path.dirname(zephyrBase));
   if (sdkRoot) {
-    candidates.push(path.join(path.dirname(sdkRoot), "zephyrproject"));
+    const sdkParent = path.dirname(sdkRoot);
+    candidates.push(sdkParent);
+    candidates.push(path.join(sdkParent, "zephyrproject"));
   }
   candidates.push(path.join(os.homedir(), "zephyrproject"));
   return candidates;

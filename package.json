@@ -428,26 +428,31 @@
         "alpSdk.path": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Path to the alp-sdk repository checkout.  When empty, the extension searches the workspace for the SDK root (a directory containing scripts/alp_project.py)."
         },
         "alpSdk.pythonPath": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Python interpreter to use for the loader + validator.  Defaults to `python3` (POSIX) / `python` (Windows)."
         },
         "alpSdk.boardYamlPath": {
           "type": "string",
           "default": "board.yaml",
-          "description": "Path (relative to the workspace root) of the board.yaml the loader operates on."
+          "scope": "resource",
+          "description": "Path (relative to its workspace folder) of the board.yaml the loader operates on. Settable per-folder via .vscode/settings.json in a multi-root workspace."
         },
         "alpSdk.westCwd": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Working directory for `west build/flash/run`.  When empty, defaults to the workspace root."
         },
         "alpSdk.cliPath": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Path to the native `alp` CLI binary. When empty, the extension uses `alp` on PATH, then falls back to downloading the matching release into its global storage. Point this at a local dev build (e.g. `cli-rs/target/release/alp`) to override."
         }
       }
@@ -465,7 +470,8 @@
     "package:dev": "vsce package --no-dependencies --pre-release",
     "publish:vsix": "vsce publish --no-dependencies",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -486,6 +492,7 @@
     "@types/react": "^19.2.15",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^6.0.2",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
     "prettier": "^3.8.3",
