@@ -147,6 +147,168 @@ async function runChecks() {
         : ""),
   );
 
+  // Click EVERY sidebar tree button one by one. Each tree item IS a button:
+  // constructing the 5 providers over both the real (board.yaml present) and the
+  // empty state enumerates every item variant; for each item that carries a
+  // `.command` we assert the command is registered and drive it — the literal
+  // "click each button in the sidebar".
+  const { BuildTreeProvider } = require("../../../out/views/build.js");
+  const { ProjectsTreeProvider } = require("../../../out/views/projects.js");
+  const { SdkTreeProvider } = require("../../../out/views/sdk.js");
+  const { SetupTreeProvider } = require("../../../out/views/setup.js");
+  const {
+    WorkspacesTreeProvider,
+  } = require("../../../out/views/workspaces.js");
+  const { StateManager } = require("../../../out/views/stateManager.js");
+  const { emptyAlpIdeState } = require("../../../out/ideHub/messages.js");
+
+  // A minimal StateManager stand-in that serves a fixed state (providers only
+  // read `.state` and subscribe to `onStateChange`).
+  const fixedMgr = (state) => ({
+    state,
+    onStateChange: () => ({ dispose() {} }),
+  });
+
+  const realMgr = new StateManager();
+  await realMgr.refresh(null); // real state: this workspace + resolved SDK
+  const emptyMgr = fixedMgr(emptyAlpIdeState());
+
+  // A synthetic "fully ready" state so the Build & Flash view renders its build
+  // action buttons (Build / Flash / Debug / Image / Renode / Clean / Update),
+  // which are gated on westInitialized && boardYamlExists and would otherwise
+  // never appear without a bootstrapped Zephyr workspace.
+  const readyState = emptyAlpIdeState();
+  readyState.workspace = {
+    workspaceRoot: process.cwd(),
+    boardYamlExists: true,
+    westInitialized: true,
+  };
+  readyState.sdk = {
+    activePath: sdkRoot || "/sdk",
+    version: "0.11.0",
+    readiness: "ready",
+    localEntries: [],
+  };
+  readyState.setup = {
+    pythonAvailable: true,
+    westAvailable: true,
+    lastBootstrapAt: null,
+    toolVersions: {
+      python: "3.11",
+      west: "1.2",
+      cmake: "3.28",
+      ninja: "1.11",
+    },
+  };
+  const readyMgr = fixedMgr(readyState);
+
+  const providersFor = (mgr) => [
+    ["setup", new SetupTreeProvider(mgr)],
+    ["workspaces", new WorkspacesTreeProvider(mgr)],
+    ["projects", new ProjectsTreeProvider(mgr)],
+    ["sdk", new SdkTreeProvider(mgr)],
+    ["build", new BuildTreeProvider(mgr)],
+  ];
+
+  const buttons = new Map(); // command -> {view, label}
+  for (const [stateName, mgr] of [
+    ["real", realMgr],
+    ["empty", emptyMgr],
+    ["ready", readyMgr],
+  ]) {
+    for (const [view, provider] of providersFor(mgr)) {
+      const items = (await provider.getChildren()) || [];
+      for (const item of items) {
+        const cmd = item.command && item.command.command;
+        if (!cmd) continue; // a non-clickable label/info row
+        const label =
+          typeof item.label === "string"
+            ? item.label
+            : (item.label && item.label.label) || "";
+        buttons.set(cmd, { view: `${view}/${stateName}`, label });
+      }
+      if (typeof provider.dispose === "function") provider.dispose();
+    }
+  }
+  realMgr.dispose();
+
+  await check(
+    `enumerated sidebar tree buttons across states (${buttons.size} distinct)`,
+    () => assert.ok(buttons.size >= 8, `too few buttons: ${buttons.size}`),
+  );
+
+  let clicked = 0;
+  for (const [cmd, meta] of buttons) {
+    await check(
+      `sidebar button "${meta.label}" (${meta.view}) → ${cmd}`,
+      async () => {
+        assert.ok(registered.has(cmd), `${cmd} not registered`);
+        try {
+          await withTimeout(
+            Promise.resolve(vscode.commands.executeCommand(cmd)),
+            2500,
+          );
+        } catch (err) {
+          throw new Error(`threw: ${err && err.message ? err.message : err}`);
+        }
+        clicked += 1;
+      },
+    );
+  }
+  console.log(`  clicked ${clicked}/${buttons.size} sidebar tree buttons`);
+
+  // Webview buttons: the React surfaces route their button clicks through the
+  // allowlisted runWebviewCommand (issue #134). Every command a webview button
+  // may fire must be a registered command — assert the whole allowlist resolves.
+  const { ALLOWED_WEBVIEW_COMMANDS } = (() => {
+    try {
+      return require("../../../out/ideHub/webviewHtml.js");
+    } catch {
+      return {};
+    }
+  })();
+  if (ALLOWED_WEBVIEW_COMMANDS) {
+    await check("every webview-button command is registered", () => {
+      const builtins = new Set([
+        "vscode.openFolder",
+        "workbench.action.reloadWindow",
+        "workbench.action.openSettings",
+      ]);
+      const missing = [...ALLOWED_WEBVIEW_COMMANDS].filter(
+        (c) => !registered.has(c) && !builtins.has(c),
+      );
+      assert.deepEqual(
+        missing,
+        [],
+        `unregistered webview commands: ${missing}`,
+      );
+    });
+  }
+
+  // The `alp` CLI must actually RESOLVE — a source checkout has a built
+  // cli-rs/target/release/alp, so the CLI-backed buttons (New Project, generate,
+  // validate) work instead of failing "Alp CLI unavailable". Resolve via the
+  // real adapter against a fabricated context pointing at this checkout.
+  const {
+    resolveAlpBinaryForContext,
+  } = require("../../../out/alpCli/vscodeAdapter.js");
+  await check("alp CLI resolves (no 'Alp CLI unavailable')", async () => {
+    const repoRoot = path.resolve(__dirname, "../../..");
+    const fakeCtx = {
+      extensionPath: repoRoot,
+      globalStorageUri: {
+        fsPath: fs.mkdtempSync(
+          path.join(require("node:os").tmpdir(), "alp-gs-"),
+        ),
+      },
+    };
+    const binary = await resolveAlpBinaryForContext(fakeCtx);
+    assert.ok(binary && binary.command, "no binary resolved");
+    // In this checkout the built CLI resolves locally (not a network download).
+    assert.equal(binary.source, "localBuild", `resolved via ${binary.source}`);
+    assert.ok(fs.existsSync(binary.command), `missing: ${binary.command}`);
+  });
+
   // The five contributed views must exist (their providers registered at activation).
   await check("all 5 tree views are contributed", () => {
     const views = (manifest.contributes.views["alp-ide"] || []).map(

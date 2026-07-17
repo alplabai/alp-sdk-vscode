@@ -40,6 +40,10 @@ export interface ResolveDeps {
   bundledBinaryPath: string;
   /** Whether `bundledBinaryPath` exists on disk. */
   bundledExists: boolean;
+  /** Absolute path of a locally-built `cli-rs/target/{release,debug}/alp[.exe]`
+   *  under the extension path, or null when none exists (running from a source
+   *  checkout resolves the CLI here instead of a network download). */
+  localBuildBinaryPath: string | null;
   fileExists: (path: string) => boolean;
   commandOnPath: (command: string) => boolean;
   ensureDir: (dir: string) => void;
@@ -68,6 +72,7 @@ export async function resolveAlpBinary(
       Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
     onPath: deps.commandOnPath("alp"),
     bundledExists: deps.bundledExists,
+    localBuildExists: Boolean(deps.localBuildBinaryPath),
     cachedExists: deps.fileExists(deps.cachedBinaryPath),
   };
 
@@ -82,6 +87,11 @@ export async function resolveAlpBinary(
         deps.chmodExec(deps.bundledBinaryPath);
       }
       return { command: deps.bundledBinaryPath, source };
+    case "localBuild":
+      if (deps.platform !== "win32") {
+        deps.chmodExec(deps.localBuildBinaryPath!);
+      }
+      return { command: deps.localBuildBinaryPath!, source };
     case "cached":
       return { command: deps.cachedBinaryPath, source };
     case "download":

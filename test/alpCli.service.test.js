@@ -73,6 +73,46 @@ test("decideBinarySource follows the resolution order", () => {
   );
 });
 
+test("decideBinarySource: a local cli-rs build resolves before cached/download", () => {
+  // A source checkout (no bundle, no network) resolves the built CLI instead of
+  // failing with "Alp CLI unavailable".
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: false,
+      bundledExists: false,
+      localBuildExists: true,
+      cachedExists: false,
+    }),
+    "localBuild",
+  );
+  // ...but a bundle (platform VSIX) and PATH/cliPath still win over it.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: false,
+      bundledExists: true,
+      localBuildExists: true,
+      cachedExists: false,
+    }),
+    "bundled",
+  );
+  // ...and a cached download loses to it.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: false,
+      bundledExists: false,
+      localBuildExists: false,
+      cachedExists: true,
+    }),
+    "cached",
+  );
+});
+
 test("decideBinarySource: bundled wins over cached/download but loses to cliPath/path", () => {
   // bundled beats cached and download when nothing higher-priority resolves.
   assert.equal(
