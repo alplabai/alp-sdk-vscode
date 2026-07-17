@@ -484,7 +484,8 @@
     "publish:vsix": "vsce publish --no-dependencies",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js"
+    "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js",
+    "test:e2e:cli": "bash test/e2e/cli-smoke.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
