@@ -5,6 +5,9 @@ const {
   parseBoardConfig,
 } = require("../packages/alp-core/dist/board/parse.js");
 const {
+  librariesForCore,
+} = require("../packages/alp-core/dist/board/models.js");
+const {
   EDGEAI,
   OBJDET,
   PRODUCTION,
@@ -22,11 +25,14 @@ test("parseBoardConfig maps the EDGEAI example", () => {
   assert.equal(c.diagnostics.log_level, "info");
 });
 
-test("parseBoardConfig maps the OBJDET example (chips + per-core libraries)", () => {
+test("parseBoardConfig maps the OBJDET example (chips + top-level libraries)", () => {
   const c = parseBoardConfig(OBJDET);
   assert.equal(c.som.sku, "E1M-V2M101");
   assert.deepEqual(c.chips, ["ov5640", "st7789"]);
-  assert.deepEqual(c.cores.m33_sm.libraries, ["cmsis_dsp"]);
+  // libraries live only at the top level (ADR-0018); a per-core pick is a
+  // `{name, cores}` entry there, not `cores.<id>.libraries` (forbidden).
+  assert.equal(c.cores.m33_sm.libraries, undefined);
+  assert.deepEqual(librariesForCore(c.libraries, "m33_sm"), ["cmsis_dsp"]);
 });
 
 test("parseBoardConfig maps the PRODUCTION example (boot/ota/memory/power/iot)", () => {
@@ -41,7 +47,7 @@ test("parseBoardConfig maps the PRODUCTION example (boot/ota/memory/power/iot)",
   ]);
   assert.equal(c.boot.method, "mcuboot");
   assert.equal(c.boot.signing.algorithm, "ecdsa_p256");
-  assert.equal(c.boot.slots.primary.size_kib, 1024);
+  assert.equal(c.boot.swap_algorithm, "scratch");
   assert.equal(c.ota.provider, "mender");
   assert.equal(c.ota.rollback.min_version, 1);
   assert.ok(c.chips.includes("optiga_trust_m"));

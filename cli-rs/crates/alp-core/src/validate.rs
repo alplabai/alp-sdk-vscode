@@ -396,14 +396,14 @@ mod tests {
     #[test]
     fn v2_clean_board_passes() {
         let text =
-            "schema_version: 2\nsom:\n  sku: E1M-AEN801\ncores:\n  m55_hp:\n    app: ./src\n";
+            "schemaVersion: 2\nsom:\n  sku: E1M-AEN801\ncores:\n  m55_hp:\n    app: ./src\n";
         let r = validate_board_yaml_local(text).unwrap();
         assert_eq!(r.outcome, Outcome::Clean);
     }
 
     #[test]
     fn v2_top_level_os_is_rejected() {
-        let text = "schema_version: 2\nos: zephyr\ncores:\n  m55_hp:\n    app: ./src\n";
+        let text = "schemaVersion: 2\nos: zephyr\ncores:\n  m55_hp:\n    app: ./src\n";
         let r = validate_board_yaml_local(text).unwrap();
         assert_eq!(r.outcome, Outcome::SchemaViolation);
         assert_eq!(r.issues.len(), 1);
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn v2_without_cores_is_rejected() {
-        let text = "schema_version: 2\nsom:\n  sku: E1M-AEN801\n";
+        let text = "schemaVersion: 2\nsom:\n  sku: E1M-AEN801\n";
         let r = validate_board_yaml_local(text).unwrap();
         assert_eq!(r.outcome, Outcome::SchemaViolation);
         assert_eq!(r.issues.len(), 1);
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn parse_rich_board_fields() {
         let text = r#"
-schema_version: 2
+schemaVersion: 2
 som:
   sku: E1M-AEN801
 cores:

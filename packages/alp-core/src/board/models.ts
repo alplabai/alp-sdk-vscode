@@ -38,12 +38,18 @@ export interface ExtraLibrary {
   profile?: string;
 }
 
+/** A top-level `libraries[]` entry (ADR 0018, board.schema.json `libraries`).
+ * A bare name is shorthand for a project-wide `{name}`; the object form scopes
+ * the pick to `cores` (omitted = project-wide, every core whose OS the
+ * manifest supports). The single place libraries are declared — there is no
+ * per-core `cores.<id>.libraries` field. */
+export type LibraryEntry = string | { name: string; cores?: string[] };
+
 export interface CoreEntry {
   os?: CoreOs;
   app?: string;
   image?: string;
   peripherals?: string[];
-  libraries?: string[];
   extra_libraries?: ExtraLibrary[];
   memory?: CoreMemory;
   power?: CorePower;
@@ -84,17 +90,10 @@ export interface BootSigning {
   key_file: string;
 }
 
-export interface BootSlot {
-  size_kib: number;
-}
-
 export interface Boot {
   method?: "mcuboot" | "none";
   signing?: BootSigning;
-  slots?: { primary: BootSlot; secondary: BootSlot };
   swap_algorithm?: "scratch" | "move" | "overwrite";
-  scratch_size_kib?: number;
-  anti_rollback?: boolean;
   build_type?: "Release" | "Debug" | "MinSizeRel";
 }
 
@@ -188,9 +187,9 @@ export interface BoardConfig {
   e1m_routes?: E1mRoutes;
   pins?: PinRef[];
   chips?: string[];
-  /** Project-wide curated third-party libraries (ADR 0018), board.schema.json
-   * `libraries`. Distinct from the per-core `cores.<id>.libraries` token list. */
-  libraries?: string[];
+  /** Curated third-party libraries (ADR 0018), board.schema.json `libraries`.
+   * The single place libraries are declared — see LibraryEntry. */
+  libraries?: LibraryEntry[];
   ipc?: IpcEntry[];
   diagnostics?: Diagnostics;
   storage?: StoragePartition[];
@@ -226,3 +225,85 @@ export const BOARD_KEY_ORDER: (keyof BoardConfig)[] = [
   "models",
   "supported_boards",
 ];
+
+/** Names of the top-level libraries effective for `coreId`: a bare string, an
+ * object with no `cores` (project-wide), or an object whose `cores` includes
+ * `coreId`. Mirrors the `cores:` scoping rule in board.schema.json. */
+export function librariesForCore(
+  libraries: LibraryEntry[] | undefined,
+  coreId: string,
+): string[] {
+  return (libraries ?? [])
+    .filter(
+      (entry) =>
+        typeof entry === "string" ||
+        entry.cores === undefined ||
+        entry.cores.includes(coreId),
+    )
+    .map((entry) => (typeof entry === "string" ? entry : entry.name));
+}
+
+/** Apply a per-core library-name selection (the configurator's per-core
+ * TagSelector) onto the top-level `libraries[]` array. A newly-added name is
+ * merged into an existing entry's `cores` (or a new `{name, cores:[coreId]}`
+ * entry); a removed name is dropped from a scoped entry's `cores` (deleting
+ * the entry once empty).
+ *
+ * Removing a *project-wide* entry (bare string / no `cores`) from a single
+ * core's picker can't be expressed as "exclude just this core" — the schema
+ * has no such primitive — so it is narrowed to the other ids in
+ * `allCoreIds` (dropped entirely if that leaves none). This is a lossy
+ * approximation for any core NOT included in `allCoreIds` (e.g. a SoM
+ * topology core with no board.yaml override): it silently loses the
+ * project-wide library for that core too. Callers should pass every core id
+ * the project cares about (the full topology, not just `cores:` keys
+ * already present in the document). */
+export function applyCoreLibrarySelection(
+  libraries: LibraryEntry[] | undefined,
+  coreId: string,
+  nextNames: string[],
+  allCoreIds: string[],
+): LibraryEntry[] {
+  const next = libraries ? [...libraries] : [];
+  const currentNames = librariesForCore(next, coreId);
+  const nextSet = new Set(nextNames);
+  const indexOf = (name: string) =>
+    next.findIndex((e) =>
+      typeof e === "string" ? e === name : e.name === name,
+    );
+
+  for (const name of currentNames) {
+    if (nextSet.has(name)) continue;
+    const idx = indexOf(name);
+    if (idx === -1) continue;
+    const entry = next[idx];
+    if (typeof entry === "string" || entry.cores === undefined) {
+      const others = allCoreIds.filter((id) => id !== coreId);
+      if (others.length === 0) next.splice(idx, 1);
+      else next[idx] = { name, cores: others };
+    } else {
+      const cores = entry.cores.filter((id) => id !== coreId);
+      if (cores.length === 0) next.splice(idx, 1);
+      else next[idx] = { ...entry, cores };
+    }
+  }
+
+  for (const name of nextNames) {
+    if (currentNames.includes(name)) continue;
+    const idx = indexOf(name);
+    if (idx === -1) {
+      next.push({ name, cores: [coreId] });
+    } else {
+      const entry = next[idx];
+      if (
+        typeof entry !== "string" &&
+        entry.cores !== undefined &&
+        !entry.cores.includes(coreId)
+      ) {
+        next[idx] = { ...entry, cores: [...entry.cores, coreId] };
+      }
+    }
+  }
+
+  return next;
+}

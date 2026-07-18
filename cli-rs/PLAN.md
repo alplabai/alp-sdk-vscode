@@ -42,7 +42,9 @@ validator (`executeValidatorPlanWithSpawn`); full spawn parity is **Phase 5**.
 ## Phase 1 — Contract harness  ✅ DONE
 Make divergence detectable by CI instead of by humans.
 
-- [x] Author `contract/board.schema.json` from the TS board model.
+- [x] Author `contract/board.schema.json` from the TS board model. (Removed:
+      this pre-v0.6 copy drifted from the SDK's own `schemas/board.schema.json`
+      and was unreferenced; the SDK schema is now the single source of truth.)
 - [x] Define golden-fixture format: `board.yaml` → `expected.json` (envelope) + `expected.exit`.
 - [x] Build an initial fixture corpus from clean examples + hand-crafted violations.
 - [x] `contract/run.sh`: runs the Rust binary and the TS **offline validator runner** over every fixture, diffs stdout JSON + exit code, fails on mismatch.
@@ -226,9 +228,10 @@ Gated on the first real `cli-rs-v<version>` release — DONE (0.1.5, 2026-06-13)
 cli-rs/
 ├── Cargo.toml                 # workspace
 ├── contract/
-│   ├── board.schema.json      # (Phase 1)
 │   ├── run.sh                 # TS vs Rust conformance (Phase 1)
 │   └── fixtures/validate/
+│       # board.schema.json removed: stale pre-v0.6 copy, unreferenced;
+│       # see schemas/board.schema.json instead.
 └── crates/
     ├── alp-core/   # domain logic, zero IO/clap; fixture- + unit-tested
     │   └── src/{lib,model,validate,preview,sdk_catalogue,project,debug,clock}.rs + wizard/

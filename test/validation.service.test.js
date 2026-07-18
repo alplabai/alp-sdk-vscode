@@ -191,6 +191,18 @@ schema_version: 2
 board_id: test-v2-board
 `;
 
+// The real contract key is camelCase `schemaVersion` (schemas/board.schema.json
+// `schemaVersion`), not the legacy `schema_version` the fixtures above use.
+// v2 rules (top-level `os:` rejected) must still apply.
+const V2_CAMELCASE_TOP_LEVEL_OS_YAML = `\
+schemaVersion: 2
+board_id: test-v2-board
+os: zephyr
+cores:
+  m33:
+    os: zephyr
+`;
+
 test("validateBoardYamlLocally: v1 board passes without errors", () => {
   const result = validateBoardYamlLocally(V1_ZEPHYR_YAML);
   assert.equal(result.outcome, "clean");
@@ -217,4 +229,12 @@ test("validateBoardYamlLocally: v2 with no cores block returns schema-violation"
   assert.equal(result.issues.length, 1);
   assert.equal(result.issues[0].severity, "error");
   assert.match(result.issues[0].message, /'cores:' block is required/);
+});
+
+test("validateBoardYamlLocally: a real (camelCase schemaVersion) v2 board still applies v2 rules", () => {
+  const result = validateBoardYamlLocally(V2_CAMELCASE_TOP_LEVEL_OS_YAML);
+  assert.equal(result.outcome, "schema-violation");
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.issues[0].severity, "error");
+  assert.match(result.issues[0].message, /top-level 'os:' is not valid/);
 });

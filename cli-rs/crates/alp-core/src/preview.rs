@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn preview_payload_uses_normalized_model() {
-        let text = "schema_version: 2\nos: zephyr\ncores:\n  m55_hp:\n    app: ./src\n";
+        let text = "schemaVersion: 2\nos: zephyr\ncores:\n  m55_hp:\n    app: ./src\n";
         let payload = create_effective_config_preview_payload(
             text,
             "board.yaml",

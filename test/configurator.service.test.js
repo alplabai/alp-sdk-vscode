@@ -116,3 +116,22 @@ cores:
   assert.equal(parsed.cores.a55_cluster.os, "yocto");
   assert.equal(parsed.cores.m33_sm.os, "zephyr");
 });
+
+// A real board.yaml uses the contract's camelCase `schemaVersion` (see
+// schemas/board.schema.json:52), not the legacy snake_case `schema_version`.
+// parseBoardModel must alias it onto `schema_version` at the parse boundary
+// so every reader that queries `schema_version` (validateBoardYamlLocally,
+// resolveEmitModesForBoardYaml, the LSP v2 checks) sees the real version.
+test("parseBoardModel aliases camelCase schemaVersion onto schema_version", () => {
+  const parsed = parseBoardModel(`
+schemaVersion: 2
+som:
+  sku: E1M-V2N101
+cores:
+  m33_sm:
+    os: zephyr
+`);
+
+  assert.equal(parsed.schema_version, 2);
+  assert.equal(parsed.schemaVersion, undefined);
+});

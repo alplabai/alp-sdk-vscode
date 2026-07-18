@@ -87,6 +87,13 @@ pub struct I2cDevice {
 pub struct TopologyCore {
     /// Core id (the topology map key), e.g. `m55_hp`.
     pub id: String,
+    /// Schema-authoritative runtime for this core (som-preset-v1.schema.json
+    /// enum: `yocto` | `zephyr` | `baremetal` | `off`). Absent on legacy
+    /// presets that only declare `board:`/`machine:`; callers should prefer
+    /// this field when present and fall back to the board/machine heuristic
+    /// otherwise.
+    #[serde(default)]
+    pub os: Option<String>,
     /// Optional application source path for this core.
     #[serde(default)]
     pub app: Option<String>,
@@ -485,6 +492,7 @@ pub fn parse_som_preset(text: &str) -> Result<SomPreset, serde_yaml::Error> {
                     let node_map = node.as_mapping();
                     Some(TopologyCore {
                         id,
+                        os: node_map.and_then(|m| str_clean(yget(m, "os"))),
                         app: node_map.and_then(|m| str_clean(yget(m, "app"))),
                         image: node_map.and_then(|m| str_clean(yget(m, "image"))),
                         machine: node_map.and_then(|m| str_clean(yget(m, "machine"))),
@@ -824,6 +832,17 @@ mod tests {
         let soc = parse_soc_spec("{\"ref\":\"soc-ref\",\"vendor\":\"v\",\"family\":\"f\",\"part\":\"p\",\"cores\":[{\"id\":\"m55_hp\",\"type\":\"m55\",\"count\":2,\"freq_mhz\":400}]}").unwrap();
         assert_eq!(soc.ref_id, "soc-ref");
         assert_eq!(soc.cores[0].count, 2);
+    }
+
+    #[test]
+    fn parse_som_preset_reads_topology_core_os() {
+        let som = parse_som_preset(
+            "sku: E1M-V2N101\nfamily: v2n\nsilicon: rz-v2n\ntopology:\n  m33_sm: { os: baremetal }\n",
+        )
+        .unwrap();
+        assert_eq!(som.topology.len(), 1);
+        assert_eq!(som.topology[0].id, "m33_sm");
+        assert_eq!(som.topology[0].os, Some("baremetal".to_string()));
     }
 
     #[test]
