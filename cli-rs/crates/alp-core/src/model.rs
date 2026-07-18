@@ -17,7 +17,10 @@ pub struct BoardModel {
     /// key is camelCase `schemaVersion` (alp-sdk scripts/alp_migrate/__init__.py
     /// reads `doc.get("schemaVersion")`); without this rename a real
     /// board.yaml's version was silently dropped and negotiation stuck at v1.
-    #[serde(default, rename = "schemaVersion")]
+    /// The `alias` keeps accepting the legacy snake_case `schema_version` that
+    /// pre-camelCase fixtures/boards still carry, so this is additive, not a
+    /// break.
+    #[serde(default, rename = "schemaVersion", alias = "schema_version")]
     pub schema_version: Option<u32>,
 
     /// System-on-module selection.

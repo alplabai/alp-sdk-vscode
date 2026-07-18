@@ -37,34 +37,42 @@ test("librariesForCore: undefined libraries resolves to an empty list", () => {
 });
 
 test("applyCoreLibrarySelection: adding a new name for a core creates a scoped entry", () => {
-  const next = applyCoreLibrarySelection(undefined, "m55_hp", ["mbedtls"], [
+  const next = applyCoreLibrarySelection(
+    undefined,
     "m55_hp",
-    "m55_he",
-  ]);
+    ["mbedtls"],
+    ["m55_hp", "m55_he"],
+  );
   assert.deepEqual(next, [{ name: "mbedtls", cores: ["m55_hp"] }]);
 });
 
 test("applyCoreLibrarySelection: adding for a second core merges into the existing entry (dedupe)", () => {
   const start = [{ name: "mbedtls", cores: ["m55_hp"] }];
-  const next = applyCoreLibrarySelection(start, "m55_he", ["mbedtls"], [
-    "m55_hp",
+  const next = applyCoreLibrarySelection(
+    start,
     "m55_he",
-  ]);
+    ["mbedtls"],
+    ["m55_hp", "m55_he"],
+  );
   assert.deepEqual(next, [{ name: "mbedtls", cores: ["m55_hp", "m55_he"] }]);
   // Re-applying the same pick for the same core is a no-op (no duplicate id).
-  const again = applyCoreLibrarySelection(next, "m55_he", ["mbedtls"], [
-    "m55_hp",
+  const again = applyCoreLibrarySelection(
+    next,
     "m55_he",
-  ]);
+    ["mbedtls"],
+    ["m55_hp", "m55_he"],
+  );
   assert.deepEqual(again, next);
 });
 
 test("applyCoreLibrarySelection: removing from a multi-core scoped entry narrows it", () => {
   const start = [{ name: "mbedtls", cores: ["m55_hp", "m55_he"] }];
-  const next = applyCoreLibrarySelection(start, "m55_he", [], [
-    "m55_hp",
+  const next = applyCoreLibrarySelection(
+    start,
     "m55_he",
-  ]);
+    [],
+    ["m55_hp", "m55_he"],
+  );
   assert.deepEqual(next, [{ name: "mbedtls", cores: ["m55_hp"] }]);
 });
 
@@ -75,17 +83,17 @@ test("applyCoreLibrarySelection: removing the last scoped core drops the entry",
 });
 
 test("applyCoreLibrarySelection: removing a project-wide pick from one core narrows it to the others", () => {
-  const next = applyCoreLibrarySelection(["mbedtls"], "m55_he", [], [
-    "m55_hp",
+  const next = applyCoreLibrarySelection(
+    ["mbedtls"],
     "m55_he",
-  ]);
+    [],
+    ["m55_hp", "m55_he"],
+  );
   assert.deepEqual(next, [{ name: "mbedtls", cores: ["m55_hp"] }]);
 });
 
 test("applyCoreLibrarySelection: removing a project-wide pick with no other cores drops it", () => {
-  const next = applyCoreLibrarySelection(["mbedtls"], "m55_hp", [], [
-    "m55_hp",
-  ]);
+  const next = applyCoreLibrarySelection(["mbedtls"], "m55_hp", [], ["m55_hp"]);
   assert.deepEqual(next, []);
 });
 
@@ -114,7 +122,9 @@ test("configurator round trip: a core-scoped library pick serializes to top-leve
   );
 
   const reparsed = parseBoardConfig(yamlText);
-  assert.deepEqual(reparsed.libraries, [{ name: "mbedtls", cores: ["m55_hp"] }]);
+  assert.deepEqual(reparsed.libraries, [
+    { name: "mbedtls", cores: ["m55_hp"] },
+  ]);
   assert.equal(reparsed.cores.m55_hp.libraries, undefined);
   assert.deepEqual(librariesForCore(reparsed.libraries, "m55_hp"), ["mbedtls"]);
   assert.deepEqual(librariesForCore(reparsed.libraries, "m55_he"), []);
