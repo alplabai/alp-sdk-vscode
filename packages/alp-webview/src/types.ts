@@ -168,8 +168,6 @@ export interface Boot {
   method?: "mcuboot" | "none";
   signing?: BootSigning;
   swap_algorithm?: "scratch" | "move" | "overwrite";
-  scratch_size_kib?: number;
-  anti_rollback?: boolean;
   build_type?: "Release" | "Debug" | "MinSizeRel";
 }
 

@@ -47,7 +47,7 @@ test("parseBoardConfig maps the PRODUCTION example (boot/ota/memory/power/iot)",
   ]);
   assert.equal(c.boot.method, "mcuboot");
   assert.equal(c.boot.signing.algorithm, "ecdsa_p256");
-  assert.equal(c.boot.slots.primary.size_kib, 1024);
+  assert.equal(c.boot.swap_algorithm, "scratch");
   assert.equal(c.ota.provider, "mender");
   assert.equal(c.ota.rollback.min_version, 1);
   assert.ok(c.chips.includes("optiga_trust_m"));

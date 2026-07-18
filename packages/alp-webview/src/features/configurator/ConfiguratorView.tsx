@@ -1046,17 +1046,6 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
               </Field>
             </Row>
-            <Check
-              checked={!!boot.anti_rollback}
-              label="Anti-rollback (monotonic image counters)"
-              onChange={(c) =>
-                mutate((d) => {
-                  d.boot = d.boot || {};
-                  if (c) d.boot.anti_rollback = true;
-                  else delete d.boot.anti_rollback;
-                })
-              }
-            />
           </>
         ) : null}
       </AdvCard>

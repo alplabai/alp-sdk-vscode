@@ -57,12 +57,7 @@ libraries: [mbedtls]
 boot:
   method: mcuboot
   signing: { algorithm: ecdsa_p256, key_file: keys/prod_ecdsa_p256.pub.pem }
-  slots:
-    primary: { size_kib: 1024 }
-    secondary: { size_kib: 1024 }
   swap_algorithm: scratch
-  scratch_size_kib: 64
-  anti_rollback: true
 ota:
   provider: mender
   artifact_name: production-deployment

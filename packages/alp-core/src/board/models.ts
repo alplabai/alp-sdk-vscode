@@ -90,17 +90,10 @@ export interface BootSigning {
   key_file: string;
 }
 
-export interface BootSlot {
-  size_kib: number;
-}
-
 export interface Boot {
   method?: "mcuboot" | "none";
   signing?: BootSigning;
-  slots?: { primary: BootSlot; secondary: BootSlot };
   swap_algorithm?: "scratch" | "move" | "overwrite";
-  scratch_size_kib?: number;
-  anti_rollback?: boolean;
   build_type?: "Release" | "Debug" | "MinSizeRel";
 }
 
