@@ -2,6 +2,7 @@
 
 import * as path from "path";
 import { ProjectContext, ProjectResolutionInput } from "./models";
+import { toPosix } from "../paths";
 
 export function resolveProjectContext(
   input: ProjectResolutionInput,
@@ -85,7 +86,10 @@ function collectSdkCandidates(
       candidates.add(workspaceFolder);
     }
 
-    const siblingSdk = path.resolve(workspaceFolder, "..", "alp-sdk");
+    // path.join (lexical, cwd-independent) not path.resolve: on Windows
+    // resolve() treats a POSIX-absolute folder as relative and injects the cwd
+    // drive, breaking the sibling match. join stays platform-deterministic.
+    const siblingSdk = toPosix(path.join(workspaceFolder, "..", "alp-sdk"));
     if (containsLoaderScript(siblingSdk, pathExists)) {
       candidates.add(siblingSdk);
     }
@@ -99,9 +103,11 @@ function resolveBoardYamlPath(
   configuredBoardYamlPath: string,
 ): string | null {
   if (!workspaceRoot) return null;
-  return path.isAbsolute(configuredBoardYamlPath)
-    ? configuredBoardYamlPath
-    : path.join(workspaceRoot, configuredBoardYamlPath);
+  return toPosix(
+    path.isAbsolute(configuredBoardYamlPath)
+      ? configuredBoardYamlPath
+      : path.join(workspaceRoot, configuredBoardYamlPath),
+  );
 }
 
 function resolveWestCwd(
@@ -127,5 +133,5 @@ function containsLoaderScript(
   pathExists: (candidatePath: string) => boolean,
 ): boolean {
   // scripts/alp_project.py is the canonical marker for an Alp SDK root.
-  return pathExists(path.join(rootPath, "scripts", "alp_project.py"));
+  return pathExists(toPosix(path.join(rootPath, "scripts", "alp_project.py")));
 }

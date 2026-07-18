@@ -2,6 +2,7 @@
 
 import * as path from "path";
 import { parseBoardModel } from "../configurator/service";
+import { toPosix } from "../paths";
 import {
   ValidationIssue,
   ValidationOutcome,
@@ -26,10 +27,8 @@ export function createValidatorPlan(
     );
   }
 
-  const scriptPath = path.join(
-    context.sdkRoot,
-    "scripts",
-    "validate_board_yaml.py",
+  const scriptPath = toPosix(
+    path.join(context.sdkRoot, "scripts", "validate_board_yaml.py"),
   );
   const args = ["--input", inputPath];
 

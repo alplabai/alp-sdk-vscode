@@ -48,10 +48,20 @@ pub struct ProjectContext {
     pub python_binary: String,
 }
 
+/// Normalize a path to forward slashes for the serialized `ProjectContext`
+/// contract + SDK-root marker probes. `Path::join` emits `\` on Windows, but
+/// every field consumed by the extension/CLI handshake (and pinned by goldens)
+/// must be platform-identical. Forward slashes still resolve on Windows, so
+/// this changes determinism only. Mirrors the TS `toPosix` in
+/// `packages/alp-core/src/paths.ts`.
+fn to_posix(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// `scripts/alp_project.py` is the canonical marker for an ALP SDK root.
 fn contains_loader_script(root: &str, path_exists: &impl Fn(&str) -> bool) -> bool {
     let marker = Path::new(root).join("scripts").join("alp_project.py");
-    path_exists(&marker.to_string_lossy())
+    path_exists(&to_posix(&marker))
 }
 
 fn resolve_workspace_root(workspace_folders: &[String]) -> Option<String> {
@@ -76,8 +86,7 @@ fn collect_sdk_candidates(
         }
 
         if let Some(parent) = Path::new(folder).parent() {
-            let sibling = parent.join("alp-sdk");
-            let sibling = sibling.to_string_lossy().to_string();
+            let sibling = to_posix(&parent.join("alp-sdk"));
             if contains_loader_script(&sibling, path_exists) {
                 push_unique(sibling, &mut candidates);
             }
@@ -118,14 +127,9 @@ fn resolve_board_yaml_path(
     let root = workspace_root?;
     let configured = Path::new(configured_board_yaml_path);
     if configured.is_absolute() {
-        return Some(configured_board_yaml_path.to_string());
+        return Some(to_posix(configured));
     }
-    Some(
-        Path::new(root)
-            .join(configured)
-            .to_string_lossy()
-            .to_string(),
-    )
+    Some(to_posix(&Path::new(root).join(configured)))
 }
 
 fn resolve_west_cwd(workspace_root: Option<&str>, configured_west_cwd: &str) -> Option<String> {
