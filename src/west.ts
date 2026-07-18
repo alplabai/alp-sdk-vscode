@@ -7,8 +7,9 @@
 // (see EXTENSION_CLI_INTEGRATION.md §6a). board.yaml diagnostics still surface
 // live via the in-process LSP, so no pre-build check is duplicated here.
 //
-// The plain `west flash/update/run` commands have no CLI equivalent and stay as
-// direct west terminal invocations for now (revisited in B4).
+// The plain `west flash`/`west update` commands have no CLI equivalent and stay
+// as direct west terminal invocations for now (revisited in B4). `west run` for
+// native_sim is already folded into `alp run` (#131 — see westRunNativeSim below).
 
 import {
   createWestFlashPlan,
