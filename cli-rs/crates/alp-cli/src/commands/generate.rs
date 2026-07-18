@@ -101,6 +101,21 @@ pub fn run(g: &GlobalArgs) -> CommandRun {
     };
 
     let python = default_python_binary();
+    // Guard: the interpreter must be new enough to run `alp_project.py` (the
+    // SDK scripts use `@dataclass(slots=True)`, Python 3.10+). Fail with an
+    // actionable message instead of the cryptic `dataclass()` TypeError.
+    if let Some(message) = crate::util::python_too_old(python) {
+        let line = format!("generate: {message}");
+        return failure(
+            g,
+            project,
+            ExitCode::RuntimeFailure,
+            "python-too-old",
+            &message,
+            empty_data(),
+            vec!["generate: python interpreter too old".to_string(), line],
+        );
+    }
     let script_path = sdk_root.join("scripts").join("alp_project.py");
     let mut written = Vec::<String>::new();
     let mut failed = Vec::<String>::new();
