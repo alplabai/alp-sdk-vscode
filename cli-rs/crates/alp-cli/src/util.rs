@@ -51,6 +51,55 @@ pub fn tool_available(tool: &str) -> bool {
     }
 }
 
+/// Minimum Python the alp-sdk loader scripts require. `@dataclass(slots=True)`
+/// (used throughout `scripts/alp_cli/`) landed in CPython 3.10, so an older
+/// interpreter dies the moment any SDK script imports, with a cryptic
+/// `TypeError: dataclass() got an unexpected keyword argument 'slots'`. Shared
+/// by the `validate`/`generate` pre-flight guards.
+pub const MIN_PYTHON: (u32, u32) = (3, 10);
+
+/// Parse `sys.version_info[:2]` output ("3.10", "3.9\n", "  3.14  ") into
+/// `(major, minor)`. `None` on anything unparseable. Split out from
+/// [`python_version`] so the parsing is unit-testable without spawning.
+fn parse_python_version(stdout: &str) -> Option<(u32, u32)> {
+    let line = stdout.trim().lines().last()?.trim();
+    let (major, minor) = line.split_once('.')?;
+    Some((major.trim().parse().ok()?, minor.trim().parse().ok()?))
+}
+
+/// Probe `binary`'s Python version as `(major, minor)`. `None` when the
+/// interpreter cannot be run or its output cannot be parsed — callers must NOT
+/// treat `None` as "too old" (a missing/broken interpreter is a different
+/// failure the real invocation surfaces on its own).
+pub fn python_version(binary: &str) -> Option<(u32, u32)> {
+    let out = Command::new(binary)
+        .arg("-c")
+        .arg("import sys;print('%d.%d' % sys.version_info[:2])")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_python_version(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// A user-facing error string when `binary` is a Python older than
+/// [`MIN_PYTHON`]; `None` when it is new enough OR its version can't be
+/// determined (don't block on an unknown — let the real call run and surface
+/// its own error). Turns the SDK's cryptic `dataclass(slots=True)` traceback
+/// into an actionable message.
+pub fn python_too_old(binary: &str) -> Option<String> {
+    match python_version(binary) {
+        Some(found) if found < MIN_PYTHON => Some(format!(
+            "Python {}.{} found at `{}`, but alp-sdk requires Python {}.{}+. \
+             Put a newer `python` on PATH (or set alpSdk.pythonPath in the \
+             VS Code extension).",
+            found.0, found.1, binary, MIN_PYTHON.0, MIN_PYTHON.1
+        )),
+        _ => None,
+    }
+}
+
 /// Lexically normalize a path (collapse `.` and `..`) without touching the
 /// filesystem, mirroring Node's `path.resolve` behavior on the joined result.
 pub fn normalize_path(path: &Path) -> PathBuf {
@@ -196,6 +245,25 @@ pub fn resolve_cli_project_context(g: &GlobalArgs) -> ProjectContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn python_version_parse_handles_common_shapes() {
+        assert_eq!(parse_python_version("3.10\n"), Some((3, 10)));
+        assert_eq!(parse_python_version("3.9"), Some((3, 9)));
+        assert_eq!(parse_python_version("  3.14  "), Some((3, 14)));
+        // Last line wins — some interpreters print a banner before the value.
+        assert_eq!(parse_python_version("noise\n3.12\n"), Some((3, 12)));
+        assert_eq!(parse_python_version(""), None);
+        assert_eq!(parse_python_version("python 3"), None);
+    }
+
+    #[test]
+    fn min_python_boundary() {
+        // 3.9 is rejected; 3.10 and 3.14 clear the `< MIN_PYTHON` guard.
+        assert!((3u32, 9u32) < MIN_PYTHON);
+        assert!((3u32, 10u32) >= MIN_PYTHON);
+        assert!((3u32, 14u32) >= MIN_PYTHON);
+    }
 
     #[test]
     fn normalize_collapses_current_and_parent_dirs() {

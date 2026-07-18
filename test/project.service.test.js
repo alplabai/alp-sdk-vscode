@@ -30,6 +30,34 @@ test("resolveProjectContext resolves sdk, board yaml, west cwd, and python", () 
   });
 });
 
+test("resolveProjectContext normalizes backslash roots to forward slashes", () => {
+  // A Windows-style workspace folder + explicit SDK path must serialize
+  // forward-slash so the ProjectContext is platform-identical (the golden /
+  // CLI<->extension handshake contract) — covering workspaceRoot, the explicit
+  // sdkPath branch, and the derived boardYamlPath + westCwd.
+  const context = resolveProjectContext(
+    {
+      workspaceFolders: ["C:\\work\\proj"],
+      settings: {
+        sdkPath: "C:\\work\\sdk",
+        pythonPath: "",
+        boardYamlPath: "board.yaml",
+        westCwd: "",
+      },
+      platform: "win32",
+    },
+    () => true,
+  );
+
+  assert.deepEqual(context, {
+    workspaceRoot: "C:/work/proj",
+    sdkRoot: "C:/work/sdk",
+    boardYamlPath: "C:/work/proj/board.yaml",
+    westCwd: "C:/work/proj",
+    pythonBinary: "python",
+  });
+});
+
 test("resolveProjectContext honors explicit settings", () => {
   const context = resolveProjectContext(
     {

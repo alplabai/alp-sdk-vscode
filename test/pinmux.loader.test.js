@@ -72,3 +72,25 @@ test("loadPinmuxTable caches per sdkRoot + family", () => {
   loadPinmuxTable("/sdk", "E1M-AEN301", readFile); // same family -> cached
   assert.strictEqual(reads, 1);
 });
+
+const STUB_TBD =
+  "family: v2n\npads:\n" +
+  '  - { e1m_pad: "TBD", e1m_function: "PWM6", owner: "renesas", silicon_peripheral: "GPT", silicon_pad: "P100" }\n' +
+  '  - { e1m_pad: "TBD", e1m_function: "IO3", owner: "renesas", silicon_peripheral: "GPIO", silicon_pad: "P101" }\n';
+
+test("loadPinmuxTable treats an all-TBD stub table as absent (no resolved pads)", () => {
+  clearPinmuxTableCache();
+  const table = loadPinmuxTable("/sdk", "E1M-V2N101", () => STUB_TBD);
+  assert.strictEqual(table, null);
+});
+
+test("loadPinmuxTable keeps a partially-resolved table and preserves its TBD pads", () => {
+  clearPinmuxTableCache();
+  const partial =
+    "family: v2n\npads:\n" +
+    '  - { e1m_pad: "TBD", e1m_function: "PWM6", owner: "renesas", silicon_peripheral: "GPT", silicon_pad: "P100" }\n' +
+    '  - { e1m_pad: "C4", e1m_function: "IO3", owner: "renesas", silicon_peripheral: "GPIO", silicon_pad: "P101" }\n';
+  const table = loadPinmuxTable("/sdk", "E1M-V2N101", () => partial);
+  assert.notStrictEqual(table, null);
+  assert.strictEqual(table.pads.length, 2); // kept intact; R2 skips the TBD row
+});
