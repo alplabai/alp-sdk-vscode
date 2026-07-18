@@ -124,6 +124,13 @@ fn run_spawn(g: &GlobalArgs) -> CommandRun {
         );
     };
 
+    // Guard 3: the resolved interpreter must be new enough to run the SDK
+    // scripts (they use `@dataclass(slots=True)`, Python 3.10+). Fail with an
+    // actionable message instead of the cryptic `dataclass()` TypeError.
+    if let Some(message) = crate::util::python_too_old(&context.python_binary) {
+        return validation_guard_failure(g, project, &context, "python-too-old", &message);
+    }
+
     // Plan: spawn `<sdk>/scripts/validate_board_yaml.py --input <board>`.
     let script_path = Path::new(&sdk_root)
         .join("scripts")
