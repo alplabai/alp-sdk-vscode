@@ -108,7 +108,16 @@ test("every curated ALP_* symbol is a real SDK Kconfig symbol (drift gate)", () 
       .map((s) => s.trim())
       .filter((s) => s && !s.startsWith("#")),
   );
-  assert.ok(vendored.size > 100, "vendored Kconfig symbol set looks truncated");
+  // alp-sdk#458 split the monolith into zephyr/Kconfig (1 symbol) + ~16
+  // rsourced fragments (~340 ALP_* symbols total). A vendor run that only
+  // reads the old fixed 2-file list (or stops following includes) would
+  // silently shrink this to ~75 while the old "curated (subset) vendored"
+  // check below still passes — this floor catches that collapse.
+  assert.ok(
+    vendored.size > 250,
+    `vendored Kconfig symbol set looks truncated (${vendored.size} symbols) — ` +
+      "did vendor-kconfig-symbols.mjs stop following rsource/source includes?",
+  );
   const curatedAlp = KCONFIG_SYMBOLS.map((s) => s.name).filter((n) =>
     n.startsWith("ALP_"),
   );
