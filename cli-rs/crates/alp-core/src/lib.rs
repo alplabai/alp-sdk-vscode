@@ -12,6 +12,7 @@ pub mod clock;
 pub mod debug;
 pub mod debug_launch;
 pub mod diff;
+pub mod error_catalog;
 pub mod loader;
 pub mod model;
 pub mod pinmux;
@@ -46,6 +47,9 @@ pub use debug_launch::{
     launch_preview_document, launch_preview_notes,
 };
 pub use diff::{DiffEntry, DiffKind, collect_diff_entries, prune_nulls};
+pub use error_catalog::{
+    ErrorCatalog, ErrorCatalogEntry, ErrorCatalogError, find_error_code, parse_error_catalog,
+};
 pub use loader::{
     ALL_EMIT_MODES, GenerationTargetSupport, LoaderPlan, create_loader_plan,
     generation_target_support, list_generation_target_support,

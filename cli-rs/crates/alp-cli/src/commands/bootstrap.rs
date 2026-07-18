@@ -152,20 +152,28 @@ pub fn run(g: &GlobalArgs, args: &BootstrapArgs) -> CommandRun {
     } else {
         // Text mode: stream the install live (inherited stdio).
         let status = Command::new(&program).args(&cmd_args).status();
-        let (exit, line) = match status {
-            Ok(s) if s.success() => (ExitCode::Success, "bootstrap: complete.".to_string()),
+        let (exit, mut lines) = match status {
+            Ok(s) if s.success() => (ExitCode::Success, vec!["bootstrap: complete.".to_string()]),
             Ok(_) => (
                 ExitCode::RuntimeFailure,
-                "bootstrap: failed (see log above).".to_string(),
+                vec!["bootstrap: failed (see log above).".to_string()],
             ),
             Err(e) => (
                 ExitCode::RuntimeFailure,
-                format!("bootstrap: failed to launch {program}: {e}"),
+                vec![format!("bootstrap: failed to launch {program}: {e}")],
             ),
         };
+        // Counter bootstrap.sh's own "Next steps" banner (it tells the user to
+        // `source .venv/bin/activate`): an activated venv puts the SDK's
+        // Python `alp` ahead of this native CLI on PATH (see `doctor`'s
+        // `pathShadow` check), so the very next command the banner sets the
+        // user up for would silently run the wrong binary.
+        if exit == ExitCode::Success {
+            lines.extend(venv_activation_note());
+        }
         CommandRun {
             exit,
-            text: vec![line],
+            text: lines,
             json: None,
         }
     }
@@ -209,6 +217,21 @@ fn bootstrap_command(
         }
         ("bash".to_string(), args)
     }
+}
+
+/// Lines counter-acting `bootstrap.sh`'s own "Next steps" banner: this native
+/// CLI needs no venv activation, and activating it is actively counterproductive
+/// (it puts the SDK's Python `alp` ahead of this one on PATH). Pure + unit
+/// tested — no I/O, so it's safe to call unconditionally after a successful run.
+fn venv_activation_note() -> Vec<String> {
+    vec![
+        String::new(),
+        "Note: this native CLI works without activating the venv bootstrap.sh just set up."
+            .to_string(),
+        "Activating it (e.g. `source .venv/bin/activate`) puts the SDK's Python `alp` ahead \
+         of this one on PATH — run `alp` commands from a plain shell instead."
+            .to_string(),
+    ]
 }
 
 /// Builds a `BootstrapData` for failure paths: empty `sdk_root`/`script_path`,
@@ -274,5 +297,23 @@ mod tests {
     fn no_flags_forwards_only_the_script() {
         let (_program, args) = bootstrap_command(false, "s.sh", false, false, false);
         assert_eq!(args, ["s.sh"]);
+    }
+
+    #[test]
+    fn venv_activation_note_counters_activate_and_names_this_cli() {
+        let lines = venv_activation_note();
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains("without activating the venv"),
+            "should state this CLI needs no activation: {joined}"
+        );
+        assert!(
+            joined.contains("source .venv/bin/activate"),
+            "should name the exact instruction it is countering: {joined}"
+        );
+        assert!(
+            joined.contains("ahead of this one on PATH"),
+            "should explain *why* activation is counterproductive: {joined}"
+        );
     }
 }

@@ -81,6 +81,16 @@ test("resolveAlpBinary: cached binary when not on PATH", async () => {
   assert.equal(calls.download, 0);
 });
 
+test("resolveAlpBinary: a cached binary wins over a verified-native PATH alp (managed binary preferred; PATH is a last resort)", async () => {
+  const { deps, calls } = baseDeps({
+    existing: ["/cache/cli/alp"],
+    commandOnPath: () => true,
+  });
+  const r = await resolveAlpBinary(deps);
+  assert.deepEqual(r, { command: "/cache/cli/alp", source: "cached" });
+  assert.equal(calls.download, 0);
+});
+
 test("resolveAlpBinary: downloads when nothing else resolves", async () => {
   const { deps, calls } = baseDeps();
   const r = await resolveAlpBinary(deps);

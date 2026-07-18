@@ -44,15 +44,25 @@ const EXIT_KINDS: Readonly<Record<number, CliExitKind>> = {
 
 /**
  * Resolution order (see EXTENSION_CLI_INTEGRATION.md §5): explicit
- * `alpSdk.cliPath` → `alp` on PATH → bundled `bin/alp[.exe]` (platform-specific
- * VSIX) → cached download → download.
+ * `alpSdk.cliPath` → the managed native binary (bundled `bin/alp[.exe]`
+ * (platform-specific VSIX) → a locally-built `cli-rs/target/{release,debug}`
+ * binary → a previously cached download) → a verified-native `alp` on PATH
+ * → download-on-demand.
+ *
+ * `alp` on PATH is deliberately checked *last*, not second: in a
+ * venv-activated shell the SDK's Python `alp` (click) can shadow the native
+ * binary on PATH, so preferring PATH risks silently running the wrong CLI
+ * (see `isNativeAlpVersionOutput`). The extension's own managed binary — one
+ * it already resolved and knows is native — never depends on the caller's
+ * current shell state, so it wins whenever one is already available. `onPath`
+ * here must already be a verified-native result (the adapter's
+ * `commandOnPath` rejects a shadowing click `alp` before this ever sees it);
+ * PATH is then used as a last resort, before falling through to a fresh
+ * download.
  */
 export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   if (input.cliPathSetting && input.cliPathExists) {
     return "cliPath";
-  }
-  if (input.onPath) {
-    return "path";
   }
   if (input.bundledExists) {
     return "bundled";
@@ -62,6 +72,9 @@ export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   }
   if (input.cachedExists) {
     return "cached";
+  }
+  if (input.onPath) {
+    return "path";
   }
   return "download";
 }

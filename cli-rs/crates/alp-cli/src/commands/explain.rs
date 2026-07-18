@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `alp explain` — describe project/module templates and generation targets.
+//! `alp explain` — describe project/module templates, generation targets, or
+//! (additive) an SDK error/diagnostic code.
 //!
 //! Mirrors TS `runExplainCommand`: `--template` explains an init/scaffold
 //! template, `--target` explains a generation output target, and no selector
-//! prints an overview. Supplying both is an error (exit 1), as is an unknown id.
+//! prints an overview. Supplying more than one of `--template`/`--target`/a
+//! `code` positional is an error (exit 1), as is an unknown id/code.
+//!
+//! The `code` selector is new: it resolves the SDK root the same way every
+//! other command does (`util::resolve_sdk_root`) and reads
+//! `<sdk>/metadata/error-catalog.json` natively (committed JSON, parsed via
+//! `alp_core::parse_error_catalog` — no Python spawn) to look up an
+//! `ALP-Bxxx` runtime diagnostic or `ALP_ERR_*` API error code.
 
 use alp_core::wizard::{ModuleTemplateDefinition, WizardFeatureFlags, WizardTemplateDefinition};
 use alp_core::wizard::{list_module_templates, list_wizard_templates};
-use alp_core::{GenerationTargetSupport, list_generation_target_support};
+use alp_core::{ErrorCatalogEntry, GenerationTargetSupport, list_generation_target_support};
 
 use super::CommandRun;
 use crate::cli::{ExplainArgs, GlobalArgs};
@@ -86,6 +94,11 @@ pub fn run(g: &GlobalArgs, args: &ExplainArgs) -> CommandRun {
         .map(str::trim)
         .filter(|s| !s.is_empty());
     let requested_target = g.target.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let requested_code = args
+        .code
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
     if requested_template.is_some() && requested_target.is_some() {
         return failure(
@@ -102,6 +115,27 @@ pub fn run(g: &GlobalArgs, args: &ExplainArgs) -> CommandRun {
                     .to_string(),
             ],
         );
+    }
+
+    if requested_code.is_some() && (requested_template.is_some() || requested_target.is_some()) {
+        return failure(
+            g,
+            available(),
+            Selector {
+                kind: "overview".to_string(),
+                value: String::new(),
+            },
+            "ambiguous-selector",
+            "Use only one of a code argument, --template, or --target for explain.",
+            vec![
+                "explain: use only one of a code argument, --template, or --target in the same command."
+                    .to_string(),
+            ],
+        );
+    }
+
+    if let Some(code) = requested_code {
+        return explain_code(g, available(), code);
     }
 
     if let Some(requested) = requested_template {
@@ -219,6 +253,113 @@ pub fn run(g: &GlobalArgs, args: &ExplainArgs) -> CommandRun {
         "ALP explain topics".to_string(),
         overview,
     )
+}
+
+/// Resolves an error/diagnostic `code` against `<sdk>/metadata/error-catalog.json`:
+/// resolves the SDK root the same way every other command does, reads the
+/// catalog file (committed JSON — no Python spawn), and either returns the
+/// matched entry or a runtime failure (SDK unresolved / catalog unreadable or
+/// malformed / code unknown), all exit 1 like explain's other failure paths.
+fn explain_code(g: &GlobalArgs, available: Available, code: &str) -> CommandRun {
+    let workspace_root = crate::util::cli_workspace_root(g);
+    let Some(sdk_root) = crate::util::resolve_sdk_root(g, &workspace_root) else {
+        return failure(
+            g,
+            available,
+            Selector {
+                kind: "overview".to_string(),
+                value: code.to_string(),
+            },
+            "sdk-unresolved",
+            "no alp-sdk checkout found -- pass --sdk-root <PATH> to look up an error code.",
+            vec![format!(
+                "explain: no alp-sdk checkout found -- pass --sdk-root <PATH> to look up '{code}'."
+            )],
+        );
+    };
+
+    let catalog_path = sdk_root.join("metadata").join("error-catalog.json");
+    let text = match std::fs::read_to_string(&catalog_path) {
+        Ok(t) => t,
+        Err(e) => {
+            return failure(
+                g,
+                available,
+                Selector {
+                    kind: "overview".to_string(),
+                    value: code.to_string(),
+                },
+                "catalog-unavailable",
+                &format!("failed to read {}: {e}", catalog_path.display()),
+                vec![format!(
+                    "explain: failed to read {}: {e}",
+                    catalog_path.display()
+                )],
+            );
+        }
+    };
+    let catalog = match alp_core::parse_error_catalog(&text) {
+        Ok(c) => c,
+        Err(e) => {
+            return failure(
+                g,
+                available,
+                Selector {
+                    kind: "overview".to_string(),
+                    value: code.to_string(),
+                },
+                "catalog-unavailable",
+                &format!("{} is malformed: {e}", catalog_path.display()),
+                vec![format!(
+                    "explain: {} is malformed: {e}",
+                    catalog_path.display()
+                )],
+            );
+        }
+    };
+
+    let Some(entry) = alp_core::find_error_code(&catalog, code) else {
+        return failure(
+            g,
+            available,
+            Selector {
+                kind: "overview".to_string(),
+                value: code.to_string(),
+            },
+            "code-unknown",
+            &format!("Unknown error code '{code}'."),
+            vec![format!(
+                "explain: unknown error code '{code}'. Check the ALP-Bxxx / ALP_ERR_* spelling."
+            )],
+        );
+    };
+
+    success(
+        g,
+        available,
+        Selector {
+            kind: "error-code".to_string(),
+            value: entry.code.clone(),
+        },
+        format!("{} ({})", entry.code, entry.kind),
+        error_code_details(entry),
+    )
+}
+
+/// Builds the detail lines for an error-catalog entry: summary, the cause
+/// when the catalog has one (F7 — previously parsed off the entry and
+/// silently dropped), documentation pointer, and the suggested fix when the
+/// catalog has one.
+fn error_code_details(entry: &ErrorCatalogEntry) -> Vec<String> {
+    let mut details = vec![entry.summary.clone()];
+    if let Some(cause) = &entry.cause {
+        details.push(format!("Cause: {cause}"));
+    }
+    details.push(format!("Documentation: {}", entry.doc));
+    if let Some(fix) = &entry.fix {
+        details.push(format!("Fix: {fix}"));
+    }
+    details
 }
 
 /// Builds the detail lines for a project (`alp init`) template: description,
@@ -368,4 +509,48 @@ fn explain_text(summary: &str, details: &[String], g: &GlobalArgs) -> Vec<String
         }
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(cause: Option<&str>, fix: Option<&str>) -> ErrorCatalogEntry {
+        ErrorCatalogEntry {
+            code: "ALP-B900".to_string(),
+            doc: "docs/diagnostics/ALP-B900.md".to_string(),
+            kind: "runtime-diagnostic".to_string(),
+            summary: "s".to_string(),
+            cause: cause.map(str::to_string),
+            fix: fix.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn error_code_details_omits_cause_when_absent() {
+        let details = error_code_details(&entry(None, Some("do x")));
+        assert_eq!(
+            details,
+            vec![
+                "s".to_string(),
+                "Documentation: docs/diagnostics/ALP-B900.md".to_string(),
+                "Fix: do x".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn error_code_details_shows_cause_when_present() {
+        // F7: a populated `cause` used to be parsed off the catalog entry and
+        // silently dropped — must now render right after the summary.
+        let details = error_code_details(&entry(Some("bad wiring"), None));
+        assert_eq!(
+            details,
+            vec![
+                "s".to_string(),
+                "Cause: bad wiring".to_string(),
+                "Documentation: docs/diagnostics/ALP-B900.md".to_string(),
+            ]
+        );
+    }
 }
