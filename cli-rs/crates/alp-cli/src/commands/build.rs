@@ -268,8 +268,27 @@ pub(crate) fn probe_build_preflight(g: &GlobalArgs, context: &ProjectContext) ->
             .as_deref()
             .map(|p| p.to_string_lossy().into_owned()),
         west_available,
+        workspace_zephyr_version: read_workspace_zephyr_version(workspace.as_deref()),
+        sdk_zephyr_pin: read_sdk_zephyr_pin(sdk_root.as_deref()),
     };
     build_preflight_checks(&input)
+}
+
+/// Read the reused workspace's Zephyr `MAJOR.MINOR` from `<workspace>/zephyr/VERSION`.
+/// `None` when there is no workspace or the file is absent/unparseable — the
+/// preflight then simply skips the version-compatibility check.
+fn read_workspace_zephyr_version(workspace_dir: Option<&Path>) -> Option<String> {
+    let version_file = workspace_dir?.join("zephyr").join("VERSION");
+    let body = std::fs::read_to_string(version_file).ok()?;
+    alp_core::preflight::parse_zephyr_version_file(&body)
+}
+
+/// Read the active SDK's pinned Zephyr `MAJOR.MINOR` from `<sdk>/west.yml`.
+/// `None` when unresolved, unreadable, or the pin is a branch/SHA.
+fn read_sdk_zephyr_pin(sdk_root: Option<&Path>) -> Option<String> {
+    let west_yml = sdk_root?.join("west.yml");
+    let body = std::fs::read_to_string(west_yml).ok()?;
+    alp_core::preflight::parse_west_zephyr_pin(&body)
 }
 
 /// Text-mode build pre-flight: run the shared checks and, if any block the build,
@@ -291,13 +310,16 @@ fn preflight_gate(g: &GlobalArgs, context: &ProjectContext) -> Option<CommandRun
 }
 
 /// Text-mode convenience that collapses `init → switch → bootstrap → build`:
-/// when the SDK and board.yaml are present but no Zephyr workspace is resolved,
-/// bootstrap one on demand (reuses a compatible Zephyr, else bootstraps) and
-/// return the re-resolved context. Returns `None` — leaving the readiness gate
-/// to guide the user — when the workspace is already resolved, or when the SDK
-/// or board.yaml is missing (bootstrap needs the SDK, so those are surfaced
-/// first rather than triggering a doomed bootstrap). Bootstrap streams live via
-/// inherited stdio, so the returned summary is intentionally discarded.
+/// when the SDK and board.yaml are present, bootstrap on demand (reuses a
+/// compatible Zephyr, else bootstraps) and return the re-resolved context. Fires
+/// either when no Zephyr workspace is resolved OR when a reused workspace's
+/// Zephyr is stale versus the SDK pin (so a stale reuse self-heals instead of
+/// producing build failures that look like regressions). Returns `None` —
+/// leaving the readiness gate to guide the user — when the workspace is already
+/// resolved and current, or when the SDK or board.yaml is missing (bootstrap
+/// needs the SDK, so those are surfaced first rather than triggering a doomed
+/// bootstrap). Bootstrap streams live via inherited stdio, so the returned
+/// summary is intentionally discarded.
 fn maybe_auto_bootstrap(g: &GlobalArgs, context: &ProjectContext) -> Option<ProjectContext> {
     let checks = probe_build_preflight(g, context);
     let is_fail = |name: &str| {
@@ -305,12 +327,26 @@ fn maybe_auto_bootstrap(g: &GlobalArgs, context: &ProjectContext) -> Option<Proj
             .iter()
             .any(|c| c.name == name && c.status == DoctorStatus::Fail)
     };
-    if !is_fail("workspace") || is_fail("sdk") || is_fail("boardYaml") {
+    let is_warn = |name: &str| {
+        checks
+            .iter()
+            .any(|c| c.name == name && c.status == DoctorStatus::Warn)
+    };
+    // Bootstrap when there is no workspace at all, OR when the reused workspace's
+    // Zephyr diverges from the SDK pin (stale reuse — `alp bootstrap` refreshes
+    // it to the pinned MAJOR.MINOR). Still gated on the SDK + board.yaml being
+    // present, since bootstrap needs the SDK.
+    let missing_workspace = is_fail("workspace");
+    let stale_zephyr = is_warn("zephyrVersion");
+    if (!missing_workspace && !stale_zephyr) || is_fail("sdk") || is_fail("boardYaml") {
         return None;
     }
-    eprintln!(
-        "No Zephyr workspace yet — bootstrapping (reuse a compatible Zephyr, else bootstrap one)…"
-    );
+    let reason = if missing_workspace {
+        "No Zephyr workspace yet"
+    } else {
+        "Reused Zephyr workspace is stale versus the SDK pin"
+    };
+    eprintln!("{reason} — bootstrapping (reuse a compatible Zephyr, else bootstrap one)…");
     let _ = crate::commands::bootstrap::run(
         g,
         &BootstrapArgs {
