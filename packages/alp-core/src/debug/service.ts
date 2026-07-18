@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
+import { toPosix } from "../paths";
 
 import {
   DebugDoctorRequest,
@@ -925,16 +926,20 @@ function resolveWorkspacePath(
   }
 
   if (value.startsWith("${workspaceFolder}/")) {
-    return path.join(workspaceRoot, value.slice("${workspaceFolder}/".length));
+    return toPosix(
+      path.join(workspaceRoot, value.slice("${workspaceFolder}/".length)),
+    );
   }
 
   if (value.startsWith("${workspaceFolder}")) {
-    return path.join(workspaceRoot, value.slice("${workspaceFolder}".length));
+    return toPosix(
+      path.join(workspaceRoot, value.slice("${workspaceFolder}".length)),
+    );
   }
 
   if (value.startsWith("/")) {
     return value;
   }
 
-  return path.join(workspaceRoot, value);
+  return toPosix(path.join(workspaceRoot, value));
 }
