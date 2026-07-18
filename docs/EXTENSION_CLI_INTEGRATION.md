@@ -109,15 +109,31 @@ observed extension state to the CLI via flags — out of scope for now.
 
 ## 5. Binary resolution (hybrid: bundled + universal)
 
-**Decision: `alpSdk.cliPath` setting → PATH → bundled `bin/alp[.exe]` → cached
-download → download-on-demand.** `resolveAlpBinary()` resolves in that order:
-an explicit `alpSdk.cliPath` (also serves dev builds:
-`cli-rs/target/release/alp`); then `alp` on PATH; then a binary staged at
-`<extensionPath>/bin/alp[.exe]` — present only in a platform-specific VSIX
-built with `vsce package --target <triple>`; then a previously downloaded
-binary cached in `globalStorage`; then a fresh download (the
-`cli-rs/npm-shim/postinstall.js` logic) for the host target. If all of those
-fail, surface a one-click "install the ALP CLI" action.
+**Decision: `alpSdk.cliPath` setting → bundled `bin/alp[.exe]` → local build →
+cached download → a verified-native `alp` on PATH (last resort) →
+download-on-demand.** `resolveAlpBinary()` resolves in that order: an explicit
+`alpSdk.cliPath` (also serves dev builds: `cli-rs/target/release/alp`); then a
+binary staged at `<extensionPath>/bin/alp[.exe]` — present only in a
+platform-specific VSIX built with `vsce package --target <triple>`; then a
+locally-built `cli-rs/target/{release,debug}/alp[.exe]` (source checkout);
+then a previously downloaded binary cached in `globalStorage`; then `alp` on
+PATH, but only once verified to be the native (clap) CLI — the SDK's
+`bootstrap.sh` pip-installs a Python `alp` (click) into the workspace venv,
+which shadows the native binary on PATH once that venv is active, so PATH is
+checked last and a non-native match falls straight through; then a fresh
+download (the `cli-rs/npm-shim/postinstall.js` logic) for the host target. If
+all of those fail, surface a one-click "install the ALP CLI" action.
+
+**Compat note (PATH order reorder, 2026-07):** before this reorder, `alp` on
+PATH was tried right after `alpSdk.cliPath` — ahead of anything the extension
+itself manages. Now PATH is a last resort, tried only once nothing
+already-managed (bundled / local build / cached) is available. One practical
+consequence: a **newer** native `alp` a user installed manually on PATH (e.g.
+via Homebrew or a manual download) now *loses* to whatever the extension
+already has cached or bundled, even if that managed copy is older — PATH used
+to win that race, it no longer does. The escape hatch is `alpSdk.cliPath`:
+point it explicitly at the PATH binary (or any other build) to force the
+extension to use it regardless of what's cached/bundled.
 
 Two VSIX shapes ship side by side:
 
@@ -173,8 +189,9 @@ follows the first `cli-rs-v*` release (§5 + Phase 7).
 **Wave B — extension consumes the CLI (after first `cli-rs-v*` release):**
 
 - **B1 — binary resolution. ✅ done.** New `src/alpCli/` slice + `alpSdk.cliPath`
-  setting. `service.ts` (pure): `decideBinarySource` (cliPath→PATH→cached→download,
-  §5), `parseEnvelope`, `classifyExitCode`/`classifyOutcome` (exit 0/1/2/3/4/5 →
+  setting. `service.ts` (pure): `decideBinarySource` (cliPath→bundled→localBuild→
+  cached→PATH(verified-native, last resort)→download, §5), `parseEnvelope`,
+  `classifyExitCode`/`classifyOutcome` (exit 0/1/2/3/4/5 →
   UX severity), `releaseAssetForTarget` (the 3 published targets; Intel-mac → null).
   `adapterCore.ts` (injected fs/net/process seams): `resolveAlpBinary` (downloads
   into globalStorage on demand) + `runAlp` (spawns `alp … --format json`, parses,
@@ -296,10 +313,12 @@ extension and terminal a single `alp build` entry point.
 
 No open items — this plan is frozen; revisit only if an assumption breaks.
 
-1. **Binary distribution** → `alpSdk.cliPath` → PATH → bundled `bin/alp[.exe]`
-   → cached → download-on-demand into `globalStorage` (§5; superseded 2026-07 —
+1. **Binary distribution** → `alpSdk.cliPath` → bundled `bin/alp[.exe]` →
+   local build → cached → a verified-native PATH `alp` (last resort) →
+   download-on-demand into `globalStorage` (§5; superseded 2026-07 —
    platform-specific VSIXes now bundle the CLI; the universal VSIX stays
-   binary-less for sideload/air-gapped installs and keeps download-on-demand).
+   binary-less for sideload/air-gapped installs and keeps download-on-demand;
+   PATH order superseded again to close the venv-shadowing gap, see B1).
 2. **`alp build` scope** → the full set `build`/`image`/`flash`/`clean`/`renode`,
    mirroring the SDK's `west alp-*` commands 1:1 (the extension already exposes
    all five). Done together to avoid a half-migrated extension.

@@ -28,6 +28,46 @@ const ALL_EMIT_MODES: [&str; 6] = [
     "carrier-netlist",
 ];
 
+/// Every mode `alp_project.py --emit` itself accepts -- mirrored by hand from
+/// upstream's own `PROJECT_EMIT_MODES` constant
+/// (`alp-sdk-upstream/scripts/alp_cli/emit.py:33-46`), and cross-checked
+/// against that script's argparse `choices=[...]`
+/// (`alp-sdk-upstream/scripts/alp_project.py:411-424`) -- both list exactly
+/// these 14 and MUST keep matching each other. This is deliberately narrower
+/// than the SDK's full `emit` front door: 4 more modes (`dts-partitions`,
+/// `storage-mounts-c`, `tfm-sysbuild-conf`, `build-plan`) are
+/// orchestrator-only, reachable solely via `python -m alp_orchestrate --emit`
+/// (`west alp-emit`), NOT `alp_project.py --emit` -- this CLI only ever shells
+/// to the latter (see `run` below), so accepting those 4 here would make
+/// every one of them fail 100% of the time (`alp_project.py`'s "invalid
+/// choice", exit 3). Nothing is lost: `dts-partitions`/`storage-mounts-c`/
+/// `tfm-sysbuild-conf` are per-slice build artefacts `alp build` already
+/// materialises, and `build-plan`/`system-manifest` are reachable via `alp
+/// build --plan`/`--manifest`. `ALL_EMIT_MODES` above is deliberately the
+/// narrower "targets `generate` produces without a flag" set and stays as-is.
+/// An explicit `--target <mode>` is checked against this wider
+/// (`alp_project.py`-accepted) list instead, so a genuinely new
+/// `alp_project.py` emit mode reaches it without a Rust-side change. Drift
+/// here is self-correcting: a stale/missing entry surfaces as
+/// `alp_project.py`'s own "invalid choice" (an emit-failed issue), never a
+/// silent wrong emit.
+const PROJECT_EMIT_MODES: [&str; 14] = [
+    "zephyr-conf",
+    "cmake-args",
+    "yocto-conf",
+    "dts-overlay",
+    "native-sim-overlay",
+    "hw-info-h",
+    "west-libraries",
+    "system-manifest",
+    "dts-reservations",
+    "ipc-contract-h",
+    "os-topology",
+    "composed-route-table",
+    "carrier-netlist",
+    "zephyr-board",
+];
+
 /// JSON `data` payload for the `generate` envelope.
 #[derive(serde::Serialize)]
 struct GenerateData {
@@ -185,15 +225,22 @@ fn resolve_board_path(g: &GlobalArgs, workspace_root: &Path) -> PathBuf {
     workspace_root.join("board.yaml")
 }
 
-/// Resolve which emit modes to run: all modes when `all` is set or no `--target`
-/// is given, otherwise the single matching mode, or an error for an unknown target.
+/// Resolve which emit modes to run: all of `ALL_EMIT_MODES` when `all` is set
+/// or no `--target` is given; otherwise the single matching mode -- checked
+/// against the wider `PROJECT_EMIT_MODES` list so any mode `alp_project.py
+/// --emit` itself accepts reaches it, not just the six `generate` produces by
+/// default -- or an error for a target neither list recognizes.
 fn resolve_generate_targets(target: Option<&str>, all: bool) -> Result<Vec<&'static str>, String> {
     if all || target.is_none() {
         return Ok(ALL_EMIT_MODES.to_vec());
     }
 
     let target = target.unwrap_or_default();
-    if let Some(mode) = ALL_EMIT_MODES.iter().copied().find(|mode| *mode == target) {
+    if let Some(mode) = PROJECT_EMIT_MODES
+        .iter()
+        .copied()
+        .find(|mode| *mode == target)
+    {
         return Ok(vec![mode]);
     }
 
@@ -201,23 +248,64 @@ fn resolve_generate_targets(target: Option<&str>, all: bool) -> Result<Vec<&'sta
 }
 
 /// Map an emit mode to its output file. Most land under
-/// `<workspace_root>/build/generated/` (ephemeral build artifacts), but the
-/// `native_sim` overlay is a Zephyr board overlay: it must live at
-/// `boards/native_sim_native_64.overlay` in the app source tree so
-/// `west build -b native_sim/native/64` auto-discovers it.
+/// `<workspace_root>/build/generated/` (ephemeral build artifacts), but a few
+/// modes have a fixed location a downstream consumer expects them at:
+///
+/// - `native-sim-overlay` is a Zephyr board overlay: it must live at
+///   `boards/native_sim_native_64.overlay` in the app source tree so
+///   `west build -b native_sim/native/64` auto-discovers it.
+/// - `system-manifest` mirrors `build/system-manifest.yaml` -- the exact path
+///   `alp build`'s own materialiser writes it at (see
+///   `alp_orchestrate/orchestrator.py`), which `alp flash`/`alp inspect`/the
+///   IDE all read from.
+/// - `ipc-contract-h` mirrors `build/generated/alp/system_ipc.h` -- the exact
+///   path `alp_orchestrate/buildplan.py`'s `_shared_artefacts` writes it at
+///   (the `alp/` subdir is so slice `CMakeLists` can add `generated/` straight
+///   to the include path and `#include <alp/system_ipc.h>` resolves).
 fn output_path_for_emit(workspace_root: &Path, emit: &str) -> PathBuf {
     if emit == "native-sim-overlay" {
         return workspace_root
             .join("boards")
             .join("native_sim_native_64.overlay");
     }
+    if emit == "system-manifest" {
+        return workspace_root.join("build").join("system-manifest.yaml");
+    }
+    if emit == "ipc-contract-h" {
+        return workspace_root
+            .join("build")
+            .join("generated")
+            .join("alp")
+            .join("system_ipc.h");
+    }
 
+    // Every remaining project mode gets its own distinct filename under
+    // `build/generated/` so successive single-`--target` runs don't clobber
+    // one another (previously every mode below `carrier-netlist` fell through
+    // to the same generic `alp.out`). Filenames are pinned to the SDK's own
+    // documented example paths where one exists
+    // (`docs/board-config-emit.md`'s `hw-info-h` / `west-libraries`
+    // walkthroughs, `alp_orchestrate/buildplan.py`'s `dts-reservations.dtsi`);
+    // the remainder (`os-topology`, `composed-route-table`) have no fixed
+    // upstream path -- `--output` is caller-chosen there too -- so they get a
+    // `<mode>.json` name consistent with `carrier-netlist.json`.
     let file_name = match emit {
         "zephyr-conf" => "alp.conf",
         "dts-overlay" => "alp.overlay",
         "cmake-args" => "alp-cmake-args.txt",
         "yocto-conf" => "alp-yocto.conf",
         "carrier-netlist" => "carrier-netlist.json",
+        "hw-info-h" => "alp_hw_info_build.h",
+        "west-libraries" => "alp-west-libs.yml",
+        "dts-reservations" => "dts-reservations.dtsi",
+        "os-topology" => "os-topology.json",
+        "composed-route-table" => "composed-route-table.json",
+        // Writes a directory of files, not a single stream
+        // (`gen_zephyr_board.py`), and `alp_project.py` also requires
+        // `--core` (which `generate` doesn't pass) -- this mode fails
+        // clearly via `alp_project.py`'s own error, never silently. A
+        // distinct name still keeps it from colliding with the others.
+        "zephyr-board" => "zephyr-board",
         _ => "alp.out",
     };
 
@@ -329,6 +417,52 @@ mod tests {
     }
 
     #[test]
+    fn target_resolution_accepts_every_project_emit_mode() {
+        // An explicit --target reaches the wider PROJECT_EMIT_MODES allowlist
+        // (exactly the 14 `alp_project.py --emit` itself accepts), not just
+        // the six ALL_EMIT_MODES `generate` produces by default -- e.g. a v2
+        // project mode like `os-topology` must not be rejected at the
+        // Rust-side gate. The 4 orchestrator-only modes (`dts-partitions`,
+        // `storage-mounts-c`, `tfm-sysbuild-conf`, `build-plan`) are
+        // deliberately NOT in this list -- see PROJECT_EMIT_MODES's doc.
+        assert_eq!(PROJECT_EMIT_MODES.len(), 14);
+        for mode in PROJECT_EMIT_MODES {
+            let resolved = resolve_generate_targets(Some(mode), false).unwrap();
+            assert_eq!(resolved, vec![mode]);
+        }
+    }
+
+    #[test]
+    fn target_resolution_rejects_orchestrator_only_modes() {
+        // These 4 modes are real `alp emit` modes, but `alp_project.py --emit`
+        // itself doesn't accept them (they route only through
+        // `python -m alp_orchestrate --emit`) -- accepting them here would
+        // shell out to a command that always rejects them (exit 3). `build-plan`
+        // / `system-manifest` remain reachable via `alp build --plan`/`--manifest`.
+        for mode in [
+            "dts-partitions",
+            "storage-mounts-c",
+            "tfm-sysbuild-conf",
+            "build-plan",
+        ] {
+            let err = resolve_generate_targets(Some(mode), false).unwrap_err();
+            assert!(
+                err.contains("Unsupported generate target"),
+                "mode {mode}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn all_emit_modes_is_unchanged_by_the_wider_target_allowlist() {
+        // --all (and the no-flag default) must keep emitting exactly the six
+        // build-facing targets, even though PROJECT_EMIT_MODES accepts 14.
+        let resolved = resolve_generate_targets(None, true).unwrap();
+        assert_eq!(resolved, ALL_EMIT_MODES.to_vec());
+        assert_eq!(ALL_EMIT_MODES.len(), 6);
+    }
+
+    #[test]
     fn target_resolution_accepts_carrier_netlist() {
         // The Studio netlist handoff (alp-sdk#419) must reach the SDK spawn,
         // not be rejected at the allowlist. See ALL_EMIT_MODES.
@@ -356,5 +490,38 @@ mod tests {
         // it up and native_sim GPIO resolves.
         let path = output_path_for_emit(Path::new("/ws"), "native-sim-overlay");
         assert!(path.ends_with("boards/native_sim_native_64.overlay"));
+    }
+
+    #[test]
+    fn system_manifest_writes_the_sdk_canonical_path() {
+        // Matches build/system-manifest.yaml -- the exact path `alp build`'s
+        // own materialiser writes it at, not build/generated/'s flat layout.
+        let path = output_path_for_emit(Path::new("/ws"), "system-manifest");
+        assert!(path.ends_with("build/system-manifest.yaml"));
+        assert!(!path.to_string_lossy().contains("generated"));
+    }
+
+    #[test]
+    fn ipc_contract_h_writes_the_sdk_canonical_path() {
+        // Matches build/generated/alp/system_ipc.h -- the exact path
+        // alp_orchestrate/buildplan.py's _shared_artefacts writes it at.
+        let path = output_path_for_emit(Path::new("/ws"), "ipc-contract-h");
+        assert!(path.ends_with("build/generated/alp/system_ipc.h"));
+    }
+
+    #[test]
+    fn every_project_emit_mode_gets_a_distinct_output_path() {
+        // F2: every widened mode used to fall through to the same generic
+        // build/generated/alp.out, so successive single-target runs clobbered
+        // each other. Every mode must now resolve to its own path.
+        let mut seen = std::collections::HashSet::new();
+        for mode in PROJECT_EMIT_MODES {
+            let path = output_path_for_emit(Path::new("/ws"), mode);
+            assert!(
+                seen.insert(path.clone()),
+                "mode {mode} collided with an earlier mode at {}",
+                path.display()
+            );
+        }
     }
 }

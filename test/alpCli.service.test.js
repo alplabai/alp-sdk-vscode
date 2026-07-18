@@ -31,6 +31,7 @@ test("isCliBehind compares numeric version tuples", () => {
 });
 
 test("decideBinarySource follows the resolution order", () => {
+  // explicit cliPath always wins.
   assert.equal(
     decideBinarySource({
       cliPathSetting: "/x/alp",
@@ -41,6 +42,10 @@ test("decideBinarySource follows the resolution order", () => {
     }),
     "cliPath",
   );
+  // a managed binary (bundled here) wins over a verified-native PATH `alp` —
+  // PATH is a last resort, not a second choice, so a shell's shadowed/stale
+  // `alp` (e.g. the SDK venv's Python click CLI) can never override the
+  // extension's own binary.
   assert.equal(
     decideBinarySource({
       cliPathSetting: "/x/alp",
@@ -49,8 +54,10 @@ test("decideBinarySource follows the resolution order", () => {
       bundledExists: true,
       cachedExists: true,
     }),
-    "path",
+    "bundled",
   );
+  // no managed binary and no PATH `alp` → a cached download still wins over
+  // triggering a fresh one.
   assert.equal(
     decideBinarySource({
       cliPathSetting: "",
@@ -61,6 +68,7 @@ test("decideBinarySource follows the resolution order", () => {
     }),
     "cached",
   );
+  // nothing resolves at all → download-on-demand.
   assert.equal(
     decideBinarySource({
       cliPathSetting: "",
@@ -113,7 +121,7 @@ test("decideBinarySource: a local cli-rs build resolves before cached/download",
   );
 });
 
-test("decideBinarySource: bundled wins over cached/download but loses to cliPath/path", () => {
+test("decideBinarySource: bundled wins over cached/download/PATH but loses to cliPath", () => {
   // bundled beats cached and download when nothing higher-priority resolves.
   assert.equal(
     decideBinarySource({
@@ -148,7 +156,10 @@ test("decideBinarySource: bundled wins over cached/download but loses to cliPath
     "cliPath",
   );
 
-  // `alp` on PATH still wins over a bundled binary.
+  // a verified-native `alp` on PATH is a last resort: it no longer overrides
+  // a managed bundled binary. PATH may be a venv-shadowed non-native `alp` in
+  // disguise (see `isNativeAlpVersionOutput`), so the extension prefers its
+  // own binary whenever one is already available.
   assert.equal(
     decideBinarySource({
       cliPathSetting: "",
@@ -157,7 +168,35 @@ test("decideBinarySource: bundled wins over cached/download but loses to cliPath
       bundledExists: true,
       cachedExists: true,
     }),
+    "bundled",
+  );
+});
+
+test("decideBinarySource: a verified-native PATH alp is a last resort — used only when no managed binary exists, still loses to any managed binary that does", () => {
+  // no cliPath, no bundled/localBuild/cached binary → PATH is all that's left,
+  // so it's used ahead of triggering a network download.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: true,
+      bundledExists: false,
+      localBuildExists: false,
+      cachedExists: false,
+    }),
     "path",
+  );
+  // ...but a cached binary (or bundled/localBuild) still wins over it.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: true,
+      bundledExists: false,
+      localBuildExists: false,
+      cachedExists: true,
+    }),
+    "cached",
   );
 });
 

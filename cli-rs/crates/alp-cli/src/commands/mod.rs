@@ -39,6 +39,9 @@ pub mod inspect;
 pub mod pinmux;
 /// `alp presets` — list SDK presets (SKUs/SoMs, carriers) + built-in catalogue defaults.
 pub mod presets;
+/// `alp run` — build the project and execute it locally (`native_sim`) or
+/// flash it to real hardware.
+pub mod run;
 /// `alp scaffold` — scaffold a module into an existing project.
 pub mod scaffold;
 /// `alp sdk` — SDK release listing/management.

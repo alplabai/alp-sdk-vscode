@@ -6,7 +6,8 @@
 //! Exit code is `doctorFailure` (4) when any check fails, `internalFailure`
 //! (5) on an invalid `--target-kind`/`--server`, and `success` (0) otherwise.
 
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 use alp_core::{
     BuildOs, BuildToolProbe, DebugServerKind, DebugTargetKind, DebuggerExtensionsState,
@@ -61,6 +62,7 @@ pub fn run(g: &GlobalArgs, args: &DoctorArgs) -> CommandRun {
         &mut report.summary,
         context.sdk_root.as_deref(),
     );
+    append_path_shadow_check(&mut report.checks, &mut report.summary);
 
     let exit = if report.summary.fail > 0 {
         ExitCode::DoctorFailure
@@ -131,6 +133,7 @@ fn run_build_readiness(g: &GlobalArgs, generated_at: &str, fix: bool) -> Command
         &mut report.summary,
         context.sdk_root.as_deref(),
     );
+    append_path_shadow_check(&mut report.checks, &mut report.summary);
 
     // Real gate: prepend the project/workspace readiness (can a build even
     // start?) ahead of the host-tool probes, sharing `alp build`'s pre-flight
@@ -263,6 +266,166 @@ fn read_sdk_version(root: &str) -> Option<String> {
     bare
 }
 
+/// Append a `pathShadow` check (advisory only — never fails doctor, mirrors
+/// `sdkProvenance`'s Warn-only shape): warns when a *different* `alp` resolves
+/// ahead of this running binary on `PATH`, but ONLY when that shadow looks
+/// like the SDK's Python/venv CLI — see `path_shadow_warning` for why this
+/// check's scope stops there. Adds nothing to the report when PATH resolves
+/// to this same binary, to nothing at all, or to a shadow that isn't the
+/// Python CLI — all healthy, unremarkable cases.
+fn append_path_shadow_check(checks: &mut Vec<DoctorCheck>, summary: &mut DoctorSummary) {
+    let Ok(current_exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return;
+    };
+    let Some(shadow) = find_shadowing_alp(&path_var, &current_exe) else {
+        return;
+    };
+    let Some(check) = path_shadow_warning(&shadow, &read_file_head, &current_exe) else {
+        return;
+    };
+
+    summary.warn += 1;
+    checks.push(check);
+}
+
+/// Build the `pathShadow` Warn check for a detected shadow, or `None` when
+/// the shadow shouldn't be warned about at all. This check's ONLY target is
+/// the Python/venv `alp` collision: after `alp bootstrap`, its underlying
+/// `scripts/bootstrap.sh` tells the user to `source .venv/bin/activate`, and
+/// an activated venv's `bin`/`Scripts` dir then wins PATH resolution over
+/// wherever this native CLI is installed, so the *next* `alp` invocation
+/// silently runs the SDK's Python CLI instead — that's worth a warning +
+/// `deactivate`/reorder-PATH fix. A node launcher (the npm shim's
+/// `#!/usr/bin/env node` script that itself spawns
+/// `node_modules/@alplabai/alp-cli/binary/alp`) or a sibling copy of the
+/// native binary elsewhere on PATH is a normal, healthy resolver arrangement,
+/// NOT this footgun — warning there would be a permanent false positive that
+/// wrongly tells the user to `deactivate`/reorder PATH, which would bypass
+/// the managed install instead of fixing anything. `looks_like_python_cli`
+/// (venv-shim path shape or a `python` shebang) is the sole gate.
+fn path_shadow_warning(
+    shadow: &Path,
+    read_head: &impl Fn(&Path) -> Option<Vec<u8>>,
+    current_exe: &Path,
+) -> Option<DoctorCheck> {
+    if !looks_like_python_cli(shadow, read_head) {
+        return None;
+    }
+
+    let shadow_str = shadow.to_string_lossy();
+    let detail = format!(
+        "Another `alp` shadows this native CLI on PATH: {shadow_str} (looks like the SDK's \
+         Python CLI). A venv-activated shell may run the wrong `alp`."
+    );
+    let fix = Some(format!(
+        "Run `deactivate` (or reorder PATH) so {} resolves first.",
+        current_exe.display()
+    ));
+
+    Some(DoctorCheck {
+        name: "pathShadow".to_string(),
+        status: DoctorStatus::Warn,
+        detail,
+        fix,
+    })
+}
+
+/// Find the first `alp`/`alp.exe` that PATH resolution would hit, scanning
+/// `path_var` left to right. Returns `None` when the first hit is this same
+/// running binary (the healthy case — nothing shadows it) or when no `alp`
+/// is found on PATH at all.
+fn find_shadowing_alp(path_var: &OsStr, current_exe: &Path) -> Option<PathBuf> {
+    let exe_name = if cfg!(windows) { "alp.exe" } else { "alp" };
+    let dirs: Vec<PathBuf> = std::env::split_paths(path_var).collect();
+    find_shadowing_alp_with(&dirs, exe_name, &|p| p.is_file(), &|p| {
+        same_binary(p, current_exe)
+    })
+}
+
+/// Pure PATH-scan core of [`find_shadowing_alp`]: `exists`/`is_current` are
+/// injected so this is unit-testable without touching the real filesystem.
+fn find_shadowing_alp_with(
+    dirs: &[PathBuf],
+    exe_name: &str,
+    exists: &impl Fn(&Path) -> bool,
+    is_current: &impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    for dir in dirs {
+        let candidate = dir.join(exe_name);
+        if !exists(&candidate) {
+            continue;
+        }
+        if is_current(&candidate) {
+            // PATH resolution stops here, and it's us — no shadow.
+            return None;
+        }
+        return Some(candidate);
+    }
+    None
+}
+
+/// Whether `a` and `b` name the same file on disk, resolving symlinks when
+/// possible (a `alp` copied or symlinked onto PATH still counts as "us"); a
+/// path that can't be canonicalized (doesn't exist, permissions) falls back
+/// to plain path equality.
+fn same_binary(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => a == b,
+    }
+}
+
+/// Heuristic: does `path` look like the SDK's Python `alp` shim rather than
+/// another copy of the native binary? True when the path runs through a
+/// `.venv`/`venv` virtualenv's `bin` (POSIX) or `Scripts` (Windows) directory,
+/// or when the file's first line is a `#!` shebang naming a `python`
+/// interpreter. `read_head` is injected for unit testing.
+fn looks_like_python_cli(path: &Path, read_head: &impl Fn(&Path) -> Option<Vec<u8>>) -> bool {
+    looks_like_venv_shim(path) || read_head(path).is_some_and(|head| shebang_names_python(&head))
+}
+
+/// True when `path` has a `.venv`/`venv` component immediately followed by a
+/// `bin`/`Scripts` component (e.g. `project/.venv/bin/alp`,
+/// `project\venv\Scripts\alp.exe`) — the shape of a virtualenv's shim dir.
+/// Splits on `/` and `\` directly (rather than `Path::components()`) so the
+/// check is host-OS independent: `Path` only treats `\` as a separator on
+/// Windows, but a Windows-style shadow path can be reported while running on
+/// any host (and is worth recognizing in tests on any host too).
+fn looks_like_venv_shim(path: &Path) -> bool {
+    let path_str = path.to_string_lossy();
+    let comps: Vec<&str> = path_str.split(['/', '\\']).collect();
+    comps.iter().enumerate().any(|(i, c)| {
+        (*c == ".venv" || *c == "venv")
+            && comps
+                .get(i + 1)
+                .is_some_and(|next| *next == "bin" || *next == "Scripts")
+    })
+}
+
+/// True when `head` (a file's leading bytes) starts with a `#!` shebang line
+/// that names a `python` interpreter (e.g. `#!/usr/bin/env python3`).
+fn shebang_names_python(head: &[u8]) -> bool {
+    if !head.starts_with(b"#!") {
+        return false;
+    }
+    let line_end = head.iter().position(|&b| b == b'\n').unwrap_or(head.len());
+    String::from_utf8_lossy(&head[..line_end]).contains("python")
+}
+
+/// Read up to the first 256 bytes of `path`, for shebang sniffing. `None` on
+/// any I/O error (missing file, permissions, …).
+fn read_file_head(path: &Path) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; 256];
+    let n = file.read(&mut buf).ok()?;
+    buf.truncate(n);
+    Some(buf)
+}
+
 /// Read + parse the active `board.yaml`, returning `None` when it is absent or
 /// unparseable (the preflight then falls back to checking all three backends).
 fn read_board_model(context: &ProjectContext) -> Option<alp_core::BoardModel> {
@@ -278,9 +441,9 @@ fn zephyr_sdk_detected() -> bool {
     if std::env::var_os("ZEPHYR_SDK_INSTALL_DIR").is_some() {
         return true;
     }
-    let mut roots: Vec<std::path::PathBuf> = vec![std::path::PathBuf::from("/opt")];
+    let mut roots: Vec<PathBuf> = vec![PathBuf::from("/opt")];
     if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
-        roots.push(std::path::PathBuf::from(home));
+        roots.push(PathBuf::from(home));
     }
     roots.iter().any(|root| {
         std::fs::read_dir(root)
@@ -510,6 +673,139 @@ fn null_project() -> Project {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shadow_scan_finds_nothing_when_no_dirs_have_alp() {
+        let dirs = vec![PathBuf::from("/usr/bin"), PathBuf::from("/usr/local/bin")];
+        let got = find_shadowing_alp_with(&dirs, "alp", &|_| false, &|_| false);
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn shadow_scan_stops_at_the_current_binary() {
+        // The first hit on PATH is us — no shadow, even though a later dir
+        // also has an `alp` (PATH resolution never reaches it).
+        let dirs = vec![PathBuf::from("/usr/local/bin"), PathBuf::from("/opt/alp")];
+        let got = find_shadowing_alp_with(&dirs, "alp", &|_| true, &|p| {
+            p == Path::new("/usr/local/bin/alp")
+        });
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn shadow_scan_reports_the_first_different_hit() {
+        let dirs = vec![
+            PathBuf::from("/home/dev/project/.venv/bin"),
+            PathBuf::from("/usr/local/bin"),
+        ];
+        let got = find_shadowing_alp_with(&dirs, "alp", &|_| true, &|_| false);
+        assert_eq!(got, Some(PathBuf::from("/home/dev/project/.venv/bin/alp")));
+    }
+
+    #[test]
+    fn venv_shim_matches_posix_and_windows_shapes() {
+        assert!(looks_like_venv_shim(Path::new(
+            "/home/dev/project/.venv/bin/alp"
+        )));
+        assert!(looks_like_venv_shim(Path::new(
+            r"C:\project\venv\Scripts\alp.exe"
+        )));
+        assert!(!looks_like_venv_shim(Path::new("/usr/local/bin/alp")));
+        // A folder that merely contains "venv" as a substring, but isn't the
+        // exact component, must not false-positive.
+        assert!(!looks_like_venv_shim(Path::new("/opt/my-venv-tools/alp")));
+    }
+
+    #[test]
+    fn shebang_detection_matches_only_python_interpreters() {
+        assert!(shebang_names_python(b"#!/usr/bin/env python3\nprint(1)\n"));
+        assert!(shebang_names_python(b"#!/usr/bin/python\nimport sys\n"));
+        assert!(!shebang_names_python(b"#!/bin/bash\necho hi\n"));
+        assert!(!shebang_names_python(b"not a shebang at all"));
+    }
+
+    #[test]
+    fn looks_like_python_cli_falls_back_to_shebang_when_not_in_a_venv_dir() {
+        let path = Path::new("/usr/local/bin/alp");
+        assert!(looks_like_python_cli(path, &|_| Some(
+            b"#!/usr/bin/env python3\n".to_vec()
+        )));
+        assert!(!looks_like_python_cli(path, &|_| Some(
+            b"#!/bin/sh\n".to_vec()
+        )));
+        assert!(!looks_like_python_cli(path, &|_| None));
+    }
+
+    #[test]
+    fn path_shadow_warning_fires_for_a_python_venv_shadow() {
+        let shadow = Path::new("/project/.venv/bin/alp");
+        let current = Path::new("/usr/local/bin/alp");
+        let check = path_shadow_warning(shadow, &|_| None, current).expect("venv shadow must warn");
+        assert_eq!(check.name, "pathShadow");
+        assert_eq!(check.status, DoctorStatus::Warn);
+        assert!(check.detail.contains("Python CLI"));
+        assert!(check.fix.unwrap().contains("deactivate"));
+    }
+
+    #[test]
+    fn path_shadow_warning_fires_for_a_bare_python_shebang_shadow() {
+        let shadow = Path::new("/usr/local/bin/alp");
+        let current = Path::new("/opt/alp/bin/alp");
+        let check = path_shadow_warning(
+            shadow,
+            &|_| Some(b"#!/usr/bin/env python3\n".to_vec()),
+            current,
+        )
+        .expect("python shebang shadow must warn");
+        assert_eq!(check.status, DoctorStatus::Warn);
+    }
+
+    #[test]
+    fn path_shadow_warning_is_silent_for_a_node_launcher() {
+        // F4: the npm shim's `#!/usr/bin/env node` launcher (which itself
+        // spawns node_modules/@alplabai/alp-cli/binary/alp) is a normal,
+        // healthy resolver arrangement -- not the Python/venv collision this
+        // check exists for. Must not warn, and must not advise deactivate.
+        let shadow = Path::new("/usr/local/lib/node_modules/@alplabai/alp-cli/bin/alp");
+        let current = Path::new("/opt/alp/bin/alp");
+        let check = path_shadow_warning(
+            shadow,
+            &|_| Some(b"#!/usr/bin/env node\n".to_vec()),
+            current,
+        );
+        assert!(check.is_none());
+    }
+
+    #[test]
+    fn path_shadow_warning_is_silent_for_a_sibling_native_binary() {
+        // A second native `alp` copy elsewhere on PATH (e.g. a Homebrew
+        // install alongside the managed cache) is not a venv shim and has no
+        // shebang at all -- also not this check's target.
+        let shadow = Path::new("/opt/homebrew/bin/alp");
+        let current = Path::new("/opt/alp/bin/alp");
+        let check = path_shadow_warning(shadow, &|_| None, current);
+        assert!(check.is_none());
+    }
+
+    #[test]
+    fn append_path_shadow_check_is_noop_absent_env_signal() {
+        // No PATH shadow expected on the actual test host in the overwhelming
+        // common case; this exercises the real `std::env` lookups end-to-end
+        // and just asserts the function never panics and never turns doctor
+        // red (only ever appends a Warn, never a Fail).
+        let mut checks = Vec::new();
+        let mut summary = DoctorSummary {
+            pass: 0,
+            warn: 0,
+            fail: 0,
+        };
+        append_path_shadow_check(&mut checks, &mut summary);
+        assert_eq!(summary.fail, 0);
+        if let Some(check) = checks.first() {
+            assert_eq!(check.name, "pathShadow");
+            assert_eq!(check.status, DoctorStatus::Warn);
+        }
+    }
 
     #[test]
     fn issues_skip_passing_checks() {
