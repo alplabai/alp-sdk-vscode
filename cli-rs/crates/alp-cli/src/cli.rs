@@ -123,6 +123,9 @@ pub enum Command {
     /// Build the project. `--plan` consumes the SDK's emitted build plan;
     /// otherwise fans board.yaml into per-core slices via `west alp-build`.
     Build(BuildArgs),
+    /// Build the project and run it: executes locally under `native_sim` by
+    /// default, or flashes to a real board with `--board`/`--flash`.
+    Run(RunArgs),
     /// Assemble a flashable image (`west alp-image`).
     Image(WestForwardArgs),
     /// Flash the assembled image to the device (`west alp-flash`).
@@ -206,6 +209,27 @@ pub struct BuildArgs {
     pub args: Vec<String>,
 }
 
+/// Args for `run`: real-hardware board selection, a flash-after-build toggle,
+/// and args forwarded to `west alp-flash` when flashing.
+#[derive(Debug, Args)]
+pub struct RunArgs {
+    /// Real-hardware target; requesting one flashes after the build unless
+    /// it's `native_sim` (the default execute-locally path).
+    #[arg(long)]
+    pub board: Option<String>,
+    /// Flash after building instead of executing locally.
+    #[arg(long)]
+    pub flash: bool,
+    /// Arguments forwarded verbatim to `west alp-flash` (used only when
+    /// flashing — via `--flash` or a real `--board`).
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        value_name = "ARGS"
+    )]
+    pub args: Vec<String>,
+}
+
 /// Args for `bootstrap`: toggles for the pip/west steps and an env-only dry run.
 #[derive(Debug, Args)]
 pub struct BootstrapArgs {
@@ -265,12 +289,18 @@ pub struct DebugConfigArgs {
     pub preview: bool,
 }
 
-/// Args for `explain`: the template id to describe.
+/// Args for `explain`: the template id to describe, or an error/diagnostic
+/// code to look up in the SDK's error catalog.
 #[derive(Debug, Args)]
 pub struct ExplainArgs {
     /// Template id to explain (project or module template).
     #[arg(long)]
     pub template: Option<String>,
+    /// Error or diagnostic code to look up (e.g. `ALP-B005`,
+    /// `ALP_ERR_TIMEOUT`) in `<sdk>/metadata/error-catalog.json`. Mutually
+    /// exclusive with `--template`/`--target`.
+    #[arg(value_name = "CODE")]
+    pub code: Option<String>,
 }
 
 /// Args for `inspect`: an optional key-path filter and an origin-metadata toggle.

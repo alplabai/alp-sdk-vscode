@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // VS Code wiring for the alp-CLI integration: resolve the binary (setting →
-// PATH → cached → download into global storage) and run envelope-mode commands.
+// bundled/local-build/cached → PATH (verified native, last resort) → download
+// into global storage) and run envelope-mode commands.
 // All fs/process/network seams are implemented here; the testable logic lives
 // in `service.ts` + `adapterCore.ts`.
 

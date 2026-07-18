@@ -37,6 +37,7 @@ fn main() {
         Command::Sdk(args) => commands::sdk::run(&global, &args),
         Command::Bootstrap(args) => commands::bootstrap::run(&global, &args),
         Command::Build(args) => commands::build::run_build(&global, &args),
+        Command::Run(args) => commands::run::run(&global, &args),
         Command::Image(args) => commands::build::run(&global, "image", &args.args),
         Command::Flash(args) => commands::build::run(&global, "flash", &args.args),
         Command::Clean(args) => commands::build::run(&global, "clean", &args.args),
