@@ -65,7 +65,9 @@ fn contains_loader_script(root: &str, path_exists: &impl Fn(&str) -> bool) -> bo
 }
 
 fn resolve_workspace_root(workspace_folders: &[String]) -> Option<String> {
-    workspace_folders.first().cloned()
+    // Normalize at the source so west_cwd + board_yaml_path derive a
+    // forward-slash root in the serialized context.
+    workspace_folders.first().map(|f| to_posix(Path::new(f)))
 }
 
 fn collect_sdk_candidates(
@@ -156,11 +158,14 @@ pub fn resolve_project_context(
     let workspace_root = resolve_workspace_root(&input.workspace_folders);
 
     ProjectContext {
+        // Normalize sdk_root here so every resolve_sdk_root branch (explicit
+        // path, workspace-is-SDK, sibling) is forward-slash in the context.
         sdk_root: resolve_sdk_root(
             &input.workspace_folders,
             &input.settings.sdk_path,
             &path_exists,
-        ),
+        )
+        .map(|r| to_posix(Path::new(&r))),
         board_yaml_path: resolve_board_yaml_path(
             workspace_root.as_deref(),
             &input.settings.board_yaml_path,
@@ -210,6 +215,30 @@ mod tests {
             Some("/work/proj/board.yaml")
         );
         assert_eq!(ctx.west_cwd.as_deref(), Some("/work/proj"));
+    }
+
+    #[test]
+    fn windows_style_roots_are_normalized_in_the_context() {
+        // Backslash roots must serialize forward-slash so the ProjectContext is
+        // platform-identical (golden/handshake contract): the workspace_root
+        // field, the explicit-sdk_path branch, and the derived board_yaml_path.
+        let ctx = resolve_project_context(
+            &input(
+                &["C:\\work\\proj"],
+                ProjectSettings {
+                    sdk_path: "C:\\work\\sdk".to_string(),
+                    board_yaml_path: "board.yaml".to_string(),
+                    ..Default::default()
+                },
+            ),
+            |_| true,
+        );
+        assert_eq!(ctx.workspace_root.as_deref(), Some("C:/work/proj"));
+        assert_eq!(ctx.sdk_root.as_deref(), Some("C:/work/sdk"));
+        assert_eq!(
+            ctx.board_yaml_path.as_deref(),
+            Some("C:/work/proj/board.yaml")
+        );
     }
 
     #[test]

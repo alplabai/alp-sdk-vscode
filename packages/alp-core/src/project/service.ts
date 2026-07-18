@@ -9,16 +9,21 @@ export function resolveProjectContext(
   pathExists: (candidatePath: string) => boolean,
 ): ProjectContext {
   // Resolve all runtime inputs once so every surface reads the same project context.
+  // workspaceRoot is normalized at its source (resolveWorkspaceRoot) so westCwd
+  // + boardYaml derive a forward-slash root; sdkRoot is normalized here so every
+  // resolveSdkRoot branch (explicit path, workspace-is-SDK, installed cache,
+  // sibling) lands platform-identical in the serialized context.
   const workspaceRoot = resolveWorkspaceRoot(input.workspaceFolders);
+  const sdkRoot = resolveSdkRoot(
+    input.workspaceFolders,
+    input.settings.sdkPath,
+    input.installedSdkRoots ?? [],
+    pathExists,
+  );
 
   return {
     workspaceRoot,
-    sdkRoot: resolveSdkRoot(
-      input.workspaceFolders,
-      input.settings.sdkPath,
-      input.installedSdkRoots ?? [],
-      pathExists,
-    ),
+    sdkRoot: sdkRoot === null ? null : toPosix(sdkRoot),
     boardYamlPath: resolveBoardYamlPath(
       workspaceRoot,
       input.settings.boardYamlPath,
@@ -34,7 +39,7 @@ export function resolveProjectContext(
 function resolveWorkspaceRoot(
   workspaceFolders: readonly string[],
 ): string | null {
-  return workspaceFolders.length > 0 ? workspaceFolders[0]! : null;
+  return workspaceFolders.length > 0 ? toPosix(workspaceFolders[0]!) : null;
 }
 
 function resolveSdkRoot(
