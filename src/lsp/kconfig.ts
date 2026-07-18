@@ -101,12 +101,6 @@ export const KCONFIG_SYMBOLS: readonly KconfigSymbol[] = [
     valueHint: "y",
   },
   {
-    name: "ALP_SDK_PERIPH_DAC",
-    type: "bool",
-    doc: "Enable the <alp/adc.h> DAC half (alp_dac_*).",
-    valueHint: "y",
-  },
-  {
     name: "ALP_SDK_PERIPH_PWM",
     type: "bool",
     doc: "Enable the <alp/pwm.h> wrapper.",
