@@ -225,6 +225,113 @@ export function diagnoseAgainstBuild(
   return out;
 }
 
+/** One symbol as the build resolved it, from `.config-trace.json`. */
+export interface TracedSymbol {
+  /** Resolved value, e.g. `y`, `n`, `1024`, `"a string"`. */
+  value: string;
+  /** `bool` | `int` | `hex` | `string` | `tristate`, as the build saw it. */
+  type: string;
+  /** How it got that value: `assign`, `default`, `select`, … */
+  kind: string;
+  /** Kconfig file that decided it, and the line within it. */
+  file?: string;
+  line?: number;
+}
+
+/**
+ * Parse `.config-trace.json` — an array of positional tuples:
+ *   [name, visibility, type, value, kind, [file, line]]
+ *
+ * TOLERANT BY CONTRACT. Zephyr's own kconfig.py warns that this format is
+ * coupled to traceconfig.py and tests/kconfig/tracing, and positional tuples
+ * shift silently when a field is inserted. So every entry is shape-checked and
+ * a bad one is skipped rather than throwing: losing hover detail is a
+ * degradation, but a parse error would take the whole diagnostic pass with it.
+ */
+export function parseConfigTrace(text: string): Map<string, TracedSymbol> {
+  const out = new Map<string, TracedSymbol>();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return out;
+  }
+  if (!Array.isArray(parsed)) return out;
+
+  for (const entry of parsed) {
+    if (!Array.isArray(entry) || entry.length < 5) continue;
+    const [name, , type, value, kind, location] = entry as unknown[];
+    if (typeof name !== "string" || !name.startsWith("CONFIG_")) continue;
+    if (typeof type !== "string" || typeof value !== "string") continue;
+    if (typeof kind !== "string") continue;
+
+    const traced: TracedSymbol = { value, type, kind };
+    if (Array.isArray(location) && typeof location[0] === "string") {
+      traced.file = location[0];
+      if (typeof location[1] === "number") traced.line = location[1];
+    }
+    out.set(name.slice("CONFIG_".length), traced);
+  }
+  return out;
+}
+
+/**
+ * Markdown describing how the last build resolved `symbolName`, or null when
+ * there is nothing trustworthy to say.
+ *
+ * Gated on the same freshness rule as the diagnostics: a stale trace reports
+ * values the current sources would not produce, and a hover asserting them
+ * reads as authoritative.
+ */
+export function buildInfoMarkdown(
+  prjConfPath: string,
+  symbolName: string,
+): string | null {
+  const slice = resolveSlice(prjConfPath);
+  if (!slice || !isBuildFresh(slice, prjConfPath)) return null;
+
+  const name = symbolName.startsWith("CONFIG_")
+    ? symbolName.slice("CONFIG_".length)
+    : symbolName;
+
+  const tracePath = path.join(
+    path.dirname(slice.configPath),
+    ".config-trace.json",
+  );
+  const traceText = readIfFile(tracePath);
+  const traced = traceText ? parseConfigTrace(traceText).get(name) : undefined;
+
+  if (traced) {
+    const lines = [
+      `**In the last \`${slice.coreId}\` build:** \`${traced.value}\` ` +
+        `_(${traced.type}, ${traced.kind})_`,
+    ];
+    // `select` is the one users misread most: the symbol is on because
+    // something else selected it, not because they set it.
+    if (traced.kind === "select") {
+      lines.push("Enabled by another symbol's `select`, not by this file.");
+    }
+    if (traced.file) {
+      const at =
+        traced.line !== undefined
+          ? `${traced.file}:${traced.line}`
+          : traced.file;
+      lines.push(`Decided at \`${at}\`.`);
+    }
+    return lines.join("\n\n");
+  }
+
+  // No trace (older Zephyr, or the file was not written) — .config alone still
+  // gives the resolved value, just not its provenance.
+  const configText = readIfFile(slice.configPath);
+  if (configText === null) return null;
+  const resolved = parseDotConfig(configText).get(name);
+  if (resolved === undefined) return null;
+
+  return `**In the last \`${slice.coreId}\` build:** \`${resolved}\``;
+}
+
 /**
  * The whole phase-2 pass for one prj.conf: resolve the slice, check freshness,
  * compare. Returns [] whenever any precondition is missing — no slice, no

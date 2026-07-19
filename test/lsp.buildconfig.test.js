@@ -96,10 +96,47 @@ test("the reported range covers the whole assignment line", () => {
   assert.equal(d.endCol, line.length);
 });
 
+// ── .config-trace.json ──────────────────────────────────────────────────────
+
+const { parseConfigTrace } = require("../out/lsp/buildConfig.js");
+
+const TRACE_TEXT = fs.readFileSync(
+  path.join(__dirname, "fixtures", "kconfig", "m55_hp.config-trace.json"),
+  "utf-8",
+);
+
+test("parseConfigTrace reads the positional tuple shape", () => {
+  const trace = parseConfigTrace(TRACE_TEXT);
+  const stack = trace.get("MAIN_STACK_SIZE");
+  assert.ok(stack, "expected CONFIG_MAIN_STACK_SIZE in the trace");
+  assert.equal(stack.value, "1024");
+  assert.equal(stack.type, "int");
+  assert.equal(stack.kind, "assign");
+  assert.equal(stack.line, 26);
+  assert.match(stack.file, /\.config$/);
+});
+
+test("parseConfigTrace survives a format it does not recognise", () => {
+  // The format is coupled to traceconfig.py and shifts silently when a field
+  // is inserted, so a bad shape must degrade to "no detail" — never throw and
+  // take the diagnostics pass down with it.
+  assert.equal(parseConfigTrace("{ not json").size, 0);
+  assert.equal(parseConfigTrace('{"symbols":[]}').size, 0);
+  assert.equal(parseConfigTrace("[]").size, 0);
+
+  // A malformed entry is skipped while its valid neighbours are kept.
+  const mixed =
+    '[[1,2],"a string",["CONFIG_KEPT","y","bool","y","assign",["f.kconfig",1]]]';
+  const trace = parseConfigTrace(mixed);
+  assert.equal(trace.size, 1);
+  assert.equal(trace.get("KEPT").value, "y");
+});
+
 // ── integration: slice resolution + freshness, on a real directory tree ──────
 
 const os = require("node:os");
 const {
+  buildInfoMarkdown,
   diagnosePrjConfAgainstBuild,
   isBuildFresh,
 } = require("../out/lsp/buildConfig.js");
@@ -174,6 +211,50 @@ test("a fresh build is compared, and the overridden assignment is reported", () 
   assert.ok(d);
   assert.equal(d.severity, "warning");
   assert.match(d.message, /did not take effect/);
+});
+
+test("hover reports the resolved value with its provenance", () => {
+  const { root, prjPath } = makeProject({ configNewest: true });
+  const zephyrDir = path.join(
+    root,
+    "build",
+    "m55_hp-zephyr",
+    "build",
+    "zephyr",
+  );
+  const tracePath = path.join(zephyrDir, ".config-trace.json");
+  fs.writeFileSync(
+    tracePath,
+    JSON.stringify([
+      [
+        "CONFIG_EXAMPLE_SYM",
+        "n",
+        "bool",
+        "n",
+        "select",
+        ["drivers/example/Kconfig", 42],
+      ],
+    ]),
+  );
+  // Written after .config, so re-stamp both to keep the build "fresh".
+  const newer = new Date(2_000_000);
+  fs.utimesSync(tracePath, newer, newer);
+  fs.utimesSync(path.join(zephyrDir, ".config"), newer, newer);
+
+  const md = buildInfoMarkdown(prjPath, "CONFIG_EXAMPLE_SYM");
+  assert.ok(md, "expected build info for a traced symbol");
+  assert.match(md, /In the last `m55_hp` build/);
+  assert.match(md, /`n` _\(bool, select\)_/);
+  // `select` is the reading users get wrong most often — name it explicitly.
+  assert.match(md, /Enabled by another symbol's `select`/);
+  assert.match(md, /drivers\/example\/Kconfig:42/);
+});
+
+test("hover says nothing when the build is stale", () => {
+  const { prjPath } = makeProject({ configNewest: false });
+  // Same rule as the diagnostics: a stale trace reports values the current
+  // sources would not produce, and a hover asserting them reads as fact.
+  assert.equal(buildInfoMarkdown(prjPath, "CONFIG_EXAMPLE_SYM"), null);
 });
 
 test("a stale build says why it is silent instead of saying nothing", () => {

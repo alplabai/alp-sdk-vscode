@@ -55,7 +55,7 @@ import {
   isPrjConfPath,
   lintPrjConf,
 } from "./kconfig";
-import { diagnosePrjConfAgainstBuild } from "./buildConfig";
+import { buildInfoMarkdown, diagnosePrjConfAgainstBuild } from "./buildConfig";
 import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
@@ -238,7 +238,15 @@ connection.onHover((params): Hover | null => {
   if (isPrjConfPath(filePath)) {
     const text = getDocumentText(params.textDocument.uri, filePath);
     const word = wordAt(text, params.position.line, params.position.character);
-    const markdown = word ? hoverPrjConf(word) : null;
+    if (!word) {
+      return null;
+    }
+    // Two independent sources: the static symbol table (always available) and
+    // what the last build resolved (only when this file maps to a slice with
+    // a fresh .config). Either may be absent — a symbol missing from the
+    // catalogue can still have build output, and vice versa.
+    const sections = [hoverPrjConf(word), buildInfoMarkdown(filePath, word)];
+    const markdown = sections.filter(Boolean).join("\n\n---\n\n");
     return markdown
       ? { contents: { kind: MarkupKind.Markdown, value: markdown } }
       : null;
