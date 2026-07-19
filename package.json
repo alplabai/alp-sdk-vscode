@@ -39,7 +39,6 @@
     "onView:alp-ide.build",
     "onCommand:alp.openSdkManager",
     "onCommand:alp.openSetupFlow",
-    "onCommand:alp.openOverview",
     "onCommand:alp.newProjectWizard",
     "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
@@ -163,7 +162,8 @@
         "command": "alp.validateBoardYaml",
         "title": "Alp: Validate board.yaml",
         "category": "Alp",
-        "icon": "$(check-all)"
+        "icon": "$(check-all)",
+        "enablement": "alp-ide.projectsState == ready"
       },
       {
         "command": "alp.installDependencies",
@@ -173,12 +173,14 @@
       {
         "command": "alp.westBuild",
         "title": "Alp: Build (validate + generate + build)",
-        "category": "Alp"
+        "category": "Alp",
+        "enablement": "alp-ide.projectsState == ready"
       },
       {
         "command": "alp.westFlash",
         "title": "Alp: West flash",
-        "category": "Alp"
+        "category": "Alp",
+        "enablement": "alp-ide.projectsState == ready"
       },
       {
         "command": "alp.westUpdate",
@@ -214,7 +216,8 @@
         "command": "alp.openConfigurator",
         "title": "Alp: Open board configurator (GUI)",
         "category": "Alp",
-        "icon": "$(circuit-board)"
+        "icon": "$(circuit-board)",
+        "enablement": "alp-ide.projectsState == ready"
       },
       {
         "command": "alp.toolchainDoctor",
@@ -270,7 +273,8 @@
         "command": "alp.previewEffectiveConfig",
         "title": "Alp: Preview effective config (LSP)",
         "category": "Alp",
-        "icon": "$(eye)"
+        "icon": "$(eye)",
+        "enablement": "alp-ide.projectsState == ready"
       },
       {
         "command": "alp.inspectProjectState",
@@ -316,11 +320,6 @@
       {
         "command": "alp.openSetupFlow",
         "title": "Alp: Open setup wizard",
-        "category": "Alp"
-      },
-      {
-        "command": "alp.openOverview",
-        "title": "Alp: Open Alp IDE overview",
         "category": "Alp"
       },
       {
