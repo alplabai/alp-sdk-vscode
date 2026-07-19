@@ -55,7 +55,11 @@ import {
   isPrjConfPath,
   lintPrjConf,
 } from "./kconfig";
-import { buildInfoMarkdown, diagnosePrjConfAgainstBuild } from "./buildConfig";
+import {
+  buildCompletions,
+  buildInfoMarkdown,
+  diagnosePrjConfAgainstBuild,
+} from "./buildConfig";
 import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
@@ -207,7 +211,17 @@ connection.onCompletion((params): CompletionItem[] => {
       0,
       params.position.character,
     );
-    return completePrjConf(linePrefix).map((c) => ({
+    // Static catalogue first — its prose is hand-written — then everything the
+    // last build resolved for this slice. The build set is SoM/slice-scoped
+    // and every name in it is real for that board target, which the full
+    // Zephyr tree (~26k symbols spanning all archs and SoCs) is not.
+    const seen = new Set<string>();
+    const merged = [
+      ...completePrjConf(linePrefix),
+      ...buildCompletions(filePath),
+    ].filter((c) => !seen.has(c.label) && seen.add(c.label));
+
+    return merged.map((c) => ({
       label: c.label,
       insertText: c.insertText,
       detail: c.detail,

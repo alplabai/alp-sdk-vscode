@@ -70,7 +70,7 @@ test("a symbol absent from .config is reported as undefined, not as off", () => 
   const cfg = parseDotConfig(CONFIG_TEXT);
   // The case that fires on real data: alp-sample's src/prj.conf sets
   // CONFIG_NEWLIB_LIBC=y and the symbol never appears in the m55_hp build —
-  // it is not declared for this board/toolchain at all. Zephyr would have
+  // it is not declared for that slice's board target at all. Zephyr would have
   // written `# … is not set` had it merely been off, so the two are distinct
   // failures and must not share a message.
   assert.equal(cfg.has("NEWLIB_LIBC"), false);
@@ -136,6 +136,7 @@ test("parseConfigTrace survives a format it does not recognise", () => {
 
 const os = require("node:os");
 const {
+  buildCompletions,
   buildInfoMarkdown,
   diagnosePrjConfAgainstBuild,
   isBuildFresh,
@@ -248,6 +249,46 @@ test("hover reports the resolved value with its provenance", () => {
   // `select` is the reading users get wrong most often — name it explicitly.
   assert.match(md, /Enabled by another symbol's `select`/);
   assert.match(md, /drivers\/example\/Kconfig:42/);
+});
+
+test("completion offers what the build resolved, scoped to the slice", () => {
+  const { root, prjPath } = makeProject({ configNewest: true });
+  const zephyrDir = path.join(
+    root,
+    "build",
+    "m55_hp-zephyr",
+    "build",
+    "zephyr",
+  );
+  const configPath = path.join(zephyrDir, ".config");
+  // A slice-real set: one bool that is off, one int.
+  fs.writeFileSync(
+    configPath,
+    "# CONFIG_EXAMPLE_SYM is not set\nCONFIG_EXAMPLE_SIZE=2048\n",
+  );
+  const newer = new Date(2_000_000);
+  fs.utimesSync(configPath, newer, newer);
+
+  const items = buildCompletions(prjPath);
+  const byLabel = new Map(items.map((i) => [i.label, i]));
+  assert.equal(items.length, 2);
+
+  const sym = byLabel.get("CONFIG_EXAMPLE_SYM");
+  assert.ok(sym);
+  assert.match(sym.detail, /currently n/);
+  assert.match(sym.doc, /Resolved by the last `m55_hp` build/);
+  // The current value is NOT the insert default — completing `=n` because the
+  // symbol happens to be off today would be a strange suggestion.
+  assert.doesNotMatch(sym.insertText, /=n$/);
+
+  assert.match(byLabel.get("CONFIG_EXAMPLE_SIZE").detail, /currently 2048/);
+});
+
+test("completion falls back to the static catalogue when nothing is built", () => {
+  const { prjPath } = makeProject({ configNewest: false });
+  // Stale build: offering its symbols would describe a slice the current
+  // sources no longer produce.
+  assert.deepEqual(buildCompletions(prjPath), []);
 });
 
 test("hover says nothing when the build is stale", () => {

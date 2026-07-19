@@ -24,7 +24,7 @@ import * as path from "path";
 
 import yaml from "js-yaml";
 
-import type { KconfigDiagnostic } from "./kconfig";
+import type { KconfigCompletion, KconfigDiagnostic } from "./kconfig";
 
 /** A prj.conf resolved to the build slice it belongs to. */
 export interface SliceContext {
@@ -205,8 +205,8 @@ export function diagnoseAgainstBuild(
         message:
           `\`${prefixed}\` is not defined in this build's Kconfig tree, so ` +
           "this line has no effect. Zephyr writes `# … is not set` for a " +
-          "symbol that exists but is off — absence means the symbol was " +
-          "never declared for this board/toolchain.",
+          "symbol that exists but is off — absence means it was never " +
+          "declared for this slice's board target or toolchain.",
       });
       return;
     }
@@ -330,6 +330,52 @@ export function buildInfoMarkdown(
   if (resolved === undefined) return null;
 
   return `**In the last \`${slice.coreId}\` build:** \`${resolved}\``;
+}
+
+/**
+ * Completions for every symbol the last build actually resolved.
+ *
+ * SCOPE IS THE POINT. Zephyr's Kconfig tree carries ~26k symbols even for a
+ * single build, because arch/Kconfig osources all 11 architectures and
+ * soc/Kconfig.soc all 126 SoC folders — offering that set would suggest
+ * symbols that do nothing on this SoM, which is the lying-IDE failure this
+ * whole surface is built to avoid. The build's own `.config` is the honest
+ * set: every name in it is declared and reachable for THIS slice's board
+ * target (derived from `som.sku` + core), and nothing else is.
+ *
+ * Returns [] when there is no slice or no fresh build — the caller keeps its
+ * static catalogue in that case.
+ */
+export function buildCompletions(prjConfPath: string): KconfigCompletion[] {
+  const slice = resolveSlice(prjConfPath);
+  if (!slice || !isBuildFresh(slice, prjConfPath)) return [];
+
+  const configText = readIfFile(slice.configPath);
+  if (configText === null) return [];
+  const resolved = parseDotConfig(configText);
+
+  const traceText = readIfFile(
+    path.join(path.dirname(slice.configPath), ".config-trace.json"),
+  );
+  const trace = traceText ? parseConfigTrace(traceText) : new Map();
+
+  const out: KconfigCompletion[] = [];
+  for (const [name, value] of resolved) {
+    const traced = trace.get(name);
+    const type = traced?.type;
+    out.push({
+      label: `CONFIG_${name}`,
+      detail: type ? `${type} — currently ${value}` : `currently ${value}`,
+      doc:
+        `Resolved by the last \`${slice.coreId}\` build to \`${value}\`` +
+        (traced ? ` (${traced.kind}).` : "."),
+      // The CURRENT value is not the insert default: completing `=n` because
+      // the symbol happens to be off today would be an odd suggestion. Fall
+      // back to the type hint, exactly as the static catalogue does.
+      insertText: `CONFIG_${name}=${type === "bool" ? "y" : ""}`,
+    });
+  }
+  return out;
 }
 
 /**
