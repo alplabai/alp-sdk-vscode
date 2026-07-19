@@ -3,6 +3,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import type { AlpIdeState } from "../ideHub/messages";
+import { derivePhase } from "../ideHub/phase";
 import type { StateManager } from "./stateManager";
 
 class ProjectItem extends vscode.TreeItem {
@@ -69,6 +70,18 @@ export class ProjectsTreeProvider
       "setContext",
       "alp-ide.projectsState",
       stateKey,
+    );
+    // Build/Flash command enablement keys off the full ladder phase (the single
+    // derivePhase selector), NOT board.yaml existence — so the Command Palette
+    // agrees with the ladder + Build tree and never offers Build/Flash for a
+    // no-env or invalid-board project (the "always-live Build that errors"
+    // anti-pattern the design set out to avoid). The board-scoped commands
+    // (Configure/Validate/Preview) stay on the coarser projectsState==ready so
+    // you can still open the configurator to FIX an invalid board.
+    void vscode.commands.executeCommand(
+      "setContext",
+      "alp-ide.buildReady",
+      derivePhase(state) === "ready",
     );
     this._emitter.fire(undefined);
   }

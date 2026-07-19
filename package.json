@@ -174,13 +174,13 @@
         "command": "alp.westBuild",
         "title": "Alp: Build (validate + generate + build)",
         "category": "Alp",
-        "enablement": "alp-ide.projectsState == ready"
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.westFlash",
         "title": "Alp: West flash",
         "category": "Alp",
-        "enablement": "alp-ide.projectsState == ready"
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.westUpdate",
