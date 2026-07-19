@@ -192,6 +192,7 @@ export function isBuildFresh(
 export function diagnoseAgainstBuild(
   prjText: string,
   resolved: Map<string, string>,
+  trace?: Map<string, TracedSymbol>,
 ): KconfigDiagnostic[] {
   const out: KconfigDiagnostic[] = [];
 
@@ -224,11 +225,20 @@ export function diagnoseAgainstBuild(
 
     const built = resolved.get(name) as string;
     if (!sameValue(built, value)) {
+      // When the trace says the symbol was not user-settable (visibility n),
+      // name that as the reason: it is sharper and more actionable than the
+      // generic "resolved to X", because it tells the user the assignment can
+      // never win here, not that some other assignment beat it. We stop short
+      // of naming the unmet dependency — the trace does not carry it.
+      const notSettable = trace?.get(name)?.visibility === "n";
       out.push({
         ...span,
-        message:
-          `\`${prefixed}\` is set to \`${value}\` here, but the last build ` +
-          `resolved it to \`${built}\` — the assignment did not take effect.`,
+        message: notSettable
+          ? `\`${prefixed}\` is not user-settable in this build target — it ` +
+            "has no prompt, or its prompt's dependencies are unmet — so this " +
+            `line is ignored (the build resolved it to \`${built}\`).`
+          : `\`${prefixed}\` is set to \`${value}\` here, but the last build ` +
+            `resolved it to \`${built}\` — the assignment did not take effect.`,
       });
     }
   });
@@ -244,6 +254,14 @@ export interface TracedSymbol {
   type: string;
   /** How it got that value: `assign`, `default`, `select`, … */
   kind: string;
+  /**
+   * The symbol's Kconfig visibility, `n` | `m` | `y` — the maximum a user could
+   * set it to. `n` means the symbol is NOT user-settable in this target (no
+   * prompt, or its prompt's dependencies are unmet), so a `prj.conf`
+   * assignment to it is ignored. It does NOT say WHICH dependency is unmet —
+   * that needs a live kconfiglib evaluation, which this does not have.
+   */
+  visibility?: string;
   /** Kconfig file that decided it, and the line within it. */
   file?: string;
   line?: number;
@@ -272,12 +290,13 @@ export function parseConfigTrace(text: string): Map<string, TracedSymbol> {
 
   for (const entry of parsed) {
     if (!Array.isArray(entry) || entry.length < 5) continue;
-    const [name, , type, value, kind, location] = entry as unknown[];
+    const [name, visibility, type, value, kind, location] = entry as unknown[];
     if (typeof name !== "string" || !name.startsWith("CONFIG_")) continue;
     if (typeof type !== "string" || typeof value !== "string") continue;
     if (typeof kind !== "string") continue;
 
     const traced: TracedSymbol = { value, type, kind };
+    if (typeof visibility === "string") traced.visibility = visibility;
     if (Array.isArray(location) && typeof location[0] === "string") {
       traced.file = location[0];
       if (typeof location[1] === "number") traced.line = location[1];
@@ -452,5 +471,14 @@ export function diagnosePrjConfAgainstBuild(
     ];
   }
 
-  return diagnoseAgainstBuild(prjText, parseDotConfig(configText));
+  // The trace is optional: with it, an ignored assignment can be attributed to
+  // the symbol not being user-settable; without it, the comparison still works
+  // off `.config` alone. Same freshness gate already passed, so the trace
+  // (written by the same build) is as current as the `.config`.
+  const traceText = readIfFile(
+    path.join(path.dirname(slice.configPath), ".config-trace.json"),
+  );
+  const trace = traceText ? parseConfigTrace(traceText) : undefined;
+
+  return diagnoseAgainstBuild(prjText, parseDotConfig(configText), trace);
 }

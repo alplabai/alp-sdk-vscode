@@ -116,6 +116,57 @@ test("parseConfigTrace reads the positional tuple shape", () => {
   assert.match(stack.file, /\.config$/);
 });
 
+test("parseConfigTrace reads the visibility field", () => {
+  const trace = parseConfigTrace(TRACE_TEXT);
+  const some = [...trace.values()];
+  assert.ok(
+    some.every(
+      (s) =>
+        s.visibility === "n" || s.visibility === "y" || s.visibility === "m",
+    ),
+    "expected every traced symbol to carry an n/m/y visibility",
+  );
+});
+
+test("an ignored assignment to a non-settable symbol names the reason", () => {
+  const cfg = new Map([["DT_HAS_FOO", "y"]]);
+  const trace = new Map([
+    [
+      "DT_HAS_FOO",
+      { value: "y", type: "bool", kind: "default", visibility: "n" },
+    ],
+  ]);
+  // Devicetree-driven symbol: not user-settable, so a prj.conf line to it is
+  // ignored. The message must say WHY (not settable), and must NOT overclaim
+  // which dependency is unmet — the trace does not carry that.
+  const [d] = diagnoseAgainstBuild("CONFIG_DT_HAS_FOO=n\n", cfg, trace);
+  assert.ok(d);
+  assert.match(d.message, /not user-settable in this build target/);
+  assert.doesNotMatch(d.message, /did not take effect/);
+});
+
+test("a settable symbol that lost keeps the plain override message", () => {
+  const cfg = new Map([["INPUT", "n"]]);
+  const trace = new Map([
+    ["INPUT", { value: "n", type: "bool", kind: "assign", visibility: "y" }],
+  ]);
+  // visibility y — the user COULD set it; something else won, so the plain
+  // "did not take effect" is the honest message, not "not settable".
+  const [d] = diagnoseAgainstBuild("CONFIG_INPUT=y\n", cfg, trace);
+  assert.ok(d);
+  assert.match(d.message, /did not take effect/);
+  assert.doesNotMatch(d.message, /not user-settable/);
+});
+
+test("without a trace the override message is unchanged", () => {
+  const cfg = new Map([["DT_HAS_FOO", "y"]]);
+  // No trace → cannot claim non-settability → fall back to the plain message.
+  const [d] = diagnoseAgainstBuild("CONFIG_DT_HAS_FOO=n\n", cfg);
+  assert.ok(d);
+  assert.match(d.message, /did not take effect/);
+  assert.doesNotMatch(d.message, /not user-settable/);
+});
+
 test("parseConfigTrace survives a format it does not recognise", () => {
   // The format is coupled to traceconfig.py and shifts silently when a field
   // is inserted, so a bad shape must degrade to "no detail" — never throw and
