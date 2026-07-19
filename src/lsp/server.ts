@@ -55,6 +55,7 @@ import {
   isPrjConfPath,
   lintPrjConf,
 } from "./kconfig";
+import { diagnosePrjConfAgainstBuild } from "./buildConfig";
 import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
@@ -698,7 +699,15 @@ function uriToFsPath(uri: string): string | null {
 
 /** Lint a prj.conf and publish the diagnostics. */
 function validatePrjConf(uri: string, text: string): void {
-  const diagnostics: Diagnostic[] = lintPrjConf(text).map((d) => ({
+  // Syntax lint (always available) + the build-output comparison (silent
+  // unless this file resolves to a slice whose .config is newer than its
+  // inputs — see buildConfig.ts).
+  const filePath = uriToFsPath(uri);
+  const findings = [
+    ...lintPrjConf(text),
+    ...(filePath ? diagnosePrjConfAgainstBuild(filePath, text) : []),
+  ];
+  const diagnostics: Diagnostic[] = findings.map((d) => ({
     range: {
       start: { line: d.line, character: d.startCol },
       end: { line: d.line, character: d.endCol },
@@ -707,7 +716,9 @@ function validatePrjConf(uri: string, text: string): void {
     severity:
       d.severity === "error"
         ? DiagnosticSeverity.Error
-        : DiagnosticSeverity.Warning,
+        : d.severity === "information"
+          ? DiagnosticSeverity.Information
+          : DiagnosticSeverity.Warning,
     source: "alp-kconfig",
   }));
   connection.sendDiagnostics({ uri, diagnostics });

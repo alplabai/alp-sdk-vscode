@@ -47,7 +47,12 @@ export interface KconfigDiagnostic {
   startCol: number;
   endCol: number;
   message: string;
-  severity: "error" | "warning";
+  /**
+   * `information` is for telling the user WHY a check is unavailable. Silence
+   * reads as "the feature is broken" — that misread has already happened twice
+   * on this surface — so a suppressed check says so rather than saying nothing.
+   */
+  severity: "error" | "warning" | "information";
 }
 
 export interface KconfigCompletion {
