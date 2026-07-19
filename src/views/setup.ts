@@ -48,10 +48,6 @@ export class SetupTreeProvider
     const toolsReady = setup.pythonAvailable && setup.westAvailable;
 
     this.items = [
-      new SetupItem("Overview", "", new vscode.ThemeIcon("home"), {
-        command: "alp.openOverview",
-        title: "Open Overview",
-      }),
       new SetupItem(
         "Host Tools",
         toolsReady ? "Ready" : "Action Required",
