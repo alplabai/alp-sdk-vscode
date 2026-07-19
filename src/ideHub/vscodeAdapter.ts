@@ -178,7 +178,8 @@ export async function queryAlpIdeState(
   if (boardYamlExists && boardYamlPath) {
     try {
       const boardYamlText = fs.readFileSync(boardYamlPath, "utf8");
-      ({ boardYamlValid, boardIssueCount } = deriveBoardValidity(boardYamlText));
+      ({ boardYamlValid, boardIssueCount } =
+        deriveBoardValidity(boardYamlText));
     } catch (err) {
       log(`alp: could not read board.yaml for validity check: ${errText(err)}`);
     }

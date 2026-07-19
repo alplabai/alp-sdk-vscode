@@ -17,7 +17,10 @@ export function deriveBoardValidity(boardYamlText: string): {
 } {
   try {
     const { issues } = validateBoardYamlLocally(boardYamlText);
-    return { boardYamlValid: issues.length === 0, boardIssueCount: issues.length };
+    return {
+      boardYamlValid: issues.length === 0,
+      boardIssueCount: issues.length,
+    };
   } catch {
     return { boardYamlValid: false, boardIssueCount: 1 };
   }
