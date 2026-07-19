@@ -214,6 +214,8 @@ export async function queryAlpIdeState(
     workspace: {
       workspaceRoot: actualWorkspaceRoot,
       boardYamlExists: boardYamlPath ? fs.existsSync(boardYamlPath) : false,
+      boardYamlValid: false,
+      boardIssueCount: 0,
       westInitialized: westWorkspaceInitialized(
         projectContext.westCwd,
         projectContext.sdkRoot,

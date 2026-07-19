@@ -56,6 +56,8 @@ export interface SetupStatus {
 export interface WorkspaceStatus {
   workspaceRoot: string | null;
   boardYamlExists: boolean;
+  boardYamlValid: boolean;
+  boardIssueCount: number;
   /** True when a `.west` directory exists at the workspace root. */
   westInitialized: boolean;
 }
