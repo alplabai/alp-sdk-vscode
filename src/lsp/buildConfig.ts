@@ -83,16 +83,27 @@ function mtimeMs(p: string): number | null {
   }
 }
 
-/** Nearest board.yaml at or above `dir`, else null. */
+/**
+ * Nearest board.yaml at or above `dir`, else null.
+ *
+ * Bounded: without a limit this ascends to the filesystem root, so a file
+ * opened from outside any project could bind to an unrelated ancestor
+ * board.yaml and then read that tree's `.config` into the hover UI. A project
+ * root is a handful of levels up at most; 24 is far past any real layout while
+ * still terminating well below `/`.
+ */
+const MAX_BOARD_YAML_ASCENT = 24;
+
 function findBoardYaml(dir: string): string | null {
   let current = dir;
-  for (;;) {
+  for (let depth = 0; depth < MAX_BOARD_YAML_ASCENT; depth++) {
     const candidate = path.join(current, "board.yaml");
     if (mtimeMs(candidate) !== null) return candidate;
     const parent = path.dirname(current);
     if (parent === current) return null;
     current = parent;
   }
+  return null;
 }
 
 /**
@@ -346,7 +357,15 @@ export function buildInfoMarkdown(
  * Returns [] when there is no slice or no fresh build — the caller keeps its
  * static catalogue in that case.
  */
-export function buildCompletions(prjConfPath: string): KconfigCompletion[] {
+export function buildCompletions(
+  prjConfPath: string,
+  linePrefix: string,
+): KconfigCompletion[] {
+  // Same guard completePrjConf applies: past the `=` the cursor is in the
+  // VALUE position, where a symbol name is never valid. Without this, a fresh
+  // slice pops all 833 of its names the moment you type `CONFIG_SERIAL=`.
+  if (linePrefix.includes("=")) return [];
+
   const slice = resolveSlice(prjConfPath);
   if (!slice || !isBuildFresh(slice, prjConfPath)) return [];
 
@@ -392,6 +411,26 @@ export function diagnosePrjConfAgainstBuild(
 
   const configText = readIfFile(slice.configPath);
   if (configText === null) return []; // never built — nothing to say
+
+  // The editor re-validates on every keystroke with the IN-MEMORY buffer,
+  // while isBuildFresh() stats the file ON DISK. A dirty buffer therefore
+  // reads as "fresh" and every unsaved line gets judged against a build that
+  // never saw it — an unprovable verdict, which is the one thing this module
+  // must not produce. Disk mtime cannot detect this; comparing the text can.
+  const onDisk = readIfFile(prjConfPath);
+  if (onDisk !== null && onDisk !== prjText) {
+    return [
+      {
+        line: 0,
+        startCol: 0,
+        endCol: 0,
+        severity: "information",
+        message:
+          "Unsaved changes — build-output checks describe the file as it was " +
+          "last built. Save and rebuild to check the current text.",
+      },
+    ];
+  }
 
   if (!isBuildFresh(slice, prjConfPath)) {
     // Say why the check is off instead of going quiet. A silent feature is

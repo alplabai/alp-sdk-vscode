@@ -269,7 +269,7 @@ test("completion offers what the build resolved, scoped to the slice", () => {
   const newer = new Date(2_000_000);
   fs.utimesSync(configPath, newer, newer);
 
-  const items = buildCompletions(prjPath);
+  const items = buildCompletions(prjPath, "CONFIG_");
   const byLabel = new Map(items.map((i) => [i.label, i]));
   assert.equal(items.length, 2);
 
@@ -288,7 +288,45 @@ test("completion falls back to the static catalogue when nothing is built", () =
   const { prjPath } = makeProject({ configNewest: false });
   // Stale build: offering its symbols would describe a slice the current
   // sources no longer produce.
-  assert.deepEqual(buildCompletions(prjPath), []);
+  assert.deepEqual(buildCompletions(prjPath, "CONFIG_"), []);
+});
+
+test("completion offers nothing in the value position", () => {
+  const { root, prjPath } = makeProject({ configNewest: true });
+  const configPath = path.join(
+    root,
+    "build",
+    "m55_hp-zephyr",
+    "build",
+    "zephyr",
+    ".config",
+  );
+  fs.writeFileSync(configPath, "CONFIG_A=y\nCONFIG_B=y\n");
+  fs.utimesSync(configPath, new Date(2_000_000), new Date(2_000_000));
+
+  // Past the `=` a symbol NAME is never valid. Without this guard a fresh
+  // slice pops its whole .config (833 names on a real one) as soon as you
+  // type `CONFIG_SERIAL=`.
+  assert.equal(buildCompletions(prjPath, "CONFIG_A").length, 2);
+  assert.deepEqual(buildCompletions(prjPath, "CONFIG_A="), []);
+  assert.deepEqual(buildCompletions(prjPath, "CONFIG_A=y"), []);
+});
+
+test("an unsaved buffer is never judged against the last build", () => {
+  const { prjPath } = makeProject({ configNewest: true });
+  // The editor re-validates on every keystroke with the in-memory text while
+  // the freshness gate stats the file on disk, so a dirty buffer reads as
+  // "fresh" and unsaved lines get judged against a build that never saw them.
+  // Disk mtime cannot detect that; comparing the text can.
+  const dirty = "CONFIG_EXAMPLE_SYM=y\nCONFIG_NEVER_BUILT=y\n";
+  const found = diagnosePrjConfAgainstBuild(prjPath, dirty);
+
+  assert.equal(found.length, 1);
+  assert.equal(found[0].severity, "information");
+  assert.match(found[0].message, /Unsaved changes/);
+  // Crucially, NOT a verdict about a line that was never built.
+  assert.doesNotMatch(found[0].message, /not defined in this build/);
+  assert.doesNotMatch(found[0].message, /did not take effect/);
 });
 
 test("hover says nothing when the build is stale", () => {

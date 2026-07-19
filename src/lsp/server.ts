@@ -218,7 +218,7 @@ connection.onCompletion((params): CompletionItem[] => {
     const seen = new Set<string>();
     const merged = [
       ...completePrjConf(linePrefix),
-      ...buildCompletions(filePath),
+      ...buildCompletions(filePath, linePrefix),
     ].filter((c) => !seen.has(c.label) && seen.add(c.label));
 
     return merged.map((c) => ({
