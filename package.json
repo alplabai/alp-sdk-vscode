@@ -185,32 +185,38 @@
       {
         "command": "alp.westUpdate",
         "title": "Alp: West update (fetch and update modules)",
-        "category": "Alp"
+        "category": "Alp",
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.westRunNativeSim",
         "title": "Alp: Run under native_sim",
-        "category": "Alp"
+        "category": "Alp",
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.westAlpImage",
         "title": "Alp: Build image (assemble image bundle)",
-        "category": "Alp"
+        "category": "Alp",
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.westAlpFlash",
         "title": "Alp: Flash (all slices)",
-        "category": "Alp"
+        "category": "Alp",
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.westAlpClean",
         "title": "Alp: Clean build (remove build dir)",
-        "category": "Alp"
+        "category": "Alp",
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.westAlpRenode",
         "title": "Alp: Run in Renode (simulate)",
-        "category": "Alp"
+        "category": "Alp",
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.openConfigurator",
@@ -300,7 +306,8 @@
         "command": "alp.debug",
         "title": "Alp: Debug (generate profile + start session)",
         "category": "Alp",
-        "icon": "$(debug-alt)"
+        "icon": "$(debug-alt)",
+        "enablement": "alp-ide.buildReady"
       },
       {
         "command": "alp.exportSupportBundle",
