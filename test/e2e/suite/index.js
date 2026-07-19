@@ -178,6 +178,8 @@ async function runChecks() {
   readyState.workspace = {
     workspaceRoot: process.cwd(),
     boardYamlExists: true,
+    boardYamlValid: true,
+    boardIssueCount: 0,
     westInitialized: true,
   };
   readyState.sdk = {

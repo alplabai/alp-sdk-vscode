@@ -168,6 +168,89 @@ const ERROR_MARKERS = [
   "nan",
 ];
 
+// The Quickstart ladder IS a state machine, so a single "rendered, 0 buttons"
+// pass proves nothing — a view stuck in its <Skeleton> loading branch looks
+// identical. Render QuickstartView at all four phases and ASSERT the expected
+// active-step CTA is actually present. Bonus: if a stateUpdate is ever dropped
+// (protocol bump, subscription regression) the CTA is absent → loud failure,
+// not a vacuous green.
+async function quickstartPhaseMatrix(problems: string[]) {
+  const base = JSON.parse(JSON.stringify(readyState)); // env-ready + valid board
+  const cases: Array<[string, unknown, string]> = [
+    ["ready", base, "Build"],
+    [
+      "invalid-board",
+      {
+        ...base,
+        workspace: {
+          ...base.workspace,
+          boardYamlValid: false,
+          boardIssueCount: 2,
+        },
+      },
+      "Configure Board",
+    ],
+    [
+      "no-project",
+      {
+        ...base,
+        workspace: {
+          ...base.workspace,
+          boardYamlExists: false,
+          boardYamlValid: false,
+        },
+      },
+      "New Project",
+    ],
+    [
+      "no-env",
+      { ...base, setup: { ...base.setup, pythonAvailable: false } },
+      "Set Up Environment",
+    ],
+  ];
+  for (const [phase, state, expectedCta] of cases) {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    let renderErr: unknown = null;
+    root.render(
+      React.createElement(
+        Boundary,
+        { onError: (e) => (renderErr = e) },
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(QuickstartView),
+        ),
+      ),
+    );
+    await tick();
+    await tick(); // AppProvider's message subscription mounts (useEffect)
+    g.__ALP_POST_TO_WEBVIEW__({ type: "stateUpdate", _v: 2, state });
+    await tick();
+    await tick();
+    if (renderErr) {
+      problems.push(`quickstart[${phase}]: crashed — ${String(renderErr)}`);
+    } else {
+      const hasCta = Array.from(container.querySelectorAll("button")).some(
+        (b) => (b.textContent || "").includes(expectedCta),
+      );
+      if (!hasCta) {
+        problems.push(
+          `quickstart[${phase}]: expected active CTA "${expectedCta}" not rendered ` +
+            `(text: ${(container.textContent || "").trim().slice(0, 80)})`,
+        );
+      } else {
+        console.log(
+          `  PASS  quickstart[${phase}]: active CTA "${expectedCta}" present`,
+        );
+      }
+    }
+    root.unmount();
+    container.remove();
+  }
+}
+
 async function main() {
   let totalButtons = 0;
   let totalClicked = 0;
@@ -262,6 +345,8 @@ async function main() {
     root?.unmount();
     container.remove();
   }
+
+  await quickstartPhaseMatrix(problems);
 
   console.log(
     `\nwebview-ui: ${rendered}/${VIEWS.length} views rendered, ` +
