@@ -16,6 +16,7 @@ import { SdkView } from "../../packages/alp-webview/src/features/sdk";
 import { ToolchainDoctorView } from "../../packages/alp-webview/src/features/toolchain-doctor";
 import { HardwareExplorerView } from "../../packages/alp-webview/src/features/hardware-explorer";
 import { BuildPlanView } from "../../packages/alp-webview/src/features/build-plan";
+import { QuickstartView } from "../../packages/alp-webview/src/features/quickstart";
 
 const g = globalThis as any;
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -59,6 +60,8 @@ const readyState = {
   workspace: {
     workspaceRoot: "/ws",
     boardYamlExists: true,
+    boardYamlValid: true,
+    boardIssueCount: 0,
     westInitialized: true,
   },
 };
@@ -150,6 +153,7 @@ const VIEWS: Array<[string, React.FC]> = [
   ["toolchain-doctor", ToolchainDoctorView],
   ["hardware-explorer", HardwareExplorerView],
   ["build-plan", BuildPlanView],
+  ["quickstart", QuickstartView],
 ];
 
 // Text a broken/degraded UI shows — flagged so we SEE the problem, not skip it.
@@ -175,8 +179,9 @@ async function main() {
     document.body.appendChild(container);
     let ok = true;
     let renderErr: unknown = null;
+    let root: ReturnType<typeof createRoot> | null = null;
     try {
-      const root = createRoot(container);
+      root = createRoot(container);
       root.render(
         React.createElement(
           Boundary,
@@ -209,6 +214,8 @@ async function main() {
     };
     if (noteCrash()) {
       console.log(`  FAIL  ${mode}: render error`);
+      root?.unmount();
+      container.remove();
       continue;
     }
     rendered += 1;
@@ -248,6 +255,12 @@ async function main() {
     console.log(
       `  ${ok ? "PASS" : "FAIL"}  ${mode}: rendered, ${buttons.length} button(s), clicked ${clickedHere}`,
     );
+    // Unmount before the next view so roots don't accumulate — a state-gated
+    // view (e.g. Quickstart, blank until stateUpdate) can otherwise be starved
+    // of its re-render by the pile of still-mounted providers and measure as
+    // "loading" purely from its position in this list.
+    root?.unmount();
+    container.remove();
   }
 
   console.log(
