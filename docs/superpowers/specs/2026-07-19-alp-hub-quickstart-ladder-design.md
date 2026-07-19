@@ -43,6 +43,15 @@ Each step is a checkbox row. The **current** step is expanded with **one** prima
 
 The primary CTA **demotes** as its step completes (NXP "+"-in-toolbar idea) rather than graying.
 
+### Full-width wizards — the ladder is a launcher, not the wizard
+
+The sidebar ladder stays a thin launcher. Rich multi-step flows open as **full-width editor-area webviews** (NXP/PlatformIO both do this):
+
+- **Step ② New Project** → launches the full-width **New Project wizard** — dev's existing `newProjectFlowPanel.ts` / `NewProjectFlowView` (template → SoM/hardware → name → confirm), **preferred over the QuickPick `alp.newProjectWizard` command sequence**. Where the GUI wizard is functional, it replaces the QuickPick as the step-② CTA target; the QuickPick may remain as a palette fallback.
+- **Step ③ Configure Board** → launches the full-width **Board Configurator** (`configuratorPanel` / `openConfigurator`).
+
+The narrow ladder never hosts a wizard inline — it triggers these full-width surfaces and reflects their completion back into the phase.
+
 ### State — single source of truth
 
 One selector derives the phase from `AlpIdeState`:
