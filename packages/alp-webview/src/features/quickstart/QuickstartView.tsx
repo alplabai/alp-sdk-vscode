@@ -84,7 +84,9 @@ function BuildBody() {
   );
 }
 
-function ActiveBody({ id, state }: { id: string; state: AlpIdeState }) {
+type StepId = (typeof LADDER_STEPS)[number]["id"];
+
+function ActiveBody({ id, state }: { id: StepId; state: AlpIdeState }) {
   switch (id) {
     case "environment":
       return <EnvironmentBody />;
@@ -94,8 +96,12 @@ function ActiveBody({ id, state }: { id: string; state: AlpIdeState }) {
       return <BoardBody state={state} />;
     case "build":
       return <BuildBody />;
-    default:
-      return null;
+    default: {
+      // Exhaustiveness guard: adding/renaming a LADDER_STEPS id without a body
+      // here is a compile error, not a silent blank row.
+      const _exhaustive: never = id;
+      return _exhaustive;
+    }
   }
 }
 
@@ -136,6 +142,7 @@ export function QuickstartView() {
                 className={styles.row}
                 data-status="done"
                 role="listitem"
+                aria-label={`${step.label}, completed`}
               >
                 <span className={styles.check} aria-hidden="true">
                   <Icon name="check" size={14} />
