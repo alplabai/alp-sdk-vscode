@@ -165,6 +165,28 @@ test("an untyped symbol is never value-linted", () => {
   assert.equal(lintPrjConf("CONFIG_ALP_SDK=7\n").length, 1);
 });
 
+test("the compiled metadata copy is not stale", () => {
+  // `tsc --build` is incremental and re-copies src/**/*.json into out/ only
+  // when a .ts file changed. Re-running scripts/vendor-kconfig-metadata.mjs
+  // touches no .ts, so out/lsp/generated/kconfig-metadata.json silently keeps
+  // the PREVIOUS harvest — and every test here, which loads out/, then passes
+  // against stale data. This bit during development (out/ held 88 typed
+  // symbols while src/ held 165). Fail loudly instead.
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const read = (p) =>
+    JSON.parse(fs.readFileSync(path.join(__dirname, "..", p), "utf-8"));
+
+  const src = read("src/lsp/generated/kconfig-metadata.json");
+  const out = read("out/lsp/generated/kconfig-metadata.json");
+  assert.deepEqual(
+    out,
+    src,
+    "out/lsp/generated/kconfig-metadata.json is stale relative to src/ — " +
+      "run `pnpm exec tsc --build --force` after re-vendoring.",
+  );
+});
+
 test("the generated metadata layer is merged in, and curated entries win", () => {
   const byName = new Map(KCONFIG_SYMBOLS.map((s) => [s.name, s]));
 

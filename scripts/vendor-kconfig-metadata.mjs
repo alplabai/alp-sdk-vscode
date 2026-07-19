@@ -36,7 +36,7 @@
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, posix } from "node:path";
 import yaml from "js-yaml";
 
 const SUBMODULE = "alp-sdk-upstream";
@@ -74,6 +74,62 @@ function listFiles(dir, ext) {
   }
 }
 
+// ── Kconfig type index ───────────────────────────────────────────────────────
+// The metadata files name symbols but never state their TYPE, so a harvest
+// from metadata alone leaves most entries unvalue-lintable. The types are
+// however declared, verbatim, in the SDK's own Kconfig tree — so read them
+// from there rather than guessing. This walks rsource/source from
+// zephyr/Kconfig exactly as vendor-kconfig-symbols.mjs does and records the
+// first type line of each `config` block.
+//
+// This is still EVIDENCE, not inference: a symbol gets a type only if its own
+// declaration states one. Symbols that live in Zephyr's tree rather than the
+// SDK's (ADC, CAN, …) are unreachable from here and correctly stay untyped.
+const ROOT_KCONFIG = "zephyr/Kconfig";
+const INCLUDE_RE = /^[ \t]*(r?source)[ \t]+"([^"]+)"/gm;
+// `tristate` is deliberately NOT folded into `bool`: the lint would behave
+// identically (both accept y/n/m) but hover would print a type the declaration
+// never stated. Leave those untyped.
+const TYPES = new Set(["bool", "int", "hex", "string"]);
+
+/** symbol name -> {type, prompt?} harvested from the SDK's Kconfig text. */
+const kconfigTypes = new Map();
+const visitedKconfig = new Set();
+
+function indexKconfigTypes(gitPath) {
+  const p = posix.normalize(gitPath);
+  if (visitedKconfig.has(p)) return;
+  visitedKconfig.add(p);
+
+  const text = showFile(p);
+  if (text === null) return;
+
+  let current = null;
+  for (const line of text.split(/\r?\n/)) {
+    const decl = /^config\s+([A-Z][A-Z0-9_]*)\s*$/.exec(line);
+    if (decl) {
+      current = decl[1];
+      continue;
+    }
+    if (!current) continue;
+    // First type line of the block wins; a prompt may follow on the same line.
+    const typed = /^\s+(\w+)\b[ \t]*(?:"([^"]*)")?/.exec(line);
+    if (typed && TYPES.has(typed[1])) {
+      kconfigTypes.set(current, { type: typed[1], prompt: typed[2] });
+      current = null;
+    } else if (/^\S/.test(line)) {
+      current = null; // left the block without finding a type
+    }
+  }
+
+  const dir = posix.dirname(p);
+  for (const [, kind, rel] of text.matchAll(INCLUDE_RE)) {
+    indexKconfigTypes(kind === "rsource" ? posix.join(dir, rel) : rel);
+  }
+}
+
+indexKconfigTypes(ROOT_KCONFIG);
+
 /** name -> {name, type?, doc, valueHint?, source} (first writer wins) */
 const symbols = new Map();
 const skipped = [];
@@ -83,7 +139,16 @@ function add(name, entry) {
     skipped.push({ name, source: entry.source });
     return;
   }
-  if (!symbols.has(name)) symbols.set(name, { name, ...entry });
+  if (symbols.has(name)) return;
+
+  // Fill in a type the caller could not prove, from the declaration itself.
+  const declared = kconfigTypes.get(name);
+  const type = entry.type ?? declared?.type;
+  const valueHint = entry.valueHint ?? (type === "bool" ? "y" : undefined);
+  const record = { name, ...entry };
+  if (type) record.type = type;
+  if (valueHint !== undefined) record.valueHint = valueHint;
+  symbols.set(name, record);
 }
 
 /**

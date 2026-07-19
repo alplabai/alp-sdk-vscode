@@ -10,317 +10,443 @@
     {
       "name": "ALP_BEARSSL_CAU",
       "doc": "Kconfig option declared by the `bearssl` library manifest.",
-      "source": "metadata/libraries/bearssl.yaml"
+      "source": "metadata/libraries/bearssl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_BEARSSL_CRYPTOCELL",
       "doc": "Kconfig option declared by the `bearssl` library manifest.",
-      "source": "metadata/libraries/bearssl.yaml"
+      "source": "metadata/libraries/bearssl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_BEARSSL_INLINE_AES",
       "doc": "Kconfig option declared by the `bearssl` library manifest.",
-      "source": "metadata/libraries/bearssl.yaml"
+      "source": "metadata/libraries/bearssl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_BEARSSL_OPTIGA",
       "doc": "Kconfig option declared by the `bearssl` library manifest.",
-      "source": "metadata/libraries/bearssl.yaml"
+      "source": "metadata/libraries/bearssl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_BEARSSL_PURE_C",
       "doc": "Kconfig option declared by the `bearssl` library manifest.",
-      "source": "metadata/libraries/bearssl.yaml"
+      "source": "metadata/libraries/bearssl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_CATCH2_SW",
       "doc": "Kconfig option declared by the `catch2` library manifest.",
-      "source": "metadata/libraries/catch2.yaml"
+      "source": "metadata/libraries/catch2.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_CMSIS_DSP_ADC_DMA",
       "doc": "Kconfig option declared by the `cmsis-dsp` library manifest.",
-      "source": "metadata/libraries/cmsis-dsp.yaml"
+      "source": "metadata/libraries/cmsis-dsp.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_CMSIS_DSP_HELIUM",
       "doc": "Kconfig option declared by the `cmsis-dsp` library manifest.",
-      "source": "metadata/libraries/cmsis-dsp.yaml"
+      "source": "metadata/libraries/cmsis-dsp.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_CMSIS_DSP_NEON",
       "doc": "Kconfig option declared by the `cmsis-dsp` library manifest.",
-      "source": "metadata/libraries/cmsis-dsp.yaml"
+      "source": "metadata/libraries/cmsis-dsp.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_CMSIS_DSP_SCALAR",
       "doc": "Kconfig option declared by the `cmsis-dsp` library manifest.",
-      "source": "metadata/libraries/cmsis-dsp.yaml"
+      "source": "metadata/libraries/cmsis-dsp.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_CMSIS_DSP_TMU_CORDIC",
       "doc": "Kconfig option declared by the `cmsis-dsp` library manifest.",
-      "source": "metadata/libraries/cmsis-dsp.yaml"
+      "source": "metadata/libraries/cmsis-dsp.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_CMSIS_DSP_TMU_FFT",
       "doc": "Kconfig option declared by the `cmsis-dsp` library manifest.",
-      "source": "metadata/libraries/cmsis-dsp.yaml"
+      "source": "metadata/libraries/cmsis-dsp.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_COAP_MBEDTLS",
       "doc": "Kconfig option declared by the `coap` library manifest.",
-      "source": "metadata/libraries/coap.yaml"
+      "source": "metadata/libraries/coap.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_COAP_NO_TLS",
       "doc": "Kconfig option declared by the `coap` library manifest.",
-      "source": "metadata/libraries/coap.yaml"
+      "source": "metadata/libraries/coap.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_COAP_OSCORE",
       "doc": "Kconfig option declared by the `coap` library manifest.",
-      "source": "metadata/libraries/coap.yaml"
+      "source": "metadata/libraries/coap.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_GFX_COMPAT_DMA2D",
       "doc": "Kconfig option declared by the `gfx-compat` library manifest.",
-      "source": "metadata/libraries/gfx-compat.yaml"
+      "source": "metadata/libraries/gfx-compat.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_GFX_COMPAT_GPU2D",
       "doc": "Kconfig option declared by the `gfx-compat` library manifest.",
-      "source": "metadata/libraries/gfx-compat.yaml"
+      "source": "metadata/libraries/gfx-compat.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_GFX_COMPAT_SPI_DMA",
       "doc": "Kconfig option declared by the `gfx-compat` library manifest.",
-      "source": "metadata/libraries/gfx-compat.yaml"
+      "source": "metadata/libraries/gfx-compat.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_GFX_COMPAT_SW",
       "doc": "Kconfig option declared by the `gfx-compat` library manifest.",
-      "source": "metadata/libraries/gfx-compat.yaml"
+      "source": "metadata/libraries/gfx-compat.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_JSMN_SW",
       "doc": "Kconfig option declared by the `jsmn` library manifest.",
-      "source": "metadata/libraries/jsmn.yaml"
+      "source": "metadata/libraries/jsmn.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LITTLEFS_EMMC_DMA",
       "doc": "Kconfig option declared by the `littlefs` library manifest.",
-      "source": "metadata/libraries/littlefs.yaml"
+      "source": "metadata/libraries/littlefs.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LITTLEFS_QSPI_DMA",
       "doc": "Kconfig option declared by the `littlefs` library manifest.",
-      "source": "metadata/libraries/littlefs.yaml"
+      "source": "metadata/libraries/littlefs.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LITTLEFS_SYNC_IO",
       "doc": "Kconfig option declared by the `littlefs` library manifest.",
-      "source": "metadata/libraries/littlefs.yaml"
+      "source": "metadata/libraries/littlefs.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LITTLEFS_XSPI_DMA",
       "doc": "Kconfig option declared by the `littlefs` library manifest.",
-      "source": "metadata/libraries/littlefs.yaml"
+      "source": "metadata/libraries/littlefs.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LVGL_DAVE2D",
       "doc": "Kconfig option declared by the `lvgl` library manifest.",
-      "source": "metadata/libraries/lvgl.yaml"
+      "source": "metadata/libraries/lvgl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LVGL_DMA2D",
       "doc": "Kconfig option declared by the `lvgl` library manifest.",
-      "source": "metadata/libraries/lvgl.yaml"
+      "source": "metadata/libraries/lvgl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LVGL_GPU2D",
       "doc": "Kconfig option declared by the `lvgl` library manifest.",
-      "source": "metadata/libraries/lvgl.yaml"
+      "source": "metadata/libraries/lvgl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LVGL_SW_BLIT",
       "doc": "Kconfig option declared by the `lvgl` library manifest.",
-      "source": "metadata/libraries/lvgl.yaml"
+      "source": "metadata/libraries/lvgl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LVGL_TMU",
       "doc": "Kconfig option declared by the `lvgl` library manifest.",
-      "source": "metadata/libraries/lvgl.yaml"
+      "source": "metadata/libraries/lvgl.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LWS_BEARSSL",
       "doc": "Kconfig option declared by the `libwebsockets` library manifest.",
-      "source": "metadata/libraries/libwebsockets.yaml"
+      "source": "metadata/libraries/libwebsockets.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LWS_MBEDTLS",
       "doc": "Kconfig option declared by the `libwebsockets` library manifest.",
-      "source": "metadata/libraries/libwebsockets.yaml"
+      "source": "metadata/libraries/libwebsockets.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LWS_NO_TLS",
       "doc": "Kconfig option declared by the `libwebsockets` library manifest.",
-      "source": "metadata/libraries/libwebsockets.yaml"
+      "source": "metadata/libraries/libwebsockets.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_LWS_TCP_DMA",
       "doc": "Kconfig option declared by the `libwebsockets` library manifest.",
-      "source": "metadata/libraries/libwebsockets.yaml"
+      "source": "metadata/libraries/libwebsockets.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MADGWICK_FPU",
       "doc": "Kconfig option declared by the `madgwick-ahrs` library manifest.",
-      "source": "metadata/libraries/madgwick-ahrs.yaml"
+      "source": "metadata/libraries/madgwick-ahrs.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MADGWICK_LIBM",
       "doc": "Kconfig option declared by the `madgwick-ahrs` library manifest.",
-      "source": "metadata/libraries/madgwick-ahrs.yaml"
+      "source": "metadata/libraries/madgwick-ahrs.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MADGWICK_TMU",
       "doc": "Kconfig option declared by the `madgwick-ahrs` library manifest.",
-      "source": "metadata/libraries/madgwick-ahrs.yaml"
+      "source": "metadata/libraries/madgwick-ahrs.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MBEDTLS_CAU",
       "doc": "Kconfig option declared by the `mbedtls` library manifest.",
-      "source": "metadata/libraries/mbedtls.yaml"
+      "source": "metadata/libraries/mbedtls.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MBEDTLS_CRYPTOCELL",
       "doc": "Kconfig option declared by the `mbedtls` library manifest.",
-      "source": "metadata/libraries/mbedtls.yaml"
+      "source": "metadata/libraries/mbedtls.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MBEDTLS_INLINE_AES",
       "doc": "Kconfig option declared by the `mbedtls` library manifest.",
-      "source": "metadata/libraries/mbedtls.yaml"
+      "source": "metadata/libraries/mbedtls.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MBEDTLS_OPTIGA",
       "doc": "Kconfig option declared by the `mbedtls` library manifest.",
-      "source": "metadata/libraries/mbedtls.yaml"
+      "source": "metadata/libraries/mbedtls.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MBEDTLS_PURE_C",
       "doc": "Kconfig option declared by the `mbedtls` library manifest.",
-      "source": "metadata/libraries/mbedtls.yaml"
+      "source": "metadata/libraries/mbedtls.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MINIMP3_FPU",
       "doc": "Kconfig option declared by the `minimp3` library manifest.",
-      "source": "metadata/libraries/minimp3.yaml"
+      "source": "metadata/libraries/minimp3.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MINIMP3_HELIUM",
       "doc": "Kconfig option declared by the `minimp3` library manifest.",
-      "source": "metadata/libraries/minimp3.yaml"
+      "source": "metadata/libraries/minimp3.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MINIMP3_I2S_DMA",
       "doc": "Kconfig option declared by the `minimp3` library manifest.",
-      "source": "metadata/libraries/minimp3.yaml"
+      "source": "metadata/libraries/minimp3.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MINIMP3_NEON",
       "doc": "Kconfig option declared by the `minimp3` library manifest.",
-      "source": "metadata/libraries/minimp3.yaml"
+      "source": "metadata/libraries/minimp3.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MINIMP3_PURE_C",
       "doc": "Kconfig option declared by the `minimp3` library manifest.",
-      "source": "metadata/libraries/minimp3.yaml"
+      "source": "metadata/libraries/minimp3.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MODBUS_ETH_DMA",
       "doc": "Kconfig option declared by the `modbus` library manifest.",
-      "source": "metadata/libraries/modbus.yaml"
+      "source": "metadata/libraries/modbus.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MODBUS_SYNC_IO",
       "doc": "Kconfig option declared by the `modbus` library manifest.",
-      "source": "metadata/libraries/modbus.yaml"
+      "source": "metadata/libraries/modbus.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MODBUS_UART_DMA",
       "doc": "Kconfig option declared by the `modbus` library manifest.",
-      "source": "metadata/libraries/modbus.yaml"
+      "source": "metadata/libraries/modbus.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MQTTSN_BEARSSL",
       "doc": "Kconfig option declared by the `coremqtt-sn` library manifest.",
-      "source": "metadata/libraries/coremqtt-sn.yaml"
+      "source": "metadata/libraries/coremqtt-sn.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MQTTSN_MBEDTLS",
       "doc": "Kconfig option declared by the `coremqtt-sn` library manifest.",
-      "source": "metadata/libraries/coremqtt-sn.yaml"
+      "source": "metadata/libraries/coremqtt-sn.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_MQTTSN_NO_TLS",
       "doc": "Kconfig option declared by the `coremqtt-sn` library manifest.",
-      "source": "metadata/libraries/coremqtt-sn.yaml"
+      "source": "metadata/libraries/coremqtt-sn.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_NANOPB_SW",
       "doc": "Kconfig option declared by the `nanopb` library manifest.",
-      "source": "metadata/libraries/nanopb.yaml"
+      "source": "metadata/libraries/nanopb.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_OPUS_FPU",
       "doc": "Kconfig option declared by the `opus` library manifest.",
-      "source": "metadata/libraries/opus.yaml"
+      "source": "metadata/libraries/opus.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_OPUS_HELIUM",
       "doc": "Kconfig option declared by the `opus` library manifest.",
-      "source": "metadata/libraries/opus.yaml"
+      "source": "metadata/libraries/opus.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_OPUS_I2S_DMA",
       "doc": "Kconfig option declared by the `opus` library manifest.",
-      "source": "metadata/libraries/opus.yaml"
+      "source": "metadata/libraries/opus.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_OPUS_NEON",
       "doc": "Kconfig option declared by the `opus` library manifest.",
-      "source": "metadata/libraries/opus.yaml"
+      "source": "metadata/libraries/opus.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_OPUS_PURE_C",
       "doc": "Kconfig option declared by the `opus` library manifest.",
-      "source": "metadata/libraries/opus.yaml"
+      "source": "metadata/libraries/opus.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_PID_FPU",
       "doc": "Kconfig option declared by the `pid` library manifest.",
-      "source": "metadata/libraries/pid.yaml"
+      "source": "metadata/libraries/pid.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_PID_INT_MATH",
       "doc": "Kconfig option declared by the `pid` library manifest.",
-      "source": "metadata/libraries/pid.yaml"
+      "source": "metadata/libraries/pid.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_PID_TIMER",
       "doc": "Kconfig option declared by the `pid` library manifest.",
-      "source": "metadata/libraries/pid.yaml"
+      "source": "metadata/libraries/pid.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_SDK_AHRS",
       "doc": "Kconfig option declared by the `madgwick-ahrs` library manifest.",
-      "source": "metadata/libraries/madgwick-ahrs.yaml"
+      "source": "metadata/libraries/madgwick-ahrs.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_SDK_CATCH2_VENDORED",
       "doc": "Kconfig option declared by the `catch2` library manifest.",
-      "source": "metadata/libraries/catch2.yaml"
+      "source": "metadata/libraries/catch2.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_SDK_CHIP_A02YYUW",
@@ -885,12 +1011,16 @@
     {
       "name": "ALP_SDK_PID",
       "doc": "Kconfig option declared by the `pid` library manifest.",
-      "source": "metadata/libraries/pid.yaml"
+      "source": "metadata/libraries/pid.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_SDK_U8G2_VENDORED_CORE",
       "doc": "Kconfig option declared by the `u8g2` library manifest.",
-      "source": "metadata/libraries/u8g2.yaml"
+      "source": "metadata/libraries/u8g2.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_SOC_ALIF_ENSEMBLE_E3",
@@ -951,62 +1081,86 @@
     {
       "name": "ALP_TFLM_DMA_COPY",
       "doc": "Kconfig option declared by the `tflite-micro` library manifest.",
-      "source": "metadata/libraries/tflite-micro.yaml"
+      "source": "metadata/libraries/tflite-micro.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_TFLM_DRP_AI",
       "doc": "Kconfig option declared by the `tflite-micro` library manifest.",
-      "source": "metadata/libraries/tflite-micro.yaml"
+      "source": "metadata/libraries/tflite-micro.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_TFLM_ETHOS_U55",
       "doc": "Kconfig option declared by the `tflite-micro` library manifest.",
-      "source": "metadata/libraries/tflite-micro.yaml"
+      "source": "metadata/libraries/tflite-micro.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_TFLM_ETHOS_U65",
       "doc": "Kconfig option declared by the `tflite-micro` library manifest.",
-      "source": "metadata/libraries/tflite-micro.yaml"
+      "source": "metadata/libraries/tflite-micro.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_TFLM_ETHOS_U85",
       "doc": "Kconfig option declared by the `tflite-micro` library manifest.",
-      "source": "metadata/libraries/tflite-micro.yaml"
+      "source": "metadata/libraries/tflite-micro.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_TFLM_HELIUM",
       "doc": "Kconfig option declared by the `tflite-micro` library manifest.",
-      "source": "metadata/libraries/tflite-micro.yaml"
+      "source": "metadata/libraries/tflite-micro.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_TFLM_NEON",
       "doc": "Kconfig option declared by the `tflite-micro` library manifest.",
-      "source": "metadata/libraries/tflite-micro.yaml"
+      "source": "metadata/libraries/tflite-micro.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_TFLM_REF_KERNELS",
       "doc": "Kconfig option declared by the `tflite-micro` library manifest.",
-      "source": "metadata/libraries/tflite-micro.yaml"
+      "source": "metadata/libraries/tflite-micro.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_U8G2_BUS_DMA",
       "doc": "Kconfig option declared by the `u8g2` library manifest.",
-      "source": "metadata/libraries/u8g2.yaml"
+      "source": "metadata/libraries/u8g2.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_U8G2_DMA2D",
       "doc": "Kconfig option declared by the `u8g2` library manifest.",
-      "source": "metadata/libraries/u8g2.yaml"
+      "source": "metadata/libraries/u8g2.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_U8G2_SW_BLIT",
       "doc": "Kconfig option declared by the `u8g2` library manifest.",
-      "source": "metadata/libraries/u8g2.yaml"
+      "source": "metadata/libraries/u8g2.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "ALP_U8G2_TMU",
       "doc": "Kconfig option declared by the `u8g2` library manifest.",
-      "source": "metadata/libraries/u8g2.yaml"
+      "source": "metadata/libraries/u8g2.yaml",
+      "type": "bool",
+      "valueHint": "y"
     },
     {
       "name": "CAN",
