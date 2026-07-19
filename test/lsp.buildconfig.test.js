@@ -183,6 +183,73 @@ test("parseConfigTrace survives a format it does not recognise", () => {
   assert.equal(trace.get("KEPT").value, "y");
 });
 
+// ── .config-missing-deps.json ───────────────────────────────────────────────
+
+const { parseMissingDeps } = require("../out/lsp/buildConfig.js");
+
+test("parseMissingDeps reads the {CONFIG_X: [deps]} map, keyed unprefixed", () => {
+  const m = parseMissingDeps(
+    '{"CONFIG_FOO":["DEP (=n)"],"CONFIG_BAR":["(A || B) (=n)","C (=n)"]}',
+  );
+  assert.deepEqual(m.get("FOO"), ["DEP (=n)"]);
+  assert.deepEqual(m.get("BAR"), ["(A || B) (=n)", "C (=n)"]);
+});
+
+test("parseMissingDeps is tolerant of shapes it does not recognise", () => {
+  // Same never-throw contract as parseConfigTrace: a bad sibling degrades to
+  // "no detail", it never takes the diagnostic pass down with it.
+  assert.equal(parseMissingDeps("{ not json").size, 0);
+  assert.equal(parseMissingDeps("[]").size, 0);
+  assert.equal(parseMissingDeps("null").size, 0);
+  // Empty lists, unprefixed keys, and non-string entries are all dropped.
+  assert.equal(
+    parseMissingDeps('{"CONFIG_A":[],"NOPREFIX":["x"],"CONFIG_B":[1,2]}').size,
+    0,
+  );
+});
+
+test("a recorded unmet dependency is named instead of the disjunction", () => {
+  const cfg = new Map([["FEATURE", "n"]]);
+  const trace = new Map([
+    ["FEATURE", { value: "n", type: "bool", kind: "unset", visibility: "n" }],
+  ]);
+  const missing = new Map([["FEATURE", ["DEP (=n)"]]]);
+  // With the concrete dep recorded by the build, the message must NAME it and
+  // drop the vague "has no prompt, or ... unmet" disjunction.
+  const [d] = diagnoseAgainstBuild("CONFIG_FEATURE=y\n", cfg, trace, missing);
+  assert.ok(d);
+  assert.match(d.message, /DEP \(=n\)/);
+  assert.match(d.message, /is unmet in this build target/);
+  assert.doesNotMatch(d.message, /has no prompt/);
+});
+
+test("multiple unmet dependencies render as a plural list", () => {
+  const cfg = new Map([["FEATURE", "n"]]);
+  const missing = new Map([["FEATURE", ["(A || B) (=n)", "C (=n)"]]]);
+  // No trace needed: the sibling file alone is authoritative for the reason.
+  const [d] = diagnoseAgainstBuild(
+    "CONFIG_FEATURE=y\n",
+    cfg,
+    undefined,
+    missing,
+  );
+  assert.ok(d);
+  assert.match(
+    d.message,
+    /its dependencies \(A \|\| B\) \(=n\), C \(=n\) are unmet/,
+  );
+});
+
+test("missing-deps never fires for an assignment that took effect", () => {
+  const cfg = new Map([["PLAIN", "y"]]);
+  // Value matches → no diagnostic at all, even if the sibling listed it.
+  const missing = new Map([["PLAIN", ["X (=n)"]]]);
+  assert.deepEqual(
+    diagnoseAgainstBuild("CONFIG_PLAIN=y\n", cfg, undefined, missing),
+    [],
+  );
+});
+
 // ── integration: slice resolution + freshness, on a real directory tree ──────
 
 const os = require("node:os");
@@ -262,6 +329,104 @@ test("a fresh build is compared, and the overridden assignment is reported", () 
   const [d] = diagnosePrjConfAgainstBuild(prjPath, text);
   assert.ok(d);
   assert.equal(d.severity, "warning");
+  assert.match(d.message, /did not take effect/);
+});
+
+test("a recorded unmet dependency reaches the diagnostic via the sibling file", () => {
+  const { root, prjPath } = makeProject({ configNewest: true });
+  // Same build wrote .config-missing-deps.json next to .config: EXAMPLE_SYM=y
+  // was ignored because DEP is unmet. The freshness gate already passed on the
+  // .config, and the sibling shares it, so it is read without a separate gate.
+  const zephyrDir = path.join(
+    root,
+    "build",
+    "m55_hp-zephyr",
+    "build",
+    "zephyr",
+  );
+  fs.writeFileSync(
+    path.join(zephyrDir, ".config-missing-deps.json"),
+    JSON.stringify({ CONFIG_EXAMPLE_SYM: ["DEP (=n)"] }),
+  );
+
+  const text = fs.readFileSync(prjPath, "utf-8");
+  const [d] = diagnosePrjConfAgainstBuild(prjPath, text);
+  assert.ok(d);
+  assert.match(d.message, /DEP \(=n\)/);
+  assert.match(d.message, /is unmet in this build target/);
+});
+
+test("a missing-deps sibling older than .config is suppressed (never a wrong blocker)", () => {
+  const { root, prjPath } = makeProject({ configNewest: true });
+  const sibling = path.join(
+    root,
+    "build",
+    "m55_hp-zephyr",
+    "build",
+    "zephyr",
+    ".config-missing-deps.json",
+  );
+  fs.writeFileSync(
+    sibling,
+    JSON.stringify({ CONFIG_EXAMPLE_SYM: ["OLD_DEP (=n)"] }),
+  );
+  // Older than .config: the run was interrupted after .config but before this
+  // sibling, or it is left from an earlier solve — its blocker may be wrong, so
+  // it must NOT surface. .config here is at epoch 2_000_000 (makeProject).
+  const stale = new Date(500_000);
+  fs.utimesSync(sibling, stale, stale);
+
+  const text = fs.readFileSync(prjPath, "utf-8");
+  const [d] = diagnosePrjConfAgainstBuild(prjPath, text);
+  assert.ok(d);
+  assert.doesNotMatch(d.message, /OLD_DEP/);
+  assert.match(d.message, /did not take effect/);
+});
+
+test("a fresh .config-trace.json drives the tier-2 not-settable message", () => {
+  const { root, prjPath } = makeProject({ configNewest: true });
+  const traceFile = path.join(
+    root,
+    "build",
+    "m55_hp-zephyr",
+    "build",
+    "zephyr",
+    ".config-trace.json",
+  );
+  // EXAMPLE_SYM resolves n (makeProject), prj sets y → ignored; the trace says
+  // it is not user-settable (visibility n) → tier-2 names that reason.
+  fs.writeFileSync(
+    traceFile,
+    JSON.stringify([["CONFIG_EXAMPLE_SYM", "n", "bool", "n", "unset", null]]),
+  );
+  const text = fs.readFileSync(prjPath, "utf-8");
+  const [d] = diagnosePrjConfAgainstBuild(prjPath, text);
+  assert.ok(d);
+  assert.match(d.message, /not user-settable/);
+});
+
+test("a .config-trace.json older than .config is suppressed (tier-2 skew closed)", () => {
+  const { root, prjPath } = makeProject({ configNewest: true });
+  const traceFile = path.join(
+    root,
+    "build",
+    "m55_hp-zephyr",
+    "build",
+    "zephyr",
+    ".config-trace.json",
+  );
+  fs.writeFileSync(
+    traceFile,
+    JSON.stringify([["CONFIG_EXAMPLE_SYM", "n", "bool", "n", "unset", null]]),
+  );
+  // Older than .config (epoch 2_000_000): a leftover/interrupted trace must not
+  // drive the "not user-settable" wording — fall to the plain tier-3 message.
+  const stale = new Date(500_000);
+  fs.utimesSync(traceFile, stale, stale);
+  const text = fs.readFileSync(prjPath, "utf-8");
+  const [d] = diagnosePrjConfAgainstBuild(prjPath, text);
+  assert.ok(d);
+  assert.doesNotMatch(d.message, /not user-settable/);
   assert.match(d.message, /did not take effect/);
 });
 
