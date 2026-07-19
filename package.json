@@ -163,7 +163,8 @@
       {
         "command": "alp.validateBoardYaml",
         "title": "Alp: Validate board.yaml",
-        "category": "Alp"
+        "category": "Alp",
+        "icon": "$(check-all)"
       },
       {
         "command": "alp.installDependencies",
@@ -258,7 +259,8 @@
       {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
-        "category": "Alp"
+        "category": "Alp",
+        "icon": "$(add)"
       },
       {
         "command": "alp.scaffoldModule",
@@ -268,7 +270,8 @@
       {
         "command": "alp.previewEffectiveConfig",
         "title": "Alp: Preview effective config (LSP)",
-        "category": "Alp"
+        "category": "Alp",
+        "icon": "$(eye)"
       },
       {
         "command": "alp.inspectProjectState",
@@ -324,7 +327,8 @@
       {
         "command": "alp.openExistingProject",
         "title": "Alp: Open Existing Alp Project",
-        "category": "Alp"
+        "category": "Alp",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "alp.openSdkManager",
@@ -391,12 +395,41 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "alp-ide.projects",
+        "when": "alp-ide.projectsState == no-workspace",
+        "contents": "Open a folder to start working on an Alp project.\n[Open Folder](command:vscode.openFolder)"
+      },
+      {
+        "view": "alp-ide.projects",
+        "when": "alp-ide.projectsState == no-board",
+        "contents": "No board.yaml here yet.\n[New Project](command:alp.newProjectWizard)\n[Open Existing](command:alp.openExistingProject)"
+      }
+    ],
     "menus": {
       "view/title": [
         {
           "command": "alp.views.refresh",
           "when": "view == alp-ide.setup || view == alp-ide.workspaces || view == alp-ide.projects || view == alp-ide.sdk || view == alp-ide.build",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "alp.openConfigurator",
+          "when": "view == alp-ide.projects && viewItem == alp-project-active",
+          "group": "inline@1"
+        },
+        {
+          "command": "alp.validateBoardYaml",
+          "when": "view == alp-ide.projects && viewItem == alp-project-active",
+          "group": "inline@2"
+        },
+        {
+          "command": "alp.previewEffectiveConfig",
+          "when": "view == alp-ide.projects && viewItem == alp-project-active",
+          "group": "inline@3"
         }
       ],
       "editor/title": [

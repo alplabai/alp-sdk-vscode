@@ -11,12 +11,13 @@ class ProjectItem extends vscode.TreeItem {
     description: string,
     icon: vscode.ThemeIcon,
     command?: vscode.Command,
+    contextValue = "project-item",
   ) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.description = description;
     this.iconPath = icon;
     this.command = command;
-    this.contextValue = "project-item";
+    this.contextValue = contextValue;
   }
 }
 
@@ -37,66 +38,38 @@ export class ProjectsTreeProvider
   private updateItems(state: AlpIdeState): void {
     const { workspace } = state;
 
+    // Empty states (no workspace / no board.yaml) render via native
+    // viewsWelcome panels (see package.json) keyed off the context key below,
+    // so the tree returns no items and VS Code shows the welcome buttons.
+    let stateKey: "no-workspace" | "no-board" | "ready";
     if (!workspace.workspaceRoot) {
-      this.items = [
-        new ProjectItem("No workspace open", "", new vscode.ThemeIcon("info")),
-      ];
+      stateKey = "no-workspace";
+      this.items = [];
     } else if (!workspace.boardYamlExists) {
-      this.items = [
-        new ProjectItem(
-          "No board.yaml found",
-          "Create or open an Alp project",
-          new vscode.ThemeIcon(
-            "warning",
-            new vscode.ThemeColor("problemsWarningIcon.foreground"),
-          ),
-        ),
-        new ProjectItem(
-          "New Project",
-          "Create from template",
-          new vscode.ThemeIcon("add"),
-          { command: "alp.newProjectWizard", title: "New Project" },
-        ),
-        new ProjectItem(
-          "Open Existing",
-          "Open existing Alp project",
-          new vscode.ThemeIcon("folder-opened"),
-          {
-            command: "alp.openExistingProject",
-            title: "Open Existing Project",
-          },
-        ),
-      ];
+      stateKey = "no-board";
+      this.items = [];
     } else {
+      stateKey = "ready";
       const projectName = path.basename(workspace.workspaceRoot);
+      // One clean row for the active project; the Configure / Validate /
+      // Preview actions hang off it as inline icons (package.json
+      // view/item/context, group "inline") rather than stacked rows.
       this.items = [
         new ProjectItem(
           projectName,
           "Active project",
           new vscode.ThemeIcon("circuit-board"),
           { command: "alp.openConfigurator", title: "Open Configurator" },
-        ),
-        new ProjectItem(
-          "Configure Board",
-          "Open board configurator",
-          new vscode.ThemeIcon("settings-gear"),
-          { command: "alp.openConfigurator", title: "Open Configurator" },
-        ),
-        new ProjectItem(
-          "Validate board.yaml",
-          "",
-          new vscode.ThemeIcon("check-all"),
-          { command: "alp.validateBoardYaml", title: "Validate" },
-        ),
-        new ProjectItem(
-          "Preview Config",
-          "Preview effective config",
-          new vscode.ThemeIcon("eye"),
-          { command: "alp.previewEffectiveConfig", title: "Preview Config" },
+          "alp-project-active",
         ),
       ];
     }
 
+    void vscode.commands.executeCommand(
+      "setContext",
+      "alp-ide.projectsState",
+      stateKey,
+    );
     this._emitter.fire(undefined);
   }
 
