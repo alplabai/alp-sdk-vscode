@@ -15,6 +15,7 @@ import {
   BuildPlanPanel,
   ExistingProjectFlowPanel,
   NewProjectFlowPanel,
+  OverviewPanel,
   registerWorkspaceCommands,
   SdkManagerPanel,
   SetupFlowPanel,
@@ -73,6 +74,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerWorkspaceCommands(),
     vscode.commands.registerCommand("alp.openSetupFlow", () =>
       SetupFlowPanel.open(context),
+    ),
+    vscode.commands.registerCommand("alp.openOverview", () =>
+      OverviewPanel.open(context),
     ),
     vscode.commands.registerCommand("alp.newProjectWizard", () =>
       NewProjectFlowPanel.open(context),

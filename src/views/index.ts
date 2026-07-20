@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { registerQuickstart } from "../ideHub/quickstartProvider";
 import { BuildTreeProvider } from "./build";
 import { ProjectsTreeProvider } from "./projects";
 import { SdkTreeProvider } from "./sdk";
+import { SetupTreeProvider } from "./setup";
 import type { StateManager } from "./stateManager";
+import { WorkspacesTreeProvider } from "./workspaces";
 
 export function registerTreeViews(
   context: vscode.ExtensionContext,
   stateMgr: StateManager,
 ): vscode.Disposable[] {
+  const setupProvider = new SetupTreeProvider(stateMgr);
+  const workspacesProvider = new WorkspacesTreeProvider(stateMgr);
   const projectsProvider = new ProjectsTreeProvider(stateMgr);
   const sdkProvider = new SdkTreeProvider(stateMgr);
   const buildProvider = new BuildTreeProvider(stateMgr);
@@ -26,11 +29,20 @@ export function registerTreeViews(
     vscode.workspace.createFileSystemWatcher("**/board.yaml");
 
   const disposables: vscode.Disposable[] = [
-    ...registerQuickstart(context, stateMgr),
+    setupProvider,
+    workspacesProvider,
     projectsProvider,
     sdkProvider,
     buildProvider,
     boardYamlWatcher,
+    vscode.window.createTreeView("alp-ide.setup", {
+      treeDataProvider: setupProvider,
+      showCollapseAll: false,
+    }),
+    vscode.window.createTreeView("alp-ide.workspaces", {
+      treeDataProvider: workspacesProvider,
+      showCollapseAll: false,
+    }),
     vscode.window.createTreeView("alp-ide.projects", {
       treeDataProvider: projectsProvider,
       showCollapseAll: false,

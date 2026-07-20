@@ -33,12 +33,14 @@
     "nxp"
   ],
   "activationEvents": [
-    "onView:alp-ide.quickstart",
+    "onView:alp-ide.setup",
+    "onView:alp-ide.workspaces",
     "onView:alp-ide.projects",
     "onView:alp-ide.sdk",
     "onView:alp-ide.build",
     "onCommand:alp.openSdkManager",
     "onCommand:alp.openSetupFlow",
+    "onCommand:alp.openOverview",
     "onCommand:alp.newProjectWizard",
     "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
@@ -161,9 +163,7 @@
       {
         "command": "alp.validateBoardYaml",
         "title": "Alp: Validate board.yaml",
-        "category": "Alp",
-        "icon": "$(check-all)",
-        "enablement": "alp-ide.projectsState == ready"
+        "category": "Alp"
       },
       {
         "command": "alp.installDependencies",
@@ -173,57 +173,48 @@
       {
         "command": "alp.westBuild",
         "title": "Alp: Build (validate + generate + build)",
-        "category": "Alp",
-        "enablement": "alp-ide.buildReady"
+        "category": "Alp"
       },
       {
         "command": "alp.westFlash",
         "title": "Alp: West flash",
-        "category": "Alp",
-        "enablement": "alp-ide.buildReady"
+        "category": "Alp"
       },
       {
         "command": "alp.westUpdate",
         "title": "Alp: West update (fetch and update modules)",
-        "category": "Alp",
-        "enablement": "alp-ide.buildReady"
+        "category": "Alp"
       },
       {
         "command": "alp.westRunNativeSim",
         "title": "Alp: Run under native_sim",
-        "category": "Alp",
-        "enablement": "alp-ide.buildReady"
+        "category": "Alp"
       },
       {
         "command": "alp.westAlpImage",
         "title": "Alp: Build image (assemble image bundle)",
-        "category": "Alp",
-        "enablement": "alp-ide.buildReady"
+        "category": "Alp"
       },
       {
         "command": "alp.westAlpFlash",
         "title": "Alp: Flash (all slices)",
-        "category": "Alp",
-        "enablement": "alp-ide.buildReady"
+        "category": "Alp"
       },
       {
         "command": "alp.westAlpClean",
         "title": "Alp: Clean build (remove build dir)",
-        "category": "Alp",
-        "enablement": "alp-ide.buildReady"
+        "category": "Alp"
       },
       {
         "command": "alp.westAlpRenode",
         "title": "Alp: Run in Renode (simulate)",
-        "category": "Alp",
-        "enablement": "alp-ide.buildReady"
+        "category": "Alp"
       },
       {
         "command": "alp.openConfigurator",
         "title": "Alp: Open board configurator (GUI)",
         "category": "Alp",
-        "icon": "$(circuit-board)",
-        "enablement": "alp-ide.projectsState == ready"
+        "icon": "$(circuit-board)"
       },
       {
         "command": "alp.toolchainDoctor",
@@ -267,8 +258,7 @@
       {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
-        "category": "Alp",
-        "icon": "$(add)"
+        "category": "Alp"
       },
       {
         "command": "alp.scaffoldModule",
@@ -278,9 +268,7 @@
       {
         "command": "alp.previewEffectiveConfig",
         "title": "Alp: Preview effective config (LSP)",
-        "category": "Alp",
-        "icon": "$(eye)",
-        "enablement": "alp-ide.projectsState == ready"
+        "category": "Alp"
       },
       {
         "command": "alp.inspectProjectState",
@@ -306,8 +294,7 @@
         "command": "alp.debug",
         "title": "Alp: Debug (generate profile + start session)",
         "category": "Alp",
-        "icon": "$(debug-alt)",
-        "enablement": "alp-ide.buildReady"
+        "icon": "$(debug-alt)"
       },
       {
         "command": "alp.exportSupportBundle",
@@ -330,10 +317,14 @@
         "category": "Alp"
       },
       {
+        "command": "alp.openOverview",
+        "title": "Alp: Open Alp IDE overview",
+        "category": "Alp"
+      },
+      {
         "command": "alp.openExistingProject",
         "title": "Alp: Open Existing Alp Project",
-        "category": "Alp",
-        "icon": "$(folder-opened)"
+        "category": "Alp"
       },
       {
         "command": "alp.openSdkManager",
@@ -374,9 +365,14 @@
     "views": {
       "alp-ide": [
         {
-          "type": "webview",
-          "id": "alp-ide.quickstart",
-          "name": "Quickstart"
+          "type": "tree",
+          "id": "alp-ide.setup",
+          "name": "Alp IDE Setup"
+        },
+        {
+          "type": "tree",
+          "id": "alp-ide.workspaces",
+          "name": "West Workspaces"
         },
         {
           "type": "tree",
@@ -395,41 +391,12 @@
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "alp-ide.projects",
-        "when": "alp-ide.projectsState == no-workspace",
-        "contents": "Open a folder to start working on an Alp project.\n[Open Folder](command:vscode.openFolder)"
-      },
-      {
-        "view": "alp-ide.projects",
-        "when": "alp-ide.projectsState == no-board",
-        "contents": "No board.yaml here yet.\n[New Project](command:alp.newProjectWizard)\n[Open Existing](command:alp.openExistingProject)"
-      }
-    ],
     "menus": {
       "view/title": [
         {
           "command": "alp.views.refresh",
-          "when": "view == alp-ide.projects || view == alp-ide.sdk || view == alp-ide.build",
+          "when": "view == alp-ide.setup || view == alp-ide.workspaces || view == alp-ide.projects || view == alp-ide.sdk || view == alp-ide.build",
           "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "alp.openConfigurator",
-          "when": "view == alp-ide.projects && viewItem == alp-project-active",
-          "group": "inline@1"
-        },
-        {
-          "command": "alp.validateBoardYaml",
-          "when": "view == alp-ide.projects && viewItem == alp-project-active",
-          "group": "inline@2"
-        },
-        {
-          "command": "alp.previewEffectiveConfig",
-          "when": "view == alp-ide.projects && viewItem == alp-project-active",
-          "group": "inline@3"
         }
       ],
       "editor/title": [

@@ -4,7 +4,6 @@ import { ExistingProjectFlowView } from "./features/existing-project-flow";
 import { HardwareExplorerView } from "./features/hardware-explorer";
 import { NewProjectFlowView } from "./features/new-project-flow";
 import { OverviewView } from "./features/overview";
-import { QuickstartView } from "./features/quickstart";
 import { SdkView } from "./features/sdk";
 import { SetupFlowView } from "./features/setup-flow";
 import { ToolchainDoctorView } from "./features/toolchain-doctor";
@@ -51,8 +50,6 @@ function Router() {
   if (protocolMismatch) return <ProtocolMismatchNotice />;
 
   switch (ALP_MODE) {
-    case "quickstart":
-      return <QuickstartView />;
     case "setup-flow":
       return <SetupFlowView />;
     case "new-project-flow":

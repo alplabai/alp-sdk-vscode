@@ -56,8 +56,6 @@ export interface SetupStatus {
 export interface WorkspaceStatus {
   workspaceRoot: string | null;
   boardYamlExists: boolean;
-  boardYamlValid: boolean;
-  boardIssueCount: number;
   /** True when a `.west` directory exists at the workspace root. */
   westInitialized: boolean;
 }
@@ -85,8 +83,6 @@ export function emptyAlpIdeState(): AlpIdeState {
     workspace: {
       workspaceRoot: null,
       boardYamlExists: false,
-      boardYamlValid: false,
-      boardIssueCount: 0,
       westInitialized: false,
     },
   };

@@ -16,7 +16,6 @@ import {
   resolveWestBinary,
   westWorkspaceInitialized,
 } from "../environment/vscodeAdapter";
-import { deriveBoardValidity } from "./boardValidity";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -170,20 +169,6 @@ export async function queryAlpIdeState(
   const boardYamlPath = actualWorkspaceRoot
     ? path.join(actualWorkspaceRoot, "board.yaml")
     : null;
-  const boardYamlExists = boardYamlPath ? fs.existsSync(boardYamlPath) : false;
-  // Reading may race a delete between the existsSync check and here; never
-  // let that reject the whole state refresh.
-  let boardYamlValid = false;
-  let boardIssueCount = 0;
-  if (boardYamlExists && boardYamlPath) {
-    try {
-      const boardYamlText = fs.readFileSync(boardYamlPath, "utf8");
-      ({ boardYamlValid, boardIssueCount } =
-        deriveBoardValidity(boardYamlText));
-    } catch (err) {
-      log(`alp: could not read board.yaml for validity check: ${errText(err)}`);
-    }
-  }
 
   const pyCmd = projectContext.pythonBinary;
   const westBin = resolveWestBinary(
@@ -228,9 +213,7 @@ export async function queryAlpIdeState(
     },
     workspace: {
       workspaceRoot: actualWorkspaceRoot,
-      boardYamlExists,
-      boardYamlValid,
-      boardIssueCount,
+      boardYamlExists: boardYamlPath ? fs.existsSync(boardYamlPath) : false,
       westInitialized: westWorkspaceInitialized(
         projectContext.westCwd,
         projectContext.sdkRoot,

@@ -102,7 +102,7 @@ function Brand({ subtitle }: { subtitle: string }) {
           WebkitMaskImage: `url("${alplabLogo}")`,
         }}
         role="img"
-        aria-label="Alp Lab"
+        aria-label="ALP LAB"
       />
       <span className={styles.topDivider} aria-hidden="true" />
       <span className={styles.topTitle}>{subtitle}</span>
