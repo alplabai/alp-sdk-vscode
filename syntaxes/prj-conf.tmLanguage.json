@@ -1,0 +1,64 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Zephyr prj.conf",
+  "scopeName": "source.prj-conf",
+  "patterns": [
+    { "include": "#not-set" },
+    { "include": "#comment" },
+    { "include": "#assignment" }
+  ],
+  "repository": {
+    "not-set": {
+      "comment": "Zephyr writes `# CONFIG_X is not set` for a disabled symbol; treat it as a config line, not a plain comment.",
+      "match": "^\\s*(#)\\s*(CONFIG_[A-Z0-9_]+)\\s+(is not set)\\s*$",
+      "name": "comment.line.number-sign.disabled.prj-conf",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.prj-conf" },
+        "2": { "name": "variable.other.kconfig.disabled.prj-conf" },
+        "3": { "name": "comment.line.number-sign.prj-conf" }
+      }
+    },
+    "comment": {
+      "match": "(#).*$",
+      "name": "comment.line.number-sign.prj-conf",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.prj-conf" }
+      }
+    },
+    "assignment": {
+      "match": "^(\\s*)(CONFIG_[A-Z0-9_]+)\\s*(=)\\s*(.*)$",
+      "captures": {
+        "2": { "name": "variable.other.kconfig.prj-conf" },
+        "3": { "name": "keyword.operator.assignment.prj-conf" },
+        "4": { "patterns": [{ "include": "#value" }] }
+      }
+    },
+    "value": {
+      "patterns": [
+        {
+          "match": "\\b[ynm]\\b",
+          "name": "constant.language.boolean.prj-conf"
+        },
+        {
+          "match": "\\b0[xX][0-9a-fA-F]+\\b",
+          "name": "constant.numeric.hex.prj-conf"
+        },
+        {
+          "match": "\\b[0-9]+\\b",
+          "name": "constant.numeric.integer.prj-conf"
+        },
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.prj-conf",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.prj-conf"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
