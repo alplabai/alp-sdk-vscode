@@ -325,6 +325,10 @@ async function runChecks() {
         assert.ok(fs.existsSync(binary.command), `missing: ${binary.command}`);
       },
     );
+  } else {
+    console.log(
+      `  SKIP  tan CLI resolves locally (no sibling tan-cli checkout built at ${siblingTan}; this check proves nothing on this run)`,
+    );
   }
 
   // The four contributed views must exist (Quickstart webview + projects/sdk/build

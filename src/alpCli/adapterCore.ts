@@ -113,7 +113,10 @@ export async function downloadCli(deps: ResolveDeps): Promise<void> {
   }
   deps.ensureDir(deps.cacheDir);
   // tan-cli ships a RAW binary per target (not an archive): download it straight
-  // to the cached binary path, then mark it executable on Unix.
+  // to the cached binary path. `download` itself chmods +x before the rename
+  // that makes it appear at `cachedBinaryPath` (closes the race where a
+  // concurrent window resolves "cached" and spawns a not-yet-executable
+  // file); this call is now a harmless idempotent safety net.
   await deps.download(asset.url, deps.cachedBinaryPath);
   if (deps.platform !== "win32") {
     deps.chmodExec(deps.cachedBinaryPath);
