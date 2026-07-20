@@ -1,6 +1,6 @@
 # Release Gates and Checklist
 
-Last revised: 2026-05-14
+Last revised: 2026-07-20
 
 This document defines mandatory release gates for core, LSP, UI, CLI, and docs.
 
@@ -20,17 +20,19 @@ A release candidate is valid only when all gates pass:
    - CLI/public behavior changes are reflected in docs
 5. Compatibility gate
    - Compatibility Rules reviewed for breaking changes
-6. Rust CLI contract gate
-   - `bash cli-rs/contract/run.sh` passes — the native `alp` binary stays
-     byte-for-byte compatible with the TypeScript CLI's JSON envelopes + exit
-     codes. Runs as the `rust_cli_contract` job in the `ci` workflow.
+
+> **CLI envelope contract.** The extension consumes the standalone `tan` CLI's
+> JSON envelope (see [CLI.md](CLI.md)). `tan` and its envelope/exit-code contract
+> are gated **in the `alplabai/tan-cli` repo**, not here — the former in-repo
+> `rust_cli_contract` job (which ran `bash cli-rs/contract/run.sh` against the
+> TypeScript CLI) is retired along with the `cli-rs/` tree and the TypeScript CLI.
 
 ## 2. Surface Coverage Checklist
 
 - Core/service logic affected: corresponding service tests updated
 - LSP behavior affected: lsp.service tests updated
 - UI/webview behavior affected: webview smoke tests updated
-- CLI behavior affected: cli.service and cli.integration tests updated
+- CLI-seam behavior affected: alpCli.service and alpCli.adapterCore tests updated
 - Generation contracts affected: loader golden tests updated
 
 ## 3. Pre-Release Manual Checks
@@ -47,23 +49,17 @@ Release should be approved only after all checklist items pass in CI and local v
 
 Version format: `MAJOR.MINOR.PATCH` following semantic versioning.
 
-CLI releases are tagged `cli-v<version>` (e.g. `cli-v0.3.0`). The tag push triggers
-the `release-cli` CI workflow.
+Extension releases are tagged and published to the VS Code Marketplace from this
+repo. The build CLI is released **separately** from
+[`alplabai/tan-cli`](https://github.com/alplabai/tan-cli): a `v<version>` tag
+push there triggers its `release` workflow, which builds the six per-target
+binaries and publishes each as a **raw** GitHub release asset
+(`tan-<triple>[.exe]`, no archive). The extension resolves the matching
+`v<version>` asset on activation; the tag scheme and asset names are a stable
+contract (see the `tan-cli` release-asset contract).
 
-| Channel | npm dist-tag | Trigger |
-|---------|-------------|---------|
-| `latest` | `latest` | `cli-v*` tag push |
-| `next` | `next` | `workflow_dispatch` with `publish: true` |
-
-Extension and CLI `MAJOR.MINOR` are kept in sync. `PATCH` may diverge for
-standalone CLI-only hotfixes.
-
-> **Native CLI.** The CLI is the native Rust binary in `cli-rs/`. Its releases are
-> tagged `cli-rs-v<version>`, which triggers `release-cli-rs` to build the
-> per-platform `alp` archives and publish the `alp-core`/`alp-cli` crates to
-> crates.io. The `@alplabai/alp-cli` npm package — the `cli-rs/npm-shim` wrapper
-> that downloads that binary — is published from a `cli-v<version>` tag via
-> `release-cli`. The contract gate (§1.6) must stay green.
+The extension pins the `tan` version it targets (`SUPPORTED_CLI_VERSION` in
+`src/alpCli/service.ts`) — bump it in lockstep when adopting a new `tan` release.
 
 Before bumping `MAJOR`:
 - all breaking CLI flag or JSON envelope changes must be documented in `COMPATIBILITY_RULES.md`.
@@ -71,18 +67,12 @@ Before bumping `MAJOR`:
 
 ## 6. Rollback Playbook
 
-If a published CLI version is defective:
+If a published extension release is defective, publish a corrected VSIX
+(bump `PATCH`, re-tag) and update the Marketplace/GitHub release notes with a
+pointer to the good version.
 
-1. **Deprecate** (preferred — keeps install history intact):
-   ```
-   npm deprecate @alplabai/alp-cli@<bad-version> "Defective release; upgrade to <good-version>"
-   ```
-2. **Unpublish** (only within 72 h of publish and no significant downloads):
-   ```
-   npm unpublish @alplabai/alp-cli@<bad-version>
-   ```
-3. **Re-release**: cherry-pick or revert to last known good commit, bump PATCH,
-   tag `cli-v<new-version>`, push to trigger automated release.
-4. **Communicate**: update the GitHub release notes for the bad version with a
-   deprecation notice and a pointer to the good version.
-5. **Document**: add an incident note to `COMPATIBILITY_RULES.md`.
+If a published **`tan` CLI** release is defective, the rollback lives in the
+[`alplabai/tan-cli`](https://github.com/alplabai/tan-cli) repo (re-release a
+corrected `v<version>` and update its release notes). Because the extension pins
+`SUPPORTED_CLI_VERSION`, hold or advance that pin to keep the extension on a
+known-good `tan` binary, and add an incident note to `COMPATIBILITY_RULES.md`.

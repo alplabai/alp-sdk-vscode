@@ -1,6 +1,6 @@
 # Getting Started (VS Code)
 
-Last revised: 2026-05-14
+Last revised: 2026-07-20
 
 This guide covers the fastest path to a productive ALP SDK workflow inside VS Code.
 
@@ -11,25 +11,36 @@ This guide covers the fastest path to a productive ALP SDK workflow inside VS Co
 - A workspace that includes your ALP project with board.yaml
 - ALP SDK checkout (recommended as sibling folder: ../alp-sdk)
 - Python 3 and `west` on `PATH` for the build / generate / validate flows — the
-  extension's `alp` CLI shells out to the SDK's `scripts/alp_project.py` (and
+  extension's `tan` CLI shells out to the SDK's `scripts/alp_project.py` (and
   `west`) for those; the SDK's `bootstrap` provides them. Run
   **Alp: Toolchain doctor** to check.
 
-### The `alp` CLI is auto-provisioned
+### The `tan` CLI is auto-provisioned
 
-The native `alp` CLI is **not** bundled in the VSIX and needs no manual install.
-The extension resolves it, in order:
+The standalone `tan` CLI is downloaded and shelled by the extension — no manual
+install. On activation the extension provisions the managed `tan` up front (a
+one-time download shown in a progress notification; a no-op once a binary already
+resolves), so the first build/validate command doesn't stall on it. It resolves
+the binary in this order:
 
 1. the `alpSdk.cliPath` setting (point it at a local build to override),
-2. `alp` on your `PATH`,
-3. a previously cached copy in the extension's global storage,
-4. otherwise it **downloads the matching `cli-rs-v<version>` release** into
-   global storage on first use (needs network access).
+2. a `bin/tan[.exe]` **bundled** in the VSIX (present only in a platform-specific
+   VSIX),
+3. a locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]` (source
+   checkout),
+4. a previously cached copy in the extension's global storage,
+5. a verified-native `tan` on your `PATH` (last resort — a `tan` that does not
+   emit the native `tan X.Y.Z` version line is treated as not present and falls
+   through, so a stale or non-native PATH copy never shadows the managed one),
+6. otherwise it **downloads the matching `v<version>` release** of
+   `alplabai/tan-cli` (a raw `tan-<triple>[.exe]` binary) into global storage
+   (needs network access).
 
-> **Intel macOS (`darwin/x64`) has no prebuilt release binary.** Build it from
-> source — `cargo build --release --manifest-path cli-rs/Cargo.toml` — and set
-> `alpSdk.cliPath` to `cli-rs/target/release/alp` (or put an `alp` on `PATH`).
-> Apple-silicon macOS, Linux (x64/arm64) and Windows x64 download automatically.
+> **All six host targets have a prebuilt release binary** — Windows (x64 +
+> arm64), Linux (x64 + arm64), and macOS (Intel x64 + Apple silicon arm64) — so
+> the download-on-demand path works on every supported host. To run a local
+> build instead, `cargo build --release` in a `tan-cli` checkout and point
+> `alpSdk.cliPath` at `tan-cli/target/release/tan` (or put a `tan` on `PATH`).
 
 ## 2. Install and Open
 

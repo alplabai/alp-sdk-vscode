@@ -1,17 +1,19 @@
 # ALP CLI Contract
 
-Last revised: 2026-05-14
+Last revised: 2026-07-20
 
 This document defines the intended contract for the ALP command-line
 surface.
 
-> **Implementation note.** The CLI is the native Rust binary (`cli-rs/`, the
-> `alp` binary); the former TypeScript implementation (`packages/alp-cli`) has
-> been retired. The Rust binary is feature-complete — all
-> commands below are ported and held byte-for-byte compatible with this contract
-> by the `cli-rs/contract` harness. This document is the single contract for both
-> implementations; the published `@alplabai/alp-cli` npm package ships the native
-> binary.
+> **Implementation note.** The CLI is the standalone native Rust binary `tan`,
+> developed and released from
+> [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli); the former in-repo
+> `alp` (`cli-rs`) binary and the TypeScript implementation (`packages/alp-cli`)
+> have been retired. `tan` is feature-complete — all commands below are held
+> compatible with this envelope contract by the conformance harness in the
+> `tan-cli` repo. `tan` is distributed as a raw per-target binary
+> (`tan-<triple>[.exe]`) published as a GitHub release asset (tag `v<version>`);
+> the extension downloads and shells it.
 
 The goal is not to mirror the VS Code extension command-for-command.
 The goal is to provide a stable, scriptable, headless interface over
@@ -32,18 +34,18 @@ The CLI must follow these rules:
 
 The CLI should expose these top-level command families:
 
-- `alp validate`
-- `alp generate`
-- `alp init`
-- `alp examples`
-- `alp scaffold`
-- `alp completion`
-- `alp inspect`
-- `alp trace`
-- `alp doctor`
-- `alp support-bundle`
-- `alp debug-config`
-- `alp pinmux`
+- `tan validate`
+- `tan generate`
+- `tan init`
+- `tan examples`
+- `tan scaffold`
+- `tan completion`
+- `tan inspect`
+- `tan trace`
+- `tan doctor`
+- `tan support-bundle`
+- `tan debug-config`
+- `tan pinmux`
 
 ### 2.1 Relation to the SDK's `west alp-*` commands (two doors, one engine)
 
@@ -52,7 +54,7 @@ The SDK registers its own west-extension commands (`west alp-build`, `alp-image`
 The name parity with this CLI is deliberate and is NOT a competing
 implementation:
 
-- **`alp X` is the portable counterpart of `west alp-X`.** For the overlapping
+- **`tan X` is the portable counterpart of `west alp-X`.** For the overlapping
   verbs (`build`/`image`/`flash`/`clean`/`renode`) the native CLI shells out to
   the west command verbatim — orchestration logic lives in exactly one place,
   the SDK's `alp_orchestrate` package. Inside a west workspace both doors work
@@ -68,9 +70,8 @@ implementation:
 
 Where a CLI verb re-implements domain logic natively (e.g. `validate
 --offline`, `diff`, the loader/context readers) instead of shelling out, that
-Rust↔Python↔TS parity surface is gated by the conformance harness
-(`cli-rs/contract/run.sh` + `offline-validate-ts.mjs`) — drift there is a test
-failure, not a runtime surprise.
+Rust↔Python parity surface is gated by the conformance harness in the `tan-cli`
+repo — drift there is a test failure, not a runtime surprise.
 
 ## 3. Global Behavior
 
@@ -115,7 +116,7 @@ Normative rules:
 
 ## 4. Command Contracts
 
-### 4.1 `alp validate`
+### 4.1 `tan validate`
 
 Purpose:
 
@@ -133,7 +134,7 @@ Suggested flags:
 - `--strict`
 - `--warnings-as-errors`
 
-### 4.2 `alp generate`
+### 4.2 `tan generate`
 
 Purpose:
 
@@ -154,7 +155,7 @@ Suggested flags:
 - `--write`
 - `--output-dir <path>`
 
-### 4.3 `alp init`
+### 4.3 `tan init`
 
 Purpose:
 
@@ -176,17 +177,17 @@ Suggested flags:
 - `--preview`
 - `--force`
 
-`alp examples` lists the SDK's ready-made example projects
+`tan examples` lists the SDK's ready-made example projects
 (`{ id, sourceDir, title, description }`) discovered under
 `<sdk>/examples/<category>/<name>/` (directories carrying a `board.yaml`); an
 unresolved SDK root yields an empty `examples` list rather than an error.
-`alp init --from-example <sourceDir>` then copies one verbatim into the
+`tan init --from-example <sourceDir>` then copies one verbatim into the
 destination — the example ships its own `board.yaml`, so `--som`/`--cores` do not
 apply. Errors: unknown/empty example → exit 2 (`init.example-not-found` /
 `init.invalid-example`); unresolved SDK → exit 2 (`init.sdk-root-unresolved`);
 unreadable files → exit 1 (`init.example-unreadable`).
 
-### 4.4 `alp scaffold`
+### 4.4 `tan scaffold`
 
 Purpose:
 
@@ -204,7 +205,7 @@ Suggested flags:
 - `--preview`
 - `--force`
 
-### 4.5 `alp inspect`
+### 4.5 `tan inspect`
 
 Purpose:
 
@@ -221,7 +222,7 @@ Suggested flags:
 - `--path <field-path>`
 - `--show-origin`
 
-### 4.6 `alp trace`
+### 4.6 `tan trace`
 
 Purpose:
 
@@ -238,7 +239,7 @@ Suggested flags:
 - `--path <field-path>`
 - `--target <generation-target>`
 
-### 4.7 `alp doctor`
+### 4.7 `tan doctor`
 
 Purpose:
 
@@ -257,7 +258,7 @@ Suggested flags:
 - `--debug`
 - `--ci`
 
-### 4.8 `alp support-bundle`
+### 4.8 `tan support-bundle`
 
 Purpose:
 
@@ -276,7 +277,7 @@ Suggested flags:
 - `--include-trace`
 - `--include-doctor`
 
-### 4.9 `alp debug-config`
+### 4.9 `tan debug-config`
 
 Purpose:
 
@@ -295,7 +296,7 @@ Suggested flags:
 - `--write-launch-json`
 - `--output <path>`
 
-### 4.10 `alp completion`
+### 4.10 `tan completion`
 
 Purpose:
 
@@ -310,7 +311,7 @@ Suggested flags:
 
 - `--shell <bash|zsh|fish>`
 
-### 4.11 `alp pinmux`
+### 4.11 `tan pinmux`
 
 Purpose:
 
@@ -370,13 +371,13 @@ Rules:
 
 The following command payloads map to shared-core contracts:
 
-- `alp inspect` -> `DebugInspectReport`
-- `alp trace` -> `DebugGenerationTraceReport`
-- `alp doctor` -> `DoctorReport` and optional `DebugPreflightReport`
-- `alp support-bundle` -> `DebugSupportBundlePayload`
-- `alp generate` -> generation summary shaped from loader batch
+- `tan inspect` -> `DebugInspectReport`
+- `tan trace` -> `DebugGenerationTraceReport`
+- `tan doctor` -> `DoctorReport` and optional `DebugPreflightReport`
+- `tan support-bundle` -> `DebugSupportBundlePayload`
+- `tan generate` -> generation summary shaped from loader batch
   (`written`, `failed`) with deterministic ordering
-- `alp examples` -> `{ examples: [{ id, sourceDir, title, description }] }`
+- `tan examples` -> `{ examples: [{ id, sourceDir, title, description }] }`
   (empty when no SDK root resolves)
 
 ## 6. Non-Interactive Requirements
@@ -431,5 +432,5 @@ To keep future CLI implementation aligned with this contract:
 
 ## 10. CI Integration Examples
 
-For ready-to-copy CI pipelines using `alp validate`, `alp generate`,
-and `alp doctor`, see [CI_EXAMPLES.md](CI_EXAMPLES.md).
+For ready-to-copy CI pipelines using `tan validate`, `tan generate`,
+and `tan doctor`, see [CI_EXAMPLES.md](CI_EXAMPLES.md).

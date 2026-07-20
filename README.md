@@ -106,7 +106,6 @@ VS Code Marketplace: search for "Alp SDK".  Or grab the latest
 ├── packages/
 │   └── alp-core/            -- @alp-sdk/core: shared domain logic
 │       └── src/             -- board, configurator, sdk, wizard, ...
-├── cli-rs/                  -- the native `alp` CLI (Rust; replaced packages/alp-cli)
 ├── src/                     -- VS Code extension TypeScript source
 │   ├── README.md            -- source folder/module guide
 │   ├── extension.ts         -- activation entry point
@@ -174,9 +173,9 @@ VS Code Marketplace: search for "Alp SDK".  Or grab the latest
 - [CONTRIBUTING.md](docs/CONTRIBUTING.md): Dev setup, the CLI release flow, and
   rollback playbook.
 - [EXTENSION_CLI_INTEGRATION.md](docs/EXTENSION_CLI_INTEGRATION.md): How the
-  extension consumes the native `alp` CLI (binary resolution + the in-process vs
-  delegated split).
-- [BUILD_ORCHESTRATION.md](docs/BUILD_ORCHESTRATION.md): Wave C plan — the `alp`
+  extension consumes the standalone `tan` CLI (binary resolution + the in-process
+  vs delegated split).
+- [BUILD_ORCHESTRATION.md](docs/BUILD_ORCHESTRATION.md): Wave C plan — the `tan`
   CLI drives the build (materialise/execute/schedule/cache/UX) and wraps
   `west`/`bitbake`/`cmake` directly, **consuming** the SDK's
   `alp_orchestrate.py --emit build-plan` instead of re-implementing the planner;
