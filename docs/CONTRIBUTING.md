@@ -5,10 +5,9 @@
 ## Table of Contents
 
 - [Development setup](#development-setup)
-- [Semver policy and release channels](#semver-policy-and-release-channels)
-- [Releasing the CLI](#releasing-the-cli)
-- [Rollback playbook](#rollback-playbook)
-- [Installing the CLI](#installing-the-cli)
+- [The build CLI lives in its own repo](#the-build-cli-lives-in-its-own-repo)
+- [Semver policy](#semver-policy)
+- [Installing the CLI for development](#installing-the-cli-for-development)
 
 ---
 
@@ -18,7 +17,7 @@
 git clone --recurse-submodules https://github.com/alplabai/alp-sdk-vscode.git
 cd alp-sdk-vscode
 pnpm install
-pnpm run compile        # tsc + vite (the alp CLI builds separately from cli-rs/)
+pnpm run compile        # tsc + vite (extension + webview)
 node --test test/*.test.js
 ```
 
@@ -45,9 +44,32 @@ no such caveat — removing one just deletes that cached version.
 
 ---
 
-## Semver policy and release channels
+## The build CLI lives in its own repo
 
-The `@alplabai/alp-cli` npm package (CLI) follows [Semantic Versioning 2.0.0](https://semver.org/).
+The build CLI is the standalone native Rust binary `tan`, developed and released
+from [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli). This extension
+**consumes** it — it downloads and shells `tan`, parsing its JSON envelope (see
+[CLI.md](CLI.md)) — but does **not** build or release it. The former in-repo
+`alp` (`cli-rs`) binary, its npm shim, and the TypeScript CLI (`packages/alp-cli`)
+are gone.
+
+To release a new `tan` version, follow the process in the `tan-cli` repo (bump
+`[workspace.package] version` in its `Cargo.toml`, push a `v<version>` tag —
+which must equal the crate version, or the `verify-version` job fails — and its
+`release` workflow builds the six per-target binaries and publishes each as a
+**raw** GitHub release asset, `tan-<triple>[.exe]`). See that repo's release-asset
+contract for the tag scheme and asset names.
+
+When adopting a new `tan` release here, bump the pinned version the extension
+targets — `SUPPORTED_CLI_VERSION` in `src/alpCli/service.ts` — in lockstep, and
+keep the envelope-parsing code (`src/alpCli/`) in step with any envelope change.
+
+---
+
+## Semver policy
+
+Both the extension and the `tan` CLI follow
+[Semantic Versioning 2.0.0](https://semver.org/).
 
 | Version bump | When to use |
 |---|---|
@@ -55,162 +77,67 @@ The `@alplabai/alp-cli` npm package (CLI) follows [Semantic Versioning 2.0.0](ht
 | **minor** (`x.Y.0`) | New commands, flags, or JSON envelope fields that are backwards-compatible. |
 | **major** (`X.0.0`) | Breaking changes to the JSON envelope schema, removed commands, or changed exit codes. |
 
-### Release channels
-
-| dist-tag | Purpose | When it is updated |
-|---|---|---|
-| `next` | Canary builds for early adopters and CI pipelines | Every merge to `main` that bumps the CLI version |
-| `latest` | Stable production releases | Manual tag push `cli-vX.Y.Z` |
-
-A version published as `next` **may** be promoted to `latest` by re-tagging:
-
-```bash
-npm dist-tag add @alplabai/alp-cli@<version> latest
-```
-
 ### Breaking-change checklist
 
-Before merging any change that bumps the major version:
+Before merging any change that bumps the `tan` CLI major version (in the
+`tan-cli` repo):
 
-- [ ] All `CliEnvelope` field removals and renames are documented in `CHANGELOG.md`.
-- [ ] Exit code changes are listed in `CHANGELOG.md`.
-- [ ] The `cli.compat.test.js` contract tests are updated to match the new schema.
-- [ ] `release-cli.yml` workflow passes with the new test suite.
-- [ ] Migration notes are added to the relevant section in this file.
-
----
-
-## Releasing the CLI
-
-The CLI is the native Rust binary in `cli-rs/`.
-
-1. Bump the version in **both** `cli-rs/Cargo.toml` and
-   `cli-rs/npm-shim/package.json` (keep them equal) and refresh `cli-rs/Cargo.lock`.
-2. Update `cli-rs/CHANGELOG.md`.
-3. Commit and push.
-4. Create and push a tag:
-
-   ```bash
-   git tag cli-rs-v<version>
-   git push origin cli-rs-v<version>
-   ```
-
-The `release-cli-rs.yml` workflow triggers automatically and attaches
-`alp-<target>.tar.gz` archives (linux-x64, macOS-arm64, windows-x64) to the
-GitHub release. Publishing the npm shim is a separate manual step:
-
-```bash
-cd cli-rs/npm-shim && npm publish     # @alplabai/alp-cli@<version>; postinstall fetches the archive
-```
+- [ ] All envelope field removals and renames are documented in that repo's `CHANGELOG.md`.
+- [ ] Exit code changes are listed in the `CHANGELOG.md`.
+- [ ] The envelope-contract tests are updated to match the new schema.
+- [ ] Migration notes are added to the GitHub release.
+- [ ] This extension's `SUPPORTED_CLI_VERSION` and `src/alpCli/` parser are updated in lockstep.
 
 ---
 
-## Rollback playbook
+## Installing the CLI for development
 
-### Scenario 1 — Bad patch/minor release (recoverable)
+### End users
 
-1. Publish a corrected version immediately:
+No manual install — the extension provisions the managed `tan` on activation
+(download-on-demand into global storage, shown in a progress notification). See
+[GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md).
 
-   ```bash
-   # Bump patch in package.json, then:
-   git tag cli-rs-v<corrected>
-   git push origin cli-rs-v<corrected>
-   ```
-
-2. Deprecate the bad version with a clear message:
-
-   ```bash
-   npm deprecate @alplabai/alp-cli@<bad-version> "Regression in <command>. Upgrade to <corrected>."
-   ```
-
-3. Add the bad version to the **Affected version matrix** table below.
-
-### Scenario 2 — Unpublishable (within 72 h of publish, policy allows)
+### Local from source
 
 ```bash
-npm unpublish @alplabai/alp-cli@<version>
-```
-
-> **Note:** npm allows unpublish only within 72 hours and only if no other package depends on the version. Prefer `npm deprecate` for older versions.
-
-### Scenario 3 — Breaking major release shipped by mistake
-
-1. Immediately deprecate the version.
-2. If the `latest` dist-tag was updated, roll it back:
-
-   ```bash
-   npm dist-tag add @alplabai/alp-cli@<last-good-version> latest
-   ```
-
-3. Open a post-mortem issue and document the affected version matrix.
-
-### Affected version matrix
-
-| Version | Status | Issue | Notes |
-|---|---|---|---|
-| _(none yet)_ | | | |
-
----
-
-## Installing the CLI
-
-### For end users
-
-```bash
-# Global install (latest stable)
-npm install -g @alplabai/alp-cli
-
-# Check the installed version
-alp --help
-```
-
-```bash
-# One-shot without install (always fetches latest)
-npx @alplabai/alp-cli --help
-```
-
-```bash
-# Pin to a specific version
-npx @alplabai/alp-cli@0.1.6 --help
-```
-
-### For developers (local from source)
-
-```bash
-cargo build --release --manifest-path cli-rs/Cargo.toml
-cli-rs/target/release/alp --help
+# in a tan-cli checkout:
+cargo build --release
+tan-cli/target/release/tan --help
 ```
 
 Point the VS Code extension at a local build via the `alpSdk.cliPath` setting.
 
-### For CI agents
+### Terminal / CI
 
-Install a pinned version at the start of your workflow to avoid unexpected
-breakage from minor/patch updates:
+Download the pinned raw binary for your host target from the
+[tan-cli releases](https://github.com/alplabai/tan-cli/releases) (tag
+`v<version>`), put it on `PATH`, and (on Unix) `chmod +x` it:
 
 ```yaml
-- name: Install alp CLI
-  run: npm install -g @alplabai/alp-cli@0.1.6
+- name: Install tan CLI
+  run: |
+    curl -L -o /usr/local/bin/tan \
+      https://github.com/alplabai/tan-cli/releases/download/v0.1.0/tan-x86_64-unknown-linux-gnu
+    chmod +x /usr/local/bin/tan
 
 - name: Validate board config
-  run: alp validate --format json board.yaml
+  run: tan validate --format json board.yaml
 ```
 
-### For offline environments / air-gapped mirrors
+### Offline environments / air-gapped mirrors
 
-Download the prebuilt binary archive and ship it to your internal artifact store:
+The release asset is a **raw** binary (no archive) — download it on an
+internet-connected machine and copy it to the air-gapped host's `PATH`; no
+unpack step:
 
 ```bash
-# On an internet-connected machine, grab the archive for the target platform
-# from the GitHub release (tag cli-rs-v<version>):
-#   https://github.com/alplabai/alp-sdk-vscode/releases
-#   alp-<target>.tar.gz   (e.g. alp-x86_64-unknown-linux-gnu.tar.gz)
+# On the connected machine, grab the asset for the target platform from the
+# GitHub release (tag v<version>):
+#   https://github.com/alplabai/tan-cli/releases
+#   tan-<triple>[.exe]   (e.g. tan-x86_64-unknown-linux-gnu)
 
-# On the air-gapped machine, extract it and put `alp` on PATH:
-tar -xzf alp-<target>.tar.gz -C /usr/local/bin alp
-alp --help
+# On the air-gapped machine, put `tan` on PATH:
+install -m 0755 tan-x86_64-unknown-linux-gnu /usr/local/bin/tan
+tan --help
 ```
-
-The `@alplabai/alp-cli` npm package can't be used fully offline — its `postinstall`
-downloads the binary from the GitHub release — so air-gapped installs use the
-archive directly (above) or `cargo install alp-cli` against a vendored registry.
