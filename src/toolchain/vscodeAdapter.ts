@@ -35,7 +35,7 @@ function probePythonDep(pythonBin: string, module: string): boolean {
 
 /**
  * Locate a Zephyr SDK install without spawning anything. Mirrors the native
- * CLI's `zephyr_sdk_detected()` (cli-rs/crates/alp-cli/src/commands/doctor.rs):
+ * CLI's `zephyr_sdk_detected()` (tan-cli `crates/tan-cli/src/commands/doctor.rs`):
  * honor ZEPHYR_SDK_INSTALL_DIR, else accept the CMake package registry the
  * SDK's setup.sh registers (`~/.cmake/packages/Zephyr-sdk`) — which it does even
  * when it never exports the env var (the Remote-SSH / non-login-shell case) —
@@ -85,7 +85,7 @@ export function collectToolchainInputs(): ToolchainInputs {
       ninja: probeTool("ninja", ["--version"]),
       dtc: probeTool("dtc", ["--version"]),
       gdb: probeTool("gdb", ["--version"]),
-      alp: probeTool("alp", ["--help"]),
+      tan: probeTool("tan", ["--help"]),
     },
     pythonDeps: {
       pyyaml: probePythonDep(depPython, "yaml"),

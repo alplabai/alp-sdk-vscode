@@ -1,1 +1,0 @@
-switch x --sdk-root contract/fixtures/sdk/switch-path-not-found/_missing

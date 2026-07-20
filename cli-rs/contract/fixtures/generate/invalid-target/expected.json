@@ -1,1 +1,0 @@
-{"command":"generate","ok":false,"exitCode":5,"project":{"root":".","boardYaml":"contract/fixtures/validate/clean-v1/board.yaml"},"data":{"schemaVersion":"1","targets":[],"written":[],"failed":[]},"issues":[{"code":"generate.internal-failure","severity":"error","message":"Unsupported generate target 'badtarget'."}]}
