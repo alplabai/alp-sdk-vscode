@@ -260,7 +260,7 @@
       },
       {
         "command": "alp.updateCli",
-        "title": "Alp: Update the alp CLI",
+        "title": "Alp: Update the tan CLI",
         "category": "Alp",
         "icon": "$(cloud-download)"
       },
@@ -514,7 +514,7 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "description": "Path to the native `alp` CLI binary. When empty, the extension uses `alp` on PATH, then falls back to downloading the matching release into its global storage. Point this at a local dev build (e.g. `cli-rs/target/release/alp`) to override."
+          "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a verified `tan` on PATH, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/target/release/tan`) to override."
         }
       }
     }

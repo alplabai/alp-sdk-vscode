@@ -8,7 +8,6 @@
 
 import * as cp from "child_process";
 import * as fs from "fs";
-import * as https from "https";
 import * as path from "path";
 import * as vscode from "vscode";
 
@@ -20,7 +19,8 @@ import {
   resolveAlpBinary,
   runAlp,
 } from "./adapterCore";
-import { BinaryResolutionInput, CliOutcome } from "./models";
+import { downloadFile } from "./download";
+import { BinaryResolutionInput, BinarySource, CliOutcome } from "./models";
 import {
   SUPPORTED_CLI_VERSION,
   binaryName,
@@ -177,12 +177,100 @@ export async function ensureTanCliProvisioned(
 /** One-shot per window: run once to avoid nagging on every command. */
 let versionChecked = false;
 
+/** The one-click action (if any) that can actually fix a stale/broken
+ *  `source` on the NEXT resolution. `decideBinarySource` (service.ts) ranks
+ *  `bundled` and `localBuild` ABOVE the managed cache, so `alp.updateCli`
+ *  downloading a fresh binary into `cacheDir` would silently keep losing to
+ *  either of them — offering "Update" there is a dead-end action that leaves
+ *  the user thinking they fixed it. `cliPath` needs the setting changed;
+ *  every other source (`cached`/`path`/`download`) sits at or below the cache
+ *  in that ranking, so a fresh download does win next time. */
+function cliFixAction(
+  source: BinarySource,
+): { label: "Open Settings" | "Update"; command: string; arg?: string } | null {
+  switch (source) {
+    case "cliPath":
+      return {
+        label: "Open Settings",
+        command: "workbench.action.openSettings",
+        arg: "alpSdk.cliPath",
+      };
+    case "bundled":
+    case "localBuild":
+      return null;
+    default:
+      return { label: "Update", command: "alp.updateCli" };
+  }
+}
+
+/** Show `message` with whatever action `cliFixAction(binary.source)` offers
+ *  (or no action button for a `bundled`/`localBuild` source `message` should
+ *  already explain how to actually fix). */
+async function warnAboutResolvedBinary(
+  binary: ResolvedBinary,
+  message: string,
+): Promise<void> {
+  const fix = cliFixAction(binary.source);
+  if (!fix) {
+    await vscode.window.showWarningMessage(message);
+    return;
+  }
+  const choice = await vscode.window.showWarningMessage(message, fix.label);
+  if (choice !== fix.label) {
+    return;
+  }
+  if (fix.arg) {
+    await vscode.commands.executeCommand(fix.command, fix.arg);
+  } else {
+    await vscode.commands.executeCommand(fix.command);
+  }
+}
+
+/** Message for a resolved binary whose `--version` output isn't the native
+ *  `tan <MAJOR.MINOR.PATCH>` line at all — worded per source since the cause
+ *  (and the fix) differs: a leftover retired `alp` binary pinned via
+ *  `alpSdk.cliPath`, a stale bundled/local build, or a managed binary
+ *  corrupted by an old non-atomic download. */
+function nonNativeCliMessage(binary: ResolvedBinary, found: string): string {
+  const printed = `\`--version\` printed "${found}" instead of "tan <version>"`;
+  switch (binary.source) {
+    case "cliPath":
+      return `The binary at alpSdk.cliPath (${binary.command}) doesn't look like the native tan CLI — ${printed}. This may be the retired alp CLI or a corrupted binary. Point the setting at a tan build, or clear the override to use the managed CLI.`;
+    case "bundled":
+      return `The tan binary bundled with this extension install (${binary.command}) doesn't look like the native tan CLI — ${printed}. Reinstall from a current .vsix to refresh it.`;
+    case "localBuild":
+      return `The local tan-cli build (${binary.command}) doesn't look like the native tan CLI — ${printed}. Rebuild the sibling tan-cli checkout.`;
+    default:
+      return `The managed tan CLI (${binary.command}) doesn't look like the native tan CLI — ${printed}. It may be corrupted from an old download.`;
+  }
+}
+
+/** Message for a resolved binary that's older than `SUPPORTED_CLI_VERSION`,
+ *  worded per source for the same reason as `nonNativeCliMessage`. */
+function outdatedCliMessage(binary: ResolvedBinary, version: string): string {
+  const behind = `is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing`;
+  switch (binary.source) {
+    case "cliPath":
+      return `The tan CLI at alpSdk.cliPath ${behind}. Update that binary, or clear the override to use the managed CLI.`;
+    case "bundled":
+      return `The tan binary bundled with this extension install (${binary.command}) ${behind}. Reinstall from a current .vsix to refresh it.`;
+    case "localBuild":
+      return `The local tan-cli build (${binary.command}) ${behind}. Rebuild the sibling tan-cli checkout.`;
+    default:
+      return `The tan CLI ${behind}.`;
+  }
+}
+
 /**
  * Probe the resolved `tan` binary's version and, when it's older than the
- * version this extension targets, warn once with an actionable path — the
- * silent cause of missing features (e.g. project examples) when a stale CLI is
- * pinned via `alpSdk.cliPath` or left cached from an older extension build.
- * Never throws: an unresolvable binary or unparseable version is a no-op.
+ * version this extension targets (or isn't the native CLI at all), warn once
+ * with whichever action actually fixes it — the silent cause of missing
+ * features (e.g. project examples) when a stale CLI is pinned via
+ * `alpSdk.cliPath` or left cached from an older extension build.
+ * Never throws: an unresolvable binary is a no-op; a `--version` spawn
+ * failure (ENOENT/EACCES/timeout — the probe couldn't even exec the binary)
+ * tells us nothing about the binary's identity, so it's logged and NOT
+ * treated as "not the native CLI".
  */
 export async function checkCliVersion(
   context: vscode.ExtensionContext,
@@ -198,41 +286,47 @@ export async function checkCliVersion(
   } catch {
     return; // resolution failure is surfaced by the command that triggered it
   }
-  // Probe directly (not runAlpCommand, which appends `--format json`).
+  // Probe directly (not runAlpCommand, which appends `--format json`). A 5s
+  // cap so a hung binary can't block the extension host main thread forever.
   const probe = cp.spawnSync(binary.command, ["--version"], {
     encoding: "utf8",
+    timeout: 5000,
   });
+  if (probe.error) {
+    // Couldn't even exec it (ENOENT, EACCES, or — on Windows — a `.cmd`/
+    // `.bat` wrapper spawnSync can't run without a shell): that's not
+    // evidence the binary is the retired CLI or corrupted, just that this
+    // probe failed. Log it and stay silent rather than accuse.
+    log(
+      `[cli] --version probe failed for ${binary.command} (status ${probe.status}): ${probe.error.message}`,
+    );
+    return;
+  }
   const version = parseTanVersion(probe.stdout ?? "");
+
+  if (version === null) {
+    // `isCliBehind(null, …)` treats an unparseable version as "unknown, not
+    // behind" and stays silent — but a resolved binary that ran and printed
+    // something that isn't the native `tan <MAJOR.MINOR.PATCH>` line is a
+    // real signal, not a probe hiccup. Warn explicitly instead of silently
+    // running it forever.
+    const found =
+      (probe.stdout ?? "").trim().split(/\r?\n/, 1)[0] ||
+      "(no --version output)";
+    log(
+      `[cli] resolved binary at ${binary.command} is not the native tan CLI (found: ${found}; source: ${binary.source})`,
+    );
+    await warnAboutResolvedBinary(binary, nonNativeCliMessage(binary, found));
+    return;
+  }
+
   if (!isCliBehind(version, SUPPORTED_CLI_VERSION)) {
     return;
   }
   log(
     `[cli] resolved tan ${version} is older than supported ${SUPPORTED_CLI_VERSION} (source: ${binary.source})`,
   );
-
-  if (binary.source === "cliPath") {
-    // A user-pinned cliPath wins over the managed download, so we can't update
-    // it — point the user at the setting (mirror surfaceResolutionError).
-    const choice = await vscode.window.showWarningMessage(
-      `The tan CLI at alpSdk.cliPath is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing. Update that binary, or clear the override to use the managed CLI.`,
-      "Open Settings",
-    );
-    if (choice === "Open Settings") {
-      await vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "alpSdk.cliPath",
-      );
-    }
-    return;
-  }
-
-  const choice = await vscode.window.showWarningMessage(
-    `The tan CLI is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing.`,
-    "Update",
-  );
-  if (choice === "Update") {
-    await vscode.commands.executeCommand("alp.updateCli");
-  }
+  await warnAboutResolvedBinary(binary, outdatedCliMessage(binary, version));
 }
 
 /**
@@ -247,7 +341,7 @@ export async function updateAlpCli(
   const deps = buildResolveDeps(context);
   if (deps.cliPathSetting) {
     const choice = await vscode.window.showWarningMessage(
-      "alpSdk.cliPath is set, so the managed CLI download won't be used. Clear the override to let the extension manage the alp CLI, or update that binary yourself.",
+      "alpSdk.cliPath is set, so the managed CLI download won't be used. Clear the override to let the extension manage the tan CLI, or update that binary yourself.",
       "Open Settings",
     );
     if (choice === "Open Settings") {
@@ -397,7 +491,11 @@ function spawnAlp(command: string, args: string[], cwd?: string): SpawnResult {
 }
 
 function commandOnPath(command: string): boolean {
-  const probe = cp.spawnSync(command, ["--version"], { encoding: "utf8" });
+  // A 5s cap so a hung binary on PATH can't block the extension host.
+  const probe = cp.spawnSync(command, ["--version"], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
   if (probe.error) {
     return false;
   }
@@ -418,31 +516,4 @@ function commandOnPath(command: string): boolean {
     return false;
   }
   return true;
-}
-
-function downloadFile(url: string, destFile: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = https.get(url, (response) => {
-      const status = response.statusCode ?? 0;
-      // Follow GitHub's redirect to the asset CDN.
-      if (status >= 300 && status < 400 && response.headers.location) {
-        response.resume();
-        downloadFile(response.headers.location, destFile).then(resolve, reject);
-        return;
-      }
-      if (status !== 200) {
-        response.resume();
-        reject(new Error(`Download failed (HTTP ${status}) for ${url}`));
-        return;
-      }
-      const file = fs.createWriteStream(destFile);
-      response.pipe(file);
-      file.on("finish", () => file.close(() => resolve()));
-      file.on("error", (error) => {
-        fs.rmSync(destFile, { force: true });
-        reject(error);
-      });
-    });
-    request.on("error", reject);
-  });
 }
