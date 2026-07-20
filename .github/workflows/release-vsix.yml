@@ -13,7 +13,8 @@
 #
 # Release flow: bump package.json `version`, ensure the targeted CLI release is
 # published (the extension downloads it on demand — SUPPORTED_CLI_VERSION must
-# match a published cli-rs-v<version>), commit, then `git tag v<version>` + push.
+# match a published `alplabai/tan-cli` `v<version>` release), commit, then
+# `git tag v<version>` + push.
 #
 # Pre-release vs stable follows the VS Code convention encoded in the version: an
 # ODD minor (0.3.x, 0.5.x) publishes as `--pre-release` (beta channel); an EVEN
@@ -21,14 +22,14 @@
 # version number.
 #
 # A second, additive job (`package_darwin_arm64`) packages + publishes a
-# darwin-arm64-targeted VSIX with the `alp` CLI bundled at `bin/alp` (the
+# darwin-arm64-targeted VSIX with the `tan` CLI bundled at `bin/tan` (the
 # extension's `bundled` resolver source, src/alpCli — see
 # docs/EXTENSION_CLI_INTEGRATION.md §5, picks it up with no first-run
-# download). It downloads the prebuilt aarch64-apple-darwin archive from the
-# `cli-rs-v<SUPPORTED_CLI_VERSION>` release (src/alpCli/service.ts is the
-# source of truth for the version), reuses the same VSCE_PAT secret and
-# SHOULD_PUBLISH gate as the universal job, and always publishes
-# `--pre-release` (it's the first bundled-CLI VSIX, regardless of the
+# download). It downloads the prebuilt RAW `tan-aarch64-apple-darwin` binary
+# from the `alplabai/tan-cli` `v<SUPPORTED_CLI_VERSION>` release
+# (src/alpCli/service.ts is the source of truth for the version), reuses the
+# same VSCE_PAT secret and SHOULD_PUBLISH gate as the universal job, and always
+# publishes `--pre-release` (it's the first bundled-CLI VSIX, regardless of the
 # odd/even-minor convention above). The universal (binary-less) job stays
 # unchanged and independent.
 
@@ -167,17 +168,18 @@ jobs:
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "::notice::Bundling alp CLI cli-rs-v$VERSION (aarch64-apple-darwin)"
+          echo "::notice::Bundling tan CLI v$VERSION (aarch64-apple-darwin)"
 
-      - name: Download + stage the aarch64-apple-darwin alp binary
+      - name: Download + stage the aarch64-apple-darwin tan binary
         run: |
           set -euo pipefail
           VERSION="${{ steps.cli_version.outputs.version }}"
-          URL="https://github.com/alplabai/alp-sdk-vscode/releases/download/cli-rs-v${VERSION}/alp-aarch64-apple-darwin.tar.gz"
-          curl -fsSL "$URL" -o alp-aarch64-apple-darwin.tar.gz
+          # tan-cli ships a RAW binary per target (not an archive) — download it
+          # straight to bin/tan (the extension's `bundled` resolver source).
+          URL="https://github.com/alplabai/tan-cli/releases/download/v${VERSION}/tan-aarch64-apple-darwin"
           mkdir -p bin
-          tar -xzf alp-aarch64-apple-darwin.tar.gz -C bin
-          chmod +x bin/alp
+          curl -fsSL "$URL" -o bin/tan
+          chmod +x bin/tan
 
       - name: Package (.vsix, darwin-arm64, bundled CLI)
         run: pnpm exec vsce package --no-dependencies --target darwin-arm64 --pre-release --out alp-sdk-darwin-arm64.vsix

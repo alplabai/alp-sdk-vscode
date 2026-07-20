@@ -1,1 +1,0 @@
-{"command":"sdk","ok":false,"exitCode":1,"project":{"root":null,"boardYaml":null},"data":{"subcommand":"switch","sdkPath":"contract/fixtures/sdk/switch-path-not-found/_missing","version":null},"issues":[{"code":"sdk.path-not-found","severity":"error","message":"SDK path not found: contract/fixtures/sdk/switch-path-not-found/_missing"}]}

@@ -1,1 +1,0 @@
-{"command":"sdk","ok":false,"exitCode":1,"project":{"root":null,"boardYaml":null},"data":{"subcommand":"switch","sdkPath":"","version":null},"issues":[{"code":"sdk.missing-version","severity":"error","message":"Version or path argument is required."}]}

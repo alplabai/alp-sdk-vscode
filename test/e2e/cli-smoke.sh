@@ -1,29 +1,33 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Functional smoke test of the real `alp` CLI — the engine behind the extension's
+# Functional smoke test of the real `tan` CLI — the engine behind the extension's
 # build/validate/generate/debug buttons — against a real SDK checkout. Proves the
 # commands actually produce output, not just that they are registered.
 #
 #   Usage: test/e2e/cli-smoke.sh [<sdk-root>]
 #   <sdk-root> defaults to a sibling `../alp-sdk` checkout.
 #
-# Requires: a built CLI (cli-rs/target/{release,debug}/alp[.exe]) and Python 3.10+.
-# Does NOT cover the west/Zephyr compile or on-hardware flash/debug (toolchain- and
-# bench-gated); those are constructed-and-driven by the in-host e2e, not run here.
+# Requires a `tan` binary — a sibling `../tan-cli/target/{release,debug}/tan[.exe]`
+# build, a `$TAN` override, or `tan` on PATH — plus Python 3.10+. Does NOT cover
+# the west/Zephyr compile or on-hardware flash/debug (toolchain- and bench-gated);
+# those are constructed-and-driven by the in-host e2e, not run here.
 set -o pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 SDK="${1:-$repo/../alp-sdk}"
 
-ALP=""
-for c in "$repo/cli-rs/target/release/alp.exe" "$repo/cli-rs/target/release/alp" \
-         "$repo/cli-rs/target/debug/alp.exe" "$repo/cli-rs/target/debug/alp"; do
-  [ -x "$c" ] && { ALP="$c"; break; }
-done
-[ -z "$ALP" ] && { echo "no built alp CLI — run 'cargo build' in cli-rs/ first"; exit 2; }
+ALP="${TAN:-}"
+if [ -z "$ALP" ]; then
+  for c in "$repo/../tan-cli/target/release/tan.exe" "$repo/../tan-cli/target/release/tan" \
+           "$repo/../tan-cli/target/debug/tan.exe" "$repo/../tan-cli/target/debug/tan"; do
+    [ -x "$c" ] && { ALP="$c"; break; }
+  done
+fi
+[ -z "$ALP" ] && command -v tan >/dev/null 2>&1 && ALP="tan"
+[ -z "$ALP" ] && { echo "no tan CLI — build it in ../tan-cli (cargo build), set \$TAN, or put tan on PATH"; exit 2; }
 [ -d "$SDK" ] || { echo "SDK root not found: $SDK"; exit 2; }
-echo "alp: $("$ALP" --version 2>&1 | head -1)   sdk: $SDK"
+echo "tan: $("$ALP" --version 2>&1 | head -1)   sdk: $SDK"
 
 WS="$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}/alp-cli-smoke.$$")"
 mkdir -p "$WS"; trap 'rm -rf "$WS"' EXIT

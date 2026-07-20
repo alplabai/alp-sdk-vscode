@@ -1,1 +1,0 @@
---board-yaml contract/fixtures/validate/clean-v1/board.yaml --sdk-root ../alp-sdk-upstream --target badtarget

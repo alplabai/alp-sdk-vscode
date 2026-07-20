@@ -4,8 +4,8 @@ const assert = require("node:assert/strict");
 
 const {
   decideBinarySource,
-  isNativeAlpVersionOutput,
-  parseAlpVersion,
+  isNativeTanVersionOutput,
+  parseTanVersion,
   isCliBehind,
   classifyExitCode,
   parseEnvelope,
@@ -15,11 +15,12 @@ const {
   SUPPORTED_CLI_VERSION,
 } = require("../out/alpCli/service.js");
 
-test("parseAlpVersion extracts MAJOR.MINOR.PATCH and tolerates a suffix", () => {
-  assert.equal(parseAlpVersion("alp 0.1.14"), "0.1.14");
-  assert.equal(parseAlpVersion("alp 0.1.14 (abc1234)\n"), "0.1.14");
-  assert.equal(parseAlpVersion("alp, version 0.8.1"), null); // python click CLI
-  assert.equal(parseAlpVersion(""), null);
+test("parseTanVersion extracts MAJOR.MINOR.PATCH and tolerates a suffix", () => {
+  assert.equal(parseTanVersion("tan 0.1.0"), "0.1.0");
+  assert.equal(parseTanVersion("tan 0.1.0 (abc1234)\n"), "0.1.0");
+  assert.equal(parseTanVersion("alp 0.1.14"), null); // the retired binary name
+  assert.equal(parseTanVersion("tan, version 0.8.1"), null); // click-style output
+  assert.equal(parseTanVersion(""), null);
 });
 
 test("isCliBehind compares numeric version tuples", () => {
@@ -34,7 +35,7 @@ test("decideBinarySource follows the resolution order", () => {
   // explicit cliPath always wins.
   assert.equal(
     decideBinarySource({
-      cliPathSetting: "/x/alp",
+      cliPathSetting: "/x/tan",
       cliPathExists: true,
       onPath: true,
       bundledExists: true,
@@ -42,13 +43,12 @@ test("decideBinarySource follows the resolution order", () => {
     }),
     "cliPath",
   );
-  // a managed binary (bundled here) wins over a verified-native PATH `alp` —
+  // a managed binary (bundled here) wins over a verified-native PATH `tan` —
   // PATH is a last resort, not a second choice, so a shell's shadowed/stale
-  // `alp` (e.g. the SDK venv's Python click CLI) can never override the
-  // extension's own binary.
+  // `tan` can never override the extension's own binary.
   assert.equal(
     decideBinarySource({
-      cliPathSetting: "/x/alp",
+      cliPathSetting: "/x/tan",
       cliPathExists: false,
       onPath: true,
       bundledExists: true,
@@ -56,7 +56,7 @@ test("decideBinarySource follows the resolution order", () => {
     }),
     "bundled",
   );
-  // no managed binary and no PATH `alp` → a cached download still wins over
+  // no managed binary and no PATH `tan` → a cached download still wins over
   // triggering a fresh one.
   assert.equal(
     decideBinarySource({
@@ -81,9 +81,9 @@ test("decideBinarySource follows the resolution order", () => {
   );
 });
 
-test("decideBinarySource: a local cli-rs build resolves before cached/download", () => {
+test("decideBinarySource: a local tan-cli build resolves before cached/download", () => {
   // A source checkout (no bundle, no network) resolves the built CLI instead of
-  // failing with "Alp CLI unavailable".
+  // failing with "tan CLI unavailable".
   assert.equal(
     decideBinarySource({
       cliPathSetting: "",
@@ -147,7 +147,7 @@ test("decideBinarySource: bundled wins over cached/download/PATH but loses to cl
   // an explicit, existing cliPath still wins over a bundled binary.
   assert.equal(
     decideBinarySource({
-      cliPathSetting: "/x/alp",
+      cliPathSetting: "/x/tan",
       cliPathExists: true,
       onPath: false,
       bundledExists: true,
@@ -156,10 +156,10 @@ test("decideBinarySource: bundled wins over cached/download/PATH but loses to cl
     "cliPath",
   );
 
-  // a verified-native `alp` on PATH is a last resort: it no longer overrides
-  // a managed bundled binary. PATH may be a venv-shadowed non-native `alp` in
-  // disguise (see `isNativeAlpVersionOutput`), so the extension prefers its
-  // own binary whenever one is already available.
+  // a verified-native `tan` on PATH is a last resort: it no longer overrides
+  // a managed bundled binary. PATH may be a stale/non-native `tan` in disguise
+  // (see `isNativeTanVersionOutput`), so the extension prefers its own binary
+  // whenever one is already available.
   assert.equal(
     decideBinarySource({
       cliPathSetting: "",
@@ -172,7 +172,7 @@ test("decideBinarySource: bundled wins over cached/download/PATH but loses to cl
   );
 });
 
-test("decideBinarySource: a verified-native PATH alp is a last resort — used only when no managed binary exists, still loses to any managed binary that does", () => {
+test("decideBinarySource: a verified-native PATH tan is a last resort — used only when no managed binary exists, still loses to any managed binary that does", () => {
   // no cliPath, no bundled/localBuild/cached binary → PATH is all that's left,
   // so it's used ahead of triggering a network download.
   assert.equal(
@@ -272,81 +272,92 @@ test("classifyOutcome sets severity by kind and prefers the first issue", () => 
   assert.equal(classifyOutcome(3, null).severity, "error"); // write
 });
 
-test("releaseAssetForTarget mirrors the published targets", () => {
+test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary, v<version> tag)", () => {
   const linux = releaseAssetForTarget("linux", "x64");
   assert.equal(linux.target, "x86_64-unknown-linux-gnu");
-  assert.equal(linux.tag, `cli-rs-v${SUPPORTED_CLI_VERSION}`);
-  assert.ok(linux.url.endsWith("/alp-x86_64-unknown-linux-gnu.tar.gz"));
+  assert.equal(linux.tag, `v${SUPPORTED_CLI_VERSION}`);
+  assert.equal(linux.assetName, "tan-x86_64-unknown-linux-gnu");
+  assert.ok(
+    linux.url.endsWith(
+      `/alplabai/tan-cli/releases/download/v${SUPPORTED_CLI_VERSION}/tan-x86_64-unknown-linux-gnu`,
+    ),
+  );
 
-  // arm64 Linux ships the static musl build (runs on glibc hosts too).
+  // arm64 Linux ships the gnu build (tan-cli's published aarch64 Linux target).
   assert.equal(
     releaseAssetForTarget("linux", "arm64").target,
-    "aarch64-unknown-linux-musl",
+    "aarch64-unknown-linux-gnu",
+  );
+
+  // both macOS arches are published (Intel + Apple Silicon).
+  assert.equal(
+    releaseAssetForTarget("darwin", "x64").target,
+    "x86_64-apple-darwin",
   );
   assert.equal(
     releaseAssetForTarget("darwin", "arm64").target,
     "aarch64-apple-darwin",
   );
-  assert.equal(
-    releaseAssetForTarget("win32", "x64").target,
-    "x86_64-pc-windows-msvc",
-  );
 
-  // Intel macOS has no download asset wired yet: the archive is built by
-  // release-cli-rs.yml but not offered for download-on-demand until a release
-  // carries it and SUPPORTED_CLI_VERSION points at that release.
-  assert.equal(releaseAssetForTarget("darwin", "x64"), null);
+  // Windows ships BOTH x64 and arm64; the asset carries a `.exe` suffix.
+  const winX64 = releaseAssetForTarget("win32", "x64");
+  assert.equal(winX64.target, "x86_64-pc-windows-msvc");
+  assert.equal(winX64.assetName, "tan-x86_64-pc-windows-msvc.exe");
+  assert.equal(
+    releaseAssetForTarget("win32", "arm64").target,
+    "aarch64-pc-windows-msvc",
+  );
 
   // A host with no published target (e.g. 32-bit ARM Linux) has no asset.
   assert.equal(releaseAssetForTarget("linux", "arm"), null);
 });
 
 test("binaryName is platform-specific", () => {
-  assert.equal(binaryName("win32"), "alp.exe");
-  assert.equal(binaryName("linux"), "alp");
-  assert.equal(binaryName("darwin"), "alp");
+  assert.equal(binaryName("win32"), "tan.exe");
+  assert.equal(binaryName("linux"), "tan");
+  assert.equal(binaryName("darwin"), "tan");
 });
 
-test("isNativeAlpVersionOutput accepts native clap output, rejects the Python click CLI", () => {
-  // Native (Rust/clap): `alp <MAJOR.MINOR.PATCH>`.
+test("isNativeTanVersionOutput accepts native clap output, rejects everything else", () => {
+  // Native (Rust/clap): `tan <MAJOR.MINOR.PATCH>`.
   for (const out of [
-    "alp 0.1.3",
-    "alp 0.1.6\n",
-    "alp 10.20.30",
-    "alp 0.2.0 (abc1234)", // tolerate a future build-metadata suffix
-    "  alp 0.1.3  ", // surrounding whitespace
-    "alp 0.1.3\r\n", // CRLF
-    "\nalp 0.1.3", // leading blank line
+    "tan 0.1.0",
+    "tan 0.1.6\n",
+    "tan 10.20.30",
+    "tan 0.2.0 (abc1234)", // tolerate a future build-metadata suffix
+    "  tan 0.1.0  ", // surrounding whitespace
+    "tan 0.1.0\r\n", // CRLF
+    "\ntan 0.1.0", // leading blank line
   ]) {
     assert.equal(
-      isNativeAlpVersionOutput(out),
+      isNativeTanVersionOutput(out),
       true,
       `expected native: ${JSON.stringify(out)}`,
     );
   }
 
-  // Upstream SDK's Python `alp` (click `version_option(prog_name="alp")`):
-  // `alp, version X` — the shadowing binary this check exists to reject.
-  for (const out of ["alp, version 0.8.1", "alp, version 0.8.1\n"]) {
+  // A click-style `tan, version X` line does not emit the JSON envelope.
+  for (const out of ["tan, version 0.8.1", "tan, version 0.8.1\n"]) {
     assert.equal(
-      isNativeAlpVersionOutput(out),
+      isNativeTanVersionOutput(out),
       false,
-      `expected click rejected: ${JSON.stringify(out)}`,
+      `expected click-style rejected: ${JSON.stringify(out)}`,
     );
   }
 
-  // Garbage / unrelated / partial → not the native CLI.
+  // Garbage / unrelated / partial / the retired `alp` name → not the native CLI.
   for (const out of [
     "",
     "   ",
+    "alp 0.1.3", // the retired binary name
     "python 3.11.5",
-    "alpine 3.19", // must not partial-match the `alp` prefix
-    "alp", // name only, no version
-    "alp 0.1", // two components, not MAJOR.MINOR.PATCH
-    "usage: alp [OPTIONS]", // click help/error text
+    "tango 3.19", // must not partial-match the `tan` prefix
+    "tan", // name only, no version
+    "tan 0.1", // two components, not MAJOR.MINOR.PATCH
+    "usage: tan [OPTIONS]", // help/error text
   ]) {
     assert.equal(
-      isNativeAlpVersionOutput(out),
+      isNativeTanVersionOutput(out),
       false,
       `expected rejected: ${JSON.stringify(out)}`,
     );

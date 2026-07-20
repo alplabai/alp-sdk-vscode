@@ -1,1 +1,0 @@
---project contract/fixtures/validate-full/missing-preset-legacy --board-yaml board.yaml --sdk-root contract/fixtures/validate-full/missing-preset-legacy
