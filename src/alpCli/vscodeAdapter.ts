@@ -374,6 +374,35 @@ export async function updateAlpCli(
 }
 
 /**
+ * Run the bundled tan-cli install script (`media/tan-install/install.sh` /
+ * `install.ps1`, vendored copies of alplabai/tan-cli's own installer — see the
+ * README in that directory) in an integrated terminal, so the user gets a
+ * `tan` binary on their PATH usable in ANY terminal — distinct from
+ * `resolveAlpBinaryForContext`'s managed download above, which stays private
+ * to this extension's global storage and is never put on PATH. Runs in a
+ * terminal (not a silent child process) so the user sees the download
+ * progress and any PATH/sudo notice the script prints.
+ */
+export function installTanCliGlobally(context: vscode.ExtensionContext): void {
+  const scriptDir = path.join(context.extensionPath, "media", "tan-install");
+  const isWindows = process.platform === "win32";
+  const script = path.join(scriptDir, isWindows ? "install.ps1" : "install.sh");
+  // Guard a packaging regression: a missing bundled script would otherwise
+  // surface only as a raw "sh: …: No such file" (exit 127) in the terminal.
+  if (!fs.existsSync(script)) {
+    void vscode.window.showErrorMessage(
+      `The bundled tan installer is missing (${script}). Try reinstalling the Alp SDK extension.`,
+    );
+    return;
+  }
+  const argv = isWindows
+    ? ["powershell", "-ExecutionPolicy", "Bypass", "-File", script]
+    : ["sh", script];
+  log(`[cli] $ ${argv.join(" ")}  (terminal: Install tan)`);
+  runInTerminal({ name: "Install tan", argv });
+}
+
+/**
  * Run `tan <args...> --format json`, returning the classified outcome. Surface
  * code decides how to present `outcome` (toast/diagnostics). Throws only when
  * the binary cannot be resolved at all (caller offers an install action).
