@@ -177,15 +177,17 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   mode inherits stdio (live install in the caller's terminal); JSON mode captures
   + emits one envelope. sdk-unresolved → exit 2. Golden fixtures + verified
   against the real SDK's `bootstrap.sh --print-env`.
-- **A2 — `tan build` + `image`/`flash`/`clean`/`renode`. ✅ done.** Five thin
-  terminal-mode wrappers that forward args verbatim to the SDK's `west alp-*`
-  driver (§6a), run in the west cwd, and hide `west`. west-not-found → `tan
+- **A2 — `tan build` + `image`/`flash`/`clean`/`renode`. ✅ done.** Five
+  terminal-mode commands that drive the build/image/flash/clean/renode
+  dispatch themselves (§6a — no `west alp-*` driver involved), run in the west
+  cwd, and hide `west`. west-not-found → `tan
   bootstrap` hint. Arg-forwarding unit-tested + stub-west smoke; no golden
   fixtures (real builds need west + a workspace).
 - **A3 — build preflight in `doctor`. ✅ done.** `tan doctor --build` resolves the
   OS set from the active `board.yaml` (explicit core `os:` fields; falls back to all
   three backends when none are declared — board.yaml alone doesn't carry per-core
-  type, that stays `west alp-build`'s job, §9), probes the host build tools each
+  type, that's derived by the SDK's `alp_orchestrate.py` planner and consumed via
+  the `--emit build-plan` contract, §9), probes the host build tools each
   needs (west/cmake/ninja/zephyrSdk for Zephyr, bitbake for Yocto / Linux-only
   warning otherwise, cmake+vendorToolchain for baremetal), and emits a doctor
   envelope with per-OS checks + installer next-steps. Vendor compilers/Yocto host
@@ -265,35 +267,39 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
 ## 6a. `tan build` — the build flow varies by platform (and by core)
 
 Build is **not** "run `west build`". A single `board.yaml` declares multiple
-cores, and each core's runtime decides its backend. The SDK already owns this
-dispatch: **`west alp-build`** is a thin Python west extension
-(`scripts/west_commands/alp_build.py`) that shells into **`alp_orchestrate.py`**,
-the real per-core/per-platform brain. It:
+cores, and each core's runtime decides its backend. **`tan build` drives that
+per-core dispatch itself** (`crates/tan-cli/src/commands/build/mod.rs`) — no
+`west alp-build` extension command is involved. The target design:
 
-- reads + validates `board.yaml`, then **fans out one build slice per non-`off`
-  core** into `<app>/build/<core>-<os>/…`,
-- routes each slice to the right backend and runs them in parallel
-  (`--sequential` on Windows), deriving the cross-compile target from
-  `board.yaml` (`alp_orchestrate.py:_default_os_from_core_type`):
+- fan out one build slice per non-`off` core into `<app>/build/<core>-<os>/…`,
+  using the plan produced by the SDK's `alp_orchestrate.py --emit build-plan`
+  (the consumed contract; see [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md)),
+- route each slice to the backend it targets:
 
-  | Core runtime | Backend it routes to | Toolchain prerequisite |
+  | Core runtime | Backend it targets | Toolchain prerequisite |
   |---|---|---|
   | Zephyr (Cortex-M) | `west build` | Zephyr SDK compiler + bootstrapped west workspace |
   | Yocto (Cortex-A) | **bitbake** (`meta-alp-sdk` layer) | Yocto host packages (Linux-only; can be hour-long) |
   | baremetal | **CMake + vendor toolchain** | Alif Ensemble / Renesas FSP / NXP MCUXpresso, per SoC family |
 
-**Design: `tan build` is the single user-facing entry that hides `west`.** The
-user types `tan build` (never `west alp-build`); the CLI delegates to
-`west alp-build`, and the Zephyr→`west build` / Yocto→`bitbake` /
-baremetal→`CMake` routing stays in the SDK's orchestrator. The CLI does **not**
-re-decide the backend — same pattern as `tan bootstrap` wrapping `bootstrap.sh`.
-CLI surface:
+**What actually executes today:** only the single-core Zephyr path is landed
+end to end (`tan build --native`, sequential; see
+[`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md) C1). The Yocto/`bitbake`
+and baremetal/`CMake` rows, plus multi-core parallel fan-out, are C2 —
+not yet implemented.
 
-- `tan build [app] [--core <id>] [--board <b>] [--sequential]` → runs
-  `west alp-build …` in a **terminal** (live, long-running). Mirror the SDK's
-  sibling commands too: `tan image` / `tan flash` / `tan clean` / `tan renode`
-  (→ `west alp-image|alp-flash|alp-clean|alp-renode`). These already exist as
-  extension commands (`alp.westAlp*`); the extension flips to invoking the CLI.
+**Design: `tan build` is the single user-facing entry that hides `west`.** The
+user types `tan build` (never `west alp-build`); `tan` targets each core at
+the backend in the table above itself, rather than shelling out to `west
+alp-build`. Where it executes today (the Zephyr path), it still shells to
+plain `west build` — never through the SDK's `west alp-build` extension
+command. CLI surface:
+
+- `tan build [app] [--core <id>] [--board <b>] [--sequential]` → drives the
+  per-core build in a **terminal** (live, long-running). Sibling commands
+  `tan image` / `tan flash` / `tan clean` / `tan renode` follow the same
+  natively-driven pattern. These already exist as extension commands
+  (`alp.westAlp*`); the extension invokes the CLI for all five.
 - Mode is **terminal**, not envelope (Yocto rebuilds + flashing want live output
   and device interaction). A short final envelope summary is optional.
 - **Prerequisites are platform-specific and beyond `bootstrap`.** `bootstrap`
@@ -304,8 +310,16 @@ CLI surface:
   missing — Zephyr SDK for M-cores, Yocto host packages for A-cores, vendor
   toolchains for baremetal.
 
-This keeps the heterogeneity where it belongs (the SDK), while still giving the
-extension and terminal a single `tan build` entry point.
+**What still goes through `west alp-*`.** The west-delegating entry point
+survives only for `west alp-migrate`, `west alp-lock`, and `west alp-quality`
+— verbs `tan` has no native command for. `tan
+build`/`image`/`flash`/`clean`/`renode` are not on that list; `tan` is the sole
+executor for those five. (The ADR recording this isn't merged yet, so it isn't
+cited or linked here.)
+
+This keeps a single, natively-driven `tan build` entry point for the extension
+and terminal alike, while the SDK's `alp_orchestrate.py` stays the single
+source of truth for per-core planning.
 
 ## 7. Constraints & non-goals
 
@@ -313,9 +327,11 @@ extension and terminal a single `tan build` entry point.
   survives for it (and the live configurator).
 - **The envelope contract is the seam** — the extension depends only on the
   documented envelope (`CLI.md`); the contract harness remains the parity gate.
-- **Build heterogeneity lives in the SDK, not the CLI** (§6a) — `tan build`
-  orchestrates `west alp-build`, which owns the per-core Zephyr/Yocto/baremetal
-  dispatch and cross-compile-target resolution. The CLI is a thin wrapper.
+- **Build heterogeneity lives in the SDK's planner, not the CLI** (§6a) —
+  `tan build` consumes the SDK's `alp_orchestrate.py --emit build-plan`, which
+  owns the per-core Zephyr/Yocto/baremetal dispatch and cross-compile-target
+  resolution; `tan` executes the resulting plan itself rather than shelling to
+  `west alp-build`.
 - Sequencing follows the Rust cutover: don't point the extension at a binary
   that isn't resolvable yet (ties into §5 and Phase 7).
 
@@ -342,13 +358,12 @@ No open items — this plan is frozen; revisit only if an assumption breaks.
 5. **Sequencing** → Wave A (CLI commands) now; Wave B (extension consumption)
    after the first `tan-cli` `v<version>` release. See §6.
 
-## 9. Build orchestration — agreed: the CLI drives, the SDK emits the plan (Wave C)
+## 9. Build orchestration — shipped: the CLI drives, the SDK emits the plan (Wave C)
 
-- Today `tan build` delegates to the SDK's `west alp-build` →
-  `alp_orchestrate.py` (a thin terminal wrapper, §6a). **Agreed direction (after
-  SDK review):** the CLI takes orchestration to the top — it owns materialise /
-  execute / schedule / cache / progress UX / envelope and invokes `west` /
-  `bitbake` / `cmake` directly.
+- **Shipped.** `tan build` no longer delegates to the SDK's `west alp-build`
+  (§6a). The CLI drives orchestration itself — it owns materialise / execute /
+  schedule / cache / progress UX / envelope and invokes `west` / `bitbake` /
+  `cmake` directly.
 - The CLI does **not** re-implement the planner. Per the SDK team's counter-offer
   it **consumes `alp_orchestrate.py --emit build-plan`**: the planner (the
   fast-moving, vendor-heavy part — partition allocation, sysbuild, TF-M) stays the
@@ -358,6 +373,6 @@ No open items — this plan is frozen; revisit only if an assumption breaks.
   conf→build wiring before our C1. `west alp-build` stays native (the shim was
   declined). Full evidence, the consumed `BuildPlan` contract, the parity strategy
   (pinned to release tags), and the phased plan (C0 consume-the-emit → C4 flip the
-  front-ends) are in [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md); the
+  front-ends, now landed) are in [`BUILD_ORCHESTRATION.md`](BUILD_ORCHESTRATION.md); the
   team-to-team agreement record is in
   [`PROPOSAL-alp-build-core.md`](PROPOSAL-alp-build-core.md).

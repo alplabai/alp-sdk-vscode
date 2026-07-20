@@ -52,7 +52,7 @@ run the full wizard:
 The template grid is generated dynamically from the active SDK, so the exact
 cards depend on the SDK version. It has two groups:
 
-- **Starters** — the CLI project templates (`alp init` `--template`): _Minimal
+- **Starters** — the CLI project templates (`tan init` `--template`): _Minimal
   app_, _Zephyr app_, _Sensor starter_, _IoT starter_, _Edge AI starter_,
   _Board diagnostics_, and _Host tooling starter_.
 - **Examples** — one card per SDK example, titled from each example's README

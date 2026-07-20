@@ -89,7 +89,7 @@ Zephyr kernel, HAL modules, and toolchains.  This is called "bootstrapping."
    — or —
    Open the **Open Existing Project** wizard and use **Initialise & Activate**.
 
-2. The extension runs `alp bootstrap`, which invokes `scripts/bootstrap.sh` in
+2. The extension runs `tan bootstrap`, which invokes `scripts/bootstrap.sh` in
    the SDK. That creates a sibling `zephyrproject/` workspace from the upstream
    Zephyr manifest and installs `west` + Zephyr's Python requirements into a
    workspace virtual environment:
@@ -109,7 +109,7 @@ Manual fallback (no extension): `bash <sdk-path>/scripts/bootstrap.sh`
 Alp: Bootstrap SDK environment
 ```
 
-This re-runs `alp bootstrap` and refreshes the sidebar state.
+This re-runs `tan bootstrap` and refreshes the sidebar state.
 
 ---
 

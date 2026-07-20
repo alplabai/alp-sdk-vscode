@@ -2,8 +2,10 @@
 
 # CLI-native build orchestration (Wave C)
 
-**Status:** plan / design. Direction decided **and agreed with the SDK team**;
-not yet implemented.
+**Status:** partially shipped. Direction decided **and agreed with the SDK
+team**; C0, C1's materialise/execute mechanism, and C4 have landed (see §5) —
+C2 (multi-core parallel fan-out + Yocto/baremetal backends) and C3
+(incremental cache + manifest) are not yet implemented.
 **Owner:** the `tan` CLI ([`alplabai/tan-cli`](https://github.com/alplabai/tan-cli)).
 
 **Decision (post SDK review):** the `tan` CLI sits **at the top** of the build —
@@ -166,12 +168,10 @@ emit doubles as the strongest possible golden.
   runs sequential) + `bitbake` (host-gated) + `cmake` backends across cores.
 - **C3 — Incremental cache + manifest.** `.alp-build-state.json` slice-hash skip;
   `system-manifest.yaml`.
-- **C4 — Flip the front-ends + retire delegation.** `tan build` stops shelling to
-  `west alp-build`; the extension keeps calling `tan build` (no UX change).
-  `west alp-build` stays native (the SDK declined the shim — standalone west use
-  is a first-class path).
-
-Rollback at any phase = the terminal delegation that ships today.
+- **C4 — Flip the front-ends + retire delegation. Shipped.** `tan build` no
+  longer shells to `west alp-build`; the extension keeps calling `tan build`
+  (no UX change). `west alp-build` stays native on the SDK side (the shim was
+  declined — standalone west use is a first-class path).
 
 ## 6. What we need from the SDK (agreed)
 

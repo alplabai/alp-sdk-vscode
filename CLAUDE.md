@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Operational guide for working in this repo. Last revised: 2026-06-02.
+Operational guide for working in this repo. Last revised: 2026-07-20.
 
 ## What this is
 
@@ -10,21 +10,20 @@ toolchain bootstrap, code generation (Zephyr conf / DTS overlay / CMake args / Y
 conf), and `west build/flash/run` workflows. Targets Alif, Renesas, NXP across Zephyr,
 Yocto, and baremetal.
 
-A standalone CLI (`alp`) ships separately. It is the **native Rust binary** under
-`cli-rs/` (distributed via GitHub releases + the `cli-rs/npm-shim` npm package).
-The former TypeScript CLI (`packages/alp-cli`) has been **retired** — the Rust CLI
-is the sole implementation (see "Rust CLI migration" below).
+A standalone CLI (`tan`) is developed and released separately, from
+[`alplabai/tan-cli`](https://github.com/alplabai/tan-cli) — this repo no longer
+ships or builds any CLI binary itself. The extension downloads and shells the
+`tan` binary (see "The `tan` CLI" below); the former in-repo Rust CLI (`cli-rs/`)
+and the TypeScript CLI (`packages/alp-cli`) have both been **retired**.
 
 ## Repo layout
 
-This is a **pnpm monorepo** + a separate **Rust workspace** + a **git submodule**.
+This is a **pnpm monorepo** + a **git submodule**.
 
 ```
 src/                      VS Code extension host (TypeScript). Entry: src/extension.ts
 packages/alp-core/        Shared domain logic (pure). Published as @alp-sdk/core (workspace:*)
 packages/alp-webview/     Activity Bar UI — React 19 + Vite, builds to dist/main.{js,css}
-cli-rs/                   The native `alp` CLI (own Cargo workspace, NOT in the VSIX).
-                          Replaced the retired TypeScript packages/alp-cli.
 alp-sdk-upstream/         git submodule (github.com/alplabai/alp-sdk) — source of truth for
                           board.yaml JSON schemas referenced by package.json yamlValidation
 test/                     Node-native tests (node --test). test/golden/ holds snapshots
@@ -51,14 +50,6 @@ pnpm run install:vscode             # build + package + install the VSIX locally
 `vsce` runs with `--no-dependencies` because `workspace:*` deps are resolved at compile
 time; only `packages/alp-webview/dist/**` is kept in the VSIX (see `.vscodeignore`).
 
-Rust CLI:
-
-```bash
-cargo build  --manifest-path cli-rs/Cargo.toml
-cargo test   --manifest-path cli-rs/Cargo.toml
-bash cli-rs/contract/run.sh          # conformance harness (TS vs Rust parity); --bless to update
-```
-
 ## Architecture rules (enforced — see docs/ARCHITECTURE_RULES.md)
 
 Strict four-layer contract with a one-directional dependency rule:
@@ -83,7 +74,7 @@ Hard rules — do not break these:
 - Validation classification lives in `src/validation/service.ts`; debug launch drafting
   in `src/debug/service.ts`; launch.json merge planning in `src/debug/launchJsonCore.ts`.
 
-The same pure/adapter split is mirrored in `packages/alp-core` and in `cli-rs/crates/alp-core`.
+The same pure/adapter split is mirrored in `packages/alp-core`.
 
 ## Webview <-> extension host
 
@@ -103,23 +94,23 @@ and the CI "vendored schema" step. After bumping the submodule, re-vendor by cop
 board schema over `schemas/board.schema.json` (the submodule's filename has varied across
 versions — `board.schema.json` / `board-config-v2.schema.json`).
 
-## Rust CLI (cli-rs/) — the `alp` binary
+## The `tan` CLI (external, `alplabai/tan-cli`)
 
-`cli-rs/` is the native `alp` CLI: a schema-first Rust rewrite that **replaced** the
-former TypeScript `packages/alp-cli` (now retired). The JSON output envelope is
-byte-for-byte fixed and exit codes are stable (0 success, 1 runtime, 2 validation,
-3 write, 4 doctor, 5 internal). Parity is gated by `cli-rs/contract/run.sh`, which now
-compares the Rust binary against **committed golden fixtures** (the TS reference is gone;
-one small `offline-validate-ts.mjs` cross-checks the offline validator against
-`@alp-sdk/core`). See `cli-rs/PLAN.md` for the roadmap.
+The build CLI is **not** part of this repo. It is the standalone native Rust
+binary `tan`, developed and released from
+[`alplabai/tan-cli`](https://github.com/alplabai/tan-cli) (public repo). What
+this repo depends on and holds stable is the JSON output envelope — byte-for-byte
+fixed (`{command, ok, exitCode, project, data, issues}`) with stable exit codes
+(0 success, 1 runtime, 2 validation, 3 write, 4 doctor, 5 internal); see
+docs/CLI.md for the full contract. This repo does not build, test, or release
+`tan` — that CLI's own gates live in the `tan-cli` repo.
 
-Status: all 14 commands ported + the orchestration surface (`bootstrap`, `build`/`image`/
-`flash`/`clean`/`renode`, `doctor --build`). First release `cli-rs-v0.1.0` (GitHub
-archives for linux-x64 / macOS-arm64 / windows-x64). Distributed via the
-`cli-rs/npm-shim` package (`@alplabai/alp-cli`) + the VS Code extension's binary resolver
-(`src/alpCli/`, setting `alpSdk.cliPath` → PATH → download-on-demand). The extension now
-invokes the CLI for bootstrap/build (terminal) and validate/generate/sdk-list (envelope);
-host-coupled debug commands stay in-process (see docs/EXTENSION_CLI_INTEGRATION.md §4a).
+The VS Code extension resolves and shells `tan` via its own binary resolver
+(`src/alpCli/`, setting `alpSdk.cliPath` → bundled → local build → cached →
+verified-native PATH → download-on-demand), invoking it for bootstrap/build
+(terminal) and validate/generate/sdk-list (envelope); host-coupled debug
+commands stay in-process (see docs/EXTENSION_CLI_INTEGRATION.md §4a). See
+docs/CLI.md for the command/envelope contract this repo depends on.
 
 ## Conventions
 
@@ -139,4 +130,4 @@ this file). `docs/PLAN.md` / `docs/BACKLOG.md` (roadmap), `docs/ARCHITECTURE_RUL
 `docs/DEBUG.md`, `docs/RELEASE_GATES.md`, `docs/COMPATIBILITY_RULES.md`,
 `docs/EXTENSION_CLI_INTEGRATION.md`, and the getting-started / troubleshooting guides.
 `README.md` has the full index. All of `docs/**` is excluded from the VSIX.
-(Note: `cli-rs/PLAN.md` is the CLI's own roadmap and stays under `cli-rs/`.)
+(Note: the `tan` CLI's own roadmap lives in the `alplabai/tan-cli` repo, not here.)

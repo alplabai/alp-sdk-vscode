@@ -9,9 +9,9 @@ surface.
 > developed and released from
 > [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli); the former in-repo
 > `alp` (`cli-rs`) binary and the TypeScript implementation (`packages/alp-cli`)
-> have been retired. `tan` is feature-complete — all commands below are held
-> compatible with this envelope contract by the conformance harness in the
-> `tan-cli` repo. `tan` is distributed as a raw per-target binary
+> have been retired. `tan` is feature-complete — all commands below are
+> implemented. This document is the envelope contract this repo depends on.
+> `tan` is distributed as a raw per-target binary
 > (`tan-<triple>[.exe]`) published as a GitHub release asset (tag `v<version>`);
 > the extension downloads and shells it.
 
@@ -46,6 +46,22 @@ The CLI should expose these top-level command families:
 - `tan support-bundle`
 - `tan debug-config`
 - `tan pinmux`
+- `tan bootstrap`
+- `tan build`
+- `tan image`
+- `tan flash`
+- `tan clean`
+- `tan renode`
+- `tan run`
+- `tan sdk`
+- `tan diff`
+- `tan presets`
+- `tan explain`
+- `tan size`
+
+The extension shells twelve of these: `bootstrap`, `build`, `image`, `flash`,
+`clean`, `renode`, `run`, `sdk`, `doctor`, `validate`, `generate`, and
+`presets` (`src/west.ts`, `src/bootstrap.ts`, `src/ideHub/buildPlanPanel.ts`).
 
 ### 2.1 Relation to the SDK's `west alp-*` commands (two doors, one engine)
 
@@ -55,23 +71,38 @@ The name parity with this CLI is deliberate and is NOT a competing
 implementation:
 
 - **`tan X` is the portable counterpart of `west alp-X`.** For the overlapping
-  verbs (`build`/`image`/`flash`/`clean`/`renode`) the native CLI shells out to
-  the west command verbatim — orchestration logic lives in exactly one place,
-  the SDK's `alp_orchestrate` package. Inside a west workspace both doors work
-  and drive the same engine; the native door adds the JSON envelope, stable
-  exit codes, and works without the user knowing west.
+  verbs (`build`/`image`/`flash`/`clean`/`renode`) `tan` drives the per-core
+  dispatch itself rather than shelling out to `west alp-X` verbatim (see §6a
+  of `EXTENSION_CLI_INTEGRATION.md`) — orchestration logic still has one
+  source of truth, the SDK's `alp_orchestrate` package, which `tan` consumes
+  via `--emit build-plan` instead of wrapping the west command. Inside a west
+  workspace both doors still work and reach the same planner; the native door
+  adds the JSON envelope, stable exit codes, and works without the user
+  knowing west.
 - **CLI-only verbs** (`validate`, `generate`, `init`, `scaffold`, `doctor`,
   `diff`, `presets`, `inspect`, `trace`, `debug-config`, `support-bundle`,
-  `sdk`, `explain`, `completion`, `bootstrap`) have no west counterpart — they
-  are the schema/generate/inspect surface the IDE consumes via the envelope.
-- **West-only commands** (`alp-emit`, `alp-size`) are SDK-side inspectors; the
-  CLI consumes the same `--emit` seam internally (ADR-0014) instead of
-  wrapping `alp-emit`.
+  `sdk`, `explain`, `completion`, `bootstrap`, `size`) have no west
+  counterpart — they are the schema/generate/inspect surface the IDE consumes
+  via the envelope. (`size` is native to `tan`, not a wrap of a west command —
+  see the row below.)
+- **West-only commands** (`alp-emit`) are SDK-side inspectors; the CLI
+  consumes the same `--emit` seam internally (ADR-0014) instead of wrapping
+  `alp-emit`. `alp-size` is no longer west-only: `tan` has its own native
+  `size` command.
 
 Where a CLI verb re-implements domain logic natively (e.g. `validate
 --offline`, `diff`, the loader/context readers) instead of shelling out, that
-Rust↔Python parity surface is gated by the conformance harness in the `tan-cli`
-repo — drift there is a test failure, not a runtime surprise.
+Rust↔Python parity surface is `tan-cli`'s own concern to test — its stated
+gates are `cargo fmt`/`clippy`/`build`/`test`. This repo does not gate it;
+what it depends on is the envelope contract in this document.
+
+### 2.2 `tan run` — native_sim versus hardware
+
+`tan run` exists as its own top-level command. The extension's native_sim Run
+action invokes it with no flags — plain `tan run`, never `--flash` — for the
+no-flash, host-simulation path. Programming real hardware is a separate action
+entirely: the extension's Flash action invokes `tan flash`, not `tan run
+--flash`. (`src/west.ts` in the extension is the caller of record for both.)
 
 ## 3. Global Behavior
 

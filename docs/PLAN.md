@@ -377,6 +377,10 @@ files, not only derived config fragments.
 
 ## Phase 5 — CLI Product Surface
 
+> **Historic.** This phase predates the Rust CLI migration — the CLI shipped
+> as the standalone `tan` binary (`alplabai/tan-cli`), not as an in-repo `alp`
+> command. Command names below reflect the plan as originally written.
+
 **Goal:** deliver full terminal and CI support for users who do not
 want to depend on the VS Code UI.
 
@@ -1001,6 +1005,10 @@ Subtasks:
 4. Add explanation support for generated starter code.
 
 ## Epic 6 — CLI Product Surface
+
+> **Historic.** This epic predates the Rust CLI migration — the CLI shipped
+> as the standalone `tan` binary (`alplabai/tan-cli`), not as an in-repo `alp`
+> command. Command names below reflect the plan as originally written.
 
 **Outcome:** the same workflows are available from the terminal and in
 CI.

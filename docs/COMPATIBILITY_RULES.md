@@ -59,7 +59,7 @@ long as the consumed contracts hold. Record each assessed SDK release here.
     offline validator (`@alp-sdk/core`) does not drift.
   - `--emit` shapes (7) + the `system-manifest-v1` schema: **unchanged** → the manifest
     reader + the build-plan envelope stay valid.
-  - SoM catalogue is sourced at runtime via `alp presets` (smoke-tested against a v0.8.0
+  - SoM catalogue is sourced at runtime via `tan presets` (smoke-tested against a v0.8.0
     checkout: 11 SKUs, version `0.8.0`); the CLI reads `metadata/sdk_version.yaml` at
     runtime — no pinned version to bump.
   - The one planner-behaviour change (`stock-shim-unimplemented`: a Zephyr core whose
