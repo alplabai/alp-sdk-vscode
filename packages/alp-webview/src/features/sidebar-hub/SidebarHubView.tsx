@@ -59,7 +59,13 @@ function StatusRow({
       <span
         className={styles.dot}
         data-health={health}
-        aria-label={health === "ok" ? "ready" : health === "warn" ? "action needed" : "not set"}
+        aria-label={
+          health === "ok"
+            ? "ready"
+            : health === "warn"
+              ? "action needed"
+              : "not set"
+        }
       />
     </Tag>
   );
@@ -120,7 +126,8 @@ function Section({
 // ── State → view helpers (mirror the retired tree providers) ─────────────────
 
 function sdkValue(sdk: AlpIdeState["sdk"]): string {
-  if (sdk.readiness === "ready") return sdk.version ? `v${sdk.version}` : "Installed";
+  if (sdk.readiness === "ready")
+    return sdk.version ? `v${sdk.version}` : "Installed";
   if (sdk.readiness === "partial") return "Update needed";
   if (sdk.activePath) return "Not ready";
   return "Not configured";
@@ -132,12 +139,20 @@ const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
   [
     { icon: "play", label: "Build", command: "alp.westBuild" },
     { icon: "bolt", label: "Flash device (west)", command: "alp.westFlash" },
-    { icon: "monitor", label: "Run (native_sim)", command: "alp.westRunNativeSim" },
+    {
+      icon: "monitor",
+      label: "Run (native_sim)",
+      command: "alp.westRunNativeSim",
+    },
     { icon: "package", label: "Image", command: "alp.westAlpImage" },
     { icon: "rocket", label: "Flash all slices", command: "alp.westAlpFlash" },
     { icon: "bug", label: "Debug", command: "alp.debug" },
     { icon: "cpu", label: "Renode", command: "alp.westAlpRenode" },
-    { icon: "refresh", label: "Update modules (west)", command: "alp.westUpdate" },
+    {
+      icon: "refresh",
+      label: "Update modules (west)",
+      command: "alp.westUpdate",
+    },
     { icon: "x", label: "Clean", command: "alp.westAlpClean" },
   ];
 
@@ -155,7 +170,11 @@ export function SidebarHubView() {
   const { setup, sdk, workspace } = state;
   const toolsReady = setup.pythonAvailable && setup.westAvailable;
   const wsName = workspace.workspaceRoot
-    ? workspace.workspaceRoot.replace(/\\/g, "/").split("/").filter(Boolean).pop()
+    ? workspace.workspaceRoot
+        .replace(/\\/g, "/")
+        .split("/")
+        .filter(Boolean)
+        .pop()
     : null;
   const buildReady = workspace.westInitialized && workspace.boardYamlExists;
 
@@ -235,7 +254,9 @@ export function SidebarHubView() {
             <StatusRow
               icon="folder"
               label={wsName}
-              value={workspace.westInitialized ? "Initialized" : "Not initialized"}
+              value={
+                workspace.westInitialized ? "Initialized" : "Not initialized"
+              }
               health={workspace.westInitialized ? "ok" : "warn"}
             />
             <ActionRow

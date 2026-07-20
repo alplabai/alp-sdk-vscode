@@ -37,7 +37,10 @@
 .topDivider {
   width: 1px;
   height: 14px;
-  background: var(--vscode-widget-border, var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35)));
+  background: var(
+    --vscode-widget-border,
+    var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35))
+  );
 }
 .topTitle {
   font-size: 12px;
@@ -92,7 +95,10 @@
   background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
 }
 .actionRow:not(:disabled):active {
-  background: var(--vscode-list-activeSelectionBackground, rgba(128, 128, 128, 0.2));
+  background: var(
+    --vscode-list-activeSelectionBackground,
+    rgba(128, 128, 128, 0.2)
+  );
 }
 .statusRow:focus-visible,
 .actionRow:focus-visible {
