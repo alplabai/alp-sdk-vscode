@@ -37,7 +37,7 @@ unzip -Z1 "$VSIX" \
 # The universal VSIX ships nothing there. Keep `bin` allowlisted so the
 # bundled-CLI package does not trip this very gate.
 printf '%s\n' bin license license.txt readme.md media out package.json \
-  packages schemas snippets \
+  packages schemas snippets syntaxes \
   | sort -u > "$allow"
 
 unexpected="$(comm -23 "$top" "$allow")"
