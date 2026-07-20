@@ -8,7 +8,7 @@ This guide covers project bootstrap and module scaffolding workflows.
 
 Initialize a new starter project:
 
-alp init --template minimal-app --name demo-app --destination . --preview
+tan init --template minimal-app --name demo-app --destination . --preview
 
 Key flags:
 
@@ -28,7 +28,7 @@ Expected behavior:
 
 Add module starter files to an existing project:
 
-alp scaffold --template sensor-driver --name sensor_mod --destination . --preview
+tan scaffold --template sensor-driver --name sensor_mod --destination . --preview
 
 Expected behavior:
 
@@ -49,11 +49,11 @@ Both flows use the same shared planning logic as CLI handlers.
 
 Use explain to inspect available templates:
 
-alp explain --format json
+tan explain --format json
 
 or target a template directly:
 
-alp explain --template minimal-app --format json
+tan explain --template minimal-app --format json
 
 ## 5. Safety Model
 

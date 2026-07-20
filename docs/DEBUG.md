@@ -408,10 +408,10 @@ The extension should eventually expose these commands:
 
 The CLI should eventually expose:
 
-- `alp inspect`
-- `alp trace`
-- `alp doctor`
-- `alp support-bundle`
+- `tan inspect`
+- `tan trace`
+- `tan doctor`
+- `tan support-bundle`
 
 ## 12. Debug Preflight Requirements
 

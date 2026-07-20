@@ -21,7 +21,7 @@ This guide helps diagnose board.yaml validation failures.
 
 Command:
 
-alp validate --project . --sdk-root ../alp-sdk --format json > validate-report.json
+tan validate --project . --sdk-root ../alp-sdk --format json > validate-report.json
 
 ## 3. Path Resolution Problems
 
