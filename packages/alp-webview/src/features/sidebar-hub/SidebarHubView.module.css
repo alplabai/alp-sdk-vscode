@@ -12,19 +12,38 @@
 }
 
 /* ── Brand ────────────────────────────────────────────────────────────── */
-.brand {
+/* The Alp Lab wordmark, painted via CSS mask so it adopts the theme foreground
+   colour (near-white on dark themes, near-black on light). Box follows the
+   asset's 100.49 × 21.5 viewBox aspect ratio (≈ 4.674) at 16px tall. */
+.topbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 4px 4px;
+  padding: 8px 6px 6px;
 }
-.brandBolt {
-  display: inline-flex;
-  color: var(--vscode-charts-yellow, #e8b339);
+.brandLogo {
+  display: block;
+  height: 16px;
+  width: 75px;
+  flex-shrink: 0;
+  background-color: var(--text-primary, var(--vscode-foreground));
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: left center;
+  mask-position: left center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
 }
-.brandName {
-  font-weight: 600;
-  letter-spacing: 0.02em;
+.topDivider {
+  width: 1px;
+  height: 14px;
+  background: var(--vscode-widget-border, var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35)));
+}
+.topTitle {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* ── Section ──────────────────────────────────────────────────────────── */

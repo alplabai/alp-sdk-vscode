@@ -8,6 +8,11 @@
 // `runCommand`; no domain logic lives here. The full-width Overview hub is a
 // separate page (alp.openOverview) and is intentionally NOT duplicated here.
 
+// The real Alp Lab wordmark (shared with the full-width Overview). Imported
+// `?inline` so Vite embeds it as a data URI — no host-side asWebviewUri
+// plumbing — and painted via CSS `mask` in the theme foreground colour, so it
+// reads correctly on both light and dark VS Code themes.
+import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import { Icon, Skeleton } from "../../shared/ui";
 import type { IconName } from "../../shared/ui";
@@ -156,11 +161,18 @@ export function SidebarHubView() {
 
   return (
     <div className={styles.root}>
-      <header className={styles.brand}>
-        <span className={styles.brandBolt} aria-hidden="true">
-          <Icon name="bolt" size={16} />
-        </span>
-        <span className={styles.brandName}>Alp IDE</span>
+      <header className={styles.topbar}>
+        <span
+          className={styles.brandLogo}
+          style={{
+            maskImage: `url("${alplabLogo}")`,
+            WebkitMaskImage: `url("${alplabLogo}")`,
+          }}
+          role="img"
+          aria-label="Alp Lab"
+        />
+        <span className={styles.topDivider} aria-hidden="true" />
+        <span className={styles.topTitle}>Alp IDE</span>
       </header>
 
       <Section title="Setup">
