@@ -24,6 +24,18 @@ primitives vs. in React webviews.
 > Decisions taken during implementation: Phase C ships as an **opt-in** custom
 > editor (text editor stays the default for `board.yaml`); the setup-flow
 > webview wizard is kept as a fallback alongside the new Walkthrough.
+>
+> **Quickstart ladder (2026-07-19, `feat/hub-visual-two-modes`):** the **Setup**
+> and **West Workspaces** trees are folded into a new state-driven **Quickstart
+> ladder** — a docked sidebar **webview** (`alp-ide.quickstart`). The ALP IDE
+> container is now **four** views: the Quickstart webview + the **Projects**,
+> **SDK Manager**, and **Build & Flash** trees. This is a scoped evolution of the
+> "reserve webviews for visual surfaces" rule, not a reversal: the ladder is a
+> progressive-disclosure guidance surface (the NXP MCUXpresso Quickstart model),
+> not a wizard — rich flows still open full-width. See
+> `docs/superpowers/specs/2026-07-19-alp-hub-quickstart-ladder-design.md`. The
+> "five native `TreeDataProvider`s" inventory below is the 2026-06-05 snapshot,
+> superseded by this entry.
 
 ## Context
 

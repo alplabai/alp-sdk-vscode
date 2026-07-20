@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { createStatusBarPresentation } from "@alp-sdk/core/boardSummary/service";
 import { loadBoardSummary } from "./boardSummary/vscodeAdapter";
 import type { AlpIdeState } from "./ideHub/messages";
+import { derivePhase } from "./ideHub/phase";
 import { collectProjectContext } from "./project/vscodeAdapter";
 import type { StateManager } from "./views/stateManager";
 
@@ -41,9 +42,10 @@ function render(
   target.command = presentation.command;
   target.show();
 
-  // Build/Flash invoke `west` commands — only meaningful once a board.yaml
-  // exists AND the west workspace is initialized (matches the tree's gating).
-  if (summary?.sku && state.workspace.westInitialized) {
+  // Build/Flash invoke `west` commands — only meaningful once the full ladder
+  // phase is "ready" (env set up + board present AND valid), matching the Build
+  // & Flash tree and the palette enablement so the surfaces never disagree.
+  if (derivePhase(state) === "ready") {
     build.show();
     flash.show();
   } else {

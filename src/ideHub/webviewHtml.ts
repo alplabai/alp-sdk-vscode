@@ -2,6 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
+import { classifyWebviewCommand } from "./webviewCommandGate";
 
 /**
  * Build the HTML shell for any Alp IDE webview (sidebar or panel).
@@ -72,35 +73,30 @@ export function buildWebviewHtml(
 </html>`;
 }
 
-/**
- * Commands an Alp IDE webview is allowed to invoke via a `runCommand` message.
- * A webview is untrusted input, so anything outside this set is refused rather
- * than forwarded to `vscode.commands.executeCommand`.
- */
-export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
-  "alp.bootstrap",
-  "alp.ideHub.focus",
-  "alp.installDependencies",
-  "alp.newProjectWizard",
-  "alp.openConfigurator",
-  "alp.openHardwareExplorer",
-  "alp.openSdkManager",
-  "alp.openSettings",
-  "alp.openSetupFlow",
-  "alp.toolchainDoctor",
-  "vscode.openFolder",
-  "workbench.action.reloadWindow",
-]);
+// The allowlist + build gate live in a pure module (unit-testable, no vscode);
+// re-exported here so existing importers (e.g. the e2e suite) keep working.
+export { ALLOWED_WEBVIEW_COMMANDS } from "./webviewCommandGate";
 
 /**
- * Run a webview-requested command, but only when it is allowlisted; a refused
- * command surfaces an error instead of executing silently.
+ * Run a webview-requested command, but only when it passes the gate: it must be
+ * allowlisted, and a build action (Build/Flash) is refused unless `buildReady`
+ * is true. `buildReady` is the host-side `derivePhase(state) === "ready"` —
+ * providers that surface build CTAs pass it so a stale/untrusted webview cannot
+ * fire a build in a non-ready phase; providers that never surface build actions
+ * omit it. A refused command surfaces a message instead of executing silently.
  */
-export function runWebviewCommand(command: string): void {
-  if (!ALLOWED_WEBVIEW_COMMANDS.has(command)) {
-    void vscode.window.showErrorMessage(
-      `Alp IDE refused to run an unexpected command: ${command}`,
-    );
+export function runWebviewCommand(command: string, buildReady?: boolean): void {
+  const verdict = classifyWebviewCommand(command, buildReady);
+  if (!verdict.ok) {
+    if (verdict.reason === "not-build-ready") {
+      void vscode.window.showWarningMessage(
+        "Alp: not ready to build yet — finish the Quickstart steps (set up the environment and a valid board.yaml) first.",
+      );
+    } else {
+      void vscode.window.showErrorMessage(
+        `Alp IDE refused to run an unexpected command: ${command}`,
+      );
+    }
     return;
   }
   void vscode.commands.executeCommand(command);
