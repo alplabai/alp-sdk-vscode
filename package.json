@@ -33,11 +33,7 @@
     "nxp"
   ],
   "activationEvents": [
-    "onView:alp-ide.setup",
-    "onView:alp-ide.workspaces",
-    "onView:alp-ide.projects",
-    "onView:alp-ide.sdk",
-    "onView:alp-ide.build",
+    "onView:alp-ide.hub",
     "onCommand:alp.openSdkManager",
     "onCommand:alp.openSetupFlow",
     "onCommand:alp.openOverview",
@@ -365,40 +361,13 @@
     "views": {
       "alp-ide": [
         {
-          "type": "tree",
-          "id": "alp-ide.setup",
-          "name": "Alp IDE Setup"
-        },
-        {
-          "type": "tree",
-          "id": "alp-ide.workspaces",
-          "name": "West Workspaces"
-        },
-        {
-          "type": "tree",
-          "id": "alp-ide.projects",
-          "name": "Projects"
-        },
-        {
-          "type": "tree",
-          "id": "alp-ide.sdk",
-          "name": "SDK Manager"
-        },
-        {
-          "type": "tree",
-          "id": "alp-ide.build",
-          "name": "Build & Flash"
+          "type": "webview",
+          "id": "alp-ide.hub",
+          "name": "Alp IDE"
         }
       ]
     },
     "menus": {
-      "view/title": [
-        {
-          "command": "alp.views.refresh",
-          "when": "view == alp-ide.setup || view == alp-ide.workspaces || view == alp-ide.projects || view == alp-ide.sdk || view == alp-ide.build",
-          "group": "navigation"
-        }
-      ],
       "editor/title": [
         {
           "command": "alp.openConfigurator",

@@ -9,6 +9,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
 import { OverviewView } from "../../packages/alp-webview/src/features/overview";
+import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
 import { NewProjectFlowView } from "../../packages/alp-webview/src/features/new-project-flow";
 import { ExistingProjectFlowView } from "../../packages/alp-webview/src/features/existing-project-flow";
@@ -143,6 +144,7 @@ function feedState() {
 
 const VIEWS: Array<[string, React.FC]> = [
   ["overview", OverviewView],
+  ["sidebar-hub", SidebarHubView],
   ["setup-flow", SetupFlowView],
   ["new-project-flow", NewProjectFlowView],
   ["existing-project-flow", ExistingProjectFlowView],
