@@ -1,0 +1,187 @@
+[
+  [
+    "CONFIG_MAIN_STACK_SIZE",
+    "y",
+    "int",
+    "1024",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 26]
+  ],
+  [
+    "CONFIG_SERIAL",
+    "y",
+    "bool",
+    "y",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 30]
+  ],
+  [
+    "CONFIG_ASSERT",
+    "y",
+    "bool",
+    "y",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 100]
+  ],
+  [
+    "CONFIG_CONSOLE",
+    "y",
+    "bool",
+    "y",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 107]
+  ],
+  [
+    "CONFIG_ALP_SDK",
+    "y",
+    "bool",
+    "n",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 513]
+  ],
+  [
+    "CONFIG_BOARD",
+    "n",
+    "string",
+    "alp_e1m_aen801_m55_hp",
+    "default",
+    ["<HOME>/zephyrproject/zephyr/boards/Kconfig", 5]
+  ],
+  [
+    "CONFIG_BOARD_REVISION",
+    "n",
+    "string",
+    "",
+    "default",
+    ["<HOME>/zephyrproject/zephyr/boards/Kconfig", 14]
+  ],
+  [
+    "CONFIG_BOARD_TARGET",
+    "n",
+    "string",
+    "alp_e1m_aen801_m55_hp/ae822fa0e5597ls0/rtss_hp",
+    "default",
+    ["<HOME>/zephyrproject/zephyr/boards/Kconfig", 24]
+  ],
+  [
+    "CONFIG_BOARD_ALP_E1M_AEN801_M55_HP",
+    "n",
+    "bool",
+    "y",
+    "default",
+    ["<HOME>/zephyrproject/zephyr/boards/Kconfig.v2", 9]
+  ],
+  [
+    "CONFIG_BOARD_ALP_E1M_AEN801_M55_HP_AE822FA0E5597LS0_RTSS_HP",
+    "n",
+    "bool",
+    "y",
+    "default",
+    ["<HOME>/zephyrproject/zephyr/boards/Kconfig.v2", 14]
+  ],
+  [
+    "CONFIG_BOARD_QUALIFIERS",
+    "n",
+    "string",
+    "ae822fa0e5597ls0/rtss_hp",
+    "default",
+    ["<HOME>/zephyrproject/zephyr/boards/Kconfig.v2", 20]
+  ],
+  [
+    "CONFIG_HEAP_MEM_POOL_SIZE",
+    "y",
+    "int",
+    "0",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 803]
+  ],
+  [
+    "CONFIG_CONSOLE_INPUT_MAX_LINE_LEN",
+    "y",
+    "int",
+    "128",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 896]
+  ],
+  [
+    "CONFIG_CONSOLE_HAS_DRIVER",
+    "n",
+    "bool",
+    "y",
+    "select",
+    ["UART_CONSOLE && SERIAL && SERIAL_HAS_DRIVER && CONSOLE"]
+  ],
+  [
+    "CONFIG_CONSOLE_INIT_PRIORITY",
+    "y",
+    "int",
+    "60",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 899]
+  ],
+  [
+    "CONFIG_UART_CONSOLE",
+    "y",
+    "bool",
+    "y",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 900]
+  ],
+  [
+    "CONFIG_DEBUG_DRIVER",
+    "y",
+    "bool",
+    "n",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 913]
+  ],
+  [
+    "CONFIG_SERIAL_HAS_DRIVER",
+    "n",
+    "bool",
+    "y",
+    "select",
+    ["UART_NS16550 && DT_HAS_NS16550_ENABLED && SERIAL"]
+  ],
+  [
+    "CONFIG_SERIAL_SUPPORT_INTERRUPT",
+    "n",
+    "bool",
+    "y",
+    "select",
+    ["UART_NS16550 && DT_HAS_NS16550_ENABLED && SERIAL"]
+  ],
+  [
+    "CONFIG_SERIAL_INIT_PRIORITY",
+    "y",
+    "int",
+    "50",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 991]
+  ],
+  [
+    "CONFIG_DEBUG",
+    "y",
+    "bool",
+    "n",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 1243]
+  ],
+  ["CONFIG_PRINTK", "y", "bool", "y", "select", ["BOOT_BANNER"]],
+  [
+    "CONFIG_ASSERT_LEVEL",
+    "y",
+    "int",
+    "2",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 1249]
+  ],
+  [
+    "CONFIG_ASSERT_VERBOSE",
+    "y",
+    "bool",
+    "y",
+    "assign",
+    ["<BUILD>/build/zephyr/.config", 1252]
+  ]
+]

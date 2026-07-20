@@ -13,6 +13,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "esModuleInterop": true,
+    // src/lsp/kconfig.ts imports the generated metadata harvest
+    // (src/lsp/generated/kconfig-metadata.json).
+    "resolveJsonModule": true,
     "skipLibCheck": true
   },
   "include": ["src/**/*"],

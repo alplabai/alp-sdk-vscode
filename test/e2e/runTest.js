@@ -50,7 +50,11 @@ async function main() {
   // The extension declares extensionDependencies: ["redhat.vscode-yaml"], so
   // VS Code refuses to activate it unless that extension is installed IN THE
   // SAME extensions dir the test run uses. The CLI is a `.cmd` shim on Windows,
-  // so spawn it through a shell.
+  // so spawn it through a shell THERE ONLY: with `shell: true`, spawnSync joins
+  // argv into one command string without quoting, and the macOS CLI path runs
+  // through "Visual Studio Code.app", so the shell splits it at the space
+  // ("/bin/sh: …/vscode-darwin-arm64-1.129.1/Visual: No such file or
+  // directory") and every e2e run dies before it starts.
   const [cli, ...baseArgs] =
     resolveCliArgsFromVSCodeExecutablePath(vscodeExecutablePath);
   const install = cp.spawnSync(
@@ -63,7 +67,11 @@ async function main() {
       "redhat.vscode-yaml",
       "--force",
     ],
-    { encoding: "utf-8", stdio: "inherit", shell: true },
+    {
+      encoding: "utf-8",
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    },
   );
   if (install.status !== 0) {
     throw new Error(

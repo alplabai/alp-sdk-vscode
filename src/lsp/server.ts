@@ -55,6 +55,11 @@ import {
   isPrjConfPath,
   lintPrjConf,
 } from "./kconfig";
+import {
+  buildCompletions,
+  buildInfoMarkdown,
+  diagnosePrjConfAgainstBuild,
+} from "./buildConfig";
 import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
@@ -206,7 +211,17 @@ connection.onCompletion((params): CompletionItem[] => {
       0,
       params.position.character,
     );
-    return completePrjConf(linePrefix).map((c) => ({
+    // Static catalogue first — its prose is hand-written — then everything the
+    // last build resolved for this slice. The build set is SoM/slice-scoped
+    // and every name in it is real for that board target, which the full
+    // Zephyr tree (~26k symbols spanning all archs and SoCs) is not.
+    const seen = new Set<string>();
+    const merged = [
+      ...completePrjConf(linePrefix),
+      ...buildCompletions(filePath, linePrefix),
+    ].filter((c) => !seen.has(c.label) && seen.add(c.label));
+
+    return merged.map((c) => ({
       label: c.label,
       insertText: c.insertText,
       detail: c.detail,
@@ -237,7 +252,15 @@ connection.onHover((params): Hover | null => {
   if (isPrjConfPath(filePath)) {
     const text = getDocumentText(params.textDocument.uri, filePath);
     const word = wordAt(text, params.position.line, params.position.character);
-    const markdown = word ? hoverPrjConf(word) : null;
+    if (!word) {
+      return null;
+    }
+    // Two independent sources: the static symbol table (always available) and
+    // what the last build resolved (only when this file maps to a slice with
+    // a fresh .config). Either may be absent — a symbol missing from the
+    // catalogue can still have build output, and vice versa.
+    const sections = [hoverPrjConf(word), buildInfoMarkdown(filePath, word)];
+    const markdown = sections.filter(Boolean).join("\n\n---\n\n");
     return markdown
       ? { contents: { kind: MarkupKind.Markdown, value: markdown } }
       : null;
@@ -698,7 +721,15 @@ function uriToFsPath(uri: string): string | null {
 
 /** Lint a prj.conf and publish the diagnostics. */
 function validatePrjConf(uri: string, text: string): void {
-  const diagnostics: Diagnostic[] = lintPrjConf(text).map((d) => ({
+  // Syntax lint (always available) + the build-output comparison (silent
+  // unless this file resolves to a slice whose .config is newer than its
+  // inputs — see buildConfig.ts).
+  const filePath = uriToFsPath(uri);
+  const findings = [
+    ...lintPrjConf(text),
+    ...(filePath ? diagnosePrjConfAgainstBuild(filePath, text) : []),
+  ];
+  const diagnostics: Diagnostic[] = findings.map((d) => ({
     range: {
       start: { line: d.line, character: d.startCol },
       end: { line: d.line, character: d.endCol },
@@ -707,7 +738,9 @@ function validatePrjConf(uri: string, text: string): void {
     severity:
       d.severity === "error"
         ? DiagnosticSeverity.Error
-        : DiagnosticSeverity.Warning,
+        : d.severity === "information"
+          ? DiagnosticSeverity.Information
+          : DiagnosticSeverity.Warning,
     source: "alp-kconfig",
   }));
   connection.sendDiagnostics({ uri, diagnostics });

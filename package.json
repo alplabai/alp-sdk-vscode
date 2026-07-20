@@ -463,6 +463,26 @@
         "path": "./snippets/board-yaml.json"
       }
     ],
+    "languages": [
+      {
+        "id": "prj-conf",
+        "aliases": [
+          "Zephyr prj.conf",
+          "prj-conf"
+        ],
+        "filenamePatterns": [
+          "prj*.conf"
+        ],
+        "configuration": "./syntaxes/prj-conf.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "prj-conf",
+        "scopeName": "source.prj-conf",
+        "path": "./syntaxes/prj-conf.tmLanguage.json"
+      }
+    ],
     "configuration": {
       "title": "Alp IDE",
       "properties": {
@@ -501,6 +521,7 @@
   },
   "scripts": {
     "compile": "tsc --build && pnpm --filter ./packages/alp-webview run build",
+    "vendor:kconfig-metadata": "node scripts/vendor-kconfig-metadata.mjs",
     "compile:watch": "tsc --build --watch",
     "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
     "test": "pnpm run compile && node --test test/*.test.js",
