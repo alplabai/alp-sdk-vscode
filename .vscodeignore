@@ -11,6 +11,10 @@
 .code-review-graph/**
 .superpowers/**
 .scratch/**
+# cli-rs was retired in #247 (extension shells the standalone tan CLI now); a dev
+# machine that had it keeps the gitignored Rust build residue (~2.5 GB target/),
+# which vsce would otherwise scan + pack. Exclude it explicitly.
+cli-rs/**
 AGENTS.md
 .prettierignore
 *.vsix
