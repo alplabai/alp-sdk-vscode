@@ -7,6 +7,7 @@ import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
+import { derivePhase } from "./phase";
 import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
 
 const VIEW_TYPE = "alp-ide.quickstart";
@@ -85,7 +86,13 @@ export class QuickstartViewProvider implements vscode.WebviewViewProvider {
         void this.postState();
         break;
       case "runCommand":
-        runWebviewCommand(msg.command);
+        // Re-check readiness host-side: the ladder only shows Build/Flash CTAs
+        // when the phase is "ready", but the webview is untrusted, so the host
+        // is the authority on whether a build action may actually fire.
+        runWebviewCommand(
+          msg.command,
+          derivePhase(this.stateMgr.state) === "ready",
+        );
         if (msg.command === "alp.installDependencies") {
           const now = new Date().toISOString();
           void this.context.globalState.update("alp.lastBootstrapAt", now);
