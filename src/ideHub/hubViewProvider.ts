@@ -23,13 +23,12 @@ export class HubViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    const watcher = vscode.workspace.createFileSystemWatcher("**/board.yaml");
+    // board.yaml + workspace-folder changes are driven in via `registerTreeViews`
+    // (views/index.ts doRefresh -> hub.refresh()), so the hub only subscribes to
+    // the signals that path does NOT cover: an alpSdk config edit (SDK
+    // activate/install) and regaining window focus (e.g. back from a bootstrap
+    // terminal). This avoids a double refresh per board.yaml change.
     this.context.subscriptions.push(
-      watcher,
-      watcher.onDidCreate(() => void this.refresh()),
-      watcher.onDidChange(() => void this.refresh()),
-      watcher.onDidDelete(() => void this.refresh()),
-      vscode.workspace.onDidChangeWorkspaceFolders(() => void this.refresh()),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration("alpSdk")) void this.refresh();
       }),

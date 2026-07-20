@@ -334,18 +334,16 @@ async function runChecks() {
     );
   }
 
-  // The five contributed views must exist (their providers registered at activation).
-  await check("all 5 tree views are contributed", () => {
-    const views = (manifest.contributes.views["alp-ide"] || []).map(
-      (v) => v.id,
+  // The Alp IDE side panel is a single webview (SidebarHubView / HubViewProvider,
+  // registered at activation); the former five native tree views were folded
+  // into it.
+  await check("side panel is the single alp-ide.hub webview", () => {
+    const views = manifest.contributes.views["alp-ide"] || [];
+    assert.deepEqual(
+      views.map((v) => v.id),
+      ["alp-ide.hub"],
     );
-    assert.deepEqual(views.sort(), [
-      "alp-ide.build",
-      "alp-ide.projects",
-      "alp-ide.sdk",
-      "alp-ide.setup",
-      "alp-ide.workspaces",
-    ]);
+    assert.equal(views[0].type, "webview");
   });
 
   const failed = results.filter((r) => !r.ok);
