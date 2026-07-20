@@ -178,6 +178,27 @@ export function isBuildFresh(
 }
 
 /**
+ * Read a build sibling of `.config` (the trace, the missing-deps file) only
+ * when it is at least as new as `.config` itself. kconfig.py writes both
+ * siblings AFTER `.config` in the same run, so a completed build always leaves
+ * them `>=` `.config`; an older one is from an interrupted run or an earlier
+ * solve and its contents may no longer match the resolved `.config` — reading
+ * it would risk a stale attribution, the one thing this module must never do.
+ * Returns null when the sibling is missing, `.config` is gone, or the sibling
+ * is older (fail-closed). `>=`, not `>`: a completed run writes both files in
+ * the same coarse-granularity granule, and `>` would falsely drop that.
+ */
+function readFreshSibling(
+  siblingPath: string,
+  configPath: string,
+): string | null {
+  const sib = mtimeMs(siblingPath);
+  const cfg = mtimeMs(configPath);
+  if (sib === null || cfg === null || sib < cfg) return null;
+  return readIfFile(siblingPath);
+}
+
+/**
  * Diagnose a prj.conf against a resolved `.config`.
  *
  * Two distinct failures, both invisible today:
@@ -193,6 +214,7 @@ export function diagnoseAgainstBuild(
   prjText: string,
   resolved: Map<string, string>,
   trace?: Map<string, TracedSymbol>,
+  missingDeps?: Map<string, string[]>,
 ): KconfigDiagnostic[] {
   const out: KconfigDiagnostic[] = [];
 
@@ -225,21 +247,38 @@ export function diagnoseAgainstBuild(
 
     const built = resolved.get(name) as string;
     if (!sameValue(built, value)) {
-      // When the trace says the symbol was not user-settable (visibility n),
-      // name that as the reason: it is sharper and more actionable than the
-      // generic "resolved to X", because it tells the user the assignment can
-      // never win here, not that some other assignment beat it. We stop short
-      // of naming the unmet dependency — the trace does not carry it.
+      // Three tiers, sharpest first — each names as much of the reason as the
+      // build actually recorded, and never more (the never-lie rule):
+      //   1. `.config-missing-deps.json` listed the exact unmet direct
+      //      dependencies (`missing_deps()` from the same build) — name them.
+      //   2. the trace says the symbol was not user-settable (visibility n)
+      //      but no concrete deps were recorded — the "no prompt / unmet deps"
+      //      disjunction, sharper than "resolved to X" but without guessing
+      //      which dependency.
+      //   3. nothing attributive — some other assignment simply beat this one.
+      const deps = missingDeps?.get(name);
       const notSettable = trace?.get(name)?.visibility === "n";
-      out.push({
-        ...span,
-        message: notSettable
-          ? `\`${prefixed}\` is not user-settable in this build target — it ` +
-            "has no prompt, or its prompt's dependencies are unmet — so this " +
-            `line is ignored (the build resolved it to \`${built}\`).`
-          : `\`${prefixed}\` is set to \`${value}\` here, but the last build ` +
-            `resolved it to \`${built}\` — the assignment did not take effect.`,
-      });
+      let message: string;
+      if (deps && deps.length > 0) {
+        // The dep strings are rendered by the build's kconfig.py, e.g.
+        // `DEP (=n)` or `(FOO || BAR) (=n)` — shown verbatim.
+        const word = deps.length === 1 ? "dependency" : "dependencies";
+        const isAre = deps.length === 1 ? "is" : "are";
+        message =
+          `\`${prefixed}\` is ignored here — its ${word} ` +
+          `${deps.join(", ")} ${isAre} unmet in this build target, so the ` +
+          `symbol is not settable (the build resolved it to \`${built}\`).`;
+      } else if (notSettable) {
+        message =
+          `\`${prefixed}\` is not user-settable in this build target — it ` +
+          "has no prompt, or its prompt's dependencies are unmet — so this " +
+          `line is ignored (the build resolved it to \`${built}\`).`;
+      } else {
+        message =
+          `\`${prefixed}\` is set to \`${value}\` here, but the last build ` +
+          `resolved it to \`${built}\` — the assignment did not take effect.`;
+      }
+      out.push({ ...span, message });
     }
   });
 
@@ -302,6 +341,43 @@ export function parseConfigTrace(text: string): Map<string, TracedSymbol> {
       if (typeof location[1] === "number") traced.line = location[1];
     }
     out.set(name.slice("CONFIG_".length), traced);
+  }
+  return out;
+}
+
+/**
+ * Parse `.config-missing-deps.json` — a map from prefixed symbol name to the
+ * rendered unsatisfied direct dependencies that blocked its assignment:
+ *   { "CONFIG_FOO": ["DEP (=n)", "(A || B) (=n)"] }
+ *
+ * Written by the same build's kconfig.py (`collect_missing_deps`) as a sibling
+ * of `.config-trace.json`, so it shares the trace's freshness. Keyed here by
+ * UNPREFIXED name to match the `.config` and trace maps. Tolerant by the same
+ * contract as parseConfigTrace: a malformed or unexpected shape yields an empty
+ * map rather than throwing, so a bad sibling never takes the diagnostic pass
+ * down with it.
+ */
+export function parseMissingDeps(text: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return out;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return out;
+  }
+
+  for (const [key, value] of Object.entries(
+    parsed as Record<string, unknown>,
+  )) {
+    if (!key.startsWith("CONFIG_")) continue;
+    if (!Array.isArray(value)) continue;
+    const deps = value.filter((d): d is string => typeof d === "string");
+    if (deps.length === 0) continue;
+    out.set(key.slice("CONFIG_".length), deps);
   }
   return out;
 }
@@ -471,14 +547,34 @@ export function diagnosePrjConfAgainstBuild(
     ];
   }
 
-  // The trace is optional: with it, an ignored assignment can be attributed to
-  // the symbol not being user-settable; without it, the comparison still works
-  // off `.config` alone. Same freshness gate already passed, so the trace
-  // (written by the same build) is as current as the `.config`.
-  const traceText = readIfFile(
-    path.join(path.dirname(slice.configPath), ".config-trace.json"),
+  const configDir = path.dirname(slice.configPath);
+
+  // The trace and its missing-deps sibling both attribute an ignored
+  // assignment — the trace to "not user-settable" (visibility), the sibling to
+  // the exact unmet dependency. Both are optional: without them the value
+  // comparison still works off `.config` alone. Each is read only when it is at
+  // least as new as `.config` (readFreshSibling), so an interrupted or
+  // left-over write can never drive a stale attribution. (A non-handwritten
+  // reload rewrites the sibling to `{}` in the same run, which the empty-map
+  // parse drops anyway.)
+  const traceText = readFreshSibling(
+    path.join(configDir, ".config-trace.json"),
+    slice.configPath,
   );
   const trace = traceText ? parseConfigTrace(traceText) : undefined;
 
-  return diagnoseAgainstBuild(prjText, parseDotConfig(configText), trace);
+  const missingDepsText = readFreshSibling(
+    path.join(configDir, ".config-missing-deps.json"),
+    slice.configPath,
+  );
+  const missingDeps = missingDepsText
+    ? parseMissingDeps(missingDepsText)
+    : undefined;
+
+  return diagnoseAgainstBuild(
+    prjText,
+    parseDotConfig(configText),
+    trace,
+    missingDeps,
+  );
 }
