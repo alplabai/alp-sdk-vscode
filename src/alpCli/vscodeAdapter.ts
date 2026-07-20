@@ -386,15 +386,18 @@ export async function updateAlpCli(
 export function installTanCliGlobally(context: vscode.ExtensionContext): void {
   const scriptDir = path.join(context.extensionPath, "media", "tan-install");
   const isWindows = process.platform === "win32";
+  const script = path.join(scriptDir, isWindows ? "install.ps1" : "install.sh");
+  // Guard a packaging regression: a missing bundled script would otherwise
+  // surface only as a raw "sh: …: No such file" (exit 127) in the terminal.
+  if (!fs.existsSync(script)) {
+    void vscode.window.showErrorMessage(
+      `The bundled tan installer is missing (${script}). Try reinstalling the Alp SDK extension.`,
+    );
+    return;
+  }
   const argv = isWindows
-    ? [
-        "powershell",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        path.join(scriptDir, "install.ps1"),
-      ]
-    : ["sh", path.join(scriptDir, "install.sh")];
+    ? ["powershell", "-ExecutionPolicy", "Bypass", "-File", script]
+    : ["sh", script];
   log(`[cli] $ ${argv.join(" ")}  (terminal: Install tan)`);
   runInTerminal({ name: "Install tan", argv });
 }

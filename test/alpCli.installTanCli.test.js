@@ -72,3 +72,14 @@ test("check-vsix-allowlist.sh's allowlist covers media/, the top-level dir the b
     "media/** must not be excluded wholesale by .vscodeignore",
   );
 });
+
+test("extension.ts registers the alp.installTanCli handler (not just contributes it)", () => {
+  // A command contributed in package.json but never registerCommand()'d is a
+  // dead palette entry that does nothing — assert the wiring exists.
+  const ext = fs.readFileSync(path.join(root, "src", "extension.ts"), "utf-8");
+  assert.match(
+    ext,
+    /registerCommand\(\s*["']alp\.installTanCli["']/,
+    "extension.ts must registerCommand('alp.installTanCli')",
+  );
+});
