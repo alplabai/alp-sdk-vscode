@@ -1,1 +1,0 @@
---project contract/fixtures/diff/unchanged --board-yaml board.yaml

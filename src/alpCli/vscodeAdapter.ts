@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// VS Code wiring for the alp-CLI integration: resolve the binary (setting →
+// VS Code wiring for the tan-CLI integration: resolve the binary (setting →
 // bundled/local-build/cached → PATH (verified native, last resort) → download
 // into global storage) and run envelope-mode commands.
 // All fs/process/network seams are implemented here; the testable logic lives
@@ -20,13 +20,15 @@ import {
   resolveAlpBinary,
   runAlp,
 } from "./adapterCore";
-import { CliOutcome } from "./models";
+import { BinaryResolutionInput, CliOutcome } from "./models";
 import {
   SUPPORTED_CLI_VERSION,
   binaryName,
+  decideBinarySource,
   isCliBehind,
-  isNativeAlpVersionOutput,
-  parseAlpVersion,
+  isNativeTanVersionOutput,
+  parseTanVersion,
+  releaseAssetForTarget,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log, runInTerminal } from "../util";
@@ -72,34 +74,24 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
   const cacheDir = cacheDirFor(context);
   const platform = process.platform;
   // Only present in a platform-specific VSIX (`vsce package --target <triple>`
-  // stages `bin/alp[.exe]` into the extension install); the universal VSIX
+  // stages `bin/tan[.exe]` into the extension install); the universal VSIX
   // ships no `bin/`, so this is always absent there.
   const bundledBinaryPath = path.join(
     context.extensionPath,
     "bin",
     binaryName(platform),
   );
-  // A locally-built CLI under the extension path — present when running from a
-  // source checkout (F5 / dev host / `code --extensionDevelopmentPath`), where
-  // no `bin/` is staged and a network download may be unavailable. Prefer a
-  // release build over debug. Lets the CLI-backed buttons work out of the box
-  // in a checkout instead of failing with "Alp CLI unavailable".
+  // A locally-built tan from a SIBLING `tan-cli` checkout — present when running
+  // from a source checkout with both repos cloned side by side (F5 / dev host /
+  // `code --extensionDevelopmentPath`), where no `bin/` is staged and a network
+  // download may be unavailable. Prefer a release build over debug. In an
+  // installed VSIX `../tan-cli` does not exist, so this is null and resolution
+  // falls through to the cached/downloaded binary.
+  const siblingTanCli = path.join(context.extensionPath, "..", "tan-cli");
   const localBuildBinaryPath =
     [
-      path.join(
-        context.extensionPath,
-        "cli-rs",
-        "target",
-        "release",
-        binaryName(platform),
-      ),
-      path.join(
-        context.extensionPath,
-        "cli-rs",
-        "target",
-        "debug",
-        binaryName(platform),
-      ),
+      path.join(siblingTanCli, "target", "release", binaryName(platform)),
+      path.join(siblingTanCli, "target", "debug", binaryName(platform)),
     ].find((candidate) => fs.existsSync(candidate)) ?? null;
   return {
     cliPathSetting: vscode.workspace
@@ -117,12 +109,11 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
     download: downloadFile,
-    extractTarGz: extractTarGz,
     chmodExec: (p) => fs.chmodSync(p, 0o755),
   };
 }
 
-/** Resolve (and if needed download) the `alp` binary for this window. */
+/** Resolve (and if needed download) the `tan` binary for this window. */
 export async function resolveAlpBinaryForContext(
   context: vscode.ExtensionContext,
 ): Promise<ResolvedBinary> {
@@ -133,11 +124,61 @@ export async function resolveAlpBinaryForContext(
   return resolved;
 }
 
+/**
+ * Ensure the managed `tan` binary is present up front (called on activation) so
+ * a fresh install feels "installed together" instead of stalling on the first
+ * command. Only fetches when nothing else resolves — a download would happen on
+ * first use anyway — and surfaces it with a one-time progress notification.
+ * Never throws: a failure here is logged and the normal per-command resolution
+ * ladder still runs (and can retry the download) later.
+ */
+export async function ensureTanCliProvisioned(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const deps = buildResolveDeps(context);
+  const input: BinaryResolutionInput = {
+    cliPathSetting: deps.cliPathSetting,
+    cliPathExists:
+      Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
+    onPath: deps.commandOnPath("tan"),
+    bundledExists: deps.bundledExists,
+    localBuildExists: Boolean(deps.localBuildBinaryPath),
+    cachedExists: deps.fileExists(deps.cachedBinaryPath),
+  };
+  // A binary already resolves (cliPath / bundled / local build / cached / PATH)
+  // — nothing to fetch.
+  if (decideBinarySource(input) !== "download") {
+    return;
+  }
+  // No prebuilt binary for this host: skip silently (a command will surface the
+  // "set alpSdk.cliPath" guidance if the user actually invokes one).
+  if (!releaseAssetForTarget(deps.platform, deps.arch)) {
+    return;
+  }
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Downloading the tan CLI…",
+      },
+      async () => {
+        await downloadCli(deps);
+        resetResolvedBinary();
+        versionChecked = false;
+      },
+    );
+  } catch (error) {
+    log(
+      `[cli] tan CLI provisioning failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /** One-shot per window: run once to avoid nagging on every command. */
 let versionChecked = false;
 
 /**
- * Probe the resolved `alp` binary's version and, when it's older than the
+ * Probe the resolved `tan` binary's version and, when it's older than the
  * version this extension targets, warn once with an actionable path — the
  * silent cause of missing features (e.g. project examples) when a stale CLI is
  * pinned via `alpSdk.cliPath` or left cached from an older extension build.
@@ -161,19 +202,19 @@ export async function checkCliVersion(
   const probe = cp.spawnSync(binary.command, ["--version"], {
     encoding: "utf8",
   });
-  const version = parseAlpVersion(probe.stdout ?? "");
+  const version = parseTanVersion(probe.stdout ?? "");
   if (!isCliBehind(version, SUPPORTED_CLI_VERSION)) {
     return;
   }
   log(
-    `[cli] resolved alp ${version} is older than supported ${SUPPORTED_CLI_VERSION} (source: ${binary.source})`,
+    `[cli] resolved tan ${version} is older than supported ${SUPPORTED_CLI_VERSION} (source: ${binary.source})`,
   );
 
   if (binary.source === "cliPath") {
     // A user-pinned cliPath wins over the managed download, so we can't update
     // it — point the user at the setting (mirror surfaceResolutionError).
     const choice = await vscode.window.showWarningMessage(
-      `The alp CLI at alpSdk.cliPath is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing. Update that binary, or clear the override to use the managed CLI.`,
+      `The tan CLI at alpSdk.cliPath is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing. Update that binary, or clear the override to use the managed CLI.`,
       "Open Settings",
     );
     if (choice === "Open Settings") {
@@ -186,7 +227,7 @@ export async function checkCliVersion(
   }
 
   const choice = await vscode.window.showWarningMessage(
-    `The alp CLI is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing.`,
+    `The tan CLI is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing.`,
     "Update",
   );
   if (choice === "Update") {
@@ -195,7 +236,7 @@ export async function checkCliVersion(
 }
 
 /**
- * Force-download the pinned `alp` release into the extension cache and reset
+ * Force-download the pinned `tan` release into the extension cache and reset
  * resolution so the next command uses it. A set `alpSdk.cliPath` wins over the
  * download, so guide the user to Settings instead of downloading a binary that
  * won't be used.
@@ -221,7 +262,7 @@ export async function updateAlpCli(
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Updating the alp CLI to ${SUPPORTED_CLI_VERSION}…`,
+        title: `Updating the tan CLI to ${SUPPORTED_CLI_VERSION}…`,
       },
       async () => {
         await downloadCli(deps);
@@ -230,16 +271,16 @@ export async function updateAlpCli(
       },
     );
     void vscode.window.showInformationMessage(
-      `Alp CLI updated to ${SUPPORTED_CLI_VERSION}.`,
+      `tan CLI updated to ${SUPPORTED_CLI_VERSION}.`,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    void vscode.window.showErrorMessage(`Alp CLI update failed: ${message}`);
+    void vscode.window.showErrorMessage(`tan CLI update failed: ${message}`);
   }
 }
 
 /**
- * Run `alp <args...> --format json`, returning the classified outcome. Surface
+ * Run `tan <args...> --format json`, returning the classified outcome. Surface
  * code decides how to present `outcome` (toast/diagnostics). Throws only when
  * the binary cannot be resolved at all (caller offers an install action).
  */
@@ -262,7 +303,7 @@ export async function runAlpCommand(
         kind: "unknown",
         ok: false,
         severity: "error",
-        message: `Alp CLI unavailable: ${message}`,
+        message: `tan CLI unavailable: ${message}`,
         envelope: null,
       },
       raw: {
@@ -294,7 +335,7 @@ export async function runAlpCommand(
 }
 
 /**
- * Run an `alp` command in a VS Code integrated terminal (terminal mode, per
+ * Run a `tan` command in a VS Code integrated terminal (terminal mode, per
  * EXTENSION_CLI_INTEGRATION.md §3): live output, interactive prompts, long
  * builds. Resolves the binary first; if it can't, surfaces a one-click action
  * to point `alpSdk.cliPath` at a build.
@@ -328,7 +369,7 @@ export async function runAlpInTerminal(
 async function surfaceResolutionError(error: unknown): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
   const choice = await vscode.window.showErrorMessage(
-    `Alp CLI unavailable: ${message}`,
+    `tan CLI unavailable: ${message}`,
     "Open Settings",
   );
   if (choice === "Open Settings") {
@@ -360,37 +401,23 @@ function commandOnPath(command: string): boolean {
   if (probe.error) {
     return false;
   }
-  // A runnable `alp` is not enough. The SDK's bootstrap.sh pip-installs a Python
-  // `alp` (click) into the workspace venv; with that venv active it shadows the
-  // native binary on PATH and exits 0 on `--version`, but it does not emit the
-  // JSON envelope — accepting it would make every envelope command silently fail
-  // (parseEnvelope → null). Verify identity from `--version` so a shadowing
-  // Python `alp` is treated as "not on PATH" and resolution falls through to the
-  // cached/downloaded native binary.
-  if (command === "alp" && !isNativeAlpVersionOutput(probe.stdout ?? "")) {
+  // A runnable `tan` is not enough: a stale or non-native `tan` on PATH could
+  // exit 0 on `--version` yet not emit the JSON envelope — accepting it would
+  // make every envelope command silently fail (parseEnvelope → null). Verify
+  // identity from `--version` (`tan <MAJOR.MINOR.PATCH>`) so a non-native `tan`
+  // is treated as "not on PATH" and resolution falls through to the cached/
+  // downloaded native binary.
+  if (command === "tan" && !isNativeTanVersionOutput(probe.stdout ?? "")) {
     const found =
       (probe.stdout ?? "").trim().split(/\r?\n/, 1)[0] ||
       "(no --version output)";
     log(
-      `alp on PATH is not the native CLI (found: ${found}); ` +
+      `tan on PATH is not the native CLI (found: ${found}); ` +
         "using the cached/downloaded binary instead.",
     );
     return false;
   }
   return true;
-}
-
-function extractTarGz(archiveFile: string, destDir: string): Promise<void> {
-  // `tar` ships on Linux, macOS, and Windows 10+ (bsdtar) and reads .tar.gz.
-  return new Promise((resolve, reject) => {
-    try {
-      cp.execFileSync("tar", ["-xzf", archiveFile, "-C", destDir]);
-      fs.rmSync(archiveFile, { force: true });
-      resolve();
-    } catch (error) {
-      reject(error instanceof Error ? error : new Error(String(error)));
-    }
-  });
 }
 
 function downloadFile(url: string, destFile: string): Promise<void> {

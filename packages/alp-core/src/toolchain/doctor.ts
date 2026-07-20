@@ -98,7 +98,7 @@ export function analyzeToolchain(inputs: ToolchainInputs): ToolchainReport {
     detail: inputs.env.zephyrBase ?? "not set (recommended)",
   });
 
-  checks.push(toolCheck(inputs, "alp", "alp CLI", false));
+  checks.push(toolCheck(inputs, "tan", "tan CLI", false));
   checks.push({
     id: "sdk-connected",
     label: "Alp SDK connected",

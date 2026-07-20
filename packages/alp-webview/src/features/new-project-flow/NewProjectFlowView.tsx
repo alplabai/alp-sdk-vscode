@@ -155,7 +155,7 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
       {starters.length === 0 && examples.length === 0 && (
         <EmptyState
           title="No templates available"
-          description="No project templates resolved. Check that an Alp SDK is selected and the alp CLI is reachable (see the Alp SDK output channel)."
+          description="No project templates resolved. Check that an Alp SDK is selected and the tan CLI is reachable (see the Alp SDK output channel)."
         />
       )}
     </>

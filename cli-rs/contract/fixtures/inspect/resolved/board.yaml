@@ -1,6 +1,0 @@
-schema_version: 2
-som:
-  sku: E1M-AEN801
-cores:
-  m55_hp:
-    app: ./src

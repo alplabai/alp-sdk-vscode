@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Types for invoking the native `alp` CLI from the extension. The extension
+// Types for invoking the native `tan` CLI from the extension. The extension
 // depends only on the documented JSON envelope (see CLI.md) — this is the seam
 // between the extension and the binary.
 
-/** The stable top-level JSON envelope every `alp <cmd> --format json` emits. */
+/** The stable top-level JSON envelope every `tan <cmd> --format json` emits. */
 export interface AlpEnvelope<T = unknown> {
   command: string;
   ok: boolean;
@@ -41,7 +41,7 @@ export interface CliOutcome {
   envelope: AlpEnvelope | null;
 }
 
-/** How the `alp` binary was (or will be) located. */
+/** How the `tan` binary was (or will be) located. */
 export type BinarySource =
   | "cliPath"
   | "path"
@@ -55,23 +55,24 @@ export interface BinaryResolutionInput {
   cliPathSetting: string;
   /** Whether `cliPathSetting` resolves to an existing file. */
   cliPathExists: boolean;
-  /** Whether `alp` is on PATH. */
+  /** Whether `tan` is on PATH. */
   onPath: boolean;
-  /** Whether a `bin/alp[.exe]` staged in the extension install exists (only
+  /** Whether a `bin/tan[.exe]` staged in the extension install exists (only
    *  true in a platform-specific VSIX built with `vsce package --target`). */
   bundledExists: boolean;
-  /** Whether a locally-built `cli-rs/target/{release,debug}/alp[.exe]` exists
-   *  under the extension path — true when running from a source checkout, so
-   *  the CLI resolves without a network download. */
+  /** Whether a locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]`
+   *  exists next to the extension path — true when running from a source
+   *  checkout with a built tan, so the CLI resolves without a network download. */
   localBuildExists: boolean;
   /** Whether a previously downloaded binary exists in global storage. */
   cachedExists: boolean;
 }
 
-/** A GitHub release asset for the host target (mirrors the npm shim). */
+/** A GitHub release asset for the host target. tan-cli ships a RAW binary per
+ *  target (not an archive). */
 export interface ReleaseAsset {
   target: string; // rust triple, e.g. aarch64-apple-darwin
-  assetName: string; // alp-<target>.tar.gz
-  tag: string; // cli-rs-v<version>
+  assetName: string; // tan-<target>[.exe] (raw binary)
+  tag: string; // v<version>
   url: string;
 }

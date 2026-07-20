@@ -282,29 +282,50 @@ async function runChecks() {
     });
   }
 
-  // The `alp` CLI must actually RESOLVE — a source checkout has a built
-  // cli-rs/target/release/alp, so the CLI-backed buttons (New Project, generate,
-  // validate) work instead of failing "Alp CLI unavailable". Resolve via the
-  // real adapter against a fabricated context pointing at this checkout.
+  // The `tan` CLI must actually RESOLVE — with a sibling `tan-cli` checkout
+  // built (target/release/tan) the CLI-backed buttons (New Project, generate,
+  // validate) work instead of failing "tan CLI unavailable". Resolve via the
+  // real adapter against a fabricated context pointing at this checkout. When no
+  // sibling build is present (fresh CI runner) resolution falls through to a
+  // download, which we skip here — only assert that resolution does not throw
+  // when a local build IS available.
   const {
     resolveAlpBinaryForContext,
   } = require("../../../out/alpCli/vscodeAdapter.js");
-  await check("alp CLI resolves (no 'Alp CLI unavailable')", async () => {
-    const repoRoot = path.resolve(__dirname, "../../..");
-    const fakeCtx = {
-      extensionPath: repoRoot,
-      globalStorageUri: {
-        fsPath: fs.mkdtempSync(
-          path.join(require("node:os").tmpdir(), "alp-gs-"),
-        ),
+  const siblingTan = path.resolve(
+    __dirname,
+    "../../..",
+    "..",
+    "tan-cli",
+    "target",
+    "release",
+    process.platform === "win32" ? "tan.exe" : "tan",
+  );
+  if (fs.existsSync(siblingTan)) {
+    await check(
+      "tan CLI resolves locally (no 'tan CLI unavailable')",
+      async () => {
+        const repoRoot = path.resolve(__dirname, "../../..");
+        const fakeCtx = {
+          extensionPath: repoRoot,
+          globalStorageUri: {
+            fsPath: fs.mkdtempSync(
+              path.join(require("node:os").tmpdir(), "alp-gs-"),
+            ),
+          },
+        };
+        const binary = await resolveAlpBinaryForContext(fakeCtx);
+        assert.ok(binary && binary.command, "no binary resolved");
+        // The sibling tan-cli build resolves locally (not a network download).
+        assert.equal(
+          binary.source,
+          "localBuild",
+          `resolved via ${binary.source}`,
+        );
+        assert.ok(fs.existsSync(binary.command), `missing: ${binary.command}`);
       },
-    };
-    const binary = await resolveAlpBinaryForContext(fakeCtx);
-    assert.ok(binary && binary.command, "no binary resolved");
-    // In this checkout the built CLI resolves locally (not a network download).
-    assert.equal(binary.source, "localBuild", `resolved via ${binary.source}`);
-    assert.ok(fs.existsSync(binary.command), `missing: ${binary.command}`);
-  });
+    );
+  }
 
   // The four contributed views must exist (Quickstart webview + projects/sdk/build
   // trees; the former setup+workspaces trees are folded into the Quickstart ladder).
