@@ -1,7 +1,0 @@
-/target
-**/*.rs.bk
-Cargo.lock.bak
-
-# npm shim: downloaded native binary + installed deps (not committed)
-npm-shim/binary/
-npm-shim/node_modules/

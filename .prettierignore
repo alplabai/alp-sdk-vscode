@@ -13,11 +13,7 @@ pnpm-lock.yaml
 # git submodule — not ours to format
 alp-sdk-upstream/
 
-# Rust build output
-cli-rs/target/
-
 # Byte-for-byte compared fixtures/snapshots — formatting would break tests
-cli-rs/contract/
 test/golden/
 # Real SDK `--emit` output, parsed verbatim by the manifest tests
 test/fixtures/*.yaml

@@ -1,1 +1,0 @@
---project contract/fixtures/inspect/show-origin --show-origin

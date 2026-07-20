@@ -73,31 +73,3 @@ jobs:
           test -f schemas/board.schema.json
           node -e "JSON.parse(require('fs').readFileSync('schemas/board.schema.json','utf8'))"
           echo "vendored board schema present + valid JSON"
-
-  rust_cli_contract:
-    name: rust cli · contract
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout (with submodule)
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Set up Node 24
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: "pnpm"
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run Rust CLI contract harness
-        run: bash cli-rs/contract/run.sh

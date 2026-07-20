@@ -1,1 +1,0 @@
-{"command":"diff","ok":true,"exitCode":0,"project":{"root":"contract/fixtures/diff/v2-os-removed","boardYaml":"contract/fixtures/diff/v2-os-removed/board.yaml"},"data":{"schemaVersion":"1","boardYamlPath":"contract/fixtures/diff/v2-os-removed/board.yaml","unchanged":false,"changeCount":1,"changes":[{"path":"os","kind":"removed","before":"zephyr"}]},"issues":[]}

@@ -3,6 +3,7 @@
 import * as vscode from "vscode";
 import {
   checkCliVersion,
+  ensureTanCliProvisioned,
   resetResolvedBinary,
   updateAlpCli,
 } from "./alpCli/vscodeAdapter";
@@ -113,9 +114,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
   void maybeOfferFirstRunWizard(context);
   void maybeOfferSetupPanel(context);
-  // Warn once if the resolved alp CLI is older than this build expects (the
-  // silent cause of missing features like project examples).
-  void checkCliVersion(context);
+  // Provision the managed `tan` CLI up front so a fresh install fetches it once,
+  // streamlined (progress notification), instead of stalling on the first
+  // build/validate command. No-op when a binary already resolves. The version
+  // check runs after so it sees the just-provisioned binary.
+  void ensureTanCliProvisioned(context).finally(() => {
+    // Warn once if the resolved tan CLI is older than this build expects (the
+    // silent cause of missing features like project examples).
+    void checkCliVersion(context);
+  });
 }
 
 export async function deactivate(): Promise<void> {

@@ -11,7 +11,7 @@ function allPresent() {
       ninja: { present: true },
       dtc: { present: true },
       gdb: { present: true },
-      alp: { present: true },
+      tan: { present: true },
     },
     pythonDeps: { pyyaml: true, jsonschema: true },
     env: { zephyrSdkDir: "/opt/zephyr-sdk", zephyrBase: "/z" },
@@ -38,13 +38,13 @@ test("missing required tool (cmake) → missing + fixId, not ok", () => {
   assert.equal(r.missingRequired, 1);
 });
 
-test("missing recommended (alp CLI) → warn, still ok", () => {
+test("missing recommended (tan CLI) → warn, still ok", () => {
   const inputs = allPresent();
-  inputs.tools.alp = { present: false };
+  inputs.tools.tan = { present: false };
   const r = analyzeToolchain(inputs);
-  const alp = r.checks.find((c) => c.id === "alp");
-  assert.equal(alp.status, "warn");
-  assert.equal(alp.required, false);
+  const tan = r.checks.find((c) => c.id === "tan");
+  assert.equal(tan.status, "warn");
+  assert.equal(tan.required, false);
   assert.equal(r.ok, true);
 });
 
