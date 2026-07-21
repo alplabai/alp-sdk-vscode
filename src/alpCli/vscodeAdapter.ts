@@ -7,7 +7,6 @@
 // in `service.ts` + `adapterCore.ts`.
 
 import * as cp from "child_process";
-import { execFile } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
@@ -35,7 +34,7 @@ import {
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log, runInTerminal } from "../util";
 
-const execFileAsyncCli = promisify(execFile);
+const execFileAsyncCli = promisify(cp.execFile);
 
 /** Bare binary name (not the full resolved path) for readable log lines. */
 function binaryLabel(command: string): string {

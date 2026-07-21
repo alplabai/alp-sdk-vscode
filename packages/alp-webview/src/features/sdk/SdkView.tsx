@@ -318,17 +318,6 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
             <Button appearance="secondary" onClick={() => browseSdk()}>
               Browse…
             </Button>
-            <Button
-              appearance="primary"
-              onClick={() =>
-                postMessage({
-                  type: "runCommand",
-                  command: "alp.openSdkManager",
-                })
-              }
-            >
-              Manage SDK →
-            </Button>
           </div>
         </div>
       </div>

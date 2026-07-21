@@ -216,7 +216,6 @@ const PANELS: PanelCardProps[] = [
 const ACTIONS: ActionItem[] = [
   { icon: "wrench", label: "Setup Wizard", command: "alp.openSetupFlow" },
   { icon: "filePlus", label: "New Project", command: "alp.newProjectWizard" },
-  { icon: "download", label: "SDK Manager", command: "alp.openSdkManager" },
   {
     icon: "refresh",
     label: "Run Bootstrap",
