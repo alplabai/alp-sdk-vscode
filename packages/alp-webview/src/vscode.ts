@@ -33,6 +33,18 @@ export function postMessage(msg: WebviewToExtMessage): void {
   getApi().postMessage(msg);
 }
 
+/** Read a value from the webview's persisted state (survives reload + hide). */
+export function getUiState<T>(key: string, fallback: T): T {
+  const state = (getApi().getState() as Record<string, unknown> | null) ?? {};
+  return key in state ? (state[key] as T) : fallback;
+}
+
+/** Merge a value into the webview's persisted state. */
+export function setUiState(key: string, value: unknown): void {
+  const state = (getApi().getState() as Record<string, unknown> | null) ?? {};
+  getApi().setState({ ...state, [key]: value });
+}
+
 export function onMessage(
   handler: (msg: ExtToWebviewMessage) => void,
 ): () => void {
