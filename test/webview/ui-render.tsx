@@ -53,6 +53,7 @@ const readyState = {
     toolVersions: {
       python: "3.11",
       west: "1.2",
+      tan: "0.1.0",
       cmake: "3.28",
       ninja: "1.11",
     },
@@ -220,6 +221,10 @@ async function main() {
       if (text.includes(marker)) {
         problems.push(`${mode}: visible text contains "${marker}"`);
       }
+    }
+    // The Hub Environment card surfaces the tan CLI next to python/west.
+    if (mode === "overview" && !text.includes("tan 0.1.0")) {
+      problems.push("overview: Environment card missing tan version");
     }
 
     const buttons = Array.from(container.querySelectorAll("button"));

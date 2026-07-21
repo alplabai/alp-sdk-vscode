@@ -29,6 +29,9 @@ function envMeta(state: AlpIdeState): string {
     const parts: string[] = [];
     if (toolVersions.python) parts.push(`Python ${toolVersions.python}`);
     if (toolVersions.west) parts.push(`west ${toolVersions.west}`);
+    // tan is managed/auto-fetched, so it is info (never gates "available"):
+    // show its version when a binary resolved, else that it is managed.
+    parts.push(toolVersions.tan ? `tan ${toolVersions.tan}` : "tan managed");
     return parts.join(" · ") || "All tools available";
   }
   const missing: string[] = [];
