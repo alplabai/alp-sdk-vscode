@@ -1,0 +1,189 @@
+/* Sidebar hub — compact, one-column, tuned for the ~300px Activity-Bar width.
+   Colours come from VS Code theme vars (with Alp token fallbacks) so it reads
+   correctly in both the Alp-brand and VS Code webview modes. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 12px);
+  padding: var(--space-3, 8px) var(--space-3, 8px) var(--space-8, 24px);
+  color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+  font-size: 13px;
+}
+
+/* ── Brand ────────────────────────────────────────────────────────────── */
+/* The Alp Lab wordmark, painted via CSS mask so it adopts the theme foreground
+   colour (near-white on dark themes, near-black on light). Box follows the
+   asset's 100.49 × 21.5 viewBox aspect ratio (≈ 4.674) at 16px tall. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px 6px;
+}
+.brandLogo {
+  display: block;
+  height: 16px;
+  width: 75px;
+  flex-shrink: 0;
+  background-color: var(--text-primary, var(--vscode-foreground));
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: left center;
+  mask-position: left center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.topDivider {
+  width: 1px;
+  height: 14px;
+  background: var(
+    --vscode-widget-border,
+    var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35))
+  );
+}
+.topTitle {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ── Section ──────────────────────────────────────────────────────────── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sectionLabel {
+  margin: 0 0 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+}
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* ── Shared row chrome ────────────────────────────────────────────────── */
+.statusRow,
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.statusRow[data-clickable],
+.actionRow {
+  cursor: pointer;
+}
+.statusRow[data-clickable]:hover,
+.actionRow:not(:disabled):hover {
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+}
+.actionRow:not(:disabled):active {
+  background: var(
+    --vscode-list-activeSelectionBackground,
+    rgba(128, 128, 128, 0.2)
+  );
+}
+.statusRow:focus-visible,
+.actionRow:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #4c8bf5);
+  outline-offset: -1px;
+}
+.actionRow:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rowIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+}
+
+/* ── Status row ───────────────────────────────────────────────────────── */
+.rowLabel {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+.dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+}
+.dot[data-health="ok"] {
+  background: var(--vscode-charts-green, #3fb950);
+}
+.dot[data-health="warn"] {
+  background: var(--vscode-charts-yellow, #d9a441);
+}
+.dot[data-health="idle"] {
+  background: var(--vscode-descriptionForeground, #808080);
+  opacity: 0.5;
+}
+
+/* ── Action row ───────────────────────────────────────────────────────── */
+.actionText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.actionLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.actionDesc {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.actionArrow {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.actionRow:not(:disabled):hover .actionArrow {
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionArrow {
+    transition: none;
+  }
+}

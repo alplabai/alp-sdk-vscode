@@ -9,6 +9,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
 import { OverviewView } from "../../packages/alp-webview/src/features/overview";
+import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
 import { NewProjectFlowView } from "../../packages/alp-webview/src/features/new-project-flow";
 import { ExistingProjectFlowView } from "../../packages/alp-webview/src/features/existing-project-flow";
@@ -16,7 +17,6 @@ import { SdkView } from "../../packages/alp-webview/src/features/sdk";
 import { ToolchainDoctorView } from "../../packages/alp-webview/src/features/toolchain-doctor";
 import { HardwareExplorerView } from "../../packages/alp-webview/src/features/hardware-explorer";
 import { BuildPlanView } from "../../packages/alp-webview/src/features/build-plan";
-import { QuickstartView } from "../../packages/alp-webview/src/features/quickstart";
 
 const g = globalThis as any;
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -60,8 +60,6 @@ const readyState = {
   workspace: {
     workspaceRoot: "/ws",
     boardYamlExists: true,
-    boardYamlValid: true,
-    boardIssueCount: 0,
     westInitialized: true,
   },
 };
@@ -146,6 +144,7 @@ function feedState() {
 
 const VIEWS: Array<[string, React.FC]> = [
   ["overview", OverviewView],
+  ["sidebar-hub", SidebarHubView],
   ["setup-flow", SetupFlowView],
   ["new-project-flow", NewProjectFlowView],
   ["existing-project-flow", ExistingProjectFlowView],
@@ -153,7 +152,6 @@ const VIEWS: Array<[string, React.FC]> = [
   ["toolchain-doctor", ToolchainDoctorView],
   ["hardware-explorer", HardwareExplorerView],
   ["build-plan", BuildPlanView],
-  ["quickstart", QuickstartView],
 ];
 
 // Text a broken/degraded UI shows — flagged so we SEE the problem, not skip it.
@@ -168,89 +166,6 @@ const ERROR_MARKERS = [
   "nan",
 ];
 
-// The Quickstart ladder IS a state machine, so a single "rendered, 0 buttons"
-// pass proves nothing — a view stuck in its <Skeleton> loading branch looks
-// identical. Render QuickstartView at all four phases and ASSERT the expected
-// active-step CTA is actually present. Bonus: if a stateUpdate is ever dropped
-// (protocol bump, subscription regression) the CTA is absent → loud failure,
-// not a vacuous green.
-async function quickstartPhaseMatrix(problems: string[]) {
-  const base = JSON.parse(JSON.stringify(readyState)); // env-ready + valid board
-  const cases: Array<[string, unknown, string]> = [
-    ["ready", base, "Build"],
-    [
-      "invalid-board",
-      {
-        ...base,
-        workspace: {
-          ...base.workspace,
-          boardYamlValid: false,
-          boardIssueCount: 2,
-        },
-      },
-      "Configure Board",
-    ],
-    [
-      "no-project",
-      {
-        ...base,
-        workspace: {
-          ...base.workspace,
-          boardYamlExists: false,
-          boardYamlValid: false,
-        },
-      },
-      "New Project",
-    ],
-    [
-      "no-env",
-      { ...base, setup: { ...base.setup, pythonAvailable: false } },
-      "Set Up Environment",
-    ],
-  ];
-  for (const [phase, state, expectedCta] of cases) {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    let renderErr: unknown = null;
-    root.render(
-      React.createElement(
-        Boundary,
-        { onError: (e) => (renderErr = e) },
-        React.createElement(
-          AppProvider,
-          null,
-          React.createElement(QuickstartView),
-        ),
-      ),
-    );
-    await tick();
-    await tick(); // AppProvider's message subscription mounts (useEffect)
-    g.__ALP_POST_TO_WEBVIEW__({ type: "stateUpdate", _v: 2, state });
-    await tick();
-    await tick();
-    if (renderErr) {
-      problems.push(`quickstart[${phase}]: crashed — ${String(renderErr)}`);
-    } else {
-      const hasCta = Array.from(container.querySelectorAll("button")).some(
-        (b) => (b.textContent || "").includes(expectedCta),
-      );
-      if (!hasCta) {
-        problems.push(
-          `quickstart[${phase}]: expected active CTA "${expectedCta}" not rendered ` +
-            `(text: ${(container.textContent || "").trim().slice(0, 80)})`,
-        );
-      } else {
-        console.log(
-          `  PASS  quickstart[${phase}]: active CTA "${expectedCta}" present`,
-        );
-      }
-    }
-    root.unmount();
-    container.remove();
-  }
-}
-
 async function main() {
   let totalButtons = 0;
   let totalClicked = 0;
@@ -262,9 +177,8 @@ async function main() {
     document.body.appendChild(container);
     let ok = true;
     let renderErr: unknown = null;
-    let root: ReturnType<typeof createRoot> | null = null;
     try {
-      root = createRoot(container);
+      const root = createRoot(container);
       root.render(
         React.createElement(
           Boundary,
@@ -297,8 +211,6 @@ async function main() {
     };
     if (noteCrash()) {
       console.log(`  FAIL  ${mode}: render error`);
-      root?.unmount();
-      container.remove();
       continue;
     }
     rendered += 1;
@@ -338,15 +250,7 @@ async function main() {
     console.log(
       `  ${ok ? "PASS" : "FAIL"}  ${mode}: rendered, ${buttons.length} button(s), clicked ${clickedHere}`,
     );
-    // Unmount before the next view so roots don't accumulate — a state-gated
-    // view (e.g. Quickstart, blank until stateUpdate) can otherwise be starved
-    // of its re-render by the pile of still-mounted providers and measure as
-    // "loading" purely from its position in this list.
-    root?.unmount();
-    container.remove();
   }
-
-  await quickstartPhaseMatrix(problems);
 
   console.log(
     `\nwebview-ui: ${rendered}/${VIEWS.length} views rendered, ` +

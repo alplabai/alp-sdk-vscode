@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { derivePhase } from "../ideHub/phase";
 import type { AlpIdeState } from "../ideHub/messages";
 import type { StateManager } from "./stateManager";
 
@@ -101,12 +100,10 @@ export class BuildTreeProvider
   }
 
   private updateItems(state: AlpIdeState): void {
-    const { workspaceRoot } = state.workspace;
-    // Gate on the full ladder phase (single source of truth), not just
-    // westInitialized && boardYamlExists — an invalid board.yaml must not
-    // silently look like "no project".
-    const phase = derivePhase(state);
-    const enabled = phase === "ready";
+    const { workspaceRoot, boardYamlExists, westInitialized } = state.workspace;
+    // Gate on the OPEN project, not just the shared ~/zephyrproject workspace:
+    // west commands run in the project folder, so they need a board.yaml too.
+    const enabled = westInitialized && boardYamlExists;
 
     // "Preview Build Plan" stays available even before west init — the view
     // explains its own empty/error states (no SDK, no board.yaml, …).
@@ -136,15 +133,7 @@ export class BuildTreeProvider
       // No buildable project: one actionable call-to-action instead of eight
       // inert (or misleading, home-dir) build rows.
       let cta: BuildItem;
-      if (phase === "invalid-board") {
-        cta = new BuildItem(
-          "board.yaml has issues",
-          "resolve to build",
-          new vscode.ThemeIcon("warning"),
-          { command: "alp.openConfigurator", title: "Open Board Configurator" },
-          true,
-        );
-      } else if (!workspaceRoot) {
+      if (!workspaceRoot) {
         cta = new BuildItem(
           "No project open",
           "create or open a project",
@@ -152,7 +141,7 @@ export class BuildTreeProvider
           { command: "alp.newProjectWizard", title: "New Project" },
           true,
         );
-      } else if (phase === "no-env") {
+      } else if (!westInitialized) {
         cta = new BuildItem(
           "Workspace not initialized",
           "install build dependencies",

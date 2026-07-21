@@ -4,8 +4,8 @@ import { ExistingProjectFlowView } from "./features/existing-project-flow";
 import { HardwareExplorerView } from "./features/hardware-explorer";
 import { NewProjectFlowView } from "./features/new-project-flow";
 import { OverviewView } from "./features/overview";
-import { QuickstartView } from "./features/quickstart";
 import { SdkView } from "./features/sdk";
+import { SidebarHubView } from "./features/sidebar-hub";
 import { SetupFlowView } from "./features/setup-flow";
 import { ToolchainDoctorView } from "./features/toolchain-doctor";
 import { AppProvider, useAppContext } from "./shared/AppContext";
@@ -51,8 +51,8 @@ function Router() {
   if (protocolMismatch) return <ProtocolMismatchNotice />;
 
   switch (ALP_MODE) {
-    case "quickstart":
-      return <QuickstartView />;
+    case "sidebar-hub":
+      return <SidebarHubView />;
     case "setup-flow":
       return <SetupFlowView />;
     case "new-project-flow":

@@ -148,14 +148,17 @@ async function runChecks() {
   );
 
   // Click EVERY sidebar tree button one by one. Each tree item IS a button:
-  // constructing the 3 tree providers over both the real (board.yaml present) and
-  // the empty state enumerates every item variant; for each item that carries a
+  // constructing the 5 providers over both the real (board.yaml present) and the
+  // empty state enumerates every item variant; for each item that carries a
   // `.command` we assert the command is registered and drive it — the literal
-  // "click each button in the sidebar". (Quickstart is a webview, not a tree — its
-  // CTA commands are covered by the allowlist check below.)
+  // "click each button in the sidebar".
   const { BuildTreeProvider } = require("../../../out/views/build.js");
   const { ProjectsTreeProvider } = require("../../../out/views/projects.js");
   const { SdkTreeProvider } = require("../../../out/views/sdk.js");
+  const { SetupTreeProvider } = require("../../../out/views/setup.js");
+  const {
+    WorkspacesTreeProvider,
+  } = require("../../../out/views/workspaces.js");
   const { StateManager } = require("../../../out/views/stateManager.js");
   const { emptyAlpIdeState } = require("../../../out/ideHub/messages.js");
 
@@ -178,8 +181,6 @@ async function runChecks() {
   readyState.workspace = {
     workspaceRoot: process.cwd(),
     boardYamlExists: true,
-    boardYamlValid: true,
-    boardIssueCount: 0,
     westInitialized: true,
   };
   readyState.sdk = {
@@ -202,6 +203,8 @@ async function runChecks() {
   const readyMgr = fixedMgr(readyState);
 
   const providersFor = (mgr) => [
+    ["setup", new SetupTreeProvider(mgr)],
+    ["workspaces", new WorkspacesTreeProvider(mgr)],
     ["projects", new ProjectsTreeProvider(mgr)],
     ["sdk", new SdkTreeProvider(mgr)],
     ["build", new BuildTreeProvider(mgr)],
@@ -331,18 +334,16 @@ async function runChecks() {
     );
   }
 
-  // The four contributed views must exist (Quickstart webview + projects/sdk/build
-  // trees; the former setup+workspaces trees are folded into the Quickstart ladder).
-  await check("all 4 sidebar views are contributed", () => {
-    const views = (manifest.contributes.views["alp-ide"] || []).map(
-      (v) => v.id,
+  // The Alp IDE side panel is a single webview (SidebarHubView / HubViewProvider,
+  // registered at activation); the former five native tree views were folded
+  // into it.
+  await check("side panel is the single alp-ide.hub webview", () => {
+    const views = manifest.contributes.views["alp-ide"] || [];
+    assert.deepEqual(
+      views.map((v) => v.id),
+      ["alp-ide.hub"],
     );
-    assert.deepEqual(views.sort(), [
-      "alp-ide.build",
-      "alp-ide.projects",
-      "alp-ide.quickstart",
-      "alp-ide.sdk",
-    ]);
+    assert.equal(views[0].type, "webview");
   });
 
   const failed = results.filter((r) => !r.ok);
