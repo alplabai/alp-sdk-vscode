@@ -9,7 +9,7 @@ import { ProjectContext, ProjectResolutionInput } from "./models";
 // identical (platform === process.platform), so behaviour is unchanged; the
 // distinction only matters under test, where a fixture can declare platform
 // "linux"/"win32" and get deterministic, host-independent path semantics.
-type PathImpl = path.PlatformPath;
+type PathImpl = typeof path.posix;
 
 function pathFor(platform: NodeJS.Platform): PathImpl {
   return platform === "win32" ? path.win32 : path.posix;
