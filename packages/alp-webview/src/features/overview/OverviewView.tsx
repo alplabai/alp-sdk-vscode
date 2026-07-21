@@ -313,10 +313,9 @@ export function OverviewView() {
 
         {/* SDK Manager — folded in from the former standalone panel. The
             `alp.openSdkManager` command opens the Hub and scrolls here. */}
-        <section aria-labelledby="sdk-heading" id="sdk-section">
-          <p id="sdk-heading" className={styles.sectionLabel}>
-            SDK Manager
-          </p>
+        {/* SdkView renders its own "SDK Manager" header + Refresh/Browse, so no
+            outer section label here (that would double the heading). */}
+        <section aria-label="SDK Manager" id="sdk-section">
           <SdkView />
         </section>
       </div>
