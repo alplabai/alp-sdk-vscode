@@ -9,7 +9,11 @@ import {
 } from "./messages";
 import { createSdkMessageHandler } from "./sdkManagerMessages";
 import { queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
+import {
+  buildWebviewHtml,
+  isBootstrapCommand,
+  runWebviewCommand,
+} from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.overview";
 const PANEL_TITLE = "Alp IDE — Hub";
@@ -129,7 +133,7 @@ export class OverviewPanel {
         break;
       case "runCommand":
         runWebviewCommand(msg.command);
-        if (msg.command === "alp.installDependencies") {
+        if (isBootstrapCommand(msg.command)) {
           const now = new Date().toISOString();
           void this.context.globalState.update("alp.lastBootstrapAt", now);
           setTimeout(() => void this.refresh(), 8000);
