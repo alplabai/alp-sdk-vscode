@@ -226,6 +226,17 @@ async function main() {
     if (mode === "overview" && !text.includes("tan 0.1.0")) {
       problems.push("overview: Environment card missing tan version");
     }
+    // Sidebar Setup section is actions-only now: the "Host Tools" status
+    // read-out is gone (moved to the status bar + Hub) and the Hub link is
+    // present. (Other sections keep their contextual status rows.)
+    if (mode === "sidebar-hub") {
+      if (text.includes("host tools")) {
+        problems.push("sidebar-hub: Host Tools status row still present");
+      }
+      if (!text.includes("hub")) {
+        problems.push("sidebar-hub: Hub link missing");
+      }
+    }
 
     const buttons = Array.from(container.querySelectorAll("button"));
     if (process.env.ALP_DUMP) {

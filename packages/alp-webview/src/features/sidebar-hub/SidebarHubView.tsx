@@ -167,8 +167,15 @@ export function SidebarHubView() {
     );
   }
 
-  const { setup, sdk, workspace } = state;
-  const toolsReady = setup.pythonAvailable && setup.westAvailable;
+  const { sdk, workspace } = state;
+  // Readiness gate (matches OverviewView.isAllReady + the status-bar item):
+  // Python + west + a ready SDK + an initialized west workspace. tan does not
+  // gate (managed/auto-fetched).
+  const ready =
+    state.setup.pythonAvailable &&
+    state.setup.westAvailable &&
+    sdk.readiness === "ready" &&
+    workspace.westInitialized;
   const wsName = workspace.workspaceRoot
     ? workspace.workspaceRoot
         .replace(/\\/g, "/")
@@ -197,55 +204,18 @@ export function SidebarHubView() {
       <Section title="Setup">
         <ActionRow
           icon="book"
-          label="Overview"
+          label="Hub"
           desc="Open the full-width hub"
-          command="alp.openOverview"
+          command="alp.openHub"
         />
-        <StatusRow
-          icon="terminal"
-          label="Host Tools"
-          value={toolsReady ? "Ready" : "Action needed"}
-          health={toolsReady ? "ok" : "warn"}
-          command={toolsReady ? undefined : "alp.installDependencies"}
-        />
-        <StatusRow
-          icon="terminal"
-          label="Python"
-          value={setup.toolVersions.python ?? "Not found"}
-          health={setup.pythonAvailable ? "ok" : "warn"}
-        />
-        <StatusRow
-          icon="terminal"
-          label="West"
-          value={setup.toolVersions.west ?? "Not found"}
-          health={setup.westAvailable ? "ok" : "warn"}
-        />
-        <StatusRow
-          icon="package"
-          label="Alp SDK"
-          value={sdkValue(sdk)}
-          health={sdk.readiness === "ready" ? "ok" : "warn"}
-          command="alp.openSdkManager"
-        />
-        <StatusRow
-          icon="folder"
-          label="Workspace"
-          value={
-            workspace.westInitialized
-              ? "Initialized"
-              : workspace.workspaceRoot
-                ? "Not initialized"
-                : "No workspace"
-          }
-          health={
-            workspace.westInitialized
-              ? "ok"
-              : workspace.workspaceRoot
-                ? "warn"
-                : "idle"
-          }
-          command={workspace.westInitialized ? undefined : "alp.openSetupFlow"}
-        />
+        {!ready && (
+          <ActionRow
+            icon="wrench"
+            label="Finish setup"
+            desc="Run the setup wizard"
+            command="alp.openSetupFlow"
+          />
+        )}
       </Section>
 
       <Section title="Workspace">
