@@ -119,13 +119,19 @@ interface StatusCardProps {
   title: string;
   chip: ChipState;
   meta: string;
+  /** When set, the card becomes a button that jumps to a related section. */
+  onClick?: () => void;
 }
 
-function StatusCard({ icon, title, chip, meta }: StatusCardProps) {
+function StatusCard({ icon, title, chip, meta, onClick }: StatusCardProps) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div
+    <Tag
+      type={onClick ? "button" : undefined}
       className={styles.statusCard}
       data-state={chip === "ready" ? "ready" : "error"}
+      data-clickable={onClick ? "" : undefined}
+      onClick={onClick}
     >
       <div className={styles.cardIcon} aria-hidden="true">
         <Icon name={icon} size={18} />
@@ -135,8 +141,14 @@ function StatusCard({ icon, title, chip, meta }: StatusCardProps) {
       <div className={styles.cardChip}>
         <StatusChip state={chip} />
       </div>
-    </div>
+    </Tag>
   );
+}
+
+function scrollToSdkSection(): void {
+  document
+    .getElementById("sdk-section")
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 interface PanelCardProps {
@@ -239,6 +251,19 @@ export function OverviewView() {
   }
 
   const allReady = isAllReady(state);
+  // When everything's set up, Bootstrap / Setup Wizard are noise — lead with
+  // Build instead. Before that, keep the setup-oriented actions.
+  const actions: ActionItem[] = allReady
+    ? [
+        { icon: "play", label: "Build", command: "alp.westBuild" },
+        {
+          icon: "filePlus",
+          label: "New Project",
+          command: "alp.newProjectWizard",
+        },
+        { icon: "settings", label: "Settings", command: "alp.openSettings" },
+      ]
+    : ACTIONS;
 
   return (
     <div className={styles.root}>
@@ -274,6 +299,7 @@ export function OverviewView() {
               title="Alp SDK"
               chip={sdkChip(state)}
               meta={sdkMeta(state)}
+              onClick={scrollToSdkSection}
             />
           </div>
         </section>
@@ -305,7 +331,7 @@ export function OverviewView() {
             Quick Actions
           </p>
           <div className={styles.actionGrid}>
-            {ACTIONS.map((a) => (
+            {actions.map((a) => (
               <ActionButton key={a.command} {...a} />
             ))}
           </div>

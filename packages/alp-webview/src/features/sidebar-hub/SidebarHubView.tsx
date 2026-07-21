@@ -18,7 +18,7 @@ import { useAppContext } from "../../shared/AppContext";
 import { Icon, Skeleton } from "../../shared/ui";
 import type { IconName } from "../../shared/ui";
 import type { AlpIdeState } from "../../types";
-import { postMessage } from "../../vscode";
+import { getUiState, postMessage, setUiState } from "../../vscode";
 import styles from "./SidebarHubView.module.css";
 
 function run(command: string) {
@@ -109,21 +109,41 @@ function ActionRow({
   );
 }
 
+// Section collapse state persists in the webview's own state, keyed by title,
+// so a user's expand/collapse choices survive reloads.
+const COLLAPSE_KEY = "sidebarSections";
+function sectionOpen(title: string, fallback: boolean): boolean {
+  const map = getUiState<Record<string, boolean>>(COLLAPSE_KEY, {});
+  return title in map ? map[title]! : fallback;
+}
+function persistSectionOpen(title: string, open: boolean): void {
+  const map = getUiState<Record<string, boolean>>(COLLAPSE_KEY, {});
+  setUiState(COLLAPSE_KEY, { ...map, [title]: open });
+}
+
 function Section({
   title,
+  defaultOpen = true,
   children,
 }: {
   title: string;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => sectionOpen(title, defaultOpen));
+  const toggle = () =>
+    setOpen((v) => {
+      const next = !v;
+      persistSectionOpen(title, next);
+      return next;
+    });
   return (
     <section className={styles.section}>
       <button
         type="button"
         className={styles.sectionHeader}
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
       >
         <span
           className={styles.sectionChevron}
@@ -154,14 +174,14 @@ function sdkValue(sdk: AlpIdeState["sdk"]): string {
 const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
   [
     { icon: "play", label: "Build", command: "alp.westBuild" },
-    { icon: "bolt", label: "Flash device (west)", command: "alp.westFlash" },
+    { icon: "bolt", label: "Flash (west)", command: "alp.westFlash" },
     {
       icon: "monitor",
       label: "Run (native_sim)",
       command: "alp.westRunNativeSim",
     },
     { icon: "package", label: "Image", command: "alp.westAlpImage" },
-    { icon: "rocket", label: "Flash all slices", command: "alp.westAlpFlash" },
+    { icon: "rocket", label: "Flash all cores", command: "alp.westAlpFlash" },
     { icon: "bug", label: "Debug", command: "alp.debug" },
     { icon: "cpu", label: "Renode", command: "alp.westAlpRenode" },
     // "West Update" lives in the Workspace section (module maintenance, not a
@@ -260,7 +280,7 @@ export function SidebarHubView() {
         )}
       </Section>
 
-      <Section title="Project">
+      <Section title="Project" defaultOpen={workspace.boardYamlExists}>
         {workspace.boardYamlExists && wsName ? (
           <StatusRow
             icon="sliders"
@@ -315,7 +335,7 @@ export function SidebarHubView() {
         />
       </Section>
 
-      <Section title="Build & Flash">
+      <Section title="Build & Flash" defaultOpen={buildReady}>
         <ActionRow
           icon="eye"
           label="Preview Build Plan"
