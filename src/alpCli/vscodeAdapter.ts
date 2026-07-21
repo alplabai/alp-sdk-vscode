@@ -25,6 +25,7 @@ import { downloadFile } from "./download";
 import { BinarySource, CliOutcome } from "./models";
 import {
   SUPPORTED_CLI_VERSION,
+  aheadPathFixAction,
   binaryName,
   decideBinarySource,
   isCliAhead,
@@ -421,20 +422,25 @@ export async function checkCliVersion(
     log(
       `[cli] resolved tan ${version} on PATH is newer than supported ${SUPPORTED_CLI_VERSION}`,
     );
-    // The remedy for an ahead PATH tan is NOT reinstalling (the installer
-    // fetches the latest release, i.e. an even-newer binary) — it's turning
-    // off the preference so resolution falls back to the version-pinned
-    // managed copy. Offer that directly rather than cliFixAction's installer,
-    // which cannot resolve a "newer than supported" condition.
+    // Reinstalling is never the remedy (the installer fetches an even-newer
+    // latest); the fix depends on the flag (see `aheadPathFixAction`). Flag
+    // off → download the pinned version into the cache (which outranks PATH
+    // when off); flag on → turn the preference off so a managed copy wins.
+    const fix = aheadPathFixAction(preferGlobalCli);
+    const label = fix === "updateManagedCli" ? "Update" : "Open Settings";
     const choice = await vscode.window.showWarningMessage(
       aheadCliMessage(binary, version),
-      "Open Settings",
+      label,
     );
-    if (choice === "Open Settings") {
-      await vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "alpSdk.preferGlobalCli",
-      );
+    if (choice === label) {
+      if (fix === "updateManagedCli") {
+        await vscode.commands.executeCommand("alp.updateCli");
+      } else {
+        await vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "alpSdk.preferGlobalCli",
+        );
+      }
     }
   }
 }

@@ -8,6 +8,7 @@ const {
   parseTanVersion,
   isCliBehind,
   isCliAhead,
+  aheadPathFixAction,
   classifyExitCode,
   parseEnvelope,
   classifyOutcome,
@@ -39,6 +40,15 @@ test("isCliAhead compares numeric version tuples (mirror of isCliBehind)", () =>
   assert.equal(isCliAhead("0.2.0", "0.1.14"), true);
   assert.equal(isCliAhead("1.0.0", "0.1.14"), true);
   assert.equal(isCliAhead(null, "0.1.14"), false); // unknown → not ahead
+});
+
+test("aheadPathFixAction gates the ahead-tan remedy on preferGlobalCli", () => {
+  // Flag off: a PATH tan only won because no managed copy exists; the cache
+  // outranks PATH when off, so downloading the pinned version restores support.
+  assert.equal(aheadPathFixAction(false), "updateManagedCli");
+  // Flag on: PATH outranks the cache, so re-downloading can't win; turning the
+  // preference off is the remedy.
+  assert.equal(aheadPathFixAction(true), "openPreferGlobalSetting");
 });
 
 test("decideBinarySource follows the resolution order", () => {
