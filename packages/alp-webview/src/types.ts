@@ -88,6 +88,11 @@ export interface ProjectTemplatesDataMessage {
   templates: ProjectTemplate[];
   modules: E1mModule[];
 }
+/** Scroll a named Hub section into view (e.g. the SDK Manager section). */
+export interface FocusSectionMessage {
+  type: "focusSection";
+  section: "sdk";
+}
 
 // ── New-project / existing-project shared types ──
 export interface ProjectTemplate {
@@ -493,6 +498,7 @@ export type ExtToWebviewMessage =
   | SdkReleasesLoadedMessage
   | SdkInstallProgressMessage
   | ProjectTemplatesDataMessage
+  | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage

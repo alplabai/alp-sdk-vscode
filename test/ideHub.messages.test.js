@@ -45,6 +45,7 @@ test("emptyAlpIdeState setup defaults", () => {
   assert.deepEqual(setup.toolVersions, {
     python: null,
     west: null,
+    tan: null,
     cmake: null,
     ninja: null,
   });

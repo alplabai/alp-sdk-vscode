@@ -128,6 +128,13 @@ export interface ProjectTemplatesDataMessage {
   modules: E1mModule[];
 }
 
+/** Ask the Hub webview to scroll a named section into view (e.g. opening the
+ *  SDK Manager, now a Hub section, from the command palette or sidebar). */
+export interface FocusSectionMessage {
+  type: "focusSection";
+  section: "sdk";
+}
+
 export interface ConfiguratorRenderMessage {
   type: "configuratorRender";
   viewModel: ConfiguratorViewModel;
@@ -228,6 +235,7 @@ export type ExtToWebviewMessage =
   | SdkReleasesLoadedMessage
   | SdkInstallProgressMessage
   | ProjectTemplatesDataMessage
+  | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
