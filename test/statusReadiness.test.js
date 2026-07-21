@@ -25,7 +25,11 @@ const base = {
       ninja: null,
     },
   },
-  workspace: { workspaceRoot: "/w", boardYamlExists: true, westInitialized: true },
+  workspace: {
+    workspaceRoot: "/w",
+    boardYamlExists: true,
+    westInitialized: true,
+  },
 };
 
 test("all ready → check + full tooltip", () => {
