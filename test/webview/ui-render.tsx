@@ -226,6 +226,13 @@ async function main() {
     if (mode === "overview" && !text.includes("tan 0.1.0")) {
       problems.push("overview: Environment card missing tan version");
     }
+    // SDK Manager is folded into the Hub as a scrollable section.
+    if (
+      mode === "overview" &&
+      !(container.innerHTML || "").includes('id="sdk-section"')
+    ) {
+      problems.push("overview: SDK Manager section missing");
+    }
     // Sidebar Setup section is actions-only now: the "Host Tools" status
     // read-out is gone (moved to the status bar + Hub) and the Hub link is
     // present. (Other sections keep their contextual status rows.)

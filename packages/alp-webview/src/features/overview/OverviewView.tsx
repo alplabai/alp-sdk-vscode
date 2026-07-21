@@ -8,6 +8,7 @@ import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import type { IconName } from "../../shared/ui";
 import { Icon, Skeleton, StatusChip } from "../../shared/ui";
+import { SdkView } from "../sdk";
 import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./OverviewView.module.css";
@@ -309,6 +310,15 @@ export function OverviewView() {
               <ActionButton key={a.command} {...a} />
             ))}
           </div>
+        </section>
+
+        {/* SDK Manager — folded in from the former standalone panel. The
+            `alp.openSdkManager` command opens the Hub and scrolls here. */}
+        <section aria-labelledby="sdk-heading" id="sdk-section">
+          <p id="sdk-heading" className={styles.sectionLabel}>
+            SDK Manager
+          </p>
+          <SdkView />
         </section>
       </div>
     </div>
