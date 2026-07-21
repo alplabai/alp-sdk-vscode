@@ -42,7 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // One shared state source for both the native trees and the status bar, so
   // the Build & Flash tree and the status-bar Build/Flash gating never disagree.
-  const stateMgr = new StateManager();
+  const stateMgr = new StateManager(context);
   const refreshState = () =>
     void stateMgr.refresh(
       context.globalState.get<string>("alp.lastBootstrapAt") ?? null,

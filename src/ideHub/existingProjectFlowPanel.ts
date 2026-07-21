@@ -69,8 +69,8 @@ export class ExistingProjectFlowPanel {
   async refresh(): Promise<void> {
     const lastBootstrapAt =
       this.context.globalState.get<string>("alp.lastBootstrapAt") ?? null;
-    const state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
-      emptyAlpIdeState(),
+    const state = await queryAlpIdeState(lastBootstrapAt, this.context).catch(
+      () => emptyAlpIdeState(),
     );
     const msg: ExtToWebviewMessage = {
       type: "stateUpdate",

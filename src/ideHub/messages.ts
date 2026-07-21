@@ -40,6 +40,7 @@ export interface SdkStatus {
 export interface ToolVersions {
   python: string | null;
   west: string | null;
+  tan: string | null;
   cmake: string | null;
   ninja: string | null;
 }
@@ -78,7 +79,13 @@ export function emptyAlpIdeState(): AlpIdeState {
       pythonAvailable: false,
       westAvailable: false,
       lastBootstrapAt: null,
-      toolVersions: { python: null, west: null, cmake: null, ninja: null },
+      toolVersions: {
+        python: null,
+        west: null,
+        tan: null,
+        cmake: null,
+        ninja: null,
+      },
     },
     workspace: {
       workspaceRoot: null,

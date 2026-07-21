@@ -40,6 +40,7 @@ export interface SdkStatus {
 export interface ToolVersions {
   python: string | null;
   west: string | null;
+  tan: string | null;
   cmake: string | null;
   ninja: string | null;
 }
