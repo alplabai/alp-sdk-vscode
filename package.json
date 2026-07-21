@@ -252,6 +252,12 @@
         "icon": "$(cloud-download)"
       },
       {
+        "command": "alp.installTanCli",
+        "title": "Alp: Install tan CLI (global)",
+        "category": "Alp",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
         "category": "Alp"

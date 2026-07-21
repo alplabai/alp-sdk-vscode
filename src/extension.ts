@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import {
   checkCliVersion,
   ensureTanCliProvisioned,
+  installTanCliGlobally,
   resetResolvedBinary,
   updateAlpCli,
 } from "./alpCli/vscodeAdapter";
@@ -109,6 +110,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.showOutput", () => showOutput()),
     vscode.commands.registerCommand("alp.updateCli", () =>
       updateAlpCli(context),
+    ),
+    vscode.commands.registerCommand("alp.installTanCli", () =>
+      installTanCliGlobally(context),
     ),
   );
 
