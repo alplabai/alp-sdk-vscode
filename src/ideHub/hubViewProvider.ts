@@ -15,7 +15,11 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
+import {
+  buildWebviewHtml,
+  isBootstrapCommand,
+  runWebviewCommand,
+} from "./webviewHtml";
 
 export class HubViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = "alp-ide.hub";
@@ -95,7 +99,7 @@ export class HubViewProvider implements vscode.WebviewViewProvider {
         runWebviewCommand(msg.command);
         // Bootstrap runs in a terminal we can't await; stamp the time and give
         // it a beat before re-querying so the status flips once it lands.
-        if (msg.command === "alp.installDependencies") {
+        if (isBootstrapCommand(msg.command)) {
           const now = new Date().toISOString();
           void this.context.globalState.update("alp.lastBootstrapAt", now);
           setTimeout(() => void this.refresh(), 8000);

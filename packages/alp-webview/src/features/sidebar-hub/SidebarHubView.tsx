@@ -148,11 +148,8 @@ const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
     { icon: "rocket", label: "Flash all slices", command: "alp.westAlpFlash" },
     { icon: "bug", label: "Debug", command: "alp.debug" },
     { icon: "cpu", label: "Renode", command: "alp.westAlpRenode" },
-    {
-      icon: "refresh",
-      label: "Update modules (west)",
-      command: "alp.westUpdate",
-    },
+    // "West Update" lives in the Workspace section (module maintenance, not a
+    // build/flash action) — don't duplicate it here.
     { icon: "x", label: "Clean", command: "alp.westAlpClean" },
   ];
 
