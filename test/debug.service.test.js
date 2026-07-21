@@ -229,8 +229,13 @@ test("buildDebugPreflightReport can pass for resolved native-host profile", () =
     profile,
     createRuntime(),
     {
+      // Normalize separators: the service joins with the host path module, so
+      // filePath uses `\` on Windows; the fixture asserts a POSIX suffix.
       pathExists: (filePath) =>
-        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+        filePath
+          .split("\\")
+          .join("/")
+          .endsWith("build/native_sim/zephyr/zephyr.exe"),
     },
   );
 

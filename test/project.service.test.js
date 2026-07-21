@@ -40,7 +40,10 @@ test("resolveProjectContext honors explicit settings", () => {
         boardYamlPath: "/custom/board.yaml",
         westCwd: "/custom/west",
       },
-      platform: "win32",
+      // POSIX-style fixture paths below → declare a POSIX platform so path
+      // semantics match on any host (this test is about explicit settings, not
+      // Windows path behaviour).
+      platform: "linux",
     },
     (candidatePath) => candidatePath === "/custom/sdk/scripts/alp_project.py",
   );
