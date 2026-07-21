@@ -13,11 +13,17 @@ function readGolden(relativePath) {
   return fs.readFileSync(fullPath, "utf8");
 }
 
+// Golden files are POSIX (LF, forward-slash paths). On Windows the working copy
+// may carry CRLF (autocrlf) and the loader joins paths with the host separator,
+// so normalize both before comparing: CRLF → LF, and JSON-escaped backslashes
+// (`\\` in the serialized string) → `/`.
+const normalize = (s) => s.replace(/\r\n/g, "\n").replace(/\\\\/g, "/");
+
 test("generation target catalog matches golden snapshot", () => {
   const actual = `${JSON.stringify(listGenerationTargetSupport(), null, 2)}\n`;
   const expected = readGolden("loader-target-support.json");
 
-  assert.equal(actual, expected);
+  assert.equal(normalize(actual), normalize(expected));
 });
 
 test("zephyr loader plan matches golden snapshot", () => {
@@ -35,5 +41,5 @@ test("zephyr loader plan matches golden snapshot", () => {
   const actual = `${JSON.stringify(plan, null, 2)}\n`;
   const expected = readGolden("loader-plan-zephyr-conf.json");
 
-  assert.equal(actual, expected);
+  assert.equal(normalize(actual), normalize(expected));
 });

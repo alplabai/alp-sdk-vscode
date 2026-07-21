@@ -211,8 +211,12 @@ export function resolveActiveSdk(
   workspaceRoot: string,
   pathExists: PathExists,
   readFile: ReadFile,
+  // Path flavour of the declared target platform; defaults to the host's. Only
+  // matters under test (a fixture can force posix/win32 semantics on any host);
+  // in production the host path is correct.
+  p: path.PlatformPath = path,
 ): string | null {
-  const pointerPath = path.join(workspaceRoot, ACTIVE_SDK_POINTER_RELATIVE);
+  const pointerPath = p.join(workspaceRoot, ".alp", "sdk-path");
   if (!pathExists(pointerPath)) return null;
 
   try {
