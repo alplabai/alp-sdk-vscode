@@ -361,7 +361,9 @@ export async function checkCliVersion(
   } catch {
     return; // resolution failure is surfaced by the command that triggered it
   }
-  const preferGlobalCli = buildResolveDeps(context).preferGlobalCli;
+  const preferGlobalCli = vscode.workspace
+    .getConfiguration("alpSdk")
+    .get<boolean>("preferGlobalCli", false);
   // Probe directly (not runAlpCommand, which appends `--format json`). A 5s
   // cap so a hung binary can't block the extension host main thread forever.
   const probe = cp.spawnSync(binary.command, ["--version"], {
@@ -419,11 +421,21 @@ export async function checkCliVersion(
     log(
       `[cli] resolved tan ${version} on PATH is newer than supported ${SUPPORTED_CLI_VERSION}`,
     );
-    await warnAboutResolvedBinary(
-      binary,
+    // The remedy for an ahead PATH tan is NOT reinstalling (the installer
+    // fetches the latest release, i.e. an even-newer binary) — it's turning
+    // off the preference so resolution falls back to the version-pinned
+    // managed copy. Offer that directly rather than cliFixAction's installer,
+    // which cannot resolve a "newer than supported" condition.
+    const choice = await vscode.window.showWarningMessage(
       aheadCliMessage(binary, version),
-      preferGlobalCli,
+      "Open Settings",
     );
+    if (choice === "Open Settings") {
+      await vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "alpSdk.preferGlobalCli",
+      );
+    }
   }
 }
 

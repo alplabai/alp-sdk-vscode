@@ -61,8 +61,14 @@ export function activate(context: vscode.ExtensionContext): void {
       if (
         e.affectsConfiguration("alpSdk.cliPath") ||
         e.affectsConfiguration("alpSdk.preferGlobalCli")
-      )
+      ) {
         resetResolvedBinary();
+        // Re-run the one-shot version check against the newly-resolved binary:
+        // resetResolvedBinary re-arms it, but nothing else re-invokes it, so
+        // without this a mid-session cliPath/preferGlobalCli edit wouldn't
+        // re-warn until a window reload.
+        void checkCliVersion(context);
+      }
       if (e.affectsConfiguration("alpSdk")) refreshState();
     }),
     vscode.window.onDidChangeWindowState((s) => {
