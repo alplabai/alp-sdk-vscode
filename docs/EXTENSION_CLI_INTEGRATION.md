@@ -111,7 +111,7 @@ observed extension state to the CLI via flags — out of scope for now.
 ## 5. Binary resolution (hybrid: bundled + universal)
 
 **Decision: `alpSdk.cliPath` setting → bundled `bin/tan[.exe]` → local build →
-cached download → a verified-native `tan` on PATH (last resort) →
+cached download → a verified-native `tan` on PATH (last resort BY DEFAULT) →
 download-on-demand.** `resolveAlpBinary()` resolves in that order: an explicit
 `alpSdk.cliPath` (also serves dev builds: `tan-cli/target/release/tan`); then a
 binary staged at `<extensionPath>/bin/tan[.exe]` — present only in a
@@ -124,6 +124,26 @@ accepts a PATH `tan` only when `tan --version` prints the native version line
 version the extension targets falls straight through; then a fresh download of
 the raw `tan-<triple>[.exe]` release asset from `alplabai/tan-cli` for the host
 target. If all of those fail, surface a one-click "install the tan CLI" action.
+
+**Opt-in: `alpSdk.preferGlobalCli` (default off).** When set, `decideBinarySource`
+promotes a verified-native `tan` on PATH to outrank the extension's own managed
+copies (bundled / local build / cached) — it is checked directly after
+`alpSdk.cliPath`, still below it. This closes the split-brain where the
+extension quietly runs its own private, version-pinned managed `tan` (e.g.
+`0.1.0`) while the user's terminal runs a different globally-installed `tan`
+(e.g. one installed via **Install tan CLI (global)**, at `0.1.1`) — with the
+flag on, both resolve to the same binary. The default order above is
+unchanged when the flag is off. `ensureTanCliProvisioned` and `checkCliVersion`
+both honor the same flag (via the shared `resolutionInputFromDeps` seam), so
+activation does not fetch a shadow managed copy when a PATH `tan` already
+resolves under the flag, and a `path`-source binary that's *ahead* of
+`SUPPORTED_CLI_VERSION` is warned about once (in addition to the existing
+*behind* warning), since behavior/flags may differ from what this extension
+was built against. If the flag is on but no `tan` resolves on the extension
+host's PATH (a known macOS class where a shell-managed PATH entry like
+`~/.local/bin` isn't visible to the extension host), the extension logs and
+warns once, then falls back to provisioning the managed copy as normal — the
+flag never blocks and never suppresses that fallback.
 
 The managed `tan` is also **provisioned up front on activation**
 (`ensureTanCliProvisioned`): a fresh install fetches the binary once behind a
@@ -199,7 +219,8 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
 
 - **B1 — binary resolution. ✅ done.** New `src/alpCli/` slice + `alpSdk.cliPath`
   setting. `service.ts` (pure): `decideBinarySource` (cliPath→bundled→localBuild→
-  cached→PATH(verified-native, last resort)→download, §5), `parseEnvelope`,
+  cached→PATH(verified-native, last resort BY DEFAULT; promoted directly after
+  cliPath when the opt-in `alpSdk.preferGlobalCli` is on)→download, §5), `parseEnvelope`,
   `classifyExitCode`/`classifyOutcome` (exit 0/1/2/3/4/5 →
   UX severity), `releaseAssetForTarget` (the 6 published targets — Windows,
   Linux, and macOS in x64 + arm64; Intel-mac now has a prebuilt binary).

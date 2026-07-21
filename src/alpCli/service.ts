@@ -46,11 +46,12 @@ const EXIT_KINDS: Readonly<Record<number, CliExitKind>> = {
  * `alpSdk.cliPath` → the managed native binary (bundled `bin/tan[.exe]`
  * (platform-specific VSIX) → a locally-built sibling `tan-cli/target/
  * {release,debug}` binary → a previously cached download) → a verified-native
- * `tan` on PATH → download-on-demand.
+ * `tan` on PATH → download-on-demand. This default order is unchanged by the
+ * `preferGlobalCli` opt-in below.
  *
- * `tan` on PATH is deliberately checked *last*, not second: a stale or
- * non-native `tan` on PATH could shadow the version this extension targets, so
- * preferring PATH risks silently running the wrong CLI (see
+ * `tan` on PATH is deliberately checked *last* BY DEFAULT, not second: a stale
+ * or non-native `tan` on PATH could shadow the version this extension
+ * targets, so preferring PATH risks silently running the wrong CLI (see
  * `isNativeTanVersionOutput`). The extension's own managed binary — one it
  * already resolved and knows is native — never depends on the caller's current
  * shell state, so it wins whenever one is already available. `onPath` here must
@@ -58,10 +59,22 @@ const EXIT_KINDS: Readonly<Record<number, CliExitKind>> = {
  * `tan` that does not emit the native version line before this ever sees it);
  * PATH is then used as a last resort, before falling through to a fresh
  * download.
+ *
+ * Opt-in override — `input.preferGlobalCli` (`alpSdk.preferGlobalCli`,
+ * default off): when set, a verified-native PATH `tan` is promoted to
+ * outrank the extension's own managed copies (bundled/localBuild/cached),
+ * closing the split-brain where the extension quietly runs a private managed
+ * `tan` while the user's terminal runs a different, globally-installed one.
+ * It still sits below an explicit `alpSdk.cliPath`, which always wins — that
+ * setting is the user's most explicit override and must never be shadowed,
+ * not even by their own global install.
  */
 export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   if (input.cliPathSetting && input.cliPathExists) {
     return "cliPath";
+  }
+  if (input.preferGlobalCli && input.onPath) {
+    return "path";
   }
   if (input.bundledExists) {
     return "bundled";
@@ -123,6 +136,28 @@ export function isCliBehind(
     const bi = b[i] ?? 0;
     if (ai < bi) return true;
     if (ai > bi) return false;
+  }
+  return false;
+}
+
+/**
+ * True when the `installed` version is strictly NEWER than `supported`
+ * (tuple compare over numeric `MAJOR.MINOR.PATCH` — no semver dep). An
+ * unparseable/`null` installed version is treated as "unknown, not ahead" so
+ * a probe hiccup never nags the user (same shape as `isCliBehind`).
+ */
+export function isCliAhead(
+  installed: string | null,
+  supported: string = SUPPORTED_CLI_VERSION,
+): boolean {
+  if (!installed) return false;
+  const a = installed.split(".").map(Number);
+  const b = supported.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    if (ai > bi) return true;
+    if (ai < bi) return false;
   }
   return false;
 }

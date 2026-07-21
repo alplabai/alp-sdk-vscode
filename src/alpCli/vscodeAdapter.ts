@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // VS Code wiring for the tan-CLI integration: resolve the binary (setting →
-// bundled/local-build/cached → PATH (verified native, last resort) → download
-// into global storage) and run envelope-mode commands.
+// bundled/local-build/cached → PATH (verified native, last resort by default;
+// promoted above bundled/local-build/cached when alpSdk.preferGlobalCli is
+// on) → download into global storage) and run envelope-mode commands.
 // All fs/process/network seams are implemented here; the testable logic lives
 // in `service.ts` + `adapterCore.ts`.
 
@@ -16,15 +17,17 @@ import {
   ResolvedBinary,
   SpawnResult,
   downloadCli,
+  resolutionInputFromDeps,
   resolveAlpBinary,
   runAlp,
 } from "./adapterCore";
 import { downloadFile } from "./download";
-import { BinaryResolutionInput, BinarySource, CliOutcome } from "./models";
+import { BinarySource, CliOutcome } from "./models";
 import {
   SUPPORTED_CLI_VERSION,
   binaryName,
   decideBinarySource,
+  isCliAhead,
   isCliBehind,
   isNativeTanVersionOutput,
   parseTanVersion,
@@ -61,9 +64,13 @@ function withSdkRoot(args: string[]): string[] {
 /** Session memo so we probe PATH / download at most once per window. */
 let resolved: ResolvedBinary | undefined;
 
-/** Reset the cached resolution (e.g. when `alpSdk.cliPath` changes). */
+/** Reset the cached resolution (e.g. when `alpSdk.cliPath` or
+ *  `alpSdk.preferGlobalCli` changes), and re-arm the one-shot version check so
+ *  a repointed binary gets re-probed instead of staying silently unchecked
+ *  for the rest of the window. */
 export function resetResolvedBinary(): void {
   resolved = undefined;
+  versionChecked = false;
 }
 
 function cacheDirFor(context: vscode.ExtensionContext): string {
@@ -105,6 +112,9 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     bundledBinaryPath,
     bundledExists: fs.existsSync(bundledBinaryPath),
     localBuildBinaryPath,
+    preferGlobalCli: vscode.workspace
+      .getConfiguration("alpSdk")
+      .get<boolean>("preferGlobalCli", false),
     fileExists: fs.existsSync,
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
@@ -136,17 +146,14 @@ export async function ensureTanCliProvisioned(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   const deps = buildResolveDeps(context);
-  const input: BinaryResolutionInput = {
-    cliPathSetting: deps.cliPathSetting,
-    cliPathExists:
-      Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
-    onPath: deps.commandOnPath("tan"),
-    bundledExists: deps.bundledExists,
-    localBuildExists: Boolean(deps.localBuildBinaryPath),
-    cachedExists: deps.fileExists(deps.cachedBinaryPath),
-  };
+  const input = resolutionInputFromDeps(deps);
+
+  warnIfPreferGlobalCliHasNoPath(deps.preferGlobalCli, input.onPath);
+
   // A binary already resolves (cliPath / bundled / local build / cached / PATH)
-  // — nothing to fetch.
+  // — nothing to fetch. With `preferGlobalCli` on and a PATH `tan` present,
+  // this correctly resolves to `path` rather than `download`, so activation
+  // does not fetch a shadow managed copy the user didn't ask for.
   if (decideBinarySource(input) !== "download") {
     return;
   }
@@ -164,7 +171,6 @@ export async function ensureTanCliProvisioned(
       async () => {
         await downloadCli(deps);
         resetResolvedBinary();
-        versionChecked = false;
       },
     );
   } catch (error) {
@@ -172,6 +178,48 @@ export async function ensureTanCliProvisioned(
       `[cli] tan CLI provisioning failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+/** One-shot per window: `alpSdk.preferGlobalCli` is on but no verified-native
+ *  `tan` resolved on the extension host's PATH, so the flag is silently a
+ *  no-op — a known macOS-shell-env class where e.g. `~/.local/bin` is on the
+ *  terminal's PATH but not the extension host's. Logs loudly and nudges the
+ *  user once; never blocks and never suppresses the normal download ladder,
+ *  which still correctly provisions the managed copy in this case. */
+let preferGlobalCliNoPathWarned = false;
+
+function warnIfPreferGlobalCliHasNoPath(
+  preferGlobalCli: boolean,
+  onPath: boolean,
+): void {
+  if (!preferGlobalCli || onPath || preferGlobalCliNoPathWarned) {
+    return;
+  }
+  preferGlobalCliNoPathWarned = true;
+  log(
+    "[cli] alpSdk.preferGlobalCli is on, but no verified-native tan resolved " +
+      "on PATH from this window (the extension host's PATH can diverge from " +
+      "your terminal's, e.g. ~/.local/bin on macOS) — falling back to the " +
+      "managed tan CLI for now.",
+  );
+  void vscode.window
+    .showWarningMessage(
+      "alpSdk.preferGlobalCli is on, but no tan CLI was found on PATH from " +
+        "this window. Install a global tan, or clear alpSdk.preferGlobalCli " +
+        "to use the extension's managed copy.",
+      "Install tan CLI (global)",
+      "Open Settings",
+    )
+    .then((choice) => {
+      if (choice === "Install tan CLI (global)") {
+        void vscode.commands.executeCommand("alp.installTanCli");
+      } else if (choice === "Open Settings") {
+        void vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "alpSdk.preferGlobalCli",
+        );
+      }
+    });
 }
 
 /** One-shot per window: run once to avoid nagging on every command. */
@@ -184,10 +232,19 @@ let versionChecked = false;
  *  either of them — offering "Update" there is a dead-end action that leaves
  *  the user thinking they fixed it. `cliPath` needs the setting changed;
  *  every other source (`cached`/`path`/`download`) sits at or below the cache
- *  in that ranking, so a fresh download does win next time. */
+ *  in that ranking BY DEFAULT, so a fresh download does win next time —
+ *  EXCEPT `path` when `preferGlobalCli` is on: it re-ranks `path` ABOVE
+ *  `bundled`/`localBuild`/`cached` (service.ts), so `alp.updateCli` would
+ *  again be a dead end there (it downloads into the cache, which `path` now
+ *  outranks) — offer re-running the global installer instead. */
 function cliFixAction(
   source: BinarySource,
-): { label: "Open Settings" | "Update"; command: string; arg?: string } | null {
+  preferGlobalCli: boolean,
+): {
+  label: "Open Settings" | "Update" | "Install tan CLI (global)";
+  command: string;
+  arg?: string;
+} | null {
   switch (source) {
     case "cliPath":
       return {
@@ -198,19 +255,28 @@ function cliFixAction(
     case "bundled":
     case "localBuild":
       return null;
+    case "path":
+      if (preferGlobalCli) {
+        return {
+          label: "Install tan CLI (global)",
+          command: "alp.installTanCli",
+        };
+      }
+      return { label: "Update", command: "alp.updateCli" };
     default:
       return { label: "Update", command: "alp.updateCli" };
   }
 }
 
-/** Show `message` with whatever action `cliFixAction(binary.source)` offers
- *  (or no action button for a `bundled`/`localBuild` source `message` should
- *  already explain how to actually fix). */
+/** Show `message` with whatever action `cliFixAction(binary.source, …)`
+ *  offers (or no action button for a `bundled`/`localBuild` source `message`
+ *  should already explain how to actually fix). */
 async function warnAboutResolvedBinary(
   binary: ResolvedBinary,
   message: string,
+  preferGlobalCli: boolean,
 ): Promise<void> {
-  const fix = cliFixAction(binary.source);
+  const fix = cliFixAction(binary.source, preferGlobalCli);
   if (!fix) {
     await vscode.window.showWarningMessage(message);
     return;
@@ -261,6 +327,15 @@ function outdatedCliMessage(binary: ResolvedBinary, version: string): string {
   }
 }
 
+/** Message for a `path`-source tan that's NEWER than `SUPPORTED_CLI_VERSION`
+ *  (only meaningful for `path`, under `alpSdk.preferGlobalCli`: a bundled/
+ *  cached/local-build binary is the version this extension shipped or
+ *  fetched itself, so it can never be ahead of what this build targets —
+ *  only a PATH `tan` the user installed independently can be). */
+function aheadCliMessage(binary: ResolvedBinary, version: string): string {
+  return `The tan CLI on PATH (${binary.command}) is ${version}, newer than the ${SUPPORTED_CLI_VERSION} this extension was built/tested against — some flags or envelope fields may differ from what this extension expects.`;
+}
+
 /**
  * Probe the resolved `tan` binary's version and, when it's older than the
  * version this extension targets (or isn't the native CLI at all), warn once
@@ -286,6 +361,7 @@ export async function checkCliVersion(
   } catch {
     return; // resolution failure is surfaced by the command that triggered it
   }
+  const preferGlobalCli = buildResolveDeps(context).preferGlobalCli;
   // Probe directly (not runAlpCommand, which appends `--format json`). A 5s
   // cap so a hung binary can't block the extension host main thread forever.
   const probe = cp.spawnSync(binary.command, ["--version"], {
@@ -316,17 +392,39 @@ export async function checkCliVersion(
     log(
       `[cli] resolved binary at ${binary.command} is not the native tan CLI (found: ${found}; source: ${binary.source})`,
     );
-    await warnAboutResolvedBinary(binary, nonNativeCliMessage(binary, found));
+    await warnAboutResolvedBinary(
+      binary,
+      nonNativeCliMessage(binary, found),
+      preferGlobalCli,
+    );
     return;
   }
 
-  if (!isCliBehind(version, SUPPORTED_CLI_VERSION)) {
+  if (isCliBehind(version, SUPPORTED_CLI_VERSION)) {
+    log(
+      `[cli] resolved tan ${version} is older than supported ${SUPPORTED_CLI_VERSION} (source: ${binary.source})`,
+    );
+    await warnAboutResolvedBinary(
+      binary,
+      outdatedCliMessage(binary, version),
+      preferGlobalCli,
+    );
     return;
   }
-  log(
-    `[cli] resolved tan ${version} is older than supported ${SUPPORTED_CLI_VERSION} (source: ${binary.source})`,
-  );
-  await warnAboutResolvedBinary(binary, outdatedCliMessage(binary, version));
+
+  // Ahead-of-supported is only worth flagging for a `path` source: a bundled/
+  // cached/local-build binary is one this extension shipped or fetched
+  // itself, so it can't be ahead of what this build targets.
+  if (binary.source === "path" && isCliAhead(version, SUPPORTED_CLI_VERSION)) {
+    log(
+      `[cli] resolved tan ${version} on PATH is newer than supported ${SUPPORTED_CLI_VERSION}`,
+    );
+    await warnAboutResolvedBinary(
+      binary,
+      aheadCliMessage(binary, version),
+      preferGlobalCli,
+    );
+  }
 }
 
 /**
@@ -361,7 +459,6 @@ export async function updateAlpCli(
       async () => {
         await downloadCli(deps);
         resetResolvedBinary();
-        versionChecked = false;
       },
     );
     void vscode.window.showInformationMessage(
@@ -519,6 +616,8 @@ function spawnAlp(command: string, args: string[], cwd?: string): SpawnResult {
   };
 }
 
+// TODO(preferGlobalCli): capture absolute path to close terminal-vs-ext-host
+// PATH divergence — see `warnIfPreferGlobalCliHasNoPath` above.
 function commandOnPath(command: string): boolean {
   // A 5s cap so a hung binary on PATH can't block the extension host.
   const probe = cp.spawnSync(command, ["--version"], {
