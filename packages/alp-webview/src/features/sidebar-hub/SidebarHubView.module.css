@@ -55,14 +55,48 @@
   flex-direction: column;
   gap: 2px;
 }
+/* Section header is a full-width toggle: chevron + uppercase label. */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0 0 2px;
+  padding: 3px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.sectionHeader:hover {
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.1));
+}
+.sectionHeader:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #4c8bf5);
+  outline-offset: -1px;
+}
+.sectionChevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  transition: transform 0.12s ease;
+}
+.sectionChevron[data-open] {
+  transform: rotate(90deg);
+}
 .sectionLabel {
-  margin: 0 0 4px;
-  padding: 0 4px;
+  margin: 0;
+  padding: 0;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--vscode-descriptionForeground);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sectionChevron {
+    transition: none;
+  }
 }
 .rows {
   display: flex;

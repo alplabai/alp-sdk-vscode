@@ -91,7 +91,12 @@ async function commandVersion(
       timeout: 3000,
       env,
     });
-    return stdout.trim().split("\n")[0] ?? null;
+    const firstLine = stdout.trim().split("\n")[0] ?? "";
+    // Reduce to the bare MAJOR.MINOR[.PATCH] — `--version` output usually
+    // carries a tool-name/prose prefix ("Python 3.9.0", "West version: v1.5.0")
+    // that would otherwise double up with the UI's own "Python"/"west" label.
+    const version = firstLine.match(/\d+\.\d+(?:\.\d+)?/);
+    return version ? version[0] : firstLine || null;
   } catch (err) {
     log(`alp: probe "${cmd} --version" failed: ${errText(err)}`);
     return null;

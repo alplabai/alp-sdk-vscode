@@ -12,6 +12,7 @@
 // `?inline` so Vite embeds it as a data URI — no host-side asWebviewUri
 // plumbing — and painted via CSS `mask` in the theme foreground colour, so it
 // reads correctly on both light and dark VS Code themes.
+import { useState } from "react";
 import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import { Icon, Skeleton } from "../../shared/ui";
@@ -115,10 +116,25 @@ function Section({
   title: string;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(true);
   return (
     <section className={styles.section}>
-      <p className={styles.sectionLabel}>{title}</p>
-      <div className={styles.rows}>{children}</div>
+      <button
+        type="button"
+        className={styles.sectionHeader}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span
+          className={styles.sectionChevron}
+          data-open={open ? "" : undefined}
+          aria-hidden="true"
+        >
+          <Icon name="chevronRight" size={12} />
+        </span>
+        <span className={styles.sectionLabel}>{title}</span>
+      </button>
+      {open && <div className={styles.rows}>{children}</div>}
     </section>
   );
 }
