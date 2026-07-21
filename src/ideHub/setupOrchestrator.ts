@@ -45,7 +45,7 @@ export async function maybeOfferSetupPanel(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   try {
-    const state = await queryAlpIdeState();
+    const state = await queryAlpIdeState(null, context);
 
     // --- drift detection ---------------------------------------------------
     const currentVersionFp = versionFingerprint(state.setup.toolVersions);

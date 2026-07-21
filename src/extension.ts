@@ -18,7 +18,6 @@ import {
   NewProjectFlowPanel,
   OverviewPanel,
   registerWorkspaceCommands,
-  SdkManagerPanel,
   SetupFlowPanel,
 } from "./ideHub";
 import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
@@ -42,7 +41,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // One shared state source for both the native trees and the status bar, so
   // the Build & Flash tree and the status-bar Build/Flash gating never disagree.
-  const stateMgr = new StateManager();
+  const stateMgr = new StateManager(context);
   const refreshState = () =>
     void stateMgr.refresh(
       context.globalState.get<string>("alp.lastBootstrapAt") ?? null,
@@ -76,6 +75,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.openSetupFlow", () =>
       SetupFlowPanel.open(context),
     ),
+    vscode.commands.registerCommand("alp.openHub", () =>
+      OverviewPanel.open(context),
+    ),
+    // Deprecated alias — keeps old keybindings/links/muscle-memory working.
     vscode.commands.registerCommand("alp.openOverview", () =>
       OverviewPanel.open(context),
     ),
@@ -85,8 +88,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.openExistingProject", () =>
       ExistingProjectFlowPanel.open(context),
     ),
+    // SDK Manager is now a section of the Hub; open the Hub focused on it.
     vscode.commands.registerCommand("alp.openSdkManager", () =>
-      SdkManagerPanel.open(context),
+      OverviewPanel.open(context, "sdk"),
     ),
     vscode.commands.registerCommand("alp.openSettings", () =>
       vscode.commands.executeCommand(

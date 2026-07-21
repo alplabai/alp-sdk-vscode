@@ -16,6 +16,7 @@ import {
   resolveWestBinary,
   westWorkspaceInitialized,
 } from "../environment/vscodeAdapter";
+import { probeTanVersion } from "../alpCli/vscodeAdapter";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -104,6 +105,7 @@ export function sdkCacheRoot(): string {
 
 export async function queryAlpIdeState(
   lastBootstrapAt: string | null = null,
+  context?: vscode.ExtensionContext,
 ): Promise<AlpIdeState> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   const actualWorkspaceRoot: string | null =
@@ -192,6 +194,9 @@ export async function queryAlpIdeState(
     ]);
   const pythonAvailable = pythonVersion !== null;
   const westAvailable = westVersion !== null;
+  // Not part of the probeEnv batch above: it resolves its own binary via the
+  // cliPath/bundled/localBuild/cached/PATH ladder and must never download.
+  const tanVersion = context ? await probeTanVersion(context) : null;
 
   return {
     sdk: {
@@ -207,6 +212,7 @@ export async function queryAlpIdeState(
       toolVersions: {
         python: pythonVersion,
         west: westVersion,
+        tan: tanVersion,
         cmake: cmakeVersion,
         ninja: ninjaVersion,
       },

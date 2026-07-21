@@ -8,6 +8,7 @@ import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import type { IconName } from "../../shared/ui";
 import { Icon, Skeleton, StatusChip } from "../../shared/ui";
+import { SdkView } from "../sdk";
 import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./OverviewView.module.css";
@@ -29,6 +30,9 @@ function envMeta(state: AlpIdeState): string {
     const parts: string[] = [];
     if (toolVersions.python) parts.push(`Python ${toolVersions.python}`);
     if (toolVersions.west) parts.push(`west ${toolVersions.west}`);
+    // tan is managed/auto-fetched, so it is info (never gates "available"):
+    // show its version when a binary resolved, else that it is managed.
+    parts.push(toolVersions.tan ? `tan ${toolVersions.tan}` : "tan managed");
     return parts.join(" · ") || "All tools available";
   }
   const missing: string[] = [];
@@ -212,7 +216,6 @@ const PANELS: PanelCardProps[] = [
 const ACTIONS: ActionItem[] = [
   { icon: "wrench", label: "Setup Wizard", command: "alp.openSetupFlow" },
   { icon: "filePlus", label: "New Project", command: "alp.newProjectWizard" },
-  { icon: "download", label: "SDK Manager", command: "alp.openSdkManager" },
   {
     icon: "refresh",
     label: "Run Bootstrap",
@@ -306,6 +309,15 @@ export function OverviewView() {
               <ActionButton key={a.command} {...a} />
             ))}
           </div>
+        </section>
+
+        {/* SDK Manager — folded in from the former standalone panel. The
+            `alp.openSdkManager` command opens the Hub and scrolls here. */}
+        <section aria-labelledby="sdk-heading" id="sdk-section">
+          <p id="sdk-heading" className={styles.sectionLabel}>
+            SDK Manager
+          </p>
+          <SdkView />
         </section>
       </div>
     </div>

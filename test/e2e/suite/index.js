@@ -196,6 +196,7 @@ async function runChecks() {
     toolVersions: {
       python: "3.11",
       west: "1.2",
+      tan: "0.1.0",
       cmake: "3.28",
       ninja: "1.11",
     },

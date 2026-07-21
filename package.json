@@ -36,6 +36,7 @@
     "onView:alp-ide.hub",
     "onCommand:alp.openSdkManager",
     "onCommand:alp.openSetupFlow",
+    "onCommand:alp.openHub",
     "onCommand:alp.openOverview",
     "onCommand:alp.newProjectWizard",
     "onCommand:alp.openExistingProject",
@@ -319,8 +320,13 @@
         "category": "Alp"
       },
       {
+        "command": "alp.openHub",
+        "title": "Alp: Open Hub",
+        "category": "Alp"
+      },
+      {
         "command": "alp.openOverview",
-        "title": "Alp: Open Alp IDE overview",
+        "title": "Alp: Open Hub (deprecated alias)",
         "category": "Alp"
       },
       {

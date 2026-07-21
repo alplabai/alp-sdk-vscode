@@ -9,6 +9,7 @@
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { promisify } from "util";
 import * as vscode from "vscode";
 
 import {
@@ -32,6 +33,8 @@ import {
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log, runInTerminal } from "../util";
+
+const execFileAsyncCli = promisify(cp.execFile);
 
 /** Bare binary name (not the full resolved path) for readable log lines. */
 function binaryLabel(command: string): string {
@@ -122,6 +125,39 @@ export async function resolveAlpBinaryForContext(
   }
   resolved = await resolveAlpBinary(buildResolveDeps(context));
   return resolved;
+}
+
+/**
+ * The installed native `tan` version, or null — WITHOUT ever downloading.
+ * Called from state refresh (focus/save/settings), so it must never fetch: if
+ * nothing resolves locally (`decideBinarySource === "download"`) it returns
+ * null immediately. Otherwise it resolves the already-present binary (no
+ * download in a non-download branch) and parses `tan --version`; a non-native
+ * `tan` on PATH parses to null (parseTanVersion guards the shape).
+ */
+export async function probeTanVersion(
+  context: vscode.ExtensionContext,
+): Promise<string | null> {
+  const deps = buildResolveDeps(context);
+  const input: BinaryResolutionInput = {
+    cliPathSetting: deps.cliPathSetting,
+    cliPathExists:
+      Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
+    onPath: deps.commandOnPath("tan"),
+    bundledExists: deps.bundledExists,
+    localBuildExists: Boolean(deps.localBuildBinaryPath),
+    cachedExists: deps.fileExists(deps.cachedBinaryPath),
+  };
+  if (decideBinarySource(input) === "download") return null;
+  try {
+    const bin = await resolveAlpBinary(deps);
+    const { stdout } = await execFileAsyncCli(bin.command, ["--version"], {
+      timeout: 3000,
+    });
+    return parseTanVersion(stdout);
+  } catch {
+    return null;
+  }
 }
 
 /**

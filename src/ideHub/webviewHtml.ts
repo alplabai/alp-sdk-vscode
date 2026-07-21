@@ -86,6 +86,7 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.openConfigurator",
   "alp.openExistingProject",
   "alp.openHardwareExplorer",
+  "alp.openHub",
   "alp.openOverview",
   "alp.openSdkManager",
   "alp.openSettings",
