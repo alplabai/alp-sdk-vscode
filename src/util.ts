@@ -51,7 +51,10 @@ const SHOW_OUTPUT = "Show Output";
  *  AND show an error toast that always offers "Show Output" (plus any caller
  *  actions). Picking "Show Output" reveals the channel and returns undefined;
  *  otherwise the picked caller action is returned. The house pattern for every
- *  error toast tied to a failure the channel can explain. */
+ *  error toast tied to a failure the channel can explain.
+ *
+ *  Do not pass a caller action literally titled "Show Output" — that title is
+ *  reserved for the appended house action and would be indistinguishable. */
 export async function reportError(
   message: string,
   detail?: string,
