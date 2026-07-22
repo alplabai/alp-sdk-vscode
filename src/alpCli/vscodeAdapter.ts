@@ -32,7 +32,7 @@ import {
   releaseAssetForTarget,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, runInTerminal } from "../util";
+import { log, runInTerminal, showOutput } from "../util";
 
 const execFileAsyncCli = promisify(cp.execFile);
 
@@ -219,9 +219,20 @@ export async function ensureTanCliProvisioned(
       },
     );
   } catch (error) {
-    log(
-      `[cli] tan CLI provisioning failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    // Provisioning only runs (and only reaches here) on a fresh install with no
+    // resolvable binary AND a failed download — not on every activation — so a
+    // failure toast is a real, non-naggy signal (previously log-only = silent).
+    const detail = error instanceof Error ? error.message : String(error);
+    log(`[cli] tan CLI provisioning failed: ${detail}`);
+    const SHOW = "Show Output";
+    void vscode.window
+      .showErrorMessage(
+        `Alp: couldn't provision the tan CLI — ${detail}. Build and validate commands need it; set "alpSdk.cliPath" to a local build, or retry when online.`,
+        SHOW,
+      )
+      .then((pick) => {
+        if (pick === SHOW) showOutput();
+      });
   }
 }
 
