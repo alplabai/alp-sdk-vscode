@@ -13,6 +13,7 @@ import {
   isBootstrapCommand,
   runWebviewCommand,
 } from "./webviewHtml";
+import { onDidFinishTerminalCommand } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.setup-flow";
 const PANEL_TITLE = "Alp IDE Setup";
@@ -56,9 +57,11 @@ export class SetupFlowPanel {
 
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
 
-    // Auto-refresh when workspace folders change.
+    // Auto-refresh when workspace folders change, and when a terminal-backed
+    // CTA (bootstrap) finishes — the real signal, not a blind delay. util.ts.
     this.disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => void this.refresh()),
+      onDidFinishTerminalCommand(() => void this.refresh()),
     );
 
     // Auto-refresh when board.yaml appears or changes.
@@ -102,10 +105,13 @@ export class SetupFlowPanel {
       case "runCommand":
         runWebviewCommand(msg.command);
         if (isBootstrapCommand(msg.command)) {
-          // Bootstrap runs in a terminal; re-check after it settles.
-          const now = new Date().toISOString();
-          void this.context.globalState.update("alp.lastBootstrapAt", now);
-          setTimeout(() => void this.refresh(), 8000);
+          // Bootstrap runs in a terminal; the standing
+          // onDidFinishTerminalCommand subscription refreshes when it closes.
+          // Stamp the time so that post-close refresh reads it.
+          void this.context.globalState.update(
+            "alp.lastBootstrapAt",
+            new Date().toISOString(),
+          );
         }
         break;
       case "closePanel":

@@ -20,6 +20,7 @@ import {
   isBootstrapCommand,
   runWebviewCommand,
 } from "./webviewHtml";
+import { onDidFinishTerminalCommand } from "../util";
 
 export class HubViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = "alp-ide.hub";
@@ -39,6 +40,9 @@ export class HubViewProvider implements vscode.WebviewViewProvider {
       vscode.window.onDidChangeWindowState((s) => {
         if (s.focused && this.view?.visible) void this.refresh();
       }),
+      // The real completion signal for a terminal-backed CTA (bootstrap, a west
+      // build/flash): refresh when that terminal closes. See util.ts.
+      onDidFinishTerminalCommand(() => void this.refresh()),
     );
   }
 
@@ -97,14 +101,14 @@ export class HubViewProvider implements vscode.WebviewViewProvider {
         break;
       case "runCommand":
         runWebviewCommand(msg.command);
-        // Bootstrap runs in a terminal we can't await; stamp the time and give
-        // it a beat before re-querying so the status flips once it lands.
+        // A CTA that changes status runs in a terminal; the standing
+        // onDidFinishTerminalCommand subscription refreshes when it closes.
+        // Only stamp the bootstrap time here so that post-close refresh reads it.
         if (isBootstrapCommand(msg.command)) {
-          const now = new Date().toISOString();
-          void this.context.globalState.update("alp.lastBootstrapAt", now);
-          setTimeout(() => void this.refresh(), 8000);
-        } else {
-          setTimeout(() => void this.refresh(), 1200);
+          void this.context.globalState.update(
+            "alp.lastBootstrapAt",
+            new Date().toISOString(),
+          );
         }
         break;
       case "openUrl":
