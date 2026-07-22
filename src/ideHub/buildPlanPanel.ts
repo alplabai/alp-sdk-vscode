@@ -11,6 +11,7 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
+import { reportError } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.buildPlan";
 const PANEL_TITLE = "Alp Build Plan";
@@ -184,7 +185,7 @@ export class BuildPlanPanel {
       await this.handleRequestBuildPlan();
     } else {
       const error = envelope?.issues?.[0]?.message ?? outcome.message;
-      void vscode.window.showErrorMessage(`Alp: materialise failed — ${error}`);
+      void reportError(`Alp: materialise failed — ${error}`);
     }
   }
 
