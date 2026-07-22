@@ -160,15 +160,10 @@ export async function probeTanVersion(
   context: vscode.ExtensionContext,
 ): Promise<string | null> {
   const deps = buildResolveDeps(context);
-  const input: BinaryResolutionInput = {
-    cliPathSetting: deps.cliPathSetting,
-    cliPathExists:
-      Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
-    onPath: deps.commandOnPath("tan"),
-    bundledExists: deps.bundledExists,
-    localBuildExists: Boolean(deps.localBuildBinaryPath),
-    cachedExists: deps.fileExists(deps.cachedBinaryPath),
-  };
+  // Resolve through the shared seam so this probe honors `preferGlobalCli`
+  // exactly like activation-time provisioning (no split-brain on which binary
+  // the version is read from).
+  const input = resolutionInputFromDeps(deps);
   if (decideBinarySource(input) === "download") return null;
   try {
     const bin = await resolveAlpBinary(deps);
