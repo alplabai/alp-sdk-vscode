@@ -45,6 +45,8 @@ export interface ResolveDeps {
    *  (running from a source checkout with a built tan resolves the CLI here
    *  instead of a network download). */
   localBuildBinaryPath: string | null;
+  /** The `alpSdk.preferGlobalCli` setting value (see `models.ts`). */
+  preferGlobalCli: boolean;
   fileExists: (path: string) => boolean;
   commandOnPath: (command: string) => boolean;
   ensureDir: (dir: string) => void;
@@ -58,6 +60,28 @@ export interface ResolvedBinary {
 }
 
 /**
+ * Build the pure resolver's input from the injected deps. This is the single
+ * seam both `resolveAlpBinary` (below) and `ensureTanCliProvisioned`
+ * (vscodeAdapter's activation-time provisioning) go through, so the fields
+ * fed to `decideBinarySource` — in particular `preferGlobalCli` — can never
+ * diverge between provisioning and per-command resolution.
+ */
+export function resolutionInputFromDeps(
+  deps: ResolveDeps,
+): BinaryResolutionInput {
+  return {
+    cliPathSetting: deps.cliPathSetting,
+    cliPathExists:
+      Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
+    onPath: deps.commandOnPath("tan"),
+    bundledExists: deps.bundledExists,
+    localBuildExists: Boolean(deps.localBuildBinaryPath),
+    cachedExists: deps.fileExists(deps.cachedBinaryPath),
+    preferGlobalCli: deps.preferGlobalCli,
+  };
+}
+
+/**
  * Resolve the `tan` command to invoke, downloading on demand when nothing else
  * is available. Throws when the host has no prebuilt binary and none is
  * configured/on PATH, or when a download fails — the surface maps that to a
@@ -66,16 +90,7 @@ export interface ResolvedBinary {
 export async function resolveAlpBinary(
   deps: ResolveDeps,
 ): Promise<ResolvedBinary> {
-  const input: BinaryResolutionInput = {
-    cliPathSetting: deps.cliPathSetting,
-    cliPathExists:
-      Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
-    onPath: deps.commandOnPath("tan"),
-    bundledExists: deps.bundledExists,
-    localBuildExists: Boolean(deps.localBuildBinaryPath),
-    cachedExists: deps.fileExists(deps.cachedBinaryPath),
-  };
-
+  const input = resolutionInputFromDeps(deps);
   const source = decideBinarySource(input);
   switch (source) {
     case "cliPath":

@@ -55,9 +55,22 @@ export function activate(context: vscode.ExtensionContext): void {
     // Reactivity (no window reload): re-derive shared state on alpSdk config
     // edits (SDK activate/deactivate via alpSdk.path) and when the window
     // regains focus (e.g. after running bootstrap/install in a terminal). A
-    // cliPath edit also resets the cached CLI-binary resolution.
+    // cliPath or preferGlobalCli edit also resets the cached CLI-binary
+    // resolution (and re-arms the one-shot version check, see
+    // resetResolvedBinary), so repointing config mid-session re-checks the
+    // newly-resolved binary right away.
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("alpSdk.cliPath")) resetResolvedBinary();
+      if (
+        e.affectsConfiguration("alpSdk.cliPath") ||
+        e.affectsConfiguration("alpSdk.preferGlobalCli")
+      ) {
+        resetResolvedBinary();
+        // Re-run the one-shot version check against the newly-resolved binary:
+        // resetResolvedBinary re-arms it, but nothing else re-invokes it, so
+        // without this a mid-session cliPath/preferGlobalCli edit wouldn't
+        // re-warn until a window reload.
+        void checkCliVersion(context);
+      }
       if (e.affectsConfiguration("alpSdk")) refreshState();
     }),
     vscode.window.onDidChangeWindowState((s) => {

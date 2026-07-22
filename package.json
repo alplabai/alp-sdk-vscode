@@ -463,6 +463,12 @@
           "default": "",
           "scope": "machine-overridable",
           "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a verified `tan` on PATH, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/target/release/tan`) to override."
+        },
+        "alpSdk.preferGlobalCli": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine-overridable",
+          "markdownDescription": "Prefer a globally-installed native `tan` on your PATH over the extension's own managed copy. Use this if you installed tan with **Install tan CLI (global)** and want the extension to run the same binary as your terminal. An explicit `#alpSdk.cliPath#` still takes precedence. Default (off): the extension uses its private, version-pinned managed copy."
         }
       }
     }

@@ -66,6 +66,10 @@ export interface BinaryResolutionInput {
   localBuildExists: boolean;
   /** Whether a previously downloaded binary exists in global storage. */
   cachedExists: boolean;
+  /** The `alpSdk.preferGlobalCli` setting: when true, a verified-native `tan`
+   *  on PATH is promoted above the managed bundled/localBuild/cached copies
+   *  (still below an explicit `cliPathSetting`). Default false. */
+  preferGlobalCli: boolean;
 }
 
 /** A GitHub release asset for the host target. tan-cli ships a RAW binary per

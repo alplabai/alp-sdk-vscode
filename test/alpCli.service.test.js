@@ -7,6 +7,8 @@ const {
   isNativeTanVersionOutput,
   parseTanVersion,
   isCliBehind,
+  isCliAhead,
+  aheadPathFixAction,
   classifyExitCode,
   parseEnvelope,
   classifyOutcome,
@@ -14,6 +16,7 @@ const {
   binaryName,
   SUPPORTED_CLI_VERSION,
 } = require("../out/alpCli/service.js");
+const { resolutionInputFromDeps } = require("../out/alpCli/adapterCore.js");
 
 test("parseTanVersion extracts MAJOR.MINOR.PATCH and tolerates a suffix", () => {
   assert.equal(parseTanVersion("tan 0.1.0"), "0.1.0");
@@ -29,6 +32,23 @@ test("isCliBehind compares numeric version tuples", () => {
   assert.equal(isCliBehind("0.2.0", "0.1.14"), false);
   assert.equal(isCliBehind("1.0.0", "0.1.14"), false);
   assert.equal(isCliBehind(null, "0.1.14"), false); // unknown → not behind
+});
+
+test("isCliAhead compares numeric version tuples (mirror of isCliBehind)", () => {
+  assert.equal(isCliAhead("0.1.11", "0.1.14"), false); // behind → not ahead
+  assert.equal(isCliAhead("0.1.14", "0.1.14"), false); // equal → not ahead
+  assert.equal(isCliAhead("0.2.0", "0.1.14"), true);
+  assert.equal(isCliAhead("1.0.0", "0.1.14"), true);
+  assert.equal(isCliAhead(null, "0.1.14"), false); // unknown → not ahead
+});
+
+test("aheadPathFixAction gates the ahead-tan remedy on preferGlobalCli", () => {
+  // Flag off: a PATH tan only won because no managed copy exists; the cache
+  // outranks PATH when off, so downloading the pinned version restores support.
+  assert.equal(aheadPathFixAction(false), "updateManagedCli");
+  // Flag on: PATH outranks the cache, so re-downloading can't win; turning the
+  // preference off is the remedy.
+  assert.equal(aheadPathFixAction(true), "openPreferGlobalSetting");
 });
 
 test("decideBinarySource follows the resolution order", () => {
@@ -172,7 +192,7 @@ test("decideBinarySource: bundled wins over cached/download/PATH but loses to cl
   );
 });
 
-test("decideBinarySource: a verified-native PATH tan is a last resort — used only when no managed binary exists, still loses to any managed binary that does", () => {
+test("decideBinarySource: flag OFF (default) — a verified-native PATH tan is a last resort, pinning the exact default order cliPath > bundled > localBuild > cached > path > download", () => {
   // no cliPath, no bundled/localBuild/cached binary → PATH is all that's left,
   // so it's used ahead of triggering a network download.
   assert.equal(
@@ -183,6 +203,7 @@ test("decideBinarySource: a verified-native PATH tan is a last resort — used o
       bundledExists: false,
       localBuildExists: false,
       cachedExists: false,
+      preferGlobalCli: false,
     }),
     "path",
   );
@@ -195,9 +216,143 @@ test("decideBinarySource: a verified-native PATH tan is a last resort — used o
       bundledExists: false,
       localBuildExists: false,
       cachedExists: true,
+      preferGlobalCli: false,
     }),
     "cached",
   );
+  // ...and localBuild wins over cached.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: true,
+      bundledExists: false,
+      localBuildExists: true,
+      cachedExists: true,
+      preferGlobalCli: false,
+    }),
+    "localBuild",
+  );
+  // ...and bundled wins over localBuild.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "",
+      cliPathExists: false,
+      onPath: true,
+      bundledExists: true,
+      localBuildExists: true,
+      cachedExists: true,
+      preferGlobalCli: false,
+    }),
+    "bundled",
+  );
+  // ...and an explicit, existing cliPath wins over everything, PATH included.
+  assert.equal(
+    decideBinarySource({
+      cliPathSetting: "/x/tan",
+      cliPathExists: true,
+      onPath: true,
+      bundledExists: true,
+      localBuildExists: true,
+      cachedExists: true,
+      preferGlobalCli: false,
+    }),
+    "cliPath",
+  );
+});
+
+test("decideBinarySource: flag ON (preferGlobalCli) — a verified-native PATH tan is promoted above bundled/localBuild/cached, but still loses to cliPath", () => {
+  const base = {
+    cliPathSetting: "",
+    cliPathExists: false,
+    onPath: true,
+    preferGlobalCli: true,
+  };
+
+  // path beats cached.
+  assert.equal(
+    decideBinarySource({
+      ...base,
+      bundledExists: false,
+      localBuildExists: false,
+      cachedExists: true,
+    }),
+    "path",
+  );
+  // path beats bundled.
+  assert.equal(
+    decideBinarySource({
+      ...base,
+      bundledExists: true,
+      localBuildExists: false,
+      cachedExists: false,
+    }),
+    "path",
+  );
+  // path beats localBuild.
+  assert.equal(
+    decideBinarySource({
+      ...base,
+      bundledExists: false,
+      localBuildExists: true,
+      cachedExists: false,
+    }),
+    "path",
+  );
+  // path still loses to an explicit, existing cliPath.
+  assert.equal(
+    decideBinarySource({
+      ...base,
+      cliPathSetting: "/x/tan",
+      cliPathExists: true,
+      bundledExists: true,
+      localBuildExists: true,
+      cachedExists: true,
+    }),
+    "cliPath",
+  );
+  // flag on with onPath:false leaves the rest of the ladder unchanged (falls
+  // straight through to bundled, same as flag off).
+  assert.equal(
+    decideBinarySource({
+      ...base,
+      onPath: false,
+      bundledExists: true,
+      localBuildExists: true,
+      cachedExists: true,
+    }),
+    "bundled",
+  );
+  // ...and with nothing else available either, flag on + onPath:false still
+  // falls through to download, same as flag off.
+  assert.equal(
+    decideBinarySource({
+      ...base,
+      onPath: false,
+      bundledExists: false,
+      localBuildExists: false,
+      cachedExists: false,
+    }),
+    "download",
+  );
+});
+
+test("resolutionInputFromDeps: the single seam both provisioning and resolution build BinaryResolutionInput from sets preferGlobalCli", () => {
+  const deps = {
+    cliPathSetting: "",
+    fileExists: () => false,
+    commandOnPath: () => true,
+    bundledExists: false,
+    localBuildBinaryPath: null,
+    cachedBinaryPath: "/cache/tan",
+    preferGlobalCli: true,
+  };
+  const input = resolutionInputFromDeps(deps);
+  assert.equal(input.preferGlobalCli, true);
+  assert.equal(input.onPath, true);
+
+  const inputOff = resolutionInputFromDeps({ ...deps, preferGlobalCli: false });
+  assert.equal(inputOff.preferGlobalCli, false);
 });
 
 test("classifyExitCode maps the stable codes", () => {
