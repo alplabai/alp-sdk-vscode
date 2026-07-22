@@ -32,7 +32,7 @@ import {
   releaseAssetForTarget,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, runInTerminal } from "../util";
+import { log, runInTerminal, showOutput } from "../util";
 
 const execFileAsyncCli = promisify(cp.execFile);
 
@@ -67,6 +67,16 @@ let resolved: ResolvedBinary | undefined;
 /** Reset the cached resolution (e.g. when `alpSdk.cliPath` changes). */
 export function resetResolvedBinary(): void {
   resolved = undefined;
+}
+
+/** Best-effort human-readable size of a just-downloaded file, for the transfer
+ *  log. Returns "unknown size" when the file can't be stat'd. */
+function downloadedBytes(filePath: string): string {
+  try {
+    return `${fs.statSync(filePath).size} bytes`;
+  } catch {
+    return "unknown size";
+  }
 }
 
 function cacheDirFor(context: vscode.ExtensionContext): string {
@@ -198,15 +208,31 @@ export async function ensureTanCliProvisioned(
         title: "Downloading the tan CLI…",
       },
       async () => {
+        const asset = releaseAssetForTarget(deps.platform, deps.arch);
+        log(`[cli] downloading tan CLI: ${asset?.url ?? "unknown asset"}`);
         await downloadCli(deps);
+        log(
+          `[cli] tan CLI downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
+        );
         resetResolvedBinary();
         versionChecked = false;
       },
     );
   } catch (error) {
-    log(
-      `[cli] tan CLI provisioning failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    // Provisioning only runs (and only reaches here) on a fresh install with no
+    // resolvable binary AND a failed download — not on every activation — so a
+    // failure toast is a real, non-naggy signal (previously log-only = silent).
+    const detail = error instanceof Error ? error.message : String(error);
+    log(`[cli] tan CLI provisioning failed: ${detail}`);
+    const SHOW = "Show Output";
+    void vscode.window
+      .showErrorMessage(
+        `Alp: couldn't provision the tan CLI — ${detail}. Build and validate commands need it; set "alpSdk.cliPath" to a local build, or retry when online.`,
+        SHOW,
+      )
+      .then((pick) => {
+        if (pick === SHOW) showOutput();
+      });
   }
 }
 
@@ -395,7 +421,14 @@ export async function updateAlpCli(
         title: `Updating the tan CLI to ${SUPPORTED_CLI_VERSION}…`,
       },
       async () => {
+        const asset = releaseAssetForTarget(deps.platform, deps.arch);
+        log(
+          `[cli] downloading tan CLI ${SUPPORTED_CLI_VERSION}: ${asset?.url ?? "unknown asset"}`,
+        );
         await downloadCli(deps);
+        log(
+          `[cli] tan CLI ${SUPPORTED_CLI_VERSION} downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
+        );
         resetResolvedBinary();
         versionChecked = false;
       },

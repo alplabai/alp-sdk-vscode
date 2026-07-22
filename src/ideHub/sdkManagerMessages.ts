@@ -20,6 +20,7 @@ import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
 import { writeAlpSetting } from "../sdk/settingsWrite";
+import { log as logChannel } from "../util";
 import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
 import { sdkCacheRoot } from "./vscodeAdapter";
 
@@ -208,6 +209,10 @@ export function createSdkMessageHandler(
       done: boolean,
       success?: boolean,
     ): void => {
+      // Tee every install-progress line into the "Alp SDK" channel so the
+      // transcript survives the panel closing (P1.2). The param is named `log`
+      // (the webview message field), so the channel logger is aliased.
+      logChannel(`[sdk-install] ${log}`);
       post({ type: "sdkInstallProgress", log, done, success });
     };
 
