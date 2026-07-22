@@ -164,6 +164,10 @@ export function createSdkMessageHandler(
           ? "Alp: failed to fetch SDK releases. Check your network connection."
           : `Alp: ${outcome.message}`,
       );
+      // Resolve the webview's "Loading SDK list…" spinner even on failure — the
+      // toast explains why; an empty list drops the user to the actionable empty
+      // state (Browse to a local SDK) instead of spinning forever.
+      post({ type: "sdkReleasesLoaded", releases: [] });
       return;
     }
     const releases =
