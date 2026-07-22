@@ -69,6 +69,16 @@ export function resetResolvedBinary(): void {
   resolved = undefined;
 }
 
+/** Best-effort human-readable size of a just-downloaded file, for the transfer
+ *  log. Returns "unknown size" when the file can't be stat'd. */
+function downloadedBytes(filePath: string): string {
+  try {
+    return `${fs.statSync(filePath).size} bytes`;
+  } catch {
+    return "unknown size";
+  }
+}
+
 function cacheDirFor(context: vscode.ExtensionContext): string {
   return path.join(context.globalStorageUri.fsPath, "cli");
 }
@@ -198,7 +208,12 @@ export async function ensureTanCliProvisioned(
         title: "Downloading the tan CLI…",
       },
       async () => {
+        const asset = releaseAssetForTarget(deps.platform, deps.arch);
+        log(`[cli] downloading tan CLI: ${asset?.url ?? "unknown asset"}`);
         await downloadCli(deps);
+        log(
+          `[cli] tan CLI downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
+        );
         resetResolvedBinary();
         versionChecked = false;
       },
@@ -395,7 +410,14 @@ export async function updateAlpCli(
         title: `Updating the tan CLI to ${SUPPORTED_CLI_VERSION}…`,
       },
       async () => {
+        const asset = releaseAssetForTarget(deps.platform, deps.arch);
+        log(
+          `[cli] downloading tan CLI ${SUPPORTED_CLI_VERSION}: ${asset?.url ?? "unknown asset"}`,
+        );
         await downloadCli(deps);
+        log(
+          `[cli] tan CLI ${SUPPORTED_CLI_VERSION} downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
+        );
         resetResolvedBinary();
         versionChecked = false;
       },
