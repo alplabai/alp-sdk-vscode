@@ -32,10 +32,11 @@ unzip -Z1 "$VSIX" \
   | tr '[:upper:]' '[:lower:]' \
   | sort -u > "$top"
 
-# `bin` holds the alp CLI bundled into the platform-specific (darwin-arm64)
-# VSIX: release-vsix.yml stages it at bin/alp before `vsce package` (#124).
-# The universal VSIX ships nothing there. Keep `bin` allowlisted so the
-# bundled-CLI package does not trip this very gate.
+# `bin` holds the tan CLI bundled into the platform-specific (darwin-arm64)
+# VSIX: release-vsix.yml stages it at bin/tan before `vsce package` (#124,
+# repointed from the retired alp/cli-rs binary under ADR-0020). The universal
+# VSIX ships nothing there. Keep `bin` allowlisted so the bundled-CLI package
+# does not trip this very gate.
 printf '%s\n' bin license license.txt readme.md media out package.json \
   packages schemas snippets syntaxes \
   | sort -u > "$allow"
