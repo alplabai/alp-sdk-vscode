@@ -413,16 +413,61 @@ export class NewProjectFlowPanel {
     // Pin the chosen SDK for the new project so it opens with the right one
     // (workspace-scoped alpSdk.path). Omitted ⇒ the project inherits the global
     // default / auto-resolution.
+    let pinError: string | undefined;
     if (sdkPath) {
-      this.pinProjectSdk(projectDir, sdkPath);
+      const pinned = this.pinProjectSdk(projectDir, sdkPath);
+      if (pinned.ok) {
+        log(`[new-project] pinned alpSdk.path=${sdkPath} for ${projectDir}`);
+      } else {
+        pinError = pinned.error;
+        log(`[new-project] SDK pin FAILED for ${projectDir}: ${pinned.error}`);
+      }
     }
 
-    const open = "Open Project";
-    const choice = await vscode.window.showInformationMessage(
-      `Project "${projectName}" created at ${projectDir}`,
-      open,
-    );
-    if (choice === open) {
+    // Decide whether to open. A pin failure must be surfaced BEFORE (and AS) the
+    // open decision — never a plain "Open Project" prompt that lets the user
+    // unknowingly open a scaffold with no SDK pinned (F5).
+    let shouldOpen = false;
+    if (pinError) {
+      const retry = "Retry Pin";
+      const openAnyway = "Open Anyway";
+      const choice = await vscode.window.showWarningMessage(
+        `Alp: project "${projectName}" was created at ${projectDir}, but pinning its SDK failed — ${pinError}. It will open WITHOUT a pinned SDK until you set "alpSdk.path" in its .vscode/settings.json.`,
+        retry,
+        openAnyway,
+      );
+      if (choice === retry) {
+        if (sdkPath) {
+          const retried = this.pinProjectSdk(projectDir, sdkPath);
+          if (retried.ok) {
+            log(`[new-project] SDK pin retry OK for ${projectDir}`);
+            void vscode.window.showInformationMessage(
+              `Alp: SDK pinned. Opening "${projectName}".`,
+            );
+          } else {
+            log(
+              `[new-project] SDK pin retry FAILED for ${projectDir}: ${retried.error}`,
+            );
+            void vscode.window.showErrorMessage(
+              `Alp: pinning the SDK failed again — ${retried.error}. Opening without a pinned SDK; set "alpSdk.path" manually.`,
+            );
+          }
+        }
+        shouldOpen = true;
+      } else if (choice === openAnyway) {
+        shouldOpen = true;
+      }
+      // Dismissed ⇒ don't open (safer than the old silent open).
+    } else {
+      const open = "Open Project";
+      const choice = await vscode.window.showInformationMessage(
+        `Project "${projectName}" created at ${projectDir}`,
+        open,
+      );
+      shouldOpen = choice === open;
+    }
+
+    if (shouldOpen) {
       // Open in a new window when a workspace is already open, so we don't
       // replace the user's current session.
       await openProjectFolder(vscode.Uri.file(projectDir));
@@ -432,30 +477,34 @@ export class NewProjectFlowPanel {
   }
 
   /** Write `alpSdk.path` into the new project's .vscode/settings.json so it
-   *  opens with the SDK chosen in the wizard (merges if a file already exists). */
-  private pinProjectSdk(projectDir: string, sdkPath: string): void {
+   *  opens with the SDK chosen in the wizard (merges if a file already exists).
+   *  Returns the outcome so the caller can surface a pin failure BEFORE offering
+   *  to open the project — never silently open an unpinned scaffold (F5). */
+  private pinProjectSdk(
+    projectDir: string,
+    sdkPath: string,
+  ): { ok: true } | { ok: false; error: string } {
     try {
       const vscodeDir = path.join(projectDir, ".vscode");
       fs.mkdirSync(vscodeDir, { recursive: true });
       const settingsPath = path.join(vscodeDir, "settings.json");
-      let settings: Record<string, unknown> = {};
+      let existing: Record<string, unknown> = {};
       if (fs.existsSync(settingsPath)) {
         try {
-          settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+          existing = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
         } catch {
-          settings = {};
+          existing = {};
         }
       }
-      settings["alpSdk.path"] = sdkPath;
+      const settings = { ...existing, "alpSdk.path": sdkPath };
       fs.writeFileSync(
         settingsPath,
         JSON.stringify(settings, null, 2) + "\n",
         "utf8",
       );
+      return { ok: true };
     } catch (err) {
-      void vscode.window.showWarningMessage(
-        `Alp: project created, but pinning its SDK failed — ${String(err)}`,
-      );
+      return { ok: false, error: String(err) };
     }
   }
 
