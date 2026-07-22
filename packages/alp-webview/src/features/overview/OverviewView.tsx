@@ -293,6 +293,14 @@ export function OverviewView() {
               title="Workspace"
               chip={workspaceChip(state)}
               meta={workspaceMeta(state)}
+              // "Action Required" was a dead end — make the card run Bootstrap
+              // (same command as the Quick Action) while the west workspace
+              // isn't initialized. Once ready, it's a static status card.
+              onClick={
+                state.workspace.westInitialized
+                  ? undefined
+                  : () => run("alp.installDependencies")
+              }
             />
             <StatusCard
               icon="package"
