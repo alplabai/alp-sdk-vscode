@@ -43,7 +43,11 @@ async function pickAppPath(value: string): Promise<string | undefined> {
 async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   const app = await pickAppPath("examples/peripheral-io/gpio-button-led");
   if (!app) return;
-  await runAlpInTerminal(context, ["build", app], {
+  // `tan build` (cli.rs BuildArgs) has no positional app_path — unlike
+  // image/flash/clean/renode, project scope only resolves from the global
+  // `--project` flag (native.rs resolve_cli_project_context). A bare
+  // positional here is a parse error, not a silently-ignored arg.
+  await runAlpInTerminal(context, ["--project", app, "build"], {
     name: "Alp Build",
     cwd: westCwd(),
   });
