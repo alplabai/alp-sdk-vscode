@@ -9,6 +9,7 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { reportError } from "../util";
 import { catalogFromPresets } from "./sdkCatalog";
 
 let client: LanguageClient | undefined;
@@ -58,7 +59,19 @@ export function startLanguageServer(context: vscode.ExtensionContext): void {
     clientOptions,
   );
   context.subscriptions.push(client);
-  void client.start().then(() => pushSdkCatalog(context));
+  // Scope the failure handler to start() itself (2-arg .then) so it reports ONLY
+  // a real LSP-launch rejection — a failed launch used to be a silent unhandled
+  // rejection, with YAML / prj.conf validation + completion just not working.
+  // pushSdkCatalog runs only on start success and swallows its own errors.
+  void client.start().then(
+    () => pushSdkCatalog(context),
+    (err: unknown) => {
+      void reportError(
+        "Alp: the language server failed to start — board.yaml / prj.conf validation and completion are unavailable.",
+        String(err),
+      );
+    },
+  );
 
   // Re-push the completion catalog whenever the active SDK / CLI path changes.
   context.subscriptions.push(
