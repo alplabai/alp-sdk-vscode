@@ -9,6 +9,10 @@
 // separate page (alp.openOverview) and is intentionally NOT duplicated here.
 
 import { useState } from "react";
+// The Alp Lab wordmark (bolt + "Alp LAB"), imported `?inline` so Vite embeds it
+// as a data URI and painted via CSS `mask` in the theme foreground — reads on
+// both light and dark. Logo only: the VS Code panel title already says "Alp IDE".
+import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import { Icon, Skeleton } from "../../shared/ui";
 import type { IconName } from "../../shared/ui";
@@ -235,6 +239,17 @@ export function SidebarHubView() {
 
   return (
     <div className={styles.root}>
+      <header className={styles.topbar}>
+        <span
+          className={styles.brandLogo}
+          style={{
+            maskImage: `url("${alplabLogo}")`,
+            WebkitMaskImage: `url("${alplabLogo}")`,
+          }}
+          role="img"
+          aria-label="Alp Lab"
+        />
+      </header>
       <Section title="Setup">
         <ActionRow
           icon="book"
