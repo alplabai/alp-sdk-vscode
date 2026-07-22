@@ -10,7 +10,10 @@ const {
 
 function readGolden(relativePath) {
   const fullPath = path.join(__dirname, "golden", relativePath);
-  return fs.readFileSync(fullPath, "utf8");
+  // Normalize CRLF -> LF: on Windows the golden .json files can smudge to CRLF
+  // on checkout (autocrlf) while JSON.stringify emits LF. Mirror the CRLF
+  // handling in the schema-vendored tests so the compare is line-ending-agnostic.
+  return fs.readFileSync(fullPath, "utf8").replace(/\r\n/g, "\n");
 }
 
 // Golden files are POSIX (LF, forward-slash paths). On Windows the working copy

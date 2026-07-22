@@ -30,6 +30,37 @@ test("resolveProjectContext resolves sdk, board yaml, west cwd, and python", () 
   });
 });
 
+test("resolveProjectContext resolves declared-win32 paths in native win32 form, host-independent", () => {
+  // A win32-declared workspace resolves through path.win32 (`pathFor(platform)`)
+  // regardless of the host running the test, so the ProjectContext is
+  // deterministic without forcing a separator flavour. Native win32 output is
+  // the correct form: emitting forward-slash here would break the exact-string
+  // `uri.fsPath === workspaceRoot` folder match in the debug launch path
+  // (fsPath is backslash-native on Windows). Covers workspaceRoot, the explicit
+  // sdkPath branch, and the derived boardYamlPath + westCwd.
+  const context = resolveProjectContext(
+    {
+      workspaceFolders: ["C:\\work\\proj"],
+      settings: {
+        sdkPath: "C:\\work\\sdk",
+        pythonPath: "",
+        boardYamlPath: "board.yaml",
+        westCwd: "",
+      },
+      platform: "win32",
+    },
+    () => true,
+  );
+
+  assert.deepEqual(context, {
+    workspaceRoot: "C:\\work\\proj",
+    sdkRoot: "C:\\work\\sdk",
+    boardYamlPath: "C:\\work\\proj\\board.yaml",
+    westCwd: "C:\\work\\proj",
+    pythonBinary: "python",
+  });
+});
+
 test("resolveProjectContext honors explicit settings", () => {
   const context = resolveProjectContext(
     {
