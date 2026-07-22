@@ -599,10 +599,6 @@ export interface MaterialiseBuildPlanMessage {
 export interface RunBuildMessage {
   type: "runBuild";
 }
-export interface BuildSliceMessage {
-  type: "buildSlice";
-  coreId: string;
-}
 export interface FlashSliceMessage {
   type: "flashSlice";
   coreId: string;
@@ -633,5 +629,4 @@ export type WebviewToExtMessage =
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
-  | BuildSliceMessage
   | FlashSliceMessage;
