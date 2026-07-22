@@ -8,7 +8,11 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
+import {
+  buildWebviewHtml,
+  isBootstrapCommand,
+  runWebviewCommand,
+} from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.existing-project-flow";
 const PANEL_TITLE = "Alp IDE — Open Project";
@@ -69,8 +73,8 @@ export class ExistingProjectFlowPanel {
   async refresh(): Promise<void> {
     const lastBootstrapAt =
       this.context.globalState.get<string>("alp.lastBootstrapAt") ?? null;
-    const state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
-      emptyAlpIdeState(),
+    const state = await queryAlpIdeState(lastBootstrapAt, this.context).catch(
+      () => emptyAlpIdeState(),
     );
     const msg: ExtToWebviewMessage = {
       type: "stateUpdate",
@@ -92,7 +96,7 @@ export class ExistingProjectFlowPanel {
 
       case "runCommand":
         runWebviewCommand(msg.command);
-        if (msg.command === "alp.bootstrap") {
+        if (isBootstrapCommand(msg.command)) {
           const now = new Date().toISOString();
           void this.context.globalState.update("alp.lastBootstrapAt", now);
           setTimeout(() => void this.refresh(), 8000);

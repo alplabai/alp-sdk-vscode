@@ -7,17 +7,23 @@ import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
+import { createSdkMessageHandler } from "./sdkManagerMessages";
 import { queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
+import {
+  buildWebviewHtml,
+  isBootstrapCommand,
+  runWebviewCommand,
+} from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.overview";
-const PANEL_TITLE = "Alp IDE Overview";
+const PANEL_TITLE = "Alp IDE — Hub";
 
 export class OverviewPanel {
   private static instance?: OverviewPanel;
 
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly sdkHandler: (msg: WebviewToExtMessage) => boolean;
 
   private constructor(private readonly context: vscode.ExtensionContext) {
     this.panel = vscode.window.createWebviewPanel(
@@ -43,6 +49,12 @@ export class OverviewPanel {
       context.extensionUri,
       "overview",
     );
+
+    this.sdkHandler = createSdkMessageHandler({
+      context,
+      post: (m) => void this.panel.webview.postMessage(m),
+      refresh: () => this.refresh(),
+    });
 
     this.panel.webview.onDidReceiveMessage(
       (msg: WebviewToExtMessage) => this.handleMessage(msg),
@@ -83,20 +95,27 @@ export class OverviewPanel {
     );
   }
 
-  /** Open (or reveal) the overview panel. */
-  static open(context: vscode.ExtensionContext): void {
+  /** Open (or reveal) the Hub panel. `focus: "sdk"` scrolls to the SDK Manager
+   *  section (the standalone SDK Manager panel is now folded in here). */
+  static open(context: vscode.ExtensionContext, focus?: "sdk"): void {
     if (OverviewPanel.instance) {
       OverviewPanel.instance.panel.reveal(vscode.ViewColumn.One);
     } else {
       OverviewPanel.instance = new OverviewPanel(context);
+    }
+    if (focus === "sdk") {
+      void OverviewPanel.instance.panel.webview.postMessage({
+        type: "focusSection",
+        section: "sdk",
+      });
     }
   }
 
   async refresh(): Promise<void> {
     const lastBootstrapAt =
       this.context.globalState.get<string>("alp.lastBootstrapAt") ?? null;
-    const state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
-      emptyAlpIdeState(),
+    const state = await queryAlpIdeState(lastBootstrapAt, this.context).catch(
+      () => emptyAlpIdeState(),
     );
     const msg: ExtToWebviewMessage = {
       type: "stateUpdate",
@@ -107,13 +126,14 @@ export class OverviewPanel {
   }
 
   private handleMessage(msg: WebviewToExtMessage): void {
+    if (this.sdkHandler(msg)) return;
     switch (msg.type) {
       case "ready":
         void this.refresh();
         break;
       case "runCommand":
         runWebviewCommand(msg.command);
-        if (msg.command === "alp.installDependencies") {
+        if (isBootstrapCommand(msg.command)) {
           const now = new Date().toISOString();
           void this.context.globalState.update("alp.lastBootstrapAt", now);
           setTimeout(() => void this.refresh(), 8000);

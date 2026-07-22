@@ -10,6 +10,7 @@
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { promisify } from "util";
 import * as vscode from "vscode";
 
 import {
@@ -35,7 +36,9 @@ import {
   releaseAssetForTarget,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, runInTerminal } from "../util";
+import { log, runInTerminal, showOutput } from "../util";
+
+const execFileAsyncCli = promisify(cp.execFile);
 
 /** Bare binary name (not the full resolved path) for readable log lines. */
 function binaryLabel(command: string): string {
@@ -72,6 +75,16 @@ let resolved: ResolvedBinary | undefined;
 export function resetResolvedBinary(): void {
   resolved = undefined;
   versionChecked = false;
+}
+
+/** Best-effort human-readable size of a just-downloaded file, for the transfer
+ *  log. Returns "unknown size" when the file can't be stat'd. */
+function downloadedBytes(filePath: string): string {
+  try {
+    return `${fs.statSync(filePath).size} bytes`;
+  } catch {
+    return "unknown size";
+  }
 }
 
 function cacheDirFor(context: vscode.ExtensionContext): string {
@@ -136,6 +149,39 @@ export async function resolveAlpBinaryForContext(
 }
 
 /**
+ * The installed native `tan` version, or null — WITHOUT ever downloading.
+ * Called from state refresh (focus/save/settings), so it must never fetch: if
+ * nothing resolves locally (`decideBinarySource === "download"`) it returns
+ * null immediately. Otherwise it resolves the already-present binary (no
+ * download in a non-download branch) and parses `tan --version`; a non-native
+ * `tan` on PATH parses to null (parseTanVersion guards the shape).
+ */
+export async function probeTanVersion(
+  context: vscode.ExtensionContext,
+): Promise<string | null> {
+  const deps = buildResolveDeps(context);
+  const input: BinaryResolutionInput = {
+    cliPathSetting: deps.cliPathSetting,
+    cliPathExists:
+      Boolean(deps.cliPathSetting) && deps.fileExists(deps.cliPathSetting),
+    onPath: deps.commandOnPath("tan"),
+    bundledExists: deps.bundledExists,
+    localBuildExists: Boolean(deps.localBuildBinaryPath),
+    cachedExists: deps.fileExists(deps.cachedBinaryPath),
+  };
+  if (decideBinarySource(input) === "download") return null;
+  try {
+    const bin = await resolveAlpBinary(deps);
+    const { stdout } = await execFileAsyncCli(bin.command, ["--version"], {
+      timeout: 3000,
+    });
+    return parseTanVersion(stdout);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ensure the managed `tan` binary is present up front (called on activation) so
  * a fresh install feels "installed together" instead of stalling on the first
  * command. Only fetches when nothing else resolves — a download would happen on
@@ -170,14 +216,30 @@ export async function ensureTanCliProvisioned(
         title: "Downloading the tan CLI…",
       },
       async () => {
+        const asset = releaseAssetForTarget(deps.platform, deps.arch);
+        log(`[cli] downloading tan CLI: ${asset?.url ?? "unknown asset"}`);
         await downloadCli(deps);
+        log(
+          `[cli] tan CLI downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
+        );
         resetResolvedBinary();
       },
     );
   } catch (error) {
-    log(
-      `[cli] tan CLI provisioning failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    // Provisioning only runs (and only reaches here) on a fresh install with no
+    // resolvable binary AND a failed download — not on every activation — so a
+    // failure toast is a real, non-naggy signal (previously log-only = silent).
+    const detail = error instanceof Error ? error.message : String(error);
+    log(`[cli] tan CLI provisioning failed: ${detail}`);
+    const SHOW = "Show Output";
+    void vscode.window
+      .showErrorMessage(
+        `Alp: couldn't provision the tan CLI — ${detail}. Build and validate commands need it; set "alpSdk.cliPath" to a local build, or retry when online.`,
+        SHOW,
+      )
+      .then((pick) => {
+        if (pick === SHOW) showOutput();
+      });
   }
 }
 
@@ -475,7 +537,14 @@ export async function updateAlpCli(
         title: `Updating the tan CLI to ${SUPPORTED_CLI_VERSION}…`,
       },
       async () => {
+        const asset = releaseAssetForTarget(deps.platform, deps.arch);
+        log(
+          `[cli] downloading tan CLI ${SUPPORTED_CLI_VERSION}: ${asset?.url ?? "unknown asset"}`,
+        );
         await downloadCli(deps);
+        log(
+          `[cli] tan CLI ${SUPPORTED_CLI_VERSION} downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
+        );
         resetResolvedBinary();
       },
     );

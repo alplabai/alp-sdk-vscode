@@ -50,6 +50,28 @@
   margin-top: var(--space-3);
 }
 
+/* "Show N older releases" / "Show fewer" toggle under the release list. */
+.showMore {
+  align-self: center;
+  margin-top: var(--space-2, 4px);
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-textLink-foreground, #4c8bf5);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.showMore:hover {
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+  text-decoration: underline;
+}
+.showMore:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #4c8bf5);
+  outline-offset: -1px;
+}
+
 .releaseCard {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);

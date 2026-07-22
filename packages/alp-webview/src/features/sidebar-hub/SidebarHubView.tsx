@@ -12,12 +12,13 @@
 // `?inline` so Vite embeds it as a data URI — no host-side asWebviewUri
 // plumbing — and painted via CSS `mask` in the theme foreground colour, so it
 // reads correctly on both light and dark VS Code themes.
+import { useState } from "react";
 import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import { Icon, Skeleton } from "../../shared/ui";
 import type { IconName } from "../../shared/ui";
 import type { AlpIdeState } from "../../types";
-import { postMessage } from "../../vscode";
+import { getUiState, postMessage, setUiState } from "../../vscode";
 import styles from "./SidebarHubView.module.css";
 
 function run(command: string) {
@@ -108,17 +109,52 @@ function ActionRow({
   );
 }
 
+// Section collapse state persists in the webview's own state, keyed by title,
+// so a user's expand/collapse choices survive reloads.
+const COLLAPSE_KEY = "sidebarSections";
+function sectionOpen(title: string, fallback: boolean): boolean {
+  const map = getUiState<Record<string, boolean>>(COLLAPSE_KEY, {});
+  return title in map ? map[title]! : fallback;
+}
+function persistSectionOpen(title: string, open: boolean): void {
+  const map = getUiState<Record<string, boolean>>(COLLAPSE_KEY, {});
+  setUiState(COLLAPSE_KEY, { ...map, [title]: open });
+}
+
 function Section({
   title,
+  defaultOpen = true,
   children,
 }: {
   title: string;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(() => sectionOpen(title, defaultOpen));
+  const toggle = () =>
+    setOpen((v) => {
+      const next = !v;
+      persistSectionOpen(title, next);
+      return next;
+    });
   return (
     <section className={styles.section}>
-      <p className={styles.sectionLabel}>{title}</p>
-      <div className={styles.rows}>{children}</div>
+      <button
+        type="button"
+        className={styles.sectionHeader}
+        aria-expanded={open}
+        onClick={toggle}
+      >
+        <span
+          className={styles.sectionChevron}
+          data-open={open ? "" : undefined}
+          aria-hidden="true"
+        >
+          <Icon name="chevronRight" size={12} />
+        </span>
+        <span className={styles.sectionLabel}>{title}</span>
+      </button>
+      {open && <div className={styles.rows}>{children}</div>}
     </section>
   );
 }
@@ -138,21 +174,18 @@ function sdkValue(sdk: AlpIdeState["sdk"]): string {
 const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
   [
     { icon: "play", label: "Build", command: "alp.westBuild" },
-    { icon: "bolt", label: "Flash device (west)", command: "alp.westFlash" },
+    { icon: "bolt", label: "Flash (west)", command: "alp.westFlash" },
     {
       icon: "monitor",
       label: "Run (native_sim)",
       command: "alp.westRunNativeSim",
     },
     { icon: "package", label: "Image", command: "alp.westAlpImage" },
-    { icon: "rocket", label: "Flash all slices", command: "alp.westAlpFlash" },
+    { icon: "rocket", label: "Flash all cores", command: "alp.westAlpFlash" },
     { icon: "bug", label: "Debug", command: "alp.debug" },
     { icon: "cpu", label: "Renode", command: "alp.westAlpRenode" },
-    {
-      icon: "refresh",
-      label: "Update modules (west)",
-      command: "alp.westUpdate",
-    },
+    // "West Update" lives in the Workspace section (module maintenance, not a
+    // build/flash action) — don't duplicate it here.
     { icon: "x", label: "Clean", command: "alp.westAlpClean" },
   ];
 
@@ -167,8 +200,15 @@ export function SidebarHubView() {
     );
   }
 
-  const { setup, sdk, workspace } = state;
-  const toolsReady = setup.pythonAvailable && setup.westAvailable;
+  const { sdk, workspace } = state;
+  // Readiness gate (matches OverviewView.isAllReady + the status-bar item):
+  // Python + west + a ready SDK + an initialized west workspace. tan does not
+  // gate (managed/auto-fetched).
+  const ready =
+    state.setup.pythonAvailable &&
+    state.setup.westAvailable &&
+    sdk.readiness === "ready" &&
+    workspace.westInitialized;
   const wsName = workspace.workspaceRoot
     ? workspace.workspaceRoot
         .replace(/\\/g, "/")
@@ -197,55 +237,18 @@ export function SidebarHubView() {
       <Section title="Setup">
         <ActionRow
           icon="book"
-          label="Overview"
+          label="Hub"
           desc="Open the full-width hub"
-          command="alp.openOverview"
+          command="alp.openHub"
         />
-        <StatusRow
-          icon="terminal"
-          label="Host Tools"
-          value={toolsReady ? "Ready" : "Action needed"}
-          health={toolsReady ? "ok" : "warn"}
-          command={toolsReady ? undefined : "alp.installDependencies"}
-        />
-        <StatusRow
-          icon="terminal"
-          label="Python"
-          value={setup.toolVersions.python ?? "Not found"}
-          health={setup.pythonAvailable ? "ok" : "warn"}
-        />
-        <StatusRow
-          icon="terminal"
-          label="West"
-          value={setup.toolVersions.west ?? "Not found"}
-          health={setup.westAvailable ? "ok" : "warn"}
-        />
-        <StatusRow
-          icon="package"
-          label="Alp SDK"
-          value={sdkValue(sdk)}
-          health={sdk.readiness === "ready" ? "ok" : "warn"}
-          command="alp.openSdkManager"
-        />
-        <StatusRow
-          icon="folder"
-          label="Workspace"
-          value={
-            workspace.westInitialized
-              ? "Initialized"
-              : workspace.workspaceRoot
-                ? "Not initialized"
-                : "No workspace"
-          }
-          health={
-            workspace.westInitialized
-              ? "ok"
-              : workspace.workspaceRoot
-                ? "warn"
-                : "idle"
-          }
-          command={workspace.westInitialized ? undefined : "alp.openSetupFlow"}
-        />
+        {!ready && (
+          <ActionRow
+            icon="wrench"
+            label="Finish setup"
+            desc="Run the setup wizard"
+            command="alp.openSetupFlow"
+          />
+        )}
       </Section>
 
       <Section title="Workspace">
@@ -277,7 +280,7 @@ export function SidebarHubView() {
         )}
       </Section>
 
-      <Section title="Project">
+      <Section title="Project" defaultOpen={workspace.boardYamlExists}>
         {workspace.boardYamlExists && wsName ? (
           <StatusRow
             icon="sliders"
@@ -332,7 +335,7 @@ export function SidebarHubView() {
         />
       </Section>
 
-      <Section title="Build & Flash">
+      <Section title="Build & Flash" defaultOpen={buildReady}>
         <ActionRow
           icon="eye"
           label="Preview Build Plan"

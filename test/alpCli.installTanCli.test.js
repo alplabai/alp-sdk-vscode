@@ -38,10 +38,19 @@ test("the bundled install scripts the handler runs exist under media/tan-install
   }
 });
 
-test("install.sh is executable so a direct invocation works", () => {
-  const mode = fs.statSync(path.join(scriptDir, "install.sh")).mode;
-  assert.ok(mode & 0o111, "install.sh should carry the executable bit");
-});
+test(
+  "install.sh is executable so a direct invocation works",
+  {
+    // The Unix executable bit isn't represented in the Windows working tree
+    // (git core.filemode is off there), so this can only be asserted on POSIX.
+    // Linux CI is the source of truth for the shipped bit.
+    skip: process.platform === "win32" && "executable bit is POSIX-only",
+  },
+  () => {
+    const mode = fs.statSync(path.join(scriptDir, "install.sh")).mode;
+    assert.ok(mode & 0o111, "install.sh should carry the executable bit");
+  },
+);
 
 test("check-vsix-allowlist.sh's allowlist covers media/, the top-level dir the bundled scripts ship under", () => {
   const allowlistScript = fs.readFileSync(

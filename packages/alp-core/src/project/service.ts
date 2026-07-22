@@ -4,16 +4,29 @@ import * as path from "path";
 import { resolveActiveSdk } from "../sdk/service";
 import { ProjectContext, ProjectResolutionInput } from "./models";
 
+// All path joins/resolves are done through the path flavour of the DECLARED
+// target platform (`input.platform`), not the host's. In production the two are
+// identical (platform === process.platform), so behaviour is unchanged; the
+// distinction only matters under test, where a fixture can declare platform
+// "linux"/"win32" and get deterministic, host-independent path semantics.
+type PathImpl = typeof path.posix;
+
+function pathFor(platform: NodeJS.Platform): PathImpl {
+  return platform === "win32" ? path.win32 : path.posix;
+}
+
 export function resolveProjectContext(
   input: ProjectResolutionInput,
   pathExists: (candidatePath: string) => boolean,
   readFile: (candidatePath: string) => string = () => "",
 ): ProjectContext {
+  const p = pathFor(input.platform);
   // Resolve all runtime inputs once so every surface reads the same project context.
   const workspaceRoot = resolveWorkspaceRoot(
     input.workspaceFolders,
     input.settings.boardYamlPath,
     pathExists,
+    p,
   );
 
   return {
@@ -25,10 +38,12 @@ export function resolveProjectContext(
       input.installedSdkRoots ?? [],
       pathExists,
       readFile,
+      p,
     ),
     boardYamlPath: resolveBoardYamlPath(
       workspaceRoot,
       input.settings.boardYamlPath,
+      p,
     ),
     westCwd: resolveWestCwd(workspaceRoot, input.settings.westCwd),
     pythonBinary: resolvePythonBinary(
@@ -42,13 +57,14 @@ function resolveWorkspaceRoot(
   workspaceFolders: readonly string[],
   configuredBoardYamlPath: string,
   pathExists: (candidatePath: string) => boolean,
+  p: PathImpl,
 ): string | null {
   if (workspaceFolders.length === 0) return null;
   // Multi-root: target the folder that actually holds the configured board.yaml
   // so the loader, Projects tree, and west all operate on the same project —
   // not blindly workspaceFolders[0]. Falls back to the first folder.
   const folderWithBoardYaml = workspaceFolders.find((folder) =>
-    pathExists(resolveBoardYamlPath(folder, configuredBoardYamlPath)!),
+    pathExists(resolveBoardYamlPath(folder, configuredBoardYamlPath, p)!),
   );
   return folderWithBoardYaml ?? workspaceFolders[0]!;
 }
@@ -60,11 +76,12 @@ function resolveSdkRoot(
   installedSdkRoots: readonly string[],
   pathExists: (candidatePath: string) => boolean,
   readFile: (candidatePath: string) => string,
+  p: PathImpl,
 ): string | null {
   // Prefer explicit SDK path, but only if it contains the loader entrypoint.
   const trimmedConfiguredPath = configuredSdkPath.trim();
   if (trimmedConfiguredPath) {
-    return containsLoaderScript(trimmedConfiguredPath, pathExists)
+    return containsLoaderScript(trimmedConfiguredPath, pathExists, p)
       ? trimmedConfiguredPath
       : null;
   }
@@ -74,14 +91,14 @@ function resolveSdkRoot(
   // auto-discovery, and only when it still points at a valid SDK root — a stale
   // pointer falls through so it can't lock out auto-discovery.
   if (workspaceRoot) {
-    const pointer = resolveActiveSdk(workspaceRoot, pathExists, readFile);
-    if (pointer && containsLoaderScript(pointer, pathExists)) {
+    const pointer = resolveActiveSdk(workspaceRoot, pathExists, readFile, p);
+    if (pointer && containsLoaderScript(pointer, pathExists, p)) {
       return pointer;
     }
   }
 
   // Auto-discovery is valid only when exactly one SDK root is detected.
-  const candidates = collectSdkCandidates(workspaceFolders, pathExists);
+  const candidates = collectSdkCandidates(workspaceFolders, pathExists, p);
   if (candidates.length === 1) {
     return candidates[0]!;
   }
@@ -95,7 +112,7 @@ function resolveSdkRoot(
   // alpSdk.path set (e.g. straight after `alp sdk install`, before activation).
   for (const installedRoot of installedSdkRoots) {
     const trimmed = installedRoot.trim();
-    if (trimmed && containsLoaderScript(trimmed, pathExists)) {
+    if (trimmed && containsLoaderScript(trimmed, pathExists, p)) {
       return trimmed;
     }
   }
@@ -106,17 +123,18 @@ function resolveSdkRoot(
 function collectSdkCandidates(
   workspaceFolders: readonly string[],
   pathExists: (candidatePath: string) => boolean,
+  p: PathImpl,
 ): string[] {
   const candidates = new Set<string>();
 
   for (const workspaceFolder of workspaceFolders) {
     // Check both workspace root and the conventional sibling alp-sdk folder.
-    if (containsLoaderScript(workspaceFolder, pathExists)) {
+    if (containsLoaderScript(workspaceFolder, pathExists, p)) {
       candidates.add(workspaceFolder);
     }
 
-    const siblingSdk = path.resolve(workspaceFolder, "..", "alp-sdk");
-    if (containsLoaderScript(siblingSdk, pathExists)) {
+    const siblingSdk = p.resolve(workspaceFolder, "..", "alp-sdk");
+    if (containsLoaderScript(siblingSdk, pathExists, p)) {
       candidates.add(siblingSdk);
     }
   }
@@ -127,11 +145,12 @@ function collectSdkCandidates(
 function resolveBoardYamlPath(
   workspaceRoot: string | null,
   configuredBoardYamlPath: string,
+  p: PathImpl,
 ): string | null {
   if (!workspaceRoot) return null;
-  return path.isAbsolute(configuredBoardYamlPath)
+  return p.isAbsolute(configuredBoardYamlPath)
     ? configuredBoardYamlPath
-    : path.join(workspaceRoot, configuredBoardYamlPath);
+    : p.join(workspaceRoot, configuredBoardYamlPath);
 }
 
 function resolveWestCwd(
@@ -155,7 +174,8 @@ function resolvePythonBinary(
 function containsLoaderScript(
   rootPath: string,
   pathExists: (candidatePath: string) => boolean,
+  p: PathImpl,
 ): boolean {
   // scripts/alp_project.py is the canonical marker for an Alp SDK root.
-  return pathExists(path.join(rootPath, "scripts", "alp_project.py"));
+  return pathExists(p.join(rootPath, "scripts", "alp_project.py"));
 }

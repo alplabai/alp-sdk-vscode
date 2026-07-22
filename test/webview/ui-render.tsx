@@ -53,6 +53,7 @@ const readyState = {
     toolVersions: {
       python: "3.11",
       west: "1.2",
+      tan: "0.1.0",
       cmake: "3.28",
       ninja: "1.11",
     },
@@ -219,6 +220,28 @@ async function main() {
     for (const marker of ERROR_MARKERS) {
       if (text.includes(marker)) {
         problems.push(`${mode}: visible text contains "${marker}"`);
+      }
+    }
+    // The Hub Environment card surfaces the tan CLI next to python/west.
+    if (mode === "overview" && !text.includes("tan 0.1.0")) {
+      problems.push("overview: Environment card missing tan version");
+    }
+    // SDK Manager is folded into the Hub as a scrollable section.
+    if (
+      mode === "overview" &&
+      !(container.innerHTML || "").includes('id="sdk-section"')
+    ) {
+      problems.push("overview: SDK Manager section missing");
+    }
+    // Sidebar Setup section is actions-only now: the "Host Tools" status
+    // read-out is gone (moved to the status bar + Hub) and the Hub link is
+    // present. (Other sections keep their contextual status rows.)
+    if (mode === "sidebar-hub") {
+      if (text.includes("host tools")) {
+        problems.push("sidebar-hub: Host Tools status row still present");
+      }
+      if (!text.includes("hub")) {
+        problems.push("sidebar-hub: Hub link missing");
       }
     }
 

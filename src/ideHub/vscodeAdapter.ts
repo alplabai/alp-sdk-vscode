@@ -16,6 +16,7 @@ import {
   resolveWestBinary,
   westWorkspaceInitialized,
 } from "../environment/vscodeAdapter";
+import { probeTanVersion } from "../alpCli/vscodeAdapter";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -90,7 +91,12 @@ async function commandVersion(
       timeout: 3000,
       env,
     });
-    return stdout.trim().split("\n")[0] ?? null;
+    const firstLine = stdout.trim().split("\n")[0] ?? "";
+    // Reduce to the bare MAJOR.MINOR[.PATCH] — `--version` output usually
+    // carries a tool-name/prose prefix ("Python 3.9.0", "West version: v1.5.0")
+    // that would otherwise double up with the UI's own "Python"/"west" label.
+    const version = firstLine.match(/\d+\.\d+(?:\.\d+)?/);
+    return version ? version[0] : firstLine || null;
   } catch (err) {
     log(`alp: probe "${cmd} --version" failed: ${errText(err)}`);
     return null;
@@ -104,6 +110,7 @@ export function sdkCacheRoot(): string {
 
 export async function queryAlpIdeState(
   lastBootstrapAt: string | null = null,
+  context?: vscode.ExtensionContext,
 ): Promise<AlpIdeState> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   const actualWorkspaceRoot: string | null =
@@ -192,6 +199,9 @@ export async function queryAlpIdeState(
     ]);
   const pythonAvailable = pythonVersion !== null;
   const westAvailable = westVersion !== null;
+  // Not part of the probeEnv batch above: it resolves its own binary via the
+  // cliPath/bundled/localBuild/cached/PATH ladder and must never download.
+  const tanVersion = context ? await probeTanVersion(context) : null;
 
   return {
     sdk: {
@@ -207,6 +217,7 @@ export async function queryAlpIdeState(
       toolVersions: {
         python: pythonVersion,
         west: westVersion,
+        tan: tanVersion,
         cmake: cmakeVersion,
         ninja: ninjaVersion,
       },

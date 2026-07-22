@@ -1,4 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+//
+// SDK Manager webview message handlers, extracted from sdkManagerPanel.ts so a
+// host panel (the Hub / OverviewPanel) can own the SDK Manager surface without
+// a second panel class. `createSdkMessageHandler(deps)` returns a predicate:
+// it handles the SDK-specific message types and returns true, or returns false
+// so the host handles its own `ready`/`runCommand`/`openUrl`/`closePanel`.
+//
+// The `handleUninstallSdk` path deletes a folder from disk (fs.rmSync) after a
+// modal confirmation — the confirm, the Alp-managed-vs-external path check, and
+// the active-pointer clear are preserved exactly as they were in the panel.
 
 import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
 import type { SdkRelease } from "@alp-sdk/core/sdk/models";
@@ -10,127 +20,27 @@ import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
 import { writeAlpSetting } from "../sdk/settingsWrite";
-import {
-  emptyAlpIdeState,
-  PROTOCOL_VERSION,
-  type ExtToWebviewMessage,
-  type WebviewToExtMessage,
-} from "./messages";
-import { queryAlpIdeState, sdkCacheRoot } from "./vscodeAdapter";
-import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
+import { log as logChannel } from "../util";
+import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
+import { sdkCacheRoot } from "./vscodeAdapter";
 
-const PANEL_VIEW_TYPE = "alp-ide.sdk-manager";
-const PANEL_TITLE = "Alp IDE — SDK Manager";
+export interface SdkHandlerDeps {
+  context: vscode.ExtensionContext;
+  post: (msg: ExtToWebviewMessage) => void;
+  refresh: () => Promise<void>;
+}
 
-export class SdkManagerPanel {
-  private static instance?: SdkManagerPanel;
+/**
+ * Build a handler for the SDK Manager webview messages. Returns a function that
+ * returns `true` when it consumed the message, `false` otherwise (so the host
+ * can handle `ready`/`runCommand`/`openUrl`/`closePanel`).
+ */
+export function createSdkMessageHandler(
+  deps: SdkHandlerDeps,
+): (msg: WebviewToExtMessage) => boolean {
+  const { context, post, refresh } = deps;
 
-  private readonly panel: vscode.WebviewPanel;
-  private readonly disposables: vscode.Disposable[] = [];
-
-  private constructor(private readonly context: vscode.ExtensionContext) {
-    this.panel = vscode.window.createWebviewPanel(
-      PANEL_VIEW_TYPE,
-      PANEL_TITLE,
-      vscode.ViewColumn.One,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(
-            context.extensionUri,
-            "packages",
-            "alp-webview",
-            "dist",
-          ),
-        ],
-      },
-    );
-
-    this.panel.webview.html = buildWebviewHtml(
-      this.panel.webview,
-      context.extensionUri,
-      "sdk-manager",
-    );
-
-    this.panel.webview.onDidReceiveMessage(
-      (msg: WebviewToExtMessage) => this.handleMessage(msg),
-      undefined,
-      this.disposables,
-    );
-
-    this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
-
-    // Reactivity (no reload): refresh on alpSdk config edits (activate/deactivate
-    // sets alpSdk.path) and when this panel becomes the active tab, so the SDK
-    // list reflects the current state without reopening.
-    this.disposables.push(
-      vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration("alpSdk")) void this.refresh();
-      }),
-      this.panel.onDidChangeViewState((e) => {
-        if (e.webviewPanel.active) void this.refresh();
-      }),
-    );
-  }
-
-  static open(context: vscode.ExtensionContext): void {
-    if (SdkManagerPanel.instance) {
-      SdkManagerPanel.instance.panel.reveal(vscode.ViewColumn.One);
-    } else {
-      SdkManagerPanel.instance = new SdkManagerPanel(context);
-    }
-  }
-
-  private async refresh(): Promise<void> {
-    const lastBootstrapAt =
-      this.context.globalState.get<string>("alp.lastBootstrapAt") ?? null;
-    const state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
-      emptyAlpIdeState(),
-    );
-    const msg: ExtToWebviewMessage = {
-      type: "stateUpdate",
-      _v: PROTOCOL_VERSION,
-      state,
-    };
-    void this.panel.webview.postMessage(msg);
-  }
-
-  private handleMessage(msg: WebviewToExtMessage): void {
-    switch (msg.type) {
-      case "ready":
-        void this.refresh();
-        break;
-      case "runCommand":
-        runWebviewCommand(msg.command);
-        break;
-      case "selectSdkPath":
-        void this.handleSelectSdkPath();
-        break;
-      case "requestSdkReleases":
-        void this.handleRequestSdkReleases();
-        break;
-      case "requestSdkInstall":
-        void this.handleRequestSdkInstall(msg.version);
-        break;
-      case "switchSdk":
-        void this.handleSwitchSdk(msg.sdkPath);
-        break;
-      case "uninstallSdk":
-        void this.handleUninstallSdk(msg.sdkPath);
-        break;
-      case "deactivateSdk":
-        void this.handleDeactivateSdk();
-        break;
-      case "openUrl":
-        if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
-          void vscode.env.openExternal(vscode.Uri.parse(msg.url));
-        }
-        break;
-    }
-  }
-
-  private async handleSelectSdkPath(): Promise<void> {
+  async function handleSelectSdkPath(): Promise<void> {
     const uris = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,
@@ -138,10 +48,10 @@ export class SdkManagerPanel {
       title: "Select Alp SDK root directory",
     });
     if (!uris || uris.length === 0) return;
-    await this.handleSwitchSdk(uris[0].fsPath);
+    await handleSwitchSdk(uris[0].fsPath);
   }
 
-  private async handleSwitchSdk(sdkPath: string): Promise<void> {
+  async function handleSwitchSdk(sdkPath: string): Promise<void> {
     try {
       await setActiveSdk(sdkPath);
     } catch (err) {
@@ -149,14 +59,14 @@ export class SdkManagerPanel {
         `Alp: failed to set active SDK — ${String(err)}`,
       );
     }
-    await this.refresh();
+    await refresh();
   }
 
   /** Delete a local SDK's folder from disk (after confirmation). Works for any
    *  local SDK — Alp-managed (~/.alp/sdk) or external (Browse / a checkout); the
    *  confirm spells out the path and warns when it isn't Alp-managed. Clears the
    *  active pointer if it pointed at the removed install. */
-  private async handleUninstallSdk(sdkPath: string): Promise<void> {
+  async function handleUninstallSdk(sdkPath: string): Promise<void> {
     const cacheRoot = path.resolve(sdkCacheRoot());
     const target = path.resolve(sdkPath);
     const alpManaged =
@@ -229,11 +139,11 @@ export class SdkManagerPanel {
       );
     }
     await vscode.commands.executeCommand("alp.views.refresh");
-    await this.refresh();
+    await refresh();
   }
 
   /** Deactivate — clear the active SDK without deleting anything. */
-  private async handleDeactivateSdk(): Promise<void> {
+  async function handleDeactivateSdk(): Promise<void> {
     try {
       await clearActiveSdk();
     } catch (err) {
@@ -241,12 +151,12 @@ export class SdkManagerPanel {
         `Alp: failed to deactivate SDK — ${String(err)}`,
       );
     }
-    await this.refresh();
+    await refresh();
   }
 
-  private async handleRequestSdkReleases(): Promise<void> {
+  async function handleRequestSdkReleases(): Promise<void> {
     // Delegate the GitHub releases fetch to `alp sdk list --format json`.
-    const { outcome } = await runAlpCommand(this.context, ["sdk", "list"]);
+    const { outcome } = await runAlpCommand(context, ["sdk", "list"]);
     const envelope = outcome.envelope;
     if (!envelope || !envelope.ok) {
       void vscode.window.showErrorMessage(
@@ -258,11 +168,10 @@ export class SdkManagerPanel {
     }
     const releases =
       (envelope.data as { releases?: SdkRelease[] }).releases ?? [];
-    const msg: ExtToWebviewMessage = { type: "sdkReleasesLoaded", releases };
-    void this.panel.webview.postMessage(msg);
+    post({ type: "sdkReleasesLoaded", releases });
   }
 
-  private async handleRequestSdkInstall(version: string): Promise<void> {
+  async function handleRequestSdkInstall(version: string): Promise<void> {
     const cacheRoot = sdkCacheRoot();
     fs.mkdirSync(cacheRoot, { recursive: true });
 
@@ -272,7 +181,7 @@ export class SdkManagerPanel {
       void vscode.window.showInformationMessage(
         `Alp: SDK ${version} is already installed — activate it from the Local tab.`,
       );
-      await this.refresh();
+      await refresh();
       return;
     }
 
@@ -300,13 +209,11 @@ export class SdkManagerPanel {
       done: boolean,
       success?: boolean,
     ): void => {
-      const msg: ExtToWebviewMessage = {
-        type: "sdkInstallProgress",
-        log,
-        done,
-        success,
-      };
-      void this.panel.webview.postMessage(msg);
+      // Tee every install-progress line into the "Alp SDK" channel so the
+      // transcript survives the panel closing (P1.2). The param is named `log`
+      // (the webview message field), so the channel logger is aliased.
+      logChannel(`[sdk-install] ${log}`);
+      post({ type: "sdkInstallProgress", log, done, success });
     };
 
     sendProgress(`Installing SDK ${version}…`, false);
@@ -333,7 +240,7 @@ export class SdkManagerPanel {
             },
           );
           sendProgress(`SDK ${version} installed successfully.`, true, true);
-          await this.refresh();
+          await refresh();
         } catch (err) {
           sendProgress(`Install failed: ${String(err)}`, true, false);
           void vscode.window.showErrorMessage(
@@ -344,10 +251,28 @@ export class SdkManagerPanel {
     );
   }
 
-  private dispose(): void {
-    SdkManagerPanel.instance = undefined;
-    this.panel.dispose();
-    this.disposables.forEach((d) => d.dispose());
-    this.disposables.length = 0;
-  }
+  return (msg: WebviewToExtMessage): boolean => {
+    switch (msg.type) {
+      case "selectSdkPath":
+        void handleSelectSdkPath();
+        return true;
+      case "requestSdkReleases":
+        void handleRequestSdkReleases();
+        return true;
+      case "requestSdkInstall":
+        void handleRequestSdkInstall(msg.version);
+        return true;
+      case "switchSdk":
+        void handleSwitchSdk(msg.sdkPath);
+        return true;
+      case "uninstallSdk":
+        void handleUninstallSdk(msg.sdkPath);
+        return true;
+      case "deactivateSdk":
+        void handleDeactivateSdk();
+        return true;
+      default:
+        return false;
+    }
+  };
 }

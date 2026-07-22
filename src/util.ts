@@ -4,8 +4,14 @@ import * as vscode from "vscode";
 
 const OUTPUT = vscode.window.createOutputChannel("Alp SDK");
 
-export function log(line: string): void {
-  OUTPUT.appendLine(line);
+export type LogLevel = "info" | "warn" | "error";
+
+/** Append a timestamped, leveled line to the shared "Alp SDK" output channel.
+ *  Existing callers pass just a message (level defaults to "info"), so the
+ *  channel gains triage-grade prefixes without touching every call site. */
+export function log(line: string, level: LogLevel = "info"): void {
+  const ts = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm (UTC)
+  OUTPUT.appendLine(`[${ts}] [${level}] ${line}`);
 }
 
 export function showOutput(): void {
@@ -36,19 +42,42 @@ export function runInTerminal(options: {
     shellPath: options.argv[0],
     shellArgs: options.argv.slice(1),
   });
+  // Capture the command's outcome: a terminal-backed command used to run with
+  // its exit code vanishing when the terminal closed. Log it via a one-shot,
+  // self-disposing listener so success/failure lands in the "Alp SDK" channel.
+  const sub = vscode.window.onDidCloseTerminal((closed) => {
+    if (closed !== terminal) return;
+    const code = closed.exitStatus?.code;
+    log(`[terminal] "${options.name}" exited (code=${code ?? "unknown"})`);
+    sub.dispose();
+  });
   terminal.show(true);
 }
 
-/** Show an info/warn message tied to a follow-up action. */
-export async function offerAction(
+const SHOW_OUTPUT = "Show Output";
+
+/** Report a diagnosable failure: log the full detail to the "Alp SDK" channel
+ *  AND show an error toast that always offers "Show Output" (plus any caller
+ *  actions). Picking "Show Output" reveals the channel and returns undefined;
+ *  otherwise the picked caller action is returned. The house pattern for every
+ *  error toast tied to a failure the channel can explain.
+ *
+ *  Do not pass a caller action literally titled "Show Output" — that title is
+ *  reserved for the appended house action and would be indistinguishable. */
+export async function reportError(
   message: string,
-  action: string,
-  severity: "info" | "warn" = "info",
-): Promise<boolean> {
-  const show =
-    severity === "warn"
-      ? vscode.window.showWarningMessage
-      : vscode.window.showInformationMessage;
-  const pick = await show(message, action);
-  return pick === action;
+  detail?: string,
+  ...actions: string[]
+): Promise<string | undefined> {
+  log(detail ? `${message} — ${detail}` : message, "error");
+  const pick = await vscode.window.showErrorMessage(
+    message,
+    ...actions,
+    SHOW_OUTPUT,
+  );
+  if (pick === SHOW_OUTPUT) {
+    showOutput();
+    return undefined;
+  }
+  return pick;
 }

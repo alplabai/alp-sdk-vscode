@@ -8,6 +8,7 @@ import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import type { IconName } from "../../shared/ui";
 import { Icon, Skeleton, StatusChip } from "../../shared/ui";
+import { SdkView } from "../sdk";
 import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./OverviewView.module.css";
@@ -29,6 +30,9 @@ function envMeta(state: AlpIdeState): string {
     const parts: string[] = [];
     if (toolVersions.python) parts.push(`Python ${toolVersions.python}`);
     if (toolVersions.west) parts.push(`west ${toolVersions.west}`);
+    // tan is managed/auto-fetched, so it is info (never gates "available"):
+    // show its version when a binary resolved, else that it is managed.
+    parts.push(toolVersions.tan ? `tan ${toolVersions.tan}` : "tan managed");
     return parts.join(" · ") || "All tools available";
   }
   const missing: string[] = [];
@@ -115,13 +119,19 @@ interface StatusCardProps {
   title: string;
   chip: ChipState;
   meta: string;
+  /** When set, the card becomes a button that jumps to a related section. */
+  onClick?: () => void;
 }
 
-function StatusCard({ icon, title, chip, meta }: StatusCardProps) {
+function StatusCard({ icon, title, chip, meta, onClick }: StatusCardProps) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div
+    <Tag
+      type={onClick ? "button" : undefined}
       className={styles.statusCard}
       data-state={chip === "ready" ? "ready" : "error"}
+      data-clickable={onClick ? "" : undefined}
+      onClick={onClick}
     >
       <div className={styles.cardIcon} aria-hidden="true">
         <Icon name={icon} size={18} />
@@ -131,8 +141,14 @@ function StatusCard({ icon, title, chip, meta }: StatusCardProps) {
       <div className={styles.cardChip}>
         <StatusChip state={chip} />
       </div>
-    </div>
+    </Tag>
   );
+}
+
+function scrollToSdkSection(): void {
+  document
+    .getElementById("sdk-section")
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 interface PanelCardProps {
@@ -212,7 +228,6 @@ const PANELS: PanelCardProps[] = [
 const ACTIONS: ActionItem[] = [
   { icon: "wrench", label: "Setup Wizard", command: "alp.openSetupFlow" },
   { icon: "filePlus", label: "New Project", command: "alp.newProjectWizard" },
-  { icon: "download", label: "SDK Manager", command: "alp.openSdkManager" },
   {
     icon: "refresh",
     label: "Run Bootstrap",
@@ -236,6 +251,19 @@ export function OverviewView() {
   }
 
   const allReady = isAllReady(state);
+  // When everything's set up, Bootstrap / Setup Wizard are noise — lead with
+  // Build instead. Before that, keep the setup-oriented actions.
+  const actions: ActionItem[] = allReady
+    ? [
+        { icon: "play", label: "Build", command: "alp.westBuild" },
+        {
+          icon: "filePlus",
+          label: "New Project",
+          command: "alp.newProjectWizard",
+        },
+        { icon: "settings", label: "Settings", command: "alp.openSettings" },
+      ]
+    : ACTIONS;
 
   return (
     <div className={styles.root}>
@@ -271,6 +299,7 @@ export function OverviewView() {
               title="Alp SDK"
               chip={sdkChip(state)}
               meta={sdkMeta(state)}
+              onClick={scrollToSdkSection}
             />
           </div>
         </section>
@@ -302,10 +331,18 @@ export function OverviewView() {
             Quick Actions
           </p>
           <div className={styles.actionGrid}>
-            {ACTIONS.map((a) => (
+            {actions.map((a) => (
               <ActionButton key={a.command} {...a} />
             ))}
           </div>
+        </section>
+
+        {/* SDK Manager — folded in from the former standalone panel. The
+            `alp.openSdkManager` command opens the Hub and scrolls here. */}
+        {/* SdkView renders its own "SDK Manager" header + Refresh/Browse, so no
+            outer section label here (that would double the heading). */}
+        <section aria-label="SDK Manager" id="sdk-section">
+          <SdkView />
         </section>
       </div>
     </div>

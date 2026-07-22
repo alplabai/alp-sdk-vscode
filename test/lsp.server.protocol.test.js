@@ -169,6 +169,26 @@ test("LSP server answers completion/hover and publishes diagnostics after didOpe
     );
   } finally {
     client.server.kill();
-    fs.rmSync(dir, { recursive: true, force: true });
+    // Wait for the server to actually exit so Windows releases its handles under
+    // `dir` before we remove it (a bare rm races the kill and throws EPERM).
+    await new Promise((resolve) => {
+      if (client.server.exitCode !== null || client.server.killed === false) {
+        // Fall through to the timeout guard if exit never fires.
+      }
+      client.server.once("exit", resolve);
+      setTimeout(resolve, 2000);
+    });
+    // Best-effort: a passing test must not fail on OS-temp cleanup if a handle
+    // is still transiently locked (AV/indexer). The OS reclaims temp regardless.
+    try {
+      fs.rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    } catch {
+      /* leaked temp dir on a locked Windows handle — harmless */
+    }
   }
 });

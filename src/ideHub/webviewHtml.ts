@@ -86,6 +86,7 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.openConfigurator",
   "alp.openExistingProject",
   "alp.openHardwareExplorer",
+  "alp.openHub",
   "alp.openOverview",
   "alp.openSdkManager",
   "alp.openSettings",
@@ -105,6 +106,17 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "vscode.openFolder",
   "workbench.action.reloadWindow",
 ]);
+
+/**
+ * Both ids run the same bootstrap flow (see src/bootstrap.ts): `alp.installDependencies`
+ * (palette / Setup view) and `alp.bootstrap` (the id some webview buttons post).
+ * Panels use this so the `lastBootstrapAt` stamp + delayed refresh fire for
+ * EITHER id — otherwise a button posting one id into a panel that only watched
+ * the other would run bootstrap but never refresh the status.
+ */
+export function isBootstrapCommand(command: string): boolean {
+  return command === "alp.installDependencies" || command === "alp.bootstrap";
+}
 
 /**
  * Run a webview-requested command, but only when it is allowlisted; a refused

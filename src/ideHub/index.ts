@@ -10,6 +10,5 @@ export type {
 export { NewProjectFlowPanel } from "./newProjectFlowPanel";
 export { OverviewPanel } from "./overviewPanel";
 export { E1M_MODULES } from "./projectScaffold";
-export { SdkManagerPanel } from "./sdkManagerPanel";
 export { SetupFlowPanel } from "./setupFlowPanel";
 export { registerWorkspaceCommands } from "./workspaceCommands";

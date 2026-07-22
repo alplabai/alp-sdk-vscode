@@ -40,6 +40,7 @@ export interface SdkStatus {
 export interface ToolVersions {
   python: string | null;
   west: string | null;
+  tan: string | null;
   cmake: string | null;
   ninja: string | null;
 }
@@ -78,7 +79,13 @@ export function emptyAlpIdeState(): AlpIdeState {
       pythonAvailable: false,
       westAvailable: false,
       lastBootstrapAt: null,
-      toolVersions: { python: null, west: null, cmake: null, ninja: null },
+      toolVersions: {
+        python: null,
+        west: null,
+        tan: null,
+        cmake: null,
+        ninja: null,
+      },
     },
     workspace: {
       workspaceRoot: null,
@@ -119,6 +126,13 @@ export interface ProjectTemplatesDataMessage {
   type: "projectTemplatesData";
   templates: ProjectTemplate[];
   modules: E1mModule[];
+}
+
+/** Ask the Hub webview to scroll a named section into view (e.g. opening the
+ *  SDK Manager, now a Hub section, from the command palette or sidebar). */
+export interface FocusSectionMessage {
+  type: "focusSection";
+  section: "sdk";
 }
 
 export interface ConfiguratorRenderMessage {
@@ -221,6 +235,7 @@ export type ExtToWebviewMessage =
   | SdkReleasesLoadedMessage
   | SdkInstallProgressMessage
   | ProjectTemplatesDataMessage
+  | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage

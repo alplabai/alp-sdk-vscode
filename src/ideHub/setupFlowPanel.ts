@@ -8,7 +8,11 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
+import {
+  buildWebviewHtml,
+  isBootstrapCommand,
+  runWebviewCommand,
+} from "./webviewHtml";
 
 const PANEL_VIEW_TYPE = "alp-ide.setup-flow";
 const PANEL_TITLE = "Alp IDE Setup";
@@ -79,8 +83,8 @@ export class SetupFlowPanel {
   async refresh(): Promise<void> {
     const lastBootstrapAt =
       this.context.globalState.get<string>("alp.lastBootstrapAt") ?? null;
-    const state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
-      emptyAlpIdeState(),
+    const state = await queryAlpIdeState(lastBootstrapAt, this.context).catch(
+      () => emptyAlpIdeState(),
     );
     const msg: ExtToWebviewMessage = {
       type: "stateUpdate",
@@ -97,7 +101,7 @@ export class SetupFlowPanel {
         break;
       case "runCommand":
         runWebviewCommand(msg.command);
-        if (msg.command === "alp.installDependencies") {
+        if (isBootstrapCommand(msg.command)) {
           // Bootstrap runs in a terminal; re-check after it settles.
           const now = new Date().toISOString();
           void this.context.globalState.update("alp.lastBootstrapAt", now);
