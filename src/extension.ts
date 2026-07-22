@@ -27,7 +27,7 @@ import { registerLspCommands } from "./lsp/commands";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
-import { showOutput } from "./util";
+import { log, showOutput } from "./util";
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
@@ -37,6 +37,9 @@ import {
 } from "./wizard";
 
 export function activate(context: vscode.ExtensionContext): void {
+  const version =
+    (context.extension.packageJSON.version as string | undefined) ?? "unknown";
+  log(`Alp SDK extension activating — v${version}`);
   startLanguageServer(context);
 
   // One shared state source for both the native trees and the status bar, so

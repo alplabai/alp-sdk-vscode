@@ -517,11 +517,12 @@ function createPanelTraceDecisions(
 }
 
 function formatDebugError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Alp: an unexpected debug configuration error occurred.";
+  // Keep the `Alp:` brand prefix + a debug context on EVERY path — the
+  // Error branch used to return the raw `error.message` with neither, so a
+  // failure surfaced as a bare, unattributed toast.
+  const detail =
+    error instanceof Error ? error.message : "an unexpected error occurred.";
+  return `Alp: debug configuration failed — ${detail}`;
 }
 
 function timestampForFile(isoTimestamp: string): string {

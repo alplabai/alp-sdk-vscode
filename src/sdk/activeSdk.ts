@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
+import { log } from "../util";
 import { writeAlpSetting } from "./settingsWrite";
 
 /**
@@ -30,6 +31,9 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
     },
   );
   if (report.state === "missing") {
+    log(
+      `[sdk] activate rejected — ${sdkPath} is not an SDK root: ${report.issues.join(" ")}`,
+    );
     void vscode.window.showErrorMessage(report.issues.join(" "));
     return;
   }
@@ -54,12 +58,18 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
         (p, content) => fs.writeFileSync(p, content),
         (p) => fs.mkdirSync(p, { recursive: true }),
       );
-    } catch {
+    } catch (err) {
       // Pointer mirror is best-effort; the setting write is the source of truth.
+      log(
+        `[sdk] .alp/sdk-path pointer mirror failed (best-effort): ${String(err)}`,
+      );
     }
   }
 
   await vscode.commands.executeCommand("alp.views.refresh");
+  log(
+    `[sdk] active SDK set → ${sdkPath} (${hasWorkspace ? "workspace" : "global"})`,
+  );
   void vscode.window.showInformationMessage(
     hasWorkspace
       ? `Alp: active SDK for this project → ${sdkPath}`
@@ -102,6 +112,9 @@ export async function clearActiveSdk(): Promise<void> {
 
   if (!workspaceCleared && !globalCleared) return; // nothing changed
   await vscode.commands.executeCommand("alp.views.refresh");
+  log(
+    `[sdk] active SDK cleared (workspace=${workspaceCleared}, global=${globalCleared})`,
+  );
 
   if (workspaceCleared && globalCleared) {
     void vscode.window.showInformationMessage("Alp: active SDK cleared.");
