@@ -7,7 +7,7 @@ import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
-import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
+import { queryAlpIdeState } from "./vscodeAdapter";
 import {
   buildWebviewHtml,
   isBootstrapCommand,
@@ -90,10 +90,6 @@ export class ExistingProjectFlowPanel {
         await this.refresh();
         break;
 
-      case "openExistingProject":
-        await this.openProject();
-        break;
-
       case "runCommand":
         runWebviewCommand(msg.command);
         if (isBootstrapCommand(msg.command)) {
@@ -114,24 +110,6 @@ export class ExistingProjectFlowPanel {
         }
         break;
     }
-  }
-
-  private async openProject(): Promise<void> {
-    const uris = await vscode.window.showOpenDialog({
-      canSelectFiles: false,
-      canSelectFolders: true,
-      canSelectMany: false,
-      title: "Select Alp project folder",
-      openLabel: "Open Project",
-    });
-
-    if (!uris || uris.length === 0) {
-      return;
-    }
-
-    // Open in a new window when a workspace is already open, so the user's
-    // current session isn't replaced.
-    await openProjectFolder(uris[0]);
   }
 
   private dispose(): void {
