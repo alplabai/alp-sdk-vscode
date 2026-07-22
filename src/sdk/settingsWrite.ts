@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import { log } from "../util";
 import { isSettingsUnsavedChangesError } from "./settingsErrors";
 import { selectSettingsFilesToSave } from "./settingsFiles";
 
@@ -30,7 +31,10 @@ export async function writeAlpSetting(
       .update(key, value, target);
     return true;
   } catch (err) {
-    if (!isSettingsUnsavedChangesError(err)) throw err;
+    if (!isSettingsUnsavedChangesError(err)) {
+      log(`[settings] alpSdk.${key} write failed: ${String(err)}`);
+      throw err;
+    }
     return recoverFromUnsavedSettings(key, value, target);
   }
 }
@@ -59,9 +63,9 @@ async function recoverFromUnsavedSettings(
     SAVE_AND_RETRY,
   );
   if (choice !== SAVE_AND_RETRY) {
-    void vscode.window.showInformationMessage(
-      "Alp: settings unchanged — save your settings file, then try again.",
-    );
+    // One canonical "save manually" message + severity for every non-write exit
+    // (previously an info toast here vs. a warning toast elsewhere).
+    tellUserToSaveManually();
     return false;
   }
 
