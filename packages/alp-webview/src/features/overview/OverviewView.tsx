@@ -287,6 +287,14 @@ export function OverviewView() {
               title="Environment"
               chip={envChip(state)}
               meta={envMeta(state)}
+              // A red "Missing"/"Update Needed" chip was a dead end. When tools
+              // aren't ready, jump to the Toolchain Doctor (which diagnoses +
+              // fixes Python/west/cmake/ninja); a ready environment stays static.
+              onClick={
+                envChip(state) === "ready"
+                  ? undefined
+                  : () => run("alp.toolchainDoctor")
+              }
             />
             <StatusCard
               icon="folder"

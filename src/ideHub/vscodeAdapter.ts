@@ -173,10 +173,6 @@ export async function queryAlpIdeState(
       .startsWith(cacheRootResolved + path.sep),
   }));
 
-  const boardYamlPath = actualWorkspaceRoot
-    ? path.join(actualWorkspaceRoot, "board.yaml")
-    : null;
-
   const pyCmd = projectContext.pythonBinary;
   const westBin = resolveWestBinary(
     projectContext.westCwd,
@@ -223,8 +219,14 @@ export async function queryAlpIdeState(
       },
     },
     workspace: {
-      workspaceRoot: actualWorkspaceRoot,
-      boardYamlExists: boardYamlPath ? fs.existsSync(boardYamlPath) : false,
+      // Resolved project context (the folder holding board.yaml + the configured
+      // boardYamlPath), NOT workspaceFolders[0] + a hardcoded "board.yaml" —
+      // otherwise a multi-root project (in folder[1]) or a custom alpSdk.boardYamlPath
+      // reports boardYamlExists=false and the hub/tree wrongly offer "New Project".
+      workspaceRoot: projectContext.workspaceRoot,
+      boardYamlExists: projectContext.boardYamlPath
+        ? fs.existsSync(projectContext.boardYamlPath)
+        : false,
       westInitialized: westWorkspaceInitialized(
         projectContext.westCwd,
         projectContext.sdkRoot,

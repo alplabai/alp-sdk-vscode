@@ -689,6 +689,12 @@ function spawnAlp(command: string, args: string[], cwd?: string): SpawnResult {
     cwd,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
+    // Cap every envelope command: this runs on the single ext-host event loop,
+    // and network-bound commands (e.g. `sdk list`) could otherwise hang it —
+    // and any webview loading state waiting on the result — forever. On timeout
+    // spawnSync sets `result.error` (ETIMEDOUT), which runAlp maps to an error
+    // outcome so the caller's spinner-clear / error toast still fires.
+    timeout: 60_000,
   });
   return {
     status: result.status,
