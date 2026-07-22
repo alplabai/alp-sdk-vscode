@@ -8,12 +8,7 @@
 // `runCommand`; no domain logic lives here. The full-width Overview hub is a
 // separate page (alp.openOverview) and is intentionally NOT duplicated here.
 
-// The real Alp Lab wordmark (shared with the full-width Overview). Imported
-// `?inline` so Vite embeds it as a data URI — no host-side asWebviewUri
-// plumbing — and painted via CSS `mask` in the theme foreground colour, so it
-// reads correctly on both light and dark VS Code themes.
 import { useState } from "react";
-import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import { Icon, Skeleton } from "../../shared/ui";
 import type { IconName } from "../../shared/ui";
@@ -81,12 +76,18 @@ function ActionRow({
   desc,
   command,
   disabled,
+  value,
+  health,
 }: {
   icon: IconName;
   label: string;
   desc?: string;
   command: string;
   disabled?: boolean;
+  /** Optional right-aligned status (value text + health dot), so a single row
+   *  can both act and report — e.g. "Manage SDKs … Not configured ●". */
+  value?: string;
+  health?: Health;
 }) {
   return (
     <button
@@ -102,6 +103,20 @@ function ActionRow({
         <span className={styles.actionLabel}>{label}</span>
         {desc && <span className={styles.actionDesc}>{desc}</span>}
       </span>
+      {value !== undefined && <span className={styles.rowValue}>{value}</span>}
+      {health !== undefined && (
+        <span
+          className={styles.dot}
+          data-health={health}
+          aria-label={
+            health === "ok"
+              ? "ready"
+              : health === "warn"
+                ? "action needed"
+                : "not set"
+          }
+        />
+      )}
       <span className={styles.actionArrow} aria-hidden="true">
         <Icon name="chevronRight" size={14} />
       </span>
@@ -220,20 +235,6 @@ export function SidebarHubView() {
 
   return (
     <div className={styles.root}>
-      <header className={styles.topbar}>
-        <span
-          className={styles.brandLogo}
-          style={{
-            maskImage: `url("${alplabLogo}")`,
-            WebkitMaskImage: `url("${alplabLogo}")`,
-          }}
-          role="img"
-          aria-label="Alp Lab"
-        />
-        <span className={styles.topDivider} aria-hidden="true" />
-        <span className={styles.topTitle}>Alp IDE</span>
-      </header>
-
       <Section title="Setup">
         <ActionRow
           icon="book"
@@ -320,17 +321,12 @@ export function SidebarHubView() {
       </Section>
 
       <Section title="SDK Manager">
-        <StatusRow
-          icon="package"
-          label={sdk.activePath ? "Active SDK" : "No SDK configured"}
-          value={sdkValue(sdk)}
-          health={sdk.readiness === "ready" ? "ok" : "warn"}
-          command="alp.openSdkManager"
-        />
         <ActionRow
           icon="download"
           label="Manage SDKs"
           desc="Install, switch, update"
+          value={sdkValue(sdk)}
+          health={sdk.readiness === "ready" ? "ok" : "warn"}
           command="alp.openSdkManager"
         />
       </Section>

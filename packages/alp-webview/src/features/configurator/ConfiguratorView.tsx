@@ -1654,8 +1654,8 @@ export function ConfiguratorView() {
       return (
         <div className={styles.section}>
           <SectionLabel
-            text="Not connected"
-            hint="No Alp SDK found. Set alpSdk.path to your alp-sdk checkout to load SoMs, boards, chips and libraries."
+            text="SDK catalog not connected"
+            hint="No Alp SDK is linked, so the SoM / board / chip pickers can't load. Set alpSdk.path to your alp-sdk checkout to enable catalog-assisted editing — your board.yaml still validates and saves without it."
           />
         </div>
       );
@@ -1679,15 +1679,6 @@ export function ConfiguratorView() {
   return (
     <div className={styles.root}>
       <header className={styles.topbar}>
-        <div className={styles.brand}>
-          <span className={styles.bolt} aria-hidden="true">
-            <Icon name="bolt" size={16} />
-          </span>
-          <span className={styles.brandName}>
-            Alp<span className={styles.brandLab}>LAB</span>
-          </span>
-        </div>
-        <span className={styles.topDivider} aria-hidden="true" />
         <span className={styles.topTitle}>Board Configurator</span>
         <span className={styles.topSpacer} />
         <span className={styles.savedTag}>
