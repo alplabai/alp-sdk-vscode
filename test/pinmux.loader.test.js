@@ -83,13 +83,15 @@ test("loadPinmuxTable returns null for an all-TBD (sentinel) capability table", 
   );
 });
 
-test("loadPinmuxTable keeps only non-TBD rows for a partially-populated table", () => {
+test("loadPinmuxTable keeps a partially-resolved table and preserves its TBD pads", () => {
   clearPinmuxTableCache();
   const mixed =
     'family: v2n\npads:\n  - { e1m_pad: "TBD", e1m_function: "TBD", owner: "renesas", silicon_peripheral: "x", silicon_pad: "PA2" }\n  - { e1m_pad: "B7", e1m_function: "I2C0", owner: "renesas", silicon_peripheral: "RIIC0", silicon_pad: "P20" }\n';
   const table = loadPinmuxTable("/sdk", "E1M-V2N101", () => mixed);
-  assert.strictEqual(table.pads.length, 1);
-  assert.strictEqual(table.pads[0].e1mPad, "B7");
+  // Both rows kept intact; R2 in checkE1mCompliance skips the TBD row.
+  assert.strictEqual(table.pads.length, 2);
+  assert.strictEqual(table.pads[0].e1mPad, "TBD");
+  assert.strictEqual(table.pads[1].e1mPad, "B7");
 });
 
 test("E1M-V2M SKUs resolve to the v2n pinmux family (same E1M edge)", () => {
