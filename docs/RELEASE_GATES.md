@@ -52,8 +52,10 @@ Version format: `MAJOR.MINOR.PATCH` following semantic versioning.
 Extension releases are tagged and published to the VS Code Marketplace from this
 repo. The build CLI is released **separately** from
 [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli): a `v<version>` tag
-push there triggers its `release` workflow, which builds the six per-target
-binaries and publishes each as a **raw** GitHub release asset
+push there triggers its `release` workflow, which builds the eight per-target
+binaries (Windows x64/arm64, macOS x64/arm64, Linux x64/arm64 gnu, Linux
+x64/arm64 musl — musl published from v0.3.0 on; the extension downloads musl)
+and publishes each as a **raw** GitHub release asset
 (`tan-<triple>[.exe]`, no archive). The extension resolves the matching
 `v<version>` asset on activation; the tag scheme and asset names are a stable
 contract (see the `tan-cli` release-asset contract).
@@ -76,3 +78,7 @@ If a published **`tan` CLI** release is defective, the rollback lives in the
 corrected `v<version>` and update its release notes). Because the extension pins
 `SUPPORTED_CLI_VERSION`, hold or advance that pin to keep the extension on a
 known-good `tan` binary, and add an incident note to `COMPATIBILITY_RULES.md`.
+**Floor:** the pin cannot go below `v0.3.0` — the extension downloads the
+Linux musl asset (see `TARGETS` in `src/alpCli/service.ts`), and musl assets
+don't exist on any earlier tag; holding/rolling back below `v0.3.0` 404s the
+Linux download.

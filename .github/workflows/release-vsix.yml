@@ -56,7 +56,7 @@ jobs:
     name: package + publish vsix
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # create the GitHub Release + upload the .vsix asset
     env:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
@@ -92,9 +92,11 @@ jobs:
           MINOR=$(node -p "require('./package.json').version.split('.')[1]")
           if [ "$((MINOR % 2))" -eq 1 ]; then
             echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
+            echo "IS_PRERELEASE=true" >> "$GITHUB_ENV"
             echo "::notice::version 0.$MINOR.x → publishing as a PRE-RELEASE (odd minor)."
           else
             echo "PRERELEASE_FLAG=" >> "$GITHUB_ENV"
+            echo "IS_PRERELEASE=false" >> "$GITHUB_ENV"
             echo "::notice::version 0.$MINOR.x → publishing as a STABLE release (even minor)."
           fi
 
@@ -110,6 +112,24 @@ jobs:
 
       - name: Gate — VSIX ships only allowlisted top-level paths (#70)
         run: bash scripts/check-vsix-allowlist.sh alp-sdk.vsix
+
+      - name: Create GitHub Release (attach the universal .vsix)
+        # On a pushed tag only. Keeps the GitHub Releases page consistent with
+        # tan-cli / alp-sdk (which both cut a GH Release per tag) instead of the
+        # tag-only state that left v0.3.6 without a visible release.
+        if: ${{ github.event_name == 'push' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: alp-sdk.vsix
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            The `.vsix` below is attached now. Marketplace/Open VSX publish runs as
+            a later step in this same workflow — check its run for status before
+            assuming it landed: https://marketplace.visualstudio.com/items?itemName=AlpLabAI.alp-sdk
+            Install now regardless: download `alp-sdk.vsix` below and
+            `code --install-extension alp-sdk.vsix`.
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
@@ -196,7 +216,13 @@ jobs:
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
-        run: pnpm exec vsce publish --no-dependencies --target darwin-arm64 --pre-release --packagePath alp-sdk-darwin-arm64.vsix
+        # NB: --target must NOT be passed with --packagePath — the target is
+        # already baked into the packaged .vsix by the earlier
+        # "Package (.vsix, darwin-arm64, bundled CLI)" step's
+        # `vsce package --target darwin-arm64`; vsce rejects both together
+        # ("Both options not supported simultaneously: 'packagePath' and
+        # 'target'"). Publish the pre-built platform .vsix by path only.
+        run: pnpm exec vsce publish --no-dependencies --pre-release --packagePath alp-sdk-darwin-arm64.vsix
         # VSCE_PAT is read from the environment by vsce.
 
       - name: Note when publish was skipped

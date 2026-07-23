@@ -37,8 +37,12 @@ unzip -Z1 "$VSIX" \
 # repointed from the retired alp/cli-rs binary under ADR-0020). The universal
 # VSIX ships nothing there. Keep `bin` allowlisted so the bundled-CLI package
 # does not trip this very gate.
-printf '%s\n' bin license license.txt readme.md media out package.json \
-  packages schemas snippets syntaxes \
+# `changelog.md` is bundled by vsce automatically (it renders as the
+# Marketplace "Changelog" tab) — shipping it is intentional, matching
+# alp-sdk and tan-cli both publishing release notes, so it's allowlisted
+# rather than excluded via .vscodeignore.
+printf '%s\n' bin changelog.md license license.txt readme.md media out \
+  package.json packages schemas snippets syntaxes \
   | sort -u > "$allow"
 
 unexpected="$(comm -23 "$top" "$allow")"
