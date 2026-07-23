@@ -174,3 +174,94 @@ test("identical-token double-claim of one physical pad is flagged (R2)", () => {
   assert.match(issues[0].message, /A3/);
   assert.match(issues[0].message, /one owner per pad/);
 });
+
+test("unresolved (TBD) pads never produce a false ownership collision (R2)", () => {
+  // A partially-characterized v2n table where both referenced functions still
+  // map to TBD pads. Before the fix these collided on the shared "TBD" key.
+  const table = {
+    family: "v2n",
+    pads: [
+      {
+        e1mPad: "TBD",
+        e1mFunction: "PWM6",
+        owner: "renesas",
+        siliconPeripheral: "GPT",
+        siliconPad: "P100",
+      },
+      {
+        e1mPad: "TBD",
+        e1mFunction: "IO3",
+        owner: "renesas",
+        siliconPeripheral: "GPIO",
+        siliconPad: "P101",
+      },
+    ],
+  };
+  const cfg = {
+    som: { sku: "E1M-V2N101" },
+    cores: {},
+    pins: ["E1M_PWM6", "E1M_GPIO_IO3"],
+  };
+  assert.deepStrictEqual(checkE1mCompliance(cfg, table), []);
+});
+
+test("a function backed only by TBD pads is not reported as unavailable (R1)", () => {
+  // Before the fix, loadPinmuxTable would drop TBD rows, so any function whose
+  // only entries were TBD vanished from padsForFunction and triggered a false
+  // "not available" (R1). padsForFunction must still see the TBD row.
+  const table = {
+    family: "v2n",
+    pads: [
+      {
+        e1mPad: "TBD",
+        e1mFunction: "PWM6",
+        owner: "renesas",
+        siliconPeripheral: "GPT",
+        siliconPad: "P100",
+      },
+    ],
+  };
+  const cfg = { som: { sku: "E1M-V2N101" }, cores: {}, pins: ["E1M_PWM6"] };
+  assert.deepStrictEqual(checkE1mCompliance(cfg, table), []);
+});
+
+test("a real collision on a resolved pad still fires when other pads are TBD", () => {
+  // PWM6 and IO3 both map to the resolved physical pad C4 — a genuine conflict.
+  // UART2 maps to a TBD pad and must be ignored, not flagged.
+  const table = {
+    family: "v2n",
+    pads: [
+      {
+        e1mPad: "C4",
+        e1mFunction: "PWM6",
+        owner: "renesas",
+        siliconPeripheral: "GPT",
+        siliconPad: "P100",
+      },
+      {
+        e1mPad: "C4",
+        e1mFunction: "IO3",
+        owner: "renesas",
+        siliconPeripheral: "GPIO",
+        siliconPad: "P101",
+      },
+      {
+        e1mPad: "TBD",
+        e1mFunction: "UART2",
+        owner: "renesas",
+        siliconPeripheral: "SCI",
+        siliconPad: "P102",
+      },
+    ],
+  };
+  const cfg = {
+    som: { sku: "E1M-V2N101" },
+    cores: {},
+    pins: ["E1M_PWM6", "E1M_GPIO_IO3", "E1M_UART2"],
+  };
+  const issues = checkE1mCompliance(cfg, table);
+  assert.strictEqual(issues.length, 1);
+  assert.strictEqual(issues[0].token, "E1M_GPIO_IO3");
+  assert.match(issues[0].message, /C4/);
+  assert.match(issues[0].message, /one owner per pad/);
+});
