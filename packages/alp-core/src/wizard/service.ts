@@ -279,4 +279,3 @@ function createScaffoldTreePreview(files: WizardPlannedFile[]): string {
   }
   return treeLines.join("\n");
 }
-
