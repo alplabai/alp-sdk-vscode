@@ -68,6 +68,15 @@ export const DEBUG_TARGET_CHOICES: ReadonlyArray<DebugTargetChoice> = [
   },
 ];
 
+/** Whether a debug target is the native_sim / native-host host-binary class
+ *  (CodeLLDB, no on-chip probe) — the class that needs the native_sim GPIO
+ *  overlay generated before launch. On-target (Zephyr/baremetal MCU, Yocto
+ *  userspace) profiles never match, so overlay generation never fires for an
+ *  SWD/J-Link/OpenOCD/pyOCD/gdbserver debug session. */
+export function isNativeHostTarget(targetKind: DebugTargetKind): boolean {
+  return targetKind === "native-host";
+}
+
 export function serverChoicesForTarget(
   targetKind: DebugTargetKind,
 ): ReadonlyArray<DebugServerChoice> {
