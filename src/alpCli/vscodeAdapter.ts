@@ -36,7 +36,7 @@ import {
   releaseAssetForTarget,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, runInTerminal, showOutput } from "../util";
+import { log, reportError, runInTerminal, showOutput } from "../util";
 
 const execFileAsyncCli = promisify(cp.execFile);
 
@@ -548,7 +548,7 @@ export async function updateAlpCli(
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    void vscode.window.showErrorMessage(`tan CLI update failed: ${message}`);
+    void reportError(`tan CLI update failed: ${message}`);
   }
 }
 
@@ -569,7 +569,7 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
   // Guard a packaging regression: a missing bundled script would otherwise
   // surface only as a raw "sh: …: No such file" (exit 127) in the terminal.
   if (!fs.existsSync(script)) {
-    void vscode.window.showErrorMessage(
+    void reportError(
       `The bundled tan installer is missing (${script}). Try reinstalling the Alp SDK extension.`,
     );
     return;
