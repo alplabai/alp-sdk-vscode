@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
+import { toPosix } from "../paths";
 
 import {
   DebugDoctorRequest,
@@ -66,6 +67,15 @@ export const DEBUG_TARGET_CHOICES: ReadonlyArray<DebugTargetChoice> = [
     targetKind: "native-host",
   },
 ];
+
+/** Whether a debug target is the native_sim / native-host host-binary class
+ *  (CodeLLDB, no on-chip probe) — the class that needs the native_sim GPIO
+ *  overlay generated before launch. On-target (Zephyr/baremetal MCU, Yocto
+ *  userspace) profiles never match, so overlay generation never fires for an
+ *  SWD/J-Link/OpenOCD/pyOCD/gdbserver debug session. */
+export function isNativeHostTarget(targetKind: DebugTargetKind): boolean {
+  return targetKind === "native-host";
+}
 
 export function serverChoicesForTarget(
   targetKind: DebugTargetKind,
@@ -917,16 +927,20 @@ function resolveWorkspacePath(
   }
 
   if (value.startsWith("${workspaceFolder}/")) {
-    return path.join(workspaceRoot, value.slice("${workspaceFolder}/".length));
+    return toPosix(
+      path.join(workspaceRoot, value.slice("${workspaceFolder}/".length)),
+    );
   }
 
   if (value.startsWith("${workspaceFolder}")) {
-    return path.join(workspaceRoot, value.slice("${workspaceFolder}".length));
+    return toPosix(
+      path.join(workspaceRoot, value.slice("${workspaceFolder}".length)),
+    );
   }
 
   if (value.startsWith("/")) {
     return value;
   }
 
-  return path.join(workspaceRoot, value);
+  return toPosix(path.join(workspaceRoot, value));
 }

@@ -9,6 +9,7 @@ import {
 } from "./messages";
 import { createSdkMessageHandler } from "./sdkManagerMessages";
 import { queryAlpIdeState } from "./vscodeAdapter";
+import { onDidFinishTerminalCommand } from "../util";
 import {
   buildWebviewHtml,
   isBootstrapCommand,
@@ -92,6 +93,9 @@ export class OverviewPanel {
       vscode.window.onDidChangeWindowState((s) => {
         if (s.focused && this.panel.visible) void this.refresh();
       }),
+      // Refresh on the real completion signal: a CTA that runs in a terminal
+      // (bootstrap, a west build/flash) closes it when done. See util.ts.
+      onDidFinishTerminalCommand(() => void this.refresh()),
     );
   }
 
@@ -133,12 +137,14 @@ export class OverviewPanel {
         break;
       case "runCommand":
         runWebviewCommand(msg.command);
+        // A CTA that changes status runs in a terminal; the standing
+        // onDidFinishTerminalCommand subscription refreshes when it closes.
+        // Only stamp the bootstrap time here so that post-close refresh reads it.
         if (isBootstrapCommand(msg.command)) {
-          const now = new Date().toISOString();
-          void this.context.globalState.update("alp.lastBootstrapAt", now);
-          setTimeout(() => void this.refresh(), 8000);
-        } else {
-          setTimeout(() => void this.refresh(), 1200);
+          void this.context.globalState.update(
+            "alp.lastBootstrapAt",
+            new Date().toISOString(),
+          );
         }
         break;
       case "openUrl":

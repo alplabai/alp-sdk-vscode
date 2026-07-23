@@ -21,6 +21,7 @@ import {
   createLaunchPreview,
   createSupportBundlePayload,
   DEBUG_TARGET_CHOICES,
+  isNativeHostTarget,
   serializeSupportBundlePayload,
   serverChoicesForTarget,
 } from "@alp-sdk/core/debug/service";
@@ -33,7 +34,8 @@ import {
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
-import { log, showOutput } from "./util";
+import { ensureNativeSimOverlay } from "./west";
+import { log, reportError, showOutput } from "./util";
 
 async function showJsonDocument(data: unknown): Promise<void> {
   const doc = await vscode.workspace.openTextDocument({
@@ -136,7 +138,7 @@ async function debugPreflight(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await vscode.window.showErrorMessage(formatDebugError(error));
+    await reportError(formatDebugError(error), debugErrorDetail(error));
     return;
   }
 
@@ -202,7 +204,7 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
       configuration,
     );
   } catch (error) {
-    await vscode.window.showErrorMessage(formatDebugError(error));
+    await reportError(formatDebugError(error), debugErrorDetail(error));
     return null;
   }
 
@@ -288,9 +290,18 @@ async function ensureDebugExtension(configName: string): Promise<boolean> {
 
 /** First-class "Debug": generate/refresh the launch profile, make sure the
  *  debug-adapter extension is present, then start the session. */
-async function startDebugging(): Promise<void> {
+async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   const result = await writeLaunchProfile();
   if (!result) return;
+
+  // native_sim/native-host is the only debug class that runs a host binary
+  // under CodeLLDB with no on-chip probe — the same class the native_sim GPIO
+  // overlay generation targets (issue #86, mirrors westRunNativeSim's
+  // pre-run hook). On-target (cortex-debug/cppdbg) profiles never match, so
+  // this never fires for an SWD/J-Link/OpenOCD/pyOCD/gdbserver session.
+  if (isNativeHostTarget(result.report.targetKind)) {
+    await ensureNativeSimOverlay(context);
+  }
 
   if (!(await ensureDebugExtension(result.configName))) {
     await vscode.window.showWarningMessage(
@@ -322,10 +333,12 @@ async function startDebugging(): Promise<void> {
   );
   const started = await vscode.debug.startDebugging(folder, result.configName);
   if (!started) {
-    await vscode.window.showErrorMessage(
+    // reportError already logs this and offers a "Show Output" action; the
+    // message itself points at the Debug Console / launch.json, so don't also
+    // force-open the Alp SDK channel here.
+    await reportError(
       `Alp: VS Code declined to start "${result.configName}" — check the Debug Console and launch.json.`,
     );
-    showOutput();
   }
 }
 
@@ -352,7 +365,7 @@ async function exportSupportBundle(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await vscode.window.showErrorMessage(formatDebugError(error));
+    await reportError(formatDebugError(error), debugErrorDetail(error));
     return;
   }
 
@@ -419,7 +432,7 @@ async function openDebugTroubleshootingPanel(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await vscode.window.showErrorMessage(formatDebugError(error));
+    await reportError(formatDebugError(error), debugErrorDetail(error));
     return;
   }
 
@@ -525,11 +538,23 @@ function formatDebugError(error: unknown): string {
   return `Alp: debug configuration failed — ${detail}`;
 }
 
+/** Full detail for the "Alp SDK" channel behind a `formatDebugError` toast: the
+ *  stack trace when available (call-site context beyond the bare message baked
+ *  into the toast), or the raw thrown value when it isn't an `Error` at all
+ *  (which the toast genericizes to "an unexpected error occurred."). */
+function debugErrorDetail(error: unknown): string {
+  return error instanceof Error
+    ? (error.stack ?? error.message)
+    : String(error);
+}
+
 function timestampForFile(isoTimestamp: string): string {
   return isoTimestamp.replace(/[:.]/g, "-");
 }
 
-export function registerDebugCommands(): vscode.Disposable[] {
+export function registerDebugCommands(
+  context: vscode.ExtensionContext,
+): vscode.Disposable[] {
   return [
     vscode.commands.registerCommand("alp.inspectProjectState", () =>
       inspectProjectState(),
@@ -541,7 +566,7 @@ export function registerDebugCommands(): vscode.Disposable[] {
     vscode.commands.registerCommand("alp.configureDebugProfile", () =>
       configureDebugProfile(),
     ),
-    vscode.commands.registerCommand("alp.debug", () => startDebugging()),
+    vscode.commands.registerCommand("alp.debug", () => startDebugging(context)),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>
       exportSupportBundle(),
     ),

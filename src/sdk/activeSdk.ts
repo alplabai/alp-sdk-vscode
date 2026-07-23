@@ -5,7 +5,7 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log } from "../util";
+import { log, reportError } from "../util";
 import { writeAlpSetting } from "./settingsWrite";
 
 /**
@@ -34,7 +34,7 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
     log(
       `[sdk] activate rejected — ${sdkPath} is not an SDK root: ${report.issues.join(" ")}`,
     );
-    void vscode.window.showErrorMessage(report.issues.join(" "));
+    void reportError(report.issues.join(" "));
     return;
   }
 

@@ -9,6 +9,7 @@ const {
   createInspectReport,
   createLaunchPreview,
   createSupportBundlePayload,
+  isNativeHostTarget,
   serializeGenerationTraceReport,
   serializeInspectReport,
   serializeSupportBundlePayload,
@@ -44,6 +45,13 @@ function createRuntime(overrides = {}) {
     ...overrides,
   };
 }
+
+test("isNativeHostTarget: true for native-host, false for on-target profiles", () => {
+  assert.equal(isNativeHostTarget("native-host"), true);
+  assert.equal(isNativeHostTarget("zephyr-mcu"), false);
+  assert.equal(isNativeHostTarget("baremetal-mcu"), false);
+  assert.equal(isNativeHostTarget("yocto-userspace"), false);
+});
 
 test("serverChoicesForTarget returns expected backends", () => {
   assert.deepEqual(
@@ -229,13 +237,10 @@ test("buildDebugPreflightReport can pass for resolved native-host profile", () =
     profile,
     createRuntime(),
     {
-      // Normalize separators: the service joins with the host path module, so
-      // filePath uses `\` on Windows; the fixture asserts a POSIX suffix.
+      // filePath is toPosix'd at the source (resolveWorkspacePath in
+      // debug/service.ts), so this asserts a POSIX suffix directly.
       pathExists: (filePath) =>
-        filePath
-          .split("\\")
-          .join("/")
-          .endsWith("build/native_sim/zephyr/zephyr.exe"),
+        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
     },
   );
 
