@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 
 /**
@@ -23,14 +24,29 @@ export function buildWebviewHtml(
     ),
   );
 
+  const styleUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      extensionUri,
+      "packages",
+      "alp-webview",
+      "dist",
+      "main.css",
+    ),
+  );
+
+  // Per-render CSP nonce: only scripts carrying it may run, so 'unsafe-inline'
+  // stays out of script-src and injected inline handlers cannot execute.
+  const nonce = randomBytes(16).toString("base64");
+
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
+    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
   <title>Alp IDE</title>
+  <link rel="stylesheet" href="${styleUri}"/>
 </head>
 <body data-alp-mode="${mode}" style="margin:0;padding:0">
   <div id="root">
@@ -38,14 +54,80 @@ export function buildWebviewHtml(
       ⏳ Loading Alp IDE…
     </p>
   </div>
-  <script>
+  <script nonce="${nonce}">
     window.onerror = function(msg, src, line, col, err) {
       console.error('[Alp IDE] error:', msg, src, line);
       var r = document.getElementById('root');
-      if (r) r.innerHTML = '<pre style="padding:8px;color:red;font-size:11px;white-space:pre-wrap"><b>Alp IDE Error:</b>\\n' + msg + '\\n' + (src||'') + ':' + line + '\\n' + (err ? err.stack : '') + '</pre>';
+      if (r) {
+        var pre = document.createElement('pre');
+        pre.style.cssText = 'padding:8px;color:red;font-size:11px;white-space:pre-wrap';
+        pre.textContent = 'Alp IDE Error:\\n' + msg + '\\n' + (src||'') + ':' + line + '\\n' + (err ? err.stack : '');
+        r.textContent = '';
+        r.appendChild(pre);
+      }
     };
   </script>
-  <script src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
+}
+
+/**
+ * Commands an Alp IDE webview is allowed to invoke via a `runCommand` message.
+ * A webview is untrusted input, so anything outside this set is refused rather
+ * than forwarded to `vscode.commands.executeCommand`.
+ */
+export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
+  "alp.bootstrap",
+  "alp.debug",
+  "alp.ideHub.focus",
+  "alp.installDependencies",
+  "alp.newProjectWizard",
+  "alp.openConfigurator",
+  "alp.openExistingProject",
+  "alp.openHardwareExplorer",
+  "alp.openHub",
+  "alp.openOverview",
+  "alp.openSdkManager",
+  "alp.openSettings",
+  "alp.openSetupFlow",
+  "alp.previewEffectiveConfig",
+  "alp.showBuildPlan",
+  "alp.toolchainDoctor",
+  "alp.validateBoardYaml",
+  "alp.westAlpClean",
+  "alp.westAlpFlash",
+  "alp.westAlpImage",
+  "alp.westAlpRenode",
+  "alp.westBuild",
+  "alp.westFlash",
+  "alp.westRunNativeSim",
+  "alp.westUpdate",
+  "vscode.openFolder",
+  "workbench.action.reloadWindow",
+]);
+
+/**
+ * Both ids run the same bootstrap flow (see src/bootstrap.ts): `alp.installDependencies`
+ * (palette / Setup view) and `alp.bootstrap` (the id some webview buttons post).
+ * Panels use this so the `lastBootstrapAt` stamp + delayed refresh fire for
+ * EITHER id — otherwise a button posting one id into a panel that only watched
+ * the other would run bootstrap but never refresh the status.
+ */
+export function isBootstrapCommand(command: string): boolean {
+  return command === "alp.installDependencies" || command === "alp.bootstrap";
+}
+
+/**
+ * Run a webview-requested command, but only when it is allowlisted; a refused
+ * command surfaces an error instead of executing silently.
+ */
+export function runWebviewCommand(command: string): void {
+  if (!ALLOWED_WEBVIEW_COMMANDS.has(command)) {
+    void vscode.window.showErrorMessage(
+      `Alp IDE refused to run an unexpected command: ${command}`,
+    );
+    return;
+  }
+  void vscode.commands.executeCommand(command);
 }

@@ -2,6 +2,7 @@
 
 import * as vscode from "vscode";
 import { createStatusBarPresentation } from "@alp-sdk/core/boardSummary/service";
+import { envReadinessPresentation } from "@alp-sdk/core/statusReadiness/service";
 import { loadBoardSummary } from "./boardSummary/vscodeAdapter";
 import type { AlpIdeState } from "./ideHub/messages";
 import { collectProjectContext } from "./project/vscodeAdapter";
@@ -11,8 +12,8 @@ import type { StateManager } from "./views/stateManager";
  * Status-bar surface (left-aligned, reading order):
  *   $(package) <sdk>         → alp.selectSdk (active SDK + per-project picker)
  *   $(circuit-board) <sku>   → open the board configurator
- *   $(play) Build            → alp.westBuild
- *   $(zap)  Flash            → alp.westFlash
+ *   $(play) Build            → alp.westBuild    (tan build)
+ *   $(zap)  Flash            → alp.westAlpFlash (tan flash)
  *
  * Everything reads one shared StateManager, so these items, the Build & Flash
  * tree, and the SDK Manager never disagree; the bar re-renders on every state
@@ -20,11 +21,19 @@ import type { StateManager } from "./views/stateManager";
  */
 function render(
   state: AlpIdeState,
+  env: vscode.StatusBarItem,
   sdk: vscode.StatusBarItem,
   target: vscode.StatusBarItem,
   build: vscode.StatusBarItem,
   flash: vscode.StatusBarItem,
 ): void {
+  // Overall Alp env-readiness glance (Python/west/tan/SDK/workspace). Full
+  // detail lives in the hover + the Hub; clicking opens the Hub.
+  const envP = envReadinessPresentation(state);
+  env.text = envP.text;
+  env.tooltip = envP.tooltip;
+  env.show();
+
   // Active SDK indicator + per-project picker (always visible).
   const sdkLabel =
     state.sdk.version ?? (state.sdk.activePath ? "SDK" : "No SDK");
@@ -41,8 +50,9 @@ function render(
   target.command = presentation.command;
   target.show();
 
-  // Build/Flash invoke `west` commands — only meaningful once a board.yaml
-  // exists AND the west workspace is initialized (matches the tree's gating).
+  // Build/Flash both drive the tan-orchestrated pipeline (validate + generate +
+  // per-slice build/flash) — only meaningful once a board.yaml exists AND the
+  // west workspace is initialized (matches the tree's gating).
   if (summary?.sku && state.workspace.westInitialized) {
     build.show();
     flash.show();
@@ -53,6 +63,12 @@ function render(
 }
 
 export function createStatusBar(stateMgr: StateManager): vscode.Disposable {
+  const env = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    102,
+  );
+  env.command = "alp.openHub";
+
   const sdk = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     101,
@@ -77,13 +93,18 @@ export function createStatusBar(stateMgr: StateManager): vscode.Disposable {
     98,
   );
   flash.text = "$(zap) Flash";
-  flash.tooltip = "Alp: flash the connected device (alp.westFlash)";
-  flash.command = "alp.westFlash";
+  // Orchestrated flash (tan flash — board.yaml validation + per-slice dispatch),
+  // matching the Build button's pipeline. The legacy plain `west flash`
+  // (alp.westFlash, "Alp: West flash") stays in the Command Palette as the
+  // advanced escape hatch.
+  flash.tooltip =
+    "Alp: build all slices and flash the device (alp.westAlpFlash)";
+  flash.command = "alp.westAlpFlash";
 
-  render(stateMgr.state, sdk, target, build, flash);
+  render(stateMgr.state, env, sdk, target, build, flash);
   const sub = stateMgr.onStateChange((state) =>
-    render(state, sdk, target, build, flash),
+    render(state, env, sdk, target, build, flash),
   );
 
-  return vscode.Disposable.from(sdk, target, build, flash, sub);
+  return vscode.Disposable.from(env, sdk, target, build, flash, sub);
 }

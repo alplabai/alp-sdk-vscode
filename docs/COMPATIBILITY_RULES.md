@@ -1,6 +1,6 @@
 # Compatibility Rules
 
-Last revised: 2026-05-14
+Last revised: 2026-07-17
 
 This document defines backward-compatibility guarantees for schema support, generation targets, and CLI contracts.
 
@@ -18,6 +18,7 @@ This document defines backward-compatibility guarantees for schema support, gene
 - Supported generation targets are versioned product contract:
   - zephyr-conf
   - dts-overlay
+  - native-sim-overlay
   - cmake-args
   - yocto-conf
 - Removing or renaming a target is breaking.
@@ -58,7 +59,7 @@ long as the consumed contracts hold. Record each assessed SDK release here.
     offline validator (`@alp-sdk/core`) does not drift.
   - `--emit` shapes (7) + the `system-manifest-v1` schema: **unchanged** → the manifest
     reader + the build-plan envelope stay valid.
-  - SoM catalogue is sourced at runtime via `alp presets` (smoke-tested against a v0.8.0
+  - SoM catalogue is sourced at runtime via `tan presets` (smoke-tested against a v0.8.0
     checkout: 11 SKUs, version `0.8.0`); the CLI reads `metadata/sdk_version.yaml` at
     runtime — no pinned version to bump.
   - The one planner-behaviour change (`stock-shim-unimplemented`: a Zephyr core whose
@@ -69,3 +70,20 @@ long as the consumed contracts hold. Record each assessed SDK release here.
   - Forward-looking (additive, not required): v0.8.0 adds an `ADC`/`DAC` E1M pin class and
     camera-sensor DTS bindings — the configurator / pin-mux could surface these as new
     routing/chip options. Tracked separately, not a compatibility concern.
+
+- **alp-sdk v0.9.0 → v0.11.0 — shipped without a per-release assessment; the
+  extension now declares a supported floor** (recorded 2026-07-17). Readiness
+  (`checkSdkReadiness`) flags any SDK older than **`MIN_SDK_VERSION`** (declared
+  in `packages/alp-core/src/sdk/service.ts`) as a `partial` install with an
+  actionable issue rather than reporting it `ready`.
+  - **v0.9.0** — BREAKING: generated pin macros renamed `E1M_*` → `ALP_E1M_*`;
+    `metadata/schemas/board.schema.json` re-vendored (#52).
+  - **v0.10.0** — added the `--emit native-sim-overlay` target the extension now
+    hardcodes (`Alp: Generate native_sim overlay`); it does not exist on v0.9.0
+    or earlier, where argparse rejects it. This is the supported floor.
+  - **v0.10.1** — patch release.
+  - **v0.11.0** — `metadata/schemas/board.schema.json` re-vendored (#117); the
+    vendored `schemas/board.schema.json` currently tracks this release.
+  - Caveat: `metadata/sdk_version.yaml` can lag the tag on a dev checkout (it
+    read `0.7.0` at one HEAD), so the readiness floor is advisory — an absent or
+    unparseable version is treated as "unknown, not behind" and never mis-flagged.

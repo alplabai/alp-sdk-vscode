@@ -40,6 +40,7 @@ export interface SdkStatus {
 export interface ToolVersions {
   python: string | null;
   west: string | null;
+  tan: string | null;
   cmake: string | null;
   ninja: string | null;
 }
@@ -78,7 +79,13 @@ export function emptyAlpIdeState(): AlpIdeState {
       pythonAvailable: false,
       westAvailable: false,
       lastBootstrapAt: null,
-      toolVersions: { python: null, west: null, cmake: null, ninja: null },
+      toolVersions: {
+        python: null,
+        west: null,
+        tan: null,
+        cmake: null,
+        ninja: null,
+      },
     },
     workspace: {
       workspaceRoot: null,
@@ -121,12 +128,22 @@ export interface ProjectTemplatesDataMessage {
   modules: E1mModule[];
 }
 
+/** Ask the Hub webview to scroll a named section into view (e.g. opening the
+ *  SDK Manager, now a Hub section, from the command palette or sidebar). */
+export interface FocusSectionMessage {
+  type: "focusSection";
+  section: "sdk";
+}
+
 export interface ConfiguratorRenderMessage {
   type: "configuratorRender";
   viewModel: ConfiguratorViewModel;
   board: BoardConfig;
   boardPath: string;
   sdkConnected: boolean;
+  /** Non-null when the document is unparseable YAML: the board is the stub,
+   *  the view must show the error, and edits are blocked (issue #127). */
+  parseError?: string | null;
 }
 
 export interface ConfiguratorSavedMessage {
@@ -218,6 +235,7 @@ export type ExtToWebviewMessage =
   | SdkReleasesLoadedMessage
   | SdkInstallProgressMessage
   | ProjectTemplatesDataMessage
+  | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
@@ -364,12 +382,6 @@ export interface RunBuildMessage {
   type: "runBuild";
 }
 
-/** Build a single manifest slice (`alp build --core <id>`). */
-export interface BuildSliceMessage {
-  type: "buildSlice";
-  coreId: string;
-}
-
 /** Flash a single manifest slice (`alp flash --core <id>`). */
 export interface FlashSliceMessage {
   type: "flashSlice";
@@ -381,6 +393,14 @@ export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
   /** Current selection, to seed the dialog's default location. */
   current?: string;
+}
+
+/** Re-fetch the template + SoM catalog against a wizard-selected SDK, so the
+ *  Examples/Hardware lists match the SDK the project is scaffolded from. */
+export interface ReloadProjectTemplatesMessage {
+  type: "reloadProjectTemplates";
+  /** Selected SDK root to source the catalog from; omitted = active/default. */
+  sdkPath?: string;
 }
 
 export type WebviewToExtMessage =
@@ -396,6 +416,7 @@ export type WebviewToExtMessage =
   | ClosePanelMessage
   | CreateNewProjectMessage
   | PickProjectLocationMessage
+  | ReloadProjectTemplatesMessage
   | OpenExistingProjectMessage
   | SaveBoardConfigMessage
   | ConfiguratorUpdateMessage
@@ -407,5 +428,4 @@ export type WebviewToExtMessage =
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
-  | BuildSliceMessage
   | FlashSliceMessage;

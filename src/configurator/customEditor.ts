@@ -56,10 +56,20 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
     // of a webview edit so it doesn't clobber the user's input focus.
     let lastWrittenText: string | null = null;
 
+    // Set when the current document text is not parseable YAML. An empty or
+    // whitespace-only document parses to EMPTY_BOARD without throwing, so this
+    // stays null there; it is only set on a genuine syntax error. While set,
+    // writes are blocked (issue #127: a broken file must never be overwritten
+    // with the stub) and the view shows the error instead of a blank form.
+    let parseError: string | null = null;
+
     const parse = (): BoardConfig => {
       try {
-        return parseBoardConfig(document.getText());
-      } catch {
+        const board = parseBoardConfig(document.getText());
+        parseError = null;
+        return board;
+      } catch (err) {
+        parseError = err instanceof Error ? err.message : String(err);
         return EMPTY_BOARD;
       }
     };
@@ -75,12 +85,16 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
         board,
         boardPath: document.uri.fsPath,
         sdkConnected: catalogue.soms.length > 0,
+        parseError,
       };
       void panel.webview.postMessage(message);
     };
 
     const writeBoard = async (board: BoardConfig): Promise<void> => {
-      const next = serializeBoardConfig(board);
+      // Never overwrite a document we could not parse — the in-memory board is
+      // the EMPTY_BOARD stub, not the user's file (issue #127).
+      if (parseError) return;
+      const next = serializeBoardConfig(board, document.getText());
       if (next === document.getText()) return;
       lastWrittenText = next;
       const edit = new vscode.WorkspaceEdit();

@@ -26,7 +26,7 @@ export function createEmptyPresetCatalogue(): PresetCatalogue {
 export function createDefaultBoardModel(): BoardModel {
   return {
     schema_version: 1,
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     // Lowercase slug: the SDK preset pattern is `^[a-z][a-z0-9-]*$`. Serialized
     // as top-level `preset:` (not the retired `carrier:`) — see normalizeBoardModel.
     carrier: { name: "e1m-evk" },
@@ -38,7 +38,20 @@ export function createDefaultBoardModel(): BoardModel {
 export function parseBoardModel(text: string): BoardModel {
   const parsed = yaml.load(text);
   if (parsed && typeof parsed === "object") {
-    return parsed as BoardModel;
+    const model = parsed as BoardModel;
+    // The contract key (board.schema.json) is camelCase `schemaVersion`; this
+    // model's own field is the legacy snake_case `schema_version` every
+    // reader (validateBoardYamlLocally, resolveEmitModesForBoardYaml, the LSP
+    // v2 checks) queries. Alias it at this single parse boundary so a real
+    // v2 board.yaml is recognized as v2 instead of silently falling back to
+    // v1. Delete the source key so it isn't carried through as an "unknown"
+    // field and duplicated back out on save.
+    const camelCaseVersion = (model as Record<string, unknown>).schemaVersion;
+    if (camelCaseVersion !== undefined && model.schema_version === undefined) {
+      model.schema_version = camelCaseVersion as number;
+      delete (model as Record<string, unknown>).schemaVersion;
+    }
+    return model;
   }
   return createDefaultBoardModel();
 }

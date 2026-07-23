@@ -40,6 +40,7 @@ export interface SdkStatus {
 export interface ToolVersions {
   python: string | null;
   west: string | null;
+  tan: string | null;
   cmake: string | null;
   ninja: string | null;
 }
@@ -87,6 +88,11 @@ export interface ProjectTemplatesDataMessage {
   templates: ProjectTemplate[];
   modules: E1mModule[];
 }
+/** Scroll a named Hub section into view (e.g. the SDK Manager section). */
+export interface FocusSectionMessage {
+  type: "focusSection";
+  section: "sdk";
+}
 
 // ── New-project / existing-project shared types ──
 export interface ProjectTemplate {
@@ -129,10 +135,15 @@ export interface CoreEntry {
   app?: string;
   image?: string;
   peripherals?: string[];
-  libraries?: string[];
   inference?: CoreInference;
   iot?: CoreIot;
 }
+
+/** A top-level `libraries[]` entry (ADR 0018, board.schema.json `libraries`).
+ * A bare name is shorthand for a project-wide `{name}`; the object form scopes
+ * the pick to `cores` (omitted = project-wide). There is no per-core
+ * `cores.<id>.libraries` field. */
+export type LibraryEntry = string | { name: string; cores?: string[] };
 
 export interface StoragePartition {
   name: string;
@@ -163,8 +174,6 @@ export interface Boot {
   method?: "mcuboot" | "none";
   signing?: BootSigning;
   swap_algorithm?: "scratch" | "move" | "overwrite";
-  scratch_size_kib?: number;
-  anti_rollback?: boolean;
   build_type?: "Release" | "Debug" | "MinSizeRel";
 }
 
@@ -218,6 +227,7 @@ export interface BoardConfig {
   cores: Record<string, CoreEntry>;
   populated?: Record<string, boolean>;
   chips?: string[];
+  libraries?: LibraryEntry[];
   ipc?: IpcEntry[];
   models?: ModelEntry[];
   diagnostics?: Diagnostics;
@@ -297,6 +307,9 @@ export interface ConfiguratorRenderMessage {
   board: BoardConfig;
   boardPath: string;
   sdkConnected: boolean;
+  /** Non-null when the document is unparseable YAML: the board is the stub,
+   *  the view must show the error, and edits are blocked (issue #127). */
+  parseError?: string | null;
 }
 
 export interface ConfiguratorSavedMessage {
@@ -485,6 +498,7 @@ export type ExtToWebviewMessage =
   | SdkReleasesLoadedMessage
   | SdkInstallProgressMessage
   | ProjectTemplatesDataMessage
+  | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
   | ToolchainReportMessage
@@ -544,6 +558,11 @@ export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
   current?: string;
 }
+export interface ReloadProjectTemplatesMessage {
+  type: "reloadProjectTemplates";
+  /** Selected SDK root to source the catalog from; omitted = active/default. */
+  sdkPath?: string;
+}
 export interface OpenExistingProjectMessage {
   type: "openExistingProject";
   activate: boolean;
@@ -580,10 +599,6 @@ export interface MaterialiseBuildPlanMessage {
 export interface RunBuildMessage {
   type: "runBuild";
 }
-export interface BuildSliceMessage {
-  type: "buildSlice";
-  coreId: string;
-}
 export interface FlashSliceMessage {
   type: "flashSlice";
   coreId: string;
@@ -602,6 +617,7 @@ export type WebviewToExtMessage =
   | ClosePanelMessage
   | CreateNewProjectMessage
   | PickProjectLocationMessage
+  | ReloadProjectTemplatesMessage
   | OpenExistingProjectMessage
   | SaveBoardConfigMessage
   | ConfiguratorUpdateMessage
@@ -613,5 +629,4 @@ export type WebviewToExtMessage =
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
-  | BuildSliceMessage
   | FlashSliceMessage;

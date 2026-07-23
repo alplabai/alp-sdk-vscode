@@ -37,6 +37,15 @@ const SDK_VERSION_FILE_RELATIVE = path.join("metadata", "sdk_version.yaml");
 /** Metadata catalogue directory. */
 const METADATA_DIR_RELATIVE = "metadata";
 
+/**
+ * Minimum alp-sdk version this extension build supports. Older SDKs lack
+ * planner contracts the extension hardcodes — notably `--emit
+ * native-sim-overlay` (added in v0.10.0), whose absence makes `Alp: Generate
+ * native_sim overlay` fail with a raw argparse error. Tracks the vendored
+ * `schemas/board.schema.json` (re-vendored at v0.9.0 then v0.11.0).
+ */
+export const MIN_SDK_VERSION = "0.10.0";
+
 /** Workspace-relative path where the active SDK pointer is stored. */
 const ACTIVE_SDK_POINTER_RELATIVE = path.join(".alp", "sdk-path");
 
@@ -202,8 +211,12 @@ export function resolveActiveSdk(
   workspaceRoot: string,
   pathExists: PathExists,
   readFile: ReadFile,
+  // Path flavour of the declared target platform; defaults to the host's. Only
+  // matters under test (a fixture can force posix/win32 semantics on any host);
+  // in production the host path is correct.
+  p: typeof path.posix = path,
 ): string | null {
-  const pointerPath = path.join(workspaceRoot, ACTIVE_SDK_POINTER_RELATIVE);
+  const pointerPath = p.join(workspaceRoot, ".alp", "sdk-path");
   if (!pathExists(pointerPath)) return null;
 
   try {
@@ -305,6 +318,12 @@ export function checkSdkReadiness(
     }
   }
 
+  if (isSdkVersionBelowMin(version)) {
+    issues.push(
+      `alp-sdk ${version} is older than the minimum supported v${MIN_SDK_VERSION} — generation targets the extension relies on (e.g. the native_sim overlay) are missing and will fail. Install v${MIN_SDK_VERSION} or newer from the SDK Manager.`,
+    );
+  }
+
   const state = deriveReadinessState(loaderScriptPresent, issues);
 
   return {
@@ -315,6 +334,30 @@ export function checkSdkReadiness(
     state,
     issues,
   };
+}
+
+/**
+ * True when a parsed `MAJOR.MINOR.PATCH` SDK version is strictly older than
+ * `min` (tuple compare, no semver dep — mirrors the CLI's `isCliBehind`). A
+ * null/unparseable version is treated as "unknown, not behind": a stale or
+ * absent version file (e.g. a dev checkout whose `metadata/sdk_version.yaml`
+ * lags the tag) must never mis-flag a usable SDK.
+ */
+export function isSdkVersionBelowMin(
+  version: string | null,
+  min: string = MIN_SDK_VERSION,
+): boolean {
+  if (!version) return false;
+  const a = version.replace(/^v/i, "").split(".").map(Number);
+  if (a.some(Number.isNaN)) return false;
+  const b = min.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    if (ai < bi) return true;
+    if (ai > bi) return false;
+  }
+  return false;
 }
 
 function deriveReadinessState(

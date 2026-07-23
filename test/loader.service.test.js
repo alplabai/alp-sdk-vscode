@@ -21,6 +21,8 @@ test("createLoaderPlan resolves output and command line", () => {
     "zephyr-conf",
   );
 
+  // outputPath/scriptPath/args are toPosix'd at the source (loader/service.ts),
+  // so this asserts forward-slash directly instead of laundering separators.
   assert.equal(plan.outputPath, "/workspace/app/build/generated/alp.conf");
   assert.equal(plan.scriptPath, "/workspace/sdk/scripts/alp_project.py");
   assert.deepEqual(plan.args, [
@@ -66,11 +68,12 @@ test("listGenerationTargetSupport exposes all supported targets with preview met
       "native-sim-overlay",
       "cmake-args",
       "yocto-conf",
+      "carrier-netlist",
     ],
   );
   assert.deepEqual(
     targets.map((target) => target.preview.languageId),
-    ["properties", "dts", "dts", "plaintext", "properties"],
+    ["properties", "dts", "dts", "plaintext", "properties", "json"],
   );
 });
 

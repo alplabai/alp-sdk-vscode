@@ -149,7 +149,7 @@ test("createBoardYamlDocumentSymbols builds nested symbol tree", () => {
   const documentText = [
     "schema_version: 1",
     "som:",
-    "  sku: E1M-AEN701",
+    "  sku: E1M-AEN801",
     "inference:",
     "  backend: auto",
     "  default_arena_kib: 512",
@@ -184,7 +184,7 @@ test("createBoardYamlQuickFixes suggests adding missing som block", () => {
 
 test("createBoardYamlQuickFixes does not suggest som block when present", () => {
   const fixes = createBoardYamlQuickFixes(
-    ["som:", "  sku: E1M-AEN701", "os: zephyr"].join("\n"),
+    ["som:", "  sku: E1M-AEN801", "os: zephyr"].join("\n"),
     "FAIL som preset: missing preset",
   );
 
@@ -207,7 +207,7 @@ test("createEffectiveConfigPreviewPayload returns normalized config with context
     [
       "schema_version: 1",
       "som:",
-      "  sku: E1M-AEN701",
+      "  sku: E1M-AEN801",
       "os: zephyr",
       "iot:",
       "  wifi: false",
@@ -235,11 +235,11 @@ test("createEffectiveConfigPreviewPayload returns normalized config with context
 test("createDiagnosticMessageWithContext enriches issue with effective context", () => {
   const message = createDiagnosticMessageWithContext(
     "FAIL som preset: missing preset",
-    ["som:", "  sku: E1M-AEN701", "preset: E1M-EVK", "os: zephyr"].join("\n"),
+    ["som:", "  sku: E1M-AEN801", "preset: E1M-EVK", "os: zephyr"].join("\n"),
   );
 
   assert.match(message, /^FAIL som preset: missing preset/m);
-  assert.match(message, /Context: .*som\.sku=E1M-AEN701/);
+  assert.match(message, /Context: .*som\.sku=E1M-AEN801/);
   assert.match(message, /Preset origin: .*som\.sku=board\.yaml inline/);
 });
 
@@ -247,14 +247,14 @@ test("createDiagnosticMessageWithContext enriches issue with effective context",
 
 test("detectV2StructuralIssues returns empty for v1 document with top-level os", () => {
   const issues = detectV2StructuralIssues(
-    ["schema_version: 1", "som:", "  sku: E1M-AEN701", "os: zephyr"].join("\n"),
+    ["schema_version: 1", "som:", "  sku: E1M-AEN801", "os: zephyr"].join("\n"),
   );
   assert.deepEqual(issues, []);
 });
 
 test("detectV2StructuralIssues returns error for v2 document with top-level os", () => {
   const issues = detectV2StructuralIssues(
-    ["schema_version: 2", "som:", "  sku: E1M-AEN701", "os: zephyr"].join("\n"),
+    ["schema_version: 2", "som:", "  sku: E1M-AEN801", "os: zephyr"].join("\n"),
   );
   assert.equal(issues.length, 1);
   assert.equal(issues[0].severity, "error");
@@ -266,7 +266,7 @@ test("detectV2StructuralIssues returns empty for clean v2 document", () => {
     [
       "schema_version: 2",
       "som:",
-      "  sku: E1M-AEN701",
+      "  sku: E1M-AEN801",
       "cores:",
       "  a32_cluster:",
       "    os: yocto",
@@ -283,7 +283,7 @@ test("createBoardYamlQuickFixes offers migration fix for v2 legacy os field", ()
   const doc = [
     "schema_version: 2",
     "som:",
-    "  sku: E1M-AEN701",
+    "  sku: E1M-AEN801",
     "os: zephyr",
   ].join("\n");
   const fixes = createBoardYamlQuickFixes(doc, V2_LEGACY_OS_FIELD_MSG);
@@ -307,7 +307,7 @@ test("createBoardYamlQuickFixes migration uses a55_cluster for yocto on V2N SoM"
 });
 
 test("createBoardYamlQuickFixes does not offer add-os fix for v2 documents", () => {
-  const doc = ["schema_version: 2", "som:", "  sku: E1M-AEN701"].join("\n");
+  const doc = ["schema_version: 2", "som:", "  sku: E1M-AEN801"].join("\n");
   const fixes = createBoardYamlQuickFixes(doc, "FAIL os missing or invalid");
   const titles = fixes.map((f) => f.title);
   assert(
@@ -317,7 +317,7 @@ test("createBoardYamlQuickFixes does not offer add-os fix for v2 documents", () 
 });
 
 test("createBoardYamlQuickFixes still offers add-os fix for v1 documents", () => {
-  const doc = ["schema_version: 1", "som:", "  sku: E1M-AEN701"].join("\n");
+  const doc = ["schema_version: 1", "som:", "  sku: E1M-AEN801"].join("\n");
   const fixes = createBoardYamlQuickFixes(doc, "FAIL os missing");
   const titles = fixes.map((f) => f.title);
   assert(titles.includes("Add missing os field"), "Should offer os fix for v1");
@@ -325,7 +325,7 @@ test("createBoardYamlQuickFixes still offers add-os fix for v1 documents", () =>
 
 test("findTokenRange locates the first occurrence of a token", () => {
   const doc =
-    "som:\n  sku: E1M-AEN701\ne1m_routes:\n  pwm:\n    - e1m: E1M_PWM9\n";
+    "som:\n  sku: E1M-AEN801\ne1m_routes:\n  pwm:\n    - e1m: E1M_PWM9\n";
   const range = findTokenRange(doc, "E1M_PWM9");
   assert.deepEqual(range, {
     start: { line: 4, character: 11 },

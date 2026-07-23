@@ -16,8 +16,6 @@ export interface UseBuildPlan {
   materialise(): void;
   /** Run the build live in a terminal (`alp build`). */
   build(): void;
-  /** Build a single manifest slice (`alp build --core <id>`). */
-  buildSlice(coreId: string): void;
   /** Flash a single manifest slice (`alp flash --core <id>`). */
   flashSlice(coreId: string): void;
 }
@@ -71,9 +69,6 @@ export function useBuildPlan(): UseBuildPlan {
       },
       build() {
         postMessage({ type: "runBuild" });
-      },
-      buildSlice(coreId: string) {
-        postMessage({ type: "buildSlice", coreId });
       },
       flashSlice(coreId: string) {
         postMessage({ type: "flashSlice", coreId });

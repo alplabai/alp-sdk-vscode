@@ -70,10 +70,18 @@ class HardwareExplorerPanel {
     const catalogue = loadSdkCatalogue(project.sdkRoot, (msg) => log(msg));
 
     const boardPath = project.boardYamlPath;
-    const boardCfg = boardPath
-      ? loadBoardConfigFromFile(boardPath)
-      : { som: { sku: "" }, cores: {} };
-    const sku = boardCfg.som.sku;
+    // A malformed board.yaml (yaml.load throws) must not strand the panel on its
+    // loading skeleton forever — the skeleton has no reload button. The
+    // Configurator guards the identical parse; mirror it here: on a parse error,
+    // treat it as no-sku and still post hardwareExplorerData so the view recovers.
+    let sku = "";
+    if (boardPath) {
+      try {
+        sku = loadBoardConfigFromFile(boardPath).som.sku;
+      } catch (err) {
+        log(`[hardware-explorer] board.yaml parse failed: ${String(err)}`);
+      }
+    }
 
     const som = sku
       ? (catalogue.soms.find((s) => s.sku === sku) ?? null)

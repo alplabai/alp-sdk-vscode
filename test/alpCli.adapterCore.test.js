@@ -6,24 +6,25 @@ const { resolveAlpBinary, runAlp } = require("../out/alpCli/adapterCore.js");
 
 function baseDeps(overrides = {}) {
   const existing = new Set(overrides.existing ?? []);
-  const calls = { ensureDir: 0, download: 0, extract: 0, chmod: 0 };
+  const calls = { ensureDir: 0, download: 0, chmod: 0 };
   const deps = {
     cliPathSetting: "",
     platform: "linux",
     arch: "x64",
     cacheDir: "/cache/cli",
-    cachedBinaryPath: "/cache/cli/alp",
+    cachedBinaryPath: "/cache/cli/tan",
+    bundledBinaryPath: "/ext/bin/tan",
+    bundledExists: false,
     fileExists: (p) => existing.has(p),
     commandOnPath: () => false,
     ensureDir: () => {
       calls.ensureDir++;
     },
-    download: async () => {
+    // tan-cli ships a RAW binary: a successful download writes it straight to
+    // the cached binary path (no archive, no extract step).
+    download: async (_url, destFile) => {
       calls.download++;
-    },
-    extractTarGz: async () => {
-      calls.extract++;
-      existing.add("/cache/cli/alp"); // a successful extract produces the binary
+      existing.add(destFile);
     },
     chmodExec: () => {
       calls.chmod++;
@@ -35,48 +36,80 @@ function baseDeps(overrides = {}) {
 
 test("resolveAlpBinary: explicit cliPath wins, no download", async () => {
   const { deps, calls } = baseDeps({
-    cliPathSetting: "/dev/alp",
-    existing: ["/dev/alp"],
+    cliPathSetting: "/dev/tan",
+    existing: ["/dev/tan"],
     commandOnPath: () => true,
   });
   const r = await resolveAlpBinary(deps);
-  assert.deepEqual(r, { command: "/dev/alp", source: "cliPath" });
+  assert.deepEqual(r, { command: "/dev/tan", source: "cliPath" });
   assert.equal(calls.download, 0);
 });
 
 test("resolveAlpBinary: PATH when cliPath unset", async () => {
   const { deps } = baseDeps({ commandOnPath: () => true });
   const r = await resolveAlpBinary(deps);
-  assert.deepEqual(r, { command: "alp", source: "path" });
+  assert.deepEqual(r, { command: "tan", source: "path" });
+});
+
+test("resolveAlpBinary: bundled binary when not on PATH (platform-specific VSIX)", async () => {
+  const { deps, calls } = baseDeps({
+    bundledExists: true,
+    existing: ["/cache/cli/tan"], // cached also exists — bundled must still win
+  });
+  const r = await resolveAlpBinary(deps);
+  assert.deepEqual(r, { command: "/ext/bin/tan", source: "bundled" });
+  assert.equal(calls.download, 0);
+  assert.equal(calls.chmod, 1); // non-windows → chmod +x the bundled binary
+});
+
+test("resolveAlpBinary: windows bundled binary skips chmod", async () => {
+  const { deps, calls } = baseDeps({
+    platform: "win32",
+    bundledBinaryPath: "/ext/bin/tan.exe",
+    bundledExists: true,
+  });
+  const r = await resolveAlpBinary(deps);
+  assert.deepEqual(r, { command: "/ext/bin/tan.exe", source: "bundled" });
+  assert.equal(calls.chmod, 0);
 });
 
 test("resolveAlpBinary: cached binary when not on PATH", async () => {
-  const { deps, calls } = baseDeps({ existing: ["/cache/cli/alp"] });
+  const { deps, calls } = baseDeps({ existing: ["/cache/cli/tan"] });
   const r = await resolveAlpBinary(deps);
-  assert.deepEqual(r, { command: "/cache/cli/alp", source: "cached" });
+  assert.deepEqual(r, { command: "/cache/cli/tan", source: "cached" });
   assert.equal(calls.download, 0);
 });
 
-test("resolveAlpBinary: downloads when nothing else resolves", async () => {
+test("resolveAlpBinary: a cached binary wins over a verified-native PATH tan (managed binary preferred; PATH is a last resort)", async () => {
+  const { deps, calls } = baseDeps({
+    existing: ["/cache/cli/tan"],
+    commandOnPath: () => true,
+  });
+  const r = await resolveAlpBinary(deps);
+  assert.deepEqual(r, { command: "/cache/cli/tan", source: "cached" });
+  assert.equal(calls.download, 0);
+});
+
+test("resolveAlpBinary: downloads the raw binary when nothing else resolves", async () => {
   const { deps, calls } = baseDeps();
   const r = await resolveAlpBinary(deps);
   assert.equal(r.source, "download");
-  assert.equal(r.command, "/cache/cli/alp");
+  assert.equal(r.command, "/cache/cli/tan");
   assert.equal(calls.ensureDir, 1);
   assert.equal(calls.download, 1);
-  assert.equal(calls.extract, 1);
   assert.equal(calls.chmod, 1); // non-windows → chmod +x
 });
 
 test("resolveAlpBinary: throws on unsupported host (no prebuilt asset)", async () => {
-  const { deps } = baseDeps({ platform: "darwin", arch: "x64" });
-  await assert.rejects(() => resolveAlpBinary(deps), /No prebuilt alp CLI/);
+  // linux/arm (32-bit) is not in TARGETS, so it has no download asset.
+  const { deps } = baseDeps({ platform: "linux", arch: "arm" });
+  await assert.rejects(() => resolveAlpBinary(deps), /No prebuilt tan CLI/);
 });
 
 test("resolveAlpBinary: throws when download yields no binary", async () => {
   const { deps } = baseDeps({
-    extractTarGz: async () => {
-      /* extract produced nothing */
+    download: async () => {
+      /* download produced nothing */
     },
   });
   await assert.rejects(
@@ -89,17 +122,13 @@ test("resolveAlpBinary: windows skips chmod", async () => {
   const { deps, calls } = baseDeps({
     platform: "win32",
     arch: "x64",
-    cachedBinaryPath: "/cache/cli/alp.exe",
-    extractTarGz: async () => {
-      calls.extract++;
+    cachedBinaryPath: "/cache/cli/tan.exe",
+    download: async (_url, destFile) => {
+      calls.download++;
+      deps.fileExists = (p) => p === destFile;
     },
     existing: [],
   });
-  // make the binary appear after extract
-  deps.extractTarGz = async () => {
-    calls.extract++;
-    deps.fileExists = (p) => p === "/cache/cli/alp.exe";
-  };
   const r = await resolveAlpBinary(deps);
   assert.equal(r.source, "download");
   assert.equal(calls.chmod, 0);
@@ -133,7 +162,7 @@ test("runAlp: appends --format json and classifies success", () => {
     stdout: envelope(),
     stderr: "",
   });
-  const { outcome } = runAlp("alp", ["validate"], spawn, "/cwd");
+  const { outcome } = runAlp("tan", ["validate"], spawn, "/cwd");
   assert.deepEqual(seen.args, ["validate", "--format", "json"]);
   assert.equal(seen.cwd, "/cwd");
   assert.equal(outcome.ok, true);
@@ -150,7 +179,7 @@ test("runAlp: validation exit maps to a warning with the first issue", () => {
     }),
     stderr: "",
   });
-  const { outcome } = runAlp("alp", ["validate"], spawn);
+  const { outcome } = runAlp("tan", ["validate"], spawn);
   assert.equal(outcome.kind, "validation");
   assert.equal(outcome.severity, "warning");
   assert.equal(outcome.message, "schema error");
@@ -161,12 +190,12 @@ test("runAlp: spawn error yields an unknown/error outcome (no throw)", () => {
     status: null,
     stdout: "",
     stderr: "",
-    error: new Error("spawn alp ENOENT"),
+    error: new Error("spawn tan ENOENT"),
   });
-  const { outcome } = runAlp("alp", ["doctor"], spawn);
+  const { outcome } = runAlp("tan", ["doctor"], spawn);
   assert.equal(outcome.kind, "unknown");
   assert.equal(outcome.severity, "error");
-  assert.match(outcome.message, /Could not run the alp CLI/);
+  assert.match(outcome.message, /Could not run the tan CLI/);
 });
 
 test("runAlp: falls back to the envelope's exitCode when status is null", () => {
@@ -175,7 +204,7 @@ test("runAlp: falls back to the envelope's exitCode when status is null", () => 
     stdout: envelope({ ok: false, exitCode: 3 }),
     stderr: "",
   });
-  const { outcome } = runAlp("alp", ["generate"], spawn);
+  const { outcome } = runAlp("tan", ["generate"], spawn);
   assert.equal(outcome.exitCode, 3);
   assert.equal(outcome.kind, "write");
 });

@@ -46,7 +46,7 @@ Append to `test/sdkCatalogue.derive.test.js`:
 const { chipFamilyForSku, chipsForSom } = require("../packages/alp-core/dist/sdkCatalogue/derive.js");
 
 test("chipFamilyForSku maps SKU prefixes to chip family tokens", () => {
-  assert.equal(chipFamilyForSku("E1M-AEN701"), "aen");
+  assert.equal(chipFamilyForSku("E1M-AEN801"), "aen");
   assert.equal(chipFamilyForSku("E1M-NX9101"), "imx93");
   assert.equal(chipFamilyForSku("E1M-V2N101"), "v2n");
   assert.equal(chipFamilyForSku("E1M-V2M101"), "v2n-m1");
@@ -63,7 +63,7 @@ test("chipsForSom filters chips by the SKU's family token", () => {
       { chipId: "imx_only", displayName: "", families: ["imx93"] },
     ],
   };
-  assert.deepEqual(chipsForSom(cat, "E1M-AEN701").map((c) => c.chipId), ["lsm6dso"]);
+  assert.deepEqual(chipsForSom(cat, "E1M-AEN801").map((c) => c.chipId), ["lsm6dso"]);
   assert.deepEqual(chipsForSom(cat, "E1M-V2M101").map((c) => c.chipId), ["lsm6dso", "deepx_dxm1"]);
   assert.deepEqual(chipsForSom(cat, "E1M-NX9101").map((c) => c.chipId), ["imx_only"]);
   assert.deepEqual(chipsForSom(cat, "E1M-NOPE"), []);
@@ -142,8 +142,8 @@ function catalogue() {
   return {
     soms: [
       {
-        sku: "E1M-AEN701", displayName: "E1M-AEN701 (Alif Ensemble E7)",
-        family: "alif-ensemble", silicon: "alif:ensemble:e7",
+        sku: "E1M-AEN801", displayName: "E1M-AEN801 (Alif Ensemble E8)",
+        family: "alif-ensemble", silicon: "alif:ensemble:e8",
         preferredBackend: "ethos_u", capabilities: {}, defaultBoard: "E1M-EVK",
         topologyCoreIds: ["a32_cluster", "m55_hp", "m55_he"],
         onModule: ["cc3501e"], preliminary: false,
@@ -166,7 +166,7 @@ function catalogue() {
     ],
     libraries: [{ id: "etl" }, { id: "mbedtls" }],
     socs: [
-      { ref: "alif:ensemble:e7", vendor: "Alif", family: "Ensemble", part: "E7",
+      { ref: "alif:ensemble:e8", vendor: "Alif", family: "Ensemble", part: "E7",
         cores: [{ id: "m55_hp", type: "cortex-m55", count: 1, freqMhz: 400 }] },
     ],
     sdkVersion: "0.6.0",
@@ -176,7 +176,7 @@ function catalogue() {
 test("VM for an AEN board derives hardware, accelerators, carriers, cores", () => {
   const vm = buildConfiguratorViewModel(parseBoardConfig(EDGEAI), catalogue());
   assert.equal(vm.sdkConnected, true);
-  assert.equal(vm.som.selected, "E1M-AEN701");
+  assert.equal(vm.som.selected, "E1M-AEN801");
   assert.equal(vm.hardware.preferredBackend, "ethos_u");
   assert.deepEqual(vm.hardware.cores.map((c) => c.id), ["m55_hp"]); // from the SoC spec
   assert.equal(vm.hardware.defaultBoard, "E1M-EVK");

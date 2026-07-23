@@ -2,12 +2,7 @@
 
 import { ProjectContext } from "../project/models";
 
-export type ValidationOutcome =
-  | "clean"
-  | "missing-preset"
-  | "schema-violation"
-  | "hardware-revision"
-  | "failed";
+export type ValidationOutcome = "clean" | "schema-violation" | "failed";
 
 export type ValidationSeverity = "error" | "warning" | "suggestion";
 

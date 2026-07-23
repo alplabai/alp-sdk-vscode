@@ -34,7 +34,7 @@ baremetal|off)`, `app`, `image`, `peripherals[]` (enum), `libraries[]` (25-lib e
 
 Real example (`examples/aen/edgeai-vision-aen/board.yaml`):
 ```yaml
-som: { sku: E1M-AEN701 }
+som: { sku: E1M-AEN801 }
 preset: e1m-evk
 pins:
   - { e1m: E1M_I2C0, macro: EVK_I2C_BUS_SENSORS, doc: "…" }

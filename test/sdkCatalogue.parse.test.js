@@ -7,13 +7,13 @@ const {
 
 const AEN = `
 schema_version: 1
-sku: E1M-AEN701
+sku: E1M-AEN801
 family: alif-ensemble
-silicon: alif:ensemble:e7
+silicon: alif:ensemble:e8
 silicon_variant: AE722F80F55D5LS
-display_name: "E1M-AEN701 (Alif Ensemble E7)"
+display_name: "E1M-AEN801 (Alif Ensemble E8)"
 on_module:
-  silicon: alif:ensemble:e7
+  silicon: alif:ensemble:e8
   wifi_ble: cc3501e
   secure_element: optiga_trust_m
 inference:
@@ -65,9 +65,9 @@ status:
 
 test("parseSomPreset maps an AEN preset", () => {
   const s = parseSomPreset(AEN);
-  assert.equal(s.sku, "E1M-AEN701");
+  assert.equal(s.sku, "E1M-AEN801");
   assert.equal(s.family, "alif-ensemble");
-  assert.equal(s.silicon, "alif:ensemble:e7");
+  assert.equal(s.silicon, "alif:ensemble:e8");
   assert.equal(s.siliconVariant, "AE722F80F55D5LS");
   assert.equal(s.preferredBackend, "ethos_u");
   assert.equal(s.defaultBoard, "E1M-EVK");
@@ -77,7 +77,7 @@ test("parseSomPreset maps an AEN preset", () => {
   assert.equal(s.preliminary, false);
   assert.ok(s.onModule.includes("cc3501e"));
   // the `silicon:` ref under on_module is NOT a companion chip
-  assert.ok(!s.onModule.includes("alif:ensemble:e7"));
+  assert.ok(!s.onModule.includes("alif:ensemble:e8"));
 });
 
 test("parseSomPreset maps a V2M preset with deepx + memory", () => {
@@ -127,7 +127,7 @@ const {
 
 const SOC = JSON.stringify({
   soc_spec_version: 1,
-  ref: "alif:ensemble:e7",
+  ref: "alif:ensemble:e8",
   vendor: "Alif Semiconductor",
   family: "Ensemble",
   part: "E7",
@@ -139,7 +139,7 @@ const SOC = JSON.stringify({
 
 test("parseSocSpec maps ref + cores", () => {
   const s = parseSocSpec(SOC);
-  assert.equal(s.ref, "alif:ensemble:e7");
+  assert.equal(s.ref, "alif:ensemble:e8");
   assert.equal(s.part, "E7");
   assert.deepEqual(s.cores, [
     { id: "a32_cluster", type: "cortex-a32", count: 2, freqMhz: 800 },
@@ -182,12 +182,12 @@ test("parseChipDef maps chip fields including families + kconfig", () => {
 });
 
 const AEN_ROUTES = `
-sku: E1M-AEN701
+sku: E1M-AEN801
 family: alif-ensemble
-silicon: alif:ensemble:e7
-display_name: AEN701
+silicon: alif:ensemble:e8
+display_name: AEN801
 on_module:
-  silicon: alif:ensemble:e7
+  silicon: alif:ensemble:e8
   wifi_ble: cc3501e
   i2c_devices:
     brd_i2c:
@@ -230,17 +230,17 @@ test("parseSomPreset flattens on-module i2c_devices", () => {
 
 test("parseSomPreset defaults padRoutes/i2cDevices to [] when absent", () => {
   const s = parseSomPreset(
-    "sku: E1M-AEN701\nfamily: alif-ensemble\nsilicon: x\ndisplay_name: y\ntopology: { m55_hp: {} }\nstatus: { preliminary: false }\n",
+    "sku: E1M-AEN801\nfamily: alif-ensemble\nsilicon: x\ndisplay_name: y\ntopology: { m55_hp: {} }\nstatus: { preliminary: false }\n",
   );
   assert.deepEqual(s.padRoutes, []);
   assert.deepEqual(s.i2cDevices, []);
 });
 
 const TOPO = `
-sku: E1M-AEN701
+sku: E1M-AEN801
 family: alif-ensemble
-silicon: alif:ensemble:e7
-display_name: AEN701
+silicon: alif:ensemble:e8
+display_name: AEN801
 topology:
   a32_cluster: { app: alp-image-edge, machine: e1m-aen701-a32, toolchain: poky-glibc }
   m55_hp: { app: alp-stock-shim, board: alp_e1m_aen701_m55_hp, toolchain: arm-zephyr-eabi }

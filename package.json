@@ -3,7 +3,7 @@
   "displayName": "Alp IDE",
   "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for Alp SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "publisher": "AlpLabAI",
   "license": "Apache-2.0",
   "repository": {
@@ -33,13 +33,10 @@
     "nxp"
   ],
   "activationEvents": [
-    "onView:alp-ide.setup",
-    "onView:alp-ide.workspaces",
-    "onView:alp-ide.projects",
-    "onView:alp-ide.sdk",
-    "onView:alp-ide.build",
+    "onView:alp-ide.hub",
     "onCommand:alp.openSdkManager",
     "onCommand:alp.openSetupFlow",
+    "onCommand:alp.openHub",
     "onCommand:alp.openOverview",
     "onCommand:alp.newProjectWizard",
     "onCommand:alp.openExistingProject",
@@ -51,6 +48,13 @@
   "icon": "media/icon.png",
   "extensionDependencies": [
     "redhat.vscode-yaml"
+  ],
+  "extensionPack": [
+    "marus25.cortex-debug",
+    "mcu-debug.peripheral-viewer",
+    "mcu-debug.memory-view",
+    "ms-vscode.cpptools",
+    "vadimcn.vscode-lldb"
   ],
   "contributes": {
     "customEditors": [
@@ -88,7 +92,7 @@
           {
             "id": "alp.walkthrough.bootstrap",
             "title": "Bootstrap your toolchain",
-            "description": "Install the host tools the build needs — Python, west, CMake, Ninja — for your OS.\n[Bootstrap toolchain](command:alp.installDependencies)",
+            "description": "Create the Zephyr workspace and install west + Zephyr Python deps into a workspace venv. Run Alp: Toolchain doctor to check host prerequisites (Python, CMake, Ninja).\n[Bootstrap toolchain](command:alp.installDependencies)",
             "media": {
               "markdown": "media/walkthroughs/02-bootstrap.md"
             },
@@ -244,7 +248,13 @@
       },
       {
         "command": "alp.updateCli",
-        "title": "Alp: Update the alp CLI",
+        "title": "Alp: Update the tan CLI",
+        "category": "Alp",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "alp.installTanCli",
+        "title": "Alp: Install tan CLI (global)",
         "category": "Alp",
         "icon": "$(cloud-download)"
       },
@@ -284,6 +294,12 @@
         "category": "Alp"
       },
       {
+        "command": "alp.debug",
+        "title": "Alp: Debug (generate profile + start session)",
+        "category": "Alp",
+        "icon": "$(debug-alt)"
+      },
+      {
         "command": "alp.exportSupportBundle",
         "title": "Alp: Export debug support bundle",
         "category": "Alp"
@@ -304,13 +320,13 @@
         "category": "Alp"
       },
       {
-        "command": "alp.openOverview",
-        "title": "Alp: Open Alp IDE overview",
+        "command": "alp.openHub",
+        "title": "Alp: Open Hub",
         "category": "Alp"
       },
       {
-        "command": "alp.newProjectWizard",
-        "title": "Alp: New Project Wizard",
+        "command": "alp.openOverview",
+        "title": "Alp: Open Hub (deprecated alias)",
         "category": "Alp"
       },
       {
@@ -357,40 +373,13 @@
     "views": {
       "alp-ide": [
         {
-          "type": "tree",
-          "id": "alp-ide.setup",
-          "name": "Alp IDE Setup"
-        },
-        {
-          "type": "tree",
-          "id": "alp-ide.workspaces",
-          "name": "West Workspaces"
-        },
-        {
-          "type": "tree",
-          "id": "alp-ide.projects",
-          "name": "Projects"
-        },
-        {
-          "type": "tree",
-          "id": "alp-ide.sdk",
-          "name": "SDK Manager"
-        },
-        {
-          "type": "tree",
-          "id": "alp-ide.build",
-          "name": "Build & Flash"
+          "type": "webview",
+          "id": "alp-ide.hub",
+          "name": "Alp IDE"
         }
       ]
     },
     "menus": {
-      "view/title": [
-        {
-          "command": "alp.views.refresh",
-          "when": "view == alp-ide.setup || view == alp-ide.workspaces || view == alp-ide.projects || view == alp-ide.sdk || view == alp-ide.build",
-          "group": "navigation"
-        }
-      ],
       "editor/title": [
         {
           "command": "alp.openConfigurator",
@@ -422,39 +411,71 @@
         "path": "./snippets/board-yaml.json"
       }
     ],
+    "languages": [
+      {
+        "id": "prj-conf",
+        "aliases": [
+          "Zephyr prj.conf",
+          "prj-conf"
+        ],
+        "filenamePatterns": [
+          "prj*.conf"
+        ],
+        "configuration": "./syntaxes/prj-conf.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "prj-conf",
+        "scopeName": "source.prj-conf",
+        "path": "./syntaxes/prj-conf.tmLanguage.json"
+      }
+    ],
     "configuration": {
       "title": "Alp IDE",
       "properties": {
         "alpSdk.path": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Path to the alp-sdk repository checkout.  When empty, the extension searches the workspace for the SDK root (a directory containing scripts/alp_project.py)."
         },
         "alpSdk.pythonPath": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Python interpreter to use for the loader + validator.  Defaults to `python3` (POSIX) / `python` (Windows)."
         },
         "alpSdk.boardYamlPath": {
           "type": "string",
           "default": "board.yaml",
-          "description": "Path (relative to the workspace root) of the board.yaml the loader operates on."
+          "scope": "resource",
+          "description": "Path (relative to its workspace folder) of the board.yaml the loader operates on. Settable per-folder via .vscode/settings.json in a multi-root workspace."
         },
         "alpSdk.westCwd": {
           "type": "string",
           "default": "",
+          "scope": "machine-overridable",
           "description": "Working directory for `west build/flash/run`.  When empty, defaults to the workspace root."
         },
         "alpSdk.cliPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the native `alp` CLI binary. When empty, the extension uses `alp` on PATH, then falls back to downloading the matching release into its global storage. Point this at a local dev build (e.g. `cli-rs/target/release/alp`) to override."
+          "scope": "machine-overridable",
+          "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a verified `tan` on PATH, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/target/release/tan`) to override."
+        },
+        "alpSdk.preferGlobalCli": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine-overridable",
+          "markdownDescription": "Prefer a globally-installed native `tan` on your PATH over the extension's own managed copy. Use this if you installed tan with **Install tan CLI (global)** and want the extension to run the same binary as your terminal. An explicit `#alpSdk.cliPath#` still takes precedence. Default (off): the extension uses its private, version-pinned managed copy."
         }
       }
     }
   },
   "scripts": {
     "compile": "tsc --build && pnpm --filter ./packages/alp-webview run build",
+    "vendor:kconfig-metadata": "node scripts/vendor-kconfig-metadata.mjs",
     "compile:watch": "tsc --build --watch",
     "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
     "test": "pnpm run compile && node --test test/*.test.js",
@@ -465,7 +486,10 @@
     "package:dev": "vsce package --no-dependencies --pre-release",
     "publish:vsix": "vsce publish --no-dependencies",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js",
+    "test:e2e:cli": "bash test/e2e/cli-smoke.sh",
+    "test:e2e:webview": "node test/webview/run.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -486,8 +510,10 @@
     "@types/react": "^19.2.15",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^6.0.2",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
+    "jsdom": "^25.0.1",
     "prettier": "^3.8.3",
     "typescript": "^7.0.2"
   }

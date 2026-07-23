@@ -1,9 +1,0 @@
-# Keep the devbox build context small + reproducible.
-# (podman/docker read this from the build-context root = cli-rs/.)
-target/
-**/target/
-contract/fixtures/
-npm-shim/node_modules/
-**/*.vsix
-**/*.log
-.git/

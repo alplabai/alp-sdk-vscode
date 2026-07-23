@@ -1,6 +1,30 @@
 # Debug Support Matrix and Launch Design
 
-Last revised: 2026-05-14
+Last revised: 2026-07-17
+
+## Companion extensions (bundled)
+
+Alp IDE ships the debug-adapter extensions it generates configurations for as
+an **extension pack** (`package.json` `extensionPack`), so they are installed
+alongside Alp IDE and F5 works out of the box:
+
+- `marus25.cortex-debug` — Cortex-M on-chip debug (J-Link / OpenOCD / pyOCD)
+- `mcu-debug.peripheral-viewer` — SVD peripheral-register view
+- `mcu-debug.memory-view` — memory inspector
+- `ms-vscode.cpptools` — C/C++ IntelliSense + `cppdbg` (Yocto/A-core remote gdb)
+- `vadimcn.vscode-lldb` — CodeLLDB
+
+`redhat.vscode-yaml` stays a hard `extensionDependency` (board.yaml schema).
+
+## One-click debug: `Alp: Debug`
+
+`alp.debug` (Build & Flash view → **Debug**, or the command palette) is the
+first-class entry point: it prompts for the target/server, writes/refreshes the
+launch profile, ensures the required debug-adapter extension is present (offers
+to install it if a user disabled it), then calls `vscode.debug.startDebugging`.
+`alp.configureDebugProfile` still writes the profile without starting a session.
+
+
 
 This document defines how debugging should work across the ALP SDK
 extension, the ALP SDK itself, and the supported target classes.
@@ -384,10 +408,10 @@ The extension should eventually expose these commands:
 
 The CLI should eventually expose:
 
-- `alp inspect`
-- `alp trace`
-- `alp doctor`
-- `alp support-bundle`
+- `tan inspect`
+- `tan trace`
+- `tan doctor`
+- `tan support-bundle`
 
 ## 12. Debug Preflight Requirements
 

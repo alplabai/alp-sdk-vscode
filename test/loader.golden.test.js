@@ -11,8 +11,7 @@ const {
 function readGolden(relativePath) {
   const fullPath = path.join(__dirname, "golden", relativePath);
   // Normalize CRLF -> LF: on Windows the golden .json files can smudge to CRLF
-  // on checkout (autocrlf) while JSON.stringify emits LF. Mirror the CRLF
-  // handling in the schema-vendored tests so the compare is line-ending-agnostic.
+  // on checkout (autocrlf) while JSON.stringify emits LF.
   return fs.readFileSync(fullPath, "utf8").replace(/\r\n/g, "\n");
 }
 
@@ -35,6 +34,9 @@ test("zephyr loader plan matches golden snapshot", () => {
     "zephyr-conf",
   );
 
+  // No comparison-side backslash masking here: outputPath/scriptPath/commandLine
+  // are forward-slash at the source (toPosix in loader/service.ts), so this
+  // assertion actually covers Windows-host determinism instead of laundering it.
   const actual = `${JSON.stringify(plan, null, 2)}\n`;
   const expected = readGolden("loader-plan-zephyr-conf.json");
 

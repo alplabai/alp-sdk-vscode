@@ -43,6 +43,8 @@ export interface UseConfigurator {
   vm: ConfiguratorViewModel | null;
   boardPath: string | null;
   sdkConnected: boolean;
+  /** Non-null when the open document is unparseable YAML (issue #127). */
+  parseError: string | null;
   dirty: boolean;
   status: string;
   validation: ValidationResult;
@@ -60,6 +62,7 @@ export function useConfigurator(): UseConfigurator {
   const [sdkConnected, setSdkConnected] = useState(false);
   const [baseline, setBaseline] = useState<string>(fingerprint(EMPTY_BOARD));
   const [status, setStatus] = useState<string>("");
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const boardRef = useRef<BoardConfig>(board);
   boardRef.current = board;
@@ -74,8 +77,11 @@ export function useConfigurator(): UseConfigurator {
         setVm(msg.viewModel);
         setBoardPath(msg.boardPath);
         setSdkConnected(msg.sdkConnected);
+        setParseError(msg.parseError ?? null);
         if (expectEcho.current) {
           expectEcho.current = false;
+        } else if (msg.parseError) {
+          setStatus("board.yaml could not be parsed.");
         } else {
           setBoard(msg.board);
           setBaseline(fingerprint(msg.board));
@@ -127,12 +133,8 @@ export function useConfigurator(): UseConfigurator {
   const validation = vm?.validation ?? EMPTY_VALIDATION;
 
   const save = useCallback(() => {
-    if (validation.errors.length > 0) {
-      setStatus("Resolve validation errors before saving.");
-      return;
-    }
     postMessage({ type: "saveBoardConfig" });
-  }, [validation.errors.length]);
+  }, []);
 
   const reload = useCallback(() => {
     expectEcho.current = false;
@@ -150,6 +152,7 @@ export function useConfigurator(): UseConfigurator {
     vm,
     boardPath,
     sdkConnected,
+    parseError,
     dirty,
     status,
     validation,

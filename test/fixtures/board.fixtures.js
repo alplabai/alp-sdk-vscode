@@ -3,7 +3,7 @@
 
 const EDGEAI = `
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 preset: e1m-evk
 pins:
   - { e1m: E1M_I2C0, macro: EVK_I2C_BUS_SENSORS, doc: "Shared sensor bus" }
@@ -30,13 +30,13 @@ cores:
     os: "off"
   m33_sm:
     app: ./src
-    libraries:
-      - cmsis_dsp
+libraries:
+  - { name: cmsis_dsp, cores: [m33_sm] }
 `;
 
 const PRODUCTION = `
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 preset: e1m-evk
 cores:
   a32_cluster:
@@ -44,7 +44,6 @@ cores:
   m55_hp:
     app: ./src
     iot: { wifi: true, mqtt: true, tls: true }
-    libraries: [mbedtls]
     memory: { stack_kib: 8, heap_kib: 64, isr_stack_kib: 4 }
     power:
       sleep_mode: standby
@@ -54,15 +53,11 @@ cores:
 chips:
   - optiga_trust_m
   - eeprom_24c128
+libraries: [mbedtls]
 boot:
   method: mcuboot
   signing: { algorithm: ecdsa_p256, key_file: keys/prod_ecdsa_p256.pub.pem }
-  slots:
-    primary: { size_kib: 1024 }
-    secondary: { size_kib: 1024 }
   swap_algorithm: scratch
-  scratch_size_kib: 64
-  anti_rollback: true
 ota:
   provider: mender
   artifact_name: production-deployment

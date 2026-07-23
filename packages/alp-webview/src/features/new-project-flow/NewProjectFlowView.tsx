@@ -151,6 +151,13 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
           )}
         </>
       )}
+
+      {starters.length === 0 && examples.length === 0 && (
+        <EmptyState
+          title="No templates available"
+          description="No project templates resolved. Check that an Alp SDK is selected and the tan CLI is reachable (see the Alp SDK output channel)."
+        />
+      )}
     </>
   );
 }
@@ -503,6 +510,15 @@ export function NewProjectFlowView() {
     });
   }
 
+  // Re-fetch the template + SoM catalog against the newly selected SDK, so the
+  // Examples list the wizard shows matches the SDK the project is scaffolded
+  // from (else `alp init --from-example` fails with "was not found" on a
+  // divergent pick — issue #144).
+  function handleSelectSdk(path: string) {
+    setSelectedSdk(path);
+    postMessage({ type: "reloadProjectTemplates", sdkPath: path || undefined });
+  }
+
   function handleNext() {
     if (stepper.isLast) {
       postMessage({
@@ -559,7 +575,7 @@ export function NewProjectFlowView() {
                   entries={sdkEntries}
                   activePath={activeSdkPath}
                   selected={selectedSdk}
-                  onSelect={setSelectedSdk}
+                  onSelect={handleSelectSdk}
                 />
               )}
               {stepper.currentIndex === 3 && (

@@ -1,1 +1,0 @@
-{"command":"validate","ok":true,"exitCode":0,"project":{"root":".","boardYaml":"contract/fixtures/validate/clean-v1/board.yaml"},"data":{"schemaVersion":"1","outcome":"clean","issueCount":0,"commandLine":"","boardYamlPath":"contract/fixtures/validate/clean-v1/board.yaml"},"issues":[]}

@@ -61,6 +61,19 @@ const GENERATION_TARGET_CATALOG: readonly GenerationTargetSupport[] = [
       languageId: "properties",
     },
   },
+  {
+    // Board-level carrier netlist + BOM handoff (alp-sdk#419) Alp Studio
+    // consumes -- a deterministic export, not a per-core build config. Listed
+    // here so the shared support lookup never throws when `generate --all`
+    // reports it among `failed` (e.g. on an SDK too old to emit it).
+    emit: "carrier-netlist",
+    displayName: "Carrier netlist",
+    outputRelativePath: "build/generated/carrier-netlist.json",
+    preview: {
+      label: "Carrier netlist preview",
+      languageId: "json",
+    },
+  },
 ];
 
 const GENERATION_TARGETS_BY_EMIT: Readonly<
@@ -76,12 +89,14 @@ const GENERATION_TARGETS_BY_EMIT: Readonly<
 );
 
 // The build-config emits regenerated together (the build-prep fallback set +
-// "generate all"'s build outputs). `native-sim-overlay` is deliberately
-// excluded: it is a source-tree board overlay for native_sim only, produced on
-// demand by its own target -- not part of a silicon build's generated config.
+// "generate all"'s build outputs). `native-sim-overlay` and `carrier-netlist`
+// are deliberately excluded: the former is a source-tree board overlay for
+// native_sim only, the latter a board-level Studio export -- neither is part of
+// a silicon build's generated config; both are `generate`-only targets.
 export const ALL_EMIT_MODES: readonly EmitMode[] =
   GENERATION_TARGET_CATALOG.filter(
-    (target) => target.emit !== "native-sim-overlay",
+    (target) =>
+      target.emit !== "native-sim-overlay" && target.emit !== "carrier-netlist",
   ).map((target) => target.emit);
 
 /**

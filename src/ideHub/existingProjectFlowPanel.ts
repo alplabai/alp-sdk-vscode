@@ -7,8 +7,13 @@ import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
-import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml } from "./webviewHtml";
+import { queryAlpIdeState } from "./vscodeAdapter";
+import {
+  buildWebviewHtml,
+  isBootstrapCommand,
+  runWebviewCommand,
+} from "./webviewHtml";
+import { onDidFinishTerminalCommand } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.existing-project-flow";
 const PANEL_TITLE = "Alp IDE — Open Project";
@@ -52,9 +57,11 @@ export class ExistingProjectFlowPanel {
 
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
 
-    // Re-push state when the workspace changes (e.g. user opened a folder).
+    // Re-push state when the workspace changes (e.g. user opened a folder), and
+    // when a terminal-backed CTA (bootstrap) finishes — the real signal. util.ts.
     this.disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => void this.refresh()),
+      onDidFinishTerminalCommand(() => void this.refresh()),
     );
   }
 
@@ -69,8 +76,8 @@ export class ExistingProjectFlowPanel {
   async refresh(): Promise<void> {
     const lastBootstrapAt =
       this.context.globalState.get<string>("alp.lastBootstrapAt") ?? null;
-    const state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
-      emptyAlpIdeState(),
+    const state = await queryAlpIdeState(lastBootstrapAt, this.context).catch(
+      () => emptyAlpIdeState(),
     );
     const msg: ExtToWebviewMessage = {
       type: "stateUpdate",
@@ -86,16 +93,15 @@ export class ExistingProjectFlowPanel {
         await this.refresh();
         break;
 
-      case "openExistingProject":
-        await this.openProject();
-        break;
-
       case "runCommand":
-        void vscode.commands.executeCommand(msg.command);
-        if (msg.command === "alp.bootstrap") {
-          const now = new Date().toISOString();
-          void this.context.globalState.update("alp.lastBootstrapAt", now);
-          setTimeout(() => void this.refresh(), 8000);
+        runWebviewCommand(msg.command);
+        // Bootstrap runs in a terminal; the standing onDidFinishTerminalCommand
+        // subscription refreshes when it closes. Stamp the time so it reads it.
+        if (isBootstrapCommand(msg.command)) {
+          void this.context.globalState.update(
+            "alp.lastBootstrapAt",
+            new Date().toISOString(),
+          );
         }
         break;
 
@@ -110,24 +116,6 @@ export class ExistingProjectFlowPanel {
         }
         break;
     }
-  }
-
-  private async openProject(): Promise<void> {
-    const uris = await vscode.window.showOpenDialog({
-      canSelectFiles: false,
-      canSelectFolders: true,
-      canSelectMany: false,
-      title: "Select Alp project folder",
-      openLabel: "Open Project",
-    });
-
-    if (!uris || uris.length === 0) {
-      return;
-    }
-
-    // Open in a new window when a workspace is already open, so the user's
-    // current session isn't replaced.
-    await openProjectFolder(uris[0]);
   }
 
   private dispose(): void {

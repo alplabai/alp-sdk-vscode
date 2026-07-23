@@ -45,6 +45,7 @@ test("emptyAlpIdeState setup defaults", () => {
   assert.deepEqual(setup.toolVersions, {
     python: null,
     west: null,
+    tan: null,
     cmake: null,
     ninja: null,
   });
@@ -129,8 +130,8 @@ test("projectTemplatesData message shape matches contract", () => {
     ],
     modules: [
       {
-        id: "E1M-AEN701",
-        displayName: "E1M-AEN701 (Alif Ensemble E7)",
+        id: "E1M-AEN801",
+        displayName: "E1M-AEN801 (Alif Ensemble E8)",
         family: "alif-ensemble",
       },
     ],
@@ -145,12 +146,12 @@ test("createNewProject message carries templateId, moduleId, projectName", () =>
   const msg = {
     type: "createNewProject",
     templateId: "blank-app",
-    moduleId: "E1M-AEN701",
+    moduleId: "E1M-AEN801",
     projectName: "my-sensor-app",
   };
   assert.equal(msg.type, "createNewProject");
   assert.equal(msg.templateId, "blank-app");
-  assert.equal(msg.moduleId, "E1M-AEN701");
+  assert.equal(msg.moduleId, "E1M-AEN801");
   assert.equal(msg.projectName, "my-sensor-app");
 });
 
@@ -184,4 +185,15 @@ test("E1mModule family is a non-empty string", () => {
     family: "nxp-imx9",
   };
   assert.ok(m.family.length > 0);
+});
+
+test("reloadProjectTemplates message carries an optional sdkPath", () => {
+  /** @type {import("../out/ideHub/messages.js").ReloadProjectTemplatesMessage} */
+  const withSdk = { type: "reloadProjectTemplates", sdkPath: "/opt/alp-sdk" };
+  assert.equal(withSdk.type, "reloadProjectTemplates");
+  assert.equal(withSdk.sdkPath, "/opt/alp-sdk");
+
+  /** @type {import("../out/ideHub/messages.js").ReloadProjectTemplatesMessage} */
+  const defaultSdk = { type: "reloadProjectTemplates" };
+  assert.equal(defaultSdk.sdkPath, undefined);
 });

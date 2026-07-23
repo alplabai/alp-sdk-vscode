@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { PinmuxPad, PinmuxTable, isResolvedE1mPad } from "../pinmux/models";
+import { PinmuxPad, PinmuxTable } from "../pinmux/models";
 import { BoardConfig, E1mRoutes } from "./models";
 
 /** One E1M-standard compliance finding against a board.yaml. */
@@ -125,14 +125,6 @@ export function checkE1mCompliance(
     }
 
     for (const pad of pads) {
-      // Pad-ownership (R2) needs a known physical pad. An unresolved ("TBD")
-      // pad has no identity to collide on — skip it so a partially
-      // characterized table doesn't flood false "already claimed" errors on
-      // its still-stub rows. (loadPinmuxTable drops all-unresolved tables
-      // entirely; this handles the mixed case as pads get resolved.)
-      if (!isResolvedE1mPad(pad.e1mPad)) {
-        continue;
-      }
       const existing = claims.get(pad.e1mPad);
       if (existing && existing.refIndex !== refIndex) {
         issues.push({

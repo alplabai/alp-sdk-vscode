@@ -5,6 +5,9 @@ const {
   parseBoardConfig,
 } = require("../packages/alp-core/dist/board/parse.js");
 const {
+  librariesForCore,
+} = require("../packages/alp-core/dist/board/models.js");
+const {
   EDGEAI,
   OBJDET,
   PRODUCTION,
@@ -13,7 +16,7 @@ const {
 
 test("parseBoardConfig maps the EDGEAI example", () => {
   const c = parseBoardConfig(EDGEAI);
-  assert.equal(c.som.sku, "E1M-AEN701");
+  assert.equal(c.som.sku, "E1M-AEN801");
   assert.equal(c.preset, "e1m-evk");
   assert.deepEqual(Object.keys(c.cores), ["a32_cluster", "m55_hp"]);
   assert.equal(c.cores.a32_cluster.os, "off");
@@ -22,11 +25,14 @@ test("parseBoardConfig maps the EDGEAI example", () => {
   assert.equal(c.diagnostics.log_level, "info");
 });
 
-test("parseBoardConfig maps the OBJDET example (chips + per-core libraries)", () => {
+test("parseBoardConfig maps the OBJDET example (chips + top-level libraries)", () => {
   const c = parseBoardConfig(OBJDET);
   assert.equal(c.som.sku, "E1M-V2M101");
   assert.deepEqual(c.chips, ["ov5640", "st7789"]);
-  assert.deepEqual(c.cores.m33_sm.libraries, ["cmsis_dsp"]);
+  // libraries live only at the top level (ADR-0018); a per-core pick is a
+  // `{name, cores}` entry there, not `cores.<id>.libraries` (forbidden).
+  assert.equal(c.cores.m33_sm.libraries, undefined);
+  assert.deepEqual(librariesForCore(c.libraries, "m33_sm"), ["cmsis_dsp"]);
 });
 
 test("parseBoardConfig maps the PRODUCTION example (boot/ota/memory/power/iot)", () => {
@@ -41,7 +47,7 @@ test("parseBoardConfig maps the PRODUCTION example (boot/ota/memory/power/iot)",
   ]);
   assert.equal(c.boot.method, "mcuboot");
   assert.equal(c.boot.signing.algorithm, "ecdsa_p256");
-  assert.equal(c.boot.slots.primary.size_kib, 1024);
+  assert.equal(c.boot.swap_algorithm, "scratch");
   assert.equal(c.ota.provider, "mender");
   assert.equal(c.ota.rollback.min_version, 1);
   assert.ok(c.chips.includes("optiga_trust_m"));
@@ -70,4 +76,14 @@ test("parseBoardConfig defaults missing som/cores rather than throwing", () => {
   assert.equal(c.som.sku, "");
   assert.deepEqual(c.cores, {});
   assert.equal(c.name, "empty");
+});
+
+test("parseBoardConfig throws on malformed YAML but not on empty input (#127)", () => {
+  // Empty / whitespace-only input is a valid empty board, never a throw — the
+  // configurator relies on this to tell "new file" from "broken file" so it
+  // never overwrites an unreadable board.yaml with a stub.
+  assert.deepEqual(parseBoardConfig("").cores, {});
+  assert.deepEqual(parseBoardConfig("   \n").cores, {});
+  // A real syntax error must throw so the caller can refuse to overwrite it.
+  assert.throws(() => parseBoardConfig('name: "unterminated'));
 });

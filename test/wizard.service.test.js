@@ -46,14 +46,14 @@ test("listModuleTemplates includes expected module catalog", () => {
 test("createWizardPlan builds starter files and scaffold preview", () => {
   const plan = createWizardPlan({
     templateId: "iot-starter",
-    somSku: "E1M-AEN701",
+    somSku: "E1M-AEN801",
     carrierName: "E1M-EVK",
     os: "zephyr",
     features: { wifi: true, mqtt: true, ble: false, tls: true },
     libraries: ["fmt", "mbedtls"],
   });
 
-  assert.equal(plan.boardModel.som.sku, "E1M-AEN701");
+  assert.equal(plan.boardModel.som.sku, "E1M-AEN801");
   assert.equal(plan.boardModel.carrier.name, "E1M-EVK");
   assert.equal(plan.boardModel.os, "zephyr");
   assert.equal(plan.files.length >= 7, true);
@@ -86,7 +86,7 @@ test("createWizardPlan builds starter files and scaffold preview", () => {
 test("createWizardPlan builds host-tooling-starter TypeScript monorepo scaffold", () => {
   const plan = createWizardPlan({
     templateId: "host-tooling-starter",
-    somSku: "E1M-AEN701",
+    somSku: "E1M-AEN801",
     carrierName: "E1M-EVK",
     os: "zephyr",
     features: { wifi: false, mqtt: false, ble: false, tls: false },
@@ -125,7 +125,7 @@ test("createWizardPlan builds host-tooling-starter TypeScript monorepo scaffold"
 test("createWizardPreviewMarkdown contains selections and file change summary", () => {
   const plan = createWizardPlan({
     templateId: "minimal-app",
-    somSku: "E1M-AEN701",
+    somSku: "E1M-AEN801",
     carrierName: "E1M-EVK",
     os: "zephyr",
     features: { wifi: false, mqtt: false, ble: false, tls: false },
@@ -182,7 +182,7 @@ test("suggestTemplateIdFromBoardModel infers templates from existing config", ()
   assert.equal(
     suggestTemplateIdFromBoardModel({
       schema_version: 1,
-      som: { sku: "E1M-AEN701" },
+      som: { sku: "E1M-AEN801" },
       carrier: { name: "E1M-EVK" },
       os: "zephyr",
       diagnostics: { last_error: true, log_level: "debug" },
@@ -193,7 +193,7 @@ test("suggestTemplateIdFromBoardModel infers templates from existing config", ()
   assert.equal(
     suggestTemplateIdFromBoardModel({
       schema_version: 1,
-      som: { sku: "E1M-AEN701" },
+      som: { sku: "E1M-AEN801" },
       carrier: { name: "E1M-EVK" },
       os: "zephyr",
       inference: { backend: "auto" },
@@ -204,7 +204,7 @@ test("suggestTemplateIdFromBoardModel infers templates from existing config", ()
   assert.equal(
     suggestTemplateIdFromBoardModel({
       schema_version: 1,
-      som: { sku: "E1M-AEN701" },
+      som: { sku: "E1M-AEN801" },
       carrier: { name: "E1M-EVK" },
       os: "zephyr",
       iot: { wifi: true, mqtt: true },
@@ -225,7 +225,7 @@ test("createModuleScaffoldPlan generates files for existing project modules", ()
     moduleName: "Thermal Sensor",
     boardModel: {
       schema_version: 1,
-      som: { sku: "E1M-AEN701" },
+      som: { sku: "E1M-AEN801" },
       carrier: { name: "E1M-EVK" },
       os: "zephyr",
     },
@@ -243,7 +243,7 @@ test("createModuleScaffoldPlan generates files for existing project modules", ()
     file.relativePath.endsWith(".c"),
   );
   assert.ok(sourceFile);
-  assert.match(sourceFile.content, /Board context: E1M-AEN701 \/ zephyr/);
+  assert.match(sourceFile.content, /Board context: E1M-AEN801 \/ zephyr/);
 });
 
 test("createModuleScaffoldPreviewMarkdown includes notes and file change summary", () => {

@@ -1,1 +1,0 @@
-{"command":"diff","ok":true,"exitCode":0,"project":{"root":"contract/fixtures/diff/unchanged","boardYaml":"contract/fixtures/diff/unchanged/board.yaml"},"data":{"schemaVersion":"1","boardYamlPath":"contract/fixtures/diff/unchanged/board.yaml","unchanged":true,"changeCount":0,"changes":[]},"issues":[]}

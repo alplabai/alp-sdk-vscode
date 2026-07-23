@@ -12,7 +12,7 @@ VS Code:
 
 CLI:
 
-node ./out/cli/main.js validate --project . --sdk-root ../alp-sdk
+tan validate --project . --sdk-root ../alp-sdk
 
 ## 2. Generate All Derived Outputs
 
@@ -22,7 +22,7 @@ VS Code:
 
 CLI:
 
-node ./out/cli/main.js generate --project . --sdk-root ../alp-sdk --all
+tan generate --project . --sdk-root ../alp-sdk --all
 
 ## 3. Preview Effective Config
 
@@ -42,7 +42,7 @@ VS Code:
 
 CLI:
 
-node ./out/cli/main.js init --template minimal-app --name demo-app --destination . --preview
+tan init --template minimal-app --name demo-app --destination . --preview
 
 ## 5. Scaffold a Module in Existing Project
 
@@ -52,7 +52,7 @@ VS Code:
 
 CLI:
 
-node ./out/cli/main.js scaffold --template sensor-driver --name sensor_mod --destination . --preview
+tan scaffold --template sensor-driver --name sensor_mod --destination . --preview
 
 ## 6. Run Debug/Environment Checks
 
@@ -62,15 +62,15 @@ VS Code:
 
 CLI:
 
-node ./out/cli/main.js doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json
+tan doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json
 
 ## 7. Setup Shell Completion
 
 CLI:
 
-node ./out/cli/main.js completion --shell bash
-node ./out/cli/main.js completion --shell zsh
-node ./out/cli/main.js completion --shell fish
+tan completion --shell bash
+tan completion --shell zsh
+tan completion --shell fish
 
 ## 8. CI Integration
 

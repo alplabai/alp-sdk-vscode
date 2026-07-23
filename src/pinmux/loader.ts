@@ -2,7 +2,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { PinmuxTable, isResolvedE1mPad } from "@alp-sdk/core/pinmux/models";
+import { PinmuxTable } from "@alp-sdk/core/pinmux/models";
 import { parsePinmuxTable } from "@alp-sdk/core/pinmux/parse";
 
 export type ReadFileFn = (filePath: string) => string;
@@ -16,7 +16,9 @@ const SKU_PINMUX_FAMILY: ReadonlyArray<readonly [RegExp, string]> = [
   [/^E1M-AEN/, "aen"],
   [/^E1M-NX9/, "imx93"],
   [/^E1M-V2N/, "v2n"],
-  [/^E1M-V2M/, "v2n-m1"],
+  // V2M is the same PCB/E1M edge as V2N (the M1 delta is SoM-internal DEEPX
+  // nets, not an edge pinout), so it shares the v2n capability table.
+  [/^E1M-V2M/, "v2n"],
 ];
 
 export function pinmuxFamilyForSku(sku: string): string | null {
@@ -42,7 +44,21 @@ export function loadPinmuxTable(
     return null;
   }
 
-  const cacheKey = `${sdkRoot}::${family}`;
+  const filePath = path.join(sdkRoot, "metadata", "pinmux", `${family}.yaml`);
+
+  // Key the cache on the table file's mtime so an in-place edit of
+  // metadata/pinmux/<family>.yaml (routine when working on alp-sdk itself) is
+  // picked up on the next validation instead of surviving until an LSP
+  // restart. mtime is best-effort: an absent file or an injected readFile
+  // leaves it 0, which is harmless.
+  let mtimeMs = 0;
+  try {
+    mtimeMs = fs.statSync(filePath).mtimeMs;
+  } catch {
+    mtimeMs = 0;
+  }
+
+  const cacheKey = `${sdkRoot}::${family}::${mtimeMs}`;
   const cached = tableCache.get(cacheKey);
   if (cached !== undefined) {
     return cached;
@@ -50,25 +66,26 @@ export function loadPinmuxTable(
 
   let table: PinmuxTable | null = null;
   try {
-    const filePath = path.join(sdkRoot, "metadata", "pinmux", `${family}.yaml`);
     const parsed = parsePinmuxTable(readFile(filePath));
-    // A readable-but-corrupt or empty table parses to a truthy object with
-    // no pads. An uncharacterized-stub table parses with pads whose e1m_pad
-    // is all "TBD" (the upstream v2n.yaml ships 207 such pads today). In
-    // either case the physical-pad mapping is unknown, so pad-ownership (R2)
-    // can't be checked and the function list isn't authoritative — treat the
-    // table as absent so callers don't flood false diagnostics against it.
-    // (Pads keep their "TBD" markers once at least one is resolved, so R2
-    // still skips the unresolved ones; see checkE1mCompliance.)
-    const resolvedPads = parsed
-      ? parsed.pads.filter((pad) => isResolvedE1mPad(pad.e1mPad)).length
-      : 0;
-    table = parsed && resolvedPads === 0 ? null : parsed;
+    // Drop rows the SDK generator left as "TBD" sentinels (every pad-first V2N
+    // row today carries no real E1M pad->function mapping). A table left with
+    // no usable pads — or a readable-but-corrupt/empty one — is treated as
+    // absent so callers fail soft (no check, like imx93) instead of flooding
+    // false "not available"/duplicate-pad diagnostics against sentinel rows.
+    if (parsed) {
+      parsed.pads = parsed.pads.filter((pad) => pad.e1mPad !== "TBD");
+    }
+    table = parsed && parsed.pads.length === 0 ? null : parsed;
   } catch {
     table = null;
   }
 
-  tableCache.set(cacheKey, table);
+  // Only cache a real table. A null (SDK not populated yet, or a transient
+  // read error) must not stick — the next call re-reads, so a populated SDK is
+  // picked up without an LSP restart.
+  if (table !== null) {
+    tableCache.set(cacheKey, table);
+  }
   return table;
 }
 

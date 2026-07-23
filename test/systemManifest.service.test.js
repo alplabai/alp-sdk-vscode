@@ -12,16 +12,16 @@ const {
 } = require("../packages/alp-core/dist/systemManifest/models.js");
 
 // Ground truth: the real `--emit system-manifest` output for the heterogeneous
-// AEN701 example (off A-core + two Zephyr M-cores + a helper MCU).
+// AEN801 example (off A-core + two Zephyr M-cores + a helper MCU).
 const FIXTURE = fs.readFileSync(
-  path.join(__dirname, "fixtures", "system-manifest.aen701.yaml"),
+  path.join(__dirname, "fixtures", "system-manifest.aen801.yaml"),
   "utf-8",
 );
 
-test("parseSystemManifest reads the real AEN701 manifest", () => {
+test("parseSystemManifest reads the real AEN801 manifest", () => {
   const m = parseSystemManifest(FIXTURE);
   assert.equal(m.schema_version, 1);
-  assert.equal(m.hw_info.sku, "E1M-AEN701");
+  assert.equal(m.hw_info.sku, "E1M-AEN801");
   assert.equal(m.slices.length, 3);
   // a32 is os: off -> not active; both M55 cores are.
   assert.equal(m.slices.filter(isActiveSlice).length, 2);

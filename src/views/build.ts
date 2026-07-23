@@ -30,13 +30,13 @@ const BUILD_ACTIONS: Array<{
   command: string;
 }> = [
   {
-    label: "West Build",
+    label: "Build",
     description: "validate + generate + build",
     icon: "play",
     command: "alp.westBuild",
   },
   {
-    label: "West Flash",
+    label: "Flash device (west)",
     description: "flash connected device",
     icon: "zap",
     command: "alp.westFlash",
@@ -48,31 +48,37 @@ const BUILD_ACTIONS: Array<{
     command: "alp.westRunNativeSim",
   },
   {
-    label: "Alp Image",
+    label: "Image",
     description: "assemble image bundle",
     icon: "package",
     command: "alp.westAlpImage",
   },
   {
-    label: "Alp Flash",
+    label: "Flash",
     description: "flash all slices",
     icon: "rocket",
     command: "alp.westAlpFlash",
   },
   {
-    label: "Renode Simulate",
+    label: "Debug",
+    description: "generate profile + start a debug session",
+    icon: "debug-alt",
+    command: "alp.debug",
+  },
+  {
+    label: "Renode",
     description: "simulate in Renode",
     icon: "beaker",
     command: "alp.westAlpRenode",
   },
   {
-    label: "West Update",
+    label: "Update modules (west)",
     description: "fetch & update modules",
     icon: "sync",
     command: "alp.westUpdate",
   },
   {
-    label: "Clean Build",
+    label: "Clean",
     description: "remove build directory",
     icon: "trash",
     command: "alp.westAlpClean",
@@ -94,7 +100,10 @@ export class BuildTreeProvider
   }
 
   private updateItems(state: AlpIdeState): void {
-    const enabled = state.workspace.westInitialized;
+    const { workspaceRoot, boardYamlExists, westInitialized } = state.workspace;
+    // Gate on the OPEN project, not just the shared ~/zephyrproject workspace:
+    // west commands run in the project folder, so they need a board.yaml too.
+    const enabled = westInitialized && boardYamlExists;
 
     // "Preview Build Plan" stays available even before west init — the view
     // explains its own empty/error states (no SDK, no board.yaml, …).
@@ -106,19 +115,51 @@ export class BuildTreeProvider
       true,
     );
 
-    this.items = [
-      previewPlan,
-      ...BUILD_ACTIONS.map(
-        (a) =>
-          new BuildItem(
-            a.label,
-            a.description,
-            new vscode.ThemeIcon(a.icon),
-            { command: a.command, title: a.label },
-            enabled,
-          ),
-      ),
-    ];
+    if (enabled) {
+      this.items = [
+        previewPlan,
+        ...BUILD_ACTIONS.map(
+          (a) =>
+            new BuildItem(
+              a.label,
+              a.description,
+              new vscode.ThemeIcon(a.icon),
+              { command: a.command, title: a.label },
+              true,
+            ),
+        ),
+      ];
+    } else {
+      // No buildable project: one actionable call-to-action instead of eight
+      // inert (or misleading, home-dir) build rows.
+      let cta: BuildItem;
+      if (!workspaceRoot) {
+        cta = new BuildItem(
+          "No project open",
+          "create or open a project",
+          new vscode.ThemeIcon("new-folder"),
+          { command: "alp.newProjectWizard", title: "New Project" },
+          true,
+        );
+      } else if (!westInitialized) {
+        cta = new BuildItem(
+          "Workspace not initialized",
+          "install build dependencies",
+          new vscode.ThemeIcon("cloud-download"),
+          { command: "alp.installDependencies", title: "Install Dependencies" },
+          true,
+        );
+      } else {
+        cta = new BuildItem(
+          "No board.yaml in this folder",
+          "create or open an Alp project",
+          new vscode.ThemeIcon("new-folder"),
+          { command: "alp.newProjectWizard", title: "New Project" },
+          true,
+        );
+      }
+      this.items = [previewPlan, cta];
+    }
 
     this._emitter.fire(undefined);
   }

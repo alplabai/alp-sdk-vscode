@@ -55,6 +55,11 @@ import {
   isPrjConfPath,
   lintPrjConf,
 } from "./kconfig";
+import {
+  buildCompletions,
+  buildInfoMarkdown,
+  diagnosePrjConfAgainstBuild,
+} from "./buildConfig";
 import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
@@ -105,6 +110,272 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
   };
 });
 
+// NOTE: every `connection.onX` registration below MUST stay at module scope
+// (i.e. run synchronously as the file loads, before `connection.listen()`),
+// not inside `connection.onInitialized`. Empirically, calling
+// `connection.workspace.onDidChangeWorkspaceFolders(...)` *before* the
+// connection has processed the client's `initialize` request throws
+// synchronously ("Client doesn't support sending workspace folder change
+// events") — the getter's backing emitter is only created while handling
+// `initialize`. Registering it here at module scope would therefore always
+// throw and abort the rest of this file. Calling it as the *first* thing
+// inside `onInitialized` (as the previous code did) doesn't throw, but a
+// throw from that call still aborts the rest of the same synchronous
+// callback — silently unregistering every request/notification handler that
+// was written after it in that callback. Keeping the request/notification
+// handlers here at module scope makes them immune to that failure mode
+// entirely, and `onDidChangeWorkspaceFolders` is registered last inside
+// `onInitialized` (see below), where a throw can only skip the trailing
+// log line — see src/lsp/README.md and test/lsp.server.protocol.test.js.
+
+connection.onDidChangeConfiguration(() => {
+  for (const uri of documentCache.keys()) {
+    void validateDocument(uri);
+  }
+});
+
+connection.onDidChangeWatchedFiles(() => {
+  for (const uri of documentCache.keys()) {
+    void validateDocument(uri);
+  }
+});
+
+connection.onDidOpenTextDocument((params) => {
+  documentCache.set(params.textDocument.uri, params.textDocument.text);
+  const filePath = uriToFsPath(params.textDocument.uri);
+  if (filePath && isPrjConfPath(filePath)) {
+    validatePrjConf(params.textDocument.uri, params.textDocument.text);
+    return;
+  }
+  void validateDocument(params.textDocument.uri, params.textDocument.text);
+});
+
+connection.onDidChangeTextDocument((params) => {
+  const filePath = uriToFsPath(params.textDocument.uri);
+  if (!filePath) {
+    return;
+  }
+  // prj.conf: cheap, local lint → re-validate live on every change.
+  if (isPrjConfPath(filePath)) {
+    const current = getDocumentText(params.textDocument.uri, filePath);
+    const updated = applyContentChanges(current, params.contentChanges);
+    documentCache.set(params.textDocument.uri, updated);
+    validatePrjConf(params.textDocument.uri, updated);
+    return;
+  }
+  if (!isBoardYamlPath(filePath)) {
+    return;
+  }
+
+  const current = getDocumentText(params.textDocument.uri, filePath);
+  const updated = applyContentChanges(current, params.contentChanges);
+  documentCache.set(params.textDocument.uri, updated);
+});
+
+connection.onDidSaveTextDocument((params) => {
+  const filePath = uriToFsPath(params.textDocument.uri);
+  if (!filePath) {
+    return;
+  }
+  if (isPrjConfPath(filePath)) {
+    const persisted = readDocumentText(filePath);
+    documentCache.set(params.textDocument.uri, persisted);
+    validatePrjConf(params.textDocument.uri, persisted);
+    return;
+  }
+  if (!isBoardYamlPath(filePath)) {
+    return;
+  }
+
+  const persisted = readDocumentText(filePath);
+  documentCache.set(params.textDocument.uri, persisted);
+  void validateDocument(params.textDocument.uri, persisted);
+});
+
+connection.onDidCloseTextDocument((params) => {
+  documentCache.delete(params.textDocument.uri);
+  connection.sendDiagnostics({
+    uri: params.textDocument.uri,
+    diagnostics: [],
+  });
+});
+
+connection.onCompletion((params): CompletionItem[] => {
+  const filePath = uriToFsPath(params.textDocument.uri);
+  if (!filePath) {
+    return [];
+  }
+  if (isPrjConfPath(filePath)) {
+    const text = getDocumentText(params.textDocument.uri, filePath);
+    const linePrefix = lineTextAt(text, params.position.line).slice(
+      0,
+      params.position.character,
+    );
+    // Static catalogue first — its prose is hand-written — then everything the
+    // last build resolved for this slice. The build set is SoM/slice-scoped
+    // and every name in it is real for that board target, which the full
+    // Zephyr tree (~26k symbols spanning all archs and SoCs) is not.
+    const seen = new Set<string>();
+    const merged = [
+      ...completePrjConf(linePrefix),
+      ...buildCompletions(filePath, linePrefix),
+    ].filter((c) => !seen.has(c.label) && seen.add(c.label));
+
+    return merged.map((c) => ({
+      label: c.label,
+      insertText: c.insertText,
+      detail: c.detail,
+      documentation: c.doc,
+      kind: CompletionItemKind.Constant,
+    }));
+  }
+  if (!isBoardYamlPath(filePath)) {
+    return [];
+  }
+
+  const documentText = getDocumentText(params.textDocument.uri, filePath);
+  const suggestions = createBoardYamlCompletionSuggestions(
+    documentText,
+    params.position.line,
+    params.position.character,
+    sdkCatalog,
+  );
+
+  return suggestions.map(toCompletionItem);
+});
+
+connection.onHover((params): Hover | null => {
+  const filePath = uriToFsPath(params.textDocument.uri);
+  if (!filePath) {
+    return null;
+  }
+  if (isPrjConfPath(filePath)) {
+    const text = getDocumentText(params.textDocument.uri, filePath);
+    const word = wordAt(text, params.position.line, params.position.character);
+    if (!word) {
+      return null;
+    }
+    // Two independent sources: the static symbol table (always available) and
+    // what the last build resolved (only when this file maps to a slice with
+    // a fresh .config). Either may be absent — a symbol missing from the
+    // catalogue can still have build output, and vice versa.
+    const sections = [hoverPrjConf(word), buildInfoMarkdown(filePath, word)];
+    const markdown = sections.filter(Boolean).join("\n\n---\n\n");
+    return markdown
+      ? { contents: { kind: MarkupKind.Markdown, value: markdown } }
+      : null;
+  }
+  if (!isBoardYamlPath(filePath)) {
+    return null;
+  }
+
+  const documentText = getDocumentText(params.textDocument.uri, filePath);
+  const hoverInfo = createBoardYamlHoverInfo(
+    documentText,
+    params.position.line,
+    params.position.character,
+    sdkCatalog,
+  );
+
+  if (!hoverInfo) {
+    return null;
+  }
+
+  return {
+    contents: {
+      kind: MarkupKind.Markdown,
+      value: formatHoverMarkdown(hoverInfo),
+    },
+  };
+});
+
+connection.onDocumentSymbol((params): DocumentSymbol[] => {
+  const filePath = uriToFsPath(params.textDocument.uri);
+  if (!filePath || !isBoardYamlPath(filePath)) {
+    return [];
+  }
+
+  const documentText = getDocumentText(params.textDocument.uri, filePath);
+  return createBoardYamlDocumentSymbols(documentText).map(toDocumentSymbol);
+});
+
+connection.onCodeAction((params): CodeAction[] => {
+  const filePath = uriToFsPath(params.textDocument.uri);
+  if (!filePath || !isBoardYamlPath(filePath)) {
+    return [];
+  }
+
+  const documentText = getDocumentText(params.textDocument.uri, filePath);
+  const actions: CodeAction[] = [];
+  const seenTitles = new Set<string>();
+
+  for (const diagnostic of params.context.diagnostics) {
+    if (diagnostic.source !== "alp-sdk") {
+      continue;
+    }
+
+    for (const fix of createBoardYamlQuickFixes(
+      documentText,
+      diagnostic.message,
+    )) {
+      if (seenTitles.has(fix.title)) {
+        continue;
+      }
+
+      seenTitles.add(fix.title);
+      actions.push(toCodeAction(params.textDocument.uri, diagnostic, fix));
+    }
+  }
+
+  return actions;
+});
+
+connection.onExecuteCommand(async (params) => {
+  if (params.command !== PREVIEW_EFFECTIVE_CONFIG_COMMAND) {
+    return null;
+  }
+
+  const resourceUri =
+    typeof params.arguments?.[0] === "string" ? params.arguments[0] : null;
+  if (!resourceUri) {
+    return {
+      schemaVersion: "1",
+      ok: false,
+      error: "Missing board.yaml URI argument.",
+    };
+  }
+
+  const filePath = uriToFsPath(resourceUri);
+  if (!filePath || !isBoardYamlPath(filePath)) {
+    return {
+      schemaVersion: "1",
+      ok: false,
+      error: "The provided URI is not a board.yaml file.",
+    };
+  }
+
+  const documentText = readDocumentText(filePath);
+  const settings = await readProjectSettings(resourceUri);
+  const projectContext = resolveProjectContext(
+    {
+      workspaceFolders: workspaceFolderPaths,
+      settings,
+      platform: process.platform,
+    },
+    fs.existsSync,
+    readDocumentText,
+  );
+
+  return {
+    ok: true,
+    ...createEffectiveConfigPreviewPayload(
+      documentText,
+      filePath,
+      projectContext,
+    ),
+  };
+});
+
 connection.onInitialized(() => {
   if (hasConfigurationCapability) {
     void connection.client.register(
@@ -113,6 +384,13 @@ connection.onInitialized(() => {
     );
   }
 
+  // Must run inside `onInitialized` (a later tick than the module-scope
+  // registrations above): the connection only creates this feature's
+  // backing emitter while processing the client's `initialize` request, so
+  // calling this getter any earlier throws. It's placed last so that, if a
+  // client doesn't support workspace-folder change notifications and this
+  // throws, only the trailing log line below is skipped — every
+  // request/notification handler is already safely registered above.
   connection.workspace.onDidChangeWorkspaceFolders((event) => {
     const removed = new Set(
       event.removed
@@ -130,227 +408,6 @@ connection.onInitialized(() => {
         workspaceFolderPaths.push(folderPath);
       }
     }
-  });
-
-  connection.onDidOpenTextDocument((params) => {
-    documentCache.set(params.textDocument.uri, params.textDocument.text);
-    const filePath = uriToFsPath(params.textDocument.uri);
-    if (filePath && isPrjConfPath(filePath)) {
-      validatePrjConf(params.textDocument.uri, params.textDocument.text);
-      return;
-    }
-    void validateDocument(params.textDocument.uri, params.textDocument.text);
-  });
-
-  connection.onDidChangeTextDocument((params) => {
-    const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath) {
-      return;
-    }
-    // prj.conf: cheap, local lint → re-validate live on every change.
-    if (isPrjConfPath(filePath)) {
-      const current = getDocumentText(params.textDocument.uri, filePath);
-      const updated = applyContentChanges(current, params.contentChanges);
-      documentCache.set(params.textDocument.uri, updated);
-      validatePrjConf(params.textDocument.uri, updated);
-      return;
-    }
-    if (!isBoardYamlPath(filePath)) {
-      return;
-    }
-
-    const current = getDocumentText(params.textDocument.uri, filePath);
-    const updated = applyContentChanges(current, params.contentChanges);
-    documentCache.set(params.textDocument.uri, updated);
-  });
-
-  connection.onDidSaveTextDocument((params) => {
-    const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath) {
-      return;
-    }
-    if (isPrjConfPath(filePath)) {
-      const persisted = readDocumentText(filePath);
-      documentCache.set(params.textDocument.uri, persisted);
-      validatePrjConf(params.textDocument.uri, persisted);
-      return;
-    }
-    if (!isBoardYamlPath(filePath)) {
-      return;
-    }
-
-    const persisted = readDocumentText(filePath);
-    documentCache.set(params.textDocument.uri, persisted);
-    void validateDocument(params.textDocument.uri, persisted);
-  });
-
-  connection.onDidCloseTextDocument((params) => {
-    documentCache.delete(params.textDocument.uri);
-    connection.sendDiagnostics({
-      uri: params.textDocument.uri,
-      diagnostics: [],
-    });
-  });
-
-  connection.onCompletion((params): CompletionItem[] => {
-    const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath) {
-      return [];
-    }
-    if (isPrjConfPath(filePath)) {
-      const text = getDocumentText(params.textDocument.uri, filePath);
-      const linePrefix = lineTextAt(text, params.position.line).slice(
-        0,
-        params.position.character,
-      );
-      return completePrjConf(linePrefix).map((c) => ({
-        label: c.label,
-        insertText: c.insertText,
-        detail: c.detail,
-        documentation: c.doc,
-        kind: CompletionItemKind.Constant,
-      }));
-    }
-    if (!isBoardYamlPath(filePath)) {
-      return [];
-    }
-
-    const documentText = getDocumentText(params.textDocument.uri, filePath);
-    const suggestions = createBoardYamlCompletionSuggestions(
-      documentText,
-      params.position.line,
-      params.position.character,
-      sdkCatalog,
-    );
-
-    return suggestions.map(toCompletionItem);
-  });
-
-  connection.onHover((params): Hover | null => {
-    const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath) {
-      return null;
-    }
-    if (isPrjConfPath(filePath)) {
-      const text = getDocumentText(params.textDocument.uri, filePath);
-      const word = wordAt(
-        text,
-        params.position.line,
-        params.position.character,
-      );
-      const markdown = word ? hoverPrjConf(word) : null;
-      return markdown
-        ? { contents: { kind: MarkupKind.Markdown, value: markdown } }
-        : null;
-    }
-    if (!isBoardYamlPath(filePath)) {
-      return null;
-    }
-
-    const documentText = getDocumentText(params.textDocument.uri, filePath);
-    const hoverInfo = createBoardYamlHoverInfo(
-      documentText,
-      params.position.line,
-      params.position.character,
-      sdkCatalog,
-    );
-
-    if (!hoverInfo) {
-      return null;
-    }
-
-    return {
-      contents: {
-        kind: MarkupKind.Markdown,
-        value: formatHoverMarkdown(hoverInfo),
-      },
-    };
-  });
-
-  connection.onDocumentSymbol((params): DocumentSymbol[] => {
-    const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath || !isBoardYamlPath(filePath)) {
-      return [];
-    }
-
-    const documentText = getDocumentText(params.textDocument.uri, filePath);
-    return createBoardYamlDocumentSymbols(documentText).map(toDocumentSymbol);
-  });
-
-  connection.onCodeAction((params): CodeAction[] => {
-    const filePath = uriToFsPath(params.textDocument.uri);
-    if (!filePath || !isBoardYamlPath(filePath)) {
-      return [];
-    }
-
-    const documentText = getDocumentText(params.textDocument.uri, filePath);
-    const actions: CodeAction[] = [];
-    const seenTitles = new Set<string>();
-
-    for (const diagnostic of params.context.diagnostics) {
-      if (diagnostic.source !== "alp-sdk") {
-        continue;
-      }
-
-      for (const fix of createBoardYamlQuickFixes(
-        documentText,
-        diagnostic.message,
-      )) {
-        if (seenTitles.has(fix.title)) {
-          continue;
-        }
-
-        seenTitles.add(fix.title);
-        actions.push(toCodeAction(params.textDocument.uri, diagnostic, fix));
-      }
-    }
-
-    return actions;
-  });
-
-  connection.onExecuteCommand(async (params) => {
-    if (params.command !== PREVIEW_EFFECTIVE_CONFIG_COMMAND) {
-      return null;
-    }
-
-    const resourceUri =
-      typeof params.arguments?.[0] === "string" ? params.arguments[0] : null;
-    if (!resourceUri) {
-      return {
-        schemaVersion: "1",
-        ok: false,
-        error: "Missing board.yaml URI argument.",
-      };
-    }
-
-    const filePath = uriToFsPath(resourceUri);
-    if (!filePath || !isBoardYamlPath(filePath)) {
-      return {
-        schemaVersion: "1",
-        ok: false,
-        error: "The provided URI is not a board.yaml file.",
-      };
-    }
-
-    const documentText = readDocumentText(filePath);
-    const settings = await readProjectSettings(resourceUri);
-    const projectContext = resolveProjectContext(
-      {
-        workspaceFolders: workspaceFolderPaths,
-        settings,
-        platform: process.platform,
-      },
-      fs.existsSync,
-    );
-
-    return {
-      ok: true,
-      ...createEffectiveConfigPreviewPayload(
-        documentText,
-        filePath,
-        projectContext,
-      ),
-    };
   });
 
   connection.console.info("Alp SDK language server initialized.");
@@ -375,10 +432,27 @@ async function validateDocument(
       platform: process.platform,
     },
     fs.existsSync,
+    readDocumentText,
   );
 
   if (!context.sdkRoot) {
-    connection.sendDiagnostics({ uri, diagnostics: [] });
+    const v2Issues = detectV2StructuralIssues(documentText);
+    connection.sendDiagnostics({
+      uri,
+      diagnostics: [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 },
+          },
+          message:
+            "Alp SDK not resolved — full board.yaml validation is disabled. Set alpSdk.path.",
+          severity: DiagnosticSeverity.Warning,
+          source: "alp-sdk",
+        },
+        ...createDiagnostics(documentText, v2Issues),
+      ],
+    });
     return;
   }
 
@@ -647,7 +721,15 @@ function uriToFsPath(uri: string): string | null {
 
 /** Lint a prj.conf and publish the diagnostics. */
 function validatePrjConf(uri: string, text: string): void {
-  const diagnostics: Diagnostic[] = lintPrjConf(text).map((d) => ({
+  // Syntax lint (always available) + the build-output comparison (silent
+  // unless this file resolves to a slice whose .config is newer than its
+  // inputs — see buildConfig.ts).
+  const filePath = uriToFsPath(uri);
+  const findings = [
+    ...lintPrjConf(text),
+    ...(filePath ? diagnosePrjConfAgainstBuild(filePath, text) : []),
+  ];
+  const diagnostics: Diagnostic[] = findings.map((d) => ({
     range: {
       start: { line: d.line, character: d.startCol },
       end: { line: d.line, character: d.endCol },
@@ -656,7 +738,9 @@ function validatePrjConf(uri: string, text: string): void {
     severity:
       d.severity === "error"
         ? DiagnosticSeverity.Error
-        : DiagnosticSeverity.Warning,
+        : d.severity === "information"
+          ? DiagnosticSeverity.Information
+          : DiagnosticSeverity.Warning,
     source: "alp-kconfig",
   }));
   connection.sendDiagnostics({ uri, diagnostics });

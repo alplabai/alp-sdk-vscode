@@ -3,6 +3,8 @@
 import * as vscode from "vscode";
 import {
   checkCliVersion,
+  ensureTanCliProvisioned,
+  installTanCliGlobally,
   resetResolvedBinary,
   updateAlpCli,
 } from "./alpCli/vscodeAdapter";
@@ -16,7 +18,6 @@ import {
   NewProjectFlowPanel,
   OverviewPanel,
   registerWorkspaceCommands,
-  SdkManagerPanel,
   SetupFlowPanel,
 } from "./ideHub";
 import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
@@ -26,7 +27,7 @@ import { registerLspCommands } from "./lsp/commands";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
-import { showOutput } from "./util";
+import { log, showOutput } from "./util";
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
@@ -36,11 +37,14 @@ import {
 } from "./wizard";
 
 export function activate(context: vscode.ExtensionContext): void {
+  const version =
+    (context.extension.packageJSON.version as string | undefined) ?? "unknown";
+  log(`Alp SDK extension activating — v${version}`);
   startLanguageServer(context);
 
   // One shared state source for both the native trees and the status bar, so
   // the Build & Flash tree and the status-bar Build/Flash gating never disagree.
-  const stateMgr = new StateManager();
+  const stateMgr = new StateManager(context);
   const refreshState = () =>
     void stateMgr.refresh(
       context.globalState.get<string>("alp.lastBootstrapAt") ?? null,
@@ -51,9 +55,22 @@ export function activate(context: vscode.ExtensionContext): void {
     // Reactivity (no window reload): re-derive shared state on alpSdk config
     // edits (SDK activate/deactivate via alpSdk.path) and when the window
     // regains focus (e.g. after running bootstrap/install in a terminal). A
-    // cliPath edit also resets the cached CLI-binary resolution.
+    // cliPath or preferGlobalCli edit also resets the cached CLI-binary
+    // resolution (and re-arms the one-shot version check, see
+    // resetResolvedBinary), so repointing config mid-session re-checks the
+    // newly-resolved binary right away.
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("alpSdk.cliPath")) resetResolvedBinary();
+      if (
+        e.affectsConfiguration("alpSdk.cliPath") ||
+        e.affectsConfiguration("alpSdk.preferGlobalCli")
+      ) {
+        resetResolvedBinary();
+        // Re-run the one-shot version check against the newly-resolved binary:
+        // resetResolvedBinary re-arms it, but nothing else re-invokes it, so
+        // without this a mid-session cliPath/preferGlobalCli edit wouldn't
+        // re-warn until a window reload.
+        void checkCliVersion(context);
+      }
       if (e.affectsConfiguration("alpSdk")) refreshState();
     }),
     vscode.window.onDidChangeWindowState((s) => {
@@ -74,6 +91,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.openSetupFlow", () =>
       SetupFlowPanel.open(context),
     ),
+    vscode.commands.registerCommand("alp.openHub", () =>
+      OverviewPanel.open(context),
+    ),
+    // Deprecated alias — keeps old keybindings/links/muscle-memory working.
     vscode.commands.registerCommand("alp.openOverview", () =>
       OverviewPanel.open(context),
     ),
@@ -83,8 +104,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.openExistingProject", () =>
       ExistingProjectFlowPanel.open(context),
     ),
+    // SDK Manager is now a section of the Hub; open the Hub focused on it.
     vscode.commands.registerCommand("alp.openSdkManager", () =>
-      SdkManagerPanel.open(context),
+      OverviewPanel.open(context, "sdk"),
     ),
     vscode.commands.registerCommand("alp.openSettings", () =>
       vscode.commands.executeCommand(
@@ -109,13 +131,22 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.updateCli", () =>
       updateAlpCli(context),
     ),
+    vscode.commands.registerCommand("alp.installTanCli", () =>
+      installTanCliGlobally(context),
+    ),
   );
 
   void maybeOfferFirstRunWizard(context);
   void maybeOfferSetupPanel(context);
-  // Warn once if the resolved alp CLI is older than this build expects (the
-  // silent cause of missing features like project examples).
-  void checkCliVersion(context);
+  // Provision the managed `tan` CLI up front so a fresh install fetches it once,
+  // streamlined (progress notification), instead of stalling on the first
+  // build/validate command. No-op when a binary already resolves. The version
+  // check runs after so it sees the just-provisioned binary.
+  void ensureTanCliProvisioned(context).finally(() => {
+    // Warn once if the resolved tan CLI is older than this build expects (the
+    // silent cause of missing features like project examples).
+    void checkCliVersion(context);
+  });
 }
 
 export async function deactivate(): Promise<void> {

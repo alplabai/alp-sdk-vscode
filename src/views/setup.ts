@@ -48,9 +48,9 @@ export class SetupTreeProvider
     const toolsReady = setup.pythonAvailable && setup.westAvailable;
 
     this.items = [
-      new SetupItem("Overview", "", new vscode.ThemeIcon("home"), {
-        command: "alp.openOverview",
-        title: "Open Overview",
+      new SetupItem("Hub", "", new vscode.ThemeIcon("home"), {
+        command: "alp.openHub",
+        title: "Open Hub",
       }),
       new SetupItem(
         "Host Tools",
@@ -75,12 +75,16 @@ export class SetupTreeProvider
       ),
       new SetupItem(
         "Alp SDK",
-        sdk.version
-          ? `v${sdk.version}`
-          : sdk.activePath
-            ? "Path set"
-            : "Not configured",
-        sdk.activePath ? readyIcon : warnIcon,
+        sdk.readiness === "ready"
+          ? sdk.version
+            ? `v${sdk.version}`
+            : "Installed"
+          : sdk.readiness === "partial"
+            ? "Partial install — update needed"
+            : sdk.activePath
+              ? "Path set but not ready"
+              : "Not configured",
+        sdk.readiness === "ready" ? readyIcon : warnIcon,
         { command: "alp.openSdkManager", title: "Open SDK Manager" },
       ),
       new SetupItem(

@@ -229,6 +229,8 @@ test("buildDebugPreflightReport can pass for resolved native-host profile", () =
     profile,
     createRuntime(),
     {
+      // filePath is toPosix'd at the source (resolveWorkspacePath in
+      // debug/service.ts), so this asserts a POSIX suffix directly.
       pathExists: (filePath) =>
         filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
     },

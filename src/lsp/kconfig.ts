@@ -1,23 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Minimal Zephyr Kconfig-fragment (prj.conf) support: syntax linting + symbol
-// completion + hover over a curated set. PURE — no LSP types here; the server
-// maps these plain results onto Diagnostic / CompletionItem / Hover. A full
-// Kconfig database (all of Zephyr) isn't bundled, so diagnostics are
-// SYNTAX-only (never "unknown symbol"); completion/hover are best-effort over a
-// curated mix of common Zephyr symbols + Alp SDK (`CONFIG_ALP_*`) enables.
+// Zephyr Kconfig-fragment (prj.conf) support: syntax linting + symbol
+// completion + hover. PURE — no LSP types here; the server maps these plain
+// results onto Diagnostic / CompletionItem / Hover.
+//
+// The symbol table has two layers:
+//   1. CURATED_SYMBOLS below — hand-written, with real explanatory help text.
+//   2. src/lsp/generated/kconfig-metadata.json — harvested by
+//      scripts/vendor-kconfig-metadata.mjs from the schema-validated metadata/
+//      the SDK already publishes (chips, libraries, and the peripheral /
+//      silicon registries). Names there are a validated field, not a regex
+//      guess over Kconfig text.
+// Curated entries win on name collision: their prose is better.
+//
+// A full Kconfig database (all of Zephyr — ~26k symbols, only obtainable by
+// running kconfiglib against a configured build) is still NOT bundled. So
+// diagnostics remain SYNTAX-only: `lintPrjConf` never flags "unknown symbol",
+// and it value-checks only symbols whose type we can PROVE. Harvested entries
+// without a `type` are deliberately never value-linted — an unknown type must
+// produce silence, never a guess.
 
 import * as path from "path";
+
+import generated from "./generated/kconfig-metadata.json";
 
 export type KconfigType = "bool" | "int" | "hex" | "string";
 
 export interface KconfigSymbol {
   /** Symbol name WITHOUT the `CONFIG_` prefix (e.g. "MAIN_STACK_SIZE"). */
   name: string;
-  type: KconfigType;
+  /**
+   * Omitted when the harvest could not prove the type. Callers MUST treat
+   * `undefined` as "do not value-check" rather than defaulting it — see
+   * `lintPrjConf`.
+   */
+  type?: KconfigType;
   doc: string;
   /** Value inserted after `=` on completion (defaults to `y` for bool). */
   valueHint?: string;
+  /** Provenance for harvested entries, e.g. `metadata/chips/bmi270.yaml`. */
+  source?: string;
 }
 
 export interface KconfigDiagnostic {
@@ -25,7 +47,12 @@ export interface KconfigDiagnostic {
   startCol: number;
   endCol: number;
   message: string;
-  severity: "error" | "warning";
+  /**
+   * `information` is for telling the user WHY a check is unavailable. Silence
+   * reads as "the feature is broken" — that misread has already happened twice
+   * on this surface — so a suppressed check says so rather than saying nothing.
+   */
+  severity: "error" | "warning" | "information";
 }
 
 export interface KconfigCompletion {
@@ -35,10 +62,12 @@ export interface KconfigCompletion {
   insertText: string; // `CONFIG_<NAME>=<value>`
 }
 
-/** Curated, non-exhaustive. Common Zephyr knobs + representative Alp SDK enables.
- *  Every ALP_* name below is verified against the SDK's zephyr/Kconfig (v0.6.0):
- *  only real symbols — completion must never insert an undefined-symbol line. */
-export const KCONFIG_SYMBOLS: readonly KconfigSymbol[] = [
+/** Hand-curated, non-exhaustive. Common Zephyr knobs + representative Alp SDK
+ *  enables. Every ALP_* name here is verified against the SDK's zephyr/Kconfig:
+ *  only real symbols — completion must never insert an undefined-symbol line.
+ *  Merged with the generated harvest below; on a name collision these win,
+ *  because the hand-written `doc` explains the knob rather than restating it. */
+const CURATED_SYMBOLS: readonly KconfigSymbol[] = [
   // ── Alp SDK (from alp-sdk zephyr/Kconfig) ─────────────────────────────────
   {
     name: "ALP_SDK",
@@ -98,12 +127,6 @@ export const KCONFIG_SYMBOLS: readonly KconfigSymbol[] = [
     name: "ALP_SDK_PERIPH_ADC",
     type: "bool",
     doc: "Enable the <alp/adc.h> wrapper.",
-    valueHint: "y",
-  },
-  {
-    name: "ALP_SDK_PERIPH_DAC",
-    type: "bool",
-    doc: "Enable the <alp/adc.h> DAC half (alp_dac_*).",
     valueHint: "y",
   },
   {
@@ -308,6 +331,25 @@ export const KCONFIG_SYMBOLS: readonly KconfigSymbol[] = [
   },
 ];
 
+/**
+ * Symbols harvested from the SDK's schema-validated metadata. Typed as
+ * `KconfigSymbol[]` rather than trusting the JSON's inferred literal types:
+ * the generator only ever writes `type` values from `KconfigType`, and the
+ * fixture gate in test/lsp.kconfig.test.js proves the names are real.
+ */
+const GENERATED_SYMBOLS = generated.symbols as readonly KconfigSymbol[];
+
+/** Curated ∪ generated, curated winning on collision, sorted by name. */
+export const KCONFIG_SYMBOLS: readonly KconfigSymbol[] = (() => {
+  const byName = new Map<string, KconfigSymbol>();
+  for (const s of GENERATED_SYMBOLS) byName.set(s.name, s);
+  for (const s of CURATED_SYMBOLS) byName.set(s.name, s);
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+})();
+
+/** Submodule commit the generated layer was harvested from (hover provenance). */
+export const KCONFIG_METADATA_REV: string = generated.submoduleRev;
+
 const SYMBOL_BY_NAME = new Map(KCONFIG_SYMBOLS.map((s) => [s.name, s]));
 
 /** prj.conf and variants (prj_debug.conf, prj-release.conf, …). */
@@ -371,7 +413,8 @@ export function completePrjConf(linePrefix: string): KconfigCompletion[] {
   if (linePrefix.includes("=")) return [];
   return KCONFIG_SYMBOLS.map((s) => ({
     label: `CONFIG_${s.name}`,
-    detail: s.type,
+    // Harvested entries have no proven type; say so rather than inventing one.
+    detail: s.type ?? "Kconfig symbol",
     doc: s.doc,
     insertText: `CONFIG_${s.name}=${s.valueHint ?? (s.type === "bool" ? "y" : "")}`,
   }));
@@ -382,5 +425,11 @@ export function hoverPrjConf(word: string): string | null {
   const name = word.startsWith("CONFIG_") ? word.slice("CONFIG_".length) : word;
   const sym = SYMBOL_BY_NAME.get(name);
   if (!sym) return null;
-  return `**CONFIG_${sym.name}** _(${sym.type})_\n\n${sym.doc}`;
+  // No type is shown when none was proven — an unproven `(bool)` in a hover
+  // reads as authoritative and would be a lie.
+  const heading = sym.type
+    ? `**CONFIG_${sym.name}** _(${sym.type})_`
+    : `**CONFIG_${sym.name}**`;
+  const provenance = sym.source ? `\n\n_Declared in \`${sym.source}\`._` : "";
+  return `${heading}\n\n${sym.doc}${provenance}`;
 }

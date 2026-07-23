@@ -2,11 +2,13 @@
 
 # CLI-native build orchestration (Wave C)
 
-**Status:** plan / design. Direction decided **and agreed with the SDK team**;
-not yet implemented.
-**Owner:** the `alp` CLI (`cli-rs/`).
+**Status:** partially shipped. Direction decided **and agreed with the SDK
+team**; C0, C1's materialise/execute mechanism, and C4 have landed (see §5) —
+C2 (multi-core parallel fan-out + Yocto/baremetal backends) and C3
+(incremental cache + manifest) are not yet implemented.
+**Owner:** the `tan` CLI ([`alplabai/tan-cli`](https://github.com/alplabai/tan-cli)).
 
-**Decision (post SDK review):** the `alp` CLI sits **at the top** of the build —
+**Decision (post SDK review):** the `tan` CLI sits **at the top** of the build —
 it owns materialise / execute / schedule / cache / progress UX / envelope and
 invokes `west` / `bitbake` / `cmake` directly. It does **not** re-implement the
 planner in Rust. Instead it **consumes the SDK's `alp_orchestrate.py --emit
@@ -112,8 +114,8 @@ pub struct GeneratedFile { pub path: String, pub contents: String }  // contents
 pub enum Backend { Zephyr, Yocto, Baremetal }
 ```
 
-This is implemented in `alp-core::build_plan` and surfaced under the existing
-envelope's `data` for `alp build --plan --format json` (C2 + exit codes reused
+This is implemented in `tan-core::build_plan` and surfaced under the existing
+envelope's `data` for `tan build --plan --format json` (C2 + exit codes reused
 verbatim). **Verified:** the consumer parses the real SDK emit (run on `dev`
 against `examples/audio/i2s-tone/board.yaml` → a 3-slice hetero plan) and
 re-serializes it semantically identical.
@@ -130,29 +132,29 @@ verifies is that our **mechanism faithfully applies the emit**:
   system-manifest` too).
 
 Run against a **pinned SDK release tag** (not `dev` — see §7.2), committed
-goldens, `--bless` to refresh, in the spirit of `cli-rs/contract/run.sh`. The
+goldens, `--bless` to refresh, in the spirit of the `tan-cli` conformance harness. The
 emit doubles as the strongest possible golden.
 
 ## 5. Phased delivery
 
-- **C0 — Agree the schema + consume the emit + `alp build --plan`.** Lock the
+- **C0 — Agree the schema + consume the emit + `tan build --plan`.** Lock the
   `--emit build-plan` JSON shape with the SDK (incl. the contents requirement);
-  deserialize into `BuildPlan`; `alp build --plan` shows it (and can dry-run the
+  deserialize into `BuildPlan`; `tan build --plan` shows it (and can dry-run the
   would-write artefacts). No execution. Gate: round-trips the emit for the
   fixture matrix. *Low-risk, no SDK semantics mirrored.*
-  **(Landed:** the consumer is in `alp-core::build_plan` (`BuildPlan` /
+  **(Landed:** the consumer is in `tan-core::build_plan` (`BuildPlan` /
   `parse_build_plan` / `summarize_plan`, schema-version guarded), matched to the
   shipped ADR 0014 emit and **verified byte-identical against the real SDK emit**;
-  `alp build --plan-from <FILE>` renders a plan under the envelope (text + JSON).
-  The live `alp build --plan` now **invokes the SDK emit** —
+  `tan build --plan-from <FILE>` renders a plan under the envelope (text + JSON).
+  The live `tan build --plan` now **invokes the SDK emit** —
   `<sdk_root>/scripts/alp_orchestrate.py --input <board.yaml> --emit build-plan`
   (SDK resolved via `--sdk-root` / settings / bootstrap), parses + renders,
   schema-version-guarded with graceful errors. (Pin-to-tags still governs
   download-on-demand + parity goldens; the invocation works against any checkout
   shipping the emit.) Sample/reference fixture:
-  `cli-rs/contract/fixtures/build/build-plan.sample.json`.**)**
+  the `tan-cli` repo's contract fixtures (`build-plan.sample.json`).**)**
 - **C1 — Single-core Zephyr end to end.** **Materialise + execute landed
-  (mechanism):** `alp build --native` consumes the plan (live emit or
+  (mechanism):** `tan build --native` consumes the plan (live emit or
   `--plan-from`), byte-writes its artefacts (`materialise_plan`,
   path-traversal-guarded, idempotent), then runs each slice's `ToolStep`
   **sequentially** — text mode streams each build live with per-slice headers;
@@ -166,12 +168,10 @@ emit doubles as the strongest possible golden.
   runs sequential) + `bitbake` (host-gated) + `cmake` backends across cores.
 - **C3 — Incremental cache + manifest.** `.alp-build-state.json` slice-hash skip;
   `system-manifest.yaml`.
-- **C4 — Flip the front-ends + retire delegation.** `alp build` stops shelling to
-  `west alp-build`; the extension keeps calling `alp build` (no UX change).
-  `west alp-build` stays native (the SDK declined the shim — standalone west use
-  is a first-class path).
-
-Rollback at any phase = the terminal delegation that ships today.
+- **C4 — Flip the front-ends + retire delegation. Shipped.** `tan build` no
+  longer shells to `west alp-build`; the extension keeps calling `tan build`
+  (no UX change). `west alp-build` stays native on the SDK side (the shim was
+  declined — standalone west use is a first-class path).
 
 ## 6. What we need from the SDK (agreed)
 
@@ -185,7 +185,7 @@ The SDK team committed to:
    to `west build --sysbuild --sysbuild-config`.)*
 4. An answer on **C4 (conf→build wiring)** before our C1.
 5. **`--emit build-plan`** per §3 — ✅ shipped on SDK `dev` (`ebaa3dd`, ADR 0014)
-   with the file-contents refinement. Live `alp build --plan` now invokes it
+   with the file-contents refinement. Live `tan build --plan` now invokes it
    (against any resolved SDK checkout); **awaiting a tagged release** only to pin
    download-on-demand + the parity goldens to it.
 
@@ -202,5 +202,5 @@ The SDK team committed to:
 - **`west build` build-dir vs cwd.** The script sets `cwd = build/<core>-<os>/`
   and runs `west build` without `-d`. Once the command shape is consumed from the
   emit (§3), this is the SDK's choice and we just run what the emit says.
-- **Flash** stays out of Wave C (separate, real backends). `alp flash` keeps
+- **Flash** stays out of Wave C (separate, real backends). `tan flash` keeps
   delegating until we wire it deliberately.

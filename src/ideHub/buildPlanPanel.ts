@@ -11,6 +11,7 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
+import { reportError } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.buildPlan";
 const PANEL_TITLE = "Alp Build Plan";
@@ -102,11 +103,8 @@ export class BuildPlanPanel {
       case "runBuild":
         void this.handleRunBuild();
         break;
-      case "buildSlice":
-        this.handleSliceCommand("build", msg.coreId);
-        break;
       case "flashSlice":
-        this.handleSliceCommand("flash", msg.coreId);
+        this.handleSliceCommand(msg.coreId);
         break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
@@ -187,7 +185,7 @@ export class BuildPlanPanel {
       await this.handleRequestBuildPlan();
     } else {
       const error = envelope?.issues?.[0]?.message ?? outcome.message;
-      void vscode.window.showErrorMessage(`Alp: materialise failed — ${error}`);
+      void reportError(`Alp: materialise failed — ${error}`);
     }
   }
 
@@ -197,13 +195,16 @@ export class BuildPlanPanel {
     await runAlpInTerminal(this.context, ["build"], { name: "alp build", cwd });
   }
 
-  /** Build or flash a single manifest slice — `alp <verb> --core <id>` forwards
-   *  to `west alp-<verb>` for that core. The view only shows the button when the
-   *  manifest says the slice supports it, so this just runs it in a terminal. */
-  private handleSliceCommand(verb: "build" | "flash", coreId: string): void {
+  /** Flash a single manifest slice — `tan flash --core <id>` forwards to
+   *  `west alp-flash` for that core. The view only shows the button when the
+   *  manifest says the slice supports it, so this just runs it in a terminal.
+   *  There is no per-slice build equivalent: `tan build` has no `--core`
+   *  option (only `flash`/`run` do), so the Build button only runs the whole
+   *  plan (`runBuild`). */
+  private handleSliceCommand(coreId: string): void {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    void runAlpInTerminal(this.context, [verb, "--core", coreId], {
-      name: `alp ${verb} ${coreId}`,
+    void runAlpInTerminal(this.context, ["flash", "--core", coreId], {
+      name: `alp flash ${coreId}`,
       cwd,
     });
   }

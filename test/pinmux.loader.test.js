@@ -12,17 +12,17 @@ const SAMPLE =
   'family: aen\npads:\n  - { e1m_pad: "A3", e1m_function: "PWM6", owner: "alif", silicon_peripheral: "UT3_T1_C", silicon_pad: "P10_7" }\n';
 
 test("pinmuxFamilyForSku maps known SKU prefixes", () => {
-  assert.strictEqual(pinmuxFamilyForSku("E1M-AEN701"), "aen");
+  assert.strictEqual(pinmuxFamilyForSku("E1M-AEN801"), "aen");
   assert.strictEqual(pinmuxFamilyForSku("E1M-NX9101"), "imx93");
   assert.strictEqual(pinmuxFamilyForSku("E1M-V2N101"), "v2n");
-  assert.strictEqual(pinmuxFamilyForSku("E1M-V2M102"), "v2n-m1");
+  assert.strictEqual(pinmuxFamilyForSku("E1M-V2M102"), "v2n");
   assert.strictEqual(pinmuxFamilyForSku("UNKNOWN-1"), null);
 });
 
 test("loadPinmuxTable reads metadata/pinmux/<family>.yaml under the SDK root", () => {
   clearPinmuxTableCache();
   const seen = [];
-  const table = loadPinmuxTable("/sdk", "E1M-AEN701", (filePath) => {
+  const table = loadPinmuxTable("/sdk", "E1M-AEN801", (filePath) => {
     seen.push(filePath);
     return SAMPLE;
   });
@@ -55,7 +55,7 @@ test("loadPinmuxTable returns null for a readable-but-corrupt/empty table (no pa
   clearPinmuxTableCache();
   const table = loadPinmuxTable(
     "/sdk",
-    "E1M-AEN701",
+    "E1M-AEN801",
     () => "family: 3\npads: nope",
   );
   assert.strictEqual(table, null);
@@ -68,29 +68,48 @@ test("loadPinmuxTable caches per sdkRoot + family", () => {
     reads += 1;
     return SAMPLE;
   };
-  loadPinmuxTable("/sdk", "E1M-AEN701", readFile);
+  loadPinmuxTable("/sdk", "E1M-AEN801", readFile);
   loadPinmuxTable("/sdk", "E1M-AEN301", readFile); // same family -> cached
   assert.strictEqual(reads, 1);
 });
 
-const STUB_TBD =
-  "family: v2n\npads:\n" +
-  '  - { e1m_pad: "TBD", e1m_function: "PWM6", owner: "renesas", silicon_peripheral: "GPT", silicon_pad: "P100" }\n' +
-  '  - { e1m_pad: "TBD", e1m_function: "IO3", owner: "renesas", silicon_peripheral: "GPIO", silicon_pad: "P101" }\n';
-
-test("loadPinmuxTable treats an all-TBD stub table as absent (no resolved pads)", () => {
+test("loadPinmuxTable returns null for an all-TBD (sentinel) capability table", () => {
   clearPinmuxTableCache();
-  const table = loadPinmuxTable("/sdk", "E1M-V2N101", () => STUB_TBD);
-  assert.strictEqual(table, null);
+  const allTbd =
+    'family: v2n\npads:\n  - { e1m_pad: "TBD", e1m_function: "TBD", owner: "renesas", silicon_peripheral: "uSD1_V_SEL", silicon_pad: "PA2" }\n';
+  assert.strictEqual(
+    loadPinmuxTable("/sdk", "E1M-V2N101", () => allTbd),
+    null,
+  );
 });
 
-test("loadPinmuxTable keeps a partially-resolved table and preserves its TBD pads", () => {
+test("loadPinmuxTable keeps only non-TBD rows for a partially-populated table", () => {
   clearPinmuxTableCache();
-  const partial =
-    "family: v2n\npads:\n" +
-    '  - { e1m_pad: "TBD", e1m_function: "PWM6", owner: "renesas", silicon_peripheral: "GPT", silicon_pad: "P100" }\n' +
-    '  - { e1m_pad: "C4", e1m_function: "IO3", owner: "renesas", silicon_peripheral: "GPIO", silicon_pad: "P101" }\n';
-  const table = loadPinmuxTable("/sdk", "E1M-V2N101", () => partial);
-  assert.notStrictEqual(table, null);
-  assert.strictEqual(table.pads.length, 2); // kept intact; R2 skips the TBD row
+  const mixed =
+    'family: v2n\npads:\n  - { e1m_pad: "TBD", e1m_function: "TBD", owner: "renesas", silicon_peripheral: "x", silicon_pad: "PA2" }\n  - { e1m_pad: "B7", e1m_function: "I2C0", owner: "renesas", silicon_peripheral: "RIIC0", silicon_pad: "P20" }\n';
+  const table = loadPinmuxTable("/sdk", "E1M-V2N101", () => mixed);
+  assert.strictEqual(table.pads.length, 1);
+  assert.strictEqual(table.pads[0].e1mPad, "B7");
+});
+
+test("E1M-V2M SKUs resolve to the v2n pinmux family (same E1M edge)", () => {
+  assert.strictEqual(pinmuxFamilyForSku("E1M-V2M101"), "v2n");
+  assert.strictEqual(pinmuxFamilyForSku("E1M-V2M102"), "v2n");
+});
+
+test("loadPinmuxTable does not cache a null miss (retries once the SDK populates)", () => {
+  clearPinmuxTableCache();
+  const first = loadPinmuxTable("/sdk", "E1M-AEN801", () => {
+    throw new Error("ENOENT"); // SDK submodule not populated yet
+  });
+  assert.strictEqual(first, null);
+
+  // A later call must re-read rather than return a stuck null.
+  let reads = 0;
+  const second = loadPinmuxTable("/sdk", "E1M-AEN801", () => {
+    reads += 1;
+    return 'family: aen\npads:\n  - { e1m_pad: "B7", e1m_function: "I2C0", owner: "alif", silicon_peripheral: "I2C0", silicon_pad: "P1" }\n';
+  });
+  assert.strictEqual(reads, 1);
+  assert.ok(second && second.pads.length === 1);
 });

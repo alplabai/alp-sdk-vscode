@@ -5,15 +5,18 @@ import {
   listLocalSdkEntries,
 } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
+import { promisify } from "util";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
+import { log } from "../util";
 import {
   resolveWestBinary,
   westWorkspaceInitialized,
 } from "../environment/vscodeAdapter";
+import { probeTanVersion } from "../alpCli/vscodeAdapter";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -28,31 +31,76 @@ export async function openProjectFolder(uri: vscode.Uri): Promise<void> {
   });
 }
 
-function commandAvailable(cmd: string): boolean {
-  try {
-    // Quote so an absolute venv path (possibly with spaces) is one token.
-    cp.execSync(`"${cmd}" --version`, { stdio: "ignore", timeout: 3000 });
-    return true;
-  } catch {
-    return false;
-  }
+const execFileAsync = promisify(cp.execFile);
+
+let loginShellPathPromise: Promise<string | undefined> | undefined;
+
+function errText(err: unknown): string {
+  const e = err as NodeJS.ErrnoException & { signal?: string };
+  if (e.code === "ENOENT") return "not found on PATH";
+  if (e.code === "EACCES") return "not executable";
+  if (e.signal === "SIGTERM") return "timed out after 3000 ms";
+  return e.message ?? String(err);
 }
 
-/** Run `cmd --version` and return the first line of stdout, or null on error. */
-function commandVersion(cmd: string): string | null {
+/**
+ * The ext-host runs under a non-login PATH, so on Remote-SSH tools that live on
+ * the user's `~/.bashrc` (or `~/.zshrc`) PATH read as "Not found" even though the
+ * integrated (login) terminal builds fine. Resolve the real login-shell PATH
+ * once per window so detection matches execution; on any failure fall back to
+ * the inherited env. Windows has no login-shell concept — its process PATH is
+ * authoritative there.
+ */
+function loginShellPath(): Promise<string | undefined> {
+  if (process.platform === "win32") return Promise.resolve(undefined);
+  if (!loginShellPathPromise) {
+    loginShellPathPromise = (async () => {
+      const shell = vscode.env.shell;
+      if (!shell) return undefined;
+      try {
+        const { stdout } = await execFileAsync(
+          shell,
+          ["-l", "-i", "-c", 'printf "%s" "$PATH"'],
+          { timeout: 3000 },
+        );
+        return stdout.trim() || undefined;
+      } catch (err) {
+        log(
+          `alp: could not resolve login-shell PATH from ${shell}: ${errText(err)}`,
+        );
+        return undefined;
+      }
+    })();
+  }
+  return loginShellPathPromise;
+}
+
+/**
+ * Run `cmd --version` with no shell — a venv path with a space / `$` / backtick
+ * is passed as one argv token, not re-parsed — and return the first stdout line,
+ * or null. A non-null version already proves availability. On failure the cause
+ * is discriminated and logged; the old silent catch reported a proven-present
+ * tool as "Not found" with nothing to debug from.
+ */
+async function commandVersion(
+  cmd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string | null> {
   try {
-    const out = cp.execSync(`"${cmd}" --version`, {
-      stdio: "pipe",
+    const { stdout } = await execFileAsync(cmd, ["--version"], {
       timeout: 3000,
+      env,
     });
-    return out.toString("utf8").trim().split("\n")[0] ?? null;
-  } catch {
+    const firstLine = stdout.trim().split("\n")[0] ?? "";
+    // Reduce to the bare MAJOR.MINOR[.PATCH] — `--version` output usually
+    // carries a tool-name/prose prefix ("Python 3.9.0", "West version: v1.5.0")
+    // that would otherwise double up with the UI's own "Python"/"west" label.
+    const version = firstLine.match(/\d+\.\d+(?:\.\d+)?/);
+    return version ? version[0] : firstLine || null;
+  } catch (err) {
+    log(`alp: probe "${cmd} --version" failed: ${errText(err)}`);
     return null;
   }
-}
-
-function pythonCmd(): string {
-  return process.platform === "win32" ? "python" : "python3";
 }
 
 /** Default directory for versioned SDK installations. */
@@ -62,6 +110,7 @@ export function sdkCacheRoot(): string {
 
 export async function queryAlpIdeState(
   lastBootstrapAt: string | null = null,
+  context?: vscode.ExtensionContext,
 ): Promise<AlpIdeState> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   const actualWorkspaceRoot: string | null =
@@ -80,37 +129,31 @@ export async function queryAlpIdeState(
     const report = checkSdkReadiness(
       sdkPath,
       (p) => fs.existsSync(p),
-      (p) => {
-        try {
-          return fs.readFileSync(p, "utf8");
-        } catch {
-          return "";
-        }
-      },
+      (p) => fs.readFileSync(p, "utf8"),
     );
     sdkReadiness = report.state;
     sdkVersion = report.version;
   }
 
-  const versionFile = sdkPath ? path.join(sdkPath, "VERSION") : null;
-  if (versionFile && sdkVersion === null && fs.existsSync(versionFile)) {
-    sdkVersion = fs.readFileSync(versionFile, "utf8").trim();
-  }
-
   const cacheRoot = sdkCacheRoot();
   const searchRoots = [cacheRoot];
-  if (actualWorkspaceRoot) searchRoots.push(actualWorkspaceRoot);
+  if (actualWorkspaceRoot) {
+    searchRoots.push(actualWorkspaceRoot);
+    // The documented sibling layout: an SDK checked out next to the project.
+    searchRoots.push(path.resolve(actualWorkspaceRoot, "..", "alp-sdk"));
+  }
+  // Always include the resolved active SDK so the picker and SDK Manager list
+  // the SDK the extension is actually driving, even when it lives outside the
+  // cache and workspace (sibling checkout or an alpSdk.path pin). Seeding it as
+  // a root keeps localEntries in step with the resolution chain; listLocalSdkEntries
+  // de-dupes via its `seen` set and the removable flag below keys off the cache
+  // prefix, so an external checkout lands as non-removable.
+  if (sdkPath) searchRoots.push(sdkPath);
 
   const discoveredEntries = listLocalSdkEntries(
     searchRoots,
     (p) => fs.existsSync(p),
-    (p) => {
-      try {
-        return fs.readFileSync(p, "utf8");
-      } catch {
-        return "";
-      }
-    },
+    (p) => fs.readFileSync(p, "utf8"),
     (p) => {
       try {
         return fs.readdirSync(p);
@@ -130,17 +173,31 @@ export async function queryAlpIdeState(
       .startsWith(cacheRootResolved + path.sep),
   }));
 
-  const boardYamlPath = actualWorkspaceRoot
-    ? path.join(actualWorkspaceRoot, "board.yaml")
-    : null;
-
-  const pyCmd = pythonCmd();
+  const pyCmd = projectContext.pythonBinary;
   const westBin = resolveWestBinary(
     projectContext.westCwd,
     projectContext.sdkRoot,
   );
-  const pythonAvailable = commandAvailable(pyCmd);
-  const westAvailable = commandAvailable(westBin);
+
+  // One env, one parallel batch: the probes no longer block the event loop (they
+  // were up to six synchronous spawns per window-focus / save / settings edit)
+  // and detection uses the same PATH the build will.
+  const shellPath = await loginShellPath();
+  const probeEnv: NodeJS.ProcessEnv = shellPath
+    ? { ...process.env, PATH: shellPath }
+    : process.env;
+  const [pythonVersion, westVersion, cmakeVersion, ninjaVersion] =
+    await Promise.all([
+      commandVersion(pyCmd, probeEnv),
+      commandVersion(westBin, probeEnv),
+      commandVersion("cmake", probeEnv),
+      commandVersion("ninja", probeEnv),
+    ]);
+  const pythonAvailable = pythonVersion !== null;
+  const westAvailable = westVersion !== null;
+  // Not part of the probeEnv batch above: it resolves its own binary via the
+  // cliPath/bundled/localBuild/cached/PATH ladder and must never download.
+  const tanVersion = context ? await probeTanVersion(context) : null;
 
   return {
     sdk: {
@@ -154,15 +211,22 @@ export async function queryAlpIdeState(
       westAvailable,
       lastBootstrapAt,
       toolVersions: {
-        python: pythonAvailable ? commandVersion(pyCmd) : null,
-        west: westAvailable ? commandVersion(westBin) : null,
-        cmake: commandVersion("cmake"),
-        ninja: commandVersion("ninja"),
+        python: pythonVersion,
+        west: westVersion,
+        tan: tanVersion,
+        cmake: cmakeVersion,
+        ninja: ninjaVersion,
       },
     },
     workspace: {
-      workspaceRoot: actualWorkspaceRoot,
-      boardYamlExists: boardYamlPath ? fs.existsSync(boardYamlPath) : false,
+      // Resolved project context (the folder holding board.yaml + the configured
+      // boardYamlPath), NOT workspaceFolders[0] + a hardcoded "board.yaml" —
+      // otherwise a multi-root project (in folder[1]) or a custom alpSdk.boardYamlPath
+      // reports boardYamlExists=false and the hub/tree wrongly offer "New Project".
+      workspaceRoot: projectContext.workspaceRoot,
+      boardYamlExists: projectContext.boardYamlPath
+        ? fs.existsSync(projectContext.boardYamlPath)
+        : false,
       westInitialized: westWorkspaceInitialized(
         projectContext.westCwd,
         projectContext.sdkRoot,

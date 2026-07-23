@@ -27,7 +27,7 @@ test("missing som.sku and empty cores are errors", () => {
 
 test("preset is mutually exclusive with inline populated", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" } },
     preset: "e1m-evk",
     populated: { lsm6dso: true },
@@ -39,31 +39,72 @@ test("preset is mutually exclusive with inline populated", () => {
   );
 });
 
-test("iot.tls without mbedtls/bearssl on the same core is an error", () => {
+test("iot.tls without mbedtls/bearssl in the top-level libraries is an error", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
-    cores: { m55_hp: { app: "./src", iot: { tls: true }, libraries: ["fmt"] } },
+    som: { sku: "E1M-AEN801" },
+    cores: { m55_hp: { app: "./src", iot: { tls: true } } },
+    libraries: ["fmt"],
   });
   assert.ok(
     r.errors.some((e) => /m55_hp.*tls.*mbedtls|tls.*requires/i.test(e)),
   );
 });
 
-test("iot.tls with mbedtls present is fine", () => {
+test("iot.tls requires the SAME shape it now reads: cores.<id>.libraries no longer counts (#165)", () => {
+  // Regression guard for the exact drift this fix closes: a per-core
+  // `libraries:` key is not part of the schema anymore (core_entry is
+  // additionalProperties:false), so validate.ts must not read it -- an
+  // mbedtls entry stranded there must NOT satisfy iot.tls.
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: {
-      m55_hp: { app: "./src", iot: { tls: true }, libraries: ["mbedtls"] },
+      m55_hp: {
+        app: "./src",
+        iot: { tls: true },
+        libraries: ["mbedtls"],
+      },
     },
   });
+  assert.ok(
+    r.errors.some((e) => /m55_hp.*tls.*mbedtls|tls.*requires/i.test(e)),
+    `expected iot.tls still flagged (stranded per-core), got: ${JSON.stringify(r.errors)}`,
+  );
+});
+
+test("iot.tls with mbedtls project-wide (bare name) in top-level libraries is fine", () => {
+  const r = validateBoardConfig({
+    som: { sku: "E1M-AEN801" },
+    cores: { m55_hp: { app: "./src", iot: { tls: true } } },
+    libraries: ["mbedtls"],
+  });
   assert.deepEqual(r.errors, []);
+});
+
+test("iot.tls with mbedtls scoped to the same core via {name, cores:[...]} is fine", () => {
+  const r = validateBoardConfig({
+    som: { sku: "E1M-AEN801" },
+    cores: {
+      m55_hp: { app: "./src", iot: { tls: true } },
+      m55_he: { app: "./he", iot: { tls: true } },
+    },
+    libraries: [{ name: "mbedtls", cores: ["m55_hp"] }],
+  });
+  assert.ok(
+    r.errors.some((e) => /m55_he.*tls.*mbedtls|tls.*requires/i.test(e)),
+    "m55_he must still be flagged: mbedtls is scoped to m55_hp only",
+  );
+  assert.equal(
+    r.errors.some((e) => /m55_hp/.test(e)),
+    false,
+    `m55_hp must not be flagged, got: ${JSON.stringify(r.errors)}`,
+  );
 });
 
 test("mcuboot without explicit signing is valid (SDK defaults the family signing)", () => {
   // The SoM family supplies the default signing (AEN -> ECDSA-P256), so an
   // mcuboot board.yaml that omits boot.signing is valid — not an error.
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" } },
     boot: { method: "mcuboot" },
   });
@@ -76,7 +117,7 @@ test("mcuboot without explicit signing is valid (SDK defaults the family signing
 
 test("ipc channel with fewer than two endpoints is an error (#109)", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" }, m55_he: { app: "./he" } },
     ipc: [
       { name: "ch0", kind: "rpmsg", endpoints: ["m55_hp"], carve_out_kb: 64 },
@@ -90,7 +131,7 @@ test("ipc channel with fewer than two endpoints is an error (#109)", () => {
 
 test("ipc endpoint referencing an undeclared core is an error (#109)", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" }, m55_he: { app: "./he" } },
     ipc: [
       {
@@ -109,7 +150,7 @@ test("ipc endpoint referencing an undeclared core is an error (#109)", () => {
 
 test("ipc channel with two declared-core endpoints is valid (#109)", () => {
   const r = validateBoardConfig({
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" }, m55_he: { app: "./he" } },
     ipc: [
       {

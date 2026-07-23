@@ -15,7 +15,8 @@ import {
 } from "./messages";
 import { E1M_MODULES } from "./projectScaffold";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
-import { buildWebviewHtml } from "./webviewHtml";
+import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
+import { log, reportError, showOutput } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
 const PANEL_TITLE = "Alp IDE — New Project";
@@ -71,8 +72,8 @@ export class NewProjectFlowPanel {
   private async sendState(): Promise<void> {
     const lastBootstrapAt =
       this.context.globalState.get<string>("alp.lastBootstrapAt") ?? null;
-    const state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
-      emptyAlpIdeState(),
+    const state = await queryAlpIdeState(lastBootstrapAt, this.context).catch(
+      () => emptyAlpIdeState(),
     );
 
     const stateMsg: ExtToWebviewMessage = {
@@ -82,10 +83,19 @@ export class NewProjectFlowPanel {
     };
     void this.panel.webview.postMessage(stateMsg);
 
+    await this.reloadCatalog();
+  }
+
+  /** Re-fetch the template + SoM catalog against a wizard-selected SDK and push
+   *  it to the webview, so the Examples/Hardware lists match the SDK the project
+   *  will be scaffolded from (an example's `sourceDir` is relative to that SDK's
+   *  `examples/`). Without this the lists come from the ambient SDK and
+   *  `alp init --from-example` fails with "was not found" on a divergent pick. */
+  private async reloadCatalog(sdkPath?: string): Promise<void> {
     const catalogMsg: ExtToWebviewMessage = {
       type: "projectTemplatesData",
-      templates: await this.fetchTemplates(),
-      modules: await this.fetchSomModules(),
+      templates: await this.fetchTemplates(sdkPath),
+      modules: await this.fetchSomModules(sdkPath),
     };
     void this.panel.webview.postMessage(catalogMsg);
   }
@@ -126,8 +136,9 @@ export class NewProjectFlowPanel {
   /** SoM ("Hardware") list from the CLI's `alp presets` (the installed SDK's
    *  actual modules). Falls back to the built-in list when no SDK is resolved
    *  (presets returns an empty `soms`) so New Project works pre-SDK. */
-  private async fetchSomModules(): Promise<E1mModule[]> {
-    const { outcome } = await runAlpCommand(this.context, ["presets"]);
+  private async fetchSomModules(sdkPath?: string): Promise<E1mModule[]> {
+    const args = sdkPath ? ["--sdk-root", sdkPath, "presets"] : ["presets"];
+    const { outcome } = await runAlpCommand(this.context, args);
     const soms =
       (
         outcome.envelope?.data as
@@ -141,22 +152,50 @@ export class NewProjectFlowPanel {
             }
           | undefined
       )?.soms ?? [];
-    this.somModules =
-      soms.length === 0
-        ? E1M_MODULES
-        : soms.map((s) => ({
-            id: s.sku,
-            displayName: s.displayName || s.sku,
-            family: s.family || "other",
-            cores: s.cores ?? [],
-          }));
+    if (soms.length === 0) {
+      // No SDK resolved: `alp presets` returns built-in defaults with an empty
+      // `soms` and a `presets.sdk-root-unresolved` warning. Fall back to the
+      // static catalog — which carries no `cores`, so a heterogeneous SoM would
+      // scaffold as single-core with no IPC. Surface the CLI's (otherwise
+      // discarded) warning so that topology gap isn't silent.
+      if (
+        outcome.envelope?.issues?.some(
+          (i) => i.code === "presets.sdk-root-unresolved",
+        )
+      ) {
+        void vscode.window.showWarningMessage(
+          "Alp: no SDK resolved, so the Hardware list can't report core topology — a multi-core SoM (e.g. E1M-V2N101) will scaffold as single-core with no IPC. Select an SDK for full multi-core scaffolding.",
+        );
+      }
+      this.somModules = E1M_MODULES;
+      return this.somModules;
+    }
+    this.somModules = soms.map((s) => ({
+      id: s.sku,
+      displayName: s.displayName || s.sku,
+      family: s.family || "other",
+      cores: s.cores ?? [],
+    }));
     return this.somModules;
   }
 
   /** Build the template picker from the CLI's real templates (single source of
    *  truth): `alp explain` lists ids, then per-id explain gives title/blurb. */
-  private async fetchTemplates(): Promise<ProjectTemplate[]> {
-    const overview = await runAlpCommand(this.context, ["explain"]);
+  private async fetchTemplates(sdkPath?: string): Promise<ProjectTemplate[]> {
+    const root = sdkPath ? ["--sdk-root", sdkPath] : [];
+    const overview = await runAlpCommand(this.context, [...root, "explain"]);
+    if (overview.outcome.envelope === null) {
+      // `runAlpCommand` never throws: an unresolvable/failed CLI returns a
+      // null-envelope error outcome. Without surfacing it the template step
+      // renders blank with no trace (issue #129) — mirror the loader's null
+      // check and point the user at the setting / output channel. A resolved
+      // SDK with no templates returns a non-null envelope, so it falls through
+      // to the webview's empty-state instead.
+      log(`[new-project] ${overview.outcome.message}`);
+      void this.surfaceTemplateError(overview.outcome.message);
+      this.templates = [];
+      return this.templates;
+    }
     const ids =
       (
         overview.outcome.envelope?.data as
@@ -167,6 +206,7 @@ export class NewProjectFlowPanel {
     const templates: ProjectTemplate[] = [];
     for (const id of ids) {
       const detail = await runAlpCommand(this.context, [
+        ...root,
         "explain",
         "--template",
         id,
@@ -186,7 +226,10 @@ export class NewProjectFlowPanel {
     // Append the SDK's ready-made example projects (`alp examples` → category
     // "example"), so users can scaffold from a real example, not just a starter.
     // Empty when no SDK resolves — the picker simply shows no Examples section.
-    const examplesRes = await runAlpCommand(this.context, ["examples"]);
+    const examplesRes = await runAlpCommand(this.context, [
+      ...root,
+      "examples",
+    ]);
     const examples =
       (
         examplesRes.outcome.envelope?.data as
@@ -215,6 +258,25 @@ export class NewProjectFlowPanel {
     return templates;
   }
 
+  /** Surface a CLI-unavailable failure from `fetchTemplates` (mirrors the
+   *  alpCli adapter's `surfaceResolutionError`, plus a "Show Output" action)
+   *  instead of leaving the template step silently blank. */
+  private async surfaceTemplateError(message: string): Promise<void> {
+    const choice = await vscode.window.showErrorMessage(
+      message,
+      "Open Settings",
+      "Show Output",
+    );
+    if (choice === "Open Settings") {
+      await vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "alpSdk.cliPath",
+      );
+    } else if (choice === "Show Output") {
+      showOutput();
+    }
+  }
+
   private async handleMessage(msg: WebviewToExtMessage): Promise<void> {
     switch (msg.type) {
       case "ready":
@@ -237,6 +299,10 @@ export class NewProjectFlowPanel {
         );
         break;
 
+      case "reloadProjectTemplates":
+        await this.reloadCatalog(msg.sdkPath);
+        break;
+
       case "closePanel":
         void vscode.commands.executeCommand("alp.ideHub.focus");
         this.panel.dispose();
@@ -249,7 +315,7 @@ export class NewProjectFlowPanel {
         break;
 
       case "runCommand":
-        void vscode.commands.executeCommand(msg.command);
+        runWebviewCommand(msg.command);
         break;
     }
   }
@@ -340,23 +406,68 @@ export class NewProjectFlowPanel {
     }
     const { outcome } = await runAlpCommand(this.context, initArgs);
     if (!outcome.envelope || !outcome.envelope.ok) {
-      await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
+      await reportError(`Alp: ${outcome.message}`);
       return;
     }
 
     // Pin the chosen SDK for the new project so it opens with the right one
     // (workspace-scoped alpSdk.path). Omitted ⇒ the project inherits the global
     // default / auto-resolution.
+    let pinError: string | undefined;
     if (sdkPath) {
-      this.pinProjectSdk(projectDir, sdkPath);
+      const pinned = this.pinProjectSdk(projectDir, sdkPath);
+      if (pinned.ok) {
+        log(`[new-project] pinned alpSdk.path=${sdkPath} for ${projectDir}`);
+      } else {
+        pinError = pinned.error;
+        log(`[new-project] SDK pin FAILED for ${projectDir}: ${pinned.error}`);
+      }
     }
 
-    const open = "Open Project";
-    const choice = await vscode.window.showInformationMessage(
-      `Project "${projectName}" created at ${projectDir}`,
-      open,
-    );
-    if (choice === open) {
+    // Decide whether to open. A pin failure must be surfaced BEFORE (and AS) the
+    // open decision — never a plain "Open Project" prompt that lets the user
+    // unknowingly open a scaffold with no SDK pinned (F5).
+    let shouldOpen = false;
+    if (pinError) {
+      const retry = "Retry Pin";
+      const openAnyway = "Open Anyway";
+      const choice = await vscode.window.showWarningMessage(
+        `Alp: project "${projectName}" was created at ${projectDir}, but pinning its SDK failed — ${pinError}. It will open WITHOUT a pinned SDK until you set "alpSdk.path" in its .vscode/settings.json.`,
+        retry,
+        openAnyway,
+      );
+      if (choice === retry) {
+        if (sdkPath) {
+          const retried = this.pinProjectSdk(projectDir, sdkPath);
+          if (retried.ok) {
+            log(`[new-project] SDK pin retry OK for ${projectDir}`);
+            void vscode.window.showInformationMessage(
+              `Alp: SDK pinned. Opening "${projectName}".`,
+            );
+          } else {
+            log(
+              `[new-project] SDK pin retry FAILED for ${projectDir}: ${retried.error}`,
+            );
+            void reportError(
+              `Alp: pinning the SDK failed again — ${retried.error}. Opening without a pinned SDK; set "alpSdk.path" manually.`,
+            );
+          }
+        }
+        shouldOpen = true;
+      } else if (choice === openAnyway) {
+        shouldOpen = true;
+      }
+      // Dismissed ⇒ don't open (safer than the old silent open).
+    } else {
+      const open = "Open Project";
+      const choice = await vscode.window.showInformationMessage(
+        `Project "${projectName}" created at ${projectDir}`,
+        open,
+      );
+      shouldOpen = choice === open;
+    }
+
+    if (shouldOpen) {
       // Open in a new window when a workspace is already open, so we don't
       // replace the user's current session.
       await openProjectFolder(vscode.Uri.file(projectDir));
@@ -366,30 +477,34 @@ export class NewProjectFlowPanel {
   }
 
   /** Write `alpSdk.path` into the new project's .vscode/settings.json so it
-   *  opens with the SDK chosen in the wizard (merges if a file already exists). */
-  private pinProjectSdk(projectDir: string, sdkPath: string): void {
+   *  opens with the SDK chosen in the wizard (merges if a file already exists).
+   *  Returns the outcome so the caller can surface a pin failure BEFORE offering
+   *  to open the project — never silently open an unpinned scaffold (F5). */
+  private pinProjectSdk(
+    projectDir: string,
+    sdkPath: string,
+  ): { ok: true } | { ok: false; error: string } {
     try {
       const vscodeDir = path.join(projectDir, ".vscode");
       fs.mkdirSync(vscodeDir, { recursive: true });
       const settingsPath = path.join(vscodeDir, "settings.json");
-      let settings: Record<string, unknown> = {};
+      let existing: Record<string, unknown> = {};
       if (fs.existsSync(settingsPath)) {
         try {
-          settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+          existing = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
         } catch {
-          settings = {};
+          existing = {};
         }
       }
-      settings["alpSdk.path"] = sdkPath;
+      const settings = { ...existing, "alpSdk.path": sdkPath };
       fs.writeFileSync(
         settingsPath,
         JSON.stringify(settings, null, 2) + "\n",
         "utf8",
       );
+      return { ok: true };
     } catch (err) {
-      void vscode.window.showWarningMessage(
-        `Alp: project created, but pinning its SDK failed — ${String(err)}`,
-      );
+      return { ok: false, error: String(err) };
     }
   }
 

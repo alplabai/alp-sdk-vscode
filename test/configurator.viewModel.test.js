@@ -13,10 +13,10 @@ function catalogue() {
   return {
     soms: [
       {
-        sku: "E1M-AEN701",
-        displayName: "E1M-AEN701 (Alif Ensemble E7)",
+        sku: "E1M-AEN801",
+        displayName: "E1M-AEN801 (Alif Ensemble E8)",
         family: "alif-ensemble",
-        silicon: "alif:ensemble:e7",
+        silicon: "alif:ensemble:e8",
         preferredBackend: "ethos_u",
         capabilities: {},
         defaultBoard: "E1M-EVK",
@@ -66,7 +66,7 @@ function catalogue() {
     libraries: [{ id: "etl" }, { id: "mbedtls" }],
     socs: [
       {
-        ref: "alif:ensemble:e7",
+        ref: "alif:ensemble:e8",
         vendor: "Alif",
         family: "Ensemble",
         part: "E7",
@@ -80,7 +80,7 @@ function catalogue() {
 test("VM for an AEN board derives hardware, accelerators, carriers, cores", () => {
   const vm = buildConfiguratorViewModel(parseBoardConfig(EDGEAI), catalogue());
   assert.equal(vm.sdkConnected, true);
-  assert.equal(vm.som.selected, "E1M-AEN701");
+  assert.equal(vm.som.selected, "E1M-AEN801");
   assert.equal(vm.hardware.preferredBackend, "ethos_u");
   assert.deepEqual(
     vm.hardware.cores.map((c) => c.id),
@@ -123,6 +123,22 @@ test("VM for a V2M board lights DeepX and offers the deepx chip", () => {
   );
   assert.equal(acc.deepx_dxm1, true);
   assert.ok(vm.chips.some((c) => c.chipId === "deepx_dxm1"));
+});
+
+// #165: libraries are declared ONCE at the top level (ADR 0018); a CorePanel's
+// `libraries` must be the top-level array resolved for that core id, honoring
+// `cores:` scoping -- not a (removed) `cores.<id>.libraries` field.
+test("CorePanel.libraries resolves the top-level libraries[] scoped to each core", () => {
+  const board = parseBoardConfig(EDGEAI);
+  board.libraries = [
+    "etl", // project-wide: every core
+    { name: "mbedtls", cores: ["m55_hp"] }, // scoped: only m55_hp
+  ];
+  const vm = buildConfiguratorViewModel(board, catalogue());
+  const m55hp = vm.cores.find((c) => c.id === "m55_hp");
+  const a32 = vm.cores.find((c) => c.id === "a32_cluster");
+  assert.deepEqual(m55hp.libraries, ["etl", "mbedtls"]);
+  assert.deepEqual(a32.libraries, ["etl"]);
 });
 
 test("VM with an empty catalogue reports disconnected and null hardware", () => {

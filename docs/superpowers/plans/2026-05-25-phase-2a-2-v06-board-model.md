@@ -55,7 +55,7 @@ const { parseBoardConfig } = require("../packages/alp-core/dist/board/parse.js")
 
 const EDGEAI = `
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 preset: e1m-evk
 pins:
   - { e1m: E1M_I2C0, macro: EVK_I2C_BUS_SENSORS, doc: "Shared sensor bus" }
@@ -88,7 +88,7 @@ cores:
 
 const PRODUCTION = `
 som:
-  sku: E1M-AEN701
+  sku: E1M-AEN801
 preset: e1m-evk
 cores:
   a32_cluster:
@@ -130,7 +130,7 @@ module.exports = { EDGEAI, OBJDET, PRODUCTION };
 
 test("parseBoardConfig maps the EDGEAI example", () => {
   const c = parseBoardConfig(EDGEAI);
-  assert.equal(c.som.sku, "E1M-AEN701");
+  assert.equal(c.som.sku, "E1M-AEN801");
   assert.equal(c.preset, "e1m-evk");
   assert.deepEqual(Object.keys(c.cores), ["a32_cluster", "m55_hp"]);
   assert.equal(c.cores.a32_cluster.os, "off");
@@ -462,7 +462,7 @@ for (const [name, text] of [["EDGEAI", EDGEAI], ["OBJDET", OBJDET], ["PRODUCTION
 test("serializeBoardConfig emits canonical top-level order (name, then som before cores)", () => {
   const yamlText = serializeBoardConfig({
     name: "demo",
-    som: { sku: "E1M-AEN701" },
+    som: { sku: "E1M-AEN801" },
     cores: { m55_hp: { app: "./src" } },
     chips: ["lsm6dso"],
   });

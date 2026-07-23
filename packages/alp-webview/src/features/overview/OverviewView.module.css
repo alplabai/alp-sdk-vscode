@@ -90,6 +90,30 @@
   gap: var(--space-3);
 }
 
+/* The Alp SDK card doubles as a jump to the SDK Manager section below. */
+.statusCard[data-clickable] {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+.statusCard[data-clickable]:hover {
+  border-color: var(--vscode-focusBorder, #4c8bf5);
+}
+.statusCard[data-clickable]:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #4c8bf5);
+  outline-offset: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .statusCard[data-clickable] {
+    transition: none;
+  }
+}
+
 .statusCard[data-state="ready"] {
   border-color: color-mix(
     in srgb,

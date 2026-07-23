@@ -5,6 +5,7 @@ import type {
   ChipChoice,
   ConfiguratorViewModel,
   CorePanel,
+  LibraryEntry,
   ModelEntry,
   Ota,
 } from "../../types";
@@ -491,6 +492,84 @@ const PERIPHERAL_CHOICES = [
   "watchdog",
 ];
 
+/** Names of the top-level `libraries[]` entries effective for `coreId`.
+ * Mirrors `librariesForCore` in `@alp-sdk/core/board/models` (separate
+ * webview build, kept in sync manually — see types.ts header comment). */
+function librariesForCore(
+  libraries: LibraryEntry[] | undefined,
+  coreId: string,
+): string[] {
+  return (libraries ?? [])
+    .filter(
+      (entry) =>
+        typeof entry === "string" ||
+        entry.cores === undefined ||
+        entry.cores.includes(coreId),
+    )
+    .map((entry) => (typeof entry === "string" ? entry : entry.name));
+}
+
+/** Apply a per-core library-name pick (this core's Libraries TagSelector) onto
+ * the top-level `libraries[]` array. Mirrors `applyCoreLibrarySelection` in
+ * `@alp-sdk/core/board/models` (same manual-sync caveat as above).
+ *
+ * Removing a *project-wide* entry (bare string / no `cores`) from a single
+ * core's picker can't be expressed as "exclude just this core" — the schema
+ * has no such primitive — so it is narrowed to the other ids in `allCoreIds`
+ * (dropped entirely if that leaves none). `allCoreIds` is the SoM topology's
+ * full core list (`vm.cores`, including topology-inherited cores with no
+ * board.yaml override); narrowing still silently drops the library for any
+ * core NOT in that list. */
+function applyCoreLibrarySelection(
+  libraries: LibraryEntry[] | undefined,
+  coreId: string,
+  nextNames: string[],
+  allCoreIds: string[],
+): LibraryEntry[] {
+  const next = libraries ? [...libraries] : [];
+  const currentNames = librariesForCore(next, coreId);
+  const nextSet = new Set(nextNames);
+  const indexOf = (name: string) =>
+    next.findIndex((e) =>
+      typeof e === "string" ? e === name : e.name === name,
+    );
+
+  for (const name of currentNames) {
+    if (nextSet.has(name)) continue;
+    const idx = indexOf(name);
+    if (idx === -1) continue;
+    const entry = next[idx];
+    if (typeof entry === "string" || entry.cores === undefined) {
+      const others = allCoreIds.filter((id) => id !== coreId);
+      if (others.length === 0) next.splice(idx, 1);
+      else next[idx] = { name, cores: others };
+    } else {
+      const cores = entry.cores.filter((id) => id !== coreId);
+      if (cores.length === 0) next.splice(idx, 1);
+      else next[idx] = { ...entry, cores };
+    }
+  }
+
+  for (const name of nextNames) {
+    if (currentNames.includes(name)) continue;
+    const idx = indexOf(name);
+    if (idx === -1) {
+      next.push({ name, cores: [coreId] });
+    } else {
+      const entry = next[idx];
+      if (
+        typeof entry !== "string" &&
+        entry.cores !== undefined &&
+        !entry.cores.includes(coreId)
+      ) {
+        next[idx] = { ...entry, cores: [...entry.cores, coreId] };
+      }
+    }
+  }
+
+  return next;
+}
+
 function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
   const { mutate, vm } = cfg;
   const ensure = (d: BoardConfig) => {
@@ -651,9 +730,16 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
               placeholder="Add library…"
               onChange={(next) =>
                 mutate((d) => {
-                  const c = ensure(d);
-                  if (next.length) c.libraries = next;
-                  else delete c.libraries;
+                  ensure(d);
+                  const allCoreIds = (vm?.cores ?? []).map((c) => c.id);
+                  const libraries = applyCoreLibrarySelection(
+                    d.libraries,
+                    core.id,
+                    next,
+                    allCoreIds,
+                  );
+                  if (libraries.length) d.libraries = libraries;
+                  else delete d.libraries;
                 })
               }
             />
@@ -960,17 +1046,6 @@ function AdvancedSection({ cfg }: { cfg: UseConfigurator }) {
                 />
               </Field>
             </Row>
-            <Check
-              checked={!!boot.anti_rollback}
-              label="Anti-rollback (monotonic image counters)"
-              onChange={(c) =>
-                mutate((d) => {
-                  d.boot = d.boot || {};
-                  if (c) d.boot.anti_rollback = true;
-                  else delete d.boot.anti_rollback;
-                })
-              }
-            />
           </>
         ) : null}
       </AdvCard>
@@ -1555,29 +1630,32 @@ export function ConfiguratorView() {
 
   const validClass = validation.errors.length ? styles.vErr : styles.vOk;
   const validText = validation.errors.length
-    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""} — resolve to save`
+    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""}`
     : validation.warnings.length
       ? `⚠ ${validation.warnings.length} warning${validation.warnings.length > 1 ? "s" : ""}`
       : "✓ Valid — ready to save";
-
-  // A valid board can always be saved — persisting an unchanged/first-time config
-  // is a harmless (idempotent) write. Only validation errors block Save, so the
-  // action is never a dead end for a valid config.
-  const saveTitle =
-    validation.errors.length > 0
-      ? `Resolve ${validation.errors.length} validation error${validation.errors.length > 1 ? "s" : ""} before saving (see the list above).`
-      : "Save board.yaml";
 
   function renderSection() {
     if (!cfg.loaded) {
       return <p className={styles.secHelp}>Loading board.yaml…</p>;
     }
+    if (cfg.parseError) {
+      return (
+        <div className={styles.section}>
+          <SectionLabel
+            text="board.yaml could not be parsed"
+            hint="Fix the YAML syntax in the text editor (Reopen Editor With… → Text Editor), then reopen the configurator. Editing is disabled here so your file is never overwritten."
+          />
+          <p className={`${styles.secHelp} ${styles.err}`}>{cfg.parseError}</p>
+        </div>
+      );
+    }
     if (!sdkConnected) {
       return (
         <div className={styles.section}>
           <SectionLabel
-            text="Not connected"
-            hint="No Alp SDK found. Set alpSdk.path to your alp-sdk checkout to load SoMs, boards, chips and libraries."
+            text="SDK catalog not connected"
+            hint="No Alp SDK is linked, so the SoM / board / chip pickers can't load. Set alpSdk.path to your alp-sdk checkout to enable catalog-assisted editing — your board.yaml still validates and saves without it."
           />
         </div>
       );
@@ -1601,15 +1679,6 @@ export function ConfiguratorView() {
   return (
     <div className={styles.root}>
       <header className={styles.topbar}>
-        <div className={styles.brand}>
-          <span className={styles.bolt} aria-hidden="true">
-            <Icon name="bolt" size={16} />
-          </span>
-          <span className={styles.brandName}>
-            Alp<span className={styles.brandLab}>LAB</span>
-          </span>
-        </div>
-        <span className={styles.topDivider} aria-hidden="true" />
         <span className={styles.topTitle}>Board Configurator</span>
         <span className={styles.topSpacer} />
         <span className={styles.savedTag}>
@@ -1637,9 +1706,8 @@ export function ConfiguratorView() {
       {validation.errors.length > 0 && (
         <div className={styles.vBanner} role="alert">
           <p className={styles.vBannerHead}>
-            {validation.errors.length} item
-            {validation.errors.length > 1 ? "s" : ""} to resolve before you can
-            save board.yaml:
+            This board.yaml has {validation.errors.length} validation error
+            {validation.errors.length > 1 ? "s" : ""}:
           </p>
           <ul className={styles.vBannerList}>
             {validation.errors.map((e, i) => (
@@ -1668,8 +1736,7 @@ export function ConfiguratorView() {
         <button
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
-          disabled={validation.errors.length > 0}
-          title={saveTitle}
+          title="Save board.yaml"
           onClick={save}
         >
           Save board.yaml

@@ -247,6 +247,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
   } = useSdk();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showAllReleases, setShowAllReleases] = useState(false);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load the release list once so the list isn't a manual step.
@@ -318,17 +319,6 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
             <Button appearance="secondary" onClick={() => browseSdk()}>
               Browse…
             </Button>
-            <Button
-              appearance="primary"
-              onClick={() =>
-                postMessage({
-                  type: "runCommand",
-                  command: "alp.openSdkManager",
-                })
-              }
-            >
-              Manage SDK →
-            </Button>
           </div>
         </div>
       </div>
@@ -336,6 +326,13 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
   }
 
   const rows = buildRows(releases, sdk.localEntries, sdk.activePath);
+  // Keep the list short: show the two newest releases (plus the active one, so
+  // it's never hidden), collapse the rest behind a toggle.
+  const VISIBLE_RELEASES = 2;
+  const visibleRows = showAllReleases
+    ? rows
+    : rows.filter((row, index) => index < VISIBLE_RELEASES || row.isActive);
+  const hiddenCount = rows.length - visibleRows.length;
 
   return (
     <div className={layout.section}>
@@ -387,7 +384,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
         </p>
       ) : (
         <div className={styles.releaseList}>
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <SdkRowCard
               key={row.id}
               row={row}
@@ -401,6 +398,24 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
               onRemove={() => row.localPath && uninstall(row.localPath)}
             />
           ))}
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className={styles.showMore}
+              onClick={() => setShowAllReleases(true)}
+            >
+              Show {hiddenCount} older release{hiddenCount > 1 ? "s" : ""}
+            </button>
+          )}
+          {showAllReleases && rows.length > VISIBLE_RELEASES && (
+            <button
+              type="button"
+              className={styles.showMore}
+              onClick={() => setShowAllReleases(false)}
+            >
+              Show fewer
+            </button>
+          )}
         </div>
       )}
     </div>

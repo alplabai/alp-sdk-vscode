@@ -108,7 +108,16 @@ test("every curated ALP_* symbol is a real SDK Kconfig symbol (drift gate)", () 
       .map((s) => s.trim())
       .filter((s) => s && !s.startsWith("#")),
   );
-  assert.ok(vendored.size > 100, "vendored Kconfig symbol set looks truncated");
+  // alp-sdk#458 split the monolith into zephyr/Kconfig (1 symbol) + ~16
+  // rsourced fragments (~340 ALP_* symbols total). A vendor run that only
+  // reads the old fixed 2-file list (or stops following includes) would
+  // silently shrink this to ~75 while the old "curated (subset) vendored"
+  // check below still passes — this floor catches that collapse.
+  assert.ok(
+    vendored.size > 250,
+    `vendored Kconfig symbol set looks truncated (${vendored.size} symbols) — ` +
+      "did vendor-kconfig-symbols.mjs stop following rsource/source includes?",
+  );
   const curatedAlp = KCONFIG_SYMBOLS.map((s) => s.name).filter((n) =>
     n.startsWith("ALP_"),
   );
@@ -130,9 +139,73 @@ test("hoverPrjConf returns markdown for known symbols, null otherwise", () => {
   assert.equal(hoverPrjConf("CONFIG_NOT_A_REAL_SYMBOL"), null);
 });
 
-test("every curated symbol has a non-empty doc + valid type", () => {
+test("every symbol has a non-empty doc, and a valid type when it claims one", () => {
   for (const s of KCONFIG_SYMBOLS) {
     assert.ok(s.name && s.doc, `symbol ${s.name} needs a doc`);
-    assert.ok(["bool", "int", "hex", "string"].includes(s.type));
+    // `type` is OPTIONAL by design: entries harvested from metadata/ carry one
+    // only where the harvest could prove it (see
+    // scripts/vendor-kconfig-metadata.mjs). An absent type must stay absent —
+    // lintPrjConf keys its value check on `type === "bool"`, so inventing a
+    // type here would turn silence into a wrong diagnostic.
+    if (s.type !== undefined) {
+      assert.ok(
+        ["bool", "int", "hex", "string"].includes(s.type),
+        `symbol ${s.name} has an invalid type ${JSON.stringify(s.type)}`,
+      );
+    }
   }
+});
+
+test("an untyped symbol is never value-linted", () => {
+  const untyped = KCONFIG_SYMBOLS.find((s) => s.type === undefined);
+  assert.ok(untyped, "expected at least one harvested untyped symbol");
+  // A bool-shaped violation on a typed symbol warns; the same shape on an
+  // untyped one must stay silent rather than guess.
+  assert.equal(lintPrjConf(`CONFIG_${untyped.name}=7\n`).length, 0);
+  assert.equal(lintPrjConf("CONFIG_ALP_SDK=7\n").length, 1);
+});
+
+test("the compiled metadata copy is not stale", () => {
+  // `tsc --build` is incremental and re-copies src/**/*.json into out/ only
+  // when a .ts file changed. Re-running scripts/vendor-kconfig-metadata.mjs
+  // touches no .ts, so out/lsp/generated/kconfig-metadata.json silently keeps
+  // the PREVIOUS harvest — and every test here, which loads out/, then passes
+  // against stale data. This bit during development (out/ held 88 typed
+  // symbols while src/ held 165). Fail loudly instead.
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const read = (p) =>
+    JSON.parse(fs.readFileSync(path.join(__dirname, "..", p), "utf-8"));
+
+  const src = read("src/lsp/generated/kconfig-metadata.json");
+  const out = read("out/lsp/generated/kconfig-metadata.json");
+  assert.deepEqual(
+    out,
+    src,
+    "out/lsp/generated/kconfig-metadata.json is stale relative to src/ — " +
+      "run `pnpm exec tsc --build --force` after re-vendoring.",
+  );
+});
+
+test("the generated metadata layer is merged in, and curated entries win", () => {
+  const byName = new Map(KCONFIG_SYMBOLS.map((s) => [s.name, s]));
+
+  // Harvested from metadata/chips/*.yaml — proof the generated layer landed.
+  // (A4988 stepper driver; a real chip_id, not a placeholder.)
+  const chip = byName.get("ALP_SDK_CHIP_A4988");
+  assert.ok(chip, "expected a harvested chip symbol in the merged table");
+  assert.equal(chip.type, "bool");
+  assert.match(chip.source ?? "", /^metadata\/chips\//);
+
+  // Curated entry keeps its hand-written prose even though the harvest also
+  // reaches ALP_SDK (via zephyr/Kconfig).
+  const sdk = byName.get("ALP_SDK");
+  assert.ok(sdk);
+  assert.equal(sdk.source, undefined, "curated entry must win over harvested");
+
+  assert.ok(
+    KCONFIG_SYMBOLS.length > 150,
+    `merged table looks truncated (${KCONFIG_SYMBOLS.length}) — did ` +
+      "scripts/vendor-kconfig-metadata.mjs fail to harvest metadata/?",
+  );
 });

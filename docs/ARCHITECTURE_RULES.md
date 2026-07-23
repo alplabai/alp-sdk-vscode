@@ -69,6 +69,9 @@ Owners:
 
 - `src/*/vscodeAdapter.ts`
 - `src/*/adapterCore.ts` when seam extraction is needed
+- `src/alpCli/download.ts` — a real network/filesystem seam extracted out of
+  `vscodeAdapter.ts` so it's unit-testable under `node:test` (against a local
+  http server) without `vscode`
 
 Responsibilities:
 

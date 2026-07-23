@@ -26,6 +26,8 @@ test("createValidatorPlan builds the expected validator command", () => {
     "/workspace/app/board.yaml",
   );
 
+  // scriptPath is toPosix'd at the source (validation/service.ts), so this
+  // asserts forward-slash directly instead of laundering separators.
   assert.equal(
     plan.scriptPath,
     "/workspace/sdk/scripts/validate_board_yaml.py",
@@ -34,30 +36,14 @@ test("createValidatorPlan builds the expected validator command", () => {
   assert.match(plan.commandLine, /python3 .*validate_board_yaml.py --input/);
 });
 
-test("analyzeValidationResult classifies missing-preset warnings", () => {
-  const result = analyzeValidationResult({
-    status: 2,
-    stdout: "",
-    stderr: "FAIL som preset: missing preset\nsummary: missing-preset\n",
-  });
-
-  assert.equal(result.outcome, "missing-preset");
-  assert.deepEqual(result.issues, [
-    { message: "som preset: missing preset", severity: "warning" },
-  ]);
-});
-
-test("analyzeValidationResult classifies hardware-revision failures", () => {
-  const result = analyzeValidationResult({
-    status: 3,
-    stdout: "",
-    stderr: "FAIL hw_rev: unsupported revision\nsummary: hardware-revision\n",
-  });
-
-  assert.equal(result.outcome, "hardware-revision");
-  assert.deepEqual(result.issues, [
-    { message: "hw_rev: unsupported revision", severity: "error" },
-  ]);
+test("analyzeValidationResult treats out-of-contract exit codes as failed", () => {
+  // v0.10+ validate_board_yaml.py returns only {0,1}; any other non-zero exit
+  // (the pin-era 2/3) is a failed verdict now, not a specific outcome. (#172)
+  for (const status of [2, 3, 9]) {
+    const result = analyzeValidationResult({ status, stdout: "", stderr: "" });
+    assert.equal(result.outcome, "failed");
+    assert.deepEqual(result.issues, []);
+  }
 });
 
 test("analyzeValidationResult classifies hint lines as suggestions", () => {
@@ -77,14 +63,14 @@ test("analyzeValidationResult classifies hint lines as suggestions", () => {
 
 test("analyzeValidationResult combines FAIL continuation lines", () => {
   const result = analyzeValidationResult({
-    status: 2,
+    status: 1,
     stdout: "",
     stderr:
       "FAIL board: `preset: my-board` does not resolve\n" +
       "     expected shared definition at metadata/boards/my-board.yaml\n",
   });
 
-  assert.equal(result.outcome, "missing-preset");
+  assert.equal(result.outcome, "schema-violation");
   assert.equal(result.issues.length, 1);
   assert.match(result.issues[0].message, /preset: my-board.*does not resolve/);
   assert.match(result.issues[0].message, /expected shared definition/);
@@ -102,9 +88,9 @@ test("analyzeValidationResult parses ALP-B* rich error block", () => {
     "",
   ].join("\n");
 
-  const result = analyzeValidationResult({ status: 2, stdout: "", stderr });
+  const result = analyzeValidationResult({ status: 1, stdout: "", stderr });
 
-  assert.equal(result.outcome, "missing-preset");
+  assert.equal(result.outcome, "schema-violation");
   assert.equal(result.issues.length, 1);
   const issue = result.issues[0];
   assert.equal(issue.code, "ALP-B005");
@@ -207,6 +193,18 @@ schema_version: 2
 board_id: test-v2-board
 `;
 
+// The real contract key is camelCase `schemaVersion` (schemas/board.schema.json
+// `schemaVersion`), not the legacy `schema_version` the fixtures above use.
+// v2 rules (top-level `os:` rejected) must still apply.
+const V2_CAMELCASE_TOP_LEVEL_OS_YAML = `\
+schemaVersion: 2
+board_id: test-v2-board
+os: zephyr
+cores:
+  m33:
+    os: zephyr
+`;
+
 test("validateBoardYamlLocally: v1 board passes without errors", () => {
   const result = validateBoardYamlLocally(V1_ZEPHYR_YAML);
   assert.equal(result.outcome, "clean");
@@ -233,4 +231,12 @@ test("validateBoardYamlLocally: v2 with no cores block returns schema-violation"
   assert.equal(result.issues.length, 1);
   assert.equal(result.issues[0].severity, "error");
   assert.match(result.issues[0].message, /'cores:' block is required/);
+});
+
+test("validateBoardYamlLocally: a real (camelCase schemaVersion) v2 board still applies v2 rules", () => {
+  const result = validateBoardYamlLocally(V2_CAMELCASE_TOP_LEVEL_OS_YAML);
+  assert.equal(result.outcome, "schema-violation");
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.issues[0].severity, "error");
+  assert.match(result.issues[0].message, /top-level 'os:' is not valid/);
 });

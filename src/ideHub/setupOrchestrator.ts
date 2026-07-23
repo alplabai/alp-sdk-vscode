@@ -15,6 +15,7 @@
 
 import * as vscode from "vscode";
 import type { ToolVersions } from "./messages";
+import { log } from "../util";
 import { queryAlpIdeState } from "./vscodeAdapter";
 
 const ORCHESTRATOR_KEY = "alp.setupOrchestrator.lastShownFingerprint";
@@ -45,7 +46,7 @@ export async function maybeOfferSetupPanel(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   try {
-    const state = await queryAlpIdeState();
+    const state = await queryAlpIdeState(null, context);
 
     // --- drift detection ---------------------------------------------------
     const currentVersionFp = versionFingerprint(state.setup.toolVersions);
@@ -86,8 +87,6 @@ export async function maybeOfferSetupPanel(
     const lastShown = context.globalState.get<string>(ORCHESTRATOR_KEY, "");
     if (lastShown === fingerprint) return;
 
-    await context.globalState.update(ORCHESTRATOR_KEY, fingerprint);
-
     const issueLabels: Record<string, string> = {
       python: "Python not found",
       west: "west not found",
@@ -99,11 +98,21 @@ export async function maybeOfferSetupPanel(
     const action = await vscode.window.showWarningMessage(
       `Alp IDE: environment not ready — ${summary}.`,
       "Open Alp IDE",
+      "Don't show again",
     );
+
+    // Only record the fingerprint once the user actually responded; an
+    // auto-dismissed toast returns undefined and is left unrecorded so it is
+    // retried on the next activation rather than lost for the install lifetime.
+    if (action !== undefined) {
+      await context.globalState.update(ORCHESTRATOR_KEY, fingerprint);
+    }
     if (action === "Open Alp IDE") {
       await vscode.commands.executeCommand("alp.ideHub.focus");
     }
-  } catch {
-    // Never block activation.
+  } catch (err) {
+    // Never block activation — but record why the readiness check failed
+    // instead of dropping it silently.
+    log(`[setup] readiness check failed: ${String(err)}`, "warn");
   }
 }

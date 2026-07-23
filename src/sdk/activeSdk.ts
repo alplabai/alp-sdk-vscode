@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { checkSdkReadiness, switchActiveSdk } from "@alp-sdk/core/sdk/service";
+import * as fs from "fs";
 import * as vscode from "vscode";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
+import { collectProjectContext } from "../project/vscodeAdapter";
+import { log, reportError } from "../util";
 import { writeAlpSetting } from "./settingsWrite";
 
 /**
@@ -12,13 +16,60 @@ import { writeAlpSetting } from "./settingsWrite";
  * native trees + status bar afterwards.
  */
 export async function setActiveSdk(sdkPath: string): Promise<void> {
+  // Probe readiness before writing: a folder that is not an SDK root (missing
+  // scripts/alp_project.py) would poison alpSdk.path — resolveSdkRoot rejects it
+  // AND skips auto-discovery of a valid sibling. Surface the error, write nothing.
+  const report = checkSdkReadiness(
+    sdkPath,
+    (p) => fs.existsSync(p),
+    (p) => {
+      try {
+        return fs.readFileSync(p, "utf8");
+      } catch {
+        return "";
+      }
+    },
+  );
+  if (report.state === "missing") {
+    log(
+      `[sdk] activate rejected — ${sdkPath} is not an SDK root: ${report.issues.join(" ")}`,
+    );
+    void reportError(report.issues.join(" "));
+    return;
+  }
+
   const hasWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
   const target = hasWorkspace
     ? vscode.ConfigurationTarget.Workspace
     : vscode.ConfigurationTarget.Global;
   const written = await writeAlpSetting("path", sdkPath, target);
   if (!written) return;
+
+  // Mirror the choice into the shared `.alp/sdk-path` pointer so the CLI
+  // (`alp sdk current`/`switch`) and the extension agree on the active SDK.
+  // Best-effort: the setting write above is authoritative — a pointer-write
+  // failure (read-only tree, no workspace) must not break activation.
+  const workspaceRoot = collectProjectContext().workspaceRoot;
+  if (workspaceRoot) {
+    try {
+      switchActiveSdk(
+        workspaceRoot,
+        sdkPath,
+        (p, content) => fs.writeFileSync(p, content),
+        (p) => fs.mkdirSync(p, { recursive: true }),
+      );
+    } catch (err) {
+      // Pointer mirror is best-effort; the setting write is the source of truth.
+      log(
+        `[sdk] .alp/sdk-path pointer mirror failed (best-effort): ${String(err)}`,
+      );
+    }
+  }
+
   await vscode.commands.executeCommand("alp.views.refresh");
+  log(
+    `[sdk] active SDK set → ${sdkPath} (${hasWorkspace ? "workspace" : "global"})`,
+  );
   void vscode.window.showInformationMessage(
     hasWorkspace
       ? `Alp: active SDK for this project → ${sdkPath}`
@@ -61,6 +112,9 @@ export async function clearActiveSdk(): Promise<void> {
 
   if (!workspaceCleared && !globalCleared) return; // nothing changed
   await vscode.commands.executeCommand("alp.views.refresh");
+  log(
+    `[sdk] active SDK cleared (workspace=${workspaceCleared}, global=${globalCleared})`,
+  );
 
   if (workspaceCleared && globalCleared) {
     void vscode.window.showInformationMessage("Alp: active SDK cleared.");

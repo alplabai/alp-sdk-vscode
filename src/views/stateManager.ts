@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import type { AlpIdeState } from "../ideHub/messages";
 import { emptyAlpIdeState } from "../ideHub/messages";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
+import { log } from "../util";
 
 export class StateManager implements vscode.Disposable {
   private _state: AlpIdeState = emptyAlpIdeState();
@@ -11,13 +12,18 @@ export class StateManager implements vscode.Disposable {
 
   readonly onStateChange = this._emitter.event;
 
+  constructor(private readonly context: vscode.ExtensionContext) {}
+
   get state(): AlpIdeState {
     return this._state;
   }
 
   async refresh(lastBootstrapAt: string | null = null): Promise<void> {
-    this._state = await queryAlpIdeState(lastBootstrapAt).catch(() =>
-      emptyAlpIdeState(),
+    this._state = await queryAlpIdeState(lastBootstrapAt, this.context).catch(
+      (err) => {
+        log(`Alp IDE state refresh failed; showing empty state: ${err}`);
+        return emptyAlpIdeState();
+      },
     );
     this._emitter.fire(this._state);
   }

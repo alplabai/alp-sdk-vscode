@@ -12,7 +12,13 @@ import {
 import { resolveProjectContext } from "@alp-sdk/core/project/service";
 
 export function collectProjectContext(): ProjectContext {
-  return resolveProjectContext(createResolutionInput(), fs.existsSync);
+  return resolveProjectContext(createResolutionInput(), fs.existsSync, (p) => {
+    try {
+      return fs.readFileSync(p, "utf8");
+    } catch {
+      return "";
+    }
+  });
 }
 
 function createResolutionInput(): ProjectResolutionInput {
@@ -54,7 +60,12 @@ function installedSdkRoots(): string[] {
 }
 
 function readProjectSettings(): ProjectSettings {
-  const config = vscode.workspace.getConfiguration("alpSdk");
+  // Resource-scoped so a multi-root folder's .vscode/settings.json can override
+  // boardYamlPath; falls back to window scope when no editor is active.
+  const config = vscode.workspace.getConfiguration(
+    "alpSdk",
+    vscode.window.activeTextEditor?.document.uri,
+  );
   return {
     sdkPath: config.get<string>("path", ""),
     pythonPath: config.get<string>("pythonPath", ""),

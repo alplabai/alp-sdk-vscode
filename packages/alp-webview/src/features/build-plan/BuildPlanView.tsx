@@ -18,20 +18,19 @@ const isReady = (value?: string): boolean => !!value && value !== "TBD";
 
 /** The system manifest — the resolved per-core contract (`alp build --manifest`):
  *  slices with their runtime + flash wiring, IPC links, and helper MCUs. The
- *  per-slice Build/Flash buttons show/hide straight from the manifest: an
- *  `os: off` slice has none; Flash appears only when the slice carries a real
- *  `flash_method` (not the `TBD` placeholder). */
+ *  per-slice Flash button shows/hides straight from the manifest: it appears
+ *  only when the slice carries a real `flash_method` (not the `TBD`
+ *  placeholder). There is no per-slice Build button — `tan build` has no
+ *  `--core` option, so building a single slice isn't a real CLI command. */
 function SystemManifestSection({
   manifest,
   postBuild,
   error,
-  buildSlice,
   flashSlice,
 }: {
   manifest: SystemManifest | null;
   postBuild: boolean;
   error: string | null;
-  buildSlice: (coreId: string) => void;
   flashSlice: (coreId: string) => void;
 }) {
   if (!manifest) {
@@ -69,15 +68,6 @@ function SystemManifestSection({
                 {s.build_dir ?? s.board ?? s.machine ?? s.image ?? s.app ?? "—"}
               </code>
               <span className={styles.manifestActions}>
-                {active && (
-                  <button
-                    type="button"
-                    className={styles.sliceBtn}
-                    onClick={() => buildSlice(s.core_id)}
-                  >
-                    Build
-                  </button>
-                )}
                 {active && isReady(s.flash_method) && (
                   <button
                     type="button"
@@ -163,7 +153,6 @@ export function BuildPlanView() {
     reload,
     materialise,
     build,
-    buildSlice,
     flashSlice,
   } = useBuildPlan();
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -331,7 +320,6 @@ export function BuildPlanView() {
             manifest={manifest}
             postBuild={manifestPostBuild}
             error={manifestError}
-            buildSlice={buildSlice}
             flashSlice={flashSlice}
           />
         </div>

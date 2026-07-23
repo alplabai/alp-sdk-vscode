@@ -31,7 +31,7 @@ Out of scope (later slices): the webview shell/styling, rendering, edit/save,
   `E1M-AEN*→aen`, `E1M-NX9*→imx93`, `E1M-V2N*→v2n`, `E1M-V2M*→v2n-m1`. `deepx_dxm1` lists
   only `v2n-m1` (so DeepX is hidden on AEN/V2N — matches "AEN has no DeepX").
 - A SoC's cores live in `catalogue.socs` keyed by `ref` == the SoM's `silicon`
-  (e.g. `alif:ensemble:e7`).
+  (e.g. `alif:ensemble:e8`).
 - Existing reusable pieces: `acceleratorAvailability`, `boardsForSom`, `chipDefaults`
   (`@alp-sdk/core/sdkCatalogue/derive`); `validateBoardConfig`
   (`@alp-sdk/core/board/validate`); models `BoardConfig`, `SdkCatalogue`, `SomPreset`,

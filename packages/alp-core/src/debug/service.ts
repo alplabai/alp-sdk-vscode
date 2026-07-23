@@ -409,7 +409,6 @@ export function createDebugProfile(
         os: "zephyr",
         executablePath: exe("${workspaceFolder}/build/app/zephyr/zephyr.elf"),
         cwd: "${workspaceFolder}",
-        preLaunchTask: "alp: build active target",
       };
 
       switch (server) {
@@ -445,7 +444,6 @@ export function createDebugProfile(
         os: "baremetal",
         executablePath: exe("${workspaceFolder}/build/baremetal/app.elf"),
         cwd: "${workspaceFolder}",
-        preLaunchTask: "alp: build baremetal target",
         device: "<resolved-device>",
         interface: "swd",
         svdFile: "<resolved-svd>",
@@ -460,7 +458,6 @@ export function createDebugProfile(
         os: "yocto",
         executablePath: exe("${workspaceFolder}/build/yocto/app"),
         cwd: "${workspaceFolder}",
-        preLaunchTask: "alp: deploy and start gdbserver",
         miMode: "gdb",
         miDebuggerServerAddress: "<host>:<port>",
         miDebuggerPath: "<resolved-gdb>",
@@ -478,7 +475,6 @@ export function createDebugProfile(
           "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
         ),
         cwd: "${workspaceFolder}",
-        preLaunchTask: "alp: build native_sim target",
       };
   }
 
@@ -497,7 +493,6 @@ export function debugProfileToLaunchDraft(
         cwd: profile.cwd,
         executable: profile.executablePath,
         runToEntryPoint: "main",
-        preLaunchTask: profile.preLaunchTask,
       };
 
       if (profile.server === "openocd") {
@@ -534,7 +529,6 @@ export function debugProfileToLaunchDraft(
         device: profile.device,
         interface: profile.interface,
         svdFile: profile.svdFile,
-        preLaunchTask: profile.preLaunchTask,
       };
     case "yocto-userspace":
       return {
@@ -547,7 +541,6 @@ export function debugProfileToLaunchDraft(
         miDebuggerServerAddress: profile.miDebuggerServerAddress,
         miDebuggerPath: profile.miDebuggerPath,
         setupCommands: profile.setupCommands,
-        preLaunchTask: profile.preLaunchTask,
       };
     case "native-host":
       return {
@@ -556,7 +549,6 @@ export function debugProfileToLaunchDraft(
         request: "launch",
         program: profile.executablePath,
         cwd: profile.cwd,
-        preLaunchTask: profile.preLaunchTask,
       };
   }
 }

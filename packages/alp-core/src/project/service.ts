@@ -1,24 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
-import { ProjectContext, ProjectResolutionInput } from "./models";
+import { resolveActiveSdk } from "../sdk/service";
 import { toPosix } from "../paths";
+import { ProjectContext, ProjectResolutionInput } from "./models";
+
+// All path joins/resolves are done through the path flavour of the DECLARED
+// target platform (`input.platform`), not the host's. In production the two are
+// identical (platform === process.platform), so behaviour is unchanged; the
+// distinction only matters under test, where a fixture can declare platform
+// "linux"/"win32" and get deterministic, host-independent path semantics.
+type PathImpl = typeof path.posix;
+
+function pathFor(platform: NodeJS.Platform): PathImpl {
+  return platform === "win32" ? path.win32 : path.posix;
+}
 
 export function resolveProjectContext(
   input: ProjectResolutionInput,
   pathExists: (candidatePath: string) => boolean,
+  readFile: (candidatePath: string) => string = () => "",
 ): ProjectContext {
+  const p = pathFor(input.platform);
   // Resolve all runtime inputs once so every surface reads the same project context.
   // workspaceRoot is normalized at its source (resolveWorkspaceRoot) so westCwd
   // + boardYaml derive a forward-slash root; sdkRoot is normalized here so every
   // resolveSdkRoot branch (explicit path, workspace-is-SDK, installed cache,
-  // sibling) lands platform-identical in the serialized context.
-  const workspaceRoot = resolveWorkspaceRoot(input.workspaceFolders);
+  // sibling) lands platform-identical in the serialized context. Needed even
+  // though `p` already picks posix/win32 by the *declared* platform: in
+  // production `input.platform` is always `process.platform`, so on a real
+  // Windows host `p` is `path.win32` and still emits `\`.
+  const workspaceRoot = resolveWorkspaceRoot(
+    input.workspaceFolders,
+    input.settings.boardYamlPath,
+    pathExists,
+    p,
+  );
   const sdkRoot = resolveSdkRoot(
+    workspaceRoot,
     input.workspaceFolders,
     input.settings.sdkPath,
     input.installedSdkRoots ?? [],
     pathExists,
+    readFile,
+    p,
   );
 
   return {
@@ -27,6 +52,7 @@ export function resolveProjectContext(
     boardYamlPath: resolveBoardYamlPath(
       workspaceRoot,
       input.settings.boardYamlPath,
+      p,
     ),
     westCwd: resolveWestCwd(workspaceRoot, input.settings.westCwd),
     pythonBinary: resolvePythonBinary(
@@ -38,26 +64,50 @@ export function resolveProjectContext(
 
 function resolveWorkspaceRoot(
   workspaceFolders: readonly string[],
+  configuredBoardYamlPath: string,
+  pathExists: (candidatePath: string) => boolean,
+  p: PathImpl,
 ): string | null {
-  return workspaceFolders.length > 0 ? toPosix(workspaceFolders[0]!) : null;
+  if (workspaceFolders.length === 0) return null;
+  // Multi-root: target the folder that actually holds the configured board.yaml
+  // so the loader, Projects tree, and west all operate on the same project —
+  // not blindly workspaceFolders[0]. Falls back to the first folder.
+  const folderWithBoardYaml = workspaceFolders.find((folder) =>
+    pathExists(resolveBoardYamlPath(folder, configuredBoardYamlPath, p)!),
+  );
+  return toPosix(folderWithBoardYaml ?? workspaceFolders[0]!);
 }
 
 function resolveSdkRoot(
+  workspaceRoot: string | null,
   workspaceFolders: readonly string[],
   configuredSdkPath: string,
   installedSdkRoots: readonly string[],
   pathExists: (candidatePath: string) => boolean,
+  readFile: (candidatePath: string) => string,
+  p: PathImpl,
 ): string | null {
   // Prefer explicit SDK path, but only if it contains the loader entrypoint.
   const trimmedConfiguredPath = configuredSdkPath.trim();
   if (trimmedConfiguredPath) {
-    return containsLoaderScript(trimmedConfiguredPath, pathExists)
+    return containsLoaderScript(trimmedConfiguredPath, pathExists, p)
       ? trimmedConfiguredPath
       : null;
   }
 
+  // Shared `.alp/sdk-path` pointer, written by `alp sdk switch` and the
+  // extension's "Select active SDK". Sits below the explicit setting but above
+  // auto-discovery, and only when it still points at a valid SDK root — a stale
+  // pointer falls through so it can't lock out auto-discovery.
+  if (workspaceRoot) {
+    const pointer = resolveActiveSdk(workspaceRoot, pathExists, readFile, p);
+    if (pointer && containsLoaderScript(pointer, pathExists, p)) {
+      return pointer;
+    }
+  }
+
   // Auto-discovery is valid only when exactly one SDK root is detected.
-  const candidates = collectSdkCandidates(workspaceFolders, pathExists);
+  const candidates = collectSdkCandidates(workspaceFolders, pathExists, p);
   if (candidates.length === 1) {
     return candidates[0]!;
   }
@@ -71,7 +121,7 @@ function resolveSdkRoot(
   // alpSdk.path set (e.g. straight after `alp sdk install`, before activation).
   for (const installedRoot of installedSdkRoots) {
     const trimmed = installedRoot.trim();
-    if (trimmed && containsLoaderScript(trimmed, pathExists)) {
+    if (trimmed && containsLoaderScript(trimmed, pathExists, p)) {
       return trimmed;
     }
   }
@@ -82,20 +132,21 @@ function resolveSdkRoot(
 function collectSdkCandidates(
   workspaceFolders: readonly string[],
   pathExists: (candidatePath: string) => boolean,
+  p: PathImpl,
 ): string[] {
   const candidates = new Set<string>();
 
   for (const workspaceFolder of workspaceFolders) {
     // Check both workspace root and the conventional sibling alp-sdk folder.
-    if (containsLoaderScript(workspaceFolder, pathExists)) {
+    if (containsLoaderScript(workspaceFolder, pathExists, p)) {
       candidates.add(workspaceFolder);
     }
 
-    // path.join (lexical, cwd-independent) not path.resolve: on Windows
-    // resolve() treats a POSIX-absolute folder as relative and injects the cwd
-    // drive, breaking the sibling match. join stays platform-deterministic.
-    const siblingSdk = toPosix(path.join(workspaceFolder, "..", "alp-sdk"));
-    if (containsLoaderScript(siblingSdk, pathExists)) {
+    // p.join (lexical, cwd-independent) not p.resolve: on Windows resolve()
+    // treats a POSIX-absolute folder as relative and injects the cwd drive,
+    // breaking the sibling match. join stays platform-deterministic.
+    const siblingSdk = toPosix(p.join(workspaceFolder, "..", "alp-sdk"));
+    if (containsLoaderScript(siblingSdk, pathExists, p)) {
       candidates.add(siblingSdk);
     }
   }
@@ -106,12 +157,13 @@ function collectSdkCandidates(
 function resolveBoardYamlPath(
   workspaceRoot: string | null,
   configuredBoardYamlPath: string,
+  p: PathImpl,
 ): string | null {
   if (!workspaceRoot) return null;
   return toPosix(
-    path.isAbsolute(configuredBoardYamlPath)
+    p.isAbsolute(configuredBoardYamlPath)
       ? configuredBoardYamlPath
-      : path.join(workspaceRoot, configuredBoardYamlPath),
+      : p.join(workspaceRoot, configuredBoardYamlPath),
   );
 }
 
@@ -136,7 +188,8 @@ function resolvePythonBinary(
 function containsLoaderScript(
   rootPath: string,
   pathExists: (candidatePath: string) => boolean,
+  p: PathImpl,
 ): boolean {
   // scripts/alp_project.py is the canonical marker for an Alp SDK root.
-  return pathExists(toPosix(path.join(rootPath, "scripts", "alp_project.py")));
+  return pathExists(toPosix(p.join(rootPath, "scripts", "alp_project.py")));
 }

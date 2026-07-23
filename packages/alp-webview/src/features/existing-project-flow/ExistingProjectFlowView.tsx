@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
@@ -150,14 +149,9 @@ function InspectStep({
 interface ActivateStepProps {
   westStatus: WestStatus;
   onActivate: (full: boolean) => void;
-  activating: boolean;
 }
 
-function ActivateStep({
-  westStatus,
-  onActivate,
-  activating,
-}: ActivateStepProps) {
+function ActivateStep({ westStatus, onActivate }: ActivateStepProps) {
   return (
     <>
       <p className={styles.stepHeading}>Activate the Alp project</p>
@@ -169,11 +163,7 @@ function ActivateStep({
             Run <code>west init</code> and <code>west update</code> to fetch the
             SDK and all dependencies before building.
           </p>
-          <Button
-            appearance="primary"
-            loading={activating}
-            onClick={() => onActivate(true)}
-          >
+          <Button appearance="primary" onClick={() => onActivate(true)}>
             Initialise &amp; Activate
           </Button>
         </div>
@@ -216,8 +206,6 @@ export function ExistingProjectFlowView() {
   const { state } = useAppContext();
   const { state: stepper, goNext, goBack } = useStepper(STEPS);
 
-  const [activating, setActivating] = useState(false);
-
   const isLoading = !state;
   const workspaceRoot = state?.workspace?.workspaceRoot ?? null;
   const hasBoardYaml = state?.workspace?.boardYamlExists ?? false;
@@ -233,8 +221,13 @@ export function ExistingProjectFlowView() {
   }
 
   function handleActivate(full: boolean) {
-    setActivating(true);
-    postMessage({ type: "openExistingProject", activate: full });
+    // Act on the ALREADY-OPEN workspace (step 0 requires one), not a folder
+    // picker: "Initialise & Activate" (full, west missing) runs Bootstrap
+    // (west init/update); "Open Project" (west ready) opens the Alp Overview.
+    postMessage({
+      type: "runCommand",
+      command: full ? "alp.installDependencies" : "alp.openOverview",
+    });
   }
 
   return (
@@ -273,7 +266,6 @@ export function ExistingProjectFlowView() {
                 <ActivateStep
                   westStatus={westStatus}
                   onActivate={handleActivate}
-                  activating={activating}
                 />
               )}
             </>

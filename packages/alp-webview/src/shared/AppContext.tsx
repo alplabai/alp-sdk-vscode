@@ -61,6 +61,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else if (msg.type === "projectTemplatesData") {
         setProjectTemplates(msg.templates);
         setE1mModules(msg.modules);
+      } else if (msg.type === "focusSection") {
+        // Best-effort scroll to a named Hub section (e.g. opening the SDK
+        // Manager, now a Hub section). The element only exists on the Hub, so
+        // this is a no-op on other views. Deferred a tick so a freshly-opened
+        // panel has mounted the section before we scroll.
+        const id = `${msg.section}-section`;
+        setTimeout(() => {
+          document
+            .getElementById(id)
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 0);
       }
     });
     postMessage({ type: "ready" });

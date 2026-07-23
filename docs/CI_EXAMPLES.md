@@ -1,32 +1,35 @@
-# ALP CLI CI Integration Examples
+# tan CLI CI Integration Examples
 
-Last revised: 2026-05-14
+Last revised: 2026-07-20
 
-This document provides copy-paste examples for running the ALP CLI in CI.
+This document provides copy-paste examples for running the `tan` CLI in CI.
 
 ## 1. CI Baseline
 
 Use the same baseline flow in every CI system:
 
-1. Install dependencies.
-2. Compile the extension sources (produces out/cli/main.js).
-3. Run CLI commands with --format json.
-4. Upload generated JSON reports as build artifacts.
+1. Install the native `tan` CLI (download the release binary from
+   [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli), pinned to an
+   exact release tag; or point at a local build).
+2. Run CLI commands with --format json.
+3. Upload generated JSON reports as build artifacts.
 
 Recommended command sequence:
 
 ```bash
-npm ci
-npm run compile
-node ./out/cli/main.js validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
-node ./out/cli/main.js generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
-node ./out/cli/main.js doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
+TAN_VERSION=v0.1.1
+curl -fL --retry 3 -o /usr/local/bin/tan \
+  "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-gnu"
+chmod +x /usr/local/bin/tan
+tan validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
+tan generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
+tan doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
 ```
 
 ## 2. GitHub Actions Example
 
 ```yaml
-name: alp-cli-ci
+name: tan-cli-ci
 
 on:
   pull_request:
@@ -38,34 +41,29 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ALP_SDK_ROOT: ${{ github.workspace }}/alp-sdk-upstream
+      TAN_VERSION: v0.1.1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Compile
-        run: npm run compile
+      - name: Install the tan CLI
+        run: |
+          curl -fL --retry 3 -o /usr/local/bin/tan \
+            "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-gnu"
+          chmod +x /usr/local/bin/tan
 
       - name: Validate board config
         run: |
-          node ./out/cli/main.js validate \
+          tan validate \
             --project . \
             --sdk-root "$ALP_SDK_ROOT" \
             --format json > validate-report.json
 
       - name: Generate all outputs
         run: |
-          node ./out/cli/main.js generate \
+          tan generate \
             --project . \
             --sdk-root "$ALP_SDK_ROOT" \
             --all \
@@ -73,7 +71,7 @@ jobs:
 
       - name: Run doctor preflight
         run: |
-          node ./out/cli/main.js doctor \
+          tan doctor \
             --project . \
             --sdk-root "$ALP_SDK_ROOT" \
             --target-kind native-host \
@@ -83,7 +81,7 @@ jobs:
       - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
-          name: alp-cli-reports
+          name: tan-cli-reports
           path: |
             validate-report.json
             generate-report.json
@@ -96,17 +94,21 @@ jobs:
 stages:
   - verify
 
-alp_cli_verify:
+tan_cli_verify:
   stage: verify
+  # node:20, not ubuntu:24.04: the job image needs git (for the runner's own
+  # clone step, before `script:` runs) + curl/ca-certificates (for the
+  # download below) preinstalled — a bare ubuntu image ships neither.
   image: node:20
   variables:
     ALP_SDK_ROOT: "$CI_PROJECT_DIR/alp-sdk-upstream"
+    TAN_VERSION: "v0.1.1"
   script:
-    - npm ci
-    - npm run compile
-    - node ./out/cli/main.js validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
-    - node ./out/cli/main.js generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
-    - node ./out/cli/main.js doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
+    - curl -fL --retry 3 -o /usr/local/bin/tan "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-gnu"
+    - chmod +x /usr/local/bin/tan
+    - tan validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
+    - tan generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
+    - tan doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
   artifacts:
     when: always
     paths:
