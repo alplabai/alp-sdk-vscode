@@ -21,6 +21,7 @@ import {
   createLaunchPreview,
   createSupportBundlePayload,
   DEBUG_TARGET_CHOICES,
+  isNativeHostTarget,
   serializeSupportBundlePayload,
   serverChoicesForTarget,
 } from "@alp-sdk/core/debug/service";
@@ -33,6 +34,7 @@ import {
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
+import { ensureNativeSimOverlay } from "./west";
 import { log, showOutput } from "./util";
 
 async function showJsonDocument(data: unknown): Promise<void> {
@@ -288,9 +290,18 @@ async function ensureDebugExtension(configName: string): Promise<boolean> {
 
 /** First-class "Debug": generate/refresh the launch profile, make sure the
  *  debug-adapter extension is present, then start the session. */
-async function startDebugging(): Promise<void> {
+async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   const result = await writeLaunchProfile();
   if (!result) return;
+
+  // native_sim/native-host is the only debug class that runs a host binary
+  // under CodeLLDB with no on-chip probe — the same class the native_sim GPIO
+  // overlay generation targets (issue #86, mirrors westRunNativeSim's
+  // pre-run hook). On-target (cortex-debug/cppdbg) profiles never match, so
+  // this never fires for an SWD/J-Link/OpenOCD/pyOCD/gdbserver session.
+  if (isNativeHostTarget(result.report.targetKind)) {
+    await ensureNativeSimOverlay(context);
+  }
 
   if (!(await ensureDebugExtension(result.configName))) {
     await vscode.window.showWarningMessage(
@@ -529,7 +540,9 @@ function timestampForFile(isoTimestamp: string): string {
   return isoTimestamp.replace(/[:.]/g, "-");
 }
 
-export function registerDebugCommands(): vscode.Disposable[] {
+export function registerDebugCommands(
+  context: vscode.ExtensionContext,
+): vscode.Disposable[] {
   return [
     vscode.commands.registerCommand("alp.inspectProjectState", () =>
       inspectProjectState(),
@@ -541,7 +554,7 @@ export function registerDebugCommands(): vscode.Disposable[] {
     vscode.commands.registerCommand("alp.configureDebugProfile", () =>
       configureDebugProfile(),
     ),
-    vscode.commands.registerCommand("alp.debug", () => startDebugging()),
+    vscode.commands.registerCommand("alp.debug", () => startDebugging(context)),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>
       exportSupportBundle(),
     ),

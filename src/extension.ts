@@ -85,7 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerToolchainCommands(context),
     registerProjectWizardCommand(),
     ...registerLspCommands(),
-    ...registerDebugCommands(),
+    ...registerDebugCommands(context),
     ...registerTreeViews(context, stateMgr),
     ...registerWorkspaceCommands(),
     vscode.commands.registerCommand("alp.openSetupFlow", () =>

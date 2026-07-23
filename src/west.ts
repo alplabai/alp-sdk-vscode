@@ -122,8 +122,10 @@ async function westRunNativeSim(
 /** Generate `boards/native_sim_native_64.overlay` on demand before a native_sim
  *  run so a GPIO app resolves its pins under host emulation (issue #86).
  *  Best-effort: a non-GPIO app doesn't need it, and an older SDK may not ship
- *  the emit, so a failure is logged and the run proceeds regardless. */
-async function ensureNativeSimOverlay(
+ *  the emit, so a failure is logged and the run proceeds regardless. Idempotent
+ *  (no-op when the overlay already exists) and fail-soft (generation failure
+ *  is logged, never thrown) — safe to call from both the Run and Debug paths. */
+export async function ensureNativeSimOverlay(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   const root = collectWestWorkspaceContext().workspaceRoot;

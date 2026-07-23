@@ -9,6 +9,7 @@ const {
   createInspectReport,
   createLaunchPreview,
   createSupportBundlePayload,
+  isNativeHostTarget,
   serializeGenerationTraceReport,
   serializeInspectReport,
   serializeSupportBundlePayload,
@@ -44,6 +45,13 @@ function createRuntime(overrides = {}) {
     ...overrides,
   };
 }
+
+test("isNativeHostTarget: true for native-host, false for on-target profiles", () => {
+  assert.equal(isNativeHostTarget("native-host"), true);
+  assert.equal(isNativeHostTarget("zephyr-mcu"), false);
+  assert.equal(isNativeHostTarget("baremetal-mcu"), false);
+  assert.equal(isNativeHostTarget("yocto-userspace"), false);
+});
 
 test("serverChoicesForTarget returns expected backends", () => {
   assert.deepEqual(
