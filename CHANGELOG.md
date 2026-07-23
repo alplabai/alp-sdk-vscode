@@ -14,3 +14,9 @@
   alp-sdk, tan, and this extension all test against byte-for-byte. Closes
   #301.
 - `SUPPORTED_CLI_VERSION` -> `0.3.0` to track the tan-cli v0.3.0 release.
+- Linux downloads switch from the `-gnu` to the `-musl` release asset
+  (`x86_64`/`aarch64-unknown-linux-musl`, published starting at tan-cli
+  v0.3.0): the `-gnu` binary carries a glibc 2.31 floor and fails with
+  `GLIBC_2.39 not found` on older distros, while `-musl` is fully static and
+  runs anywhere, including the `-gnu` asset's own build host. `win32`/`darwin`
+  targets are unchanged.

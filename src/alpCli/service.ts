@@ -26,8 +26,13 @@ const RELEASE_REPO = "alplabai/tan-cli";
 const TARGETS: Readonly<Record<string, string>> = {
   "win32/x64": "x86_64-pc-windows-msvc",
   "win32/arm64": "aarch64-pc-windows-msvc",
-  "linux/x64": "x86_64-unknown-linux-gnu",
-  "linux/arm64": "aarch64-unknown-linux-gnu",
+  // musl (static), not gnu: the -gnu assets carry a glibc 2.31 floor and fail
+  // with "GLIBC_2.39 not found" on older distros (including the -gnu asset's
+  // own build host). -musl is fully static, so it runs on any distro/libc.
+  // TLS is rustls/ring, so musl needs no extra runtime deps. musl assets only
+  // exist from tan-cli v0.3.0 on — see SUPPORTED_CLI_VERSION.
+  "linux/x64": "x86_64-unknown-linux-musl",
+  "linux/arm64": "aarch64-unknown-linux-musl",
   "darwin/x64": "x86_64-apple-darwin",
   "darwin/arm64": "aarch64-apple-darwin",
 };
