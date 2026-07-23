@@ -13,8 +13,8 @@ const {
 // The vendored board schema pins `name` to this pattern (issue #73). The
 // starter generator must never emit a name that violates it — a space, or any
 // punctuation a SKU carries, would be rejected by board.schema.json.
-const NAME_PATTERN =
-  require("../schemas/board.schema.json").properties.name.pattern;
+const NAME_PATTERN = require("../schemas/board.schema.json").properties.name
+  .pattern;
 const nameRe = new RegExp(NAME_PATTERN);
 
 test("starterBoardName is schema-valid for the qualified SKU", () => {
