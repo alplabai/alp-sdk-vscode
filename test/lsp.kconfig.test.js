@@ -54,19 +54,49 @@ test("completePrjConf offers symbols in key position, none after '='", () => {
   assert.deepEqual(completePrjConf("CONFIG_LOG=y"), []);
 });
 
-test("completePrjConf merges live symbols, curated/generated winning on collision", () => {
-  const items = completePrjConf("CONFIG_", ["ALP_FOO", "MAIN_STACK_SIZE"]);
+test("completePrjConf merges live symbols, LIVE winning on collision (alp-sdk #894 rich feed)", () => {
+  const items = completePrjConf("CONFIG_", [
+    {
+      name: "ALP_FOO",
+      type: "bool",
+      doc: "A live-only symbol from the active SDK's Kconfig walk.",
+      valueHint: "y",
+      source: "sdk-live",
+    },
+    {
+      name: "MAIN_STACK_SIZE",
+      type: "int",
+      doc: "Live doc for this board+core, overriding the curated one.",
+      valueHint: "4096",
+      source: "sdk-live",
+    },
+  ]);
   const foo = items.find((i) => i.label === "CONFIG_ALP_FOO");
   assert.ok(foo, "a live-only symbol must be offered");
-  assert.equal(foo.detail, "Kconfig symbol");
-  assert.match(foo.doc, /active SDK/);
+  assert.equal(foo.detail, "bool");
+  assert.match(foo.doc, /live-only symbol/);
 
-  // MAIN_STACK_SIZE is curated: exactly one entry, with the curated prose/type,
-  // not overridden or duplicated by the live one of the same name.
+  // MAIN_STACK_SIZE is also curated, but the LIVE entry wins: exactly one
+  // entry, carrying the live prose/valueHint, not the curated one.
   const stackSize = items.filter((i) => i.label === "CONFIG_MAIN_STACK_SIZE");
   assert.equal(stackSize.length, 1);
   assert.equal(stackSize[0].detail, "int");
-  assert.match(stackSize[0].doc, /Stack size/);
+  assert.match(stackSize[0].doc, /Live doc for this board\+core/);
+  assert.ok(stackSize[0].insertText.endsWith("=4096"));
+});
+
+test("a degenerate live symbol (no doc, no proven type) never blanks a good curated collision (quality floor)", () => {
+  const items = completePrjConf("CONFIG_", [
+    { name: "MAIN_STACK_SIZE", type: undefined, doc: "", source: "sdk-live" },
+  ]);
+  const stackSize = items.filter((i) => i.label === "CONFIG_MAIN_STACK_SIZE");
+  assert.equal(stackSize.length, 1);
+  assert.equal(stackSize[0].detail, "int", "curated type must survive");
+  assert.match(
+    stackSize[0].doc,
+    /Stack size/,
+    "curated doc must survive a degenerate live collision",
+  );
 });
 
 test("completePrjConf with no liveSymbols behaves exactly as before", () => {
@@ -159,6 +189,50 @@ test("hoverPrjConf returns markdown for known symbols, null otherwise", () => {
   assert.match(hoverPrjConf("CONFIG_ALP_SDK") ?? "", /CONFIG_ALP_SDK/);
   assert.match(hoverPrjConf("MAIN_STACK_SIZE") ?? "", /stack/i);
   assert.equal(hoverPrjConf("CONFIG_NOT_A_REAL_SYMBOL"), null);
+});
+
+test("hoverPrjConf surfaces a live-only symbol's type + doc (alp-sdk #894 rich feed)", () => {
+  const live = [
+    {
+      name: "ALP_SDK_FOO_LIVE_ONLY",
+      type: "bool",
+      doc: "Live-only doc from the active SDK.",
+      source: "sdk-live",
+    },
+  ];
+  assert.equal(hoverPrjConf("CONFIG_ALP_SDK_FOO_LIVE_ONLY"), null);
+  const hover = hoverPrjConf("CONFIG_ALP_SDK_FOO_LIVE_ONLY", live);
+  assert.match(hover ?? "", /\(bool\)/);
+  assert.match(hover ?? "", /Live-only doc/);
+});
+
+test("lintPrjConf value-checks a live-only bool symbol (alp-sdk #894 rich feed)", () => {
+  const live = [
+    { name: "LIVE_BOOL", type: "bool", doc: "x", source: "sdk-live" },
+  ];
+  assert.equal(
+    lintPrjConf("CONFIG_LIVE_BOOL=123").length,
+    0,
+    "unknown to the static tables — silence, not a guess",
+  );
+  const findings = lintPrjConf("CONFIG_LIVE_BOOL=123", live);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].message, /boolean/);
+});
+
+test("liveSymbols empty/absent falls back to the vendored/curated set unchanged (offline fallback)", () => {
+  assert.deepEqual(
+    completePrjConf("CONFIG_MAIN"),
+    completePrjConf("CONFIG_MAIN", []),
+  );
+  assert.equal(
+    hoverPrjConf("CONFIG_ALP_SDK", []),
+    hoverPrjConf("CONFIG_ALP_SDK"),
+  );
+  assert.deepEqual(
+    lintPrjConf("CONFIG_ALP_SDK=123", []),
+    lintPrjConf("CONFIG_ALP_SDK=123"),
+  );
 });
 
 test("every symbol has a non-empty doc, and a valid type when it claims one", () => {

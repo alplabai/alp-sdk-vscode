@@ -1,15 +1,32 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const {
   catalogFromPresets,
   kconfigSymbolsFromEnvelope,
+  fetchKconfigSymbolsForCore,
+  clearKconfigSymbolCache,
   EMPTY_SDK_CATALOG,
 } = require("../out/lsp/sdkCatalog.js");
 const {
   createBoardYamlCompletionSuggestions,
   createBoardYamlHoverInfo,
 } = require("../out/lsp/service.js");
+
+/** A real, stat-able board.yaml path — the cache key folds in its mtime, so
+ *  the caching tests need an actual file rather than a fake "/proj/board.yaml"
+ *  string (which never stats and would always skip the cache). */
+function tempBoardYaml() {
+  const p = path.join(
+    os.tmpdir(),
+    `alp-sdk-vscode-test-board-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.yaml`,
+  );
+  fs.writeFileSync(p, "cores: {}\n");
+  return p;
+}
 
 test("catalogFromPresets maps alp-presets data to SKUs + boardLibraries", () => {
   const catalog = catalogFromPresets({
@@ -34,24 +51,302 @@ test("catalogFromPresets tolerates a missing / degenerate payload", () => {
   assert.deepEqual(catalog.libraries, []);
 });
 
-test("kconfigSymbolsFromEnvelope parses tan-kconfig data", () => {
-  assert.deepEqual(
-    kconfigSymbolsFromEnvelope({ symbols: ["ALP_SDK", "ALP_HAS_BMI270"] }),
-    ["ALP_SDK", "ALP_HAS_BMI270"],
-  );
+test("kconfigSymbolsFromEnvelope maps the rich per-core SDK payload (alp-sdk #894)", () => {
+  const symbols = kconfigSymbolsFromEnvelope({
+    schemaVersion: 1,
+    board: "e1m_v2n101_som",
+    core: "m55_hp",
+    symbols: [
+      {
+        name: "ALP_SDK_BLE",
+        type: "bool",
+        prompt: "Enable BLE",
+        depends: ["ALP_SDK"],
+        default: "n",
+        help: "Real Bluetooth host stack via Zephyr bt for <alp/ble.h>.",
+      },
+      {
+        name: "MAIN_STACK_SIZE",
+        type: "int",
+        prompt: "Main stack size",
+        default: 2048,
+      },
+    ],
+  });
+  assert.deepEqual(symbols, [
+    {
+      name: "ALP_SDK_BLE",
+      type: "bool",
+      doc: "Real Bluetooth host stack via Zephyr bt for <alp/ble.h>.",
+      valueHint: "n",
+      source: "sdk-live",
+    },
+    {
+      name: "MAIN_STACK_SIZE",
+      type: "int",
+      doc: "Main stack size",
+      valueHint: "2048",
+      source: "sdk-live",
+    },
+  ]);
 });
 
-test("kconfigSymbolsFromEnvelope tolerates missing/degenerate data (old CLI without `tan kconfig`)", () => {
+test("kconfigSymbolsFromEnvelope falls back doc to prompt then empty; drops an empty default", () => {
+  const symbols = kconfigSymbolsFromEnvelope({
+    symbols: [
+      {
+        name: "PROMPT_ONLY",
+        type: "bool",
+        prompt: "Has a prompt only",
+        default: "",
+      },
+      { name: "NO_PROMPT_NO_HELP", type: "bool" },
+    ],
+  });
+  assert.equal(symbols[0].doc, "Has a prompt only");
+  assert.equal(symbols[0].valueHint, undefined);
+  assert.equal(symbols[1].doc, "");
+});
+
+test("kconfigSymbolsFromEnvelope tolerates missing/degenerate data + malformed entries (old CLI predating `--core`, or the old flat #298 payload)", () => {
   assert.deepEqual(kconfigSymbolsFromEnvelope(null), []);
   assert.deepEqual(kconfigSymbolsFromEnvelope(undefined), []);
   assert.deepEqual(kconfigSymbolsFromEnvelope({}), []);
   assert.deepEqual(kconfigSymbolsFromEnvelope({ symbols: "not-an-array" }), []);
+  // The pre-#894 flat `{symbols: string[]}` shape has no object entries — it
+  // collapses to empty here rather than throwing.
+  assert.deepEqual(
+    kconfigSymbolsFromEnvelope({ symbols: ["ALP_SDK", "ALP_HAS_BMI270"] }),
+    [],
+  );
   assert.deepEqual(
     kconfigSymbolsFromEnvelope({
-      symbols: ["ALP_SDK", "", 42, null, undefined],
+      symbols: [
+        { name: "OK", type: "bool", help: "fine" },
+        { type: "bool", help: "missing name" },
+        { name: "", type: "bool", help: "empty name" },
+        { name: "BAD_TYPE", type: "not-a-type", help: "junk type dropped" },
+        null,
+        "not-an-object",
+        42,
+      ],
     }),
-    ["ALP_SDK"],
+    [
+      { name: "OK", type: "bool", doc: "fine", source: "sdk-live" },
+      { name: "BAD_TYPE", doc: "junk type dropped", source: "sdk-live" },
+    ],
   );
+});
+
+test("kconfigSymbolsFromEnvelope keeps a tristate type (kconfiglib's full TYPE_TO_STR set)", () => {
+  const symbols = kconfigSymbolsFromEnvelope({
+    symbols: [
+      { name: "MMC_HOST", type: "tristate", help: "Enable MMC host driver" },
+    ],
+  });
+  assert.equal(symbols.length, 1);
+  assert.equal(symbols[0].type, "tristate");
+});
+
+test("kconfigSymbolsFromEnvelope only sets valueHint for a literal default, dropping a symbol-reference/expression", () => {
+  const symbols = kconfigSymbolsFromEnvelope({
+    symbols: [
+      {
+        name: "EXPR_DEFAULT",
+        type: "bool",
+        help: "x",
+        default: "OTHER_SYMBOL",
+      },
+      { name: "BOOL_DEFAULT", type: "bool", help: "x", default: "y" },
+      { name: "HEX_DEFAULT", type: "hex", help: "x", default: "0x1000" },
+      { name: "INT_DEFAULT", type: "int", help: "x", default: "1024" },
+      {
+        name: "STRING_DEFAULT",
+        type: "string",
+        help: "x",
+        default: '"a string"',
+      },
+    ],
+  });
+  const byName = Object.fromEntries(symbols.map((s) => [s.name, s]));
+  assert.equal(
+    byName.EXPR_DEFAULT.valueHint,
+    undefined,
+    "a bare symbol-name default is an expression, not an insertable literal",
+  );
+  assert.equal(byName.BOOL_DEFAULT.valueHint, "y");
+  assert.equal(byName.HEX_DEFAULT.valueHint, "0x1000");
+  assert.equal(byName.INT_DEFAULT.valueHint, "1024");
+  assert.equal(byName.STRING_DEFAULT.valueHint, '"a string"');
+});
+
+test("fetchKconfigSymbolsForCore caches per (sdkRoot, boardYamlPath, coreId, mtime) — a different core is a different entry", async () => {
+  clearKconfigSymbolCache();
+  const boardYamlPath = tempBoardYaml();
+  try {
+    const calls = [];
+    const fetchEnvelope = async (coreId, cwd) => {
+      calls.push({ coreId, cwd });
+      return { symbols: [{ name: `SYM_${coreId}`, type: "bool", help: "x" }] };
+    };
+
+    const hp = await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    const he = await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_he",
+      "/proj",
+      fetchEnvelope,
+    );
+    assert.equal(calls.length, 2, "two distinct cores must both fetch");
+    assert.deepEqual(
+      hp.map((s) => s.name),
+      ["SYM_m55_hp"],
+    );
+    assert.deepEqual(
+      he.map((s) => s.name),
+      ["SYM_m55_he"],
+    );
+
+    // Same (sdkRoot, boardYamlPath, coreId, mtime) again: served from cache.
+    await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    assert.equal(
+      calls.length,
+      2,
+      "a repeat fetch for the same key must hit the cache",
+    );
+  } finally {
+    fs.rmSync(boardYamlPath, { force: true });
+  }
+});
+
+test("fetchKconfigSymbolsForCore invalidates when board.yaml's mtime changes (in-place edit self-invalidates)", async () => {
+  clearKconfigSymbolCache();
+  const boardYamlPath = tempBoardYaml();
+  try {
+    let calls = 0;
+    const fetchEnvelope = async () => {
+      calls++;
+      return { symbols: [{ name: "SYM", type: "bool", help: "x" }] };
+    };
+
+    await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    assert.equal(calls, 1, "an unchanged mtime must hit the cache");
+
+    // Push mtime forward by a few seconds — some filesystems only have ~1-2s
+    // mtime resolution, so a tiny bump could round away to the same value.
+    const bumped = new Date(fs.statSync(boardYamlPath).mtime.getTime() + 5000);
+    fs.utimesSync(boardYamlPath, bumped, bumped);
+
+    await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    assert.equal(
+      calls,
+      2,
+      "board.yaml's mtime changing must refetch, not hit the stale cache entry",
+    );
+  } finally {
+    fs.rmSync(boardYamlPath, { force: true });
+  }
+});
+
+test("fetchKconfigSymbolsForCore never caches when board.yaml can't be stat'd — always refetches rather than caching under an unkeyed entry", async () => {
+  clearKconfigSymbolCache();
+  const missingPath = path.join(
+    os.tmpdir(),
+    `alp-sdk-vscode-test-missing-${process.pid}-${Date.now()}.yaml`,
+  );
+  let calls = 0;
+  const fetchEnvelope = async () => {
+    calls++;
+    return { symbols: [{ name: "SYM", type: "bool", help: "x" }] };
+  };
+  await fetchKconfigSymbolsForCore(
+    "/sdk",
+    missingPath,
+    "m55_hp",
+    "/proj",
+    fetchEnvelope,
+  );
+  await fetchKconfigSymbolsForCore(
+    "/sdk",
+    missingPath,
+    "m55_hp",
+    "/proj",
+    fetchEnvelope,
+  );
+  assert.equal(
+    calls,
+    2,
+    "an unstattable board.yaml must skip caching, not stick under a bad key",
+  );
+});
+
+test("fetchKconfigSymbolsForCore never caches an empty/failed fetch — the offline fallback stays retryable", async () => {
+  clearKconfigSymbolCache();
+  const boardYamlPath = tempBoardYaml();
+  try {
+    let calls = 0;
+    // Simulates `tan kconfig --core` not existing yet (pre tan-cli #35): the
+    // envelope fetch resolves with no usable data.
+    const emptyFetch = async () => {
+      calls++;
+      return undefined;
+    };
+    const first = await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      emptyFetch,
+    );
+    const second = await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      emptyFetch,
+    );
+    assert.deepEqual(first, []);
+    assert.deepEqual(second, []);
+    assert.equal(
+      calls,
+      2,
+      "an empty result must not stick — retried every call",
+    );
+  } finally {
+    fs.rmSync(boardYamlPath, { force: true });
+  }
 });
 
 test("som.sku value completion uses the pushed SDK catalog when present", () => {

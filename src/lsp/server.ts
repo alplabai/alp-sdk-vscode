@@ -59,10 +59,12 @@ import {
   isPrjConfPath,
   lintPrjConf,
 } from "./kconfig";
+import type { KconfigSymbol } from "./kconfig";
 import {
   buildCompletions,
   buildInfoMarkdown,
   diagnosePrjConfAgainstBuild,
+  resolveSlice,
 } from "./buildConfig";
 import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
@@ -110,10 +112,12 @@ function spawnValidatorAsync(
   });
 }
 
-// The board.yaml completion catalog (SoM SKUs + libraries). The client pushes it
-// from `alp presets` (the single CLI source — see client.ts) via the
-// `alp/updateSdkCatalog` notification; before the first push it stays empty and
-// completion falls back to the built-in defaults in service.ts.
+// The board.yaml completion catalog (SoM SKUs + libraries) plus the per-core
+// live Kconfig symbol sets. The client pushes it from `alp presets` + `tan
+// kconfig --core <id>` (alp-sdk #894 — see client.ts) via the
+// `alp/updateSdkCatalog` notification; before the first push it stays empty
+// and completion falls back to the built-in defaults (service.ts) / the
+// vendored Kconfig set (kconfig.ts).
 let sdkCatalog: SdkCompletionCatalog = EMPTY_SDK_CATALOG;
 
 connection.onNotification(
@@ -122,6 +126,24 @@ connection.onNotification(
     sdkCatalog = catalog ?? EMPTY_SDK_CATALOG;
   },
 );
+
+/**
+ * The live Kconfig symbols the client fetched for `filePath`'s resolved core
+ * (`tan kconfig --core <id>`, alp-sdk #894), or `[]` when the file has no
+ * resolvable slice or that core hasn't been pushed yet — completion/hover/
+ * lint then fall back to the vendored/curated set (see kconfig.ts). Keyed the
+ * same way client.ts populates `kconfigByCore`:
+ * `${boardYamlPath}::${coreId}`.
+ */
+function liveKconfigSymbolsFor(filePath: string): readonly KconfigSymbol[] {
+  const slice = resolveSlice(filePath);
+  if (!slice) {
+    return [];
+  }
+  return (
+    sdkCatalog.kconfigByCore[`${slice.boardYamlPath}::${slice.coreId}`] ?? []
+  );
+}
 
 connection.onInitialize((params: InitializeParams): InitializeResult => {
   hasConfigurationCapability = Boolean(
@@ -259,7 +281,7 @@ connection.onCompletion((params): CompletionItem[] => {
     // Zephyr tree (~26k symbols spanning all archs and SoCs) is not.
     const seen = new Set<string>();
     const merged = [
-      ...completePrjConf(linePrefix, sdkCatalog.kconfigSymbols),
+      ...completePrjConf(linePrefix, liveKconfigSymbolsFor(filePath)),
       ...buildCompletions(filePath, linePrefix),
     ].filter((c) => !seen.has(c.label) && seen.add(c.label));
 
@@ -301,7 +323,10 @@ connection.onHover((params): Hover | null => {
     // what the last build resolved (only when this file maps to a slice with
     // a fresh .config). Either may be absent — a symbol missing from the
     // catalogue can still have build output, and vice versa.
-    const sections = [hoverPrjConf(word), buildInfoMarkdown(filePath, word)];
+    const sections = [
+      hoverPrjConf(word, liveKconfigSymbolsFor(filePath)),
+      buildInfoMarkdown(filePath, word),
+    ];
     const markdown = sections.filter(Boolean).join("\n\n---\n\n");
     return markdown
       ? { contents: { kind: MarkupKind.Markdown, value: markdown } }
@@ -791,7 +816,7 @@ function validatePrjConf(uri: string, text: string): void {
   // inputs — see buildConfig.ts).
   const filePath = uriToFsPath(uri);
   const findings = [
-    ...lintPrjConf(text),
+    ...lintPrjConf(text, filePath ? liveKconfigSymbolsFor(filePath) : []),
     ...(filePath ? diagnosePrjConfAgainstBuild(filePath, text) : []),
   ];
   const diagnostics: Diagnostic[] = findings.map((d) => ({
