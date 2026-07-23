@@ -30,7 +30,7 @@ asset (no `.zip` / `.tar.gz`). Download the one for your host from the
 #   tan-x86_64-pc-windows-msvc.exe     (Windows x64)
 #   tan-aarch64-pc-windows-msvc.exe    (Windows arm64)
 curl -L -o /usr/local/bin/tan \
-  https://github.com/alplabai/tan-cli/releases/download/v0.1.1/tan-x86_64-unknown-linux-musl
+  https://github.com/alplabai/tan-cli/releases/download/v0.3.0/tan-x86_64-unknown-linux-musl
 chmod +x /usr/local/bin/tan
 tan --help
 ```

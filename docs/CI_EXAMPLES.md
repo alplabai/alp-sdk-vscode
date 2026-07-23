@@ -17,7 +17,7 @@ Use the same baseline flow in every CI system:
 Recommended command sequence:
 
 ```bash
-TAN_VERSION=v0.1.1
+TAN_VERSION=v0.3.0
 curl -fL --retry 3 -o /usr/local/bin/tan \
   "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-musl"
 chmod +x /usr/local/bin/tan
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ALP_SDK_ROOT: ${{ github.workspace }}/alp-sdk-upstream
-      TAN_VERSION: v0.1.1
+      TAN_VERSION: v0.3.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -102,7 +102,7 @@ tan_cli_verify:
   image: node:20
   variables:
     ALP_SDK_ROOT: "$CI_PROJECT_DIR/alp-sdk-upstream"
-    TAN_VERSION: "v0.1.1"
+    TAN_VERSION: "v0.3.0"
   script:
     - curl -fL --retry 3 -o /usr/local/bin/tan "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-musl"
     - chmod +x /usr/local/bin/tan

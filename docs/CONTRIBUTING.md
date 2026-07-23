@@ -118,7 +118,7 @@ Download the pinned raw binary for your host target from the
 - name: Install tan CLI
   run: |
     curl -L -o /usr/local/bin/tan \
-      https://github.com/alplabai/tan-cli/releases/download/v0.1.1/tan-x86_64-unknown-linux-musl
+      https://github.com/alplabai/tan-cli/releases/download/v0.3.0/tan-x86_64-unknown-linux-musl
     chmod +x /usr/local/bin/tan
 
 - name: Validate board config
