@@ -26,3 +26,6 @@ coverage/
 
 # VS Code e2e test runtime (downloaded VS Code + user data)
 .vscode-test/
+
+# Cygwin/MSYS bash crash dumps (Windows dev hosts)
+*.stackdump
