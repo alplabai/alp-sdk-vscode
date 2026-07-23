@@ -8,10 +8,6 @@ const {
   validateBoardYamlLocally,
 } = require("../packages/alp-core/dist/validation/service.js");
 
-// scriptPath is host-path-joined (correct in production); normalize separators
-// so the fixture asserts identically on POSIX and Windows.
-const toPosix = (s) => s.split("\\").join("/");
-
 test("isBoardYamlPath matches board.yaml case-insensitively", () => {
   assert.equal(isBoardYamlPath("/tmp/board.yaml"), true);
   assert.equal(isBoardYamlPath("/tmp/BOARD.YAML"), true);
@@ -30,8 +26,10 @@ test("createValidatorPlan builds the expected validator command", () => {
     "/workspace/app/board.yaml",
   );
 
+  // scriptPath is toPosix'd at the source (validation/service.ts), so this
+  // asserts forward-slash directly instead of laundering separators.
   assert.equal(
-    toPosix(plan.scriptPath),
+    plan.scriptPath,
     "/workspace/sdk/scripts/validate_board_yaml.py",
   );
   assert.deepEqual(plan.args, ["--input", "/workspace/app/board.yaml"]);

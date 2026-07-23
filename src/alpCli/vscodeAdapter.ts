@@ -20,7 +20,7 @@ import {
   downloadCli,
   resolutionInputFromDeps,
   resolveAlpBinary,
-  runAlp,
+  runAlpAsync,
 } from "./adapterCore";
 import { downloadFile } from "./download";
 import { BinarySource, CliOutcome } from "./models";
@@ -36,7 +36,7 @@ import {
   releaseAssetForTarget,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, runInTerminal, showOutput } from "../util";
+import { log, reportError, runInTerminal, showOutput } from "../util";
 
 const execFileAsyncCli = promisify(cp.execFile);
 
@@ -548,7 +548,7 @@ export async function updateAlpCli(
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    void vscode.window.showErrorMessage(`tan CLI update failed: ${message}`);
+    void reportError(`tan CLI update failed: ${message}`);
   }
 }
 
@@ -569,7 +569,7 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
   // Guard a packaging regression: a missing bundled script would otherwise
   // surface only as a raw "sh: …: No such file" (exit 127) in the terminal.
   if (!fs.existsSync(script)) {
-    void vscode.window.showErrorMessage(
+    void reportError(
       `The bundled tan installer is missing (${script}). Try reinstalling the Alp SDK extension.`,
     );
     return;
@@ -590,6 +590,7 @@ export async function runAlpCommand(
   context: vscode.ExtensionContext,
   args: string[],
   cwd?: string,
+  options?: { signal?: AbortSignal },
 ): Promise<{ outcome: CliOutcome; raw: SpawnResult }> {
   let binary: ResolvedBinary;
   try {
@@ -621,7 +622,13 @@ export async function runAlpCommand(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")} --format json` +
       (cwd ? `  (cwd: ${cwd})` : ""),
   );
-  const result = runAlp(binary.command, finalArgs, spawnAlp, cwd);
+  const result = await runAlpAsync(
+    binary.command,
+    finalArgs,
+    (command, spawnArgs, spawnCwd) =>
+      spawnAlpAsync(command, spawnArgs, spawnCwd, options?.signal),
+    cwd,
+  );
   const { outcome, raw } = result;
   if (outcome.ok) {
     log(`[cli] → ok (exit ${outcome.exitCode})`);
@@ -684,24 +691,86 @@ async function surfaceResolutionError(error: unknown): Promise<void> {
 
 // ── real seams ───────────────────────────────────────────────────────────────
 
-function spawnAlp(command: string, args: string[], cwd?: string): SpawnResult {
-  const result = cp.spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: 16 * 1024 * 1024,
-    // Cap every envelope command: this runs on the single ext-host event loop,
-    // and network-bound commands (e.g. `sdk list`) could otherwise hang it —
-    // and any webview loading state waiting on the result — forever. On timeout
-    // spawnSync sets `result.error` (ETIMEDOUT), which runAlp maps to an error
-    // outcome so the caller's spinner-clear / error toast still fires.
-    timeout: 60_000,
+const ALP_SPAWN_TIMEOUT_MS = 60_000;
+const ALP_SPAWN_MAX_OUTPUT = 16 * 1024 * 1024;
+
+/**
+ * Async twin of the former `spawnAlp`: runs a `tan` envelope command off the
+ * extension-host event loop via `cp.spawn`, so a slow or network-bound command
+ * (e.g. `sdk list`) — and any webview waiting on it — never freezes the editor.
+ * Preserves the sync path's guards: utf8 output, a 16 MB cap, and a 60s timeout,
+ * each surfaced as `SpawnResult.error` so `runAlpAsync` maps it to an error
+ * outcome (caller's spinner-clear / error toast still fires). An optional
+ * `signal` (from a command's CancellationToken) kills the child on user cancel.
+ */
+function spawnAlpAsync(
+  command: string,
+  args: string[],
+  cwd?: string,
+  signal?: AbortSignal,
+): Promise<SpawnResult> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const child = cp.spawn(command, args, { cwd, signal });
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+
+    const finish = (result: SpawnResult): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish({
+        status: null,
+        stdout,
+        stderr,
+        error: new Error(
+          `tan CLI timed out after ${ALP_SPAWN_TIMEOUT_MS / 1000}s`,
+        ),
+      });
+    }, ALP_SPAWN_TIMEOUT_MS);
+
+    // Cap BOTH streams (spawnSync's maxBuffer applied per-stream) so a runaway
+    // tan can't grow ext-host memory unbounded.
+    const capGuard = (): void => {
+      if (stdout.length + stderr.length > ALP_SPAWN_MAX_OUTPUT) {
+        child.kill();
+        finish({
+          status: null,
+          stdout,
+          stderr,
+          error: new Error("tan CLI output exceeded 16 MB"),
+        });
+      }
+    };
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+      capGuard();
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+      capGuard();
+    });
+    // `error` fires on ENOENT and on abort (AbortError when `signal` is aborted).
+    child.on("error", (err) =>
+      finish({ status: null, stdout, stderr, error: err }),
+    );
+    // A stdio stream error (rare, e.g. EPIPE) emits on the stream itself; with no
+    // listener Node re-throws it as an uncaught exception that can crash the
+    // extension host, so route it through finish like any other spawn failure.
+    const onStreamError = (err: Error): void =>
+      finish({ status: null, stdout, stderr, error: err });
+    child.stdout?.on("error", onStreamError);
+    child.stderr?.on("error", onStreamError);
+    child.on("close", (code) => finish({ status: code, stdout, stderr }));
   });
-  return {
-    status: result.status,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-    error: result.error,
-  };
 }
 
 // TODO(preferGlobalCli): capture absolute path to close terminal-vs-ext-host

@@ -2,7 +2,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { PinmuxTable } from "@alp-sdk/core/pinmux/models";
+import { PinmuxTable, isResolvedE1mPad } from "@alp-sdk/core/pinmux/models";
 import { parsePinmuxTable } from "@alp-sdk/core/pinmux/parse";
 
 export type ReadFileFn = (filePath: string) => string;
@@ -67,15 +67,18 @@ export function loadPinmuxTable(
   let table: PinmuxTable | null = null;
   try {
     const parsed = parsePinmuxTable(readFile(filePath));
-    // Drop rows the SDK generator left as "TBD" sentinels (every pad-first V2N
-    // row today carries no real E1M pad->function mapping). A table left with
-    // no usable pads — or a readable-but-corrupt/empty one — is treated as
-    // absent so callers fail soft (no check, like imx93) instead of flooding
-    // false "not available"/duplicate-pad diagnostics against sentinel rows.
-    if (parsed) {
-      parsed.pads = parsed.pads.filter((pad) => pad.e1mPad !== "TBD");
-    }
-    table = parsed && parsed.pads.length === 0 ? null : parsed;
+    // A readable-but-corrupt or empty table parses to a truthy object with no
+    // pads. An uncharacterized-stub table parses with pads whose e1m_pad is
+    // all "TBD" (the upstream v2n.yaml ships 207 such pads today). In either
+    // case the physical-pad mapping is unknown, so pad-ownership (R2) can't
+    // be checked and the function list isn't authoritative — treat the table
+    // as absent so callers don't flood false diagnostics against it. (Pads
+    // keep their "TBD" markers once at least one is resolved, so R2 still
+    // skips the unresolved ones; see checkE1mCompliance.)
+    const resolvedCount = parsed
+      ? parsed.pads.filter((pad) => isResolvedE1mPad(pad.e1mPad)).length
+      : 0;
+    table = parsed && resolvedCount === 0 ? null : parsed;
   } catch {
     table = null;
   }

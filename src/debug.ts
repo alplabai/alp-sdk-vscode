@@ -35,7 +35,7 @@ import {
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { ensureNativeSimOverlay } from "./west";
-import { log, showOutput } from "./util";
+import { log, reportError, showOutput } from "./util";
 
 async function showJsonDocument(data: unknown): Promise<void> {
   const doc = await vscode.workspace.openTextDocument({
@@ -138,7 +138,7 @@ async function debugPreflight(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await vscode.window.showErrorMessage(formatDebugError(error));
+    await reportError(formatDebugError(error), debugErrorDetail(error));
     return;
   }
 
@@ -204,7 +204,7 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
       configuration,
     );
   } catch (error) {
-    await vscode.window.showErrorMessage(formatDebugError(error));
+    await reportError(formatDebugError(error), debugErrorDetail(error));
     return null;
   }
 
@@ -333,10 +333,12 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   );
   const started = await vscode.debug.startDebugging(folder, result.configName);
   if (!started) {
-    await vscode.window.showErrorMessage(
+    // reportError already logs this and offers a "Show Output" action; the
+    // message itself points at the Debug Console / launch.json, so don't also
+    // force-open the Alp SDK channel here.
+    await reportError(
       `Alp: VS Code declined to start "${result.configName}" — check the Debug Console and launch.json.`,
     );
-    showOutput();
   }
 }
 
@@ -363,7 +365,7 @@ async function exportSupportBundle(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await vscode.window.showErrorMessage(formatDebugError(error));
+    await reportError(formatDebugError(error), debugErrorDetail(error));
     return;
   }
 
@@ -430,7 +432,7 @@ async function openDebugTroubleshootingPanel(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await vscode.window.showErrorMessage(formatDebugError(error));
+    await reportError(formatDebugError(error), debugErrorDetail(error));
     return;
   }
 
@@ -534,6 +536,16 @@ function formatDebugError(error: unknown): string {
   const detail =
     error instanceof Error ? error.message : "an unexpected error occurred.";
   return `Alp: debug configuration failed — ${detail}`;
+}
+
+/** Full detail for the "Alp SDK" channel behind a `formatDebugError` toast: the
+ *  stack trace when available (call-site context beyond the bare message baked
+ *  into the toast), or the raw thrown value when it isn't an `Error` at all
+ *  (which the toast genericizes to "an unexpected error occurred."). */
+function debugErrorDetail(error: unknown): string {
+  return error instanceof Error
+    ? (error.stack ?? error.message)
+    : String(error);
 }
 
 function timestampForFile(isoTimestamp: string): string {

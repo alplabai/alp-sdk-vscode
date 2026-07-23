@@ -5,6 +5,7 @@ import {
   parseBoardModel,
 } from "@alp-sdk/core/configurator/service";
 import { ProjectContext, ProjectSettings } from "@alp-sdk/core/project/models";
+import boardSchema from "../../schemas/board.schema.json";
 import type { SdkCompletionCatalog } from "./sdkCatalog";
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
@@ -85,29 +86,12 @@ const ISSUE_KEY_ALIASES: ReadonlyArray<{
   },
 ];
 
-const TOP_LEVEL_KEYS: readonly string[] = [
-  "schema_version",
-  "som",
-  "preset",
-  "populated",
-  "os",
-  "inference",
-  "libraries",
-  "iot",
-  "diagnostics",
-];
-const TOP_LEVEL_KEYS_V2: readonly string[] = [
-  "schema_version",
-  "som",
-  "preset",
-  "populated",
-  "cores",
-  "ipc",
-  "inference",
-  "libraries",
-  "iot",
-  "diagnostics",
-];
+// Single source of truth for top-level completion: derived from the vendored
+// schema's `properties` so this can never drift from schemas/board.schema.json
+// again (there is exactly one board.yaml schema — no v1/v2 top-level split).
+const TOP_LEVEL_KEYS: readonly string[] = Object.keys(
+  boardSchema.properties ?? {},
+);
 
 const CHILD_KEYS: Readonly<Record<string, readonly string[]>> = {
   som: ["sku"],
@@ -765,10 +749,13 @@ function resolvePathAtPosition(
 
 function resolveKeyChoices(
   containerPath: string,
-  schemaVersion: number,
+  // schemaVersion is retained in the signature for call-site stability
+  // (diagnostics/quick-fix code still branches on it elsewhere) but no
+  // longer selects a different top-level key set — there is one schema.
+  _schemaVersion: number,
 ): readonly string[] {
   if (!containerPath) {
-    return schemaVersion >= 2 ? TOP_LEVEL_KEYS_V2 : TOP_LEVEL_KEYS;
+    return TOP_LEVEL_KEYS;
   }
 
   return CHILD_KEYS[containerPath] ?? [];

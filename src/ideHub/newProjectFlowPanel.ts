@@ -16,7 +16,7 @@ import {
 import { E1M_MODULES } from "./projectScaffold";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
-import { log, showOutput } from "../util";
+import { log, reportError, showOutput } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
 const PANEL_TITLE = "Alp IDE — New Project";
@@ -406,7 +406,7 @@ export class NewProjectFlowPanel {
     }
     const { outcome } = await runAlpCommand(this.context, initArgs);
     if (!outcome.envelope || !outcome.envelope.ok) {
-      await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
+      await reportError(`Alp: ${outcome.message}`);
       return;
     }
 
@@ -448,7 +448,7 @@ export class NewProjectFlowPanel {
             log(
               `[new-project] SDK pin retry FAILED for ${projectDir}: ${retried.error}`,
             );
-            void vscode.window.showErrorMessage(
+            void reportError(
               `Alp: pinning the SDK failed again — ${retried.error}. Opening without a pinned SDK; set "alpSdk.path" manually.`,
             );
           }
