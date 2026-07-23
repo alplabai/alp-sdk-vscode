@@ -32,7 +32,7 @@ import * as path from "path";
 
 import generated from "./generated/kconfig-metadata.json";
 
-export type KconfigType = "bool" | "int" | "hex" | "string";
+export type KconfigType = "bool" | "int" | "hex" | "string" | "tristate";
 
 export interface KconfigSymbol {
   /** Symbol name WITHOUT the `CONFIG_` prefix (e.g. "MAIN_STACK_SIZE"). */
@@ -361,15 +361,26 @@ export const KCONFIG_METADATA_REV: string = generated.submoduleRev;
 const SYMBOL_BY_NAME = new Map(KCONFIG_SYMBOLS.map((s) => [s.name, s]));
 
 /** Curated ∪ generated ∪ live, LIVE winning on name collision (a live symbol
- *  is proven promptable for this board+core; see the module header). Cloning
- *  SYMBOL_BY_NAME per call is cheap at this scale (curated ∪ generated is a
- *  few hundred entries, live is a per-core subset of that) and keeps every
- *  caller here a pure function of its arguments. */
+ *  is proven promptable for this board+core; see the module header) — BUT
+ *  only when it has something to show. Real Zephyr has plenty of promptless/
+ *  help-less symbols only reachable via `select`/`imply`; a live fetch that
+ *  surfaces one of those must not blank out a good curated/generated entry of
+ *  the same name (hover/detail regressing to nothing). The floor only governs
+ *  a COLLISION — a live-only symbol (no curated/generated counterpart) is
+ *  still added regardless of how little it carries.
+ *
+ *  Cloning SYMBOL_BY_NAME per call is cheap at this scale (curated ∪
+ *  generated is a few hundred entries, live is a per-core subset of that) and
+ *  keeps every caller here a pure function of its arguments. */
 function mergedSymbolMap(
   liveSymbols: readonly KconfigSymbol[],
 ): Map<string, KconfigSymbol> {
   const byName = new Map(SYMBOL_BY_NAME);
-  for (const s of liveSymbols) byName.set(s.name, s);
+  for (const s of liveSymbols) {
+    const degenerate = s.doc === "" && s.type === undefined;
+    if (degenerate && byName.has(s.name)) continue;
+    byName.set(s.name, s);
+  }
   return byName;
 }
 

@@ -7,6 +7,8 @@
 // CLI is the one source shared with the New Project flow, the Configurator, and
 // Alp Studio.
 
+import * as fs from "fs";
+
 import type { KconfigSymbol, KconfigType } from "./kconfig";
 
 /** Concrete value lists derived from the active SDK via `alp presets`. */
@@ -53,12 +55,27 @@ export function catalogFromPresets(data: unknown): SdkCompletionCatalog {
   return { skus, libraries, kconfigByCore: {} };
 }
 
+// kconfiglib's TYPE_TO_STR set, minus "unknown" (which stays undefined here —
+// see kconfigSymbolsFromEnvelope). "tristate" is real Zephyr (y/n/m), not a
+// guess, so it's kept rather than dropped like a genuinely unrecognized type.
 const KCONFIG_TYPES: ReadonlySet<string> = new Set([
   "bool",
+  "tristate",
   "int",
   "hex",
   "string",
 ]);
+
+/** Whether `raw` (a Kconfig `default`, already stringified upstream via
+ *  kconfiglib's `expr_str`) is a plain literal safe to insert verbatim after
+ *  `CONFIG_X=` — `y`/`n`/`m`, a decimal or `0x…` hex integer, or a quoted
+ *  string. `expr_str` renders a symbol-reference or conditional default
+ *  (`default OTHER_SYMBOL`, `default X if Y`) as arbitrary text, and
+ *  inserting THAT verbatim would write an invalid `CONFIG_FOO=OTHER_SYMBOL`
+ *  line — so anything that isn't one of these literal shapes is dropped. */
+function isLiteralDefault(raw: string): boolean {
+  return /^(?:[ynm]|-?\d+|0[xX][0-9a-fA-F]+|".*")$/.test(raw);
+}
 
 /** One symbol from the SDK's rich `tan kconfig --core <id>` envelope
  *  (alp-sdk #894) — a promptable Kconfig symbol, bare name (no `CONFIG_`
@@ -81,8 +98,9 @@ interface KconfigData {
 /**
  * Extract live Kconfig symbols from a `tan kconfig --core <id>` `data`
  * payload, mapped onto the LSP's `KconfigSymbol` shape (`type`→`type`,
- * `doc` = `help || prompt || ""`, `valueHint` = `default` (dropped when
- * empty), `source` = `"sdk-live"`).
+ * `doc` = `help || prompt || ""`, `valueHint` = `default` when it's a plain
+ * literal (dropped when empty or a symbol-reference/expression — see
+ * `isLiteralDefault`), `source` = `"sdk-live"`).
  *
  * Pure + tolerant: a missing/degenerate payload, a non-array `symbols`, or a
  * malformed entry (missing/empty name, a junk `type`) is dropped rather than
@@ -112,7 +130,9 @@ export function kconfigSymbolsFromEnvelope(data: unknown): KconfigSymbol[] {
     const rawDefault = sym.default;
     const valueHint =
       typeof rawDefault === "string"
-        ? rawDefault || undefined
+        ? rawDefault && isLiteralDefault(rawDefault)
+          ? rawDefault
+          : undefined
         : typeof rawDefault === "number" || typeof rawDefault === "boolean"
           ? String(rawDefault)
           : undefined;
@@ -129,12 +149,13 @@ export function kconfigSymbolsFromEnvelope(data: unknown): KconfigSymbol[] {
   return out;
 }
 
-/** Per-`${sdkRoot}::${boardYamlPath}::${coreId}` cache of the live symbols
- *  fetched for that core — mirrors src/pinmux/loader.ts's table cache, except
- *  there is no mtime to invalidate on here, so only a NON-EMPTY result is
- *  cached: an empty/failed fetch (old CLI, transient error) must not stick,
- *  so the next push retries it instead of silently starving completion for
- *  the rest of the window. */
+/** Per-`${sdkRoot}::${boardYamlPath}::${coreId}::${mtimeMs}` cache of the live
+ *  symbols fetched for that core — mirrors src/pinmux/loader.ts's table cache,
+ *  keyed the same way (mtime folded in so an in-place board.yaml edit
+ *  self-invalidates instead of serving stale completions/hover/lint for the
+ *  rest of the window). Only a NON-EMPTY result is cached: an empty/failed
+ *  fetch (old CLI, transient error) must not stick, so the next push retries
+ *  it instead of silently starving completion. */
 const kconfigCache = new Map<string, readonly KconfigSymbol[]>();
 
 /**
@@ -142,6 +163,14 @@ const kconfigCache = new Map<string, readonly KconfigSymbol[]>();
  * the injectable seam — the real caller (client.ts) shells `tan kconfig
  * --core <id>` via `runAlpCommand`; tests inject a fake — so this stays pure
  * and unit-testable without `vscode`.
+ *
+ * The cache key folds in `boardYamlPath`'s `mtimeMs` (exactly like
+ * src/pinmux/loader.ts folds in its table file's mtime) so editing board.yaml
+ * — a different SoM/core topology, say — invalidates the fetch on the very
+ * next call rather than serving a stale catalog for the rest of the window.
+ * When the file can't be stat'd (deleted mid-edit, a bad path) caching is
+ * skipped for this call entirely — always refetch rather than cache under a
+ * key that can never be invalidated again.
  */
 export async function fetchKconfigSymbolsForCore(
   sdkRoot: string,
@@ -150,12 +179,24 @@ export async function fetchKconfigSymbolsForCore(
   cwd: string,
   fetchEnvelope: (coreId: string, cwd: string) => Promise<unknown>,
 ): Promise<readonly KconfigSymbol[]> {
-  const key = `${sdkRoot}::${boardYamlPath}::${coreId}`;
-  const cached = kconfigCache.get(key);
-  if (cached !== undefined) return cached;
+  let mtimeMs: number | null;
+  try {
+    mtimeMs = fs.statSync(boardYamlPath).mtimeMs;
+  } catch {
+    mtimeMs = null;
+  }
+  const key =
+    mtimeMs === null
+      ? null
+      : `${sdkRoot}::${boardYamlPath}::${coreId}::${mtimeMs}`;
+
+  if (key !== null) {
+    const cached = kconfigCache.get(key);
+    if (cached !== undefined) return cached;
+  }
 
   const symbols = kconfigSymbolsFromEnvelope(await fetchEnvelope(coreId, cwd));
-  if (symbols.length > 0) kconfigCache.set(key, symbols);
+  if (key !== null && symbols.length > 0) kconfigCache.set(key, symbols);
   return symbols;
 }
 

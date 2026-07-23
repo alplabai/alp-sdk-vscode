@@ -1,5 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const {
   catalogFromPresets,
@@ -12,6 +15,18 @@ const {
   createBoardYamlCompletionSuggestions,
   createBoardYamlHoverInfo,
 } = require("../out/lsp/service.js");
+
+/** A real, stat-able board.yaml path — the cache key folds in its mtime, so
+ *  the caching tests need an actual file rather than a fake "/proj/board.yaml"
+ *  string (which never stats and would always skip the cache). */
+function tempBoardYaml() {
+  const p = path.join(
+    os.tmpdir(),
+    `alp-sdk-vscode-test-board-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.yaml`,
+  );
+  fs.writeFileSync(p, "cores: {}\n");
+  return p;
+}
 
 test("catalogFromPresets maps alp-presets data to SKUs + boardLibraries", () => {
   const catalog = catalogFromPresets({
@@ -123,79 +138,215 @@ test("kconfigSymbolsFromEnvelope tolerates missing/degenerate data + malformed e
   );
 });
 
-test("fetchKconfigSymbolsForCore caches per (sdkRoot, boardYamlPath, coreId) — a different core is a different entry", async () => {
-  clearKconfigSymbolCache();
-  const calls = [];
-  const fetchEnvelope = async (coreId, cwd) => {
-    calls.push({ coreId, cwd });
-    return { symbols: [{ name: `SYM_${coreId}`, type: "bool", help: "x" }] };
-  };
+test("kconfigSymbolsFromEnvelope keeps a tristate type (kconfiglib's full TYPE_TO_STR set)", () => {
+  const symbols = kconfigSymbolsFromEnvelope({
+    symbols: [
+      { name: "MMC_HOST", type: "tristate", help: "Enable MMC host driver" },
+    ],
+  });
+  assert.equal(symbols.length, 1);
+  assert.equal(symbols[0].type, "tristate");
+});
 
-  const hp = await fetchKconfigSymbolsForCore(
+test("kconfigSymbolsFromEnvelope only sets valueHint for a literal default, dropping a symbol-reference/expression", () => {
+  const symbols = kconfigSymbolsFromEnvelope({
+    symbols: [
+      {
+        name: "EXPR_DEFAULT",
+        type: "bool",
+        help: "x",
+        default: "OTHER_SYMBOL",
+      },
+      { name: "BOOL_DEFAULT", type: "bool", help: "x", default: "y" },
+      { name: "HEX_DEFAULT", type: "hex", help: "x", default: "0x1000" },
+      { name: "INT_DEFAULT", type: "int", help: "x", default: "1024" },
+      {
+        name: "STRING_DEFAULT",
+        type: "string",
+        help: "x",
+        default: '"a string"',
+      },
+    ],
+  });
+  const byName = Object.fromEntries(symbols.map((s) => [s.name, s]));
+  assert.equal(
+    byName.EXPR_DEFAULT.valueHint,
+    undefined,
+    "a bare symbol-name default is an expression, not an insertable literal",
+  );
+  assert.equal(byName.BOOL_DEFAULT.valueHint, "y");
+  assert.equal(byName.HEX_DEFAULT.valueHint, "0x1000");
+  assert.equal(byName.INT_DEFAULT.valueHint, "1024");
+  assert.equal(byName.STRING_DEFAULT.valueHint, '"a string"');
+});
+
+test("fetchKconfigSymbolsForCore caches per (sdkRoot, boardYamlPath, coreId, mtime) — a different core is a different entry", async () => {
+  clearKconfigSymbolCache();
+  const boardYamlPath = tempBoardYaml();
+  try {
+    const calls = [];
+    const fetchEnvelope = async (coreId, cwd) => {
+      calls.push({ coreId, cwd });
+      return { symbols: [{ name: `SYM_${coreId}`, type: "bool", help: "x" }] };
+    };
+
+    const hp = await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    const he = await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_he",
+      "/proj",
+      fetchEnvelope,
+    );
+    assert.equal(calls.length, 2, "two distinct cores must both fetch");
+    assert.deepEqual(
+      hp.map((s) => s.name),
+      ["SYM_m55_hp"],
+    );
+    assert.deepEqual(
+      he.map((s) => s.name),
+      ["SYM_m55_he"],
+    );
+
+    // Same (sdkRoot, boardYamlPath, coreId, mtime) again: served from cache.
+    await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    assert.equal(
+      calls.length,
+      2,
+      "a repeat fetch for the same key must hit the cache",
+    );
+  } finally {
+    fs.rmSync(boardYamlPath, { force: true });
+  }
+});
+
+test("fetchKconfigSymbolsForCore invalidates when board.yaml's mtime changes (in-place edit self-invalidates)", async () => {
+  clearKconfigSymbolCache();
+  const boardYamlPath = tempBoardYaml();
+  try {
+    let calls = 0;
+    const fetchEnvelope = async () => {
+      calls++;
+      return { symbols: [{ name: "SYM", type: "bool", help: "x" }] };
+    };
+
+    await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    assert.equal(calls, 1, "an unchanged mtime must hit the cache");
+
+    // Push mtime forward by a few seconds — some filesystems only have ~1-2s
+    // mtime resolution, so a tiny bump could round away to the same value.
+    const bumped = new Date(fs.statSync(boardYamlPath).mtime.getTime() + 5000);
+    fs.utimesSync(boardYamlPath, bumped, bumped);
+
+    await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      fetchEnvelope,
+    );
+    assert.equal(
+      calls,
+      2,
+      "board.yaml's mtime changing must refetch, not hit the stale cache entry",
+    );
+  } finally {
+    fs.rmSync(boardYamlPath, { force: true });
+  }
+});
+
+test("fetchKconfigSymbolsForCore never caches when board.yaml can't be stat'd — always refetches rather than caching under an unkeyed entry", async () => {
+  clearKconfigSymbolCache();
+  const missingPath = path.join(
+    os.tmpdir(),
+    `alp-sdk-vscode-test-missing-${process.pid}-${Date.now()}.yaml`,
+  );
+  let calls = 0;
+  const fetchEnvelope = async () => {
+    calls++;
+    return { symbols: [{ name: "SYM", type: "bool", help: "x" }] };
+  };
+  await fetchKconfigSymbolsForCore(
     "/sdk",
-    "/proj/board.yaml",
+    missingPath,
     "m55_hp",
     "/proj",
     fetchEnvelope,
   );
-  const he = await fetchKconfigSymbolsForCore(
-    "/sdk",
-    "/proj/board.yaml",
-    "m55_he",
-    "/proj",
-    fetchEnvelope,
-  );
-  assert.equal(calls.length, 2, "two distinct cores must both fetch");
-  assert.deepEqual(
-    hp.map((s) => s.name),
-    ["SYM_m55_hp"],
-  );
-  assert.deepEqual(
-    he.map((s) => s.name),
-    ["SYM_m55_he"],
-  );
-
-  // Same (sdkRoot, boardYamlPath, coreId) again: served from cache.
   await fetchKconfigSymbolsForCore(
     "/sdk",
-    "/proj/board.yaml",
+    missingPath,
     "m55_hp",
     "/proj",
     fetchEnvelope,
   );
   assert.equal(
-    calls.length,
+    calls,
     2,
-    "a repeat fetch for the same key must hit the cache",
+    "an unstattable board.yaml must skip caching, not stick under a bad key",
   );
 });
 
 test("fetchKconfigSymbolsForCore never caches an empty/failed fetch — the offline fallback stays retryable", async () => {
   clearKconfigSymbolCache();
-  let calls = 0;
-  // Simulates `tan kconfig --core` not existing yet (pre tan-cli #35): the
-  // envelope fetch resolves with no usable data.
-  const emptyFetch = async () => {
-    calls++;
-    return undefined;
-  };
-  const first = await fetchKconfigSymbolsForCore(
-    "/sdk",
-    "/proj/board.yaml",
-    "m55_hp",
-    "/proj",
-    emptyFetch,
-  );
-  const second = await fetchKconfigSymbolsForCore(
-    "/sdk",
-    "/proj/board.yaml",
-    "m55_hp",
-    "/proj",
-    emptyFetch,
-  );
-  assert.deepEqual(first, []);
-  assert.deepEqual(second, []);
-  assert.equal(calls, 2, "an empty result must not stick — retried every call");
+  const boardYamlPath = tempBoardYaml();
+  try {
+    let calls = 0;
+    // Simulates `tan kconfig --core` not existing yet (pre tan-cli #35): the
+    // envelope fetch resolves with no usable data.
+    const emptyFetch = async () => {
+      calls++;
+      return undefined;
+    };
+    const first = await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      emptyFetch,
+    );
+    const second = await fetchKconfigSymbolsForCore(
+      "/sdk",
+      boardYamlPath,
+      "m55_hp",
+      "/proj",
+      emptyFetch,
+    );
+    assert.deepEqual(first, []);
+    assert.deepEqual(second, []);
+    assert.equal(
+      calls,
+      2,
+      "an empty result must not stick — retried every call",
+    );
+  } finally {
+    fs.rmSync(boardYamlPath, { force: true });
+  }
 });
 
 test("som.sku value completion uses the pushed SDK catalog when present", () => {

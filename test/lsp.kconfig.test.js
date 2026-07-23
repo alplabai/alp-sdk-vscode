@@ -85,6 +85,20 @@ test("completePrjConf merges live symbols, LIVE winning on collision (alp-sdk #8
   assert.ok(stackSize[0].insertText.endsWith("=4096"));
 });
 
+test("a degenerate live symbol (no doc, no proven type) never blanks a good curated collision (quality floor)", () => {
+  const items = completePrjConf("CONFIG_", [
+    { name: "MAIN_STACK_SIZE", type: undefined, doc: "", source: "sdk-live" },
+  ]);
+  const stackSize = items.filter((i) => i.label === "CONFIG_MAIN_STACK_SIZE");
+  assert.equal(stackSize.length, 1);
+  assert.equal(stackSize[0].detail, "int", "curated type must survive");
+  assert.match(
+    stackSize[0].doc,
+    /Stack size/,
+    "curated doc must survive a degenerate live collision",
+  );
+});
+
 test("completePrjConf with no liveSymbols behaves exactly as before", () => {
   assert.deepEqual(
     completePrjConf("CONFIG_MAIN"),
