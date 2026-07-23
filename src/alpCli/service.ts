@@ -16,7 +16,7 @@ import {
 /** The `tan` CLI version this extension build targets for download-on-demand.
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
  *  (aligned with tan-cli's `[workspace.package] version`). */
-export const SUPPORTED_CLI_VERSION = "0.2.0";
+export const SUPPORTED_CLI_VERSION = "0.3.0";
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
