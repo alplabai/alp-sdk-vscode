@@ -20,7 +20,7 @@ import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
 import { writeAlpSetting } from "../sdk/settingsWrite";
-import { log as logChannel } from "../util";
+import { log as logChannel, reportError } from "../util";
 import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
 import { sdkCacheRoot } from "./vscodeAdapter";
 
@@ -55,9 +55,7 @@ export function createSdkMessageHandler(
     try {
       await setActiveSdk(sdkPath);
     } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Alp: failed to set active SDK — ${String(err)}`,
-      );
+      void reportError(`Alp: failed to set active SDK — ${String(err)}`);
     }
     await refresh();
   }
@@ -87,9 +85,7 @@ export function createSdkMessageHandler(
     try {
       fs.rmSync(target, { recursive: true, force: true });
     } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Alp: failed to remove SDK — ${String(err)}`,
-      );
+      void reportError(`Alp: failed to remove SDK — ${String(err)}`);
       return;
     }
 
@@ -147,9 +143,7 @@ export function createSdkMessageHandler(
     try {
       await clearActiveSdk();
     } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Alp: failed to deactivate SDK — ${String(err)}`,
-      );
+      void reportError(`Alp: failed to deactivate SDK — ${String(err)}`);
     }
     await refresh();
   }
@@ -159,7 +153,7 @@ export function createSdkMessageHandler(
     const { outcome } = await runAlpCommand(context, ["sdk", "list"]);
     const envelope = outcome.envelope;
     if (!envelope || !envelope.ok) {
-      void vscode.window.showErrorMessage(
+      void reportError(
         envelope
           ? "Alp: failed to fetch SDK releases. Check your network connection."
           : `Alp: ${outcome.message}`,
@@ -247,9 +241,7 @@ export function createSdkMessageHandler(
           await refresh();
         } catch (err) {
           sendProgress(`Install failed: ${String(err)}`, true, false);
-          void vscode.window.showErrorMessage(
-            `Alp: SDK install failed — ${String(err)}`,
-          );
+          void reportError(`Alp: SDK install failed — ${String(err)}`);
         }
       },
     );
