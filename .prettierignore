@@ -27,3 +27,6 @@ examples/
 
 # Hand-maintained prose docs — not subject to code formatting
 *.md
+
+# Plugin runtime state (Remember) — not source
+.remember/
