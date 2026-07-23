@@ -259,7 +259,7 @@ connection.onCompletion((params): CompletionItem[] => {
     // Zephyr tree (~26k symbols spanning all archs and SoCs) is not.
     const seen = new Set<string>();
     const merged = [
-      ...completePrjConf(linePrefix),
+      ...completePrjConf(linePrefix, sdkCatalog.kconfigSymbols),
       ...buildCompletions(filePath, linePrefix),
     ].filter((c) => !seen.has(c.label) && seen.add(c.label));
 

@@ -408,12 +408,21 @@ export function lintPrjConf(text: string): KconfigDiagnostic[] {
   return out;
 }
 
-/** Completions when the cursor is in the symbol-name position (before any `=`). */
-export function completePrjConf(linePrefix: string): KconfigCompletion[] {
+/** Completions when the cursor is in the symbol-name position (before any `=`).
+ *  `liveSymbols` are name-only entries from `tan kconfig` (the active SDK's
+ *  live Kconfig set) — they augment KCONFIG_SYMBOLS but never override a
+ *  curated/generated entry of the same name (that one has real type/doc). */
+export function completePrjConf(
+  linePrefix: string,
+  liveSymbols: readonly string[] = [],
+): KconfigCompletion[] {
   if (linePrefix.includes("=")) return [];
-  return KCONFIG_SYMBOLS.map((s) => ({
+  const live: KconfigSymbol[] = liveSymbols
+    .filter((name) => !SYMBOL_BY_NAME.has(name))
+    .map((name) => ({ name, doc: "Kconfig symbol from the active SDK." }));
+  return [...KCONFIG_SYMBOLS, ...live].map((s) => ({
     label: `CONFIG_${s.name}`,
-    // Harvested entries have no proven type; say so rather than inventing one.
+    // Harvested/live entries have no proven type; say so rather than inventing one.
     detail: s.type ?? "Kconfig symbol",
     doc: s.doc,
     insertText: `CONFIG_${s.name}=${s.valueHint ?? (s.type === "bool" ? "y" : "")}`,
