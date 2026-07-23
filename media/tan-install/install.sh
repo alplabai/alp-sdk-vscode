@@ -36,7 +36,10 @@ done
 os="$(uname -s)"
 case "$os" in
 Darwin) os_part="apple-darwin" ;;
-Linux) os_part="unknown-linux-gnu" ;;
+# musl (static): no glibc floor, runs on any distro; TLS is rustls/ring so
+# there are no extra runtime deps either. Only published from tan-cli
+# v0.3.0 onward — see the --version 404 note below.
+Linux) os_part="unknown-linux-musl" ;;
 *) echo "install.sh: unsupported OS '$os' — on Windows use install.ps1" >&2; exit 1 ;;
 esac
 
@@ -58,12 +61,20 @@ fi
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 echo "install.sh: downloading tan (${arch_part}-${os_part}, ${VERSION})…"
+dl_ok=1
 if command -v curl >/dev/null 2>&1; then
-	curl -fSL --proto '=https' --tlsv1.2 -o "$tmp" "$url"
+	curl -fSL --proto '=https' --tlsv1.2 -o "$tmp" "$url" || dl_ok=0
 elif command -v wget >/dev/null 2>&1; then
-	wget -qO "$tmp" "$url"
+	wget -qO "$tmp" "$url" || dl_ok=0
 else
 	echo "install.sh: need curl or wget on PATH" >&2
+	exit 1
+fi
+if [ "$dl_ok" = "0" ]; then
+	echo "install.sh: download failed: ${url}" >&2
+	if [ "$os_part" = "unknown-linux-musl" ] && [ "$VERSION" != "latest" ]; then
+		echo "install.sh: note — the musl Linux asset only exists from v0.3.0 onward; older tags published gnu only and have no ${asset} asset." >&2
+	fi
 	exit 1
 fi
 chmod +x "$tmp"
