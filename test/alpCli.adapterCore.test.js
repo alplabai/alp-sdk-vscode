@@ -2,7 +2,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { resolveAlpBinary, runAlp } = require("../out/alpCli/adapterCore.js");
+const {
+  resolveAlpBinary,
+  runAlp,
+  runAlpAsync,
+} = require("../out/alpCli/adapterCore.js");
 
 function baseDeps(overrides = {}) {
   const existing = new Set(overrides.existing ?? []);
@@ -205,6 +209,75 @@ test("runAlp: falls back to the envelope's exitCode when status is null", () => 
     stderr: "",
   });
   const { outcome } = runAlp("tan", ["generate"], spawn);
+  assert.equal(outcome.exitCode, 3);
+  assert.equal(outcome.kind, "write");
+});
+
+function spawnAsyncReturning(result) {
+  const seen = {};
+  const spawnAsync = async (command, args, cwd) => {
+    seen.command = command;
+    seen.args = args;
+    seen.cwd = cwd;
+    return result;
+  };
+  return { spawnAsync, seen };
+}
+
+test("runAlpAsync: appends --format json and classifies success", async () => {
+  const { spawnAsync, seen } = spawnAsyncReturning({
+    status: 0,
+    stdout: envelope(),
+    stderr: "",
+  });
+  const { outcome } = await runAlpAsync(
+    "tan",
+    ["validate"],
+    spawnAsync,
+    "/cwd",
+  );
+  assert.deepEqual(seen.args, ["validate", "--format", "json"]);
+  assert.equal(seen.cwd, "/cwd");
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.kind, "success");
+});
+
+test("runAlpAsync: validation exit maps to a warning with the first issue", async () => {
+  const { spawnAsync } = spawnAsyncReturning({
+    status: 2,
+    stdout: envelope({
+      ok: false,
+      exitCode: 2,
+      issues: [{ code: "v", severity: "error", message: "schema error" }],
+    }),
+    stderr: "",
+  });
+  const { outcome } = await runAlpAsync("tan", ["validate"], spawnAsync);
+  assert.equal(outcome.kind, "validation");
+  assert.equal(outcome.severity, "warning");
+  assert.equal(outcome.message, "schema error");
+});
+
+test("runAlpAsync: a spawn error (ENOENT / cancelled abort) is an error outcome, no throw", async () => {
+  const { spawnAsync } = spawnAsyncReturning({
+    status: null,
+    stdout: "",
+    stderr: "",
+    error: new Error("The operation was aborted"),
+  });
+  const { outcome } = await runAlpAsync("tan", ["validate"], spawnAsync);
+  assert.equal(outcome.kind, "unknown");
+  assert.equal(outcome.severity, "error");
+  assert.match(outcome.message, /Could not run the tan CLI/);
+});
+
+test("runAlpAsync: falls back to the envelope's exitCode when status is null", async () => {
+  const { spawnAsync } = spawnAsyncReturning({
+    status: null,
+    stdout: envelope({ ok: false, exitCode: 3 }),
+    stderr: "",
+  });
+  const { outcome } = await runAlpAsync("tan", ["generate"], spawnAsync);
   assert.equal(outcome.exitCode, 3);
   assert.equal(outcome.kind, "write");
 });

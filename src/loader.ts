@@ -48,6 +48,37 @@ function logIssues(
   }
 }
 
+type CliResult = Awaited<ReturnType<typeof runAlpCommand>>;
+const CANCELLED = Symbol("cancelled");
+
+/**
+ * Run an envelope command inside a cancellable progress notification. The
+ * CancellationToken is bridged to an AbortSignal so pressing Cancel kills the
+ * `tan` child (and its Python validator/loader) instead of leaving it running.
+ * Returns CANCELLED when the user cancels so the caller skips its error toast.
+ */
+async function runAlpWithProgress(
+  context: vscode.ExtensionContext,
+  args: string[],
+  title: string,
+): Promise<CliResult | typeof CANCELLED> {
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title,
+      cancellable: true,
+    },
+    async (_progress, token) => {
+      const controller = new AbortController();
+      token.onCancellationRequested(() => controller.abort());
+      const result = await runAlpCommand(context, args, undefined, {
+        signal: controller.signal,
+      });
+      return token.isCancellationRequested ? CANCELLED : result;
+    },
+  );
+}
+
 async function runLoader(
   context: vscode.ExtensionContext,
   emit: EmitMode,
@@ -55,11 +86,16 @@ async function runLoader(
   if (boardYamlMissing()) return;
   const target = getGenerationTargetSupport(emit);
 
-  const { outcome } = await runAlpCommand(context, [
-    "generate",
-    "--target",
-    emit,
-  ]);
+  const res = await runAlpWithProgress(
+    context,
+    ["generate", "--target", emit],
+    `Generating ${target.displayName}…`,
+  );
+  if (res === CANCELLED) {
+    vscode.window.setStatusBarMessage("Alp: generation cancelled.", 3000);
+    return;
+  }
+  const { outcome } = res;
   const envelope = outcome.envelope;
   if (!envelope) {
     await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
@@ -89,7 +125,16 @@ async function runLoader(
 async function runLoaderAll(context: vscode.ExtensionContext): Promise<void> {
   if (boardYamlMissing()) return;
 
-  const { outcome } = await runAlpCommand(context, ["generate", "--all"]);
+  const res = await runAlpWithProgress(
+    context,
+    ["generate", "--all"],
+    "Regenerating all formats…",
+  );
+  if (res === CANCELLED) {
+    vscode.window.setStatusBarMessage("Alp: generation cancelled.", 3000);
+    return;
+  }
+  const { outcome } = res;
   const envelope = outcome.envelope;
   if (!envelope) {
     await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
@@ -119,7 +164,16 @@ async function runValidator(context: vscode.ExtensionContext): Promise<void> {
 
   // Delegate to the native CLI (which spawns the SDK's Python validator) and
   // map the envelope back onto the same toasts.
-  const { outcome } = await runAlpCommand(context, ["validate"]);
+  const res = await runAlpWithProgress(
+    context,
+    ["validate"],
+    "Validating board.yaml…",
+  );
+  if (res === CANCELLED) {
+    vscode.window.setStatusBarMessage("Alp: validation cancelled.", 3000);
+    return;
+  }
+  const { outcome } = res;
   const envelope = outcome.envelope;
 
   if (envelope) {

@@ -26,6 +26,12 @@ export type SpawnFn = (
   cwd?: string,
 ) => SpawnResult;
 
+export type SpawnAsyncFn = (
+  command: string,
+  args: string[],
+  cwd?: string,
+) => Promise<SpawnResult>;
+
 /** Seams the resolver needs; the adapter supplies real fs/net/process impls. */
 export interface ResolveDeps {
   cliPathSetting: string;
@@ -149,7 +155,31 @@ export function runAlp(
   spawn: SpawnFn,
   cwd?: string,
 ): { outcome: CliOutcome; raw: SpawnResult } {
-  const raw = spawn(command, [...args, "--format", "json"], cwd);
+  return classifyAlpSpawn(spawn(command, [...args, "--format", "json"], cwd));
+}
+
+/**
+ * Async twin of {@link runAlp}: the injected spawner returns a promise so the
+ * extension host's event loop is never blocked on the CLI subprocess. Same
+ * envelope parsing + classification; a spawn failure (ENOENT, timeout, or a
+ * user-cancelled abort) still yields an error outcome rather than throwing.
+ */
+export async function runAlpAsync(
+  command: string,
+  args: string[],
+  spawnAsync: SpawnAsyncFn,
+  cwd?: string,
+): Promise<{ outcome: CliOutcome; raw: SpawnResult }> {
+  return classifyAlpSpawn(
+    await spawnAsync(command, [...args, "--format", "json"], cwd),
+  );
+}
+
+/** Shared post-spawn classification for {@link runAlp} / {@link runAlpAsync}. */
+function classifyAlpSpawn(raw: SpawnResult): {
+  outcome: CliOutcome;
+  raw: SpawnResult;
+} {
   if (raw.error) {
     return {
       outcome: {
