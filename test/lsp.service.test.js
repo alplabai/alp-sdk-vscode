@@ -109,8 +109,9 @@ test("createBoardYamlCompletionSuggestions suggests top-level keys", () => {
   const labels = suggestions.map((item) => item.label);
 
   assert(labels.includes("som"));
-  assert(labels.includes("os"));
   assert(labels.includes("diagnostics"));
+  // `os` is only valid nested under `cores.<id>.os` (#72) — not top-level.
+  assert(!labels.includes("os"));
 });
 
 test("createBoardYamlCompletionSuggestions suggests enum values for os", () => {
