@@ -20,3 +20,8 @@
   `GLIBC_2.39 not found` on older distros, while `-musl` is fully static and
   runs anywhere, including the `-gnu` asset's own build host. `win32`/`darwin`
   targets are unchanged.
+- `media/tan-install/install.sh` (the standalone global-install script,
+  distinct from the extension's own managed download) switches to the same
+  musl asset, with a clearer error when a download fails.
+- Each tagged release now also cuts a GitHub Release with `alp-sdk.vsix`
+  attached, instead of leaving a tag with no visible release page.

@@ -125,8 +125,11 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |
-            Published to the VS Code Marketplace: https://marketplace.visualstudio.com/items?itemName=AlpLabAI.alp-sdk
-            Install from the pre-release channel, or download `alp-sdk.vsix` below and `code --install-extension alp-sdk.vsix`.
+            The `.vsix` below is attached now. Marketplace/Open VSX publish runs as
+            a later step in this same workflow — check its run for status before
+            assuming it landed: https://marketplace.visualstudio.com/items?itemName=AlpLabAI.alp-sdk
+            Install now regardless: download `alp-sdk.vsix` below and
+            `code --install-extension alp-sdk.vsix`.
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
@@ -214,9 +217,11 @@ jobs:
       - name: Publish to VS Code Marketplace
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
         # NB: --target must NOT be passed with --packagePath — the target is
-        # already baked into the packaged .vsix (line ~185); vsce rejects both
-        # together ("Both options not supported simultaneously: 'packagePath'
-        # and 'target'"). Publish the pre-built platform .vsix by path only.
+        # already baked into the packaged .vsix by the earlier
+        # "Package (.vsix, darwin-arm64, bundled CLI)" step's
+        # `vsce package --target darwin-arm64`; vsce rejects both together
+        # ("Both options not supported simultaneously: 'packagePath' and
+        # 'target'"). Publish the pre-built platform .vsix by path only.
         run: pnpm exec vsce publish --no-dependencies --pre-release --packagePath alp-sdk-darwin-arm64.vsix
         # VSCE_PAT is read from the environment by vsce.
 

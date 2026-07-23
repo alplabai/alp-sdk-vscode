@@ -42,14 +42,11 @@ the binary in this order:
 > build instead, `cargo build --release` in a `tan-cli` checkout and point
 > `alpSdk.cliPath` at `tan-cli/target/release/tan` (or put a `tan` on `PATH`).
 
-> **Linux arm64 is a glibc build, not musl.** The published Linux arm64 asset
-> (`tan-aarch64-unknown-linux-gnu`) links against glibc; the retired in-repo
-> CLI used to ship a static `aarch64-unknown-linux-musl` build specifically so
-> it would run on any distro regardless of libc. Two consequences: a musl-only
-> distro (e.g. Alpine) has no prebuilt `tan` binary to download and needs to
-> point `alpSdk.cliPath` at its own build instead, and a host with a glibc
-> older than the one the `tan-cli` release was built against can fail to run
-> the downloaded binary.
+> **Both Linux assets are static musl builds, not glibc.** The extension
+> downloads `tan-x86_64-unknown-linux-musl` / `tan-aarch64-unknown-linux-musl`
+> (published from `tan-cli` v0.3.0 on) — fully static, so they run on any
+> distro/libc, including musl-only distros like Alpine, with no glibc-version
+> floor to worry about.
 
 ## 2. Install and Open
 

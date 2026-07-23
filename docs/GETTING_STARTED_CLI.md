@@ -23,14 +23,14 @@ asset (no `.zip` / `.tar.gz`). Download the one for your host from the
 
 ```bash
 # Pick the asset for your host target (tag v<version>):
-#   tan-x86_64-unknown-linux-gnu       (Linux x64)
-#   tan-aarch64-unknown-linux-gnu      (Linux arm64)
+#   tan-x86_64-unknown-linux-musl      (Linux x64, static)
+#   tan-aarch64-unknown-linux-musl     (Linux arm64, static)
 #   tan-x86_64-apple-darwin            (macOS Intel)
 #   tan-aarch64-apple-darwin           (macOS Apple silicon)
 #   tan-x86_64-pc-windows-msvc.exe     (Windows x64)
 #   tan-aarch64-pc-windows-msvc.exe    (Windows arm64)
 curl -L -o /usr/local/bin/tan \
-  https://github.com/alplabai/tan-cli/releases/download/v0.1.1/tan-x86_64-unknown-linux-gnu
+  https://github.com/alplabai/tan-cli/releases/download/v0.1.1/tan-x86_64-unknown-linux-musl
 chmod +x /usr/local/bin/tan
 tan --help
 ```
