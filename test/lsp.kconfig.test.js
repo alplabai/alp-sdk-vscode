@@ -54,6 +54,28 @@ test("completePrjConf offers symbols in key position, none after '='", () => {
   assert.deepEqual(completePrjConf("CONFIG_LOG=y"), []);
 });
 
+test("completePrjConf merges live symbols, curated/generated winning on collision", () => {
+  const items = completePrjConf("CONFIG_", ["ALP_FOO", "MAIN_STACK_SIZE"]);
+  const foo = items.find((i) => i.label === "CONFIG_ALP_FOO");
+  assert.ok(foo, "a live-only symbol must be offered");
+  assert.equal(foo.detail, "Kconfig symbol");
+  assert.match(foo.doc, /active SDK/);
+
+  // MAIN_STACK_SIZE is curated: exactly one entry, with the curated prose/type,
+  // not overridden or duplicated by the live one of the same name.
+  const stackSize = items.filter((i) => i.label === "CONFIG_MAIN_STACK_SIZE");
+  assert.equal(stackSize.length, 1);
+  assert.equal(stackSize[0].detail, "int");
+  assert.match(stackSize[0].doc, /Stack size/);
+});
+
+test("completePrjConf with no liveSymbols behaves exactly as before", () => {
+  assert.deepEqual(
+    completePrjConf("CONFIG_MAIN"),
+    completePrjConf("CONFIG_MAIN", []),
+  );
+});
+
 test("lint diagnostics carry correct ranges (spaced + indented assignments)", () => {
   // Spaced '=': the underline must start at the VALUE, not at the '='.
   const spaced = lintPrjConf("CONFIG_ALP_SDK = 123");

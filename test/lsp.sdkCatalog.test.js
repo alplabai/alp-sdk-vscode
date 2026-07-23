@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   catalogFromPresets,
+  kconfigSymbolsFromEnvelope,
   EMPTY_SDK_CATALOG,
 } = require("../out/lsp/sdkCatalog.js");
 const {
@@ -31,6 +32,26 @@ test("catalogFromPresets tolerates a missing / degenerate payload", () => {
   });
   assert.deepEqual(catalog.skus, ["E1M-AEN801"]);
   assert.deepEqual(catalog.libraries, []);
+});
+
+test("kconfigSymbolsFromEnvelope parses tan-kconfig data", () => {
+  assert.deepEqual(
+    kconfigSymbolsFromEnvelope({ symbols: ["ALP_SDK", "ALP_HAS_BMI270"] }),
+    ["ALP_SDK", "ALP_HAS_BMI270"],
+  );
+});
+
+test("kconfigSymbolsFromEnvelope tolerates missing/degenerate data (old CLI without `tan kconfig`)", () => {
+  assert.deepEqual(kconfigSymbolsFromEnvelope(null), []);
+  assert.deepEqual(kconfigSymbolsFromEnvelope(undefined), []);
+  assert.deepEqual(kconfigSymbolsFromEnvelope({}), []);
+  assert.deepEqual(kconfigSymbolsFromEnvelope({ symbols: "not-an-array" }), []);
+  assert.deepEqual(
+    kconfigSymbolsFromEnvelope({
+      symbols: ["ALP_SDK", "", 42, null, undefined],
+    }),
+    ["ALP_SDK"],
+  );
 });
 
 test("som.sku value completion uses the pushed SDK catalog when present", () => {

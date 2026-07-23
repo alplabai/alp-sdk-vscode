@@ -13,6 +13,9 @@ export interface SdkCompletionCatalog {
   skus: readonly string[];
   /** ADR-0018 board libraries (`alp presets` `boardLibraries`). */
   libraries: readonly string[];
+  /** Live Kconfig symbol names (no `CONFIG_` prefix) from `tan kconfig`.
+   *  Empty when the CLI predates that command — see kconfigSymbolsFromEnvelope. */
+  kconfigSymbols: readonly string[];
 }
 
 /** The degraded catalog used before the first push / when no SDK (or CLI) is
@@ -20,6 +23,7 @@ export interface SdkCompletionCatalog {
 export const EMPTY_SDK_CATALOG: SdkCompletionCatalog = {
   skus: [],
   libraries: [],
+  kconfigSymbols: [],
 };
 
 /** The subset of the `alp presets` envelope `data` payload the catalog needs. */
@@ -39,5 +43,23 @@ export function catalogFromPresets(data: unknown): SdkCompletionCatalog {
   const libraries = (payload.boardLibraries ?? []).filter(
     (name): name is string => typeof name === "string" && name.length > 0,
   );
-  return { skus, libraries };
+  return { skus, libraries, kconfigSymbols: [] };
+}
+
+/** The subset of the `tan kconfig` envelope `data` payload the catalog needs. */
+interface KconfigData {
+  symbols?: unknown;
+}
+
+/** Extract live Kconfig symbol names from a `tan kconfig` `data` payload. Pure +
+ *  tolerant: a missing/degenerate payload, a non-array `symbols`, or non-string /
+ *  empty entries collapse to an empty list — this is also the fallback when the
+ *  CLI predates the `kconfig` subcommand entirely. */
+export function kconfigSymbolsFromEnvelope(data: unknown): string[] {
+  const payload = (data ?? {}) as KconfigData;
+  const symbols = payload.symbols;
+  if (!Array.isArray(symbols)) return [];
+  return symbols.filter(
+    (name): name is string => typeof name === "string" && name.length > 0,
+  );
 }
