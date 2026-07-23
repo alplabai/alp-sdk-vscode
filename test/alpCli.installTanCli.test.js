@@ -82,6 +82,21 @@ test("check-vsix-allowlist.sh's allowlist covers media/, the top-level dir the b
   );
 });
 
+test("check-vsix-allowlist.sh's allowlist covers changelog.md, which vsce bundles automatically", () => {
+  const allowlistScript = fs.readFileSync(
+    path.join(root, "scripts", "check-vsix-allowlist.sh"),
+    "utf-8",
+  );
+  // vsce bundles CHANGELOG.md into the VSIX unconditionally for the
+  // Marketplace "Changelog" tab — shipping it is intentional, so a future
+  // trim of the allowlist can't silently re-break packaging (it did once).
+  assert.match(
+    allowlistScript,
+    /\bchangelog\.md\b/,
+    "scripts/check-vsix-allowlist.sh must allowlist changelog.md",
+  );
+});
+
 test("extension.ts registers the alp.installTanCli handler (not just contributes it)", () => {
   // A command contributed in package.json but never registerCommand()'d is a
   // dead palette entry that does nothing — assert the wiring exists.
