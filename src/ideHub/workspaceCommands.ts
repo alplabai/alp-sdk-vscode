@@ -5,7 +5,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log } from "../util";
+import { log, reportError } from "../util";
 
 /**
  * Register workspace lifecycle commands:
@@ -71,7 +71,7 @@ export function registerWorkspaceCommands(): vscode.Disposable[] {
         } catch (err) {
           const message = `Alp: failed to remove ${westDir}: ${String(err)}`;
           log(`[removeWestInit] ${message}`);
-          void vscode.window.showErrorMessage(message);
+          void reportError(message);
         }
       },
     ),

@@ -2,6 +2,7 @@
 
 import * as path from "path";
 import { parseBoardModel } from "../configurator/service";
+import { toPosix } from "../paths";
 import {
   EmitMode,
   GenerationTargetSupport,
@@ -173,8 +174,10 @@ export function createLoaderPlan(
   const workspaceRoot = requireWorkspaceRoot(context.workspaceRoot);
   const sdkRoot = requireSdkRoot(context.sdkRoot);
   const boardPath = requireBoardYamlPath(context.boardYamlPath);
-  const outputPath = path.join(workspaceRoot, target.outputRelativePath);
-  const scriptPath = path.join(sdkRoot, "scripts", "alp_project.py");
+  const outputPath = toPosix(
+    path.join(workspaceRoot, target.outputRelativePath),
+  );
+  const scriptPath = toPosix(path.join(sdkRoot, "scripts", "alp_project.py"));
   const args = ["--input", boardPath, "--emit", emit, "--output", outputPath];
 
   return {
@@ -195,7 +198,7 @@ export function summarizeLoaderBatch(
 
   for (const entry of entries) {
     if (entry.exists && entry.size > 0) {
-      written.push(path.relative(workspaceRoot, entry.outputPath));
+      written.push(toPosix(path.relative(workspaceRoot, entry.outputPath)));
     } else {
       failed.push(entry.emit);
     }

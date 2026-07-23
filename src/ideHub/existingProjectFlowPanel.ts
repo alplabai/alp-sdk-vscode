@@ -13,6 +13,7 @@ import {
   isBootstrapCommand,
   runWebviewCommand,
 } from "./webviewHtml";
+import { onDidFinishTerminalCommand } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.existing-project-flow";
 const PANEL_TITLE = "Alp IDE — Open Project";
@@ -56,9 +57,11 @@ export class ExistingProjectFlowPanel {
 
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
 
-    // Re-push state when the workspace changes (e.g. user opened a folder).
+    // Re-push state when the workspace changes (e.g. user opened a folder), and
+    // when a terminal-backed CTA (bootstrap) finishes — the real signal. util.ts.
     this.disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => void this.refresh()),
+      onDidFinishTerminalCommand(() => void this.refresh()),
     );
   }
 
@@ -92,10 +95,13 @@ export class ExistingProjectFlowPanel {
 
       case "runCommand":
         runWebviewCommand(msg.command);
+        // Bootstrap runs in a terminal; the standing onDidFinishTerminalCommand
+        // subscription refreshes when it closes. Stamp the time so it reads it.
         if (isBootstrapCommand(msg.command)) {
-          const now = new Date().toISOString();
-          void this.context.globalState.update("alp.lastBootstrapAt", now);
-          setTimeout(() => void this.refresh(), 8000);
+          void this.context.globalState.update(
+            "alp.lastBootstrapAt",
+            new Date().toISOString(),
+          );
         }
         break;
 
