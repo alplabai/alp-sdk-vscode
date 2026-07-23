@@ -24,7 +24,11 @@ import {
   TextEdit,
 } from "vscode-languageserver/node";
 import { resolveProjectContext } from "@alp-sdk/core/project/service";
-import { executeValidatorPlanWithSpawn } from "@alp-sdk/core/validation/adapterCore";
+import { executeValidatorPlanAsync } from "@alp-sdk/core/validation/adapterCore";
+import {
+  CancelToken,
+  createCoalescingScheduler,
+} from "@alp-sdk/core/jobs/coalescingScheduler";
 import {
   analyzeValidationResult,
   createValidatorPlan,
@@ -68,6 +72,43 @@ const connection = createConnection(ProposedFeatures.all);
 let hasConfigurationCapability = false;
 let workspaceFolderPaths: string[] = [];
 const documentCache = new Map<string, string>();
+
+// board.yaml validation shells the SDK's Python validator. Debounce + coalesce
+// per-document so a burst of saves runs one validator (the latest), never N, and
+// a stale in-flight run is aborted so it can't post diagnostics over a newer one.
+const BOARD_VALIDATION_DEBOUNCE_MS = 250;
+const boardValidationScheduler = createCoalescingScheduler<string>({
+  delayMs: BOARD_VALIDATION_DEBOUNCE_MS,
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
+});
+
+/**
+ * Spawn the validator asynchronously so the language server's event loop is
+ * never blocked on the subprocess. `signal` (from an AbortController the caller
+ * aborts on coalesce) kills the child; on that abort `spawn` emits `error`,
+ * which we resolve to an empty result — the caller discards it via the token.
+ */
+function spawnValidatorAsync(
+  command: string,
+  args: string[],
+  signal: AbortSignal,
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    const child = cp.spawn(command, args, { signal });
+    // Decode as utf8 at the stream (not per-chunk) so a multi-byte sequence
+    // split across a chunk boundary isn't garbled to replacement characters —
+    // matching the old spawnSync({ encoding: "utf8" }) behavior.
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => (stdout += chunk));
+    child.stderr?.on("data", (chunk) => (stderr += chunk));
+    child.on("error", () => resolve({ status: null, stdout, stderr }));
+    child.on("close", (code) => resolve({ status: code, stdout, stderr }));
+  });
+}
 
 // The board.yaml completion catalog (SoM SKUs + libraries). The client pushes it
 // from `alp presets` (the single CLI source — see client.ts) via the
@@ -147,7 +188,7 @@ connection.onDidOpenTextDocument((params) => {
     validatePrjConf(params.textDocument.uri, params.textDocument.text);
     return;
   }
-  void validateDocument(params.textDocument.uri, params.textDocument.text);
+  scheduleBoardValidation(params.textDocument.uri, params.textDocument.text);
 });
 
 connection.onDidChangeTextDocument((params) => {
@@ -189,11 +230,12 @@ connection.onDidSaveTextDocument((params) => {
 
   const persisted = readDocumentText(filePath);
   documentCache.set(params.textDocument.uri, persisted);
-  void validateDocument(params.textDocument.uri, persisted);
+  scheduleBoardValidation(params.textDocument.uri, persisted);
 });
 
 connection.onDidCloseTextDocument((params) => {
   documentCache.delete(params.textDocument.uri);
+  boardValidationScheduler.cancel(params.textDocument.uri);
   connection.sendDiagnostics({
     uri: params.textDocument.uri,
     diagnostics: [],
@@ -413,9 +455,21 @@ connection.onInitialized(() => {
   connection.console.info("Alp SDK language server initialized.");
 });
 
+/**
+ * Debounce + coalesce board.yaml validation for `uri`. A burst of saves runs
+ * the validator once (latest text); the scheduler aborts any earlier in-flight
+ * run so its result is discarded rather than posted over the newer one.
+ */
+function scheduleBoardValidation(uri: string, documentText: string): void {
+  boardValidationScheduler.schedule(uri, (token) =>
+    validateDocument(uri, documentText, token),
+  );
+}
+
 async function validateDocument(
   uri: string,
   documentTextOverride?: string,
+  token?: CancelToken,
 ): Promise<void> {
   const filePath = uriToFsPath(uri);
   if (!filePath || !isBoardYamlPath(filePath)) {
@@ -462,7 +516,18 @@ async function validateDocument(
   );
 
   const plan = createValidatorPlan(context, filePath);
-  const execution = executeValidatorPlanWithSpawn(context, plan, cp.spawnSync);
+  const controller = new AbortController();
+  token?.onAbort(() => controller.abort());
+  const execution = await executeValidatorPlanAsync(
+    context,
+    plan,
+    (command, args) => spawnValidatorAsync(command, args, controller.signal),
+  );
+  // A newer save superseded this run while the validator was in flight — drop
+  // the stale result so it can't overwrite the newer run's diagnostics.
+  if (token?.aborted) {
+    return;
+  }
   connection.console.log(`$ ${plan.commandLine} (rv=${execution.status})`);
 
   const validation = analyzeValidationResult(execution);
