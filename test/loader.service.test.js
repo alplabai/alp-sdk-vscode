@@ -9,11 +9,6 @@ const {
   summarizeLoaderBatch,
 } = require("../packages/alp-core/dist/loader/service.js");
 
-// The loader joins with the host path module (correct in production — these are
-// real host paths). Normalize separators so the fixtures assert identically on
-// POSIX and Windows.
-const toPosix = (s) => s.split("\\").join("/");
-
 test("createLoaderPlan resolves output and command line", () => {
   const plan = createLoaderPlan(
     {
@@ -26,15 +21,11 @@ test("createLoaderPlan resolves output and command line", () => {
     "zephyr-conf",
   );
 
-  assert.equal(
-    toPosix(plan.outputPath),
-    "/workspace/app/build/generated/alp.conf",
-  );
-  assert.equal(
-    toPosix(plan.scriptPath),
-    "/workspace/sdk/scripts/alp_project.py",
-  );
-  assert.deepEqual(plan.args.map(toPosix), [
+  // outputPath/scriptPath/args are toPosix'd at the source (loader/service.ts),
+  // so this asserts forward-slash directly instead of laundering separators.
+  assert.equal(plan.outputPath, "/workspace/app/build/generated/alp.conf");
+  assert.equal(plan.scriptPath, "/workspace/sdk/scripts/alp_project.py");
+  assert.deepEqual(plan.args, [
     "--input",
     "/workspace/app/board.yaml",
     "--emit",
@@ -60,13 +51,10 @@ test("summarizeLoaderBatch separates written and failed outputs", () => {
     },
   ]);
 
-  assert.deepEqual(
-    { written: summary.written.map(toPosix), failed: summary.failed },
-    {
-      written: ["build/generated/alp.conf"],
-      failed: ["yocto-conf"],
-    },
-  );
+  assert.deepEqual(summary, {
+    written: ["build/generated/alp.conf"],
+    failed: ["yocto-conf"],
+  });
 });
 
 test("listGenerationTargetSupport exposes all supported targets with preview metadata", () => {

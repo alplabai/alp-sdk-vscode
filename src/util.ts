@@ -18,6 +18,19 @@ export function showOutput(): void {
   OUTPUT.show(true);
 }
 
+/** Fires when a terminal launched by `runInTerminal` closes, carrying the
+ *  terminal's `name` and its process exit `code` (undefined if unknown). It is
+ *  the real "an Alp command that ran in a terminal has finished" signal — the
+ *  hub panels keep a standing subscription and re-query their status on it,
+ *  instead of guessing with a blind delay. Fires for every `runInTerminal`
+ *  terminal (bootstrap, `west` build/flash); refresh is idempotent, so a panel
+ *  refreshing on an unrelated Alp terminal's close is harmless. */
+const terminalFinished = new vscode.EventEmitter<{
+  name: string;
+  code: number | undefined;
+}>();
+export const onDidFinishTerminalCommand = terminalFinished.event;
+
 /**
  * Launch `argv` in a dedicated integrated terminal, running the executable
  * directly via `shellPath`/`shellArgs` (no intermediate shell). VS Code passes
@@ -49,6 +62,7 @@ export function runInTerminal(options: {
     if (closed !== terminal) return;
     const code = closed.exitStatus?.code;
     log(`[terminal] "${options.name}" exited (code=${code ?? "unknown"})`);
+    terminalFinished.fire({ name: options.name, code });
     sub.dispose();
   });
   terminal.show(true);
