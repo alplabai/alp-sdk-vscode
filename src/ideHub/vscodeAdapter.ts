@@ -28,9 +28,12 @@ import type { AlpIdeState } from "./messages";
  * save any unsaved editors before replacing, so this is not a silent session
  * loss. Used by the new- and existing-project flows.
  */
-export async function openProjectFolder(uri: vscode.Uri): Promise<void> {
+export async function openProjectFolder(
+  uri: vscode.Uri,
+  forceNewWindow = false,
+): Promise<void> {
   await vscode.commands.executeCommand("vscode.openFolder", uri, {
-    forceNewWindow: false,
+    forceNewWindow,
   });
 }
 

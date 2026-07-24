@@ -296,6 +296,7 @@ export class NewProjectFlowPanel {
           msg.projectName,
           msg.sdkPath,
           msg.destination,
+          msg.openInCurrentWindow ?? true,
         );
         break;
 
@@ -326,6 +327,7 @@ export class NewProjectFlowPanel {
     projectName: string,
     sdkPath?: string,
     destination?: string,
+    openInCurrentWindow: boolean = true,
   ): Promise<void> {
     // Prefer the location chosen in the wizard; fall back to a picker if absent.
     let parentDir = destination?.trim() ?? "";
@@ -472,7 +474,12 @@ export class NewProjectFlowPanel {
     }
 
     if (shouldOpen) {
-      await openProjectFolder(vscode.Uri.file(projectDir));
+      // Checkbox unchecked ⇒ open in a NEW window (keep the current workspace);
+      // checked (default) ⇒ replace the current window.
+      await openProjectFolder(
+        vscode.Uri.file(projectDir),
+        !openInCurrentWindow,
+      );
     }
 
     this.panel.dispose();
