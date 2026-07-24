@@ -7,8 +7,10 @@
 
 import type { AlpIssue, CliOutcome } from "../alpCli/models";
 import type {
+  ModelAbResultMessage,
   ModelFitDataMessage,
   ModelPrepResultMessage,
+  ModelRunResultMessage,
   ModelsDataMessage,
 } from "../ideHub/messages";
 
@@ -151,6 +153,58 @@ export function toModelPrepResult(outcome: CliOutcome): ModelPrepResultMessage {
     ok: true,
     quantized: data.quantized,
     accuracy: data.accuracy,
+    issues: env.issues,
+  };
+}
+
+/**
+ * Shape a `tan model run` outcome into the webview's run-result message. A
+ * `null` envelope or `!ok` → `ok:false` with the real cause (via
+ * `cliFailureMessage`) plus any envelope issues (tan's `model.failed`).
+ */
+export function toModelRunResult(outcome: CliOutcome): ModelRunResultMessage {
+  const env = outcome.envelope;
+  if (env === null || !env.ok) {
+    const issues: AlpIssue[] = [...(env?.issues ?? [])];
+    if (env === null) {
+      issues.push({
+        code: "modelRun.cli-error",
+        severity: "error",
+        message: cliFailureMessage(outcome),
+      });
+    }
+    return { type: "modelRunResult", ok: false, issues };
+  }
+  return {
+    type: "modelRunResult",
+    ok: true,
+    run: env.data as ModelRunResultMessage["run"],
+    issues: env.issues,
+  };
+}
+
+/**
+ * Shape a `tan model ab` outcome into the webview's A/B-result message. A
+ * `null` envelope or `!ok` → `ok:false` with the real cause (via
+ * `cliFailureMessage`) plus any envelope issues (tan's `model.failed`).
+ */
+export function toModelAbResult(outcome: CliOutcome): ModelAbResultMessage {
+  const env = outcome.envelope;
+  if (env === null || !env.ok) {
+    const issues: AlpIssue[] = [...(env?.issues ?? [])];
+    if (env === null) {
+      issues.push({
+        code: "modelAb.cli-error",
+        severity: "error",
+        message: cliFailureMessage(outcome),
+      });
+    }
+    return { type: "modelAbResult", ok: false, issues };
+  }
+  return {
+    type: "modelAbResult",
+    ok: true,
+    ab: env.data as ModelAbResultMessage["ab"],
     issues: env.issues,
   };
 }

@@ -10,6 +10,8 @@ const {
   cliFailureMessage,
   toModelFitData,
   toModelPrepResult,
+  toModelRunResult,
+  toModelAbResult,
 } = require("../out/models/service.js");
 
 function okOutcome(envelope) {
@@ -263,6 +265,91 @@ test("toModelPrepResult: !ok envelope -> ok:false, surfaces model.failed", () =>
     },
   };
   const msg = toModelPrepResult(outcome);
+  assert.equal(msg.ok, false);
+  assert.ok(msg.issues.some((i) => i.code === "model.failed"));
+});
+
+test("toModelRunResult: ok -> run passthrough", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        model: "m.onnx",
+        backend: "cpu-host",
+        latency_ms: 0.3,
+        output_argmax: 5,
+        peak_sram_kib: null,
+        power_mj: null,
+        runs: 5,
+        random_input: true,
+        note: "host reference",
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelRunResult(outcome);
+  assert.equal(msg.ok, true);
+  assert.equal(msg.run.backend, "cpu-host");
+  assert.equal(msg.run.power_mj, null);
+});
+
+test("toModelRunResult: null envelope -> ok:false + real cause", () => {
+  const msg = toModelRunResult({
+    exitCode: -1,
+    message: "tan binary not found",
+    envelope: null,
+  });
+  assert.equal(msg.ok, false);
+  assert.ok(msg.issues.some((i) => i.message.includes("tan binary not found")));
+});
+
+test("toModelAbResult: ok -> comparison passthrough", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        a: { model: "a", backend: "cpu-host", latency_ms: 1 },
+        b: { model: "b", backend: "cpu-host", latency_ms: 2 },
+        comparison: {
+          faster: "a",
+          latency_ratio: 2,
+          a_latency_ms: 1,
+          b_latency_ms: 2,
+          size_delta_bytes: 0,
+        },
+        note: "host reference",
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelAbResult(outcome);
+  assert.equal(msg.ok, true);
+  assert.equal(msg.ab.comparison.faster, "a");
+});
+
+test("toModelAbResult: !ok -> surfaces model.failed", () => {
+  const msg = toModelAbResult({
+    exitCode: 1,
+    message: "x",
+    envelope: {
+      command: "model",
+      ok: false,
+      exitCode: 1,
+      project: {},
+      data: null,
+      issues: [{ code: "model.failed", severity: "error", message: "error: bad" }],
+    },
+  });
   assert.equal(msg.ok, false);
   assert.ok(msg.issues.some((i) => i.code === "model.failed"));
 });
