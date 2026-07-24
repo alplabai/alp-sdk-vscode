@@ -17,6 +17,33 @@ export function registerBootstrapCommand(
   context: vscode.ExtensionContext,
 ): vscode.Disposable[] {
   const runBootstrap = () => {
+    // Native Windows can't bootstrap: `tan bootstrap` orchestrates the SDK's
+    // POSIX bootstrap.sh (west install + west init/update + Zephyr pip) and
+    // refuses on win32 ("bootstrap: not supported on native Windows. Use
+    // WSL2"). Shelling it anyway spawns a terminal whose shell (tan.exe) exits
+    // 1 immediately, so VS Code shows its generic "failed to launch (exit
+    // code: 1)" and hides tan's real guidance. Surface it directly instead of
+    // launching a doomed terminal.
+    if (process.platform === "win32") {
+      const LEARN = "Learn more";
+      void vscode.window
+        .showWarningMessage(
+          "Alp: Bootstrap isn't supported on native Windows — the build " +
+            "environment (west + Zephyr + Python) runs under WSL2 (Ubuntu). " +
+            "Open your project in a WSL2 window and run Bootstrap there.",
+          LEARN,
+        )
+        .then((pick) => {
+          if (pick === LEARN) {
+            void vscode.env.openExternal(
+              vscode.Uri.parse(
+                "https://github.com/alplabai/alp-sdk-vscode#readme",
+              ),
+            );
+          }
+        });
+      return;
+    }
     const workspaceRoot = collectProjectContext().workspaceRoot ?? undefined;
     return runAlpInTerminal(context, ["bootstrap"], {
       name: "Alp Bootstrap",
