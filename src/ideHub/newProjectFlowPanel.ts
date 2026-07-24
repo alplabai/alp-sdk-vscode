@@ -14,6 +14,7 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { E1M_MODULES } from "./projectScaffold";
+import { buildProjectSettings } from "./projectSettings";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
 import { log, reportError, showOutput } from "../util";
@@ -485,10 +486,12 @@ export class NewProjectFlowPanel {
     this.panel.dispose();
   }
 
-  /** Write `alpSdk.path` into the new project's .vscode/settings.json so it
-   *  opens with the SDK chosen in the wizard (merges if a file already exists).
-   *  Returns the outcome so the caller can surface a pin failure BEFORE offering
-   *  to open the project — never silently open an unpinned scaffold (F5). */
+  /** Write the new project's .vscode/settings.json (merging if it exists): pin
+   *  `alpSdk.path` to the SDK chosen in the wizard, and point the C/C++ extension
+   *  at the west build's compile DB so Zephyr + ALP headers resolve after the
+   *  first Build (see buildProjectSettings). Returns the outcome so the caller
+   *  can surface a failure BEFORE offering to open the project — never silently
+   *  open an unpinned scaffold (F5). */
   private pinProjectSdk(
     projectDir: string,
     sdkPath: string,
@@ -505,7 +508,7 @@ export class NewProjectFlowPanel {
           existing = {};
         }
       }
-      const settings = { ...existing, "alpSdk.path": sdkPath };
+      const settings = buildProjectSettings(existing, sdkPath);
       fs.writeFileSync(
         settingsPath,
         JSON.stringify(settings, null, 2) + "\n",
