@@ -1,0 +1,191 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+.container {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  color: var(--text-primary);
+}
+
+/* ── Header ── */
+.header {
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+  padding-bottom: var(--space-4);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.title {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  margin: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.configLink {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-link);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.configLink:hover {
+  color: var(--text-link-active);
+}
+
+/* ── Issues ── */
+.issues {
+  border: 1px solid var(--status-info-border);
+  background: var(--status-info-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.issues[data-ok="false"] {
+  border-color: var(--status-err-border);
+  background: var(--status-err-bg);
+}
+
+.issuesHead {
+  margin: 0 0 var(--space-2);
+  font-weight: 600;
+  color: var(--status-err);
+}
+
+.issuesList {
+  margin: 0;
+  padding-left: var(--space-6);
+}
+
+.issuesList li[data-severity="error"] {
+  color: var(--status-err);
+}
+
+.issuesList li[data-severity="warn"],
+.issuesList li[data-severity="warning"] {
+  color: var(--status-warn);
+}
+
+/* ── Section ── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-default);
+  padding-bottom: var(--space-2);
+  margin: 0;
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hint {
+  color: var(--text-secondary);
+  font-size: var(--font-size-base);
+  margin: 0;
+}
+
+/* ── Table ── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-secondary);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table td {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.mono {
+  font-family: var(--text-mono);
+  font-size: var(--font-size-sm);
+}
+
+.bytes {
+  margin-left: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+/* ── Badge ── */
+.badge {
+  display: inline-block;
+  border-radius: var(--radius-xl);
+  padding: 1px var(--space-3);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--vscode-badge-foreground);
+}
+
+.badge[data-variant="ok"] {
+  background: var(--status-ok);
+}
+
+.badge[data-variant="warn"] {
+  background: var(--status-warn);
+}
+
+.badge[data-variant="err"] {
+  background: var(--status-err);
+}
+
+/* ── Build progress ── */
+.log {
+  background: var(--surface-bg);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  font-family: var(--text-mono);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+}
