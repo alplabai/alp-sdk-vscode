@@ -14,7 +14,12 @@ import {
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { log as logChannel, reportError } from "../util";
-import { cliFailureMessage, toModelFitData, toModelsData } from "./service";
+import {
+  cliFailureMessage,
+  toModelFitData,
+  toModelPrepResult,
+  toModelsData,
+} from "./service";
 
 const PANEL_VIEW_TYPE = "alpModels";
 const PANEL_TITLE = "Alp Models";
@@ -107,6 +112,48 @@ class ModelsPanel {
     this.post(toModelFitData(outcome));
   }
 
+  /** Prompt for a raw .onnx + a calibration folder, shell `tan model prep`,
+   *  and post the accuracy report. Thin: prep logic lives in tan/alp-sdk. */
+  private async prepModel(): Promise<void> {
+    const modelPick = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { "ONNX model": ["onnx"] },
+      openLabel: "Select model to prep",
+    });
+    if (!modelPick || modelPick.length === 0) return;
+    const calPick = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      openLabel: "Select calibration folder (.npy samples)",
+    });
+    if (!calPick || calPick.length === 0) return;
+
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const args = [
+      "model",
+      "prep",
+      modelPick[0].fsPath,
+      "--calibration",
+      calPick[0].fsPath,
+    ];
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Alp: Prepping model (quantize + accuracy)",
+        cancellable: false,
+      },
+      async () => {
+        const { outcome } = await runAlpCommand(this.context, args, cwd, {
+          timeoutMs: MODEL_BUILD_TIMEOUT_MS,
+        });
+        this.post(toModelPrepResult(outcome));
+      },
+    );
+  }
+
   private onMessage(msg: WebviewToExtMessage): void {
     switch (msg.type) {
       case "ready":
@@ -118,6 +165,9 @@ class ModelsPanel {
         break;
       case "checkModelFit":
         void this.checkFit();
+        break;
+      case "prepModel":
+        void this.prepModel();
         break;
       case "closePanel":
         this.panel.dispose();
