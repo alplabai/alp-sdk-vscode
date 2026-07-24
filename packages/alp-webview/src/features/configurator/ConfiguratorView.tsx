@@ -804,6 +804,15 @@ const LOG_LEVELS: Opt[] = [
   ["trace", "trace"],
 ];
 
+const CONSOLE_BACKENDS: Opt[] = [
+  ["auto", "auto"],
+  ["alp", "alp"],
+  ["uart", "uart"],
+  ["ram", "ram"],
+  ["linux", "linux"],
+  ["none", "none"],
+];
+
 function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
   const { board, mutate } = cfg;
   const d = board.diagnostics ?? {};
@@ -850,6 +859,38 @@ function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
           }
         />
       </Field>
+      <Field
+        label="Console backend"
+        hint="auto picks the console by slice OS; ram forces the Zephyr RAM console for serial-less bench boards (read ram_console_buf over SWD)"
+      >
+        <Select
+          label="Console backend"
+          value={d.console || "auto"}
+          options={CONSOLE_BACKENDS}
+          onChange={(v) =>
+            mutate((draft) => {
+              draft.diagnostics = draft.diagnostics || {};
+              if (v === "auto") delete draft.diagnostics.console;
+              else draft.diagnostics.console = v as never;
+              cleanup(draft);
+            })
+          }
+        />
+      </Field>
+      <div className={styles.field}>
+        <Check
+          checked={d.sim_console === true}
+          label="Simulator console for headless cores (issue #686)"
+          onChange={(c) =>
+            mutate((draft) => {
+              draft.diagnostics = draft.diagnostics || {};
+              if (c) draft.diagnostics.sim_console = true;
+              else delete draft.diagnostics.sim_console;
+              cleanup(draft);
+            })
+          }
+        />
+      </div>
       <Field label="Per-module overrides">
         <div className={styles.modules}>
           {Object.keys(modules).length === 0 ? (
