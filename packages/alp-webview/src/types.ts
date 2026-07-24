@@ -422,6 +422,22 @@ export interface ModelFitDataMessage {
   issues: { code: string; severity: string; message: string }[];
 }
 
+/** Result of `tan model prep` — the quantized artifact + accuracy report. */
+export interface ModelPrepResultMessage {
+  type: "modelPrepResult";
+  ok: boolean;
+  quantized?: string;
+  accuracy?: {
+    samples: number;
+    top1_agreement_pct: number;
+    mean_cosine: number;
+    max_abs_err: number;
+    verdict: string;
+    guidance: string | null;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
 // --- Build-plan preview (mirrors messages.ts; consumes `alp build --plan`) ---
 export interface BuildPlanToolStep {
   tool: string;
@@ -539,7 +555,8 @@ export type ExtToWebviewMessage =
   | SystemManifestDataMessage
   | ModelsDataMessage
   | ModelBuildProgressMessage
-  | ModelFitDataMessage;
+  | ModelFitDataMessage
+  | ModelPrepResultMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -564,6 +581,9 @@ export interface BuildModelMessage {
 }
 export interface CheckModelFitMessage {
   type: "checkModelFit";
+}
+export interface PrepModelMessage {
+  type: "prepModel";
 }
 export interface RequestSdkInstallMessage {
   type: "requestSdkInstall";
@@ -676,4 +696,5 @@ export type WebviewToExtMessage =
   | FlashSliceMessage
   | RequestModelsMessage
   | BuildModelMessage
-  | CheckModelFitMessage;
+  | CheckModelFitMessage
+  | PrepModelMessage;

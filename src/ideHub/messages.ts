@@ -200,6 +200,22 @@ export interface ModelFitDataMessage {
   issues: { code: string; severity: string; message: string }[];
 }
 
+/** Result of `tan model prep` — the quantized artifact + accuracy report. */
+export interface ModelPrepResultMessage {
+  type: "modelPrepResult";
+  ok: boolean;
+  quantized?: string;
+  accuracy?: {
+    samples: number;
+    top1_agreement_pct: number;
+    mean_cosine: number;
+    max_abs_err: number;
+    verdict: string;
+    guidance: string | null;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
 // --- Build-plan preview (consumes `alp build --plan`, ADR 0014 BuildPlan) ---
 
 export interface BuildPlanToolStep {
@@ -282,7 +298,8 @@ export type ExtToWebviewMessage =
   | SystemManifestDataMessage
   | ModelsDataMessage
   | ModelBuildProgressMessage
-  | ModelFitDataMessage;
+  | ModelFitDataMessage
+  | ModelPrepResultMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -342,6 +359,11 @@ export interface BuildModelMessage {
 /** Ask the extension to run the static fit check on the board's models. */
 export interface CheckModelFitMessage {
   type: "checkModelFit";
+}
+
+/** Ask the extension to prep a model (prompts for model + calibration dir). */
+export interface PrepModelMessage {
+  type: "prepModel";
 }
 
 export interface RequestSdkInstallMessage {
@@ -487,4 +509,5 @@ export type WebviewToExtMessage =
   | FlashSliceMessage
   | RequestModelsMessage
   | BuildModelMessage
-  | CheckModelFitMessage;
+  | CheckModelFitMessage
+  | PrepModelMessage;
