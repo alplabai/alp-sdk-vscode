@@ -55,6 +55,14 @@ test("consoleRecommendation: headless core + ram/auto backend -> no warning", ()
   assert.equal(consoleRecommendation(cores, undefined).warning, undefined);
 });
 
+test("consoleRecommendation: already on ram -> no redundant recommendation, badge kept", () => {
+  const cores = [{ id: "sysmgr", hwConsole: false }];
+  const r = consoleRecommendation(cores, "ram");
+  assert.equal(r.recommendation, undefined); // don't nag when already ram
+  assert.equal(r.warning, undefined);
+  assert.deepEqual(r.headlessIds, ["sysmgr"]); // per-core badge still shows
+});
+
 test("consoleRecommendation: mixed SoM names only the headless cores", () => {
   const cores = [
     { id: "hp", hwConsole: true },
