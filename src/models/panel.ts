@@ -14,7 +14,7 @@ import {
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { log as logChannel, reportError } from "../util";
-import { cliFailureMessage, toModelsData } from "./service";
+import { cliFailureMessage, toModelFitData, toModelsData } from "./service";
 
 const PANEL_VIEW_TYPE = "alpModels";
 const PANEL_TITLE = "Alp Models";
@@ -91,6 +91,20 @@ class ModelsPanel {
       runAlpCommand(this.context, ["model", "doctor"], cwd),
     ]);
     this.post(toModelsData(list.outcome, doctor.outcome));
+    void this.checkFit();
+  }
+
+  /** Run the static fit check on every board.yaml model
+   *  (`tan model check --board board.yaml`) and post the per-model verdicts.
+   *  Thin: all fit logic lives in `tan`/alp-sdk; this only shells + shapes. */
+  private async checkFit(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const { outcome } = await runAlpCommand(
+      this.context,
+      ["model", "check", "--board", "board.yaml"],
+      cwd,
+    );
+    this.post(toModelFitData(outcome));
   }
 
   private onMessage(msg: WebviewToExtMessage): void {
@@ -101,6 +115,9 @@ class ModelsPanel {
         break;
       case "buildModel":
         void this.buildModel(msg.name);
+        break;
+      case "checkModelFit":
+        void this.checkFit();
         break;
       case "closePanel":
         this.panel.dispose();
