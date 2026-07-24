@@ -6,7 +6,7 @@
 // and posts the result this module shapes.
 
 import type { AlpIssue, CliOutcome } from "../alpCli/models";
-import type { ModelsDataMessage } from "../ideHub/messages";
+import type { ModelFitDataMessage, ModelsDataMessage } from "../ideHub/messages";
 
 /**
  * Classify a `CliOutcome` into the message the user should see. A `null`
@@ -86,5 +86,36 @@ export function toModelsData(
     models,
     toolchains,
     issues: [...list.envelope!.issues, ...doctor.envelope!.issues],
+  };
+}
+
+/**
+ * Shape a `tan model check --board` outcome into the webview's fit payload.
+ * A `null` envelope (command never produced one) or `!ok` (validation/runtime
+ * failure) surfaces as `ok:false` with an empty model list; the real cause is
+ * `cliFailureMessage(outcome)` (a `null` envelope with a real exit code =
+ * "update tan"; otherwise the outcome's own message) plus any envelope issues
+ * (e.g. tan's `model.failed` carrying the alp stderr).
+ */
+export function toModelFitData(outcome: CliOutcome): ModelFitDataMessage {
+  const env = outcome.envelope;
+  if (env === null || !env.ok) {
+    const issues: AlpIssue[] = [...(env?.issues ?? [])];
+    if (env === null) {
+      issues.push({
+        code: "modelFit.cli-error",
+        severity: "error",
+        message: cliFailureMessage(outcome),
+      });
+    }
+    return { type: "modelFitData", ok: false, models: [], issues };
+  }
+  const data = env.data as { sku?: string; models?: unknown[] };
+  return {
+    type: "modelFitData",
+    ok: true,
+    sku: data.sku,
+    models: data.models ?? [],
+    issues: env.issues,
   };
 }

@@ -5,7 +5,11 @@ const assert = require("node:assert");
 // toModelsData is pure (no `vscode`) so it lives in service.js, not panel.js
 // (panel.js pulls in `vscode`, which isn't resolvable outside a VS Code host —
 // see src/models/service.ts's header comment). panel.ts re-exports it too.
-const { toModelsData, cliFailureMessage } = require("../out/models/service.js");
+const {
+  toModelsData,
+  cliFailureMessage,
+  toModelFitData,
+} = require("../out/models/service.js");
 
 function okOutcome(envelope) {
   return {
@@ -126,4 +130,40 @@ test("cliFailureMessage: a real spawn/timeout outcome (exitCode -1) surfaces out
     cliFailureMessage(spawnFailureOutcome),
     spawnFailureOutcome.message,
   );
+});
+
+test("toModelFitData: ok envelope -> models + sku passthrough", () => {
+  const outcome = {
+    exitCode: 0, message: "",
+    envelope: { command: "model", ok: true, exitCode: 0, project: {},
+      data: { board: "board.yaml", sku: "E1M-AEN801",
+        models: [{ name: "tiny", source: "m.tflite",
+          backends: [{ backend: "cpu", verdict: "fits" }], suggestion: null }] },
+      issues: [] },
+  };
+  const msg = toModelFitData(outcome);
+  assert.equal(msg.type, "modelFitData");
+  assert.equal(msg.ok, true);
+  assert.equal(msg.sku, "E1M-AEN801");
+  assert.equal(msg.models.length, 1);
+  assert.equal(msg.models[0].name, "tiny");
+});
+
+test("toModelFitData: null envelope -> ok:false + real cause (not 'update tan')", () => {
+  const outcome = { exitCode: -1, message: "tan binary not found", envelope: null };
+  const msg = toModelFitData(outcome);
+  assert.equal(msg.ok, false);
+  assert.equal(msg.models.length, 0);
+  assert.ok(msg.issues.some((i) => i.message.includes("tan binary not found")));
+});
+
+test("toModelFitData: !ok envelope -> ok:false, surfaces envelope issues", () => {
+  const outcome = {
+    exitCode: 1, message: "model failed",
+    envelope: { command: "model", ok: false, exitCode: 1, project: {}, data: null,
+      issues: [{ code: "model.failed", severity: "error", message: "error: static check supports .tflite" }] },
+  };
+  const msg = toModelFitData(outcome);
+  assert.equal(msg.ok, false);
+  assert.ok(msg.issues.some((i) => i.code === "model.failed"));
 });
