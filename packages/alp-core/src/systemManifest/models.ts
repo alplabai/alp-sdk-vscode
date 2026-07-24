@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // TS mirror of the ALP **system manifest** (`build/system-manifest.yaml`) — the
-// IDE/tool contract emitted by `west alp-build`. Mirrors, field-for-field, the
-// Rust model in cli-rs/crates/alp-core/src/system_manifest.rs and the vendored
-// schema schemas/system-manifest-v1.schema.json (alp-sdk v0.11.0). Kept in sync
-// MANUALLY — change all three together.
+// IDE/tool contract emitted by `west alp-emit system-manifest`
+// (`python -m alp_orchestrate --emit system-manifest`). Mirrors, field-for-field,
+// the Rust model in cli-rs/crates/alp-core/src/system_manifest.rs and the
+// vendored schema schemas/system-manifest-v1.schema.json (alp-sdk v0.13.0).
+// Kept in sync MANUALLY — change all three together.
 //
 // TOLERANT READER (the stability policy from alp-sdk#106): `schema_version` 1 is
 // additive-only; a breaking change ships as v2 via a deprecation cycle. So
