@@ -20,10 +20,8 @@ const PANEL_VIEW_TYPE = "alpModels";
 const PANEL_TITLE = "Alp Models";
 
 // Pure envelope shaping (`toModelsData`) lives in ./service.ts — no `vscode`
-// there, so it's unit-testable directly (test/models.panel.test.js) without
-// this file's vscode dependency in the require chain. Re-exported here so
-// "the panel's shaper" has one obvious import path for callers of panel.ts.
-export { toModelsData } from "./service";
+// there, so it's unit-testable directly (test/models.service.test.js) without
+// this file's vscode dependency in the require chain.
 
 class ModelsPanel {
   private static current: ModelsPanel | undefined;
