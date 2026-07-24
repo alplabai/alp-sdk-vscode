@@ -95,11 +95,26 @@ export async function maybeOfferSetupPanel(
     };
     const summary = issues.map((k) => issueLabels[k] ?? k).join(", ");
 
-    const action = await vscode.window.showWarningMessage(
-      `Alp IDE: environment not ready — ${summary}.`,
-      "Open Alp IDE",
-      "Don't show again",
-    );
+    // west/python missing on an open project = the build environment hasn't been
+    // bootstrapped — the actionable fix is `alp bootstrap` (installs west +
+    // Zephyr's Python deps). Offer it as a one-click action and say so plainly,
+    // instead of leaving the user to decode "west not found". SDK-not-ready is a
+    // separate fix (SDK Manager), and no-workspace means "open a folder" first —
+    // neither is a bootstrap, so don't offer it for those.
+    const canBootstrap =
+      !issues.includes("no-workspace") &&
+      (issues.includes("west") || issues.includes("python"));
+
+    const RUN_BOOTSTRAP = "Run Bootstrap";
+    const OPEN_HUB = "Open Alp IDE";
+    const message = canBootstrap
+      ? `Alp: build environment not set up (${summary}). Run Bootstrap to install west + Zephyr build tools.`
+      : `Alp IDE: environment not ready — ${summary}.`;
+    const actions = canBootstrap
+      ? [RUN_BOOTSTRAP, OPEN_HUB, "Don't show again"]
+      : [OPEN_HUB, "Don't show again"];
+
+    const action = await vscode.window.showWarningMessage(message, ...actions);
 
     // Only record the fingerprint once the user actually responded; an
     // auto-dismissed toast returns undefined and is left unrecorded so it is
@@ -107,7 +122,9 @@ export async function maybeOfferSetupPanel(
     if (action !== undefined) {
       await context.globalState.update(ORCHESTRATOR_KEY, fingerprint);
     }
-    if (action === "Open Alp IDE") {
+    if (action === RUN_BOOTSTRAP) {
+      await vscode.commands.executeCommand("alp.installDependencies");
+    } else if (action === OPEN_HUB) {
       await vscode.commands.executeCommand("alp.ideHub.focus");
     }
   } catch (err) {
