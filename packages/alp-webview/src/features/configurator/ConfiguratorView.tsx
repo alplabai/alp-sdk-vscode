@@ -809,6 +809,27 @@ const LOG_LEVELS: Opt[] = [
   ["trace", "trace"],
 ];
 
+const CONSOLE_BACKENDS: Opt[] = [
+  ["auto", "auto — by slice OS"],
+  ["alp", "alp — module UART"],
+  ["uart", "uart — module UART"],
+  ["ram", "ram — RAM console (SWD)"],
+  ["linux", "linux — Linux console"],
+  ["none", "none — board default"],
+];
+
+/** Where a core's printf/LOG output goes, and how you read it, for each console
+ *  backend — shown live under the selector so the debug path is explicit. */
+const CONSOLE_BACKEND_HELP: Record<string, string> = {
+  auto: "Default. Picks by slice OS: a Zephyr slice → the module UART console; a Yocto slice → the Linux console.",
+  alp: "printf / LOG → the module console UART (e.g. E1M edge UART0). Read it on a serial terminal.",
+  uart: "printf / LOG → the module console UART (e.g. E1M edge UART0). Read it on a serial terminal.",
+  ram: "printf / LOG → the Zephyr RAM console buffer (ram_console_buf) — no UART needed. Read it over SWD/J-Link, for serial-less bench boards.",
+  linux:
+    "Kernel/console output → the Linux console (Yocto slice), on the Linux tty.",
+  none: "No console Kconfig emitted — inherits the board's default console (DT zephyr,console).",
+};
+
 function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
   const { board, mutate } = cfg;
   const d = board.diagnostics ?? {};
@@ -855,6 +876,38 @@ function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
           }
         />
       </Field>
+      <Field
+        label="Console backend"
+        hint={CONSOLE_BACKEND_HELP[d.console || "auto"]}
+      >
+        <Select
+          label="Console backend"
+          value={d.console || "auto"}
+          options={CONSOLE_BACKENDS}
+          onChange={(v) =>
+            mutate((draft) => {
+              draft.diagnostics = draft.diagnostics || {};
+              if (v === "auto") delete draft.diagnostics.console;
+              else draft.diagnostics.console = v as never;
+              cleanup(draft);
+            })
+          }
+        />
+      </Field>
+      <div className={styles.field}>
+        <Check
+          checked={d.sim_console === true}
+          label="Simulator console for headless cores (issue #686)"
+          onChange={(c) =>
+            mutate((draft) => {
+              draft.diagnostics = draft.diagnostics || {};
+              if (c) draft.diagnostics.sim_console = true;
+              else delete draft.diagnostics.sim_console;
+              cleanup(draft);
+            })
+          }
+        />
+      </div>
       <Field label="Per-module overrides">
         <div className={styles.modules}>
           {Object.keys(modules).length === 0 ? (
