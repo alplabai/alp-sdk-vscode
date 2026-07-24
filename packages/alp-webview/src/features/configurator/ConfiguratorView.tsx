@@ -805,13 +805,25 @@ const LOG_LEVELS: Opt[] = [
 ];
 
 const CONSOLE_BACKENDS: Opt[] = [
-  ["auto", "auto"],
-  ["alp", "alp"],
-  ["uart", "uart"],
-  ["ram", "ram"],
-  ["linux", "linux"],
-  ["none", "none"],
+  ["auto", "auto — by slice OS"],
+  ["alp", "alp — module UART"],
+  ["uart", "uart — module UART"],
+  ["ram", "ram — RAM console (SWD)"],
+  ["linux", "linux — Linux console"],
+  ["none", "none — board default"],
 ];
+
+/** Where a core's printf/LOG output goes, and how you read it, for each console
+ *  backend — shown live under the selector so the debug path is explicit. */
+const CONSOLE_BACKEND_HELP: Record<string, string> = {
+  auto: "Default. Picks by slice OS: a Zephyr slice → the module UART console; a Yocto slice → the Linux console.",
+  alp: "printf / LOG → the module console UART (e.g. E1M edge UART0). Read it on a serial terminal.",
+  uart: "printf / LOG → the module console UART (e.g. E1M edge UART0). Read it on a serial terminal.",
+  ram: "printf / LOG → the Zephyr RAM console buffer (ram_console_buf) — no UART needed. Read it over SWD/J-Link, for serial-less bench boards.",
+  linux:
+    "Kernel/console output → the Linux console (Yocto slice), on the Linux tty.",
+  none: "No console Kconfig emitted — inherits the board's default console (DT zephyr,console).",
+};
 
 function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
   const { board, mutate } = cfg;
@@ -861,7 +873,7 @@ function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
       </Field>
       <Field
         label="Console backend"
-        hint="auto picks the console by slice OS; ram forces the Zephyr RAM console for serial-less bench boards (read ram_console_buf over SWD)"
+        hint={CONSOLE_BACKEND_HELP[d.console || "auto"]}
       >
         <Select
           label="Console backend"
