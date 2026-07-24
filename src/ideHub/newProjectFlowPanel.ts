@@ -15,6 +15,7 @@ import {
 } from "./messages";
 import { E1M_MODULES } from "./projectScaffold";
 import { buildProjectSettings } from "./projectSettings";
+import { resetSetupNudge } from "./setupOrchestrator";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
 import { log, reportError, showOutput } from "../util";
@@ -471,6 +472,12 @@ export class NewProjectFlowPanel {
       void vscode.window.showInformationMessage(
         `Project "${projectName}" created — opening…`,
       );
+      // Clear the setupOrchestrator's machine-wide "already shown" fingerprint
+      // so the freshly-created project's activation re-evaluates readiness and
+      // reliably shows the bootstrap nudge — a prior dismissal for the same
+      // issue set (e.g. from an earlier project) must not silently suppress it
+      // here. globalState is machine-wide, so this survives the window replace.
+      await resetSetupNudge(this.context);
       shouldOpen = true;
     }
 

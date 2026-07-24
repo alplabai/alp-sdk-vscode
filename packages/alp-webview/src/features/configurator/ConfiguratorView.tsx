@@ -473,7 +473,11 @@ function runtimeOptions(id: string): Array<[string, string]> {
   ];
 }
 
-/** Per-core peripheral classes (board.schema.json `core_entry.peripherals` enum). */
+/** Per-core peripheral classes. Source of truth is the vendored schema's
+ * `$defs.core_entry.properties.peripherals.items.enum` in
+ * schemas/board.schema.json; kept in sync manually (webview doesn't depend
+ * on @alp-sdk/core). Drift-guarded by test/configurator.peripheralCatalog.test.js --
+ * a schema change fails that test until this array is updated to match. */
 const PERIPHERAL_CHOICES = [
   "adc",
   "can",
