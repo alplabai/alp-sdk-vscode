@@ -376,6 +376,8 @@ export function ModelsView() {
     zooOk,
     zooIssues,
     adding,
+    addOk,
+    addIssues,
     addFromZoo,
   } = useModels();
 
@@ -475,6 +477,22 @@ export function ModelsView() {
         <h3 id="zoo-title" className={styles.sectionTitle}>
           Model zoo
         </h3>
+        {!addOk && (
+          <IssuesBanner
+            ok={false}
+            issues={
+              addIssues.length > 0
+                ? addIssues
+                : [
+                    {
+                      code: "zooAdd.failed",
+                      severity: "error",
+                      message: "Add failed.",
+                    },
+                  ]
+            }
+          />
+        )}
         {!zooOk ? (
           <IssuesBanner
             ok={false}

@@ -125,6 +125,8 @@ interface State {
   zooOk: boolean;
   zooIssues: ModelsDataMessage["issues"];
   adding: boolean;
+  addOk: boolean;
+  addIssues: ModelsDataMessage["issues"];
 }
 
 type Action =
@@ -166,7 +168,11 @@ type Action =
       issues: ModelsDataMessage["issues"];
     }
   | { type: "addStart" }
-  | { type: "addDone" };
+  | {
+      type: "addResult";
+      ok: boolean;
+      issues: ModelsDataMessage["issues"];
+    };
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
@@ -227,8 +233,13 @@ function reduce(state: State, action: Action): State {
       };
     case "addStart":
       return { ...state, adding: true };
-    case "addDone":
-      return { ...state, adding: false };
+    case "addResult":
+      return {
+        ...state,
+        adding: false,
+        addOk: action.ok,
+        addIssues: action.issues,
+      };
   }
 }
 
@@ -256,6 +267,8 @@ const init: State = {
   zooOk: true,
   zooIssues: [],
   adding: false,
+  addOk: true,
+  addIssues: [],
 };
 
 export function useModels() {
@@ -325,8 +338,10 @@ export function useModels() {
         dispatch({ type: "addStart" });
       } else if (msg?.type === "zooAddResult") {
         // The panel already re-posts `zooData` (+ `modelsData`) after a
-        // successful add — this only clears the button's disabled state.
-        dispatch({ type: "addDone" });
+        // successful add — this clears the button's disabled state AND
+        // carries `ok`/`issues` so a failed add (e.g. duplicate name) still
+        // renders something (never silent, mirrors PrepReport's failure path).
+        dispatch({ type: "addResult", ok: msg.ok, issues: msg.issues });
       }
     }
     window.addEventListener("message", onMessage);

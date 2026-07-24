@@ -122,9 +122,10 @@ class ModelsPanel {
   }
 
   /** Add a curated zoo entry to board.yaml (`tan model add <id> --board`),
-   *  then refresh both the model list (the new model appears) and the zoo
-   *  (idempotence — the entry may now be present). Thin: fetch/add logic
-   *  lives in tan/alp-sdk. */
+   *  then refresh (the new model appears in the list; `refresh()` re-runs
+   *  `refreshZoo()` too, so idempotence shows up there). On failure, report
+   *  the error — a duplicate-name add otherwise fails with no user-visible
+   *  signal. Thin: fetch/add logic lives in tan/alp-sdk. */
   private async addFromZoo(id: string): Promise<void> {
     this.post({ type: "zooAddStarted" });
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -143,8 +144,11 @@ class ModelsPanel {
         );
         this.post(toZooAddResult(outcome));
         if (outcome.envelope && outcome.envelope.ok) {
-          await this.refresh(); // the new model now appears in the list
-          await this.refreshZoo();
+          await this.refresh(); // the new model list refresh also re-runs refreshZoo()
+        } else {
+          void reportError(
+            `Alp: add from zoo failed — ${cliFailureMessage(outcome)}`,
+          );
         }
       },
     );
