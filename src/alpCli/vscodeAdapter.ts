@@ -754,10 +754,18 @@ export async function runAlpInTerminal(
  * Run a `tan` command with its output streamed live into the "Alp SDK" output
  * channel (channel mode). Unlike terminal mode the log PERSISTS after the
  * process exits — the channel does not die with the command, so the outcome and
- * full build log stay visible. Forces `--no-color` (the channel renders plain
- * text) and `--non-interactive` (no TTY to answer prompts), so this is for the
- * build-family commands that never prompt — not bootstrap/flash. Fires the
+ * full log stay visible. Forces `--no-color` (the channel renders plain text)
+ * and `--non-interactive` (no TTY to answer prompts), so this is for the
+ * orchestrator commands that don't need a live console: build/flash/image/clean.
+ * Flash matters most here — its per-slice failure reasons (e.g. "backend
+ * zephyr_west_flash needs west on PATH") used to vanish with the dying terminal,
+ * leaving only "failed to launch". Bootstrap and renode keep runAlpInTerminal
+ * (bootstrap can prompt; renode hosts an interactive sim console). Fires the
  * terminal-finish refresh signal + a verdict toast on close.
+ *
+ * NB: the child inherits the extension host's env, so a tool the flash backend
+ * shells (`west`) must be on the HOST's PATH — the same requirement build
+ * already relies on. It is not sourced from the user's shell profile.
  */
 export async function runAlpStreamed(
   context: vscode.ExtensionContext,

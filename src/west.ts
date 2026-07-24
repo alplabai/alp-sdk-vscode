@@ -92,12 +92,19 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   await runAlpStreamed(context, args, { name: "Alp Build", cwd: target.cwd });
 }
 
+// Image/Flash/Clean, like Build, stream to the "Alp SDK" channel instead of a
+// terminal: a `tan` terminal dies when the process exits, so its output (and,
+// critically for flash, the per-slice failure reasons — e.g. "backend
+// zephyr_west_flash needs west on PATH") scrolls away, leaving only a cryptic
+// "failed to launch". Channel mode keeps the full log + verdict. All three are
+// non-interactive (runAlpStreamed forces `--non-interactive`), so no TTY is
+// lost. Renode alone stays a terminal — it hosts an interactive sim console.
 async function alpImage(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
   );
   if (!target) return;
-  await runAlpInTerminal(context, ["image", ...target.appArg], {
+  await runAlpStreamed(context, ["image", ...target.appArg], {
     name: "Alp Image",
     cwd: target.cwd,
   });
@@ -108,7 +115,7 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
     "examples/multicore/rpmsg-v2n",
   );
   if (!target) return;
-  await runAlpInTerminal(context, ["flash", ...target.appArg], {
+  await runAlpStreamed(context, ["flash", ...target.appArg], {
     name: "Alp Flash",
     cwd: target.cwd,
   });
@@ -119,7 +126,7 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
     "examples/multicore/rpmsg-v2n",
   );
   if (!target) return;
-  await runAlpInTerminal(context, ["clean", ...target.appArg], {
+  await runAlpStreamed(context, ["clean", ...target.appArg], {
     name: "Alp Clean",
     cwd: target.cwd,
   });
