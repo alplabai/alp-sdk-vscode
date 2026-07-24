@@ -8,6 +8,7 @@
 import type { AlpIssue, CliOutcome } from "../alpCli/models";
 import type {
   ModelFitDataMessage,
+  ModelPrepResultMessage,
   ModelsDataMessage,
 } from "../ideHub/messages";
 
@@ -119,6 +120,37 @@ export function toModelFitData(outcome: CliOutcome): ModelFitDataMessage {
     ok: true,
     sku: data.sku,
     models: data.models ?? [],
+    issues: env.issues,
+  };
+}
+
+/**
+ * Shape a `tan model prep` outcome into the webview's prep-result message.
+ * A `null` envelope or `!ok` → `ok:false` with the real cause (via
+ * `cliFailureMessage`) plus any envelope issues (tan's `model.failed`).
+ */
+export function toModelPrepResult(outcome: CliOutcome): ModelPrepResultMessage {
+  const env = outcome.envelope;
+  if (env === null || !env.ok) {
+    const issues: AlpIssue[] = [...(env?.issues ?? [])];
+    if (env === null) {
+      issues.push({
+        code: "modelPrep.cli-error",
+        severity: "error",
+        message: cliFailureMessage(outcome),
+      });
+    }
+    return { type: "modelPrepResult", ok: false, issues };
+  }
+  const data = env.data as {
+    quantized?: string;
+    accuracy?: ModelPrepResultMessage["accuracy"];
+  };
+  return {
+    type: "modelPrepResult",
+    ok: true,
+    quantized: data.quantized,
+    accuracy: data.accuracy,
     issues: env.issues,
   };
 }
