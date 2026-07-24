@@ -42,6 +42,13 @@ const FIT_LABEL: Record<string, string> = {
   "no-fit": "no fit",
 };
 
+/** Unrecognized verdicts default to severity 1 ("warn") — fail-safe so an
+ *  unknown string can't render as green "ok", and can't be masked by a real
+ *  "fits" (severity 0) when `worstByBackend` collapses per-backend results. */
+function fitSeverity(verdict: string): number {
+  return FIT_SEVERITY[verdict] ?? 1;
+}
+
 /** Collapse a model's per-backend verdicts to one worst-case badge per backend
  *  (E8 resolves 3 ethos_u configs → show one ethos_u at its worst verdict). */
 function worstByBackend(
@@ -50,10 +57,7 @@ function worstByBackend(
   const worst = new Map<string, string>();
   for (const b of backends ?? []) {
     const prev = worst.get(b.backend);
-    if (
-      prev === undefined ||
-      (FIT_SEVERITY[b.verdict] ?? 0) > (FIT_SEVERITY[prev] ?? 0)
-    ) {
+    if (prev === undefined || fitSeverity(b.verdict) > fitSeverity(prev)) {
       worst.set(b.backend, b.verdict);
     }
   }
@@ -131,7 +135,7 @@ function ModelRow({
           worstByBackend(fit?.backends).map(({ backend, verdict }) => (
             <Badge
               key={backend}
-              variant={FIT_VARIANT[FIT_SEVERITY[verdict] ?? 0]}
+              variant={FIT_VARIANT[fitSeverity(verdict)]}
               label={`${backend}: ${FIT_LABEL[verdict] ?? verdict}`}
             />
           ))
@@ -182,6 +186,8 @@ export function ModelsView() {
     build,
     refresh,
     fits,
+    fitOk,
+    fitIssues,
     checkingFit,
     checkFit,
   } = useModels();
@@ -215,6 +221,7 @@ export function ModelsView() {
       </header>
 
       <IssuesBanner ok={ok} issues={issues} />
+      <IssuesBanner ok={fitOk} issues={fitIssues} />
 
       <section className={styles.section} aria-labelledby="models-title">
         <div className={styles.sectionHead}>
