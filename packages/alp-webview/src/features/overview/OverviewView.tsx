@@ -223,6 +223,12 @@ const PANELS: PanelCardProps[] = [
     desc: "Diagnose build tools and apply one-click fixes.",
     command: "alp.toolchainDoctor",
   },
+  {
+    icon: "layers",
+    title: "Models",
+    desc: "Manage, build and inspect on-device AI models.",
+    command: "alp.openModelsPanel",
+  },
 ];
 
 const ACTIONS: ActionItem[] = [

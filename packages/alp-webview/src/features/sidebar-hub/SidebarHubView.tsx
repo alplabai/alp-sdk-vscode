@@ -335,6 +335,15 @@ export function SidebarHubView() {
         />
       </Section>
 
+      <Section title="Models">
+        <ActionRow
+          icon="layers"
+          label="Models"
+          desc="Manage, build and inspect on-device AI models"
+          command="alp.openModelsPanel"
+        />
+      </Section>
+
       <Section title="SDK Manager">
         <ActionRow
           icon="download"
