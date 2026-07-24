@@ -296,6 +296,7 @@ export class NewProjectFlowPanel {
           msg.projectName,
           msg.sdkPath,
           msg.destination,
+          msg.openInCurrentWindow ?? true,
         );
         break;
 
@@ -326,6 +327,7 @@ export class NewProjectFlowPanel {
     projectName: string,
     sdkPath?: string,
     destination?: string,
+    openInCurrentWindow: boolean = true,
   ): Promise<void> {
     // Prefer the location chosen in the wizard; fall back to a picker if absent.
     let parentDir = destination?.trim() ?? "";
@@ -459,18 +461,25 @@ export class NewProjectFlowPanel {
       }
       // Dismissed ⇒ don't open (safer than the old silent open).
     } else {
-      const open = "Open Project";
-      const choice = await vscode.window.showInformationMessage(
-        `Project "${projectName}" created at ${projectDir}`,
-        open,
+      // Pin OK ⇒ auto-open so the new project becomes the ACTIVE project: the
+      // extension's project context (board.yaml / build / flash) resolves from
+      // the open workspace folder, so a created-but-unopened project is never
+      // active. Opens in the CURRENT window (see openProjectFolder) — the user
+      // just built this to work on it. Fire-and-forget toast for feedback;
+      // opening no longer needs a click.
+      void vscode.window.showInformationMessage(
+        `Project "${projectName}" created — opening…`,
       );
-      shouldOpen = choice === open;
+      shouldOpen = true;
     }
 
     if (shouldOpen) {
-      // Open in a new window when a workspace is already open, so we don't
-      // replace the user's current session.
-      await openProjectFolder(vscode.Uri.file(projectDir));
+      // Checkbox unchecked ⇒ open in a NEW window (keep the current workspace);
+      // checked (default) ⇒ replace the current window.
+      await openProjectFolder(
+        vscode.Uri.file(projectDir),
+        !openInCurrentWindow,
+      );
     }
 
     this.panel.dispose();

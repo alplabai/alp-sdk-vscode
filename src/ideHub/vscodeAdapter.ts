@@ -21,14 +21,19 @@ import { probeTanVersion } from "../alpCli/vscodeAdapter";
 import type { AlpIdeState } from "./messages";
 
 /**
- * Open a project folder without disrupting the user's current session: if a
- * workspace is already open, open in a NEW window; otherwise reuse the current
- * (empty) window. Used by the new- and existing-project flows.
+ * Open a project folder in the CURRENT window (replaces the open workspace).
+ * The extension's New Project / Open Project flows both mean "switch to this
+ * project now", so a new window would just leave the old one behind as clutter
+ * (the earlier new-window behavior was reported as bad UX). VS Code prompts to
+ * save any unsaved editors before replacing, so this is not a silent session
+ * loss. Used by the new- and existing-project flows.
  */
-export async function openProjectFolder(uri: vscode.Uri): Promise<void> {
-  const hasWorkspaceOpen = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+export async function openProjectFolder(
+  uri: vscode.Uri,
+  forceNewWindow = false,
+): Promise<void> {
   await vscode.commands.executeCommand("vscode.openFolder", uri, {
-    forceNewWindow: hasWorkspaceOpen,
+    forceNewWindow,
   });
 }
 

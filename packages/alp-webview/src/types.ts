@@ -553,6 +553,9 @@ export interface CreateNewProjectMessage {
   sdkPath?: string;
   /** Parent directory chosen in the wizard; omitted = prompt with a dialog. */
   destination?: string;
+  /** Open the created project in the CURRENT window (replace the workspace) vs a
+   *  new window. Omitted = true (the wizard checkbox defaults to on). */
+  openInCurrentWindow?: boolean;
 }
 export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
