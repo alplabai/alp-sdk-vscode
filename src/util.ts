@@ -64,6 +64,16 @@ export function runInTerminal(options: {
     log(`[terminal] "${options.name}" exited (code=${code ?? "unknown"})`);
     terminalFinished.fire({ name: options.name, code });
     sub.dispose();
+    // Glanceable verdict: the terminal dies when its process (e.g. `tan`) exits,
+    // so the outcome otherwise scrolls away with nothing left behind (only the
+    // channel keeps the record). A 0 exit shows an info toast; a defined
+    // non-zero shows an error toast + "Show Output". An undefined code (the user
+    // closed the terminal mid-run) stays silent — not a real failure.
+    if (code === 0) {
+      void vscode.window.showInformationMessage(`${options.name} finished`);
+    } else if (code !== undefined) {
+      void reportError(`${options.name} failed (exit ${code})`);
+    }
   });
   terminal.show(true);
 }
