@@ -174,8 +174,8 @@ export function BuildPlanView() {
           </Button>
         </div>
         <p className={styles.subtitle}>
-          The per-core plan from <code>alp build --plan</code> — what each slice
-          builds, before anything runs.
+          The per-core build plan — what each slice builds, before anything
+          runs.
         </p>
       </header>
 

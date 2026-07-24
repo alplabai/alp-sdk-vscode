@@ -108,7 +108,7 @@ function InspectStep({
           : "No board.yaml found — may not be an Alp project",
     },
     {
-      label: "west workspace",
+      label: "Workspace",
       state:
         westStatus === "initialized"
           ? ("ready" as const)
@@ -116,7 +116,7 @@ function InspectStep({
       description:
         westStatus === "initialized"
           ? "west.yml and .west/ found"
-          : "Run 'west init' to initialise the workspace",
+          : "Activate to initialise the workspace",
     },
   ];
 
@@ -158,10 +158,9 @@ function ActivateStep({ westStatus, onActivate }: ActivateStepProps) {
 
       {westStatus === "missing" && (
         <div className={styles.actionCard}>
-          <p className={styles.actionTitle}>West workspace not initialised</p>
+          <p className={styles.actionTitle}>Workspace not initialised</p>
           <p className={styles.actionDesc}>
-            Run <code>west init</code> and <code>west update</code> to fetch the
-            SDK and all dependencies before building.
+            Activate to fetch the SDK and all dependencies before building.
           </p>
           <Button appearance="primary" onClick={() => onActivate(true)}>
             Initialise &amp; Activate

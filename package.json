@@ -164,7 +164,7 @@
       },
       {
         "command": "alp.installDependencies",
-        "title": "Alp: Bootstrap SDK environment (west + Zephyr deps)",
+        "title": "Alp: Bootstrap SDK environment (Zephyr + build deps)",
         "category": "Alp"
       },
       {
@@ -174,12 +174,12 @@
       },
       {
         "command": "alp.westFlash",
-        "title": "Alp: West flash",
+        "title": "Alp: Flash (single image)",
         "category": "Alp"
       },
       {
         "command": "alp.westUpdate",
-        "title": "Alp: West update (fetch and update modules)",
+        "title": "Alp: Update workspace",
         "category": "Alp"
       },
       {
@@ -346,7 +346,7 @@
       },
       {
         "command": "alp.removeWestInit",
-        "title": "Alp: Remove west initialization (.west/)",
+        "title": "Alp: Reset workspace (.west/)",
         "category": "Alp"
       },
       {

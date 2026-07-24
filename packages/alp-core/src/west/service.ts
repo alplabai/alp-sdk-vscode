@@ -17,7 +17,7 @@ export function createWestBuildPlan(
   context: WestWorkspaceContext,
   input: WestBuildInput,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west build", [
+  return createWestCommandPlan(context, "Alp · Build", [
     "west",
     "build",
     "-b",
@@ -48,23 +48,20 @@ export function createWestBuildPreparation(
 export function createWestFlashPlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west flash", ["west", "flash"]);
+  return createWestCommandPlan(context, "Alp · Flash", ["west", "flash"]);
 }
 
 export function createWestUpdatePlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west update", [
-    "west",
-    "update",
-  ]);
+  return createWestCommandPlan(context, "Alp · Update", ["west", "update"]);
 }
 
 export function createWestAlpImagePlan(
   context: WestWorkspaceContext,
   appPath: string,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west alp-image", [
+  return createWestCommandPlan(context, "Alp · Build image", [
     "west",
     "alp-image",
     appPath,
@@ -75,7 +72,7 @@ export function createWestAlpFlashPlan(
   context: WestWorkspaceContext,
   appPath: string,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west alp-flash", [
+  return createWestCommandPlan(context, "Alp · Flash (all slices)", [
     "west",
     "alp-flash",
     appPath,
@@ -86,7 +83,7 @@ export function createWestAlpCleanPlan(
   context: WestWorkspaceContext,
   appPath: string,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west alp-clean", [
+  return createWestCommandPlan(context, "Alp · Clean", [
     "west",
     "alp-clean",
     appPath,
@@ -97,7 +94,7 @@ export function createWestAlpRenodePlan(
   context: WestWorkspaceContext,
   appPath: string,
 ): WestCommandPlan {
-  return createWestCommandPlan(context, "alp · west alp-renode", [
+  return createWestCommandPlan(context, "Alp · Renode", [
     "west",
     "alp-renode",
     appPath,
