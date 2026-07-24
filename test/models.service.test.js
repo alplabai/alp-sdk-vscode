@@ -203,12 +203,27 @@ test("toModelFitData: !ok envelope -> ok:false, surfaces envelope issues", () =>
 
 test("toModelPrepResult: ok envelope -> quantized + accuracy passthrough", () => {
   const outcome = {
-    exitCode: 0, message: "",
-    envelope: { command: "model", ok: true, exitCode: 0, project: {},
-      data: { raw: "m.onnx", quantized: "m.int8.onnx",
-        accuracy: { samples: 8, top1_agreement_pct: 100.0, mean_cosine: 0.999,
-          max_abs_err: 0.01, verdict: "good", guidance: null } },
-      issues: [] },
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        raw: "m.onnx",
+        quantized: "m.int8.onnx",
+        accuracy: {
+          samples: 8,
+          top1_agreement_pct: 100.0,
+          mean_cosine: 0.999,
+          max_abs_err: 0.01,
+          verdict: "good",
+          guidance: null,
+        },
+      },
+      issues: [],
+    },
   };
   const msg = toModelPrepResult(outcome);
   assert.equal(msg.type, "modelPrepResult");
@@ -218,7 +233,11 @@ test("toModelPrepResult: ok envelope -> quantized + accuracy passthrough", () =>
 });
 
 test("toModelPrepResult: null envelope -> ok:false + real cause", () => {
-  const outcome = { exitCode: -1, message: "tan binary not found", envelope: null };
+  const outcome = {
+    exitCode: -1,
+    message: "tan binary not found",
+    envelope: null,
+  };
   const msg = toModelPrepResult(outcome);
   assert.equal(msg.ok, false);
   assert.ok(msg.issues.some((i) => i.message.includes("tan binary not found")));
@@ -226,9 +245,22 @@ test("toModelPrepResult: null envelope -> ok:false + real cause", () => {
 
 test("toModelPrepResult: !ok envelope -> ok:false, surfaces model.failed", () => {
   const outcome = {
-    exitCode: 1, message: "prep failed",
-    envelope: { command: "model", ok: false, exitCode: 1, project: {}, data: null,
-      issues: [{ code: "model.failed", severity: "error", message: "error: calibration set has 2 samples" }] },
+    exitCode: 1,
+    message: "prep failed",
+    envelope: {
+      command: "model",
+      ok: false,
+      exitCode: 1,
+      project: {},
+      data: null,
+      issues: [
+        {
+          code: "model.failed",
+          severity: "error",
+          message: "error: calibration set has 2 samples",
+        },
+      ],
+    },
   };
   const msg = toModelPrepResult(outcome);
   assert.equal(msg.ok, false);
