@@ -28,9 +28,10 @@ export function registerBootstrapCommand(
       const LEARN = "Learn more";
       void vscode.window
         .showWarningMessage(
-          "Alp: Bootstrap isn't supported on native Windows — the build " +
-            "environment (west + Zephyr + Python) runs under WSL2 (Ubuntu). " +
-            "Open your project in a WSL2 window and run Bootstrap there.",
+          "Alp: Bootstrap doesn't run on native Windows yet — for now, set up " +
+            "the build environment (west + Zephyr + Python) under WSL2 " +
+            "(Ubuntu): open your project in a WSL2 window and run Bootstrap " +
+            "there. Native Windows support is planned.",
           LEARN,
         )
         .then((pick) => {
