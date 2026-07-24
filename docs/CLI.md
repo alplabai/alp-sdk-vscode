@@ -58,10 +58,18 @@ The CLI should expose these top-level command families:
 - `tan presets`
 - `tan explain`
 - `tan size`
+- `tan model` (subcommands: `build`, `list`, `info`, `doctor`, `check`, `zoo`,
+  `add`, `prep`, `run`, `ab` — see §2.3)
 
-The extension shells twelve of these: `bootstrap`, `build`, `image`, `flash`,
+The extension shells thirteen of these: `bootstrap`, `build`, `image`, `flash`,
 `clean`, `renode`, `run`, `sdk`, `doctor`, `validate`, `generate`, and
-`presets` (`src/west.ts`, `src/bootstrap.ts`, `src/ideHub/buildPlanPanel.ts`).
+`presets` (`src/west.ts`, `src/bootstrap.ts`, `src/ideHub/buildPlanPanel.ts`),
+plus the `model` family — the Models panel is a thin GUI shelling `tan model …`:
+a per-model FIT BADGE (green/yellow/red = `fits`/`cpu-fallback`/`no-fit`, before
+build), PREP MODEL (pick model + calibration folder → quantize → accuracy
+report), RUN MODEL / A-B COMPARE (host reference run), and a MODEL ZOO GALLERY
+(browse "runs on your SoM" + one-click Add). Honest caveat: the panel's Run /
+A-B is a host reference, not target-SoM performance.
 
 ### 2.1 Relation to the SDK's `west alp-*` commands (two doors, one engine)
 
@@ -103,6 +111,41 @@ action invokes it with no flags — plain `tan run`, never `--flash` — for the
 no-flash, host-simulation path. Programming real hardware is a separate action
 entirely: the extension's Flash action invokes `tan flash`, not `tan run
 --flash`. (`src/west.ts` in the extension is the caller of record for both.)
+
+### 2.3 `tan model` — model lifecycle family
+
+`tan model <cmd>` mirrors the SDK-native `alp model <cmd>` verbatim (same
+subcommands, same flags). `alp model` is the SDK-native command surface; `tan
+model` is the thin envelope wrapper emitting `{command, ok, exitCode, project,
+data, issues}`. Subcommands:
+
+- `build` / `list` / `info` / `doctor` (pre-existing) — compile `board.yaml`
+  `models:` → `.alpmodel`; list; decode; report toolchains.
+- `check <model.tflite|.onnx> --sku <SKU>` (or `--board board.yaml
+  [--model NAME]`) `[--format human|json]` — static PRE-FLIGHT fit/perf,
+  OFFLINE, no toolchain. Per SoM-backend verdict `fits` | `cpu-fallback` |
+  `no-fit`, plus est SRAM (vs the SoC arena budget), est latency, op-coverage %,
+  and unsupported ops. Labelled `source:static` (tier-1, biased CONSERVATIVE —
+  never over-promises "fits"). Answers "will it fit my SoM's NPU + how fast,
+  before I compile"; the estimate is verified on silicon later.
+- `zoo [--sku <SKU> | --board board.yaml] [--format]` — browse curated
+  model-zoo entries (`metadata/model_zoo/<id>.yaml`), each marked `runs_here`
+  for the SoM (via `validated_soms`). Link + fetch + layer, no weight
+  redistribution.
+- `add <zoo-id> [--board board.yaml] [--name NAME] [--models-dir DIR]` — fetch
+  the source (URL sha256-verified, or bundled), append `{name, source}` to
+  `board.yaml` `models:`. Non-destructive (duplicate name errors).
+- `prep <model.onnx|.tflite> --calibration <dir> [--out] [--per-channel]
+  [--min-samples N]` — LICENSE-FREE INT8 quantize (onnxruntime QDQ) +
+  fp32-vs-int8 ACCURACY report. `.tflite` is converted to ONNX first via
+  tf2onnx. Extras: `model-prep` (onnxruntime/onnx/numpy/sympy), `model-convert`
+  (tf2onnx/tensorflow-cpu) for `.tflite` input.
+- `run <model.onnx> [--input FILE.npy] [--expected LABEL] [--runs N]` — HOST
+  reference run (backend `cpu-host`): functional + host-latency + accuracy. NOT
+  the target SoM's performance; `peak_sram_kib`/`power_mj` are null on host
+  (on-device values are HW-gated).
+- `ab <a.onnx> <b.onnx> [--input] [--runs]` — A/B two models on the same input
+  (host reference): latency + size delta.
 
 ## 3. Global Behavior
 
@@ -365,6 +408,134 @@ Suggested flags:
 
 - `--sku <sku>`
 - `--family <stem>`
+
+### 4.12 `tan model` (envelope subcommands)
+
+`tan model` mirrors the SDK-native `alp model` (see §2.3). `build`, `list`,
+`info`, and `doctor` follow the standard envelope with no special payload. The
+value-add subcommands below each emit the standard envelope; their payloads live
+under `data`, warnings/errors under `issues`.
+
+#### `tan model check`
+
+Purpose:
+
+- static, OFFLINE pre-flight of a model's fit + performance against a SoM's NPU
+  backends, before any compile (no toolchain required)
+
+Required behavior:
+
+- accept `<model.tflite|.onnx>` with `--sku <SKU>`, or `--board board.yaml
+  [--model NAME]`
+- emit, per SoM backend, a verdict of `fits` | `cpu-fallback` | `no-fit`, plus
+  est SRAM (vs the SoC arena budget), est latency, op-coverage %, and unsupported
+  ops
+- label results `source:static` (tier-1, biased CONSERVATIVE — never
+  over-promises "fits"); the estimate is verified on silicon later
+
+Flags:
+
+- `--sku <SKU>`
+- `--board board.yaml`
+- `--model NAME`
+- `--format human|json`
+
+#### `tan model zoo`
+
+Purpose:
+
+- browse curated model-zoo entries and mark which run on the target SoM
+
+Required behavior:
+
+- read `metadata/model_zoo/<id>.yaml` entries and mark each `runs_here` for the
+  SoM (via `validated_soms`)
+- resolve the SoM from `--sku <SKU>` or `--board board.yaml`
+- link + fetch + layer only — no weight redistribution
+
+Flags:
+
+- `--sku <SKU>`
+- `--board board.yaml`
+- `--format`
+
+#### `tan model add`
+
+Purpose:
+
+- add a zoo entry's model to the project's `board.yaml`
+
+Required behavior:
+
+- fetch the source (URL sha256-verified, or bundled)
+- append `{name, source}` to `board.yaml` `models:` — non-destructive (a
+  duplicate name errors)
+
+Flags:
+
+- `--board board.yaml`
+- `--name NAME`
+- `--models-dir DIR`
+
+#### `tan model prep`
+
+Purpose:
+
+- LICENSE-FREE INT8 quantization with an accuracy report
+
+Required behavior:
+
+- quantize `<model.onnx|.tflite>` to INT8 (onnxruntime QDQ) against
+  `--calibration <dir>`
+- emit an fp32-vs-int8 ACCURACY report (top1 agreement %, mean cosine, max-abs-err,
+  verdict `good` | `degraded` + guidance)
+- convert `.tflite` input to ONNX first via tf2onnx
+
+Flags:
+
+- `--calibration <dir>`
+- `--out`
+- `--per-channel`
+- `--min-samples N`
+
+Extras: `model-prep` (onnxruntime/onnx/numpy/sympy); `model-convert`
+(tf2onnx/tensorflow-cpu) for `.tflite` input.
+
+#### `tan model run`
+
+Purpose:
+
+- HOST reference run of `<model.onnx>` — functional + host-latency + accuracy
+
+Required behavior:
+
+- run on backend `cpu-host`
+- report functional output, host latency, and accuracy (against `--expected LABEL`
+  when given)
+- leave `peak_sram_kib`/`power_mj` null on host — these are HW-gated on-device
+  values, NOT the target SoM's performance
+
+Flags:
+
+- `--input FILE.npy`
+- `--expected LABEL`
+- `--runs N`
+
+#### `tan model ab`
+
+Purpose:
+
+- A/B two models (`<a.onnx> <b.onnx>`) on the same input (host reference)
+
+Required behavior:
+
+- run both on the same input and report latency + size delta
+- host reference only — not target-SoM performance
+
+Flags:
+
+- `--input`
+- `--runs`
 
 ## 5. JSON Contract Shape
 

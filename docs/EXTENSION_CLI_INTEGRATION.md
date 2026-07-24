@@ -62,7 +62,9 @@ the `tan` binary as the single implementation and render its output — collapsi
 
 Envelope commands: `validate`, `generate`, `inspect`, `presets`, `explain`,
 `diff`, `trace`, `debug-config --preview`, `support-bundle`, `doctor`,
-`sdk list/current`.
+`sdk list/current`, and the Models-panel surface `model
+check/zoo/add/prep/run/ab` (offline pre-flight / prep / host-reference — no
+toolchain; §6b).
 
 Terminal commands: `bootstrap`, `sdk install` (git clone), and the build/flash
 workflow. The extension **already** runs west builds in a terminal
@@ -341,6 +343,51 @@ cited or linked here.)
 This keeps a single, natively-driven `tan build` entry point for the extension
 and terminal alike, while the SDK's `alp_orchestrate.py` stays the single
 source of truth for per-core planning.
+
+## 6b. Models panel — thin GUI shelling `tan model …`
+
+The extension's **Models panel** is the same shell-the-CLI-and-render-the-envelope
+shape as every other surface here: it spawns `tan model …` (which mirrors the
+SDK's `alp model …` as a thin envelope wrapper) and renders the
+`{command, ok, exitCode, project, data, issues}` envelope. The six commands it
+drives are all **envelope, offline, and toolchain-free** — no compile, no
+`west`, no device — so they sit in the envelope column of §3, not the terminal
+one. (The pre-existing `model build`, which compiles a `board.yaml`'s `models:`
+to `.alpmodel`, does need a toolchain and is not part of this panel.)
+
+Commands the panel shells:
+
+- `tan model check <model.tflite|.onnx> --sku <SKU>` (or `--board board.yaml
+  [--model NAME]`) `[--format human|json]` — static **pre-flight** fit/perf,
+  offline. Per SoM-backend verdict `fits | cpu-fallback | no-fit`, plus est
+  SRAM (vs the SoC arena budget), est latency, op-coverage %, and unsupported
+  ops. Labelled `source:static` — biased **conservative**, never over-promises
+  "fits". Drives the panel's per-model **fit badge** (green/yellow/red =
+  fits/cpu-fallback/no-fit, shown before any build).
+- `tan model zoo [--sku <SKU> | --board board.yaml] [--format]` — browse
+  curated model-zoo entries (`metadata/model_zoo/<id>.yaml`), each marked
+  `runs_here` for the SoM. Backs the **model-zoo gallery** ("runs on your SoM").
+- `tan model add <zoo-id> [--board board.yaml] [--name NAME] [--models-dir
+  DIR]` — fetch the source (URL sha256-verified, or bundled) and append
+  `{name,source}` to `board.yaml` `models:`. Non-destructive (duplicate name
+  errors). The gallery's one-click **Add**.
+- `tan model prep <model.onnx|.tflite> --calibration <dir> [--out]
+  [--per-channel] [--min-samples N]` — license-free INT8 quantize (onnxruntime
+  QDQ) + an fp32-vs-int8 **accuracy report** (top1 agreement %, mean cosine,
+  max-abs-err, verdict good|degraded + guidance). `.tflite` is converted to
+  ONNX first (tf2onnx). Backs **Prep Model** (pick model + calibration folder →
+  report).
+- `tan model run <model.onnx> [--input FILE.npy] [--expected LABEL] [--runs N]`
+  and `tan model ab <a.onnx> <b.onnx> [--input] [--runs]` — a **host reference**
+  run (backend `cpu-host`): functional + host-latency + accuracy, and A/B
+  latency + size delta. Back **Run Model** / **A-B Compare**.
+
+**On-device performance and power stay HW-gated — the panel states this, it
+does not hide it.** `run`/`ab` are a **host reference**, not the target SoM's
+performance; `peak_sram_kib` and `power_mj` are null on host (on-device values
+need the EVK power-topology + Yocto NPU runtimes). `check` is a conservative
+static estimate, verified on silicon later. Real curated zoo entries,
+PyTorch/Keras→ONNX conversion, and per-backend compile defaults are follow-ons.
 
 ## 7. Constraints & non-goals
 
