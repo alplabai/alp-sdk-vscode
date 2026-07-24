@@ -374,24 +374,18 @@ function ConfirmStep({
         role="group"
         aria-label="Where to open the new project"
       >
-        <button
-          type="button"
-          className={styles.filterChip}
-          data-selected={openInThisWindow ? "" : undefined}
-          aria-pressed={openInThisWindow}
+        <Button
+          appearance={openInThisWindow ? "primary" : "secondary"}
           onClick={() => onToggleOpenInThisWindow(true)}
         >
-          Open in this window
-        </button>
-        <button
-          type="button"
-          className={styles.filterChip}
-          data-selected={!openInThisWindow ? "" : undefined}
-          aria-pressed={!openInThisWindow}
+          {openInThisWindow ? "✓ " : ""}Open in this window
+        </Button>
+        <Button
+          appearance={!openInThisWindow ? "primary" : "secondary"}
           onClick={() => onToggleOpenInThisWindow(false)}
         >
-          Open in new window
-        </button>
+          {!openInThisWindow ? "✓ " : ""}Open in new window
+        </Button>
       </div>
       <p className={styles.stepDesc}>
         Click <strong>Create Project</strong> to scaffold{" "}
