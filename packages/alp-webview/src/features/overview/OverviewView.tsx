@@ -49,8 +49,8 @@ function workspaceChip(state: AlpIdeState): ChipState {
 
 function workspaceMeta(state: AlpIdeState): string {
   const { workspaceRoot, westInitialized, boardYamlExists } = state.workspace;
-  if (!westInitialized) return "Run Bootstrap to set up the west workspace";
-  const parts: string[] = ["west workspace ready"];
+  if (!westInitialized) return "Run Bootstrap to set up the workspace";
+  const parts: string[] = ["Workspace ready"];
   if (workspaceRoot && boardYamlExists) parts.push("board.yaml found");
   else if (!workspaceRoot) parts.push("no folder open");
   return parts.join(" · ");

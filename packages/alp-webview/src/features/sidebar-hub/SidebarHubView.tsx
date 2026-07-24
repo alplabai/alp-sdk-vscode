@@ -193,7 +193,7 @@ function sdkValue(sdk: AlpIdeState["sdk"]): string {
 const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
   [
     { icon: "play", label: "Build", command: "alp.westBuild" },
-    { icon: "bolt", label: "Flash (west)", command: "alp.westFlash" },
+    { icon: "bolt", label: "Flash", command: "alp.westFlash" },
     {
       icon: "monitor",
       label: "Run (native_sim)",
@@ -203,7 +203,7 @@ const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
     { icon: "rocket", label: "Flash all cores", command: "alp.westAlpFlash" },
     { icon: "bug", label: "Debug", command: "alp.debug" },
     { icon: "cpu", label: "Renode", command: "alp.westAlpRenode" },
-    // "West Update" lives in the Workspace section (module maintenance, not a
+    // "Update" lives in the Workspace section (module maintenance, not a
     // build/flash action) — don't duplicate it here.
     { icon: "x", label: "Clean", command: "alp.westAlpClean" },
   ];
@@ -280,7 +280,7 @@ export function SidebarHubView() {
             />
             <ActionRow
               icon="refresh"
-              label="West Update"
+              label="Update"
               desc="Fetch & update modules"
               command="alp.westUpdate"
               disabled={!workspace.westInitialized}
