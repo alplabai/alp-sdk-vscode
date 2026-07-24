@@ -4,14 +4,22 @@
 // completion + hover. PURE — no LSP types here; the server maps these plain
 // results onto Diagnostic / CompletionItem / Hover.
 //
-// The symbol table has two layers:
+// The symbol table has three layers, sharpest wins on name collision:
 //   1. CURATED_SYMBOLS below — hand-written, with real explanatory help text.
 //   2. src/lsp/generated/kconfig-metadata.json — harvested by
 //      scripts/vendor-kconfig-metadata.mjs from the schema-validated metadata/
 //      the SDK already publishes (chips, libraries, and the peripheral /
 //      silicon registries). Names there are a validated field, not a regex
-//      guess over Kconfig text.
-// Curated entries win on name collision: their prose is better.
+//      guess over Kconfig text. Curated wins over generated: its prose is
+//      better.
+//   3. LIVE per-core symbols the caller passes into completePrjConf /
+//      hoverPrjConf / lintPrjConf — `tan kconfig --core <id>` (alp-sdk #894),
+//      the active SDK's own Kconfig walk for the prj.conf's resolved core.
+//      These win over BOTH layers above: a live symbol is proven promptable
+//      for THIS board+core, sharper than any static guess. Absent (the CLI
+//      predates rich `--core` kconfig, or the fetch failed) they default to
+//      `[]` and every caller here falls back to curated ∪ generated exactly
+//      as before — see kconfigSymbolsFromEnvelope in sdkCatalog.ts.
 //
 // A full Kconfig database (all of Zephyr — ~26k symbols, only obtainable by
 // running kconfiglib against a configured build) is still NOT bundled. So
@@ -24,7 +32,7 @@ import * as path from "path";
 
 import generated from "./generated/kconfig-metadata.json";
 
-export type KconfigType = "bool" | "int" | "hex" | "string";
+export type KconfigType = "bool" | "int" | "hex" | "string" | "tristate";
 
 export interface KconfigSymbol {
   /** Symbol name WITHOUT the `CONFIG_` prefix (e.g. "MAIN_STACK_SIZE"). */
@@ -352,13 +360,45 @@ export const KCONFIG_METADATA_REV: string = generated.submoduleRev;
 
 const SYMBOL_BY_NAME = new Map(KCONFIG_SYMBOLS.map((s) => [s.name, s]));
 
+/** Curated ∪ generated ∪ live, LIVE winning on name collision (a live symbol
+ *  is proven promptable for this board+core; see the module header) — BUT
+ *  only when it has something to show. Real Zephyr has plenty of promptless/
+ *  help-less symbols only reachable via `select`/`imply`; a live fetch that
+ *  surfaces one of those must not blank out a good curated/generated entry of
+ *  the same name (hover/detail regressing to nothing). The floor only governs
+ *  a COLLISION — a live-only symbol (no curated/generated counterpart) is
+ *  still added regardless of how little it carries.
+ *
+ *  Cloning SYMBOL_BY_NAME per call is cheap at this scale (curated ∪
+ *  generated is a few hundred entries, live is a per-core subset of that) and
+ *  keeps every caller here a pure function of its arguments. */
+function mergedSymbolMap(
+  liveSymbols: readonly KconfigSymbol[],
+): Map<string, KconfigSymbol> {
+  const byName = new Map(SYMBOL_BY_NAME);
+  for (const s of liveSymbols) {
+    const degenerate = s.doc === "" && s.type === undefined;
+    if (degenerate && byName.has(s.name)) continue;
+    byName.set(s.name, s);
+  }
+  return byName;
+}
+
 /** prj.conf and variants (prj_debug.conf, prj-release.conf, …). */
 export function isPrjConfPath(filePath: string): boolean {
   return /^prj.*\.conf$/i.test(path.basename(filePath));
 }
 
-/** Syntax-only lint of a Kconfig fragment. Never flags "unknown symbol". */
-export function lintPrjConf(text: string): KconfigDiagnostic[] {
+/** Syntax-only lint of a Kconfig fragment. Never flags "unknown symbol".
+ *  `liveSymbols` (see the module header) sharpen the boolean-value check for
+ *  a symbol the static tables don't know but the active SDK proves is typed
+ *  for this board+core; omit them (or pass `[]`) to lint against curated ∪
+ *  generated alone. */
+export function lintPrjConf(
+  text: string,
+  liveSymbols: readonly KconfigSymbol[] = [],
+): KconfigDiagnostic[] {
+  const symbolByName = mergedSymbolMap(liveSymbols);
   const out: KconfigDiagnostic[] = [];
   text.split(/\r?\n/).forEach((line, i) => {
     const trimmed = line.trim();
@@ -392,7 +432,7 @@ export function lintPrjConf(text: string): KconfigDiagnostic[] {
       });
       return;
     }
-    const sym = SYMBOL_BY_NAME.get(name.slice("CONFIG_".length));
+    const sym = symbolByName.get(name.slice("CONFIG_".length));
     if (sym && sym.type === "bool" && !/^[ynm]$/.test(value)) {
       out.push({
         line: i,
@@ -408,22 +448,39 @@ export function lintPrjConf(text: string): KconfigDiagnostic[] {
   return out;
 }
 
-/** Completions when the cursor is in the symbol-name position (before any `=`). */
-export function completePrjConf(linePrefix: string): KconfigCompletion[] {
+/** Completions when the cursor is in the symbol-name position (before any `=`).
+ *  `liveSymbols` (see the module header) are the active SDK's rich per-core
+ *  Kconfig set from `tan kconfig --core <id>` — real `type`/`doc`/`valueHint`,
+ *  not a name-only guess — and win over a curated/generated entry of the same
+ *  name. Omit them (or pass `[]`) to complete against curated ∪ generated
+ *  alone, e.g. when the live fetch failed or the CLI predates it. */
+export function completePrjConf(
+  linePrefix: string,
+  liveSymbols: readonly KconfigSymbol[] = [],
+): KconfigCompletion[] {
   if (linePrefix.includes("=")) return [];
-  return KCONFIG_SYMBOLS.map((s) => ({
+  const merged = mergedSymbolMap(liveSymbols);
+  return [...merged.values()].map((s) => ({
     label: `CONFIG_${s.name}`,
-    // Harvested entries have no proven type; say so rather than inventing one.
+    // No proven type (a harvested/live entry that doesn't carry one); say so
+    // rather than inventing one.
     detail: s.type ?? "Kconfig symbol",
     doc: s.doc,
     insertText: `CONFIG_${s.name}=${s.valueHint ?? (s.type === "bool" ? "y" : "")}`,
   }));
 }
 
-/** Hover markdown for a known symbol, else null. `word` may include CONFIG_. */
-export function hoverPrjConf(word: string): string | null {
+/** Hover markdown for a known symbol, else null. `word` may include CONFIG_.
+ *  `liveSymbols` (see the module header) sharpen the heading/doc for a symbol
+ *  the static tables don't know but the active SDK proves is typed for this
+ *  board+core; omit them (or pass `[]`) to hover against curated ∪ generated
+ *  alone. */
+export function hoverPrjConf(
+  word: string,
+  liveSymbols: readonly KconfigSymbol[] = [],
+): string | null {
   const name = word.startsWith("CONFIG_") ? word.slice("CONFIG_".length) : word;
-  const sym = SYMBOL_BY_NAME.get(name);
+  const sym = mergedSymbolMap(liveSymbols).get(name);
   if (!sym) return null;
   // No type is shown when none was proven — an unproven `(bool)` in a hover
   // reads as authoritative and would be a lie.

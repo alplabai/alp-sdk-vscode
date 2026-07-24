@@ -24,7 +24,11 @@ import {
   TextEdit,
 } from "vscode-languageserver/node";
 import { resolveProjectContext } from "@alp-sdk/core/project/service";
-import { executeValidatorPlanWithSpawn } from "@alp-sdk/core/validation/adapterCore";
+import { executeValidatorPlanAsync } from "@alp-sdk/core/validation/adapterCore";
+import {
+  CancelToken,
+  createCoalescingScheduler,
+} from "@alp-sdk/core/jobs/coalescingScheduler";
 import {
   analyzeValidationResult,
   createValidatorPlan,
@@ -55,10 +59,12 @@ import {
   isPrjConfPath,
   lintPrjConf,
 } from "./kconfig";
+import type { KconfigSymbol } from "./kconfig";
 import {
   buildCompletions,
   buildInfoMarkdown,
   diagnosePrjConfAgainstBuild,
+  resolveSlice,
 } from "./buildConfig";
 import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
@@ -69,10 +75,49 @@ let hasConfigurationCapability = false;
 let workspaceFolderPaths: string[] = [];
 const documentCache = new Map<string, string>();
 
-// The board.yaml completion catalog (SoM SKUs + libraries). The client pushes it
-// from `alp presets` (the single CLI source — see client.ts) via the
-// `alp/updateSdkCatalog` notification; before the first push it stays empty and
-// completion falls back to the built-in defaults in service.ts.
+// board.yaml validation shells the SDK's Python validator. Debounce + coalesce
+// per-document so a burst of saves runs one validator (the latest), never N, and
+// a stale in-flight run is aborted so it can't post diagnostics over a newer one.
+const BOARD_VALIDATION_DEBOUNCE_MS = 250;
+const boardValidationScheduler = createCoalescingScheduler<string>({
+  delayMs: BOARD_VALIDATION_DEBOUNCE_MS,
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
+});
+
+/**
+ * Spawn the validator asynchronously so the language server's event loop is
+ * never blocked on the subprocess. `signal` (from an AbortController the caller
+ * aborts on coalesce) kills the child; on that abort `spawn` emits `error`,
+ * which we resolve to an empty result — the caller discards it via the token.
+ */
+function spawnValidatorAsync(
+  command: string,
+  args: string[],
+  signal: AbortSignal,
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    const child = cp.spawn(command, args, { signal });
+    // Decode as utf8 at the stream (not per-chunk) so a multi-byte sequence
+    // split across a chunk boundary isn't garbled to replacement characters —
+    // matching the old spawnSync({ encoding: "utf8" }) behavior.
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => (stdout += chunk));
+    child.stderr?.on("data", (chunk) => (stderr += chunk));
+    child.on("error", () => resolve({ status: null, stdout, stderr }));
+    child.on("close", (code) => resolve({ status: code, stdout, stderr }));
+  });
+}
+
+// The board.yaml completion catalog (SoM SKUs + libraries) plus the per-core
+// live Kconfig symbol sets. The client pushes it from `alp presets` + `tan
+// kconfig --core <id>` (alp-sdk #894 — see client.ts) via the
+// `alp/updateSdkCatalog` notification; before the first push it stays empty
+// and completion falls back to the built-in defaults (service.ts) / the
+// vendored Kconfig set (kconfig.ts).
 let sdkCatalog: SdkCompletionCatalog = EMPTY_SDK_CATALOG;
 
 connection.onNotification(
@@ -81,6 +126,24 @@ connection.onNotification(
     sdkCatalog = catalog ?? EMPTY_SDK_CATALOG;
   },
 );
+
+/**
+ * The live Kconfig symbols the client fetched for `filePath`'s resolved core
+ * (`tan kconfig --core <id>`, alp-sdk #894), or `[]` when the file has no
+ * resolvable slice or that core hasn't been pushed yet — completion/hover/
+ * lint then fall back to the vendored/curated set (see kconfig.ts). Keyed the
+ * same way client.ts populates `kconfigByCore`:
+ * `${boardYamlPath}::${coreId}`.
+ */
+function liveKconfigSymbolsFor(filePath: string): readonly KconfigSymbol[] {
+  const slice = resolveSlice(filePath);
+  if (!slice) {
+    return [];
+  }
+  return (
+    sdkCatalog.kconfigByCore[`${slice.boardYamlPath}::${slice.coreId}`] ?? []
+  );
+}
 
 connection.onInitialize((params: InitializeParams): InitializeResult => {
   hasConfigurationCapability = Boolean(
@@ -147,7 +210,7 @@ connection.onDidOpenTextDocument((params) => {
     validatePrjConf(params.textDocument.uri, params.textDocument.text);
     return;
   }
-  void validateDocument(params.textDocument.uri, params.textDocument.text);
+  scheduleBoardValidation(params.textDocument.uri, params.textDocument.text);
 });
 
 connection.onDidChangeTextDocument((params) => {
@@ -189,11 +252,12 @@ connection.onDidSaveTextDocument((params) => {
 
   const persisted = readDocumentText(filePath);
   documentCache.set(params.textDocument.uri, persisted);
-  void validateDocument(params.textDocument.uri, persisted);
+  scheduleBoardValidation(params.textDocument.uri, persisted);
 });
 
 connection.onDidCloseTextDocument((params) => {
   documentCache.delete(params.textDocument.uri);
+  boardValidationScheduler.cancel(params.textDocument.uri);
   connection.sendDiagnostics({
     uri: params.textDocument.uri,
     diagnostics: [],
@@ -217,7 +281,7 @@ connection.onCompletion((params): CompletionItem[] => {
     // Zephyr tree (~26k symbols spanning all archs and SoCs) is not.
     const seen = new Set<string>();
     const merged = [
-      ...completePrjConf(linePrefix),
+      ...completePrjConf(linePrefix, liveKconfigSymbolsFor(filePath)),
       ...buildCompletions(filePath, linePrefix),
     ].filter((c) => !seen.has(c.label) && seen.add(c.label));
 
@@ -259,7 +323,10 @@ connection.onHover((params): Hover | null => {
     // what the last build resolved (only when this file maps to a slice with
     // a fresh .config). Either may be absent — a symbol missing from the
     // catalogue can still have build output, and vice versa.
-    const sections = [hoverPrjConf(word), buildInfoMarkdown(filePath, word)];
+    const sections = [
+      hoverPrjConf(word, liveKconfigSymbolsFor(filePath)),
+      buildInfoMarkdown(filePath, word),
+    ];
     const markdown = sections.filter(Boolean).join("\n\n---\n\n");
     return markdown
       ? { contents: { kind: MarkupKind.Markdown, value: markdown } }
@@ -413,9 +480,21 @@ connection.onInitialized(() => {
   connection.console.info("Alp SDK language server initialized.");
 });
 
+/**
+ * Debounce + coalesce board.yaml validation for `uri`. A burst of saves runs
+ * the validator once (latest text); the scheduler aborts any earlier in-flight
+ * run so its result is discarded rather than posted over the newer one.
+ */
+function scheduleBoardValidation(uri: string, documentText: string): void {
+  boardValidationScheduler.schedule(uri, (token) =>
+    validateDocument(uri, documentText, token),
+  );
+}
+
 async function validateDocument(
   uri: string,
   documentTextOverride?: string,
+  token?: CancelToken,
 ): Promise<void> {
   const filePath = uriToFsPath(uri);
   if (!filePath || !isBoardYamlPath(filePath)) {
@@ -462,7 +541,18 @@ async function validateDocument(
   );
 
   const plan = createValidatorPlan(context, filePath);
-  const execution = executeValidatorPlanWithSpawn(context, plan, cp.spawnSync);
+  const controller = new AbortController();
+  token?.onAbort(() => controller.abort());
+  const execution = await executeValidatorPlanAsync(
+    context,
+    plan,
+    (command, args) => spawnValidatorAsync(command, args, controller.signal),
+  );
+  // A newer save superseded this run while the validator was in flight — drop
+  // the stale result so it can't overwrite the newer run's diagnostics.
+  if (token?.aborted) {
+    return;
+  }
   connection.console.log(`$ ${plan.commandLine} (rv=${execution.status})`);
 
   const validation = analyzeValidationResult(execution);
@@ -726,7 +816,7 @@ function validatePrjConf(uri: string, text: string): void {
   // inputs — see buildConfig.ts).
   const filePath = uriToFsPath(uri);
   const findings = [
-    ...lintPrjConf(text),
+    ...lintPrjConf(text, filePath ? liveKconfigSymbolsFor(filePath) : []),
     ...(filePath ? diagnosePrjConfAgainstBuild(filePath, text) : []),
   ];
   const diagnostics: Diagnostic[] = findings.map((d) => ({

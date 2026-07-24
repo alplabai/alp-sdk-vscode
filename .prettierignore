@@ -17,6 +17,9 @@ alp-sdk-upstream/
 test/golden/
 # Real SDK `--emit` output, parsed verbatim by the manifest tests
 test/fixtures/*.yaml
+# Vendored alp-sdk `--emit kconfig` contract fixture — must stay byte-identical
+# to alp-sdk-upstream (test/lsp.kconfigContractFixture.test.js drift gate)
+test/fixtures/kconfig/emit-kconfig.golden.json
 
 # Vendored board schema — must stay byte-identical to the submodule (CI cmp)
 schemas/
@@ -27,3 +30,6 @@ examples/
 
 # Hand-maintained prose docs — not subject to code formatting
 *.md
+
+# Plugin runtime state (Remember) — not source
+.remember/
