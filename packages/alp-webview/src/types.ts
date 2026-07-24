@@ -391,6 +391,23 @@ export interface HardwareExplorerDataMessage {
   sdkConnected: boolean;
 }
 
+// --- Models panel (mirrors messages.ts; merges `tan model list` +
+// `tan model doctor` envelopes). `models`/`toolchains` stay `unknown[]` at
+// the boundary — narrowed here, not re-declared from the tan-owned schema. ---
+export interface ModelsDataMessage {
+  type: "modelsData";
+  ok: boolean;
+  models: unknown[];
+  toolchains: unknown[];
+  issues: { code: string; severity: string; message: string }[];
+}
+export interface ModelBuildProgressMessage {
+  type: "modelBuildProgress";
+  log: string;
+  done: boolean;
+  success?: boolean;
+}
+
 // --- Build-plan preview (mirrors messages.ts; consumes `alp build --plan`) ---
 export interface BuildPlanToolStep {
   tool: string;
@@ -505,7 +522,9 @@ export type ExtToWebviewMessage =
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
   | BuildPlanDataMessage
-  | SystemManifestDataMessage;
+  | SystemManifestDataMessage
+  | ModelsDataMessage
+  | ModelBuildProgressMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -520,6 +539,13 @@ export interface SelectSdkPathMessage {
 }
 export interface RequestSdkReleasesMessage {
   type: "requestSdkReleases";
+}
+export interface RequestModelsMessage {
+  type: "requestModels";
+}
+export interface BuildModelMessage {
+  type: "buildModel";
+  name?: string;
 }
 export interface RequestSdkInstallMessage {
   type: "requestSdkInstall";
@@ -629,4 +655,6 @@ export type WebviewToExtMessage =
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
-  | FlashSliceMessage;
+  | FlashSliceMessage
+  | RequestModelsMessage
+  | BuildModelMessage;

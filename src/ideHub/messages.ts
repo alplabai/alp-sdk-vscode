@@ -163,6 +163,29 @@ export interface HardwareExplorerDataMessage {
   sdkConnected: boolean;
 }
 
+/** Models panel state — merges `tan model list` + `tan model doctor` envelopes.
+ *  `models`/`toolchains` stay `unknown[]` at the boundary: they carry the
+ *  tan-owned payload shapes, narrowed in the webview, not re-declared here. */
+export interface ModelsDataMessage {
+  type: "modelsData";
+  /** Envelope `ok` (false → show the error/issues, e.g. "update tan"). */
+  ok: boolean;
+  /** `envelope.data.models` from `tan model list` (ModelListEntry[]). */
+  models: unknown[];
+  /** `envelope.data.toolchains` from `tan model doctor`. */
+  toolchains: unknown[];
+  /** `envelope.issues` from both calls, merged. */
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Long-running model build progress; mirrors SdkInstallProgressMessage. */
+export interface ModelBuildProgressMessage {
+  type: "modelBuildProgress";
+  log: string;
+  done: boolean;
+  success?: boolean;
+}
+
 // --- Build-plan preview (consumes `alp build --plan`, ADR 0014 BuildPlan) ---
 
 export interface BuildPlanToolStep {
@@ -242,7 +265,9 @@ export type ExtToWebviewMessage =
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
   | BuildPlanDataMessage
-  | SystemManifestDataMessage;
+  | SystemManifestDataMessage
+  | ModelsDataMessage
+  | ModelBuildProgressMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -286,6 +311,17 @@ export interface SelectSdkPathMessage {
 
 export interface RequestSdkReleasesMessage {
   type: "requestSdkReleases";
+}
+
+/** Ask the extension to (re-)fetch the Models panel data. */
+export interface RequestModelsMessage {
+  type: "requestModels";
+}
+
+/** Build one model, or all models when `name` is omitted. */
+export interface BuildModelMessage {
+  type: "buildModel";
+  name?: string;
 }
 
 export interface RequestSdkInstallMessage {
@@ -428,4 +464,6 @@ export type WebviewToExtMessage =
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
-  | FlashSliceMessage;
+  | FlashSliceMessage
+  | RequestModelsMessage
+  | BuildModelMessage;
