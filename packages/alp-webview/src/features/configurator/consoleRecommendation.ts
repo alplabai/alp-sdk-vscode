@@ -35,7 +35,13 @@ export function consoleRecommendation(
   }
 
   const ids = headlessIds.join(", ");
-  const recommendation = `Recommended: ram — core(s) ${ids} are headless (no console UART); read ram_console_buf over SWD.`;
+  // Already on `ram` ⇒ the headless core(s) are correctly configured, so don't
+  // nag "Recommended: ram". headlessIds still returns (the per-core badge
+  // stays); only the redundant recommendation is suppressed.
+  const recommendation =
+    currentConsole === "ram"
+      ? undefined
+      : `Recommended: ram — core(s) ${ids} are headless (no console UART); read ram_console_buf over SWD.`;
 
   const warning =
     currentConsole === "uart" || currentConsole === "alp"
