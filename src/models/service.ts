@@ -9,21 +9,34 @@ import type { AlpIssue, CliOutcome } from "../alpCli/models";
 import type { ModelsDataMessage } from "../ideHub/messages";
 
 /**
+ * Classify a `CliOutcome` into the message the user should see. A `null`
+ * envelope has two different causes that need different messages:
+ *  - `exitCode !== -1`: the command actually ran and returned a real process
+ *    exit code, it just didn't emit a parseable envelope — the resolved `tan`
+ *    doesn't understand `model --format json` at all (a genuinely old
+ *    binary), so an actionable "update tan" message beats `outcome.message`'s
+ *    generic exit-code-based fallback.
+ *  - otherwise (real envelope, or `exitCode === -1` meaning the command never
+ *    ran at all — binary unresolved, spawn ENOENT, spawn timeout):
+ *    `outcome.message` already carries the real cause (see
+ *    spawnAlpAsync/runAlpCommand/summarize), so surface THAT instead of
+ *    misdiagnosing every such failure as "update tan".
+ *
+ * Shared by `toModelsData` (the refresh path) and `buildModel` (panel.ts) so
+ * the same old-tan root cause reads the same way from both entry points.
+ */
+export function cliFailureMessage(outcome: CliOutcome): string {
+  if (outcome.envelope === null && outcome.exitCode !== -1) {
+    return "Update tan to a version with `tan model --format json` support.";
+  }
+  return outcome.message;
+}
+
+/**
  * Merge a `tan model list` + `tan model doctor` outcome pair into the
  * webview's `ModelsDataMessage`. Either outcome's envelope being `null` (CLI
  * didn't produce one) or `!ok` (validation/runtime failure) surfaces as
  * `ok:false` with an empty model/toolchain list.
- *
- * A `null` envelope has two different causes that need different messages:
- *  - `exitCode !== -1`: the command actually ran and returned a real process
- *    exit code, it just didn't emit a parseable envelope — the resolved `tan`
- *    doesn't understand `model --format json` at all (a genuinely old
- *    binary), so a synthesized, actionable "update tan" issue beats a blank
- *    panel.
- *  - `exitCode === -1`: the command never ran at all (binary unresolved,
- *    spawn ENOENT, the spawn timeout) — `outcome.message` already carries the
- *    real cause (see spawnAlpAsync/runAlpCommand), so surface THAT instead of
- *    misdiagnosing every such failure as "update tan".
  */
 export function toModelsData(
   list: CliOutcome,
@@ -36,25 +49,24 @@ export function toModelsData(
       ...(list.envelope?.issues ?? []),
       ...(doctor.envelope?.issues ?? []),
     ];
-    let tanOutdated = false;
+    let outdated: CliOutcome | undefined;
     for (const outcome of [list, doctor]) {
       if (outcome.envelope !== null) continue; // ok, or its issues are merged above
       if (outcome.exitCode !== -1) {
-        tanOutdated = true;
+        outdated = outcome;
       } else {
         issues.push({
           code: "models.cli-error",
           severity: "error",
-          message: outcome.message,
+          message: cliFailureMessage(outcome),
         });
       }
     }
-    if (tanOutdated) {
+    if (outdated) {
       issues.push({
         code: "models.tan-outdated",
         severity: "error",
-        message:
-          "Update tan to a version with `tan model --format json` support.",
+        message: cliFailureMessage(outdated),
       });
     }
     return {

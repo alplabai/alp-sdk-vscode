@@ -14,7 +14,7 @@ import {
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { log as logChannel, reportError } from "../util";
-import { toModelsData } from "./service";
+import { cliFailureMessage, toModelsData } from "./service";
 
 const PANEL_VIEW_TYPE = "alpModels";
 const PANEL_TITLE = "Alp Models";
@@ -150,7 +150,7 @@ class ModelsPanel {
         if (envelope && envelope.ok) {
           sendProgress("Build complete.", true, true);
         } else {
-          const error = envelope?.issues?.[0]?.message ?? outcome.message;
+          const error = cliFailureMessage(outcome);
           sendProgress(`Build failed: ${error}`, true, false);
           void reportError(`Alp: model build failed — ${error}`);
         }

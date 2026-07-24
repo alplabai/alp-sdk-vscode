@@ -5,7 +5,7 @@ const assert = require("node:assert");
 // toModelsData is pure (no `vscode`) so it lives in service.js, not panel.js
 // (panel.js pulls in `vscode`, which isn't resolvable outside a VS Code host —
 // see src/models/service.ts's header comment). panel.ts re-exports it too.
-const { toModelsData } = require("../out/models/service.js");
+const { toModelsData, cliFailureMessage } = require("../out/models/service.js");
 
 function okOutcome(envelope) {
   return {
@@ -99,4 +99,31 @@ test("toModelsData: a binary-missing/spawn failure (exitCode -1) surfaces outcom
     "a binary-missing failure is not the old-tan case and must not say 'update tan'",
   );
   assert.deepEqual(msg.models, []);
+});
+
+test("cliFailureMessage: old-tan outcome (envelope null, real exit code) says 'update tan'", () => {
+  const oldTanOutcome = {
+    exitCode: 2,
+    kind: "validation",
+    ok: false,
+    severity: "warning",
+    message: "Validation reported issues.",
+    envelope: null,
+  };
+  assert.match(cliFailureMessage(oldTanOutcome), /update tan/i);
+});
+
+test("cliFailureMessage: a real spawn/timeout outcome (exitCode -1) surfaces outcome.message", () => {
+  const spawnFailureOutcome = {
+    exitCode: -1,
+    kind: "unknown",
+    ok: false,
+    severity: "error",
+    message: "tan CLI unavailable: ENOENT (no such file or directory)",
+    envelope: null,
+  };
+  assert.equal(
+    cliFailureMessage(spawnFailureOutcome),
+    spawnFailureOutcome.message,
+  );
 });
