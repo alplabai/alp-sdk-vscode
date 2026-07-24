@@ -18,8 +18,23 @@ import type { ToolVersions } from "./messages";
 import { log } from "../util";
 import { queryAlpIdeState } from "./vscodeAdapter";
 
-const ORCHESTRATOR_KEY = "alp.setupOrchestrator.lastShownFingerprint";
+export const ORCHESTRATOR_KEY = "alp.setupOrchestrator.lastShownFingerprint";
 const DRIFT_VERSION_KEY = "alp.setupOrchestrator.lastToolVersions";
+
+/**
+ * Clear the "already shown" fingerprint so the next activation's readiness
+ * check re-evaluates and re-shows the bootstrap nudge if still not ready.
+ *
+ * Call this when a NEW project is about to be opened (e.g. right after the
+ * New Project wizard scaffolds one) — globalState is machine-wide, so
+ * without this a dismissal recorded for one project's issue set silently
+ * suppresses the nudge for every later project with the same issues.
+ */
+export async function resetSetupNudge(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  await context.globalState.update(ORCHESTRATOR_KEY, undefined);
+}
 
 /** Build a short fingerprint from the issues present in the state. */
 function issueFingerprint(issues: string[]): string {

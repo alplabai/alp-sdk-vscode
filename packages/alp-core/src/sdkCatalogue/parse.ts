@@ -135,6 +135,8 @@ export function parseSomPreset(text: string): SomPreset {
         machine: str(tc.machine),
         board: str(tc.board),
         toolchain: str(tc.toolchain),
+        hwConsole:
+          typeof tc.hw_console === "boolean" ? tc.hw_console : undefined,
       };
     },
   );

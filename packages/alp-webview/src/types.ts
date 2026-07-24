@@ -265,6 +265,7 @@ export interface CorePanel {
   libraries: string[];
   iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
   inferenceArenaKib?: number;
+  hwConsole?: boolean;
 }
 export interface ChipChoice {
   chipId: string;
@@ -369,6 +370,7 @@ export interface ExplorerTopologyCore {
   machine?: string;
   board?: string;
   toolchain?: string;
+  hwConsole?: boolean;
 }
 export interface ExplorerCore {
   id: string;
