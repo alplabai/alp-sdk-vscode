@@ -9,6 +9,7 @@ import type {
   ModelEntry,
   Ota,
 } from "../../types";
+import { consoleRecommendation } from "./consoleRecommendation";
 import styles from "./ConfiguratorView.module.css";
 import {
   CONFIGURATOR_SECTIONS,
@@ -583,6 +584,14 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
       <div className={`${styles.core} ${styles.coreGhost}`}>
         <div className={styles.coreHd}>
           <span className={styles.coreId}>{core.id}</span>
+          {core.hwConsole === false ? (
+            <span
+              className={styles.warn}
+              title="No console UART on this core (alp-sdk#686) — use the ram console backend."
+            >
+              headless — no console UART
+            </span>
+          ) : null}
           <span className={styles.coreSpacer} />
           <span className={styles.coreInherit}>inherits SoM default</span>
         </div>
@@ -607,6 +616,14 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
     <div className={styles.core}>
       <div className={styles.coreHd}>
         <span className={styles.coreId}>{core.id}</span>
+        {core.hwConsole === false ? (
+          <span
+            className={styles.warn}
+            title="No console UART on this core (alp-sdk#686) — use the ram console backend."
+          >
+            headless — no console UART
+          </span>
+        ) : null}
         <span className={styles.coreSpacer} />
         <select
           className={`${styles.control} ${styles.coreRuntime}`}
@@ -827,10 +844,14 @@ const CONSOLE_BACKEND_HELP: Record<string, string> = {
 };
 
 function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
-  const { board, mutate } = cfg;
+  const { board, mutate, vm } = cfg;
   const d = board.diagnostics ?? {};
   const modules = d.modules ?? {};
   const [newMod, setNewMod] = useState("");
+  const { recommendation, warning } = consoleRecommendation(
+    vm?.cores ?? [],
+    d.console,
+  );
 
   const cleanup = (draft: BoardConfig) => {
     if (draft.diagnostics && Object.keys(draft.diagnostics).length === 0)
@@ -890,6 +911,10 @@ function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
           }
         />
       </Field>
+      {recommendation ? (
+        <div className={styles.hint}>{recommendation}</div>
+      ) : null}
+      {warning ? <div className={styles.warn}>{warning}</div> : null}
       <div className={styles.field}>
         <Check
           checked={d.sim_console === true}

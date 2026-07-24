@@ -258,8 +258,22 @@ test("parseSomPreset captures full topology detail", () => {
     machine: "e1m-aen701-a32",
     board: undefined,
     toolchain: "poky-glibc",
+    hwConsole: undefined,
   });
   assert.equal(s.topology[1].id, "m55_hp");
   assert.equal(s.topology[1].board, "alp_e1m_aen701_m55_hp");
   assert.equal(s.topology[1].toolchain, "arm-zephyr-eabi");
+});
+
+test("parseSomPreset reads hw_console: false as a headless core (alp-sdk#686)", () => {
+  const s = parseSomPreset(
+    "sku: E1M-V2N101\nfamily: renesas-rzv2n\nsilicon: x\ndisplay_name: y\n" +
+      "topology:\n  m33_sm: { app: system-manager, hw_console: false }\n  a55_cluster: { app: alp-image-edge }\n" +
+      "status: { preliminary: false }\n",
+  );
+  assert.equal(s.topology.find((t) => t.id === "m33_sm").hwConsole, false);
+  assert.equal(
+    s.topology.find((t) => t.id === "a55_cluster").hwConsole,
+    undefined,
+  );
 });

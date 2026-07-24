@@ -19,6 +19,7 @@ export interface TopologyCore {
   machine?: string;
   board?: string;
   toolchain?: string;
+  hwConsole?: boolean;
 }
 
 export interface SomPreset {
