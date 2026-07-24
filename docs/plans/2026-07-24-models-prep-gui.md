@@ -75,7 +75,7 @@ Add `| ModelPrepResultMessage` to `ExtToWebviewMessage` and `| PrepModelMessage`
 
 - [ ] **Step 2: Mirror in `packages/alp-webview/src/types.ts`** (identical interfaces + union additions).
 
-- [ ] **Step 3: Compile** (`cd /e/GitHub/alp-sdk-vscode/.claude/worktrees/models-panel && pnpm run compile 2>&1 | tail -12`) — clean.
+- [ ] **Step 3: Compile** (`pnpm run compile 2>&1 | tail -12`) — clean.
 
 - [ ] **Step 4: Commit**
 

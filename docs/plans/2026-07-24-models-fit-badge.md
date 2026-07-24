@@ -78,7 +78,7 @@ Add the identical `ModelFitDataMessage` and `CheckModelFitMessage` interfaces an
 
 - [ ] **Step 3: Compile (type-check both sides)**
 
-Run: `cd /e/GitHub/alp-sdk-vscode/.claude/worktrees/models-panel && pnpm run compile 2>&1 | tail -15`
+Run: `pnpm run compile 2>&1 | tail -15`
 Expected: clean (types added, not yet used — no errors).
 
 - [ ] **Step 4: Commit**

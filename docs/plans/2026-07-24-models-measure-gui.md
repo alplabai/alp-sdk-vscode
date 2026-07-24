@@ -44,7 +44,7 @@
 
 - [ ] **Step 2: Mirror all five in `packages/alp-webview/src/types.ts`** + the same union additions.
 
-- [ ] **Step 3: Compile** (`cd /e/GitHub/alp-sdk-vscode/.claude/worktrees/models-panel && pnpm run compile 2>&1 | tail -12`) — clean.
+- [ ] **Step 3: Compile** (`pnpm run compile 2>&1 | tail -12`) — clean.
 
 - [ ] **Step 4: Commit** (`git add src/ideHub/messages.ts packages/alp-webview/src/types.ts && git commit -m "feat(models): add run/ab measure protocol messages"`).
 
