@@ -13,6 +13,7 @@ import type {
   ModelToolchain,
   PrepResult,
   RunResultView,
+  ZooEntryView,
 } from "./useModels";
 import { useModels } from "./useModels";
 
@@ -314,6 +315,36 @@ function ToolchainRow({ toolchain }: { toolchain: ModelToolchain }) {
   );
 }
 
+/** One curated zoo entry card: task + description, a runs-here badge (honest
+ *  about entries that don't validate on this board rather than hiding them),
+ *  and an Add button that's disabled for the duration of any in-flight add. */
+function ZooCard({
+  entry,
+  adding,
+  onAdd,
+}: {
+  entry: ZooEntryView;
+  adding: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div className={styles.zooCard}>
+      <div className={styles.zooCardHead}>
+        <span className={styles.mono}>{entry.task}</span>
+        {entry.runs_here === true && <Badge variant="ok" label="runs here" />}
+        {entry.runs_here === false && (
+          <Badge variant="warn" label="not validated here" />
+        )}
+      </div>
+      <p className={styles.suggestion}>{entry.description}</p>
+      <p className={styles.hint}>{entry.license}</p>
+      <Button disabled={adding} onClick={onAdd}>
+        Add
+      </Button>
+    </div>
+  );
+}
+
 export function ModelsView() {
   const {
     ok,
@@ -341,6 +372,11 @@ export function ModelsView() {
     abIssues,
     runModel,
     abModels,
+    zoo,
+    zooOk,
+    zooIssues,
+    adding,
+    addFromZoo,
   } = useModels();
 
   return (
@@ -432,6 +468,41 @@ export function ModelsView() {
               ))}
             </tbody>
           </table>
+        )}
+      </section>
+
+      <section className={styles.section} aria-labelledby="zoo-title">
+        <h3 id="zoo-title" className={styles.sectionTitle}>
+          Model zoo
+        </h3>
+        {!zooOk ? (
+          <IssuesBanner
+            ok={false}
+            issues={
+              zooIssues.length > 0
+                ? zooIssues
+                : [
+                    {
+                      code: "zoo.failed",
+                      severity: "error",
+                      message: "Model zoo unavailable (no diagnostic).",
+                    },
+                  ]
+            }
+          />
+        ) : zoo.length === 0 ? (
+          <p className={styles.hint}>No zoo entries available.</p>
+        ) : (
+          <div className={styles.zooGrid}>
+            {zoo.map((entry) => (
+              <ZooCard
+                key={entry.id}
+                entry={entry}
+                adding={adding}
+                onAdd={() => addFromZoo(entry.id)}
+              />
+            ))}
+          </div>
         )}
       </section>
 

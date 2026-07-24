@@ -90,6 +90,17 @@ export interface AbResultView {
   note: string;
 }
 
+// `zooData` payload shapes (`tan model zoo --board`'s curated gallery),
+// narrowed here for the view only — mirrors ZooEntry/ZooDataMessage in types.ts.
+export interface ZooEntryView {
+  id: string;
+  task: string;
+  description: string;
+  license: string;
+  validated_soms: string[];
+  runs_here: boolean | null;
+}
+
 interface State {
   ok: boolean;
   models: ModelListEntry[];
@@ -110,6 +121,10 @@ interface State {
   abOk: boolean;
   abResult: AbResultView | null;
   abIssues: ModelsDataMessage["issues"];
+  zoo: ZooEntryView[];
+  zooOk: boolean;
+  zooIssues: ModelsDataMessage["issues"];
+  adding: boolean;
 }
 
 type Action =
@@ -143,7 +158,15 @@ type Action =
       ok: boolean;
       ab: AbResultView | null;
       issues: ModelsDataMessage["issues"];
-    };
+    }
+  | {
+      type: "zooData";
+      ok: boolean;
+      entries: ZooEntryView[];
+      issues: ModelsDataMessage["issues"];
+    }
+  | { type: "addStart" }
+  | { type: "addDone" };
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
@@ -195,6 +218,17 @@ function reduce(state: State, action: Action): State {
         abResult: action.ab,
         abIssues: action.issues,
       };
+    case "zooData":
+      return {
+        ...state,
+        zoo: action.entries,
+        zooOk: action.ok,
+        zooIssues: action.issues,
+      };
+    case "addStart":
+      return { ...state, adding: true };
+    case "addDone":
+      return { ...state, adding: false };
   }
 }
 
@@ -218,6 +252,10 @@ const init: State = {
   abOk: true,
   abResult: null,
   abIssues: [],
+  zoo: [],
+  zooOk: true,
+  zooIssues: [],
+  adding: false,
 };
 
 export function useModels() {
@@ -276,6 +314,19 @@ export function useModels() {
           ab: (msg.ab as AbResultView) ?? null,
           issues: msg.issues,
         });
+      } else if (msg?.type === "zooData") {
+        dispatch({
+          type: "zooData",
+          ok: msg.ok,
+          entries: msg.entries as ZooEntryView[],
+          issues: msg.issues,
+        });
+      } else if (msg?.type === "zooAddStarted") {
+        dispatch({ type: "addStart" });
+      } else if (msg?.type === "zooAddResult") {
+        // The panel already re-posts `zooData` (+ `modelsData`) after a
+        // successful add — this only clears the button's disabled state.
+        dispatch({ type: "addDone" });
       }
     }
     window.addEventListener("message", onMessage);
@@ -312,5 +363,26 @@ export function useModels() {
     postMessage({ type: "abModels" });
   }
 
-  return { ...state, build, refresh, checkFit, prepModel, runModel, abModels };
+  function requestZoo() {
+    postMessage({ type: "requestZoo" });
+  }
+
+  // No optimistic `adding:true` here — the extension posts `zooAddStarted`
+  // only after it actually starts the add, mirroring prepModel/runModel so a
+  // failure-to-start never sticks the button (the 3c lesson).
+  function addFromZoo(id: string) {
+    postMessage({ type: "addFromZoo", id });
+  }
+
+  return {
+    ...state,
+    build,
+    refresh,
+    checkFit,
+    prepModel,
+    runModel,
+    abModels,
+    requestZoo,
+    addFromZoo,
+  };
 }
