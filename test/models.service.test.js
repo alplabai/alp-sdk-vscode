@@ -134,12 +134,27 @@ test("cliFailureMessage: a real spawn/timeout outcome (exitCode -1) surfaces out
 
 test("toModelFitData: ok envelope -> models + sku passthrough", () => {
   const outcome = {
-    exitCode: 0, message: "",
-    envelope: { command: "model", ok: true, exitCode: 0, project: {},
-      data: { board: "board.yaml", sku: "E1M-AEN801",
-        models: [{ name: "tiny", source: "m.tflite",
-          backends: [{ backend: "cpu", verdict: "fits" }], suggestion: null }] },
-      issues: [] },
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        board: "board.yaml",
+        sku: "E1M-AEN801",
+        models: [
+          {
+            name: "tiny",
+            source: "m.tflite",
+            backends: [{ backend: "cpu", verdict: "fits" }],
+            suggestion: null,
+          },
+        ],
+      },
+      issues: [],
+    },
   };
   const msg = toModelFitData(outcome);
   assert.equal(msg.type, "modelFitData");
@@ -150,7 +165,11 @@ test("toModelFitData: ok envelope -> models + sku passthrough", () => {
 });
 
 test("toModelFitData: null envelope -> ok:false + real cause (not 'update tan')", () => {
-  const outcome = { exitCode: -1, message: "tan binary not found", envelope: null };
+  const outcome = {
+    exitCode: -1,
+    message: "tan binary not found",
+    envelope: null,
+  };
   const msg = toModelFitData(outcome);
   assert.equal(msg.ok, false);
   assert.equal(msg.models.length, 0);
@@ -159,9 +178,22 @@ test("toModelFitData: null envelope -> ok:false + real cause (not 'update tan')"
 
 test("toModelFitData: !ok envelope -> ok:false, surfaces envelope issues", () => {
   const outcome = {
-    exitCode: 1, message: "model failed",
-    envelope: { command: "model", ok: false, exitCode: 1, project: {}, data: null,
-      issues: [{ code: "model.failed", severity: "error", message: "error: static check supports .tflite" }] },
+    exitCode: 1,
+    message: "model failed",
+    envelope: {
+      command: "model",
+      ok: false,
+      exitCode: 1,
+      project: {},
+      data: null,
+      issues: [
+        {
+          code: "model.failed",
+          severity: "error",
+          message: "error: static check supports .tflite",
+        },
+      ],
+    },
   };
   const msg = toModelFitData(outcome);
   assert.equal(msg.ok, false);

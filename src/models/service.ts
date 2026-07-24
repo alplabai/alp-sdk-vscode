@@ -6,7 +6,10 @@
 // and posts the result this module shapes.
 
 import type { AlpIssue, CliOutcome } from "../alpCli/models";
-import type { ModelFitDataMessage, ModelsDataMessage } from "../ideHub/messages";
+import type {
+  ModelFitDataMessage,
+  ModelsDataMessage,
+} from "../ideHub/messages";
 
 /**
  * Classify a `CliOutcome` into the message the user should see. A `null`
