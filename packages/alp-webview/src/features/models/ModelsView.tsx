@@ -10,6 +10,7 @@ import type {
   ModelFit,
   ModelListEntry,
   ModelToolchain,
+  PrepResult,
 } from "./useModels";
 import { useModels } from "./useModels";
 
@@ -105,6 +106,33 @@ function IssuesBanner({
   );
 }
 
+/** Renders the `tan model prep` accuracy report (fp32-vs-int8): the issues
+ *  banner on failure, or the quantized path + verdict badge + numbers on
+ *  success. Thin: all accuracy math comes from the envelope, not computed here. */
+function PrepReport({ prep }: { prep: PrepResult }) {
+  if (!prep.ok) {
+    return <IssuesBanner ok={false} issues={prep.issues} />;
+  }
+  const a = prep.accuracy;
+  const variant: BadgeVariant = a?.verdict === "good" ? "ok" : "warn";
+  return (
+    <div className={styles.issues} data-ok={true}>
+      <p className={styles.issuesHead}>Prep result</p>
+      {prep.quantized && <p className={styles.mono}>{prep.quantized}</p>}
+      {a && (
+        <>
+          <Badge variant={variant} label={`accuracy: ${a.verdict}`} />
+          <p className={styles.suggestion}>
+            top1 {a.top1_agreement_pct}% · cosine {a.mean_cosine} · max err{" "}
+            {a.max_abs_err} · n={a.samples}
+          </p>
+          {a.guidance && <p className={styles.suggestion}>{a.guidance}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ModelRow({
   model,
   fit,
@@ -190,6 +218,9 @@ export function ModelsView() {
     fitIssues,
     checkingFit,
     checkFit,
+    prep,
+    prepping,
+    prepModel,
   } = useModels();
 
   return (
@@ -213,6 +244,9 @@ export function ModelsView() {
             <Button onClick={checkFit} disabled={checkingFit}>
               {checkingFit ? "Checking fit…" : "Check fit"}
             </Button>
+            <Button onClick={prepModel} disabled={prepping}>
+              {prepping ? "Prepping…" : "Prep model"}
+            </Button>
             <Button appearance="secondary" onClick={refresh}>
               Refresh
             </Button>
@@ -222,6 +256,7 @@ export function ModelsView() {
 
       <IssuesBanner ok={ok} issues={issues} />
       <IssuesBanner ok={fitOk} issues={fitIssues} />
+      {prep && <PrepReport prep={prep} />}
 
       <section className={styles.section} aria-labelledby="models-title">
         <div className={styles.sectionHead}>

@@ -46,6 +46,23 @@ export interface ModelFit {
   error?: string;
 }
 
+// `modelPrepResult` payload shapes (`tan model prep`'s accuracy report),
+// narrowed here for the view only — mirrors ModelPrepResultMessage in types.ts.
+export interface PrepAccuracy {
+  samples: number;
+  top1_agreement_pct: number;
+  mean_cosine: number;
+  max_abs_err: number;
+  verdict: string;
+  guidance: string | null;
+}
+export interface PrepResult {
+  ok: boolean;
+  quantized?: string;
+  accuracy?: PrepAccuracy;
+  issues: ModelsDataMessage["issues"];
+}
+
 interface State {
   ok: boolean;
   models: ModelListEntry[];
@@ -57,6 +74,8 @@ interface State {
   fitOk: boolean;
   fitIssues: ModelsDataMessage["issues"];
   checkingFit: boolean;
+  prepping: boolean;
+  prep: PrepResult | null;
 }
 
 type Action =
@@ -75,7 +94,9 @@ type Action =
       ok: boolean;
       models: ModelFit[];
       issues: ModelsDataMessage["issues"];
-    };
+    }
+  | { type: "prepStart" }
+  | { type: "prepResult"; result: PrepResult };
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
@@ -105,6 +126,10 @@ function reduce(state: State, action: Action): State {
         fits: action.models,
         fitIssues: action.issues,
       };
+    case "prepStart":
+      return { ...state, prepping: true };
+    case "prepResult":
+      return { ...state, prepping: false, prep: action.result };
   }
 }
 
@@ -119,6 +144,8 @@ const init: State = {
   fitOk: true,
   fitIssues: [],
   checkingFit: false,
+  prepping: false,
+  prep: null,
 };
 
 export function useModels() {
@@ -149,6 +176,16 @@ export function useModels() {
           models: (msg.models as ModelFit[]) ?? [],
           issues: msg.issues,
         });
+      } else if (msg?.type === "modelPrepResult") {
+        dispatch({
+          type: "prepResult",
+          result: {
+            ok: msg.ok,
+            quantized: msg.quantized,
+            accuracy: msg.accuracy,
+            issues: msg.issues,
+          },
+        });
       }
     }
     window.addEventListener("message", onMessage);
@@ -170,5 +207,10 @@ export function useModels() {
     postMessage({ type: "checkModelFit" });
   }
 
-  return { ...state, build, refresh, checkFit };
+  function prepModel() {
+    dispatch({ type: "prepStart" });
+    postMessage({ type: "prepModel" });
+  }
+
+  return { ...state, build, refresh, checkFit, prepModel };
 }
