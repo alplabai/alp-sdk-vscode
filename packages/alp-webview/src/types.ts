@@ -265,6 +265,17 @@ export interface CorePanel {
   libraries: string[];
   iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
   inferenceArenaKib?: number;
+  /** `false` = headless core, no hardware UART console (SoM topology fact).
+   *  Absent means it has one — only an explicit `false` marks it headless.
+   *  Mirrors `CorePanel.hwConsole` in `@alp-sdk/core/configurator/viewModel`. */
+  hwConsole?: boolean;
+}
+/** Guidance for the `diagnostics.console` selector, computed host-side.
+ *  Mirrors `ConsoleAdvice` in `@alp-sdk/core/configurator/viewModel` — the
+ *  RULE lives there, this is only the shape it arrives in. */
+export interface ConsoleAdvice {
+  severity: "warning" | "info";
+  message: string;
 }
 export interface ChipChoice {
   chipId: string;
@@ -301,6 +312,8 @@ export interface ConfiguratorViewModel {
   chips: ChipChoice[];
   projectChips: string[];
   validation: ValidationResult;
+  /** Console-backend guidance for headless cores; null when nothing to say. */
+  consoleAdvice: ConsoleAdvice | null;
 }
 
 export interface ConfiguratorRenderMessage {
@@ -369,6 +382,9 @@ export interface ExplorerTopologyCore {
   machine?: string;
   board?: string;
   toolchain?: string;
+  /** `false` = headless core, no hardware UART console. Absent means it has
+   *  one. Mirrors `TopologyCore.hwConsole` in `@alp-sdk/core`. */
+  hwConsole?: boolean;
 }
 export interface ExplorerCore {
   id: string;

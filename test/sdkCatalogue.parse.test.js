@@ -258,6 +258,9 @@ test("parseSomPreset captures full topology detail", () => {
     machine: "e1m-aen701-a32",
     board: undefined,
     toolchain: "poky-glibc",
+    // This SoM's topology omits `hw_console`, which means "has a console".
+    // undefined, NOT false — see configurator.hwConsole.test.js.
+    hwConsole: undefined,
   });
   assert.equal(s.topology[1].id, "m55_hp");
   assert.equal(s.topology[1].board, "alp_e1m_aen701_m55_hp");

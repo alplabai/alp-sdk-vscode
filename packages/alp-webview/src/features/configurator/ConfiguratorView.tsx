@@ -827,9 +827,10 @@ const CONSOLE_BACKEND_HELP: Record<string, string> = {
 };
 
 function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
-  const { board, mutate } = cfg;
+  const { board, mutate, vm } = cfg;
   const d = board.diagnostics ?? {};
   const modules = d.modules ?? {};
+  const advice = vm?.consoleAdvice ?? null;
   const [newMod, setNewMod] = useState("");
 
   const cleanup = (draft: BoardConfig) => {
@@ -889,6 +890,21 @@ function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
             })
           }
         />
+        {/* Headless-core guidance (alp-sdk#920). Computed host-side in
+            buildConfiguratorViewModel — see ConsoleAdvice in
+            @alp-sdk/core/configurator/viewModel — so the rule that decides it
+            exists once, not once here and once there. */}
+        {advice ? (
+          <div
+            className={
+              advice.severity === "warning" ? styles.warn : styles.hint
+            }
+            role={advice.severity === "warning" ? "alert" : undefined}
+          >
+            {advice.severity === "warning" ? "⚠ " : ""}
+            {advice.message}
+          </div>
+        ) : null}
       </Field>
       <div className={styles.field}>
         <Check

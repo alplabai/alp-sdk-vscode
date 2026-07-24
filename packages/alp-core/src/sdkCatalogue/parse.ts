@@ -25,6 +25,14 @@ function num(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
 }
 
+/** Strict boolean read: anything that is not a real YAML boolean stays
+ *  `undefined` rather than collapsing to false. Callers distinguish "absent"
+ *  (inherit the default) from an explicit `false`, so `Boolean(v)` would be
+ *  wrong here — it turns every missing key into a hard false. */
+function bool(v: unknown): boolean | undefined {
+  return typeof v === "boolean" ? v : undefined;
+}
+
 function boolMap(v: unknown): Record<string, boolean> {
   const out: Record<string, boolean> = {};
   if (v && typeof v === "object") {
@@ -135,6 +143,7 @@ export function parseSomPreset(text: string): SomPreset {
         machine: str(tc.machine),
         board: str(tc.board),
         toolchain: str(tc.toolchain),
+        hwConsole: bool(tc.hw_console),
       };
     },
   );

@@ -19,6 +19,13 @@ export interface TopologyCore {
   machine?: string;
   board?: string;
   toolchain?: string;
+  /** False when this core has NO hardware UART console — headless, e.g. the
+   *  RZ/V2N `m33_sm` system-manager, whose debug UART the A55 owns
+   *  (som-preset-v1.schema.json `topology.<core>.hw_console`). A SoM-topology
+   *  fact, not customer-overridable in board.yaml. Absent means true, so only
+   *  an explicit `false` marks a core headless — never treat undefined as
+   *  headless, or every SoM whose YAML omits the key reads as serial-less. */
+  hwConsole?: boolean;
 }
 
 export interface SomPreset {
