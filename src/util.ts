@@ -18,6 +18,13 @@ export function showOutput(): void {
   OUTPUT.show(true);
 }
 
+/** Append raw text (no timestamp/level prefix) to the "Alp SDK" channel — for
+ *  streaming a subprocess's live stdout/stderr into the persistent log, so a
+ *  build's output survives the terminal that would otherwise die with it. */
+export function appendOutput(text: string): void {
+  OUTPUT.append(text);
+}
+
 /** Fires when a `runInTerminal` run finishes (its process exits, or the task
  *  ends without ever starting one), carrying the run's `name` and its exit
  *  `code` (undefined if unknown). It is the real "an Alp command that ran in
@@ -391,4 +398,21 @@ export async function reportError(
     return undefined;
   }
   return pick;
+}
+
+/** Announce a channel-run (streamed) command's result: log it, fire the
+ *  terminal-finish refresh signal, and show a glanceable verdict — the
+ *  channel-mode twin of `runInTerminal`'s close handler (info on a 0 exit,
+ *  error + "Show Output" on a defined non-zero, silent on undefined). */
+export function announceStreamedResult(
+  name: string,
+  code: number | undefined,
+): void {
+  log(`[channel] "${name}" exited (code=${code ?? "unknown"})`);
+  terminalFinished.fire({ name, code });
+  if (code === 0) {
+    void vscode.window.showInformationMessage(`${name} finished`);
+  } else if (code !== undefined) {
+    void reportError(`${name} failed (exit ${code})`);
+  }
 }

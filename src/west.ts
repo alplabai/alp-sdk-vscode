@@ -20,7 +20,11 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 
-import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
+import {
+  runAlpCommand,
+  runAlpInTerminal,
+  runAlpStreamed,
+} from "./alpCli/vscodeAdapter";
 import {
   collectWestWorkspaceContext,
   executeWestPlan,
@@ -82,7 +86,10 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   const args = target.active
     ? ["build"]
     : ["--project", ...target.appArg, "build"];
-  await runAlpInTerminal(context, args, { name: "Alp Build", cwd: target.cwd });
+  // Channel mode (not terminal): a `tan` terminal dies when the process exits,
+  // scrolling the build result away; streaming to the "Alp SDK" output channel
+  // keeps the full log + verdict. Build is non-interactive, so no TTY is lost.
+  await runAlpStreamed(context, args, { name: "Alp Build", cwd: target.cwd });
 }
 
 async function alpImage(context: vscode.ExtensionContext): Promise<void> {

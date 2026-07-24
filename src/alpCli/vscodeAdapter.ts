@@ -37,7 +37,14 @@ import {
   shouldFetchManagedCli,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, reportError, runInTerminal, showOutput } from "../util";
+import {
+  announceStreamedResult,
+  appendOutput,
+  log,
+  reportError,
+  runInTerminal,
+  showOutput,
+} from "../util";
 
 const execFileAsyncCli = promisify(cp.execFile);
 
@@ -740,6 +747,51 @@ export async function runAlpInTerminal(
     name: options.name,
     argv: [binary.command, ...finalArgs],
     cwd: options.cwd,
+  });
+}
+
+/**
+ * Run a `tan` command with its output streamed live into the "Alp SDK" output
+ * channel (channel mode). Unlike terminal mode the log PERSISTS after the
+ * process exits — the channel does not die with the command, so the outcome and
+ * full build log stay visible. Forces `--no-color` (the channel renders plain
+ * text) and `--non-interactive` (no TTY to answer prompts), so this is for the
+ * build-family commands that never prompt — not bootstrap/flash. Fires the
+ * terminal-finish refresh signal + a verdict toast on close.
+ */
+export async function runAlpStreamed(
+  context: vscode.ExtensionContext,
+  args: string[],
+  options: { name: string; cwd?: string },
+): Promise<void> {
+  let binary: ResolvedBinary;
+  try {
+    binary = await resolveAlpBinaryForContext(context);
+  } catch (error) {
+    log(
+      `[cli] ✗ CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
+    );
+    await surfaceResolutionError(error);
+    return;
+  }
+  const finalArgs = [...withSdkRoot(args), "--no-color", "--non-interactive"];
+  log(
+    `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (channel: ${options.name})`,
+  );
+  showOutput();
+  appendOutput(`\n$ ${options.name}\n`);
+  await new Promise<void>((resolve) => {
+    const child = cp.spawn(binary.command, finalArgs, { cwd: options.cwd });
+    child.stdout?.on("data", (chunk: Buffer) => appendOutput(chunk.toString()));
+    child.stderr?.on("data", (chunk: Buffer) => appendOutput(chunk.toString()));
+    child.on("error", (err) => {
+      void reportError(`${options.name} failed to start`, err.message);
+      resolve();
+    });
+    child.on("close", (code) => {
+      announceStreamedResult(options.name, code ?? undefined);
+      resolve();
+    });
   });
 }
 
