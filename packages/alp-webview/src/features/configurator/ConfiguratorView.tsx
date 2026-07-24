@@ -587,13 +587,14 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
           <span className={styles.coreInherit}>inherits SoM default</span>
         </div>
         <div className={styles.ghostNote}>
-          Runs the SoM preset&apos;s default image.{" "}
+          Runs the SoM preset&apos;s default image. Override to set this
+          core&apos;s runtime and its own app directory.{" "}
           <button
             type="button"
             className={styles.btn}
             onClick={() => mutate((d) => void ensure(d))}
           >
-            Override this core
+            Override (set app directory)
           </button>
         </div>
       </div>
