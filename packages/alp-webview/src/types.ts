@@ -445,6 +445,52 @@ export interface ModelPrepResultMessage {
   issues: { code: string; severity: string; message: string }[];
 }
 
+/** Ack that a `tan model run`/`tan model ab` measurement actually started
+ *  (the file dialog(s) confirmed) — lets the webview flip `measuring:true`
+ *  only for real work, so a cancelled dialog (panel.ts returns early, posts
+ *  nothing) never sticks the button. Mirrors ModelPrepStartedMessage. */
+export interface ModelMeasureStartedMessage {
+  type: "modelMeasureStarted";
+}
+
+/** Result of `tan model run` — a host reference (CPU) inference measurement. */
+export interface ModelRunResultMessage {
+  type: "modelRunResult";
+  ok: boolean;
+  run?: {
+    backend: string;
+    latency_ms: number;
+    output_argmax: number | null;
+    peak_sram_kib: number | null;
+    power_mj: number | null;
+    runs: number;
+    random_input: boolean;
+    note: string;
+    accuracy?: { expected: number; match: boolean };
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Result of `tan model ab` — two models' host reference measurements + a
+ *  head-to-head comparison. */
+export interface ModelAbResultMessage {
+  type: "modelAbResult";
+  ok: boolean;
+  ab?: {
+    a: { model: string; backend: string; latency_ms: number };
+    b: { model: string; backend: string; latency_ms: number };
+    comparison: {
+      faster: string;
+      latency_ratio: number | null;
+      a_latency_ms: number;
+      b_latency_ms: number;
+      size_delta_bytes: number | null;
+    };
+    note: string;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
 // --- Build-plan preview (mirrors messages.ts; consumes `alp build --plan`) ---
 export interface BuildPlanToolStep {
   tool: string;
@@ -564,7 +610,10 @@ export type ExtToWebviewMessage =
   | ModelBuildProgressMessage
   | ModelFitDataMessage
   | ModelPrepStartedMessage
-  | ModelPrepResultMessage;
+  | ModelPrepResultMessage
+  | ModelMeasureStartedMessage
+  | ModelRunResultMessage
+  | ModelAbResultMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -592,6 +641,12 @@ export interface CheckModelFitMessage {
 }
 export interface PrepModelMessage {
   type: "prepModel";
+}
+export interface RunModelMessage {
+  type: "runModel";
+}
+export interface AbModelsMessage {
+  type: "abModels";
 }
 export interface RequestSdkInstallMessage {
   type: "requestSdkInstall";
@@ -705,4 +760,6 @@ export type WebviewToExtMessage =
   | RequestModelsMessage
   | BuildModelMessage
   | CheckModelFitMessage
-  | PrepModelMessage;
+  | PrepModelMessage
+  | RunModelMessage
+  | AbModelsMessage;
