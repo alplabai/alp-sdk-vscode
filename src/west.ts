@@ -16,6 +16,8 @@ import {
   createWestFlashPlan,
   createWestUpdatePlan,
 } from "@alp-sdk/core/west/service";
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 
 import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
@@ -38,54 +40,92 @@ async function pickAppPath(value: string): Promise<string | undefined> {
   });
 }
 
+/**
+ * Where an orchestrator command (build/image/flash/clean/renode) should run.
+ *
+ * When the workspace holds a real board.yaml, the command targets that project
+ * directly — no app-path prompt. Every `tan` orchestrator subcommand defaults
+ * its app/project to the current directory (the unified "run from the project
+ * dir" convention), so we run from the project root and pass no app argument.
+ *
+ * Only when no project is open do we fall back to prompting for an example app
+ * to build. Returns `undefined` when the user cancels that prompt.
+ */
+async function resolveOrchestratorTarget(
+  fallbackExample: string,
+): Promise<
+  { appArg: string[]; cwd: string | undefined; active: boolean } | undefined
+> {
+  const projectCtx = collectWestWorkspaceContext();
+  const projectRoot =
+    projectCtx.boardYamlPath && fs.existsSync(projectCtx.boardYamlPath)
+      ? path.dirname(projectCtx.boardYamlPath)
+      : undefined;
+  if (projectRoot) return { appArg: [], cwd: projectRoot, active: true };
+
+  const app = await pickAppPath(fallbackExample);
+  if (!app) return undefined;
+  return { appArg: [app], cwd: westCwd(), active: false };
+}
+
 // ── CLI-backed orchestrator workflow (tan build/image/flash/clean/renode) ─────
 
 async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/peripheral-io/gpio-button-led");
-  if (!app) return;
-  // `tan build` (cli.rs BuildArgs) has no positional app_path — unlike
-  // image/flash/clean/renode, project scope only resolves from the global
-  // `--project` flag (native.rs resolve_cli_project_context). A bare
-  // positional here is a parse error, not a silently-ignored arg.
-  await runAlpInTerminal(context, ["--project", app, "build"], {
-    name: "Alp Build",
-    cwd: westCwd(),
-  });
+  const target = await resolveOrchestratorTarget(
+    "examples/peripheral-io/gpio-button-led",
+  );
+  if (!target) return;
+  // `tan build` (cli.rs BuildArgs) has no positional app_path — project scope
+  // resolves from `--project` (which defaults to the cwd). Active project: a
+  // bare `build` from the project root. Fallback: point `--project` at the
+  // chosen example (a bare positional would be a parse error, not ignored).
+  const args = target.active
+    ? ["build"]
+    : ["--project", ...target.appArg, "build"];
+  await runAlpInTerminal(context, args, { name: "Alp Build", cwd: target.cwd });
 }
 
 async function alpImage(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/multicore/rpmsg-v2n");
-  if (!app) return;
-  await runAlpInTerminal(context, ["image", app], {
+  const target = await resolveOrchestratorTarget(
+    "examples/multicore/rpmsg-v2n",
+  );
+  if (!target) return;
+  await runAlpInTerminal(context, ["image", ...target.appArg], {
     name: "Alp Image",
-    cwd: westCwd(),
+    cwd: target.cwd,
   });
 }
 
 async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/multicore/rpmsg-v2n");
-  if (!app) return;
-  await runAlpInTerminal(context, ["flash", app], {
+  const target = await resolveOrchestratorTarget(
+    "examples/multicore/rpmsg-v2n",
+  );
+  if (!target) return;
+  await runAlpInTerminal(context, ["flash", ...target.appArg], {
     name: "Alp Flash",
-    cwd: westCwd(),
+    cwd: target.cwd,
   });
 }
 
 async function alpClean(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/multicore/rpmsg-v2n");
-  if (!app) return;
-  await runAlpInTerminal(context, ["clean", app], {
+  const target = await resolveOrchestratorTarget(
+    "examples/multicore/rpmsg-v2n",
+  );
+  if (!target) return;
+  await runAlpInTerminal(context, ["clean", ...target.appArg], {
     name: "Alp Clean",
-    cwd: westCwd(),
+    cwd: target.cwd,
   });
 }
 
 async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
-  const app = await pickAppPath("examples/multicore/rpmsg-v2n");
-  if (!app) return;
-  await runAlpInTerminal(context, ["renode", app], {
+  const target = await resolveOrchestratorTarget(
+    "examples/multicore/rpmsg-v2n",
+  );
+  if (!target) return;
+  await runAlpInTerminal(context, ["renode", ...target.appArg], {
     name: "Alp Renode",
-    cwd: westCwd(),
+    cwd: target.cwd,
   });
 }
 
