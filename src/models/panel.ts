@@ -85,7 +85,7 @@ class ModelsPanel {
       runAlpCommand(this.context, ["model", "list"], cwd),
       runAlpCommand(this.context, ["model", "doctor"], cwd),
     ]);
-    this.post(toModelsData(list.outcome.envelope, doctor.outcome.envelope));
+    this.post(toModelsData(list.outcome, doctor.outcome));
   }
 
   private onMessage(msg: WebviewToExtMessage): void {

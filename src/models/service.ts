@@ -5,29 +5,51 @@
 // `child_process` here — that's the adapter (panel.ts), which shells `tan`
 // and posts the result this module shapes.
 
-import type { AlpEnvelope, AlpIssue } from "../alpCli/models";
+import type { AlpIssue, CliOutcome } from "../alpCli/models";
 import type { ModelsDataMessage } from "../ideHub/messages";
 
 /**
- * Merge a `tan model list` + `tan model doctor` envelope pair into the
- * webview's `ModelsDataMessage`. Either envelope being `null` (CLI resolution
- * failed) or `!ok` (validation/runtime failure) surfaces as `ok:false` with
- * an empty model/toolchain list; a `null` envelope additionally means the
- * resolved `tan` doesn't understand `model` at all, so it gets a synthesized,
- * actionable issue instead of the panel just going blank.
+ * Merge a `tan model list` + `tan model doctor` outcome pair into the
+ * webview's `ModelsDataMessage`. Either outcome's envelope being `null` (CLI
+ * didn't produce one) or `!ok` (validation/runtime failure) surfaces as
+ * `ok:false` with an empty model/toolchain list.
+ *
+ * A `null` envelope has two different causes that need different messages:
+ *  - `exitCode !== -1`: the command actually ran and returned a real process
+ *    exit code, it just didn't emit a parseable envelope — the resolved `tan`
+ *    doesn't understand `model --format json` at all (a genuinely old
+ *    binary), so a synthesized, actionable "update tan" issue beats a blank
+ *    panel.
+ *  - `exitCode === -1`: the command never ran at all (binary unresolved,
+ *    spawn ENOENT, the spawn timeout) — `outcome.message` already carries the
+ *    real cause (see spawnAlpAsync/runAlpCommand), so surface THAT instead of
+ *    misdiagnosing every such failure as "update tan".
  */
 export function toModelsData(
-  listEnv: AlpEnvelope | null,
-  doctorEnv: AlpEnvelope | null,
+  list: CliOutcome,
+  doctor: CliOutcome,
 ): ModelsDataMessage {
-  const listOk = listEnv !== null && listEnv.ok;
-  const doctorOk = doctorEnv !== null && doctorEnv.ok;
+  const listOk = list.envelope !== null && list.envelope.ok;
+  const doctorOk = doctor.envelope !== null && doctor.envelope.ok;
   if (!listOk || !doctorOk) {
     const issues: AlpIssue[] = [
-      ...(listEnv?.issues ?? []),
-      ...(doctorEnv?.issues ?? []),
+      ...(list.envelope?.issues ?? []),
+      ...(doctor.envelope?.issues ?? []),
     ];
-    if (listEnv === null || doctorEnv === null) {
+    let tanOutdated = false;
+    for (const outcome of [list, doctor]) {
+      if (outcome.envelope !== null) continue; // ok, or its issues are merged above
+      if (outcome.exitCode !== -1) {
+        tanOutdated = true;
+      } else {
+        issues.push({
+          code: "models.cli-error",
+          severity: "error",
+          message: outcome.message,
+        });
+      }
+    }
+    if (tanOutdated) {
       issues.push({
         code: "models.tan-outdated",
         severity: "error",
@@ -43,14 +65,14 @@ export function toModelsData(
       issues,
     };
   }
-  const models = (listEnv.data as { models?: unknown[] }).models ?? [];
+  const models = (list.envelope!.data as { models?: unknown[] }).models ?? [];
   const toolchains =
-    (doctorEnv.data as { toolchains?: unknown[] }).toolchains ?? [];
+    (doctor.envelope!.data as { toolchains?: unknown[] }).toolchains ?? [];
   return {
     type: "modelsData",
     ok: true,
     models,
     toolchains,
-    issues: [...listEnv.issues, ...doctorEnv.issues],
+    issues: [...list.envelope!.issues, ...doctor.envelope!.issues],
   };
 }
