@@ -146,6 +146,26 @@ export function isCliBehind(
 }
 
 /**
+ * Whether activation should (re)fetch the managed `tan` binary. Fetch when
+ * nothing resolves yet (`download`), OR when the resolved binary is the
+ * extension's own managed cache (`cached`) AND its version is behind the pinned
+ * `supported` — self-healing a stale managed install to the pin (the "tan shows
+ * an old version and never updates" symptom). User/build-owned sources
+ * (`cliPath` / `localBuild` / `bundled` / `path`) are never auto-replaced; the
+ * per-command outdated/ahead warning nudges those instead. `cachedVersion` is
+ * the parsed cached-binary version (null when unknown/unprobed → not behind).
+ */
+export function shouldFetchManagedCli(
+  source: BinarySource,
+  cachedVersion: string | null,
+  supported: string = SUPPORTED_CLI_VERSION,
+): boolean {
+  if (source === "download") return true;
+  if (source === "cached") return isCliBehind(cachedVersion, supported);
+  return false;
+}
+
+/**
  * True when the `installed` version is strictly NEWER than `supported`
  * (tuple compare over numeric `MAJOR.MINOR.PATCH` — no semver dep). An
  * unparseable/`null` installed version is treated as "unknown, not ahead" so

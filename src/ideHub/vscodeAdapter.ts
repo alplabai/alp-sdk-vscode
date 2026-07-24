@@ -4,6 +4,7 @@ import {
   checkSdkReadiness,
   listLocalSdkEntries,
 } from "@alp-sdk/core/sdk/service";
+import { toPosix } from "@alp-sdk/core/paths";
 import * as cp from "child_process";
 import { promisify } from "util";
 import * as fs from "fs";
@@ -168,9 +169,16 @@ export async function queryAlpIdeState(
   const cacheRootResolved = path.resolve(cacheRoot);
   const localEntries = discoveredEntries.map((entry) => ({
     ...entry,
+    // Normalize to forward-slash like `activePath` (sdkRoot is toPosix'd in
+    // resolveProjectContext). listLocalSdkEntries returns native path.resolve()
+    // output — backslash on Windows — so a raw `local.path === activePath`
+    // compare in the SDK Manager (buildRows) never matched, and the "Active"
+    // badge / Use→Deactivate flip never fired on Windows. removable keys off the
+    // pre-normalized native path (path.resolve re-normalizes posix input fine).
     removable: path
       .resolve(entry.path)
       .startsWith(cacheRootResolved + path.sep),
+    path: toPosix(entry.path),
   }));
 
   const pyCmd = projectContext.pythonBinary;
