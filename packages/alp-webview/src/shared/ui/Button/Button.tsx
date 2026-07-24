@@ -3,7 +3,7 @@ import styles from "./Button.module.css";
 
 interface Props {
   children: ReactNode;
-  appearance?: "primary" | "secondary" | "ghost" | "danger";
+  appearance?: "primary" | "secondary" | "ghost" | "danger" | "accent";
   disabled?: boolean;
   loading?: boolean;
   title?: string;
