@@ -63,6 +63,33 @@ export interface PrepResult {
   issues: ModelsDataMessage["issues"];
 }
 
+// `modelRunResult`/`modelAbResult` payload shapes (`tan model run`/`tan model
+// ab`'s host reference measurements), narrowed here for the view only —
+// mirrors ModelRunResultMessage/ModelAbResultMessage in types.ts.
+export interface RunResultView {
+  backend: string;
+  latency_ms: number;
+  output_argmax: number | null;
+  peak_sram_kib: number | null;
+  power_mj: number | null;
+  runs: number;
+  random_input: boolean;
+  note: string;
+  accuracy?: { expected: number; match: boolean };
+}
+export interface AbResultView {
+  a: { model: string; backend: string; latency_ms: number };
+  b: { model: string; backend: string; latency_ms: number };
+  comparison: {
+    faster: string;
+    latency_ratio: number | null;
+    a_latency_ms: number;
+    b_latency_ms: number;
+    size_delta_bytes: number | null;
+  };
+  note: string;
+}
+
 interface State {
   ok: boolean;
   models: ModelListEntry[];
@@ -76,6 +103,13 @@ interface State {
   checkingFit: boolean;
   prepping: boolean;
   prep: PrepResult | null;
+  measuring: boolean;
+  runOk: boolean;
+  runResult: RunResultView | null;
+  runIssues: ModelsDataMessage["issues"];
+  abOk: boolean;
+  abResult: AbResultView | null;
+  abIssues: ModelsDataMessage["issues"];
 }
 
 type Action =
@@ -96,7 +130,20 @@ type Action =
       issues: ModelsDataMessage["issues"];
     }
   | { type: "prepStart" }
-  | { type: "prepResult"; result: PrepResult };
+  | { type: "prepResult"; result: PrepResult }
+  | { type: "measureStart" }
+  | {
+      type: "runResult";
+      ok: boolean;
+      run: RunResultView | null;
+      issues: ModelsDataMessage["issues"];
+    }
+  | {
+      type: "abResult";
+      ok: boolean;
+      ab: AbResultView | null;
+      issues: ModelsDataMessage["issues"];
+    };
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
@@ -130,6 +177,24 @@ function reduce(state: State, action: Action): State {
       return { ...state, prepping: true };
     case "prepResult":
       return { ...state, prepping: false, prep: action.result };
+    case "measureStart":
+      return { ...state, measuring: true };
+    case "runResult":
+      return {
+        ...state,
+        measuring: false,
+        runOk: action.ok,
+        runResult: action.run,
+        runIssues: action.issues,
+      };
+    case "abResult":
+      return {
+        ...state,
+        measuring: false,
+        abOk: action.ok,
+        abResult: action.ab,
+        abIssues: action.issues,
+      };
   }
 }
 
@@ -146,6 +211,13 @@ const init: State = {
   checkingFit: false,
   prepping: false,
   prep: null,
+  measuring: false,
+  runOk: true,
+  runResult: null,
+  runIssues: [],
+  abOk: true,
+  abResult: null,
+  abIssues: [],
 };
 
 export function useModels() {
@@ -188,6 +260,22 @@ export function useModels() {
             issues: msg.issues,
           },
         });
+      } else if (msg?.type === "modelMeasureStarted") {
+        dispatch({ type: "measureStart" });
+      } else if (msg?.type === "modelRunResult") {
+        dispatch({
+          type: "runResult",
+          ok: msg.ok,
+          run: (msg.run as RunResultView) ?? null,
+          issues: msg.issues,
+        });
+      } else if (msg?.type === "modelAbResult") {
+        dispatch({
+          type: "abResult",
+          ok: msg.ok,
+          ab: (msg.ab as AbResultView) ?? null,
+          issues: msg.issues,
+        });
       }
     }
     window.addEventListener("message", onMessage);
@@ -213,5 +301,16 @@ export function useModels() {
     postMessage({ type: "prepModel" });
   }
 
-  return { ...state, build, refresh, checkFit, prepModel };
+  // No optimistic `measuring:true` here — the extension posts
+  // `modelMeasureStarted` only after its file dialog(s) confirm, so a
+  // cancelled dialog never sticks the button (see panel.ts's runModel/abModels).
+  function runModel() {
+    postMessage({ type: "runModel" });
+  }
+
+  function abModels() {
+    postMessage({ type: "abModels" });
+  }
+
+  return { ...state, build, refresh, checkFit, prepModel, runModel, abModels };
 }

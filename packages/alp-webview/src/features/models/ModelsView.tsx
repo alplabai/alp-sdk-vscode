@@ -5,12 +5,14 @@ import type { ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./ModelsView.module.css";
 import type {
+  AbResultView,
   BackendFit,
   ModelArtifact,
   ModelFit,
   ModelListEntry,
   ModelToolchain,
   PrepResult,
+  RunResultView,
 } from "./useModels";
 import { useModels } from "./useModels";
 
@@ -145,6 +147,103 @@ function PrepReport({ prep }: { prep: PrepResult }) {
   );
 }
 
+/** Renders the `tan model run` host reference measurement: the issues banner
+ *  on failure (never silent), or backend + latency + power/SRAM ("n/a" when
+ *  null, never fabricated) + accuracy + the honesty `note` on success. */
+function RunReport({
+  ok,
+  run,
+  issues,
+}: {
+  ok: boolean;
+  run: RunResultView | null;
+  issues: ModelsDataMessage["issues"];
+}) {
+  if (!ok) {
+    const bannerIssues =
+      issues.length > 0
+        ? issues
+        : [
+            {
+              code: "modelRun.failed",
+              severity: "error",
+              message: "Model run failed (no diagnostic).",
+            },
+          ];
+    return <IssuesBanner ok={false} issues={bannerIssues} />;
+  }
+  if (!run) return null;
+  return (
+    <div className={styles.issues} data-ok={true}>
+      <p className={styles.issuesHead}>Run result</p>
+      <Badge variant="warn" label={run.backend} />
+      <p className={styles.suggestion}>
+        {run.latency_ms.toFixed(2)} ms · {run.runs} run(s)
+        {run.random_input ? " · random input" : ""} · argmax{" "}
+        {run.output_argmax ?? "n/a"}
+      </p>
+      <p className={styles.suggestion}>
+        power: {run.power_mj ?? "n/a"} mJ · peak SRAM:{" "}
+        {run.peak_sram_kib ?? "n/a"} KiB
+      </p>
+      {run.accuracy && (
+        <Badge
+          variant={run.accuracy.match ? "ok" : "err"}
+          label={`expected ${run.accuracy.expected} — ${run.accuracy.match ? "match" : "mismatch"}`}
+        />
+      )}
+      <p className={styles.hint}>{run.note}</p>
+    </div>
+  );
+}
+
+/** Renders the `tan model ab` head-to-head comparison: the issues banner on
+ *  failure (never silent), or both models' latency + the comparison verdict
+ *  + the honesty `note` on success. */
+function AbReport({
+  ok,
+  ab,
+  issues,
+}: {
+  ok: boolean;
+  ab: AbResultView | null;
+  issues: ModelsDataMessage["issues"];
+}) {
+  if (!ok) {
+    const bannerIssues =
+      issues.length > 0
+        ? issues
+        : [
+            {
+              code: "modelAb.failed",
+              severity: "error",
+              message: "Model A/B compare failed (no diagnostic).",
+            },
+          ];
+    return <IssuesBanner ok={false} issues={bannerIssues} />;
+  }
+  if (!ab) return null;
+  return (
+    <div className={styles.issues} data-ok={true}>
+      <p className={styles.issuesHead}>A/B result</p>
+      <p className={styles.mono}>
+        A: {ab.a.model} — {ab.a.backend} · {ab.a.latency_ms.toFixed(2)} ms
+      </p>
+      <p className={styles.mono}>
+        B: {ab.b.model} — {ab.b.backend} · {ab.b.latency_ms.toFixed(2)} ms
+      </p>
+      <Badge
+        variant="ok"
+        label={`${ab.comparison.faster} faster (${ab.comparison.latency_ratio ?? "n/a"}x)`}
+      />
+      <p className={styles.suggestion}>
+        size delta: {ab.comparison.size_delta_bytes ?? "n/a"} bytes
+      </p>
+      <p className={styles.hint}>{ab.note}</p>
+    </div>
+  );
+}
+
 function ModelRow({
   model,
   fit,
@@ -233,6 +332,15 @@ export function ModelsView() {
     prep,
     prepping,
     prepModel,
+    measuring,
+    runOk,
+    runResult,
+    runIssues,
+    abOk,
+    abResult,
+    abIssues,
+    runModel,
+    abModels,
   } = useModels();
 
   return (
@@ -259,6 +367,12 @@ export function ModelsView() {
             <Button onClick={prepModel} disabled={prepping}>
               {prepping ? "Prepping…" : "Prep model"}
             </Button>
+            <Button onClick={runModel} disabled={measuring}>
+              {measuring ? "Measuring…" : "Run model"}
+            </Button>
+            <Button onClick={abModels} disabled={measuring}>
+              A/B compare
+            </Button>
             <Button appearance="secondary" onClick={refresh}>
               Refresh
             </Button>
@@ -269,6 +383,12 @@ export function ModelsView() {
       <IssuesBanner ok={ok} issues={issues} />
       <IssuesBanner ok={fitOk} issues={fitIssues} />
       {prep && <PrepReport prep={prep} />}
+      {(runResult || !runOk) && (
+        <RunReport ok={runOk} run={runResult} issues={runIssues} />
+      )}
+      {(abResult || !abOk) && (
+        <AbReport ok={abOk} ab={abResult} issues={abIssues} />
+      )}
 
       <section className={styles.section} aria-labelledby="models-title">
         <div className={styles.sectionHead}>
