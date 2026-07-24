@@ -77,6 +77,18 @@ export function resolveWestBinary(
   return firstVenvBinary("west", westCwd, sdkRoot) ?? "west";
 }
 
+/** True when a bootstrap-venv `west` exists on disk (deterministic file check),
+ *  as opposed to the bare "west" PATH fallback. west AVAILABILITY should key off
+ *  this, NOT a `west --version` spawn — that probe can time out under load
+ *  (Windows CPython cold-start) and wrongly flip the Environment card to
+ *  "Missing" mid-session even though west is installed. */
+export function venvWestExists(
+  westCwd: string | null,
+  sdkRoot: string | null,
+): boolean {
+  return firstVenvBinary("west", westCwd, sdkRoot) !== null;
+}
+
 /**
  * The bootstrap venv's Python (where Zephyr's Python deps were installed), or
  * null if no venv is found — callers fall back to the system interpreter.

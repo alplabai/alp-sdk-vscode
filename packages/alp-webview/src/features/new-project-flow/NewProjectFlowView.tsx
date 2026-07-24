@@ -375,13 +375,13 @@ function ConfirmStep({
         aria-label="Where to open the new project"
       >
         <Button
-          appearance={openInThisWindow ? "primary" : "secondary"}
+          appearance={openInThisWindow ? "accent" : "secondary"}
           onClick={() => onToggleOpenInThisWindow(true)}
         >
           {openInThisWindow ? "✓ " : ""}Open in this window
         </Button>
         <Button
-          appearance={!openInThisWindow ? "primary" : "secondary"}
+          appearance={!openInThisWindow ? "accent" : "secondary"}
           onClick={() => onToggleOpenInThisWindow(false)}
         >
           {!openInThisWindow ? "✓ " : ""}Open in new window
