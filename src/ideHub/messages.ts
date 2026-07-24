@@ -186,6 +186,20 @@ export interface ModelBuildProgressMessage {
   success?: boolean;
 }
 
+/** Per-model fit verdicts from `tan model check --board`. `models` stays
+ *  `unknown[]` at the boundary — the board-mode payload
+ *  ([{name,source,backends?,suggestion?,error?}]) is narrowed in the webview. */
+export interface ModelFitDataMessage {
+  type: "modelFitData";
+  /** Envelope `ok` (false → show issues, e.g. the alp stderr via `model.failed`). */
+  ok: boolean;
+  /** `envelope.data.sku` (the board's `som.sku`); absent on failure. */
+  sku?: string;
+  /** `envelope.data.models` — board-mode per-model results. */
+  models: unknown[];
+  issues: { code: string; severity: string; message: string }[];
+}
+
 // --- Build-plan preview (consumes `alp build --plan`, ADR 0014 BuildPlan) ---
 
 export interface BuildPlanToolStep {
@@ -267,7 +281,8 @@ export type ExtToWebviewMessage =
   | BuildPlanDataMessage
   | SystemManifestDataMessage
   | ModelsDataMessage
-  | ModelBuildProgressMessage;
+  | ModelBuildProgressMessage
+  | ModelFitDataMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -322,6 +337,11 @@ export interface RequestModelsMessage {
 export interface BuildModelMessage {
   type: "buildModel";
   name?: string;
+}
+
+/** Ask the extension to run the static fit check on the board's models. */
+export interface CheckModelFitMessage {
+  type: "checkModelFit";
 }
 
 export interface RequestSdkInstallMessage {
@@ -466,4 +486,5 @@ export type WebviewToExtMessage =
   | RunBuildMessage
   | FlashSliceMessage
   | RequestModelsMessage
-  | BuildModelMessage;
+  | BuildModelMessage
+  | CheckModelFitMessage;

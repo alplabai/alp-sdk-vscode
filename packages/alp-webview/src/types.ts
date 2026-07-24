@@ -408,6 +408,20 @@ export interface ModelBuildProgressMessage {
   success?: boolean;
 }
 
+/** Per-model fit verdicts from `tan model check --board`. `models` stays
+ *  `unknown[]` at the boundary — the board-mode payload
+ *  ([{name,source,backends?,suggestion?,error?}]) is narrowed in the webview. */
+export interface ModelFitDataMessage {
+  type: "modelFitData";
+  /** Envelope `ok` (false → show issues, e.g. the alp stderr via `model.failed`). */
+  ok: boolean;
+  /** `envelope.data.sku` (the board's `som.sku`); absent on failure. */
+  sku?: string;
+  /** `envelope.data.models` — board-mode per-model results. */
+  models: unknown[];
+  issues: { code: string; severity: string; message: string }[];
+}
+
 // --- Build-plan preview (mirrors messages.ts; consumes `alp build --plan`) ---
 export interface BuildPlanToolStep {
   tool: string;
@@ -524,7 +538,8 @@ export type ExtToWebviewMessage =
   | BuildPlanDataMessage
   | SystemManifestDataMessage
   | ModelsDataMessage
-  | ModelBuildProgressMessage;
+  | ModelBuildProgressMessage
+  | ModelFitDataMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -546,6 +561,9 @@ export interface RequestModelsMessage {
 export interface BuildModelMessage {
   type: "buildModel";
   name?: string;
+}
+export interface CheckModelFitMessage {
+  type: "checkModelFit";
 }
 export interface RequestSdkInstallMessage {
   type: "requestSdkInstall";
@@ -657,4 +675,5 @@ export type WebviewToExtMessage =
   | RunBuildMessage
   | FlashSliceMessage
   | RequestModelsMessage
-  | BuildModelMessage;
+  | BuildModelMessage
+  | CheckModelFitMessage;
