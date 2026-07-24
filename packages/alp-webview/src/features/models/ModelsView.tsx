@@ -5,7 +5,9 @@ import type { ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./ModelsView.module.css";
 import type {
+  BackendFit,
   ModelArtifact,
+  ModelFit,
   ModelListEntry,
   ModelToolchain,
 } from "./useModels";
@@ -23,6 +25,43 @@ const ARTIFACT_LABEL: Record<BadgeVariant, string> = {
   warn: "stale",
   err: "missing",
 };
+
+const FIT_SEVERITY: Record<string, number> = {
+  fits: 0,
+  "cpu-fallback": 1,
+  "no-fit": 2,
+};
+const FIT_VARIANT: Record<number, BadgeVariant> = {
+  0: "ok",
+  1: "warn",
+  2: "err",
+};
+const FIT_LABEL: Record<string, string> = {
+  fits: "fits",
+  "cpu-fallback": "cpu fallback",
+  "no-fit": "no fit",
+};
+
+/** Collapse a model's per-backend verdicts to one worst-case badge per backend
+ *  (E8 resolves 3 ethos_u configs → show one ethos_u at its worst verdict). */
+function worstByBackend(
+  backends?: BackendFit[],
+): { backend: string; verdict: string }[] {
+  const worst = new Map<string, string>();
+  for (const b of backends ?? []) {
+    const prev = worst.get(b.backend);
+    if (
+      prev === undefined ||
+      (FIT_SEVERITY[b.verdict] ?? 0) > (FIT_SEVERITY[prev] ?? 0)
+    ) {
+      worst.set(b.backend, b.verdict);
+    }
+  }
+  return [...worst.entries()].map(([backend, verdict]) => ({
+    backend,
+    verdict,
+  }));
+}
 
 function formatBytes(bytes?: number): string | null {
   if (bytes === undefined) return null;
@@ -64,10 +103,12 @@ function IssuesBanner({
 
 function ModelRow({
   model,
+  fit,
   building,
   onBuild,
 }: {
   model: ModelListEntry;
+  fit?: ModelFit;
   building: boolean;
   onBuild: () => void;
 }) {
@@ -80,6 +121,24 @@ function ModelRow({
       <td>
         <Badge variant={variant} label={ARTIFACT_LABEL[variant]} />
         {bytes && <span className={styles.bytes}>{bytes}</span>}
+      </td>
+      <td>
+        {fit?.error ? (
+          <span className={styles.badge} data-variant="err" title={fit.error}>
+            check error
+          </span>
+        ) : (
+          worstByBackend(fit?.backends).map(({ backend, verdict }) => (
+            <Badge
+              key={backend}
+              variant={FIT_VARIANT[FIT_SEVERITY[verdict] ?? 0]}
+              label={`${backend}: ${FIT_LABEL[verdict] ?? verdict}`}
+            />
+          ))
+        )}
+        {fit?.suggestion && (
+          <p className={styles.suggestion}>{fit.suggestion}</p>
+        )}
       </td>
       <td>
         <Button appearance="secondary" onClick={onBuild} disabled={building}>
@@ -113,8 +172,19 @@ function ToolchainRow({ toolchain }: { toolchain: ModelToolchain }) {
 }
 
 export function ModelsView() {
-  const { ok, models, toolchains, issues, buildLog, building, build, refresh } =
-    useModels();
+  const {
+    ok,
+    models,
+    toolchains,
+    issues,
+    buildLog,
+    building,
+    build,
+    refresh,
+    fits,
+    checkingFit,
+    checkFit,
+  } = useModels();
 
   return (
     <div className={styles.container}>
@@ -134,6 +204,9 @@ export function ModelsView() {
             >
               Edit models in Configurator
             </button>
+            <Button onClick={checkFit} disabled={checkingFit}>
+              {checkingFit ? "Checking fit…" : "Check fit"}
+            </Button>
             <Button appearance="secondary" onClick={refresh}>
               Refresh
             </Button>
@@ -169,6 +242,7 @@ export function ModelsView() {
                 <th>Name</th>
                 <th>Source</th>
                 <th>Artifact</th>
+                <th>Fit</th>
                 <th />
               </tr>
             </thead>
@@ -177,6 +251,7 @@ export function ModelsView() {
                 <ModelRow
                   key={m.name}
                   model={m}
+                  fit={fits.find((f) => f.name === m.name)}
                   building={building}
                   onBuild={() => build(m.name)}
                 />

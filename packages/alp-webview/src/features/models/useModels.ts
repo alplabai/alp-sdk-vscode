@@ -25,6 +25,27 @@ export interface ModelToolchain {
   reason?: string;
 }
 
+// `modelFitData` payload shapes (board-mode `tan model check --board`
+// results), narrowed here for the view only — see BackendFit/ModelFit above
+// the fields they mirror in messages.ts's ModelFitDataMessage doc comment.
+export interface BackendFit {
+  backend: string;
+  verdict: "fits" | "cpu-fallback" | "no-fit" | string;
+  est_sram_kib?: number;
+  budget_sram_kib?: number | null;
+  est_latency_ms?: number | null;
+  op_coverage_pct?: number;
+  unsupported_ops?: string[];
+  source?: string;
+}
+export interface ModelFit {
+  name: string;
+  source?: string;
+  backends?: BackendFit[];
+  suggestion?: string | null;
+  error?: string;
+}
+
 interface State {
   ok: boolean;
   models: ModelListEntry[];
@@ -32,6 +53,10 @@ interface State {
   issues: ModelsDataMessage["issues"];
   buildLog: string[];
   building: boolean;
+  fits: ModelFit[];
+  fitOk: boolean;
+  fitIssues: ModelsDataMessage["issues"];
+  checkingFit: boolean;
 }
 
 type Action =
@@ -43,7 +68,14 @@ type Action =
       issues: ModelsDataMessage["issues"];
     }
   | { type: "buildStart" }
-  | { type: "progress"; log: string; done: boolean };
+  | { type: "progress"; log: string; done: boolean }
+  | { type: "fitStart" }
+  | {
+      type: "fitData";
+      ok: boolean;
+      models: ModelFit[];
+      issues: ModelsDataMessage["issues"];
+    };
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
@@ -63,6 +95,16 @@ function reduce(state: State, action: Action): State {
         building: !action.done,
         buildLog: [...state.buildLog, action.log],
       };
+    case "fitStart":
+      return { ...state, checkingFit: true };
+    case "fitData":
+      return {
+        ...state,
+        checkingFit: false,
+        fitOk: action.ok,
+        fits: action.models,
+        fitIssues: action.issues,
+      };
   }
 }
 
@@ -73,6 +115,10 @@ const init: State = {
   issues: [],
   buildLog: [],
   building: false,
+  fits: [],
+  fitOk: true,
+  fitIssues: [],
+  checkingFit: false,
 };
 
 export function useModels() {
@@ -96,6 +142,13 @@ export function useModels() {
         if (msg.done) {
           postMessage({ type: "requestModels" });
         }
+      } else if (msg?.type === "modelFitData") {
+        dispatch({
+          type: "fitData",
+          ok: msg.ok,
+          models: (msg.models as ModelFit[]) ?? [],
+          issues: msg.issues,
+        });
       }
     }
     window.addEventListener("message", onMessage);
@@ -112,5 +165,10 @@ export function useModels() {
     postMessage({ type: "requestModels" });
   }
 
-  return { ...state, build, refresh };
+  function checkFit() {
+    dispatch({ type: "fitStart" });
+    postMessage({ type: "checkModelFit" });
+  }
+
+  return { ...state, build, refresh, checkFit };
 }
