@@ -14,6 +14,7 @@ const {
   classifyOutcome,
   releaseAssetForTarget,
   binaryName,
+  shouldFetchManagedCli,
   SUPPORTED_CLI_VERSION,
 } = require("../out/alpCli/service.js");
 const { resolutionInputFromDeps } = require("../out/alpCli/adapterCore.js");
@@ -24,6 +25,26 @@ test("parseTanVersion extracts MAJOR.MINOR.PATCH and tolerates a suffix", () => 
   assert.equal(parseTanVersion("alp 0.1.14"), null); // the retired binary name
   assert.equal(parseTanVersion("tan, version 0.8.1"), null); // click-style output
   assert.equal(parseTanVersion(""), null);
+});
+
+test("shouldFetchManagedCli fetches when nothing resolves, and self-heals a stale cache", () => {
+  // Fresh install: nothing resolves yet → download.
+  assert.equal(shouldFetchManagedCli("download", null), true);
+  // Managed cache behind the pin → self-heal (re-fetch the pin).
+  assert.equal(shouldFetchManagedCli("cached", "0.1.0", "0.3.0"), true);
+  // Managed cache at/ahead of the pin → leave it.
+  assert.equal(shouldFetchManagedCli("cached", "0.3.0", "0.3.0"), false);
+  assert.equal(shouldFetchManagedCli("cached", "0.4.0", "0.3.0"), false);
+  // Cache present but version unprobed/unparseable → not behind, don't thrash.
+  assert.equal(shouldFetchManagedCli("cached", null, "0.3.0"), false);
+  // User/build-owned sources are NEVER auto-replaced, even when behind.
+  for (const source of ["cliPath", "localBuild", "bundled", "path"]) {
+    assert.equal(
+      shouldFetchManagedCli(source, "0.1.0", "0.3.0"),
+      false,
+      `${source} must not auto-fetch`,
+    );
+  }
 });
 
 test("isCliBehind compares numeric version tuples", () => {
