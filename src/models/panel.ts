@@ -19,6 +19,11 @@ import { toModelsData } from "./service";
 const PANEL_VIEW_TYPE = "alpModels";
 const PANEL_TITLE = "Alp Models";
 
+// A real NPU compile (vela/dxcom/drpai) can run well past the 60s default
+// envelope timeout (spawnAlpAsync's ALP_SPAWN_TIMEOUT_MS) — killing it there
+// would falsely report "Build failed" and orphan the in-progress compile.
+const MODEL_BUILD_TIMEOUT_MS = 30 * 60 * 1000;
+
 // Pure envelope shaping (`toModelsData`) lives in ./service.ts — no `vscode`
 // there, so it's unit-testable directly (test/models.service.test.js) without
 // this file's vscode dependency in the require chain.
@@ -138,7 +143,9 @@ class ModelsPanel {
         cancellable: false,
       },
       async () => {
-        const { outcome } = await runAlpCommand(this.context, args, cwd);
+        const { outcome } = await runAlpCommand(this.context, args, cwd, {
+          timeoutMs: MODEL_BUILD_TIMEOUT_MS,
+        });
         const envelope = outcome.envelope;
         if (envelope && envelope.ok) {
           sendProgress("Build complete.", true, true);
