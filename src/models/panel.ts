@@ -21,6 +21,8 @@ import {
   toModelPrepResult,
   toModelRunResult,
   toModelsData,
+  toZooAddResult,
+  toZooData,
 } from "./service";
 
 const PANEL_VIEW_TYPE = "alpModels";
@@ -103,6 +105,49 @@ class ModelsPanel {
     ]);
     this.post(toModelsData(list.outcome, doctor.outcome));
     void this.checkFit();
+    void this.refreshZoo();
+  }
+
+  /** Fetch the curated zoo gallery (`tan model zoo --board`), badged with
+   *  whether each entry runs on the board's `som.sku`. Thin: zoo logic lives
+   *  in tan/alp-sdk; this only shells + shapes. */
+  private async refreshZoo(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const { outcome } = await runAlpCommand(
+      this.context,
+      ["model", "zoo", "--board", "board.yaml"],
+      cwd,
+    );
+    this.post(toZooData(outcome));
+  }
+
+  /** Add a curated zoo entry to board.yaml (`tan model add <id> --board`),
+   *  then refresh both the model list (the new model appears) and the zoo
+   *  (idempotence — the entry may now be present). Thin: fetch/add logic
+   *  lives in tan/alp-sdk. */
+  private async addFromZoo(id: string): Promise<void> {
+    this.post({ type: "zooAddStarted" });
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Alp: Adding ${id} from zoo`,
+        cancellable: false,
+      },
+      async () => {
+        const { outcome } = await runAlpCommand(
+          this.context,
+          ["model", "add", id, "--board", "board.yaml"],
+          cwd,
+          { timeoutMs: MODEL_BUILD_TIMEOUT_MS },
+        );
+        this.post(toZooAddResult(outcome));
+        if (outcome.envelope && outcome.envelope.ok) {
+          await this.refresh(); // the new model now appears in the list
+          await this.refreshZoo();
+        }
+      },
+    );
   }
 
   /** Run the static fit check on every board.yaml model
@@ -244,6 +289,12 @@ class ModelsPanel {
         break;
       case "abModels":
         void this.abModels();
+        break;
+      case "requestZoo":
+        void this.refreshZoo();
+        break;
+      case "addFromZoo":
+        void this.addFromZoo(msg.id);
         break;
       case "closePanel":
         this.panel.dispose();
