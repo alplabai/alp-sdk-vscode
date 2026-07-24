@@ -269,6 +269,43 @@ export interface ModelAbResultMessage {
   issues: { code: string; severity: string; message: string }[];
 }
 
+/** A single curated zoo entry from `tan model zoo --board` — `runs_here` is
+ *  `true`/`false` when the board's `som.sku` was resolvable, `null` when it
+ *  wasn't (e.g. no board.yaml yet) — the MVP shows every entry badged rather
+ *  than silently hiding the ones it can't validate. */
+export interface ZooEntry {
+  id: string;
+  task: string;
+  description: string;
+  license: string;
+  validated_soms: string[];
+  runs_here: boolean | null;
+}
+
+/** Zoo gallery state from `tan model zoo --board`. */
+export interface ZooDataMessage {
+  type: "zooData";
+  ok: boolean;
+  entries: ZooEntry[];
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Ack that `tan model add` actually started — mirrors ModelPrepStartedMessage
+ *  (Add mutates board.yaml + fetches, so it gets the same started-ack shape
+ *  as prep: the webview poster does NOT set `adding` optimistically). */
+export interface ZooAddStartedMessage {
+  type: "zooAddStarted";
+}
+
+/** Result of `tan model add <id> --board` — the fetched model appended to
+ *  board.yaml. */
+export interface ZooAddResultMessage {
+  type: "zooAddResult";
+  ok: boolean;
+  added?: string;
+  issues: { code: string; severity: string; message: string }[];
+}
+
 // --- Build-plan preview (consumes `alp build --plan`, ADR 0014 BuildPlan) ---
 
 export interface BuildPlanToolStep {
@@ -356,7 +393,10 @@ export type ExtToWebviewMessage =
   | ModelPrepResultMessage
   | ModelMeasureStartedMessage
   | ModelRunResultMessage
-  | ModelAbResultMessage;
+  | ModelAbResultMessage
+  | ZooDataMessage
+  | ZooAddStartedMessage
+  | ZooAddResultMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -433,6 +473,17 @@ export interface RunModelMessage {
  *  prompts for two model files). */
 export interface AbModelsMessage {
   type: "abModels";
+}
+
+/** Ask the extension to (re-)fetch the zoo gallery (`tan model zoo --board`). */
+export interface RequestZooMessage {
+  type: "requestZoo";
+}
+
+/** Add a curated zoo entry to board.yaml (`tan model add <id> --board`). */
+export interface AddFromZooMessage {
+  type: "addFromZoo";
+  id: string;
 }
 
 export interface RequestSdkInstallMessage {
@@ -581,4 +632,6 @@ export type WebviewToExtMessage =
   | CheckModelFitMessage
   | PrepModelMessage
   | RunModelMessage
-  | AbModelsMessage;
+  | AbModelsMessage
+  | RequestZooMessage
+  | AddFromZooMessage;
