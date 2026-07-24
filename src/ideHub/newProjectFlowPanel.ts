@@ -459,17 +459,19 @@ export class NewProjectFlowPanel {
       }
       // Dismissed ⇒ don't open (safer than the old silent open).
     } else {
-      const open = "Open Project";
-      const choice = await vscode.window.showInformationMessage(
-        `Project "${projectName}" created at ${projectDir}`,
-        open,
+      // Pin OK ⇒ auto-open so the new project becomes the ACTIVE project: the
+      // extension's project context (board.yaml / build / flash) resolves from
+      // the open workspace folder, so a created-but-unopened project is never
+      // active. Opens in the CURRENT window (see openProjectFolder) — the user
+      // just built this to work on it. Fire-and-forget toast for feedback;
+      // opening no longer needs a click.
+      void vscode.window.showInformationMessage(
+        `Project "${projectName}" created — opening…`,
       );
-      shouldOpen = choice === open;
+      shouldOpen = true;
     }
 
     if (shouldOpen) {
-      // Open in a new window when a workspace is already open, so we don't
-      // replace the user's current session.
       await openProjectFolder(vscode.Uri.file(projectDir));
     }
 
