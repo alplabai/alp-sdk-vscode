@@ -176,6 +176,8 @@ export function useModels() {
           models: (msg.models as ModelFit[]) ?? [],
           issues: msg.issues,
         });
+      } else if (msg?.type === "modelPrepStarted") {
+        dispatch({ type: "prepStart" });
       } else if (msg?.type === "modelPrepResult") {
         dispatch({
           type: "prepResult",
@@ -208,7 +210,6 @@ export function useModels() {
   }
 
   function prepModel() {
-    dispatch({ type: "prepStart" });
     postMessage({ type: "prepModel" });
   }
 

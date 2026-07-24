@@ -200,6 +200,13 @@ export interface ModelFitDataMessage {
   issues: { code: string; severity: string; message: string }[];
 }
 
+/** Ack that `tan model prep` actually started (both file dialogs confirmed) —
+ *  lets the webview flip `prepping:true` only for real work, so a cancelled
+ *  dialog (panel.ts returns early, posts nothing) never sticks the button. */
+export interface ModelPrepStartedMessage {
+  type: "modelPrepStarted";
+}
+
 /** Result of `tan model prep` — the quantized artifact + accuracy report. */
 export interface ModelPrepResultMessage {
   type: "modelPrepResult";
@@ -299,6 +306,7 @@ export type ExtToWebviewMessage =
   | ModelsDataMessage
   | ModelBuildProgressMessage
   | ModelFitDataMessage
+  | ModelPrepStartedMessage
   | ModelPrepResultMessage;
 
 // ---------------------------------------------------------------------------

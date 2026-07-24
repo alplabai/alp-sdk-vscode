@@ -131,6 +131,8 @@ class ModelsPanel {
     });
     if (!calPick || calPick.length === 0) return;
 
+    this.post({ type: "modelPrepStarted" });
+
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const args = [
       "model",

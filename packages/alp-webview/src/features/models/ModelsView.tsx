@@ -111,7 +111,19 @@ function IssuesBanner({
  *  success. Thin: all accuracy math comes from the envelope, not computed here. */
 function PrepReport({ prep }: { prep: PrepResult }) {
   if (!prep.ok) {
-    return <IssuesBanner ok={false} issues={prep.issues} />;
+    // A contract-violating `!ok` result with no issues would otherwise render
+    // nothing (IssuesBanner returns null on an empty list) — never fail silently.
+    const issues =
+      prep.issues.length > 0
+        ? prep.issues
+        : [
+            {
+              code: "modelPrep.failed",
+              severity: "error",
+              message: "Model prep failed (no diagnostic).",
+            },
+          ];
+    return <IssuesBanner ok={false} issues={issues} />;
   }
   const a = prep.accuracy;
   const variant: BadgeVariant = a?.verdict === "good" ? "ok" : "warn";
