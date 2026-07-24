@@ -96,6 +96,7 @@ const TOP_LEVEL_KEYS: readonly string[] = Object.keys(
 const CHILD_KEYS: Readonly<Record<string, readonly string[]>> = {
   som: ["sku"],
   inference: ["default_arena_kib"],
+  models: ["name", "source", "compile"],
   iot: ["wifi", "mqtt", "ble", "tls"],
   diagnostics: ["last_error", "log_level"],
 };
@@ -171,6 +172,26 @@ const FIELD_DOCS: Readonly<Record<string, BoardYamlHoverInfo>> = {
   "inference.default_arena_kib": {
     title: "inference.default_arena_kib",
     description: "Default tensor arena size in KiB.",
+  },
+  models: {
+    title: "models",
+    description:
+      "models[] declares AI models to compile into .alpmodel packages. Each entry has a name + source (ONNX/TFLite); compile backends are DERIVED from the SoM (som.sku), never customer-specified.",
+  },
+  "models.name": {
+    title: "models.name",
+    description:
+      "Model instance identifier; used to name the generated .alpmodel artifact.",
+  },
+  "models.source": {
+    title: "models.source",
+    description:
+      "Path (relative to board.yaml) to the source model. `.tflite` compiles for CPU (TFLM) + Ethos-U (Vela) out of the box; `.onnx` requires a vendor toolchain (DRP-AI / DEEPX) on the build host.",
+  },
+  "models.compile": {
+    title: "models.compile",
+    description:
+      "Per-backend compile configuration (DRP-AI, DEEPX config + calibration) for NPU toolchains the SDK cannot derive settings for; a backend with no block here is recorded as a coverage skip.",
   },
   libraries: {
     title: "libraries",
