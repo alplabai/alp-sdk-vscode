@@ -12,6 +12,8 @@ const {
   toModelPrepResult,
   toModelRunResult,
   toModelAbResult,
+  toZooData,
+  toZooAddResult,
 } = require("../out/models/service.js");
 
 function okOutcome(envelope) {
@@ -349,6 +351,92 @@ test("toModelAbResult: !ok -> surfaces model.failed", () => {
       data: null,
       issues: [
         { code: "model.failed", severity: "error", message: "error: bad" },
+      ],
+    },
+  });
+  assert.equal(msg.ok, false);
+  assert.ok(msg.issues.some((i) => i.code === "model.failed"));
+});
+
+test("toZooData: ok -> entries passthrough", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        entries: [
+          {
+            id: "example-tiny",
+            task: "example",
+            description: "d",
+            license: "Apache-2.0",
+            validated_soms: ["E1M-AEN801"],
+            runs_here: true,
+          },
+        ],
+      },
+      issues: [],
+    },
+  };
+  const msg = toZooData(outcome);
+  assert.equal(msg.ok, true);
+  assert.equal(msg.entries.length, 1);
+  assert.equal(msg.entries[0].runs_here, true);
+});
+
+test("toZooData: null envelope -> ok:false + real cause", () => {
+  const msg = toZooData({
+    exitCode: -1,
+    message: "tan binary not found",
+    envelope: null,
+  });
+  assert.equal(msg.ok, false);
+  assert.equal(msg.entries.length, 0);
+  assert.ok(msg.issues.some((i) => i.message.includes("tan binary not found")));
+});
+
+test("toZooAddResult: ok -> added passthrough", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        added: "example-tiny",
+        source: "models/example-tiny.tflite",
+        from: "example-tiny",
+      },
+      issues: [],
+    },
+  };
+  const msg = toZooAddResult(outcome);
+  assert.equal(msg.ok, true);
+  assert.equal(msg.added, "example-tiny");
+});
+
+test("toZooAddResult: !ok -> surfaces model.failed", () => {
+  const msg = toZooAddResult({
+    exitCode: 1,
+    message: "x",
+    envelope: {
+      command: "model",
+      ok: false,
+      exitCode: 1,
+      project: {},
+      data: null,
+      issues: [
+        {
+          code: "model.failed",
+          severity: "error",
+          message: "error: already has a model named X",
+        },
       ],
     },
   });

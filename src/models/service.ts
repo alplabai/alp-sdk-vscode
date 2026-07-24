@@ -12,6 +12,8 @@ import type {
   ModelPrepResultMessage,
   ModelRunResultMessage,
   ModelsDataMessage,
+  ZooAddResultMessage,
+  ZooDataMessage,
 } from "../ideHub/messages";
 
 /**
@@ -205,6 +207,60 @@ export function toModelAbResult(outcome: CliOutcome): ModelAbResultMessage {
     type: "modelAbResult",
     ok: true,
     ab: env.data as ModelAbResultMessage["ab"],
+    issues: env.issues,
+  };
+}
+
+/**
+ * Shape a `tan model zoo --board` outcome into the webview's gallery payload.
+ * A `null` envelope or `!ok` → `ok:false` with the real cause (via
+ * `cliFailureMessage`) plus any envelope issues.
+ */
+export function toZooData(outcome: CliOutcome): ZooDataMessage {
+  const env = outcome.envelope;
+  if (env === null || !env.ok) {
+    const issues: AlpIssue[] = [...(env?.issues ?? [])];
+    if (env === null) {
+      issues.push({
+        code: "zoo.cli-error",
+        severity: "error",
+        message: cliFailureMessage(outcome),
+      });
+    }
+    return { type: "zooData", ok: false, entries: [], issues };
+  }
+  const data = env.data as { entries?: ZooDataMessage["entries"] };
+  return {
+    type: "zooData",
+    ok: true,
+    entries: data.entries ?? [],
+    issues: env.issues,
+  };
+}
+
+/**
+ * Shape a `tan model add <id> --board` outcome into the webview's add-result
+ * message. A `null` envelope or `!ok` → `ok:false` with the real cause (via
+ * `cliFailureMessage`) plus any envelope issues (tan's `model.failed`).
+ */
+export function toZooAddResult(outcome: CliOutcome): ZooAddResultMessage {
+  const env = outcome.envelope;
+  if (env === null || !env.ok) {
+    const issues: AlpIssue[] = [...(env?.issues ?? [])];
+    if (env === null) {
+      issues.push({
+        code: "zooAdd.cli-error",
+        severity: "error",
+        message: cliFailureMessage(outcome),
+      });
+    }
+    return { type: "zooAddResult", ok: false, issues };
+  }
+  const data = env.data as { added?: string };
+  return {
+    type: "zooAddResult",
+    ok: true,
+    added: data.added,
     issues: env.issues,
   };
 }
