@@ -16,8 +16,10 @@ import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { log as logChannel, reportError } from "../util";
 import {
   cliFailureMessage,
+  toModelAbResult,
   toModelFitData,
   toModelPrepResult,
+  toModelRunResult,
   toModelsData,
 } from "./service";
 
@@ -28,6 +30,10 @@ const PANEL_TITLE = "Alp Models";
 // envelope timeout (spawnAlpAsync's ALP_SPAWN_TIMEOUT_MS) — killing it there
 // would falsely report "Build failed" and orphan the in-progress compile.
 const MODEL_BUILD_TIMEOUT_MS = 30 * 60 * 1000;
+
+// Host reference measurement (`tan model run|ab`) is a plain CPU inference —
+// quick, but timeouts are cheap insurance against a hung process.
+const MEASURE_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Pure envelope shaping (`toModelsData`) lives in ./service.ts — no `vscode`
 // there, so it's unit-testable directly (test/models.service.test.js) without
@@ -156,6 +162,68 @@ class ModelsPanel {
     );
   }
 
+  /** Prompt for a model, shell `tan model run`, and post the host reference
+   *  latency/accuracy measurement. Thin: measurement logic lives in tan/alp-sdk. */
+  private async runModel(): Promise<void> {
+    const pick = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { "ONNX model": ["onnx"] },
+      openLabel: "Select model to run",
+    });
+    if (!pick || pick.length === 0) return;
+    this.post({ type: "modelMeasureStarted" });
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Alp: Running model (host reference)",
+        cancellable: false,
+      },
+      async () => {
+        const { outcome } = await runAlpCommand(
+          this.context,
+          ["model", "run", pick[0].fsPath],
+          cwd,
+          { timeoutMs: MEASURE_TIMEOUT_MS },
+        );
+        this.post(toModelRunResult(outcome));
+      },
+    );
+  }
+
+  /** Prompt for two models, shell `tan model ab`, and post the head-to-head
+   *  comparison. Thin: comparison logic lives in tan/alp-sdk. */
+  private async abModels(): Promise<void> {
+    const pick = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: true,
+      filters: { "ONNX model": ["onnx"] },
+      openLabel: "Select TWO models to A/B",
+    });
+    if (!pick || pick.length < 2) return;
+    this.post({ type: "modelMeasureStarted" });
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Alp: A/B comparing models (host reference)",
+        cancellable: false,
+      },
+      async () => {
+        const { outcome } = await runAlpCommand(
+          this.context,
+          ["model", "ab", pick[0].fsPath, pick[1].fsPath],
+          cwd,
+          { timeoutMs: MEASURE_TIMEOUT_MS },
+        );
+        this.post(toModelAbResult(outcome));
+      },
+    );
+  }
+
   private onMessage(msg: WebviewToExtMessage): void {
     switch (msg.type) {
       case "ready":
@@ -170,6 +238,12 @@ class ModelsPanel {
         break;
       case "prepModel":
         void this.prepModel();
+        break;
+      case "runModel":
+        void this.runModel();
+        break;
+      case "abModels":
+        void this.abModels();
         break;
       case "closePanel":
         this.panel.dispose();
