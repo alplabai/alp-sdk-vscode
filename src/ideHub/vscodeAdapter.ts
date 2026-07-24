@@ -15,6 +15,7 @@ import { collectProjectContext } from "../project/vscodeAdapter";
 import { log } from "../util";
 import {
   resolveWestBinary,
+  venvWestExists,
   westWorkspaceInitialized,
 } from "../environment/vscodeAdapter";
 import { probeTanVersion } from "../alpCli/vscodeAdapter";
@@ -91,10 +92,11 @@ function loginShellPath(): Promise<string | undefined> {
 async function commandVersion(
   cmd: string,
   env: NodeJS.ProcessEnv,
+  timeout = 3000,
 ): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync(cmd, ["--version"], {
-      timeout: 3000,
+      timeout,
       env,
     });
     const firstLine = stdout.trim().split("\n")[0] ?? "";
@@ -191,6 +193,14 @@ export async function queryAlpIdeState(
     projectContext.westCwd,
     projectContext.sdkRoot,
   );
+  // Deterministic availability: a bootstrap-venv west existing on disk means
+  // west IS available regardless of whether the `west --version` probe below
+  // wins its race — this is the fix for the card flip-flopping to "Missing"
+  // when the probe times out under load (Windows CPython cold-start).
+  const venvWest = venvWestExists(
+    projectContext.westCwd,
+    projectContext.sdkRoot,
+  );
 
   // One env, one parallel batch: the probes no longer block the event loop (they
   // were up to six synchronous spawns per window-focus / save / settings edit)
@@ -202,12 +212,14 @@ export async function queryAlpIdeState(
   const [pythonVersion, westVersion, cmakeVersion, ninjaVersion] =
     await Promise.all([
       commandVersion(pyCmd, probeEnv),
-      commandVersion(westBin, probeEnv),
+      commandVersion(westBin, probeEnv, 10000), // roomier: venv west cold-start
       commandVersion("cmake", probeEnv),
       commandVersion("ninja", probeEnv),
     ]);
   const pythonAvailable = pythonVersion !== null;
-  const westAvailable = westVersion !== null;
+  // Availability from the deterministic on-disk check OR a successful probe, so a
+  // timed-out version probe alone never downgrades an installed west to "Missing".
+  const westAvailable = venvWest || westVersion !== null;
   // Not part of the probeEnv batch above: it resolves its own binary via the
   // cliPath/bundled/localBuild/cached/PATH ladder and must never download.
   const tanVersion = context ? await probeTanVersion(context) : null;
