@@ -347,7 +347,9 @@ test("toModelAbResult: !ok -> surfaces model.failed", () => {
       exitCode: 1,
       project: {},
       data: null,
-      issues: [{ code: "model.failed", severity: "error", message: "error: bad" }],
+      issues: [
+        { code: "model.failed", severity: "error", message: "error: bad" },
+      ],
     },
   });
   assert.equal(msg.ok, false);
