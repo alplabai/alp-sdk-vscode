@@ -3,7 +3,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { runAlpCommand, runAlpInTerminal } from "../alpCli/vscodeAdapter";
+import { runAlpCommand, runAlpStreamed } from "../alpCli/vscodeAdapter";
 import {
   type BuildPlanData,
   type ExtToWebviewMessage,
@@ -191,20 +191,23 @@ export class BuildPlanPanel {
 
   private async handleRunBuild(): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    // Live build in a terminal (streams output, like `alp build`).
-    await runAlpInTerminal(this.context, ["build"], { name: "alp build", cwd });
+    // Stream to the "Alp SDK" channel (persistent), not a terminal that dies on
+    // exit — same reason as the Build/Flash orchestrator commands (util.ts).
+    await runAlpStreamed(this.context, ["build"], { name: "Alp Build", cwd });
   }
 
-  /** Flash a single manifest slice — `tan flash --core <id>` forwards to
-   *  `west alp-flash` for that core. The view only shows the button when the
-   *  manifest says the slice supports it, so this just runs it in a terminal.
+  /** Flash a single manifest slice — `tan flash --core <id>`. The view only
+   *  shows the button when the manifest says the slice supports it. Streams to
+   *  the "Alp SDK" channel (persistent) instead of a terminal that dies on exit:
+   *  a `tan flash --core` that fails (e.g. `west` not on PATH) otherwise left
+   *  only "failed to launch (exit 1)" with the real reason gone.
    *  There is no per-slice build equivalent: `tan build` has no `--core`
    *  option (only `flash`/`run` do), so the Build button only runs the whole
    *  plan (`runBuild`). */
   private handleSliceCommand(coreId: string): void {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    void runAlpInTerminal(this.context, ["flash", "--core", coreId], {
-      name: `alp flash ${coreId}`,
+    void runAlpStreamed(this.context, ["flash", "--core", coreId], {
+      name: `Alp Flash · ${coreId}`,
       cwd,
     });
   }

@@ -193,19 +193,14 @@ function sdkValue(sdk: AlpIdeState["sdk"]): string {
 const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
   [
     { icon: "play", label: "Build", command: "alp.westBuild" },
-    // Flash routes through the orchestrator (`tan flash`, alp.westAlpFlash), not
-    // plain `west flash` (alp.westFlash): the multi-core project has no single
-    // build dir at the workspace root, and bare `west` isn't on the terminal's
-    // PATH (it lives in the bootstrap venv), so the plain path dies with
-    // "shell executable west does not exist". tan flashes every built slice and
-    // resolves west itself. (Plain `west flash` stays available in the palette.)
-    { icon: "bolt", label: "Flash", command: "alp.westAlpFlash" },
+    { icon: "bolt", label: "Flash", command: "alp.westFlash" },
     {
       icon: "monitor",
       label: "Run (native_sim)",
       command: "alp.westRunNativeSim",
     },
     { icon: "package", label: "Image", command: "alp.westAlpImage" },
+    { icon: "rocket", label: "Flash all cores", command: "alp.westAlpFlash" },
     { icon: "bug", label: "Debug", command: "alp.debug" },
     { icon: "cpu", label: "Renode", command: "alp.westAlpRenode" },
     // "Update" lives in the Workspace section (module maintenance, not a
