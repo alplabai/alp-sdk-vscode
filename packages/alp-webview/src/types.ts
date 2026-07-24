@@ -203,6 +203,8 @@ export interface Diagnostics {
   last_error?: boolean;
   log_level?: LogLevel;
   modules?: Record<string, LogLevelOrOff>;
+  console?: "auto" | "alp" | "uart" | "ram" | "linux" | "none";
+  sim_console?: boolean;
 }
 
 /** An AI model to compile + package into .alpmodel (board.schema.json `models`). */
