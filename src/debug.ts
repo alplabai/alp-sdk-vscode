@@ -3,7 +3,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { createLaunchJsonWritePlan } from "@alp-sdk/core/debug/launchJsonCore";
 import {
   DebugGenerationTraceDecision,
   DebugServerKind,
@@ -18,7 +17,6 @@ import {
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
-  createLaunchPreview,
   createSupportBundlePayload,
   DEBUG_TARGET_CHOICES,
   isNativeHostTarget,
@@ -29,11 +27,10 @@ import {
   collectRuntimeCapabilities,
   collectWorkspaceDebugContext,
   fileExists,
-  readLaunchJson,
-  writeLaunchJson,
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
+import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import { ensureNativeSimOverlay } from "./west";
 import { log, reportError, showOutput } from "./util";
 
@@ -173,10 +170,45 @@ interface LaunchProfileResult {
   notes: readonly string[];
 }
 
+/** The `debug-config` envelope fields this command consumes. Narrow guard —
+ *  an older `tan` that predates `data.configuration` fails it and is reported
+ *  as such, rather than writing `undefined` into launch.json. */
+interface DebugConfigEnvelopeData {
+  launchJsonPath: string;
+  replaced: boolean;
+  notes: string[];
+  configuration: { name?: unknown };
+}
+
+function isDebugConfigData(value: unknown): value is DebugConfigEnvelopeData {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  return (
+    typeof data.launchJsonPath === "string" &&
+    typeof data.replaced === "boolean" &&
+    Array.isArray(data.notes) &&
+    typeof data.configuration === "object" &&
+    data.configuration !== null
+  );
+}
+
 /** Prompt for target/server, write the launch.json profile, and return what a
  *  caller needs to report status or start a session. Null when the user
- *  cancelled or no workspace is open (a message is shown for the latter). */
-async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
+ *  cancelled, no workspace is open, or the CLI could not produce a config (a
+ *  message is shown for the latter two).
+ *
+ *  The configuration itself comes from `tan debug-config`, which resolves the
+ *  probe/tool values from the build's own `runners.yaml` (tan-cli#66). The
+ *  extension deliberately keeps NO second draft: it had one, with the same
+ *  unresolved `<resolved-device>` placeholders, and a fork of the same logic in
+ *  two languages meant fixing one left the other handing out broken files
+ *  (#339). What stays in-process is the readiness report below — it probes
+ *  which debugger extensions are installed, host state a separate process
+ *  cannot observe (EXTENSION_CLI_INTEGRATION.md §4a).
+ */
+async function writeLaunchProfile(
+  extensionContext: vscode.ExtensionContext,
+): Promise<LaunchProfileResult | null> {
   const targetKind = await pickTargetKind();
   if (!targetKind) return null;
   const server = await pickServer(targetKind);
@@ -189,28 +221,36 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
   }
 
   const slice = resolveManifestSlice(context.workspaceRoot, targetKind);
-  const preview = createLaunchPreview(
-    new Date().toISOString(),
+  const args = [
+    "debug-config",
+    "--target-kind",
     targetKind,
+    "--server",
     server,
-    slice,
-  );
-  const configuration = preview.launch.configurations[0]!;
+  ];
+  // Name the slice explicitly when one resolved, so the CLI resolves against
+  // the SAME core this command's readiness report describes — on a multicore
+  // board the CLI's own default (first slice of the target's OS) could
+  // otherwise pick the other one.
+  if (slice?.core_id) args.push("--core", slice.core_id);
 
-  let writePlan;
-  try {
-    writePlan = createLaunchJsonWritePlan(
-      readLaunchJson(context.workspaceRoot),
-      configuration,
+  const { outcome } = await runAlpCommand(
+    extensionContext,
+    args,
+    context.workspaceRoot,
+  );
+  const data = outcome.envelope?.data;
+  if (!outcome.ok || !isDebugConfigData(data)) {
+    await reportError(
+      `Alp: could not generate the debug configuration — ${outcome.message}`,
+      outcome.envelope ? JSON.stringify(outcome.envelope, null, 2) : undefined,
     );
-  } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
     return null;
   }
 
-  const launchPath = writeLaunchJson(context.workspaceRoot, writePlan.content);
+  const launchPath = data.launchJsonPath;
   log(
-    `alp debug: ${writePlan.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
+    `alp debug: ${data.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
 
   const report = buildDebugPreflightReport(
@@ -223,17 +263,19 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
 
   return {
     workspaceRoot: context.workspaceRoot,
-    configName: String(configuration.name),
+    configName: String(data.configuration.name ?? ""),
     launchPath,
     relPath: vscode.workspace.asRelativePath(launchPath),
-    replaced: writePlan.replaced,
+    replaced: data.replaced,
     report,
-    notes: preview.notes,
+    notes: data.notes,
   };
 }
 
-async function configureDebugProfile(): Promise<void> {
-  const result = await writeLaunchProfile();
+async function configureDebugProfile(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const result = await writeLaunchProfile(context);
   if (!result) return;
 
   const doc = await vscode.workspace.openTextDocument(result.launchPath);
@@ -291,7 +333,7 @@ async function ensureDebugExtension(configName: string): Promise<boolean> {
 /** First-class "Debug": generate/refresh the launch profile, make sure the
  *  debug-adapter extension is present, then start the session. */
 async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
-  const result = await writeLaunchProfile();
+  const result = await writeLaunchProfile(context);
   if (!result) return;
 
   // native_sim/native-host is the only debug class that runs a host binary
@@ -564,7 +606,7 @@ export function registerDebugCommands(
       debugPreflight(),
     ),
     vscode.commands.registerCommand("alp.configureDebugProfile", () =>
-      configureDebugProfile(),
+      configureDebugProfile(context),
     ),
     vscode.commands.registerCommand("alp.debug", () => startDebugging(context)),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>
