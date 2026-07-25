@@ -48,12 +48,9 @@
   "icon": "media/icon.png",
   "extensionDependencies": [
     "redhat.vscode-yaml",
-    "marus25.cortex-debug",
-    "mcu-debug.memory-view",
-    "mcu-debug.rtos-views"
+    "marus25.cortex-debug"
   ],
   "extensionPack": [
-    "mcu-debug.peripheral-viewer",
     "ms-vscode.cpptools",
     "vadimcn.vscode-lldb"
   ],
