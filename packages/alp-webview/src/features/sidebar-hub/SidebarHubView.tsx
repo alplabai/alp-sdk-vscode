@@ -193,7 +193,12 @@ function sdkValue(sdk: AlpIdeState["sdk"]): string {
 const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
   [
     { icon: "play", label: "Build", command: "alp.westBuild" },
-    { icon: "bolt", label: "Flash", command: "alp.westFlash" },
+    // Both Flash buttons route to the orchestrator (`tan flash`): plain
+    // `west flash` (alp.westFlash) can't find `west` (it's in the bootstrap
+    // venv, not on the terminal PATH) and dies SILENTLY (terminal fails to
+    // launch → exit code unknown → no toast). "Flash all cores" is kept
+    // deliberately; whether to dedup these two is a follow-up design call.
+    { icon: "bolt", label: "Flash", command: "alp.westAlpFlash" },
     {
       icon: "monitor",
       label: "Run (native_sim)",
