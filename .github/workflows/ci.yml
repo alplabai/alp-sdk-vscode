@@ -64,6 +64,9 @@ jobs:
       - name: Gate — VSIX ships only allowlisted top-level paths (#70)
         run: bash scripts/check-vsix-allowlist.sh alp-sdk.vsix
 
+      - name: Gate — extensionDependencies resolve on Open VSX (#344)
+        run: node scripts/check-extension-deps.mjs
+
       - name: Vendored schema present + valid
         run: |
           # The board schema ships vendored in the VSIX (the submodule is
