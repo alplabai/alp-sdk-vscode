@@ -47,12 +47,13 @@
   "main": "./out/extension.js",
   "icon": "media/icon.png",
   "extensionDependencies": [
-    "redhat.vscode-yaml"
+    "redhat.vscode-yaml",
+    "marus25.cortex-debug",
+    "mcu-debug.memory-view",
+    "mcu-debug.rtos-views"
   ],
   "extensionPack": [
-    "marus25.cortex-debug",
     "mcu-debug.peripheral-viewer",
-    "mcu-debug.memory-view",
     "ms-vscode.cpptools",
     "vadimcn.vscode-lldb"
   ],
