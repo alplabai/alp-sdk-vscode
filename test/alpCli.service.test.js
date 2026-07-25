@@ -8,6 +8,7 @@ const {
   parseTanVersion,
   isCliBehind,
   isCliAhead,
+  bootstrapHostVerdict,
   aheadPathFixAction,
   classifyExitCode,
   parseEnvelope,
@@ -53,6 +54,114 @@ test("isCliBehind compares numeric version tuples", () => {
   assert.equal(isCliBehind("0.2.0", "0.1.14"), false);
   assert.equal(isCliBehind("1.0.0", "0.1.14"), false);
   assert.equal(isCliBehind(null, "0.1.14"), false); // unknown → not behind
+});
+
+test("bootstrapHostVerdict: refuses only the error-severity bootstrap.yocto-host issue", () => {
+  const envelope = (ok, issues) => ({
+    command: "bootstrap",
+    ok,
+    exitCode: ok ? 0 : 2,
+    project: { root: null, boardYaml: null },
+    data: {},
+    issues,
+  });
+
+  // The real refusal shape tan-cli's bootstrap/mod.rs emits (YoctoGate::Refuse).
+  const refused = bootstrapHostVerdict(
+    envelope(false, [
+      {
+        code: "bootstrap.yocto-host",
+        severity: "error",
+        message: "every core in this project targets Yocto. …",
+      },
+    ]),
+  );
+  assert.deepEqual(refused, {
+    refuse: true,
+    message: "every core in this project targets Yocto. …",
+  });
+
+  // Same issue CODE, but the mixed-board WARN shape (YoctoGate::Warn, ok:true)
+  // -- a mixed board can still bootstrap its non-Yocto core(s) here, so this
+  // must NOT be treated as a refusal (the regression this test guards).
+  const mixed = bootstrapHostVerdict(
+    envelope(true, [
+      {
+        code: "bootstrap.yocto-host",
+        severity: "warning",
+        message: "a Yocto core is in play. …",
+      },
+    ]),
+  );
+  assert.deepEqual(mixed, { refuse: false });
+
+  // A clean run (no issues at all) never refuses.
+  assert.deepEqual(bootstrapHostVerdict(envelope(true, [])), {
+    refuse: false,
+  });
+
+  // An unrelated failure (e.g. sdk-root-unresolved) never refuses -- the
+  // real terminal run surfaces it legibly instead (see util.ts).
+  const unrelated = bootstrapHostVerdict(
+    envelope(false, [
+      {
+        code: "bootstrap.sdk-root-unresolved",
+        severity: "error",
+        message: "alp-sdk root is unresolved.",
+      },
+    ]),
+  );
+  assert.deepEqual(unrelated, { refuse: false });
+
+  // A null envelope (the pre-flight call itself failed/unresolvable/not
+  // JSON) always proceeds -- never block a working setup on a failed probe.
+  assert.deepEqual(bootstrapHostVerdict(null), { refuse: false });
+});
+
+test("bootstrapHostVerdict: refuses an old tan's bootstrap.windows-unsupported (permanent, not transitional)", () => {
+  // The real shape a pre-v0.3.1 tan (still shelling bootstrap.sh) emits on
+  // win32 -- an old binary pinned forever via alpSdk.cliPath must keep
+  // hitting this branch, not just until the user upgrades.
+  const oldTan = bootstrapHostVerdict({
+    command: "bootstrap",
+    ok: false,
+    exitCode: 1,
+    project: { root: null, boardYaml: null },
+    data: {},
+    issues: [
+      {
+        code: "bootstrap.windows-unsupported",
+        severity: "error",
+        message:
+          "bootstrap.sh is POSIX-only. On Windows use WSL2 (Ubuntu) or " +
+          "follow the native steps in docs/cross-platform-setup.md §4.",
+      },
+    ],
+  });
+  assert.equal(oldTan.refuse, true);
+  // Own message, not tan's -- tan's wording never mentions updating tan.
+  assert.match(oldTan.message, /update/i);
+  assert.match(oldTan.message, /WSL/);
+
+  // A warning-severity windows-unsupported (hypothetical/never emitted today)
+  // must not refuse -- only "error" gates the run, same rule as yocto-host.
+  assert.deepEqual(
+    bootstrapHostVerdict({
+      command: "bootstrap",
+      ok: true,
+      exitCode: 0,
+      project: { root: null, boardYaml: null },
+      data: {},
+      issues: [
+        {
+          code: "bootstrap.windows-unsupported",
+          severity: "warning",
+          message: "…",
+        },
+      ],
+    }),
+    { refuse: false },
+  );
 });
 
 test("isCliAhead compares numeric version tuples (mirror of isCliBehind)", () => {

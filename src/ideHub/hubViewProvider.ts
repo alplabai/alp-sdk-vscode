@@ -41,7 +41,7 @@ export class HubViewProvider implements vscode.WebviewViewProvider {
         if (s.focused && this.view?.visible) void this.refresh();
       }),
       // The real completion signal for a terminal-backed CTA (bootstrap, a west
-      // build/flash): refresh when that terminal closes. See util.ts.
+      // build/flash): refresh when its process exits. See util.ts.
       onDidFinishTerminalCommand(() => void this.refresh()),
     );
   }
@@ -102,8 +102,8 @@ export class HubViewProvider implements vscode.WebviewViewProvider {
       case "runCommand":
         runWebviewCommand(msg.command);
         // A CTA that changes status runs in a terminal; the standing
-        // onDidFinishTerminalCommand subscription refreshes when it closes.
-        // Only stamp the bootstrap time here so that post-close refresh reads it.
+        // onDidFinishTerminalCommand subscription refreshes when its process exits.
+        // Only stamp the bootstrap time here so that post-exit refresh reads it.
         if (isBootstrapCommand(msg.command)) {
           void this.context.globalState.update(
             "alp.lastBootstrapAt",
