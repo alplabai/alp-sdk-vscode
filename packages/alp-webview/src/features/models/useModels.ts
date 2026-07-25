@@ -63,6 +63,20 @@ export interface PrepResult {
   issues: ModelsDataMessage["issues"];
 }
 
+// A real bench-measured energy result (`tan model run --on-device`/`tan model
+// ab`); undefined on a host-only run (the overwhelmingly common case) or a
+// malformed energy object — mirrors ModelEnergyMeasurement in types.ts.
+export interface EnergyView {
+  source: string;
+  scope: string;
+  value_mj_per_inference: number;
+  rails: string[];
+  n_inferences: number;
+  window_ms: number;
+  sample_count: number;
+  spread_mj: number | null;
+}
+
 // `modelRunResult`/`modelAbResult` payload shapes (`tan model run`/`tan model
 // ab`'s host reference measurements), narrowed here for the view only —
 // mirrors ModelRunResultMessage/ModelAbResultMessage in types.ts.
@@ -76,16 +90,28 @@ export interface RunResultView {
   random_input: boolean;
   note: string;
   accuracy?: { expected: number; match: boolean };
+  energy?: EnergyView;
 }
 export interface AbResultView {
-  a: { model: string; backend: string; latency_ms: number };
-  b: { model: string; backend: string; latency_ms: number };
+  a: {
+    model: string;
+    backend: string;
+    latency_ms: number;
+    energy?: EnergyView;
+  };
+  b: {
+    model: string;
+    backend: string;
+    latency_ms: number;
+    energy?: EnergyView;
+  };
   comparison: {
     faster: string;
     latency_ratio: number | null;
     a_latency_ms: number;
     b_latency_ms: number;
     size_delta_bytes: number | null;
+    energy_delta_mj_per_inference?: number;
   };
   note: string;
 }
