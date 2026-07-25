@@ -24,6 +24,10 @@ coverage/
 # Transient Claude Code runtime locks
 .claude/scheduled_tasks.lock
 
+# Per-machine Claude Code settings (never shared; also the last thing that
+# made repo-wide `pnpm run format:check` fail on a clean checkout)
+.claude/settings.local.json
+
 # Claude Code agent worktrees — FULL repo copies incl. node_modules. Never
 # commit these; `git add .claude` would otherwise pull in the whole tree.
 .claude/worktrees/
@@ -34,3 +38,7 @@ coverage/
 
 # Cygwin/MSYS bash crash dumps (Windows dev hosts)
 *.stackdump
+
+# Retired in-repo Rust CLI (superseded by the standalone tan-cli repo) —
+# read-only local reference only, never tracked here.
+cli-rs/
