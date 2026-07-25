@@ -48,12 +48,9 @@
   "icon": "media/icon.png",
   "extensionDependencies": [
     "redhat.vscode-yaml",
-    "marus25.cortex-debug",
-    "mcu-debug.memory-view",
-    "mcu-debug.rtos-views"
+    "marus25.cortex-debug"
   ],
   "extensionPack": [
-    "mcu-debug.peripheral-viewer",
     "ms-vscode.cpptools",
     "vadimcn.vscode-lldb"
   ],
@@ -493,7 +490,7 @@
     "compile:watch": "tsc --build --watch",
     "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
     "test": "pnpm run compile && node --test test/*.test.js",
-    "install:vscode": "bash ./scripts/install-vscode.sh",
+    "install:vscode": "node scripts/run-bash.mjs ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",
     "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm run bundle:ext",
     "package": "vsce package --no-dependencies",
@@ -502,7 +499,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js",
-    "test:e2e:cli": "bash test/e2e/cli-smoke.sh",
+    "test:e2e:cli": "node scripts/run-bash.mjs test/e2e/cli-smoke.sh",
     "test:e2e:webview": "node test/webview/run.mjs"
   },
   "pnpm": {
