@@ -1,27 +1,56 @@
 # Debug Support Matrix and Launch Design
 
-Last revised: 2026-07-17
+Last revised: 2026-07-25
 
 ## Companion extensions (bundled)
 
-Alp IDE ships the debug-adapter extensions it generates configurations for as
-an **extension pack** (`package.json` `extensionPack`), so they are installed
-alongside Alp IDE and F5 works out of the box:
+Alp IDE ships the debug-adapter extensions it generates configurations for, in
+two tiers. Both install alongside Alp IDE; the difference is what happens when
+a user removes one.
 
-- `marus25.cortex-debug` — Cortex-M on-chip debug (J-Link / OpenOCD / pyOCD)
-- `mcu-debug.peripheral-viewer` — SVD peripheral-register view
-- `mcu-debug.memory-view` — memory inspector
+### Required (`package.json` `extensionDependencies`)
+
+VS Code installs these with Alp IDE and will not enable Alp IDE without them.
+They are required because Alp IDE's own output is unusable without them — it
+writes a `cortex-debug` launch configuration, and a debug session that cannot
+inspect memory or threads is not the debugging experience this extension
+claims to provide.
+
+- `redhat.vscode-yaml` — board.yaml schema validation
+- `marus25.cortex-debug` — Cortex-M on-chip debug (J-Link / OpenOCD / pyOCD).
+  The adapter every generated MCU launch config names; without it the config
+  is inert.
+- `mcu-debug.memory-view` — memory inspector. Needs no SVD, so it works on
+  every supported target the moment a session attaches.
+- `mcu-debug.rtos-views` — RTOS thread/queue views for a running Zephyr image.
+  Pulls `mcu-debug.debug-tracker-vscode` itself, so that one needs no entry.
+
+The trade-off this accepts: `extensionDependencies` is a hard gate, so an entry
+missing from the marketplace in use makes Alp IDE impossible to install at all,
+not merely degraded. `scripts/check-extension-deps.mjs` runs in CI against both
+the VS Code Marketplace and Open VSX to keep that from happening silently.
+
+### Recommended (`package.json` `extensionPack`)
+
+Installed alongside, removable — each serves a target class a given project may
+never touch, so forcing them would be an install a user cannot justify.
+
+- `mcu-debug.peripheral-viewer` — SVD peripheral-register view. **Optional
+  rather than required** because no SVD is resolvable yet (alp-sdk#948): the
+  view would install and stay empty. Promote it once SVDs ship.
 - `ms-vscode.cpptools` — C/C++ IntelliSense + `cppdbg` (Yocto/A-core remote gdb)
-- `vadimcn.vscode-lldb` — CodeLLDB
-
-`redhat.vscode-yaml` stays a hard `extensionDependency` (board.yaml schema).
+- `vadimcn.vscode-lldb` — CodeLLDB (native_sim host debug)
 
 ## One-click debug: `Alp: Debug`
 
 `alp.debug` (Build & Flash view → **Debug**, or the command palette) is the
 first-class entry point: it prompts for the target/server, writes/refreshes the
-launch profile, ensures the required debug-adapter extension is present (offers
-to install it if a user disabled it), then calls `vscode.debug.startDebugging`.
+launch profile, ensures the required debug-adapter extension is present, then
+calls `vscode.debug.startDebugging`. For `cortex-debug` that check can now only
+fail if a user DISABLED it — it is an `extensionDependency`, so it cannot be
+missing — which is why the prompt offers to enable rather than install. The
+cppdbg/CodeLLDB adapters are `extensionPack` entries and can genuinely be
+absent.
 `alp.configureDebugProfile` still writes the profile without starting a session.
 
 
