@@ -759,8 +759,10 @@ export async function runAlpInTerminal(
  * orchestrator commands that don't need a live console: build/flash/image/clean.
  * Flash matters most here — its per-slice failure reasons (e.g. "backend
  * zephyr_west_flash needs west on PATH") used to vanish with the dying terminal,
- * leaving only "failed to launch". Bootstrap and renode keep runAlpInTerminal
- * (bootstrap can prompt; renode hosts an interactive sim console). Fires the
+ * leaving only "failed to launch". Renode streams for the same reason: its
+ * headless smoke refuses a multi-Zephyr-slice manifest BEFORE booting, and that
+ * refusal died with the terminal. Bootstrap keeps runAlpInTerminal — it can
+ * prompt, so it genuinely needs the TTY. Fires the
  * terminal-finish refresh signal + a verdict toast on close.
  *
  * NB: the child inherits the extension host's env, so a tool the flash backend

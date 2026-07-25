@@ -98,7 +98,12 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
 // zephyr_west_flash needs west on PATH") scrolls away, leaving only a cryptic
 // "failed to launch". Channel mode keeps the full log + verdict. All three are
 // non-interactive (runAlpStreamed forces `--non-interactive`), so no TTY is
-// lost. Renode alone stays a terminal — it hosts an interactive sim console.
+// lost. Renode streams too: `tan renode` boots Renode HEADLESS as a smoke test
+// and reads no stdin, and its most common outcome on a real project is a
+// PRE-BOOT refusal — e.g. "system-manifest.yaml has 2 zephyr slices (cores
+// [\"m55_hp\", \"m55_he\"]); the Renode smoke boots a single-Zephyr-slice
+// system" — which the dying terminal swallowed whole, surfacing to the user as
+// a bare "failed to launch (exit code: 1)" with no reason anywhere.
 async function alpImage(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
@@ -137,7 +142,7 @@ async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
     "examples/multicore/rpmsg-v2n",
   );
   if (!target) return;
-  await runAlpInTerminal(context, ["renode", ...target.appArg], {
+  await runAlpStreamed(context, ["renode", ...target.appArg], {
     name: "Alp Renode",
     cwd: target.cwd,
   });
