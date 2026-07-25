@@ -11,6 +11,11 @@
 .code-review-graph/**
 .superpowers/**
 .scratch/**
+# `.alp/sdk-path` is per-workspace extension state holding a LOCAL ABSOLUTE path
+# (e.g. C:/Users/<you>/.alp/sdk/v0.13.0). A dev-machine `pnpm run package` was
+# shipping it inside the VSIX; CI's fresh checkout has none, so this never went
+# red there. Public repo — no local paths in a published artifact.
+.alp/**
 # .remember/ is the agent history runtime dir (session buffers + daily logs, ~1 MB);
 # it materializes only on a dev machine and must never ship in the VSIX (#297).
 .remember/**

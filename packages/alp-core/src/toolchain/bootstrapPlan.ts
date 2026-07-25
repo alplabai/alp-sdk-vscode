@@ -177,6 +177,12 @@ export type FixResult =
   // `pip install --user` aborts under PEP 668 (externally-managed-environment).
   | { kind: "bootstrap" };
 
+// A per-tool install hint (tool -> command) for a missing prerequisite
+// belongs upstream as structured data — alp-sdk's `metadata/bootstrap.json`
+// `prerequisites.install.{windows,posix,macos}`, delivered through the
+// envelope's `data`, not parsed from tan's prose message (see alp-sdk
+// docs/adr/0021-toolchain-provisioning.md, Lane 1 P0b).
+
 export function fixCommand(
   fixId: ToolchainFixId,
   host: BootstrapHost,

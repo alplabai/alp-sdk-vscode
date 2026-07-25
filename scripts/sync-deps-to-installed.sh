@@ -81,19 +81,24 @@ if [ -d "$PNPM/vscode-languageserver-protocol@3.17.5/node_modules/vscode-languag
   done
 fi
 
-SEMVER_DIR=$(ls "$PNPM" 2>/dev/null | grep "^semver@7" | head -1)
+# `|| true` on each of the three greps below for the same reason as copy_pkg's:
+# under `set -euo pipefail` a grep no-match aborts the whole script. pnpm 11 no
+# longer materializes semver@*/minimatch@*/brace-expansion* dirs in .pnpm, so all
+# three miss — the sync completed but exited 1, which under install-vscode.sh's
+# own `set -e` swallowed the final "Installed extension:" confirmation.
+SEMVER_DIR=$(ls "$PNPM" 2>/dev/null | grep "^semver@7" | head -1 || true)
 if [ -n "$SEMVER_DIR" ] && [ ! -d "$DEST/semver" ]; then
   cp -rL "$PNPM/$SEMVER_DIR/node_modules/semver" "$DEST/semver"
   echo "✓ semver (pnpm)"
 fi
 
-MINIMATCH_DIR=$(ls "$PNPM" 2>/dev/null | grep "^minimatch@5" | head -1)
+MINIMATCH_DIR=$(ls "$PNPM" 2>/dev/null | grep "^minimatch@5" | head -1 || true)
 if [ -n "$MINIMATCH_DIR" ] && [ ! -d "$DEST/minimatch" ]; then
   cp -rL "$PNPM/$MINIMATCH_DIR/node_modules/minimatch" "$DEST/minimatch"
   echo "✓ minimatch (pnpm)"
 fi
 
-BRACE_DIR=$(ls "$PNPM" 2>/dev/null | grep "^brace-expansion" | head -1)
+BRACE_DIR=$(ls "$PNPM" 2>/dev/null | grep "^brace-expansion" | head -1 || true)
 if [ -n "$BRACE_DIR" ] && [ ! -d "$DEST/brace-expansion" ]; then
   cp -rL "$PNPM/$BRACE_DIR/node_modules/brace-expansion" "$DEST/brace-expansion"
   echo "✓ brace-expansion (pnpm)"
