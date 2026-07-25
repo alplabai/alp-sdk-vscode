@@ -146,6 +146,7 @@ function makeFakeVscode() {
   // `error` on a defined non-zero, and NOTHING for an undefined code (a task
   // that ended without its process ever starting -- we have no verdict).
   const toasts = [];
+  const warnings = [];
   const fake = {
     window: {
       createOutputChannel: () => ({ appendLine() {}, show() {} }),
@@ -157,6 +158,11 @@ function makeFakeVscode() {
         toasts.push({ kind: "error", message });
         return Promise.resolve(undefined);
       },
+      showWarningMessage: (message, ...actions) => {
+        warnings.push({ message, actions });
+        return Promise.resolve(undefined);
+      },
+      terminals: [],
     },
     tasks: {
       executeTask: (task) => {
@@ -204,6 +210,7 @@ function makeFakeVscode() {
     terminated,
     executed,
     toasts,
+    warnings,
   };
 }
 
@@ -257,6 +264,28 @@ test("runInTerminal: process-end then task-end fires terminalFinished exactly on
   assert.deepEqual(toasts, [{ kind: "info", message: "west build finished" }]);
 });
 
+test("runInTerminal: a nonzero exit code raises the failure toast (#332)", async () => {
+  const { fake, onDidStartTask, onDidEndTaskProcess, executed, toasts } =
+    makeFakeVscode();
+  const util = loadUtil(fake);
+  const fires = [];
+  util.onDidFinishTerminalCommand((e) => fires.push(e));
+
+  util.runInTerminal({ name: "tan bootstrap", argv: ["tan", "bootstrap"] });
+  await Promise.resolve();
+
+  const execution = executed[0];
+  onDidStartTask.fire({ execution });
+  onDidEndTaskProcess.fire({ execution, exitCode: 2 });
+
+  assert.deepEqual(fires, [{ name: "tan bootstrap", code: 2 }]);
+  // A refused/failed run must produce an error toast with the exit code and
+  // "Show Output" -- see reportError in src/util.ts.
+  assert.deepEqual(toasts, [
+    { kind: "error", message: "tan bootstrap failed (exit 2)" },
+  ]);
+});
+
 test("runInTerminal: task-end alone (no process ever started) fires terminalFinished exactly once", async () => {
   const { fake, onDidStartTask, onDidEndTask, executed, toasts } =
     makeFakeVscode();
@@ -289,4 +318,38 @@ test("runInTerminal: the reservation is synchronous, so a caller can block a con
   // resolve -- this is what lets executeWestPlan's isRunInTerminalActive
   // pre-check reject a second dispatch instead of racing it (issue #146).
   assert.equal(util.isRunInTerminalActive("west flash"), true);
+});
+
+test("runInTerminal: a second dispatch of an already-active name is refused, not raced (#146 root fix)", async () => {
+  const { fake, executed, terminated, warnings } = makeFakeVscode();
+  const util = loadUtil(fake);
+
+  util.runInTerminal({ name: "Alp Bootstrap", argv: ["tan", "bootstrap"] });
+  util.runInTerminal({ name: "Alp Bootstrap", argv: ["tan", "bootstrap"] });
+  await Promise.resolve();
+
+  // Only the FIRST dispatch's task ever ran -- the second never reached
+  // executeTask at all, so there is no window where two `tan bootstrap`
+  // processes can run concurrently against the same venv.
+  assert.equal(executed.length, 1);
+  // The refused run is not silently dropped: it warns (and never terminates
+  // the live one -- a bare terminate() would have hit a genuinely-running
+  // flash mid-write, the #146 hazard in the other direction).
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0].message, /Alp Bootstrap.*still running/);
+  assert.equal(terminated.length, 0);
+  assert.equal(util.isRunInTerminalActive("Alp Bootstrap"), true);
+});
+
+test("runInTerminal: concurrent runs under DIFFERENT names are unaffected", async () => {
+  const { fake, executed } = makeFakeVscode();
+  const util = loadUtil(fake);
+
+  util.runInTerminal({ name: "Alp Build", argv: ["tan", "build"] });
+  util.runInTerminal({ name: "Alp Flash", argv: ["tan", "flash"] });
+  await Promise.resolve();
+
+  assert.equal(executed.length, 2);
+  assert.equal(util.isRunInTerminalActive("Alp Build"), true);
+  assert.equal(util.isRunInTerminalActive("Alp Flash"), true);
 });
