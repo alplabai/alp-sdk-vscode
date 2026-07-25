@@ -767,6 +767,43 @@ export async function runAlpInTerminal(
  * shells (`west`) must be on the HOST's PATH — the same requirement build
  * already relies on. It is not sourced from the user's shell profile.
  */
+/** The streamed runs in flight, keyed on `options.name`.
+ *
+ *  `runInTerminal` disposed any prior terminal of the same name, which killed
+ *  the process inside it. Channel mode has no such owner, so without this two
+ *  Build clicks spawn two `tan build` processes racing the same `build/` dir
+ *  with their output interleaved into one channel — and nothing can stop
+ *  either. Same key, same rule: a new run replaces the old one. */
+const streamedRuns = new Map<string, cp.ChildProcess>();
+
+/** Run `command` through the user's LOGIN shell on POSIX, so the child sees the
+ *  environment a terminal would — `~/.zshrc` / `~/.bashrc`, venv activation,
+ *  every PATH entry a GUI-launched VS Code (macOS `.app`, a Linux desktop
+ *  launcher) never sourced into the extension host.
+ *
+ *  This is the property terminal mode had for free and channel mode loses:
+ *  `cp.spawn` inherits the EXTENSION HOST's env, not the shell's. Reconstructing
+ *  one PATH entry (the bootstrap venv) instead would both miss everything else
+ *  the user put in their profile and fork the venv-resolution logic that already
+ *  lives in `tan` itself.
+ *
+ *  `null` on Windows, where the extension host already inherits the login
+ *  session's environment and there is no `-lc` equivalent worth emulating. */
+function loginShellInvocation(
+  command: string,
+  args: string[],
+): { file: string; argv: string[] } | null {
+  if (process.platform === "win32") return null;
+  const shell = process.env.SHELL?.trim() || "/bin/sh";
+  // Single-quote every word: paths carry spaces, and nothing here should ever
+  // be re-interpreted by the shell as a glob, variable, or command.
+  const quote = (word: string): string => `'${word.split("'").join(`'\''`)}'`;
+  return {
+    file: shell,
+    argv: ["-lc", [command, ...args].map(quote).join(" ")],
+  };
+}
+
 export async function runAlpStreamed(
   context: vscode.ExtensionContext,
   args: string[],
@@ -786,21 +823,68 @@ export async function runAlpStreamed(
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (channel: ${options.name})`,
   );
+
+  // Replace any run of the same name still in flight (see `streamedRuns`).
+  const previous = streamedRuns.get(options.name);
+  if (previous) {
+    log(`[channel] "${options.name}" restarted — killing the previous run`);
+    previous.kill();
+  }
+
   showOutput();
   appendOutput(`\n$ ${options.name}\n`);
-  await new Promise<void>((resolve) => {
-    const child = cp.spawn(binary.command, finalArgs, { cwd: options.cwd });
-    child.stdout?.on("data", (chunk: Buffer) => appendOutput(chunk.toString()));
-    child.stderr?.on("data", (chunk: Buffer) => appendOutput(chunk.toString()));
-    child.on("error", (err) => {
-      void reportError(`${options.name} failed to start`, err.message);
-      resolve();
-    });
-    child.on("close", (code) => {
-      announceStreamedResult(options.name, code ?? undefined);
-      resolve();
-    });
-  });
+
+  const shellRun = loginShellInvocation(binary.command, finalArgs);
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: options.name,
+      cancellable: true,
+    },
+    (_progress, token) =>
+      new Promise<void>((resolve) => {
+        const child = shellRun
+          ? cp.spawn(shellRun.file, shellRun.argv, { cwd: options.cwd })
+          : cp.spawn(binary.command, finalArgs, { cwd: options.cwd });
+        streamedRuns.set(options.name, child);
+        // Decode as UTF-8 on the stream, not per chunk: a multi-byte character
+        // split across a chunk boundary is mangled by a per-chunk toString().
+        child.stdout?.setEncoding("utf8");
+        child.stderr?.setEncoding("utf8");
+        child.stdout?.on("data", (text: string) => appendOutput(text));
+        child.stderr?.on("data", (text: string) => appendOutput(text));
+
+        // `settled` guards the two racing ends: `error` can fire before `close`,
+        // and a caller chaining off this must not see it resolve twice.
+        let settled = false;
+        const finish = (): void => {
+          if (settled) return;
+          settled = true;
+          if (streamedRuns.get(options.name) === child) {
+            streamedRuns.delete(options.name);
+          }
+          resolve();
+        };
+        token.onCancellationRequested(() => {
+          log(`[channel] "${options.name}" cancelled by the user`);
+          appendOutput(`\n[cancelled] ${options.name}\n`);
+          child.kill();
+        });
+        child.on("error", (err) => {
+          void reportError(`${options.name} failed to start`, err.message);
+          finish();
+        });
+        child.on("close", (code, signal) => {
+          // A kill (cancel, or a restart) is not a failure to report as one.
+          if (signal) {
+            log(`[channel] "${options.name}" stopped (signal=${signal})`);
+          } else {
+            announceStreamedResult(options.name, code ?? undefined);
+          }
+          finish();
+        });
+      }),
+  );
 }
 
 async function surfaceResolutionError(error: unknown): Promise<void> {
