@@ -48,6 +48,9 @@ jobs:
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 
+      - name: Gate — extensionDependencies resolve on the Marketplace + Open VSX
+        run: node scripts/check-extension-deps.mjs
+
       - name: Package (.vsix)
         # --no-dependencies: workspace:* protocol is not resolvable by vsce;
         # the extension code is compiled to out/ and does not need bundled

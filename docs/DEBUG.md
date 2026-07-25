@@ -29,6 +29,11 @@ present. Listing any of them here would be redundant — and listing
 it. (It stays empty until SVDs ship — alp-sdk#948 — but that is a matter of the
 view having no data, not of the extension being absent.)
 
+`extensionDependencies` is a hard gate: an id missing from the registry a given
+editor installs from makes Alp IDE impossible to install at all, not merely
+degraded. `scripts/check-extension-deps.mjs` runs in CI against **both** the VS
+Code Marketplace and Open VSX so that cannot happen silently.
+
 Engine floors are all below this extension's own `^1.85.0` (cortex-debug
 `^1.69.0`; the mcu-debug family `^1.75.0`), so none of this locks out a
 supported VS Code.
