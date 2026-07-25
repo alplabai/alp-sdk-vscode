@@ -30,6 +30,7 @@ import {
   executeWestPlan,
   nativeSimOverlayExists,
 } from "./west/vscodeAdapter";
+import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
 import { log } from "./util";
 
 function westCwd(): string | undefined {
@@ -137,12 +138,56 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
   });
 }
 
+/** The Zephyr `core_id`s of the post-build manifest under `cwd`, in manifest
+ *  order. Empty pre-build, on a parse failure, or for an all-Yocto project —
+ *  every one of which means "don't prompt, let the CLI speak". */
+function zephyrCoresOf(cwd: string): string[] {
+  const manifestPath = path.join(cwd, "build", "system-manifest.yaml");
+  if (!fs.existsSync(manifestPath)) return [];
+  try {
+    const manifest = parseSystemManifest(fs.readFileSync(manifestPath, "utf8"));
+    return manifest.slices
+      .filter((slice) => slice.os === "zephyr")
+      .map((slice) => slice.core_id);
+  } catch {
+    return [];
+  }
+}
+
+/** Which core the Renode smoke should boot: `null` = pass no `--core` (the CLI
+ *  picks the project's only Zephyr slice), a string = the user's choice,
+ *  `undefined` = the user dismissed the picker, so run nothing.
+ *
+ *  The smoke boots ONE Zephyr slice, so a multicore project (an E1M-AEN801's
+ *  `m55_hp` + `m55_he`) used to be refused outright. Asking here turns that
+ *  dead end into a choice. Only asked when there really is a choice: with 0 or
+ *  1 Zephyr slices no flag is sent, so the CLI's own message stays the single
+ *  source of truth for every not-buildable case. */
+async function pickRenodeCore(
+  cwd: string | undefined,
+): Promise<string | null | undefined> {
+  const cores = cwd ? zephyrCoresOf(cwd) : [];
+  if (cores.length < 2) return null;
+  const picked = await vscode.window.showQuickPick(cores, {
+    title: "Renode: which core to boot?",
+    placeHolder: "The Renode smoke boots one Zephyr slice at a time",
+  });
+  return picked ?? undefined;
+}
+
 async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
   );
   if (!target) return;
-  await runAlpStreamed(context, ["renode", ...target.appArg], {
+  const core = await pickRenodeCore(target.cwd);
+  if (core === undefined) return;
+  // `--core` needs a tan that carries it (tan-cli#63). Sending it only in the
+  // multi-slice case keeps an older CLI no worse off than before: that case
+  // was already a hard refusal there, and a single-slice project never sees
+  // the flag at all.
+  const coreArg = core === null ? [] : ["--core", core];
+  await runAlpStreamed(context, ["renode", ...target.appArg, ...coreArg], {
     name: "Alp Renode",
     cwd: target.cwd,
   });
