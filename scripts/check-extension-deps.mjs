@@ -27,6 +27,7 @@ const MARKETPLACE =
   "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery";
 const TIMEOUT_MS = 15_000;
 const ATTEMPTS = 3;
+const RETRY_DELAY_MS = 1_000;
 
 /** `publisher.name` → the two path segments Open VSX wants. */
 function splitId(id) {
@@ -35,10 +36,15 @@ function splitId(id) {
   return { publisher: id.slice(0, at), name: id.slice(at + 1) };
 }
 
-/** Run `attempt` up to ATTEMPTS times; `unknown` carries the last error. */
+/** Run `attempt` up to ATTEMPTS times; `unknown` carries the last error.
+ *
+ *  Waits between attempts: against a 429 or a slow 503, three instant retries
+ *  are three instant failures — the retry only means something if the registry
+ *  is given time to recover. */
 async function withRetry(attempt) {
   let lastError = "";
   for (let i = 1; i <= ATTEMPTS; i += 1) {
+    if (i > 1) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
     try {
       const outcome = await attempt();
       if (outcome) return outcome;
@@ -50,9 +56,7 @@ async function withRetry(attempt) {
   return { state: "unknown", detail: lastError };
 }
 
-async function probeOpenVsx(id) {
-  const parts = splitId(id);
-  if (!parts) return { state: "missing", detail: "not a publisher.name id" };
+async function probeOpenVsx(parts) {
   return withRetry(async () => {
     const response = await fetch(
       `${OPEN_VSX}/${parts.publisher}/${parts.name}`,
@@ -82,7 +86,12 @@ async function probeMarketplace(id) {
       },
       body: JSON.stringify({
         filters: [{ criteria: [{ filterType: 7, value: id }] }],
-        flags: 914,
+        // 512 = IncludeLatestVersionOnly. Existence alone needs no flags at
+        // all (`flags: 0` finds the extension), but it comes back with an
+        // EMPTY `versions` array, so the report would read `ok v?`. 512 is the
+        // narrowest flag that carries a version: exactly one, the latest —
+        // where `flags: 1` (IncludeVersions) returns all 105 of cortex-debug's.
+        flags: 512,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -105,17 +114,39 @@ if (ids.length === 0) {
 }
 
 const results = await Promise.all(
-  ids.map(async (id) => ({
-    id,
-    marketplace: await probeMarketplace(id),
-    openVsx: await probeOpenVsx(id),
-  })),
+  ids.map(async (id) => {
+    // A malformed id is a defect in package.json, not a registry problem.
+    // Checked once, before either probe: the Marketplace answers a garbage id
+    // with a non-2xx, which `withRetry` would (correctly, for a real outage)
+    // report as "registry unreachable" — sending the reader to check Open VSX
+    // status for a typo in their own manifest.
+    const parts = splitId(id);
+    if (!parts) {
+      const bad = { state: "missing", detail: "not a publisher.name id" };
+      return { id, marketplace: bad, openVsx: bad };
+    }
+    return {
+      id,
+      marketplace: await probeMarketplace(id),
+      openVsx: await probeOpenVsx(parts),
+    };
+  }),
 );
 
-console.log("dependency".padEnd(34) + "marketplace".padEnd(22) + "open vsx");
+// Two spaces between columns, not padEnd alone: a cell exactly as wide as the
+// column (`"skipped empty response"` is 22) would otherwise run into the next
+// one with no separator. The versions are each registry's LATEST, which is not
+// always the same release — Open VSX may lead with a pre-release while the
+// Marketplace shows the stable. That is normal, not registry skew.
+const column = (text, width) => text.padEnd(width) + "  ";
+console.log(
+  column("dependency", 32) +
+    column("marketplace (latest)", 24) +
+    "open vsx (latest)",
+);
 for (const { id, marketplace, openVsx } of results) {
   const cell = (r) => `${MARKS[r.state]} ${r.detail}`;
-  console.log(id.padEnd(34) + cell(marketplace).padEnd(22) + cell(openVsx));
+  console.log(column(id, 32) + column(cell(marketplace), 24) + cell(openVsx));
 }
 
 const failures = results.flatMap(({ id, marketplace, openVsx }) => [
