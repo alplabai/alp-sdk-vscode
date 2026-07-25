@@ -3,7 +3,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { createLaunchJsonWritePlan } from "@alp-sdk/core/debug/launchJsonCore";
 import {
   DebugGenerationTraceDecision,
   DebugServerKind,
@@ -18,7 +17,6 @@ import {
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
-  createLaunchPreview,
   createSupportBundlePayload,
   DEBUG_ADAPTER_EXTENSION_ID,
   DEBUG_TARGET_ADAPTER,
@@ -32,12 +30,11 @@ import {
   collectRuntimeCapabilities,
   collectWorkspaceDebugContext,
   fileExists,
-  readLaunchJson,
-  writeLaunchJson,
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { samePath } from "@alp-sdk/core/paths";
+import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import { ensureNativeSimOverlay } from "./west";
 import { NotifyAction } from "./notify/models";
 import { planFailure, planPrecondition, planSuccess } from "./notify/service";
@@ -213,10 +210,45 @@ interface LaunchProfileResult {
   unresolved: readonly string[];
 }
 
+/** The `debug-config` envelope fields this command consumes. Narrow guard —
+ *  an older `tan` that predates `data.configuration` fails it and is reported
+ *  as such, rather than writing `undefined` into launch.json. */
+interface DebugConfigEnvelopeData {
+  launchJsonPath: string;
+  replaced: boolean;
+  notes: string[];
+  configuration: { name?: unknown };
+}
+
+function isDebugConfigData(value: unknown): value is DebugConfigEnvelopeData {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  return (
+    typeof data.launchJsonPath === "string" &&
+    typeof data.replaced === "boolean" &&
+    Array.isArray(data.notes) &&
+    typeof data.configuration === "object" &&
+    data.configuration !== null
+  );
+}
+
 /** Prompt for target/server, write the launch.json profile, and return what a
  *  caller needs to report status or start a session. Null when the user
- *  cancelled or no workspace is open (a message is shown for the latter). */
-async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
+ *  cancelled, no workspace is open, or the CLI could not produce a config (a
+ *  message is shown for the latter two).
+ *
+ *  The configuration itself comes from `tan debug-config`, which resolves the
+ *  probe/tool values from the build's own `runners.yaml` (tan-cli#66). The
+ *  extension deliberately keeps NO second draft: it had one, with the same
+ *  unresolved `<resolved-device>` placeholders, and a fork of the same logic in
+ *  two languages meant fixing one left the other handing out broken files
+ *  (#339). What stays in-process is the readiness report below — it probes
+ *  which debugger extensions are installed, host state a separate process
+ *  cannot observe (EXTENSION_CLI_INTEGRATION.md §4a).
+ */
+async function writeLaunchProfile(
+  extensionContext: vscode.ExtensionContext,
+): Promise<LaunchProfileResult | null> {
   const targetKind = await pickTargetKind();
   if (!targetKind) return null;
   const server = await pickServer(targetKind);
@@ -229,55 +261,61 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
   }
 
   const slice = resolveManifestSlice(context.workspaceRoot, targetKind);
-  const preview = createLaunchPreview(
-    new Date().toISOString(),
+  const args = [
+    "debug-config",
+    "--target-kind",
     targetKind,
+    "--server",
     server,
-    slice,
+  ];
+  // Name the slice explicitly when one resolved, so the CLI resolves against
+  // the SAME core this command's readiness report describes — on a multicore
+  // board the CLI's own default (first slice of the target's OS) could
+  // otherwise pick the other one.
+  if (slice?.core_id) args.push("--core", slice.core_id);
+
+  const { outcome } = await runAlpCommand(
+    extensionContext,
+    args,
+    context.workspaceRoot,
   );
-  const configuration = preview.launch.configurations[0]!;
-
-  let writePlan;
-  try {
-    writePlan = createLaunchJsonWritePlan(
-      readLaunchJson(context.workspaceRoot),
-      configuration,
+  const data = outcome.envelope?.data;
+  if (!outcome.ok || !isDebugConfigData(data)) {
+    // Not `reportDebugFailure`: that takes a thrown Error, and this is an
+    // envelope verdict, not an exception. #368 routed every debug notification
+    // through `planFailure` so each one names what failed and what to do next;
+    // going straight to it keeps that contract for the CLI's own refusal.
+    await notify(
+      planFailure({
+        operation: "Alp: generating the debug configuration",
+        cause: `Alp: could not generate the debug configuration — ${outcome.message}`,
+        detail: outcome.envelope
+          ? JSON.stringify(outcome.envelope, null, 2)
+          : undefined,
+        actions: [{ id: "showOutput" }],
+      }),
     );
-  } catch (error) {
-    // launchJsonCore throws "Alp: .vscode/launch.json is not valid JSON or
-    // JSONC." — an Open launch.json button is the remedy — but readLaunchJson
-    // is inside this try too, and its errno carries the absolute path.
-    await reportDebugFailure("Alp: updating .vscode/launch.json", error, [
-      { id: "openLaunchJson" },
-    ]);
     return null;
   }
 
-  // The write is mkdirSync + writeFileSync. Uncaught, a read-only .vscode or a
-  // locked file escapes the command handler and VS Code shows its own unbranded
-  // "command failed" popup with the raw errno — no channel entry, no action.
-  let launchPath: string;
-  try {
-    launchPath = writeLaunchJson(context.workspaceRoot, writePlan.content);
-  } catch (error) {
-    await reportDebugFailure("Alp: writing .vscode/launch.json", error);
-    return null;
-  }
+  const launchPath = data.launchJsonPath;
   log(
-    `alp debug: ${writePlan.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
+    `alp debug: ${data.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
 
   const { profile, report } = buildPreflight(context, targetKind, server);
 
   return {
     workspaceRoot: context.workspaceRoot,
-    configName: String(configuration.name),
+    configName: String(data.configuration.name ?? ""),
     launchPath,
     relPath: vscode.workspace.asRelativePath(launchPath),
-    replaced: writePlan.replaced,
+    replaced: data.replaced,
     report,
-    notes: preview.notes,
+    // Still computed in-process at this commit. The next one deletes the
+    // fork and takes the unresolved set from the CLI's own payload instead.
     unresolved: unresolvedRequiredFields(profile),
+    notes: data.notes,
   };
 }
 
@@ -311,8 +349,10 @@ function unresolvedFieldsSentence(fields: readonly string[]): string {
   return `${joined} ${many ? "aren't" : "isn't"} in the Alp SDK's board metadata yet, so ${many ? "they" : "it"} must be filled in by hand.`;
 }
 
-async function configureDebugProfile(): Promise<void> {
-  const result = await writeLaunchProfile();
+async function configureDebugProfile(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const result = await writeLaunchProfile(context);
   if (!result) return;
 
   const doc = await vscode.workspace.openTextDocument(result.launchPath);
@@ -459,7 +499,7 @@ async function ensureDebugExtension(
 /** First-class "Debug": generate/refresh the launch profile, make sure the
  *  debug-adapter extension is present, then start the session. */
 async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
-  const result = await writeLaunchProfile();
+  const result = await writeLaunchProfile(context);
   if (!result) return;
 
   // native_sim/native-host is the only debug class that runs a host binary
@@ -789,7 +829,7 @@ export function registerDebugCommands(
       debugPreflight(),
     ),
     vscode.commands.registerCommand("alp.configureDebugProfile", () =>
-      configureDebugProfile(),
+      configureDebugProfile(context),
     ),
     vscode.commands.registerCommand("alp.debug", () => startDebugging(context)),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>
