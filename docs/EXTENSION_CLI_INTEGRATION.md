@@ -271,6 +271,23 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   (sdk install is a bespoke webview/terminal git-clone flow; sdk switch is a
   cheap local fs pointer write). `previewEffectiveConfig` stays in-process (live
   configurator, §4).
+  **Correction (#349): "sdk switch is a cheap local fs pointer write" is false.**
+  The active-SDK pointer is not the only pointer a switch invalidates — `west`
+  reads `<topdir>/.west/config`'s own `[manifest] path` directly and
+  independently, so an in-process switch leaves it naming the previous SDK.
+  When that directory is later removed the workspace is silently broken (west
+  falls back to whatever `$ZEPHYR_BASE` names; the report saw `west flash` fail
+  with `unknown runner "alif_flash"`). `tan` owns the repair — `tan bootstrap`
+  has reconciled the pointer since tan-cli #31, `tan sdk switch` since tan-cli
+  #74 — and the extension deliberately does **not** mirror that write: a second
+  writer with an independently-evolving guard is how the two diverge on a file
+  `west` depends on. The extension only **detects** it (`inspectWestManifest`,
+  read-only, `packages/alp-core/src/sdk/service.ts`) and points at Bootstrap.
+  Delegating the switch itself is queued behind a `SUPPORTED_CLI_VERSION` bump
+  to the first tan-cli release carrying #74 — the pin bump and the
+  `tan sdk switch` call must land in the **same** PR, using the **absolute**
+  SDK path (a bare version resolves against `~/.alp/sdk-cache`, not the
+  extension's `~/.alp/sdk`) and an explicit `cwd` of the workspace root.
 - **B4 — retire the TS CLI. ✅ done (retire); core shrink = n/a.** Inventory found
   the extension (`src/`) imports **nearly all** of `@alp-sdk/core` (board,
   boardSummary, configurator, the whole debug domain [in-process per §4a], loader,
