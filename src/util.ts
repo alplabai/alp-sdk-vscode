@@ -81,20 +81,28 @@ interface RunReservation {
  * dispatches of the same name before either resolves would both see nothing
  * reserved (issue #146). So `runInTerminal` reserves the slot SYNCHRONOUSLY,
  * before `executeTask` is even called, keyed by a monotonic `generation`
- * rather than the (not-yet-known) `TaskExecution` object.
+ * rather than the (not-yet-known) `TaskExecution` object -- and consults this
+ * same map itself before dispatching (see `runInTerminal`), so the guard
+ * holds even for callers that never check `isRunInTerminalActive` first.
  */
 const active = new Map<string, RunReservation>();
 /** Maps a known `TaskExecution` (from `onDidStartTask` or the `executeTask`
  *  Thenable, whichever arrives first) back to the generation that dispatched
- *  it, so `finish()` below can identify which reservation (if any) a
- *  process/task-end event belongs to WITHOUT relying on `TaskExecution`
- *  object identity being the same instance across events (see finding this
- *  guards: a superseded/terminated run's late event must never clobber a
- *  fresh run already occupying the same name). */
+ *  it, so `finish()` below can tell whether a process/task-end event belongs
+ *  to the CURRENT reservation for its name or a stale/superseded one (a
+ *  superseded/terminated run's late event must never clobber a fresh run
+ *  already occupying the same name). Being a WeakMap, this is keyed BY
+ *  `TaskExecution` object identity, and so RELIES on VS Code handing back the
+ *  same instance for every event tied to one execution (`onDidStartTask`,
+ *  `onDidEndTaskProcess`, `onDidEndTask`, and the `executeTask` Thenable all
+ *  memoize to the same object per execution id) -- if that ever stopped
+ *  holding, `executionGeneration.get()` would return undefined for a genuine
+ *  event and `finish()` would silently drop it forever. */
 const executionGeneration = new WeakMap<vscode.TaskExecution, number>();
 let nextGeneration = 0;
 
 let taskTrackingReady = false;
+const taskTrackingDisposables: vscode.Disposable[] = [];
 function ensureTaskTracking(): void {
   if (taskTrackingReady) return;
   taskTrackingReady = true;
@@ -145,39 +153,50 @@ function ensureTaskTracking(): void {
   // guard with isRunInTerminalActive() before calling (west/vscodeAdapter.ts
   // already does, for the #146 case this module exists to fix); upgrade path
   // if a second caller needs it: a per-dispatch nonce in the task definition.
-  vscode.tasks.onDidStartTask((event) => {
-    const name = runNameOf(event.execution);
-    if (!name) return;
-    const entry = active.get(name);
-    if (!entry) {
-      // Reservation already gone: either superseded by a newer same-named run
-      // (benign) or released by the watchdog before this start arrived. The
-      // latter STRANDS this run -- with no reservation there is no generation
-      // to record, so `finish()` will drop its end event and nothing will ever
-      // report its completion. Never silent: this is the one trace that
-      // explains a run whose terminal is visibly working while the UI believes
-      // nothing is active.
-      log(
-        `[terminal] "${name}" started with no live reservation -- superseded, or it took longer than ${RUN_START_TIMEOUT_MS / 1000}s to start; its completion will not be reported`,
-        "warn",
-      );
-      return;
-    }
-    entry.started = true;
-    entry.execution = event.execution;
-    clearTimeout(entry.watchdog);
-    executionGeneration.set(event.execution, entry.generation);
-  });
-  // The real "finished" signal: fires once the spawned process itself exits,
-  // carrying its real exit code.
-  vscode.tasks.onDidEndTaskProcess((event) =>
-    finish(event.execution, event.exitCode),
+  taskTrackingDisposables.push(
+    vscode.tasks.onDidStartTask((event) => {
+      const name = runNameOf(event.execution);
+      if (!name) return;
+      const entry = active.get(name);
+      if (!entry) {
+        // Reservation already gone: either superseded by a newer same-named run
+        // (benign) or released by the watchdog before this start arrived. The
+        // latter STRANDS this run -- with no reservation there is no generation
+        // to record, so `finish()` will drop its end event and nothing will ever
+        // report its completion. Never silent: this is the one trace that
+        // explains a run whose terminal is visibly working while the UI believes
+        // nothing is active.
+        log(
+          `[terminal] "${name}" started with no live reservation -- superseded, or it took longer than ${RUN_START_TIMEOUT_MS / 1000}s to start; its completion will not be reported`,
+          "warn",
+        );
+        return;
+      }
+      entry.started = true;
+      entry.execution = event.execution;
+      clearTimeout(entry.watchdog);
+      executionGeneration.set(event.execution, entry.generation);
+    }),
+    // The real "finished" signal: fires once the spawned process itself exits,
+    // carrying its real exit code.
+    vscode.tasks.onDidEndTaskProcess((event) =>
+      finish(event.execution, event.exitCode),
+    ),
+    // Backstop: a task can end without ever starting a process (e.g. the
+    // binary doesn't exist) -- onDidEndTaskProcess never fires then, but
+    // onDidEndTask always does, so this guarantees `terminalFinished` still
+    // fires exactly once for every run.
+    vscode.tasks.onDidEndTask((event) => finish(event.execution, undefined)),
   );
-  // Backstop: a task can end without ever starting a process (e.g. the
-  // binary doesn't exist) -- onDidEndTaskProcess never fires then, but
-  // onDidEndTask always does, so this guarantees `terminalFinished` still
-  // fires exactly once for every run.
-  vscode.tasks.onDidEndTask((event) => finish(event.execution, undefined));
+}
+
+/** Disposes the `vscode.tasks.*` subscriptions `ensureTaskTracking` set up
+ *  (no-op if it never ran). Harmless to skip at host teardown -- VS Code
+ *  tears down the whole extension host anyway -- but this is the one
+ *  listener set in this file that would otherwise outlive `deactivate`. */
+export function disposeTaskTracking(): void {
+  taskTrackingDisposables.splice(0).forEach((d) => d.dispose());
+  taskTrackingReady = false;
 }
 
 /** The `run` (name) this task's definition carries, or undefined for a task
@@ -200,15 +219,16 @@ export function isRunInTerminalActive(name: string): boolean {
  * `name` isn't active, or its terminal hasn't appeared yet). In a multi-root
  * `.code-workspace` VS Code renames the task's terminal to a QUALIFIED LABEL
  * (a source prefix and/or a ` (folder)` suffix) instead of the plain task
- * name, so an exact-equality match silently misses there -- widen the match
- * to the qualified-label shapes, and log a miss instead of no-op'ing quietly.
+ * name -- and, when BOTH apply at once, to the COMBINED form (source prefix
+ * AND folder suffix together, e.g. `"Alp SDK: west flash (myproj)"`), which
+ * an either/or match still misses -- so match `name` bounded by either or
+ * both affixes at once, and log a miss instead of no-op'ing quietly.
  */
 export function revealRunInTerminal(name: string): void {
-  const terminal = vscode.window.terminals.find(
-    (t) =>
-      t.name === name ||
-      t.name.endsWith(": " + name) ||
-      t.name.startsWith(name + " ("),
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const qualifiedLabel = new RegExp(`^(?:.*: )?${escaped}(?: \\(.*\\))?$`);
+  const terminal = vscode.window.terminals.find((t) =>
+    qualifiedLabel.test(t.name),
   );
   if (!terminal) {
     log(
@@ -229,9 +249,15 @@ export function revealRunInTerminal(name: string): void {
  * launch the command). A single-purpose binary that exits fast and nonzero
  * (e.g. a refused `tan bootstrap`) no longer gets misclassified as "the
  * terminal process failed to launch" either — a Task terminal stays open and
- * shows the command's real output. A previous still-running task under
- * `options.name` is terminated first, so a re-run reuses the named slot
- * instead of piling up (mirrors the old dispose-before-recreate).
+ * shows the command's real output. A run already active under `options.name`
+ * is never interrupted: the dispatch is refused (warn + offer to reveal the
+ * live terminal) rather than terminating a command that might be mid-flash
+ * (issue #146) or racing a second dispatch into starting a concurrent
+ * `tan bootstrap` against the same venv. This guard lives HERE, not only in
+ * callers, so every caller gets it — `executeWestPlan` already checks
+ * `isRunInTerminalActive` itself for a caller-specific message and returns
+ * before ever reaching this function, so its check and this one never both
+ * fire for the same dispatch.
  *
  * Completion is reported via `vscode.tasks.onDidEndTaskProcess` (carries the
  * real exit code), not `Terminal.onDidCloseTerminal`: a Task's terminal can
@@ -241,12 +267,10 @@ export function revealRunInTerminal(name: string): void {
  * `{name, code}` shape for its existing subscribers.
  *
  * The slot under `options.name` is reserved SYNCHRONOUSLY (before
- * `executeTask` is even called), and released if `vscode.tasks.onDidStartTask`
- * never confirms a real start within `RUN_START_TIMEOUT_MS` -- closing the
- * async window where two rapid same-named dispatches could otherwise both
- * see nothing running (issue #146) and, separately, guaranteeing a task that
- * never starts (e.g. its type was never contributed) can't brick the
- * command forever (`isRunInTerminalActive` would stay true with no event
+ * `executeTask` is even called) and released if `vscode.tasks.onDidStartTask`
+ * never confirms a real start within `RUN_START_TIMEOUT_MS` -- guaranteeing a
+ * task that never starts (e.g. its type was never contributed) can't brick
+ * the command forever (`isRunInTerminalActive` would stay true with no event
  * ever coming to clear it).
  */
 export function runInTerminal(options: {
@@ -256,7 +280,20 @@ export function runInTerminal(options: {
   env?: Record<string, string>;
 }): void {
   ensureTaskTracking();
-  active.get(options.name)?.execution?.terminate();
+  if (active.has(options.name)) {
+    // Refuse rather than silently no-op or terminate a possibly-live run
+    // (issue #146 in both directions: two concurrent bootstraps, or a flash
+    // killed mid-write) -- tell the user why the click did nothing.
+    void vscode.window
+      .showWarningMessage(
+        `"${options.name}" is still running — wait for it to finish before starting it again.`,
+        "Show Terminal",
+      )
+      .then((choice) => {
+        if (choice === "Show Terminal") revealRunInTerminal(options.name);
+      });
+    return;
+  }
 
   const generation = ++nextGeneration;
   const release = (): void => {
@@ -280,6 +317,12 @@ export function runInTerminal(options: {
       terminalFinished.fire({ name: options.name, code: undefined });
     }, RUN_START_TIMEOUT_MS).unref(),
   };
+  // The `active.has` guard above means a live reservation is never clobbered
+  // here in practice, but clear defensively anyway (finding #2): a stray
+  // watchdog left running past its reservation would log a bogus "did not
+  // start" error and fire a premature terminalFinished for a run that is
+  // superseding it, not the run the watchdog was guarding.
+  clearTimeout(active.get(options.name)?.watchdog);
   active.set(options.name, reservation);
 
   const execution = new vscode.ProcessExecution(

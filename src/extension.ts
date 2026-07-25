@@ -27,7 +27,7 @@ import { registerLspCommands } from "./lsp/commands";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
-import { log, showOutput } from "./util";
+import { disposeTaskTracking, log, showOutput } from "./util";
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
@@ -150,5 +150,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export async function deactivate(): Promise<void> {
+  disposeTaskTracking();
   await stopLanguageServer();
 }
