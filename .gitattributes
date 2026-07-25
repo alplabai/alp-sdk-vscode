@@ -6,3 +6,8 @@ schemas/board.schema.json text eol=lf
 schemas/system-manifest-v1.schema.json text eol=lf
 # Vendored Kconfig symbol snapshot (gated by test/lsp.kconfig.test.js).
 test/fixtures/alp-kconfig-symbols.txt text eol=lf
+# Shell scripts must stay LF: with core.autocrlf=true a Windows checkout
+# smudges them to CRLF and bash fails on the trailing \r
+# ("set: pipefail\r: invalid option name"), breaking pnpm run install:vscode
+# and the curl|bash tan installer in media/tan-install/install.sh.
+*.sh text eol=lf
