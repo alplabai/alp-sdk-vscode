@@ -300,17 +300,20 @@ test("toModelRunResult: ok -> run passthrough", () => {
   assert.equal(msg.run.power_mj, null);
 });
 
-// Real envelope captured on Alif Ensemble E8 silicon (2026-07-25) —
-// `EnergyMeasurement` fields verbatim, do not round.
+// Real envelope captured on Alif Ensemble E8 silicon (2026-07-25) --
+// `EnergyMeasurement` fields verbatim, do not round.  This is the primary run
+// documented in alp-sdk's docs/measuring-inference-energy.md (person_detect on
+// the +5V carrier rail, 3 window pairs); keep the two in step so the panel is
+// demonstrably rendering a figure that exists.
 const REAL_ENERGY = {
   source: "measured",
   scope: "carrier-rail-delta",
-  value_mj_per_inference: 0.017177,
+  value_mj_per_inference: 0.017237,
   rails: ["+5V"],
-  n_inferences: 2872,
+  n_inferences: 2886,
   window_ms: 1120.0,
   sample_count: 1500,
-  spread_mj: 0.000255,
+  spread_mj: 0.0002,
 };
 
 test("toModelRunResult: energy present -> carried through unchanged", () => {
@@ -419,12 +422,13 @@ test("toModelRunResult: malformed/partial energy (missing rails) -> absent", () 
         energy: {
           source: "measured",
           scope: "carrier-rail-delta",
-          value_mj_per_inference: 0.017177,
-          // rails missing
-          n_inferences: 2872,
+          value_mj_per_inference: 0.017237,
+          // rails missing -- otherwise identical to REAL_ENERGY, so the only
+          // thing under test is the absent key
+          n_inferences: 2886,
           window_ms: 1120.0,
           sample_count: 1500,
-          spread_mj: 0.000255,
+          spread_mj: 0.0002,
         },
       },
       issues: [],
