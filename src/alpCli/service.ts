@@ -18,7 +18,7 @@ import {
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
  *  (aligned with tan-cli's `[workspace.package] version`). v0.3.1 is the
  *  release that carries native (non-WSL-only) Windows bootstrap. */
-export const SUPPORTED_CLI_VERSION = "0.3.1";
+export const SUPPORTED_CLI_VERSION = "0.3.2";
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
@@ -407,4 +407,71 @@ export function prerequisitesMissingIssue(
         issue.severity === "error",
     ) ?? null
   );
+}
+
+/** The `debug-config` envelope fields the extension consumes.
+ *
+ *  `configuration` is the launch configuration itself, added in tan-cli#67 —
+ *  before that the envelope described the write without carrying the object.
+ *  An older `tan` therefore returns `ok:true` with no `configuration` at all,
+ *  which is why this is a shape check and not an `ok` check.
+ */
+export interface DebugConfigData {
+  launchJsonPath: string;
+  replaced: boolean;
+  notes: string[];
+  configuration: { name: string } & Record<string, unknown>;
+}
+
+/**
+ * Whether an envelope `data` really carries a usable launch configuration.
+ *
+ * `name` is asserted as a NON-EMPTY string, not merely present: it is the one
+ * field the caller actually consumes, and an empty one silently degrades —
+ * `requiredDebugExtension("")` matches no target pattern and prompts for the
+ * wrong adapter, then `startDebugging(folder, "")` fails with `VS Code
+ * declined to start ""`. Every `notes` element is checked too, since they are
+ * logged verbatim and a non-string prints as `[object Object]`.
+ */
+export function isDebugConfigData(value: unknown): value is DebugConfigData {
+  if (typeof value !== "object" || value === null) return false;
+  const data = value as Record<string, unknown>;
+  if (typeof data.launchJsonPath !== "string") return false;
+  if (typeof data.replaced !== "boolean") return false;
+  if (
+    !Array.isArray(data.notes) ||
+    !data.notes.every((note) => typeof note === "string")
+  ) {
+    return false;
+  }
+  const configuration = data.configuration;
+  if (typeof configuration !== "object" || configuration === null) return false;
+  const name = (configuration as Record<string, unknown>).name;
+  return typeof name === "string" && name.length > 0;
+}
+
+/**
+ * The `<resolved-…>` placeholders left in a launch configuration, if any.
+ *
+ * `tan debug-config` resolves what the build recorded and leaves a placeholder
+ * for what it could not — a board that registers no OpenOCD runner still ships
+ * `configFiles: ["<resolved-openocd-board-cfg>"]`. It reports `ok` either way,
+ * by design, because a draft is still worth writing before the first build. So
+ * "the command succeeded" does NOT mean "this configuration can launch", and
+ * the caller must look at the object rather than the exit code — otherwise the
+ * user is told the profile is ready and the session dies inside the adapter.
+ */
+export function launchConfigPlaceholders(value: unknown): string[] {
+  const found: string[] = [];
+  const walk = (node: unknown): void => {
+    if (typeof node === "string") {
+      if (node.includes("<resolved-")) found.push(node);
+    } else if (Array.isArray(node)) {
+      node.forEach(walk);
+    } else if (typeof node === "object" && node !== null) {
+      Object.values(node).forEach(walk);
+    }
+  };
+  walk(value);
+  return found;
 }

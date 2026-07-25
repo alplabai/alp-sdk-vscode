@@ -31,6 +31,12 @@ import {
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { runAlpCommand } from "./alpCli/vscodeAdapter";
+import {
+  DebugConfigData,
+  SUPPORTED_CLI_VERSION,
+  isDebugConfigData,
+  launchConfigPlaceholders,
+} from "./alpCli/service";
 import { ensureNativeSimOverlay } from "./west";
 import { log, reportError, showOutput } from "./util";
 
@@ -170,34 +176,12 @@ interface LaunchProfileResult {
   notes: readonly string[];
 }
 
-/** The `debug-config` envelope fields this command consumes. Narrow guard —
- *  an older `tan` that predates `data.configuration` fails it and is reported
- *  as such, rather than writing `undefined` into launch.json. */
-interface DebugConfigEnvelopeData {
-  launchJsonPath: string;
-  replaced: boolean;
-  notes: string[];
-  configuration: { name?: unknown };
-}
-
-function isDebugConfigData(value: unknown): value is DebugConfigEnvelopeData {
-  if (typeof value !== "object" || value === null) return false;
-  const data = value as Record<string, unknown>;
-  return (
-    typeof data.launchJsonPath === "string" &&
-    typeof data.replaced === "boolean" &&
-    Array.isArray(data.notes) &&
-    typeof data.configuration === "object" &&
-    data.configuration !== null
-  );
-}
-
-/** Prompt for target/server, write the launch.json profile, and return what a
- *  caller needs to report status or start a session. Null when the user
- *  cancelled, no workspace is open, or the CLI could not produce a config (a
- *  message is shown for the latter two).
+/** Prompt for target/server, have `tan debug-config` write the launch profile,
+ *  and return what a caller needs to report status or start a session. Null
+ *  when the user cancelled, no workspace is open, or the CLI could not produce
+ *  a usable configuration (a message is shown for the latter two).
  *
- *  The configuration itself comes from `tan debug-config`, which resolves the
+ *  The configuration comes from `tan debug-config`, which resolves the
  *  probe/tool values from the build's own `runners.yaml` (tan-cli#66). The
  *  extension deliberately keeps NO second draft: it had one, with the same
  *  unresolved `<resolved-device>` placeholders, and a fork of the same logic in
@@ -205,7 +189,12 @@ function isDebugConfigData(value: unknown): value is DebugConfigEnvelopeData {
  *  (#339). What stays in-process is the readiness report below — it probes
  *  which debugger extensions are installed, host state a separate process
  *  cannot observe (EXTENSION_CLI_INTEGRATION.md §4a).
- */
+ *
+ *  Two passes on purpose: `--preview` first, and only a real write once the
+ *  envelope is accepted. Writing first and validating after means an older
+ *  `tan` (no `data.configuration`) reports a failure the user cannot act on
+ *  while their `launch.json` has already gained a config full of placeholders
+ *  they never asked for. */
 async function writeLaunchProfile(
   extensionContext: vscode.ExtensionContext,
 ): Promise<LaunchProfileResult | null> {
@@ -228,29 +217,31 @@ async function writeLaunchProfile(
     "--server",
     server,
   ];
-  // Name the slice explicitly when one resolved, so the CLI resolves against
-  // the SAME core this command's readiness report describes — on a multicore
-  // board the CLI's own default (first slice of the target's OS) could
-  // otherwise pick the other one.
+  // Pin the CLI to the same slice this command's readiness report describes.
+  // `resolveManifestSlice` takes the first slice matching the target's OS —
+  // the identical default the CLI documents — so this makes the two agree
+  // rather than choosing between cores. A user wanting the SECOND Zephyr core
+  // is still never asked; that is a separate gap.
   if (slice?.core_id) args.push("--core", slice.core_id);
 
-  const { outcome } = await runAlpCommand(
+  const preview = await runDebugConfig(
     extensionContext,
-    args,
     context.workspaceRoot,
+    [...args, "--preview"],
   );
-  const data = outcome.envelope?.data;
-  if (!outcome.ok || !isDebugConfigData(data)) {
-    await reportError(
-      `Alp: could not generate the debug configuration — ${outcome.message}`,
-      outcome.envelope ? JSON.stringify(outcome.envelope, null, 2) : undefined,
-    );
-    return null;
-  }
+  if (!preview) return null;
 
-  const launchPath = data.launchJsonPath;
+  // Shape accepted — now let the CLI write for real.
+  const written = await runDebugConfig(
+    extensionContext,
+    context.workspaceRoot,
+    args,
+  );
+  if (!written) return null;
+
+  const placeholders = launchConfigPlaceholders(written.configuration);
   log(
-    `alp debug: ${data.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
+    `alp debug: ${written.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
 
   const report = buildDebugPreflightReport(
@@ -263,13 +254,78 @@ async function writeLaunchProfile(
 
   return {
     workspaceRoot: context.workspaceRoot,
-    configName: String(data.configuration.name ?? ""),
-    launchPath,
-    relPath: vscode.workspace.asRelativePath(launchPath),
-    replaced: data.replaced,
-    report,
-    notes: data.notes,
+    configName: written.configuration.name,
+    launchPath: written.launchJsonPath,
+    relPath: vscode.workspace.asRelativePath(written.launchJsonPath),
+    replaced: written.replaced,
+    // The in-process report answers "is the HOST ready" (adapters installed).
+    // It cannot see that the CLI left `<resolved-device>` in the file it just
+    // wrote — `tan debug-config` reports ok for a partly-resolved draft by
+    // design. Without this the user is told the profile is ready and the
+    // session dies inside the adapter.
+    report: placeholders.length > 0 ? { ...report, canLaunch: false } : report,
+    notes:
+      placeholders.length > 0
+        ? [
+            ...written.notes,
+            `Unresolved in the generated configuration: ${placeholders.join(", ")}. Build the project first, or set these by hand.`,
+          ]
+        : written.notes,
   };
+}
+
+/** One `tan debug-config` invocation, with the two failure modes reported
+ *  distinctly. `null` on either.
+ *
+ *  They are separate because they need different words. A non-zero exit is the
+ *  CLI's own complaint (a bad flag, an unreadable `launch.json`). A zero exit
+ *  whose payload has no `configuration` is version skew — `outcome.message` is
+ *  literally "Command completed." there, so reporting it as the failure reason
+ *  tells the user the command both failed and succeeded. */
+async function runDebugConfig(
+  extensionContext: vscode.ExtensionContext,
+  cwd: string,
+  args: string[],
+): Promise<DebugConfigData | null> {
+  const outcome = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Alp: generating the debug configuration",
+      cancellable: true,
+    },
+    async (_progress, token) => {
+      // A first-ever Debug may DOWNLOAD the tan binary inside this call; with
+      // no progress UI the user stares at nothing after the two quick-picks.
+      const controller = new AbortController();
+      token.onCancellationRequested(() => controller.abort());
+      const result = await runAlpCommand(extensionContext, args, cwd, {
+        signal: controller.signal,
+      });
+      return result.outcome;
+    },
+  );
+
+  if (!outcome.ok) {
+    const skew =
+      outcome.kind === "validation" && args.includes("--core")
+        ? ` This extension requires tan ${SUPPORTED_CLI_VERSION} or newer; run "Alp: Update CLI" and retry.`
+        : "";
+    await reportError(
+      `Alp: the debug configuration could not be generated.${skew}`,
+      outcome.message,
+    );
+    return null;
+  }
+
+  const data = outcome.envelope?.data;
+  if (!isDebugConfigData(data)) {
+    await reportError(
+      `Alp: this tan CLI does not report the debug configuration — it predates the ${SUPPORTED_CLI_VERSION} this extension requires. Run "Alp: Update CLI" and retry.`,
+      outcome.envelope ? JSON.stringify(outcome.envelope, null, 2) : undefined,
+    );
+    return null;
+  }
+  return data;
 }
 
 async function configureDebugProfile(

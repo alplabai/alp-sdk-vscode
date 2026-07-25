@@ -7,7 +7,6 @@ const {
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
-  createLaunchPreview,
   createSupportBundlePayload,
   isNativeHostTarget,
   serializeGenerationTraceReport,
@@ -310,82 +309,4 @@ test("buildDoctorReport summarizes zephyr doctor state", () => {
     "Install marus25.cortex-debug.",
     "Install openocd and make sure it is on PATH.",
   ]);
-});
-
-test("createLaunchPreview generates a Zephyr J-Link draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "zephyr-mcu",
-    "jlink",
-  );
-
-  assert.equal(preview.launch.version, "0.2.0");
-  assert.equal(preview.launch.configurations.length, 1);
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "jlink");
-  assert.equal(config.interface, "swd");
-  assert.match(config.name, /Zephyr Debug/);
-});
-
-test("createLaunchPreview generates a Zephyr OpenOCD draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "zephyr-mcu",
-    "openocd",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "openocd");
-  assert.deepEqual(config.configFiles, ["<resolved-openocd-board-cfg>"]);
-});
-
-test("createLaunchPreview generates a baremetal draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "baremetal-mcu",
-    "jlink",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "jlink");
-  assert.equal(config.executable, "${workspaceFolder}/build/baremetal/app.elf");
-});
-
-test("createLaunchPreview generates a Yocto gdbserver draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "yocto-userspace",
-    "gdbserver",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cppdbg");
-  assert.equal(config.MIMode, "gdb");
-  assert.equal(config.miDebuggerServerAddress, "<host>:<port>");
-});
-
-test("createLaunchPreview generates a native host draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "native-host",
-    "none",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "codelldb");
-  assert.equal(
-    config.program,
-    "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
-  );
-});
-
-test("createLaunchPreview rejects unsupported launch combinations", () => {
-  assert.throws(
-    () =>
-      createLaunchPreview("2026-05-14T00:00:00.000Z", "native-host", "jlink"),
-    /Unsupported debug backend/,
-  );
 });
