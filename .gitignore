@@ -24,6 +24,11 @@ coverage/
 # Transient Claude Code runtime locks
 .claude/scheduled_tasks.lock
 
+# Claude Code agent worktrees — FULL repo copies incl. node_modules. Never
+# commit these; `git add .claude` would otherwise pull in the whole tree.
+.claude/worktrees/
+.claude/alp-tasks.json
+
 # VS Code e2e test runtime (downloaded VS Code + user data)
 .vscode-test/
 
