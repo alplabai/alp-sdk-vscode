@@ -21,10 +21,12 @@ import * as path from "path";
 import * as vscode from "vscode";
 
 import {
+  probeTanVersion,
   runAlpCommand,
   runAlpInTerminal,
   runAlpStreamed,
 } from "./alpCli/vscodeAdapter";
+import { isCliBehind } from "./alpCli/service";
 import {
   collectWestWorkspaceContext,
   executeWestPlan,
@@ -138,6 +140,10 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
   });
 }
 
+/** First `tan` carrying `renode --core` (tan-cli#63). Below this the flag is a
+ *  parse error, not an ignored argument. */
+const RENODE_CORE_CLI_VERSION = "0.3.2";
+
 /** The Zephyr `core_id`s of the post-build manifest under `cwd`, in manifest
  *  order. Empty pre-build, on a parse failure, or for an all-Yocto project —
  *  every one of which means "don't prompt, let the CLI speak". */
@@ -164,8 +170,24 @@ function zephyrCoresOf(cwd: string): string[] {
  *  1 Zephyr slices no flag is sent, so the CLI's own message stays the single
  *  source of truth for every not-buildable case. */
 async function pickRenodeCore(
+  context: vscode.ExtensionContext,
   cwd: string | undefined,
 ): Promise<string | null | undefined> {
+  // `tan renode --core` only exists from RENODE_CORE_CLI_VERSION on. Sending it
+  // to an older binary turns an explanatory refusal ("system-manifest.yaml has
+  // 2 zephyr slices … the Renode smoke boots a single-Zephyr-slice system")
+  // into clap's `unexpected argument '--core'` — a strictly worse message. When
+  // the version can't be read at all we also stay quiet: an unprompted no-op
+  // beats a QuickPick whose answer the CLI would reject.
+  const version = await probeTanVersion(context);
+  if (!version || isCliBehind(version, RENODE_CORE_CLI_VERSION)) {
+    if (version) {
+      log(
+        `[renode] tan ${version} predates --core (${RENODE_CORE_CLI_VERSION}); not offering the core picker`,
+      );
+    }
+    return null;
+  }
   const cores = cwd ? zephyrCoresOf(cwd) : [];
   if (cores.length < 2) return null;
   const picked = await vscode.window.showQuickPick(cores, {
@@ -180,7 +202,7 @@ async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
     "examples/multicore/rpmsg-v2n",
   );
   if (!target) return;
-  const core = await pickRenodeCore(target.cwd);
+  const core = await pickRenodeCore(context, target.cwd);
   if (core === undefined) return;
   // `--core` needs a tan that carries it (tan-cli#63). Sending it only in the
   // multi-slice case keeps an older CLI no worse off than before: that case
