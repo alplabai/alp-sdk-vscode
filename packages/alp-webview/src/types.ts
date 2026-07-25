@@ -453,6 +453,25 @@ export interface ModelMeasureStartedMessage {
   type: "modelMeasureStarted";
 }
 
+/** A real bench-measured energy result (`alp_model.measure.EnergyMeasurement`
+ *  in alp-sdk) attached to a `tan model run --on-device`/`tan model ab`
+ *  payload. `source`/`scope` are always `"measured"`/`"carrier-rail-delta"` —
+ *  a board-level carrier-rail delta, never an isolated NPU/U85/U55/M55
+ *  figure; `scope` drives the webview's label (never hardcode "NPU power" /
+ *  "silicon energy" from it). Undefined on a host-only run (the
+ *  overwhelmingly common case) or when the CLI's energy object was
+ *  malformed. */
+export interface ModelEnergyMeasurement {
+  source: string;
+  scope: string;
+  value_mj_per_inference: number;
+  rails: string[];
+  n_inferences: number;
+  window_ms: number;
+  sample_count: number;
+  spread_mj: number | null;
+}
+
 /** Result of `tan model run` — a host reference (CPU) inference measurement. */
 export interface ModelRunResultMessage {
   type: "modelRunResult";
@@ -467,6 +486,7 @@ export interface ModelRunResultMessage {
     random_input: boolean;
     note: string;
     accuracy?: { expected: number; match: boolean };
+    energy?: ModelEnergyMeasurement;
   };
   issues: { code: string; severity: string; message: string }[];
 }
@@ -477,14 +497,28 @@ export interface ModelAbResultMessage {
   type: "modelAbResult";
   ok: boolean;
   ab?: {
-    a: { model: string; backend: string; latency_ms: number };
-    b: { model: string; backend: string; latency_ms: number };
+    a: {
+      model: string;
+      backend: string;
+      latency_ms: number;
+      energy?: ModelEnergyMeasurement;
+    };
+    b: {
+      model: string;
+      backend: string;
+      latency_ms: number;
+      energy?: ModelEnergyMeasurement;
+    };
     comparison: {
       faster: string;
       latency_ratio: number | null;
       a_latency_ms: number;
       b_latency_ms: number;
       size_delta_bytes: number | null;
+      /** Present only when BOTH `a`/`b` carry a real energy object — mirrors
+       *  the CLI, which omits the key entirely rather than sending `null`
+       *  when either side lacks one. */
+      energy_delta_mj_per_inference?: number;
     };
     note: string;
   };

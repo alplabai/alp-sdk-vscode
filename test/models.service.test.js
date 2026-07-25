@@ -300,6 +300,144 @@ test("toModelRunResult: ok -> run passthrough", () => {
   assert.equal(msg.run.power_mj, null);
 });
 
+// Real envelope captured on Alif Ensemble E8 silicon (2026-07-25) --
+// `EnergyMeasurement` fields verbatim, do not round.  This is the primary run
+// documented in alp-sdk's docs/measuring-inference-energy.md (person_detect on
+// the +5V carrier rail, 3 window pairs); keep the two in step so the panel is
+// demonstrably rendering a figure that exists.
+const REAL_ENERGY = {
+  source: "measured",
+  scope: "carrier-rail-delta",
+  value_mj_per_inference: 0.017237,
+  rails: ["+5V"],
+  n_inferences: 2886,
+  window_ms: 1120.0,
+  sample_count: 1500,
+  spread_mj: 0.0002,
+};
+
+test("toModelRunResult: energy present -> carried through unchanged", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        model: "m.onnx",
+        backend: "cpu-host",
+        latency_ms: 0.3,
+        output_argmax: 5,
+        peak_sram_kib: null,
+        power_mj: null,
+        runs: 5,
+        random_input: true,
+        note: "host reference",
+        energy: REAL_ENERGY,
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelRunResult(outcome);
+  assert.equal(msg.ok, true);
+  assert.deepEqual(msg.run.energy, REAL_ENERGY);
+});
+
+test("toModelRunResult: energy null (host-only run) -> absent", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        model: "m.onnx",
+        backend: "cpu-host",
+        latency_ms: 0.3,
+        output_argmax: 5,
+        peak_sram_kib: null,
+        power_mj: null,
+        runs: 5,
+        random_input: true,
+        note: "host reference",
+        energy: null,
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelRunResult(outcome);
+  assert.equal(msg.run.energy, undefined);
+});
+
+test("toModelRunResult: energy key missing -> absent", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        model: "m.onnx",
+        backend: "cpu-host",
+        latency_ms: 0.3,
+        output_argmax: 5,
+        peak_sram_kib: null,
+        power_mj: null,
+        runs: 5,
+        random_input: true,
+        note: "host reference",
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelRunResult(outcome);
+  assert.equal(msg.run.energy, undefined);
+});
+
+test("toModelRunResult: malformed/partial energy (missing rails) -> absent", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        model: "m.onnx",
+        backend: "cpu-host",
+        latency_ms: 0.3,
+        output_argmax: 5,
+        peak_sram_kib: null,
+        power_mj: null,
+        runs: 5,
+        random_input: true,
+        note: "host reference",
+        energy: {
+          source: "measured",
+          scope: "carrier-rail-delta",
+          value_mj_per_inference: 0.017237,
+          // rails missing -- otherwise identical to REAL_ENERGY, so the only
+          // thing under test is the absent key
+          n_inferences: 2886,
+          window_ms: 1120.0,
+          sample_count: 1500,
+          spread_mj: 0.0002,
+        },
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelRunResult(outcome);
+  assert.equal(msg.run.energy, undefined);
+});
+
 test("toModelRunResult: null envelope -> ok:false + real cause", () => {
   const msg = toModelRunResult({
     exitCode: -1,
@@ -337,6 +475,79 @@ test("toModelAbResult: ok -> comparison passthrough", () => {
   const msg = toModelAbResult(outcome);
   assert.equal(msg.ok, true);
   assert.equal(msg.ab.comparison.faster, "a");
+});
+
+test("toModelAbResult: energy on one side only -> no delta rendered", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        a: { model: "a", backend: "cpu-host", latency_ms: 1, energy: null },
+        b: {
+          model: "b",
+          backend: "cpu-host",
+          latency_ms: 2,
+          energy: REAL_ENERGY,
+        },
+        comparison: {
+          faster: "a",
+          latency_ratio: 2,
+          a_latency_ms: 1,
+          b_latency_ms: 2,
+          size_delta_bytes: 0,
+          // the real CLI omits this key entirely when either side lacks energy
+        },
+        note: "host reference",
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelAbResult(outcome);
+  assert.equal(msg.ab.a.energy, undefined);
+  assert.deepEqual(msg.ab.b.energy, REAL_ENERGY);
+  assert.equal(msg.ab.comparison.energy_delta_mj_per_inference, undefined);
+});
+
+test("toModelAbResult: energy on both sides -> delta rendered", () => {
+  const bEnergy = { ...REAL_ENERGY, value_mj_per_inference: 0.02 };
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        a: {
+          model: "a",
+          backend: "cpu-host",
+          latency_ms: 1,
+          energy: REAL_ENERGY,
+        },
+        b: { model: "b", backend: "cpu-host", latency_ms: 2, energy: bEnergy },
+        comparison: {
+          faster: "a",
+          latency_ratio: 2,
+          a_latency_ms: 1,
+          b_latency_ms: 2,
+          size_delta_bytes: 0,
+          energy_delta_mj_per_inference: 0.0028,
+        },
+        note: "host reference",
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelAbResult(outcome);
+  assert.deepEqual(msg.ab.a.energy, REAL_ENERGY);
+  assert.deepEqual(msg.ab.b.energy, bEnergy);
+  assert.equal(msg.ab.comparison.energy_delta_mj_per_inference, 0.0028);
 });
 
 test("toModelAbResult: !ok -> surfaces model.failed", () => {
