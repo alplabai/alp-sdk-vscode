@@ -1,33 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `alp.installDependencies` delegates to the native CLI's `alp bootstrap`,
-// which orchestrates the SDK's own `scripts/bootstrap.sh` (west install +
-// `west init/update` + Zephyr Python requirements) in a live terminal. This
-// replaces the extension's former private venv/pip plan — one bootstrap, owned
-// by the SDK. OS-specific toolchains (Zephyr SDK, Yocto host packages, vendor
-// compilers) are beyond bootstrap.sh's scope and are surfaced by the build
-// preflight (`alp doctor --build`) instead.
+// `alp.installDependencies` delegates to the native CLI's `tan bootstrap`,
+// which reads the SDK's own `metadata/bootstrap.json` and drives venv/west/pip
+// itself (a native cross-platform Rust implementation — tan-cli#49 — it no
+// longer shells the SDK's POSIX `scripts/bootstrap.sh`) in a live terminal.
+// This replaces the extension's former private venv/pip plan — one bootstrap,
+// owned by the CLI. OS-specific toolchains (Zephyr SDK, Yocto host packages,
+// vendor compilers) are beyond bootstrap's scope and are surfaced by the build
+// preflight (`tan doctor --build`) instead.
+//
+// win32 pre-flight: tan itself is the single source of truth for whether a
+// project can bootstrap on this host — not a guess re-derived here. tan
+// resolves each core's runtime from the SoM topology in the SDK metadata
+// (`som.sku` -> `<sdkRoot>/metadata/e1m_modules/<sku>.yaml` `topology:`);
+// `board.yaml` alone does NOT carry that (a per-core `os:` there is only an
+// override, mostly used as `os: "off"`), so parsing board.yaml here would
+// miss every real Yocto-only project and let a doomed terminal spawn anyway.
+// So: run `tan bootstrap --no-pip --no-west --format json` first — the SAME
+// gate a real run hits, made side-effect-free by those two flags (tan-cli's
+// `bootstrap/mod.rs` never creates the venv when both are set) — and act on
+// tan's own verdict (`bootstrapHostVerdict`, service.ts). A refusal gets a
+// legible warning + the one-click "Reopen in WSL" affordance; a call that
+// fails, can't resolve, or returns nothing recognisable always falls through
+// to running for real — never block a working setup on a failed probe. Any
+// OTHER refusal now renders legibly in the terminal itself (see util.ts's
+// `runInTerminal`), so this pre-flight only needs to catch the one host-level
+// dead end (Yocto-only) that a live terminal can't recover from by retrying.
 
-import * as fs from "fs";
-import { load as loadYaml } from "js-yaml";
 import * as vscode from "vscode";
 
-import { boardUsesYocto } from "@alp-sdk/core/board/backend";
+import { bootstrapHostVerdict } from "./alpCli/service";
 import { runAlpInTerminal } from "./alpCli/vscodeAdapter";
+import { CANCELLED, runAlpWithProgress } from "./loader";
 import { collectProjectContext } from "./project/vscodeAdapter";
-
-/** True when the open project has a Yocto core — read board.yaml, parse, inspect
- *  cores. Best-effort: a missing/unparseable board.yaml is treated as not-Yocto
- *  (Zephyr/baremetal), so the message only claims "Yocto" when it's certain. */
-function projectUsesYocto(): boolean {
-  try {
-    const boardYamlPath = collectProjectContext().boardYamlPath;
-    if (!boardYamlPath || !fs.existsSync(boardYamlPath)) return false;
-    return boardUsesYocto(loadYaml(fs.readFileSync(boardYamlPath, "utf8")));
-  } catch {
-    return false;
-  }
-}
+import { log } from "./util";
 
 /** Offer VS Code's Remote-WSL "Reopen in WSL"; if that extension isn't
  *  installed the command is absent and executeCommand rejects — fall back to
@@ -47,33 +53,48 @@ async function reopenInWsl(): Promise<void> {
 export function registerBootstrapCommand(
   context: vscode.ExtensionContext,
 ): vscode.Disposable[] {
-  const runBootstrap = () => {
-    // Native Windows can't bootstrap: `tan bootstrap` orchestrates the SDK's
-    // POSIX bootstrap.sh (west install + west init/update + Zephyr pip) and
-    // refuses on win32. Rather than shell a doomed terminal (whose shell IS
-    // tan.exe, so its exit-1 shows as a cryptic "failed to launch"), guide the
-    // user to WSL2 — via a ONE-CLICK "Reopen in WSL" (VS Code Remote-WSL), the
-    // clean path: the extension host + project + tools all run natively-Linux
-    // inside WSL, no Windows<->WSL path translation or slow /mnt/c builds.
-    // Message is backend-aware: Yocto/BitBake is Linux-only (WSL2 permanently);
-    // Zephyr/baremetal can eventually go native-Windows (planned).
-    if (process.platform === "win32") {
-      const REOPEN = "Reopen in WSL";
-      const yocto = projectUsesYocto();
-      const message = yocto
-        ? "Alp: Yocto builds require Linux — reopen this project in WSL2 " +
-          "(Ubuntu) to bootstrap and build. Keep the project on the WSL " +
-          "filesystem (~/…), not /mnt/c, for build speed."
-        : "Alp: Bootstrap doesn't run on native Windows yet — reopen in WSL2 " +
-          "(Ubuntu) to set up the build environment now (native Windows " +
-          "support is planned). Keep the project on the WSL filesystem (~/…), " +
-          "not /mnt/c, for build speed.";
-      void vscode.window.showWarningMessage(message, REOPEN).then((pick) => {
-        if (pick === REOPEN) void reopenInWsl();
-      });
-      return;
-    }
+  const runBootstrap = async () => {
     const workspaceRoot = collectProjectContext().workspaceRoot ?? undefined;
+    if (process.platform === "win32") {
+      // Side-effect-free and ~440ms warm, but with no CLI cached yet it
+      // triggers a full download-on-demand first, which needs both a
+      // visible "something is happening" signal and a way out -- hence the
+      // shared cancellable-progress wrapper (see loader.ts).
+      const preflight = await runAlpWithProgress(
+        context,
+        ["bootstrap", "--no-pip", "--no-west"],
+        "Alp: checking whether this project can bootstrap on Windows…",
+        workspaceRoot,
+      );
+      if (preflight === CANCELLED) {
+        return; // user cancelled the pre-flight check itself; do nothing.
+      }
+      const { outcome, raw, source } = preflight;
+      const verdict = bootstrapHostVerdict(outcome.envelope);
+      if (verdict.refuse) {
+        log(
+          `[bootstrap] win32 pre-flight: tan refuses to bootstrap this project here — ` +
+            `${verdict.message} (source: ${source})` +
+            (raw.stderr.trim()
+              ? `\n[bootstrap]   stderr: ${raw.stderr.trim()}`
+              : ""),
+          "warn",
+        );
+        const REOPEN = "Reopen in WSL";
+        // tan's own wording already says WHY and to re-run under WSL2/Linux;
+        // add the one thing it can't know — keep the project on the WSL
+        // filesystem, not /mnt/c, for build speed — plus the one-click fix.
+        const message =
+          `Alp: ${verdict.message} Keep the project on the WSL filesystem ` +
+          "(~/…), not /mnt/c, for build speed.";
+        void vscode.window.showWarningMessage(message, REOPEN).then((pick) => {
+          if (pick === REOPEN) void reopenInWsl();
+        });
+        return;
+      }
+      // Clear, a mixed-board advisory, or an unresolvable/unrelated outcome —
+      // all fall through to the real run below.
+    }
     return runAlpInTerminal(context, ["bootstrap"], {
       name: "Alp Bootstrap",
       cwd: workspaceRoot,

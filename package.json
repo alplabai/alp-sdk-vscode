@@ -361,6 +361,19 @@
         "category": "Alp"
       }
     ],
+    "taskDefinitions": [
+      {
+        "type": "alpRun",
+        "required": [
+          "run"
+        ],
+        "properties": {
+          "run": {
+            "type": "string"
+          }
+        }
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

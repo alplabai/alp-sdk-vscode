@@ -641,13 +641,24 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
  * Run `tan <args...> --format json`, returning the classified outcome. Surface
  * code decides how to present `outcome` (toast/diagnostics). Throws only when
  * the binary cannot be resolved at all (caller offers an install action).
+ *
+ * `source` carries how the run binary was resolved (`ResolvedBinary.source`)
+ * so a caller that wants that for diagnostics (e.g. `bootstrap.ts`'s win32
+ * pre-flight log) doesn't need a second, redundant `resolveAlpBinaryForContext`
+ * call — resolution is memoized per window anyway, but the second call was
+ * still a needless extra async round trip and try/catch just to read a field
+ * this function already has in hand.
  */
 export async function runAlpCommand(
   context: vscode.ExtensionContext,
   args: string[],
   cwd?: string,
   options?: { signal?: AbortSignal },
-): Promise<{ outcome: CliOutcome; raw: SpawnResult }> {
+): Promise<{
+  outcome: CliOutcome;
+  raw: SpawnResult;
+  source: BinarySource | "unresolved";
+}> {
   let binary: ResolvedBinary;
   try {
     binary = await resolveAlpBinaryForContext(context);
@@ -671,6 +682,7 @@ export async function runAlpCommand(
         stderr: "",
         error: error instanceof Error ? error : new Error(message),
       },
+      source: "unresolved",
     };
   }
   const finalArgs = withSdkRoot(args);
@@ -696,7 +708,7 @@ export async function runAlpCommand(
       log(`[cli]   stderr: ${clip(raw.stderr)}`);
     }
   }
-  return result;
+  return { ...result, source: binary.source };
 }
 
 /**

@@ -15,8 +15,9 @@ import {
 
 /** The `tan` CLI version this extension build targets for download-on-demand.
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
- *  (aligned with tan-cli's `[workspace.package] version`). */
-export const SUPPORTED_CLI_VERSION = "0.3.0";
+ *  (aligned with tan-cli's `[workspace.package] version`). v0.3.1 is the
+ *  release that carries native (non-WSL-only) Windows bootstrap. */
+export const SUPPORTED_CLI_VERSION = "0.3.1";
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
@@ -308,4 +309,72 @@ export function releaseAssetForTarget(
 /** The on-disk binary filename for a platform. */
 export function binaryName(platform: NodeJS.Platform): string {
   return platform === "win32" ? "tan.exe" : "tan";
+}
+
+/**
+ * Verdict from a `tan bootstrap --no-pip --no-west --format json` pre-flight
+ * call: whether `src/bootstrap.ts` must refuse to spawn the real bootstrap
+ * terminal on this host, and the reason to show the user.
+ *
+ * tan resolves each core's runtime from the SoM topology in the SDK metadata
+ * (`som.sku` -> `<sdkRoot>/metadata/e1m_modules/<sku>.yaml` `topology:`) —
+ * `board.yaml` alone does not carry that (a per-core `os:` there is only an
+ * OVERRIDE, mostly used as `os: "off"`), so re-deriving this verdict from a
+ * parsed `board.yaml` here would miss every real Yocto-only project. This
+ * reads tan's own answer instead of re-guessing it (`crates/tan-core/src/
+ * bootstrap/runtime.rs`'s `yocto_gate`, single-sourced in tan-cli).
+ *
+ * `--no-pip --no-west` makes the call side-effect-free while running the
+ * IDENTICAL gate a real `tan bootstrap` invocation would hit: tan-cli's
+ * `bootstrap/mod.rs` never creates the venv when both flags are set, and the
+ * gate itself runs (and can return before) any prerequisite check.
+ *
+ * Two DISTINCT refusal shapes, both from real tan-cli releases:
+ *
+ * - `bootstrap.yocto-host` at severity `error` (current tan, `>= v0.3.1`,
+ *   `YoctoGate::Refuse`, exit 2): every core in the project targets Yocto,
+ *   which is Linux-only. tan's own message already explains this and is used
+ *   verbatim. The SAME code at severity `warning` (`YoctoGate::Warn`, `ok:
+ *   true`, exit 0) is a MIXED board — it can still bootstrap its non-Yocto
+ *   core(s) here, so that shape must NOT be treated as a refusal.
+ * - `bootstrap.windows-unsupported` at severity `error` (an OLD tan, `v0.3.0`
+ *   and earlier — see tan-cli's now-retired `commands/bootstrap.rs`): that
+ *   release refuses ALL bootstrapping on native Windows, full stop, because
+ *   it still shells the SDK's POSIX `bootstrap.sh`. Anyone pinned to that old
+ *   binary via `alpSdk.cliPath` needs this branch forever, not just until
+ *   they upgrade — so this is a permanent compatibility case, not
+ *   transitional scaffolding. tan's own message there doesn't mention
+ *   updating tan, so a clearer message is used here instead.
+ *
+ * A `null` envelope (the pre-flight call itself failed/couldn't resolve/
+ * wasn't JSON) is never a refusal either — never block a working setup on a
+ * failed probe.
+ */
+export function bootstrapHostVerdict(
+  envelope: AlpEnvelope | null,
+): { refuse: false } | { refuse: true; message: string } {
+  const issues = envelope?.issues ?? [];
+
+  const tooOld = issues.find(
+    (issue) =>
+      issue.code === "bootstrap.windows-unsupported" &&
+      issue.severity === "error",
+  );
+  if (tooOld) {
+    return {
+      refuse: true,
+      message:
+        "This tan CLI is too old to bootstrap on Windows. Update tan " +
+        "(native Windows bootstrap shipped in tan-cli v0.3.1), or reopen " +
+        "this project in WSL to bootstrap there now.",
+    };
+  }
+
+  const yoctoOnly = issues.find(
+    (issue) =>
+      issue.code === "bootstrap.yocto-host" && issue.severity === "error",
+  );
+  return yoctoOnly
+    ? { refuse: true, message: yoctoOnly.message }
+    : { refuse: false };
 }
