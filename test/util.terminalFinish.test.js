@@ -141,8 +141,23 @@ function makeFakeVscode() {
   // stand-in), since util.ts's WeakMap-based generation tracking is keyed off
   // object identity.
   const executed = [];
+  // Toasts raised via the #332 finish verdict, so a test can assert the
+  // glanceable outcome survived the port onto Tasks: `info` on a 0 exit,
+  // `error` on a defined non-zero, and NOTHING for an undefined code (a task
+  // that ended without its process ever starting -- we have no verdict).
+  const toasts = [];
   const fake = {
-    window: { createOutputChannel: () => ({ appendLine() {}, show() {} }) },
+    window: {
+      createOutputChannel: () => ({ appendLine() {}, show() {} }),
+      showInformationMessage: (message) => {
+        toasts.push({ kind: "info", message });
+        return Promise.resolve(undefined);
+      },
+      showErrorMessage: (message) => {
+        toasts.push({ kind: "error", message });
+        return Promise.resolve(undefined);
+      },
+    },
     tasks: {
       executeTask: (task) => {
         const execution = {
@@ -188,6 +203,7 @@ function makeFakeVscode() {
     onDidEndTask,
     terminated,
     executed,
+    toasts,
   };
 }
 
@@ -213,8 +229,14 @@ function loadUtil(fake) {
 }
 
 test("runInTerminal: process-end then task-end fires terminalFinished exactly once", async () => {
-  const { fake, onDidStartTask, onDidEndTaskProcess, onDidEndTask, executed } =
-    makeFakeVscode();
+  const {
+    fake,
+    onDidStartTask,
+    onDidEndTaskProcess,
+    onDidEndTask,
+    executed,
+    toasts,
+  } = makeFakeVscode();
   const util = loadUtil(fake);
   const fires = [];
   util.onDidFinishTerminalCommand((e) => fires.push(e));
@@ -230,10 +252,14 @@ test("runInTerminal: process-end then task-end fires terminalFinished exactly on
 
   assert.deepEqual(fires, [{ name: "west build", code: 0 }]);
   assert.equal(util.isRunInTerminalActive("west build"), false);
+  // #332's glanceable verdict must survive the port onto Tasks: exactly one
+  // info toast for a 0 exit, and not a second one from the backstop event.
+  assert.deepEqual(toasts, [{ kind: "info", message: "west build finished" }]);
 });
 
 test("runInTerminal: task-end alone (no process ever started) fires terminalFinished exactly once", async () => {
-  const { fake, onDidStartTask, onDidEndTask, executed } = makeFakeVscode();
+  const { fake, onDidStartTask, onDidEndTask, executed, toasts } =
+    makeFakeVscode();
   const util = loadUtil(fake);
   const fires = [];
   util.onDidFinishTerminalCommand((e) => fires.push(e));
@@ -248,6 +274,10 @@ test("runInTerminal: task-end alone (no process ever started) fires terminalFini
 
   assert.deepEqual(fires, [{ name: "Install tan", code: undefined }]);
   assert.equal(util.isRunInTerminalActive("Install tan"), false);
+  // An undefined code carries no verdict (the task ended without its process
+  // ever starting), so #332's silence rule holds -- claiming success OR
+  // failure here would be a guess.
+  assert.deepEqual(toasts, []);
 });
 
 test("runInTerminal: the reservation is synchronous, so a caller can block a concurrent same-named run (#146)", () => {

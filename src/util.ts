@@ -116,6 +116,23 @@ function ensureTaskTracking(): void {
     active.delete(name);
     log(`[terminal] "${name}" exited (code=${code ?? "unknown"})`);
     terminalFinished.fire({ name, code });
+    // Glanceable verdict (#332). Its original premise -- "the terminal dies
+    // when its process exits, so the outcome scrolls away" -- no longer holds
+    // now that these run as Tasks whose terminal stays open, but the toast is
+    // still the only signal a user gets without watching the panel or opening
+    // the channel. A 0 exit shows an info toast; a defined non-zero shows an
+    // error toast + "Show Output".
+    //
+    // An undefined code stays SILENT, and the reason changed with the port:
+    // it used to mean "the user closed the terminal mid-run", and now means
+    // the task ended without its process ever starting (the onDidEndTask
+    // backstop) -- i.e. we have no verdict to report. Claiming either outcome
+    // there would be a guess, so #332's silence rule is kept for a new reason.
+    if (code === 0) {
+      void vscode.window.showInformationMessage(`${name} finished`);
+    } else if (code !== undefined) {
+      void reportError(`${name} failed (exit ${code})`);
+    }
   };
 
   // The real "did it actually start" signal (see RUN_START_TIMEOUT_MS):
