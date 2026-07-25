@@ -32,7 +32,10 @@ import {
   executeWestPlan,
   nativeSimOverlayExists,
 } from "./west/vscodeAdapter";
-import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
+import {
+  parseSystemManifest,
+  zephyrCoreIds,
+} from "@alp-sdk/core/systemManifest/service";
 import { log } from "./util";
 
 function westCwd(): string | undefined {
@@ -146,55 +149,74 @@ const RENODE_CORE_CLI_VERSION = "0.3.2";
 
 /** The Zephyr `core_id`s of the post-build manifest under `cwd`, in manifest
  *  order. Empty pre-build, on a parse failure, or for an all-Yocto project —
- *  every one of which means "don't prompt, let the CLI speak". */
+ *  every one of which means "don't prompt, let the CLI speak".
+ *
+ *  Only the `fs` read lives here; the selection is `zephyrCoreIds` in
+ *  `@alp-sdk/core`. Reading and parsing this file had grown three hand-rolled
+ *  copies, which CLAUDE.md's "no cross-slice copy-paste of domain rules"
+ *  forbids — and a non-exported function doing its own IO in a surface file
+ *  cannot be tested at all. */
 function zephyrCoresOf(cwd: string): string[] {
   const manifestPath = path.join(cwd, "build", "system-manifest.yaml");
   if (!fs.existsSync(manifestPath)) return [];
   try {
-    const manifest = parseSystemManifest(fs.readFileSync(manifestPath, "utf8"));
-    return manifest.slices
-      .filter((slice) => slice.os === "zephyr")
-      .map((slice) => slice.core_id);
+    return zephyrCoreIds(
+      parseSystemManifest(fs.readFileSync(manifestPath, "utf8")),
+    );
   } catch {
     return [];
   }
 }
 
 /** Which core the Renode smoke should boot: `null` = pass no `--core` (the CLI
- *  picks the project's only Zephyr slice), a string = the user's choice,
- *  `undefined` = the user dismissed the picker, so run nothing.
+ *  picks the project's only Zephyr slice, or refuses with its own message), a
+ *  string = the user's choice, `undefined` = the user dismissed the picker.
  *
- *  The smoke boots ONE Zephyr slice, so a multicore project (an E1M-AEN801's
- *  `m55_hp` + `m55_he`) used to be refused outright. Asking here turns that
- *  dead end into a choice. Only asked when there really is a choice: with 0 or
- *  1 Zephyr slices no flag is sent, so the CLI's own message stays the single
- *  source of truth for every not-buildable case. */
+ *  The manifest is read FIRST and the CLI version probed only if a picker could
+ *  actually appear: `probeTanVersion` spawns `tan --version` with a 3 s timeout,
+ *  which on a single-slice project is pure cost on every Renode click, for a
+ *  question whose answer cannot change the outcome. */
 async function pickRenodeCore(
   context: vscode.ExtensionContext,
   cwd: string | undefined,
 ): Promise<string | null | undefined> {
+  const cores = cwd ? zephyrCoresOf(cwd) : [];
+  if (cores.length < 2) return null;
+
   // `tan renode --core` only exists from RENODE_CORE_CLI_VERSION on. Sending it
   // to an older binary turns an explanatory refusal ("system-manifest.yaml has
   // 2 zephyr slices … the Renode smoke boots a single-Zephyr-slice system")
-  // into clap's `unexpected argument '--core'` — a strictly worse message. When
-  // the version can't be read at all we also stay quiet: an unprompted no-op
-  // beats a QuickPick whose answer the CLI would reject.
+  // into clap's `unexpected argument '--core'` — strictly worse.
   const version = await probeTanVersion(context);
-  if (!version || isCliBehind(version, RENODE_CORE_CLI_VERSION)) {
-    if (version) {
-      log(
-        `[renode] tan ${version} predates --core (${RENODE_CORE_CLI_VERSION}); not offering the core picker`,
-      );
-    }
+  if (!version) {
+    // Either unreadable, or the managed binary has not been downloaded yet
+    // (probeTanVersion never fetches). Staying silent is the safe fallback —
+    // multi-slice just gets the CLI's own refusal — but it is invisible
+    // without this line, so a first-ever Renode run on a multicore project
+    // does not look like the picker is broken.
+    log(
+      "[renode] tan version not readable yet (not downloaded?); not offering the core picker",
+    );
     return null;
   }
-  const cores = cwd ? zephyrCoresOf(cwd) : [];
-  if (cores.length < 2) return null;
+  if (isCliBehind(version, RENODE_CORE_CLI_VERSION)) {
+    log(
+      `[renode] tan ${version} predates --core (${RENODE_CORE_CLI_VERSION}); not offering the core picker`,
+    );
+    return null;
+  }
+
   const picked = await vscode.window.showQuickPick(cores, {
     title: "Renode: which core to boot?",
     placeHolder: "The Renode smoke boots one Zephyr slice at a time",
   });
-  return picked ?? undefined;
+  if (!picked) {
+    // Fires AFTER the user engaged with a prompt, so a completely silent
+    // no-op reads as a broken button.
+    log("[renode] core picker dismissed — nothing run");
+    return undefined;
+  }
+  return picked;
 }
 
 async function alpRenode(context: vscode.ExtensionContext): Promise<void> {

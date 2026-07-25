@@ -17,7 +17,7 @@ import {
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
  *  (aligned with tan-cli's `[workspace.package] version`). v0.3.1 is the
  *  release that carries native (non-WSL-only) Windows bootstrap. */
-export const SUPPORTED_CLI_VERSION = "0.3.1";
+export const SUPPORTED_CLI_VERSION = "0.3.2";
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
@@ -135,15 +135,32 @@ export function isCliBehind(
   supported: string = SUPPORTED_CLI_VERSION,
 ): boolean {
   if (!installed) return false;
-  const a = installed.split(".").map(Number);
-  const b = supported.split(".").map(Number);
+  // Split the pre-release suffix off first. `"0.3.2-rc1".split(".")` gives
+  // `[0, 3, NaN]`, and both `NaN < 2` and `NaN > 2` are false, so an rc of the
+  // very version being required used to fall through as "not behind" — and
+  // then get handed a flag it does not have.
+  const parse = (
+    version: string,
+  ): { numbers: number[]; preRelease: boolean } => {
+    const [core, ...rest] = version.split("-");
+    return {
+      numbers: core.split(".").map(Number),
+      preRelease: rest.length > 0,
+    };
+  };
+  const a = parse(installed);
+  const b = parse(supported);
   for (let i = 0; i < 3; i++) {
-    const ai = a[i] ?? 0;
-    const bi = b[i] ?? 0;
+    const ai = a.numbers[i] ?? 0;
+    const bi = b.numbers[i] ?? 0;
+    if (Number.isNaN(ai) || Number.isNaN(bi)) return false; // unparseable: never claim behind
     if (ai < bi) return true;
     if (ai > bi) return false;
   }
-  return false;
+  // Same numbers: a pre-release precedes its own release (0.3.2-rc1 < 0.3.2),
+  // so it IS behind — which is the whole point, since the rc may predate the
+  // feature the pin was raised for.
+  return a.preRelease && !b.preRelease;
 }
 
 /**
