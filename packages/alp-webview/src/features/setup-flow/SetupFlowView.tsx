@@ -41,7 +41,7 @@ function EnvStep({ state }: { state: AlpIdeState }) {
           <StatusChip state={pythonAvailable ? "ready" : "not-installed"} />
         </div>
         <div className={styles.checkRow}>
-          <span className={styles.checkLabel}>west CLI</span>
+          <span className={styles.checkLabel}>Build tools</span>
           <StatusChip state={westAvailable ? "ready" : "not-installed"} />
         </div>
       </div>
@@ -61,8 +61,8 @@ function EnvStep({ state }: { state: AlpIdeState }) {
         </div>
       )}
       <p className={styles.stepDesc}>
-        Bootstrap installs Python, west, and other host dependencies required to
-        build Alp SDK firmware.
+        Bootstrap installs Python, the Zephyr build tools, and other host
+        dependencies required to build Alp SDK firmware.
       </p>
     </>
   );
@@ -74,10 +74,10 @@ function WorkspaceStep({ state }: { state: AlpIdeState }) {
 
   return (
     <>
-      <p className={styles.stepHeading}>West workspace status</p>
+      <p className={styles.stepHeading}>Workspace status</p>
       <div className={styles.checkList}>
         <div className={styles.checkRow}>
-          <span className={styles.checkLabel}>West workspace initialized</span>
+          <span className={styles.checkLabel}>Workspace initialized</span>
           <StatusChip state={westInitialized ? "ready" : "setup-required"} />
         </div>
         <div className={styles.checkRow}>
@@ -108,10 +108,9 @@ function WorkspaceStep({ state }: { state: AlpIdeState }) {
         )}
       </div>
       <p className={styles.stepDesc}>
-        Bootstrap sets up the shared Zephyr <code>west</code> workspace (the{" "}
-        <code>.west</code> directory + modules) the SDK builds against — it
-        lives outside your project. Open a folder when you want to edit a
-        specific Alp project.
+        Bootstrap sets up the shared Zephyr workspace (the <code>.west</code>{" "}
+        directory + modules) the SDK builds against — it lives outside your
+        project. Open a folder when you want to edit a specific Alp project.
       </p>
     </>
   );

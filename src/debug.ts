@@ -34,6 +34,7 @@ import {
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
+import { samePath } from "@alp-sdk/core/paths";
 import { ensureNativeSimOverlay } from "./west";
 import { log, reportError, showOutput } from "./util";
 
@@ -260,8 +261,12 @@ async function configureDebugProfile(): Promise<void> {
 
 /** Debug-adapter extension required per server. cortex-debug drives the on-chip
  *  servers (J-Link/OpenOCD/pyOCD); the Yocto remote path uses cppdbg (cpptools).
- *  These ship in the extension pack, but a user can disable one — offer to
- *  (re)install rather than let the session fail with "unknown debug type". */
+ *  cortex-debug is an `extensionDependency`, so it cannot be absent — only
+ *  DISABLED, which `vscode.extensions.getExtension` reports the same way.
+ *  cpptools ships in the extension pack and can genuinely be uninstalled.
+ *  Either way, prompt rather than let the session fail with "unknown debug
+ *  type". (The prompt's Install action is a no-op on a merely disabled
+ *  extension — tracked separately.) */
 function requiredDebugExtension(configName: string): {
   id: string;
   label: string;
@@ -328,8 +333,10 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
     if (choice !== "Start Anyway") return;
   }
 
-  const folder = vscode.workspace.workspaceFolders?.find(
-    (candidate) => candidate.uri.fsPath === result.workspaceRoot,
+  // `result.workspaceRoot` is toPosix'd by the project service while
+  // `uri.fsPath` stays native, so this must not be a raw `===` (#303).
+  const folder = vscode.workspace.workspaceFolders?.find((candidate) =>
+    samePath(candidate.uri.fsPath, result.workspaceRoot),
   );
   const started = await vscode.debug.startDebugging(folder, result.configName);
   if (!started) {

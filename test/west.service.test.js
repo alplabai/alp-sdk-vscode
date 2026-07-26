@@ -25,7 +25,7 @@ test("createWestBuildPlan builds the expected west command", () => {
   });
 
   assert.deepEqual(plan, {
-    terminalName: "alp · west build",
+    terminalName: "Alp · Build",
     args: [
       "west",
       "build",
@@ -46,7 +46,7 @@ test("createWestFlashPlan preserves cwd and uses an empty env without sdkRoot", 
   const plan = createWestFlashPlan(createWestContext({ sdkRoot: null }));
 
   assert.deepEqual(plan, {
-    terminalName: "alp · west flash",
+    terminalName: "Alp · Flash",
     args: ["west", "flash"],
     westCwd: "/workspace/app",
     env: {},

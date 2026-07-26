@@ -37,6 +37,18 @@
   background: var(--vscode-button-hoverBackground);
 }
 
+/* Accent — saturated "selected/active" fill (brighter than primary's muted
+   button-background), for toggles / segmented controls. */
+.btn[data-appearance="accent"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.btn[data-appearance="accent"]:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
 /* Secondary */
 .btn[data-appearance="secondary"] {
   background: var(--surface-btn-secondary);

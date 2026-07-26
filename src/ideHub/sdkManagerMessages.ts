@@ -16,9 +16,14 @@ import { installSdkRelease } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { sameUserPath } from "@alp-sdk/core/paths";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
-import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
+import {
+  clearActiveSdk,
+  setActiveSdk,
+  warnIfWestManifestDangling,
+} from "../sdk/activeSdk";
 import { writeAlpSetting } from "../sdk/settingsWrite";
 import { log as logChannel, reportError } from "../util";
 import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
@@ -96,12 +101,26 @@ export function createSdkMessageHandler(
     // would become an unhandled rejection and skip the refresh).
     const cfg = vscode.workspace.getConfiguration("alpSdk");
     const inspected = cfg.inspect<string>("path");
+    // `sameUserPath`, not `===` (#361): these settings are HAND-TYPED, and
+    // `path.resolve` normalises separators without folding case or dropping a
+    // trailing slash. A setting of `c:\...0.13.0\` against a `target` of
+    // `C:\...0.13.0` left the pointer naming an SDK that no longer exists —
+    // the same dangling-pointer failure as #349, reached from the other side.
     const needWorkspace = Boolean(
       inspected?.workspaceValue &&
-      path.resolve(inspected.workspaceValue) === target,
+      sameUserPath(
+        path.resolve(inspected.workspaceValue),
+        target,
+        process.platform,
+      ),
     );
     const needGlobal = Boolean(
-      inspected?.globalValue && path.resolve(inspected.globalValue) === target,
+      inspected?.globalValue &&
+      sameUserPath(
+        path.resolve(inspected.globalValue),
+        target,
+        process.platform,
+      ),
     );
 
     let pointerCleared = true;
@@ -136,6 +155,12 @@ export function createSdkMessageHandler(
     }
     await vscode.commands.executeCommand("alp.views.refresh");
     await refresh();
+
+    // #349: deleting a version the west workspace's `.west/config` still names
+    // is exactly how the reported breakage is created. This is the earliest
+    // possible signal — `target` is gone, but `dirname(target)` is still the
+    // topdir whose manifest pointer now dangles.
+    warnIfWestManifestDangling(target);
   }
 
   /** Deactivate — clear the active SDK without deleting anything. */
@@ -180,6 +205,10 @@ export function createSdkMessageHandler(
         `Alp: SDK ${version} is already installed — activate it from the Local tab.`,
       );
       await refresh();
+      // Same #349 signal as the install below: this branch is the likelier one
+      // to hit it, since re-pressing Install is what a user does when the
+      // workspace is already misbehaving.
+      warnIfWestManifestDangling(path.join(cacheRoot, version));
       return;
     }
 
@@ -237,7 +266,27 @@ export function createSdkMessageHandler(
               }
             },
           );
-          sendProgress(`SDK ${version} installed successfully.`, true, true);
+          // #349: installing a version does NOT repair a `.west/config` whose
+          // `[manifest] path` still names a removed one — west reads that file
+          // directly and independently of the active-SDK pointer, so the
+          // workspace stays broken and a plain "installed successfully" reads
+          // as "nothing left to do". The switch and uninstall paths already
+          // give this signal; Install is the button the original report used.
+          //
+          // Unlike `setActiveSdk`, the done/success message is still sent: the
+          // webview's install panel resolves its progress state on it, and
+          // suppressing it would leave the spinner running. The wording carries
+          // the caveat instead.
+          const dangling = warnIfWestManifestDangling(
+            path.join(cacheRoot, version),
+          );
+          sendProgress(
+            dangling
+              ? `SDK ${version} installed, but the west workspace still points at a removed SDK — run Bootstrap to reconcile it.`
+              : `SDK ${version} installed successfully.`,
+            true,
+            true,
+          );
           await refresh();
         } catch (err) {
           sendProgress(`Install failed: ${String(err)}`, true, false);

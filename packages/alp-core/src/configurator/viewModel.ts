@@ -40,6 +40,7 @@ export interface CorePanel {
   libraries: string[];
   iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
   inferenceArenaKib?: number;
+  hwConsole?: boolean;
 }
 
 export interface ChipChoice {
@@ -132,6 +133,7 @@ export function buildConfiguratorViewModel(
         tls: Boolean(iot.tls),
       },
       inferenceArenaKib: core?.inference?.default_arena_kib,
+      hwConsole: som?.topology?.find((t) => t.id === id)?.hwConsole,
     };
   });
 

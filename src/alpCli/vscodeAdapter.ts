@@ -34,6 +34,7 @@ import {
   isNativeTanVersionOutput,
   parseTanVersion,
   releaseAssetForTarget,
+  shouldFetchManagedCli,
 } from "./service";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log, reportError, runInTerminal, showOutput } from "../util";
@@ -76,6 +77,13 @@ export function resetResolvedBinary(): void {
   resolved = undefined;
   versionChecked = false;
 }
+
+/** globalState key holding the SUPPORTED_CLI_VERSION for which stale-cache
+ *  self-heal already downloaded the pin and the binary STILL read behind (a
+ *  mis-published release, or a pin bumped ahead of the published binary).
+ *  Persisted so a futile re-download + toast doesn't repeat on every future
+ *  activation; a pin change re-arms the attempt. */
+const HEAL_GAVE_UP_KEY = "alp.tanSelfHealGaveUpPin";
 
 /** Best-effort human-readable size of a just-downloaded file, for the transfer
  *  log. Returns "unknown size" when the file can't be stat'd. */
@@ -165,22 +173,16 @@ export async function probeTanVersion(
   // the version is read from).
   const input = resolutionInputFromDeps(deps);
   if (decideBinarySource(input) === "download") return null;
-  try {
-    const bin = await resolveAlpBinary(deps);
-    const { stdout } = await execFileAsyncCli(bin.command, ["--version"], {
-      timeout: 3000,
-    });
-    return parseTanVersion(stdout);
-  } catch {
-    return null;
-  }
+  return readResolvedCliVersion(deps);
 }
 
 /**
  * Ensure the managed `tan` binary is present up front (called on activation) so
  * a fresh install feels "installed together" instead of stalling on the first
- * command. Only fetches when nothing else resolves — a download would happen on
- * first use anyway — and surfaces it with a one-time progress notification.
+ * command. Fetches when nothing else resolves (a download would happen on first
+ * use anyway), or self-heals a managed *cached* copy that's fallen behind the
+ * pinned SUPPORTED_CLI_VERSION; surfaced with a one-time progress notification.
+ * User/build-owned sources are never auto-replaced (see shouldFetchManagedCli).
  * Never throws: a failure here is logged and the normal per-command resolution
  * ladder still runs (and can retry the download) later.
  */
@@ -192,11 +194,28 @@ export async function ensureTanCliProvisioned(
 
   warnIfPreferGlobalCliHasNoPath(deps.preferGlobalCli, input.onPath);
 
+  const source = decideBinarySource(input);
   // A binary already resolves (cliPath / bundled / local build / cached / PATH)
-  // — nothing to fetch. With `preferGlobalCli` on and a PATH `tan` present,
-  // this correctly resolves to `path` rather than `download`, so activation
-  // does not fetch a shadow managed copy the user didn't ask for.
-  if (decideBinarySource(input) !== "download") {
+  // — nothing to fetch, EXCEPT a managed *cached* copy behind the pin, which is
+  // the extension's own to self-heal (see shouldFetchManagedCli). Only probe the
+  // cached binary's version when it can change the decision. With
+  // `preferGlobalCli` on and a PATH `tan` present, source is `path`, so
+  // activation does not fetch a shadow managed copy the user didn't ask for.
+  const cachedVersion =
+    source === "cached" ? await readResolvedCliVersion(deps) : null;
+  if (!shouldFetchManagedCli(source, cachedVersion)) {
+    return;
+  }
+  // Reached the fetch: a `download` source is a fresh provision; a `cached`
+  // source here means the managed copy is behind the pin — an update.
+  const updatingStaleCache = source === "cached";
+  // Don't re-attempt a self-heal we already proved futile for this pin (the
+  // fetched pin's binary still read behind — a mis-published release). Bounds
+  // the download + toast to once per pin across activations; a pin bump re-arms.
+  if (
+    updatingStaleCache &&
+    context.globalState.get<string>(HEAL_GAVE_UP_KEY) === SUPPORTED_CLI_VERSION
+  ) {
     return;
   }
   // No prebuilt binary for this host: skip silently (a command will surface the
@@ -208,7 +227,9 @@ export async function ensureTanCliProvisioned(
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: "Downloading the tan CLI…",
+        title: updatingStaleCache
+          ? `Updating the tan CLI to ${SUPPORTED_CLI_VERSION}…`
+          : "Downloading the tan CLI…",
       },
       async () => {
         const asset = releaseAssetForTarget(deps.platform, deps.arch);
@@ -218,23 +239,58 @@ export async function ensureTanCliProvisioned(
           `[cli] tan CLI downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
         );
         resetResolvedBinary();
+        if (updatingStaleCache) {
+          // Verify the freshly-fetched pin actually cleared the skew. If the
+          // downloaded binary still reads behind, the published release is
+          // mis-tagged (or the pin outran it) — record it so we stop retrying
+          // this pin every activation. A correct release clears the flag.
+          const healed = await readResolvedCliVersion(deps);
+          if (isCliBehind(healed)) {
+            log(
+              `[cli] tan self-heal fetched ${SUPPORTED_CLI_VERSION} but binary still reports ${healed ?? "unknown"} — giving up until the pin changes`,
+            );
+            await context.globalState.update(
+              HEAL_GAVE_UP_KEY,
+              SUPPORTED_CLI_VERSION,
+            );
+          } else {
+            await context.globalState.update(HEAL_GAVE_UP_KEY, undefined);
+          }
+        }
       },
     );
   } catch (error) {
-    // Provisioning only runs (and only reaches here) on a fresh install with no
-    // resolvable binary AND a failed download — not on every activation — so a
-    // failure toast is a real, non-naggy signal (previously log-only = silent).
+    // This only runs on a failed download — either a fresh install with no
+    // resolvable binary, or a stale-cache self-update. Not on every activation,
+    // so a failure toast is a real, non-naggy signal (previously log-only). On
+    // an update failure the existing (older) cached binary still works, so the
+    // wording differs: don't imply commands are broken.
     const detail = error instanceof Error ? error.message : String(error);
     log(`[cli] tan CLI provisioning failed: ${detail}`);
     const SHOW = "Show Output";
-    void vscode.window
-      .showErrorMessage(
-        `Alp: couldn't provision the tan CLI — ${detail}. Build and validate commands need it; set "alpSdk.cliPath" to a local build, or retry when online.`,
-        SHOW,
-      )
-      .then((pick) => {
-        if (pick === SHOW) showOutput();
-      });
+    const message = updatingStaleCache
+      ? `Alp: couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION} — ${detail}. The installed version still works; retry when online.`
+      : `Alp: couldn't provision the tan CLI — ${detail}. Build and validate commands need it; set "alpSdk.cliPath" to a local build, or retry when online.`;
+    void vscode.window.showErrorMessage(message, SHOW).then((pick) => {
+      if (pick === SHOW) showOutput();
+    });
+  }
+}
+
+/** Resolve the tan binary and read its parsed `--version`, or null on any
+ *  spawn/parse hiccup. Does NOT guard against a `download` source — callers that
+ *  must never fetch (e.g. probeTanVersion) check decideBinarySource first. */
+async function readResolvedCliVersion(
+  deps: ResolveDeps,
+): Promise<string | null> {
+  try {
+    const bin = await resolveAlpBinary(deps);
+    const { stdout } = await execFileAsyncCli(bin.command, ["--version"], {
+      timeout: 3000,
+    });
+    return parseTanVersion(stdout);
+  } catch {
+    return null;
   }
 }
 
@@ -585,13 +641,24 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
  * Run `tan <args...> --format json`, returning the classified outcome. Surface
  * code decides how to present `outcome` (toast/diagnostics). Throws only when
  * the binary cannot be resolved at all (caller offers an install action).
+ *
+ * `source` carries how the run binary was resolved (`ResolvedBinary.source`)
+ * so a caller that wants that for diagnostics (e.g. `bootstrap.ts`'s win32
+ * pre-flight log) doesn't need a second, redundant `resolveAlpBinaryForContext`
+ * call — resolution is memoized per window anyway, but the second call was
+ * still a needless extra async round trip and try/catch just to read a field
+ * this function already has in hand.
  */
 export async function runAlpCommand(
   context: vscode.ExtensionContext,
   args: string[],
   cwd?: string,
   options?: { signal?: AbortSignal; timeoutMs?: number },
-): Promise<{ outcome: CliOutcome; raw: SpawnResult }> {
+): Promise<{
+  outcome: CliOutcome;
+  raw: SpawnResult;
+  source: BinarySource | "unresolved";
+}> {
   let binary: ResolvedBinary;
   try {
     binary = await resolveAlpBinaryForContext(context);
@@ -615,6 +682,7 @@ export async function runAlpCommand(
         stderr: "",
         error: error instanceof Error ? error : new Error(message),
       },
+      source: "unresolved",
     };
   }
   const finalArgs = withSdkRoot(args);
@@ -646,7 +714,7 @@ export async function runAlpCommand(
       log(`[cli]   stderr: ${clip(raw.stderr)}`);
     }
   }
-  return result;
+  return { ...result, source: binary.source };
 }
 
 /**

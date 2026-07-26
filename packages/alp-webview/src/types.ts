@@ -20,6 +20,8 @@ export interface LocalSdkEntry {
   issues: string[];
   /** True when Alp installed this SDK (under ~/.alp/sdk) and may remove it. */
   removable?: boolean;
+  /** Decided host-side (#361) — do NOT re-derive with `path === activePath`. */
+  active?: boolean;
 }
 
 export interface SdkRelease {
@@ -203,6 +205,8 @@ export interface Diagnostics {
   last_error?: boolean;
   log_level?: LogLevel;
   modules?: Record<string, LogLevelOrOff>;
+  console?: "auto" | "alp" | "uart" | "ram" | "linux" | "none";
+  sim_console?: boolean;
 }
 
 /** An AI model to compile + package into .alpmodel (board.schema.json `models`). */
@@ -263,6 +267,7 @@ export interface CorePanel {
   libraries: string[];
   iot: { wifi: boolean; mqtt: boolean; ble: boolean; tls: boolean };
   inferenceArenaKib?: number;
+  hwConsole?: boolean;
 }
 export interface ChipChoice {
   chipId: string;
@@ -367,6 +372,7 @@ export interface ExplorerTopologyCore {
   machine?: string;
   board?: string;
   toolchain?: string;
+  hwConsole?: boolean;
 }
 export interface ExplorerCore {
   id: string;
@@ -659,6 +665,44 @@ export interface SystemManifestDataMessage {
   error?: string;
 }
 
+// --- `alp-size/1` (mirrors @alp-sdk/core/systemManifest/models) -------------
+// `tan size` reads build/system-manifest.yaml, measures each slice's ELF and
+// resolves the SoM memory budget. Every number is nullable: tan reports null
+// rather than guessing when a slice is unbuilt, unmeasurable, or has no
+// resolvable budget. Render null as "unknown", never as 0.
+export interface SizeRegion {
+  used: number | null;
+  total: number | null;
+  pct: number | null;
+}
+export type SliceSizeStatus =
+  | "ok"
+  | "warn"
+  | "over"
+  | "not-built"
+  | "no-budget"
+  | "n/a";
+export interface SliceSize {
+  core_id: string;
+  os: string;
+  status: SliceSizeStatus;
+  flash: SizeRegion;
+  ram: SizeRegion;
+  source?: string | null;
+  budget_note?: string;
+  notes?: string[];
+}
+export interface SizeReport {
+  schema: string;
+  slices: SliceSize[];
+  summary: { over_budget: string[]; unknown_budget: string[] };
+}
+export interface SliceSizesDataMessage {
+  type: "sliceSizesData";
+  report: SizeReport | null;
+  error?: string;
+}
+
 export interface ProjectLocationPickedMessage {
   type: "projectLocationPicked";
   path: string;
@@ -687,7 +731,8 @@ export type ExtToWebviewMessage =
   | ModelAbResultMessage
   | ZooDataMessage
   | ZooAddStartedMessage
-  | ZooAddResultMessage;
+  | ZooAddResultMessage
+  | SliceSizesDataMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -761,6 +806,9 @@ export interface CreateNewProjectMessage {
   sdkPath?: string;
   /** Parent directory chosen in the wizard; omitted = prompt with a dialog. */
   destination?: string;
+  /** Open the created project in the CURRENT window (replace the workspace) vs a
+   *  new window. Omitted = true (the wizard checkbox defaults to on). */
+  openInCurrentWindow?: boolean;
 }
 export interface PickProjectLocationMessage {
   type: "pickProjectLocation";

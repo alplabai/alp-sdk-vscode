@@ -94,7 +94,7 @@ export class OverviewPanel {
         if (s.focused && this.panel.visible) void this.refresh();
       }),
       // Refresh on the real completion signal: a CTA that runs in a terminal
-      // (bootstrap, a west build/flash) closes it when done. See util.ts.
+      // (bootstrap, a west build/flash) refreshes when its process exits. See util.ts.
       onDidFinishTerminalCommand(() => void this.refresh()),
     );
   }
@@ -138,8 +138,8 @@ export class OverviewPanel {
       case "runCommand":
         runWebviewCommand(msg.command);
         // A CTA that changes status runs in a terminal; the standing
-        // onDidFinishTerminalCommand subscription refreshes when it closes.
-        // Only stamp the bootstrap time here so that post-close refresh reads it.
+        // onDidFinishTerminalCommand subscription refreshes when its process exits.
+        // Only stamp the bootstrap time here so that post-exit refresh reads it.
         if (isBootstrapCommand(msg.command)) {
           void this.context.globalState.update(
             "alp.lastBootstrapAt",

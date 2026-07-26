@@ -95,7 +95,7 @@ export function createStatusBar(stateMgr: StateManager): vscode.Disposable {
   flash.text = "$(zap) Flash";
   // Orchestrated flash (tan flash — board.yaml validation + per-slice dispatch),
   // matching the Build button's pipeline. The legacy plain `west flash`
-  // (alp.westFlash, "Alp: West flash") stays in the Command Palette as the
+  // (alp.westFlash, "Alp: Flash (single image)") stays in the Command Palette as the
   // advanced escape hatch.
   flash.tooltip =
     "Alp: build all slices and flash the device (alp.westAlpFlash)";

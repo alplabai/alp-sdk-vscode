@@ -21,6 +21,11 @@
   );
   --text-link: var(--vscode-textLink-foreground);
   --text-link-active: var(--vscode-textLink-activeForeground);
+  /* Accent — a saturated "selected/active" fill for toggles/segmented controls.
+   * focusBorder reads far brighter than button-background in dark themes, so a
+   * selected accent button is unmistakable vs a secondary one. */
+  --accent: var(--vscode-focusBorder);
+  --accent-fg: var(--vscode-button-foreground);
   /* Concrete monospace stack — deliberately NOT var(--vscode-editor-font-family, …).
    * That VS Code var resolves to an EMPTY value in some webview hosts, which makes
    * the nested var() empty and collapses inline `code` to the serif UA default

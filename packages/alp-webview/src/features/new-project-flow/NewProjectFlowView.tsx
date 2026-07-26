@@ -308,6 +308,8 @@ interface ConfirmStepProps {
   destination: string;
   templates: ProjectTemplate[];
   modules: E1mModule[];
+  openInThisWindow: boolean;
+  onToggleOpenInThisWindow: (v: boolean) => void;
 }
 
 function ConfirmStep({
@@ -318,6 +320,8 @@ function ConfirmStep({
   destination,
   templates,
   modules,
+  openInThisWindow,
+  onToggleOpenInThisWindow,
 }: ConfirmStepProps) {
   const tpl = templates.find((t) => t.id === templateId);
   const mod = modules.find((m) => m.id === moduleId);
@@ -364,6 +368,25 @@ function ConfirmStep({
           </div>
         ))}
       </Card>
+      <p className={styles.groupLabel}>When created</p>
+      <div
+        className={styles.filterChips}
+        role="group"
+        aria-label="Where to open the new project"
+      >
+        <Button
+          appearance={openInThisWindow ? "accent" : "secondary"}
+          onClick={() => onToggleOpenInThisWindow(true)}
+        >
+          {openInThisWindow ? "✓ " : ""}Open in this window
+        </Button>
+        <Button
+          appearance={!openInThisWindow ? "accent" : "secondary"}
+          onClick={() => onToggleOpenInThisWindow(false)}
+        >
+          {!openInThisWindow ? "✓ " : ""}Open in new window
+        </Button>
+      </div>
       <p className={styles.stepDesc}>
         Click <strong>Create Project</strong> to scaffold{" "}
         <code>{projectName || "…"}</code>{" "}
@@ -450,6 +473,8 @@ export function NewProjectFlowView() {
   const [projectName, setProjectName] = useState("");
   const [nameError, setNameError] = useState("");
   const [destination, setDestination] = useState("");
+  // Open the created project in the current window (replace) vs a new window.
+  const [openInThisWindow, setOpenInThisWindow] = useState(true);
 
   // Receive the parent folder chosen via the native picker (or the default).
   useEffect(() => {
@@ -528,6 +553,7 @@ export function NewProjectFlowView() {
         projectName,
         sdkPath: selectedSdk || undefined,
         destination: destination || undefined,
+        openInCurrentWindow: openInThisWindow,
       });
     } else {
       goNext();
@@ -596,6 +622,8 @@ export function NewProjectFlowView() {
                   destination={destination}
                   templates={templates}
                   modules={modules}
+                  openInThisWindow={openInThisWindow}
+                  onToggleOpenInThisWindow={setOpenInThisWindow}
                 />
               )}
             </>
