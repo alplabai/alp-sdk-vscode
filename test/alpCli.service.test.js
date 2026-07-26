@@ -648,3 +648,15 @@ test("isNativeTanVersionOutput accepts native clap output, rejects everything el
     );
   }
 });
+
+test("isCliBehind treats a pre-release as behind its own release", () => {
+  // `"0.3.2-rc1".split(".")` is [0, 3, NaN]; NaN comparisons are all false, so
+  // this used to read as "not behind" and hand an rc a flag it may not have.
+  assert.strictEqual(isCliBehind("0.3.2-rc1", "0.3.2"), true);
+  assert.strictEqual(isCliBehind("0.3.2", "0.3.2"), false);
+  assert.strictEqual(isCliBehind("0.3.3-rc1", "0.3.2"), false);
+  assert.strictEqual(isCliBehind("0.3.1", "0.3.2"), true);
+  // Unparseable never claims "behind" — a wrong downgrade prompt is worse than
+  // a missed one.
+  assert.strictEqual(isCliBehind("garbage", "0.3.2"), false);
+});
