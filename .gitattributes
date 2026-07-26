@@ -1,3 +1,15 @@
+# Every text file is stored LF. Without this, a Windows tool that rewrites a
+# whole file writes CRLF, `.prettierrc`'s `endOfLine: "auto"` then PRESERVES
+# that CRLF on every later format run, and the file is committed with new line
+# endings — so a ten-line change lands as a thousand-line diff nobody can
+# review. `test/webview/ui-render.tsx` had already drifted this way and is
+# normalised in the same commit as this rule; it was the only text file in the
+# repo stored with CRLF.
+#
+# `text=auto` leaves binaries alone (git detects them), and the more specific
+# rules below still win — a later matching pattern overrides an earlier one.
+* text=auto eol=lf
+
 # Vendored JSON schemas are byte-pinned by tests
 # (test/*.schema.vendored.test.js). Force LF on every platform so the sha256
 # gate matches on a Windows checkout (where core.autocrlf=true would otherwise
