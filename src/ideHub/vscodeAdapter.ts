@@ -4,7 +4,7 @@ import {
   checkSdkReadiness,
   listLocalSdkEntries,
 } from "@alp-sdk/core/sdk/service";
-import { toPosix } from "@alp-sdk/core/paths";
+import { sameUserPath, toPosix } from "@alp-sdk/core/paths";
 import * as cp from "child_process";
 import { promisify } from "util";
 import * as fs from "fs";
@@ -186,6 +186,12 @@ export async function queryAlpIdeState(
       .resolve(entry.path)
       .startsWith(cacheRootResolved + path.sep),
     path: toPosix(entry.path),
+    // The single place "is this the active SDK" is decided (#361). `activePath`
+    // may originate in a hand-typed `alpSdk.path`, so a raw `===` misses on a
+    // case or trailing-separator difference and the badge never appears.
+    active:
+      projectContext.sdkRoot !== null &&
+      sameUserPath(entry.path, projectContext.sdkRoot, process.platform),
   }));
 
   const pyCmd = projectContext.pythonBinary;

@@ -201,8 +201,8 @@ async function selectSdk(): Promise<void> {
   const items: SdkPickItem[] = entries.map((entry) => {
     const label = entry.version ?? pathTail(entry.path);
     return {
-      label: entry.path === active ? `$(check) ${label}` : label,
-      description: entry.path === active ? "active" : "",
+      label: entry.active ? `$(check) ${label}` : label,
+      description: entry.active ? "active" : "",
       detail: entry.path,
       sdkPath: entry.path,
     };

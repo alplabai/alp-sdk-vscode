@@ -16,6 +16,7 @@ import { installSdkRelease } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { sameUserPath } from "@alp-sdk/core/paths";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
@@ -100,12 +101,26 @@ export function createSdkMessageHandler(
     // would become an unhandled rejection and skip the refresh).
     const cfg = vscode.workspace.getConfiguration("alpSdk");
     const inspected = cfg.inspect<string>("path");
+    // `sameUserPath`, not `===` (#361): these settings are HAND-TYPED, and
+    // `path.resolve` normalises separators without folding case or dropping a
+    // trailing slash. A setting of `c:\...0.13.0\` against a `target` of
+    // `C:\...0.13.0` left the pointer naming an SDK that no longer exists —
+    // the same dangling-pointer failure as #349, reached from the other side.
     const needWorkspace = Boolean(
       inspected?.workspaceValue &&
-      path.resolve(inspected.workspaceValue) === target,
+      sameUserPath(
+        path.resolve(inspected.workspaceValue),
+        target,
+        process.platform,
+      ),
     );
     const needGlobal = Boolean(
-      inspected?.globalValue && path.resolve(inspected.globalValue) === target,
+      inspected?.globalValue &&
+      sameUserPath(
+        path.resolve(inspected.globalValue),
+        target,
+        process.platform,
+      ),
     );
 
     let pointerCleared = true;

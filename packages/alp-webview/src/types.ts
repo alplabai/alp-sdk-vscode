@@ -20,6 +20,8 @@ export interface LocalSdkEntry {
   issues: string[];
   /** True when Alp installed this SDK (under ~/.alp/sdk) and may remove it. */
   removable?: boolean;
+  /** Decided host-side (#361) — do NOT re-derive with `path === activePath`. */
+  active?: boolean;
 }
 
 export interface SdkRelease {

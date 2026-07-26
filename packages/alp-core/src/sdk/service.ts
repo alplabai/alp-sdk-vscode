@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from "path";
+import { canonicalPath } from "../paths";
 import {
   MkdirP,
   PathExists,
@@ -146,20 +147,28 @@ export async function installSdkRelease(
  * @param pathExists  - injectable filesystem existence check
  * @param readFile    - injectable file reader; null means skip VERSION check
  * @param readdir     - injectable directory listing
+ * @param platform    - declared host platform; only affects the de-dup key
  */
 export function listLocalSdkEntries(
   searchRoots: string[],
   pathExists: PathExists,
   readFile: ReadFile | null,
   readdir: Readdir,
+  platform: NodeJS.Platform = process.platform,
 ): LocalSdkEntry[] {
   const seen = new Set<string>();
   const entries: LocalSdkEntry[] = [];
 
   function consider(candidate: string): void {
     const normalized = path.resolve(candidate);
-    if (seen.has(normalized)) return;
-    seen.add(normalized);
+    // De-dup on the CANONICAL form, not the resolved one: `path.resolve` does
+    // not fold case, so a user-typed `alpSdk.path` seeded as a search root
+    // would list the same SDK a second time whenever its casing differed from
+    // what discovery produced (#361). The stored `path` stays `normalized` —
+    // the canonical form is a key, never a value the user sees.
+    const key = canonicalPath(normalized, platform);
+    if (seen.has(key)) return;
+    seen.add(key);
 
     if (pathExists(path.join(normalized, LOADER_SCRIPT_RELATIVE))) {
       const report = checkSdkReadiness(

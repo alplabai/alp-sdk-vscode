@@ -44,6 +44,12 @@ export interface LocalSdkEntry {
   /** True when Alp installed this SDK (under ~/.alp/sdk) and may remove it.
    *  External SDKs (added via Browse / sibling checkouts) are not removable. */
   removable?: boolean;
+  /** True when this entry IS the active SDK. Decided host-side (#361): the
+   *  active path can come from a hand-typed `alpSdk.path` whose casing or
+   *  trailing separator differs from what discovery produced, so matching it
+   *  is a path-semantics rule that belongs with the other path rules — not
+   *  re-derived with `===` by each of the four surfaces that render a badge. */
+  active?: boolean;
 }
 
 // ---------------------------------------------------------------------------
