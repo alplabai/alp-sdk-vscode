@@ -7,6 +7,11 @@ import {
   ToolchainFixId,
 } from "@alp-sdk/core/toolchain/bootstrapPlan";
 import {
+  WestManifestStatus,
+  westManifestLogLine,
+  westManifestWarning,
+} from "@alp-sdk/core/sdk/service";
+import {
   analyzeToolchain,
   DoctorCheck,
   DoctorCheckStatus,
@@ -14,6 +19,8 @@ import {
 } from "@alp-sdk/core/toolchain/doctor";
 import * as vscode from "vscode";
 import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
+import { danglingWestManifest } from "./environment/vscodeAdapter";
+import { collectProjectContext } from "./project/vscodeAdapter";
 import { showToolchainDoctorPanel } from "./toolchain/doctorPanel";
 import { collectToolchainInputs } from "./toolchain/vscodeAdapter";
 import { log } from "./util";
@@ -185,20 +192,39 @@ function isCliDoctorData(value: unknown): value is CliDoctorData {
 
 /** Map the CLI doctor report onto the webview's `ToolchainReport` shape so the
  *  existing panel renders it unchanged. The CLI drives fixes itself
- *  (`doctor --build --fix`), so no per-check `fixId` is attached. */
-function mapCliDoctorToReport(data: CliDoctorData): ToolchainReport {
-  const checks: DoctorCheck[] = data.checks.map((c) => ({
-    id: c.name,
-    label: CLI_LABELS[c.name] ?? c.name,
-    status: CLI_STATUS[c.status] ?? "warn",
-    detail: c.fix ? `${c.detail} — ${c.fix}` : c.detail,
-    required: c.status !== "warn",
-  }));
-  return {
-    checks,
-    ok: data.summary.fail === 0,
-    missingRequired: data.summary.fail,
-  };
+ *  (`doctor --build --fix`), so no per-check `fixId` is attached.
+ *
+ *  When `dangling` is set, the CLI's `workspace` check is downgraded to
+ *  missing: the CLI only asks whether a workspace RESOLVES, and one whose
+ *  `.west/config` manifest names a directory that is gone resolves fine while
+ *  being unbuildable (#349). Leaving it green would have the panel report
+ *  "toolchain OK" at the same moment the toast says the workspace is broken. */
+function mapCliDoctorToReport(
+  data: CliDoctorData,
+  dangling?: WestManifestStatus | null,
+): ToolchainReport {
+  const checks: DoctorCheck[] = data.checks.map((c) => {
+    const overridden = dangling && c.name === "workspace";
+    return {
+      id: c.name,
+      label: CLI_LABELS[c.name] ?? c.name,
+      status: overridden ? "missing" : (CLI_STATUS[c.status] ?? "warn"),
+      detail: overridden
+        ? `${c.detail} — but its manifest points at "${dangling.manifestPath}", which no longer exists (${dangling.configPath}).`
+        : c.fix
+          ? `${c.detail} — ${c.fix}`
+          : c.detail,
+      required: overridden ? true : c.status !== "warn",
+    };
+  });
+  // A dangling manifest that the CLI did NOT already count as a failure adds one.
+  const extraFail =
+    dangling &&
+    !data.checks.some((c) => c.name === "workspace" && c.status === "fail")
+      ? 1
+      : 0;
+  const missingRequired = data.summary.fail + extraFail;
+  return { checks, ok: missingRequired === 0, missingRequired };
 }
 
 /**
@@ -214,53 +240,91 @@ export async function buildToolchainReportViaCli(
   report: ToolchainReport;
   fromCli: boolean;
   canFix: boolean;
+  dangling?: WestManifestStatus | null;
   reason?: string;
 }> {
+  // #349: "workspace: fail" only covers a workspace that is ABSENT. A present
+  // one whose `.west/config` manifest names a directory that is gone is just as
+  // unbuildable, and an ambient `$ZEPHYR_BASE` pointing at any unrelated Zephyr
+  // checkout is enough to keep that check passing — which is why the offer
+  // never appeared for the workspace that was actually broken. Probed on both
+  // branches: the local filesystem answers this whether or not the CLI ran.
+  const dangling = danglingWestManifest(collectProjectContext().sdkRoot);
+
   const { outcome } = await runAlpCommand(context, ["doctor", "--build"]);
   const data = outcome.envelope?.data;
   if (outcome.envelope && isCliDoctorData(data)) {
-    const canFix = data.checks.some(
-      (c) => c.name === "workspace" && c.status === "fail",
-    );
-    return { report: mapCliDoctorToReport(data), fromCli: true, canFix };
+    const canFix =
+      data.checks.some((c) => c.name === "workspace" && c.status === "fail") ||
+      dangling !== null;
+    return {
+      report: mapCliDoctorToReport(data, dangling),
+      fromCli: true,
+      canFix,
+      dangling,
+    };
   }
   const reason = `CLI build gate did not run (${outcome.message}); showing local in-process checks only.`;
   log(`[toolchain] ${reason}`);
   return {
     report: buildToolchainReport(),
     fromCli: false,
-    canFix: false,
+    canFix: dangling !== null,
+    dangling,
     reason,
   };
 }
 
-/** Offer to bootstrap a missing Zephyr workspace via `alp doctor --build --fix`
- *  (streams live in a terminal). After it finishes the user re-runs the panel's
- *  "Re-run" to see the green report. */
+/** Offer to bootstrap a missing — or manifest-broken — Zephyr workspace via
+ *  `alp doctor --build --fix` (streams live in a terminal). After it finishes
+ *  the user re-runs the panel's "Re-run" to see the green report. */
 async function offerBootstrapFix(
   context: vscode.ExtensionContext,
+  dangling?: WestManifestStatus | null,
 ): Promise<void> {
+  // A workspace that EXISTS but points its manifest at a directory that is gone
+  // needs a different sentence than one that was never bootstrapped — "no Zephyr
+  // workspace yet" is simply false there, and the user would dismiss it.
+  if (dangling) {
+    log(`[toolchain] ${westManifestLogLine(dangling)}`, "warn");
+  }
+
   const choice = await vscode.window.showWarningMessage(
-    "No Zephyr workspace yet — a build can't start until one is bootstrapped.",
+    dangling
+      ? (westManifestWarning(dangling) as string)
+      : "No Zephyr workspace yet — a build can't start until one is bootstrapped.",
     "Bootstrap now",
   );
-  if (choice === "Bootstrap now") {
-    await runAlpInTerminal(context, ["doctor", "--build", "--fix"], {
-      name: "Alp Bootstrap",
-    });
+  if (choice !== "Bootstrap now") return;
+
+  // `tan doctor --build --fix` bootstraps ONLY when its own `workspace` check
+  // fails (tan-cli v0.3.1 `doctor.rs`). A workspace that exists but dangles
+  // passes that check, so `--fix` would print a green report and repair
+  // nothing. Run `tan bootstrap` directly for that case — it reconciles the
+  // manifest pointer (tan-cli #31), unless it reuses a `$ZEPHYR_BASE`
+  // workspace, which the logged line above spells out.
+  if (dangling) {
+    await vscode.commands.executeCommand("alp.installDependencies");
+    return;
   }
+  await runAlpInTerminal(context, ["doctor", "--build", "--fix"], {
+    name: "Alp Bootstrap",
+  });
 }
 
 function registerDoctorCommand(
   context: vscode.ExtensionContext,
 ): vscode.Disposable {
   return vscode.commands.registerCommand("alp.toolchainDoctor", async () => {
-    const { report, fromCli, canFix } =
+    const { report, canFix, dangling } =
       await buildToolchainReportViaCli(context);
     reportToOutput(report);
     showToolchainDoctorPanel(context);
-    if (fromCli && canFix) {
-      void offerBootstrapFix(context);
+    // Not gated on `fromCli` any more: a dangling manifest is detected locally,
+    // and its fix (`tan bootstrap`) is worth offering even when the doctor
+    // envelope was unusable.
+    if (canFix) {
+      void offerBootstrapFix(context, dangling);
     }
   });
 }

@@ -18,7 +18,11 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
-import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
+import {
+  clearActiveSdk,
+  setActiveSdk,
+  warnIfWestManifestDangling,
+} from "../sdk/activeSdk";
 import { writeAlpSetting } from "../sdk/settingsWrite";
 import { log as logChannel, reportError } from "../util";
 import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
@@ -136,6 +140,12 @@ export function createSdkMessageHandler(
     }
     await vscode.commands.executeCommand("alp.views.refresh");
     await refresh();
+
+    // #349: deleting a version the west workspace's `.west/config` still names
+    // is exactly how the reported breakage is created. This is the earliest
+    // possible signal — `target` is gone, but `dirname(target)` is still the
+    // topdir whose manifest pointer now dangles.
+    warnIfWestManifestDangling(target);
   }
 
   /** Deactivate — clear the active SDK without deleting anything. */
