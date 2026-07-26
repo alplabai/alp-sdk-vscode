@@ -391,6 +391,29 @@
   flex: 0 0 auto;
 }
 
+/* Why a slice ended the way it did, plus what it produced and where its log
+ * is (#331). `flex-basis: 100%` inside the wrapping `.manifestSlice` row puts
+ * it on its own line without restructuring the row into a column. */
+.manifestDetail {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  padding-left: var(--space-3);
+}
+
+.manifestReason {
+  color: var(--status-warn);
+}
+
+.manifestDetailPath {
+  font-family: var(--font-family-mono, monospace);
+  overflow-wrap: anywhere;
+}
+
 .sliceBtn {
   font-size: var(--font-size-xs);
   font-weight: 600;
