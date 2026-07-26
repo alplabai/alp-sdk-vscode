@@ -254,6 +254,176 @@ export function switchActiveSdk(
 }
 
 // ---------------------------------------------------------------------------
+// West workspace manifest pointer (read-only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Classification of a west workspace's `<topdir>/.west/config` manifest pointer.
+ *
+ * - `no-workspace` — no `.west/` here at all; nothing to say (the existing
+ *   bootstrap call-to-actions already own that state).
+ * - `ok`           — `[manifest] path` resolves to a directory that exists.
+ * - `dangling`     — it resolves to a directory that does NOT exist. west reads
+ *   this file directly and independently of the active-SDK pointer, so the
+ *   workspace is broken until something rewrites it.
+ * - `unparsable`   — absent/unreadable/ambiguous config. Never acted on.
+ */
+export type WestManifestState =
+  | "no-workspace"
+  | "ok"
+  | "dangling"
+  | "unparsable";
+
+export interface WestManifestStatus {
+  /** The west topdir inspected. */
+  topdir: string;
+  /** `<topdir>/.west/config`. */
+  configPath: string;
+  /** Raw `[manifest] path` value, trimmed; null when there wasn't exactly one. */
+  manifestPath: string | null;
+  /** `manifestPath` resolved against `topdir`; null when `manifestPath` is. */
+  resolvedPath: string | null;
+  state: WestManifestState;
+}
+
+/**
+ * Read `<topdir>/.west/config` and classify its `[manifest] path` pointer.
+ *
+ * READ-ONLY BY DESIGN. The repair belongs to `tan` — `tan bootstrap` has
+ * reconciled this pointer since tan-cli #31, and `tan sdk switch` since #74 —
+ * and duplicating a *mutating* guard here would give one file two writers with
+ * separately-evolving policies. This function exists only so the extension can
+ * stop being silent about a workspace it invalidated.
+ *
+ * Parsing follows Python `configparser` (what west itself uses), not a generic
+ * INI reader: option keys are case-insensitive but SECTION names are not
+ * (`optionxform` lowercases only keys — `[Manifest]` raises `NoSectionError`
+ * for `manifest`, so west never reads it and neither may we), `=` and `:` both
+ * delimit, and inline comments are NOT stripped (configparser ships with them
+ * disabled, so `path = v0.13.0 # old` really is the directory name west looks
+ * for). A config with duplicate `[manifest]` sections or a duplicate `path` key
+ * is `unparsable` rather than guessed at — strict `configparser` rejects it too.
+ *
+ * @param topdir     - the west topdir (the directory CONTAINING `.west/`)
+ * @param pathExists - injectable filesystem existence check
+ * @param readFile   - injectable file reader
+ * @param p          - path flavour; defaults to the host's (tests force one)
+ */
+export function inspectWestManifest(
+  topdir: string,
+  pathExists: PathExists,
+  readFile: ReadFile,
+  p: typeof path.posix = path,
+): WestManifestStatus {
+  const configPath = p.join(topdir, ".west", "config");
+  const base: Omit<WestManifestStatus, "state"> = {
+    topdir,
+    configPath,
+    manifestPath: null,
+    resolvedPath: null,
+  };
+
+  if (!pathExists(p.join(topdir, ".west"))) {
+    return { ...base, state: "no-workspace" };
+  }
+  if (!pathExists(configPath)) return { ...base, state: "unparsable" };
+
+  let contents: string;
+  try {
+    contents = readFile(configPath);
+  } catch {
+    return { ...base, state: "unparsable" };
+  }
+
+  const manifestPath = readManifestPath(contents);
+  // An empty value must not resolve to the topdir itself and report a false
+  // "ok" — treat it as unparsable, same as a missing key.
+  if (manifestPath === null || manifestPath === "") {
+    return { ...base, state: "unparsable" };
+  }
+
+  // west resolves `manifest.path` against the topdir; `resolve` (never `join`)
+  // is what makes an already-absolute value replace the topdir rather than be
+  // appended to it.
+  const resolvedPath = p.resolve(topdir, manifestPath);
+  return {
+    ...base,
+    manifestPath,
+    resolvedPath,
+    state: pathExists(resolvedPath) ? "ok" : "dangling",
+  };
+}
+
+/**
+ * The `[manifest]` section's `path` value, or null when there is no
+ * `[manifest]` section, no `path` key inside it, or MORE THAN ONE of either —
+ * an ambiguity strict `configparser` rejects outright, so neither should this.
+ */
+function readManifestPath(config: string): string | null {
+  let section = "";
+  let manifestSections = 0;
+  const values: string[] = [];
+
+  for (const line of config.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      continue;
+    }
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      // Case-SENSITIVE: configparser does not transform section names, so
+      // `[Manifest]` is a different section that west will never resolve.
+      section = trimmed.slice(1, -1).trim();
+      if (section === "manifest") manifestSections++;
+      continue;
+    }
+    if (section !== "manifest") continue;
+
+    // configparser accepts both `=` and `:` as the delimiter. The key half can
+    // contain neither, so a Windows value like `C:\sdk` never confuses the split.
+    const match = /^([^=:]+)[=:](.*)$/.exec(trimmed);
+    if (!match) continue;
+    if (match[1].trim().toLowerCase() === "path") values.push(match[2].trim());
+  }
+
+  if (manifestSections !== 1 || values.length !== 1) return null;
+  return values[0];
+}
+
+/**
+ * The user-visible warning for a manifest status, or null when there is nothing
+ * worth interrupting for. Only `dangling` warns: it is the state in which west
+ * silently resolves the wrong workspace (or none).
+ */
+export function westManifestWarning(status: WestManifestStatus): string | null {
+  if (status.state !== "dangling") return null;
+  return (
+    `Alp: the west workspace at ${status.topdir} points its manifest at ` +
+    `"${status.manifestPath}", which no longer exists. Builds and flashes will ` +
+    "use the wrong Zephyr workspace or fail."
+  );
+}
+
+/**
+ * The output-channel line for a manifest status, or null when there is nothing
+ * to record. Carries the manual escape hatch deliberately: no shipped command
+ * is a guaranteed repair. `tan bootstrap` reconciles this pointer only when it
+ * does NOT reuse an existing `$ZEPHYR_BASE` workspace (tan-cli v0.3.1
+ * `bootstrap/mod.rs` gates the reconcile on `!reuse`), and an ambient
+ * `$ZEPHYR_BASE` is exactly what masked this failure when it was reported. The
+ * wording stays action-agnostic so it reads correctly from every caller.
+ */
+export function westManifestLogLine(status: WestManifestStatus): string | null {
+  if (status.state !== "dangling") return null;
+  return (
+    `west manifest dangling: ${status.configPath} [manifest] path = ` +
+    `${status.manifestPath} -> ${status.resolvedPath} (missing). Bootstrap ` +
+    "reconciles it only when it does not reuse an existing $ZEPHYR_BASE " +
+    `workspace; otherwise set that \`path =\` to an SDK version present under ` +
+    `${status.topdir}.`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Readiness check
 // ---------------------------------------------------------------------------
 

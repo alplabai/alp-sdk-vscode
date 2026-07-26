@@ -358,8 +358,12 @@ async function configureDebugProfile(
 
 /** Debug-adapter extension required per server. cortex-debug drives the on-chip
  *  servers (J-Link/OpenOCD/pyOCD); the Yocto remote path uses cppdbg (cpptools).
- *  These ship in the extension pack, but a user can disable one — offer to
- *  (re)install rather than let the session fail with "unknown debug type". */
+ *  cortex-debug is an `extensionDependency`, so it cannot be absent — only
+ *  DISABLED, which `vscode.extensions.getExtension` reports the same way.
+ *  cpptools ships in the extension pack and can genuinely be uninstalled.
+ *  Either way, prompt rather than let the session fail with "unknown debug
+ *  type". (The prompt's Install action is a no-op on a merely disabled
+ *  extension — tracked separately.) */
 function requiredDebugExtension(configName: string): {
   id: string;
   label: string;
