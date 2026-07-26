@@ -537,6 +537,18 @@ async function runChecks() {
   // cannot be found and `startDebugging` aborts with no useful error (#342).
   // Hard-coded here rather than imported so a rename in src/tasks/service.ts
   // fails this check instead of silently moving with it.
+
+  // The provider behind the four `preLaunchTask` labels `tan debug-config`
+  // writes into launch.json must actually be REGISTERED and answering in a real
+  // extension host — the unit test only proves the strings agree with each other
+  // and that package.json contributes the type. What this pins: the extension
+  // activated, `registerTaskProvider("alp", …)` ran, and `fetchTasks` returns a
+  // task per spec whose `${source}: ${name}` is what `preLaunchTask` matches
+  // against. What it does NOT pin: that a build task, once run, succeeds — the
+  // execution is a CustomExecution that only dispatches when the task is
+  // actually started, which needs a real project and toolchain. Labels are
+  // hard-coded rather than imported so a rename in src/tasks/service.ts fails
+  // this check instead of silently moving with it.
   await check(
     "the four alp: preLaunchTask labels resolve as tasks",
     async () => {

@@ -4,29 +4,43 @@
 // launch.json profiles reference (see service.ts for the string contract and
 // PR #342 for why this exists: nothing defined these tasks, so pressing
 // Debug wrote a profile whose preLaunchTask VS Code could never resolve —
-// silent pre-launch abort, no useful error). This file owns the vscode/
-// child-process seam: resolving the `tan` binary, building its argv/cwd the
-// same way the rest of the extension does, and the CustomExecution
-// pseudo-terminal for the one task with no tan equivalent.
+// silent pre-launch abort, no useful error). This file owns the vscode seam:
+// the CustomExecution pseudoterminals backing all four tasks. The three
+// build tasks do NOT spawn `tan` themselves — they delegate to
+// `runAlpInTerminal` (alpCli/vscodeAdapter.ts), the exact call the Build
+// Plan panel's build button uses, under the identical run name "alp build".
+// That keeps binary resolution, `--sdk-root` augmentation, and the
+// `runInTerminal` #146/#341 concurrency reservation in the ONE place that
+// already owns them, instead of a second copy here — and, just as
+// importantly, means `provideTasks` below does no I/O at all: resolution
+// only happens inside a pseudoterminal's `open()`, which VS Code calls only
+// when a task actually runs, never while merely populating the Run Task
+// picker. A `provideTasks` that awaits a network-bound CLI download (the
+// earlier shape of this file) can get the whole provider dropped by VS Code
+// on a slow host, silently vanishing all four labels -- with the
+// `onTaskType:alp` activation event, merely opening that picker was enough
+// to trigger it. "deploy and start gdbserver" has no tan equivalent (see
+// service.ts) and stays a simple one-line message pty.
 
 import * as vscode from "vscode";
 
-import { ResolvedBinary } from "../alpCli/adapterCore";
-import {
-  resolveAlpBinaryForContext,
-  withSdkRoot,
-} from "../alpCli/vscodeAdapter";
+import { runAlpInTerminal } from "../alpCli/vscodeAdapter";
+import { collectProjectContext } from "../project/vscodeAdapter";
+import { isRunInTerminalActive, onDidFinishTerminalCommand } from "../util";
 import { TASK_SOURCE, TASK_SPECS, TaskSpec } from "./service";
 
 const TASK_TYPE = "alp";
 
+/** The `runInTerminal` reservation name the build tasks share with the Build
+ *  Plan panel's build button (`buildPlanPanel.ts` `handleRunBuild`). Using
+ *  the identical name is what makes the #146/#341 concurrency guard refuse a
+ *  second dispatch in BOTH directions — a preLaunchTask build can't start
+ *  while the button's build is running, and vice versa. */
+const BUILD_RUN_NAME = "alp build";
+
 /** A trivial Pseudoterminal that writes one line then closes with
- *  `exitCode`. Backs both the "deploy and start gdbserver" placeholder (no
- *  tan equivalent exists — see service.ts) and the fallback used when the
- *  `tan` binary itself can't be resolved for a build task, so a resolution
- *  failure fails just that task with a readable reason instead of throwing
- *  out of `provideTasks` (which would silently drop every contributed task,
- *  not just the one that failed to resolve). */
+ *  `exitCode`. Backs the "deploy and start gdbserver" placeholder (no tan
+ *  equivalent exists — see service.ts). */
 class MessagePty implements vscode.Pseudoterminal {
   private readonly writeEmitter = new vscode.EventEmitter<string>();
   // Typed to match Pseudoterminal.onDidClose exactly (Event<number | void>)
@@ -50,6 +64,94 @@ class MessagePty implements vscode.Pseudoterminal {
   }
 }
 
+/**
+ * Pseudoterminal backing the three build tasks. Delegates the actual build
+ * to `runAlpInTerminal` under `BUILD_RUN_NAME` rather than spawning `tan`
+ * itself, so this task's dispatch and the Build Plan panel's build button
+ * share one reservation (see `BUILD_RUN_NAME`). If that name is already
+ * running, this does NOT start a second one — it just waits for the
+ * in-flight run to finish, since a duplicate `tan build`/`ninja` against the
+ * same build dir is exactly what the shared reservation exists to prevent.
+ *
+ * This pty's own output stays a one-line pointer: the real build output
+ * streams into the "alp build" terminal `runAlpInTerminal` opens (or
+ * reuses) — same as the Build button already shows, not a duplicate log.
+ *
+ * Residual behaviour: when a build is already running, this task WAITS for
+ * it rather than failing fast, so a `preLaunchTask` stacked behind an
+ * in-flight manual build blocks the debug session until that build
+ * finishes. The user can cancel by terminating this task from the Tasks UI;
+ * the build it was waiting on (owned by the other dispatch) keeps running
+ * either way.
+ */
+class BuildDelegatePty implements vscode.Pseudoterminal {
+  private readonly writeEmitter = new vscode.EventEmitter<string>();
+  private readonly closeEmitter = new vscode.EventEmitter<number | void>();
+  readonly onDidWrite = this.writeEmitter.event;
+  readonly onDidClose = this.closeEmitter.event;
+  private subscription: vscode.Disposable | undefined;
+  private settled = false;
+
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly cwd: string | undefined,
+  ) {}
+
+  open(): void {
+    const alreadyRunning = isRunInTerminalActive(BUILD_RUN_NAME);
+    const status = alreadyRunning
+      ? "a build is already running -- waiting for it to finish"
+      : "building";
+    this.writeEmitter.fire(
+      `Alp: ${status} (see the "${BUILD_RUN_NAME}" terminal for output)...\r\n`,
+    );
+    // Subscribe before dispatching so a same-tick finish can't be missed.
+    this.subscription = onDidFinishTerminalCommand((event) => {
+      if (event.name !== BUILD_RUN_NAME) return;
+      // An undefined code means the task ended with no verdict (see
+      // util.ts's `finish`) -- that must never read as success to a
+      // `preLaunchTask`, which treats a 0 exit as "go ahead and debug".
+      this.finish(event.code ?? 1);
+    });
+    if (!alreadyRunning) {
+      void runAlpInTerminal(this.context, ["build"], {
+        name: BUILD_RUN_NAME,
+        cwd: this.cwd,
+      }).then(
+        () => this.failIfNothingStarted(),
+        () => this.failIfNothingStarted(),
+      );
+    }
+  }
+
+  /** `runAlpInTerminal` RESOLVES without dispatching anything when the `tan`
+   *  binary cannot be resolved — it reports that itself and returns. Nothing
+   *  is reserved in that case, so no finish event will ever arrive and a
+   *  `preLaunchTask` waiting on one would hang the debug session forever
+   *  behind a terminal that says "building". `runInTerminal` reserves its
+   *  slot synchronously before dispatching, so an active reservation here is
+   *  proof a run really started. */
+  private failIfNothingStarted(): void {
+    if (this.settled || isRunInTerminalActive(BUILD_RUN_NAME)) return;
+    this.writeEmitter.fire(
+      "Alp: the build did not start -- see the Alp SDK output channel.\r\n",
+    );
+    this.finish(1);
+  }
+
+  close(): void {
+    this.subscription?.dispose();
+    this.subscription = undefined;
+  }
+
+  private finish(code: number): void {
+    this.settled = true;
+    this.subscription?.dispose();
+    this.subscription = undefined;
+    this.closeEmitter.fire(code);
+  }
+}
+
 /** "deploy and start gdbserver" has no tan equivalent: the extension has no
  *  deploy story, and the yocto-userspace debug profile ships
  *  `miDebuggerServerAddress: "<host>:<port>"` for the user to fill in by
@@ -63,12 +165,17 @@ const DEPLOY_GDBSERVER_MESSAGE =
   "binary to the target and start gdbserver there by hand, then fill in " +
   '"miDebuggerServerAddress" in launch.json.';
 
+/** Builds the `vscode.Task` for `spec` against `definition`. `resolveTask`
+ *  must reuse the EXACT `TaskDefinition` object VS Code handed it (see its
+ *  doc comment below), so `definition` is a parameter rather than always
+ *  built fresh here. */
 function toVsCodeTask(
+  definition: vscode.TaskDefinition,
   spec: TaskSpec,
-  execution: vscode.ProcessExecution | vscode.CustomExecution,
+  execution: vscode.CustomExecution,
 ): vscode.Task {
   const task = new vscode.Task(
-    { type: TASK_TYPE, task: spec.name },
+    definition,
     vscode.TaskScope.Workspace,
     spec.name,
     TASK_SOURCE,
@@ -89,41 +196,36 @@ function toVsCodeTask(
 
 /**
  * All three "build …" names run the identical `tan build` (it has no
- * per-target selector — see service.ts) via a `ProcessExecution`, spawned
- * directly as an argv array with no shell in between (same shape
- * `runInTerminal` in `util.ts` uses). Binary resolution and the `--sdk-root`
- * augmentation mirror `runAlpInTerminal`/`runAlpCommand` in
- * `alpCli/vscodeAdapter.ts` rather than re-deriving new logic.
+ * per-target selector — see service.ts), delegated to `runAlpInTerminal` via
+ * `BuildDelegatePty` — no binary resolution or workspace lookup happens
+ * here; both are deferred into the pty's `open()`, which only runs once the
+ * task actually starts.
  */
-async function createBuildTask(
+function createBuildTask(
   context: vscode.ExtensionContext,
   spec: TaskSpec,
-): Promise<vscode.Task> {
-  let binary: ResolvedBinary;
-  try {
-    binary = await resolveAlpBinaryForContext(context);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return toVsCodeTask(
-      spec,
-      new vscode.CustomExecution(
-        async () => new MessagePty(`Alp: tan CLI unavailable -- ${message}`, 1),
-      ),
-    );
-  }
-  // Same cwd the existing plain "alp build" command uses (buildPlanPanel.ts
-  // handleRunBuild / west.ts alpBuild): the workspace root, since `tan build`
-  // resolves its own project scope from the cwd.
-  const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const argv = [binary.command, ...withSdkRoot(["build"])];
+  definition: vscode.TaskDefinition,
+): vscode.Task {
   return toVsCodeTask(
+    definition,
     spec,
-    new vscode.ProcessExecution(argv[0], argv.slice(1), { cwd }),
+    new vscode.CustomExecution(async () => {
+      // Single source of truth for the workspace root (docs/ARCHITECTURE_
+      // RULES.md §3) — in a multi-root workspace this picks the folder
+      // holding board.yaml, same as every other Alp command, instead of
+      // blindly taking workspaceFolders[0].
+      const cwd = collectProjectContext().workspaceRoot ?? undefined;
+      return new BuildDelegatePty(context, cwd);
+    }),
   );
 }
 
-function createDeployGdbserverTask(spec: TaskSpec): vscode.Task {
+function createDeployGdbserverTask(
+  spec: TaskSpec,
+  definition: vscode.TaskDefinition,
+): vscode.Task {
   return toVsCodeTask(
+    definition,
     spec,
     new vscode.CustomExecution(
       async () => new MessagePty(DEPLOY_GDBSERVER_MESSAGE, 1),
@@ -131,25 +233,43 @@ function createDeployGdbserverTask(spec: TaskSpec): vscode.Task {
   );
 }
 
+function buildTaskFor(
+  context: vscode.ExtensionContext,
+  spec: TaskSpec,
+  definition: vscode.TaskDefinition,
+): vscode.Task {
+  return spec.kind === "build"
+    ? createBuildTask(context, spec, definition)
+    : createDeployGdbserverTask(spec, definition);
+}
+
 class AlpTaskProvider implements vscode.TaskProvider {
   constructor(private readonly context: vscode.ExtensionContext) {}
 
-  async provideTasks(): Promise<vscode.Task[]> {
-    return Promise.all(
-      TASK_SPECS.map((spec) =>
-        spec.kind === "build"
-          ? createBuildTask(this.context, spec)
-          : Promise.resolve(createDeployGdbserverTask(spec)),
-      ),
+  provideTasks(): vscode.Task[] {
+    // No I/O, no binary resolution here — see the file-header comment. This
+    // must stay cheap and synchronous so a slow/offline host never risks VS
+    // Code dropping the provider before the four labels appear.
+    return TASK_SPECS.map((spec) =>
+      buildTaskFor(this.context, spec, { type: TASK_TYPE, task: spec.name }),
     );
   }
 
-  /** Every task this provider contributes is already fully resolved by
-   *  `provideTasks` above (no lazy `tasks.json`-declared "alp" task exists
-   *  for VS Code to hand back here for completion), so there's nothing to
-   *  resolve. */
-  resolveTask(): vscode.ProviderResult<vscode.Task> {
-    return undefined;
+  /** VS Code calls this for a task declared in the user's `tasks.json`
+   *  (`{"type": "alp", "task": "..."}`, offered by the `taskDefinitions`
+   *  contribution in package.json) rather than one this provider already
+   *  returned from `provideTasks`. Per the `TaskProvider.resolveTask` API
+   *  contract, the returned task must reuse the EXACT `task.definition`
+   *  object handed in here — not a freshly built one — so `definition` is
+   *  threaded through to `toVsCodeTask` unchanged. An unrecognised `task`
+   *  name (typo, or a stale label from a since-renamed spec) resolves to
+   *  undefined rather than guessing. */
+  resolveTask(task: vscode.Task): vscode.ProviderResult<vscode.Task> {
+    const name = (task.definition as { task?: unknown }).task;
+    if (typeof name !== "string") return undefined;
+    const spec = TASK_SPECS.find((candidate) => candidate.name === name);
+    if (!spec) return undefined;
+    return buildTaskFor(this.context, spec, task.definition);
   }
 }
 

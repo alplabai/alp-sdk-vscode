@@ -997,7 +997,7 @@ const TAN_0_3_1_DATA = {
 const TAN_0_3_2_DATA = {
   ...TAN_0_3_1_DATA,
   configuration: {
-    name: "ALP: Zephyr Debug (J-Link)",
+    name: "Alp: Zephyr Debug (J-Link)",
     type: "cortex-debug",
     executable:
       "${workspaceFolder}/build/m55_he-zephyr/build/zephyr/zephyr.elf",
@@ -1040,7 +1040,7 @@ test("launchConfigPlaceholders finds every unresolved value, nested", () => {
   // A board that registers no OpenOCD runner still gets configFiles with a
   // placeholder — inside an ARRAY, which a flat scan would miss.
   const partly = {
-    name: "ALP: Zephyr Debug (OpenOCD)",
+    name: "Alp: Zephyr Debug (OpenOCD)",
     servertype: "openocd",
     serverpath: "/zephyr-sdk-1.0.1/hosttools/usr/bin/openocd",
     configFiles: ["<resolved-openocd-board-cfg>"],

@@ -92,7 +92,7 @@ function clip(text: string, max = 4000): string {
  * task-driven build silently starts using a different SDK than every other
  * command in the window.
  */
-export function withSdkRoot(args: string[]): string[] {
+function withSdkRoot(args: string[]): string[] {
   if (args.includes("--sdk-root")) return args;
   const sdkRoot = collectProjectContext().sdkRoot;
   if (!sdkRoot) {
