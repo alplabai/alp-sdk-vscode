@@ -424,7 +424,7 @@ git commit -m "feat(models): render per-model pre-flight fit badges in the panel
 ## Task 5: e2e — real envelope round-trip through the extension path
 
 **Files:**
-- Test harness (scratch): `C:\Users\Caner\.claude\jobs\86f9cc08\tmp\fit-e2e-harness.js`
+- Test harness: scratch file outside the repo (not committed)
 
 **Interfaces:** none (verification only).
 
