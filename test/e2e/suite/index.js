@@ -335,6 +335,92 @@ async function runChecks() {
     );
   }
 
+  // #303: the debug launch matches a real `WorkspaceFolder` against the
+  // toPosix'd `ProjectContext.workspaceRoot`. The unit tests pin `samePath` and
+  // the resolver in isolation, with an INJECTED platform and fabricated paths —
+  // only a real host proves the two live producers (VS Code's `uri.fsPath` and
+  // the project service) actually agree about the folder that is genuinely
+  // open. On win32 it also asserts the pre-fix `===` really does fail, so this
+  // check cannot quietly pass for the wrong reason.
+  await check(
+    "the debug workspace-folder match resolves in a real host",
+    () => {
+      const { samePath } = require("../../../packages/alp-core/dist/paths.js");
+      const {
+        collectProjectContext,
+      } = require("../../../out/project/vscodeAdapter.js");
+
+      const folders = vscode.workspace.workspaceFolders || [];
+      assert.ok(folders.length > 0, "the e2e host opened no workspace folder");
+      const { workspaceRoot } = collectProjectContext();
+      assert.ok(workspaceRoot, "no workspaceRoot resolved");
+
+      const matched = folders.find((candidate) =>
+        samePath(candidate.uri.fsPath, workspaceRoot),
+      );
+      assert.ok(
+        matched,
+        `no folder matched ${workspaceRoot} among [${folders
+          .map((f) => f.uri.fsPath)
+          .join(", ")}]`,
+      );
+
+      if (process.platform === "win32") {
+        assert.ok(
+          !folders.some((candidate) => candidate.uri.fsPath === workspaceRoot),
+          "expected the pre-fix `===` compare to fail on win32; if it now " +
+            "succeeds, either fsPath or workspaceRoot changed flavour and this " +
+            "check is no longer proving anything",
+        );
+      }
+    },
+  );
+
+  // #349: an SDK install/switch/uninstall can leave `<topdir>/.west/config`'s
+  // `[manifest] path` naming a directory that is gone. west reads that file
+  // directly and independently of every pointer the extension owns, so the
+  // workspace is broken while the IDE looks fine. The unit tests inject a fake
+  // filesystem; this builds the reported state on the REAL one and asserts the
+  // adapter reads it — including the negative, so a detector that fired
+  // unconditionally would fail here.
+  await check(
+    "a dangling .west/config is detected against the real filesystem",
+    () => {
+      const {
+        danglingWestManifest,
+      } = require("../../../out/environment/vscodeAdapter.js");
+
+      const topdir = fs.mkdtempSync(
+        path.join(require("node:os").tmpdir(), "alp-west-"),
+      );
+      try {
+        fs.mkdirSync(path.join(topdir, ".west"), { recursive: true });
+        // Byte-for-byte the config from the #349 report.
+        fs.writeFileSync(
+          path.join(topdir, ".west", "config"),
+          "[manifest]\npath = v0.11.0\nfile = west.yml\n\n[zephyr]\nbase = zephyr\n",
+        );
+        const sdkRoot = path.join(topdir, "v0.13.0");
+        fs.mkdirSync(sdkRoot, { recursive: true });
+
+        const status = danglingWestManifest(sdkRoot);
+        assert.ok(status, "dangling manifest not detected");
+        assert.equal(status.state, "dangling");
+        assert.equal(status.manifestPath, "v0.11.0");
+
+        // Restore what the pointer names: the warning must stop firing.
+        fs.mkdirSync(path.join(topdir, "v0.11.0"), { recursive: true });
+        assert.equal(
+          danglingWestManifest(sdkRoot),
+          null,
+          "still reported dangling after the pointed-at directory was restored",
+        );
+      } finally {
+        fs.rmSync(topdir, { recursive: true, force: true });
+      }
+    },
+  );
+
   // The Alp IDE side panel is a single webview (SidebarHubView / HubViewProvider,
   // registered at activation); the former five native tree views were folded
   // into it.

@@ -190,6 +190,10 @@ export function createSdkMessageHandler(
         `Alp: SDK ${version} is already installed — activate it from the Local tab.`,
       );
       await refresh();
+      // Same #349 signal as the install below: this branch is the likelier one
+      // to hit it, since re-pressing Install is what a user does when the
+      // workspace is already misbehaving.
+      warnIfWestManifestDangling(path.join(cacheRoot, version));
       return;
     }
 
@@ -247,7 +251,27 @@ export function createSdkMessageHandler(
               }
             },
           );
-          sendProgress(`SDK ${version} installed successfully.`, true, true);
+          // #349: installing a version does NOT repair a `.west/config` whose
+          // `[manifest] path` still names a removed one — west reads that file
+          // directly and independently of the active-SDK pointer, so the
+          // workspace stays broken and a plain "installed successfully" reads
+          // as "nothing left to do". The switch and uninstall paths already
+          // give this signal; Install is the button the original report used.
+          //
+          // Unlike `setActiveSdk`, the done/success message is still sent: the
+          // webview's install panel resolves its progress state on it, and
+          // suppressing it would leave the spinner running. The wording carries
+          // the caveat instead.
+          const dangling = warnIfWestManifestDangling(
+            path.join(cacheRoot, version),
+          );
+          sendProgress(
+            dangling
+              ? `SDK ${version} installed, but the west workspace still points at a removed SDK — run Bootstrap to reconcile it.`
+              : `SDK ${version} installed successfully.`,
+            true,
+            true,
+          );
           await refresh();
         } catch (err) {
           sendProgress(`Install failed: ${String(err)}`, true, false);
