@@ -51,6 +51,10 @@ jobs:
       - name: Gate — extensionDependencies resolve on the Marketplace + Open VSX
         run: node scripts/check-extension-deps.mjs
 
+      # Runs after compile: it reads the pin from the built out/alpCli/service.js.
+      - name: Gate — SUPPORTED_CLI_VERSION is a published tan-cli release
+        run: node scripts/check-cli-pin.mjs
+
       - name: Package (.vsix)
         # --no-dependencies: workspace:* protocol is not resolvable by vsce;
         # the extension code is compiled to out/ and does not need bundled

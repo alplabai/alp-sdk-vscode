@@ -36,7 +36,7 @@ import {
   parseSystemManifest,
   zephyrCoreIds,
 } from "@alp-sdk/core/systemManifest/service";
-import { log } from "./util";
+import { BUILD_RUN_NAME, FLASH_RUN_NAME, log } from "./util";
 
 function westCwd(): string | undefined {
   const context = collectWestWorkspaceContext();
@@ -95,7 +95,13 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   // Channel mode (not terminal): a `tan` terminal dies when the process exits,
   // scrolling the build result away; streaming to the "Alp SDK" output channel
   // keeps the full log + verdict. Build is non-interactive, so no TTY is lost.
-  await runAlpStreamed(context, args, { name: "Alp Build", cwd: target.cwd });
+  // BUILD_RUN_NAME, not a literal: the debug `preLaunchTask` build dispatches
+  // under the same name, and only one shared name makes the "already running"
+  // guard refuse the second of two builds over one `build/` directory.
+  await runAlpStreamed(context, args, {
+    name: BUILD_RUN_NAME,
+    cwd: target.cwd,
+  });
 }
 
 // Image/Flash/Clean, like Build, stream to the "Alp SDK" channel instead of a
@@ -127,7 +133,7 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
   );
   if (!target) return;
   await runAlpStreamed(context, ["flash", ...target.appArg], {
-    name: "Alp Flash",
+    name: FLASH_RUN_NAME,
     cwd: target.cwd,
   });
 }
@@ -144,7 +150,14 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
 }
 
 /** First `tan` carrying `renode --core` (tan-cli#63). Below this the flag is a
- *  parse error, not an ignored argument. */
+ *  parse error, not an ignored argument.
+ *
+ *  AHEAD of `SUPPORTED_CLI_VERSION` (0.3.1) on purpose, and with a consequence:
+ *  tan-cli v0.3.2 is not published, so the managed download installs 0.3.1 and
+ *  the picker below stays unreachable for managed installs until it is — see
+ *  #367. A local build or an `alpSdk.cliPath` tan carrying #63 does get it. The
+ *  pin itself cannot be raised to 0.3.2: an unpublished pin 404s the download
+ *  on every activation (see SUPPORTED_CLI_VERSION). */
 const RENODE_CORE_CLI_VERSION = "0.3.2";
 
 /** The Zephyr `core_id`s of the post-build manifest under `cwd`, in manifest
@@ -240,7 +253,11 @@ async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
 // ── legacy plain-west commands (no CLI equivalent yet) ────────────────────────
 
 function westFlash(): void {
-  executeWestPlan(createWestFlashPlan(collectWestWorkspaceContext()));
+  const plan = createWestFlashPlan(collectWestWorkspaceContext());
+  // Run it under the SHARED flash name, not the plan's own "Alp · Flash": this
+  // programs the same board as `tan flash`, and two names are two reservations
+  // — i.e. two programmers writing at once. The plan is rebuilt, not mutated.
+  executeWestPlan({ ...plan, terminalName: FLASH_RUN_NAME });
 }
 
 function westUpdate(): void {

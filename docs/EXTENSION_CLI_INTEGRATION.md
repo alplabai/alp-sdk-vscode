@@ -58,16 +58,36 @@ the `tan` binary as the single implementation and render its output — collapsi
   synchronous, per-keystroke calls that cannot afford a subprocess.
 - **`packages/alp-cli` (TS CLI) is retired** at the Rust cutover (Phase 7).
 
-## 3. Two invocation modes
+## 3. Three invocation modes
 
 | Mode | When | Mechanism |
 |------|------|-----------|
 | **Envelope** | one-shot, data-producing commands | spawn `tan <cmd> --format json`, parse the envelope, map `exitCode`/`issues` to UX |
-| **Terminal** | long-running / interactive / live-output | open a VS Code integrated terminal and run `tan <cmd>` (or the underlying tool) so the user sees progress and can answer prompts (sudo, pip, `west update`) |
+| **Terminal** | long-running **and interactive** | open a VS Code integrated terminal (a Task) and run `tan <cmd>` (or the underlying tool) so the user can answer prompts (sudo, pip, `west update`) |
+| **Channel** | long-running, non-interactive, live-output | `runAlpStreamed` spawns `tan <cmd> --no-color --non-interactive` and streams stdout/stderr into the persistent "Alp SDK" output channel |
+
+Channel mode exists because a terminal dies with its process, taking the verdict
+with it — a failed flash showed only "failed to launch" while the real per-slice
+reason (e.g. "backend zephyr_west_flash needs west on PATH") scrolled away. The
+channel outlives the command. On POSIX the child runs under the user's login
+shell (`$SHELL -lc`, `cd <cwd> && exec …`), so a venv `west` that
+`tan bootstrap` activated is still on PATH; on Windows the binary is spawned
+directly, the extension host already having the login environment.
+
+**One run per name, across both run modes.** Terminal and channel dispatches
+share a single reservation registry (`src/util.ts`: `isRunActive`,
+`reserveStreamedRun`). A second dispatch under a live name is REFUSED with a
+warning, never allowed to terminate the first — killing a flash mid-write can
+leave a board unbootable (#146). Every build dispatch uses `BUILD_RUN_NAME` and
+every flash dispatch `FLASH_RUN_NAME`, whole-project or per-core, `tan` or
+legacy `west`: two names would be two reservations over one build tree, or two
+programmers over one board.
 
 Envelope commands: `validate`, `generate`, `inspect`, `presets`, `explain`,
 `diff`, `trace`, `debug-config --preview`, `support-bundle`, `doctor`,
 `sdk list/current`.
+
+Channel commands: `build`, `image`, `flash`, `clean`, `renode`.
 
 Terminal commands: `bootstrap`, `sdk install` (git clone), and the build/flash
 workflow. The extension **already** runs west builds in a terminal
@@ -210,7 +230,8 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   facts come from `<sdkRoot>/metadata/bootstrap.json`. Native Windows is
   first-class: no `bash`, no pointer, no WSL. This is what closed #316.)*
 - **A2 — `tan build` + `image`/`flash`/`clean`/`renode`. ✅ done.** Five
-  terminal-mode commands that drive the build/image/flash/clean/renode
+  channel-mode commands (terminal-mode when this was written) that drive the
+  build/image/flash/clean/renode
   dispatch themselves (§6a — no `west alp-*` driver involved), run in the west
   cwd, and hide `west`. west-not-found → `tan
   bootstrap` hint. Arg-forwarding unit-tested + stub-west smoke; no golden
@@ -346,12 +367,14 @@ plain `west build` — never through the SDK's `west alp-build` extension
 command. CLI surface:
 
 - `tan build [app] [--core <id>] [--board <b>] [--sequential]` → drives the
-  per-core build in a **terminal** (live, long-running). Sibling commands
-  `tan image` / `tan flash` / `tan clean` / `tan renode` follow the same
-  natively-driven pattern. These already exist as extension commands
-  (`alp.westAlp*`); the extension invokes the CLI for all five.
-- Mode is **terminal**, not envelope (Yocto rebuilds + flashing want live output
-  and device interaction). A short final envelope summary is optional.
+  per-core build with live output. Sibling commands `tan image` / `tan flash` /
+  `tan clean` / `tan renode` follow the same natively-driven pattern. These
+  already exist as extension commands (`alp.westAlp*`); the extension invokes
+  the CLI for all five.
+- Mode is **channel**, not envelope: these want live output, and none of them
+  reads stdin (the extension passes `--non-interactive`), so nothing is lost by
+  giving up the TTY — and the log plus verdict then survive the process, which
+  in a terminal they did not. A short final envelope summary is optional.
 - **Prerequisites are platform-specific and beyond `bootstrap`.** `bootstrap`
   gets west + the Zephyr workspace + Zephyr Python reqs, but **not** the
   compiler toolchains above. So `tan build` runs a build-preflight (in `doctor`,

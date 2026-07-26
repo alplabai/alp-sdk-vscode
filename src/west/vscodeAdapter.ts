@@ -5,9 +5,11 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import {
-  isRunInTerminalActive,
+  isRunActive,
+  isStreamedRunActive,
   revealRunInTerminal,
   runInTerminal,
+  showOutput,
 } from "../util";
 import {
   WestCommandPlan,
@@ -53,18 +55,22 @@ function findWorkspaceVenvWest(
 }
 
 export function executeWestPlan(plan: WestCommandPlan): void {
-  // A previous run under this terminal name is still executing (tracked by
-  // util.ts's Task-execution bookkeeping) -- runInTerminal would terminate it
-  // to start a fresh one, killing a live command mid-run (interrupting a
-  // flash — issue #146). Warn and reveal it instead of interrupting it.
-  if (isRunInTerminalActive(plan.terminalName)) {
+  // A previous run under this name is still executing — a terminal task, or a
+  // streamed channel run (one registry, see util.ts). runInTerminal would
+  // terminate it to start a fresh one, killing a live command mid-run
+  // (interrupting a flash — issue #146). Warn and reveal it instead.
+  if (isRunActive(plan.terminalName)) {
+    const streamed = isStreamedRunActive(plan.terminalName);
+    const reveal = streamed ? "Show Output" : "Show Terminal";
     void vscode.window
       .showWarningMessage(
         `"${plan.terminalName}" is still running — wait for it to finish before starting it again.`,
-        "Show Terminal",
+        reveal,
       )
       .then((choice) => {
-        if (choice === "Show Terminal") revealRunInTerminal(plan.terminalName);
+        if (choice !== reveal) return;
+        if (streamed) showOutput();
+        else revealRunInTerminal(plan.terminalName);
       });
     return;
   }

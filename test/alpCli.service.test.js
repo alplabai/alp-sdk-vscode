@@ -17,6 +17,8 @@ const {
   releaseAssetForTarget,
   binaryName,
   shouldFetchManagedCli,
+  posixShellQuote,
+  posixLoginShellCommand,
   SUPPORTED_CLI_VERSION,
 } = require("../out/alpCli/service.js");
 const { resolutionInputFromDeps } = require("../out/alpCli/adapterCore.js");
@@ -222,6 +224,61 @@ test("isCliAhead compares numeric version tuples (mirror of isCliBehind)", () =>
   assert.equal(isCliAhead("0.2.0", "0.1.14"), true);
   assert.equal(isCliAhead("1.0.0", "0.1.14"), true);
   assert.equal(isCliAhead(null, "0.1.14"), false); // unknown → not ahead
+});
+
+// ── POSIX login-shell command building (channel mode) ────────────────────────
+
+test("posixShellQuote emits a real '\\'' escape, not the template-literal '''", () => {
+  assert.equal(posixShellQuote("/opt/tan"), "'/opt/tan'");
+  assert.equal(posixShellQuote("/Users/a b/proj"), "'/Users/a b/proj'");
+  // The regression: written in a template literal this produced `'''`, and a
+  // path with an apostrophe then broke EVERY streamed run on POSIX with
+  // "unexpected EOF while looking for matching `''".
+  assert.equal(
+    posixShellQuote("/Users/o'connor/proj"),
+    "'/Users/o'\\''connor/proj'",
+  );
+  assert.equal(posixShellQuote("*"), "'*'"); // never re-read as a glob
+  assert.equal(posixShellQuote("$HOME"), "'$HOME'"); // nor as a variable
+});
+
+test(
+  "posixShellQuote survives a real /bin/sh round trip",
+  { skip: process.platform === "win32" },
+  () => {
+    const cp = require("node:child_process");
+    // The only assertion that can prove the escape: hand it to a real shell.
+    const words = [
+      "/Users/o'connor/proj",
+      "a b",
+      "it's a 'test'",
+      "$PATH",
+      "*",
+    ];
+    for (const word of words) {
+      const out = cp.execFileSync(
+        "/bin/sh",
+        ["-c", `printf %s ${posixShellQuote(word)}`],
+        { encoding: "utf8" },
+      );
+      assert.equal(out, word);
+    }
+  },
+);
+
+test("posixLoginShellCommand cd's into cwd and execs the binary", () => {
+  // `cd` because the login shell sources the user's profile FIRST, and a
+  // profile that cd's would otherwise move a `tan build` whose project scope
+  // comes from the cwd. `exec` because the caller's kill() must reach `tan`
+  // itself — killing a wrapper shell leaves the real process orphaned.
+  assert.equal(
+    posixLoginShellCommand("/opt/tan", ["build", "--no-color"], "/w s"),
+    "cd '/w s' && exec '/opt/tan' 'build' '--no-color'",
+  );
+  assert.equal(
+    posixLoginShellCommand("/opt/tan", ["build"]),
+    "exec '/opt/tan' 'build'",
+  );
 });
 
 test("aheadPathFixAction gates the ahead-tan remedy on preferGlobalCli", () => {

@@ -76,7 +76,7 @@ interface RunReservation {
 
 /**
  * Reservations for still-running (or not-yet-confirmed-started) `runInTerminal`
- * runs, keyed by `name`. Backs `isRunInTerminalActive`/`revealRunInTerminal`
+ * runs, keyed by `name`. Backs `isRunActive`/`revealRunInTerminal`
  * (the "already running, don't kill it" guard `west/vscodeAdapter.ts` needs)
  * and lets a same-named re-run terminate the stale one first.
  *
@@ -90,7 +90,7 @@ interface RunReservation {
  * before `executeTask` is even called, keyed by a monotonic `generation`
  * rather than the (not-yet-known) `TaskExecution` object -- and consults this
  * same map itself before dispatching (see `runInTerminal`), so the guard
- * holds even for callers that never check `isRunInTerminalActive` first.
+ * holds even for callers that never check `isRunActive` first.
  */
 const active = new Map<string, RunReservation>();
 /** Maps a known `TaskExecution` (from `onDidStartTask` or the `executeTask`
@@ -157,7 +157,7 @@ function ensureTaskTracking(): void {
   // is CURRENT for `name`, not necessarily the one that dispatched it -- a
   // second runInTerminal() for the same name landing before the first's
   // start confirms could misattribute. Callers that must serialize a name
-  // guard with isRunInTerminalActive() before calling (west/vscodeAdapter.ts
+  // guard with isRunActive() before calling (west/vscodeAdapter.ts
   // already does, for the #146 case this module exists to fix); upgrade path
   // if a second caller needs it: a per-dispatch nonce in the task definition.
   taskTrackingDisposables.push(
@@ -215,10 +215,58 @@ function runNameOf(execution: vscode.TaskExecution): string | undefined {
     : undefined;
 }
 
-/** True when a `runInTerminal` run under `name` is still executing (or its
- *  start is still pending confirmation). */
-export function isRunInTerminalActive(name: string): boolean {
-  return active.has(name);
+/** Names held by a STREAMED run (`runAlpStreamed`, output-channel mode).
+ *
+ *  Deliberately in this module, beside `active`, so both dispatch paths answer
+ *  ONE question: "is anything running under this name?". Two registries was
+ *  not an academic split — `runInTerminal` refuses a same-named re-run (#146:
+ *  "two concurrent bootstraps, or a flash killed mid-write") while the channel
+ *  path could neither see that reservation nor be seen by it, so a debug
+ *  `preLaunchTask` build and a Build click raced the same `build/` directory
+ *  with neither guard firing. */
+const streamedActive = new Set<string>();
+
+/** The one run name every `tan build` dispatch uses — the Build button and the
+ *  Build Plan panel today, the debug `preLaunchTask` once #342 lands (it still
+ *  declares its own `"alp build"` literal, which must adopt this on rebase). A
+ *  single name is what makes the #146/#341 guard mean anything: two names in
+ *  one registry are two reservations, and two `tan build` processes over one
+ *  `build/` directory. */
+export const BUILD_RUN_NAME = "Alp Build";
+
+/** The one run name every FLASH dispatch uses, `tan flash` and the legacy
+ *  `west flash` alike, whole-project and per-core. Sharper than the build case:
+ *  two builds corrupt a directory, two flashes drive one programmer into one
+ *  board mid-write. The per-core flash deliberately does NOT get its own name —
+ *  a second core is a second write to the same target (the core it flashes is
+ *  in the logged command line). */
+export const FLASH_RUN_NAME = "Alp Flash";
+
+/** True when a run under `name` is still executing (or its start is still
+ *  pending confirmation) — a terminal task OR a streamed channel run. */
+export function isRunActive(name: string): boolean {
+  return active.has(name) || streamedActive.has(name);
+}
+
+/** True when the live run under `name` is a streamed one — its output is in
+ *  the "Alp SDK" channel and there is no terminal to reveal. */
+export function isStreamedRunActive(name: string): boolean {
+  return streamedActive.has(name);
+}
+
+/** Claim `name` for a streamed run. False when a run — terminal or streamed —
+ *  already holds it, in which case the caller must REFUSE the dispatch and
+ *  never terminate the live one: a streamed run can be a flash, and killing
+ *  that mid-write can leave a board unbootable (#146). Pair every true with a
+ *  `releaseStreamedRun` on every exit path. */
+export function reserveStreamedRun(name: string): boolean {
+  if (isRunActive(name)) return false;
+  streamedActive.add(name);
+  return true;
+}
+
+export function releaseStreamedRun(name: string): void {
+  streamedActive.delete(name);
 }
 
 /**
@@ -262,7 +310,7 @@ export function revealRunInTerminal(name: string): void {
  * (issue #146) or racing a second dispatch into starting a concurrent
  * `tan bootstrap` against the same venv. This guard lives HERE, not only in
  * callers, so every caller gets it — `executeWestPlan` already checks
- * `isRunInTerminalActive` itself for a caller-specific message and returns
+ * `isRunActive` itself for a caller-specific message and returns
  * before ever reaching this function, so its check and this one never both
  * fire for the same dispatch.
  *
@@ -277,7 +325,7 @@ export function revealRunInTerminal(name: string): void {
  * `executeTask` is even called) and released if `vscode.tasks.onDidStartTask`
  * never confirms a real start within `RUN_START_TIMEOUT_MS` -- guaranteeing a
  * task that never starts (e.g. its type was never contributed) can't brick
- * the command forever (`isRunInTerminalActive` would stay true with no event
+ * the command forever (`isRunActive` would stay true with no event
  * ever coming to clear it).
  */
 export function runInTerminal(options: {
@@ -287,17 +335,23 @@ export function runInTerminal(options: {
   env?: Record<string, string>;
 }): void {
   ensureTaskTracking();
-  if (active.has(options.name)) {
+  if (isRunActive(options.name)) {
     // Refuse rather than silently no-op or terminate a possibly-live run
     // (issue #146 in both directions: two concurrent bootstraps, or a flash
-    // killed mid-write) -- tell the user why the click did nothing.
+    // killed mid-write) -- tell the user why the click did nothing. A STREAMED
+    // run under the same name counts, and its output is in the channel, so
+    // offer the surface that actually holds it.
+    const streamed = isStreamedRunActive(options.name);
+    const reveal = streamed ? "Show Output" : "Show Terminal";
     void vscode.window
       .showWarningMessage(
         `"${options.name}" is still running — wait for it to finish before starting it again.`,
-        "Show Terminal",
+        reveal,
       )
       .then((choice) => {
-        if (choice === "Show Terminal") revealRunInTerminal(options.name);
+        if (choice !== reveal) return;
+        if (streamed) showOutput();
+        else revealRunInTerminal(options.name);
       });
     return;
   }
