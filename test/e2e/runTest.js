@@ -65,6 +65,13 @@ async function main() {
       extensionsDir,
       "--install-extension",
       "redhat.vscode-yaml",
+      // cortex-debug is the second `extensionDependency`; without it the
+      // extension does not activate in the isolated --extensions-dir and every
+      // e2e case fails at activation. The VS Code CLI pulls ITS dependencies
+      // (debug-tracker-vscode, memory-view, rtos-views, peripheral-viewer)
+      // transitively, so they need no entries here.
+      "--install-extension",
+      "marus25.cortex-debug",
       "--force",
     ],
     {
@@ -75,7 +82,7 @@ async function main() {
   );
   if (install.status !== 0) {
     throw new Error(
-      "Failed to install the redhat.vscode-yaml dependency into the test instance",
+      "Failed to install an extensionDependency into the test instance",
     );
   }
 
