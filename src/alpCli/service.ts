@@ -17,11 +17,20 @@ import {
 
 /** The `tan` CLI version this extension build targets for download-on-demand.
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
- *  (aligned with tan-cli's `[workspace.package] version`). v0.4.0 is the first
- *  release that publishes `envelope-contract.json`, which is what
- *  `scripts/fetch-tan-contract.mjs` downloads for THIS pin — so bumping it is
- *  what turns the envelope-contract gate from "skipped, loudly" into a check
- *  that verifies something. */
+ *  (aligned with tan-cli's `[workspace.package] version`).
+ *
+ *  v0.4.0 is the first release that publishes `envelope-contract.json`, which
+ *  is what `scripts/fetch-tan-contract.mjs` downloads for THIS pin — so the pin
+ *  is what turns the envelope-contract gate from "skipped, loudly" into a check
+ *  that verifies something.
+ *
+ *  It is also the first release carrying what this extension now REQUIRES, not
+ *  merely prefers: `tan debug-config --core` and its `data.configuration`
+ *  (tan-cli#67 — `writeLaunchProfile` has no second draft to fall back to), and
+ *  the `bootstrap.python-*` refusal codes `prerequisitesMissingIssue` reads
+ *  (tan-cli#78/#81). Against v0.3.1 `--core` is `error: unexpected argument`,
+ *  exit 2. Native (non-WSL-only) Windows bootstrap arrived earlier, in v0.3.1. */
+
 export const SUPPORTED_CLI_VERSION = "0.4.0";
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */

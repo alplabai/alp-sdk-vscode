@@ -448,6 +448,59 @@ test("the self-heal give-up marker is compared against the pin, so a pin bump re
   }
 });
 
+test("prerequisitesMissingIssue: also matches the two python-refusal codes (tan-cli#78/#81)", () => {
+  const envelope = (issues) => ({
+    command: "bootstrap",
+    ok: false,
+    exitCode: 1,
+    project: { root: null, boardYaml: null },
+    data: {},
+    issues,
+  });
+
+  const tooOld = {
+    code: "bootstrap.python-too-old",
+    severity: "error",
+    message:
+      "Python 3.9 found; the SDK tooling needs >= 3.10 (winget install " +
+      "-e --id Python.Python.3.12).",
+  };
+  assert.equal(prerequisitesMissingIssue(envelope([tooOld])), tooOld);
+
+  const notRunnable = {
+    code: "bootstrap.python-not-runnable",
+    severity: "error",
+    message:
+      "python3 was found on PATH but could not be run (winget install " +
+      "-e --id Python.Python.3.12).",
+  };
+  assert.equal(prerequisitesMissingIssue(envelope([notRunnable])), notRunnable);
+
+  // Same code, but not "error" severity -- must not be treated as a verdict,
+  // same narrowness as the original bootstrap.prerequisites-missing case.
+  assert.equal(
+    prerequisitesMissingIssue(envelope([{ ...tooOld, severity: "warning" }])),
+    null,
+  );
+
+  // An unrelated bootstrap refusal code is still not this verdict.
+  assert.equal(
+    prerequisitesMissingIssue(
+      envelope([
+        {
+          code: "bootstrap.windows-unsupported",
+          severity: "error",
+          message: "This tan CLI is too old to bootstrap on Windows. …",
+        },
+      ]),
+    ),
+    null,
+  );
+
+  // A null envelope (failed/unparseable probe) -- not a verdict.
+  assert.equal(prerequisitesMissingIssue(null), null);
+});
+
 test("aheadPathFixAction gates the ahead-tan remedy on preferGlobalCli", () => {
   // Flag off: a PATH tan only won because no managed copy exists; the cache
   // outranks PATH when off, so downloading the pinned version restores support.

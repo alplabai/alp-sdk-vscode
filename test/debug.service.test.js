@@ -9,6 +9,7 @@ const {
   createGenerationTraceReport,
   createInspectReport,
   createSupportBundlePayload,
+  foldLaunchConfigPlaceholders,
   isNativeHostTarget,
   serializeGenerationTraceReport,
   serializeInspectReport,
@@ -431,6 +432,54 @@ test("buildDebugPreflightReport fails the placeholder OpenOCD board config", () 
   const openOcd = report.checks.find((check) => check.name === "openOcdConfig");
   assert.equal(openOcd.status, "fail");
   assert.match(openOcd.detail, /<resolved-openocd-board-cfg>/);
+});
+
+test("foldLaunchConfigPlaceholders returns the report unchanged when there are no placeholders", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    {
+      ...createDebugProfile("native-host", "none"),
+      executablePath: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
+    },
+    createRuntime(),
+    {
+      pathExists: (filePath) =>
+        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+    },
+  );
+
+  assert.equal(foldLaunchConfigPlaceholders(report, []), report);
+});
+
+test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the report", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    {
+      ...createDebugProfile("native-host", "none"),
+      executablePath: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
+    },
+    createRuntime(),
+    {
+      pathExists: (filePath) =>
+        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+    },
+  );
+  assert.equal(report.canLaunch, true);
+  const failBefore = report.summary.fail;
+
+  const folded = foldLaunchConfigPlaceholders(report, ["<resolved-device>"]);
+
+  assert.equal(folded.canLaunch, false);
+  assert.equal(folded.summary.fail, failBefore + 1);
+  const launchConfigChecks = folded.checks.filter(
+    (check) => check.name === "launchConfig",
+  );
+  assert.equal(launchConfigChecks.length, 1);
+  assert.equal(launchConfigChecks[0].status, "fail");
+  assert.equal(launchConfigChecks[0].detail, "<resolved-device>");
+  assert.ok(launchConfigChecks[0].fix);
 });
 
 test("serializeSupportBundlePayload returns stable JSON", () => {
