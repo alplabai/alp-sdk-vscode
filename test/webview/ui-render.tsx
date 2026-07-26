@@ -189,6 +189,34 @@ function feedState() {
       boot_order: [],
     },
   });
+  // #359: per-slice footprint from `tan size`. Deliberately mixed — one slice
+  // in budget with real numbers, one that produced nothing — so the harness
+  // covers both the measured and the no-data branch.
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "sliceSizesData",
+    report: {
+      schema: "alp-size/1",
+      slices: [
+        {
+          core_id: "m55_hp",
+          os: "zephyr",
+          status: "ok",
+          flash: { used: 99452, total: 5767168, pct: 1.7 },
+          ram: { used: 16968, total: 262144, pct: 6.5 },
+          source: "size-tool",
+        },
+        {
+          core_id: "a32_cluster",
+          os: "yocto",
+          status: "not-built",
+          flash: { used: null, total: null, pct: null },
+          ram: { used: null, total: null, pct: null },
+          source: null,
+        },
+      ],
+      summary: { over_budget: [], unknown_budget: [] },
+    },
+  });
   g.__ALP_POST_TO_WEBVIEW__({
     type: "hardwareExplorerData",
     som: {
@@ -302,6 +330,11 @@ async function main() {
         "build/a32_cluster/bitbake.log", // slice log_path
         "build/m55_hp/zephyr/zephyr.elf", // slice output_artefact
         "peer slice skipped", // ipc link reason
+        // #359 — footprint from `tan size`, and the no-data branch beside it.
+        "97.1 kib / 5.50 mib (1.7%)", // flash, measured
+        "16.6 kib / 256.0 kib (6.5%)", // ram, measured
+        "in budget", // status verdict
+        "not built", // a slice tan could not measure
       ]) {
         if (!text.includes(needle)) {
           problems.push(

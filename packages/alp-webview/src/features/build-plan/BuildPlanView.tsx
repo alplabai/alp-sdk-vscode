@@ -3,6 +3,8 @@ import { Button, Card, EmptyState, Icon, Skeleton } from "../../shared/ui";
 import type {
   BuildPlanGeneratedFile,
   BuildPlanSlice,
+  SizeReport,
+  SliceSize,
   SystemManifest,
 } from "../../types";
 import styles from "./BuildPlanView.module.css";
@@ -22,17 +24,76 @@ const isReady = (value?: string): boolean => !!value && value !== "TBD";
  *  only when the slice carries a real `flash_method` (not the `TBD`
  *  placeholder). There is no per-slice Build button — `tan build` has no
  *  `--core` option, so building a single slice isn't a real CLI command. */
+/** `99452` -> `97.1 KiB`. Bytes are what tan reports and what a linker map
+ *  shows, so both are rendered — the exact figure is the one you act on. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kib = bytes / 1024;
+  if (kib < 1024) return `${kib.toFixed(1)} KiB`;
+  return `${(kib / 1024).toFixed(2)} MiB`;
+}
+
+/** One region as `97.1 KiB / 5.50 MiB (1.7%)`, degrading honestly: a null
+ *  `used` means nothing could measure it and a null `total` means no budget
+ *  resolved. Neither is rendered as 0 — tan reports null rather than guessing,
+ *  and a fabricated 0% would read as "plenty of room left". */
+function regionLabel(region: SliceSize["flash"]): string {
+  if (region.used === null) return "unknown";
+  const used = formatBytes(region.used);
+  if (region.total === null) return `${used} (no budget)`;
+  const pct = region.pct === null ? "" : ` (${region.pct}%)`;
+  return `${used} / ${formatBytes(region.total)}${pct}`;
+}
+
+/** Footprint for one slice, or null when `tan size` had no row for it. */
+function SliceFootprint({ size }: { size: SliceSize | undefined }) {
+  if (!size) return null;
+  // A slice with no artefact yet, or one that cannot be measured at all, has
+  // no numbers worth a row — say so instead of printing empty regions.
+  if (size.status === "not-built" || size.status === "n/a") {
+    return (
+      <span className={styles.manifestDetail}>
+        <span className={styles.sizeStatus} data-size-status={size.status}>
+          {size.status === "not-built" ? "not built" : "size n/a"}
+        </span>
+        {size.budget_note && <span>{size.budget_note}</span>}
+      </span>
+    );
+  }
+  return (
+    <span className={styles.manifestDetail}>
+      <span className={styles.sizeStatus} data-size-status={size.status}>
+        {size.status === "over"
+          ? "over budget"
+          : size.status === "warn"
+            ? "near budget"
+            : size.status === "no-budget"
+              ? "no budget"
+              : "in budget"}
+      </span>
+      <span>FLASH {regionLabel(size.flash)}</span>
+      <span>RAM {regionLabel(size.ram)}</span>
+      {size.budget_note && <span>{size.budget_note}</span>}
+    </span>
+  );
+}
+
 function SystemManifestSection({
   manifest,
   postBuild,
   error,
   flashSlice,
+  sizes,
 }: {
   manifest: SystemManifest | null;
   postBuild: boolean;
   error: string | null;
   flashSlice: (coreId: string) => void;
+  sizes: SizeReport | null;
 }) {
+  const sizeByCore = new Map<string, SliceSize>(
+    (sizes?.slices ?? []).map((s) => [s.core_id, s]),
+  );
   if (!manifest) {
     return error ? (
       <section className={styles.section}>
@@ -107,6 +168,7 @@ function SystemManifestSection({
                   )}
                 </span>
               )}
+              <SliceFootprint size={sizeByCore.get(s.core_id)} />
             </li>
           );
         })}
@@ -182,6 +244,7 @@ export function BuildPlanView() {
     manifest,
     manifestPostBuild,
     manifestError,
+    sizes,
     reload,
     materialise,
     build,
@@ -353,6 +416,7 @@ export function BuildPlanView() {
             postBuild={manifestPostBuild}
             error={manifestError}
             flashSlice={flashSlice}
+            sizes={sizes}
           />
         </div>
       )}
