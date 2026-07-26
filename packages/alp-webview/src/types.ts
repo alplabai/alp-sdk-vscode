@@ -397,6 +397,177 @@ export interface HardwareExplorerDataMessage {
   sdkConnected: boolean;
 }
 
+// --- Models panel (mirrors messages.ts; merges `tan model list` +
+// `tan model doctor` envelopes). `models`/`toolchains` stay `unknown[]` at
+// the boundary — narrowed here, not re-declared from the tan-owned schema. ---
+export interface ModelsDataMessage {
+  type: "modelsData";
+  ok: boolean;
+  models: unknown[];
+  toolchains: unknown[];
+  issues: { code: string; severity: string; message: string }[];
+}
+export interface ModelBuildProgressMessage {
+  type: "modelBuildProgress";
+  log: string;
+  done: boolean;
+  success?: boolean;
+}
+
+/** Per-model fit verdicts from `tan model check --board`. `models` stays
+ *  `unknown[]` at the boundary — the board-mode payload
+ *  ([{name,source,backends?,suggestion?,error?}]) is narrowed in the webview. */
+export interface ModelFitDataMessage {
+  type: "modelFitData";
+  /** Envelope `ok` (false → show issues, e.g. the alp stderr via `model.failed`). */
+  ok: boolean;
+  /** `envelope.data.sku` (the board's `som.sku`); absent on failure. */
+  sku?: string;
+  /** `envelope.data.models` — board-mode per-model results. */
+  models: unknown[];
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Ack that `tan model prep` actually started (both file dialogs confirmed) —
+ *  lets the webview flip `prepping:true` only for real work, so a cancelled
+ *  dialog (panel.ts returns early, posts nothing) never sticks the button. */
+export interface ModelPrepStartedMessage {
+  type: "modelPrepStarted";
+}
+
+/** Result of `tan model prep` — the quantized artifact + accuracy report. */
+export interface ModelPrepResultMessage {
+  type: "modelPrepResult";
+  ok: boolean;
+  quantized?: string;
+  accuracy?: {
+    samples: number;
+    top1_agreement_pct: number;
+    mean_cosine: number;
+    max_abs_err: number;
+    verdict: string;
+    guidance: string | null;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Ack that a `tan model run`/`tan model ab` measurement actually started
+ *  (the file dialog(s) confirmed) — lets the webview flip `measuring:true`
+ *  only for real work, so a cancelled dialog (panel.ts returns early, posts
+ *  nothing) never sticks the button. Mirrors ModelPrepStartedMessage. */
+export interface ModelMeasureStartedMessage {
+  type: "modelMeasureStarted";
+}
+
+/** A real bench-measured energy result (`alp_model.measure.EnergyMeasurement`
+ *  in alp-sdk) attached to a `tan model run --on-device`/`tan model ab`
+ *  payload. `source`/`scope` are always `"measured"`/`"carrier-rail-delta"` —
+ *  a board-level carrier-rail delta, never an isolated NPU/U85/U55/M55
+ *  figure; `scope` drives the webview's label (never hardcode "NPU power" /
+ *  "silicon energy" from it). Undefined on a host-only run (the
+ *  overwhelmingly common case) or when the CLI's energy object was
+ *  malformed. */
+export interface ModelEnergyMeasurement {
+  source: string;
+  scope: string;
+  value_mj_per_inference: number;
+  rails: string[];
+  n_inferences: number;
+  window_ms: number;
+  sample_count: number;
+  spread_mj: number | null;
+}
+
+/** Result of `tan model run` — a host reference (CPU) inference measurement. */
+export interface ModelRunResultMessage {
+  type: "modelRunResult";
+  ok: boolean;
+  run?: {
+    backend: string;
+    latency_ms: number;
+    output_argmax: number | null;
+    peak_sram_kib: number | null;
+    power_mj: number | null;
+    runs: number;
+    random_input: boolean;
+    note: string;
+    accuracy?: { expected: number; match: boolean };
+    energy?: ModelEnergyMeasurement;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Result of `tan model ab` — two models' host reference measurements + a
+ *  head-to-head comparison. */
+export interface ModelAbResultMessage {
+  type: "modelAbResult";
+  ok: boolean;
+  ab?: {
+    a: {
+      model: string;
+      backend: string;
+      latency_ms: number;
+      energy?: ModelEnergyMeasurement;
+    };
+    b: {
+      model: string;
+      backend: string;
+      latency_ms: number;
+      energy?: ModelEnergyMeasurement;
+    };
+    comparison: {
+      faster: string;
+      latency_ratio: number | null;
+      a_latency_ms: number;
+      b_latency_ms: number;
+      size_delta_bytes: number | null;
+      /** Present only when BOTH `a`/`b` carry a real energy object — mirrors
+       *  the CLI, which omits the key entirely rather than sending `null`
+       *  when either side lacks one. */
+      energy_delta_mj_per_inference?: number;
+    };
+    note: string;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** A single curated zoo entry from `tan model zoo --board` — `runs_here` is
+ *  `true`/`false` when the board's `som.sku` was resolvable, `null` when it
+ *  wasn't (e.g. no board.yaml yet) — the MVP shows every entry badged rather
+ *  than silently hiding the ones it can't validate. */
+export interface ZooEntry {
+  id: string;
+  task: string;
+  description: string;
+  license: string;
+  validated_soms: string[];
+  runs_here: boolean | null;
+}
+
+/** Zoo gallery state from `tan model zoo --board`. */
+export interface ZooDataMessage {
+  type: "zooData";
+  ok: boolean;
+  entries: ZooEntry[];
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Ack that `tan model add` actually started — mirrors ModelPrepStartedMessage
+ *  (Add mutates board.yaml + fetches, so it gets the same started-ack shape
+ *  as prep: the webview poster does NOT set `adding` optimistically). */
+export interface ZooAddStartedMessage {
+  type: "zooAddStarted";
+}
+
+/** Result of `tan model add <id> --board` — the fetched model appended to
+ *  board.yaml. */
+export interface ZooAddResultMessage {
+  type: "zooAddResult";
+  ok: boolean;
+  added?: string;
+  issues: { code: string; severity: string; message: string }[];
+}
+
 // --- Build-plan preview (mirrors messages.ts; consumes `alp build --plan`) ---
 export interface BuildPlanToolStep {
   tool: string;
@@ -550,6 +721,17 @@ export type ExtToWebviewMessage =
   | ProjectLocationPickedMessage
   | BuildPlanDataMessage
   | SystemManifestDataMessage
+  | ModelsDataMessage
+  | ModelBuildProgressMessage
+  | ModelFitDataMessage
+  | ModelPrepStartedMessage
+  | ModelPrepResultMessage
+  | ModelMeasureStartedMessage
+  | ModelRunResultMessage
+  | ModelAbResultMessage
+  | ZooDataMessage
+  | ZooAddStartedMessage
+  | ZooAddResultMessage
   | SliceSizesDataMessage;
 
 // Webview → Extension
@@ -565,6 +747,32 @@ export interface SelectSdkPathMessage {
 }
 export interface RequestSdkReleasesMessage {
   type: "requestSdkReleases";
+}
+export interface RequestModelsMessage {
+  type: "requestModels";
+}
+export interface BuildModelMessage {
+  type: "buildModel";
+  name?: string;
+}
+export interface CheckModelFitMessage {
+  type: "checkModelFit";
+}
+export interface PrepModelMessage {
+  type: "prepModel";
+}
+export interface RunModelMessage {
+  type: "runModel";
+}
+export interface AbModelsMessage {
+  type: "abModels";
+}
+export interface RequestZooMessage {
+  type: "requestZoo";
+}
+export interface AddFromZooMessage {
+  type: "addFromZoo";
+  id: string;
 }
 export interface RequestSdkInstallMessage {
   type: "requestSdkInstall";
@@ -677,4 +885,12 @@ export type WebviewToExtMessage =
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
-  | FlashSliceMessage;
+  | FlashSliceMessage
+  | RequestModelsMessage
+  | BuildModelMessage
+  | CheckModelFitMessage
+  | PrepModelMessage
+  | RunModelMessage
+  | AbModelsMessage
+  | RequestZooMessage
+  | AddFromZooMessage;

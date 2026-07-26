@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// `model build` runs a real NPU compile that can outlast the 60s default
+// envelope timeout (spawnAlpAsync's ALP_SPAWN_TIMEOUT_MS in
+// src/alpCli/vscodeAdapter.ts) — killing it there would falsely report
+// "Build failed" and orphan the in-progress compile. spawnAlpAsync lives in
+// vscodeAdapter.ts, which imports `vscode` and so can't be exercised directly
+// by node:test outside a VS Code host (see test/alpCli.installTanCli.test.js
+// for the same constraint); this is a cheap source-level wiring check instead.
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.join(__dirname, "..");
+
+test("runAlpCommand accepts a per-call timeoutMs override, threaded to spawnAlpAsync", () => {
+  const src = fs.readFileSync(
+    path.join(root, "src", "alpCli", "vscodeAdapter.ts"),
+    "utf-8",
+  );
+  assert.match(
+    src,
+    /options\?:\s*\{\s*signal\?:\s*AbortSignal;\s*timeoutMs\?:\s*number\s*\}/,
+    "runAlpCommand's options must accept an optional timeoutMs override",
+  );
+  assert.match(
+    src,
+    /spawnAlpAsync\(\s*command,\s*spawnArgs,\s*spawnCwd,\s*options\?\.signal,\s*options\?\.timeoutMs,?\s*\)/,
+    "runAlpCommand must forward options.timeoutMs to spawnAlpAsync",
+  );
+});
+
+test("model build passes a timeout well past the 60s envelope default", () => {
+  const src = fs.readFileSync(
+    path.join(root, "src", "models", "panel.ts"),
+    "utf-8",
+  );
+  const match = src.match(/MODEL_BUILD_TIMEOUT_MS\s*=\s*([0-9_*\s]+);/);
+  assert.ok(match, "panel.ts must define MODEL_BUILD_TIMEOUT_MS");
+  const timeoutMs = match[1]
+    .replace(/_/g, "")
+    .split("*")
+    .map((n) => Number(n.trim()))
+    .reduce((a, b) => a * b, 1);
+  assert.ok(
+    timeoutMs > 60_000,
+    `MODEL_BUILD_TIMEOUT_MS (${timeoutMs}ms) must exceed the 60s envelope default`,
+  );
+  assert.match(
+    src,
+    /runAlpCommand\(this\.context,\s*args,\s*cwd,\s*\{\s*timeoutMs:\s*MODEL_BUILD_TIMEOUT_MS,?\s*\}\)/,
+    "buildModel's runAlpCommand call must pass { timeoutMs: MODEL_BUILD_TIMEOUT_MS }",
+  );
+});

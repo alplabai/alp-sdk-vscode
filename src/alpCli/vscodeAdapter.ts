@@ -653,7 +653,7 @@ export async function runAlpCommand(
   context: vscode.ExtensionContext,
   args: string[],
   cwd?: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<{
   outcome: CliOutcome;
   raw: SpawnResult;
@@ -694,7 +694,13 @@ export async function runAlpCommand(
     binary.command,
     finalArgs,
     (command, spawnArgs, spawnCwd) =>
-      spawnAlpAsync(command, spawnArgs, spawnCwd, options?.signal),
+      spawnAlpAsync(
+        command,
+        spawnArgs,
+        spawnCwd,
+        options?.signal,
+        options?.timeoutMs,
+      ),
     cwd,
   );
   const { outcome, raw } = result;
@@ -766,16 +772,19 @@ const ALP_SPAWN_MAX_OUTPUT = 16 * 1024 * 1024;
  * Async twin of the former `spawnAlp`: runs a `tan` envelope command off the
  * extension-host event loop via `cp.spawn`, so a slow or network-bound command
  * (e.g. `sdk list`) — and any webview waiting on it — never freezes the editor.
- * Preserves the sync path's guards: utf8 output, a 16 MB cap, and a 60s timeout,
- * each surfaced as `SpawnResult.error` so `runAlpAsync` maps it to an error
- * outcome (caller's spinner-clear / error toast still fires). An optional
- * `signal` (from a command's CancellationToken) kills the child on user cancel.
+ * Preserves the sync path's guards: utf8 output, a 16 MB cap, and a timeout
+ * (default 60s, `timeoutMs` overrides it — e.g. `model build` runs a real NPU
+ * compile that can outlast 60s and must not be killed mid-compile), each
+ * surfaced as `SpawnResult.error` so `runAlpAsync` maps it to an error outcome
+ * (caller's spinner-clear / error toast still fires). An optional `signal`
+ * (from a command's CancellationToken) kills the child on user cancel.
  */
 function spawnAlpAsync(
   command: string,
   args: string[],
   cwd?: string,
   signal?: AbortSignal,
+  timeoutMs: number = ALP_SPAWN_TIMEOUT_MS,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     let stdout = "";
@@ -799,11 +808,9 @@ function spawnAlpAsync(
         status: null,
         stdout,
         stderr,
-        error: new Error(
-          `tan CLI timed out after ${ALP_SPAWN_TIMEOUT_MS / 1000}s`,
-        ),
+        error: new Error(`tan CLI timed out after ${timeoutMs / 1000}s`),
       });
-    }, ALP_SPAWN_TIMEOUT_MS);
+    }, timeoutMs);
 
     // Cap BOTH streams (spawnSync's maxBuffer applied per-stream) so a runaway
     // tan can't grow ext-host memory unbounded.
