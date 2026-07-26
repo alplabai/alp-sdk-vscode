@@ -89,19 +89,32 @@ Zephyr kernel, HAL modules, and toolchains.  This is called "bootstrapping."
    — or —
    Open the **Open Existing Project** wizard and use **Initialise & Activate**.
 
-2. The extension runs `tan bootstrap`, which invokes `scripts/bootstrap.sh` in
-   the SDK. That creates a sibling `zephyrproject/` workspace from the upstream
-   Zephyr manifest and installs `west` + Zephyr's Python requirements into a
-   workspace virtual environment:
+2. The extension runs `tan bootstrap`. It is native on every host — a Rust port
+   of the SDK's `scripts/bootstrap.sh` + `scripts/bootstrap.ps1`, **not** a
+   shell-out to either, so Windows needs no `bash` (tan-cli#49). It creates a
+   workspace virtual environment, installs `west` into it, initialises the
+   Zephyr workspace with the **alp-sdk checkout itself as the manifest repo**,
+   and installs Zephyr's Python requirements:
    ```
-   west init -m https://github.com/zephyrproject-rtos/zephyr --mr <version> .
-   west update
+   west init -l <sdk-path>
+   west update          # shallow + narrow
+   west zephyr-export
    ```
+   The exact flags come from the SDK's `metadata/bootstrap.json`, which is the
+   source of truth for them. `west init -l` makes the **parent of the SDK
+   checkout** the west topdir — a sibling `zephyrproject/` topdir is the
+   pre-v0.11 layout, which the extension still recognises but bootstrap no
+   longer creates.
 3. Progress is shown in the Output panel (`ALP SDK` channel).
 4. When complete, the west chip in the sidebar changes to **Ready**.
 
-Manual fallback (no extension): `bash <sdk-path>/scripts/bootstrap.sh`
-(`--no-pip` / `--no-west` / `--print-env` are supported).
+Manual fallback (no extension): `tan bootstrap`, run from the project directory
+(`--no-pip` / `--no-west` / `--print-env` are supported). Works on Windows,
+macOS and Linux with no shell dependency.
+
+The SDK still ships `scripts/bootstrap.sh` and `scripts/bootstrap.ps1`, but they
+are no longer the supported entry point — `tan bootstrap` is the one that stays
+in step with the extension.
 
 ### Via the Command Palette
 
