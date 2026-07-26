@@ -2,7 +2,6 @@ import { BuildPlanView } from "./features/build-plan";
 import { ConfiguratorView } from "./features/configurator";
 import { ExistingProjectFlowView } from "./features/existing-project-flow";
 import { HardwareExplorerView } from "./features/hardware-explorer";
-import { ModelsView } from "./features/models";
 import { NewProjectFlowView } from "./features/new-project-flow";
 import { OverviewView } from "./features/overview";
 import { SdkView } from "./features/sdk";
@@ -70,8 +69,6 @@ function Router() {
       return <HardwareExplorerView />;
     case "build-plan":
       return <BuildPlanView />;
-    case "models":
-      return <ModelsView />;
     case "overview":
     default:
       return <OverviewView />;

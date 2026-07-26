@@ -93,48 +93,7 @@ Use:
 - Alp: West flash
 - Alp: Run under native_sim
 
-## 7. Models Panel
-
-The Models panel (Activity Bar) is a thin GUI over the `tan model …` command
-family — it shells `tan` and renders the JSON envelope, it does not re-implement
-any model logic. Use it to check, prepare, and try models against your SoM
-before you build.
-
-- **Fit badge (before build).** Each model in board.yaml `models:` gets a
-  green/yellow/red badge — fits / cpu-fallback / no-fit — from a static
-  pre-flight check (`tan model check <model.tflite|.onnx> --sku <SKU>` or
-  `--board board.yaml [--model NAME]` `[--format human|json]`). Offline, no
-  toolchain: per SoM-backend it reports the verdict plus estimated SRAM (vs the
-  SoC arena budget), estimated latency, op-coverage %, and unsupported ops. The
-  estimate is conservative (labelled `source:static`, biased so it never
-  over-promises a "fits") and is verified on silicon later.
-- **Prep Model.** Pick a model and a calibration folder to run a license-free
-  INT8 quantize (`tan model prep <model.onnx|.tflite> --calibration <dir>
-  [--out] [--per-channel] [--min-samples N]`, onnxruntime QDQ) and get an
-  fp32-vs-int8 accuracy report (top1 agreement %, mean cosine, max-abs-err,
-  verdict good|degraded + guidance). A `.tflite` input is converted to ONNX
-  first via tf2onnx. (Prep runs Python — the `model-prep` extra; `.tflite`
-  conversion needs `model-convert`.)
-- **Run Model / A-B Compare.** Run a model as a host reference
-  (`tan model run <model.onnx> [--input FILE.npy] [--expected LABEL] [--runs N]`)
-  or compare two on the same input (`tan model ab <a.onnx> <b.onnx> [--input]
-  [--runs]`) for latency + size delta. Honest caveat: this is a `cpu-host`
-  reference run — functional + host latency + accuracy — **not** the target
-  SoM's performance; `peak_sram_kib` / `power_mj` come back null on host
-  (on-device values are hardware-gated).
-- **Model Zoo gallery + Add.** Browse curated zoo entries, each marked whether
-  it runs on your SoM (`tan model zoo [--sku <SKU> | --board board.yaml]
-  [--format]`), and add one with a click (`tan model add <zoo-id> [--board
-  board.yaml] [--name NAME] [--models-dir DIR]`), which fetches the
-  sha256-verified source and appends `{name, source}` to board.yaml `models:`.
-  Add is non-destructive — a duplicate name errors.
-
-> **Honest caveats.** Run / A-B are host reference runs, not target-SoM
-> performance. Power and on-device measurement are hardware-gated — they need
-> the EVK power-topology and the Yocto NPU runtimes. The static fit check is a
-> conservative estimate, confirmed on silicon later.
-
-## 8. Troubleshooting Quick Checks
+## 7. Troubleshooting Quick Checks
 
 1. Confirm SDK path resolves to a folder containing scripts/alp_project.py.
 2. Confirm board.yaml path is correct.
@@ -142,7 +101,7 @@ before you build.
 4. Run Alp: Debug doctor for environment checks.
 5. If needed, run Alp: Export debug support bundle.
 
-## 9. Next Steps
+## 8. Next Steps
 
 - For terminal-first usage, continue with GETTING_STARTED_CLI.md.
 - For CI setup examples, see CI_EXAMPLES.md.

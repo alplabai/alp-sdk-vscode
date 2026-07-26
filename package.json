@@ -228,16 +228,6 @@
         "icon": "$(list-tree)"
       },
       {
-        "command": "alp.openModelsPanel",
-        "title": "Alp: Models",
-        "category": "Alp"
-      },
-      {
-        "command": "alp.buildModel",
-        "title": "Alp: Build Model",
-        "category": "Alp"
-      },
-      {
         "command": "alp.openGettingStarted",
         "title": "Alp: Get started (walkthrough)",
         "category": "Alp"
