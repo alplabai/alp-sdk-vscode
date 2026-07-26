@@ -92,3 +92,66 @@ export interface SystemManifest {
 export function isActiveSlice(slice: ManifestSlice): boolean {
   return slice.os !== "off";
 }
+
+// ---------------------------------------------------------------------------
+// `alp-size/1` — the `tan size` envelope payload
+// ---------------------------------------------------------------------------
+//
+// NOT part of system-manifest-v1, despite living next to it: `tan size` READS
+// `build/system-manifest.yaml`, measures each slice's ELF, and resolves the SoM
+// memory budget from SoC metadata, emitting its own `alp-size/1` payload in the
+// envelope `data`. Modelled here because it is keyed by the same `core_id` and
+// is only meaningful alongside a manifest.
+//
+// Mirrors tan-core's `SliceSize::to_json_entry` / `region_json` /
+// `build_size_report` (crates/tan-core/src/size.rs, tan v0.3.1). Same tolerant
+// reader doctrine as above: every measurement is optional, because tan reports
+// `null` rather than guessing when a slice is not built, has no resolvable
+// budget, or no size tool could read it.
+
+/** One memory region's measurement against its budget. Any field may be null:
+ *  `used` when nothing could measure it, `total` when no budget resolved, and
+ *  `pct` whenever either is missing or the total is zero. */
+export interface SizeRegion {
+  used: number | null;
+  total: number | null;
+  pct: number | null;
+}
+
+/**
+ * `ok` / `warn` / `over` are budget verdicts; the rest mean "no verdict":
+ * `not-built` (no artefact yet), `no-budget` (neither region resolved), `n/a`
+ * (the slice is not measurable at all, e.g. a Yocto image).
+ */
+export type SliceSizeStatus =
+  | "ok"
+  | "warn"
+  | "over"
+  | "not-built"
+  | "no-budget"
+  | "n/a";
+
+/** One slice's measured footprint vs its resolved budget. */
+export interface SliceSize {
+  core_id: string;
+  os: string;
+  status: SliceSizeStatus;
+  flash: SizeRegion;
+  ram: SizeRegion;
+  /** Where the measurement came from: `size-tool` / `pyelftools` / `rom/ram.json`. */
+  source?: string | null;
+  /** Why a budget is missing or the slice is `n/a`. */
+  budget_note?: string;
+  notes?: string[];
+}
+
+export interface SizeReport {
+  schema: string;
+  slices: SliceSize[];
+  summary: {
+    /** core_ids over budget. */
+    over_budget: string[];
+    /** Measured Zephyr core_ids whose budget could not be fully resolved. */
+    unknown_budget: string[];
+  };
+}

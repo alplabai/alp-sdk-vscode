@@ -9,6 +9,7 @@ const {
   isCliBehind,
   isCliAhead,
   bootstrapHostVerdict,
+  prerequisitesMissingIssue,
   aheadPathFixAction,
   classifyExitCode,
   parseEnvelope,
@@ -162,6 +163,57 @@ test("bootstrapHostVerdict: refuses an old tan's bootstrap.windows-unsupported (
     }),
     { refuse: false },
   );
+});
+
+test("prerequisitesMissingIssue: returns the error-severity issue verbatim, and only that", () => {
+  const envelope = (issues) => ({
+    command: "bootstrap",
+    ok: false,
+    exitCode: 1,
+    project: { root: null, boardYaml: null },
+    data: {},
+    issues,
+  });
+
+  // Byte-exact real refusal: tan-cli's `failure()` (bootstrap/mod.rs) joins
+  // lines with a single space, never `\n` -- confirmed live with ninja absent.
+  const prereq = {
+    code: "bootstrap.prerequisites-missing",
+    severity: "error",
+    message:
+      "Missing required tools:   ninja  ->  winget install -e --id " +
+      "Ninja-build.Ninja Install the tools above (then reopen PowerShell) " +
+      "and re-run.",
+  };
+  assert.equal(prerequisitesMissingIssue(envelope([prereq])), prereq);
+
+  // Same code, but not "error" severity -- must not be treated as a verdict.
+  assert.equal(
+    prerequisitesMissingIssue(envelope([{ ...prereq, severity: "warning" }])),
+    null,
+  );
+
+  // An unrelated issue (e.g. a different bootstrap refusal) is not this verdict.
+  assert.equal(
+    prerequisitesMissingIssue(
+      envelope([
+        {
+          code: "bootstrap.yocto-host",
+          severity: "error",
+          message: "every core in this project targets Yocto. …",
+        },
+      ]),
+    ),
+    null,
+  );
+
+  // No issues at all -- not a verdict.
+  assert.equal(prerequisitesMissingIssue(envelope([])), null);
+
+  // The fall-through rule: a probe that failed/couldn't resolve/returned
+  // nothing parseable is a null envelope here -- MUST NOT be treated as a
+  // prerequisites refusal (never block a working setup on a failed probe).
+  assert.equal(prerequisitesMissingIssue(null), null);
 });
 
 test("isCliAhead compares numeric version tuples (mirror of isCliBehind)", () => {

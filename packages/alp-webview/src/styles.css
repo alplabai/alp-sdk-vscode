@@ -90,3 +90,19 @@ code {
 .alp-animate-in {
   animation: fadeIn var(--duration-base) var(--ease-out) both;
 }
+
+/* ── Boot failure fallbacks ─────────────────────────────────────────────── */
+/* Used by main.tsx when React never mounts. Classes, not style attributes:
+   the shell's CSP has no `style-src 'unsafe-inline'`, so a style="" written
+   through innerHTML is dropped and the message would render unstyled — exactly
+   when something has already gone wrong and legibility matters most. */
+.alp-boot-error {
+  padding: 8px;
+  color: #f88;
+}
+.alp-boot-error-detail {
+  padding: 12px;
+  color: #f88;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+}

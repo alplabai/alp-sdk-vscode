@@ -10,7 +10,35 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   pretendToBeVisual: true,
 });
 
+// jsdom implements no layout, so it ships no scrollIntoView — but a real VS
+// Code webview has one, and handlers call it (SidebarHubView's
+// scrollToSdkSection). Stubbing it keeps the error capture below reporting
+// real defects instead of this environment gap.
+dom.window.Element.prototype.scrollIntoView = function scrollIntoView() {};
+
 const g = globalThis;
+
+// An exception thrown inside an event listener is REPORTED, not propagated —
+// the DOM spec says so, and jsdom obeys it. So `button.click()` returns
+// normally even when the handler threw, and the try/catch around the click in
+// ui-render.tsx can never fire. Without this capture the harness clicked 50
+// buttons, swallowed every throw, and printed "0 problem(s)".
+//
+// React 19 does not rethrow a handler error synchronously either: it reports it
+// via `reportError`, which surfaces as the same window `error` event. Both
+// paths land here.
+g.__ALP_ERRORS__ = [];
+dom.window.addEventListener("error", (ev) => {
+  const e = ev.error ?? ev.message;
+  g.__ALP_ERRORS__.push(e instanceof Error ? e.message : String(e));
+});
+dom.window.addEventListener("unhandledrejection", (ev) => {
+  const e = ev.reason;
+  g.__ALP_ERRORS__.push(
+    `unhandled rejection: ${e instanceof Error ? e.message : String(e)}`,
+  );
+});
+
 g.window = dom.window;
 g.document = dom.window.document;
 // node 24 exposes a read-only global `navigator`; jsdom's is on window anyway.

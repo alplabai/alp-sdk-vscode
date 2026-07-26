@@ -21,6 +21,33 @@ import { BuildPlanView } from "../../packages/alp-webview/src/features/build-pla
 const g = globalThis as any;
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+/**
+ * Drain enough macrotask turns for React to have committed and flushed passive
+ * effects, including for components mounted by an ancestor's state update.
+ *
+ * This used to be two bare `await tick()`s, which was silently too few. React
+ * 19 commits passive effects on its own scheduler turn, so a hook subscribing
+ * BELOW AppProvider — `useBuildPlan`, and every other feature hook — had not
+ * called `onMessage` yet when the harness dispatched its data. Instrumenting
+ * `onMessage` showed the nine AppProviders registering as listeners #1-#10 and
+ * receiving everything, while `useBuildPlan` registered as #11/#12 after the
+ * last dispatch and received nothing at all.
+ *
+ * The harness reported PASS regardless: it only looked for ERROR_MARKERS, and
+ * a view stuck in its loading/empty state contains none. So "9/9 views
+ * rendered" meant they rendered EMPTY. Any assertion about data-driven content
+ * depends on this settling, which is why the #331 checks below are the first
+ * thing that would have caught it.
+ */
+const settle = async (turns = 12): Promise<void> => {
+  for (let i = 0; i < turns; i++) await tick();
+};
+
+// Take and clear whatever jsdom-setup's window `error` / `unhandledrejection`
+// listeners collected since the last call. Draining (not just reading) keeps
+// one broken handler from being re-reported against every later button.
+const drainErrors = (): string[] => g.__ALP_ERRORS__.splice(0);
+
 // Error boundary that records the actual render error instead of letting React
 // swallow it — so a component that crashes shows up as a PROBLEM, not a pass.
 class Boundary extends React.Component<
@@ -121,10 +148,74 @@ function feedState() {
       warnings: [],
     },
   });
+  // A real post-build manifest, not `null` — the System manifest section was
+  // never rendered by this harness at all, so nothing here covered it. The
+  // shape is the one #331 is about: one slice that succeeded and one that did
+  // not, the latter carrying the `reason` the UI used to drop.
   g.__ALP_POST_TO_WEBVIEW__({
     type: "systemManifestData",
-    manifest: null,
-    postBuild: false,
+    postBuild: true,
+    manifest: {
+      schema_version: 1,
+      generated_by: "tan",
+      hw_info: { sku: "E1M-AEN801" },
+      slices: [
+        {
+          core_id: "m55_hp",
+          os: "zephyr",
+          status: "ok",
+          build_dir: "build/m55_hp",
+          output_artefact: "build/m55_hp/zephyr/zephyr.elf",
+          flash_method: "jlink",
+        },
+        {
+          core_id: "a32_cluster",
+          os: "yocto",
+          status: "skipped",
+          reason: "bitbake not found",
+          log_path: "build/a32_cluster/bitbake.log",
+        },
+      ],
+      ipc: [
+        {
+          name: "rpmsg0",
+          kind: "rpmsg",
+          endpoints: ["m55_hp", "a32_cluster"],
+          status: "degraded",
+          reason: "peer slice skipped",
+        },
+      ],
+      helper_mcus: [],
+      boot_order: [],
+    },
+  });
+  // #359: per-slice footprint from `tan size`. Deliberately mixed — one slice
+  // in budget with real numbers, one that produced nothing — so the harness
+  // covers both the measured and the no-data branch.
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "sliceSizesData",
+    report: {
+      schema: "alp-size/1",
+      slices: [
+        {
+          core_id: "m55_hp",
+          os: "zephyr",
+          status: "ok",
+          flash: { used: 99452, total: 5767168, pct: 1.7 },
+          ram: { used: 16968, total: 262144, pct: 6.5 },
+          source: "size-tool",
+        },
+        {
+          core_id: "a32_cluster",
+          os: "yocto",
+          status: "not-built",
+          flash: { used: null, total: null, pct: null },
+          ram: { used: null, total: null, pct: null },
+          source: null,
+        },
+      ],
+      summary: { over_budget: [], unknown_budget: [] },
+    },
   });
   g.__ALP_POST_TO_WEBVIEW__({
     type: "hardwareExplorerData",
@@ -187,14 +278,15 @@ async function main() {
           React.createElement(AppProvider, null, React.createElement(View)),
         ),
       );
-      await tick();
-      await tick(); // let AppProvider's message subscription mount (useEffect)
+      await settle();
       feedState();
-      await tick();
-      await tick();
-      feedState(); // re-dispatch in case a subscription mounted late
-      await tick();
-      await tick();
+      // AppProvider renders its children only once it HAS state, so a feature
+      // hook that subscribes below it (useBuildPlan, …) does not exist until
+      // this first feed has been processed and committed. Feed again once it
+      // does — see `settle` for why two ticks were never enough.
+      await settle();
+      feedState();
+      await settle();
     } catch (err) {
       ok = false;
       problems.push(`${mode}: RENDER THREW — ${String(err)}`);
@@ -210,6 +302,12 @@ async function main() {
       renderErr = null;
       return true;
     };
+    // Drain before the first click so a report from mount/effects is blamed on
+    // the view, not on whichever button happens to be clicked first.
+    for (const err of drainErrors()) {
+      ok = false;
+      problems.push(`${mode}: error reported during render — ${err}`);
+    }
     if (noteCrash()) {
       console.log(`  FAIL  ${mode}: render error`);
       continue;
@@ -220,6 +318,29 @@ async function main() {
     for (const marker of ERROR_MARKERS) {
       if (text.includes(marker)) {
         problems.push(`${mode}: visible text contains "${marker}"`);
+      }
+    }
+    // #331: a slice that did not build must say WHY. The manifest already
+    // carried `reason`, `log_path` and `output_artefact`; the row rendered
+    // only the status chip, so "skipped" arrived with no explanation and the
+    // produced artefact and log were invisible. `text` is lowercased above.
+    if (mode === "build-plan") {
+      for (const needle of [
+        "bitbake not found", // slice reason
+        "build/a32_cluster/bitbake.log", // slice log_path
+        "build/m55_hp/zephyr/zephyr.elf", // slice output_artefact
+        "peer slice skipped", // ipc link reason
+        // #359 — footprint from `tan size`, and the no-data branch beside it.
+        "97.1 kib / 5.50 mib (1.7%)", // flash, measured
+        "16.6 kib / 256.0 kib (6.5%)", // ram, measured
+        "in budget", // status verdict
+        "not built", // a slice tan could not measure
+      ]) {
+        if (!text.includes(needle)) {
+          problems.push(
+            `build-plan: system manifest detail missing "${needle}"`,
+          );
+        }
       }
     }
     // The Hub Environment card surfaces the tan CLI next to python/west.
@@ -262,9 +383,16 @@ async function main() {
         clickedHere += 1;
         totalClicked += 1;
       } catch (err) {
+        // Only a throw from click() ITSELF (a jsdom fault) reaches here — a
+        // handler's own throw is reported, not propagated. drainErrors() below
+        // is what actually catches a broken button.
         problems.push(
           `${mode}: button "${label}" threw on click — ${String(err)}`,
         );
+      }
+      for (const err of drainErrors()) {
+        ok = false;
+        problems.push(`${mode}: button "${label}" threw on click — ${err}`);
       }
       void before;
     }

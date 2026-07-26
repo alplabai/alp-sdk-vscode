@@ -6,6 +6,7 @@
 
 import {
   AlpEnvelope,
+  AlpIssue,
   BinaryResolutionInput,
   BinarySource,
   CliExitKind,
@@ -394,4 +395,33 @@ export function bootstrapHostVerdict(
   return yoctoOnly
     ? { refuse: true, message: yoctoOnly.message }
     : { refuse: false };
+}
+
+/**
+ * The pre-flight envelope's `bootstrap.prerequisites-missing` issue, if tan
+ * explicitly refused because a required tool (ninja/cmake/west/…) isn't on
+ * PATH — an EXPLICIT, PARSED verdict distinct from `bootstrapHostVerdict`'s
+ * host-level refusals (those want a WSL reopen; this wants an install
+ * action). Spawning the real bootstrap terminal after this issue is present
+ * just repeats the exact failure tan already reported.
+ *
+ * Deliberately narrow, mirroring `bootstrapHostVerdict`: only an issue with
+ * this EXACT code AND `severity: "error"` counts. A probe that could not
+ * run, could not resolve a binary, timed out, or returned an envelope with
+ * no such issue is NOT a verdict — it is `null` here, and callers must let
+ * it fall through to the real run (never block a working setup on a failed
+ * probe). Conflating "no verdict" with "refuse" would re-break every
+ * working host on a flaky/failed probe.
+ */
+export function prerequisitesMissingIssue(
+  envelope: AlpEnvelope | null,
+): AlpIssue | null {
+  const issues = envelope?.issues ?? [];
+  return (
+    issues.find(
+      (issue) =>
+        issue.code === "bootstrap.prerequisites-missing" &&
+        issue.severity === "error",
+    ) ?? null
+  );
 }

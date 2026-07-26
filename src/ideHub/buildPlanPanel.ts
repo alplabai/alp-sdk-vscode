@@ -7,6 +7,7 @@ import { runAlpCommand, runAlpStreamed } from "../alpCli/vscodeAdapter";
 import {
   type BuildPlanData,
   type ExtToWebviewMessage,
+  type SizeReport,
   type SystemManifest,
   type WebviewToExtMessage,
 } from "./messages";
@@ -67,6 +68,7 @@ export class BuildPlanPanel {
     const refresh = () => {
       void this.handleRequestBuildPlan();
       void this.handleRequestSystemManifest();
+      void this.handleRequestSliceSizes();
     };
     for (const glob of ["**/board.yaml", "**/system-manifest.yaml"]) {
       const watcher = vscode.workspace.createFileSystemWatcher(glob);
@@ -96,6 +98,7 @@ export class BuildPlanPanel {
       case "requestBuildPlan":
         void this.handleRequestBuildPlan();
         void this.handleRequestSystemManifest();
+        void this.handleRequestSliceSizes();
         break;
       case "materialiseBuildPlan":
         void this.handleMaterialiseBuildPlan();
@@ -165,6 +168,44 @@ export class BuildPlanPanel {
       const error = envelope?.issues?.[0]?.message ?? outcome.message;
       msg = { type: "systemManifestData", manifest: null, postBuild, error };
     }
+    void this.panel.webview.postMessage(msg);
+  }
+
+  /** Fetch per-slice firmware footprint vs the SoM memory budget from
+   *  `tan size --format json` (#359, the memory half of #331).
+   *
+   *  Post-build only. `tan size` measures the ELF each slice produced, so with
+   *  no `build/system-manifest.yaml` every row would read `not-built` — a
+   *  subprocess per refresh to render nothing. Posts `report: null` in that
+   *  case so the view clears any stale numbers from a previous build.
+   *
+   *  Never passes `--fail-over-budget`: that flag makes `tan size` exit
+   *  non-zero, and this panel reports a footprint, it does not fail anything.
+   *  A missing size tool is not an error either — tan falls back to reading
+   *  ELF section headers and still returns rows. */
+  private async handleRequestSliceSizes(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const built = cwd
+      ? path.join(cwd, "build", "system-manifest.yaml")
+      : undefined;
+    if (!built || !fs.existsSync(built)) {
+      void this.panel.webview.postMessage({
+        type: "sliceSizesData",
+        report: null,
+      } satisfies ExtToWebviewMessage);
+      return;
+    }
+
+    const { outcome } = await runAlpCommand(this.context, ["size"], cwd);
+    const envelope = outcome.envelope;
+    const msg: ExtToWebviewMessage =
+      envelope && envelope.ok
+        ? { type: "sliceSizesData", report: envelope.data as SizeReport }
+        : {
+            type: "sliceSizesData",
+            report: null,
+            error: envelope?.issues?.[0]?.message ?? outcome.message,
+          };
     void this.panel.webview.postMessage(msg);
   }
 

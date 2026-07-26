@@ -19,17 +19,29 @@
 // So: run `tan bootstrap --no-pip --no-west --format json` first — the SAME
 // gate a real run hits, made side-effect-free by those two flags (tan-cli's
 // `bootstrap/mod.rs` never creates the venv when both are set) — and act on
-// tan's own verdict (`bootstrapHostVerdict`, service.ts). A refusal gets a
-// legible warning + the one-click "Reopen in WSL" affordance; a call that
-// fails, can't resolve, or returns nothing recognisable always falls through
-// to running for real — never block a working setup on a failed probe. Any
-// OTHER refusal now renders legibly in the terminal itself (see util.ts's
-// `runInTerminal`), so this pre-flight only needs to catch the one host-level
-// dead end (Yocto-only) that a live terminal can't recover from by retrying.
+// tan's own verdict. Two DISTINCT, EXPLICITLY-PARSED verdicts stop the real
+// terminal spawn, checked in this order (a host-level dead end outranks a
+// fixable tool gap): a host-level refusal (`bootstrapHostVerdict`,
+// service.ts — Yocto-only / an old tan) gets a legible warning + the
+// one-click "Reopen in WSL" affordance; a `bootstrap.prerequisites-missing`
+// refusal (`prerequisitesMissingIssue`, service.ts — a required tool like
+// ninja/cmake isn't on PATH) gets tan's own message logged + shown verbatim
+// in an error notification — no re-parsing it (tan's `failure()` space-joins
+// its lines into one, so a regex hunting `<tool> -> <command>` structure in
+// it is unreliable; see bootstrapPlan.ts for the real fix). Anything short
+// of one of those two exact, parsed issues — a call that fails, can't
+// resolve a binary, times out, or returns nothing recognisable — always
+// falls through to running for real; never block a working setup on a
+// failed probe. Any OTHER refusal renders legibly in the terminal itself
+// (see util.ts's `runInTerminal`), so this pre-flight only needs to catch
+// the dead ends a live terminal can't recover from by retrying.
 
 import * as vscode from "vscode";
 
-import { bootstrapHostVerdict } from "./alpCli/service";
+import {
+  bootstrapHostVerdict,
+  prerequisitesMissingIssue,
+} from "./alpCli/service";
 import { runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import { CANCELLED, runAlpWithProgress } from "./loader";
 import { collectProjectContext } from "./project/vscodeAdapter";
@@ -70,6 +82,9 @@ export function registerBootstrapCommand(
         return; // user cancelled the pre-flight check itself; do nothing.
       }
       const { outcome, raw, source } = preflight;
+
+      // Host-level dead end first: it outranks a fixable tool gap (a
+      // Yocto-only project can't run here at all, no matter what's on PATH).
       const verdict = bootstrapHostVerdict(outcome.envelope);
       if (verdict.refuse) {
         log(
@@ -90,6 +105,39 @@ export function registerBootstrapCommand(
         void vscode.window.showWarningMessage(message, REOPEN).then((pick) => {
           if (pick === REOPEN) void reopenInWsl();
         });
+        return;
+      }
+
+      // An EXPLICIT, PARSED `bootstrap.prerequisites-missing` issue is a
+      // verdict tan already reached — spawning the real run would just repeat
+      // the identical failure. This is deliberately narrower than "the probe
+      // didn't come back clean": a probe that failed to run, couldn't resolve
+      // a binary, timed out, or returned an envelope with no such issue is
+      // NOT this verdict (`prerequisitesMissingIssue` returns null for all of
+      // those) and falls through to the real run below, same as ever — only
+      // the exact, parsed issue stops the terminal spawn.
+      const prereqIssue = prerequisitesMissingIssue(outcome.envelope);
+      if (prereqIssue) {
+        // `isEnvelope` (service.ts) only checks `issues` is an array, never
+        // each issue's shape — guard once, use everywhere below, so a
+        // message-less issue can't throw instead of falling through.
+        const message = prereqIssue.message ?? "";
+        log(
+          `[bootstrap] win32 pre-flight: tan refuses to bootstrap — missing ` +
+            `prerequisites (source: ${source})\n[bootstrap]   ${message.replace(/\n/g, "\n[bootstrap]   ")}` +
+            (raw.stderr.trim()
+              ? `\n[bootstrap]   stderr: ${raw.stderr.trim()}`
+              : ""),
+          "warn",
+        );
+        const TOOLCHAIN_DOCTOR = "Open Toolchain Doctor";
+        void vscode.window
+          .showErrorMessage(`Alp: ${message}`, TOOLCHAIN_DOCTOR)
+          .then((pick) => {
+            if (pick === TOOLCHAIN_DOCTOR) {
+              void vscode.commands.executeCommand("alp.toolchainDoctor");
+            }
+          });
         return;
       }
       // Clear, a mixed-board advisory, or an unresolvable/unrelated outcome —

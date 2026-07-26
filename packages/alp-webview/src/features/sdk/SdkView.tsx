@@ -104,7 +104,7 @@ function buildRows(
       changelog: r.releaseNotes || r.releaseNotesSummary || undefined,
       installTag: local ? undefined : r.tag,
       localPath: local?.path,
-      isActive: !!local && local.path === activePath,
+      isActive: !!local?.active,
       source,
     });
   }
@@ -116,7 +116,7 @@ function buildRows(
       id: e.path,
       label: e.version ?? pathTail(e.path),
       localPath: e.path,
-      isActive: e.path === activePath,
+      isActive: !!e.active,
       source: e.removable ? "installed" : "linked",
     });
   }

@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   resolveProjectContext,
 } = require("../packages/alp-core/dist/project/service.js");
+const { samePath } = require("../packages/alp-core/dist/paths.js");
 
 test("resolveProjectContext resolves sdk, board yaml, west cwd, and python", () => {
   const context = resolveProjectContext(
@@ -28,6 +29,43 @@ test("resolveProjectContext resolves sdk, board yaml, west cwd, and python", () 
     westCwd: "/workspace/app",
     pythonBinary: "python3",
   });
+});
+
+// The only win32-declared fixture in this file. #285 posix-forced the emitted
+// paths with nothing pinning that on the Windows flavour, and nothing pinning
+// how a consumer then matches them against a native host path — which is how
+// #303 (debug session loses its workspace-folder scope) survived the port.
+// Multi-root, native separators in, forward slashes out.
+test("resolveProjectContext forward-slashes every emitted path on win32", () => {
+  const context = resolveProjectContext(
+    {
+      workspaceFolders: ["C:\\workspace\\docs", "C:\\workspace\\app"],
+      settings: {
+        sdkPath: "",
+        pythonPath: "",
+        boardYamlPath: "configs/board.yaml",
+        westCwd: "",
+      },
+      platform: "win32",
+    },
+    (candidatePath) =>
+      candidatePath === "C:/workspace/app/configs/board.yaml" ||
+      candidatePath === "C:/workspace/alp-sdk/scripts/alp_project.py",
+  );
+
+  assert.deepEqual(context, {
+    workspaceRoot: "C:/workspace/app",
+    sdkRoot: "C:/workspace/alp-sdk",
+    boardYamlPath: "C:/workspace/app/configs/board.yaml",
+    westCwd: "C:/workspace/app",
+    pythonBinary: "python",
+  });
+
+  // Documents the other half of the seam rather than re-testing samePath
+  // (test/paths.test.js owns that): VS Code reports this same folder natively,
+  // so any consumer comparing the two must normalize first.
+  assert.notEqual(context.workspaceRoot, "C:\\workspace\\app");
+  assert.ok(samePath("C:\\workspace\\app", context.workspaceRoot));
 });
 
 test("resolveProjectContext honors explicit settings", () => {
