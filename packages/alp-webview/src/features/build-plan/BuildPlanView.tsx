@@ -78,6 +78,35 @@ function SystemManifestSection({
                   </button>
                 )}
               </span>
+              {/* The status chip alone says `skipped` without saying why, which
+               *  is the complaint behind #331 — the manifest already carries
+               *  the answer and it was being dropped. `reason` first, because
+               *  it is the only one that explains a non-ok slice; then what
+               *  the build produced, then where to read the log. Wraps to its
+               *  own line via flex-basis so the chip row keeps its shape. */}
+              {(s.reason || s.output_artefact || s.log_path) && (
+                <span className={styles.manifestDetail}>
+                  {s.reason && (
+                    <span className={styles.manifestReason}>{s.reason}</span>
+                  )}
+                  {s.output_artefact && (
+                    <span>
+                      out{" "}
+                      <code className={styles.manifestDetailPath}>
+                        {s.output_artefact}
+                      </code>
+                    </span>
+                  )}
+                  {s.log_path && (
+                    <span>
+                      log{" "}
+                      <code className={styles.manifestDetailPath}>
+                        {s.log_path}
+                      </code>
+                    </span>
+                  )}
+                </span>
+              )}
             </li>
           );
         })}
@@ -89,6 +118,9 @@ function SystemManifestSection({
             <span key={link.name} className={styles.manifestChip}>
               {link.name} <em>{link.kind}</em> [{link.endpoints.join(" ↔ ")}]
               {link.status && link.status !== "ok" ? ` · ${link.status}` : ""}
+              {/* Same gap as the slices above: a degraded link showed its
+               *  status but never its reason, which the model already has. */}
+              {link.reason ? ` · ${link.reason}` : ""}
             </span>
           ))}
         </div>
