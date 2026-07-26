@@ -21,6 +21,11 @@ import { BuildPlanView } from "../../packages/alp-webview/src/features/build-pla
 const g = globalThis as any;
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+// Take and clear whatever jsdom-setup's window `error` / `unhandledrejection`
+// listeners collected since the last call. Draining (not just reading) keeps
+// one broken handler from being re-reported against every later button.
+const drainErrors = (): string[] => g.__ALP_ERRORS__.splice(0);
+
 // Error boundary that records the actual render error instead of letting React
 // swallow it — so a component that crashes shows up as a PROBLEM, not a pass.
 class Boundary extends React.Component<
@@ -210,6 +215,12 @@ async function main() {
       renderErr = null;
       return true;
     };
+    // Drain before the first click so a report from mount/effects is blamed on
+    // the view, not on whichever button happens to be clicked first.
+    for (const err of drainErrors()) {
+      ok = false;
+      problems.push(`${mode}: error reported during render — ${err}`);
+    }
     if (noteCrash()) {
       console.log(`  FAIL  ${mode}: render error`);
       continue;
@@ -262,9 +273,16 @@ async function main() {
         clickedHere += 1;
         totalClicked += 1;
       } catch (err) {
+        // Only a throw from click() ITSELF (a jsdom fault) reaches here — a
+        // handler's own throw is reported, not propagated. drainErrors() below
+        // is what actually catches a broken button.
         problems.push(
           `${mode}: button "${label}" threw on click — ${String(err)}`,
         );
+      }
+      for (const err of drainErrors()) {
+        ok = false;
+        problems.push(`${mode}: button "${label}" threw on click — ${err}`);
       }
       void before;
     }
