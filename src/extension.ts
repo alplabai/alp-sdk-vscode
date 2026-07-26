@@ -24,7 +24,6 @@ import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
-import { showModelsPanel, triggerModelBuild } from "./models/panel";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
@@ -120,12 +119,6 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("alp.showBuildPlan", () =>
       BuildPlanPanel.open(context),
-    ),
-    vscode.commands.registerCommand("alp.openModelsPanel", () =>
-      showModelsPanel(context),
-    ),
-    vscode.commands.registerCommand("alp.buildModel", () =>
-      triggerModelBuild(context),
     ),
     vscode.commands.registerCommand("alp.openGettingStarted", () =>
       vscode.commands.executeCommand(

@@ -1,13 +1,13 @@
 # ALP IDE — GUI Onboarding Guide
 
-Last revised: 2026-07-25
+Last revised: 2026-05-16
 
 This guide walks through every GUI-first path for getting started with the ALP SDK
 inside VS Code, using the ALP IDE sidebar panel and wizard flows.
 
 ## Overview
 
-The ALP IDE extension provides five entry-point surfaces:
+The ALP IDE extension provides four entry-point surfaces:
 
 | Surface | Command | Purpose |
 |---------|---------|---------|
@@ -16,7 +16,6 @@ The ALP IDE extension provides five entry-point surfaces:
 | **New Project Wizard** | `Alp: New Project Wizard` | Create a new ALP project from a template |
 | **Open Existing Project** | `Alp: Open Existing ALP Project` | Open and activate an existing ALP project |
 | **IDE Overview** | `Alp: Open ALP IDE overview` | Full-window summary of workspace state |
-| **Models Panel** | Activity Bar → ALP icon → Models | Pre-flight fit badge, INT8 prep, host run/A-B, model-zoo browse |
 
 ---
 
@@ -157,29 +156,7 @@ All actions update the sidebar status chips in real time.
 
 ---
 
-## 6. Models Panel
-
-The **Models Panel** is a thin GUI over the `tan model` command family — it collects
-input, shells `tan model …`, and renders the JSON envelope. Reach it from the
-Activity Bar (**ALP icon → Models**). Nothing here compiles or flashes; every action
-is a host-side, pre-build check.
-
-| GUI action | Shells | What it shows |
-|------------|--------|---------------|
-| **Fit badge** (green / yellow / red) | `tan model check <model.tflite\|.onnx> --sku <SKU>` (or `--board board.yaml [--model NAME]`) `[--format human\|json]` | Static, offline pre-flight verdict per SoM backend — `fits` (green) / `cpu-fallback` (yellow) / `no-fit` (red) — with est. SRAM (vs the SoC arena budget), est. latency, op-coverage %, and unsupported ops. No toolchain needed. |
-| **Prep Model** | `tan model prep <model.onnx\|.tflite> --calibration <dir> [--out] [--per-channel] [--min-samples N]` | License-free INT8 quantize (onnxruntime QDQ) plus an fp32-vs-int8 accuracy report (top-1 agreement %, mean cosine, max-abs-err, `good`/`degraded` verdict + guidance). A `.tflite` input is converted to ONNX first (tf2onnx). |
-| **Run Model** | `tan model run <model.onnx> [--input FILE.npy] [--expected LABEL] [--runs N]` | Host reference run (backend `cpu-host`): functional result + host latency + accuracy. |
-| **A-B Compare** | `tan model ab <a.onnx> <b.onnx> [--input] [--runs]` | Runs two models on the same input (host reference): latency + size delta. |
-| **Model Zoo Gallery** | `tan model zoo [--sku <SKU> \| --board board.yaml] [--format]` | Browse curated model-zoo entries, each marked `runs_here` for your SoM. One-click **Add** shells `tan model add <zoo-id> [--board board.yaml] [--name NAME] [--models-dir DIR]` to append `{name, source}` to `board.yaml` `models:` (non-destructive — a duplicate name errors). |
-
-> **Honest caveats — read before trusting a number:**
-> - The **fit badge** is a *static, conservative estimate* (labelled `source:static`, biased to never over-promise `fits`). It is verified on real silicon later, not by this check.
-> - **Run Model** and **A-B Compare** are *host reference* runs (backend `cpu-host`) — **not** the target SoM's performance. `peak_sram_kib` / `power_mj` are `null` on the host; on-device power + measurement are hardware-gated (they need the EVK power-topology + Yocto NPU runtimes).
-> - Real curated zoo entries, PyTorch/Keras→ONNX conversion, and per-backend compile defaults are follow-ons.
-
----
-
-## 7. Recovery Language Reference
+## 6. Recovery Language Reference
 
 | Chip label | Meaning | Suggested action |
 |------------|---------|-----------------|
@@ -191,7 +168,7 @@ is a host-side, pre-build check.
 
 ---
 
-## 8. Related Guides
+## 7. Related Guides
 
 - [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md) — Quick terminal-and-command-palette path
 - [ALP_IDE_SDK_INSTALLATION.md](ALP_IDE_SDK_INSTALLATION.md) — Detailed SDK install and management

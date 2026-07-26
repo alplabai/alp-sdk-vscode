@@ -15,17 +15,6 @@ First-class IDE support for projects built against the
 * **Debug-aware orchestration.** Inspect, doctor, preflight,
   launch-profile planning, and support-bundle surfaces are available
   without embedding debugger implementation into the extension.
-* **Models / edge-AI panel.** A thin GUI over the `tan model` CLI:
-  a per-model **fit badge** (green / yellow / red = `fits` /
-  `cpu-fallback` / `no-fit`, before you build) from `tan model check`;
-  **Prep Model** to INT8-quantize against a calibration folder with an
-  fp32-vs-int8 accuracy report (`tan model prep`); **Run Model** and
-  **A-B Compare** host-reference runs (`tan model run` / `tan model ab`);
-  and a **Model Zoo** gallery of entries marked "runs on your SoM" with
-  one-click Add (`tan model zoo` / `tan model add`). The fit badge is a
-  conservative offline estimate and the host run / A-B is a reference —
-  not the target SoM's measured performance (power and on-device
-  measurement are hardware-gated).
 
 ## Screenshots
 
