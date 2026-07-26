@@ -26,6 +26,7 @@ import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
+import { registerAlpTaskProvider } from "./tasks/vscodeAdapter";
 import { registerToolchainCommands } from "./toolchain";
 import { disposeTaskTracking, log, showOutput } from "./util";
 import { registerTreeViews } from "./views";
@@ -79,6 +80,10 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),
+    // Backs the `preLaunchTask` labels tan's generated launch.json profiles
+    // reference (e.g. "alp: build active target") — without this VS Code has
+    // nothing to resolve those against and pre-launch aborts silently.
+    registerAlpTaskProvider(context),
     createStatusBar(stateMgr),
     registerSelectSdkCommand(),
     ...registerConfiguratorEditor(context),

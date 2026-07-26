@@ -222,6 +222,46 @@ export function buildDebugPreflightReport(
   };
 }
 
+/** Fold a "launchConfig" failure into an already-built preflight report when
+ *  the caller has spotted `<resolved-…>` placeholders left in the launch.json
+ *  configuration `tan debug-config` just wrote. The in-process preflight
+ *  report can't see this itself — it only checks host readiness (adapters and
+ *  tools installed) — so the surface layer (src/debug.ts) that DID diff the
+ *  written configuration against `launchConfigPlaceholders` calls this to
+ *  fold its finding back in, rather than overriding `canLaunch` directly and
+ *  leaving `checks`/`summary`/`nextSteps` to disagree with it. Reuses the same
+ *  summary/canLaunch/nextSteps arithmetic `buildDebugPreflightReport` uses, so
+ *  the result is indistinguishable from a report that had the check all
+ *  along. Returns `report` unchanged when `placeholders` is empty. */
+export function foldLaunchConfigPlaceholders(
+  report: DebugPreflightReport,
+  placeholders: readonly string[],
+): DebugPreflightReport {
+  if (placeholders.length === 0) return report;
+
+  const checks: PreflightCheck[] = [
+    ...report.checks,
+    {
+      name: "launchConfig",
+      status: "fail",
+      detail: placeholders.join(", "),
+      fix: "Build the project first, or set these by hand.",
+    },
+  ];
+
+  return {
+    ...report,
+    checks,
+    summary: {
+      pass: countPreflightChecks(checks, "pass"),
+      warn: countPreflightChecks(checks, "warn"),
+      fail: countPreflightChecks(checks, "fail"),
+    },
+    nextSteps: uniquePreflightNextSteps(checks),
+    canLaunch: countPreflightChecks(checks, "fail") === 0,
+  };
+}
+
 export function buildDoctorReport(
   context: DebugWorkspaceContext,
   request: DebugDoctorRequest,

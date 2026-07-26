@@ -23,18 +23,19 @@
 // terminal spawn, checked in this order (a host-level dead end outranks a
 // fixable tool gap): a host-level refusal (`bootstrapHostVerdict`,
 // service.ts — Yocto-only / an old tan) gets a legible warning + the
-// one-click "Reopen in WSL" affordance; a `bootstrap.prerequisites-missing`
-// refusal (`prerequisitesMissingIssue`, service.ts — a required tool like
-// ninja/cmake isn't on PATH) gets tan's own message logged + shown verbatim
-// in an error notification — no re-parsing it (tan's `failure()` space-joins
-// its lines into one, so a regex hunting `<tool> -> <command>` structure in
-// it is unreliable; see bootstrapPlan.ts for the real fix). Anything short
-// of one of those two exact, parsed issues — a call that fails, can't
-// resolve a binary, times out, or returns nothing recognisable — always
-// falls through to running for real; never block a working setup on a
-// failed probe. Any OTHER refusal renders legibly in the terminal itself
-// (see util.ts's `runInTerminal`), so this pre-flight only needs to catch
-// the dead ends a live terminal can't recover from by retrying.
+// one-click "Reopen in WSL" affordance; a prerequisite refusal
+// (`prerequisitesMissingIssue`, service.ts — its `PREREQ_CODES` set: a
+// required tool like ninja/cmake isn't on PATH, or `python`/`python3` can't
+// run or is too old) gets tan's own message logged + shown verbatim in an
+// error notification — no re-parsing it (tan's `failure()` space-joins its
+// lines into one, so a regex hunting `<tool> -> <command>` structure in it
+// is unreliable; see bootstrapPlan.ts for the real fix). Anything short of
+// one of those two verdicts — a call that fails, can't resolve a binary,
+// times out, or returns nothing recognisable — always falls through to
+// running for real; never block a working setup on a failed probe. Any
+// OTHER refusal renders legibly in the terminal itself (see util.ts's
+// `runInTerminal`), so this pre-flight only needs to catch the dead ends a
+// live terminal can't recover from by retrying.
 
 import * as vscode from "vscode";
 
@@ -108,14 +109,17 @@ export function registerBootstrapCommand(
         return;
       }
 
-      // An EXPLICIT, PARSED `bootstrap.prerequisites-missing` issue is a
-      // verdict tan already reached — spawning the real run would just repeat
-      // the identical failure. This is deliberately narrower than "the probe
-      // didn't come back clean": a probe that failed to run, couldn't resolve
-      // a binary, timed out, or returned an envelope with no such issue is
-      // NOT this verdict (`prerequisitesMissingIssue` returns null for all of
-      // those) and falls through to the real run below, same as ever — only
-      // the exact, parsed issue stops the terminal spawn.
+      // An EXPLICIT, PARSED prerequisite-refusal issue
+      // (`prerequisitesMissingIssue`'s `PREREQ_CODES` — a missing tool, or a
+      // `python`/`python3` that can't run or is too old, tan-cli#78/#81) is
+      // a verdict tan already reached — spawning the real run would just
+      // repeat the identical failure. This is deliberately narrower than
+      // "the probe didn't come back clean": a probe that failed to run,
+      // couldn't resolve a binary, timed out, or returned an envelope with
+      // no such issue is NOT this verdict (`prerequisitesMissingIssue`
+      // returns null for all of those) and falls through to the real run
+      // below, same as ever — only one of those exact, parsed issues stops
+      // the terminal spawn.
       const prereqIssue = prerequisitesMissingIssue(outcome.envelope);
       if (prereqIssue) {
         // `isEnvelope` (service.ts) only checks `issues` is an array, never

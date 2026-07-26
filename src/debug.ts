@@ -19,6 +19,7 @@ import {
   createInspectReport,
   createSupportBundlePayload,
   DEBUG_TARGET_CHOICES,
+  foldLaunchConfigPlaceholders,
   isNativeHostTarget,
   serializeSupportBundlePayload,
   serverChoicesForTarget,
@@ -262,15 +263,14 @@ async function writeLaunchProfile(
     // It cannot see that the CLI left `<resolved-device>` in the file it just
     // wrote — `tan debug-config` reports ok for a partly-resolved draft by
     // design. Without this the user is told the profile is ready and the
-    // session dies inside the adapter.
-    report: placeholders.length > 0 ? { ...report, canLaunch: false } : report,
-    notes:
-      placeholders.length > 0
-        ? [
-            ...written.notes,
-            `Unresolved in the generated configuration: ${placeholders.join(", ")}. Build the project first, or set these by hand.`,
-          ]
-        : written.notes,
+    // session dies inside the adapter. foldLaunchConfigPlaceholders adds a
+    // real "launchConfig" check (rather than just flipping `canLaunch`), so
+    // `report.checks`/`summary`/`nextSteps` name the failure too — both
+    // consumers below build their message from `checks`.
+    report: foldLaunchConfigPlaceholders(report, placeholders),
+    // The placeholders are now named by the folded check's own detail/fix, so
+    // no separate note is needed here — keep only the CLI's own notes.
+    notes: written.notes,
   };
 }
 

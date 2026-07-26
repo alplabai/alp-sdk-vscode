@@ -59,8 +59,14 @@ function clip(text: string, max = 4000): string {
  * so envelope/terminal commands (build --plan, validate, …) use the same SDK the
  * user selected (alpSdk.path / per-project override) rather than the CLI's own
  * cwd-based discovery. No-op when nothing resolves or the caller already set it.
+ *
+ * Exported for the `alp` task provider (`src/tasks/vscodeAdapter.ts`), which
+ * spawns `tan build` itself rather than through `runAlpCommand`/
+ * `runAlpInTerminal` and must not re-derive this rule — a second copy is how a
+ * task-driven build silently starts using a different SDK than every other
+ * command in the window.
  */
-function withSdkRoot(args: string[]): string[] {
+export function withSdkRoot(args: string[]): string[] {
   if (args.includes("--sdk-root")) return args;
   const sdkRoot = collectProjectContext().sdkRoot;
   return sdkRoot ? ["--sdk-root", sdkRoot, ...args] : args;

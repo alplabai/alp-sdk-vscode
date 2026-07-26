@@ -16,9 +16,15 @@ import {
 
 /** The `tan` CLI version this extension build targets for download-on-demand.
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
- *  (aligned with tan-cli's `[workspace.package] version`). v0.3.1 is the
- *  release that carries native (non-WSL-only) Windows bootstrap. */
-export const SUPPORTED_CLI_VERSION = "0.3.2";
+ *  (aligned with tan-cli's `[workspace.package] version`).
+ *
+ *  v0.4.0 is the first release carrying what this extension now REQUIRES, not
+ *  merely prefers: `tan debug-config --core` and its `data.configuration`
+ *  (tan-cli#67 — `writeLaunchProfile` has no second draft to fall back to), and
+ *  the `bootstrap.python-*` refusal codes `prerequisitesMissingIssue` reads
+ *  (tan-cli#78/#81). Against v0.3.1 `--core` is `error: unexpected argument`,
+ *  exit 2. Native (non-WSL-only) Windows bootstrap arrived earlier, in v0.3.1. */
+export const SUPPORTED_CLI_VERSION = "0.4.0";
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
@@ -380,21 +386,37 @@ export function bootstrapHostVerdict(
     : { refuse: false };
 }
 
+/** Issue codes that mean tan explicitly REFUSED to bootstrap over a missing
+ *  or unusable prerequisite, all sharing the same remediation shape (an
+ *  install action) — as read by `prerequisitesMissingIssue` below.
+ *  `bootstrap.prerequisites-missing` covers a required tool (ninja/cmake/
+ *  west/…) absent from PATH; `bootstrap.python-not-runnable` and
+ *  `bootstrap.python-too-old` (tan-cli#78/#81) cover a `python`/`python3`
+ *  that resolves but can't run, or runs below the SDK tooling's >= 3.10
+ *  floor — e.g. a Microsoft Store python stub or a stale 3.9. */
+const PREREQ_CODES = new Set([
+  "bootstrap.prerequisites-missing",
+  "bootstrap.python-not-runnable",
+  "bootstrap.python-too-old",
+]);
+
 /**
- * The pre-flight envelope's `bootstrap.prerequisites-missing` issue, if tan
- * explicitly refused because a required tool (ninja/cmake/west/…) isn't on
- * PATH — an EXPLICIT, PARSED verdict distinct from `bootstrapHostVerdict`'s
- * host-level refusals (those want a WSL reopen; this wants an install
- * action). Spawning the real bootstrap terminal after this issue is present
- * just repeats the exact failure tan already reported.
+ * The pre-flight envelope's prerequisite-refusal issue, if tan explicitly
+ * refused because a required tool (ninja/cmake/west/…) isn't on PATH, or
+ * because its `python`/`python3` can't run or is too old for the SDK
+ * tooling (`PREREQ_CODES` above) — an EXPLICIT, PARSED verdict distinct
+ * from `bootstrapHostVerdict`'s host-level refusals (those want a WSL
+ * reopen; this wants an install action). Spawning the real bootstrap
+ * terminal after one of these issues is present just repeats the exact
+ * failure tan already reported.
  *
- * Deliberately narrow, mirroring `bootstrapHostVerdict`: only an issue with
- * this EXACT code AND `severity: "error"` counts. A probe that could not
- * run, could not resolve a binary, timed out, or returned an envelope with
- * no such issue is NOT a verdict — it is `null` here, and callers must let
- * it fall through to the real run (never block a working setup on a failed
- * probe). Conflating "no verdict" with "refuse" would re-break every
- * working host on a flaky/failed probe.
+ * Deliberately narrow, mirroring `bootstrapHostVerdict`: only an issue
+ * whose code is in `PREREQ_CODES` AND `severity: "error"` counts. A probe
+ * that could not run, could not resolve a binary, timed out, or returned an
+ * envelope with no such issue is NOT a verdict — it is `null` here, and
+ * callers must let it fall through to the real run (never block a working
+ * setup on a failed probe). Conflating "no verdict" with "refuse" would
+ * re-break every working host on a flaky/failed probe.
  */
 export function prerequisitesMissingIssue(
   envelope: AlpEnvelope | null,
@@ -402,9 +424,7 @@ export function prerequisitesMissingIssue(
   const issues = envelope?.issues ?? [];
   return (
     issues.find(
-      (issue) =>
-        issue.code === "bootstrap.prerequisites-missing" &&
-        issue.severity === "error",
+      (issue) => PREREQ_CODES.has(issue.code) && issue.severity === "error",
     ) ?? null
   );
 }
