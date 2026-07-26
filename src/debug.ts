@@ -34,6 +34,7 @@ import {
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
+import { samePath } from "@alp-sdk/core/paths";
 import { ensureNativeSimOverlay } from "./west";
 import { log, reportError, showOutput } from "./util";
 
@@ -332,8 +333,10 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
     if (choice !== "Start Anyway") return;
   }
 
-  const folder = vscode.workspace.workspaceFolders?.find(
-    (candidate) => candidate.uri.fsPath === result.workspaceRoot,
+  // `result.workspaceRoot` is toPosix'd by the project service while
+  // `uri.fsPath` stays native, so this must not be a raw `===` (#303).
+  const folder = vscode.workspace.workspaceFolders?.find((candidate) =>
+    samePath(candidate.uri.fsPath, result.workspaceRoot),
   );
   const started = await vscode.debug.startDebugging(folder, result.configName);
   if (!started) {
