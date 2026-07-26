@@ -414,6 +414,24 @@
   overflow-wrap: anywhere;
 }
 
+/* Budget verdict for a slice's footprint (#359). `over` is the one a firmware
+ * developer must act on, so it reads as an error; `warn` and `no-budget` are
+ * advisory; `not-built` / `n/a` are absence of data, not a problem. */
+.sizeStatus {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.sizeStatus[data-size-status="ok"] {
+  color: var(--status-ok);
+}
+.sizeStatus[data-size-status="warn"],
+.sizeStatus[data-size-status="no-budget"] {
+  color: var(--status-warn);
+}
+.sizeStatus[data-size-status="over"] {
+  color: var(--status-error, var(--status-warn));
+}
+
 .sliceBtn {
   font-size: var(--font-size-xs);
   font-weight: 600;
