@@ -345,15 +345,31 @@ async function configureDebugProfile(
     return;
   }
 
-  for (const note of result.notes) log(note);
-  const unresolved = result.report.checks
-    .filter((check) => check.status === "fail")
-    .map((check) => check.name)
-    .join(", ");
+  const unresolved = logUnlaunchableDetail(result);
   await vscode.window.showWarningMessage(
     `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
   );
   showOutput();
+}
+
+/** Log everything behind a "not launchable yet" toast, and return the check
+ *  names that toast lists. The toast has room for names only, so the WHY has
+ *  to reach the channel it sends the user to (`showOutput()`): each failing
+ *  check's `detail`/`fix`. That is the ONLY place the unresolved values
+ *  themselves survive — the folded `launchConfig` check
+ *  (`foldLaunchConfigPlaceholders`) carries the `<resolved-…>` list in its
+ *  detail, and the CLI's own notes only say placeholders exist in general,
+ *  never which. Logging names alone would leave "resolve: launchConfig" with
+ *  no way to find out which field. */
+function logUnlaunchableDetail(result: LaunchProfileResult): string {
+  for (const note of result.notes) log(note);
+  const failures = result.report.checks.filter(
+    (check) => check.status === "fail",
+  );
+  for (const check of failures) {
+    log(`${check.name}: ${check.detail}${check.fix ? ` — ${check.fix}` : ""}`);
+  }
+  return failures.map((check) => check.name).join(", ");
 }
 
 /** Debug-adapter extension required per server. cortex-debug drives the on-chip
@@ -413,11 +429,7 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   }
 
   if (!result.report.canLaunch) {
-    for (const note of result.notes) log(note);
-    const unresolved = result.report.checks
-      .filter((check) => check.status === "fail")
-      .map((check) => check.name)
-      .join(", ");
+    const unresolved = logUnlaunchableDetail(result);
     const choice = await vscode.window.showWarningMessage(
       `Alp: ${result.relPath} is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
       "Start Anyway",
