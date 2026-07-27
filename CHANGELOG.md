@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Documented what the `native_sim` debug session actually does**, after
+  driving the generated configuration through a real CodeLLDB adapter rather
+  than reasoning about it: the breakpoint verifies and hits inside the
+  application's `main`, locals report real values, and `readMemory` works. Also
+  corrects a claim in `docs/DEBUG.md` — the transitively installed debug views
+  are not uniformly "installed but empty" on this path. `MEMORY` and `xRTOS`
+  list debug types in their `activationEvents` and `lldb` is in neither, so on
+  a `native_sim` session they do not attach at all; only `XPeripherals`
+  activates and then hides itself for want of an SVD.
+
 - **`Native host` debugging now says why it cannot work on Windows.** `native_sim`
   is a POSIX target — Zephyr's own board documentation says it creates "a normal
   Linux executable" — but the extension offered the target on every host with no

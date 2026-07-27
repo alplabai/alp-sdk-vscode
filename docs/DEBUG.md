@@ -26,8 +26,33 @@ So the memory inspector, the RTOS thread views, and the SVD peripheral view are
 all force-installed transitively and cannot be removed while cortex-debug is
 present. Listing any of them here would be redundant — and listing
 `peripheral-viewer` as "optional" would be false, since nothing can opt out of
-it. (It stays empty until SVDs ship — alp-sdk#948 — but that is a matter of the
-view having no data, not of the extension being absent.)
+it.
+
+**Installed is not the same as attached, and which one you get depends on the
+debug type.** Each of these views gates itself on the running session, so the
+`native-host` profile — the only one that emits `type: lldb` — reaches a
+different set than the MCU profiles do. Measured against the installed
+manifests:
+
+| View | Extension | Gate | On a `type: lldb` session |
+| ---- | --------- | ---- | ------------------------- |
+| MEMORY | `mcu-debug.memory-view` 0.0.29 | `activationEvents`: `cortex-debug`, `mcu-debug`, `cppdbg`, `cspy`, `gdb`, three vendor gdb targets — no `lldb` | does not auto-activate |
+| xRTOS | `mcu-debug.rtos-views` 0.0.16 | same shape, no `lldb` | does not auto-activate |
+| XPeripherals | `mcu-debug.peripheral-viewer` 1.6.1 | `onDebug` + `when: mcu-debug.peripheral-viewer.hadData` | activates, view stays hidden |
+| Cortex Live Watch | `marus25.cortex-debug` 1.12.1 | `when: debugType == cortex-debug` | not rendered |
+
+Only XPeripherals matches the "installed but empty" description, and only
+because its activation is `onDebug` rather than a debug-type list; it stays
+hidden until SVDs ship (alp-sdk#948). MEMORY and xRTOS are a different case on
+this path — absent rather than empty, because CodeLLDB's debug type is not in
+their activation lists. The underlying capability is still there: a CodeLLDB
+session advertises `supportsReadMemoryRequest: true` and serves `readMemory`,
+so the panel works once opened by command; it just does not come up on its own.
+
+None of this is Alp IDE's to change — the activation lists belong to the
+mcu-debug extensions — but a customer told to "open the Memory view" on
+native_sim will not find it waiting for them, and that is worth saying here
+rather than leaving to be rediscovered.
 
 `extensionDependencies` is a hard gate: an id missing from the registry a given
 editor installs from makes Alp IDE impossible to install at all, not merely
@@ -445,6 +470,39 @@ resolves (see §12).
 `contributes.debuggers`; `CodeLLDB` is the extension's *name* and `codelldb` is
 never a debug type — VS Code rejects such a config with `configured debug type
 'codelldb' is not supported`.
+
+Driven end to end against a real CodeLLDB 1.12.2 adapter and a `native_sim`
+build of Zephyr v4.4.0, this configuration verifies a source breakpoint, hits
+it inside the application's own `main`, and reports live locals with real
+values:
+
+```
+stopped reason=breakpoint
+  main            @ samples/basic/blinky/src/main.c:44
+  bg_thread_main  @ kernel/init.c:347
+  z_thread_entry  @ lib/os/thread_entry.c:60
+  posix_arch_thread_entry @ arch/posix/core/thread.c:124
+locals: ret = 0 (int)   led_state = false (bool)
+```
+
+Two behaviours are worth knowing before they surprise someone:
+
+- **The first `stopped` event is not yours.** `zephyr.exe` is a dynamically
+  linked host executable, so the run stops at the loader rendezvous
+  (`__GI__dl_debug_state`) before reaching application code, and it stops first
+  in the native simulator's own `main`
+  (`scripts/native_simulator/common/src/main.c`) rather than the application's.
+  A client that assumes the first stop is its breakpoint reports the wrong
+  location.
+- **Scalar locals carry `memoryReference: 0x0`.** Zephyr builds `-Os`, so
+  `ret` and `led_state` live in registers with no address to hand out. Their
+  *values* are correct and are not `<optimized out>` — but "view memory of this
+  variable" has nothing to point at. Reading by address works normally
+  (`readMemory` at `rsp`/`rip`/`rbp` returns bytes), which is the Memory view's
+  primary mode anyway.
+
+See the companion-extensions section above for which debug views attach to an
+`lldb` session and which do not.
 
 ## 11. Product Commands to Support Debug
 
