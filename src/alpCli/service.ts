@@ -237,7 +237,7 @@ export function shouldFetchManagedCli(
  *
  * Why MINOR is the breaking axis: tan is pre-1.0 and this extension matches on
  * EXACT issue-code strings that all FAIL OPEN — `bootstrap.windows-unsupported`,
- * `bootstrap.yocto-host`, `bootstrap.prerequisites-missing` (above) and
+ * `bootstrap.yocto-host`, the three `BOOTSTRAP_PREREQUISITE_CODES` (below) and
  * `presets.sdk-root-unresolved` (`ideHub/newProjectFlowPanel.ts`) — plus
  * unversioned `data.*` field names read with `?? []` fallbacks. A renamed code
  * or field produces no error and no log line, just a dead guard or an empty
@@ -492,20 +492,45 @@ export function bootstrapHostVerdict(
 }
 
 /**
- * The pre-flight envelope's `bootstrap.prerequisites-missing` issue, if tan
- * explicitly refused because a required tool (ninja/cmake/west/…) isn't on
- * PATH — an EXPLICIT, PARSED verdict distinct from `bootstrapHostVerdict`'s
- * host-level refusals (those want a WSL reopen; this wants an install
- * action). Spawning the real bootstrap terminal after this issue is present
- * just repeats the exact failure tan already reported.
+ * Every code tan raises when its own prerequisite pre-flight refuses to
+ * bootstrap (tan-core `bootstrap/prerequisites.rs`). All three are the same
+ * verdict to a consumer: tan already decided, and re-running would reproduce
+ * it verbatim.
  *
- * Deliberately narrow, mirroring `bootstrapHostVerdict`: only an issue with
- * this EXACT code AND `severity: "error"` counts. A probe that could not
- * run, could not resolve a binary, timed out, or returned an envelope with
- * no such issue is NOT a verdict — it is `null` here, and callers must let
- * it fall through to the real run (never block a working setup on a failed
- * probe). Conflating "no verdict" with "refuse" would re-break every
- * working host on a flaky/failed probe.
+ * The two python codes are NOT redundant with the first. tan's source is
+ * explicit that they carry NO missing-tool list at all — a consumer keying
+ * only on `prerequisites-missing` "would get an empty array against a fully
+ * actionable message", which is precisely what happened here: both fell
+ * through the win32 pre-flight, the real bootstrap was spawned anyway, and the
+ * customer watched the identical refusal a second time with tan's guidance
+ * lost in the terminal.
+ *
+ * The pinned CLI (`SUPPORTED_CLI_VERSION`) emits only the first — the other
+ * two landed in tan after that tag. Matching a code the pinned binary never
+ * emits costs nothing and lands the fix BEFORE the pin bump instead of after.
+ */
+const BOOTSTRAP_PREREQUISITE_CODES: ReadonlySet<string> = new Set([
+  "bootstrap.prerequisites-missing",
+  "bootstrap.python-not-runnable",
+  "bootstrap.python-too-old",
+]);
+
+/**
+ * The pre-flight envelope's prerequisite-refusal issue, if tan explicitly
+ * refused because a required tool (ninja/cmake/west/…) isn't on PATH, or
+ * because the python it found cannot run or is too old — an EXPLICIT, PARSED
+ * verdict distinct from `bootstrapHostVerdict`'s host-level refusals (those
+ * want a WSL reopen; this wants an install action). Spawning the real
+ * bootstrap terminal after one of these is present just repeats the exact
+ * failure tan already reported.
+ *
+ * Deliberately narrow, mirroring `bootstrapHostVerdict`: only an issue whose
+ * code is one of `BOOTSTRAP_PREREQUISITE_CODES` AND whose severity is
+ * `"error"` counts. A probe that could not run, could not resolve a binary,
+ * timed out, or returned an envelope with no such issue is NOT a verdict — it
+ * is `null` here, and callers must let it fall through to the real run (never
+ * block a working setup on a failed probe). Conflating "no verdict" with
+ * "refuse" would re-break every working host on a flaky/failed probe.
  */
 export function prerequisitesMissingIssue(
   envelope: AlpEnvelope | null,
@@ -514,7 +539,7 @@ export function prerequisitesMissingIssue(
   return (
     issues.find(
       (issue) =>
-        issue.code === "bootstrap.prerequisites-missing" &&
+        BOOTSTRAP_PREREQUISITE_CODES.has(issue.code) &&
         issue.severity === "error",
     ) ?? null
   );

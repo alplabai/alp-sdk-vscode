@@ -105,6 +105,7 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.installDependencies",
   "alp.newProjectWizard",
   "alp.openConfigurator",
+  "alp.openDependencies",
   "alp.openExistingProject",
   "alp.openHardwareExplorer",
   "alp.openHub",
@@ -114,7 +115,12 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.openSetupFlow",
   "alp.previewEffectiveConfig",
   "alp.showBuildPlan",
-  "alp.toolchainDoctor",
+  // `alp.toolchainDoctor` is deliberately NOT here. The id still exists (the
+  // notify seam's `runDoctor` action and shipped keybindings execute it, and it
+  // opens the dependency panel), but no webview posts it any more — the Hub
+  // tile and the Environment card both dispatch `alp.openDependencies`. A stale
+  // bundle that still posts the old id gets the "reload the window" notice,
+  // which is exactly the situation it describes.
   "alp.validateBoardYaml",
   "alp.westAlpClean",
   "alp.westAlpFlash",

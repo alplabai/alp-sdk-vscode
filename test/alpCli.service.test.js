@@ -260,6 +260,80 @@ test("prerequisitesMissingIssue: returns the error-severity issue verbatim, and 
   assert.equal(prerequisitesMissingIssue(null), null);
 });
 
+// tan's prerequisite pre-flight (tan-core `bootstrap/prerequisites.rs`) refuses
+// with THREE codes, not one. The extension matched only the first, so both
+// python refusals fell through the win32 pre-flight, the real bootstrap was
+// spawned anyway, and the customer watched the identical refusal a second time
+// with tan's guidance lost in the terminal. tan's own source is explicit that
+// the two python codes carry NO missing-tool list — a consumer keying on
+// `prerequisites-missing` alone "would get an empty array against a fully
+// actionable message".
+//
+// The pinned SUPPORTED_CLI_VERSION emits only `bootstrap.prerequisites-missing`
+// (the other two landed in tan after that tag). Matching a code the pinned
+// binary never emits is harmless and lands the fix BEFORE the pin bump.
+const PREREQUISITE_REFUSAL_CODES = [
+  "bootstrap.prerequisites-missing",
+  "bootstrap.python-not-runnable",
+  "bootstrap.python-too-old",
+];
+
+for (const code of PREREQUISITE_REFUSAL_CODES) {
+  test(`prerequisitesMissingIssue: "${code}" at error severity is a refusal`, () => {
+    const issue = {
+      code,
+      severity: "error",
+      message: "tan's own refusal text, verbatim.",
+    };
+    const envelope = {
+      command: "bootstrap",
+      ok: false,
+      exitCode: 1,
+      project: { root: null, boardYaml: null },
+      data: {},
+      issues: [issue],
+    };
+    assert.equal(
+      prerequisitesMissingIssue(envelope),
+      issue,
+      `${code} is a verdict tan already reached — re-running reproduces it`,
+    );
+
+    // The narrowness rule is per-code, not just for the first one: only
+    // "error" gates the run.
+    assert.equal(
+      prerequisitesMissingIssue({
+        ...envelope,
+        issues: [{ ...issue, severity: "warning" }],
+      }),
+      null,
+    );
+  });
+}
+
+test("prerequisitesMissingIssue: an unrecognised bootstrap code still falls through", () => {
+  // The fall-through rule is unchanged by widening the set: a code this build
+  // does not know is NOT a verdict, and blocking on it would break a working
+  // host the day tan adds a refusal we haven't taught the extension.
+  assert.equal(
+    prerequisitesMissingIssue({
+      command: "bootstrap",
+      ok: false,
+      exitCode: 1,
+      project: { root: null, boardYaml: null },
+      data: {},
+      issues: [
+        {
+          code: "bootstrap.some-future-refusal",
+          severity: "error",
+          message: "…",
+        },
+      ],
+    }),
+    null,
+  );
+});
+
 test("cliSkew is the single comparison: behind / same / ahead-patch / ahead-minor / unknown", () => {
   assert.equal(cliSkew("0.1.11", "0.1.14"), "behind");
   assert.equal(cliSkew("0.1.14", "0.1.14"), "same");

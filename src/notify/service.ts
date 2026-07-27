@@ -33,6 +33,34 @@ export interface OperationContext {
   dedupeKey?: string;
 }
 
+/**
+ * True for VS Code's `CancellationError` — "the window went away", NOT "the
+ * thing failed".
+ *
+ * When the extension host tears a window down (reload, close, or a folder-open
+ * that replaces the workspace) the RPC protocol rejects EVERY pending
+ * main-thread reply with one of these. An unanswered toast is the likeliest
+ * pending call, so any `await` on a notification, a memento write or a
+ * `executeCommand` can land here through no fault of its own. Logging that as
+ * a failure is the closed-window-vs-broken confusion this seam exists to keep
+ * out of the customer-facing channel.
+ *
+ * STRUCTURAL, and deliberately narrow:
+ *  - `instanceof vscode.CancellationError` is unavailable twice over — this
+ *    module is pure (no `vscode`), and the error crosses the RPC boundary, so
+ *    the prototype would not survive anyway.
+ *  - BOTH `name` and `message` must be exactly "Canceled" (VS Code's own
+ *    `CancellationError` sets `this.name = this.message = "Canceled"`).
+ *    Matching the message alone would swallow a REAL fault whose text merely
+ *    mentions cancellation ("Bootstrap was canceled by the user") — a silenced
+ *    real error is worse than the noisy line this predicate removes.
+ */
+export function isCancellation(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { name?: unknown; message?: unknown };
+  return e.name === "Canceled" && e.message === "Canceled";
+}
+
 /** Raw-diagnostic markers that must never reach a customer-facing sentence.
  *  An explicit errno list (not `E[A-Z]+`) so ordinary prose can't trip it. */
 const ERRNO =

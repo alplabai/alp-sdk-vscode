@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+- **One Dependencies panel replaces the Toolchain Doctor and folds in the SDK
+  Manager.** It answers "is my machine ready, and is it current" in one table:
+  every dependency `tan` checks — the SDK, the workspace, west, CMake, Ninja,
+  the Zephyr SDK and the rest — with its installed version, the latest known
+  version, the status `tan` reported, and one action. Rows are **derived** from
+  what `tan` reports rather than listed here, so a check added upstream appears
+  with no change to the extension, and a test asserts membership against a
+  captured envelope rather than shape.
+- **The old panel's Fix button was dead on every machine where `tan` resolves.**
+  It rendered only when a per-check fix id was attached, and the CLI path never
+  attached one. Buttons now say what they actually do — "Install", "Open install
+  guide", "Run bootstrap" — each with a tooltip naming the effect, because two
+  of the available fixes open a web page and install nothing.
+- **The old panel could report "All required tools present" while Ninja was
+  missing.** It treated `tan`'s `warn` as "not required", and `tan` caps an
+  absent build tool at `warn` today. The new panel publishes no readiness
+  verdict at all — it shows `tan`'s own three counts. When tan-cli#103 lands and
+  a missing build tool becomes a `fail`, that number becomes a truthful blocking
+  verdict with no change here.
+- Versions are never invented: a cell `tan` cannot fill renders a dash, and a
+  probed version is shown only for a row `tan` itself reports as passing. The
+  pinned `tan` CLI is shown as pinned and never offered an "update" to a version
+  older than the one installed.
+- `[setup] readiness check failed: Canceled: Canceled` is gone. It was the
+  extension host tearing down its RPC channel on window close — the check had
+  not failed, the window went away — reported to the customer as a fault. Two
+  defects rode with it: bookkeeping writes ran *before* the notification they
+  could suppress, and the notification helper had no rejection handler, so a
+  teardown produced an unhandled rejection naming nothing.
+- The extension now recognises all three of `tan`'s bootstrap refusals. It knew
+  only `bootstrap.prerequisites-missing`; a Python that is too old or not
+  runnable fell through, so the real bootstrap ran anyway and the customer saw
+  the same refusal twice with its guidance lost.
+- A failed readiness refresh no longer replaces good state with an empty one, so
+  a transient hiccup stops repainting a provisioned machine as "nothing
+  installed".
+- `vsce package` can no longer leave a stale bundle where `tsc --build` will not
+  replace it: bundling now invalidates the build info, so an ordinary `compile`
+  restores the real output.
+
 - **A Windows upgrade could strand a customer on the old `tan` CLI.** Replacing
   the installed binary renames it aside first, and that rename fails when the
   `.old` slot is itself held — measured here as a hard, non-transient failure,

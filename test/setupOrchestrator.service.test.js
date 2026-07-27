@@ -203,18 +203,47 @@ const READY_STATE = {
   workspace: { workspaceRoot: "/w" },
 };
 
+/** The environment the setup nudge exists for: west missing on an open
+ *  project, so the toast fires and offers Bootstrap. */
+const NOT_READY_STATE = {
+  ...READY_STATE,
+  setup: { ...READY_STATE.setup, westAvailable: false },
+};
+
 /** Run `maybeOfferSetupPanel` over the given mementos, collecting every plan
- *  the presenter was handed. */
-async function activate({ globalState, workspaceState }) {
+ *  the presenter was handed.
+ *
+ *  Returns the `notifyAsync` plans (the drift toast). `nudges` and `logs`, when
+ *  passed, additionally collect the awaited `notify` plans (the setup nudge)
+ *  and every output-channel line — those are what the bookkeeping-order and
+ *  cancellation tests read. `state` is what the readiness query answers with,
+ *  or an Error it rejects with. */
+async function activate({
+  globalState,
+  workspaceState,
+  state = READY_STATE,
+  nudges,
+  logs,
+}) {
   const plans = [];
   const { maybeOfferSetupPanel } = loadOrchestrator({
     vscode: {},
     "../notify/vscodeAdapter": {
-      notify: async () => undefined,
+      notify: async (plan) => {
+        nudges?.push(plan);
+        return undefined;
+      },
       notifyAsync: (plan) => plans.push(plan),
     },
-    "../util": { log() {} },
-    "./vscodeAdapter": { queryAlpIdeState: async () => READY_STATE },
+    "../util": {
+      log: (line, level = "info") => logs?.push({ line, level }),
+    },
+    "./vscodeAdapter": {
+      queryAlpIdeState: async () => {
+        if (state instanceof Error) throw state;
+        return state;
+      },
+    },
   });
   await maybeOfferSetupPanel({ globalState, workspaceState });
   return plans;
@@ -295,6 +324,122 @@ test("the same drift is not repeated in the same workspace", async () => {
     [],
     "the fingerprint was re-recorded, so there is no drift left to report",
   );
+});
+
+// ────────────── bookkeeping must never gate the remedy ──────────────
+
+/** A `Memento` whose writes always reject — a storage fault, or the teardown
+ *  that rejects every pending main-thread reply. */
+function rejectingMemento(err) {
+  return {
+    get: (_key, fallback) => fallback,
+    update: async () => {
+      throw err;
+    },
+  };
+}
+
+for (const [label, err] of [
+  ["a storage fault", new Error("EPERM: operation not permitted")],
+  [
+    "window teardown",
+    Object.assign(new Error("Canceled"), { name: "Canceled" }),
+  ],
+]) {
+  test(`the setup nudge is shown even when a fingerprint write fails (${label})`, async () => {
+    // The defect: two `workspaceState.update` RPCs sat BEFORE the nudge inside
+    // the same `try`. Either one rejecting took the whole readiness check into
+    // the catch, so the ONE customer-facing sentence this file exists to
+    // deliver was never shown — and the only trace was a line claiming
+    // readiness itself had failed. Fingerprint bookkeeping is a nicety; the
+    // nudge is the product.
+    const nudges = [];
+    const logs = [];
+    await activate({
+      globalState: rejectingMemento(err),
+      workspaceState: rejectingMemento(err),
+      state: NOT_READY_STATE,
+      nudges,
+      logs,
+    });
+
+    assert.equal(nudges.length, 1, "the nudge must survive the failed write");
+    assert.equal(
+      nudges[0].message,
+      "Alp: build environment not set up (west not found). Run Bootstrap to " +
+        "install west + Zephyr build tools.",
+    );
+    assert.deepEqual(
+      logs.filter((l) => l.line.startsWith("[setup] readiness check failed")),
+      [],
+      "a failed bookkeeping write is not a failed readiness check",
+    );
+  });
+}
+
+test("a failed fingerprint write is still reported to the channel", async () => {
+  // Fire-and-forget, not ignore-and-forget: the write is idempotent and the
+  // next activation redoes it, but a rejection still leaves one line naming
+  // the key — and never an unhandled rejection.
+  const logs = [];
+  await activate({
+    globalState: memento(),
+    workspaceState: rejectingMemento(new Error("EPERM")),
+    state: NOT_READY_STATE,
+    nudges: [],
+    logs,
+  });
+  assert.deepEqual(
+    logs.filter((l) => l.line.startsWith("[setup] could not record")),
+    [
+      {
+        line: "[setup] could not record alp.setupOrchestrator.lastToolVersions: Error: EPERM",
+        level: "warn",
+      },
+    ],
+  );
+});
+
+// ─────────── the window closing is not a readiness failure ───────────
+
+test("a readiness check abandoned by window teardown is not logged as a failure", async () => {
+  // Observed verbatim in two extension-host transcripts:
+  //   [setup] readiness check failed: Canceled: Canceled
+  // The check did not fail — the window went away (reload/close, or a
+  // folder-open replacing the workspace), and the host rejected every pending
+  // main-thread reply, the unanswered toast above included.
+  const logs = [];
+  await activate({
+    globalState: memento(),
+    workspaceState: memento(),
+    state: Object.assign(new Error("Canceled"), { name: "Canceled" }),
+    logs,
+  });
+  assert.deepEqual(logs, [
+    {
+      line: "[setup] readiness check abandoned, window closing",
+      level: "info",
+    },
+  ]);
+});
+
+test("a real fault is STILL a readiness failure, even when it mentions cancellation", async () => {
+  // The half-fix that would be worse than the bug: matching on the message
+  // alone swallows real faults in the one channel the customer is told to
+  // read.
+  const logs = [];
+  await activate({
+    globalState: memento(),
+    workspaceState: memento(),
+    state: new Error("Canceled"),
+    logs,
+  });
+  assert.deepEqual(logs, [
+    {
+      line: "[setup] readiness check failed: Error: Canceled",
+      level: "warn",
+    },
+  ]);
 });
 
 // ───────────────────────── the extension id ─────────────────────────────
