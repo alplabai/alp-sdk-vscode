@@ -7,6 +7,7 @@
 import { BinaryResolutionInput, BinarySource, CliOutcome } from "./models";
 import {
   classifyOutcome,
+  classifyUnavailable,
   decideBinarySource,
   parseEnvelope,
   releaseAssetForTarget,
@@ -56,7 +57,11 @@ export interface ResolveDeps {
   fileExists: (path: string) => boolean;
   commandOnPath: (command: string) => boolean;
   ensureDir: (dir: string) => void;
-  download: (url: string, destFile: string) => Promise<void>;
+  download: (
+    url: string,
+    destFile: string,
+    signal?: AbortSignal,
+  ) => Promise<void>;
   chmodExec: (path: string) => void;
 }
 
@@ -124,7 +129,10 @@ export async function resolveAlpBinary(
   }
 }
 
-export async function downloadCli(deps: ResolveDeps): Promise<void> {
+export async function downloadCli(
+  deps: ResolveDeps,
+  signal?: AbortSignal,
+): Promise<void> {
   const asset = releaseAssetForTarget(deps.platform, deps.arch);
   if (!asset) {
     throw new Error(
@@ -138,7 +146,7 @@ export async function downloadCli(deps: ResolveDeps): Promise<void> {
   // that makes it appear at `cachedBinaryPath` (closes the race where a
   // concurrent window resolves "cached" and spawns a not-yet-executable
   // file); this call is now a harmless idempotent safety net.
-  await deps.download(asset.url, deps.cachedBinaryPath);
+  await deps.download(asset.url, deps.cachedBinaryPath, signal);
   if (deps.platform !== "win32") {
     deps.chmodExec(deps.cachedBinaryPath);
   }
@@ -181,14 +189,21 @@ function classifyAlpSpawn(raw: SpawnResult): {
   raw: SpawnResult;
 } {
   if (raw.error) {
+    // The errno/timeout text stays OFF `message` and travels on `unavailable.
+    // detail` instead: `src/notify/service.ts` logs it to the output channel
+    // and never renders it, so `spawn tan ENOENT` can't reach a toast.
     return {
       outcome: {
         exitCode: -1,
         kind: "unknown",
         ok: false,
         severity: "error",
-        message: `Could not run the tan CLI: ${raw.error.message}`,
+        message: "Could not run the tan CLI.",
         envelope: null,
+        unavailable: {
+          reason: classifyUnavailable(raw.error.message),
+          detail: raw.error.message,
+        },
       },
       raw,
     };

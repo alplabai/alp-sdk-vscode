@@ -2,10 +2,12 @@
 //
 // Generate + validate commands. Both delegate to the native CLI:
 // `alp generate [--target <emit> | --all]` and `alp validate`. The SDK's Python
-// loader/validator run inside the CLI; this file just maps the JSON envelope
-// back onto the same toasts / previews. The cheap board.yaml-exists pre-check
-// stays in-process for a precise "not found" message; per-edit board.yaml
-// diagnostics remain the LSP's job (src/diagnostics.ts), untouched.
+// loader/validator run inside the CLI; this file maps the JSON envelope onto a
+// NotificationPlan and hands it to the one presenter (src/notify/) — severity
+// comes from the classified outcome, never from a hand-picked show*Message
+// here. The cheap board.yaml-exists pre-check stays in-process for a precise
+// "not found" message; per-edit board.yaml diagnostics remain the LSP's job
+// (src/diagnostics.ts), untouched.
 
 import * as path from "path";
 import * as vscode from "vscode";
@@ -18,6 +20,13 @@ import {
   collectLoaderWorkspaceContext,
   previewGeneratedFile,
 } from "./loader/vscodeAdapter";
+import {
+  planCliOutcome,
+  planFailure,
+  planPrecondition,
+  planSuccess,
+} from "./notify/service";
+import { notify, notifyAsync } from "./notify/vscodeAdapter";
 import { log, showOutput } from "./util";
 
 interface GenerateData {
@@ -26,15 +35,36 @@ interface GenerateData {
   failed: string[];
 }
 
+/**
+ * `envelope.data` is the one part of the envelope whose shape the CLI contract
+ * does NOT fix, so a `tan` that omits a list must not throw a TypeError out of
+ * the command handler — that surfaces as VS Code's own unbranded "command
+ * failed" popup with the raw error, which is worse than any bad toast.
+ */
+function generateData(data: unknown): GenerateData {
+  const d = (data ?? {}) as Partial<GenerateData>;
+  return {
+    targets: d.targets ?? [],
+    written: d.written ?? [],
+    failed: d.failed ?? [],
+  };
+}
+
 function boardYamlMissing(): boolean {
   const project = collectLoaderWorkspaceContext();
-  if (!boardYamlExists(project.boardYamlPath)) {
-    void vscode.window.showErrorMessage(
-      `Alp: board.yaml not found at ${project.boardYamlPath ?? "<unset>"}.`,
-    );
-    return true;
-  }
-  return false;
+  if (boardYamlExists(project.boardYamlPath)) return false;
+  // First run, not a failure: a warning that carries New Project / Open Setup,
+  // with the path kept off the sentence and in the channel-only detail.
+  // Fire-and-forget — the caller is synchronous and must return its guard now.
+  notifyAsync(
+    planPrecondition("noBoardYaml", {
+      detail: project.boardYamlPath
+        ? `expected at ${project.boardYamlPath}`
+        : "no board.yaml path resolved for this workspace",
+      dedupeKey: "board-yaml-missing",
+    }),
+  );
+  return true;
 }
 
 function logIssues(
@@ -94,6 +124,7 @@ async function runLoader(
 ): Promise<void> {
   if (boardYamlMissing()) return;
   const target = getGenerationTargetSupport(emit);
+  const operation = `${target.displayName} generation`;
 
   const res = await runAlpWithProgress(
     context,
@@ -101,22 +132,55 @@ async function runLoader(
     `Generating ${target.displayName}…`,
   );
   if (res === CANCELLED) {
-    vscode.window.setStatusBarMessage("Alp: generation cancelled.", 3000);
+    await notify(
+      planSuccess("Alp: generation cancelled.", { timeoutMs: 3000 }),
+    );
     return;
   }
   const { outcome } = res;
   const envelope = outcome.envelope;
   if (!envelope) {
-    await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
+    // planCliOutcome splits "tan was never installed" (Install it) from "tan is
+    // there but broken/misconfigured" (Settings/Doctor) off
+    // outcome.unavailable, and keeps the errno/path in the channel detail.
+    if ((await notify(planCliOutcome(outcome, { operation }))) === "retry") {
+      await runLoader(context, emit);
+    }
     return;
   }
   logIssues("generate", envelope.issues);
 
-  const data = envelope.data as GenerateData;
-  if (!envelope.ok || data.failed.includes(emit)) {
+  const data = generateData(envelope.data);
+  if (!envelope.ok) {
     showOutput();
-    await vscode.window.showErrorMessage(
-      `Alp: ${target.displayName} generation failed.  See the Alp SDK output channel.`,
+    // Severity is the outcome's: an exit-2 validation failure stays a warning,
+    // exit 3 gets Retry, the rest get Run Doctor. "Open board.yaml" is opt-in
+    // per-caller (the planner cannot know whether a board.yaml is even in play
+    // -- `tan init` also exits 2), and generation reads one, so it opts in.
+    if (
+      (await notify(
+        planCliOutcome(outcome, {
+          operation,
+          extraActions: [{ id: "openBoardYaml" }],
+        }),
+      )) === "retry"
+    ) {
+      await runLoader(context, emit);
+    }
+    return;
+  }
+  if (data.failed.includes(emit)) {
+    showOutput();
+    // The CLI exited 0 yet listed this target as failed, so there is no
+    // classified severity to inherit — "warning" is the honest floor for a
+    // self-contradicting envelope, and it must not read as a clean run.
+    await notify(
+      planFailure({
+        operation,
+        cause: `${target.displayName} was not generated.`,
+        severity: "warning",
+        actions: [{ id: "runDoctor" }],
+      }),
     );
     return;
   }
@@ -124,15 +188,17 @@ async function runLoader(
   const written = data.written[0];
   if (written && envelope.project.root) {
     await previewGeneratedFile(path.resolve(envelope.project.root, written));
-    vscode.window.setStatusBarMessage(
-      `Alp: wrote ${target.displayName} (${written})`,
-      5000,
+    await notify(
+      planSuccess(`Alp: wrote ${target.displayName} (${written})`, {
+        timeoutMs: 5000,
+      }),
     );
   }
 }
 
 async function runLoaderAll(context: vscode.ExtensionContext): Promise<void> {
   if (boardYamlMissing()) return;
+  const operation = "Regenerating all formats";
 
   const res = await runAlpWithProgress(
     context,
@@ -140,74 +206,98 @@ async function runLoaderAll(context: vscode.ExtensionContext): Promise<void> {
     "Regenerating all formats…",
   );
   if (res === CANCELLED) {
-    vscode.window.setStatusBarMessage("Alp: generation cancelled.", 3000);
+    await notify(
+      planSuccess("Alp: generation cancelled.", { timeoutMs: 3000 }),
+    );
     return;
   }
   const { outcome } = res;
   const envelope = outcome.envelope;
   if (!envelope) {
-    await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
+    if ((await notify(planCliOutcome(outcome, { operation }))) === "retry") {
+      await runLoaderAll(context);
+    }
     return;
   }
   logIssues("generate", envelope.issues);
 
-  const data = envelope.data as GenerateData;
-  if (data.failed.length === 0) {
-    vscode.window.setStatusBarMessage(
-      `Alp: regenerated all ${data.targets.length} formats (${data.written.join(", ")})`,
-      7000,
+  const data = generateData(envelope.data);
+  if (envelope.ok && data.failed.length === 0) {
+    await notify(
+      planSuccess(
+        `Alp: regenerated all ${data.targets.length} formats (${data.written.join(", ")})`,
+        { timeoutMs: 7000 },
+      ),
     );
-  } else {
-    showOutput();
-    const failedDisplayNames = data.failed.map(
-      (emit) => getGenerationTargetSupport(emit as EmitMode).displayName,
-    );
-    await vscode.window.showWarningMessage(
-      `Alp: regenerated ${data.written.length}/${data.targets.length} -- failed: ${failedDisplayNames.join(", ")}`,
-    );
+    return;
   }
+
+  showOutput();
+  const failedDisplayNames = data.failed.map(
+    (emit) => getGenerationTargetSupport(emit as EmitMode).displayName,
+  );
+  await notify(
+    planFailure({
+      operation,
+      // The per-target counts are the best customer text this command has, so
+      // they stay in `message`; only the severity moves — an exit-3 write
+      // failure is an error, not the yellow toast this site used to hardcode.
+      cause:
+        failedDisplayNames.length > 0
+          ? `Regenerated ${data.written.length} of ${data.targets.length} formats — ${failedDisplayNames.join(", ")} failed.`
+          : "Regenerating all formats failed.",
+      severity: envelope.ok ? "warning" : outcome.severity,
+      actions: [{ id: "openBoardYaml" }, { id: "runDoctor" }],
+    }),
+  );
 }
 
 async function runValidator(context: vscode.ExtensionContext): Promise<void> {
   if (boardYamlMissing()) return;
+  const operation = "Validating board.yaml";
 
   // Delegate to the native CLI (which spawns the SDK's Python validator) and
-  // map the envelope back onto the same toasts.
+  // map the envelope onto a plan.
   const res = await runAlpWithProgress(
     context,
     ["validate"],
     "Validating board.yaml…",
   );
   if (res === CANCELLED) {
-    vscode.window.setStatusBarMessage("Alp: validation cancelled.", 3000);
+    await notify(
+      planSuccess("Alp: validation cancelled.", { timeoutMs: 3000 }),
+    );
     return;
   }
   const { outcome } = res;
   const envelope = outcome.envelope;
-
-  if (envelope) {
-    logIssues("validate", envelope.issues);
-  } else {
+  if (!envelope) {
     // Binary could not be resolved or produced no envelope.
-    await vscode.window.showErrorMessage(`Alp: ${outcome.message}`);
+    if ((await notify(planCliOutcome(outcome, { operation }))) === "retry") {
+      await runValidator(context);
+    }
     return;
   }
+  logIssues("validate", envelope.issues);
 
-  const granular = (envelope.data as { outcome?: string } | undefined)?.outcome;
-  switch (granular) {
-    case "clean":
-      await vscode.window.showInformationMessage("Alp: board.yaml is clean.");
-      return;
-    case "schema-violation":
-      await vscode.window.showErrorMessage(
-        "Alp: board.yaml schema violation.  See the Alp SDK output channel.",
-      );
-      return;
-    default:
-      await vscode.window.showErrorMessage(
-        "Alp: board.yaml validation failed unexpectedly.  See the Alp SDK output channel.",
-      );
-      return;
+  // `envelope.ok` is the authority. The old `envelope.data.outcome` switch read
+  // a field the envelope contract does not guarantee, so a tan that omitted it
+  // reported "validation failed unexpectedly" for a board.yaml that passed.
+  if (envelope.ok && envelope.issues.length === 0) {
+    await notify(planSuccess("Alp: board.yaml is clean."));
+    return;
+  }
+  // Validation failures are always about the board.yaml this command just read,
+  // so this site opts into the "Open board.yaml" remedy (see runLoader).
+  if (
+    (await notify(
+      planCliOutcome(outcome, {
+        operation,
+        extraActions: [{ id: "openBoardYaml" }],
+      }),
+    )) === "retry"
+  ) {
+    await runValidator(context);
   }
 }
 

@@ -36,7 +36,10 @@ import {
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { samePath } from "@alp-sdk/core/paths";
 import { ensureNativeSimOverlay } from "./west";
-import { log, reportError, showOutput } from "./util";
+import { NotifyAction } from "./notify/models";
+import { planFailure, planPrecondition, planSuccess } from "./notify/service";
+import { notify } from "./notify/vscodeAdapter";
+import { log, showOutput } from "./util";
 
 async function showJsonDocument(data: unknown): Promise<void> {
   const doc = await vscode.workspace.openTextDocument({
@@ -139,7 +142,7 @@ async function debugPreflight(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
+    await reportDebugFailure("Alp: the debug preflight", error);
     return;
   }
 
@@ -183,8 +186,8 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
   if (!context.workspaceRoot) {
-    await vscode.window.showErrorMessage(
-      "Alp: no workspace folder is open, cannot write launch.json.",
+    await notify(
+      planPrecondition("noWorkspace", { operation: "write launch.json" }),
     );
     return null;
   }
@@ -205,11 +208,25 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
       configuration,
     );
   } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
+    // launchJsonCore throws "Alp: .vscode/launch.json is not valid JSON or
+    // JSONC." — an Open launch.json button is the remedy — but readLaunchJson
+    // is inside this try too, and its errno carries the absolute path.
+    await reportDebugFailure("Alp: updating .vscode/launch.json", error, [
+      { id: "openLaunchJson" },
+    ]);
     return null;
   }
 
-  const launchPath = writeLaunchJson(context.workspaceRoot, writePlan.content);
+  // The write is mkdirSync + writeFileSync. Uncaught, a read-only .vscode or a
+  // locked file escapes the command handler and VS Code shows its own unbranded
+  // "command failed" popup with the raw errno — no channel entry, no action.
+  let launchPath: string;
+  try {
+    launchPath = writeLaunchJson(context.workspaceRoot, writePlan.content);
+  } catch (error) {
+    await reportDebugFailure("Alp: writing .vscode/launch.json", error);
+    return null;
+  }
   log(
     `alp debug: ${writePlan.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
@@ -242,9 +259,9 @@ async function configureDebugProfile(): Promise<void> {
 
   const verb = result.replaced ? "updated" : "wrote";
   if (result.report.canLaunch) {
-    await vscode.window.showInformationMessage(
-      `Alp: ${verb} ${result.relPath}.`,
-    );
+    // The document this announces was just opened and focused above — a toast
+    // would steal focus to restate what is already on screen.
+    await notify(planSuccess(`Alp: ${verb} ${result.relPath}.`));
     return;
   }
 
@@ -253,44 +270,115 @@ async function configureDebugProfile(): Promise<void> {
     .filter((check) => check.status === "fail")
     .map((check) => check.name)
     .join(", ");
-  await vscode.window.showWarningMessage(
-    `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
+  // The failing check names are internal PreflightCheck ids and the joined
+  // nextSteps push the text past VS Code's truncation point: both are channel
+  // detail. The Troubleshooting panel already renders that state per item.
+  await notify(
+    planFailure({
+      operation: "Alp: refreshing the launch profile",
+      cause: `Alp: ${verb} ${result.relPath}, but the profile is not launchable yet.`,
+      detail: `unresolved: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
+      severity: "warning",
+      actions: [{ id: "openTroubleshooting" }],
+    }),
   );
-  showOutput();
 }
 
-/** Debug-adapter extension required per server. cortex-debug drives the on-chip
- *  servers (J-Link/OpenOCD/pyOCD); the Yocto remote path uses cppdbg (cpptools).
- *  cortex-debug is an `extensionDependency`, so it cannot be absent — only
- *  DISABLED, which `vscode.extensions.getExtension` reports the same way.
- *  cpptools ships in the extension pack and can genuinely be uninstalled.
- *  Either way, prompt rather than let the session fail with "unknown debug
- *  type". (The prompt's Install action is a no-op on a merely disabled
- *  extension — tracked separately.) */
-function requiredDebugExtension(configName: string): {
-  id: string;
-  label: string;
-} {
-  return /Yocto/i.test(configName)
-    ? { id: "ms-vscode.cpptools", label: "C/C++ (cpptools)" }
-    : { id: "marus25.cortex-debug", label: "Cortex-Debug" };
-}
+/**
+ * Debug-adapter extension required per target class. Keyed by `targetKind` so
+ * it mirrors the `adapter` createDebugProfile actually picks — the old
+ * `/Yocto/i.test(configName)` heuristic named Cortex-Debug for
+ * "Alp: Native Sim Debug", whose adapter is codelldb (vadimcn.vscode-lldb).
+ * An exhaustive Record makes a new target kind a compile error rather than a
+ * silent fall-through to cortex-debug.
+ *
+ * `dependency` = listed in package.json `extensionDependencies`, so VS Code
+ * guarantees it is INSTALLED: a missing `getExtension` there means disabled,
+ * and `workbench.extensions.installExtension` is a documented no-op on that
+ * state. The extensionPack entries (cpptools, CodeLLDB) can genuinely be
+ * uninstalled, so only those get an Install prompt.
+ */
+const DEBUG_ADAPTER_EXTENSION: Record<
+  DebugTargetKind,
+  { id: string; label: string; dependency: boolean }
+> = {
+  "zephyr-mcu": {
+    id: "marus25.cortex-debug",
+    label: "Cortex-Debug",
+    dependency: true,
+  },
+  "baremetal-mcu": {
+    id: "marus25.cortex-debug",
+    label: "Cortex-Debug",
+    dependency: true,
+  },
+  "yocto-userspace": {
+    id: "ms-vscode.cpptools",
+    label: "C/C++ (cpptools)",
+    dependency: false,
+  },
+  "native-host": {
+    id: "vadimcn.vscode-lldb",
+    label: "CodeLLDB",
+    dependency: false,
+  },
+};
 
-async function ensureDebugExtension(configName: string): Promise<boolean> {
-  const { id, label } = requiredDebugExtension(configName);
+/** True when the adapter extension is usable. Prompts rather than letting the
+ *  session fail with "unknown debug type", and owns BOTH refusal messages: the
+ *  caller only has to stop, so a cancelled prompt is not re-toasted and a
+ *  genuine install failure is not confused with it. */
+async function ensureDebugExtension(
+  targetKind: DebugTargetKind,
+): Promise<boolean> {
+  const { id, label, dependency } = DEBUG_ADAPTER_EXTENSION[targetKind];
   if (vscode.extensions.getExtension(id)) return true;
-  const choice = await vscode.window.showWarningMessage(
-    `Alp: the ${label} extension (${id}) is required to debug this target but is not installed.`,
-    "Install",
-    "Cancel",
+
+  if (dependency) {
+    // Cannot be absent, only disabled — and enabling it needs a window reload,
+    // so there is no "install and carry on" path to offer here.
+    await notify(
+      planFailure({
+        operation: "Alp: starting the debug session",
+        cause: `Alp: the ${label} extension is disabled, and this target cannot be debugged without it.`,
+        detail: `${id} is an extension dependency of alp-sdk, so it is installed but not enabled.`,
+        severity: "warning",
+        actions: [{ id: "openExtensions", arg: id }],
+      }),
+    );
+    return false;
+  }
+
+  // `custom` is the caller-handled id (no `run` in the presenter's table), so
+  // the pick comes back here and gates the install below.
+  const choice = await notify(
+    planFailure({
+      operation: "Alp: starting the debug session",
+      cause: `Alp: the ${label} extension is required to debug this target but is not installed.`,
+      detail: id,
+      severity: "warning",
+      actions: [{ id: "custom", title: "Install" }],
+    }),
   );
-  if (choice !== "Install") return false;
+  if (choice !== "custom") return false;
+
   await vscode.commands.executeCommand(
     "workbench.extensions.installExtension",
     id,
   );
   // installExtension resolves once installed; getExtension then sees it.
-  return vscode.extensions.getExtension(id) !== undefined;
+  if (vscode.extensions.getExtension(id)) return true;
+
+  await notify(
+    planFailure({
+      operation: "Alp: installing the debug adapter extension",
+      cause: `Alp: ${label} could not be installed, so the debug session was not started.`,
+      detail: id,
+      severity: "warning",
+      actions: [{ id: "openExtensions", arg: id }],
+    }),
+  );
+  return false;
 }
 
 /** First-class "Debug": generate/refresh the launch profile, make sure the
@@ -308,12 +396,9 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
     await ensureNativeSimOverlay(context);
   }
 
-  if (!(await ensureDebugExtension(result.configName))) {
-    await vscode.window.showWarningMessage(
-      `Alp: cannot start debugging without ${requiredDebugExtension(result.configName).label}.`,
-    );
-    return;
-  }
+  // The refusal is warned inside ensureDebugExtension (a cancelled prompt needs
+  // no second toast; a failed install gets its own), so this only has to stop.
+  if (!(await ensureDebugExtension(result.report.targetKind))) return;
 
   if (!result.report.canLaunch) {
     for (const note of result.notes) log(note);
@@ -321,16 +406,19 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
       .filter((check) => check.status === "fail")
       .map((check) => check.name)
       .join(", ");
-    const choice = await vscode.window.showWarningMessage(
-      `Alp: ${result.relPath} is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
-      "Start Anyway",
-      "Show Details",
+    // `startAnyway` is caller-handled (no `run`), so the pick comes back and
+    // gates startDebugging; "Show Output" is appended by the presenter and
+    // reveals the channel where `unresolved` + nextSteps were just logged.
+    const choice = await notify(
+      planFailure({
+        operation: "Alp: starting the debug session",
+        cause: `Alp: ${result.relPath} is not launchable yet.`,
+        detail: `unresolved: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
+        severity: "warning",
+        actions: [{ id: "startAnyway" }],
+      }),
     );
-    if (choice === "Show Details") {
-      showOutput();
-      return;
-    }
-    if (choice !== "Start Anyway") return;
+    if (choice !== "startAnyway") return;
   }
 
   // `result.workspaceRoot` is toPosix'd by the project service while
@@ -340,11 +428,14 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   );
   const started = await vscode.debug.startDebugging(folder, result.configName);
   if (!started) {
-    // reportError already logs this and offers a "Show Output" action; the
-    // message itself points at the Debug Console / launch.json, so don't also
-    // force-open the Alp SDK channel here.
-    await reportError(
-      `Alp: VS Code declined to start "${result.configName}" — check the Debug Console and launch.json.`,
+    // The presenter logs this and appends "Show Output"; the message itself
+    // points at the Debug Console / launch.json, so don't also force-open the
+    // Alp SDK channel here.
+    await notify(
+      planFailure({
+        operation: "Alp: starting the debug session",
+        cause: `Alp: VS Code declined to start "${result.configName}" — check the Debug Console and launch.json.`,
+      }),
     );
   }
 }
@@ -355,8 +446,10 @@ async function exportSupportBundle(): Promise<void> {
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
   if (!context.workspaceRoot) {
-    await vscode.window.showErrorMessage(
-      "Alp: no workspace folder is open, cannot export a support bundle.",
+    await notify(
+      planPrecondition("noWorkspace", {
+        operation: "export a support bundle",
+      }),
     );
     return;
   }
@@ -372,7 +465,7 @@ async function exportSupportBundle(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
+    await reportDebugFailure("Alp: exporting the support bundle", error);
     return;
   }
 
@@ -400,18 +493,27 @@ async function exportSupportBundle(): Promise<void> {
     ],
   });
 
-  const filePath = writeSupportBundle(
-    context.workspaceRoot,
-    `debug-support-bundle-${timestampForFile(generatedAt)}.json`,
-    serializeSupportBundlePayload(bundle),
-  );
+  // mkdirSync + writeFileSync, same unguarded-throw hazard as writeLaunchJson.
+  let filePath: string;
+  try {
+    filePath = writeSupportBundle(
+      context.workspaceRoot,
+      `debug-support-bundle-${timestampForFile(generatedAt)}.json`,
+      serializeSupportBundlePayload(bundle),
+    );
+  } catch (error) {
+    await reportDebugFailure("Alp: writing the support bundle", error);
+    return;
+  }
 
   log(`alp.exportSupportBundle: wrote ${filePath}`);
   const doc = await vscode.workspace.openTextDocument(filePath);
   await vscode.window.showTextDocument(doc, { preview: false });
 
-  await vscode.window.showInformationMessage(
-    `Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`,
+  // The bundle is already open in an editor, and the block below may reveal the
+  // channel — a toast here would be the second focus grab for one command.
+  await notify(
+    planSuccess(`Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`),
   );
 
   if (
@@ -439,7 +541,7 @@ async function openDebugTroubleshootingPanel(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
+    await reportDebugFailure("Alp: opening the troubleshooting panel", error);
     return;
   }
 
@@ -536,19 +638,39 @@ function createPanelTraceDecisions(
   return decisions;
 }
 
-function formatDebugError(error: unknown): string {
-  // Keep the `Alp:` brand prefix + a debug context on EVERY path — the
-  // Error branch used to return the raw `error.message` with neither, so a
-  // failure surfaced as a bare, unattributed toast.
-  const detail =
-    error instanceof Error ? error.message : "an unexpected error occurred.";
-  return `Alp: debug configuration failed — ${detail}`;
+/**
+ * The one exit for every thrown-error path in this file. The toast names what
+ * the USER asked for and nothing else: the thrown message is internal jargon
+ * ("Unsupported debug target '<kind>'.", "Unsupported debug backend '<server>'
+ * for target '<targetKind>'.") or a raw errno carrying the absolute path
+ * (`readLaunchJson`, `writeLaunchJson`, `writeSupportBundle`). Both belong in
+ * `detail`, which the presenter logs to the "Alp SDK" channel and never
+ * renders. The old `formatDebugError` interpolated all of it into the toast,
+ * and called every one of these "debug configuration failed" — wrong noun on
+ * the support-bundle and panel paths.
+ *
+ * `operation` is the customer-terms phrase the sentence is built from:
+ * "Alp: exporting the support bundle" -> "Alp: exporting the support bundle
+ * failed."
+ */
+async function reportDebugFailure(
+  operation: string,
+  error: unknown,
+  actions?: NotifyAction[],
+): Promise<void> {
+  await notify(
+    planFailure({
+      operation,
+      cause: `${operation} failed.`,
+      detail: debugErrorDetail(error),
+      actions,
+    }),
+  );
 }
 
-/** Full detail for the "Alp SDK" channel behind a `formatDebugError` toast: the
- *  stack trace when available (call-site context beyond the bare message baked
- *  into the toast), or the raw thrown value when it isn't an `Error` at all
- *  (which the toast genericizes to "an unexpected error occurred."). */
+/** Full detail for the "Alp SDK" channel behind a `reportDebugFailure` toast:
+ *  the stack trace when available (call-site context beyond the bare message),
+ *  or the raw thrown value when it isn't an `Error` at all. */
 function debugErrorDetail(error: unknown): string {
   return error instanceof Error
     ? (error.stack ?? error.message)

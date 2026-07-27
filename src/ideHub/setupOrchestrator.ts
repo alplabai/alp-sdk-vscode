@@ -15,6 +15,8 @@
 
 import * as vscode from "vscode";
 import type { ToolVersions } from "./messages";
+import type { NotifyAction } from "../notify/models";
+import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { log } from "../util";
 import { queryAlpIdeState } from "./vscodeAdapter";
 
@@ -51,6 +53,45 @@ function versionFingerprint(versions: ToolVersions): string {
   ].join("|");
 }
 
+/** Display names for the fingerprint's tool keys. */
+const TOOL_LABELS: Record<string, string> = {
+  py: "Python",
+  west: "west",
+  cmake: "cmake",
+  ninja: "ninja",
+};
+
+/** `"west:1.2.0"` -> `["west", "1.2.0"]`. */
+function splitFingerprintEntry(entry: string): [string, string] {
+  const at = entry.indexOf(":");
+  return at < 0 ? [entry, ""] : [entry.slice(0, at), entry.slice(at + 1)];
+}
+
+/**
+ * Name the tools whose version actually moved, as `west 1.2.0 → 1.3.0`. Both
+ * arguments come from `versionFingerprint`, so the entries line up by index.
+ *
+ * This is what turns "something changed, go re-verify" into a sentence the user
+ * can act on: a deliberate west upgrade and a toolchain that silently broke read
+ * identically without it, and both fingerprints were already in hand. Empty when
+ * the two strings differ only in shape (a fingerprint written by an older
+ * extension), which the caller falls back on.
+ */
+function describeVersionDrift(previous: string, current: string): string {
+  const before = previous.split("|");
+  return current
+    .split("|")
+    .flatMap((entry, index) => {
+      const was = before[index] ?? "";
+      if (entry === was) return [];
+      const [tool, now] = splitFingerprintEntry(entry);
+      return [
+        `${TOOL_LABELS[tool] ?? tool} ${splitFingerprintEntry(was)[1] || "not found"} → ${now || "not found"}`,
+      ];
+    })
+    .join(", ");
+}
+
 /**
  * Evaluate prerequisites on first open and offer the IDE Hub panel
  * when the environment is not ready.
@@ -75,16 +116,19 @@ export async function maybeOfferSetupPanel(
       const lastDriftShown = context.globalState.get<string>(driftKey, "");
       if (lastDriftShown !== currentVersionFp) {
         await context.globalState.update(driftKey, currentVersionFp);
-        void vscode.window
-          .showWarningMessage(
-            "Alp IDE: build tool versions have changed since last session. Re-verify your build environment.",
-            "Open Alp IDE",
-          )
-          .then((action) => {
-            if (action === "Open Alp IDE") {
-              void vscode.commands.executeCommand("alp.ideHub.focus");
-            }
-          });
+        const drift = describeVersionDrift(lastVersionFp, currentVersionFp);
+        // Info, not warning: nothing failed — a tool moved. Doctor is the thing
+        // that actually re-verifies the environment (the old "Open Alp IDE"
+        // focused a panel that re-verifies nothing). "info" never gets the
+        // presenter's automatic channel link, so it is named here.
+        notifyAsync({
+          severity: "info",
+          channel: "toast",
+          message: drift
+            ? `Alp IDE: build tools changed since last session — ${drift}. Run Doctor to re-verify the environment.`
+            : "Alp IDE: build tool versions have changed since last session. Run Doctor to re-verify the environment.",
+          actions: [{ id: "runDoctor" }, { id: "showOutput" }],
+        });
       }
     }
     await context.workspaceState.update(DRIFT_VERSION_KEY, currentVersionFp);
@@ -116,31 +160,47 @@ export async function maybeOfferSetupPanel(
     // instead of leaving the user to decode "west not found". SDK-not-ready is a
     // separate fix (SDK Manager), and no-workspace means "open a folder" first —
     // neither is a bootstrap, so don't offer it for those.
+    const noWorkspace = issues.includes("no-workspace");
     const canBootstrap =
-      !issues.includes("no-workspace") &&
-      (issues.includes("west") || issues.includes("python"));
+      !noWorkspace && (issues.includes("west") || issues.includes("python"));
 
-    const RUN_BOOTSTRAP = "Run Bootstrap";
-    const OPEN_HUB = "Open Alp IDE";
-    const message = canBootstrap
-      ? `Alp: build environment not set up (${summary}). Run Bootstrap to install west + Zephyr build tools.`
-      : `Alp IDE: environment not ready — ${summary}.`;
-    const actions = canBootstrap
-      ? [RUN_BOOTSTRAP, OPEN_HUB, "Don't show again"]
-      : [OPEN_HUB, "Don't show again"];
+    // One control per state, instead of one panel-focus button for all four:
+    // the toast used to collapse "no folder open", "SDK not installed" and
+    // "build tools missing" into a comma summary whose only button opened a
+    // panel — so neither opening a folder nor installing the SDK had a control
+    // that did it.
+    const actions: NotifyAction[] = [];
+    if (noWorkspace) actions.push({ id: "openFolder" });
+    if (canBootstrap) actions.push({ id: "bootstrap" });
+    if (issues.includes("sdk")) actions.push({ id: "openSdkManager" });
+    // The presenter's ad-hoc button: it carries no `run`, so this pick — and
+    // only this pick — comes back and records the fingerprint.
+    actions.push({ id: "custom", title: "Don't show again" });
 
-    const action = await vscode.window.showWarningMessage(message, ...actions);
+    const message = noWorkspace
+      ? "Alp: open a project folder to finish setting up the build environment."
+      : canBootstrap
+        ? `Alp: build environment not set up (${summary}). Run Bootstrap to install west + Zephyr build tools.`
+        : "Alp: no Alp SDK is ready yet — install or activate one from the SDK Manager.";
 
-    // Only record the fingerprint once the user actually responded; an
-    // auto-dismissed toast returns undefined and is left unrecorded so it is
-    // retried on the next activation rather than lost for the install lifetime.
-    if (action !== undefined) {
+    const picked = await notify({
+      severity: "warning",
+      channel: "toast",
+      message,
+      // The full issue set reaches the channel even when the sentence names
+      // only the first thing to fix.
+      detail: summary,
+      actions,
+    });
+
+    // "Don't show again" is now the ONLY response that records the fingerprint.
+    // An auto-dismissed toast returns undefined and stays unrecorded so it is
+    // retried on the next activation rather than lost for the install lifetime;
+    // a remedy click no longer silences a state that is still broken — if the
+    // remedy worked the issue set is empty next time and nothing is shown, and
+    // if it didn't, the nudge is still the correct thing to show.
+    if (picked === "custom") {
       await context.globalState.update(ORCHESTRATOR_KEY, fingerprint);
-    }
-    if (action === RUN_BOOTSTRAP) {
-      await vscode.commands.executeCommand("alp.installDependencies");
-    } else if (action === OPEN_HUB) {
-      await vscode.commands.executeCommand("alp.ideHub.focus");
     }
   } catch (err) {
     // Never block activation — but record why the readiness check failed

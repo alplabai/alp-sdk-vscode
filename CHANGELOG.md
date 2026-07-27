@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Every notification now says what failed and carries the button that fixes it.
+  A failed terminal command used to surface only VS Code's `failed to launch
+  (exit code: 1)` — its wording for any non-zero exit, which reads as if `tan`
+  never started — plus a toast naming the same exit number and nothing else.
+  Commands now route through one seam (`src/notify/`): a pure planner that
+  derives severity from the classified CLI outcome and guarantees an action,
+  and a single presenter that is the only caller of `vscode.window.show*Message`.
+  Concretely: `summarize()` no longer drops every issue after the first (the
+  toast names the first plus a count, and an action opens the full list); raw
+  `stderr`, errnos, stack frames and exit codes are demoted to the "Alp SDK"
+  output channel instead of being rendered in the toast; a CLI that was never
+  installed no longer reads like one that is broken, and the two offer different
+  remedies; first-run preconditions (no folder, no `board.yaml`, no SDK) are
+  warnings carrying New Project / Open Setup rather than red errors with an
+  interpolated path; and transient successes moved from dismissible toasts to
+  the status bar. 86 call sites across 19 files were audited and either fixed or
+  justified. `test/notify.guard.test.js` fails if a raw interpolated
+  `show*Message` reappears.
+- The tan CLI download, the tan CLI update and the SDK install are cancellable.
+  All three could run for minutes with no way to stop them, which reads as a
+  hung window. Cancelling now aborts the real child process, and a cancelled SDK
+  install removes the partial clone — `git clone` refuses a non-empty directory,
+  so leaving it behind made the *next* install of that version fail for an
+  unrelated-looking reason.
+
 - A stranded west workspace no longer stays silent. Switching or uninstalling an
   SDK never touched `<topdir>/.west/config`, whose `[manifest] path` `west`
   reads directly and independently of the active-SDK pointer — so removing the

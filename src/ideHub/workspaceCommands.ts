@@ -4,8 +4,15 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 
+import {
+  planConfirm,
+  planFailure,
+  planPrecondition,
+  planSuccess,
+} from "../notify/service";
+import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, reportError } from "../util";
+import { log } from "../util";
 
 /**
  * Register workspace lifecycle commands:
@@ -30,32 +37,45 @@ export function registerWorkspaceCommands(): vscode.Disposable[] {
         // (no workspace open) aborts instead of guessing.
         const root = collectProjectContext().workspaceRoot;
         if (!root) {
-          const message =
-            "Alp: no workspace folder is open — cannot remove west initialization.";
-          log(`[removeWestInit] aborted: ${message}`);
-          void vscode.window.showErrorMessage(message);
+          // No folder open is a precondition, not a failure — and Open Folder
+          // (alp.switchWorkspace, registered above) resolves it in one click.
+          log("[removeWestInit] aborted: no workspace folder is open");
+          notifyAsync(
+            planPrecondition("noWorkspace", {
+              operation: "remove west initialization",
+            }),
+          );
           return;
         }
 
         const westDir = path.join(root, ".west");
 
         if (!fs.existsSync(westDir)) {
-          void vscode.window.showInformationMessage(
-            "No .west/ directory found — workspace is already uninitialized.",
+          notifyAsync(
+            planSuccess(
+              "Alp: no .west/ directory found — workspace is already uninitialized.",
+            ),
           );
           return;
         }
 
-        const answer = await vscode.window.showWarningMessage(
-          `Remove west initialization from "${root}"? ` +
-            `The ${westDir} directory will be deleted. ` +
-            "Your project source files will not be affected. " +
-            "You can re-initialize by running Bootstrap.",
-          { modal: true },
-          "Remove",
+        // Stays a modal, and the path + consequence stay ON the dialog
+        // (`modalDetail`, not the channel-only `detail`) — this pick gates an
+        // irreversible recursive delete. `deleteFromDisk` has no `run` in the
+        // presenter's table, so the pick comes back here; `title` keeps the
+        // button's original "Remove" wording.
+        const answer = await notify(
+          planConfirm({
+            message: "Remove west initialization from this workspace?",
+            modalDetail:
+              `The ${westDir} directory will be deleted. ` +
+              "Your project source files will not be affected. " +
+              "You can re-initialize by running Bootstrap.",
+            confirm: { id: "deleteFromDisk", title: "Remove" },
+          }),
         );
 
-        if (answer !== "Remove") {
+        if (answer !== "deleteFromDisk") {
           log(`[removeWestInit] cancelled by user for ${westDir}`);
           return;
         }
@@ -63,15 +83,30 @@ export function registerWorkspaceCommands(): vscode.Disposable[] {
         try {
           fs.rmSync(westDir, { recursive: true, force: true });
           log(`[removeWestInit] removed ${westDir}`);
-          void vscode.window.showInformationMessage(
-            "West initialization removed. " +
+          // The text already names the next step; now a button carries it
+          // (`bootstrap` runs alp.installDependencies) instead of sending the
+          // user to the command palette straight after a destructive delete.
+          notifyAsync({
+            severity: "info",
+            channel: "toast",
+            message:
+              "West initialization removed. " +
               "Run Bootstrap to re-initialize the workspace.",
-          );
+            actions: [{ id: "bootstrap" }],
+          });
           void vscode.commands.executeCommand("alp.ideHub.refresh");
         } catch (err) {
-          const message = `Alp: failed to remove ${westDir}: ${String(err)}`;
-          log(`[removeWestInit] ${message}`);
-          void reportError(message);
+          // The real cause in customer terms; fs.rmSync's EBUSY/EPERM/ENOENT and
+          // the absolute path go to `detail`, which only the channel sees.
+          notifyAsync(
+            planFailure({
+              operation: "Removing the west initialization",
+              cause:
+                "Alp: couldn't delete the .west directory — close anything " +
+                "holding it open (a running west or build task), then try again.",
+              detail: `[removeWestInit] ${westDir}: ${String(err)}`,
+            }),
+          );
         }
       },
     ),

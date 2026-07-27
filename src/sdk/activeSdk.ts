@@ -10,8 +10,10 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import { danglingWestManifest } from "../environment/vscodeAdapter";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
+import { planFailure, planSuccess } from "../notify/service";
+import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, reportError, showOutput } from "../util";
+import { log } from "../util";
 import { writeAlpSetting } from "./settingsWrite";
 
 /**
@@ -32,22 +34,20 @@ export function warnIfWestManifestDangling(sdkRoot: string | null): boolean {
   // `danglingWestManifest` returns.
   log(`[sdk] ${westManifestLogLine(status)}`, "warn");
 
-  void vscode.window
-    .showWarningMessage(
-      westManifestWarning(status) as string,
-      "Bootstrap now",
-      "Show Output",
-    )
-    .then((choice) => {
-      // `tan bootstrap`, NOT `tan doctor --build --fix`: the latter only
-      // bootstraps when its `workspace` check FAILS, and a workspace that
-      // exists but dangles passes that check — so it would repair nothing.
-      if (choice === "Bootstrap now") {
-        void vscode.commands.executeCommand("alp.installDependencies");
-      } else if (choice === "Show Output") {
-        showOutput();
-      }
-    });
+  // Built as a plan literal, not via `planFailure`: naming the workspace and
+  // the manifest path IS the diagnosis here, and planFailure's raw-diagnostic
+  // scrub would demote that sentence into the channel. Fire-and-forget so the
+  // synchronous `true` still reaches the caller. The presenter appends
+  // "Show Output" to any non-info plan, so the channel link is not named here.
+  notifyAsync({
+    severity: "warning",
+    channel: "toast",
+    message: westManifestWarning(status) as string,
+    // `tan bootstrap`, NOT `tan doctor --build --fix`: the latter only
+    // bootstraps when its `workspace` check FAILS, and a workspace that
+    // exists but dangles passes that check — so it would repair nothing.
+    actions: [{ id: "bootstrap" }],
+  });
   return true;
 }
 
@@ -77,7 +77,24 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
     log(
       `[sdk] activate rejected — ${sdkPath} is not an SDK root: ${report.issues.join(" ")}`,
     );
-    void reportError(report.issues.join(" "));
+    // The loader-script name and the rejected path stay in the channel line
+    // above; the toast says what the user actually did wrong and — the point of
+    // this fix — offers both ways out instead of only "Show Output".
+    const picked = await notify(
+      planFailure({
+        operation: "Activating that SDK",
+        cause: "That folder is not an Alp SDK root.",
+        actions: [
+          // `retry` carries no `run` in the presenter's table, so the pick comes
+          // back here and re-opens the picker the user came from.
+          { id: "retry", title: "Choose Another Folder" },
+          { id: "openSdkManager" },
+        ],
+      }),
+    );
+    if (picked === "retry") {
+      void vscode.commands.executeCommand("alp.selectSdk");
+    }
     return;
   }
 
@@ -123,10 +140,15 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
   // the context's (possibly stale) sdkRoot.
   if (warnIfWestManifestDangling(sdkPath)) return;
 
-  void vscode.window.showInformationMessage(
-    hasWorkspace
-      ? `Alp: active SDK for this project → ${sdkPath}`
-      : `Alp: default SDK → ${sdkPath} (open a project folder to override per-project)`,
+  // Status bar, not a toast: the `$(package)` item one line below already
+  // renders the active SDK, so a dismissible popup for it is a click with no
+  // information in it.
+  notifyAsync(
+    planSuccess(
+      hasWorkspace
+        ? `Alp: active SDK for this project → ${sdkPath}`
+        : `Alp: default SDK → ${sdkPath} (open a project folder to override per-project)`,
+    ),
   );
 }
 
@@ -141,7 +163,9 @@ export async function clearActiveSdk(): Promise<void> {
   const hadWorkspace = inspected?.workspaceValue !== undefined;
   const hadGlobal = inspected?.globalValue !== undefined;
   if (!hadWorkspace && !hadGlobal) {
-    void vscode.window.showInformationMessage("Alp: no active SDK to clear.");
+    // Nothing to act on and the status bar already reads "No SDK" — ack it
+    // there rather than making the user dismiss a popup.
+    notifyAsync(planSuccess("Alp: no active SDK to clear."));
     return;
   }
 
@@ -170,16 +194,12 @@ export async function clearActiveSdk(): Promise<void> {
   );
 
   if (workspaceCleared && globalCleared) {
-    void vscode.window.showInformationMessage("Alp: active SDK cleared.");
-  } else {
-    const stillSet = !workspaceCleared
-      ? "this project's"
-      : "the global default";
-    void vscode.window.showWarningMessage(
-      `Alp: ${stillSet} SDK setting still points at an SDK — save that ` +
-        "settings file and run Deactivate again to finish clearing it.",
-    );
+    notifyAsync(planSuccess("Alp: active SDK cleared."));
   }
+  // No second toast for a partial clear: the scope that didn't land failed
+  // because its settings file is dirty, and `writeAlpSetting` has already said
+  // so — with Open Settings + Retry on it. Stacking a buttonless warning on top
+  // of that gave one Deactivate click two warnings for one cause.
 }
 
 /** Last path segment (cross-platform); the cache dir is named after the tag. */

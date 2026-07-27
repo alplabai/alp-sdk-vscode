@@ -28,6 +28,7 @@ import {
   SUPPORTED_CLI_VERSION,
   aheadPathFixAction,
   binaryName,
+  classifyUnavailable,
   decideBinarySource,
   isCliAhead,
   isCliBehind,
@@ -36,8 +37,11 @@ import {
   releaseAssetForTarget,
   shouldFetchManagedCli,
 } from "./service";
+import { ActionId, NotifyAction } from "../notify/models";
+import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
+import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, reportError, runInTerminal, showOutput } from "../util";
+import { log, runInTerminal } from "../util";
 
 const execFileAsyncCli = promisify(cp.execFile);
 
@@ -223,6 +227,7 @@ export async function ensureTanCliProvisioned(
   if (!releaseAssetForTarget(deps.platform, deps.arch)) {
     return;
   }
+  let cancelled = false;
   try {
     await vscode.window.withProgress(
       {
@@ -230,50 +235,83 @@ export async function ensureTanCliProvisioned(
         title: updatingStaleCache
           ? `Updating the tan CLI to ${SUPPORTED_CLI_VERSION}…`
           : "Downloading the tan CLI…",
+        // A binary fetch over a slow link is the longest thing that can happen
+        // on first activation; without Cancel it reads as a hung window.
+        cancellable: true,
       },
-      async () => {
-        const asset = releaseAssetForTarget(deps.platform, deps.arch);
-        log(`[cli] downloading tan CLI: ${asset?.url ?? "unknown asset"}`);
-        await downloadCli(deps);
-        log(
-          `[cli] tan CLI downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
-        );
-        resetResolvedBinary();
-        if (updatingStaleCache) {
-          // Verify the freshly-fetched pin actually cleared the skew. If the
-          // downloaded binary still reads behind, the published release is
-          // mis-tagged (or the pin outran it) — record it so we stop retrying
-          // this pin every activation. A correct release clears the flag.
-          const healed = await readResolvedCliVersion(deps);
-          if (isCliBehind(healed)) {
-            log(
-              `[cli] tan self-heal fetched ${SUPPORTED_CLI_VERSION} but binary still reports ${healed ?? "unknown"} — giving up until the pin changes`,
-            );
-            await context.globalState.update(
-              HEAL_GAVE_UP_KEY,
-              SUPPORTED_CLI_VERSION,
-            );
-          } else {
-            await context.globalState.update(HEAL_GAVE_UP_KEY, undefined);
+      async (_progress, token) => {
+        const controller = new AbortController();
+        const sub = token.onCancellationRequested(() => {
+          cancelled = true;
+          controller.abort();
+        });
+        try {
+          const asset = releaseAssetForTarget(deps.platform, deps.arch);
+          log(`[cli] downloading tan CLI: ${asset?.url ?? "unknown asset"}`);
+          await downloadCli(deps, controller.signal);
+          log(
+            `[cli] tan CLI downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
+          );
+          resetResolvedBinary();
+          if (updatingStaleCache) {
+            // Verify the freshly-fetched pin actually cleared the skew. If the
+            // downloaded binary still reads behind, the published release is
+            // mis-tagged (or the pin outran it) — record it so we stop retrying
+            // this pin every activation. A correct release clears the flag.
+            const healed = await readResolvedCliVersion(deps);
+            if (isCliBehind(healed)) {
+              log(
+                `[cli] tan self-heal fetched ${SUPPORTED_CLI_VERSION} but binary still reports ${healed ?? "unknown"} — giving up until the pin changes`,
+              );
+              await context.globalState.update(
+                HEAL_GAVE_UP_KEY,
+                SUPPORTED_CLI_VERSION,
+              );
+            } else {
+              await context.globalState.update(HEAL_GAVE_UP_KEY, undefined);
+            }
           }
+        } finally {
+          sub.dispose();
         }
       },
     );
   } catch (error) {
+    // A user-pressed Cancel aborts the request, which surfaces here as an
+    // AbortError. That is not a failure and must not raise a failure toast —
+    // the customer already knows, they asked for it. `downloadFile` removes its
+    // temp file on the way out, so nothing partial is left behind.
+    if (cancelled) {
+      log("[cli] tan CLI download cancelled by the user");
+      return;
+    }
     // This only runs on a failed download — either a fresh install with no
     // resolvable binary, or a stale-cache self-update. Not on every activation,
     // so a failure toast is a real, non-naggy signal (previously log-only). On
     // an update failure the existing (older) cached binary still works, so the
     // wording differs: don't imply commands are broken.
+    // The raw failure (HTTP status, the asset URL, ENOTFOUND/EACCES) rides on
+    // `detail`: the presenter logs it to the "Alp SDK" channel and never puts
+    // it in the toast, where it read as noise instead of a remedy.
     const detail = error instanceof Error ? error.message : String(error);
-    log(`[cli] tan CLI provisioning failed: ${detail}`);
-    const SHOW = "Show Output";
-    const message = updatingStaleCache
-      ? `Alp: couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION} — ${detail}. The installed version still works; retry when online.`
-      : `Alp: couldn't provision the tan CLI — ${detail}. Build and validate commands need it; set "alpSdk.cliPath" to a local build, or retry when online.`;
-    void vscode.window.showErrorMessage(message, SHOW).then((pick) => {
-      if (pick === SHOW) showOutput();
-    });
+    notifyAsync(
+      planFailure({
+        operation: "Provisioning the tan CLI",
+        cause: updatingStaleCache
+          ? `Couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION}. The installed version still works — retry when you're back online.`
+          : "Couldn't download the tan CLI. Build and validate commands need it — retry when you're back online, or point alpSdk.cliPath at a local build.",
+        detail,
+        // `alp.updateCli` re-runs exactly this download, so the presenter can
+        // execute the retry itself; a caller-handled `retry` id would be a dead
+        // button here because nothing awaits this plan.
+        actions: updatingStaleCache
+          ? [{ id: "updateCli", title: "Retry" }]
+          : [
+              { id: "updateCli", title: "Retry" },
+              { id: "openSettings", arg: "alpSdk.cliPath" },
+            ],
+      }),
+    );
   }
 }
 
@@ -316,24 +354,23 @@ function warnIfPreferGlobalCliHasNoPath(
       "your terminal's, e.g. ~/.local/bin on macOS) — falling back to the " +
       "managed tan CLI for now.",
   );
-  void vscode.window
-    .showWarningMessage(
-      "alpSdk.preferGlobalCli is on, but no tan CLI was found on PATH from " +
+  notifyAsync(
+    planFailure({
+      operation: "Resolving the tan CLI",
+      cause:
+        "alpSdk.preferGlobalCli is on, but no tan CLI was found on PATH from " +
         "this window. Install a global tan, or clear alpSdk.preferGlobalCli " +
         "to use the extension's managed copy.",
-      "Install tan CLI (global)",
-      "Open Settings",
-    )
-    .then((choice) => {
-      if (choice === "Install tan CLI (global)") {
-        void vscode.commands.executeCommand("alp.installTanCli");
-      } else if (choice === "Open Settings") {
-        void vscode.commands.executeCommand(
-          "workbench.action.openSettings",
-          "alpSdk.preferGlobalCli",
-        );
-      }
-    });
+      severity: "warning",
+      // "(global)" is load-bearing in this one toast: the remedy is a `tan` on
+      // PATH, not the managed copy the extension already has — so the title
+      // overrides the presenter's generic "Install tan CLI".
+      actions: [
+        { id: "installTanCli", title: "Install tan CLI (global)" },
+        { id: "openSettings", arg: "alpSdk.preferGlobalCli" },
+      ],
+    }),
+  );
 }
 
 /** One-shot per window: run once to avoid nagging on every command. */
@@ -354,88 +391,83 @@ let versionChecked = false;
 function cliFixAction(
   source: BinarySource,
   preferGlobalCli: boolean,
-): {
-  label: "Open Settings" | "Update" | "Install tan CLI (global)";
-  command: string;
-  arg?: string;
-} | null {
+): NotifyAction | null {
   switch (source) {
     case "cliPath":
-      return {
-        label: "Open Settings",
-        command: "workbench.action.openSettings",
-        arg: "alpSdk.cliPath",
-      };
+      return { id: "openSettings", arg: "alpSdk.cliPath" };
     case "bundled":
     case "localBuild":
       return null;
     case "path":
       if (preferGlobalCli) {
-        return {
-          label: "Install tan CLI (global)",
-          command: "alp.installTanCli",
-        };
+        return { id: "installTanCli", title: "Install tan CLI (global)" };
       }
-      return { label: "Update", command: "alp.updateCli" };
+      return { id: "updateCli", title: "Update" };
     default:
-      return { label: "Update", command: "alp.updateCli" };
+      return { id: "updateCli", title: "Update" };
   }
 }
 
-/** Show `message` with whatever action `cliFixAction(binary.source, …)`
- *  offers (or no action button for a `bundled`/`localBuild` source `message`
- *  should already explain how to actually fix). */
+/** Warn about the resolved binary with whatever action
+ *  `cliFixAction(binary.source, …)` offers. A `bundled`/`localBuild` source has
+ *  no one-click fix, so its plan carries no action of its own — the presenter's
+ *  appended "Show Output" is then the button, which is exactly what that branch
+ *  lacked: the probe detail (the resolved path, the line `--version` actually
+ *  printed, the source) is already in the channel, one click away, instead of
+ *  the toast being a bare dismiss. */
 async function warnAboutResolvedBinary(
   binary: ResolvedBinary,
   message: string,
   preferGlobalCli: boolean,
 ): Promise<void> {
   const fix = cliFixAction(binary.source, preferGlobalCli);
-  if (!fix) {
-    await vscode.window.showWarningMessage(message);
-    return;
-  }
-  const choice = await vscode.window.showWarningMessage(message, fix.label);
-  if (choice !== fix.label) {
-    return;
-  }
-  if (fix.arg) {
-    await vscode.commands.executeCommand(fix.command, fix.arg);
-  } else {
-    await vscode.commands.executeCommand(fix.command);
-  }
+  await notify(
+    planFailure({
+      operation: "Checking the tan CLI",
+      cause: message,
+      severity: "warning",
+      actions: fix ? [fix] : [],
+    }),
+  );
 }
 
 /** Message for a resolved binary whose `--version` output isn't the native
  *  `tan <MAJOR.MINOR.PATCH>` line at all — worded per source since the cause
  *  (and the fix) differs: a leftover retired `alp` binary pinned via
  *  `alpSdk.cliPath`, a stale bundled/local build, or a managed binary
- *  corrupted by an old non-atomic download. */
-function nonNativeCliMessage(binary: ResolvedBinary, found: string): string {
-  const printed = `\`--version\` printed "${found}" instead of "tan <version>"`;
+ *  corrupted by an old non-atomic download.
+ *
+ *  The resolved path and the line `--version` actually printed are NOT in the
+ *  sentence: an unknown binary's first stdout line is unbounded, and both facts
+ *  are already logged by the caller — "Show Output" is the click that reveals
+ *  them. */
+function nonNativeCliMessage(binary: ResolvedBinary): string {
+  const notTan = "doesn't look like the native tan CLI";
   switch (binary.source) {
     case "cliPath":
-      return `The binary at alpSdk.cliPath (${binary.command}) doesn't look like the native tan CLI — ${printed}. This may be the retired alp CLI or a corrupted binary. Point the setting at a tan build, or clear the override to use the managed CLI.`;
+      return `The binary at alpSdk.cliPath ${notTan}. This may be the retired alp CLI or a corrupted binary. Point the setting at a tan build, or clear the override to use the managed CLI.`;
     case "bundled":
-      return `The tan binary bundled with this extension install (${binary.command}) doesn't look like the native tan CLI — ${printed}. Reinstall from a current .vsix to refresh it.`;
+      return `The tan binary bundled with this extension install ${notTan}. Reinstall from a current .vsix to refresh it.`;
     case "localBuild":
-      return `The local tan-cli build (${binary.command}) doesn't look like the native tan CLI — ${printed}. Rebuild the sibling tan-cli checkout.`;
+      return `The local tan-cli build ${notTan}. Rebuild the sibling tan-cli checkout.`;
     default:
-      return `The managed tan CLI (${binary.command}) doesn't look like the native tan CLI — ${printed}. It may be corrupted from an old download.`;
+      return `The managed tan CLI ${notTan}. It may be corrupted from an old download.`;
   }
 }
 
 /** Message for a resolved binary that's older than `SUPPORTED_CLI_VERSION`,
- *  worded per source for the same reason as `nonNativeCliMessage`. */
+ *  worded per source for the same reason as `nonNativeCliMessage` (and, for the
+ *  same reason, without the resolved path — the caller logs it). The version
+ *  numbers stay: they are the fact the user needs, not raw diagnostics. */
 function outdatedCliMessage(binary: ResolvedBinary, version: string): string {
   const behind = `is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing`;
   switch (binary.source) {
     case "cliPath":
       return `The tan CLI at alpSdk.cliPath ${behind}. Update that binary, or clear the override to use the managed CLI.`;
     case "bundled":
-      return `The tan binary bundled with this extension install (${binary.command}) ${behind}. Reinstall from a current .vsix to refresh it.`;
+      return `The tan binary bundled with this extension install ${behind}. Reinstall from a current .vsix to refresh it.`;
     case "localBuild":
-      return `The local tan-cli build (${binary.command}) ${behind}. Rebuild the sibling tan-cli checkout.`;
+      return `The local tan-cli build ${behind}. Rebuild the sibling tan-cli checkout.`;
     default:
       return `The tan CLI ${behind}.`;
   }
@@ -446,8 +478,8 @@ function outdatedCliMessage(binary: ResolvedBinary, version: string): string {
  *  cached/local-build binary is the version this extension shipped or
  *  fetched itself, so it can never be ahead of what this build targets —
  *  only a PATH `tan` the user installed independently can be). */
-function aheadCliMessage(binary: ResolvedBinary, version: string): string {
-  return `The tan CLI on PATH (${binary.command}) is ${version}, newer than the ${SUPPORTED_CLI_VERSION} this extension was built/tested against — some flags or envelope fields may differ from what this extension expects.`;
+function aheadCliMessage(version: string): string {
+  return `The tan CLI on PATH is ${version}, newer than the ${SUPPORTED_CLI_VERSION} this extension was built/tested against — some flags or envelope fields may differ from what this extension expects.`;
 }
 
 /**
@@ -510,7 +542,7 @@ export async function checkCliVersion(
     );
     await warnAboutResolvedBinary(
       binary,
-      nonNativeCliMessage(binary, found),
+      nonNativeCliMessage(binary),
       preferGlobalCli,
     );
     return;
@@ -532,29 +564,28 @@ export async function checkCliVersion(
   // cached/local-build binary is one this extension shipped or fetched
   // itself, so it can't be ahead of what this build targets.
   if (binary.source === "path" && isCliAhead(version, SUPPORTED_CLI_VERSION)) {
+    // The PATH binary's absolute path belongs in the channel, not in the toast
+    // sentence — this is the only place it is recorded for this branch.
     log(
-      `[cli] resolved tan ${version} on PATH is newer than supported ${SUPPORTED_CLI_VERSION}`,
+      `[cli] resolved tan ${version} on PATH (${binary.command}) is newer than supported ${SUPPORTED_CLI_VERSION}`,
     );
     // Reinstalling is never the remedy (the installer fetches an even-newer
     // latest); the fix depends on the flag (see `aheadPathFixAction`). Flag
     // off → download the pinned version into the cache (which outranks PATH
     // when off); flag on → turn the preference off so a managed copy wins.
     const fix = aheadPathFixAction(preferGlobalCli);
-    const label = fix === "updateManagedCli" ? "Update" : "Open Settings";
-    const choice = await vscode.window.showWarningMessage(
-      aheadCliMessage(binary, version),
-      label,
+    await notify(
+      planFailure({
+        operation: "Checking the tan CLI",
+        cause: aheadCliMessage(version),
+        severity: "warning",
+        actions: [
+          fix === "updateManagedCli"
+            ? { id: "updateCli", title: "Update" }
+            : { id: "openSettings", arg: "alpSdk.preferGlobalCli" },
+        ],
+      }),
     );
-    if (choice === label) {
-      if (fix === "updateManagedCli") {
-        await vscode.commands.executeCommand("alp.updateCli");
-      } else {
-        await vscode.commands.executeCommand(
-          "workbench.action.openSettings",
-          "alpSdk.preferGlobalCli",
-        );
-      }
-    }
   }
 }
 
@@ -569,42 +600,78 @@ export async function updateAlpCli(
 ): Promise<void> {
   const deps = buildResolveDeps(context);
   if (deps.cliPathSetting) {
-    const choice = await vscode.window.showWarningMessage(
-      "alpSdk.cliPath is set, so the managed CLI download won't be used. Clear the override to let the extension manage the tan CLI, or update that binary yourself.",
-      "Open Settings",
+    // The warning is the whole point of this guard — the `return` below is a
+    // refusal the user has to be told about, never a silent no-op.
+    await notify(
+      planFailure({
+        operation: "Updating the tan CLI",
+        cause:
+          "alpSdk.cliPath is set, so the managed CLI download won't be used. Clear the override to let the extension manage the tan CLI, or update that binary yourself.",
+        severity: "warning",
+        actions: [{ id: "openSettings", arg: "alpSdk.cliPath" }],
+      }),
     );
-    if (choice === "Open Settings") {
-      await vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "alpSdk.cliPath",
-      );
-    }
     return;
   }
+  let cancelled = false;
   try {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: `Updating the tan CLI to ${SUPPORTED_CLI_VERSION}…`,
+        // The existing binary keeps working while this runs, so a cancel is
+        // always safe — and a slow link must never look like a hung window.
+        cancellable: true,
       },
-      async () => {
-        const asset = releaseAssetForTarget(deps.platform, deps.arch);
-        log(
-          `[cli] downloading tan CLI ${SUPPORTED_CLI_VERSION}: ${asset?.url ?? "unknown asset"}`,
-        );
-        await downloadCli(deps);
-        log(
-          `[cli] tan CLI ${SUPPORTED_CLI_VERSION} downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
-        );
-        resetResolvedBinary();
+      async (_progress, token) => {
+        const controller = new AbortController();
+        const sub = token.onCancellationRequested(() => {
+          cancelled = true;
+          controller.abort();
+        });
+        try {
+          const asset = releaseAssetForTarget(deps.platform, deps.arch);
+          log(
+            `[cli] downloading tan CLI ${SUPPORTED_CLI_VERSION}: ${asset?.url ?? "unknown asset"}`,
+          );
+          await downloadCli(deps, controller.signal);
+          log(
+            `[cli] tan CLI ${SUPPORTED_CLI_VERSION} downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
+          );
+          resetResolvedBinary();
+        } finally {
+          sub.dispose();
+        }
       },
     );
-    void vscode.window.showInformationMessage(
-      `tan CLI updated to ${SUPPORTED_CLI_VERSION}.`,
-    );
+    if (cancelled) {
+      log(`[cli] tan CLI update to ${SUPPORTED_CLI_VERSION} cancelled`);
+      notifyAsync(planSuccess("tan CLI update cancelled."));
+      return;
+    }
+    // Status bar, not a toast: the progress notification above already showed
+    // the update running, and nothing here needs a dismissal click.
+    notifyAsync(planSuccess(`tan CLI updated to ${SUPPORTED_CLI_VERSION}.`));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    void reportError(`tan CLI update failed: ${message}`);
+    // A cancel aborts the request and lands here as an AbortError; the customer
+    // asked for it, so it is reported as a status-bar note, never a failure.
+    if (cancelled) {
+      log(`[cli] tan CLI update to ${SUPPORTED_CLI_VERSION} cancelled`);
+      notifyAsync(planSuccess("tan CLI update cancelled."));
+      return;
+    }
+    notifyAsync(
+      planFailure({
+        operation: "Updating the tan CLI",
+        cause: "The tan CLI update failed.",
+        // HTTP status / errno / asset URL — logged, never rendered.
+        detail: error instanceof Error ? error.message : String(error),
+        // Almost always transient (network), so offer the retry; `alp.updateCli`
+        // IS this command, so the presenter can run it without this plan being
+        // awaited.
+        actions: [{ id: "updateCli", title: "Retry" }],
+      }),
+    );
   }
 }
 
@@ -625,8 +692,17 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
   // Guard a packaging regression: a missing bundled script would otherwise
   // surface only as a raw "sh: …: No such file" (exit 127) in the terminal.
   if (!fs.existsSync(script)) {
-    void reportError(
-      `The bundled tan installer is missing (${script}). Try reinstalling the Alp SDK extension.`,
+    notifyAsync(
+      planFailure({
+        operation: "Installing the tan CLI",
+        cause:
+          "The bundled tan installer is missing from this extension install. Reinstalling the Alp SDK extension restores it.",
+        // The expected script path is a local absolute path: channel only.
+        detail: `expected installer at ${script}`,
+        // The stated remedy now has the button it never had. The id is spelled
+        // exactly as package.json publishes it (`AlpLabAI.alp-sdk`).
+        actions: [{ id: "openExtensions", arg: "AlpLabAI.alp-sdk" }],
+      }),
     );
     return;
   }
@@ -673,8 +749,16 @@ export async function runAlpCommand(
         kind: "unknown",
         ok: false,
         severity: "error",
-        message: `tan CLI unavailable: ${message}`,
+        // The raw resolver text (`No prebuilt tan CLI for win32/x64…`, an HTTP
+        // status, an errno) rides on `unavailable.detail`, which the
+        // notification planner logs and never renders — it used to be
+        // interpolated straight into a buttonless toast.
+        message: "tan CLI unavailable.",
         envelope: null,
+        unavailable: {
+          reason: classifyUnavailable(message),
+          detail: message,
+        },
       },
       raw: {
         status: null,
@@ -729,7 +813,13 @@ export async function runAlpInTerminal(
     log(
       `[cli] ✗ CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
     );
-    await surfaceResolutionError(error);
+    // "Retry" is caller-handled by the seam's contract, so it has to be
+    // honoured here or the button is a dead end: resolution threw, so nothing
+    // is memoized and a second attempt really does re-resolve (and can
+    // re-download). One extra frame per user click, no loop.
+    if ((await surfaceResolutionError(error, options.name)) === "retry") {
+      await runAlpInTerminal(context, args, options);
+    }
     return;
   }
   const finalArgs = withSdkRoot(args);
@@ -743,18 +833,34 @@ export async function runAlpInTerminal(
   });
 }
 
-async function surfaceResolutionError(error: unknown): Promise<void> {
-  const message = error instanceof Error ? error.message : String(error);
-  const choice = await vscode.window.showErrorMessage(
-    `tan CLI unavailable: ${message}`,
-    "Open Settings",
+/**
+ * Present a binary-resolution failure through the seam's CLI-unavailable plan.
+ * `classifyUnavailable` turns the raw resolver text into the discriminant, so
+ * "tan was never installed here" offers Install/Retry while "a binary is there
+ * but broken/mispointed" offers Settings/Doctor — the previous single toast
+ * read identically for both and offered `alpSdk.cliPath` to a first-run user
+ * who has no binary to point it at. The raw text stays on `unavailable.detail`
+ * (channel only). Returns the caller-handled pick, i.e. "retry".
+ */
+async function surfaceResolutionError(
+  error: unknown,
+  operation: string,
+): Promise<ActionId | undefined> {
+  const detail = error instanceof Error ? error.message : String(error);
+  return notify(
+    planCliOutcome(
+      {
+        exitCode: -1,
+        kind: "unknown",
+        ok: false,
+        severity: "error",
+        message: "tan CLI unavailable.",
+        envelope: null,
+        unavailable: { reason: classifyUnavailable(detail), detail },
+      },
+      { operation },
+    ),
   );
-  if (choice === "Open Settings") {
-    await vscode.commands.executeCommand(
-      "workbench.action.openSettings",
-      "alpSdk.cliPath",
-    );
-  }
 }
 
 // ── real seams ───────────────────────────────────────────────────────────────
