@@ -105,7 +105,7 @@
           {
             "id": "alp.walkthrough.bootstrap",
             "title": "Bootstrap your toolchain",
-            "description": "With your project folder open, create the Zephyr workspace and install west + Zephyr Python deps into a workspace venv. Toolchain doctor checks host prerequisites (Python, CMake, Ninja).\n[Bootstrap toolchain](command:alp.installDependencies)\n[Run toolchain doctor](command:alp.toolchainDoctor)",
+            "description": "With your project folder open, create the Zephyr workspace and install west + Zephyr Python deps into a workspace venv. Dependencies lists every host tool tan checks (CMake, Ninja, the Zephyr SDK, …) with the status tan reported for each.\n[Bootstrap toolchain](command:alp.installDependencies)\n[Open Dependencies](command:alp.openDependencies)",
             "media": {
               "markdown": "media/walkthroughs/03-bootstrap.md"
             },
@@ -215,8 +215,14 @@
         "icon": "$(circuit-board)"
       },
       {
+        "command": "alp.openDependencies",
+        "title": "Alp: Dependencies",
+        "category": "Alp",
+        "icon": "$(checklist)"
+      },
+      {
         "command": "alp.toolchainDoctor",
-        "title": "Alp: Toolchain doctor",
+        "title": "Alp: Toolchain doctor (opens Dependencies)",
         "category": "Alp"
       },
       {
@@ -249,7 +255,7 @@
       },
       {
         "command": "alp.updateCli",
-        "title": "Alp: Update the tan CLI",
+        "title": "Alp: Reinstall the pinned tan CLI",
         "category": "Alp",
         "icon": "$(cloud-download)"
       },
@@ -394,6 +400,12 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "alp.toolchainDoctor",
+          "when": "false"
+        }
+      ],
       "editor/title": [
         {
           "command": "alp.openConfigurator",
@@ -492,7 +504,7 @@
     "vendor:kconfig-metadata": "node scripts/vendor-kconfig-metadata.mjs",
     "compile:watch": "tsc --build --watch",
     "typecheck": "tsc --noEmit -p packages/alp-core --tsBuildInfoFile node_modules/.cache/alp-core.typecheck.tsbuildinfo && tsc --noEmit -p tsconfig.json && pnpm --filter ./packages/alp-webview run typecheck",
-    "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
+    "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap && node -e \"require('fs').rmSync('tsconfig.tsbuildinfo',{force:true})\"",
     "test": "pnpm run compile && node --test test/*.test.js",
     "install:vscode": "node scripts/run-bash.mjs ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",

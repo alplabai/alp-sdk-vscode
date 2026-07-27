@@ -3,6 +3,12 @@
 import type { BoardConfig } from "@alp-sdk/core/board/models";
 import type { ConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
 import type {
+  DependencyAction,
+  DependencyActionEffect,
+  DependencyReport,
+  DependencyRow,
+} from "@alp-sdk/core/deps/planner";
+import type {
   LocalSdkEntry,
   SdkReadinessState,
   SdkRelease,
@@ -13,12 +19,17 @@ import type {
   SystemManifest,
 } from "@alp-sdk/core/systemManifest/models";
 import type { ToolchainFixId } from "@alp-sdk/core/toolchain/bootstrapPlan";
-import type { ToolchainReport } from "@alp-sdk/core/toolchain/doctor";
 
 // Re-export so callers only need this module.
 export type {
   BoardConfig,
   ConfiguratorViewModel,
+  DependencyAction,
+  // The verb a row's button promises (`install` / `open-docs` / `bootstrap`),
+  // read off the host's own fix dispatch. Mirrored in the webview types.
+  DependencyActionEffect,
+  DependencyReport,
+  DependencyRow,
   LocalSdkEntry,
   SdkRelease,
   SocCore,
@@ -26,7 +37,6 @@ export type {
   SomPreset,
   SystemManifest,
   ToolchainFixId,
-  ToolchainReport,
 };
 
 // ---------------------------------------------------------------------------
@@ -138,8 +148,17 @@ export function emptyAlpIdeState(): AlpIdeState {
 // Extension → Webview messages
 // ---------------------------------------------------------------------------
 
-/** Increment whenever the message protocol changes in a breaking way. */
-export const PROTOCOL_VERSION = 2 as const;
+/**
+ * Increment whenever the message protocol changes in a breaking way.
+ *
+ * 3 — the Toolchain Doctor protocol (`toolchainReport` / `reloadToolchain` /
+ * `runToolchainFix`) was REMOVED and replaced by the dependency panel's
+ * `dependencyReport` / `refreshDependencies` / `runDependencyAction`. Removal is
+ * breaking in both directions: a stale webview posting `runToolchainFix` would
+ * be dropped on the floor, and one waiting on `toolchainReport` would spin
+ * forever. The bump is what makes it show the reload prompt instead.
+ */
+export const PROTOCOL_VERSION = 3 as const;
 
 export interface StateUpdateMessage {
   type: "stateUpdate";
@@ -190,9 +209,18 @@ export interface ConfiguratorSavedMessage {
   boardPath: string;
 }
 
-export interface ToolchainReportMessage {
-  type: "toolchainReport";
-  report: ToolchainReport;
+/**
+ * The dependency table (`tan doctor --build`, planned by
+ * `@alp-sdk/core/deps/planner`). One push carries the whole table — rows,
+ * tan's own three counts, and whether this tan could say what is missing.
+ *
+ * `report: null` + `error` is the honest "the CLI could not answer" state.
+ * The panel says so; it never renders an empty table as a clean bill of health.
+ */
+export interface DependencyReportMessage {
+  type: "dependencyReport";
+  report: DependencyReport | null;
+  error?: string;
 }
 
 export interface HardwareExplorerDataMessage {
@@ -287,7 +315,7 @@ export type ExtToWebviewMessage =
   | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
-  | ToolchainReportMessage
+  | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
   | BuildPlanDataMessage
@@ -408,13 +436,30 @@ export interface PreviewEffectiveConfigMessage {
   type: "previewEffectiveConfig";
 }
 
-export interface RunToolchainFixMessage {
-  type: "runToolchainFix";
-  fixId: ToolchainFixId;
+/**
+ * Re-run `tan doctor --build` and push a fresh `dependencyReport`. The user
+ * asked, so this is also the one path allowed to spend a GitHub request on the
+ * latest-SDK lookup regardless of the cache TTL (src/deps/panel.ts).
+ */
+export interface RefreshDependenciesMessage {
+  type: "refreshDependencies";
 }
 
-export interface ReloadToolchainMessage {
-  type: "reloadToolchain";
+/**
+ * Run one dependency row's action.
+ *
+ * Carries the ROW ID (`DependencyRow.name`, which is tan's `check.name`) and
+ * nothing else. The host looks the id up in the report it last sent and runs
+ * THAT row's `action` — so what executes is always something the host itself
+ * produced. A webview that handed over a command string to execute would be a
+ * command-injection seam: the panel renders untrusted CLI output, and a
+ * compromised or merely buggy renderer could then choose the command.
+ *
+ * An unknown id, or a row whose `action` is `null`, is a no-op.
+ */
+export interface RunDependencyActionMessage {
+  type: "runDependencyAction";
+  name: string;
 }
 
 export interface ReloadHardwareExplorerMessage {
@@ -475,8 +520,8 @@ export type WebviewToExtMessage =
   | ConfiguratorUpdateMessage
   | ReloadConfiguratorMessage
   | PreviewEffectiveConfigMessage
-  | RunToolchainFixMessage
-  | ReloadToolchainMessage
+  | RefreshDependenciesMessage
+  | RunDependencyActionMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage

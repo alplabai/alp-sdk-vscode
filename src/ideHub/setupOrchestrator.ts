@@ -28,6 +28,7 @@
 import * as vscode from "vscode";
 import type { ToolVersions } from "./messages";
 import type { NotificationPlan, NotifyAction } from "../notify/models";
+import { isCancellation } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { log } from "../util";
 import { queryAlpIdeState } from "./vscodeAdapter";
@@ -161,6 +162,22 @@ export function planToolDrift(input: {
 }
 
 /**
+ * Persist one piece of bookkeeping WITHOUT letting it gate the remedy.
+ *
+ * A `Memento.update` is a main-thread RPC and can reject — at window teardown
+ * it always does. Awaited inline it takes the whole readiness check down with
+ * it, and the one customer-facing sentence this file exists to deliver is
+ * never shown. Fire-and-forget, with its own handler so the rejection is never
+ * an unhandled one: the write is idempotent and the next activation redoes it.
+ */
+function record(memento: vscode.Memento, key: string, value: string): void {
+  void Promise.resolve(memento.update(key, value)).then(undefined, (err) => {
+    if (isCancellation(err)) return;
+    log(`[setup] could not record ${key}: ${String(err)}`, "warn");
+  });
+}
+
+/**
  * Evaluate prerequisites on first open and offer the IDE Hub panel
  * when the environment is not ready.
  *
@@ -183,10 +200,10 @@ export async function maybeOfferSetupPanel(
       lastShown: context.workspaceState.get<string>(driftKey, ""),
     });
     if (plan) {
-      await context.workspaceState.update(driftKey, currentVersionFp);
+      record(context.workspaceState, driftKey, currentVersionFp);
       notifyAsync(plan);
     }
-    await context.workspaceState.update(DRIFT_VERSION_KEY, currentVersionFp);
+    record(context.workspaceState, DRIFT_VERSION_KEY, currentVersionFp);
 
     // --- missing prerequisites notification --------------------------------
     const issues: string[] = [];
@@ -255,9 +272,21 @@ export async function maybeOfferSetupPanel(
     // remedy worked the issue set is empty next time and nothing is shown, and
     // if it didn't, the nudge is still the correct thing to show.
     if (picked === "custom") {
-      await context.globalState.update(ORCHESTRATOR_KEY, fingerprint);
+      record(context.globalState, ORCHESTRATOR_KEY, fingerprint);
     }
   } catch (err) {
+    // The window going away is NOT a readiness failure. At teardown (reload,
+    // close, or a folder-open replacing this workspace) the extension host
+    // rejects every pending main-thread reply with a CancellationError — and
+    // the unanswered toast above is exactly such a pending reply. The check
+    // never reached a verdict, so there is nothing to warn about, and a
+    // "readiness check failed" line in the customer-visible channel next to a
+    // surface whose whole job is "is my machine ready" reads as the machine
+    // being broken.
+    if (isCancellation(err)) {
+      log("[setup] readiness check abandoned, window closing", "info");
+      return;
+    }
     // Never block activation — but record why the readiness check failed
     // instead of dropping it silently.
     log(`[setup] readiness check failed: ${String(err)}`, "warn");

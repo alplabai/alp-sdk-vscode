@@ -2,7 +2,7 @@
 // The webview is a separate build; we do not share source with the extension.
 
 /** Must match PROTOCOL_VERSION in src/ideHub/messages.ts. */
-export const PROTOCOL_VERSION = 2 as const;
+export const PROTOCOL_VERSION = 3 as const;
 
 export type SdkReadinessState = "ready" | "partial" | "missing" | "unknown";
 
@@ -331,34 +331,102 @@ export interface ConfiguratorSavedMessage {
   boardPath: string;
 }
 
-// ── Toolchain Doctor — mirrored from @alp-sdk/core/toolchain/doctor +
-//    bootstrapPlan. Kept in sync manually (separate webview build). ──
+// ── Dependencies panel — mirrored from @alp-sdk/core/deps/planner and
+//    @alp-sdk/core/toolchain/bootstrapPlan. Kept in sync manually (separate
+//    webview build). Only the REPORT half of the planner crosses the wire; its
+//    envelope inputs stay host-side. ──
+
+/**
+ * Mirrors `ToolchainFixId` in packages/alp-core/src/toolchain/bootstrapPlan.ts.
+ * Every member core can emit must be listed — this union silently lost "gdb"
+ * once, which `test/deps.protocol.test.js` now guards in both directions.
+ */
 export type ToolchainFixId =
   | "python-deps"
   | "west"
   | "build-tools"
-  | "zephyr-sdk";
+  | "zephyr-sdk"
+  | "gdb";
 
-export type DoctorCheckStatus = "ok" | "missing" | "warn";
+/**
+ * A row's status, VERBATIM from tan. Deliberately `string`, not a union: the
+ * view prints it as-is, so a status tan adds later shows up rather than being
+ * coerced into today's vocabulary.
+ */
+export type DependencyStatus = string;
 
-export interface DoctorCheck {
-  id: string;
+/** `"pin"` = the extension requires exactly this version, so it is never an
+ *  update to offer; `"release"` = the row chases latest. */
+export interface DependencyLatest {
+  version: string;
+  kind: "release" | "pin";
+}
+
+/**
+ * What pressing the button ACTUALLY does, so the label can say it. Mirrors
+ * `DependencyActionEffect` in packages/alp-core/src/deps/planner.ts.
+ *
+ * `"open-docs"` opens a web page and installs NOTHING (the `build-tools` and
+ * `zephyr-sdk` fixes are exactly that), and `"bootstrap"` starts a whole
+ * `tan bootstrap` run — neither may be labelled "Install".
+ */
+export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
+
+/**
+ * What a row's button does. `null` (no action) is a first-class outcome.
+ *
+ * `effect` picks the label and `title` is the tooltip: both are on every kind,
+ * so the view never has to guess a verb or leave a button unexplained.
+ */
+export type DependencyAction =
+  | {
+      kind: "command";
+      command: string;
+      effect: "install";
+      title: string;
+    }
+  | {
+      kind: "fix";
+      fixId: ToolchainFixId;
+      effect: DependencyActionEffect;
+      title: string;
+    };
+
+export interface DependencyRow {
+  /** tan's `check.name`, verbatim — the row's identity and what the webview
+   *  posts back in `runDependencyAction`. */
+  name: string;
   label: string;
-  status: DoctorCheckStatus;
+  status: DependencyStatus;
   detail: string;
-  required: boolean;
-  fixId?: ToolchainFixId;
+  /** tan's own `check.fix` PROSE, verbatim, or `null` when tan gave none.
+   *  DISPLAY ONLY — rendered under the detail, never parsed into a command
+   *  (#347). On a row with no button it is the only remedy the user gets. */
+  hint: string | null;
+  /** `null` whenever tan reports no version — render an em dash, never a
+   *  fabricated version and never the word "unknown". */
+  installed: string | null;
+  latest: DependencyLatest | null;
+  updateAvailable: boolean;
+  action: DependencyAction | null;
 }
 
-export interface ToolchainReport {
-  checks: DoctorCheck[];
-  ok: boolean;
-  missingRequired: number;
+export interface DependencyReport {
+  rows: DependencyRow[];
+  /** tan's `data.summary` verbatim. There is deliberately no `ok` boolean:
+   *  tan caps an absent PATH tool at `warn`, so any `fail === 0` verdict would
+   *  print "all good" while Ninja is missing. The view must not invent one. */
+  counts: { pass: number; warn: number; fail: number };
+  /** True when this tan emitted no `missingPrerequisites` at all (the pinned
+   *  v0.3.1). The panel says so in one line instead of implying tan looked and
+   *  found nothing. */
+  prerequisiteDataUnavailable: boolean;
 }
 
-export interface ToolchainReportMessage {
-  type: "toolchainReport";
-  report: ToolchainReport;
+export interface DependencyReportMessage {
+  type: "dependencyReport";
+  report: DependencyReport | null;
+  error?: string;
 }
 
 // ── Hardware Explorer model — mirrored from @alp-sdk/core/sdkCatalogue/models ──
@@ -554,7 +622,7 @@ export type ExtToWebviewMessage =
   | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
-  | ToolchainReportMessage
+  | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
   | BuildPlanDataMessage
@@ -637,12 +705,15 @@ export interface ReloadConfiguratorMessage {
 export interface PreviewEffectiveConfigMessage {
   type: "previewEffectiveConfig";
 }
-export interface RunToolchainFixMessage {
-  type: "runToolchainFix";
-  fixId: ToolchainFixId;
+export interface RefreshDependenciesMessage {
+  type: "refreshDependencies";
 }
-export interface ReloadToolchainMessage {
-  type: "reloadToolchain";
+/** Run one row's action. Carries the ROW ID only — the host resolves it
+ *  against the report it last sent, so what runs is always something the host
+ *  produced. Posting a command string to execute would be an injection seam. */
+export interface RunDependencyActionMessage {
+  type: "runDependencyAction";
+  name: string;
 }
 export interface ReloadHardwareExplorerMessage {
   type: "reloadHardwareExplorer";
@@ -680,8 +751,8 @@ export type WebviewToExtMessage =
   | ConfiguratorUpdateMessage
   | ReloadConfiguratorMessage
   | PreviewEffectiveConfigMessage
-  | RunToolchainFixMessage
-  | ReloadToolchainMessage
+  | RefreshDependenciesMessage
+  | RunDependencyActionMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage

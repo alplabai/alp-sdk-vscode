@@ -219,9 +219,13 @@ const PANELS: PanelCardProps[] = [
   },
   {
     icon: "activity",
-    title: "Toolchain Doctor",
-    desc: "Diagnose build tools and apply one-click fixes.",
-    command: "alp.toolchainDoctor",
+    // The panel this opens is titled "Alp Dependencies"; the tile says the same
+    // thing. It promises no fix, because a row only gets a button when tan
+    // supplies one — the old "one-click fixes" wording was dead on every
+    // machine where tan resolved.
+    title: "Dependencies",
+    desc: "Every build tool tan checks, with its status and version.",
+    command: "alp.openDependencies",
   },
 ];
 
@@ -288,12 +292,12 @@ export function OverviewView() {
               chip={envChip(state)}
               meta={envMeta(state)}
               // A red "Missing"/"Update Needed" chip was a dead end. When tools
-              // aren't ready, jump to the Toolchain Doctor (which diagnoses +
-              // fixes Python/west/cmake/ninja); a ready environment stays static.
+              // aren't ready, open Dependencies — the per-tool table of what tan
+              // checked and found; a ready environment stays static.
               onClick={
                 envChip(state) === "ready"
                   ? undefined
-                  : () => run("alp.toolchainDoctor")
+                  : () => run("alp.openDependencies")
               }
             />
             <StatusCard

@@ -11,6 +11,7 @@ import {
 import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorEditor } from "./configurator/customEditor";
 import { registerDebugCommands } from "./debug";
+import { DependencyPanel } from "./deps/panel";
 import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
   BuildPlanPanel,
@@ -29,7 +30,6 @@ import { planFailure, planSuccess } from "./notify/service";
 import { notifyAsync, setExtensionId } from "./notify/vscodeAdapter";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
-import { registerToolchainCommands } from "./toolchain";
 import {
   disposeTaskTracking,
   log,
@@ -191,7 +191,23 @@ export function activate(context: vscode.ExtensionContext): void {
     createStatusBar(stateMgr),
     registerSelectSdkCommand(),
     ...registerConfiguratorEditor(context),
-    ...registerToolchainCommands(context),
+    vscode.commands.registerCommand("alp.openDependencies", () =>
+      DependencyPanel.open(context, stateMgr),
+    ),
+    // The Toolchain Doctor panel is gone — this id opens the dependency panel
+    // that replaced it. Kept (not removed) because the notify seam's `runDoctor`
+    // action, the walkthrough, the webview allowlist and every shipped
+    // keybinding execute it by name; retiring the id would turn all of those
+    // into dead buttons.
+    //
+    // The deleted registration's `noWorkspace` precondition did not go with
+    // it: with no folder open `buildDependencyReport` refuses to spawn and the
+    // panel says to open one (src/deps/vscodeAdapter.ts). The guard moved to
+    // where the spawn is, so `alp.openDependencies` — reachable from the
+    // Activity Bar on a fresh install — is covered by the same check (#371).
+    vscode.commands.registerCommand("alp.toolchainDoctor", () =>
+      DependencyPanel.open(context, stateMgr),
+    ),
     registerProjectWizardCommand(),
     ...registerLspCommands(),
     ...registerDebugCommands(context),

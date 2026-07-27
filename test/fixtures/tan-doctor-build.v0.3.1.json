@@ -1,0 +1,126 @@
+{
+  "command": "doctor",
+  "ok": false,
+  "exitCode": 4,
+  "project": {
+    "root": "/workspace/demo-project",
+    "boardYaml": "/workspace/demo-project/board.yaml"
+  },
+  "data": {
+    "schemaVersion": "1",
+    "generatedAt": "2026-07-27T15:37:09.032Z",
+    "osSet": ["zephyr", "yocto", "baremetal"],
+    "summary": { "pass": 1, "warn": 6, "fail": 3 },
+    "checks": [
+      {
+        "name": "sdk",
+        "status": "fail",
+        "detail": "no SDK selected — run `tan sdk switch <path>` or `tan sdk install <ver>`",
+        "fix": "tan sdk switch <path>"
+      },
+      {
+        "name": "boardYaml",
+        "status": "fail",
+        "detail": "board.yaml not found — run `tan init` or pass `--board-yaml <path>`",
+        "fix": "tan init"
+      },
+      {
+        "name": "workspace",
+        "status": "fail",
+        "detail": "no Zephyr workspace — run `tan bootstrap` (reuses a compatible Zephyr, else bootstraps one)",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "westResolved",
+        "status": "warn",
+        "detail": "west not found — run `tan bootstrap` to create the workspace venv",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "west",
+        "status": "warn",
+        "detail": "west not found on PATH — needed for Zephyr builds.",
+        "fix": "Install west via `tan bootstrap`."
+      },
+      { "name": "cmake", "status": "pass", "detail": "cmake is available." },
+      {
+        "name": "ninja",
+        "status": "warn",
+        "detail": "ninja not found on PATH — needed for Zephyr builds.",
+        "fix": "Install Ninja."
+      },
+      {
+        "name": "zephyrSdk",
+        "status": "warn",
+        "detail": "Zephyr SDK toolchain not detected (ZEPHYR_SDK_INSTALL_DIR unset).",
+        "fix": "Install the Zephyr SDK: https://docs.zephyrproject.org/latest/develop/toolchains/zephyr_sdk.html"
+      },
+      {
+        "name": "yoctoHost",
+        "status": "warn",
+        "detail": "Yocto builds are Linux-only; use WSL2 or a Linux host/container.",
+        "fix": "Run Yocto builds on Linux (WSL2 / Docker)."
+      },
+      {
+        "name": "vendorToolchain",
+        "status": "warn",
+        "detail": "Baremetal needs a vendor toolchain (Alif/Renesas/NXP), per SoC family.",
+        "fix": "Install the vendor toolchain for your SoC (see docs/getting-started.md §8)."
+      }
+    ],
+    "nextSteps": [
+      "Install west via `tan bootstrap`.",
+      "Install Ninja.",
+      "Install the Zephyr SDK: https://docs.zephyrproject.org/latest/develop/toolchains/zephyr_sdk.html",
+      "Run Yocto builds on Linux (WSL2 / Docker).",
+      "Install the vendor toolchain for your SoC (see docs/getting-started.md §8)."
+    ]
+  },
+  "issues": [
+    {
+      "code": "doctor.sdk",
+      "severity": "error",
+      "message": "no SDK selected — run `tan sdk switch <path>` or `tan sdk install <ver>`"
+    },
+    {
+      "code": "doctor.boardYaml",
+      "severity": "error",
+      "message": "board.yaml not found — run `tan init` or pass `--board-yaml <path>`"
+    },
+    {
+      "code": "doctor.workspace",
+      "severity": "error",
+      "message": "no Zephyr workspace — run `tan bootstrap` (reuses a compatible Zephyr, else bootstraps one)"
+    },
+    {
+      "code": "doctor.westResolved",
+      "severity": "warning",
+      "message": "west not found — run `tan bootstrap` to create the workspace venv"
+    },
+    {
+      "code": "doctor.west",
+      "severity": "warning",
+      "message": "west not found on PATH — needed for Zephyr builds."
+    },
+    {
+      "code": "doctor.ninja",
+      "severity": "warning",
+      "message": "ninja not found on PATH — needed for Zephyr builds."
+    },
+    {
+      "code": "doctor.zephyrSdk",
+      "severity": "warning",
+      "message": "Zephyr SDK toolchain not detected (ZEPHYR_SDK_INSTALL_DIR unset)."
+    },
+    {
+      "code": "doctor.yoctoHost",
+      "severity": "warning",
+      "message": "Yocto builds are Linux-only; use WSL2 or a Linux host/container."
+    },
+    {
+      "code": "doctor.vendorToolchain",
+      "severity": "warning",
+      "message": "Baremetal needs a vendor toolchain (Alif/Renesas/NXP), per SoC family."
+    }
+  ]
+}

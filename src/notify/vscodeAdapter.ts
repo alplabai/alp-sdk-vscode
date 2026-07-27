@@ -17,6 +17,7 @@ import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log, revealRunInTerminal, showOutput } from "../util";
 import { ActionId, NotificationPlan, NotifyAction } from "./models";
+import { isCancellation } from "./service";
 
 /**
  * This extension's own `<publisher>.<name>`, as VS Code registered it — the
@@ -165,14 +166,28 @@ export function notifyAsync(plan: NotificationPlan): void {
   if (actions.length === 0 && plan.channel !== "statusBar") {
     actions.push({ id: "showOutput" });
   }
-  void notify({ ...plan, actions }).then((picked) => {
-    if (picked) {
+  void notify({ ...plan, actions })
+    .then((picked) => {
+      if (picked) {
+        log(
+          `[notify] fire-and-forget action "${picked}" was picked but nobody can handle it — ${plan.message}`,
+          "warn",
+        );
+      }
+    })
+    // Nobody awaits this chain, so without a rejection handler every failure
+    // here is an UNHANDLED rejection in the extension host — with no line
+    // naming which of the ~85 call sites produced it. `notify` really can
+    // reject: it awaits the message RPC, and for a presenter-handled action it
+    // awaits `executeCommand` too. At teardown both reject with a
+    // CancellationError, which is not a fault and must stay silent.
+    .catch((err: unknown) => {
+      if (isCancellation(err)) return;
       log(
-        `[notify] fire-and-forget action "${picked}" was picked but nobody can handle it — ${plan.message}`,
+        `[notify] could not present "${plan.message}": ${err instanceof Error ? err.message : String(err)}`,
         "warn",
       );
-    }
-  });
+    });
 }
 
 /** True when the presenter itself acts on the pick (`run`), or handles it
