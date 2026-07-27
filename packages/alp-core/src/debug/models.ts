@@ -150,7 +150,18 @@ export interface DebugSupportBundlePayload {
   notes: string[];
 }
 
-export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "codelldb";
+/**
+ * VS Code **debug type** strings — the `type` field of a launch configuration,
+ * as registered by each adapter extension in its own `contributes.debuggers`.
+ * These are adapter ids, NOT extension names or ids:
+ *
+ * - `cortex-debug` — marus25.cortex-debug
+ * - `cppdbg`       — ms-vscode.cpptools
+ * - `lldb`         — vadimcn.vscode-lldb (the extension is *named* CodeLLDB;
+ *                    it registers the type `lldb`, and `codelldb` is not a
+ *                    debug type at all)
+ */
+export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "lldb";
 
 export type DebugProfileOs = "zephyr" | "baremetal" | "yocto" | "host";
 

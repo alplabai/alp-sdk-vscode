@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **"Alp: Native Sim Debug" can start.** It emitted `"type": "codelldb"`, which
+  is not a debug type any extension registers — CodeLLDB registers `lldb`, and
+  `codelldb` is only the extension's name — so pressing F5 died with
+  `Configured debug type 'codelldb' is not supported.` native_sim is the only
+  target reachable with no probe and no board, so this was the first debugging
+  experience anyone had, and it had never worked. Two unit assertions named the
+  broken value and passed; both are corrected, and a new test asserts every
+  emitted debug type is one an extension this package declares actually
+  contributes. The end-to-end suite now starts a real debug session in a real
+  VS Code, so a debug type that does not exist can no longer reach a release.
+- Native-sim debugging no longer demands an LLDB on `PATH`. The preflight
+  probed `lldb-dap`/`lldb`, but CodeLLDB ships its own, so a stock machine was
+  told the session was not launchable and offered "Start Anyway". Preflight and
+  the Toolchain Doctor now agree that no debug server is needed for that target.
+- Hand-edited launch configurations survive. `launch.json` is rewritten before
+  every session, and the whole matching configuration was replaced — so a device
+  name typed in by hand was silently overwritten on the next F5. The write now
+  merges: a value already filled in is kept when the freshly generated one is
+  still an unresolved placeholder, while everything else refreshes.
+- A launch configuration that cannot start now says which fact is missing — the
+  J-Link device name, the pyOCD target id, the OpenOCD board config — in the
+  customer's terms, and offers to open `launch.json`. The Alp SDK does not
+  publish that probe metadata yet; alp-sdk#987 tracks it, alp-sdk#948 tracks the
+  SVD half.
+- The peripheral/register view is wired for Zephyr targets, not just baremetal,
+  and a missing SVD no longer blocks a launch — it is optional to cortex-debug
+  and only feeds that view, so a customer can set breakpoints without one. An
+  unresolved SVD path is now omitted rather than written as a literal
+  `<resolved-svd>`, which cortex-debug would have tried to open as a file.
+
 - Every notification now says what failed and carries the button that fixes it.
   A failed terminal command used to surface only VS Code's `failed to launch
   (exit code: 1)` — its wording for any non-zero exit, which reads as if `tan`

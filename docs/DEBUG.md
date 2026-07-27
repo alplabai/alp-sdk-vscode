@@ -1,6 +1,6 @@
 # Debug Support Matrix and Launch Design
 
-Last revised: 2026-07-25
+Last revised: 2026-07-27
 
 ## Companion extensions (bundled)
 
@@ -65,8 +65,8 @@ absent, where Install is the right action.
 
 
 
-This document defines how debugging should work across the ALP SDK
-extension, the ALP SDK itself, and the supported target classes.
+This document defines how debugging should work across the Alp SDK
+extension, the Alp SDK itself, and the supported target classes.
 
 The key design rule is simple:
 
@@ -76,7 +76,7 @@ debug configuration for the active target.**
 
 ## 1. Why Debug Is a First-Class Requirement
 
-The ALP SDK is not only a configuration/generation product. It is also
+The Alp SDK is not only a configuration/generation product. It is also
 used for:
 
 - SoM bring-up
@@ -147,7 +147,7 @@ Used for:
 
 Primary adapter strategy:
 
-- `CodeLLDB`
+- `CodeLLDB` (vadimcn.vscode-lldb — debug type `lldb`)
 
 ## 3. Debug Support Matrix
 
@@ -317,7 +317,12 @@ type DebugTargetKind =
   | "baremetal-mcu"
   | "yocto-userspace"
   | "native-host";
-type DebugAdapterKind = "cortex-debug" | "cppdbg" | "codelldb";
+// VS Code *debug type* strings, as registered in each adapter extension's own
+// `contributes.debuggers` — not extension names: `cortex-debug` is
+// marus25.cortex-debug, `cppdbg` is ms-vscode.cpptools, and `lldb` is
+// vadimcn.vscode-lldb (the extension is *named* CodeLLDB; `codelldb` is not a
+// debug type at all).
+type DebugAdapterKind = "cortex-debug" | "cppdbg" | "lldb";
 type DebugServerKind = "jlink" | "openocd" | "pyocd" | "gdbserver" | "none";
 
 interface DebugProfile {
@@ -353,7 +358,7 @@ able to generate.
 
 ```json
 {
-  "name": "ALP: Zephyr Debug (J-Link)",
+  "name": "Alp: Zephyr Debug (J-Link)",
   "type": "cortex-debug",
   "request": "launch",
   "servertype": "jlink",
@@ -370,7 +375,7 @@ able to generate.
 
 ```json
 {
-  "name": "ALP: Zephyr Debug (OpenOCD)",
+  "name": "Alp: Zephyr Debug (OpenOCD)",
   "type": "cortex-debug",
   "request": "launch",
   "servertype": "openocd",
@@ -386,7 +391,7 @@ able to generate.
 
 ```json
 {
-  "name": "ALP: Baremetal Debug (J-Link)",
+  "name": "Alp: Baremetal Debug (J-Link)",
   "type": "cortex-debug",
   "request": "launch",
   "servertype": "jlink",
@@ -394,17 +399,21 @@ able to generate.
   "executable": "${workspaceFolder}/build/baremetal/app.elf",
   "device": "<resolved-device>",
   "interface": "swd",
-  "svdFile": "<resolved-svd>",
   "runToEntryPoint": "main",
   "preLaunchTask": "alp: build baremetal target"
 }
 ```
 
+No `svdFile` key: cortex-debug *opens* that path, so an unresolved
+`"<resolved-svd>"` placeholder would be read as a filename and kill a session
+that preflight only warned about. The key is emitted only once a real file
+resolves (see §12).
+
 ### 10.4 Yocto Userspace + cppdbg + gdbserver
 
 ```json
 {
-  "name": "ALP: Yocto Remote Debug",
+  "name": "Alp: Yocto Remote Debug",
   "type": "cppdbg",
   "request": "launch",
   "program": "${workspaceFolder}/build/yocto/app",
@@ -423,14 +432,19 @@ able to generate.
 
 ```json
 {
-  "name": "ALP: Native Sim Debug",
-  "type": "codelldb",
+  "name": "Alp: Native Sim Debug",
+  "type": "lldb",
   "request": "launch",
   "program": "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
   "cwd": "${workspaceFolder}",
   "preLaunchTask": "alp: build native_sim target"
 }
 ```
+
+`vadimcn.vscode-lldb` registers the debug type `lldb` in
+`contributes.debuggers`; `CodeLLDB` is the extension's *name* and `codelldb` is
+never a debug type — VS Code rejects such a config with `configured debug type
+'codelldb' is not supported`.
 
 ## 11. Product Commands to Support Debug
 
@@ -462,11 +476,19 @@ validate:
 - build output exists and ELF path is valid
 - expected debugger extension is installed
 - selected probe/server tool exists
-- required paths such as SVD or OpenOCD config are valid
+- required paths such as the OpenOCD config are valid
 - target connection info exists for remote userspace debug
 
+`svdFile` is **optional and warn-only**: cortex-debug reads it to populate the
+peripheral/register view and nothing else, so a missing SVD leaves that view
+empty while breakpoints, stepping and memory reads all work. It must never
+appear in a launch-blocking check or in the fields a customer is told to
+supply. (Warn is the normal state today — alp-sdk ships no `.svd` and carries
+no path to one, alp-sdk#948.)
+
 If preflight fails, the product should not attempt a debug launch. It
-should explain the failure and offer the next action.
+should explain the failure and offer the next action. Only `fail` checks
+block; `warn` checks are reported and the launch proceeds.
 
 Current implementation status:
 
