@@ -116,36 +116,94 @@ export function isNativeTanVersionOutput(stdout: string): boolean {
 }
 
 /**
- * Extract the `MAJOR.MINOR.PATCH` version from `tan --version` stdout
- * (e.g. `tan 0.1.0` or `tan 0.1.0 (abc1234)`), or `null` when the output is
- * not the native CLI's version line.
+ * Extract the version from `tan --version` stdout — `MAJOR.MINOR.PATCH` plus a
+ * SemVer pre-release suffix when the binary carries one (`tan 0.4.0-rc.1` →
+ * `"0.4.0-rc.1"`) — or `null` when the output is not the native CLI's version
+ * line.
+ *
+ * The suffix is KEPT, not discarded. Dropping it parsed `tan 0.4.0-rc.1` to
+ * `"0.4.0"`, so a release candidate compared EQUAL to the finished release and
+ * every skew check went silent on a binary that predates it. Build metadata
+ * after a space (a future `tan 0.4.0 (abc1234)`) is still ignored — it carries
+ * no SemVer precedence.
  */
 export function parseTanVersion(stdout: string): string | null {
   const firstLine = stdout.trim().split(/\r?\n/, 1)[0] ?? "";
-  const match = /^tan (\d+)\.(\d+)\.(\d+)/.exec(firstLine);
-  return match ? `${match[1]}.${match[2]}.${match[3]}` : null;
+  const match = /^tan (\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?/.exec(firstLine);
+  return match ? `${match[1]}.${match[2]}.${match[3]}${match[4] ?? ""}` : null;
 }
 
 /**
- * True when the `installed` version is strictly older than `supported`
- * (tuple compare over numeric `MAJOR.MINOR.PATCH` — no semver dep). An
- * unparseable/`null` installed version is treated as "unknown, not behind" so a
- * probe hiccup never nags the user.
+ * How the INSTALLED `tan` relates to the version this extension build pins.
+ * `ahead-minor` covers a newer MAJOR too — the distinction that matters is
+ * "patch (contract can't have moved)" vs "minor/major (it can)", not the
+ * position of the digit.
+ */
+export type CliSkew =
+  | "behind"
+  | "same"
+  | "ahead-patch"
+  | "ahead-minor"
+  | "unknown";
+
+const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+
+function parseVersion(
+  version: string | null | undefined,
+): { nums: number[]; pre: string | null } | null {
+  const m = version ? VERSION_RE.exec(version.trim()) : null;
+  return m
+    ? { nums: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] ?? null }
+    : null;
+}
+
+/**
+ * Compare the installed tan against the pinned `supported` version — the ONE
+ * comparison every version-skew decision in this repo routes through (tuple
+ * compare over numeric `MAJOR.MINOR.PATCH` + SemVer pre-release rule, no semver
+ * dep). An unparseable/`null` version on either side is `"unknown"`, which every
+ * caller treats as "stay quiet": a probe hiccup must never nag the user.
+ *
+ * A pre-release is strictly OLDER than the same `MAJOR.MINOR.PATCH` without one
+ * (`0.4.0-rc.1` < `0.4.0`), per SemVer §11 — that is the rule that stops an rc
+ * from passing as the finished release.
+ */
+export function cliSkew(
+  installed: string | null,
+  supported: string = SUPPORTED_CLI_VERSION,
+): CliSkew {
+  const a = parseVersion(installed);
+  const b = parseVersion(supported);
+  if (!a || !b) return "unknown";
+  for (let i = 0; i < 3; i++) {
+    if (a.nums[i] < b.nums[i]) return "behind";
+    // i 0/1 = MAJOR/MINOR (the axis that can move the envelope contract),
+    // i 2 = PATCH (it can't).
+    if (a.nums[i] > b.nums[i]) return i < 2 ? "ahead-minor" : "ahead-patch";
+  }
+  if (a.pre === b.pre) return "same";
+  if (a.pre && !b.pre) return "behind";
+  // `!a.pre || !b.pre` rather than `!a.pre && b.pre`: the two are equivalent
+  // here (the previous line already returned for `a.pre && !b.pre`), but this
+  // form narrows BOTH to `string` for the comparison below — the other does
+  // not, and TS18047 rejects it.
+  if (!a.pre || !b.pre) return "ahead-patch";
+  // ponytail: two DIFFERENT pre-releases on the same tuple compare as plain
+  // strings (so `rc.10` sorts before `rc.9`). Nothing pins a pre-release as
+  // SUPPORTED_CLI_VERSION, so this only picks between two silent branches;
+  // upgrade to identifier-wise SemVer compare if a pin ever carries a suffix.
+  return a.pre < b.pre ? "behind" : "ahead-patch";
+}
+
+/**
+ * True when the `installed` version is strictly older than `supported`.
+ * Thin reading of `cliSkew` so there is exactly one comparison in the repo.
  */
 export function isCliBehind(
   installed: string | null,
   supported: string = SUPPORTED_CLI_VERSION,
 ): boolean {
-  if (!installed) return false;
-  const a = installed.split(".").map(Number);
-  const b = supported.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    const ai = a[i] ?? 0;
-    const bi = b[i] ?? 0;
-    if (ai < bi) return true;
-    if (ai > bi) return false;
-  }
-  return false;
+  return cliSkew(installed, supported) === "behind";
 }
 
 /**
@@ -169,25 +227,37 @@ export function shouldFetchManagedCli(
 }
 
 /**
- * True when the `installed` version is strictly NEWER than `supported`
- * (tuple compare over numeric `MAJOR.MINOR.PATCH` — no semver dep). An
- * unparseable/`null` installed version is treated as "unknown, not ahead" so
- * a probe hiccup never nags the user (same shape as `isCliBehind`).
+ * Whether this activation should raise the "the installed tan is newer than
+ * the version this extension was built against" warning.
+ *
+ * Only a MINOR/MAJOR bump qualifies (`cliSkew === "ahead-minor"`). A PATCH
+ * bump is deliberately SILENT: it cannot move the envelope contract, and a
+ * toast on every activation is precisely the nagging the notification seam
+ * exists to prevent.
+ *
+ * Why MINOR is the breaking axis: tan is pre-1.0 and this extension matches on
+ * EXACT issue-code strings that all FAIL OPEN — `bootstrap.windows-unsupported`,
+ * `bootstrap.yocto-host`, `bootstrap.prerequisites-missing` (above) and
+ * `presets.sdk-root-unresolved` (`ideHub/newProjectFlowPanel.ts`) — plus
+ * unversioned `data.*` field names read with `?? []` fallbacks. A renamed code
+ * or field produces no error and no log line, just a dead guard or an empty
+ * catalogue, so the version number is the only warning the customer can get.
+ *
+ * `warnedForVersion` is the installed version a warning was already raised for
+ * (persisted by the adapter), which makes this one-shot ACROSS activations, not
+ * just per window. Keyed on the installed version, not on the pin: a further
+ * upgrade (0.4.0 → 0.5.0) is news again, while a pin bump that closes the gap
+ * lands on `same`/`behind` and says nothing.
  */
-export function isCliAhead(
+export function shouldWarnCliAhead(
   installed: string | null,
+  warnedForVersion: string | undefined,
   supported: string = SUPPORTED_CLI_VERSION,
 ): boolean {
-  if (!installed) return false;
-  const a = installed.split(".").map(Number);
-  const b = supported.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    const ai = a[i] ?? 0;
-    const bi = b[i] ?? 0;
-    if (ai > bi) return true;
-    if (ai < bi) return false;
-  }
-  return false;
+  return (
+    cliSkew(installed, supported) === "ahead-minor" &&
+    warnedForVersion !== installed
+  );
 }
 
 /**

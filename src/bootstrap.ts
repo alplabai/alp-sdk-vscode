@@ -44,7 +44,7 @@ import {
 } from "./alpCli/service";
 import { runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import { CANCELLED, runAlpWithProgress } from "./loader";
-import { planFailure } from "./notify/service";
+import { planFailure, planPrecondition } from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 import { log } from "./util";
@@ -69,6 +69,23 @@ export function registerBootstrapCommand(
 ): vscode.Disposable[] {
   const runBootstrap = async () => {
     const workspaceRoot = collectProjectContext().workspaceRoot ?? undefined;
+    // No folder open = no cwd to hand the child. `runAlpInTerminal` would pass
+    // `cwd: undefined`, so `tan bootstrap` would inherit the extension host's
+    // own working directory (on Windows, the VS Code install directory) and
+    // create a venv / west workspace there. Same builder the four sibling
+    // sites use (wizard.ts, debug.ts x2, ideHub/workspaceCommands.ts). It sits
+    // BEFORE the win32 pre-flight so that probe never runs against an
+    // arbitrary directory either — and the pre-flight's fall-through rule
+    // ("anything unrecognised runs for real") means it could not have stopped
+    // the real run anyway.
+    if (!workspaceRoot) {
+      await notify(
+        planPrecondition("noWorkspace", {
+          operation: "bootstrap the toolchain",
+        }),
+      );
+      return;
+    }
     if (process.platform === "win32") {
       // Side-effect-free and ~440ms warm, but with no CLI cached yet it
       // triggers a full download-on-demand first, which needs both a

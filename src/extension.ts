@@ -25,7 +25,7 @@ import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
 import { planFailure, planSuccess } from "./notify/service";
-import { notifyAsync } from "./notify/vscodeAdapter";
+import { notifyAsync, setExtensionId } from "./notify/vscodeAdapter";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
@@ -43,10 +43,38 @@ import {
   registerProjectWizardCommand,
 } from "./wizard";
 
+/**
+ * The version this machine last activated. ABSENT = the first ever activation
+ * (a fresh install), DIFFERENT = the extension was upgraded since, SAME = an
+ * ordinary activation. One key answers both questions for the price of one,
+ * which is why there is no separate "has run before" boolean.
+ */
+const LAST_ACTIVATED_VERSION_KEY = "alp.lastActivatedVersion";
+
 export function activate(context: vscode.ExtensionContext): void {
+  // The presenter has no `context` of its own but needs this extension's id for
+  // the `openExtensions` default. Hand it over first, before anything can
+  // notify — re-typing it there is what mis-cased it as `alplabai.` once.
+  setExtensionId(context.extension.id);
   const version =
     (context.extension.packageJSON.version as string | undefined) ?? "unknown";
-  log(`Alp SDK extension activating — v${version}`);
+  // Read BEFORE the write, or every activation looks like an ordinary one.
+  const lastActivated = context.globalState.get<string>(
+    LAST_ACTIVATED_VERSION_KEY,
+  );
+  // An absent key is a first run, not an upgrade: there is no previous build
+  // whose persisted state could be stale.
+  const extensionUpgraded =
+    lastActivated !== undefined && lastActivated !== version;
+  void context.globalState.update(LAST_ACTIVATED_VERSION_KEY, version);
+  log(
+    `Alp SDK extension activating — v${version}` +
+      (lastActivated === undefined
+        ? " (first activation on this machine)"
+        : extensionUpgraded
+          ? ` (upgraded from v${lastActivated})`
+          : ""),
+  );
   startLanguageServer(context);
 
   // One shared state source for both the native trees and the status bar, so
@@ -140,10 +168,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.openSdkManager", () =>
       OverviewPanel.open(context, "sdk"),
     ),
+    // `context.extension.id` is the authoritative `<publisher>.<name>` VS Code
+    // itself registered this extension under, so the settings filter and the
+    // walkthrough id below cannot drift from package.json's `"publisher":
+    // "AlpLabAI"` — the hardcoded lower-case spellings they replace did not
+    // match it, and the walkthrough one silently opened nothing.
+    // `test/setupOrchestrator.service.test.js` fails if either is re-typed.
     vscode.commands.registerCommand("alp.openSettings", () =>
       vscode.commands.executeCommand(
         "workbench.action.openSettings",
-        "@ext:alplabai.alp-sdk",
+        `@ext:${context.extension.id}`,
       ),
     ),
     vscode.commands.registerCommand("alp.openHardwareExplorer", () =>
@@ -155,7 +189,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.openGettingStarted", () =>
       vscode.commands.executeCommand(
         "workbench.action.openWalkthrough",
-        "alplabai.alp-sdk#alpGettingStarted",
+        `${context.extension.id}#alpGettingStarted`,
         false,
       ),
     ),
@@ -169,6 +203,11 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   void maybeOfferFirstRunWizard(context);
+  // No upgrade flag: the drift check's stored tool-version fingerprint carries
+  // its own format tag, so an incomparable stored value is recognised from the
+  // value itself (see setupOrchestrator.planToolDrift). Passing the flag here
+  // silenced a genuine tool move whenever VS Code auto-updated the extension in
+  // the same activation — which is the common case, not the rare one.
   void maybeOfferSetupPanel(context);
   // Provision the managed `tan` CLI up front so a fresh install fetches it once,
   // streamlined (progress notification), instead of stalling on the first

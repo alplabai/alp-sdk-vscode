@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+- **A new customer can now find the getting-started walkthrough.** It was
+  promoted only to workspaces that already contained a `board.yaml` — the file
+  its own third step exists to create — so the one guided path through setup was
+  shown only to people who had already finished it. The gate is gone.
+- **The walkthrough no longer tells you to bootstrap before you have a project.**
+  Its order was "install SDK, bootstrap, open a project, build", but bootstrap
+  needs an open folder and creating a project is what produces one. Following it
+  literally with nothing open ran the CLI against a directory the customer never
+  chose: with no folder, `cwd` was undefined and the child inherited the
+  extension host's working directory. Bootstrap and the Toolchain Doctor now
+  refuse with "Open a folder to …" and a button that does it, and the terminal
+  helper's `cwd` is a required argument so the compiler finds any future site
+  that forgets one.
+- The "Install the Alp SDK" step now completes when an SDK is actually made
+  active, not when the SDK Manager is merely opened, and the step says that
+  installing and activating are two separate clicks. The other three steps still
+  complete on a click; there is no honest signal to observe yet, and that is
+  recorded rather than papered over.
+- The **Flash** button on the last step ran the legacy plain-`west` command
+  instead of the tan-backed one the status bar uses. It now runs the same
+  command as the status bar.
+- **A tan CLI newer than the pinned one is no longer silent.** A newer patch
+  release stays quiet — it cannot move the envelope contract — but a newer minor
+  or major warns once, because this extension matches exact issue-code strings
+  and unversioned envelope field names that all fail open: a rename there skips a
+  check instead of erroring. The warning's button used to be labelled "Update"
+  while actually downgrading the CLI to the pinned version; it now says what it
+  does and offers updating the extension too.
+- A pre-release CLI no longer passes as the finished release — `tan 0.4.0-rc.1`
+  compared equal to `0.4.0`.
+- The "build tools changed since last session" notice no longer fires for a
+  change the customer did not make. Its stored fingerprint carries a format tag,
+  so a value written by an older build is treated as not comparable instead of as
+  drift, and the "already shown" gate now lives in the same scope as the data it
+  gates rather than suppressing the notice in every other workspace.
+- The extension records whether an activation is a first install or an upgrade,
+  and says which in the output channel — the first thing worth knowing when a
+  customer reports that something behaves differently than it used to.
+- `capabilities.untrustedWorkspaces` is declared, so a customer in Restricted
+  Mode is told why the extension is unavailable instead of it silently vanishing.
+- The end-to-end gate is pinned to VS Code 1.129.1. On 1.130.0 the downloaded
+  archive build ships no signature-verifying tool, so installing *any* extension
+  fails with `Signature verification failed with 'ENOENT' error.` and the suite
+  died before its first check.
+
 - **"Alp: Native Sim Debug" can start.** It emitted `"type": "codelldb"`, which
   is not a debug type any extension registers — CodeLLDB registers `lldb`, and
   `codelldb` is only the extension's name — so pressing F5 died with

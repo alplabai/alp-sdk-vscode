@@ -12,10 +12,22 @@
 // Drift detection: after every successful state query the tool version
 // fingerprint is persisted in workspaceState.  On the next activation, if any
 // version string has changed the user is notified and prompted to recheck.
+// Its "already shown" gate lives in workspaceState too — the same scope as the
+// thing it gates, so a drift shown in one workspace can't silence a different
+// workspace whose customer never saw it.
+//
+// The fingerprint is SELF-DESCRIBING: it carries its own format tag, so a
+// stored value written in an older format is recognised as incomparable from
+// the value itself.  This used to be approximated with "was the extension
+// upgraded since the last activation?", which is both wider and narrower than
+// the real risk: VS Code auto-updates extensions on startup, so a genuine
+// python/cmake/ninja move landing in that same activation was swallowed
+// permanently (the fingerprint is re-recorded either way), while a format
+// change shipped without a version bump was not caught at all.
 
 import * as vscode from "vscode";
 import type { ToolVersions } from "./messages";
-import type { NotifyAction } from "../notify/models";
+import type { NotificationPlan, NotifyAction } from "../notify/models";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { log } from "../util";
 import { queryAlpIdeState } from "./vscodeAdapter";
@@ -43,14 +55,27 @@ function issueFingerprint(issues: string[]): string {
   return issues.slice().sort().join("|");
 }
 
+/**
+ * The fingerprint's own format tag. BUMP IT whenever the entry list or an
+ * entry's shape below changes — that is what tells the next activation the
+ * value it has stored is not comparable with the one it just computed.
+ */
+const FINGERPRINT_FORMAT = "v1";
+
 /** Serialize tool versions to a stable string for comparison. */
 function versionFingerprint(versions: ToolVersions): string {
   return [
+    FINGERPRINT_FORMAT,
     `py:${versions.python ?? ""}`,
     `west:${versions.west ?? ""}`,
     `cmake:${versions.cmake ?? ""}`,
     `ninja:${versions.ninja ?? ""}`,
   ].join("|");
+}
+
+/** The format tag a fingerprint was written in ("" for a pre-tag value). */
+function fingerprintFormat(fingerprint: string): string {
+  return fingerprint.split("|")[0] ?? "";
 }
 
 /** Display names for the fingerprint's tool keys. */
@@ -93,6 +118,49 @@ function describeVersionDrift(previous: string, current: string): string {
 }
 
 /**
+ * Decide whether this activation should raise the "build tools changed" toast.
+ *
+ * PURE — no `vscode`, no I/O — so `test/setupOrchestrator.service.test.js` can
+ * drive every branch without a VS Code host. Returns the plan to present, or
+ * null for "say nothing". The caller re-records `current` either way.
+ */
+export function planToolDrift(input: {
+  /** Fingerprint persisted by the previous activation; "" when there is none. */
+  stored: string;
+  /** Fingerprint computed this activation. */
+  current: string;
+  /** Fingerprint the drift toast was last shown for; "" when never. */
+  lastShown: string;
+}): NotificationPlan | null {
+  const { stored, current, lastShown } = input;
+  // First ever run in this workspace: nothing to compare against, and "your
+  // tools changed" is false — they were merely observed for the first time.
+  if (!stored || stored === current) return null;
+  // A stored value written in a DIFFERENT format is not comparable: entries no
+  // longer line up, so the diff would name versions that never moved. Same
+  // answer as a first run — say nothing, and let the caller re-record. This
+  // deliberately keys off the value itself and NOT off "the extension was
+  // upgraded": VS Code auto-updates extensions on startup, so gating on the
+  // upgrade would swallow a real tool move that happened to land in the same
+  // activation — permanently, since the fingerprint is re-recorded regardless.
+  if (fingerprintFormat(stored) !== fingerprintFormat(current)) return null;
+  if (lastShown === current) return null;
+  const drift = describeVersionDrift(stored, current);
+  // Info, not warning: nothing failed — a tool moved. Doctor is the thing
+  // that actually re-verifies the environment (the old "Open Alp IDE"
+  // focused a panel that re-verifies nothing). "info" never gets the
+  // presenter's automatic channel link, so it is named here.
+  return {
+    severity: "info",
+    channel: "toast",
+    message: drift
+      ? `Alp IDE: build tools changed since last session — ${drift}. Run Doctor to re-verify the environment.`
+      : "Alp IDE: build tool versions have changed since last session. Run Doctor to re-verify the environment.",
+    actions: [{ id: "runDoctor" }, { id: "showOutput" }],
+  };
+}
+
+/**
  * Evaluate prerequisites on first open and offer the IDE Hub panel
  * when the environment is not ready.
  *
@@ -106,30 +174,17 @@ export async function maybeOfferSetupPanel(
 
     // --- drift detection ---------------------------------------------------
     const currentVersionFp = versionFingerprint(state.setup.toolVersions);
-    const lastVersionFp = context.workspaceState.get<string>(
-      DRIFT_VERSION_KEY,
-      "",
-    );
-    if (lastVersionFp && lastVersionFp !== currentVersionFp) {
-      // Versions changed since last run — inform once (globalState gates repeat)
-      const driftKey = `${ORCHESTRATOR_KEY}.drift`;
-      const lastDriftShown = context.globalState.get<string>(driftKey, "");
-      if (lastDriftShown !== currentVersionFp) {
-        await context.globalState.update(driftKey, currentVersionFp);
-        const drift = describeVersionDrift(lastVersionFp, currentVersionFp);
-        // Info, not warning: nothing failed — a tool moved. Doctor is the thing
-        // that actually re-verifies the environment (the old "Open Alp IDE"
-        // focused a panel that re-verifies nothing). "info" never gets the
-        // presenter's automatic channel link, so it is named here.
-        notifyAsync({
-          severity: "info",
-          channel: "toast",
-          message: drift
-            ? `Alp IDE: build tools changed since last session — ${drift}. Run Doctor to re-verify the environment.`
-            : "Alp IDE: build tool versions have changed since last session. Run Doctor to re-verify the environment.",
-          actions: [{ id: "runDoctor" }, { id: "showOutput" }],
-        });
-      }
+    // Both the fingerprint and its "already shown" gate are workspaceState:
+    // the gate must not outlive the scope of the value it gates.
+    const driftKey = `${ORCHESTRATOR_KEY}.drift`;
+    const plan = planToolDrift({
+      stored: context.workspaceState.get<string>(DRIFT_VERSION_KEY, ""),
+      current: currentVersionFp,
+      lastShown: context.workspaceState.get<string>(driftKey, ""),
+    });
+    if (plan) {
+      await context.workspaceState.update(driftKey, currentVersionFp);
+      notifyAsync(plan);
     }
     await context.workspaceState.update(DRIFT_VERSION_KEY, currentVersionFp);
 
