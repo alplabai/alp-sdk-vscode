@@ -29,13 +29,17 @@ const IDLE_TIMEOUT_MS = 30_000;
 // dribbles bytes slowly enough to keep beating the idle timeout forever.
 const WALL_CLOCK_TIMEOUT_MS = 120_000;
 
-/** GET `url`, following redirects (capped) and enforcing an idle timeout. */
-function get(url: string): Promise<http.IncomingMessage> {
+/** GET `url`, following redirects (capped) and enforcing an idle timeout.
+ *  `signal` (the caller's cancellation, if any) is combined with the wall-clock
+ *  timeout rather than replacing it, so a user cancel and a stalled server both
+ *  abort the same in-flight request. */
+function get(url: string, signal?: AbortSignal): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const client = url.startsWith("https:") ? https : http;
+    const wallClock = AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS);
     const request = client.get(
       url,
-      { signal: AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS) },
+      { signal: signal ? AbortSignal.any([wallClock, signal]) : wallClock },
       resolve,
     );
     request.setTimeout(IDLE_TIMEOUT_MS, () => {
@@ -74,8 +78,9 @@ async function attempt(
   destFile: string,
   requireHttps: boolean,
   redirectsLeft: number,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const response = await get(url);
+  const response = await get(url, signal);
   const status = response.statusCode ?? 0;
 
   if (status >= 300 && status < 400 && response.headers.location) {
@@ -89,7 +94,7 @@ async function attempt(
         `Refusing to follow an https redirect to a non-https URL: ${next}`,
       );
     }
-    return attempt(next, destFile, requireHttps, redirectsLeft - 1);
+    return attempt(next, destFile, requireHttps, redirectsLeft - 1, signal);
   }
 
   if (status !== 200) {
@@ -155,8 +160,23 @@ async function attempt(
  * partial file at `destFile` — every failure path removes its temp file. Any
  * existing `destFile` is moved aside (`.old`) rather than overwritten in
  * place, so this is safe even while the previous binary is still running.
+ *
+ * Pass `signal` (bridged from a progress notification's CancellationToken) to
+ * make the download abortable: the request is destroyed, `pipeline` rejects,
+ * and the temp file is removed on the way out, so a cancel leaves no partial
+ * binary behind — the same cleanup path every other failure takes.
  */
-export function downloadFile(url: string, destFile: string): Promise<void> {
+export function downloadFile(
+  url: string,
+  destFile: string,
+  signal?: AbortSignal,
+): Promise<void> {
   sweepLeftovers(destFile);
-  return attempt(url, destFile, url.startsWith("https:"), MAX_REDIRECTS);
+  return attempt(
+    url,
+    destFile,
+    url.startsWith("https:"),
+    MAX_REDIRECTS,
+    signal,
+  );
 }

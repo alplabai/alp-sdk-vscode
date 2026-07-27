@@ -31,6 +31,35 @@ export type CliExitKind =
   | "internal"
   | "unknown";
 
+/**
+ * Why no envelope was produced, when the cause is the BINARY rather than the
+ * project. Splits "tan was never installed here" (Install is the fix) from
+ * "tan is present but broken/misconfigured" (Settings/Doctor is the fix) — the
+ * two read identically to a first-run user otherwise, and the wrong remedy is
+ * offered for whichever half the call site guessed.
+ *
+ * EXTENSION-SIDE ONLY. This is not part of the `{command, ok, exitCode,
+ * project, data, issues}` envelope contract with the tan CLI, which stays
+ * byte-stable (CLI.md).
+ */
+export type CliUnavailableReason =
+  /** Nothing resolved / the resolved path is gone → download or install it. */
+  | "notInstalled"
+  /** tan-cli publishes no prebuilt binary for this platform/arch. */
+  | "noPrebuilt"
+  /** `alpSdk.cliPath` points at something that isn't there. */
+  | "cliPathMissing"
+  /** The managed download failed (network, HTTP status, disk). */
+  | "downloadFailed"
+  /** A binary resolved, but `--version` says it isn't the native tan CLI. */
+  | "notNative"
+  /** A binary is present but unusable (not executable, truncated download). */
+  | "corrupt"
+  /** The process started but couldn't be run to completion. */
+  | "spawnFailed"
+  /** The CLI exceeded the extension's spawn timeout. */
+  | "timeout";
+
 /** A classified result ready to map onto VS Code UX (toast severity + text). */
 export interface CliOutcome {
   exitCode: number;
@@ -39,6 +68,11 @@ export interface CliOutcome {
   severity: "info" | "warning" | "error";
   message: string;
   envelope: AlpEnvelope | null;
+  /** Set ONLY when no envelope exists because the binary itself failed.
+   *  `detail` holds the raw errno / HTTP / path text and MUST NOT be
+   *  interpolated into anything the customer sees — the notification planner
+   *  routes it to the "Alp SDK" output channel (`NotificationPlan.detail`). */
+  unavailable?: { reason: CliUnavailableReason; detail?: string };
 }
 
 /** How the `tan` binary was (or will be) located. */

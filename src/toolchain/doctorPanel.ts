@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { ToolchainReport } from "@alp-sdk/core/toolchain/doctor";
 import * as vscode from "vscode";
 import {
   type ExtToWebviewMessage,
@@ -7,10 +8,43 @@ import {
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { buildToolchainReportViaCli, runToolchainFix } from "../toolchain";
-import { showOutput } from "../util";
 
 const PANEL_VIEW_TYPE = "alpToolchainDoctor";
 const PANEL_TITLE = "Alp Toolchain Doctor";
+
+/**
+ * The CLI build gate couldn't run, so this report comes from the weaker
+ * in-process probes — which can read "toolchain OK" without checking the
+ * build-critical items. Surface that provenance as the report's first check
+ * row, not as a toast: it is per-report state the panel it rides on already
+ * renders, and as a toast it duplicated its own sentence and could stack with
+ * `offerBootstrapFix`'s warning. `buildToolchainReportViaCli` has already
+ * logged the same reason to the output channel.
+ *
+ * `ok` / `missingRequired` are deliberately untouched — a gate that did not
+ * run is not a missing tool, and inflating the count would make the summary
+ * line lie.
+ */
+function withBuildGateRow(
+  report: ToolchainReport,
+  reason: string | undefined,
+): ToolchainReport {
+  return {
+    ...report,
+    checks: [
+      {
+        id: "buildGate",
+        label: "Build gate",
+        status: "warn",
+        detail:
+          reason ??
+          "Did not run — showing local in-process checks only, which can read OK without checking the build-critical items.",
+        required: true,
+      },
+      ...report.checks,
+    ],
+  };
+}
 
 class ToolchainDoctorPanel {
   private static current: ToolchainDoctorPanel | undefined;
@@ -71,30 +105,9 @@ class ToolchainDoctorPanel {
     );
     const message: ExtToWebviewMessage = {
       type: "toolchainReport",
-      report,
+      report: fromCli ? report : withBuildGateRow(report, reason),
     };
     void this.panel.webview.postMessage(message);
-    if (!fromCli) {
-      void this.warnFallback(reason);
-    }
-  }
-
-  /** The CLI build gate couldn't run, so this report comes from the weaker
-   *  in-process probes — which can read "toolchain OK" without checking the
-   *  build-critical items. The report looks identical, so surface the
-   *  provenance (and reason) or the user trusts a gate that never ran. */
-  private async warnFallback(reason: string | undefined): Promise<void> {
-    const detail = reason ? `: ${reason}` : ".";
-    const choice = await vscode.window.showWarningMessage(
-      `Build gate did not run — showing local checks only${detail}`,
-      "Show Output",
-      "Update CLI",
-    );
-    if (choice === "Show Output") {
-      showOutput();
-    } else if (choice === "Update CLI") {
-      await vscode.commands.executeCommand("alp.updateCli");
-    }
   }
 
   private onMessage(msg: WebviewToExtMessage): void {

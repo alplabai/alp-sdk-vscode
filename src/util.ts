@@ -123,24 +123,17 @@ function ensureTaskTracking(): void {
     }
     active.delete(name);
     log(`[terminal] "${name}" exited (code=${code ?? "unknown"})`);
-    terminalFinished.fire({ name, code });
-    // Glanceable verdict (#332). Its original premise -- "the terminal dies
-    // when its process exits, so the outcome scrolls away" -- no longer holds
-    // now that these run as Tasks whose terminal stays open, but the toast is
-    // still the only signal a user gets without watching the panel or opening
-    // the channel. A 0 exit shows an info toast; a defined non-zero shows an
-    // error toast + "Show Output".
+    // The glanceable verdict (#332) is NOT raised here any more: it is planned
+    // and presented by the `onDidFinishTerminalCommand` subscriber in
+    // `src/extension.ts`, so a failed `west flash` gets a plan with real
+    // actions ("Show Terminal", "Run Doctor") and keeps the exit code out of
+    // the toast text. This file must not import the presenter — the presenter
+    // imports log/showOutput/revealRunInTerminal from here.
     //
-    // An undefined code stays SILENT, and the reason changed with the port:
-    // it used to mean "the user closed the terminal mid-run", and now means
-    // the task ended without its process ever starting (the onDidEndTask
-    // backstop) -- i.e. we have no verdict to report. Claiming either outcome
-    // there would be a guess, so #332's silence rule is kept for a new reason.
-    if (code === 0) {
-      void vscode.window.showInformationMessage(`${name} finished`);
-    } else if (code !== undefined) {
-      void reportError(`${name} failed (exit ${code})`);
-    }
+    // The event's own rule is unchanged: an undefined `code` means the task
+    // ended without its process ever starting (the onDidEndTask backstop), so
+    // there is no verdict to report and the subscriber stays silent.
+    terminalFinished.fire({ name, code });
   };
 
   // The real "did it actually start" signal (see RUN_START_TIMEOUT_MS):
@@ -365,30 +358,9 @@ export function runInTerminal(options: {
   );
 }
 
-const SHOW_OUTPUT = "Show Output";
-
-/** Report a diagnosable failure: log the full detail to the "Alp SDK" channel
- *  AND show an error toast that always offers "Show Output" (plus any caller
- *  actions). Picking "Show Output" reveals the channel and returns undefined;
- *  otherwise the picked caller action is returned. The house pattern for every
- *  error toast tied to a failure the channel can explain.
- *
- *  Do not pass a caller action literally titled "Show Output" — that title is
- *  reserved for the appended house action and would be indistinguishable. */
-export async function reportError(
-  message: string,
-  detail?: string,
-  ...actions: string[]
-): Promise<string | undefined> {
-  log(detail ? `${message} — ${detail}` : message, "error");
-  const pick = await vscode.window.showErrorMessage(
-    message,
-    ...actions,
-    SHOW_OUTPUT,
-  );
-  if (pick === SHOW_OUTPUT) {
-    showOutput();
-    return undefined;
-  }
-  return pick;
-}
+// `reportError` used to live here. It moved to `src/notify/vscodeAdapter.ts`
+// (same signature) so that ALL notification rendering sits behind one seam:
+// leaving a second toast-raising helper here is exactly what let call sites
+// hand-roll their own `showErrorMessage` variants. It cannot be re-exported
+// from this file either — the presenter imports `log` / `showOutput` /
+// `revealRunInTerminal` from here, so an import back would be a cycle.

@@ -12,7 +12,8 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
-import { reportError } from "../util";
+import { planCliOutcome, planSuccess } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
 
 const PANEL_VIEW_TYPE = "alp-ide.buildPlan";
 const PANEL_TITLE = "Alp Build Plan";
@@ -219,14 +220,22 @@ export class BuildPlanPanel {
     const envelope = outcome.envelope;
     if (envelope && envelope.ok) {
       const written = (envelope.data as { written?: string[] }).written ?? [];
-      void vscode.window.showInformationMessage(
-        `Alp: materialised ${written.length} file(s) under the build tree.`,
+      // Status bar, not a toast: the very next line re-requests the plan, so
+      // the panel the user is looking at already reports the new on-disk state.
+      notifyAsync(
+        planSuccess(
+          `Materialised ${written.length} file(s) under the build tree.`,
+        ),
       );
       // The plan view reflects on-disk state — re-request so it isn't stale.
       await this.handleRequestBuildPlan();
     } else {
-      const error = envelope?.issues?.[0]?.message ?? outcome.message;
-      void reportError(`Alp: materialise failed — ${error}`);
+      // Severity comes from the outcome: the most common materialise failure is
+      // a board.yaml validation error (exit 2 ⇒ warning), which must not read
+      // like the write failure that exits 3.
+      notifyAsync(
+        planCliOutcome(outcome, { operation: "Materialising the build plan" }),
+      );
     }
   }
 

@@ -44,6 +44,8 @@ import {
 } from "./alpCli/service";
 import { runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import { CANCELLED, runAlpWithProgress } from "./loader";
+import { planFailure } from "./notify/service";
+import { notify } from "./notify/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 import { log } from "./util";
 
@@ -95,15 +97,36 @@ export function registerBootstrapCommand(
               : ""),
           "warn",
         );
-        const REOPEN = "Reopen in WSL";
         // tan's own wording already says WHY and to re-run under WSL2/Linux;
         // add the one thing it can't know — keep the project on the WSL
-        // filesystem, not /mnt/c, for build speed — plus the one-click fix.
-        const message =
-          `Alp: ${verdict.message} Keep the project on the WSL filesystem ` +
-          "(~/…), not /mnt/c, for build speed.";
-        void vscode.window.showWarningMessage(message, REOPEN).then((pick) => {
-          if (pick === REOPEN) void reopenInWsl();
+        // filesystem, not the Windows drive mount — plus the one-click fix.
+        //
+        // The severity is the pre-flight outcome's, never hand-picked here:
+        // whether tan's refusal is a validation exit (warning) or a harder
+        // failure (error) is tan's verdict to make, not this call site's.
+        // "Reopen in WSL" is a `custom` action, so it has no `run` in the
+        // presenter's table and the pick still comes back to gate the reopen.
+        //
+        // The literal "/mnt/c" stays OUT of `cause`: `planFailure` demotes any
+        // cause carrying an absolute path into `detail` and replaces the
+        // sentence with a bare "Bootstrap failed.", which would throw away
+        // tan's own explanation. It rides `detail` instead, which the appended
+        // "Show Output" reaches.
+        const plan = planFailure({
+          operation: "Bootstrap",
+          cause:
+            `Alp: ${verdict.message} Keep the project on the WSL filesystem ` +
+            "(~/…), not the mounted Windows drive, for build speed.",
+          detail:
+            "Inside WSL the Windows drive is mounted at /mnt/c; building there " +
+            "goes through the 9p bridge and is much slower than ~/.",
+          severity: outcome.severity,
+          actions: [{ id: "custom", title: "Reopen in WSL" }],
+        });
+        // Not awaited: this notification must not hold `alp.installDependencies`
+        // open until the user dismisses it.
+        void notify(plan).then((pick) => {
+          if (pick === "custom") void reopenInWsl();
         });
         return;
       }
@@ -130,14 +153,22 @@ export function registerBootstrapCommand(
               : ""),
           "warn",
         );
-        const TOOLCHAIN_DOCTOR = "Open Toolchain Doctor";
-        void vscode.window
-          .showErrorMessage(`Alp: ${message}`, TOOLCHAIN_DOCTOR)
-          .then((pick) => {
-            if (pick === TOOLCHAIN_DOCTOR) {
-              void vscode.commands.executeCommand("alp.toolchainDoctor");
-            }
-          });
+        // tan's `failure()` space-joins its lines into one wall of text, so
+        // `message` is a raw diagnostic, not a sentence — it goes to the
+        // channel as `detail` (the `log` call just above already put the same
+        // text there) and the doctor panel names the missing tools one click
+        // away. A tool that isn't installed yet on a first run is a warning,
+        // not an error dump.
+        void notify(
+          planFailure({
+            operation: "Bootstrap",
+            cause:
+              "Alp: bootstrap needs build tools that aren't installed yet.",
+            detail: message,
+            severity: "warning",
+            actions: [{ id: "runDoctor" }],
+          }),
+        );
         return;
       }
       // Clear, a mixed-board advisory, or an unresolvable/unrelated outcome —

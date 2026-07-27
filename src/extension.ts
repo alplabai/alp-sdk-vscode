@@ -24,10 +24,17 @@ import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
+import { planFailure, planSuccess } from "./notify/service";
+import { notifyAsync } from "./notify/vscodeAdapter";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerToolchainCommands } from "./toolchain";
-import { disposeTaskTracking, log, showOutput } from "./util";
+import {
+  disposeTaskTracking,
+  log,
+  onDidFinishTerminalCommand,
+  showOutput,
+} from "./util";
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
@@ -75,6 +82,31 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.window.onDidChangeWindowState((s) => {
       if (s.focused) refreshState();
+    }),
+    // The verdict for EVERY `runInTerminal` run — bootstrap, `west build`,
+    // `west flash`, "Install tan" — in one place (#332). It used to be raised
+    // inside `util.ts`'s finish handler, where the failure toast said only
+    // `<name> failed (exit 1)`: an exit number the customer can't act on and
+    // no button but "Show Output". The exit code is detail now (channel only)
+    // and the toast carries the two things that actually help — the terminal
+    // that holds the real error, and the doctor.
+    //
+    // An undefined `code` stays SILENT: the task ended without its process
+    // ever starting, so there is no verdict to report and claiming either
+    // outcome would be a guess.
+    onDidFinishTerminalCommand(({ name, code }) => {
+      if (code === 0) {
+        notifyAsync(planSuccess(`${name} finished.`));
+      } else if (code !== undefined) {
+        notifyAsync(
+          planFailure({
+            operation: name,
+            cause: `${name} failed.`,
+            detail: `exit ${code}`,
+            actions: [{ id: "showTerminal", arg: name }, { id: "runDoctor" }],
+          }),
+        );
+      }
     }),
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),

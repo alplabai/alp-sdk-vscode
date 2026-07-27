@@ -11,6 +11,7 @@ import {
   BinarySource,
   CliExitKind,
   CliOutcome,
+  CliUnavailableReason,
   ReleaseAsset,
 } from "./models";
 
@@ -261,10 +262,50 @@ export function classifyOutcome(
   };
 }
 
+/**
+ * Classify the raw failure text produced one layer down (the resolver's
+ * throws, a spawn error, the download seam) into the reason the notification
+ * planner branches on. Pure so the mapping is unit-testable and lives in ONE
+ * place instead of being re-sniffed at every surface.
+ *
+ * ponytail: string-sniffs messages this repo constructs itself
+ * (`adapterCore.ts`'s resolver throws, `spawnAlpAsync`'s timeout/cap errors,
+ * Node's errno text). Upgrade path if it gets fragile: typed error classes in
+ * `adapterCore.ts` / `download.ts` — one pure function plus its test today.
+ */
+export function classifyUnavailable(raw: string): CliUnavailableReason {
+  if (/^No prebuilt tan CLI/.test(raw)) return "noPrebuilt";
+  if (/did not produce a binary|Downloaded 0 bytes/.test(raw)) return "corrupt";
+  if (
+    /Download failed|Timed out downloading|Too many redirects|ENOTFOUND|ECONNRESET|ECONNREFUSED|getaddrinfo/.test(
+      raw,
+    )
+  ) {
+    return "downloadFailed";
+  }
+  if (/timed out after/.test(raw)) return "timeout";
+  if (/\bENOENT\b/.test(raw)) return "notInstalled";
+  if (/\bEACCES\b|\bEPERM\b/.test(raw)) return "corrupt";
+  return "spawnFailed";
+}
+
+/**
+ * One-line summary of an envelope for the output channel and for callers that
+ * still read `CliOutcome.message` directly.
+ *
+ * Reports the first issue PLUS how many more there are: the previous version
+ * returned `issues[0].message` alone, so on a multi-issue envelope every issue
+ * after the first was invisible at every surface. The full array stays on
+ * `envelope.issues` — `src/notify/service.ts` copies it onto the plan and
+ * attaches a "Show All Issues" action, which is what actually makes them
+ * reachable; this count is the honest hint that there is more to see.
+ */
 function summarize(kind: CliExitKind, envelope: AlpEnvelope | null): string {
-  const firstIssue = envelope?.issues?.[0]?.message;
+  const issues = envelope?.issues ?? [];
+  const firstIssue = issues[0]?.message;
   if (firstIssue) {
-    return firstIssue;
+    const more = issues.length - 1;
+    return more > 0 ? `${firstIssue} (+${more} more)` : firstIssue;
   }
   switch (kind) {
     case "success":

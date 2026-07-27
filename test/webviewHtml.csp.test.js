@@ -15,12 +15,38 @@ const Module = require("node:module");
 
 const root = path.join(__dirname, "..");
 
+// `webviewHtml` reaches the notification presenter, so requiring it now pulls
+// in `src/util.ts`, whose MODULE SCOPE opens the "Alp SDK" output channel and
+// constructs the terminal-finish `EventEmitter` (reading `.event` off it). The
+// fake must therefore cover those two calls or the require throws before a
+// single CSP assertion runs. Same shape as test/util.terminalFinish.test.js's
+// fake — keep the two in step.
 const fakeVscode = {
   Uri: {
     joinPath: (base, ...parts) => ({
       fsPath: [base.fsPath, ...parts].join("/"),
       toString: () => [base.fsPath, ...parts].join("/"),
     }),
+  },
+  window: {
+    createOutputChannel: () => ({
+      appendLine() {},
+      show() {},
+      dispose() {},
+    }),
+  },
+  /** Minimal `vscode.EventEmitter`: `.event` subscribes (returning a
+   *  Disposable), `.fire(e)` re-broadcasts to every current subscriber. */
+  EventEmitter: class {
+    constructor() {
+      const listeners = new Set();
+      this.event = (fn) => {
+        listeners.add(fn);
+        return { dispose: () => listeners.delete(fn) };
+      };
+      this.fire = (e) => listeners.forEach((fn) => fn(e));
+      this.dispose = () => listeners.clear();
+    }
   },
 };
 
