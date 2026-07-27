@@ -11,6 +11,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { isCancellation } from "../notify/service";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { isRunInTerminalActive, log } from "../util";
 import {
@@ -29,14 +30,36 @@ import type { AlpIdeState } from "./messages";
  * (the earlier new-window behavior was reported as bad UX). VS Code prompts to
  * save any unsaved editors before replacing, so this is not a silent session
  * loss. Used by the new- and existing-project flows.
+ *
+ * REPLACING THE WORKSPACE TEARS THIS EXTENSION HOST DOWN — that is the command
+ * working, not failing. The host then rejects every pending main-thread reply,
+ * this `executeCommand` among them, with a CancellationError whose name and
+ * message are both "Canceled". Reported as a failure it becomes "creating the
+ * project failed" on the one path where everything succeeded, so it is
+ * swallowed HERE, at the single seam every folder-open routes through, rather
+ * than in each caller's catch. A genuine `vscode.openFolder` rejection (a
+ * deleted directory, a refused URI) still propagates.
+ *
+ * ONLY in the replacing mode. With `forceNewWindow` the current host SURVIVES
+ * — nothing tears it down — so a cancellation there means the folder genuinely
+ * did not open, and swallowing it would leave the customer with a created
+ * project, no window, a disposed wizard panel and not one word about any of it.
  */
 export async function openProjectFolder(
   uri: vscode.Uri,
   forceNewWindow = false,
 ): Promise<void> {
-  await vscode.commands.executeCommand("vscode.openFolder", uri, {
-    forceNewWindow,
-  });
+  try {
+    await vscode.commands.executeCommand("vscode.openFolder", uri, {
+      forceNewWindow,
+    });
+  } catch (err) {
+    if (!forceNewWindow && isCancellation(err)) {
+      log(`[project] window replaced while opening ${uri.fsPath}`);
+      return;
+    }
+    throw err;
+  }
 }
 
 const execFileAsync = promisify(cp.execFile);

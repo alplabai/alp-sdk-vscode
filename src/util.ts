@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import { isCancellation } from "./notify/service";
 
 const OUTPUT = vscode.window.createOutputChannel("Alp SDK");
 
@@ -350,9 +351,16 @@ export function runInTerminal(options: {
       executionGeneration.set(taskExecution, generation);
     },
     (error) => {
+      // `executeTask` is a main-thread RPC, so at window teardown it rejects
+      // with a CancellationError for every run still in flight. The task was
+      // abandoned with the window — it did not fail to start — and an "error"
+      // line saying so is the closed-window-vs-broken confusion. Still release
+      // the slot below: the reservation is per-window state either way.
       log(
-        `[terminal] "${options.name}" failed to start: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
+        isCancellation(error)
+          ? `[terminal] "${options.name}" abandoned, window closing`
+          : `[terminal] "${options.name}" failed to start: ${error instanceof Error ? error.message : String(error)}`,
+        isCancellation(error) ? "info" : "error",
       );
       // executeTask's Thenable can also resolve on a failed start (VS Code
       // internals), so this rejection path is a bonus, not the only guard --

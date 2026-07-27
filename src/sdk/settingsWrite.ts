@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
-import { planFailure } from "../notify/service";
+import { isCancellation, planFailure } from "../notify/service";
 import { notify } from "../notify/vscodeAdapter";
 import { log } from "../util";
 import { isSettingsUnsavedChangesError } from "./settingsErrors";
@@ -19,8 +19,19 @@ const SAVE_AND_RETRY = "Save settings & retry";
  * Returns `true` when the value was written; `false` when the write did not
  * happen because the settings file was dirty and could not be persisted (the
  * user declined, or the save/retry did not clear it — in every such case the
- * user has been told, in plain language, to save the file and try again). Only
- * a genuinely unrelated failure is rethrown for the caller to surface.
+ * user has been told, in plain language, to save the file and try again), and
+ * `false` when the window went away mid-write. Only a genuinely unrelated
+ * failure is rethrown for the caller to surface.
+ *
+ * THE CANCELLATION GUARD IS HERE, not in the three callers. `update()` is a
+ * main-thread RPC and the recovery path awaits a toast, so at window teardown
+ * (reload, close, a folder-open replacing the workspace) either can reject with
+ * a CancellationError — and every caller turns a throw from here into a toast
+ * ("Alp: couldn't set the active SDK", "the removed SDK is still named as the
+ * active one"). One guard at the seam every caller routes through beats three
+ * that can drift apart. `false` is already each caller's silent path, because
+ * it means "not written, and the user has been told" — and a user whose window
+ * is closing has nothing left to be told.
  */
 export async function writeAlpSetting(
   key: string,
@@ -28,16 +39,22 @@ export async function writeAlpSetting(
   target: vscode.ConfigurationTarget,
 ): Promise<boolean> {
   try {
-    await vscode.workspace
-      .getConfiguration("alpSdk")
-      .update(key, value, target);
-    return true;
-  } catch (err) {
-    if (!isSettingsUnsavedChangesError(err)) {
-      log(`[settings] alpSdk.${key} write failed: ${String(err)}`);
-      throw err;
+    try {
+      await vscode.workspace
+        .getConfiguration("alpSdk")
+        .update(key, value, target);
+      return true;
+    } catch (err) {
+      if (!isSettingsUnsavedChangesError(err)) throw err;
     }
-    return recoverFromUnsavedSettings(key, value, target);
+    return await recoverFromUnsavedSettings(key, value, target);
+  } catch (err) {
+    if (isCancellation(err)) {
+      log(`[settings] alpSdk.${key} write abandoned, window closing`);
+      return false;
+    }
+    log(`[settings] alpSdk.${key} write failed: ${String(err)}`);
+    throw err;
   }
 }
 

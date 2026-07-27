@@ -321,6 +321,140 @@ test("native-host launches with no lldb on PATH", () => {
   }
 });
 
+// native_sim is a POSIX-architecture board -- Zephyr's board docs say it builds
+// "a normal Linux executable" -- and the profile launches it with CodeLLDB in
+// THIS extension host. On Windows that cannot work at any step: the Zephyr build
+// emits no Windows binary, and one built under WSL is a Linux ELF a Windows-side
+// CodeLLDB cannot launch. Before this check, "Native host" was offered
+// unconditionally, wrote a launch config, and F5 died with nothing explaining
+// why -- on the one target that needs neither probe nor board, i.e. the first
+// debug session a customer ever runs.
+const NATIVE_HOST_WIN32_DETAIL =
+  "native_sim builds a Linux executable, so it cannot run on this Windows host.";
+const NATIVE_HOST_WIN32_FIX =
+  "Reopen the folder in WSL, or build and debug native_sim on a Linux or macOS host.";
+
+test("native-host preflight blocks on a win32 host and names the WSL way out", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    createDebugProfile("native-host", "none"),
+    createRuntime({ hostPlatform: "win32" }),
+    // Everything else healthy, so the host OS is the only thing left to fail.
+    { pathExists: () => true },
+  );
+
+  const check = report.checks.find((entry) => entry.name === "hostPlatform");
+  assert.ok(check, "no hostPlatform check on a win32 native-host preflight");
+  // Blocking, not advisory: nothing the customer installs on Windows clears it,
+  // so a warn would leave canLaunch true and F5 still reaching the dead end.
+  assert.equal(check.status, "fail");
+  assert.equal(check.detail, NATIVE_HOST_WIN32_DETAIL);
+  assert.equal(check.fix, NATIVE_HOST_WIN32_FIX);
+  assert.equal(report.canLaunch, false);
+  assert.ok(report.summary.fail > 0);
+  // nextSteps is what the surface interpolates, so the remedy has to arrive
+  // there and not just sit in the per-check detail.
+  assert.ok(report.nextSteps.includes(NATIVE_HOST_WIN32_FIX));
+
+  // The message contract in src/notify/models.ts: no errno, no absolute path,
+  // no internal check id in anything a customer reads.
+  for (const text of [check.detail, check.fix]) {
+    assert.ok(!/[\\/]/.test(text), `leaks a path: ${text}`);
+    assert.ok(!/\bE[A-Z]{3,}\b/.test(text), `leaks an errno: ${text}`);
+    assert.ok(!/hostPlatform/.test(text), `leaks the check id: ${text}`);
+  }
+});
+
+test("native-host doctor blocks on a win32 host with the same sentence", () => {
+  const report = buildDoctorReport(
+    createDebugContext(),
+    { targetKind: "native-host", server: "none" },
+    createRuntime({ hostPlatform: "win32" }),
+  );
+
+  const check = report.checks.find((entry) => entry.name === "hostPlatform");
+  assert.ok(check, "no hostPlatform check on a win32 native-host doctor run");
+  assert.equal(check.status, "fail");
+  assert.equal(check.detail, NATIVE_HOST_WIN32_DETAIL);
+  assert.equal(check.fix, NATIVE_HOST_WIN32_FIX);
+  assert.equal(report.summary.fail, 1);
+  assert.ok(report.nextSteps.includes(NATIVE_HOST_WIN32_FIX));
+});
+
+test("native-host is unaffected on linux, darwin and an unreported host", () => {
+  for (const hostPlatform of ["linux", "darwin", undefined]) {
+    const where = `hostPlatform=${hostPlatform}`;
+    const preflight = buildDebugPreflightReport(
+      "2026-05-14T00:00:00.000Z",
+      createDebugContext(),
+      createDebugProfile("native-host", "none"),
+      createRuntime({ hostPlatform }),
+      { pathExists: () => true },
+    );
+    assert.equal(
+      preflight.checks.some((entry) => entry.name === "hostPlatform"),
+      false,
+      where,
+    );
+    assert.equal(preflight.canLaunch, true, where);
+    assert.deepEqual(preflight.nextSteps, [], where);
+
+    const doctor = buildDoctorReport(
+      createDebugContext(),
+      { targetKind: "native-host", server: "none" },
+      createRuntime({ hostPlatform }),
+    );
+    assert.equal(
+      doctor.checks.some((entry) => entry.name === "hostPlatform"),
+      false,
+      where,
+    );
+    assert.equal(doctor.summary.fail, 0, where);
+  }
+});
+
+// The gate is native_sim's POSIX architecture, not "Windows is bad at
+// debugging": every other target class debugs over a probe or a remote
+// gdbserver and is perfectly launchable from Windows. A check that fired on
+// them would break real on-target debugging for the primary customer.
+test("no other debug target gains a host-OS check on win32", () => {
+  for (const { targetKind } of DEBUG_TARGET_CHOICES) {
+    if (targetKind === "native-host") continue;
+    for (const { server } of serverChoicesForTarget(targetKind)) {
+      const where = `${targetKind}/${server}`;
+      const preflight = buildDebugPreflightReport(
+        "2026-05-14T00:00:00.000Z",
+        createDebugContext(),
+        createDebugProfile(targetKind, server),
+        createRuntime({ hostPlatform: "win32" }),
+        { pathExists: () => true },
+      );
+      assert.equal(
+        preflight.checks.some((entry) => entry.name === "hostPlatform"),
+        false,
+        where,
+      );
+
+      const doctor = buildDoctorReport(
+        createDebugContext(),
+        { targetKind, server },
+        createRuntime({ hostPlatform: "win32" }),
+      );
+      assert.equal(
+        doctor.checks.some((entry) => entry.name === "hostPlatform"),
+        false,
+        where,
+      );
+      assert.equal(
+        doctor.nextSteps.includes(NATIVE_HOST_WIN32_FIX),
+        false,
+        where,
+      );
+    }
+  }
+});
+
 test("buildDebugPreflightReport fails the placeholder OpenOCD board config", () => {
   const report = buildDebugPreflightReport(
     "2026-05-14T00:00:00.000Z",

@@ -87,6 +87,18 @@ export interface DebugRuntimeCapabilities {
   pyocdExecutable: string | null;
   gdbExecutable: string | null;
   lldbExecutable: string | null;
+  /**
+   * `process.platform` of the host the extension host runs on, supplied by
+   * `src/debug/vscodeAdapter.ts`. The debug service is a PURE module and may
+   * not read `process` itself, so the host OS arrives here alongside the other
+   * probed host facts rather than being sniffed in the service.
+   *
+   * Optional, and absent means "assume not Windows": every caller and fixture
+   * that predates this field keeps compiling and keeps its old verdict, and a
+   * platform-blocking check that fired on a *missing* value would block Linux
+   * and macOS — the two hosts on which the target actually works.
+   */
+  hostPlatform?: string;
 }
 
 export interface DebugDoctorRequest {

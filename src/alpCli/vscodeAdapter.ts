@@ -39,7 +39,12 @@ import {
   shouldWarnCliAhead,
 } from "./service";
 import { ActionId, NotificationPlan, NotifyAction } from "../notify/models";
-import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
+import {
+  isCancellation,
+  planCliOutcome,
+  planFailure,
+  planSuccess,
+} from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log, runInTerminal } from "../util";
@@ -352,6 +357,17 @@ export async function ensureTanCliProvisioned(
       log("[cli] tan CLI download cancelled by the user");
       return;
     }
+    // The OTHER cancellation: not the user's Cancel button but the window
+    // going away. This runs on activation, and it awaits `withProgress` plus
+    // two `globalState.update` writes — all main-thread RPCs, all rejected with
+    // a CancellationError at teardown. Provisioning was abandoned, not failed;
+    // the next activation retries it, and a "couldn't download the tan CLI"
+    // toast for a window the customer just closed is the confusion this guard
+    // exists to keep out.
+    if (isCancellation(error)) {
+      log("[cli] tan CLI provisioning abandoned, window closing");
+      return;
+    }
     // This only runs on a failed download — either a fresh install with no
     // resolvable binary, or a stale-cache self-update. Not on every activation,
     // so a failure toast is a real, non-naggy signal (previously log-only). On
@@ -590,12 +606,38 @@ function aheadCliMessage(version: string): string {
  * A PATCH-newer tan is deliberately silent (channel only): it cannot move the
  * envelope contract, so there is nothing for the customer to do.
  *
- * Never throws: an unresolvable binary is a no-op; a `--version` spawn
- * failure (ENOENT/EACCES/timeout — the probe couldn't even exec the binary)
- * tells us nothing about the binary's identity, so it's logged and NOT
- * treated as "not the native CLI".
+ * Never throws — and this wrapper is what makes that true. The body awaits a
+ * toast and a `globalState.update`, both main-thread RPCs, and BOTH call sites
+ * are `void checkCliVersion(context)` (activation, and the cliPath/
+ * preferGlobalCli config listener). Unguarded, a window closing mid-check
+ * became an unhandled rejection in the extension host naming nothing —
+ * `Canceled: Canceled` with no operation and no cause. An unresolvable binary
+ * is a no-op; a `--version` spawn failure (ENOENT/EACCES/timeout — the probe
+ * couldn't even exec the binary) tells us nothing about the binary's identity,
+ * so it's logged and NOT treated as "not the native CLI".
  */
 export async function checkCliVersion(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  try {
+    await runCliVersionCheck(context);
+  } catch (error) {
+    if (isCancellation(error)) {
+      log("[cli] version check abandoned, window closing");
+      return;
+    }
+    // The STACK, not just the message: this wrapper is new, and everything it
+    // now catches used to surface with a full stack as an unhandled rejection.
+    // A blanket catch that keeps only `error.message` turns a genuine bug into
+    // a one-line warn with nothing to debug from.
+    log(
+      `[cli] version check failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      "warn",
+    );
+  }
+}
+
+async function runCliVersionCheck(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   if (versionChecked) {
@@ -795,6 +837,13 @@ export async function updateAlpCli(
     if (cancelled) {
       log(`[cli] tan CLI update to ${SUPPORTED_CLI_VERSION} cancelled`);
       notifyAsync(planSuccess("tan CLI update cancelled."));
+      return;
+    }
+    // A closing window rejects the pending `withProgress` RPC the same way.
+    // Silent: the existing binary is untouched, so there is nothing to retry
+    // and nobody left to read the toast.
+    if (isCancellation(error)) {
+      log(`[cli] tan CLI update abandoned, window closing`);
       return;
     }
     notifyAsync(

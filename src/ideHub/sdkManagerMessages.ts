@@ -20,6 +20,7 @@ import { sameUserPath } from "@alp-sdk/core/paths";
 import * as vscode from "vscode";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
+  isCancellation,
   planCliOutcome,
   planConfirm,
   planFailure,
@@ -67,6 +68,15 @@ export function createSdkMessageHandler(
     try {
       await setActiveSdk(sdkPath);
     } catch (err) {
+      // `setActiveSdk` awaits a toast and `alp.views.refresh` — both
+      // main-thread RPCs — so at window teardown it rejects with a
+      // CancellationError. The SDK switch was abandoned with the window; a
+      // "couldn't set the active SDK" toast there tells the customer their
+      // machine is broken when in fact their window closed.
+      if (isCancellation(err)) {
+        logChannel("[sdk] active-SDK switch abandoned, window closing");
+        return;
+      }
       // setActiveSdk already toasts its own not-an-SDK-root case and
       // writeAlpSetting its unsaved-settings case, so anything reaching here is
       // an unrelated throw: state the operation, keep the raw text in `detail`.
@@ -212,6 +222,13 @@ export function createSdkMessageHandler(
     try {
       await clearActiveSdk();
     } catch (err) {
+      // Same seam as handleSwitchSdk: `clearActiveSdk` awaits
+      // `alp.views.refresh`, so a closing window rejects it with a
+      // CancellationError. Nothing failed — the deactivate was abandoned.
+      if (isCancellation(err)) {
+        logChannel("[sdk] active-SDK deactivate abandoned, window closing");
+        return;
+      }
       // writeAlpSetting handles (and explains) the dirty-settings case without
       // throwing, so a throw here is unrelated — plain sentence, raw text to
       // the channel.

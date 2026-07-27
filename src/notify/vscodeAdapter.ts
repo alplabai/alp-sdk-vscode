@@ -316,6 +316,15 @@ async function openPath(target: string): Promise<void> {
     );
     await vscode.window.showTextDocument(doc, { preview: false });
   } catch (error) {
+    // Both awaits above are main-thread RPCs, so a window closing rejects them
+    // with a CancellationError. Nothing could not be opened — the window went
+    // away — and this catch does not just log: it FORCE-REVEALS the customer's
+    // output channel on the way out, with a warn line about a file that was
+    // never in trouble.
+    if (isCancellation(error)) {
+      log(`[notify] opening ${target} abandoned, window closing`);
+      return;
+    }
     log(
       `[notify] could not open ${target}: ${error instanceof Error ? error.message : String(error)}`,
       "warn",
