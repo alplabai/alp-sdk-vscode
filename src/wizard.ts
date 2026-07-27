@@ -19,9 +19,15 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { loadBoardModel } from "./configurator/vscodeAdapter";
-import { planConfirm, planPrecondition, planSuccess } from "./notify/service";
+import {
+  isCancellation,
+  planConfirm,
+  planPrecondition,
+  planSuccess,
+} from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
+import { log } from "./util";
 
 const FIRST_RUN_PROMPT_KEY_PREFIX = "alp.firstRunWizardPromptShown";
 
@@ -36,6 +42,18 @@ export function registerProjectWizardCommand(): vscode.Disposable {
   );
 }
 
+/**
+ * Offer the New Project flow on a first open with no board.yaml.
+ *
+ * Runs asynchronously after activation (`void maybeOfferFirstRunWizard`) —
+ * never throws, for the same reason `maybeOfferSetupPanel` doesn't: the
+ * `workspaceState.update` and the unanswered toast below are both pending
+ * main-thread RPCs, and a window closing rejects them with a CancellationError.
+ * Unguarded that is an unhandled rejection in the extension host naming
+ * nothing. Nothing failed — the offer was abandoned along with the window, and
+ * the next activation makes it again (the key is only recorded once the write
+ * lands).
+ */
 export async function maybeOfferFirstRunWizard(
   context: vscode.ExtensionContext,
 ): Promise<void> {
@@ -52,18 +70,26 @@ export async function maybeOfferFirstRunWizard(
     return;
   }
 
-  await context.workspaceState.update(workspaceKey, true);
-  // Audit verdict `keep`: the text and the single action are already right, so
-  // the plan is spelled out rather than built by `planPrecondition("noBoardYaml")`
-  // — that builder retitles the offer and adds a second button. `newProject`
-  // carries a `run` (alp.newProjectWizard), so the presenter executes it and the
-  // old branch-on-title disappears with no change in what the user sees.
-  await notify({
-    severity: "info",
-    channel: "toast",
-    message: "Alp: No board.yaml found. Create a new project?",
-    actions: [{ id: "newProject" }],
-  });
+  try {
+    await context.workspaceState.update(workspaceKey, true);
+    // Audit verdict `keep`: the text and the single action are already right, so
+    // the plan is spelled out rather than built by `planPrecondition("noBoardYaml")`
+    // — that builder retitles the offer and adds a second button. `newProject`
+    // carries a `run` (alp.newProjectWizard), so the presenter executes it and the
+    // old branch-on-title disappears with no change in what the user sees.
+    await notify({
+      severity: "info",
+      channel: "toast",
+      message: "Alp: No board.yaml found. Create a new project?",
+      actions: [{ id: "newProject" }],
+    });
+  } catch (err) {
+    if (isCancellation(err)) {
+      log("[wizard] first-run offer abandoned, window closing", "info");
+      return;
+    }
+    log(`[wizard] first-run offer failed: ${String(err)}`, "warn");
+  }
 }
 
 async function runModuleScaffoldWizard(): Promise<void> {

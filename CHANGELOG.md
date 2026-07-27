@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **`Native host` debugging now says why it cannot work on Windows.** `native_sim`
+  is a POSIX target — Zephyr's own board documentation says it creates "a normal
+  Linux executable" — but the extension offered the target on every host with no
+  check, wrote a launch configuration pointing at a binary Windows can never
+  produce, and left the customer to discover that at F5. The preflight now fails
+  on a Windows host with `native_sim builds a Linux executable, so it cannot run
+  on this Windows host.` and names the way forward: reopen the folder in WSL, or
+  use a Linux or macOS host. The target is still offered, because it becomes
+  valid one click later and the same picker feeds the doctor and the support
+  bundle.
+- **A closing window is no longer reported as a failure.** When the extension
+  host tears down — a window closing or reloading, or a folder-open replacing the
+  workspace — VS Code rejects every pending request. Nine places treated that as
+  a fault: a bootstrap "failed to start", "couldn't set the active SDK",
+  "Couldn't download the tan CLI", "The tan CLI update failed", a project
+  creation reported as failed on the one path where it had actually succeeded,
+  and three unhandled rejections naming nothing at all. Each now returns quietly
+  and says what was abandoned. A genuine error whose message merely mentions
+  cancellation is still reported — the distinction is tested in both directions.
+- Taking the offered **Reopen in WSL** action no longer opens a browser tab
+  telling you to install Remote-WSL when you already have it: the reload that
+  action triggers was being read as the command being absent.
+
+
 - **One Dependencies panel replaces the Toolchain Doctor and folds in the SDK
   Manager.** It answers "is my machine ready, and is it current" in one table:
   every dependency `tan` checks — the SDK, the workspace, west, CMake, Ninja,

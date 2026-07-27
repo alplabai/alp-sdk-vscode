@@ -254,6 +254,8 @@ export function buildDebugPreflightReport(
     createExecutableCheck(profile, context, dependencies),
   ];
 
+  checks.push(...nativeHostPlatformChecks(profile.targetKind, runtime));
+
   checks.push(
     ...createProfileConfigurationChecks(profile, context, dependencies),
   );
@@ -348,6 +350,9 @@ export function buildDoctorReport(
       break;
     case "native-host":
       checks.push(createExtensionCheck("codeLLDBExtension", "lldb", context));
+      // Doctor and preflight must agree on the host dead end, or doctor reports
+      // a healthy native-host setup on the very box where F5 cannot work.
+      checks.push(...nativeHostPlatformChecks(request.targetKind, runtime));
       // Informational, never a warn: CodeLLDB SHIPS its own LLDB (lldb/bin/ inside
       // vadimcn.vscode-lldb v1.12.2) and never consults PATH, so an lldb on PATH
       // is neither needed nor used. Warning about it put "Install LLDB or
@@ -918,6 +923,42 @@ function createServerToolCheck(
       ? undefined
       : `Install ${server} and make sure it is on PATH.`,
   };
+}
+
+/**
+ * native_sim is a POSIX-architecture board: Zephyr's own board documentation
+ * says it builds "a normal Linux executable". So `native-host` is not a
+ * missing-tool problem on Windows, it is a dead end — the Zephyr build cannot
+ * emit a Windows binary, and one built under WSL is a Linux ELF that a
+ * Windows-side CodeLLDB cannot launch. Nothing the customer installs on
+ * Windows clears it, so this FAILS (blocking `canLaunch`) rather than warns.
+ *
+ * It is deliberately the ONLY host-OS gate here: every other target class
+ * debugs over a probe or a remote gdbserver and is perfectly launchable from
+ * Windows, so this returns an empty list for them and on every non-Windows
+ * host. Both `buildDebugPreflightReport` and `buildDoctorReport` call it, so
+ * the two cannot disagree about whether this box can run the target.
+ *
+ * Wording contract (see src/notify/models.ts): `fix` reaches the customer
+ * through `nextSteps` and the toast detail, so it carries no errno, no path
+ * and no internal check id. "Reopen … in WSL" is the same affordance
+ * `src/bootstrap.ts` already offers for the same host dead end.
+ */
+function nativeHostPlatformChecks(
+  targetKind: DebugTargetKind,
+  runtime: DebugRuntimeCapabilities,
+): PreflightCheck[] {
+  if (!isNativeHostTarget(targetKind)) return [];
+  if (runtime.hostPlatform !== "win32") return [];
+  return [
+    {
+      name: "hostPlatform",
+      status: "fail",
+      detail:
+        "native_sim builds a Linux executable, so it cannot run on this Windows host.",
+      fix: "Reopen the folder in WSL, or build and debug native_sim on a Linux or macOS host.",
+    },
+  ];
 }
 
 function createExecutableCheck(

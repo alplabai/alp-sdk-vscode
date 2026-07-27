@@ -18,7 +18,12 @@ import { buildProjectSettings } from "./projectSettings";
 import { resetSetupNudge } from "./setupOrchestrator";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
-import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
+import {
+  isCancellation,
+  planCliOutcome,
+  planFailure,
+  planSuccess,
+} from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { log } from "../util";
 
@@ -56,8 +61,29 @@ export class NewProjectFlowPanel {
       "new-project-flow",
     );
 
+    // `handleMessage` is voided (a message pump must not be awaited), so
+    // without this handler every rejection inside it is an UNHANDLED one in the
+    // extension host, with no line naming which message produced it. It really
+    // can reject: the wizard awaits a folder picker, toasts, a globalState
+    // write and the workspace-replacing folder open — all main-thread RPCs, all
+    // rejected with a CancellationError when the window goes away. That is the
+    // "Create" button working (the new project's window is opening), so it is
+    // logged as abandoned, never as a failure.
     this.panel.webview.onDidReceiveMessage(
-      (msg: WebviewToExtMessage) => void this.handleMessage(msg),
+      (msg: WebviewToExtMessage) =>
+        void this.handleMessage(msg).catch((err: unknown) => {
+          if (isCancellation(err)) {
+            log(`[new-project] "${msg.type}" abandoned, window closing`);
+            return;
+          }
+          notifyAsync(
+            planFailure({
+              operation: "The New Project wizard",
+              cause: "Alp: the New Project wizard hit an unexpected error.",
+              detail: `${msg.type}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+            }),
+          );
+        }),
       undefined,
       this.disposables,
     );

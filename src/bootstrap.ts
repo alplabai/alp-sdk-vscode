@@ -45,18 +45,33 @@ import {
 import { runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import { BOOTSTRAP_RUN_NAME } from "./ideHub/messages";
 import { CANCELLED, runAlpWithProgress } from "./loader";
-import { planFailure, planPrecondition } from "./notify/service";
+import {
+  isCancellation,
+  planFailure,
+  planPrecondition,
+} from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 import { log } from "./util";
 
 /** Offer VS Code's Remote-WSL "Reopen in WSL"; if that extension isn't
  *  installed the command is absent and executeCommand rejects — fall back to
- *  the Marketplace page so the user can install it. */
+ *  the Marketplace page so the user can install it.
+ *
+ *  The command SUCCEEDING rejects this await too: reopening reloads the window
+ *  into a WSL remote, which tears this extension host down and cancels every
+ *  pending main-thread reply with a CancellationError (`name` and `message`
+ *  both "Canceled") — structurally the same teardown as the workspace-replacing
+ *  `vscode.openFolder`. Unguarded, the customer who HAS Remote-WSL and takes
+ *  the offer gets a browser tab telling them to install what they just used. */
 async function reopenInWsl(): Promise<void> {
   try {
     await vscode.commands.executeCommand("remote-wsl.reopenInWSL");
-  } catch {
+  } catch (err) {
+    if (isCancellation(err)) {
+      log("[bootstrap] reopening in WSL, window closing");
+      return;
+    }
     void vscode.env.openExternal(
       vscode.Uri.parse(
         "https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl",

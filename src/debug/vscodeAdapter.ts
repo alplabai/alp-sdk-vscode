@@ -29,10 +29,18 @@ export function collectWorkspaceDebugContext(): DebugWorkspaceContext {
 }
 
 export function collectRuntimeCapabilities(): DebugRuntimeCapabilities {
-  return collectRuntimeCapabilitiesFromCommands(
-    collectProjectContext(),
-    commandOnPath,
-  );
+  return {
+    ...collectRuntimeCapabilitiesFromCommands(
+      collectProjectContext(),
+      commandOnPath,
+    ),
+    // The one host fact the pure debug service cannot read for itself, and the
+    // one that decides whether `native-host` is debuggable at all: native_sim
+    // builds a Linux executable, so the target is a dead end on win32. Supplied
+    // here rather than in adapterCore's PATH probe because it is the OS, not a
+    // tool — see DebugRuntimeCapabilities.hostPlatform.
+    hostPlatform: process.platform,
+  };
 }
 
 export function launchJsonPath(workspaceRoot: string): string {
