@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { LaunchConfigurationDraft } from "./models";
+import { isResolvedValue } from "./service";
 
 interface LaunchJsonDocument {
   version: string;
@@ -25,7 +26,10 @@ export function createLaunchJsonWritePlan(
 
   let replaced = false;
   if (existingIndex >= 0) {
-    document.configurations[existingIndex] = nextConfiguration;
+    document.configurations[existingIndex] = mergeConfiguration(
+      document.configurations[existingIndex],
+      nextConfiguration,
+    );
     replaced = true;
   } else {
     document.configurations.push(nextConfiguration);
@@ -35,6 +39,65 @@ export function createLaunchJsonWritePlan(
     content: `${JSON.stringify(document, null, 2)}\n`,
     replaced,
   };
+}
+
+/**
+ * Merge the freshly generated configuration over the one already in the file
+ * instead of replacing it, because this runs before EVERY session and the
+ * configuration names are fixed per target/server.
+ *
+ * The rule is narrow: an incoming `<placeholder>` never overwrites a value that
+ * is already resolved. A customer told to hand-fill `"device": "AE822F4M55_HP"`
+ * used to get it silently reset to `"<resolved-device>"` on their next F5 — data
+ * loss on their own file, with no confirm and no backup, and an unexitable loop
+ * around the advice we had just given them.
+ *
+ * Everything else still refreshes — `type`, `executable`, `cwd`, `servertype` —
+ * so repairs such as `codelldb` → `lldb` still land on an existing entry. Keys
+ * the customer added that we never write (`preLaunchTask`, `serverArgs`, …)
+ * survive untouched, and key order follows the existing entry with any new key
+ * appended.
+ */
+function mergeConfiguration(
+  existing: LaunchConfigurationDraft,
+  next: LaunchConfigurationDraft,
+): LaunchConfigurationDraft {
+  const merged: LaunchConfigurationDraft = { ...existing };
+  for (const [key, value] of Object.entries(next)) {
+    merged[key] = mergeValue(existing[key], value);
+  }
+  return merged;
+}
+
+function mergeValue(existingValue: unknown, nextValue: unknown): unknown {
+  // Arrays (cortex-debug `configFiles`): an all-placeholder incoming list keeps
+  // the existing list whole — a hand-added second .cfg would be lost to a
+  // per-index merge against a one-element draft. A mixed list still merges per
+  // element, so a resolved entry we computed wins.
+  if (Array.isArray(nextValue) && Array.isArray(existingValue)) {
+    if (
+      nextValue.length > 0 &&
+      existingValue.length > 0 &&
+      nextValue.every(isUnresolvedString)
+    ) {
+      return existingValue;
+    }
+    return nextValue.map((entry, index) =>
+      mergeValue(existingValue[index], entry),
+    );
+  }
+
+  return isUnresolvedString(nextValue) && isResolvedString(existingValue)
+    ? existingValue
+    : nextValue;
+}
+
+function isUnresolvedString(value: unknown): boolean {
+  return typeof value === "string" && !isResolvedValue(value);
+}
+
+function isResolvedString(value: unknown): boolean {
+  return typeof value === "string" && isResolvedValue(value);
 }
 
 function parseLaunchJsonOrDefault(content: string | null): LaunchJsonDocument {

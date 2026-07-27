@@ -20,10 +20,13 @@ import {
   createInspectReport,
   createLaunchPreview,
   createSupportBundlePayload,
+  DEBUG_ADAPTER_EXTENSION_ID,
+  DEBUG_TARGET_ADAPTER,
   DEBUG_TARGET_CHOICES,
   isNativeHostTarget,
   serializeSupportBundlePayload,
   serverChoicesForTarget,
+  unresolvedRequiredFields,
 } from "@alp-sdk/core/debug/service";
 import {
   collectRuntimeCapabilities,
@@ -122,7 +125,12 @@ async function debugDoctor(): Promise<void> {
   );
   log(`alp.debugDoctor: ran doctor for ${targetKind}/${server}`);
   await showJsonDocument(summary);
-  if (summary.summary.fail > 0 || summary.summary.warn > 0) {
+  // Only a FAIL forces the channel open. The full report — every check, every
+  // fix — is already open and focused in the editor above, so revealing the
+  // channel is a second focus grab that adds one `log` line; it has to be
+  // earned by something blocking. Same rule in `debugPreflight` and
+  // `exportSupportBundle`.
+  if (summary.summary.fail > 0) {
     showOutput();
   }
 }
@@ -132,37 +140,56 @@ async function debugPreflight(): Promise<void> {
   if (!targetKind) return;
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
-  const runtime = collectRuntimeCapabilities();
 
-  let profile;
+  let report;
   try {
-    profile = createDebugProfile(
-      targetKind,
-      server,
-      resolveManifestSlice(context.workspaceRoot, targetKind),
-    );
+    report = buildPreflight(context, targetKind, server).report;
   } catch (error) {
     await reportDebugFailure("Alp: the debug preflight", error);
     return;
   }
 
-  const report = buildDebugPreflightReport(
-    new Date().toISOString(),
-    context,
-    profile,
-    runtime,
-    {
-      pathExists: fileExists,
-    },
-  );
-
   log(
     `alp.debugPreflight: ran preflight for ${targetKind}/${server}, canLaunch=${report.canLaunch}`,
   );
   await showJsonDocument(report);
-  if (!report.canLaunch || report.summary.warn > 0) {
+  // Not `|| summary.warn > 0`: on every MCU target `svdFile` warns permanently
+  // — alp-sdk publishes no SVD and this thin extension must not vendor one —
+  // so that clause yanked the channel open on every healthy run, over the one
+  // item nobody can clear.
+  if (!report.canLaunch) {
     showOutput();
   }
+}
+
+/** Profile + preflight for one target/server pair, off a caller-supplied
+ *  workspace snapshot. Throws what `createDebugProfile` throws (unsupported
+ *  target/backend); every caller that can hit that wraps it.
+ *
+ *  A report is a snapshot, never a cached fact: installing the adapter
+ *  extension or writing the native_sim overlay changes the answer, so anything
+ *  that mutates the environment has to re-run this rather than reuse an
+ *  earlier report. */
+function buildPreflight(
+  context: ReturnType<typeof collectWorkspaceDebugContext>,
+  targetKind: DebugTargetKind,
+  server: DebugServerKind,
+) {
+  const profile = createDebugProfile(
+    targetKind,
+    server,
+    resolveManifestSlice(context.workspaceRoot, targetKind),
+  );
+  return {
+    profile,
+    report: buildDebugPreflightReport(
+      new Date().toISOString(),
+      context,
+      profile,
+      collectRuntimeCapabilities(),
+      { pathExists: fileExists },
+    ),
+  };
 }
 
 /** The outcome of generating (or refreshing) the launch profile, shared by the
@@ -173,8 +200,17 @@ interface LaunchProfileResult {
   launchPath: string;
   relPath: string;
   replaced: boolean;
+  /** Preflight as of the write. A caller that then changes the environment —
+   *  `startDebugging` installs the adapter extension — must re-run
+   *  `buildPreflight` instead of gating on this. */
   report: ReturnType<typeof buildDebugPreflightReport>;
   notes: readonly string[];
+  /** Customer-facing names of the required probe facts the written profile
+   *  still carries as `<placeholder>` — "J-Link device name", never the
+   *  internal PreflightCheck id `device`. Empty when nothing is missing.
+   *  Non-empty implies `report.canLaunch === false`: every one of these is a
+   *  failing check. */
+  unresolved: readonly string[];
 }
 
 /** Prompt for target/server, write the launch.json profile, and return what a
@@ -231,13 +267,7 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
     `alp debug: ${writePlan.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
 
-  const report = buildDebugPreflightReport(
-    new Date().toISOString(),
-    context,
-    createDebugProfile(targetKind, server, slice),
-    collectRuntimeCapabilities(),
-    { pathExists: fileExists },
-  );
+  const { profile, report } = buildPreflight(context, targetKind, server);
 
   return {
     workspaceRoot: context.workspaceRoot,
@@ -247,7 +277,38 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
     replaced: writePlan.replaced,
     report,
     notes: preview.notes,
+    unresolved: unresolvedRequiredFields(profile),
   };
+}
+
+/**
+ * Channel detail behind every "fill it in by hand" toast: WHY the extension
+ * cannot supply these itself. alp-sdk metadata carries no J-Link device name,
+ * no pyOCD target id and no OpenOCD board config, so there is nothing to
+ * substitute — this is a gap in the published data, not a bug in the profile
+ * writer, and the customer editing launch.json is the only path today.
+ *
+ * Probe facts only. It used to end by pointing at alp-sdk#948 (the SVD half of
+ * the same metadata gap), but `svdFile` is deliberately excluded from
+ * `unresolvedRequiredFields` — it is optional and only feeds the peripheral
+ * view — so that clause could never be the reader's blocker and sent them
+ * chasing a cross-repo issue instead of filling in the device name.
+ */
+const MISSING_PROBE_METADATA_DETAIL =
+  "The Alp SDK does not publish probe metadata (J-Link device name, pyOCD target id, OpenOCD board config) for this board yet, so the extension has nothing to substitute.";
+
+/**
+ * The customer sentence for a profile whose required probe facts are still
+ * `<placeholder>`. Takes the labels from `unresolvedRequiredFields` — a
+ * customer can act on "the J-Link device name"; they cannot act on `device`.
+ */
+function unresolvedFieldsSentence(fields: readonly string[]): string {
+  const list = fields.map((field) => `the ${field}`);
+  const many = list.length > 1;
+  const joined = many
+    ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`
+    : list.join("");
+  return `${joined} ${many ? "aren't" : "isn't"} in the Alp SDK's board metadata yet, so ${many ? "they" : "it"} must be filled in by hand.`;
 }
 
 async function configureDebugProfile(): Promise<void> {
@@ -266,18 +327,43 @@ async function configureDebugProfile(): Promise<void> {
   }
 
   for (const note of result.notes) log(note);
-  const unresolved = result.report.checks
-    .filter((check) => check.status === "fail")
-    .map((check) => check.name)
-    .join(", ");
-  // The failing check names are internal PreflightCheck ids and the joined
-  // nextSteps push the text past VS Code's truncation point: both are channel
-  // detail. The Troubleshooting panel already renders that state per item.
+
+  // The file WAS written and is worth keeping: an expert who knows their own
+  // board fills the device name in and debugs today, where refusing would leave
+  // them with nothing. What is NOT acceptable is writing `"device":
+  // "<resolved-device>"` silently — that config looks finished and dies later
+  // inside J-Link with a probe error that names nothing. So say which facts are
+  // missing, in the customer's terms.
+  //
+  // This REPLACES the generic toast below rather than stacking on it: every
+  // unresolved field is itself a failing check, so both branches would fire for
+  // one cause, and the named one is strictly more useful.
+  if (result.unresolved.length > 0) {
+    await notify(
+      planFailure({
+        operation: "Alp: refreshing the launch profile",
+        cause: `Alp: ${verb} ${result.relPath}, but ${unresolvedFieldsSentence(result.unresolved)}`,
+        detail: `${MISSING_PROBE_METADATA_DETAIL} ${result.report.nextSteps.join(" ")}`,
+        severity: "warning",
+        // The document is open above, but the customer may have clicked away
+        // by the time they read this; `arg` pins the file just written rather
+        // than letting the presenter re-resolve a workspace root.
+        actions: [{ id: "openLaunchJson", arg: result.launchPath }],
+      }),
+    );
+    return;
+  }
+
+  // Everything else that blocks a launch — an unbuilt artefact, a probe tool
+  // missing from PATH. `nextSteps` are the checks' own customer-facing fixes;
+  // the failing check NAMES are internal PreflightCheck ids and deliberately do
+  // not appear, here or in the channel. The Troubleshooting panel renders the
+  // per-item state for anyone who wants it.
   await notify(
     planFailure({
       operation: "Alp: refreshing the launch profile",
       cause: `Alp: ${verb} ${result.relPath}, but the profile is not launchable yet.`,
-      detail: `unresolved: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
+      detail: result.report.nextSteps.join(" "),
       severity: "warning",
       actions: [{ id: "openTroubleshooting" }],
     }),
@@ -285,43 +371,31 @@ async function configureDebugProfile(): Promise<void> {
 }
 
 /**
- * Debug-adapter extension required per target class. Keyed by `targetKind` so
- * it mirrors the `adapter` createDebugProfile actually picks — the old
- * `/Yocto/i.test(configName)` heuristic named Cortex-Debug for
- * "Alp: Native Sim Debug", whose adapter is codelldb (vadimcn.vscode-lldb).
- * An exhaustive Record makes a new target kind a compile error rather than a
- * silent fall-through to cortex-debug.
+ * What the install prompt needs to SAY per target class — the extension id
+ * itself is not here. `DEBUG_ADAPTER_EXTENSION_ID[DEBUG_TARGET_ADAPTER[kind]]`
+ * in the core is the one copy in the repo, shared with preflight and doctor, so
+ * this surface cannot prompt for one extension while preflight checks another.
+ * (Hand-copying the ids here is how "native-host needs Cortex-Debug" once
+ * survived a green suite: the old `/Yocto/i.test(configName)` heuristic named
+ * Cortex-Debug for "Alp: Native Sim Debug", whose adapter is the `lldb` type
+ * contributed by CodeLLDB, vadimcn.vscode-lldb.)
  *
+ * `label` is the extension's marketplace NAME, for the sentence a human reads;
  * `dependency` = listed in package.json `extensionDependencies`, so VS Code
  * guarantees it is INSTALLED: a missing `getExtension` there means disabled,
  * and `workbench.extensions.installExtension` is a documented no-op on that
  * state. The extensionPack entries (cpptools, CodeLLDB) can genuinely be
- * uninstalled, so only those get an Install prompt.
+ * uninstalled, so only those get an Install prompt. An exhaustive Record makes
+ * a new target kind a compile error rather than a silent fall-through.
  */
 const DEBUG_ADAPTER_EXTENSION: Record<
   DebugTargetKind,
-  { id: string; label: string; dependency: boolean }
+  { label: string; dependency: boolean }
 > = {
-  "zephyr-mcu": {
-    id: "marus25.cortex-debug",
-    label: "Cortex-Debug",
-    dependency: true,
-  },
-  "baremetal-mcu": {
-    id: "marus25.cortex-debug",
-    label: "Cortex-Debug",
-    dependency: true,
-  },
-  "yocto-userspace": {
-    id: "ms-vscode.cpptools",
-    label: "C/C++ (cpptools)",
-    dependency: false,
-  },
-  "native-host": {
-    id: "vadimcn.vscode-lldb",
-    label: "CodeLLDB",
-    dependency: false,
-  },
+  "zephyr-mcu": { label: "Cortex-Debug", dependency: true },
+  "baremetal-mcu": { label: "Cortex-Debug", dependency: true },
+  "yocto-userspace": { label: "C/C++ (cpptools)", dependency: false },
+  "native-host": { label: "CodeLLDB", dependency: false },
 };
 
 /** True when the adapter extension is usable. Prompts rather than letting the
@@ -331,7 +405,8 @@ const DEBUG_ADAPTER_EXTENSION: Record<
 async function ensureDebugExtension(
   targetKind: DebugTargetKind,
 ): Promise<boolean> {
-  const { id, label, dependency } = DEBUG_ADAPTER_EXTENSION[targetKind];
+  const { label, dependency } = DEBUG_ADAPTER_EXTENSION[targetKind];
+  const id = DEBUG_ADAPTER_EXTENSION_ID[DEBUG_TARGET_ADAPTER[targetKind]];
   if (vscode.extensions.getExtension(id)) return true;
 
   if (dependency) {
@@ -400,22 +475,44 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   // no second toast; a failed install gets its own), so this only has to stop.
   if (!(await ensureDebugExtension(result.report.targetKind))) return;
 
-  if (!result.report.canLaunch) {
+  // Re-run the preflight: `result.report` predates both steps above, and both
+  // change its answer. On a first-ever native-host run the customer accepts the
+  // Install prompt, CodeLLDB lands, and gating on the stale report would answer
+  // that with "not launchable yet" over the `adapterExtension` check they just
+  // cleared. Cheap (one manifest read + PATH probes) next to starting a
+  // session, and it also picks up an artefact built since the write.
+  const { report } = buildPreflight(
+    collectWorkspaceDebugContext(),
+    result.report.targetKind,
+    result.report.server,
+  );
+
+  if (!report.canLaunch) {
     for (const note of result.notes) log(note);
-    const unresolved = result.report.checks
-      .filter((check) => check.status === "fail")
-      .map((check) => check.name)
-      .join(", ");
-    // `startAnyway` is caller-handled (no `run`), so the pick comes back and
-    // gates startDebugging; "Show Output" is appended by the presenter and
-    // reveals the channel where `unresolved` + nextSteps were just logged.
+    // Placeholders in the file just written; unaffected by the recheck, which
+    // reads the same profile inputs.
+    const missing = result.unresolved.length > 0;
+    const nextSteps = report.nextSteps.join(" ");
+    // Same honesty as the write path: name the facts, not the check ids. On
+    // this path "Open launch.json" is also the real remedy — Start Anyway hands
+    // `<resolved-device>` to the probe — and it is presenter-handled, so
+    // picking it opens the file and returns undefined, i.e. does not start.
     const choice = await notify(
       planFailure({
         operation: "Alp: starting the debug session",
-        cause: `Alp: ${result.relPath} is not launchable yet.`,
-        detail: `unresolved: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
+        cause: missing
+          ? `Alp: ${result.relPath} is not launchable — ${unresolvedFieldsSentence(result.unresolved)}`
+          : `Alp: ${result.relPath} is not launchable yet.`,
+        detail: missing
+          ? `${MISSING_PROBE_METADATA_DETAIL} ${nextSteps}`
+          : nextSteps,
         severity: "warning",
-        actions: [{ id: "startAnyway" }],
+        actions: missing
+          ? [
+              { id: "openLaunchJson", arg: result.launchPath },
+              { id: "startAnyway" },
+            ]
+          : [{ id: "startAnyway" }],
       }),
     );
     if (choice !== "startAnyway") return;
@@ -516,11 +613,10 @@ async function exportSupportBundle(): Promise<void> {
     planSuccess(`Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`),
   );
 
-  if (
-    !preflight.canLaunch ||
-    doctor.summary.fail > 0 ||
-    doctor.summary.warn > 0
-  ) {
+  // Fail-only, same rule as debugDoctor/debugPreflight: the bundle carrying
+  // every check is open in the editor above, and a warn there is routinely the
+  // permanent `svdFile` one.
+  if (!preflight.canLaunch || doctor.summary.fail > 0) {
     showOutput();
   }
 }

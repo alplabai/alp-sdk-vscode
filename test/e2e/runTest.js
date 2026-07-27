@@ -72,6 +72,21 @@ async function main() {
       // transitively, so they need no entries here.
       "--install-extension",
       "marus25.cortex-debug",
+      // CodeLLDB is an `extensionPack` entry, not a dependency, so VS Code does
+      // NOT pull it into an isolated --extensions-dir. Install it explicitly:
+      // it owns the `lldb` debug type that "Alp: Native Sim Debug" emits, and
+      // the debug-type case below is the only check that can prove a launch
+      // config this extension writes actually resolves. Without it that case
+      // could only ever report "type not supported" and would prove nothing.
+      "--install-extension",
+      "vadimcn.vscode-lldb",
+      // Same reasoning for the other `extensionPack` entry: cpptools owns the
+      // `cppdbg` type the yocto-userspace profile emits. Verifying three of the
+      // four emitted types and taking the fourth on trust is exactly how
+      // `codelldb` shipped broken -- so it is installed rather than exempted,
+      // at the cost of a slower first e2e run.
+      "--install-extension",
+      "ms-vscode.cpptools",
       "--force",
     ],
     {
