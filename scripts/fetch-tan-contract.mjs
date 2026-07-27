@@ -8,8 +8,8 @@
 //
 // The artefact does not exist yet — `alplabai/tan-cli#106` is the open issue
 // that will publish it. So the 404 path is the normal path today, and the one
-// thing it must never do is look like a pass. Three OUTCOMES, three messages,
-// and the log must never let two of them read the same:
+// thing it must never do is look like a pass. FOUR outcomes, four messages, and
+// the log must never let two of them read the same:
 //
 //   * 404            → `::warning::` naming the pin, the URL and the issue,
 //                      exit 0. NOT PUBLISHED — a known state of the world. The
@@ -24,9 +24,17 @@
 //                      that today cannot verify anything trains people to
 //                      ignore it. (`check-extension-deps.mjs` tolerates
 //                      registry downtime for the same reason.)
+//   * any other      → `::error::`, exit 1. A 400 or a 451 on a public
+//     non-OK status      release-asset URL is neither "not published" nor
+//                      "GitHub was busy", and sweeping it into either warning
+//                      would file it as a fact it is not.
 //   * 200, not JSON  → `::error::`, exit 1. That is a real contract violation:
 //                      the asset exists and is malformed. Availability had
 //                      nothing to do with it.
+//
+// (A pin that cannot be resolved out of `src/alpCli/service.ts` at all is a
+// fifth `::error::`, below — it means this script's own assumption about the
+// repo broke, not anything about tan.)
 //
 // Not a `node --test` file on purpose: this is the only part that touches the
 // network, and keeping it out of the test run leaves `test/tanContract.test.js`

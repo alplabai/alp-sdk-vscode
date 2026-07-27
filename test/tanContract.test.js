@@ -130,10 +130,15 @@ function scanGatedCodes(roots) {
  * that passes on any drift, so the predicate stays far short of the six-key
  * shape, `ok`/`exitCode` agreement and `parseEnvelope` the tests below assert.
  *
- * `exitCode` is in the predicate purely to exclude documentation prose: a block
- * like `"commands": {"build": {"command": "tan build", "description": "…"}}` is
- * a plausible neighbour in an artefact whose layout #106 has not frozen, and
- * `command`-alone would drag it in and red the gate over a doc string.
+ * `exitCode` and `issues` are in the predicate purely to exclude documentation
+ * prose: a block like `"commands": {"build": {"command": "tan build",
+ * "description": "…"}}` is a plausible neighbour in an artefact whose layout
+ * #106 has not frozen, and `command`-alone would drag it in and red the gate
+ * over a doc string. `exitCode` alone was not enough — a docs block that
+ * documents its own exit code clears it — so `issues` is required too. All
+ * three together are still far short of the six-key shape, the `ok`/`exitCode`
+ * agreement and `parseEnvelope` the tests below assert, so this stays a
+ * discovery heuristic and not a restatement of the thing under test.
  *
  * A candidate is not descended into, so a nested `data` never double-counts.
  */
@@ -141,7 +146,11 @@ function findEnvelopes(node, out = []) {
   if (Array.isArray(node)) {
     for (const v of node) findEnvelopes(v, out);
   } else if (node && typeof node === "object") {
-    if (typeof node.command === "string" && typeof node.exitCode === "number") {
+    if (
+      typeof node.command === "string" &&
+      typeof node.exitCode === "number" &&
+      Array.isArray(node.issues)
+    ) {
       out.push(node);
     } else {
       for (const v of Object.values(node)) findEnvelopes(v, out);
@@ -160,19 +169,33 @@ function findEnvelopes(node, out = []) {
  *
  * The entries must LOOK like issue codes, not merely live under a `*code(s)`
  * key. docs/CLI.md pins six exit codes as well, so an `exitCodes` map keyed
- * `"0".."5"` is a plausible sibling here — and `Object.entries` insertion order
- * would otherwise decide which one wins, reddening the gate on a perfectly
- * correct artefact and blaming tan for a rename that never happened.
+ * `"0".."5"` is a plausible sibling here — and it is excluded by shape.
+ *
+ * Every issue-code-shaped list is UNIONED rather than the first one winning.
+ * First-match let `Object.entries` insertion order decide, so a `removedCodes`
+ * or `deprecatedCodes` neighbour — an entirely plausible companion to a frozen
+ * list, whose entries pass the shape test — could red the gate on a perfectly
+ * correct artefact and blame tan for a rename that never happened.
+ *
+ * KNOWN LIMIT, and it cannot be closed from this side today: if the artefact
+ * ships a list of LEGACY code names, unioning it in means a code tan actually
+ * renamed still resolves, and the gate greens on the drift it exists to catch.
+ * Discovering the list by shape is a stopgap for #106 being open; when the
+ * layout is frozen, replace this with the one declared key and delete the
+ * heuristic rather than hardening it further.
  */
 function findFrozenCodes(node) {
+  const codes = new Set();
+  collectFrozenCodes(node, codes);
+  return codes.size ? codes : null;
+}
+
+function collectFrozenCodes(node, out) {
   if (Array.isArray(node)) {
-    for (const v of node) {
-      const hit = findFrozenCodes(v);
-      if (hit) return hit;
-    }
-    return null;
+    for (const v of node) collectFrozenCodes(v, out);
+    return;
   }
-  if (!node || typeof node !== "object") return null;
+  if (!node || typeof node !== "object") return;
   for (const [key, value] of Object.entries(node)) {
     if (/codes?$/i.test(key)) {
       const codes = Array.isArray(value)
@@ -184,13 +207,13 @@ function findFrozenCodes(node) {
         codes?.length &&
         codes.every((c) => typeof c === "string" && ISSUE_CODE_SHAPE.test(c))
       ) {
-        return new Set(codes);
+        for (const code of codes) out.add(code);
+        // A matched list is not descended into — its entries are strings.
+        continue;
       }
     }
-    const hit = findFrozenCodes(value);
-    if (hit) return hit;
+    collectFrozenCodes(value, out);
   }
-  return null;
 }
 
 const present = fs.existsSync(assetPath);

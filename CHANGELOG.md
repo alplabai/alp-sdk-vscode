@@ -33,11 +33,12 @@
   so the runner's own `# SKIP` line says the contract was not checked. A
   rate-limit, an outage or a timeout prints a second, distinctly worded
   `::warning::` and also exits 0 — "could not check" is a different fact from
-  "not published", and neither is a defect in this repo. The one hard failure is
-  an asset that is published and does not parse as JSON. An artefact that is
-  present but yields zero assertions against anything only tan can be the source
-  of fails as well; present-but-vacuous is the same defect wearing a different
-  hat.
+  "not published", and neither is a defect in this repo. What does fail hard is
+  anything that is not an availability problem: an asset that is published and
+  does not parse as JSON, an unexpected non-OK status that is neither a 404 nor
+  a rate-limit, and an artefact that is present but yields zero assertions
+  against anything only tan can be the source of — present-but-vacuous is the
+  same defect wearing a different hat.
 
 - **Documented what the `native_sim` debug session actually does**, after
   driving the generated configuration through a real CodeLLDB adapter rather
