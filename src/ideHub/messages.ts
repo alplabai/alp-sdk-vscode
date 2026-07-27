@@ -49,9 +49,43 @@ export interface ToolVersions {
   ninja: string | null;
 }
 
+/**
+ * The `runInTerminal` task `name` EVERY bootstrap dispatch runs under —
+ * `alp.installDependencies`/`alp.bootstrap` (`tan bootstrap`, src/bootstrap.ts)
+ * and the Toolchain Doctor's build fix (`tan doctor --build --fix`,
+ * src/toolchain.ts). Both deliberately share ONE name so `runInTerminal`'s
+ * reservation refuses a second concurrent bootstrap against the same venv
+ * (issue #146); that shared name is also what lets a single probe
+ * (`bootstrapRunning`, src/ideHub/vscodeAdapter.ts) answer "is a bootstrap
+ * running" for either entry point.
+ *
+ * Lives HERE, next to the `SetupStatus.bootstrapRunning` field it feeds,
+ * because it is the one string the dispatch sites, the probe and the
+ * task-start refresh must all agree on — and this module is the only shared
+ * one all three can import (it pulls in no `vscode`, so importing it costs a
+ * dispatch site nothing). A second spelling anywhere and the probe watches a
+ * name nobody runs under: no spinner, and Build/Flash offered over a
+ * half-fetched module tree. Host-side only — the webview never dispatches a
+ * terminal, so this is NOT part of the mirrored protocol.
+ */
+export const BOOTSTRAP_RUN_NAME = "Alp Bootstrap";
+
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
+  /**
+   * True while a bootstrap run (`BOOTSTRAP_RUN_NAME`) is STILL EXECUTING in a
+   * terminal.
+   *
+   * Every other gate in this state is a snapshot of the disk, and
+   * `workspace.westInitialized` flips the moment `.west/config` is written —
+   * the FIRST thing `tan bootstrap` does, not the last. So without this term
+   * every readiness surface reports a half-fetched module tree as ready and
+   * offers Build/Flash over it. tan v0.4.0 widens that window: it no longer
+   * reuses a workspace across a patch-level Zephyr bump, so a `west update`
+   * can now run where none did before — minutes, not seconds.
+   */
+  bootstrapRunning: boolean;
   /** ISO timestamp of the last time the user triggered bootstrap. Null if never. */
   lastBootstrapAt: string | null;
   /** Raw version strings for each build tool, null when not found. */
@@ -82,6 +116,7 @@ export function emptyAlpIdeState(): AlpIdeState {
     setup: {
       pythonAvailable: false,
       westAvailable: false,
+      bootstrapRunning: false,
       lastBootstrapAt: null,
       toolVersions: {
         python: null,

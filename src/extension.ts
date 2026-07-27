@@ -20,6 +20,7 @@ import {
   registerWorkspaceCommands,
   SetupFlowPanel,
 } from "./ideHub";
+import { BOOTSTRAP_RUN_NAME } from "./ideHub/messages";
 import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
@@ -44,12 +45,34 @@ import {
 } from "./wizard";
 
 /**
- * The version this machine last activated. ABSENT = the first ever activation
- * (a fresh install), DIFFERENT = the extension was upgraded since, SAME = an
- * ordinary activation. One key answers both questions for the price of one,
- * which is why there is no separate "has run before" boolean.
+ * The version this machine last activated. DIFFERENT = the extension was
+ * upgraded since, SAME = an ordinary activation. One key answers both questions
+ * for the price of one, which is why there is no separate "has run before"
+ * boolean.
+ *
+ * An ABSENT value is NOT proof of a fresh install — see `PRE_MARKER_STATE_KEYS`.
  */
 const LAST_ACTIVATED_VERSION_KEY = "alp.lastActivatedVersion";
+
+/**
+ * Keys written by builds that predate `alp.lastActivatedVersion` (it landed in
+ * 0.3.7). If the marker is absent but any of these exist, a previous build ran
+ * on this machine and this activation is an UPGRADE, not a first install.
+ *
+ * Without this the whole existing customer base — everyone upgrading from 0.3.6
+ * or earlier — is reported as a fresh install on the one activation where
+ * knowing it was an upgrade matters most. Observed in a real old->new upgrade:
+ * a 0.3.6 profile carrying a downloaded tan CLI logged
+ * "v0.3.7 (first activation on this machine)".
+ *
+ * Only globalState keys belong here; workspaceState says nothing about whether
+ * the extension has run on this MACHINE.
+ */
+const PRE_MARKER_STATE_KEYS = [
+  "alp.tanSelfHealGaveUpPin",
+  "alp.setupOrchestrator.lastShownFingerprint",
+  "alp.lastBootstrapAt",
+] as const;
 
 export function activate(context: vscode.ExtensionContext): void {
   // The presenter has no `context` of its own but needs this extension's id for
@@ -62,18 +85,26 @@ export function activate(context: vscode.ExtensionContext): void {
   const lastActivated = context.globalState.get<string>(
     LAST_ACTIVATED_VERSION_KEY,
   );
-  // An absent key is a first run, not an upgrade: there is no previous build
-  // whose persisted state could be stale.
-  const extensionUpgraded =
-    lastActivated !== undefined && lastActivated !== version;
+  // An absent marker means EITHER a fresh install OR an upgrade from a build
+  // that predates the marker; state left by that older build tells the two
+  // apart. Getting this wrong misreports every existing customer's first
+  // upgrade as a fresh install.
+  const ranBefore =
+    lastActivated !== undefined ||
+    PRE_MARKER_STATE_KEYS.some(
+      (key) => context.globalState.get(key) !== undefined,
+    );
+  const extensionUpgraded = ranBefore && lastActivated !== version;
   void context.globalState.update(LAST_ACTIVATED_VERSION_KEY, version);
   log(
     `Alp SDK extension activating — v${version}` +
-      (lastActivated === undefined
+      (!ranBefore
         ? " (first activation on this machine)"
-        : extensionUpgraded
-          ? ` (upgraded from v${lastActivated})`
-          : ""),
+        : lastActivated === undefined
+          ? " (upgraded from a build older than v0.3.7)"
+          : extensionUpgraded
+            ? ` (upgraded from v${lastActivated})`
+            : ""),
   );
   startLanguageServer(context);
 
@@ -122,7 +153,25 @@ export function activate(context: vscode.ExtensionContext): void {
     // An undefined `code` stays SILENT: the task ended without its process
     // ever starting, so there is no verdict to report and claiming either
     // outcome would be a guess.
+    // A bootstrap STARTING changes readiness as much as one finishing, and
+    // nothing else notices: `tan bootstrap` writes no board.yaml and no
+    // setting, so neither the file watcher nor the config listener fires.
+    // Without this the snapshot carries `bootstrapRunning: false` for the
+    // whole run and every gate that reads it — the status bar, the Build &
+    // Flash items — stays open over a half-fetched module tree. Filtered to
+    // the bootstrap run (`run` is the contributed `alpRun` task property, see
+    // package.json) so a user's own tasks don't each trigger a probe sweep.
+    vscode.tasks.onDidStartTask((e) => {
+      const def = e.execution.task.definition as { run?: unknown };
+      if (def.run === BOOTSTRAP_RUN_NAME) refreshState();
+    }),
     onDidFinishTerminalCommand(({ name, code }) => {
+      // Re-derive the shared state FIRST, whatever the verdict: a finished
+      // bootstrap changed the workspace on disk and released the run's
+      // reservation, and this event is the only signal of either. Repainting
+      // the old snapshot instead is what made a SUCCESSFUL bootstrap flip the
+      // bar to "$(warning) Alp: setup" — a warning at the moment of success.
+      refreshState();
       if (code === 0) {
         notifyAsync(planSuccess(`${name} finished.`));
       } else if (code !== undefined) {

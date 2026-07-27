@@ -12,6 +12,7 @@
 // (not the retired `west alp-*` driver) with no tan equivalent, so they stay as
 // direct west terminal invocations.
 
+import { WestWorkspaceContext } from "@alp-sdk/core/west/models";
 import {
   createWestFlashPlan,
   createWestUpdatePlan,
@@ -21,6 +22,8 @@ import * as path from "path";
 import * as vscode from "vscode";
 
 import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
+import { planPrecondition } from "./notify/service";
+import { notify } from "./notify/vscodeAdapter";
 import {
   collectWestWorkspaceContext,
   executeWestPlan,
@@ -28,8 +31,13 @@ import {
 } from "./west/vscodeAdapter";
 import { log } from "./util";
 
-function westCwd(): string | undefined {
-  const context = collectWestWorkspaceContext();
+/** The directory a `tan` run should use, or undefined when nothing resolves one
+ *  (no folder open and no `alpSdk.westCwd`) — in which case the run must be
+ *  refused, never spawned with an inherited cwd. Takes an already-collected
+ *  context so a caller that needs both doesn't resolve the project twice. */
+function westCwd(
+  context: WestWorkspaceContext = collectWestWorkspaceContext(),
+): string | undefined {
   return context.westCwd ?? context.workspaceRoot ?? undefined;
 }
 
@@ -49,14 +57,29 @@ async function pickAppPath(value: string): Promise<string | undefined> {
  * dir" convention), so we run from the project root and pass no app argument.
  *
  * Only when no project is open do we fall back to prompting for an example app
- * to build. Returns `undefined` when the user cancels that prompt.
+ * to build. Returns `undefined` when the user cancels that prompt — or when
+ * nothing resolves a cwd at all, which is refused here rather than in each of
+ * the five callers: `tan build/image/flash/clean/renode` all WRITE where they
+ * run, and with no folder open the child inherits the extension host's own
+ * directory (on Windows, the VS Code install directory) and drops a `build/`
+ * there. `cwd` is narrowed to `string` on the way out so the guard cannot be
+ * bypassed by a later caller. Same builder the sibling sites use (bootstrap.ts,
+ * toolchain.ts, wizard.ts, debug.ts, ideHub/workspaceCommands.ts).
+ *
+ * `operation` is the verb phrase `planPrecondition` renders into "Open a folder
+ * to <operation>.", so it is per-command, not per-resolver.
  */
 async function resolveOrchestratorTarget(
   fallbackExample: string,
-): Promise<
-  { appArg: string[]; cwd: string | undefined; active: boolean } | undefined
-> {
+  operation: string,
+): Promise<{ appArg: string[]; cwd: string; active: boolean } | undefined> {
   const projectCtx = collectWestWorkspaceContext();
+  const root = westCwd(projectCtx);
+  if (!root) {
+    await notify(planPrecondition("noWorkspace", { operation }));
+    return undefined;
+  }
+
   const projectRoot =
     projectCtx.boardYamlPath && fs.existsSync(projectCtx.boardYamlPath)
       ? path.dirname(projectCtx.boardYamlPath)
@@ -65,7 +88,7 @@ async function resolveOrchestratorTarget(
 
   const app = await pickAppPath(fallbackExample);
   if (!app) return undefined;
-  return { appArg: [app], cwd: westCwd(), active: false };
+  return { appArg: [app], cwd: root, active: false };
 }
 
 // ── CLI-backed orchestrator workflow (tan build/image/flash/clean/renode) ─────
@@ -73,6 +96,7 @@ async function resolveOrchestratorTarget(
 async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/peripheral-io/gpio-button-led",
+    "build this project",
   );
   if (!target) return;
   // `tan build` (cli.rs BuildArgs) has no positional app_path — project scope
@@ -88,6 +112,7 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
 async function alpImage(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
+    "build a flash image",
   );
   if (!target) return;
   await runAlpInTerminal(context, ["image", ...target.appArg], {
@@ -99,6 +124,7 @@ async function alpImage(context: vscode.ExtensionContext): Promise<void> {
 async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
+    "flash this device",
   );
   if (!target) return;
   await runAlpInTerminal(context, ["flash", ...target.appArg], {
@@ -110,6 +136,7 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
 async function alpClean(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
+    "clean this project",
   );
   if (!target) return;
   await runAlpInTerminal(context, ["clean", ...target.appArg], {
@@ -121,6 +148,7 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
 async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
+    "run this project in Renode",
   );
   if (!target) return;
   await runAlpInTerminal(context, ["renode", ...target.appArg], {
@@ -142,6 +170,18 @@ function westUpdate(): void {
 async function westRunNativeSim(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  // Its OWN guard, not the resolver's: this command never calls
+  // `resolveOrchestratorTarget`, so deleting either one leaves the other path
+  // still spawning `tan` with an inherited cwd. It sits ahead of the overlay
+  // generation so that `tan generate` never runs against an arbitrary
+  // directory either.
+  const root = westCwd();
+  if (!root) {
+    await notify(
+      planPrecondition("noWorkspace", { operation: "run this project" }),
+    );
+    return;
+  }
   await ensureNativeSimOverlay(context);
   // Route through the CLI (`tan run`) so the SDK owns the board target and
   // build dir — a bare `west build -t run` has no `-b`/`-d`, so it aborts on an
@@ -155,7 +195,7 @@ async function westRunNativeSim(
   // action (`tan flash`, alp.westAlpFlash).
   await runAlpInTerminal(context, ["run"], {
     name: "Alp Run (native_sim)",
-    cwd: westCwd(),
+    cwd: root,
   });
 }
 

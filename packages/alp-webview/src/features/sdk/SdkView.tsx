@@ -14,7 +14,6 @@ import type {
   SdkRelease,
   SdkStatus,
 } from "../../types";
-import { postMessage } from "../../vscode";
 import styles from "./SdkView.module.css";
 import { useSdk } from "./useSdk";
 
@@ -84,7 +83,6 @@ interface SdkRow {
 function buildRows(
   releases: SdkRelease[] | null,
   locals: LocalSdkEntry[],
-  activePath: string | null,
 ): SdkRow[] {
   const rows: SdkRow[] = [];
   const usedPaths = new Set<string>();
@@ -325,7 +323,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     );
   }
 
-  const rows = buildRows(releases, sdk.localEntries, sdk.activePath);
+  const rows = buildRows(releases, sdk.localEntries);
   // Keep the list short: show the two newest releases (plus the active one, so
   // it's never hidden), collapse the rest behind a toggle.
   const VISIBLE_RELEASES = 2;

@@ -101,9 +101,14 @@ export class BuildTreeProvider
 
   private updateItems(state: AlpIdeState): void {
     const { workspaceRoot, boardYamlExists, westInitialized } = state.workspace;
+    const { bootstrapRunning } = state.setup;
     // Gate on the OPEN project, not just the shared ~/zephyrproject workspace:
-    // west commands run in the project folder, so they need a board.yaml too.
-    const enabled = westInitialized && boardYamlExists;
+    // west commands run in the project folder, so they need a board.yaml too —
+    // and never while a bootstrap is still populating that workspace.
+    // `.west/config` is written at the START of `tan bootstrap`, so
+    // `westInitialized` alone goes true minutes before the module tree is
+    // fetched and these rows would launch a build over half of it.
+    const enabled = westInitialized && boardYamlExists && !bootstrapRunning;
 
     // "Preview Build Plan" stays available even before west init — the view
     // explains its own empty/error states (no SDK, no board.yaml, …).
@@ -133,7 +138,20 @@ export class BuildTreeProvider
       // No buildable project: one actionable call-to-action instead of eight
       // inert (or misleading, home-dir) build rows.
       let cta: BuildItem;
-      if (!workspaceRoot) {
+      if (bootstrapRunning) {
+        // Checked FIRST: mid-run the on-disk answers below are whatever the
+        // half-finished bootstrap has written so far, so they would offer
+        // "install build dependencies" for the install that is already
+        // running, or claim the board.yaml is missing. The only correct
+        // action is to wait; the Hub shows the run's progress.
+        cta = new BuildItem(
+          "Bootstrapping…",
+          "workspace is still being set up",
+          new vscode.ThemeIcon("sync"),
+          { command: "alp.openHub", title: "Open Hub" },
+          true,
+        );
+      } else if (!workspaceRoot) {
         cta = new BuildItem(
           "No project open",
           "create or open a project",
