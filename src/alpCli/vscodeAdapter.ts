@@ -22,7 +22,12 @@ import {
   resolveAlpBinary,
   runAlpAsync,
 } from "./adapterCore";
-import { CliInUseError, downloadFile } from "./download";
+import {
+  CliInUseError,
+  ProxyConfig,
+  ProxyError,
+  downloadFile,
+} from "./download";
 import { BinarySource, CliOutcome } from "./models";
 import {
   SUPPORTED_CLI_VERSION,
@@ -171,8 +176,57 @@ function cliInUsePlan(
   });
 }
 
+/**
+ * The plan for a download that never got past the PROXY. Returns null for every
+ * other failure, so the two catch sites below keep their own network wording.
+ *
+ * Split out from them for the same reason as `cliInUsePlan` and branched on the
+ * TYPE, not the sentence. Without it a blocked CONNECT — a 407, a proxy that
+ * can't be resolved, a TLS-inspecting proxy this download won't trust — reads
+ * as "Couldn't download the tan CLI … retry when you're back online", which
+ * sends the customer to their Wi-Fi for a problem the proxy caused and makes
+ * the CLI look broken. `ProxyError.message` says "proxy", names its host:port,
+ * and never carries the `user:password@`; the errno/status rides on `detail`,
+ * which the presenter writes to the channel only.
+ */
+function proxyFailurePlan(
+  error: unknown,
+  operation: string,
+): NotificationPlan | null {
+  if (!(error instanceof ProxyError)) {
+    return null;
+  }
+  return planFailure({
+    operation,
+    cause: error.message,
+    detail: error.detail,
+    // Settings first: the remedy is nearly always a proxy URL (or credentials
+    // in it), not another attempt at the same blocked hop.
+    actions: [
+      { id: "openSettings", arg: "http.proxy" },
+      { id: "updateCli", title: "Retry" },
+    ],
+  });
+}
+
 function cacheDirFor(context: vscode.ExtensionContext): string {
   return path.join(context.globalStorageUri.fsPath, "cli");
+}
+
+/**
+ * VS Code's OWN proxy settings, read here because `src/alpCli/download.ts` must
+ * stay `vscode`-free (its tests run under plain `node --test`). Read per call,
+ * not memoized, so changing `http.proxy` takes effect on the next download
+ * without a reload. The `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` environment
+ * variables are deliberately NOT forwarded from here — `download.ts` reads
+ * `process.env` itself, which is not a `vscode` dependency.
+ */
+function proxySettings(): ProxyConfig {
+  const httpConfig = vscode.workspace.getConfiguration("http");
+  return {
+    proxy: httpConfig.get<string>("proxy", "").trim(),
+    strictSSL: httpConfig.get<boolean>("proxyStrictSSL", true),
+  };
 }
 
 function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
@@ -216,7 +270,10 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     fileExists: fs.existsSync,
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
-    download: downloadFile,
+    // Settings read at call time (see `proxySettings`) so the seam's signature
+    // stays the plain `(url, dest, signal)` every other caller and test uses.
+    download: (url, dest, signal) =>
+      downloadFile(url, dest, signal, proxySettings()),
     chmodExec: (p) => fs.chmodSync(p, 0o755),
   };
 }
@@ -379,8 +436,11 @@ export async function ensureTanCliProvisioned(
     const detail = error instanceof Error ? error.message : String(error);
     notifyAsync(
       // A pinned-open binary is neither of the two sentences below: it is not
-      // an outage, and the installed CLI is not what's broken.
+      // an outage, and the installed CLI is not what's broken. Nor is a proxy
+      // that blocked the transfer — "retry when you're back online" is the
+      // wrong advice when the network is fine and the proxy said no.
       cliInUsePlan(error, "Provisioning the tan CLI") ??
+        proxyFailurePlan(error, "Provisioning the tan CLI") ??
         planFailure({
           operation: "Provisioning the tan CLI",
           cause: updatingStaleCache
@@ -850,6 +910,8 @@ export async function updateAlpCli(
       // The one failure a retry cannot clear — a live process is holding the
       // installed binary, so the same rename fails the same way until it exits.
       cliInUsePlan(error, "Updating the tan CLI") ??
+        // …and the one a retry cannot clear either until the proxy changes.
+        proxyFailurePlan(error, "Updating the tan CLI") ??
         planFailure({
           operation: "Updating the tan CLI",
           cause: "The tan CLI update failed.",

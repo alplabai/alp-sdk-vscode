@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **The tan CLI download now goes through a proxy when there is one.** Node
+  honours no proxy variable of its own and the extension never read VS Code's
+  `http.proxy`, so on a machine behind a corporate proxy the download could not
+  succeed at all — and the customer was told "Couldn't download the tan CLI …
+  retry when you're back online", advice for an outage that was not happening.
+  The download now resolves `http.proxy` first (a setting the user chose
+  deliberately outranks the environment), then `HTTPS_PROXY` / `https_proxy` for
+  https and `HTTP_PROXY` / `http_proxy` for http, with `NO_PROXY` / `no_proxy`
+  bypassing either — `*`, an exact host, a leading-dot suffix, and an optional
+  `:port`. https is tunnelled with `CONNECT` and http is sent in absolute form;
+  `http.proxyStrictSSL` maps to TLS `rejectUnauthorized` inside the tunnel, so a
+  TLS-inspecting proxy can be accepted, while a DIRECT download keeps full
+  certificate verification either way (this transfer has no checksum of its own,
+  so TLS is the only thing vouching for the bytes). No new dependency: this is
+  `http.request({ method: "CONNECT" })` plus `tls.connect({ socket })`.
+- **A proxy failure now says "proxy".** A refused or unresolvable proxy names
+  the proxy and says it could not be reached; a rejected `CONNECT` names the
+  status, with its own sentence for `407 Proxy Authentication Required`; a
+  certificate rejection through the tunnel points at `http.proxyStrictSSL`. All
+  three offer Settings before Retry, because retrying a blocked hop cannot work.
+  Proxy credentials are stripped from every message, error and output-channel
+  line — a proxy URL may be `user:password@host:port`, and the output channel is
+  what customers paste into issue reports.
+
 - **Documented what the `native_sim` debug session actually does**, after
   driving the generated configuration through a real CodeLLDB adapter rather
   than reasoning about it: the breakpoint verifies and hits inside the
