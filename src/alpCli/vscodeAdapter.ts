@@ -22,7 +22,7 @@ import {
   resolveAlpBinary,
   runAlpAsync,
 } from "./adapterCore";
-import { downloadFile } from "./download";
+import { CliInUseError, downloadFile } from "./download";
 import { BinarySource, CliOutcome } from "./models";
 import {
   SUPPORTED_CLI_VERSION,
@@ -38,7 +38,7 @@ import {
   shouldFetchManagedCli,
   shouldWarnCliAhead,
 } from "./service";
-import { ActionId, NotifyAction } from "../notify/models";
+import { ActionId, NotificationPlan, NotifyAction } from "../notify/models";
 import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
@@ -64,11 +64,31 @@ function clip(text: string, max = 4000): string {
  * so envelope/terminal commands (build --plan, validate, …) use the same SDK the
  * user selected (alpSdk.path / per-project override) rather than the CLI's own
  * cwd-based discovery. No-op when nothing resolves or the caller already set it.
+ *
+ * The fallthrough is LOGGED, because it is not a no-op from tan's side: with no
+ * `--sdk-root` tan discovers an SDK itself, and from tan 0.4.0 that discovery
+ * walks UP to an enclosing checkout — so a cwd that used to fail cleanly can
+ * instead resolve to an ancestor SDK nobody selected, and every downstream
+ * result (validation, generation, the build plan) silently comes from it.
+ * Channel only: this happens on every unpinned invocation, so a toast would
+ * nag. It is deliberately a LOG and not a second resolution rule here — the
+ * extension must READ tan's answer, never compute a competing one (a
+ * TypeScript copy of tan's walk-up would drift from it). Reporting the SDK
+ * root tan actually used is a tan-side envelope ask.
  */
 function withSdkRoot(args: string[]): string[] {
   if (args.includes("--sdk-root")) return args;
   const sdkRoot = collectProjectContext().sdkRoot;
-  return sdkRoot ? ["--sdk-root", sdkRoot, ...args] : args;
+  if (!sdkRoot) {
+    log(
+      "[cli] no active SDK resolved — running without --sdk-root; tan will " +
+        "discover an SDK from the working directory (0.4.0+ searches parent " +
+        "directories too, so it may pick an enclosing checkout). Set alpSdk.path " +
+        "to pin one.",
+    );
+    return args;
+  }
+  return ["--sdk-root", sdkRoot, ...args];
 }
 
 /** Session memo so we probe PATH / download at most once per window. */
@@ -105,6 +125,45 @@ function downloadedBytes(filePath: string): string {
   } catch {
     return "unknown size";
   }
+}
+
+/**
+ * The plan for the ONE download failure whose remedy is not "try again": the
+ * installed binary is pinned open by a live process (`CliInUseError`), so both
+ * rename-aside names failed. Returns null for every other failure, leaving each
+ * call site its own network wording.
+ *
+ * Owned here rather than duplicated at the two catch sites below, and branched
+ * on the TYPE rather than the sentence. Three things it fixes at once:
+ *
+ * - the customer sentence reaches the TOAST as `cause`. It used to ride on
+ *   `detail`, which the presenter writes only to the output channel, so the one
+ *   instruction that resolves this was behind a "Show Output" click;
+ * - the toast no longer says "retry when you're back online". The network was
+ *   never the problem, and reading a lock as an outage sends the customer to
+ *   their Wi-Fi;
+ * - no "Retry" button. `alp.updateCli` re-runs the identical rename against the
+ *   identical holder and fails identically — a button that cannot work. Reload
+ *   Window is the click that DOES: it drops this window's own handles (the
+ *   `runAlpInTerminal` mid-build collision `moveAside` documents), and
+ *   activation re-runs `ensureTanCliProvisioned`, so the update retries itself
+ *   once the holder is gone. The presenter appends "Show Output" for the errno.
+ */
+function cliInUsePlan(
+  error: unknown,
+  operation: string,
+): NotificationPlan | null {
+  if (!(error instanceof CliInUseError)) {
+    return null;
+  }
+  return planFailure({
+    operation,
+    cause: error.message,
+    // The raw `EBUSY/EPERM … rename '<path>' -> '<path>.old'` — channel only,
+    // and the reason the sentence above carries neither.
+    detail: error.detail,
+    actions: [{ id: "reloadWindow" }],
+  });
 }
 
 function cacheDirFor(context: vscode.ExtensionContext): string {
@@ -303,22 +362,25 @@ export async function ensureTanCliProvisioned(
     // it in the toast, where it read as noise instead of a remedy.
     const detail = error instanceof Error ? error.message : String(error);
     notifyAsync(
-      planFailure({
-        operation: "Provisioning the tan CLI",
-        cause: updatingStaleCache
-          ? `Couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION}. The installed version still works — retry when you're back online.`
-          : "Couldn't download the tan CLI. Build and validate commands need it — retry when you're back online, or point alpSdk.cliPath at a local build.",
-        detail,
-        // `alp.updateCli` re-runs exactly this download, so the presenter can
-        // execute the retry itself; a caller-handled `retry` id would be a dead
-        // button here because nothing awaits this plan.
-        actions: updatingStaleCache
-          ? [{ id: "updateCli", title: "Retry" }]
-          : [
-              { id: "updateCli", title: "Retry" },
-              { id: "openSettings", arg: "alpSdk.cliPath" },
-            ],
-      }),
+      // A pinned-open binary is neither of the two sentences below: it is not
+      // an outage, and the installed CLI is not what's broken.
+      cliInUsePlan(error, "Provisioning the tan CLI") ??
+        planFailure({
+          operation: "Provisioning the tan CLI",
+          cause: updatingStaleCache
+            ? `Couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION}. The installed version still works — retry when you're back online.`
+            : "Couldn't download the tan CLI. Build and validate commands need it — retry when you're back online, or point alpSdk.cliPath at a local build.",
+          detail,
+          // `alp.updateCli` re-runs exactly this download, so the presenter can
+          // execute the retry itself; a caller-handled `retry` id would be a
+          // dead button here because nothing awaits this plan.
+          actions: updatingStaleCache
+            ? [{ id: "updateCli", title: "Retry" }]
+            : [
+                { id: "updateCli", title: "Retry" },
+                { id: "openSettings", arg: "alpSdk.cliPath" },
+              ],
+        }),
     );
   }
 }
@@ -736,16 +798,19 @@ export async function updateAlpCli(
       return;
     }
     notifyAsync(
-      planFailure({
-        operation: "Updating the tan CLI",
-        cause: "The tan CLI update failed.",
-        // HTTP status / errno / asset URL — logged, never rendered.
-        detail: error instanceof Error ? error.message : String(error),
-        // Almost always transient (network), so offer the retry; `alp.updateCli`
-        // IS this command, so the presenter can run it without this plan being
-        // awaited.
-        actions: [{ id: "updateCli", title: "Retry" }],
-      }),
+      // The one failure a retry cannot clear — a live process is holding the
+      // installed binary, so the same rename fails the same way until it exits.
+      cliInUsePlan(error, "Updating the tan CLI") ??
+        planFailure({
+          operation: "Updating the tan CLI",
+          cause: "The tan CLI update failed.",
+          // HTTP status / errno / asset URL — logged, never rendered.
+          detail: error instanceof Error ? error.message : String(error),
+          // Almost always transient (network), so offer the retry;
+          // `alp.updateCli` IS this command, so the presenter can run it
+          // without this plan being awaited.
+          actions: [{ id: "updateCli", title: "Retry" }],
+        }),
     );
   }
 }

@@ -45,6 +45,13 @@ jobs:
       - name: Compile (extension + CLI bundle + webview)
         run: pnpm run compile
 
+      - name: Typecheck (extension + core + webview)
+        # Must follow Compile: `@alp-sdk/core/*` resolves through
+        # packages/alp-core/dist, which `tsc --build` produces. Its own job here
+        # is packages/alp-webview — `vite build` strips types without checking
+        # them, so the webview is otherwise never type-checked at all.
+        run: pnpm run typecheck
+
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 

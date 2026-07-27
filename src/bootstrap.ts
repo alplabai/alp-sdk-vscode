@@ -43,6 +43,7 @@ import {
   prerequisitesMissingIssue,
 } from "./alpCli/service";
 import { runAlpInTerminal } from "./alpCli/vscodeAdapter";
+import { BOOTSTRAP_RUN_NAME } from "./ideHub/messages";
 import { CANCELLED, runAlpWithProgress } from "./loader";
 import { planFailure, planPrecondition } from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
@@ -192,7 +193,7 @@ export function registerBootstrapCommand(
       // all fall through to the real run below.
     }
     return runAlpInTerminal(context, ["bootstrap"], {
-      name: "Alp Bootstrap",
+      name: BOOTSTRAP_RUN_NAME,
       cwd: workspaceRoot,
     });
   };

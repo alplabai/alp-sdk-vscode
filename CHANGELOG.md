@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **A Windows upgrade could strand a customer on the old `tan` CLI.** Replacing
+  the installed binary renames it aside first, and that rename fails when the
+  `.old` slot is itself held — measured here as a hard, non-transient failure,
+  so a retry loop would only ever have failed on customer machines. The move now
+  falls back to a uniquely-suffixed name, and the leftover sweep can no longer
+  abort the download by throwing on a file it cannot delete (it ran first, so a
+  single locked leftover killed the upgrade before a byte was fetched). When the
+  binary genuinely cannot be replaced the failure is now explicit, with the
+  remedy on the toast rather than only in the log: closing the other window
+  holding it is what helps, not retrying the download.
+- **An E1M-AEN701 owner could not pick their own module.** The fallback hardware
+  list used before an SDK resolves — the first-run path — was missing that
+  released Alif Ensemble E7 module, and the wizard blocks until a module is
+  chosen, so the nearest option was an E8 part. `tan init --som` then wrote the
+  wrong silicon into `board.yaml`. The list, the shipped `board.yaml` snippets
+  and the editor's SKU completion now all offer every SoM the SDK ships, and a
+  test pins them against the SDK's own manifests instead of asserting shape.
+- Six build and flash commands no longer run the CLI when no folder is open;
+  they say what to open, as bootstrap and the Toolchain Doctor already did.
+- Build and Flash are no longer offered while a bootstrap is still running.
+  tan 0.4.0 stops reusing a workspace across a patch-level Zephyr bump, so that
+  window grows from seconds to minutes.
+- `tan 0.4.0-rc.1` no longer compares equal to `0.4.0`, and a newer-than-pinned
+  CLI reports honestly instead of silently.
+- An upgrade from a build older than 0.3.7 is no longer reported as a first
+  install. The marker that distinguishes them did not exist before 0.3.7, so
+  state left by the older build is what tells them apart — without it the whole
+  existing customer base was misreported on the one activation where knowing it
+  was an upgrade matters.
+- `pnpm run typecheck` now type-checks the extension, the shared core and the
+  webview, and runs in CI. The webview built with no type checking at all, and
+  the fast check people reach for (esbuild) strips types without checking them —
+  it passed a null-dereference that `tsc` caught.
+
 - **A new customer can now find the getting-started walkthrough.** It was
   promoted only to workspaces that already contained a `board.yaml` — the file
   its own third step exists to create — so the one guided path through setup was

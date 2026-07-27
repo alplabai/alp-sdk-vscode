@@ -12,13 +12,14 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log } from "../util";
+import { isRunInTerminalActive, log } from "../util";
 import {
   resolveWestBinary,
   venvWestExists,
   westWorkspaceInitialized,
 } from "../environment/vscodeAdapter";
 import { probeTanVersion } from "../alpCli/vscodeAdapter";
+import { BOOTSTRAP_RUN_NAME } from "./messages";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -114,6 +115,22 @@ async function commandVersion(
 /** Default directory for versioned SDK installations. */
 export function sdkCacheRoot(): string {
   return path.join(os.homedir(), ".alp", "sdk");
+}
+
+/**
+ * THE PROBE (the only impure half of the readiness fix): is a bootstrap still
+ * executing right now? Its answer travels to the surfaces in
+ * `SetupStatus.bootstrapRunning` (below), and the decision that uses it is
+ * pure and lives in `@alp-sdk/core/statusReadiness/service`.
+ *
+ * No timer, no extra bookkeeping: `runInTerminal` already reserves the name
+ * synchronously at dispatch and releases it on the real task-end event, so
+ * this is exact for the whole run — including the not-yet-confirmed-started
+ * window, which is precisely when a naive "is the terminal open?" check would
+ * say no.
+ */
+export function bootstrapRunning(): boolean {
+  return isRunInTerminalActive(BOOTSTRAP_RUN_NAME);
 }
 
 export async function queryAlpIdeState(
@@ -240,6 +257,12 @@ export async function queryAlpIdeState(
     setup: {
       pythonAvailable,
       westAvailable,
+      // Probed on every refresh so ONE state carries it to every surface (the
+      // status bar, the Build & Flash tree, the Hub) — the gate is only worth
+      // anything where the action lives, and re-probing per surface is how
+      // they drift. Refreshed at both ends of a run: src/extension.ts
+      // re-derives state on the task-start and terminal-finish events.
+      bootstrapRunning: bootstrapRunning(),
       lastBootstrapAt,
       toolVersions: {
         python: pythonVersion,

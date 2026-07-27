@@ -21,6 +21,37 @@ import * as https from "https";
 import * as path from "path";
 import { pipeline } from "stream/promises";
 
+/**
+ * The installed binary could not be moved aside under ANY name, so the update
+ * cannot land: a live process is holding it open.
+ *
+ * A distinct type rather than a string the caller sniffs, because the caller
+ * must present this one BACKWARDS from every other download failure — nothing
+ * changes until the holder exits, so "Retry" re-runs the identical rename for
+ * the identical result (see `src/alpCli/vscodeAdapter.ts`).
+ *
+ * `message` is the CUSTOMER sentence and stays clean on purpose: `planFailure`
+ * (`src/notify/service.ts`) demotes a `cause` carrying an errno or an absolute
+ * path into the channel and replaces the toast with a generic
+ * "<operation> failed." — which is exactly the toast this type exists to
+ * prevent. The raw errno rides on `detail`, which the caller passes to
+ * `planFailure.detail` (channel only).
+ */
+export class CliInUseError extends Error {
+  /** Raw `EBUSY: resource busy or locked, rename …` text — channel only. */
+  readonly detail: string;
+
+  constructor(detail: string) {
+    super(
+      "The tan CLI that's already installed is in use, so it can't be replaced. " +
+        "Close any other VS Code windows using it, let any running build finish, " +
+        "then reload this window.",
+    );
+    this.name = "CliInUseError";
+    this.detail = detail;
+  }
+}
+
 const MAX_REDIRECTS = 5;
 // Resets on every byte received — catches a connection that goes silent
 // mid-transfer (the "progress notification spins forever" symptom).
@@ -52,8 +83,15 @@ function get(url: string, signal?: AbortSignal): Promise<http.IncomingMessage> {
 /** Best-effort removal of stale artifacts next to `destFile`: a `*.tmp` left
  *  by an interrupted download (extension host killed mid-transfer), or a
  *  `*.old` left by the rename-aside below when it couldn't be deleted because
- *  the previous binary was still running. Never throws — a leftover that's
- *  still locked just survives to the next sweep. */
+ *  the previous binary was still running.
+ *
+ *  Never throws, per entry: on Windows `rmSync` raises EPERM/EBUSY on a file
+ *  that is still running or still has an open handle, and `force` does not
+ *  cover that (it only swallows ENOENT). `maxRetries` doesn't help either —
+ *  the sharing violation lasts as long as the holder lives, it isn't a race.
+ *  This sweep runs before a single byte is fetched, so letting one locked
+ *  leftover escape would kill the whole upgrade; it survives to the next
+ *  sweep instead. */
 function sweepLeftovers(destFile: string): void {
   const dir = path.dirname(destFile);
   let entries: string[];
@@ -68,8 +106,50 @@ function sweepLeftovers(destFile: string): void {
       entry.startsWith(prefix) &&
       (entry.endsWith(".tmp") || entry.endsWith(".old"))
     ) {
-      fs.rmSync(path.join(dir, entry), { force: true });
+      try {
+        fs.rmSync(path.join(dir, entry), { force: true });
+      } catch {
+        // Still locked. Leave it; the next sweep gets it.
+      }
     }
+  }
+}
+
+/** Move an existing `destFile` out of the way so the fresh binary can be
+ *  renamed into its place.
+ *
+ *  On Windows, renaming a running executable's file IS permitted — the running
+ *  process keeps its handle on the renamed file — so the *source* is never the
+ *  problem. The *destination* is: if `<dest>.old` from an earlier update is
+ *  itself running (or otherwise held open), the rename fails with a sharing
+ *  violation (EBUSY in the field, EPERM in a controlled repro; don't key on the
+ *  errno). That is what overwriting in place would hit too, and is the
+ *  "EBUSY: resource busy or locked, rename 'tan.exe' -> 'tan.exe.old'" that
+ *  blocked upgrades. It is NOT transient while the holder lives, so retrying
+ *  the same name is pointless — retry once with a unique name, which no live
+ *  process can be holding. `sweepLeftovers` collects it on a later run.
+ *
+ *  A missing `destFile` (ENOENT) is the first-ever download: expected, silent,
+ *  and not a reason to create a uniquely-named nothing. */
+function moveAside(destFile: string): void {
+  try {
+    fs.renameSync(destFile, `${destFile}.old`);
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return;
+    }
+  }
+  try {
+    fs.renameSync(destFile, `${destFile}.${process.pid}.${Date.now()}.old`);
+  } catch (error) {
+    // Genuinely stuck: the binary we're replacing can't be moved at all. Fail
+    // loudly rather than silently leaving the customer on the old CLI — and
+    // TAGGED, so the caller can drop the useless "Retry" instead of matching
+    // on this sentence. The errno stays off the sentence and on `detail`.
+    throw new CliInUseError(
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 
@@ -132,19 +212,10 @@ async function attempt(
       // window resolving "cached" spawns it and gets EACCES.
       fs.chmodSync(tmpFile, 0o755);
     }
-    try {
-      // Move any existing binary aside instead of overwriting it in place.
-      // On Windows, renaming a running executable's file IS permitted (the
-      // running process keeps its handle on the renamed file); overwriting
-      // it directly is not — that's the EPERM `runAlpInTerminal` mid-build +
-      // "Update the tan CLI" collision this exists to avoid. A missing
-      // destFile (first-ever download) is expected and ignored.
-      fs.renameSync(destFile, `${destFile}.old`);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
-      }
-    }
+    // Move any existing binary aside instead of overwriting it in place —
+    // overwriting a running executable is the EPERM `runAlpInTerminal`
+    // mid-build + "Update the tan CLI" collision this exists to avoid.
+    moveAside(destFile);
     fs.renameSync(tmpFile, destFile);
   } catch (error) {
     fs.rmSync(tmpFile, { force: true });
@@ -158,8 +229,12 @@ async function attempt(
  * connection drop mid-transfer, an idle or wall-clock timeout, a byte count
  * that disagrees with `content-length`, or a 0-byte body. Never leaves a
  * partial file at `destFile` — every failure path removes its temp file. Any
- * existing `destFile` is moved aside (`.old`) rather than overwritten in
- * place, so this is safe even while the previous binary is still running.
+ * existing `destFile` is moved aside (`.old`, or a uniquely-suffixed `.old`
+ * when that name is locked) rather than overwritten in place, so this is safe
+ * even while the previous binary is still running. It rejects with a
+ * `CliInUseError` only if both moves fail, which means the installed CLI is
+ * genuinely pinned open — the old binary is left working and the message says
+ * what to close.
  *
  * Pass `signal` (bridged from a progress notification's CancellationToken) to
  * make the download abortable: the request is destroyed, `pipeline` rejects,

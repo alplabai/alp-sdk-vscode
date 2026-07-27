@@ -20,6 +20,7 @@ import {
 import * as vscode from "vscode";
 import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import { danglingWestManifest } from "./environment/vscodeAdapter";
+import { BOOTSTRAP_RUN_NAME } from "./ideHub/messages";
 import type { NotificationPlan } from "./notify/models";
 import { planFailure, planPrecondition, planSuccess } from "./notify/service";
 import { notify, notifyAsync } from "./notify/vscodeAdapter";
@@ -365,7 +366,10 @@ async function offerBootstrapFix(
     return;
   }
   await runAlpInTerminal(context, ["doctor", "--build", "--fix"], {
-    name: "Alp Bootstrap",
+    // Same run name as `tan bootstrap` (src/bootstrap.ts) on purpose: this
+    // fix bootstraps too, so it must take the same reservation and light the
+    // same "bootstrapping, don't build yet" gate.
+    name: BOOTSTRAP_RUN_NAME,
     cwd,
   });
 }

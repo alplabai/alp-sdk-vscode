@@ -50,6 +50,15 @@ export interface ToolVersions {
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
+  /**
+   * True while a `tan bootstrap` run is still executing in a terminal.
+   * `workspace.westInitialized` goes true at the START of that run (the first
+   * write of `.west/config`), so any readiness a surface renders from it alone
+   * is wrong for the whole run — the workspace is still being fetched. Every
+   * surface that renders "ready" or enables Build/Flash must AND in
+   * `!bootstrapRunning`, or it will disagree with the status bar.
+   */
+  bootstrapRunning: boolean;
   /** ISO timestamp of the last time the user triggered bootstrap. Null if never. */
   lastBootstrapAt: string | null;
   /** Raw version strings for each build tool, null when not found. */
