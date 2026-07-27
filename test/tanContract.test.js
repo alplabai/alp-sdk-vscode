@@ -130,15 +130,30 @@ function scanGatedCodes(roots) {
  * that passes on any drift, so the predicate stays far short of the six-key
  * shape, `ok`/`exitCode` agreement and `parseEnvelope` the tests below assert.
  *
- * `exitCode` and `issues` are in the predicate purely to exclude documentation
- * prose: a block like `"commands": {"build": {"command": "tan build",
- * "description": "…"}}` is a plausible neighbour in an artefact whose layout
- * #106 has not frozen, and `command`-alone would drag it in and red the gate
- * over a doc string. `exitCode` alone was not enough — a docs block that
- * documents its own exit code clears it — so `issues` is required too. All
- * three together are still far short of the six-key shape, the `ok`/`exitCode`
- * agreement and `parseEnvelope` the tests below assert, so this stays a
- * discovery heuristic and not a restatement of the thing under test.
+ * `exitCode` is in the predicate purely to exclude documentation prose: a block
+ * like `"commands": {"build": {"command": "tan build", "description": "…"}}` is
+ * a plausible neighbour in an artefact whose layout #106 has not frozen, and
+ * `command`-alone would drag it in and red the gate over a doc string.
+ *
+ * `issues` was ADDED here and then REVERTED, and the reason is the rule for
+ * anything else anyone is tempted to add. It did close a false red — a docs
+ * block that documents its own exit code clears `command`+`exitCode`. But
+ * `isEnvelope` requires exactly `command`/`ok`/`exitCode`/`issues`, so putting
+ * `issues` in the *discovery* predicate meant an envelope whose `issues` tan
+ * had renamed was no longer discovered at all: the family read as absent, the
+ * assertion SKIPPED, the gate went green, and the skip line blamed #106's open
+ * layout for a rename tan actually made. Driven: renaming `issues` to
+ * `problems` in a golden went `fail 1` to `pass 5 skipped 1`. That is the exact
+ * fail-open this file exists to catch, and it is the whole-envelope case, not
+ * one field — `envelope?.issues ?? []` at three sites in `src/alpCli/service.ts`
+ * silently yields `[]`.
+ *
+ * **A discovery key can never be an asserted key.** Whatever discovery filters
+ * on becomes invisible to every assertion downstream, so the cost of closing a
+ * false red that way is a false green. For a drift gate that trade is always
+ * wrong: a false red is a bug report, a false green is a silent regression.
+ * The docs-block false red stays until #106 freezes the layout and discovery
+ * can be anchored to the declared container key instead of a shape guess.
  *
  * A candidate is not descended into, so a nested `data` never double-counts.
  */
@@ -146,11 +161,7 @@ function findEnvelopes(node, out = []) {
   if (Array.isArray(node)) {
     for (const v of node) findEnvelopes(v, out);
   } else if (node && typeof node === "object") {
-    if (
-      typeof node.command === "string" &&
-      typeof node.exitCode === "number" &&
-      Array.isArray(node.issues)
-    ) {
+    if (typeof node.command === "string" && typeof node.exitCode === "number") {
       out.push(node);
     } else {
       for (const v of Object.values(node)) findEnvelopes(v, out);
@@ -184,18 +195,24 @@ function findEnvelopes(node, out = []) {
  * layout is frozen, replace this with the one declared key and delete the
  * heuristic rather than hardening it further.
  */
-function findFrozenCodes(node) {
+function findFrozenCodes(node, envelopes = []) {
   const codes = new Set();
-  collectFrozenCodes(node, codes);
+  collectFrozenCodes(node, codes, new Set(envelopes));
   return codes.size ? codes : null;
 }
 
-function collectFrozenCodes(node, out) {
+function collectFrozenCodes(node, out, skip) {
   if (Array.isArray(node)) {
-    for (const v of node) collectFrozenCodes(v, out);
+    for (const v of node) collectFrozenCodes(v, out, skip);
     return;
   }
   if (!node || typeof node !== "object") return;
+  // A golden envelope's own payload is tan DEMONSTRATING a code, not the
+  // producer PROMISING to keep it. Without this, a `data.handledCodes` list
+  // inside a golden is unioned into the frozen set and masks a rename of every
+  // pinned code at once — driven: renaming all three in the frozen list while a
+  // golden carried the old names went `fail 2` to `pass 6`.
+  if (skip.has(node)) return;
   for (const [key, value] of Object.entries(node)) {
     if (/codes?$/i.test(key)) {
       const codes = Array.isArray(value)
@@ -212,7 +229,7 @@ function collectFrozenCodes(node, out) {
         continue;
       }
     }
-    collectFrozenCodes(value, out);
+    collectFrozenCodes(value, out, skip);
   }
 }
 
@@ -225,7 +242,7 @@ const skip =
 
 const doc = present ? JSON.parse(fs.readFileSync(assetPath, "utf8")) : null;
 const envelopes = present ? findEnvelopes(doc) : [];
-const frozenCodes = present ? findFrozenCodes(doc) : null;
+const frozenCodes = present ? findFrozenCodes(doc, envelopes) : null;
 
 /**
  * Assertions made against a SUBSTANTIVE family of the artefact's content —

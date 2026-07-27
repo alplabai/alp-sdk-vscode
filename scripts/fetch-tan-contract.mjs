@@ -150,12 +150,13 @@ try {
 try {
   JSON.parse(body);
 } catch (error) {
-  // A hard red, unlike everything above it: the asset EXISTS and is malformed.
-  // That is a contract violation, and availability had nothing to do with it.
+  // A hard red, like the unexpected-status branch above and unlike the three
+  // that warn: the asset EXISTS and is malformed. That is a contract violation,
+  // and availability had nothing to do with it.
   console.error(
     `::error::${url} returned HTTP 200 but the body is not JSON: ${why(error)}. ` +
       `The asset is published and malformed — that is a contract violation, not an ` +
-      `availability problem, and it is the one outcome here that must fail the build.`,
+      `availability problem, so it fails the build rather than warning.`,
   );
   process.exit(1);
 }
