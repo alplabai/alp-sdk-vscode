@@ -19,6 +19,22 @@ import { log, revealRunInTerminal, showOutput } from "../util";
 import { ActionId, NotificationPlan, NotifyAction } from "./models";
 
 /**
+ * This extension's own `<publisher>.<name>`, as VS Code registered it — the
+ * `openExtensions` default. Set once from `context.extension.id` in
+ * `activate`, because the presenter is a module and has no context.
+ *
+ * NOT a literal: the hardcoded copy that used to sit in the search filter read
+ * `alplabai.alp-sdk` while package.json publishes `"publisher": "AlpLabAI"`,
+ * so the Extensions view opened on nothing.
+ * `test/setupOrchestrator.service.test.js` fails if it is re-typed.
+ */
+let thisExtensionId = "";
+
+export function setExtensionId(id: string): void {
+  thisExtensionId = id;
+}
+
+/**
  * The ONLY place vscode command ids and button titles live.
  *
  * THE CONTRACT: an action WITH a `run` is executed here and `notify` returns
@@ -90,7 +106,7 @@ const ACTIONS: Record<
     run: (arg) =>
       vscode.commands.executeCommand(
         "workbench.extensions.search",
-        `@id:${arg ?? "alplabai.alp-sdk"}`,
+        `@id:${arg ?? thisExtensionId}`,
       ),
   },
   reloadWindow: {

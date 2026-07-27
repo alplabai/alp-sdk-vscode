@@ -29,13 +29,14 @@ import {
   aheadPathFixAction,
   binaryName,
   classifyUnavailable,
+  cliSkew,
   decideBinarySource,
-  isCliAhead,
   isCliBehind,
   isNativeTanVersionOutput,
   parseTanVersion,
   releaseAssetForTarget,
   shouldFetchManagedCli,
+  shouldWarnCliAhead,
 } from "./service";
 import { ActionId, NotifyAction } from "../notify/models";
 import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
@@ -88,6 +89,13 @@ export function resetResolvedBinary(): void {
  *  Persisted so a futile re-download + toast doesn't repeat on every future
  *  activation; a pin change re-arms the attempt. */
 const HEAL_GAVE_UP_KEY = "alp.tanSelfHealGaveUpPin";
+
+/** globalState key holding the installed tan version an "ahead of the pin"
+ *  warning was already raised for. Persisted (not a module flag) so the warning
+ *  is one-shot ACROSS activations, not once per window — a customer running a
+ *  newer tan on purpose must not be re-toasted every time VS Code starts. A
+ *  further upgrade stores a different version and so warns again. */
+const AHEAD_WARNED_KEY = "alp.tanAheadWarnedVersion";
 
 /** Best-effort human-readable size of a just-downloaded file, for the transfer
  *  log. Returns "unknown size" when the file can't be stat'd. */
@@ -473,21 +481,53 @@ function outdatedCliMessage(binary: ResolvedBinary, version: string): string {
   }
 }
 
-/** Message for a `path`-source tan that's NEWER than `SUPPORTED_CLI_VERSION`
- *  (only meaningful for `path`, under `alpSdk.preferGlobalCli`: a bundled/
- *  cached/local-build binary is the version this extension shipped or
- *  fetched itself, so it can never be ahead of what this build targets —
- *  only a PATH `tan` the user installed independently can be). */
+/** The CLI-side remedy for an ahead-of-the-pin tan: fetch the version this
+ *  extension build pins. That is a DOWNGRADE, so it is titled by what it does
+ *  — `cliFixAction` titles the same `updateCli` id "Update", which is correct
+ *  when the CLI is behind the pin and actively misleading when it is ahead. */
+const usePinnedCli: NotifyAction = {
+  id: "updateCli",
+  title: `Use tan ${SUPPORTED_CLI_VERSION}`,
+};
+
+/** Message for a tan that's a MINOR/MAJOR release NEWER than
+ *  `SUPPORTED_CLI_VERSION`. Not scoped to a `path` source any more: a sibling
+ *  `localBuild` checkout tracking tan-cli's dev branch, and any binary pinned
+ *  via `alpSdk.cliPath`, run ahead of the pin just as easily as a global
+ *  install does. Says what to do; carries no exit code and no resolved path
+ *  (the caller logs those to the channel).
+ *
+ *  DELIBERATELY SHORT (~135 chars). VS Code clips a toast to about two lines
+ *  and hides the rest behind a chevron, so whatever leads is the whole message
+ *  most customers read: fact, then remedy. The previous 283-char version led
+ *  with the version facts and put "Renamed issue codes or envelope fields …
+ *  would silently skip checks" in the visible middle — internal contract
+ *  vocabulary, unactionable, and it read as "something is broken" rather than
+ *  "your CLI is newer than this was tested against". That rationale now rides
+ *  on the channel line in `checkCliVersion`, where a support thread can find
+ *  it and a customer is never shown it. */
 function aheadCliMessage(version: string): string {
-  return `The tan CLI on PATH is ${version}, newer than the ${SUPPORTED_CLI_VERSION} this extension was built/tested against — some flags or envelope fields may differ from what this extension expects.`;
+  return (
+    `The tan CLI is ${version}, newer than the ${SUPPORTED_CLI_VERSION} this ` +
+    `extension was tested against. Update the extension, or use the pinned CLI.`
+  );
 }
 
 /**
- * Probe the resolved `tan` binary's version and, when it's older than the
- * version this extension targets (or isn't the native CLI at all), warn once
- * with whichever action actually fixes it — the silent cause of missing
- * features (e.g. project examples) when a stale CLI is pinned via
- * `alpSdk.cliPath` or left cached from an older extension build.
+ * Probe the resolved `tan` binary's version and warn once, with whichever
+ * action actually fixes it, when it is NOT the version this extension targets:
+ *
+ * - older (or not the native CLI at all) — the silent cause of missing features
+ *   (e.g. project examples) when a stale CLI is pinned via `alpSdk.cliPath` or
+ *   left cached from an older extension build;
+ * - a MINOR/MAJOR release NEWER than the pin — the skew that can rename an
+ *   issue code or an envelope field this extension matches on exactly, all of
+ *   which fail open (see `shouldWarnCliAhead`). One-shot per newer version via
+ *   globalState, so it cannot repeat on every activation.
+ *
+ * A PATCH-newer tan is deliberately silent (channel only): it cannot move the
+ * envelope contract, so there is nothing for the customer to do.
+ *
  * Never throws: an unresolvable binary is a no-op; a `--version` spawn
  * failure (ENOENT/EACCES/timeout — the probe couldn't even exec the binary)
  * tells us nothing about the binary's identity, so it's logged and NOT
@@ -548,7 +588,9 @@ export async function checkCliVersion(
     return;
   }
 
-  if (isCliBehind(version, SUPPORTED_CLI_VERSION)) {
+  const skew = cliSkew(version, SUPPORTED_CLI_VERSION);
+
+  if (skew === "behind") {
     log(
       `[cli] resolved tan ${version} is older than supported ${SUPPORTED_CLI_VERSION} (source: ${binary.source})`,
     );
@@ -560,33 +602,66 @@ export async function checkCliVersion(
     return;
   }
 
-  // Ahead-of-supported is only worth flagging for a `path` source: a bundled/
-  // cached/local-build binary is one this extension shipped or fetched
-  // itself, so it can't be ahead of what this build targets.
-  if (binary.source === "path" && isCliAhead(version, SUPPORTED_CLI_VERSION)) {
-    // The PATH binary's absolute path belongs in the channel, not in the toast
-    // sentence — this is the only place it is recorded for this branch.
-    log(
-      `[cli] resolved tan ${version} on PATH (${binary.command}) is newer than supported ${SUPPORTED_CLI_VERSION}`,
-    );
-    // Reinstalling is never the remedy (the installer fetches an even-newer
-    // latest); the fix depends on the flag (see `aheadPathFixAction`). Flag
-    // off → download the pinned version into the cache (which outranks PATH
-    // when off); flag on → turn the preference off so a managed copy wins.
-    const fix = aheadPathFixAction(preferGlobalCli);
-    await notify(
-      planFailure({
-        operation: "Checking the tan CLI",
-        cause: aheadCliMessage(version),
-        severity: "warning",
-        actions: [
-          fix === "updateManagedCli"
-            ? { id: "updateCli", title: "Update" }
-            : { id: "openSettings", arg: "alpSdk.preferGlobalCli" },
-        ],
-      }),
-    );
+  // ONE decision for whether the customer sees this warning, deliberately.
+  // There used to be an `if (skew === "ahead-patch") return;` early return
+  // ABOVE this gate as well — two decision points for one question, and
+  // widening that one to `|| skew === "ahead-minor"` made everything below
+  // dead code with the whole suite still green (pure-function tests never
+  // reach this branch, and a source grep cannot see that a call became
+  // unreachable). `test/alpCli.aheadWarning.test.js` drives this function.
+  if (
+    !shouldWarnCliAhead(
+      version,
+      context.globalState.get<string>(AHEAD_WARNED_KEY),
+    )
+  ) {
+    // Silent — and logged, so the silence is explainable in a support thread.
+    // A PATCH release can't move the envelope contract this extension parses,
+    // so a toast on every activation would carry no action worth taking.
+    if (skew === "ahead-patch") {
+      log(
+        `[cli] resolved tan ${version} is a patch ahead of supported ${SUPPORTED_CLI_VERSION} (source: ${binary.source}) — contract unchanged, staying quiet`,
+      );
+    }
+    return;
   }
+  // The resolved absolute path belongs in the channel, never in the toast —
+  // and so does WHY a minor bump matters at all (issue codes and envelope
+  // fields are contract vocabulary a customer cannot act on; see
+  // `aheadCliMessage`).
+  log(
+    `[cli] resolved tan ${version} (${binary.command}, source: ${binary.source}) is newer than supported ${SUPPORTED_CLI_VERSION} — this extension matches exact issue codes and unversioned envelope data fields, all of which fail open, so a rename in that release skips a check instead of erroring`,
+  );
+  await context.globalState.update(AHEAD_WARNED_KEY, version);
+  // For a PATH tan, reinstalling is never the remedy (the installer fetches an
+  // even-newer latest); the fix depends on the flag (see `aheadPathFixAction`).
+  // Flag off → download the pinned version into the cache (which outranks PATH
+  // when off); flag on → turn the preference off so a managed copy wins. Every
+  // other source takes the same fix as any other bad-binary warning.
+  const fix: NotifyAction | null =
+    binary.source === "path"
+      ? aheadPathFixAction(preferGlobalCli) === "updateManagedCli"
+        ? usePinnedCli
+        : { id: "openSettings", arg: "alpSdk.preferGlobalCli" }
+      : cliFixAction(binary.source, preferGlobalCli);
+  await notify(
+    planFailure({
+      operation: "Checking the tan CLI",
+      cause: aheadCliMessage(version),
+      severity: "warning",
+      // Order matches the sentence: "Update the extension, or use the pinned
+      // CLI." `openExtensions` is what makes the first half clickable — it was
+      // advice with no button, while the only button ran `alp.updateCli`.
+      actions: [
+        { id: "openExtensions" },
+        // `cliFixAction` titles `updateCli` "Update", which is right when the
+        // CLI is BEHIND the pin. HERE it downloads an OLDER tan, so the same
+        // title would offer a silent downgrade to a customer who just read
+        // "update the extension". Retitled to what it actually does.
+        ...(fix ? [fix.id === "updateCli" ? usePinnedCli : fix] : []),
+      ],
+    }),
+  );
 }
 
 /**
@@ -710,7 +785,11 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
     ? ["powershell", "-ExecutionPolicy", "Bypass", "-File", script]
     : ["sh", script];
   log(`[cli] $ ${argv.join(" ")}  (terminal: Install tan)`);
-  runInTerminal({ name: "Install tan", argv });
+  // Stated, not omitted: the bundled installer writes to a fixed per-user
+  // install location and never to its working directory, so it is the one
+  // run here with nothing project-specific to run in — and it is reachable
+  // with no folder open, so there would be no root to pass anyway.
+  runInTerminal({ name: "Install tan", argv, cwd: undefined });
 }
 
 /**
@@ -800,11 +879,26 @@ export async function runAlpCommand(
  * EXTENSION_CLI_INTEGRATION.md §3): live output, interactive prompts, long
  * builds. Resolves the binary first; if it can't, surfaces a one-click action
  * to point `alpSdk.cliPath` at a build.
+ *
+ * `cwd` is a REQUIRED key (its value may still be `undefined`), and that is a
+ * data-safety guard, not tidiness. Several `tan` subcommands WRITE where they
+ * run — `bootstrap` and `doctor --build --fix` create a venv and a west
+ * workspace in the working directory. An OMITTED `cwd` reached
+ * `new vscode.ProcessExecution(…, { cwd: undefined })`, so the child inherited
+ * the extension host's own directory — on Windows the VS Code install
+ * directory — and bootstrapped THERE. Two call sites shipped that way
+ * (`bootstrap.ts`, `toolchain.ts`); requiring the key is what makes the
+ * compiler, not a reviewer, find the next one. It is a required key rather
+ * than `cwd: string` because `west.ts` and `ideHub/buildPlanPanel.ts`
+ * legitimately resolve a `string | undefined` — what must never happen again
+ * is a site that never considered the question at all. A caller with no folder
+ * open has no cwd to pass and must refuse the run instead
+ * (`planPrecondition("noWorkspace", …)`), which is what both now do.
  */
 export async function runAlpInTerminal(
   context: vscode.ExtensionContext,
   args: string[],
-  options: { name: string; cwd?: string },
+  options: { name: string; cwd: string | undefined },
 ): Promise<void> {
   let binary: ResolvedBinary;
   try {

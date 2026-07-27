@@ -8,4 +8,4 @@ With an SDK active and a `board.yaml` in place, you're ready to build.
 - **Flash** programs the connected device.
 
 Build and Flash are one click away from the status bar and the **Build & Flash**
-view in the Alp IDE side bar.
+section of the **Alp IDE** panel in the side bar.

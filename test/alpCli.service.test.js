@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const {
   decideBinarySource,
   isNativeTanVersionOutput,
   parseTanVersion,
   isCliBehind,
-  isCliAhead,
+  cliSkew,
+  shouldWarnCliAhead,
   bootstrapHostVerdict,
   prerequisitesMissingIssue,
   aheadPathFixAction,
@@ -21,12 +24,53 @@ const {
 } = require("../out/alpCli/service.js");
 const { resolutionInputFromDeps } = require("../out/alpCli/adapterCore.js");
 
+/** The adapter source, whitespace-normalised. Two gates below are single
+ *  expressions in the adapter (which imports `vscode`, so it can't be loaded
+ *  here); reading the source is how they stay pinned. */
+const adapterSource = fs
+  .readFileSync(
+    path.join(__dirname, "..", "src", "alpCli", "vscodeAdapter.ts"),
+    "utf8",
+  )
+  .replace(/\s+/g, " ");
+
+/** The normalised adapter source just after the `index`th `token`, so a gate
+ *  can be pinned without pinning Prettier's exact line breaks. */
+function sourceAfter(token, index = 1, length = 160) {
+  const parts = adapterSource.split(token);
+  assert.ok(
+    parts.length > index,
+    `src/alpCli/vscodeAdapter.ts must contain ${token} (occurrence ${index})`,
+  );
+  return parts[index].slice(0, length);
+}
+
 test("parseTanVersion extracts MAJOR.MINOR.PATCH and tolerates a suffix", () => {
   assert.equal(parseTanVersion("tan 0.1.0"), "0.1.0");
   assert.equal(parseTanVersion("tan 0.1.0 (abc1234)\n"), "0.1.0");
   assert.equal(parseTanVersion("alp 0.1.14"), null); // the retired binary name
   assert.equal(parseTanVersion("tan, version 0.8.1"), null); // click-style output
   assert.equal(parseTanVersion(""), null);
+});
+
+test("parseTanVersion KEEPS a pre-release suffix, so an rc is not the final release", () => {
+  // The defect this pins: the old regex discarded everything after PATCH, so
+  // `tan 0.4.0-rc.1` parsed to "0.4.0" and compared EQUAL to the finished
+  // 0.4.0 -- every skew check went silent on a binary that predates it. With
+  // tan v0.4.0 being cut, an rc in the wild is a real shape.
+  assert.equal(parseTanVersion("tan 0.4.0-rc.1"), "0.4.0-rc.1");
+  assert.equal(parseTanVersion("tan 0.4.0-rc.1\r\n"), "0.4.0-rc.1");
+  assert.equal(parseTanVersion("tan 1.0.0-alpha.2"), "1.0.0-alpha.2");
+  // Build metadata after a space carries no SemVer precedence -- still dropped.
+  assert.equal(parseTanVersion("tan 0.4.0 (abc1234)"), "0.4.0");
+
+  // The consequence, end to end: the rc must read as OLDER than the release.
+  assert.equal(isCliBehind(parseTanVersion("tan 0.4.0-rc.1"), "0.4.0"), true);
+  assert.equal(isCliBehind(parseTanVersion("tan 0.4.0"), "0.4.0"), false);
+
+  // ...while `isNativeTanVersionOutput` still accepts it: an rc IS the native
+  // CLI, so it must not be demoted to "not on PATH".
+  assert.equal(isNativeTanVersionOutput("tan 0.4.0-rc.1"), true);
 });
 
 test("shouldFetchManagedCli fetches when nothing resolves, and self-heals a stale cache", () => {
@@ -216,12 +260,116 @@ test("prerequisitesMissingIssue: returns the error-severity issue verbatim, and 
   assert.equal(prerequisitesMissingIssue(null), null);
 });
 
-test("isCliAhead compares numeric version tuples (mirror of isCliBehind)", () => {
-  assert.equal(isCliAhead("0.1.11", "0.1.14"), false); // behind → not ahead
-  assert.equal(isCliAhead("0.1.14", "0.1.14"), false); // equal → not ahead
-  assert.equal(isCliAhead("0.2.0", "0.1.14"), true);
-  assert.equal(isCliAhead("1.0.0", "0.1.14"), true);
-  assert.equal(isCliAhead(null, "0.1.14"), false); // unknown → not ahead
+test("cliSkew is the single comparison: behind / same / ahead-patch / ahead-minor / unknown", () => {
+  assert.equal(cliSkew("0.1.11", "0.1.14"), "behind");
+  assert.equal(cliSkew("0.1.14", "0.1.14"), "same");
+  // PATCH ahead is its own verdict -- it cannot move the envelope contract.
+  assert.equal(cliSkew("0.3.2", "0.3.1"), "ahead-patch");
+  // MINOR (and MAJOR) ahead is the axis that can rename an issue code/field.
+  assert.equal(cliSkew("0.4.0", "0.3.1"), "ahead-minor");
+  assert.equal(cliSkew("1.0.0", "0.3.1"), "ahead-minor");
+
+  // Pre-release rule (SemVer §11): an rc is OLDER than its own release...
+  assert.equal(cliSkew("0.4.0-rc.1", "0.4.0"), "behind");
+  assert.equal(cliSkew("0.4.0", "0.4.0-rc.1"), "ahead-patch");
+  assert.equal(cliSkew("0.4.0-rc.1", "0.4.0-rc.1"), "same");
+  // ...but an rc of a NEWER minor is still ahead-minor: the suffix must not
+  // mask the bump that can break the contract.
+  assert.equal(cliSkew("0.4.0-rc.1", "0.3.1"), "ahead-minor");
+
+  // Anything unparseable on either side is "unknown", and every caller stays
+  // quiet on it -- a probe hiccup must never nag.
+  assert.equal(cliSkew(null, "0.3.1"), "unknown");
+  assert.equal(cliSkew("", "0.3.1"), "unknown");
+  assert.equal(cliSkew("tan-dev", "0.3.1"), "unknown");
+  assert.equal(cliSkew("0.3", "0.3.1"), "unknown");
+  assert.equal(cliSkew("0.3.1", "nonsense"), "unknown");
+
+  // isCliBehind is a thin read of it, with its legacy behaviour unchanged.
+  assert.equal(isCliBehind("0.2.0", "0.1.14"), false);
+  assert.equal(isCliBehind(null, "0.1.14"), false);
+});
+
+test("shouldWarnCliAhead: PATCH-newer is silent, MINOR/MAJOR-newer warns exactly once", () => {
+  // PATCH newer -> NO notification. A patch can't move the envelope contract,
+  // and a toast on every activation is the nagging the notify seam fought.
+  assert.equal(shouldWarnCliAhead("0.3.2", undefined, "0.3.1"), false);
+  assert.equal(shouldWarnCliAhead("0.3.9", undefined, "0.3.1"), false);
+
+  // MINOR newer -> exactly one warning (this is the headline case).
+  assert.equal(shouldWarnCliAhead("0.4.0", undefined, "0.3.1"), true);
+  // MAJOR newer counts on the same axis.
+  assert.equal(shouldWarnCliAhead("1.0.0", undefined, "0.3.1"), true);
+  // An rc of a newer minor warns too -- the rc suffix must not silence it.
+  assert.equal(shouldWarnCliAhead("0.4.0-rc.1", undefined, "0.3.1"), true);
+
+  // The one-shot gate: a SECOND activation, with the warning already recorded
+  // for this exact version, is silent.
+  assert.equal(shouldWarnCliAhead("0.4.0", "0.4.0", "0.3.1"), false);
+  // ...but a further upgrade is news again.
+  assert.equal(shouldWarnCliAhead("0.5.0", "0.4.0", "0.3.1"), true);
+  // ...and a recorded warning for a version that is no longer installed does
+  // not suppress the one for the version that IS.
+  assert.equal(shouldWarnCliAhead("0.4.0", "0.3.2", "0.3.1"), true);
+
+  // behind / same / unknown never warn.
+  assert.equal(shouldWarnCliAhead("0.3.0", undefined, "0.3.1"), false);
+  assert.equal(shouldWarnCliAhead("0.3.1", undefined, "0.3.1"), false);
+  assert.equal(shouldWarnCliAhead(null, undefined, "0.3.1"), false);
+  assert.equal(shouldWarnCliAhead("tan-dev", undefined, "0.3.1"), false);
+});
+
+test("the ahead-of-pin warning is gated on persisted state, not a module flag", () => {
+  // The pure decision above is only honest if the adapter actually asks it AND
+  // records the answer -- a module-level flag would re-warn on every
+  // activation, which is exactly what this fix removes.
+  assert.match(
+    adapterSource,
+    /const AHEAD_WARNED_KEY = "alp\.tanAheadWarnedVersion";/,
+    "the ahead warning must be keyed in globalState",
+  );
+  assert.match(
+    sourceAfter("shouldWarnCliAhead("),
+    /AHEAD_WARNED_KEY/,
+    "checkCliVersion must gate on the persisted warned-for version",
+  );
+  assert.match(
+    adapterSource,
+    /globalState\.update\( ?AHEAD_WARNED_KEY, ?version,? ?\)/,
+    "the warned-for version must be persisted, or the gate never closes",
+  );
+});
+
+test("the self-heal give-up marker is compared against the pin, so a pin bump re-arms it", () => {
+  // Traced, not assumed: HEAL_GAVE_UP_KEY stores the SUPPORTED_CLI_VERSION the
+  // self-heal proved futile for, and the gate compares the stored value to the
+  // CURRENT pin. Move the pin 0.3.1 -> 0.4.0 with "0.3.1" recorded and the
+  // comparison is false, so the download is attempted again for the new pin --
+  // correct, and no code change was needed. This test exists to keep it that
+  // way: compare against a literal version instead of the pin and the marker
+  // would outlive the pin it was recorded for, wedging every future release.
+  assert.match(
+    adapterSource,
+    /globalState\.get<string>\(HEAL_GAVE_UP_KEY\) === SUPPORTED_CLI_VERSION/,
+    "the give-up gate must compare against the current pin",
+  );
+  assert.match(
+    adapterSource,
+    /globalState\.update\( ?HEAL_GAVE_UP_KEY, ?SUPPORTED_CLI_VERSION,? ?\)/,
+    "the give-up marker must record the current pin",
+  );
+  // ...and no hardcoded version literal sits next to either give-up site.
+  for (
+    let i = 1;
+    i <= adapterSource.split("HEAL_GAVE_UP_KEY").length - 1;
+    i++
+  ) {
+    assert.doesNotMatch(
+      sourceAfter("HEAL_GAVE_UP_KEY", i, 60),
+      /"\d+\.\d+\.\d+"/,
+      "a literal version next to HEAL_GAVE_UP_KEY would outlive the pin",
+    );
+  }
 });
 
 test("aheadPathFixAction gates the ahead-tan remedy on preferGlobalCli", () => {

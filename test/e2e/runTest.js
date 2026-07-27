@@ -45,7 +45,19 @@ async function main() {
   const userDataDir = path.join(testRoot, "user-data");
   const extensionsDir = path.join(testRoot, "extensions");
 
-  const vscodeExecutablePath = await downloadAndUnzipVSCode("stable");
+  // PINNED, not "stable". VS Code 1.130.0's archive build ships no
+  // signature-verifying tool, so `--install-extension` fails for EVERY
+  // extension with:
+  //
+  //   Error while installing extension redhat.vscode-yaml: Signature
+  //   verification failed with 'ENOENT' error.
+  //
+  // and the install step below throws before a single check runs. The same
+  // install succeeds on 1.129.1 ("Extension 'redhat.vscode-yaml' v1.24.0 was
+  // successfully installed."), so this is a VS Code archive-build regression,
+  // not anything about this extension. Revisit — and move back to "stable" —
+  // once a later stable ships the verifier again.
+  const vscodeExecutablePath = await downloadAndUnzipVSCode("1.129.1");
 
   // The extension declares extensionDependencies: ["redhat.vscode-yaml"], so
   // VS Code refuses to activate it unless that extension is installed IN THE

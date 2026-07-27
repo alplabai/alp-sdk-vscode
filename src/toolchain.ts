@@ -21,7 +21,7 @@ import * as vscode from "vscode";
 import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
 import { danglingWestManifest } from "./environment/vscodeAdapter";
 import type { NotificationPlan } from "./notify/models";
-import { planFailure, planSuccess } from "./notify/service";
+import { planFailure, planPrecondition, planSuccess } from "./notify/service";
 import { notify, notifyAsync } from "./notify/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
 import { showToolchainDoctorPanel } from "./toolchain/doctorPanel";
@@ -275,9 +275,19 @@ export async function buildToolchainReportViaCli(
   // checkout is enough to keep that check passing — which is why the offer
   // never appeared for the workspace that was actually broken. Probed on both
   // branches: the local filesystem answers this whether or not the CLI ran.
-  const dangling = danglingWestManifest(collectProjectContext().sdkRoot);
+  const project = collectProjectContext();
+  const dangling = danglingWestManifest(project.sdkRoot);
 
-  const { outcome } = await runAlpCommand(context, ["doctor", "--build"]);
+  // cwd, always. `tan doctor --build` discovers the project from where it runs,
+  // and with none passed the child inherited the extension host's own working
+  // directory (on Windows, the VS Code install directory). Resolved HERE rather
+  // than at each call site so the doctor panel's own refresh
+  // (`toolchain/doctorPanel.ts`) is covered by the same fix as the command.
+  const { outcome } = await runAlpCommand(
+    context,
+    ["doctor", "--build"],
+    project.workspaceRoot ?? undefined,
+  );
   const data = outcome.envelope?.data;
   if (outcome.envelope && isCliDoctorData(data)) {
     const canFix =
@@ -306,6 +316,10 @@ export async function buildToolchainReportViaCli(
  *  the user re-runs the panel's "Re-run" to see the green report. */
 async function offerBootstrapFix(
   context: vscode.ExtensionContext,
+  /** The open folder to bootstrap IN. Required — `tan doctor --build --fix`
+   *  creates a venv and a west workspace in its working directory, so there is
+   *  no safe default; the caller refuses the whole command when there is none. */
+  cwd: string,
   dangling?: WestManifestStatus | null,
 ): Promise<void> {
   // A workspace that EXISTS but points its manifest at a directory that is gone
@@ -352,6 +366,7 @@ async function offerBootstrapFix(
   }
   await runAlpInTerminal(context, ["doctor", "--build", "--fix"], {
     name: "Alp Bootstrap",
+    cwd,
   });
 }
 
@@ -359,6 +374,21 @@ function registerDoctorCommand(
   context: vscode.ExtensionContext,
 ): vscode.Disposable {
   return vscode.commands.registerCommand("alp.toolchainDoctor", async () => {
+    // No folder open = no cwd to hand the child, and the fix this command
+    // offers (`tan doctor --build --fix`) BOOTSTRAPS where it runs — creating a
+    // venv and a west workspace in the extension host's own directory, on
+    // Windows the VS Code install directory. Reachable in two clicks from a
+    // fresh install: the walkthrough is no longer gated on an open folder and
+    // its "Run toolchain doctor" step links straight here. Same builder the
+    // sibling sites use (bootstrap.ts, wizard.ts, debug.ts x2,
+    // ideHub/workspaceCommands.ts).
+    const root = collectProjectContext().workspaceRoot;
+    if (!root) {
+      await notify(
+        planPrecondition("noWorkspace", { operation: "check the toolchain" }),
+      );
+      return;
+    }
     const { report, canFix, dangling } =
       await buildToolchainReportViaCli(context);
     reportToOutput(report);
@@ -367,7 +397,7 @@ function registerDoctorCommand(
     // and its fix (`tan bootstrap`) is worth offering even when the doctor
     // envelope was unusable.
     if (canFix) {
-      void offerBootstrapFix(context, dangling);
+      void offerBootstrapFix(context, root, dangling);
     }
   });
 }
