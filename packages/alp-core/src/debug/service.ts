@@ -495,17 +495,24 @@ function sliceExecutablePath(
  * where the build artefact should be. The nine configuration fields it used to
  * invent — `device`, `targetId`, `openOcdConfigFiles`, `svdFile`, `interface`,
  * `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` — plus
- * `cwd` are gone. They were not all placeholders (`interface: "swd"`,
+ * `cwd`, `name` and `os` are gone. They were not all placeholders
+ * (`interface: "swd"`,
  * `miMode: "gdb"` and the `-enable-pretty-printing` `setupCommands` were
  * concrete, and `miDebuggerServerAddress` was `"<host>:<port>"`, not a
  * `<resolved-…>` token), but they were all CONSTANTS of `(targetKind, server)`:
  * a second derivation of what `tan debug-config` resolves from the build's
  * `runners.yaml`, one that no project input could reach. Three of them
- * (`interface`, `miMode`, `setupCommands`) and `cwd` had no reader at all once
- * #387 deleted `debugProfileToLaunchDraft`; the rest were read only by the
- * preflight checks that graded them, and grading a constant placeholder is
- * precisely the defect #339 reports. The written configuration is the only
- * thing worth grading, and `foldLaunchConfigPlaceholders` grades that.
+ * (`interface`, `miMode`, `setupCommands`), `cwd`, `name` and `os` had no
+ * reader at all once #387 deleted `debugProfileToLaunchDraft`; the rest were
+ * read only by the preflight checks that graded them, and grading a constant
+ * placeholder is precisely the defect #339 reports. `name` was worse than
+ * unread — it said `Alp: Zephyr Debug (J-Link)` while the pinned tan 0.4.0
+ * writes `ALP: Zephyr Debug (J-Link)`, so anything that had trusted it as
+ * tan's merge key would have appended a duplicate. That is the very defect
+ * `planOrphanRescue` in src/debug/service.ts repairs, and it learns the
+ * spelling from the customer's file and from `tan debug-config --preview`,
+ * never from here. The written configuration is the only thing worth grading,
+ * and `foldLaunchConfigPlaceholders` grades that.
  */
 export function createDebugProfile(
   targetKind: DebugTargetKind,
@@ -535,29 +542,21 @@ export function createDebugProfile(
     case "zephyr-mcu":
       return {
         ...base,
-        name: `Alp: Zephyr Debug (${serverLabel(server)})`,
-        os: "zephyr",
         executablePath: exe("${workspaceFolder}/build/app/zephyr/zephyr.elf"),
       };
     case "baremetal-mcu":
       return {
         ...base,
-        name: `Alp: Baremetal Debug (${serverLabel(server)})`,
-        os: "baremetal",
         executablePath: exe("${workspaceFolder}/build/baremetal/app.elf"),
       };
     case "yocto-userspace":
       return {
         ...base,
-        name: "Alp: Yocto Remote Debug",
-        os: "yocto",
         executablePath: exe("${workspaceFolder}/build/yocto/app"),
       };
     case "native-host":
       return {
         ...base,
-        name: "Alp: Native Sim Debug",
-        os: "host",
         executablePath: exe(
           "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
         ),
@@ -624,21 +623,6 @@ function supportsServerForTarget(
   return serverChoicesForTarget(targetKind).some(
     (choice) => choice.server === server,
   );
-}
-
-function serverLabel(server: DebugServerKind): string {
-  switch (server) {
-    case "jlink":
-      return "J-Link";
-    case "openocd":
-      return "OpenOCD";
-    case "pyocd":
-      return "pyOCD";
-    case "gdbserver":
-      return "gdbserver";
-    case "none":
-      return "local";
-  }
 }
 
 function collectResolvedValues(

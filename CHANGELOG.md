@@ -17,9 +17,16 @@
   configuration fields `createDebugProfile` used to invent — `device`,
   `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`, `miMode`,
   `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` and the dead
-  `cwd` — are deleted from `DebugProfile`, leaving `executablePath` as the only
-  field that also appears in `launch.json`, and it stays because the extension
-  STATS it. The preflight report now grades host readiness only: which debugger
+  `cwd` — are deleted from `DebugProfile`, along with the equally dead `name`
+  and `os`. `name` was `Alp: Zephyr Debug (J-Link)` and its three siblings: a
+  `launch.json` key, constant per target, unread anywhere in `src/`,
+  `packages/` or `test/`, and already DRIFTED from the `ALP: …` merge key tan
+  0.4.0 writes — the drift the orphan rescue exists to repair, which learns the
+  spelling from the customer's file and from `tan debug-config --preview`
+  rather than from a profile. `os` was a fifth spelling of `targetKind`. That
+  leaves `executablePath` as the only field that also appears in `launch.json`,
+  and it stays because the extension STATS it. The preflight report now grades
+  host readiness only: which debugger
   extension is installed, whether the server tool is on PATH, the host platform,
   whether the build artefact exists. The configuration's own values are graded
   once, against the object tan actually wrote (#339).
@@ -32,8 +39,25 @@
   `configurationGraded`, `false` until the fold sets it, the panel prints it
   beside `canLaunch`, and the support bundle — the artefact a customer sends
   once a session has ALREADY failed — records `hostReady=` rather than
-  `canLaunch=`. Grading the configuration on those paths would mean spawning
-  tan from a diagnostic command; the marker is the honest cheap half (#339).
+  `canLaunch=`. That bundle note is the whole reason the marker exists and it is
+  a hand-built string in `src/debug.ts`, so it gets its own test
+  (`test/debug.supportBundle.test.js`): it drives the real registered
+  `alp.exportSupportBundle` handler and asserts on the notes the bundle carries,
+  including that none of them may call a configuration-blind verdict
+  `canLaunch=`. Grading the configuration on those paths would mean spawning tan
+  from a diagnostic command; the marker is the honest cheap half (#339).
+
+  On `dev` this was not, as first written, invisible behind a constant `false`.
+  `native-host` drew no configuration check at all — `requiredPlaceholderFields`
+  filtered on `value !== undefined` and its profile set none of them, it carried
+  no `openOcdConfigFiles`, and the `svdFile` check was gated on
+  `adapter === "cortex-debug"` while native-host is `lldb`. dev's own
+  "buildDebugPreflightReport can pass for resolved native-host profile" asserts
+  `canLaunch === true`. So a dev support bundle could already print an unlabelled
+  `canLaunch=true`, for the target class that is most often a customer's first
+  debug session. Harmless in practice, because tan's `native-host` configuration
+  carries no `<…>` token to be blind to — but the marker is a fix, not only a
+  guard against a future one.
 
 - **An unresolved value in that written configuration still blocks the launch,
   and now names the field.** The fold that reads tan's output produces one check

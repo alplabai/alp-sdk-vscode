@@ -363,8 +363,6 @@ type DebugServerKind = "jlink" | "openocd" | "pyocd" | "gdbserver" | "none";
 
 interface DebugProfile {
   id: string;
-  name: string;
-  os: "zephyr" | "baremetal" | "yocto" | "host";
   targetKind: DebugTargetKind;
   adapter: DebugAdapterKind;
   server: DebugServerKind;
@@ -374,11 +372,17 @@ interface DebugProfile {
 
 That is the whole of it. `DebugProfile` describes the session the extension is
 REPORTING ON, not a launch configuration: `executablePath` is here because
-`buildDebugPreflightReport` stats the ELF, which is a fact about this machine.
-It used to carry `device`, `interface`, `svdFile`, `openOcdConfigFiles`,
-`targetId`, `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`,
-`setupCommands` and `cwd` as well, all hardcoded constants of
-`(targetKind, server)` — see §12 for why grading those was #339. The
+`buildDebugPreflightReport` stats the ELF, which is a fact about this machine,
+and it is the only field here that also appears in launch.json. It used to
+carry `device`, `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`,
+`miMode`, `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands`, `cwd`,
+`name` and `os` as well, all hardcoded constants of `(targetKind, server)` —
+see §12 for why grading those was #339. `name` is the one worth naming twice:
+it said `Alp: Zephyr Debug (J-Link)` while the pinned tan 0.4.0 writes
+`ALP: Zephyr Debug (J-Link)`, so the extension's copy of tan's merge key had
+already drifted from it — which is exactly the stranded-duplicate defect §12's
+orphan rescue repairs, and that rescue reads the spelling off the customer's
+own file and off `tan debug-config --preview`, never off a profile. The
 configuration keys are tan's; §10 shows what it writes.
 
 ## 10. MVP Launch Profiles
@@ -614,16 +618,17 @@ Two consequences worth stating:
   recorded on another host (a container/WSL build leaves `serverpath` and
   `configFiles` pointing at `/home/…` paths that do not exist on the Windows
   box reading them). Tracked separately.
-- **`svdFile` no longer produces a check at all.** It was a constant `warn`:
-  `createDebugProfile("baremetal-mcu", …)` set `svdFile: "<resolved-svd>"` — a
-  hardcoded placeholder, so the check never resolved — and every other profile
-  left the field unset, which warned too. It never once opened the output
-  channel on its own, for two reasons: the check was added only for
-  `adapter === "cortex-debug"`, so `yocto-userspace` (cppdbg) and `native-host`
-  (lldb) never got it; and on the two targets that did, `canLaunch` was already
-  `false` for every server the picker offers, so the `!report.canLaunch` half of
-  `Alp: Debug preflight`'s `if (!report.canLaunch || report.summary.warn > 0)`
-  had already fired. What makes keeping it out matter is FORWARD-looking: a
+- **`svdFile` no longer produces a check at all.** Exactly two profiles ever
+  drew one, because it was added only for `adapter === "cortex-debug"`:
+  `yocto-userspace` (cppdbg) and `native-host` (lldb) never got it. On both that
+  did it was a constant `warn` — `createDebugProfile("baremetal-mcu", …)` set
+  `svdFile: "<resolved-svd>"`, a hardcoded placeholder that never resolved, and
+  `zephyr-mcu` left the field unset, which `isResolvedValue(undefined)` warned on
+  too. It never once opened the output channel on its own: on those same two
+  targets `canLaunch` was already `false` for every server the picker offers, so
+  the `!report.canLaunch` half of `Alp: Debug preflight`'s
+  `if (!report.canLaunch || report.summary.warn > 0)` had already fired. What
+  makes keeping it out matter is FORWARD-looking: a
   resolved preflight now reports `canLaunch: true`, so from here a surviving
   constant `warn` would be the sole reason the channel is forced open, on every
   run. The rule below is what keeps it out: `svdFile` is **optional and

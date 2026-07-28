@@ -237,9 +237,24 @@ test("buildDebugPreflightReport grades host readiness, never a drafted configura
     createDebugProfile("yocto-userspace", "gdbserver").miDebuggerPath,
     undefined,
   );
-  // `cwd` was the one the sweep missed: a launch.json key, "${workspaceFolder}"
-  // for every target, and read by nothing. It went with the other nine.
-  assert.equal(createDebugProfile("zephyr-mcu", "jlink").cwd, undefined);
+  // `cwd`, `name` and `os` were the ones the sweep missed: launch.json keys (or,
+  // for `os`, a fifth spelling of `targetKind`), constant per target, and read
+  // by nothing. `name` mattered most -- it said "Alp: Zephyr Debug (J-Link)"
+  // while the pinned tan 0.4.0 writes "ALP: Zephyr Debug (J-Link)", so it was
+  // already drifted from tan's merge key. The spellings live in
+  // src/debug/service.ts's ALP_PREFIX, read off the customer's own file; a
+  // second copy here is what the orphan rescue exists to repair.
+  const profile = createDebugProfile("zephyr-mcu", "jlink");
+  assert.equal(profile.cwd, undefined);
+  assert.equal(profile.name, undefined);
+  assert.equal(profile.os, undefined);
+  assert.deepEqual(Object.keys(profile).sort(), [
+    "adapter",
+    "executablePath",
+    "id",
+    "server",
+    "targetKind",
+  ]);
 });
 
 // #339 residual, stated where it is consumed. This report never reads the
