@@ -11,14 +11,16 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { isCancellation } from "../notify/service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log } from "../util";
+import { isRunActive, log } from "../util";
 import {
   resolveWestBinary,
   venvWestExists,
   westWorkspaceInitialized,
 } from "../environment/vscodeAdapter";
 import { probeTanVersion } from "../alpCli/vscodeAdapter";
+import { BOOTSTRAP_RUN_NAME } from "./messages";
 import type { AlpIdeState } from "./messages";
 
 /**
@@ -28,14 +30,36 @@ import type { AlpIdeState } from "./messages";
  * (the earlier new-window behavior was reported as bad UX). VS Code prompts to
  * save any unsaved editors before replacing, so this is not a silent session
  * loss. Used by the new- and existing-project flows.
+ *
+ * REPLACING THE WORKSPACE TEARS THIS EXTENSION HOST DOWN — that is the command
+ * working, not failing. The host then rejects every pending main-thread reply,
+ * this `executeCommand` among them, with a CancellationError whose name and
+ * message are both "Canceled". Reported as a failure it becomes "creating the
+ * project failed" on the one path where everything succeeded, so it is
+ * swallowed HERE, at the single seam every folder-open routes through, rather
+ * than in each caller's catch. A genuine `vscode.openFolder` rejection (a
+ * deleted directory, a refused URI) still propagates.
+ *
+ * ONLY in the replacing mode. With `forceNewWindow` the current host SURVIVES
+ * — nothing tears it down — so a cancellation there means the folder genuinely
+ * did not open, and swallowing it would leave the customer with a created
+ * project, no window, a disposed wizard panel and not one word about any of it.
  */
 export async function openProjectFolder(
   uri: vscode.Uri,
   forceNewWindow = false,
 ): Promise<void> {
-  await vscode.commands.executeCommand("vscode.openFolder", uri, {
-    forceNewWindow,
-  });
+  try {
+    await vscode.commands.executeCommand("vscode.openFolder", uri, {
+      forceNewWindow,
+    });
+  } catch (err) {
+    if (!forceNewWindow && isCancellation(err)) {
+      log(`[project] window replaced while opening ${uri.fsPath}`);
+      return;
+    }
+    throw err;
+  }
 }
 
 const execFileAsync = promisify(cp.execFile);
@@ -114,6 +138,22 @@ async function commandVersion(
 /** Default directory for versioned SDK installations. */
 export function sdkCacheRoot(): string {
   return path.join(os.homedir(), ".alp", "sdk");
+}
+
+/**
+ * THE PROBE (the only impure half of the readiness fix): is a bootstrap still
+ * executing right now? Its answer travels to the surfaces in
+ * `SetupStatus.bootstrapRunning` (below), and the decision that uses it is
+ * pure and lives in `@alp-sdk/core/statusReadiness/service`.
+ *
+ * No timer, no extra bookkeeping: `runInTerminal` already reserves the name
+ * synchronously at dispatch and releases it on the real task-end event, so
+ * this is exact for the whole run — including the not-yet-confirmed-started
+ * window, which is precisely when a naive "is the terminal open?" check would
+ * say no.
+ */
+export function bootstrapRunning(): boolean {
+  return isRunActive(BOOTSTRAP_RUN_NAME);
 }
 
 export async function queryAlpIdeState(
@@ -240,6 +280,12 @@ export async function queryAlpIdeState(
     setup: {
       pythonAvailable,
       westAvailable,
+      // Probed on every refresh so ONE state carries it to every surface (the
+      // status bar, the Build & Flash tree, the Hub) — the gate is only worth
+      // anything where the action lives, and re-probing per surface is how
+      // they drift. Refreshed at both ends of a run: src/extension.ts
+      // re-derives state on the task-start and terminal-finish events.
+      bootstrapRunning: bootstrapRunning(),
       lastBootstrapAt,
       toolVersions: {
         python: pythonVersion,

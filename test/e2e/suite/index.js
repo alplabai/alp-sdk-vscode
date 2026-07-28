@@ -317,6 +317,10 @@ async function runChecks() {
               path.join(require("node:os").tmpdir(), "alp-gs-"),
             ),
           },
+          // Required since #386: resolution reads the recorded digest for the
+          // cached binary. Empty here — this check resolves the sibling
+          // `localBuild`, which is not a verified arm and never consults it.
+          globalState: { get: () => undefined, update: async () => undefined },
         };
         const binary = await resolveAlpBinaryForContext(fakeCtx);
         assert.ok(binary && binary.command, "no binary resolved");
@@ -418,6 +422,159 @@ async function runChecks() {
       } finally {
         fs.rmSync(topdir, { recursive: true, force: true });
       }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // The debug type this extension emits must be one a real VS Code can resolve.
+  //
+  // "Alp: Native Sim Debug" shipped `type: "codelldb"` for its whole life. No
+  // extension registers that type -- CodeLLDB registers `lldb`, and `codelldb`
+  // is only the extension's NAME -- so pressing F5 died with
+  // `configured debug type 'codelldb' is not supported`. native_sim is the one
+  // target reachable with no probe and no board, i.e. the first debugging
+  // experience anyone has, and two unit assertions named the broken value and
+  // passed. A unit test cannot catch that class: only a real host knows which
+  // debug types actually exist. These checks are that host.
+  // ---------------------------------------------------------------------------
+  const contributedDebugTypes = new Set();
+  for (const e of vscode.extensions.all) {
+    for (const d of e.packageJSON?.contributes?.debuggers ?? []) {
+      if (d.type) contributedDebugTypes.add(d.type);
+    }
+  }
+
+  await check("the emitted native-sim debug type exists in a real host", () => {
+    assert.ok(
+      contributedDebugTypes.has("lldb"),
+      `no installed extension contributes the "lldb" debug type; saw: ${[...contributedDebugTypes].sort().join(", ")}`,
+    );
+    assert.ok(
+      !contributedDebugTypes.has("codelldb"),
+      '"codelldb" is not a debug type any extension registers -- if this ever ' +
+        "becomes true the comment above is wrong, not the code",
+    );
+  });
+
+  await check("every debug type the extension emits is registered", () => {
+    // Read the values straight out of the compiled core, so this tracks the
+    // real emitter rather than a copy of it.
+    // `debugProfileToLaunchDraft` used to be rendered here and its `type` read
+    // off the draft. #387 moved draft-building to `tan debug-config`, so the
+    // value this extension still owns -- and still writes into every profile it
+    // creates -- is the map. `DEBUG_TARGET_ADAPTER` feeds `createDebugProfile`'s
+    // `adapter`, and tan is gated on the same value by its own
+    // `debug_launch.rs` tests.
+    const {
+      serverChoicesForTarget,
+      DEBUG_TARGET_CHOICES,
+      DEBUG_TARGET_ADAPTER,
+    } = require(
+      path.resolve(
+        __dirname,
+        "../../../packages/alp-core/dist/debug/service.js",
+      ),
+    );
+    for (const { targetKind } of DEBUG_TARGET_CHOICES) {
+      const type = DEBUG_TARGET_ADAPTER[targetKind];
+      // The server loop stays: the type must not vary by backend, and a new
+      // backend must not be able to slip in with a type of its own.
+      for (const { server } of serverChoicesForTarget(targetKind)) {
+        assert.ok(
+          contributedDebugTypes.has(type),
+          `${targetKind}/${server} emits type "${type}", which no installed extension registers`,
+        );
+      }
+    }
+  });
+
+  // The strongest evidence available without a human at a GUI: hand the config
+  // our own code emits to the real debug subsystem and require a session to
+  // START. `program` is repointed at a binary that certainly exists, because
+  // this asserts the ADAPTER accepts our config shape -- not that a Zephyr
+  // native_sim build is present in a headless run.
+  await check("a native-sim debug session starts in a real host", async () => {
+    // Built from the map rather than a rendered draft, for the same reason as
+    // the check above: tan owns the draft since #387. The fields below are the
+    // ones the ADAPTER has to accept -- which is what this check is for -- and
+    // `program` is repointed anyway, so nothing here depended on the renderer.
+    const { DEBUG_TARGET_ADAPTER } = require(
+      path.resolve(
+        __dirname,
+        "../../../packages/alp-core/dist/debug/service.js",
+      ),
+    );
+    const draft = {
+      name: "Alp: Native Sim Debug",
+      type: DEBUG_TARGET_ADAPTER["native-host"],
+      request: "launch",
+    };
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(folder, "no workspace folder to launch against");
+
+    let started = null;
+    const sub = vscode.debug.onDidStartDebugSession((s) => {
+      started = s;
+    });
+    try {
+      const ok = await vscode.debug.startDebugging(folder, {
+        ...draft,
+        program: process.execPath,
+        args: ["--version"],
+        stopOnEntry: true,
+      });
+      assert.ok(
+        ok,
+        `startDebugging refused the "${draft.type}" configuration -- this is ` +
+          "exactly the failure the codelldb bug produced",
+      );
+      // startDebugging resolving true is the adapter accepting the config; the
+      // session object confirms one really came up.
+      for (let i = 0; i < 100 && !started; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.ok(started, "startDebugging returned true but no session started");
+      assert.equal(started.type, "lldb");
+    } finally {
+      sub.dispose();
+      await vscode.debug.stopDebugging(started ?? undefined).then(
+        () => {},
+        () => {},
+      );
+    }
+  });
+
+  // The four `preLaunchTask` labels `tan debug-config` writes into launch.json
+  // must actually resolve in a REAL extension host — the unit test only proves
+  // the strings agree with each other. VS Code composes a provided task's label
+  // as `${source}: ${name}`, which is what `preLaunchTask` matches against; if
+  // this set ever stops matching, Debug writes a profile whose pre-launch task
+  // cannot be found and `startDebugging` aborts with no useful error (#342).
+  // Hard-coded here rather than imported so a rename in src/tasks/service.ts
+  // fails this check instead of silently moving with it.
+
+  // The provider behind the four `preLaunchTask` labels `tan debug-config`
+  // writes into launch.json must actually be REGISTERED and answering in a real
+  // extension host — the unit test only proves the strings agree with each other
+  // and that package.json contributes the type. What this pins: the extension
+  // activated, `registerTaskProvider("alp", …)` ran, and `fetchTasks` returns a
+  // task per spec whose `${source}: ${name}` is what `preLaunchTask` matches
+  // against. What it does NOT pin: that a build task, once run, succeeds — the
+  // execution is a CustomExecution that only dispatches when the task is
+  // actually started, which needs a real project and toolchain. Labels are
+  // hard-coded rather than imported so a rename in src/tasks/service.ts fails
+  // this check instead of silently moving with it.
+  await check(
+    "the four alp: preLaunchTask labels resolve as tasks",
+    async () => {
+      const tasks = await vscode.tasks.fetchTasks({ type: "alp" });
+      const labels = tasks.map((task) => `${task.source}: ${task.name}`).sort();
+      assert.deepEqual(labels, [
+        "alp: build active target",
+        "alp: build baremetal target",
+        "alp: build native_sim target",
+        "alp: deploy and start gdbserver",
+      ]);
     },
   );
 

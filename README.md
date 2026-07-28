@@ -22,7 +22,7 @@ First-class IDE support for projects built against the
 
 ![ALP IDE Hub overview dashboard](media/screenshots/01-ide-hub-overview.png)
 
-_Workspace readiness at a glance — environment, west workspace and Alp SDK status, board-configurator / hardware-explorer / toolchain-doctor panels, and quick actions._
+_Workspace readiness at a glance — environment, west workspace and Alp SDK status, board-configurator / hardware-explorer / dependencies panels, and quick actions._
 
 ### Create a new project
 

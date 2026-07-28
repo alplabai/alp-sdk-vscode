@@ -27,8 +27,9 @@ function render(
   build: vscode.StatusBarItem,
   flash: vscode.StatusBarItem,
 ): void {
-  // Overall Alp env-readiness glance (Python/west/tan/SDK/workspace). Full
-  // detail lives in the hover + the Hub; clicking opens the Hub.
+  // Overall Alp env-readiness glance (Python/west/tan/SDK/workspace/bootstrap
+  // in flight). Full detail lives in the hover + the Hub; clicking opens the
+  // Hub.
   const envP = envReadinessPresentation(state);
   env.text = envP.text;
   env.tooltip = envP.tooltip;
@@ -52,8 +53,15 @@ function render(
 
   // Build/Flash both drive the tan-orchestrated pipeline (validate + generate +
   // per-slice build/flash) — only meaningful once a board.yaml exists AND the
-  // west workspace is initialized (matches the tree's gating).
-  if (summary?.sku && state.workspace.westInitialized) {
+  // west workspace is initialized (matches the tree's gating), and never while
+  // a bootstrap is still populating that workspace: `.west/config` exists from
+  // the start of the run, so `westInitialized` alone offered Build over a
+  // half-fetched module tree.
+  if (
+    summary?.sku &&
+    state.workspace.westInitialized &&
+    !state.setup.bootstrapRunning
+  ) {
     build.show();
     flash.show();
   } else {
@@ -105,6 +113,11 @@ export function createStatusBar(stateMgr: StateManager): vscode.Disposable {
   const sub = stateMgr.onStateChange((state) =>
     render(state, env, sdk, target, build, flash),
   );
-
+  // No terminal-finish subscription here on purpose: re-rendering the snapshot
+  // this file already holds would repaint STALE state — at the exact moment a
+  // bootstrap succeeds, a bar still holding `westInitialized: false` would
+  // paint "$(warning) Alp: setup", a warning at the moment of success.
+  // src/extension.ts refreshes the shared state on that same event (and on
+  // task start), and the refresh fires `onStateChange` above.
   return vscode.Disposable.from(env, sdk, target, build, flash, sub);
 }

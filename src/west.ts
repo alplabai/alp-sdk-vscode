@@ -12,6 +12,7 @@
 // (not the retired `west alp-*` driver) with no tan equivalent, so they stay as
 // direct west terminal invocations.
 
+import { WestWorkspaceContext } from "@alp-sdk/core/west/models";
 import {
   createWestFlashPlan,
   createWestUpdatePlan,
@@ -27,6 +28,8 @@ import {
   runAlpStreamed,
 } from "./alpCli/vscodeAdapter";
 import { isCliBehind } from "./alpCli/service";
+import { planPrecondition } from "./notify/service";
+import { notify } from "./notify/vscodeAdapter";
 import {
   collectWestWorkspaceContext,
   executeWestPlan,
@@ -38,8 +41,13 @@ import {
 } from "@alp-sdk/core/systemManifest/service";
 import { BUILD_RUN_NAME, FLASH_RUN_NAME, log } from "./util";
 
-function westCwd(): string | undefined {
-  const context = collectWestWorkspaceContext();
+/** The directory a `tan` run should use, or undefined when nothing resolves one
+ *  (no folder open and no `alpSdk.westCwd`) — in which case the run must be
+ *  refused, never spawned with an inherited cwd. Takes an already-collected
+ *  context so a caller that needs both doesn't resolve the project twice. */
+function westCwd(
+  context: WestWorkspaceContext = collectWestWorkspaceContext(),
+): string | undefined {
   return context.westCwd ?? context.workspaceRoot ?? undefined;
 }
 
@@ -59,14 +67,31 @@ async function pickAppPath(value: string): Promise<string | undefined> {
  * dir" convention), so we run from the project root and pass no app argument.
  *
  * Only when no project is open do we fall back to prompting for an example app
- * to build. Returns `undefined` when the user cancels that prompt.
+ * to build. Returns `undefined` when the user cancels that prompt — or when
+ * nothing resolves a cwd at all, which is refused here rather than in each of
+ * the five callers: `tan build/image/flash/clean/renode` all WRITE where they
+ * run, and with no folder open the child inherits the extension host's own
+ * directory (on Windows, the VS Code install directory) and drops a `build/`
+ * there. `cwd` is narrowed to `string` on the way out so the guard cannot be
+ * bypassed by a later caller. Same builder the sibling sites use (bootstrap.ts,
+ * toolchain.ts, wizard.ts, debug.ts, ideHub/workspaceCommands.ts).
+ *
+ * `operation` is the verb phrase `planPrecondition` renders into "Open a folder
+ * to <operation>.", so it is per-command, not per-resolver.
+ *
+ * @callers 5 resolveOrchestratorTarget
  */
 async function resolveOrchestratorTarget(
   fallbackExample: string,
-): Promise<
-  { appArg: string[]; cwd: string | undefined; active: boolean } | undefined
-> {
+  operation: string,
+): Promise<{ appArg: string[]; cwd: string; active: boolean } | undefined> {
   const projectCtx = collectWestWorkspaceContext();
+  const root = westCwd(projectCtx);
+  if (!root) {
+    await notify(planPrecondition("noWorkspace", { operation }));
+    return undefined;
+  }
+
   const projectRoot =
     projectCtx.boardYamlPath && fs.existsSync(projectCtx.boardYamlPath)
       ? path.dirname(projectCtx.boardYamlPath)
@@ -75,7 +100,7 @@ async function resolveOrchestratorTarget(
 
   const app = await pickAppPath(fallbackExample);
   if (!app) return undefined;
-  return { appArg: [app], cwd: westCwd(), active: false };
+  return { appArg: [app], cwd: root, active: false };
 }
 
 // ── CLI-backed orchestrator workflow (tan build/image/flash/clean/renode) ─────
@@ -83,6 +108,7 @@ async function resolveOrchestratorTarget(
 async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/peripheral-io/gpio-button-led",
+    "build this project",
   );
   if (!target) return;
   // `tan build` (cli.rs BuildArgs) has no positional app_path — project scope
@@ -119,6 +145,7 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
 async function alpImage(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
+    "build a flash image",
   );
   if (!target) return;
   await runAlpStreamed(context, ["image", ...target.appArg], {
@@ -130,6 +157,7 @@ async function alpImage(context: vscode.ExtensionContext): Promise<void> {
 async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
+    "flash this device",
   );
   if (!target) return;
   await runAlpStreamed(context, ["flash", ...target.appArg], {
@@ -141,6 +169,7 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
 async function alpClean(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
+    "clean this project",
   );
   if (!target) return;
   await runAlpStreamed(context, ["clean", ...target.appArg], {
@@ -149,15 +178,18 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
   });
 }
 
-/** First `tan` carrying `renode --core` (tan-cli#63). Below this the flag is a
- *  parse error, not an ignored argument.
+/** First `tan` carrying `renode --core` (tan-cli#63, which shipped in v0.4.0 —
+ *  v0.3.2 was never published). Below this the flag is a parse error, not an
+ *  ignored argument.
  *
- *  AHEAD of `SUPPORTED_CLI_VERSION` (0.3.1) on purpose, and with a consequence:
- *  tan-cli v0.3.2 is not published, so the managed download installs 0.3.1 and
- *  the picker below stays unreachable for managed installs until it is — see
- *  #367. A local build or an `alpSdk.cliPath` tan carrying #63 does get it. The
- *  pin itself cannot be raised to 0.3.2: an unpublished pin 404s the download
- *  on every activation (see SUPPORTED_CLI_VERSION). */
+ *  BEHIND `SUPPORTED_CLI_VERSION` (0.4.0), so a managed install always clears
+ *  it and the picker is reachable — the #367 state, where the pin sat at 0.3.1
+ *  and this floor was unreachable for everyone but a local build, is over.
+ *  This floor still earns its keep for the binaries the pin does not govern: an
+ *  `alpSdk.cliPath` or `localBuild` tan can be any version, and the check is
+ *  against the PROBED one. It is deliberately not `SUPPORTED_CLI_VERSION`: a
+ *  feature gate compares against what is running, never against what this
+ *  build would download. */
 const RENODE_CORE_CLI_VERSION = "0.3.2";
 
 /** The Zephyr `core_id`s of the post-build manifest under `cwd`, in manifest
@@ -235,6 +267,7 @@ async function pickRenodeCore(
 async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
+    "run this project in Renode",
   );
   if (!target) return;
   const core = await pickRenodeCore(context, target.cwd);
@@ -267,6 +300,18 @@ function westUpdate(): void {
 async function westRunNativeSim(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  // Its OWN guard, not the resolver's: this command never calls
+  // `resolveOrchestratorTarget`, so deleting either one leaves the other path
+  // still spawning `tan` with an inherited cwd. It sits ahead of the overlay
+  // generation so that `tan generate` never runs against an arbitrary
+  // directory either.
+  const root = westCwd();
+  if (!root) {
+    await notify(
+      planPrecondition("noWorkspace", { operation: "run this project" }),
+    );
+    return;
+  }
   await ensureNativeSimOverlay(context);
   // Route through the CLI (`tan run`) so the SDK owns the board target and
   // build dir — a bare `west build -t run` has no `-b`/`-d`, so it aborts on an
@@ -280,7 +325,7 @@ async function westRunNativeSim(
   // action (`tan flash`, alp.westAlpFlash).
   await runAlpInTerminal(context, ["run"], {
     name: "Alp Run (native_sim)",
-    cwd: westCwd(),
+    cwd: root,
   });
 }
 

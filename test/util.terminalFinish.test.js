@@ -141,10 +141,12 @@ function makeFakeVscode() {
   // stand-in), since util.ts's WeakMap-based generation tracking is keyed off
   // object identity.
   const executed = [];
-  // Toasts raised via the #332 finish verdict, so a test can assert the
-  // glanceable outcome survived the port onto Tasks: `info` on a 0 exit,
-  // `error` on a defined non-zero, and NOTHING for an undefined code (a task
-  // that ended without its process ever starting -- we have no verdict).
+  // Any toast util.ts raises on its own. This must stay EMPTY: the #332
+  // finish verdict is planned and presented by the
+  // onDidFinishTerminalCommand subscriber in src/extension.ts, so util.ts's
+  // job is only to fire the event exactly once with the real exit code. A
+  // toast appearing here again means the verdict was re-inlined, taking its
+  // exit-number wording and its missing action button with it.
   const toasts = [];
   const warnings = [];
   const fake = {
@@ -259,12 +261,15 @@ test("runInTerminal: process-end then task-end fires terminalFinished exactly on
 
   assert.deepEqual(fires, [{ name: "west build", code: 0 }]);
   assert.equal(util.isRunActive("west build"), false);
-  // #332's glanceable verdict must survive the port onto Tasks: exactly one
-  // info toast for a 0 exit, and not a second one from the backstop event.
-  assert.deepEqual(toasts, [{ kind: "info", message: "west build finished" }]);
+  // util.ts raises NO toast of its own any more: #332's glanceable verdict is
+  // planned and presented by the onDidFinishTerminalCommand subscriber in
+  // src/extension.ts (a status-bar line on success), so that a FAILED run gets
+  // real actions instead of a toast naming only its exit number. What util.ts
+  // still owns — and what this pins — is firing the event exactly once.
+  assert.deepEqual(toasts, []);
 });
 
-test("runInTerminal: a nonzero exit code raises the failure toast (#332)", async () => {
+test("runInTerminal: a nonzero exit code is reported on the event, not as a toast (#332)", async () => {
   const { fake, onDidStartTask, onDidEndTaskProcess, executed, toasts } =
     makeFakeVscode();
   const util = loadUtil(fake);
@@ -279,11 +284,11 @@ test("runInTerminal: a nonzero exit code raises the failure toast (#332)", async
   onDidEndTaskProcess.fire({ execution, exitCode: 2 });
 
   assert.deepEqual(fires, [{ name: "tan bootstrap", code: 2 }]);
-  // A refused/failed run must produce an error toast with the exit code and
-  // "Show Output" -- see reportError in src/util.ts.
-  assert.deepEqual(toasts, [
-    { kind: "error", message: "tan bootstrap failed (exit 2)" },
-  ]);
+  // The failure verdict rides on the event, not on a toast raised here: the
+  // subscriber in src/extension.ts turns a defined non-zero code into a plan
+  // whose message names the run (never the exit number -- that is `detail`,
+  // logged to the channel) and which carries "Show Terminal" + "Run Doctor".
+  assert.deepEqual(toasts, []);
 });
 
 test("runInTerminal: task-end alone (no process ever started) fires terminalFinished exactly once", async () => {

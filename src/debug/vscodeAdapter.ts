@@ -29,33 +29,18 @@ export function collectWorkspaceDebugContext(): DebugWorkspaceContext {
 }
 
 export function collectRuntimeCapabilities(): DebugRuntimeCapabilities {
-  return collectRuntimeCapabilitiesFromCommands(
-    collectProjectContext(),
-    commandOnPath,
-  );
-}
-
-export function launchJsonPath(workspaceRoot: string): string {
-  return path.join(workspaceRoot, ".vscode", "launch.json");
-}
-
-export function readLaunchJson(workspaceRoot: string): string | null {
-  const filePath = launchJsonPath(workspaceRoot);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-
-  return fs.readFileSync(filePath, "utf-8");
-}
-
-export function writeLaunchJson(
-  workspaceRoot: string,
-  content: string,
-): string {
-  const filePath = launchJsonPath(workspaceRoot);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, "utf-8");
-  return filePath;
+  return {
+    ...collectRuntimeCapabilitiesFromCommands(
+      collectProjectContext(),
+      commandOnPath,
+    ),
+    // The one host fact the pure debug service cannot read for itself, and the
+    // one that decides whether `native-host` is debuggable at all: native_sim
+    // builds a Linux executable, so the target is a dead end on win32. Supplied
+    // here rather than in adapterCore's PATH probe because it is the OS, not a
+    // tool — see DebugRuntimeCapabilities.hostPlatform.
+    hostPlatform: process.platform,
+  };
 }
 
 export function fileExists(filePath: string): boolean {

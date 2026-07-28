@@ -13,7 +13,8 @@ This guide covers the fastest path to a productive ALP SDK workflow inside VS Co
 - Python 3 and `west` on `PATH` for the build / generate / validate flows — the
   extension's `tan` CLI shells out to the SDK's `scripts/alp_project.py` (and
   `west`) for those; the SDK's `bootstrap` provides them. Run
-  **Alp: Toolchain doctor** to check.
+  **Alp: Dependencies** for `west` and the other host tools `tan` checks — it
+  emits no Python check, so verify that one yourself with `python3 --version`.
 
 ### The `tan` CLI is auto-provisioned
 

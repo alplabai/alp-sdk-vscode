@@ -4,11 +4,11 @@ import * as path from "path";
 import { toPosix } from "../paths";
 
 import {
+  DebugAdapterKind,
   DebugDoctorRequest,
   DebugGenerationTraceDecision,
   DebugGenerationTraceReport,
   DebugInspectReport,
-  DebugLaunchPreview,
   DebugPreflightReport,
   DebugProfile,
   DebugResolvedValue,
@@ -21,7 +21,6 @@ import {
   DebugWorkspaceContext,
   DoctorCheck,
   DoctorReport,
-  LaunchConfigurationDraft,
   PreflightCheck,
   PreflightStatus,
 } from "./models";
@@ -67,6 +66,31 @@ export const DEBUG_TARGET_CHOICES: ReadonlyArray<DebugTargetChoice> = [
     targetKind: "native-host",
   },
 ];
+
+export const DEBUG_ADAPTER_EXTENSION_ID: Record<DebugAdapterKind, string> = {
+  "cortex-debug": "marus25.cortex-debug",
+  cppdbg: "ms-vscode.cpptools",
+  lldb: "vadimcn.vscode-lldb",
+};
+
+/**
+ * Debug type each target class launches with. `createDebugProfile` reads it, so
+ * the `type` written into launch.json and the extension checks above cannot
+ * name different adapters for the same target.
+ */
+export const DEBUG_TARGET_ADAPTER: Record<DebugTargetKind, DebugAdapterKind> = {
+  "zephyr-mcu": "cortex-debug",
+  "baremetal-mcu": "cortex-debug",
+  "yocto-userspace": "cppdbg",
+  // `lldb`, not `codelldb`: CodeLLDB (vadimcn.vscode-lldb) registers its debug
+  // type as `lldb` in its own `contributes.debuggers` — `codelldb` is the
+  // extension's NAME and has never been a debug type. This value is written
+  // verbatim into launch.json as `type`, so `codelldb` made VS Code refuse the
+  // session with "configured debug type 'codelldb' is not supported".
+  // native_sim is the only target that needs neither probe nor board, so this
+  // is the first debug session a customer ever runs.
+  "native-host": "lldb",
+};
 
 /** Whether a debug target is the native_sim / native-host host-binary class
  *  (CodeLLDB, no on-chip probe) — the class that needs the native_sim GPIO
@@ -204,6 +228,9 @@ export function buildDebugPreflightReport(
     createExecutableCheck(profile, context, dependencies),
   ];
 
+  // #374: the ONLY host-OS gate. Empty for every other target and host.
+  checks.push(...nativeHostPlatformChecks(profile.targetKind, runtime));
+
   checks.push(
     ...createProfileConfigurationChecks(profile, context, dependencies),
   );
@@ -219,6 +246,46 @@ export function buildDebugPreflightReport(
       fail: countPreflightChecks(checks, "fail"),
     },
     checks,
+    nextSteps: uniquePreflightNextSteps(checks),
+    canLaunch: countPreflightChecks(checks, "fail") === 0,
+  };
+}
+
+/** Fold a "launchConfig" failure into an already-built preflight report when
+ *  the caller has spotted `<resolved-…>` placeholders left in the launch.json
+ *  configuration `tan debug-config` just wrote. The in-process preflight
+ *  report can't see this itself — it only checks host readiness (adapters and
+ *  tools installed) — so the surface layer (src/debug.ts) that DID diff the
+ *  written configuration against `launchConfigPlaceholders` calls this to
+ *  fold its finding back in, rather than overriding `canLaunch` directly and
+ *  leaving `checks`/`summary`/`nextSteps` to disagree with it. Reuses the same
+ *  summary/canLaunch/nextSteps arithmetic `buildDebugPreflightReport` uses, so
+ *  the result is indistinguishable from a report that had the check all
+ *  along. Returns `report` unchanged when `placeholders` is empty. */
+export function foldLaunchConfigPlaceholders(
+  report: DebugPreflightReport,
+  placeholders: readonly string[],
+): DebugPreflightReport {
+  if (placeholders.length === 0) return report;
+
+  const checks: PreflightCheck[] = [
+    ...report.checks,
+    {
+      name: "launchConfig",
+      status: "fail",
+      detail: placeholders.join(", "),
+      fix: "Build the project first, or set these by hand.",
+    },
+  ];
+
+  return {
+    ...report,
+    checks,
+    summary: {
+      pass: countPreflightChecks(checks, "pass"),
+      warn: countPreflightChecks(checks, "warn"),
+      fail: countPreflightChecks(checks, "fail"),
+    },
     nextSteps: uniquePreflightNextSteps(checks),
     canLaunch: countPreflightChecks(checks, "fail") === 0,
   };
@@ -323,46 +390,25 @@ export function buildDoctorReport(
           ? undefined
           : "Install vadimcn.vscode-lldb.",
       });
+      // Doctor and preflight must agree on the host dead end, or doctor reports
+      // a healthy native-host setup on the very box where F5 cannot work (#374).
+      checks.push(...nativeHostPlatformChecks(request.targetKind, runtime));
+      // Informational, never a warn: CodeLLDB SHIPS its own LLDB (lldb/bin/ inside
+      // vadimcn.vscode-lldb v1.12.2) and never consults PATH, so an lldb on PATH
+      // is neither needed nor used. Warning about it put "Install LLDB or
+      // lldb-dap" into `nextSteps` on every stock Windows box and made doctor
+      // contradict `createServerToolCheck`, which now passes the same condition.
       checks.push({
         name: "lldb",
-        status: runtime.lldbExecutable ? "pass" : "warn",
+        status: "pass",
         detail:
           runtime.lldbExecutable ??
-          "No local LLDB executable was found on PATH.",
-        fix: runtime.lldbExecutable
-          ? undefined
-          : "Install LLDB or lldb-dap for native-host debug flows.",
+          "vadimcn.vscode-lldb ships its own LLDB, so none is needed on PATH.",
       });
       break;
   }
 
   return createDoctorReport(context.generatedAt, request, checks);
-}
-
-export function createLaunchPreview(
-  generatedAt: string,
-  targetKind: DebugTargetKind,
-  server: DebugServerKind,
-  slice?: ManifestSlice,
-): DebugLaunchPreview {
-  const profile = createDebugProfile(targetKind, server, slice);
-
-  return {
-    generatedAt,
-    targetKind,
-    server,
-    notes: [
-      "This is a draft launch configuration generated by the extension.",
-      "Placeholder fields such as <resolved-device> still need project-specific resolution.",
-      slice
-        ? `Executable path resolved from the system manifest slice '${slice.core_id}'.`
-        : "The long-term target is to resolve these values from the shared debug model.",
-    ],
-    launch: {
-      version: "0.2.0",
-      configurations: [debugProfileToLaunchDraft(profile)],
-    },
-  };
 }
 
 /** Per-slice executable path from the system manifest: prefer the built
@@ -477,7 +523,11 @@ export function createDebugProfile(
         id: `alp:${targetKind}:${server}`,
         name: "Alp: Native Sim Debug",
         targetKind,
-        adapter: "codelldb",
+        // `lldb`, not `codelldb` (#369; tan-cli#104): CodeLLDB's manifest
+        // declares `contributes.debuggers[0].type = "lldb"`. `codelldb` is the
+        // EXTENSION id, and VS Code refuses the session outright with
+        // `Configured debug type 'codelldb' is not supported.`
+        adapter: "lldb",
         server,
         os: "host",
         executablePath: exe(
@@ -488,78 +538,6 @@ export function createDebugProfile(
   }
 
   throw new Error(`Unsupported debug target '${targetKind}'.`);
-}
-
-export function debugProfileToLaunchDraft(
-  profile: DebugProfile,
-): LaunchConfigurationDraft {
-  switch (profile.targetKind) {
-    case "zephyr-mcu": {
-      const base: LaunchConfigurationDraft = {
-        name: profile.name,
-        type: profile.adapter,
-        request: "launch",
-        cwd: profile.cwd,
-        executable: profile.executablePath,
-        runToEntryPoint: "main",
-      };
-
-      if (profile.server === "openocd") {
-        return {
-          ...base,
-          servertype: "openocd",
-          configFiles: profile.openOcdConfigFiles,
-        };
-      }
-
-      if (profile.server === "pyocd") {
-        return {
-          ...base,
-          servertype: "pyocd",
-          targetId: profile.targetId,
-        };
-      }
-
-      return {
-        ...base,
-        servertype: "jlink",
-        device: profile.device,
-        interface: profile.interface,
-      };
-    }
-    case "baremetal-mcu":
-      return {
-        name: profile.name,
-        type: profile.adapter,
-        request: "launch",
-        servertype: profile.server,
-        cwd: profile.cwd,
-        executable: profile.executablePath,
-        device: profile.device,
-        interface: profile.interface,
-        svdFile: profile.svdFile,
-      };
-    case "yocto-userspace":
-      return {
-        name: profile.name,
-        type: profile.adapter,
-        request: "launch",
-        program: profile.executablePath,
-        cwd: profile.cwd,
-        MIMode: profile.miMode,
-        miDebuggerServerAddress: profile.miDebuggerServerAddress,
-        miDebuggerPath: profile.miDebuggerPath,
-        setupCommands: profile.setupCommands,
-      };
-    case "native-host":
-      return {
-        name: profile.name,
-        type: profile.adapter,
-        request: "launch",
-        program: profile.executablePath,
-        cwd: profile.cwd,
-      };
-  }
 }
 
 function createDoctorReport(
@@ -753,7 +731,7 @@ function createAdapterCheck(
           ? undefined
           : "Install ms-vscode.cpptools.",
       };
-    case "codelldb":
+    case "lldb":
       return {
         name: "adapterExtension",
         status: context.debuggerExtensions.codeLLDB ? "pass" : "fail",
@@ -771,6 +749,24 @@ function createServerToolCheck(
   server: DebugProfile["server"],
   runtime: DebugRuntimeCapabilities,
 ): PreflightCheck {
+  // `none` is not a tool name — it is the native-host "there is no debug
+  // server" marker. CodeLLDB (vadimcn.vscode-lldb v1.12.2) SHIPS its own LLDB
+  // (lldb/bin/lldb.exe, liblldb, lldb-server) and never consults PATH, so
+  // probing `where lldb-dap` / `where lldb` failed this check on every stock
+  // machine and put F5 on "Alp: Native Sim Debug" behind a Start Anyway click —
+  // while rendering "No none executable was found on PATH." and interpolating
+  // "Install none and make sure it is on PATH." into the customer toast. The
+  // extension's own presence is the real requirement, and `adapterExtension`
+  // already covers it.
+  if (server === "none") {
+    return {
+      name: "serverTool",
+      status: "pass",
+      detail:
+        "No debug server is needed: vadimcn.vscode-lldb ships its own LLDB (checked by adapterExtension).",
+    };
+  }
+
   const executable = resolveBackendExecutable(server, runtime);
   return {
     name: "serverTool",
@@ -779,6 +775,135 @@ function createServerToolCheck(
     fix: executable
       ? undefined
       : `Install ${server} and make sure it is on PATH.`,
+  };
+}
+
+/**
+ * native_sim is a POSIX-architecture board: Zephyr's own board documentation
+ * says it builds "a normal Linux executable". So `native-host` is not a
+ * missing-tool problem on Windows, it is a dead end — the Zephyr build cannot
+ * emit a Windows binary, and one built under WSL is a Linux ELF that a
+ * Windows-side CodeLLDB cannot launch. Nothing the customer installs on
+ * Windows clears it, so this FAILS (blocking `canLaunch`) rather than warns.
+ *
+ * It is deliberately the ONLY host-OS gate here: every other target class
+ * debugs over a probe or a remote gdbserver and is perfectly launchable from
+ * Windows, so this returns an empty list for them and on every non-Windows
+ * host. Both `buildDebugPreflightReport` and `buildDoctorReport` call it, so
+ * the two cannot disagree about whether this box can run the target.
+ *
+ * Wording contract (see src/notify/models.ts): `fix` reaches the customer
+ * through `nextSteps` and the toast detail, so it carries no errno, no path
+ * and no internal check id. "Reopen … in WSL" is the same affordance
+ * `src/bootstrap.ts` already offers for the same host dead end.
+ */
+function nativeHostPlatformChecks(
+  targetKind: DebugTargetKind,
+  runtime: DebugRuntimeCapabilities,
+): PreflightCheck[] {
+  if (!isNativeHostTarget(targetKind)) return [];
+  if (runtime.hostPlatform !== "win32") return [];
+  return [
+    {
+      name: "hostPlatform",
+      status: "fail",
+      detail:
+        "native_sim builds a Linux executable, so it cannot run on this Windows host.",
+      fix: "Reopen the folder in WSL, or build and debug native_sim on a Linux or macOS host.",
+    },
+  ];
+}
+
+/**
+ * The profile fields that MUST resolve before a session can start, in one
+ * place, so the preflight check and the customer-facing
+ * `unresolvedRequiredFields` cannot drift on what "required" means.
+ *
+ * `name` is the internal `PreflightCheck` id (report/panel wiring, never shown
+ * in a toast); `label` is what a customer is told to go and supply.
+ *
+ * Derived from the fields the profile ACTUALLY carries, because those are
+ * exactly the keys `debugProfileToLaunchDraft` emits. Switching on `server`
+ * instead was wrong for baremetal-mcu, which ignores `server` entirely and
+ * always emits device+interface: baremetal-mcu + pyocd named "the pyOCD target
+ * id" — a key not in the file — while the `<resolved-device>` that IS in the
+ * file went unnamed.
+ *
+ * `svdFile` is deliberately absent: it is optional to cortex-debug and only
+ * feeds the peripheral/register view, so it warns (`createSvdCheck`) and never
+ * blocks. `openOcdConfigFiles` is a list whose entries also get a per-file
+ * existence check, so it is handled separately by both callers.
+ */
+function requiredPlaceholderFields(profile: DebugProfile): ReadonlyArray<{
+  name: string;
+  label: string;
+  value: string | undefined;
+  fix: string;
+}> {
+  const fields = [
+    {
+      name: "device",
+      // cortex-debug reads `device` for J-Link; baremetal-mcu emits it whatever
+      // the server is, and telling a pyOCD user to supply a "J-Link device
+      // name" would be a lie.
+      label:
+        profile.server === "jlink" ? "J-Link device name" : "probe device name",
+      value: profile.device,
+      fix: "Resolve J-Link device before launch.",
+    },
+    {
+      name: "targetId",
+      label: "pyOCD target id",
+      value: profile.targetId,
+      fix: "Resolve pyOCD targetId before launch.",
+    },
+    {
+      name: "miDebuggerServerAddress",
+      label: "gdbserver address (host:port)",
+      value: profile.miDebuggerServerAddress,
+      fix: "Resolve gdbserver address before launch.",
+    },
+    {
+      name: "miDebuggerPath",
+      label: "gdb executable path",
+      value: profile.miDebuggerPath,
+      fix: "Resolve local gdb path before launch.",
+    },
+  ];
+
+  return fields.filter((field) => field.value !== undefined);
+}
+
+/**
+ * SVD is OPTIONAL to cortex-debug: it populates the peripheral/register view
+ * (mcu-debug.peripheral-viewer) and affects nothing else — the session starts,
+ * breakpoints hit and memory reads work without it. So this WARNS and never
+ * fails. It used to be a `fail` on baremetal-mcu, which put it in
+ * `summary.fail` and so drove `canLaunch` false: a missing register view
+ * blocked the launch outright. A missing SVD must never stop a customer
+ * setting a breakpoint.
+ *
+ * Warn is the normal state right now and nothing in this repo can change it:
+ * alp-sdk ships no `.svd` files and its metadata carries no path to one
+ * (alp-sdk#948), and this is a thin extension — it must not vendor an SVD or
+ * invent where one lives. So no profile sets `svdFile`; when the SDK starts
+ * publishing per-SoC SVD metadata, `createDebugProfile` is where it gets read,
+ * and `debugProfileToLaunchDraft` already emits the key only once it RESOLVES
+ * (cortex-debug OPENS `svdFile`, so a placeholder is worse than no key).
+ *
+ * No `fix` on the unresolved branch: `uniquePreflightNextSteps` collects `fix`
+ * from every non-pass check, so advice nobody can act on would be mixed into
+ * `nextSteps` permanently — and the surface interpolates those into the toast
+ * detail and into every support bundle. The explanation stays in `detail`.
+ */
+function createSvdCheck(profile: DebugProfile): PreflightCheck {
+  const resolved = isResolvedValue(profile.svdFile);
+  return {
+    name: "svdFile",
+    status: resolved ? "pass" : "warn",
+    detail: resolved
+      ? profile.svdFile!
+      : "No SVD file is available, so the peripheral/register view will be empty. Debugging is otherwise unaffected.",
   };
 }
 
@@ -811,20 +936,14 @@ function createProfileConfigurationChecks(
   context: DebugWorkspaceContext,
   dependencies: DebugPreflightDependencies,
 ): PreflightCheck[] {
-  const checks: PreflightCheck[] = [];
+  const checks: PreflightCheck[] = requiredPlaceholderFields(profile).map(
+    (field) => createResolvedValueCheck(field.name, field.value, field.fix),
+  );
 
-  if (profile.server === "jlink") {
-    checks.push(
-      createResolvedValueCheck(
-        "device",
-        profile.device,
-        "Resolve J-Link device before launch.",
-      ),
-    );
-  }
-
-  if (profile.server === "openocd") {
-    const configs = profile.openOcdConfigFiles ?? [];
+  // Same presence rule as `unresolvedRequiredFields`: only check the list when
+  // the profile actually carries one, because that is when it is written.
+  const configs = profile.openOcdConfigFiles;
+  if (configs) {
     if (configs.length === 0) {
       checks.push({
         name: "openOcdConfig",
@@ -857,39 +976,10 @@ function createProfileConfigurationChecks(
     }
   }
 
-  if (profile.server === "pyocd") {
-    checks.push(
-      createResolvedValueCheck(
-        "targetId",
-        profile.targetId,
-        "Resolve pyOCD targetId before launch.",
-      ),
-    );
-  }
-
-  if (profile.targetKind === "baremetal-mcu") {
-    checks.push(
-      createResolvedValueCheck(
-        "svdFile",
-        profile.svdFile,
-        "Resolve SVD file path before launch.",
-      ),
-    );
-  }
-
-  if (profile.targetKind === "yocto-userspace") {
-    checks.push(
-      createResolvedValueCheck(
-        "miDebuggerServerAddress",
-        profile.miDebuggerServerAddress,
-        "Resolve gdbserver address before launch.",
-      ),
-      createResolvedValueCheck(
-        "miDebuggerPath",
-        profile.miDebuggerPath,
-        "Resolve local gdb path before launch.",
-      ),
-    );
+  // cortex-debug is the only adapter that reads svdFile, and it reads it for
+  // zephyr-mcu and baremetal-mcu alike.
+  if (profile.adapter === "cortex-debug") {
+    checks.push(createSvdCheck(profile));
   }
 
   return checks;

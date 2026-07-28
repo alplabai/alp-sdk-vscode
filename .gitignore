@@ -18,6 +18,12 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# tan's published envelope contract, fetched by scripts/fetch-tan-contract.mjs.
+# Deliberately NOT tracked: a corpus hand-copied into this repo drifts in exactly
+# the way the drift gate that reads it exists to catch. Refresh with
+# `pnpm run contract:fetch`.
+test/golden/tan-contract/
+
 # Local assistant instructions (keep private)
 .github/local-agent-instructions.md
 

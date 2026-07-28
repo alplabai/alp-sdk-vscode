@@ -55,7 +55,16 @@ test("a second run of the same name is REFUSED, never killed", () => {
     ADAPTER.indexOf("async function streamRun("),
   );
   assert.match(entry, /if \(!reserveStreamedRun\(options\.name\)\)/);
-  assert.match(entry, /still running — wait for it to finish/);
+  // The refusal is a notify plan now (#368's single presenter), not a
+  // hand-rolled showWarningMessage: a warning severity, the "still running"
+  // sentence, and a reveal action chosen from the mode of the run that holds
+  // the name — "Show Output" for a channel run, "Show Terminal" for a task.
+  assert.match(entry, /notifyAsync\(\s*planFailure\(\{/);
+  assert.match(entry, /severity: "warning"/);
+  assert.match(entry, /is still running\./);
+  assert.match(entry, /isStreamedRunActive\(options\.name\)/);
+  assert.match(entry, /\{ id: "showOutput" \}/);
+  assert.match(entry, /\{ id: "showTerminal", arg: options\.name \}/);
   assert.match(entry, /finally \{\s*releaseStreamedRun\(options\.name\);/);
   // No same-name kill anywhere on this path; the only kill left is the user's
   // own Cancel button.

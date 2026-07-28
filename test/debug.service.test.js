@@ -2,13 +2,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  DEBUG_TARGET_CHOICES,
   buildDebugPreflightReport,
   buildDoctorReport,
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
-  createLaunchPreview,
   createSupportBundlePayload,
+  foldLaunchConfigPlaceholders,
   isNativeHostTarget,
   serializeGenerationTraceReport,
   serializeInspectReport,
@@ -66,28 +67,6 @@ test("serverChoicesForTarget returns expected backends", () => {
     serverChoicesForTarget("native-host").map((choice) => choice.server),
     ["none"],
   );
-});
-
-test("createDebugProfile defines reusable profile metadata", () => {
-  const zephyr = createDebugProfile("zephyr-mcu", "openocd");
-  const baremetal = createDebugProfile("baremetal-mcu", "jlink");
-  const yocto = createDebugProfile("yocto-userspace", "gdbserver");
-  const host = createDebugProfile("native-host", "none");
-
-  assert.equal(zephyr.adapter, "cortex-debug");
-  assert.equal(zephyr.os, "zephyr");
-  assert.deepEqual(zephyr.openOcdConfigFiles, ["<resolved-openocd-board-cfg>"]);
-
-  assert.equal(baremetal.adapter, "cortex-debug");
-  assert.equal(baremetal.os, "baremetal");
-  assert.equal(baremetal.interface, "swd");
-
-  assert.equal(yocto.adapter, "cppdbg");
-  assert.equal(yocto.server, "gdbserver");
-  assert.equal(yocto.miMode, "gdb");
-
-  assert.equal(host.adapter, "codelldb");
-  assert.equal(host.os, "host");
 });
 
 test("createDebugProfile derives the per-core path from a manifest slice", () => {
@@ -248,6 +227,261 @@ test("buildDebugPreflightReport can pass for resolved native-host profile", () =
   assert.equal(report.summary.fail, 0);
 });
 
+// The stock machine, not the CI container: vadimcn.vscode-lldb v1.12.2 SHIPS
+// its own LLDB (lldb/bin/lldb.exe, liblldb.dll, lldb-server.exe inside the
+// extension) and never consults PATH, so a Windows or macOS box normally has no
+// `lldb` and no `lldb-dap` -- and does not need one. Probing for it put F5 on
+// "Alp: Native Sim Debug" behind a Start Anyway click, on native_sim: the one
+// target needing neither probe nor board, and so the first debug session a
+// customer ever runs.
+//
+// createRuntime() hardcodes lldbExecutable, which is exactly why the suite hid
+// this. Overriding it is the whole test.
+test("native-host launches with no lldb on PATH", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    createDebugProfile("native-host", "none"),
+    createRuntime({ lldbExecutable: null }),
+    { pathExists: () => true },
+  );
+
+  assert.equal(report.canLaunch, true);
+  assert.equal(report.summary.fail, 0);
+  assert.deepEqual(report.nextSteps, []);
+
+  const serverTool = report.checks.find((check) => check.name === "serverTool");
+  assert.equal(serverTool.status, "pass");
+  assert.equal(serverTool.fix, undefined);
+
+  // Doctor has to agree with preflight on the same fact, or the customer is
+  // told to install something preflight just said was unnecessary.
+  const doctor = buildDoctorReport(
+    createDebugContext(),
+    { targetKind: "native-host", server: "none" },
+    createRuntime({ lldbExecutable: null }),
+  );
+  assert.deepEqual(doctor.nextSteps, []);
+  assert.equal(doctor.summary.fail, 0);
+  assert.equal(doctor.summary.warn, 0);
+
+  // "none" is the native-host "there is no debug server" marker, not a tool
+  // name. Interpolated as one it rendered "No none executable was found on
+  // PATH." and "Install none and make sure it is on PATH." straight into the
+  // customer toast. Nothing customer-facing here may contain the word at all --
+  // if some future wording needs it, reword the wording.
+  const emitted = [
+    ...report.checks.flatMap((check) => [check.detail, check.fix]),
+    ...report.nextSteps,
+  ].filter(Boolean);
+  for (const text of emitted) {
+    assert.ok(
+      !/\bnone\b/i.test(text),
+      `preflight rendered "none" as a tool name: ${text}`,
+    );
+  }
+});
+
+// native_sim is a POSIX-architecture board -- Zephyr's board docs say it builds
+// "a normal Linux executable" -- and the profile launches it with CodeLLDB in
+// THIS extension host. On Windows that cannot work at any step: the Zephyr build
+// emits no Windows binary, and one built under WSL is a Linux ELF a Windows-side
+// CodeLLDB cannot launch. Before this check, "Native host" was offered
+// unconditionally, wrote a launch config, and F5 died with nothing explaining
+// why -- on the one target that needs neither probe nor board, i.e. the first
+// debug session a customer ever runs.
+const NATIVE_HOST_WIN32_DETAIL =
+  "native_sim builds a Linux executable, so it cannot run on this Windows host.";
+const NATIVE_HOST_WIN32_FIX =
+  "Reopen the folder in WSL, or build and debug native_sim on a Linux or macOS host.";
+
+test("native-host preflight blocks on a win32 host and names the WSL way out", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    createDebugProfile("native-host", "none"),
+    createRuntime({ hostPlatform: "win32" }),
+    // Everything else healthy, so the host OS is the only thing left to fail.
+    { pathExists: () => true },
+  );
+
+  const check = report.checks.find((entry) => entry.name === "hostPlatform");
+  assert.ok(check, "no hostPlatform check on a win32 native-host preflight");
+  // Blocking, not advisory: nothing the customer installs on Windows clears it,
+  // so a warn would leave canLaunch true and F5 still reaching the dead end.
+  assert.equal(check.status, "fail");
+  assert.equal(check.detail, NATIVE_HOST_WIN32_DETAIL);
+  assert.equal(check.fix, NATIVE_HOST_WIN32_FIX);
+  assert.equal(report.canLaunch, false);
+  assert.ok(report.summary.fail > 0);
+  // nextSteps is what the surface interpolates, so the remedy has to arrive
+  // there and not just sit in the per-check detail.
+  assert.ok(report.nextSteps.includes(NATIVE_HOST_WIN32_FIX));
+
+  // The message contract in src/notify/models.ts: no errno, no absolute path,
+  // no internal check id in anything a customer reads.
+  for (const text of [check.detail, check.fix]) {
+    assert.ok(!/[\\/]/.test(text), `leaks a path: ${text}`);
+    assert.ok(!/\bE[A-Z]{3,}\b/.test(text), `leaks an errno: ${text}`);
+    assert.ok(!/hostPlatform/.test(text), `leaks the check id: ${text}`);
+  }
+});
+
+test("native-host doctor blocks on a win32 host with the same sentence", () => {
+  const report = buildDoctorReport(
+    createDebugContext(),
+    { targetKind: "native-host", server: "none" },
+    createRuntime({ hostPlatform: "win32" }),
+  );
+
+  const check = report.checks.find((entry) => entry.name === "hostPlatform");
+  assert.ok(check, "no hostPlatform check on a win32 native-host doctor run");
+  assert.equal(check.status, "fail");
+  assert.equal(check.detail, NATIVE_HOST_WIN32_DETAIL);
+  assert.equal(check.fix, NATIVE_HOST_WIN32_FIX);
+  assert.equal(report.summary.fail, 1);
+  assert.ok(report.nextSteps.includes(NATIVE_HOST_WIN32_FIX));
+});
+
+test("native-host is unaffected on linux, darwin and an unreported host", () => {
+  for (const hostPlatform of ["linux", "darwin", undefined]) {
+    const where = `hostPlatform=${hostPlatform}`;
+    const preflight = buildDebugPreflightReport(
+      "2026-05-14T00:00:00.000Z",
+      createDebugContext(),
+      createDebugProfile("native-host", "none"),
+      createRuntime({ hostPlatform }),
+      { pathExists: () => true },
+    );
+    assert.equal(
+      preflight.checks.some((entry) => entry.name === "hostPlatform"),
+      false,
+      where,
+    );
+    assert.equal(preflight.canLaunch, true, where);
+    assert.deepEqual(preflight.nextSteps, [], where);
+
+    const doctor = buildDoctorReport(
+      createDebugContext(),
+      { targetKind: "native-host", server: "none" },
+      createRuntime({ hostPlatform }),
+    );
+    assert.equal(
+      doctor.checks.some((entry) => entry.name === "hostPlatform"),
+      false,
+      where,
+    );
+    assert.equal(doctor.summary.fail, 0, where);
+  }
+});
+
+// The gate is native_sim's POSIX architecture, not "Windows is bad at
+// debugging": every other target class debugs over a probe or a remote
+// gdbserver and is perfectly launchable from Windows. A check that fired on
+// them would break real on-target debugging for the primary customer.
+test("no other debug target gains a host-OS check on win32", () => {
+  for (const { targetKind } of DEBUG_TARGET_CHOICES) {
+    if (targetKind === "native-host") continue;
+    for (const { server } of serverChoicesForTarget(targetKind)) {
+      const where = `${targetKind}/${server}`;
+      const preflight = buildDebugPreflightReport(
+        "2026-05-14T00:00:00.000Z",
+        createDebugContext(),
+        createDebugProfile(targetKind, server),
+        createRuntime({ hostPlatform: "win32" }),
+        { pathExists: () => true },
+      );
+      assert.equal(
+        preflight.checks.some((entry) => entry.name === "hostPlatform"),
+        false,
+        where,
+      );
+
+      const doctor = buildDoctorReport(
+        createDebugContext(),
+        { targetKind, server },
+        createRuntime({ hostPlatform: "win32" }),
+      );
+      assert.equal(
+        doctor.checks.some((entry) => entry.name === "hostPlatform"),
+        false,
+        where,
+      );
+      assert.equal(
+        doctor.nextSteps.includes(NATIVE_HOST_WIN32_FIX),
+        false,
+        where,
+      );
+    }
+  }
+});
+
+test("buildDebugPreflightReport fails the placeholder OpenOCD board config", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    createDebugProfile("zephyr-mcu", "openocd"),
+    createRuntime(),
+    // Every path that could exist does, so the only thing left to object to is
+    // the <resolved-openocd-board-cfg> placeholder itself. OpenOCD would take
+    // it as a literal filename and fail to open it.
+    { pathExists: () => true },
+  );
+
+  assert.equal(report.canLaunch, false);
+  const openOcd = report.checks.find((check) => check.name === "openOcdConfig");
+  assert.equal(openOcd.status, "fail");
+  assert.match(openOcd.detail, /<resolved-openocd-board-cfg>/);
+});
+
+test("foldLaunchConfigPlaceholders returns the report unchanged when there are no placeholders", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    {
+      ...createDebugProfile("native-host", "none"),
+      executablePath: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
+    },
+    createRuntime(),
+    {
+      pathExists: (filePath) =>
+        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+    },
+  );
+
+  assert.equal(foldLaunchConfigPlaceholders(report, []), report);
+});
+
+test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the report", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    {
+      ...createDebugProfile("native-host", "none"),
+      executablePath: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
+    },
+    createRuntime(),
+    {
+      pathExists: (filePath) =>
+        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+    },
+  );
+  assert.equal(report.canLaunch, true);
+  const failBefore = report.summary.fail;
+
+  const folded = foldLaunchConfigPlaceholders(report, ["<resolved-device>"]);
+
+  assert.equal(folded.canLaunch, false);
+  assert.equal(folded.summary.fail, failBefore + 1);
+  const launchConfigChecks = folded.checks.filter(
+    (check) => check.name === "launchConfig",
+  );
+  assert.equal(launchConfigChecks.length, 1);
+  assert.equal(launchConfigChecks[0].status, "fail");
+  assert.equal(launchConfigChecks[0].detail, "<resolved-device>");
+  assert.ok(launchConfigChecks[0].fix);
+});
+
 test("serializeSupportBundlePayload returns stable JSON", () => {
   const inspect = createInspectReport(createDebugContext());
   const preflight = buildDebugPreflightReport(
@@ -310,82 +544,4 @@ test("buildDoctorReport summarizes zephyr doctor state", () => {
     "Install marus25.cortex-debug.",
     "Install openocd and make sure it is on PATH.",
   ]);
-});
-
-test("createLaunchPreview generates a Zephyr J-Link draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "zephyr-mcu",
-    "jlink",
-  );
-
-  assert.equal(preview.launch.version, "0.2.0");
-  assert.equal(preview.launch.configurations.length, 1);
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "jlink");
-  assert.equal(config.interface, "swd");
-  assert.match(config.name, /Zephyr Debug/);
-});
-
-test("createLaunchPreview generates a Zephyr OpenOCD draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "zephyr-mcu",
-    "openocd",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "openocd");
-  assert.deepEqual(config.configFiles, ["<resolved-openocd-board-cfg>"]);
-});
-
-test("createLaunchPreview generates a baremetal draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "baremetal-mcu",
-    "jlink",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "jlink");
-  assert.equal(config.executable, "${workspaceFolder}/build/baremetal/app.elf");
-});
-
-test("createLaunchPreview generates a Yocto gdbserver draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "yocto-userspace",
-    "gdbserver",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cppdbg");
-  assert.equal(config.MIMode, "gdb");
-  assert.equal(config.miDebuggerServerAddress, "<host>:<port>");
-});
-
-test("createLaunchPreview generates a native host draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "native-host",
-    "none",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "codelldb");
-  assert.equal(
-    config.program,
-    "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
-  );
-});
-
-test("createLaunchPreview rejects unsupported launch combinations", () => {
-  assert.throws(
-    () =>
-      createLaunchPreview("2026-05-14T00:00:00.000Z", "native-host", "jlink"),
-    /Unsupported debug backend/,
-  );
 });

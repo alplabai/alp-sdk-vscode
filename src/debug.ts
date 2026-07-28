@@ -3,7 +3,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { createLaunchJsonWritePlan } from "@alp-sdk/core/debug/launchJsonCore";
 import {
   DebugGenerationTraceDecision,
   DebugServerKind,
@@ -11,6 +10,7 @@ import {
 } from "@alp-sdk/core/debug/models";
 import type { ManifestSlice } from "@alp-sdk/core/systemManifest/models";
 import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
+import { samePath } from "@alp-sdk/core/paths";
 import { createDebugTroubleshootingPanelHtml } from "@alp-sdk/core/debug/panelHtml";
 import {
   buildDebugPreflightReport,
@@ -18,9 +18,9 @@ import {
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
-  createLaunchPreview,
   createSupportBundlePayload,
   DEBUG_TARGET_CHOICES,
+  foldLaunchConfigPlaceholders,
   isNativeHostTarget,
   serializeSupportBundlePayload,
   serverChoicesForTarget,
@@ -29,14 +29,35 @@ import {
   collectRuntimeCapabilities,
   collectWorkspaceDebugContext,
   fileExists,
-  readLaunchJson,
-  writeLaunchJson,
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
+import {
+  readLaunchJsonDocument,
+  writeLaunchJsonDocument,
+} from "./debug/launchJsonFile";
+import {
+  debugConfigArgs,
+  findRescuablePairs,
+  planOrphanRescue,
+} from "./debug/service";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
-import { samePath } from "@alp-sdk/core/paths";
+import { runAlpCommand } from "./alpCli/vscodeAdapter";
+import {
+  DebugConfigData,
+  SUPPORTED_CLI_VERSION,
+  isDebugConfigData,
+  launchConfigPlaceholders,
+} from "./alpCli/service";
 import { ensureNativeSimOverlay } from "./west";
-import { log, reportError, showOutput } from "./util";
+import { log, showOutput } from "./util";
+import { NotifyAction } from "./notify/models";
+import {
+  isCancellation,
+  planFailure,
+  planPrecondition,
+  planSuccess,
+} from "./notify/service";
+import { notify } from "./notify/vscodeAdapter";
 
 async function showJsonDocument(data: unknown): Promise<void> {
   const doc = await vscode.workspace.openTextDocument({
@@ -139,7 +160,7 @@ async function debugPreflight(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
+    await reportDebugFailure("Alp: the debug preflight", error);
     return;
   }
 
@@ -174,44 +195,64 @@ interface LaunchProfileResult {
   notes: readonly string[];
 }
 
-/** Prompt for target/server, write the launch.json profile, and return what a
- *  caller needs to report status or start a session. Null when the user
- *  cancelled or no workspace is open (a message is shown for the latter). */
-async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
+/** Prompt for target/server, have `tan debug-config` write the launch profile,
+ *  and return what a caller needs to report status or start a session. Null
+ *  when the user cancelled, no workspace is open, or the CLI could not produce
+ *  a usable configuration (a message is shown for the latter two).
+ *
+ *  The configuration comes from `tan debug-config`, which resolves the
+ *  probe/tool values from the build's own `runners.yaml` (tan-cli#66). The
+ *  extension deliberately keeps NO second draft: it had one, with the same
+ *  unresolved `<resolved-device>` placeholders, and a fork of the same logic in
+ *  two languages meant fixing one left the other handing out broken files
+ *  (#339). What stays in-process is the readiness report below — it probes
+ *  which debugger extensions are installed, host state a separate process
+ *  cannot observe (EXTENSION_CLI_INTEGRATION.md §4a).
+ *
+ *  Two passes on purpose: `--preview` first, and only a real write once the
+ *  envelope is accepted. Writing first and validating after means an older
+ *  `tan` (no `data.configuration`) reports a failure the user cannot act on
+ *  while their `launch.json` has already gained a config full of placeholders
+ *  they never asked for. */
+async function writeLaunchProfile(
+  extensionContext: vscode.ExtensionContext,
+): Promise<LaunchProfileResult | null> {
   const targetKind = await pickTargetKind();
   if (!targetKind) return null;
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
   if (!context.workspaceRoot) {
-    await vscode.window.showErrorMessage(
-      "Alp: no workspace folder is open, cannot write launch.json.",
+    await notify(
+      planPrecondition("noWorkspace", { operation: "write launch.json" }),
     );
     return null;
   }
 
   const slice = resolveManifestSlice(context.workspaceRoot, targetKind);
-  const preview = createLaunchPreview(
-    new Date().toISOString(),
-    targetKind,
-    server,
-    slice,
+  // Built by `debugConfigArgs` rather than here, so the argv is pinned by a
+  // test instead of by reading (#397). A wrong flag exits 2 and says so; a
+  // wrong VALUE — `--core m55_hp` against `--core m55_he` — is a valid command
+  // that debugs the wrong core and reports nothing.
+  const spec = { targetKind, server, coreId: slice?.core_id ?? null };
+
+  const preview = await runDebugConfig(
+    extensionContext,
+    context.workspaceRoot,
+    debugConfigArgs(spec, { preview: true }),
   );
-  const configuration = preview.launch.configurations[0]!;
+  if (!preview) return null;
 
-  let writePlan;
-  try {
-    writePlan = createLaunchJsonWritePlan(
-      readLaunchJson(context.workspaceRoot),
-      configuration,
-    );
-  } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
-    return null;
-  }
+  // Shape accepted — now let the CLI write for real.
+  const written = await runDebugConfig(
+    extensionContext,
+    context.workspaceRoot,
+    debugConfigArgs(spec),
+  );
+  if (!written) return null;
 
-  const launchPath = writeLaunchJson(context.workspaceRoot, writePlan.content);
+  const placeholders = launchConfigPlaceholders(written.configuration);
   log(
-    `alp debug: ${writePlan.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
+    `alp debug: ${written.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
 
   const report = buildDebugPreflightReport(
@@ -224,17 +265,112 @@ async function writeLaunchProfile(): Promise<LaunchProfileResult | null> {
 
   return {
     workspaceRoot: context.workspaceRoot,
-    configName: String(configuration.name),
-    launchPath,
-    relPath: vscode.workspace.asRelativePath(launchPath),
-    replaced: writePlan.replaced,
-    report,
-    notes: preview.notes,
+    configName: written.configuration.name,
+    launchPath: written.launchJsonPath,
+    relPath: vscode.workspace.asRelativePath(written.launchJsonPath),
+    replaced: written.replaced,
+    // The in-process report answers "is the HOST ready" (adapters installed).
+    // It cannot see that the CLI left `<resolved-device>` in the file it just
+    // wrote — `tan debug-config` reports ok for a partly-resolved draft by
+    // design. Without this the user is told the profile is ready and the
+    // session dies inside the adapter. foldLaunchConfigPlaceholders adds a
+    // real "launchConfig" check (rather than just flipping `canLaunch`), so
+    // `report.checks`/`summary`/`nextSteps` name the failure too — both
+    // consumers below build their message from `checks`.
+    report: foldLaunchConfigPlaceholders(report, placeholders),
+    // The placeholders are now named by the folded check's own detail/fix, so
+    // no separate note is needed here — keep only the CLI's own notes.
+    notes: written.notes,
   };
 }
 
-async function configureDebugProfile(): Promise<void> {
-  const result = await writeLaunchProfile();
+/** One `tan debug-config` invocation, with the two failure modes reported
+ *  distinctly. `null` on either.
+ *
+ *  They are separate because they need different words. A non-zero exit is the
+ *  CLI's own complaint (a bad flag, an unreadable `launch.json`). A zero exit
+ *  whose payload has no `configuration` is version skew — `outcome.message` is
+ *  literally "Command completed." there, so reporting it as the failure reason
+ *  tells the user the command both failed and succeeded. */
+async function runDebugConfig(
+  extensionContext: vscode.ExtensionContext,
+  cwd: string,
+  args: string[],
+): Promise<DebugConfigData | null> {
+  const outcome = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Alp: generating the debug configuration",
+      cancellable: true,
+    },
+    async (_progress, token) => {
+      // A first-ever Debug may DOWNLOAD the tan binary inside this call; with
+      // no progress UI the user stares at nothing after the two quick-picks.
+      const controller = new AbortController();
+      token.onCancellationRequested(() => controller.abort());
+      const result = await runAlpCommand(extensionContext, args, cwd, {
+        signal: controller.signal,
+      });
+      return result.outcome;
+    },
+  );
+
+  if (!outcome.ok) {
+    const skew =
+      outcome.kind === "validation" && args.includes("--core")
+        ? ` This extension requires tan ${SUPPORTED_CLI_VERSION} or newer; run "Alp: Update CLI" and retry.`
+        : "";
+    await notify(
+      planFailure({
+        operation: "Alp: generating the debug configuration",
+        cause: `Alp: the debug configuration could not be generated.${skew}`,
+        detail: outcome.message,
+        actions: [{ id: "showOutput" }],
+      }),
+    );
+    return null;
+  }
+
+  const data = outcome.envelope?.data;
+  if (!isDebugConfigData(data)) {
+    await notify(
+      planFailure({
+        operation: "Alp: generating the debug configuration",
+        cause: `Alp: this tan CLI does not report the debug configuration — it predates the ${SUPPORTED_CLI_VERSION} this extension requires. Run "Alp: Update CLI" and retry.`,
+        detail: outcome.envelope
+          ? JSON.stringify(outcome.envelope, null, 2)
+          : undefined,
+        actions: [{ id: "showOutput" }],
+      }),
+    );
+    return null;
+  }
+  return data;
+}
+
+/** Every debug-path failure toast goes through here so the sentence names the
+ *  OPERATION that failed, not a generic "debug configuration failed" (#368).
+ *  Ported with this rebase: #342 predates the notify layer entirely and still
+ *  called `reportError`, which #368 removed from `./util`. */
+async function reportDebugFailure(
+  operation: string,
+  error: unknown,
+  actions?: NotifyAction[],
+): Promise<void> {
+  await notify(
+    planFailure({
+      operation,
+      cause: `${operation} failed.`,
+      detail: debugErrorDetail(error),
+      actions,
+    }),
+  );
+}
+
+async function configureDebugProfile(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const result = await writeLaunchProfile(context);
   if (!result) return;
 
   const doc = await vscode.workspace.openTextDocument(result.launchPath);
@@ -242,21 +378,258 @@ async function configureDebugProfile(): Promise<void> {
 
   const verb = result.replaced ? "updated" : "wrote";
   if (result.report.canLaunch) {
-    await vscode.window.showInformationMessage(
-      `Alp: ${verb} ${result.relPath}.`,
+    await notify(planSuccess(`Alp: ${verb} ${result.relPath}.`));
+  } else {
+    const unresolved = logUnlaunchableDetail(result);
+    await notify(
+      planFailure({
+        operation: "Alp: refreshing the launch profile",
+        cause: `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}.`,
+        detail: result.report.nextSteps.join(" "),
+        severity: "warning",
+        actions: [{ id: "openLaunchJson", arg: result.launchPath }],
+      }),
     );
+  }
+
+  // The write above is what CREATES the duplicate on a launch.json older than
+  // #387, so this is both the moment it exists and the moment the maintained
+  // name is known for free — no `--preview` run needed. Not one-shot: the
+  // customer ran this command, so an offer here is an answer, not a nag.
+  // Offered after the status toast rather than before it, because the toast
+  // describes the report taken BEFORE the repair; reordering them would need
+  // the whole preflight recomputed to stay honest.
+  await maybeRescueOrphanedLaunchConfig(context, {
+    maintainedName: result.configName,
+    oneShot: false,
+  });
+}
+
+/** One offer per WORKSPACE, and only once the customer has said "stop asking".
+ *  Not global: the stranded value lives in one project's launch.json, and
+ *  declining for that project says nothing about the next one. */
+const RESCUE_PROMPT_KEY_PREFIX = "alp.launchConfigRescueOffered";
+
+/**
+ * Offer to repair a `launch.json` that holds the same debug configuration
+ * twice, once under each of `ALP:` / `Alp:` — see `./debug/service.ts` for what
+ * that is, why it strands a customer's hand-filled value, and what bounds this.
+ *
+ * OFFERS, NEVER APPLIES. It is the customer's file; a silent rewrite of it is
+ * not acceptable at any level of confidence, so the write is gated on an
+ * `applyChanges` pick coming back from the seam.
+ *
+ * ACTIVATION, and the configure command as well. The affected customer's
+ * symptom is "F5 fails", so they will conclude debugging is broken and will
+ * never think to run Configure Debug Profile — waiting to be asked is waiting
+ * forever. The counterweight is that activation work is intrusive and this
+ * repo is strict about not nagging, so the trigger is deliberately narrow:
+ * only when a pair really exists AND a concrete value is really at risk
+ * (`findRescuablePairs`), decided offline. A launch.json with no pair never
+ * says a word, and never spawns a process to find that out — but it is not one
+ * read either: `collectWorkspaceDebugContext()` runs first, which is a
+ * `readdirSync` of `~/.alp/sdk` plus a `statSync` per entry, the extension's
+ * own settings, a handful of `existsSync`/`readFileSync` probes and three
+ * `vscode.extensions.getExtension` calls, and then the launch.json
+ * `readFileSync`. All synchronous, all cheap, none of it the CLI.
+ *
+ * ONCE, BUT ONLY AFTER AN ANSWER. `src/ideHub/setupOrchestrator.ts` already
+ * ruled on this shape: an auto-dismissed toast returns undefined and stays
+ * unrecorded, so it is retried on the next activation rather than lost for the
+ * lifetime of the workspace. The same applies here and harder — an accidental
+ * dismissal would strand the value permanently and hand the customer back a
+ * broken F5 whose only remaining fix is a command they have never heard of,
+ * which is the very argument for triggering on activation at all. So the
+ * `Don't show again` button is the ONLY response that records the key.
+ * Accepting does not need to: a successful repair removes the pair, and
+ * `findRescuablePairs` is then silent on its own — while a repair that failed
+ * to land is a state still worth offering.
+ *
+ * "Activation" means package.json's own `activationEvents`, and that is a real
+ * limit, not an oversight: a folder holding nothing but a stranded
+ * `.vscode/launch.json` — no `board.yaml`, no `prj*.conf`, no Alp view opened —
+ * never activates this extension at all, so the offer never comes. Widening
+ * the manifest to `workspaceContains:.vscode/launch.json` would activate the
+ * whole extension in almost every VS Code window on the machine to cover a
+ * folder that has no Alp project in it. The command path is the answer for
+ * that case; alplabai/tan-cli#169 is the real one, since tan needs no
+ * activation event.
+ *
+ * `maintainedName` is the configuration name the CURRENTLY PINNED tan writes —
+ * the only thing that says which half of the pair is maintained and which is
+ * the orphan, and something this extension cannot know statically. The
+ * configure command already has one; otherwise a `--preview` run answers it,
+ * and that runs ONLY after the customer has accepted. `--preview` is
+ * documented not to touch launch.json, so asking costs them nothing.
+ *
+ * Never throws: it is `void`-ed from activation, and the toast plus the
+ * `workspaceState` write are both pending main-thread RPCs that a closing
+ * window rejects with a CancellationError — the same reason
+ * `maybeOfferFirstRunWizard` catches.
+ */
+export async function maybeRescueOrphanedLaunchConfig(
+  context: vscode.ExtensionContext,
+  options: { maintainedName?: string; oneShot: boolean },
+): Promise<void> {
+  const workspaceRoot = collectWorkspaceDebugContext().workspaceRoot;
+  if (!workspaceRoot) return;
+  if (findRescuablePairs(readLaunchJsonDocument(workspaceRoot)).length === 0) {
     return;
   }
 
-  for (const note of result.notes) log(note);
-  const unresolved = result.report.checks
-    .filter((check) => check.status === "fail")
-    .map((check) => check.name)
-    .join(", ");
-  await vscode.window.showWarningMessage(
-    `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
+  const key = `${RESCUE_PROMPT_KEY_PREFIX}:${workspaceRoot}`;
+  if (options.oneShot && context.workspaceState.get<boolean>(key, false)) {
+    return;
+  }
+
+  try {
+    // Spelled out rather than built by `planFailure`: nothing has failed, so
+    // the operation-and-cause shape that builder is for would misdescribe it.
+    // `applyChanges` is caller-handled (no `run` in the presenter's table) so
+    // the pick comes back here and gates the write; `openLaunchJson` IS
+    // presenter-run, so "let me look first" opens the file and correctly
+    // repairs nothing.
+    //
+    // The sentence has to be true about the losing case too: where both entries
+    // hold a different hand-filled value, one of them does NOT move — the
+    // maintained entry's stands, and the success message below names what was
+    // dropped.
+    const actions: NotifyAction[] = [
+      { id: "applyChanges" },
+      { id: "openLaunchJson" },
+    ];
+    // Only the activation offer can nag, so only it needs a way to be told to
+    // stop. From the configure command the customer asked the question, and an
+    // answer there is an answer, not a nag.
+    if (options.oneShot)
+      actions.push({ id: "custom", title: "Don't show again" });
+    const choice = await notify({
+      severity: "warning",
+      channel: "toast",
+      message:
+        "Alp: this project's launch.json holds the same debug configuration " +
+        'twice — once as "Alp:" and once as "ALP:". Only one of them is kept ' +
+        "up to date, and values you filled in by hand may be sitting on the " +
+        "other. Move what is missing onto the maintained one and remove the " +
+        "duplicate? Where both entries have a value, the maintained one is " +
+        "kept and the other is discarded.",
+      actions,
+    });
+    // The one-shot key is recorded HERE, on an explicit "stop asking", and
+    // nowhere else — see the header. A dismissal must come back.
+    if (choice === "custom") {
+      await context.workspaceState.update(key, true);
+      return;
+    }
+    if (choice !== "applyChanges") return;
+
+    const maintainedName =
+      options.maintainedName ??
+      (await previewMaintainedConfigName(context, workspaceRoot));
+    if (!maintainedName) return;
+
+    // Re-read rather than reuse the document detection parsed. launch.json is
+    // very likely OPEN in the editor while the offer sits on screen — the
+    // configure command opens it — so the copy read a moment ago may already
+    // be stale, and writing it back would revert whatever was typed.
+    const rescue = planOrphanRescue(
+      readLaunchJsonDocument(workspaceRoot),
+      maintainedName,
+    );
+    if (!rescue) {
+      log("alp debug: launch.json no longer has a duplicate to repair");
+      return;
+    }
+
+    writeLaunchJsonDocument(workspaceRoot, rescue.document);
+    for (const pair of rescue.pairs) {
+      log(
+        `alp debug: removed "${pair.removedName}" from launch.json, keeping ` +
+          `"${pair.keptName}"` +
+          (pair.movedKeys.length > 0
+            ? `, moving across: ${pair.movedKeys.join(", ")}`
+            : " (the removed entry held no concrete value of its own)") +
+          // A deleted value is never left to be discovered later. The file was
+          // overwritten in place with no backup, so the channel is the only
+          // record of what the removed entry said.
+          (pair.discardedKeys.length > 0
+            ? `; the kept entry's own ${pair.discardedKeys.join(", ")} stood, ` +
+              `so the removed entry's value for it was discarded, not moved`
+            : ""),
+      );
+    }
+    const discarded = [
+      ...new Set(rescue.pairs.flatMap((p) => p.discardedKeys)),
+    ];
+    // A discarded value earns a toast, not the status bar: it is the one
+    // outcome where the repair DELETED something the customer may have typed,
+    // and a status-bar line that clears itself in five seconds is not a place
+    // to report that. `openLaunchJson` so they can go and look.
+    await notify(
+      discarded.length > 0
+        ? {
+            severity: "warning",
+            channel: "toast",
+            message:
+              "Alp: repaired the duplicate debug configuration. The removed " +
+              `entry's ${discarded.join(", ")} was discarded — the kept entry ` +
+              "already had a value of its own, and that is the one F5 uses.",
+            actions: [{ id: "openLaunchJson" }],
+          }
+        : planSuccess("Alp: repaired the duplicate debug configuration."),
+    );
+  } catch (error) {
+    if (isCancellation(error)) {
+      log("[debug] launch.json repair abandoned, window closing", "info");
+      return;
+    }
+    log(`[debug] launch.json repair failed: ${String(error)}`, "warn");
+  }
+}
+
+/** The configuration name the currently pinned tan writes, LEARNED rather than
+ *  guessed. The target/server pair asked for is arbitrary — every draft tan
+ *  emits carries the same prefix and the prefix is the entire question — so it
+ *  asks for the one target class every project has. */
+async function previewMaintainedConfigName(
+  context: vscode.ExtensionContext,
+  workspaceRoot: string,
+): Promise<string | null> {
+  // Through `debugConfigArgs` like `writeLaunchProfile`, not spelled inline:
+  // this was the second construction site, byte-identical but uncovered, so a
+  // pin bump that renamed the subcommand or added a required flag would move
+  // the tested function and leave this one behind. `runDebugConfig` returns
+  // null on the resulting exit 2, which here means the rescue silently loses
+  // the maintained config name mid-repair.
+  const preview = await runDebugConfig(
+    context,
+    workspaceRoot,
+    debugConfigArgs(
+      { targetKind: "zephyr-mcu", server: "jlink", coreId: null },
+      { preview: true },
+    ),
   );
-  showOutput();
+  return preview?.configuration.name ?? null;
+}
+
+/** Log everything behind a "not launchable yet" toast, and return the check
+ *  names that toast lists. The toast has room for names only, so the WHY has
+ *  to reach the channel it sends the user to (`showOutput()`): each failing
+ *  check's `detail`/`fix`. That is the ONLY place the unresolved values
+ *  themselves survive — the folded `launchConfig` check
+ *  (`foldLaunchConfigPlaceholders`) carries the `<resolved-…>` list in its
+ *  detail, and the CLI's own notes only say placeholders exist in general,
+ *  never which. Logging names alone would leave "resolve: launchConfig" with
+ *  no way to find out which field. */
+function logUnlaunchableDetail(result: LaunchProfileResult): string {
+  for (const note of result.notes) log(note);
+  const failures = result.report.checks.filter(
+    (check) => check.status === "fail",
+  );
+  for (const check of failures) {
+    log(`${check.name}: ${check.detail}${check.fix ? ` — ${check.fix}` : ""}`);
+  }
+  return failures.map((check) => check.name).join(", ");
 }
 
 /** Debug-adapter extension required per server. cortex-debug drives the on-chip
@@ -279,12 +652,18 @@ function requiredDebugExtension(configName: string): {
 async function ensureDebugExtension(configName: string): Promise<boolean> {
   const { id, label } = requiredDebugExtension(configName);
   if (vscode.extensions.getExtension(id)) return true;
-  const choice = await vscode.window.showWarningMessage(
-    `Alp: the ${label} extension (${id}) is required to debug this target but is not installed.`,
-    "Install",
-    "Cancel",
+  // `custom` is the caller-handled id (no `run` in the presenter's table), so
+  // the pick comes back here and gates the install below.
+  const choice = await notify(
+    planFailure({
+      operation: "Alp: starting the debug session",
+      cause: `Alp: the ${label} extension is required to debug this target but is not installed.`,
+      detail: id,
+      severity: "warning",
+      actions: [{ id: "custom", title: "Install" }],
+    }),
   );
-  if (choice !== "Install") return false;
+  if (choice !== "custom") return false;
   await vscode.commands.executeCommand(
     "workbench.extensions.installExtension",
     id,
@@ -296,7 +675,7 @@ async function ensureDebugExtension(configName: string): Promise<boolean> {
 /** First-class "Debug": generate/refresh the launch profile, make sure the
  *  debug-adapter extension is present, then start the session. */
 async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
-  const result = await writeLaunchProfile();
+  const result = await writeLaunchProfile(context);
   if (!result) return;
 
   // native_sim/native-host is the only debug class that runs a host binary
@@ -309,42 +688,48 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   }
 
   if (!(await ensureDebugExtension(result.configName))) {
-    await vscode.window.showWarningMessage(
-      `Alp: cannot start debugging without ${requiredDebugExtension(result.configName).label}.`,
+    await notify(
+      planFailure({
+        operation: "Alp: starting the debug session",
+        cause: `Alp: cannot start debugging without ${requiredDebugExtension(result.configName).label}.`,
+        severity: "warning",
+      }),
     );
     return;
   }
 
   if (!result.report.canLaunch) {
-    for (const note of result.notes) log(note);
-    const unresolved = result.report.checks
-      .filter((check) => check.status === "fail")
-      .map((check) => check.name)
-      .join(", ");
-    const choice = await vscode.window.showWarningMessage(
-      `Alp: ${result.relPath} is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
-      "Start Anyway",
-      "Show Details",
+    const unresolved = logUnlaunchableDetail(result);
+    // Both ids are caller-handled, so the pick comes back here. `showOutput`
+    // IS presenter-run, so it opens the channel and returns undefined — which
+    // correctly does NOT start the session.
+    const choice = await notify(
+      planFailure({
+        operation: "Alp: starting the debug session",
+        cause: `Alp: ${result.relPath} is not launchable yet — resolve: ${unresolved}.`,
+        detail: result.report.nextSteps.join(" "),
+        severity: "warning",
+        actions: [{ id: "startAnyway" }, { id: "showOutput" }],
+      }),
     );
-    if (choice === "Show Details") {
-      showOutput();
-      return;
-    }
-    if (choice !== "Start Anyway") return;
+    if (choice !== "startAnyway") return;
   }
 
   // `result.workspaceRoot` is toPosix'd by the project service while
-  // `uri.fsPath` stays native, so this must not be a raw `===` (#303).
+  // `uri.fsPath` stays native, so this must not be a raw `===` (#303/#355).
   const folder = vscode.workspace.workspaceFolders?.find((candidate) =>
     samePath(candidate.uri.fsPath, result.workspaceRoot),
   );
   const started = await vscode.debug.startDebugging(folder, result.configName);
   if (!started) {
-    // reportError already logs this and offers a "Show Output" action; the
-    // message itself points at the Debug Console / launch.json, so don't also
-    // force-open the Alp SDK channel here.
-    await reportError(
-      `Alp: VS Code declined to start "${result.configName}" — check the Debug Console and launch.json.`,
+    // The presenter logs this and appends "Show Output"; the message itself
+    // points at the Debug Console / launch.json, so don't also force-open the
+    // Alp SDK channel here.
+    await notify(
+      planFailure({
+        operation: "Alp: starting the debug session",
+        cause: `Alp: VS Code declined to start "${result.configName}" — check the Debug Console and launch.json.`,
+      }),
     );
   }
 }
@@ -355,8 +740,10 @@ async function exportSupportBundle(): Promise<void> {
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
   if (!context.workspaceRoot) {
-    await vscode.window.showErrorMessage(
-      "Alp: no workspace folder is open, cannot export a support bundle.",
+    await notify(
+      planPrecondition("noWorkspace", {
+        operation: "export a support bundle",
+      }),
     );
     return;
   }
@@ -372,7 +759,7 @@ async function exportSupportBundle(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
+    await reportDebugFailure("Alp: exporting the support bundle", error);
     return;
   }
 
@@ -410,8 +797,8 @@ async function exportSupportBundle(): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(filePath);
   await vscode.window.showTextDocument(doc, { preview: false });
 
-  await vscode.window.showInformationMessage(
-    `Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`,
+  await notify(
+    planSuccess(`Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`),
   );
 
   if (
@@ -439,7 +826,7 @@ async function openDebugTroubleshootingPanel(): Promise<void> {
       resolveManifestSlice(context.workspaceRoot, targetKind),
     );
   } catch (error) {
-    await reportError(formatDebugError(error), debugErrorDetail(error));
+    await reportDebugFailure("Alp: opening the troubleshooting panel", error);
     return;
   }
 
@@ -536,15 +923,6 @@ function createPanelTraceDecisions(
   return decisions;
 }
 
-function formatDebugError(error: unknown): string {
-  // Keep the `Alp:` brand prefix + a debug context on EVERY path — the
-  // Error branch used to return the raw `error.message` with neither, so a
-  // failure surfaced as a bare, unattributed toast.
-  const detail =
-    error instanceof Error ? error.message : "an unexpected error occurred.";
-  return `Alp: debug configuration failed — ${detail}`;
-}
-
 /** Full detail for the "Alp SDK" channel behind a `formatDebugError` toast: the
  *  stack trace when available (call-site context beyond the bare message baked
  *  into the toast), or the raw thrown value when it isn't an `Error` at all
@@ -571,7 +949,7 @@ export function registerDebugCommands(
       debugPreflight(),
     ),
     vscode.commands.registerCommand("alp.configureDebugProfile", () =>
-      configureDebugProfile(),
+      configureDebugProfile(context),
     ),
     vscode.commands.registerCommand("alp.debug", () => startDebugging(context)),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>

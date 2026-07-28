@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import { isCancellation } from "./notify/service";
 
 const OUTPUT = vscode.window.createOutputChannel("Alp SDK");
 
@@ -36,6 +37,13 @@ export function appendOutput(text: string): void {
 const terminalFinished = new vscode.EventEmitter<{
   name: string;
   code: number | undefined;
+  /** Which surface holds this run's output — a dedicated task terminal
+   *  (`"terminal"`, the default and the only value before channel mode) or the
+   *  "Alp SDK" output channel (`"channel"`, fired by
+   *  `signalStreamedFinished`). The verdict subscriber needs it to offer a
+   *  reveal action that exists: "Show Terminal" opens nothing for a run that
+   *  never had one. */
+  mode?: "terminal" | "channel";
 }>();
 export const onDidFinishTerminalCommand = terminalFinished.event;
 
@@ -130,24 +138,17 @@ function ensureTaskTracking(): void {
     }
     active.delete(name);
     log(`[terminal] "${name}" exited (code=${code ?? "unknown"})`);
-    terminalFinished.fire({ name, code });
-    // Glanceable verdict (#332). Its original premise -- "the terminal dies
-    // when its process exits, so the outcome scrolls away" -- no longer holds
-    // now that these run as Tasks whose terminal stays open, but the toast is
-    // still the only signal a user gets without watching the panel or opening
-    // the channel. A 0 exit shows an info toast; a defined non-zero shows an
-    // error toast + "Show Output".
+    // The glanceable verdict (#332) is NOT raised here any more: it is planned
+    // and presented by the `onDidFinishTerminalCommand` subscriber in
+    // `src/extension.ts`, so a failed `west flash` gets a plan with real
+    // actions ("Show Terminal", "Run Doctor") and keeps the exit code out of
+    // the toast text. This file must not import the presenter — the presenter
+    // imports log/showOutput/revealRunInTerminal from here.
     //
-    // An undefined code stays SILENT, and the reason changed with the port:
-    // it used to mean "the user closed the terminal mid-run", and now means
-    // the task ended without its process ever starting (the onDidEndTask
-    // backstop) -- i.e. we have no verdict to report. Claiming either outcome
-    // there would be a guess, so #332's silence rule is kept for a new reason.
-    if (code === 0) {
-      void vscode.window.showInformationMessage(`${name} finished`);
-    } else if (code !== undefined) {
-      void reportError(`${name} failed (exit ${code})`);
-    }
+    // The event's own rule is unchanged: an undefined `code` means the task
+    // ended without its process ever starting (the onDidEndTask backstop), so
+    // there is no verdict to report and the subscriber stays silent.
+    terminalFinished.fire({ name, code });
   };
 
   // The real "did it actually start" signal (see RUN_START_TIMEOUT_MS):
@@ -331,7 +332,15 @@ export function revealRunInTerminal(name: string): void {
 export function runInTerminal(options: {
   name: string;
   argv: string[];
-  cwd?: string;
+  /** REQUIRED, though it may be `undefined` — the key must be written, so "no
+   *  working directory" is a decision a caller states and a reviewer can see,
+   *  never an omission. `undefined` reaches `ProcessExecution` as "inherit the
+   *  extension host's own cwd", which on Windows is the VS Code INSTALL
+   *  DIRECTORY; a command that writes where it runs (`tan bootstrap`, `tan
+   *  doctor --build --fix` — both create a venv + west workspace) then
+   *  bootstraps there. Two `runAlpInTerminal` sites shipped with `cwd` simply
+   *  left off, which is why this is not optional. */
+  cwd: string | undefined;
   env?: Record<string, string>;
 }): void {
   ensureTaskTracking();
@@ -410,9 +419,16 @@ export function runInTerminal(options: {
       executionGeneration.set(taskExecution, generation);
     },
     (error) => {
+      // `executeTask` is a main-thread RPC, so at window teardown it rejects
+      // with a CancellationError for every run still in flight. The task was
+      // abandoned with the window — it did not fail to start — and an "error"
+      // line saying so is the closed-window-vs-broken confusion. Still release
+      // the slot below: the reservation is per-window state either way.
       log(
-        `[terminal] "${options.name}" failed to start: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
+        isCancellation(error)
+          ? `[terminal] "${options.name}" abandoned, window closing`
+          : `[terminal] "${options.name}" failed to start: ${error instanceof Error ? error.message : String(error)}`,
+        isCancellation(error) ? "info" : "error",
       );
       // executeTask's Thenable can also resolve on a failed start (VS Code
       // internals), so this rejection path is a bonus, not the only guard --
@@ -426,47 +442,26 @@ export function runInTerminal(options: {
   );
 }
 
-const SHOW_OUTPUT = "Show Output";
+// `reportError` used to live here. It moved to `src/notify/vscodeAdapter.ts`
+// (same signature) so that ALL notification rendering sits behind one seam:
+// leaving a second toast-raising helper here is exactly what let call sites
+// hand-roll their own `showErrorMessage` variants. It cannot be re-exported
+// from this file either — the presenter imports `log` / `showOutput` /
+// `revealRunInTerminal` from here, so an import back would be a cycle.
 
-/** Report a diagnosable failure: log the full detail to the "Alp SDK" channel
- *  AND show an error toast that always offers "Show Output" (plus any caller
- *  actions). Picking "Show Output" reveals the channel and returns undefined;
- *  otherwise the picked caller action is returned. The house pattern for every
- *  error toast tied to a failure the channel can explain.
+/** Report a STREAMED (channel-mode) run's result: log it, then fire the same
+ *  finish signal a terminal run fires, tagged `mode: "channel"`.
  *
- *  Do not pass a caller action literally titled "Show Output" — that title is
- *  reserved for the appended house action and would be indistinguishable. */
-export async function reportError(
-  message: string,
-  detail?: string,
-  ...actions: string[]
-): Promise<string | undefined> {
-  log(detail ? `${message} — ${detail}` : message, "error");
-  const pick = await vscode.window.showErrorMessage(
-    message,
-    ...actions,
-    SHOW_OUTPUT,
-  );
-  if (pick === SHOW_OUTPUT) {
-    showOutput();
-    return undefined;
-  }
-  return pick;
-}
-
-/** Announce a channel-run (streamed) command's result: log it, fire the
- *  terminal-finish refresh signal, and show a glanceable verdict — the
- *  channel-mode twin of `runInTerminal`'s close handler (info on a 0 exit,
- *  error + "Show Output" on a defined non-zero, silent on undefined). */
-export function announceStreamedResult(
+ *  It raises no toast, for the same reason the terminal `finish()` above
+ *  stopped raising one (#368): the verdict is planned and presented by the
+ *  `onDidFinishTerminalCommand` subscriber in `src/extension.ts`. The `mode`
+ *  tag is what lets that one subscriber offer "Show Output" for a channel run
+ *  — whose log is in the channel and which has no terminal to reveal —
+ *  instead of a "Show Terminal" that would open nothing. */
+export function signalStreamedFinished(
   name: string,
   code: number | undefined,
 ): void {
   log(`[channel] "${name}" exited (code=${code ?? "unknown"})`);
-  terminalFinished.fire({ name, code });
-  if (code === 0) {
-    void vscode.window.showInformationMessage(`${name} finished`);
-  } else if (code !== undefined) {
-    void reportError(`${name} failed (exit ${code})`);
-  }
+  terminalFinished.fire({ name, code, mode: "channel" });
 }

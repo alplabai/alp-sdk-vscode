@@ -144,6 +144,39 @@ jobs:
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT == '' }}
         run: echo "::warning::VSCE_PAT not set — built the .vsix but skipped Marketplace publish. Add the VSCE_PAT repo secret to enable it."
 
+  # Why is darwin-arm64 the ONLY platform that bundles a binary?
+  #
+  # Because the asymmetry is intentional and staged, not an oversight.
+  # docs/EXTENSION_CLI_INTEGRATION.md §5 states the end state — platform-specific
+  # VSIXes for "`--target darwin-arm64`, and eventually the other five targets
+  # `tan-cli` publishes" — with darwin-arm64 as the first one shipped. That
+  # "five" is stale; the release is what counts, and tan-cli v0.3.1 publishes
+  # EIGHT raw target binaries (aarch64/x86_64 × apple-darwin, pc-windows-msvc,
+  # unknown-linux-gnu, unknown-linux-musl) alongside checksums.txt. Eight is the
+  # authoritative number throughout this comment: one shipped, SEVEN to go.
+  # Expanding this is a matter of adding jobs, not of missing assets. (Correcting
+  # the doc is a separate change — not this one.)
+  #
+  # Until then, every Windows, Linux and darwin-x64 install ships binary-less and
+  # acquires `tan` through the universal VSIX's normal resolver chain
+  # (`resolveAlpBinary()`, src/alpCli): the `alpSdk.cliPath` setting → bundled
+  # (absent there) → a locally built sibling tan-cli → a previously cached
+  # download → a verified-native `tan` on PATH → download-on-demand of
+  # `tan-<triple>[.exe]` from the pinned tan-cli release, provisioned up front on
+  # activation. That path works; what it costs is a first-run network call, which
+  # is exactly what offline/proxied users cannot pay (§5 "Reversal rationale").
+  #
+  # One branch of `decideBinarySource()` (src/alpCli/service.ts) is elided above:
+  # with `alpSdk.preferGlobalCli` on, a verified-native `tan` on PATH is checked
+  # SECOND — after `alpSdk.cliPath`, but AHEAD of bundled. It defaults to false
+  # (package.json), so the chain above is what an unconfigured install follows.
+  # With it on, a darwin-arm64 install runs the PATH `tan` and never touches the
+  # binary this job goes to the trouble of bundling.
+  #
+  # Deliberately NOT expanding the matrix here — that is a separate decision with
+  # its own cost (7 more package+publish jobs, 7 more Marketplace targets to keep
+  # in lockstep with the pin, and a per-target verification story this workflow
+  # does not have today).
   package_darwin_arm64:
     name: package + publish vsix (darwin-arm64, bundled CLI)
     runs-on: ubuntu-latest
@@ -191,6 +224,23 @@ jobs:
           echo "::notice::Bundling tan CLI v$VERSION (aarch64-apple-darwin)"
 
       - name: Download + stage the aarch64-apple-darwin tan binary
+        # Fatal on purpose: this job exists ONLY to ship the bundled binary. A
+        # darwin-arm64 VSIX without bin/tan is the universal VSIX wearing a
+        # platform label, and VS Code PREFERS a platform-specific VSIX over the
+        # universal one — publishing an empty one is strictly worse than
+        # publishing none. So we keep it fatal and make the failure legible:
+        # `curl -f` alone exits 22 and says nothing about which pin, which URL,
+        # or which status. Dropping -f and reading %{http_code} separates "the
+        # tan tag isn't published" (404) from "the network/permissions broke"
+        # (000/403/5xx) — different problems, different fixes. Note -f is not
+        # what blocks %{http_code}: `curl -f -w '%{http_code}'` prints 404 quite
+        # happily (driven). -f is dropped so curl_exit means TRANSPORT only —
+        # http_status=404 curl_exit=0 reads "network fine, server said no",
+        # where -f collapses every HTTP error into exit 22. The price is that
+        # curl then WRITES the non-2xx body: on a 404 that is GitHub's 9-byte
+        # "Not Found" at bin/tan, which -f suppressed entirely. Hence
+        # `rm -f bin/tan` on every failure path — it cleans up after this step's
+        # own choice, not after some older bug.
         run: |
           set -euo pipefail
           VERSION="${{ steps.cli_version.outputs.version }}"
@@ -198,8 +248,24 @@ jobs:
           # straight to bin/tan (the extension's `bundled` resolver source).
           URL="https://github.com/alplabai/tan-cli/releases/download/v${VERSION}/tan-aarch64-apple-darwin"
           mkdir -p bin
-          curl -fsSL "$URL" -o bin/tan
+          CURL_RC=0
+          STATUS=$(curl -sSL -w '%{http_code}' -o bin/tan "$URL") || CURL_RC=$?
+          # bin/tan is absent when curl never connected — read the size only if
+          # it exists, or the failed input redirect prints its own noise.
+          BYTES=0
+          if [ -f bin/tan ]; then BYTES=$(wc -c < bin/tan); fi
+          if [ "$CURL_RC" -ne 0 ] || [ "$STATUS" != "200" ] || [ ! -s bin/tan ]; then
+            rm -f bin/tan
+            echo "::error::Could not stage the bundled tan CLI. pin=v${VERSION} (SUPPORTED_CLI_VERSION in src/alpCli/service.ts) url=${URL} http_status=${STATUS} curl_exit=${CURL_RC} bytes=${BYTES}"
+            if [ "$STATUS" = "404" ]; then
+              echo "::error::alplabai/tan-cli has no tan-aarch64-apple-darwin asset at tag v${VERSION}. The tan-cli release must be published BEFORE this extension is tagged — SUPPORTED_CLI_VERSION may only ever name an already-published tan tag. Fix: cut+publish tan-cli v${VERSION}, or repin src/alpCli/service.ts to a published version, then re-run."
+            else
+              echo "::error::Not a missing-tag failure (http_status=${STATUS}, curl_exit=${CURL_RC}) — treat as network, proxy, or permissions and re-run the job. http_status=000 would mean curl never completed the request; any other status is the server's answer, and a 200 here means the asset downloaded empty."
+            fi
+            exit 1
+          fi
           chmod +x bin/tan
+          echo "::notice::Staged tan v${VERSION} aarch64-apple-darwin (${BYTES} bytes) at bin/tan from ${URL}"
 
       - name: Package (.vsix, darwin-arm64, bundled CLI)
         run: pnpm exec vsce package --no-dependencies --target darwin-arm64 --pre-release --out alp-sdk-darwin-arm64.vsix

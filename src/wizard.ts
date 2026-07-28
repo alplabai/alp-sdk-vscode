@@ -19,7 +19,15 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { loadBoardModel } from "./configurator/vscodeAdapter";
+import {
+  isCancellation,
+  planConfirm,
+  planPrecondition,
+  planSuccess,
+} from "./notify/service";
+import { notify } from "./notify/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
+import { log } from "./util";
 
 const FIRST_RUN_PROMPT_KEY_PREFIX = "alp.firstRunWizardPromptShown";
 
@@ -34,6 +42,18 @@ export function registerProjectWizardCommand(): vscode.Disposable {
   );
 }
 
+/**
+ * Offer the New Project flow on a first open with no board.yaml.
+ *
+ * Runs asynchronously after activation (`void maybeOfferFirstRunWizard`) —
+ * never throws, for the same reason `maybeOfferSetupPanel` doesn't: the
+ * `workspaceState.update` and the unanswered toast below are both pending
+ * main-thread RPCs, and a window closing rejects them with a CancellationError.
+ * Unguarded that is an unhandled rejection in the extension host naming
+ * nothing. Nothing failed — the offer was abandoned along with the window, and
+ * the next activation makes it again (the key is only recorded once the write
+ * lands).
+ */
 export async function maybeOfferFirstRunWizard(
   context: vscode.ExtensionContext,
 ): Promise<void> {
@@ -50,21 +70,35 @@ export async function maybeOfferFirstRunWizard(
     return;
   }
 
-  await context.workspaceState.update(workspaceKey, true);
-  const action = await vscode.window.showInformationMessage(
-    "Alp: No board.yaml found. Create a new project?",
-    "New Project",
-  );
-  if (action === "New Project") {
-    await vscode.commands.executeCommand("alp.newProjectWizard");
+  try {
+    await context.workspaceState.update(workspaceKey, true);
+    // Audit verdict `keep`: the text and the single action are already right, so
+    // the plan is spelled out rather than built by `planPrecondition("noBoardYaml")`
+    // — that builder retitles the offer and adds a second button. `newProject`
+    // carries a `run` (alp.newProjectWizard), so the presenter executes it and the
+    // old branch-on-title disappears with no change in what the user sees.
+    await notify({
+      severity: "info",
+      channel: "toast",
+      message: "Alp: No board.yaml found. Create a new project?",
+      actions: [{ id: "newProject" }],
+    });
+  } catch (err) {
+    if (isCancellation(err)) {
+      log("[wizard] first-run offer abandoned, window closing", "info");
+      return;
+    }
+    log(`[wizard] first-run offer failed: ${String(err)}`, "warn");
   }
 }
 
 async function runModuleScaffoldWizard(): Promise<void> {
   const project = collectProjectContext();
   if (!project.workspaceRoot) {
-    await vscode.window.showErrorMessage(
-      "Alp: open a workspace folder before scaffolding a module.",
+    // A precondition, not a failure: warning severity + the Open Folder action
+    // (alp.switchWorkspace) instead of a red toast whose only option is dismissal.
+    await notify(
+      planPrecondition("noWorkspace", { operation: "scaffold a module" }),
     );
     return;
   }
@@ -114,8 +148,12 @@ async function runModuleScaffoldWizard(): Promise<void> {
     (file) => file.kind !== "unchanged",
   ).length;
   if (writeCount === 0) {
-    await vscode.window.showInformationMessage(
-      "Alp: module scaffold matches current files. Nothing to write.",
+    // Same channel as this function's success path below (the status bar): a
+    // transient no-op verdict is not worth a notification the user must dismiss.
+    await notify(
+      planSuccess(
+        "Alp: module scaffold matches current files. Nothing to write.",
+      ),
     );
     return;
   }
@@ -128,12 +166,23 @@ async function runModuleScaffoldWizard(): Promise<void> {
   ]
     .filter(Boolean)
     .join(", ");
-  const moduleAction = await vscode.window.showWarningMessage(
-    `Alp: ${writeCount} module file change(s) — ${changeSummary}. Review the plan above, then apply?`,
-    { modal: true },
-    "Apply Changes",
+  // Stays MODAL: this gates a multi-file write, and a corner toast is easy to
+  // miss or auto-dismiss — the blocking dialog is what guarantees the user saw
+  // the question. The "read the plan first" affordance rides in `modalDetail`,
+  // which is rendered ON the dialog; the markdown preview opened above survives
+  // a Cancel, so reading it costs one re-run and never a stray write. The pick
+  // still gates the write: `applyChanges` has no `run` in the presenter's
+  // table, so `notify` hands the id back instead of swallowing it.
+  const moduleAction = await notify(
+    planConfirm({
+      message: `Alp: apply ${writeCount} module file change(s) — ${changeSummary}?`,
+      modalDetail:
+        "The markdown preview listing every file is open behind this dialog. " +
+        'Cancel to read it, then re-run "Alp: Scaffold module" to apply.',
+      confirm: { id: "applyChanges" },
+    }),
   );
-  if (moduleAction !== "Apply Changes") {
+  if (moduleAction !== "applyChanges") {
     return;
   }
 

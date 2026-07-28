@@ -1,6 +1,6 @@
 # Debug Support Matrix and Launch Design
 
-Last revised: 2026-07-25
+Last revised: 2026-07-27
 
 ## Companion extensions (bundled)
 
@@ -26,8 +26,33 @@ So the memory inspector, the RTOS thread views, and the SVD peripheral view are
 all force-installed transitively and cannot be removed while cortex-debug is
 present. Listing any of them here would be redundant — and listing
 `peripheral-viewer` as "optional" would be false, since nothing can opt out of
-it. (It stays empty until SVDs ship — alp-sdk#948 — but that is a matter of the
-view having no data, not of the extension being absent.)
+it.
+
+**Installed is not the same as attached, and which one you get depends on the
+debug type.** Each of these views gates itself on the running session, so the
+`native-host` profile — the only one that emits `type: lldb` — reaches a
+different set than the MCU profiles do. Measured against the installed
+manifests:
+
+| View | Extension | Gate | On a `type: lldb` session |
+| ---- | --------- | ---- | ------------------------- |
+| MEMORY | `mcu-debug.memory-view` 0.0.29 | `activationEvents`: `cortex-debug`, `mcu-debug`, `cppdbg`, `cspy`, `gdb`, three vendor gdb targets — no `lldb` | does not auto-activate |
+| xRTOS | `mcu-debug.rtos-views` 0.0.16 | same shape, no `lldb` | does not auto-activate |
+| XPeripherals | `mcu-debug.peripheral-viewer` 1.6.1 | `onDebug` + `when: mcu-debug.peripheral-viewer.hadData` | activates, view stays hidden |
+| Cortex Live Watch | `marus25.cortex-debug` 1.12.1 | `when: debugType == cortex-debug` | not rendered |
+
+Only XPeripherals matches the "installed but empty" description, and only
+because its activation is `onDebug` rather than a debug-type list; it stays
+hidden until SVDs ship (alp-sdk#948). MEMORY and xRTOS are a different case on
+this path — absent rather than empty, because CodeLLDB's debug type is not in
+their activation lists. The underlying capability is still there: a CodeLLDB
+session advertises `supportsReadMemoryRequest: true` and serves `readMemory`,
+so the panel works once opened by command; it just does not come up on its own.
+
+None of this is Alp IDE's to change — the activation lists belong to the
+mcu-debug extensions — but a customer told to "open the Memory view" on
+native_sim will not find it waiting for them, and that is worth saying here
+rather than leaving to be rediscovered.
 
 `extensionDependencies` is a hard gate: an id missing from the registry a given
 editor installs from makes Alp IDE impossible to install at all, not merely
@@ -65,8 +90,8 @@ absent, where Install is the right action.
 
 
 
-This document defines how debugging should work across the ALP SDK
-extension, the ALP SDK itself, and the supported target classes.
+This document defines how debugging should work across the Alp SDK
+extension, the Alp SDK itself, and the supported target classes.
 
 The key design rule is simple:
 
@@ -76,7 +101,7 @@ debug configuration for the active target.**
 
 ## 1. Why Debug Is a First-Class Requirement
 
-The ALP SDK is not only a configuration/generation product. It is also
+The Alp SDK is not only a configuration/generation product. It is also
 used for:
 
 - SoM bring-up
@@ -147,7 +172,7 @@ Used for:
 
 Primary adapter strategy:
 
-- `CodeLLDB`
+- `CodeLLDB` (vadimcn.vscode-lldb — debug type `lldb`)
 
 ## 3. Debug Support Matrix
 
@@ -304,7 +329,18 @@ The recommended path is:
 - later: add dynamic profile generation once the model stabilizes
 
 Current implementation follows the MVP path: `alp.configureDebugProfile`
-writes or updates `launch.json` entries from generated launch drafts.
+writes or updates `launch.json` entries. The configuration itself comes from
+`tan debug-config` (tan-cli#67), which resolves `device` / `gdbPath` /
+`serverpath` / `searchDir` / `configFiles` from the build's own `runners.yaml`
+and writes the file; the extension keeps **no** second draft, because two
+drafts in two languages is exactly what shipped users a `launch.json` that
+could not start a session (#339). Requires `tan` >= the pinned
+`SUPPORTED_CLI_VERSION` (`src/alpCli/service.ts`) — an older binary carries no
+`data.configuration` and the command reports version skew instead of writing.
+
+What stays in-process is the readiness report: it probes which debugger
+extensions are installed, host state a separate process cannot observe
+(`docs/EXTENSION_CLI_INTEGRATION.md` §4a).
 
 ## 9. Shared Debug Model
 
@@ -317,7 +353,12 @@ type DebugTargetKind =
   | "baremetal-mcu"
   | "yocto-userspace"
   | "native-host";
-type DebugAdapterKind = "cortex-debug" | "cppdbg" | "codelldb";
+// VS Code *debug type* strings, as registered in each adapter extension's own
+// `contributes.debuggers` — not extension names: `cortex-debug` is
+// marus25.cortex-debug, `cppdbg` is ms-vscode.cpptools, and `lldb` is
+// vadimcn.vscode-lldb (the extension is *named* CodeLLDB; `codelldb` is not a
+// debug type at all).
+type DebugAdapterKind = "cortex-debug" | "cppdbg" | "lldb";
 type DebugServerKind = "jlink" | "openocd" | "pyocd" | "gdbserver" | "none";
 
 interface DebugProfile {
@@ -353,7 +394,7 @@ able to generate.
 
 ```json
 {
-  "name": "ALP: Zephyr Debug (J-Link)",
+  "name": "Alp: Zephyr Debug (J-Link)",
   "type": "cortex-debug",
   "request": "launch",
   "servertype": "jlink",
@@ -370,7 +411,7 @@ able to generate.
 
 ```json
 {
-  "name": "ALP: Zephyr Debug (OpenOCD)",
+  "name": "Alp: Zephyr Debug (OpenOCD)",
   "type": "cortex-debug",
   "request": "launch",
   "servertype": "openocd",
@@ -386,7 +427,7 @@ able to generate.
 
 ```json
 {
-  "name": "ALP: Baremetal Debug (J-Link)",
+  "name": "Alp: Baremetal Debug (J-Link)",
   "type": "cortex-debug",
   "request": "launch",
   "servertype": "jlink",
@@ -394,17 +435,21 @@ able to generate.
   "executable": "${workspaceFolder}/build/baremetal/app.elf",
   "device": "<resolved-device>",
   "interface": "swd",
-  "svdFile": "<resolved-svd>",
   "runToEntryPoint": "main",
   "preLaunchTask": "alp: build baremetal target"
 }
 ```
 
+No `svdFile` key: cortex-debug *opens* that path, so an unresolved
+`"<resolved-svd>"` placeholder would be read as a filename and kill a session
+that preflight only warned about. The key is emitted only once a real file
+resolves (see §12).
+
 ### 10.4 Yocto Userspace + cppdbg + gdbserver
 
 ```json
 {
-  "name": "ALP: Yocto Remote Debug",
+  "name": "Alp: Yocto Remote Debug",
   "type": "cppdbg",
   "request": "launch",
   "program": "${workspaceFolder}/build/yocto/app",
@@ -423,14 +468,84 @@ able to generate.
 
 ```json
 {
-  "name": "ALP: Native Sim Debug",
-  "type": "codelldb",
+  "name": "Alp: Native Sim Debug",
+  "type": "lldb",
   "request": "launch",
   "program": "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
   "cwd": "${workspaceFolder}",
   "preLaunchTask": "alp: build native_sim target"
 }
 ```
+
+`vadimcn.vscode-lldb` registers the debug type `lldb` in
+`contributes.debuggers`; `CodeLLDB` is the extension's *name* and `codelldb` is
+never a debug type — VS Code rejects such a config with `configured debug type
+'codelldb' is not supported`.
+
+Driven end to end against a real CodeLLDB 1.12.2 adapter and a `native_sim`
+build of Zephyr v4.4.0, this configuration verifies a source breakpoint, hits
+it inside the application's own `main`, and reports live locals with real
+values:
+
+```
+stopped reason=breakpoint
+  main            @ samples/basic/blinky/src/main.c:44
+  bg_thread_main  @ kernel/init.c:347
+  z_thread_entry  @ lib/os/thread_entry.c:60
+  posix_arch_thread_entry @ arch/posix/core/thread.c:124
+locals: ret = 0 (int)   led_state = false (bool)
+```
+
+Two behaviours are worth knowing before they surprise someone:
+
+- **The first `stopped` event is not yours.** `zephyr.exe` is a dynamically
+  linked host executable, so the run stops at the loader rendezvous
+  (`__GI__dl_debug_state`) before reaching application code, and it stops first
+  in the native simulator's own `main`
+  (`scripts/native_simulator/common/src/main.c`) rather than the application's.
+  A client that assumes the first stop is its breakpoint reports the wrong
+  location.
+- **Scalar locals carry `memoryReference: 0x0`.** Zephyr builds `-Os`, so
+  `ret` and `led_state` live in registers with no address to hand out. Their
+  *values* are correct and are not `<optimized out>` — but "view memory of this
+  variable" has nothing to point at. Reading by address works normally
+  (`readMemory` at `rsp`/`rip`/`rbp` returns bytes), which is the Memory view's
+  primary mode anyway.
+
+See the companion-extensions section above for which debug views attach to an
+`lldb` session and which do not.
+
+### 10.6 The `preLaunchTask` names above
+
+Every profile in §10 references a pre-launch task by label. VS Code renders a
+provider-contributed task's label as `${source}: ${name}`, so those labels
+resolve only while something contributes them — an unresolvable
+`preLaunchTask` aborts the pre-launch and `vscode.debug.startDebugging`
+returns `false` with no useful error, pointing the user at a `launch.json`
+that looks perfectly fine.
+
+The extension contributes all four (`src/tasks/service.ts` holds the string
+contract, `src/tasks/vscodeAdapter.ts` the VS Code seam, task type + source
+`alp`):
+
+| label                             | runs                                          |
+| --------------------------------- | --------------------------------------------- |
+| `alp: build active target`        | `tan build`                                   |
+| `alp: build baremetal target`     | `tan build`                                   |
+| `alp: build native_sim target`    | `tan build`                                   |
+| `alp: deploy and start gdbserver` | nothing — reports the manual step, exits **1** |
+
+The three build labels run the identical command because `tan build` has no
+per-target selector: it builds every slice `board.yaml` declares. Three labels
+exist because three debug-target classes reference them under different names.
+
+`alp: deploy and start gdbserver` has no `tan` equivalent — the extension has
+no deploy story, and §10.4's profile ships `miDebuggerServerAddress:
+"<host>:<port>"` for the user to fill in by hand. It deliberately fails rather
+than faking success, so VS Code raises its "the preLaunchTask terminated with
+exit code 1 — Debug Anyway / Show Errors" dialog with the manual step named,
+instead of dropping the user into a cppdbg session with no gdbserver on the
+other end.
 
 ## 11. Product Commands to Support Debug
 
@@ -462,11 +577,19 @@ validate:
 - build output exists and ELF path is valid
 - expected debugger extension is installed
 - selected probe/server tool exists
-- required paths such as SVD or OpenOCD config are valid
+- required paths such as the OpenOCD config are valid
 - target connection info exists for remote userspace debug
 
+`svdFile` is **optional and warn-only**: cortex-debug reads it to populate the
+peripheral/register view and nothing else, so a missing SVD leaves that view
+empty while breakpoints, stepping and memory reads all work. It must never
+appear in a launch-blocking check or in the fields a customer is told to
+supply. (Warn is the normal state today — alp-sdk ships no `.svd` and carries
+no path to one, alp-sdk#948.)
+
 If preflight fails, the product should not attempt a debug launch. It
-should explain the failure and offer the next action.
+should explain the failure and offer the next action. Only `fail` checks
+block; `warn` checks are reported and the launch proceeds.
 
 Current implementation status:
 

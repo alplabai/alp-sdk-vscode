@@ -87,6 +87,18 @@ export interface DebugRuntimeCapabilities {
   pyocdExecutable: string | null;
   gdbExecutable: string | null;
   lldbExecutable: string | null;
+  /**
+   * `process.platform` of the host the extension host runs on, supplied by
+   * `src/debug/vscodeAdapter.ts`. The debug service is a PURE module and may
+   * not read `process` itself, so the host OS arrives here alongside the other
+   * probed host facts rather than being sniffed in the service.
+   *
+   * Optional, and absent means "assume not Windows": every caller and fixture
+   * that predates this field keeps compiling and keeps its old verdict, and a
+   * platform-blocking check that fired on a *missing* value would block Linux
+   * and macOS — the two hosts on which the target actually works.
+   */
+  hostPlatform?: string;
 }
 
 export interface DebugDoctorRequest {
@@ -150,7 +162,18 @@ export interface DebugSupportBundlePayload {
   notes: string[];
 }
 
-export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "codelldb";
+/**
+ * VS Code **debug type** strings — the `type` field of a launch configuration,
+ * as registered by each adapter extension in its own `contributes.debuggers`.
+ * These are adapter ids, NOT extension names or ids:
+ *
+ * - `cortex-debug` — marus25.cortex-debug
+ * - `cppdbg`       — ms-vscode.cpptools
+ * - `lldb`         — vadimcn.vscode-lldb (the extension is *named* CodeLLDB;
+ *                    it registers the type `lldb`, and `codelldb` is not a
+ *                    debug type at all)
+ */
+export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "lldb";
 
 export type DebugProfileOs = "zephyr" | "baremetal" | "yocto" | "host";
 
