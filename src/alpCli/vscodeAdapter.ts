@@ -30,11 +30,12 @@ import {
   ProxyError,
   downloadSeam,
 } from "./download";
-import { BinarySource, CliOutcome } from "./models";
+import { BinaryResolutionInput, BinarySource, CliOutcome } from "./models";
 import {
   CACHED_CLI_UNVERIFIED,
   CACHED_CLI_UNVERIFIED_NO_PREBUILT,
   SUPPORTED_CLI_VERSION,
+  UNVERIFIED_PATH_IN_USE,
   aheadPathFixAction,
   binaryName,
   classifyUnavailable,
@@ -47,6 +48,7 @@ import {
   proxyEnvOverrides,
   releaseAssetForTarget,
   shouldFetchManagedCli,
+  shouldNoticeUnverifiedPath,
   shouldWarnCliAhead,
   unverifiedCacheCause,
 } from "./service";
@@ -146,6 +148,27 @@ const AHEAD_WARNED_KEY = "alp.tanAheadWarnedVersion";
  *  `ResolveDeps.recordedCachedDigest` for what that does and does not buy, and
  *  why the record lives here rather than beside the binary. */
 const CACHED_DIGEST_KEY = "alp.tanCachedBinarySha256";
+
+/** globalState key set once the rung-6 PATH notice has been shown (#393).
+ *
+ *  Persisted, like `AHEAD_WARNED_KEY`, because the state it describes is
+ *  PERMANENT: a customer with `tan` on PATH and no managed copy is in it on
+ *  every activation forever, so a per-window flag would nag every window.
+ *  A bare marker rather than a version/fingerprint — there is no second version
+ *  of this fact to report.
+ *
+ *  RECORDED ON SHOW, which is the opposite of the ruling
+ *  `src/ideHub/setupOrchestrator.ts` made for its setup nudge (an auto-dismissed
+ *  toast stays unrecorded and is retried; only an explicit "Don't show again"
+ *  records). That ruling is about a nudge gating a BROKEN environment, where
+ *  losing the toast strands the customer with the remedy unsaid. Here nothing is
+ *  broken and there is no remedy to lose: the notice reports a steady state, the
+ *  customer's setup works either way, and the only cost of a missed impression
+ *  is that they were not told a thing they can look up. The cost of the other
+ *  policy is a recurring info toast about a machine that is behaving correctly,
+ *  which is the nag both files exist to prevent. Different question, so a
+ *  different answer — deliberately, not by oversight. */
+const PATH_NOTICED_KEY = "alp.tanUnverifiedPathNoticed";
 
 /** Last `sha256File` answer, keyed by path + size + mtime.
  *
@@ -600,6 +623,12 @@ export async function ensureTanCliProvisioned(
   const input = resolutionInputFromDeps(deps);
 
   warnIfPreferGlobalCliHasNoPath(deps.preferGlobalCli, input.onPath);
+  // Both notices sit above the fetch decision and neither influences it: this
+  // one is about which binary is ALREADY going to run, and it excludes the
+  // machine the fetch below is for (an un-digested cache — see
+  // `shouldNoticeUnverifiedPath`), so its position relative to the heal cannot
+  // make it say something the heal is about to falsify.
+  noticeUnverifiedPathFallback(context, input);
 
   const source = decideBinarySource(input);
   // A binary already resolves (cliPath / bundled / local build / cached / PATH)
@@ -908,6 +937,70 @@ function warnIfPreferGlobalCliHasNoPath(
         { id: "installTanCli", title: "Install tan CLI (global)" },
         { id: "openSettings", arg: "alpSdk.preferGlobalCli" },
       ],
+    }),
+  );
+}
+
+/**
+ * Say ONCE, plainly, that the `tan` being run is the one the customer's shell
+ * resolves and is not one this extension verified (#393). Never a refusal and
+ * never a demotion — see `shouldNoticeUnverifiedPath` for why both were
+ * rejected, and `UNVERIFIED_PATH_IN_USE` for why the sentence is worded the way
+ * it is.
+ *
+ * Fires for the rung-6 FALLBACK only. `alpSdk.preferGlobalCli` (rung 2) gets
+ * NOTHING here — no toast, no log line, no fetch — which is the constraint #396
+ * got wrong at this exact rung by gating only the sentence.
+ *
+ * `info` severity, so the presenter shows an information message and appends no
+ * "Show Output": there is no failure to diagnose. The action is the managed
+ * download, which genuinely ends the state (a digested `cached` copy outranks
+ * the rung-6 fallback), and it is an OFFER — nothing happens unless it is
+ * clicked.
+ *
+ * Synchronous, and the record is fire-and-forget for the reason
+ * `setupOrchestrator.record` documents: `Memento.update` is a main-thread RPC
+ * that rejects at window teardown, and awaiting it here would take
+ * `ensureTanCliProvisioned`'s "never throws" down with it. The write is
+ * idempotent; the worst case is the notice repeating on the next activation,
+ * which is the safe direction for a notice whose whole job is to be seen.
+ */
+function noticeUnverifiedPathFallback(
+  context: vscode.ExtensionContext,
+  input: BinaryResolutionInput,
+): void {
+  if (
+    !shouldNoticeUnverifiedPath(
+      input,
+      context.globalState.get<boolean>(PATH_NOTICED_KEY, false),
+    )
+  ) {
+    return;
+  }
+  void Promise.resolve(context.globalState.update(PATH_NOTICED_KEY, true)).then(
+    undefined,
+    (error: unknown) => {
+      if (isCancellation(error)) return;
+      log(`[cli] could not record the PATH notice: ${String(error)}`, "warn");
+    },
+  );
+  log(
+    "[cli] resolved tan from PATH (rung-6 fallback: no managed copy resolved) " +
+      "— nothing here verified that binary; the format probe on `tan --version` " +
+      "is not an integrity check",
+  );
+  notifyAsync(
+    planFailure({
+      operation: "Resolving the tan CLI",
+      cause: UNVERIFIED_PATH_IN_USE,
+      // Not a failure and not a warning: the setup works, and rendering this
+      // red or yellow would send the customer looking for a break that isn't
+      // there.
+      severity: "info",
+      // `alpSdk.cliPath` is deliberately not offered — see the sentence's own
+      // doc comment. This button downloads the pinned copy into the extension's
+      // storage, where `cached` outranks this fallback on the next resolution.
+      actions: [{ id: "updateCli", title: "Use the managed copy" }],
     }),
   );
 }

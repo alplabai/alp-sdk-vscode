@@ -1443,7 +1443,16 @@ test("#396 nothing to heal: a fresh install and a localBuild developer are uncha
   // !cachedDigestRecorded`; drop either half and one of these starts fetching.
 
   // No cache at all, `tan` on PATH — a fresh install on a machine that already
-  // has a global tan. Nothing is re-acquired and nothing is said.
+  // has a global tan. Nothing is re-acquired.
+  //
+  // It is no longer SILENT, and that is #393 rather than a heal: this machine
+  // is the rung-6 PATH fallback with no managed copy, so it gets exactly one
+  // informational notice naming the binary it is running. What this row watches
+  // survives that, because the fetch it forbids would be a SECOND plan —
+  // OFFLINE_ASSET makes any fetch fail loudly. So the assertion is tightened to
+  // the exact message list rather than relaxed to "no download plan": drop
+  // either half of `isUnverifiableCache` from the trigger and a download failure
+  // joins the notice here.
   const fresh = extensionHome();
   try {
     const { adapter, plans } = loadAdapter({
@@ -1452,9 +1461,9 @@ test("#396 nothing to heal: a fresh install and a localBuild developer are uncha
     });
     await adapter.ensureTanCliProvisioned(fresh.context);
     assert.deepEqual(
-      plans,
-      [],
-      "a fresh install with a PATH tan was disturbed",
+      plans.map((plan) => plan.message),
+      [SERVICE.UNVERIFIED_PATH_IN_USE],
+      "a fresh install with a PATH tan was made to fetch",
     );
     assert.equal(fs.existsSync(fresh.cachedBinaryPath), false);
     assert.equal(
