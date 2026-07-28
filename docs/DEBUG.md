@@ -607,8 +607,8 @@ own `runners.yaml`, driven on tan 0.4.0 to `"configFiles":
 ["/home/dev/board/e1m_aen801.cfg"]` with a matching `serverpath` and
 `searchDir`. Bullet 7 it cannot: `yocto-userspace` comes out
 `"miDebuggerServerAddress": "<host>:<port>"` with `"miDebuggerPath":
-"<resolved-gdb>"` even against a `runners.yaml` that is fully populated, which
-that target never reads. So the fold sees a resolved value in the first case
+"<resolved-gdb>"` against that same fully populated `runners.yaml` — the file
+makes no difference to it. So the fold sees a resolved value in the first case
 and a surviving placeholder in the second, and the next step it prints has to
 differ accordingly — see the end of this section.
 
@@ -653,10 +653,10 @@ Two consequences worth stating:
   the fold is what would see an unresolved one.)
 
 Two targets are where a value genuinely cannot be filled. `baremetal-mcu` has
-no Zephyr build, so no `runners.yaml` ever exists to read and all three servers
-come out with `"device": "<resolved-device>"` whatever the build tree holds;
-`yocto-userspace` needs a remote `<host>:<port>` and a cross-gdb path that
-nothing local derives. The wording is SPLIT between the two processes, and it
+no Zephyr build, so no `runners.yaml` of its own to read, and all three servers
+come out with `"device": "<resolved-device>"` even with a fully populated one
+sitting in the tree; `yocto-userspace` needs a remote `<host>:<port>` and a
+cross-gdb path that nothing local derives. The wording is SPLIT between the two processes, and it
 is worth being exact about which half is whose:
 
 - **tan owns the general note.** It emits the placeholder and, alongside it,

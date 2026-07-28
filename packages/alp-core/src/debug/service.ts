@@ -357,13 +357,14 @@ export function foldLaunchConfigPlaceholders(
  * is #339's own defect wearing a different hat — something that reads like a
  * way forward and is not one. Driven against tan 0.4.0:
  *
- * - `baremetal-mcu` has no Zephyr build and so no `runners.yaml` to read; all
- *   three servers write `"device": "<resolved-device>"` whatever the build tree
- *   holds. Only the customer knows the part.
+ * - `baremetal-mcu` has no Zephyr build and so no `runners.yaml` of its own to
+ *   read; all three servers write `"device": "<resolved-device>"` even with a
+ *   fully populated one sitting in the tree. Only the customer knows the part.
  * - `yocto-userspace` writes `"miDebuggerServerAddress": "<host>:<port>"` and
- *   `"miDebuggerPath": "<resolved-gdb>"` even against a fully populated
- *   `runners.yaml` — it never reads one. Both describe a remote target and the
- *   cross-toolchain reaching it, neither of which a local build produces.
+ *   `"miDebuggerPath": "<resolved-gdb>"` against that same populated
+ *   `runners.yaml` — the file makes no difference to that output. Both describe
+ *   a remote target and the cross-toolchain reaching it, neither of which a
+ *   local build produces.
  *
  * `native-host` takes the default and never exercises it: tan's configuration
  * for it carries no placeholder to fold.

@@ -626,12 +626,12 @@ test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the r
 // #339's defect wearing a different hat. The customer was handed a placeholder
 // that reads like a value; handing them a next step that cannot work is the
 // same thing. "Build the project first" is true only where a build resolves the
-// value -- driven against tan 0.4.0, `baremetal-mcu` writes
-// "device": "<resolved-device>" on all three servers whatever the build tree
-// holds (no Zephyr build, so no runners.yaml), and `yocto-userspace` writes
-// "miDebuggerServerAddress": "<host>:<port>" with "miDebuggerPath":
-// "<resolved-gdb>" even against a fully populated runners.yaml, which it never
-// reads. On those two the fold must say what the customer has to supply.
+// value -- driven against tan 0.4.0 on a fixture whose runners.yaml IS fully
+// populated, `baremetal-mcu` still writes "device": "<resolved-device>" on all
+// three servers (it has no Zephyr build, so none of that file is its own), and
+// `yocto-userspace` still writes "miDebuggerServerAddress": "<host>:<port>"
+// with "miDebuggerPath": "<resolved-gdb>". On those two the fold must say what
+// the customer has to supply.
 test("the fold's next step fits the target, not only the key", () => {
   const foldFor = (targetKind, server, placeholder) =>
     foldLaunchConfigPlaceholders(

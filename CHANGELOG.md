@@ -42,8 +42,8 @@
   `runners.yaml` is ever written for tan to read `device` from, and
   `yocto-userspace`'s `<host>:<port>` and cross-gdb path describe a remote
   target — driven against tan 0.4.0, that target's configuration keeps both
-  placeholders even against a fully populated `runners.yaml`, which it never
-  reads. #339 is about being handed something that reads like a value and is
+  placeholders against a fully populated `runners.yaml`, which makes no
+  difference to it. #339 is about being handed something that reads like a value and is
   not; a next step that cannot work is the same defect. The fold now branches
   on the report's `targetKind` and names what the customer must supply, keeping
   "build first" only for `zephyr-mcu`, where a build genuinely resolves it. The
@@ -89,9 +89,10 @@
   own. The placeholder itself stays in the check detail and in the log. Where a
   value genuinely cannot be filled — `baremetal-mcu` has no Zephyr build and so
   no `runners.yaml`, `yocto-userspace` needs a remote `<host>:<port>` nothing can
-  derive — tan already emits both the placeholder and a note saying so, and the
-  extension logs that note verbatim rather than writing a second version of it
-  (#339).
+  derive — tan emits both the placeholder and a general note saying so, and the
+  extension logs that note verbatim rather than writing a second version of it.
+  The per-key next step is the extension's own, and fits the target: see the
+  bullet above (#339).
 
 - **The argv the extension hands `tan debug-config` is now pinned by a test**
   (`test/debug.configArgs.test.js`). Since #387 the extension does not write
