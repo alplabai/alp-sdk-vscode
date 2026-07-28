@@ -56,9 +56,16 @@ export type CliUnavailableReason =
   /** A binary is present but unusable (not executable, truncated download). */
   | "corrupt"
   /**
-   * A managed download was REFUSED by checksum verification (`ChecksumError`):
-   * the bytes did not match the published digest, the checksum file would not
-   * fetch, or the release does not list this asset. Nothing was installed.
+   * A binary was REFUSED by checksum verification (`ChecksumError`). Five
+   * causes, on two of the six resolution arms:
+   *
+   * `download` — the bytes did not match the published digest, the checksum
+   * file would not fetch, or the release does not list this asset. Nothing was
+   * installed.
+   *
+   * `cached` (#386) — the file at the cached path no longer hashes to the
+   * digest recorded when it was downloaded, or it predates the recording
+   * entirely and could not be re-acquired. Nothing was run.
    *
    * Distinct from `corrupt` — which says "the installed copy looks broken" and
    * offers `alpSdk.cliPath` — for two reasons, and neither is cosmetic. The
@@ -114,6 +121,20 @@ export interface BinaryResolutionInput {
   localBuildExists: boolean;
   /** Whether a previously downloaded binary exists in global storage. */
   cachedExists: boolean;
+  /**
+   * Whether this extension holds the sha256 it verified for THAT cached file
+   * (`ResolveDeps.recordedCachedDigest`). Every copy cached before the digest
+   * was recorded has none — that is the #386 migration, and it is why this is
+   * a separate field instead of being folded into `cachedExists`: a reader of
+   * `decideBinarySource` has to be able to see that an unvouched-for cache is
+   * skipped rather than resolved.
+   *
+   * FAIL-CLOSED, and required rather than optional for that reason: a missing
+   * record means "cannot be checked", never "assume it is fine". Accepting an
+   * unrecorded binary and recording its current digest would launder the very
+   * bytes #386 is about into a "verified" state.
+   */
+  cachedDigestRecorded: boolean;
   /** The `alpSdk.preferGlobalCli` setting: when true, a verified-native `tan`
    *  on PATH is promoted above the managed bundled/localBuild/cached copies
    *  (still below an explicit `cliPathSetting`). Default false. */

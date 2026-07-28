@@ -521,6 +521,7 @@ test("decideBinarySource follows the resolution order", () => {
       onPath: true,
       bundledExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "cliPath",
   );
@@ -534,6 +535,7 @@ test("decideBinarySource follows the resolution order", () => {
       onPath: true,
       bundledExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "bundled",
   );
@@ -546,6 +548,7 @@ test("decideBinarySource follows the resolution order", () => {
       onPath: false,
       bundledExists: false,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "cached",
   );
@@ -597,6 +600,7 @@ test("decideBinarySource: a local tan-cli build resolves before cached/download"
       bundledExists: false,
       localBuildExists: false,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "cached",
   );
@@ -611,6 +615,7 @@ test("decideBinarySource: bundled wins over cached/download/PATH but loses to cl
       onPath: false,
       bundledExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "bundled",
   );
@@ -633,6 +638,7 @@ test("decideBinarySource: bundled wins over cached/download/PATH but loses to cl
       onPath: false,
       bundledExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "cliPath",
   );
@@ -648,6 +654,7 @@ test("decideBinarySource: bundled wins over cached/download/PATH but loses to cl
       onPath: true,
       bundledExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "bundled",
   );
@@ -677,6 +684,7 @@ test("decideBinarySource: flag OFF (default) — a verified-native PATH tan is a
       bundledExists: false,
       localBuildExists: false,
       cachedExists: true,
+      cachedDigestRecorded: true,
       preferGlobalCli: false,
     }),
     "cached",
@@ -690,6 +698,7 @@ test("decideBinarySource: flag OFF (default) — a verified-native PATH tan is a
       bundledExists: false,
       localBuildExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
       preferGlobalCli: false,
     }),
     "localBuild",
@@ -703,6 +712,7 @@ test("decideBinarySource: flag OFF (default) — a verified-native PATH tan is a
       bundledExists: true,
       localBuildExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
       preferGlobalCli: false,
     }),
     "bundled",
@@ -716,6 +726,7 @@ test("decideBinarySource: flag OFF (default) — a verified-native PATH tan is a
       bundledExists: true,
       localBuildExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
       preferGlobalCli: false,
     }),
     "cliPath",
@@ -737,6 +748,7 @@ test("decideBinarySource: flag ON (preferGlobalCli) — a verified-native PATH t
       bundledExists: false,
       localBuildExists: false,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "path",
   );
@@ -769,6 +781,7 @@ test("decideBinarySource: flag ON (preferGlobalCli) — a verified-native PATH t
       bundledExists: true,
       localBuildExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "cliPath",
   );
@@ -781,6 +794,7 @@ test("decideBinarySource: flag ON (preferGlobalCli) — a verified-native PATH t
       bundledExists: true,
       localBuildExists: true,
       cachedExists: true,
+      cachedDigestRecorded: true,
     }),
     "bundled",
   );
@@ -807,6 +821,7 @@ test("resolutionInputFromDeps: the single seam both provisioning and resolution 
     localBuildBinaryPath: null,
     cachedBinaryPath: "/cache/tan",
     preferGlobalCli: true,
+    recordedCachedDigest: () => undefined,
   };
   const input = resolutionInputFromDeps(deps);
   assert.equal(input.preferGlobalCli, true);
@@ -814,6 +829,33 @@ test("resolutionInputFromDeps: the single seam both provisioning and resolution 
 
   const inputOff = resolutionInputFromDeps({ ...deps, preferGlobalCli: false });
   assert.equal(inputOff.preferGlobalCli, false);
+});
+
+test("resolutionInputFromDeps: cachedDigestRecorded reflects the recorded digest, and a missing record is FALSE (#386)", () => {
+  const deps = {
+    cliPathSetting: "",
+    fileExists: () => true,
+    commandOnPath: () => false,
+    bundledExists: false,
+    localBuildBinaryPath: null,
+    cachedBinaryPath: "/cache/tan",
+    preferGlobalCli: false,
+    recordedCachedDigest: () => undefined,
+  };
+  // The migration state: the binary is on disk, nothing vouches for it.
+  const migrating = resolutionInputFromDeps(deps);
+  assert.equal(migrating.cachedExists, true);
+  assert.equal(migrating.cachedDigestRecorded, false);
+  // …and that is what keeps `decideBinarySource` off the cached arm, which is
+  // the whole mechanism: no record, no spawn.
+  assert.equal(decideBinarySource(migrating), "download");
+
+  const recorded = resolutionInputFromDeps({
+    ...deps,
+    recordedCachedDigest: () => "a".repeat(64),
+  });
+  assert.equal(recorded.cachedDigestRecorded, true);
+  assert.equal(decideBinarySource(recorded), "cached");
 });
 
 test("classifyExitCode maps the stable codes", () => {

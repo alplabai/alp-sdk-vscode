@@ -317,6 +317,10 @@ async function runChecks() {
               path.join(require("node:os").tmpdir(), "alp-gs-"),
             ),
           },
+          // Required since #386: resolution reads the recorded digest for the
+          // cached binary. Empty here — this check resolves the sibling
+          // `localBuild`, which is not a verified arm and never consults it.
+          globalState: { get: () => undefined, update: async () => undefined },
         };
         const binary = await resolveAlpBinaryForContext(fakeCtx);
         assert.ok(binary && binary.command, "no binary resolved");

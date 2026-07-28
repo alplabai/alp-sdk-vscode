@@ -93,16 +93,35 @@ export class ProxyError extends Error {
   }
 }
 
+/** Which refusal a `ChecksumError` is. See that class for why every one of
+ *  these refuses and none may be softened into a warning. */
+export type ChecksumRefusal =
+  /** The bytes are not the digest that was published (download) or recorded
+   *  (cache). The case the whole check exists for. */
+  | "mismatch"
+  /** The digest to compare against could not be obtained at all. */
+  | "unfetchable"
+  /** The release publishes no line for this asset, so nothing vouches for it. */
+  | "unlisted"
+  /** #386: a cached binary predates the digest record, so there is nothing to
+   *  compare it with, and re-acquiring it did not complete either. */
+  | "unrecorded";
+
 /**
- * The downloaded bytes were NOT accepted, so nothing was installed: either they
- * do not match the sha256 the producer published for this asset, or that
- * published digest could not be obtained at all.
+ * Bytes were NOT accepted, so nothing was installed — or, on the `cached` arm,
+ * nothing was RUN: either they do not match the sha256 that vouches for them, or
+ * that digest could not be obtained at all.
  *
- * THREE causes, THREE sentences, and all three REFUSE. That is deliberate and
- * must stay that way — do not "relax" any of them into a warning:
+ * FOUR kinds, FIVE sentences, and every one of them REFUSES. That is deliberate
+ * and must stay that way — do not "relax" any of them into a warning:
  *
- *   - MISMATCH. The bytes are not what the producer published. This is the case
- *     that matters and the reason the whole check exists.
+ *   - MISMATCH. The bytes are not what the producer published (download), or no
+ *     longer what was recorded for them (cache, #386). This is the case that
+ *     matters and the reason the whole check exists — and it is the kind that
+ *     carries TWO sentences, because those are two different facts: the release
+ *     served the wrong bytes, versus something rewrote a binary this extension
+ *     had already verified (`CACHED_CLI_MISMATCH` in `service.ts`, whose remedy
+ *     is a reinstall rather than a retry).
  *   - The checksum file would not FETCH. This is NOT "probably fine": every
  *     tagged tan release publishes `checksums.txt`, and the binary itself just
  *     came down the same connection, through the same proxy, moments earlier.
@@ -111,8 +130,12 @@ export class ProxyError extends Error {
  *     reason to execute an unverified binary.
  *   - The checksum file has NO LINE for this asset. The release does not vouch
  *     for the file it just served.
+ *   - UNRECORDED (#386, raised by `adapterCore.ts`): a cached binary that
+ *     predates the digest record, which therefore has to be fetched again, and
+ *     the fetch did not complete. Accepting it and recording its current digest
+ *     instead would launder an unverified binary into a "verified" one.
  *
- * The alternative to refusing, in all three cases, is spawning an unverified
+ * The alternative to refusing, in every one of them, is spawning an unverified
  * executable on a customer's machine. There is no third option here: the
  * extension runs this binary, it does not merely store it.
  *
@@ -128,12 +151,24 @@ export class ProxyError extends Error {
  * digests and the URL ride on `detail`, which is channel-only.
  */
 export class ChecksumError extends Error {
+  /** Which refusal this is, as a value rather than a sentence to sniff.
+   *
+   *  Added for the #386 `cached` arm, which has to treat ONE of these
+   *  differently: when a cached binary that predates verification is being
+   *  re-acquired, a `mismatch` is a producer-side fact that must survive
+   *  unchanged, while the other two mean "the one-time re-verification could
+   *  not be completed" and are re-framed by `downloadCli` so the customer is
+   *  told what actually happened to the copy they already had. Branching on the
+   *  message text there would have made these customer sentences load-bearing
+   *  for control flow. */
+  readonly kind: ChecksumRefusal;
   /** Raw digests / URL / transport error — channel only. */
   readonly detail: string;
 
-  constructor(message: string, detail: string) {
+  constructor(kind: ChecksumRefusal, message: string, detail: string) {
     super(message);
     this.name = "ChecksumError";
+    this.kind = kind;
     this.detail = detail;
   }
 }
@@ -686,6 +721,7 @@ async function publishedSha256(
       throw error;
     }
     throw new ChecksumError(
+      "unfetchable",
       "The tan CLI download was discarded: the checksum file that vouches " +
         "for it could not be fetched, so there was no way to tell whether the " +
         "binary is the one Alp Lab published. Check your connection or proxy, " +
@@ -697,6 +733,7 @@ async function publishedSha256(
   const digest = expectedSha256(manifest, verify.assetName);
   if (!digest) {
     throw new ChecksumError(
+      "unlisted",
       "The tan CLI download was discarded: the release's checksum file does " +
         "not list this binary, so nothing vouches for the bytes that were " +
         "served.",
@@ -760,6 +797,7 @@ async function attempt(
     const digest = hash.digest("hex");
     if (expectedDigest !== null && digest !== expectedDigest) {
       throw new ChecksumError(
+        "mismatch",
         "The downloaded tan CLI does not match the checksum Alp Lab " +
           "published for it, so it was discarded and nothing was installed. " +
           "The bytes that arrived are not the ones that were released — that " +

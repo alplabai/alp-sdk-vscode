@@ -64,6 +64,68 @@
   `tan bootstrap` runs on — the command that downloads Zephyr and the pip
   packages, i.e. the one that needs the proxy most.
 
+- **The cached `tan` binary is now verified on EVERY resolution, not only when
+  it was downloaded (#386).** #389 checked the bytes as they arrived and then
+  never looked again. The download happens once; the cache is read on every
+  activation forever, so anything that rewrote the file afterwards — corruption,
+  a partial write, a half-restored backup, or anything with write access to the
+  extension's global storage — was spawned unchallenged. The `cached` arm now
+  hashes the file and compares it against the digest recorded when it was
+  installed, and REFUSES the spawn on a mismatch. Not a warning: the next thing
+  that happens to that path is an exec.
+
+  **Two of the six resolution arms are verified, and the other four are not.**
+  Do not read this as "the tan the extension runs is verified". `download` is
+  checked at write time (#389) and `cached` against that record on every
+  resolution; `cliPath`, `path` and `localBuild` are a binary the user pointed
+  at, put on their PATH or built themselves, with no reference digest anywhere
+  to check against, and `bundled` is staged into the VSIX by
+  `vsce package --target`, so it rides on the extension package's own signature.
+  The scope is written onto `resolveAlpBinary` itself so it cannot be misread as
+  broader than it is.
+
+  **What the record does and does not buy**, stated plainly because the tempting
+  word is "tamper-proof" and that would be false: it lives in `globalState`, not
+  in a sidecar beside the binary, so merely dropping a file into the cache
+  directory does not also control the record it is checked against — but an
+  attacker who already has write access to this user account can rewrite both,
+  and nothing here stops them. What it detects is corruption, a partial or
+  interrupted write, a half-restored backup, and replacement by anything that
+  does not know to update the record.
+
+  A copy cached BEFORE the digest was recorded — i.e. every existing install —
+  cannot be checked against anything, so it is never accepted and recorded,
+  which would launder an unverified binary into a "verified" one. It is skipped,
+  and resolution continues down the ladder: normally that means re-acquiring it
+  through the verified download path, but on a machine that already has a global
+  `tan`, the (unverified) `path` arm is reached first and takes over instead.
+  That machine's resolved source really does change, cached to path; what is
+  unchanged is the path-over-download precedence itself, which predates this
+  work. The re-acquiring customer gets a sentence about the one-time migration
+  instead of a generic outage; the precise transport cause stays on the output
+  channel.
+
+  A stalled link no longer turns that migration into a **one-click bypass**. The
+  120 s wall clock (`AbortSignal.timeout`) throws a bare `TimeoutError`, which is
+  abort-shaped but is a failure, not a cancel — it used to escape the migration
+  re-framing on its name alone. Nothing downstream branched on it
+  (`isCancellation` requires `name === message === "Canceled"`), so on the
+  per-command download route it surfaced as `spawnFailed` and the toast offered
+  an "Install tan CLI" button — which puts a `tan` on PATH, one of the four
+  unverified arms above. A cancel is now decided by the CALLER's own
+  `AbortSignal` having fired rather than by an error name, so a timeout is
+  re-framed like any other unreachable-network case and neither refusal offers
+  `installTanCli` or `alpSdk.cliPath`.
+
+  A refusal is classified by the error's TYPE, not by matching the word
+  "checksum" in its sentence — otherwise editing a customer-facing string would
+  silently reclassify a refusal and hand it a "Run doctor" button. The hash is
+  memoized on path + size + mtime because `probeTanVersion` re-resolves on every
+  state refresh (window focus, board.yaml save, bootstrap task start, terminal
+  finish, an `alpSdk` settings edit), and a synchronous 2.6 ms
+  hash of the 3282944-byte binary per focus event is not free; the memo's ceiling
+  is stated where it lives, and it sits inside the limit the record already has.
+
 - **The downloaded `tan` binary is now verified against the release's
   `checksums.txt` before it is ever executed (#378).** The extension fetched a
   binary from a GitHub release, renamed it into the managed cache, marked it

@@ -47,20 +47,25 @@ const { planCliOutcome } = require(
   path.join(root, "out", "notify", "service.js"),
 );
 
-/** The three refusals `download.ts` throws, with their channel-only detail. */
+/** The three refusals `download.ts` throws, with their channel-only detail.
+ *  The `kind` is the first argument and is what `downloadCli` branches on when
+ *  it re-frames a #386 re-acquire — see `migrationRefusal` in adapterCore. */
 const REFUSALS = {
   mismatch: new ChecksumError(
+    "mismatch",
     "The downloaded tan CLI does not match the checksum Alp Lab published " +
       "for it, so it was discarded and nothing was installed.",
     "sha256 of the downloaded bytes is aaaa, published digest is bbbb",
   ),
   unfetchable: new ChecksumError(
+    "unfetchable",
     "The tan CLI download was discarded: the checksum file that vouches for " +
       "it could not be fetched, so there was no way to tell whether the " +
       "binary is the one Alp Lab published.",
     "could not fetch https://example/checksums.txt — HTTP 500",
   ),
   unlisted: new ChecksumError(
+    "unlisted",
     "The tan CLI download was discarded: the release's checksum file does " +
       "not list this binary, so nothing vouches for the bytes that were served.",
     "no entry for tan-x86_64-unknown-linux-musl in https://example/checksums.txt",

@@ -8,6 +8,7 @@
 // in `service.ts` + `adapterCore.ts`.
 
 import * as cp from "child_process";
+import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
@@ -31,6 +32,7 @@ import {
 } from "./download";
 import { BinarySource, CliOutcome } from "./models";
 import {
+  CACHED_CLI_UNVERIFIED,
   SUPPORTED_CLI_VERSION,
   aheadPathFixAction,
   binaryName,
@@ -39,6 +41,7 @@ import {
   decideBinarySource,
   isCliBehind,
   isNativeTanVersionOutput,
+  isUnverifiableCache,
   parseTanVersion,
   proxyEnvOverrides,
   releaseAssetForTarget,
@@ -135,6 +138,55 @@ const HEAL_GAVE_UP_KEY = "alp.tanSelfHealGaveUpPin";
  *  further upgrade stores a different version and so warns again. */
 const AHEAD_WARNED_KEY = "alp.tanAheadWarnedVersion";
 
+/** globalState key holding the sha256 this extension verified for the binary it
+ *  installed at `cachedBinaryPath`. Read on EVERY resolution that lands on the
+ *  `cached` source and compared against the file on disk (#386) — see
+ *  `ResolveDeps.recordedCachedDigest` for what that does and does not buy, and
+ *  why the record lives here rather than beside the binary. */
+const CACHED_DIGEST_KEY = "alp.tanCachedBinarySha256";
+
+/** Last `sha256File` answer, keyed by path + size + mtime.
+ *
+ *  MEASURED, not guessed: hashing the 3.2 MB `tan` binary (readFileSync +
+ *  sha256) takes ~2.5-3.2 ms on this machine, and `statSync` ~0.08 ms. Without
+ *  the memo that cost is per STATE REFRESH, not per-window:
+ *  `resolveAlpBinaryForContext` memoizes into `resolved`, but `probeTanVersion`
+ *  builds its OWN deps and hands them to `readResolvedCliVersion`, which calls
+ *  `resolveAlpBinary` directly — so that path never sees the `resolved` memo,
+ *  and it runs on every state refresh: window focus, board.yaml save, BOOTSTRAP
+ *  task start (`src/extension.ts` filters `onDidStartTask` on
+ *  `def.run === BOOTSTRAP_RUN_NAME`, so a user's own tasks do not sweep),
+ *  terminal finish, any `alpSdk` settings edit.
+ *  That is a synchronous multi-millisecond hash on the extension-host main
+ *  thread per focus event.
+ *
+ *  ponytail: size + mtime, so a rewrite that preserves BOTH within one window
+ *  reuses the memo. That is a real ceiling and it is stated rather than papered
+ *  over — though it is inside the limit the record itself already has (an
+ *  attacker who can rewrite the binary and forge its mtime can equally rewrite
+ *  the globalState record). Upgrade path if that changes: drop the memo and hash
+ *  per resolution, or key it on the file handle. */
+let hashMemo: { key: string; digest: string } | undefined;
+
+/** Lowercase hex sha256 of `filePath`, or null when it can't be read (missing,
+ *  locked, a directory). Null is a REFUSAL at the caller, never a pass. */
+function sha256File(filePath: string): string | null {
+  try {
+    const stat = fs.statSync(filePath);
+    const key = `${filePath}|${stat.size}|${stat.mtimeMs}`;
+    if (hashMemo?.key === key) {
+      return hashMemo.digest;
+    }
+    const digest = createHash("sha256")
+      .update(fs.readFileSync(filePath))
+      .digest("hex");
+    hashMemo = { key, digest };
+    return digest;
+  } catch {
+    return null;
+  }
+}
+
 /** Best-effort human-readable size of a just-downloaded file, for the transfer
  *  log. Returns "unknown size" when the file can't be stat'd. */
 function downloadedBytes(filePath: string): string {
@@ -198,9 +250,13 @@ function cliInUsePlan(
  * which the presenter writes to the channel only.
  */
 /**
- * The plan for a download that was REFUSED rather than failed: the bytes did not
- * match the checksum the release publishes, or that checksum could not be
- * obtained at all (`ChecksumError`). Returns null for every other failure.
+ * The plan for an acquisition that was REFUSED rather than failed
+ * (`ChecksumError`). Returns null for every other failure.
+ *
+ * Not download-only, despite the name's history: `downloadCli` re-frames an
+ * unverifiable CACHED copy (#386) into a `ChecksumError` too, so the migration
+ * refusal arrives here as well — which is what the `unavailableOutcome`
+ * paragraph below means when it says this plan already caught those.
  *
  * Split out on the TYPE, like `cliInUsePlan` and `proxyFailurePlan` above, and
  * for a sharper reason than either: without it a refused binary falls into
@@ -210,8 +266,10 @@ function cliInUsePlan(
  * the published ones — the single most important thing this check can say would
  * be the one thing it never said.
  *
- * `ChecksumError.message` states which of the three refusals it was and carries
- * no digest or URL; the digests ride on `detail` (channel only). "Retry" is
+ * `ChecksumError.message` states which of the five refusal sentences it was
+ * (four kinds; `mismatch` has one wording for a download and another for a
+ * cached copy) and carries no digest or URL; the digests ride on `detail`
+ * (channel only). "Retry" is
  * still offered — it is safe by construction, since the retry re-verifies and a
  * mismatching binary can never be installed by it, and the common cause of a
  * one-off mismatch really is a corrupted transfer. `alpSdk.cliPath` is NOT
@@ -246,9 +304,11 @@ function checksumFailurePlan(
  * provisioning downloads inline, and a `ChecksumError` surfaces HERE rather than
  * through `checksumFailurePlan`. Branching on the TYPE — same discipline as
  * `cliInUsePlan` / `proxyFailurePlan` / `checksumFailurePlan` — is what carries
- * the three refusals through as three sentences instead of flattening them into
- * one. The sentence goes to the toast; the digests ride on `detail`, which the
- * presenter logs and never renders.
+ * each refusal through as its own sentence instead of flattening them into one.
+ * There are five: the three download refusals (mismatch, unfetchable manifest,
+ * asset unlisted) plus the two CACHED ones (#386) — an unrecorded migrating
+ * copy and a digest mismatch on disk. The sentence goes to the toast; the
+ * digests ride on `detail`, which the presenter logs and never renders.
  */
 function unavailableOutcome(error: unknown): CliOutcome {
   const raw = error instanceof Error ? error.message : String(error);
@@ -265,7 +325,17 @@ function unavailableOutcome(error: unknown): CliOutcome {
       error instanceof ChecksumError ? error.message : "tan CLI unavailable.",
     envelope: null,
     unavailable: {
-      reason: classifyUnavailable(raw),
+      // TYPE first, string-sniff second. `classifyUnavailable` reaches
+      // `checksumRefused` by matching the word "checksum" in the sentence,
+      // which is fine for the three download refusals but would make the
+      // wording of the two CACHED refusals (#386) load-bearing for their
+      // classification — an edit to a customer sentence would silently
+      // reclassify a refusal as `spawnFailed` and hand it a "Run doctor"
+      // button. The type cannot be edited by accident.
+      reason:
+        error instanceof ChecksumError
+          ? "checksumRefused"
+          : classifyUnavailable(raw),
       detail: error instanceof ChecksumError ? error.detail : raw,
     },
   };
@@ -451,6 +521,15 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     // knows.
     download: downloadSeam(proxySettings),
     chmodExec: (p) => fs.chmodSync(p, 0o755),
+    sha256File,
+    // `globalState`, not a sidecar in `cacheDir` — see
+    // `ResolveDeps.recordedCachedDigest` for why the record deliberately does
+    // not live next to the thing it vouches for.
+    recordedCachedDigest: () =>
+      context.globalState.get<string>(CACHED_DIGEST_KEY),
+    recordCachedDigest: async (digest) => {
+      await context.globalState.update(CACHED_DIGEST_KEY, digest);
+    },
   };
 }
 
@@ -518,6 +597,14 @@ export async function ensureTanCliProvisioned(
   // Reached the fetch: a `download` source is a fresh provision; a `cached`
   // source here means the managed copy is behind the pin — an update.
   const updatingStaleCache = source === "cached";
+  // …and a THIRD case that looks like the first: a binary is already sitting at
+  // `cachedBinaryPath`, but it predates the digest record, so it was skipped by
+  // `decideBinarySource` and this fetch is re-acquiring it through the verified
+  // path (#386). Worth separating because the failure sentence differs — this
+  // customer HAS a tan CLI, and telling them it "couldn't be downloaded, build
+  // and validate need it" explains nothing about why the one they have stopped
+  // being used.
+  const reacquiringUnverifiedCache = isUnverifiableCache(input);
   // Don't re-attempt a self-heal we already proved futile for this pin (the
   // fetched pin's binary still read behind — a mis-published release). Bounds
   // the download + toast to once per pin across activations; a pin bump re-arms.
@@ -539,7 +626,9 @@ export async function ensureTanCliProvisioned(
         location: vscode.ProgressLocation.Notification,
         title: updatingStaleCache
           ? `Updating the tan CLI to ${SUPPORTED_CLI_VERSION}…`
-          : "Downloading the tan CLI…",
+          : reacquiringUnverifiedCache
+            ? "Verifying the tan CLI (one-time re-download)…"
+            : "Downloading the tan CLI…",
         // A binary fetch over a slow link is the longest thing that can happen
         // on first activation; without Cancel it reads as a hung window.
         cancellable: true,
@@ -623,19 +712,39 @@ export async function ensureTanCliProvisioned(
         checksumFailurePlan(error, "Provisioning the tan CLI") ??
         planFailure({
           operation: "Provisioning the tan CLI",
-          cause: updatingStaleCache
-            ? `Couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION}. The installed version still works — retry when you're back online.`
-            : "Couldn't download the tan CLI. Build and validate commands need it — retry when you're back online, or point alpSdk.cliPath at a local build.",
+          cause: reacquiringUnverifiedCache
+            ? // NOT the generic sentence below: this machine has a tan CLI, it
+              // just isn't one anything can vouch for (#386). Narrow by the
+              // time it is reached — `downloadCli` re-frames every TRANSPORT
+              // failure of a re-acquire into a `ChecksumError` (the wall-clock
+              // `TimeoutError` included: it used to escape that re-framing, and
+              // reached this branch on a transfer that had NOT succeeded), and
+              // `checksumFailurePlan` above already caught those. A cancel and
+              // a closing window returned further up. So what lands here is the
+              // residue of a transfer that DID succeed: the binary could not be
+              // read back, or its digest not stored.
+              CACHED_CLI_UNVERIFIED
+            : updatingStaleCache
+              ? `Couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION}. The installed version still works — retry when you're back online.`
+              : "Couldn't download the tan CLI. Build and validate commands need it — retry when you're back online, or point alpSdk.cliPath at a local build.",
           detail,
           // `alp.updateCli` re-runs exactly this download, so the presenter can
           // execute the retry itself; a caller-handled `retry` id would be a
           // dead button here because nothing awaits this plan.
-          actions: updatingStaleCache
-            ? [{ id: "updateCli", title: "Retry" }]
-            : [
-                { id: "updateCli", title: "Retry" },
-                { id: "openSettings", arg: "alpSdk.cliPath" },
-              ],
+          //
+          // `alpSdk.cliPath` is offered on the FIRST-INSTALL failure only. It is
+          // withheld from the re-acquire, for the reason #389 withdrew it from
+          // the checksum refusal: that setting is the one resolution source
+          // never checked against anything, so offering it as the way out of a
+          // verification failure is a one-click route to running the unverified
+          // binary permanently.
+          actions:
+            updatingStaleCache || reacquiringUnverifiedCache
+              ? [{ id: "updateCli", title: "Retry" }]
+              : [
+                  { id: "updateCli", title: "Retry" },
+                  { id: "openSettings", arg: "alpSdk.cliPath" },
+                ],
         }),
     );
   }
