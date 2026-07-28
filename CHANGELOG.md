@@ -26,9 +26,12 @@
   in `src/` is classified as exactly one of the two — a new match site cannot be
   added without someone deciding which kind it is.
 
-  That asset does not exist yet — `alplabai/tan-cli#106` is the open issue that
-  will publish it — so the gate is built to be loudly inconclusive rather than
-  quietly green. A 404 prints a `::warning::` naming the pin, the URL and the
+  That asset does not exist yet, but not because the producer is missing:
+  `alplabai/tan-cli#106` is MERGED and `release.yml` publishes
+  `envelope-contract.json` on every tagged release. What is missing is a TAG —
+  no tan release has been cut since #106 landed, and the newest that exists
+  (v0.3.1) predates it. So the gate is built to be loudly inconclusive rather
+  than quietly green. A 404 prints a `::warning::` naming the pin, the URL and the
   issue and exits 0, and the test then skips with all three facts in its reason,
   so the runner's own `# SKIP` line says the contract was not checked. A
   rate-limit, an outage or a timeout prints a second, distinctly worded
@@ -39,6 +42,32 @@
   rate-limit nor an outage, and an artefact that is present but yields zero
   assertions against anything only tan can be the source of —
   present-but-vacuous is the same defect wearing a different hat.
+- **A release that pins an unpublished `tan` version now says so.** When
+  `SUPPORTED_CLI_VERSION` named a tan-cli tag that was not published, the
+  darwin-arm64 packaging job died on `curl: (22) The requested URL returned
+  error: 404` and exit 22 — a bare status line that named neither the pin, nor
+  the URL, nor what to do. The step now reports the resolved pin, the exact
+  asset URL, the HTTP status and curl's exit code as `::error::` annotations
+  (so they land on the run summary, not only in the raw log), and separates a
+  404 — the tan release has to be published *before* the extension is tagged —
+  from a network, proxy or permissions failure, which is a re-run rather than a
+  repin. It stays fatal on purpose: this job exists only to ship the bundled
+  binary, VS Code prefers a platform-specific VSIX over the universal one, and a
+  darwin-arm64 VSIX with no `bin/tan` would be the universal VSIX wearing a
+  platform label. A zero-byte 200 is now caught too, and every failure path
+  removes `bin/tan` — which is cleanup after this change's own doing, not a
+  pre-existing leak: the old step's `curl -f` suppressed the response body, so a
+  404 wrote nothing at all (driven on curl 8.5.0: exit 22, `bin/` empty). `-f`
+  is dropped here so curl's exit code reports transport health alone —
+  `http_status=404 curl_exit=0` reads "the network was fine, the server said
+  no", where `-f` collapses every HTTP error into exit 22 — and the price of
+  that is curl writing the non-2xx body, GitHub's 9-byte `Not Found`, straight
+  to `bin/tan`. The `rm` is what keeps it out of the package. Scope, for the
+  record: the
+  two packaging jobs are independent — nothing in the workflow declares
+  `needs:` — so this failure never blocked the universal VSIX, which still
+  packages, releases and publishes; what it lost was the darwin-arm64 VSIX, and
+  the run went red.
 - **The tan CLI download now goes through a proxy when there is one.** Node
   honours no proxy variable of its own and the extension never read VS Code's
   `http.proxy`, so on a machine behind a corporate proxy the download could not
