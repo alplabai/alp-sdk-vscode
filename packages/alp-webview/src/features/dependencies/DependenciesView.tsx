@@ -25,11 +25,14 @@ type ViewState =
 /**
  * tan's own three counts, and nothing derived from them.
  *
- * There is deliberately no "all good" line here. tan caps an absent PATH tool
- * at `warn` (tan-cli#103, unmerged), so `fail === 0` is true on a machine with
- * no Ninja — src/toolchain.ts:244 drew that verdict anyway and printed "All
- * required tools present" over a build that cannot run. The counts ARE the
- * header; the reader draws the conclusion.
+ * There is deliberately no "all good" line here. An older tan caps an absent
+ * PATH tool at `warn`, so `fail === 0` is true on a machine with no Ninja —
+ * src/toolchain.ts drew that verdict anyway and printed "All required tools
+ * present" over a build that cannot run. tan-cli#103 fixed the producer side
+ * and shipped in the pinned v0.4.0, but a binary set through `alpSdk.cliPath`
+ * can still be older, and a view that invents a verdict is wrong for that
+ * reader specifically. The counts ARE the header; the reader draws the
+ * conclusion.
  */
 function Counts({ counts }: { counts: DependencyReport["counts"] }) {
   return (

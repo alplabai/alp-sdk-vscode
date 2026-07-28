@@ -194,7 +194,9 @@ export async function offerBootstrapFix(
   if (choice !== "custom") return;
 
   // `tan doctor --build --fix` bootstraps ONLY when its own `workspace` check
-  // fails (tan-cli v0.3.1 `doctor.rs`). A workspace that exists but dangles
+  // fails (re-verified against the pinned tan v0.4.0: `doctor.rs`
+  // `run_build_readiness` gates the bootstrap on
+  // `c.name == "workspace" && c.status == Fail`). A workspace that exists but dangles
   // passes that check, so `--fix` would print a green report and repair
   // nothing. Run `tan bootstrap` directly for that case — it reconciles the
   // manifest pointer (tan-cli #31), unless it reuses a `$ZEPHYR_BASE`

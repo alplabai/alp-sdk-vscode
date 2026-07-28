@@ -17,9 +17,12 @@ import {
 
 /** The `tan` CLI version this extension build targets for download-on-demand.
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
- *  (aligned with tan-cli's `[workspace.package] version`). v0.3.1 is the
- *  release that carries native (non-WSL-only) Windows bootstrap. */
-export const SUPPORTED_CLI_VERSION = "0.3.1";
+ *  (aligned with tan-cli's `[workspace.package] version`). v0.4.0 is the first
+ *  release that publishes `envelope-contract.json`, which is what
+ *  `scripts/fetch-tan-contract.mjs` downloads for THIS pin — so bumping it is
+ *  what turns the envelope-contract gate from "skipped, loudly" into a check
+ *  that verifies something. */
+export const SUPPORTED_CLI_VERSION = "0.4.0";
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";

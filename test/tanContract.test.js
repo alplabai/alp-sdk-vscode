@@ -15,10 +15,12 @@
 // hand-copied: a fixture copied into this repo drifts exactly the way the thing
 // it is testing drifts).
 //
-// The artefact does not exist yet — `alplabai/tan-cli#106` will publish it. So
-// the SKIP path is today's real path, and it is written to be impossible to read
-// as a pass: every skip reason names the pin, the URL and the issue, so the
-// runner's own `# SKIP` line carries all three. The `not vacuous` test below
+// The artefact EXISTS as of tan v0.4.0, the first release to publish it
+// (`alplabai/tan-cli#106` wired it into `release.yml`). So the asserting path is
+// now the real path. The SKIP path stays, because a pin can move to a release
+// that predates the asset and a network can fail, and it is written to be
+// impossible to read as a pass: every skip reason names the pin, the URL and the
+// reason, so the runner's own `# SKIP` line carries all three. The `not vacuous` test below
 // closes the other half of the same trap — an artefact that IS present but
 // yields zero assertions (wrong shape, empty families, a layout tan changed)
 // fails rather than passing quietly.
@@ -132,7 +134,7 @@ function scanGatedCodes(roots) {
  *
  * `exitCode` is in the predicate purely to exclude documentation prose: a block
  * like `"commands": {"build": {"command": "tan build", "description": "…"}}` is
- * a plausible neighbour in an artefact whose layout #106 has not frozen, and
+ * a plausible neighbour in the artefact, and
  * `command`-alone would drag it in and red the gate over a doc string.
  *
  * `issues` was ADDED here and then REVERTED, and the reason is the rule for
@@ -171,67 +173,48 @@ function findEnvelopes(node, out = []) {
 }
 
 /**
- * The artefact's FROZEN issue-code list, or null when it carries none. Accepts
- * any key ending in `code`/`codes` holding a non-empty array of issue codes or
- * an object keyed by them — no published artefact exists to pin the layout against, so
- * this is tolerant by design. Codes scraped out of golden envelopes are
- * deliberately NOT included: a golden that happens to carry one code is not the
- * producer promising to keep it.
+ * The artefact's FROZEN issue-code list, or null when it carries none.
  *
- * The entries must LOOK like issue codes, not merely live under a `*code(s)`
- * key. docs/CLI.md pins six exit codes as well, so an `exitCodes` map keyed
- * `"0".."5"` is a plausible sibling here — and it is excluded by shape.
+ * This used to DISCOVER the list by shape — walk the whole document for any key
+ * ending in `code`/`codes` whose value looked like issue codes — because no
+ * published artefact existed to read the layout off. That stopgap carried its
+ * own instruction: "when the layout is frozen, replace this with the one
+ * declared key and delete the heuristic rather than hardening it further."
  *
- * Every issue-code-shaped list is UNIONED rather than the first one winning.
- * First-match let `Object.entries` insertion order decide, so a `removedCodes`
- * or `deprecatedCodes` neighbour — an entirely plausible companion to a frozen
- * list, whose entries pass the shape test — could red the gate on a perfectly
- * correct artefact and blame tan for a rename that never happened.
+ * v0.4.0 is the first release to publish the asset, and the heuristic could not
+ * read it. `issueCodes` is an array of OBJECTS (`{code, status, severity,
+ * consumer, consumerEffect, note}`), while the walker only accepted an array of
+ * STRINGS or an object keyed by them — so it collected nothing, `frozenCodes`
+ * came back null, and the one assertion that matters (every code the pinned tan
+ * emits is in tan's frozen list) SKIPPED on the very first artefact it was
+ * given. Loudly, to its credit, but skipped.
  *
- * KNOWN LIMIT, and it cannot be closed from this side today: if the artefact
- * ships a list of LEGACY code names, unioning it in means a code tan actually
- * renamed still resolves, and the gate greens on the drift it exists to catch.
- * Discovering the list by shape is a stopgap until a tagged release ships the
- * asset and its layout can be read off a real artefact; when the
- * layout is frozen, replace this with the one declared key and delete the
- * heuristic rather than hardening it further.
+ * So: the declared key, and the declared shape. A layout change now REDS this
+ * gate instead of silently disarming it, which is the whole point of pinning to
+ * a producer artefact. Plain strings are still accepted because that is a
+ * strictly narrower shape the walker also handled and it costs one branch.
+ *
+ * Codes scraped out of golden envelopes remain excluded — a golden carrying a
+ * code is tan DEMONSTRATING it, not the producer PROMISING to keep it.
  */
-function findFrozenCodes(node, envelopes = []) {
-  const codes = new Set();
-  collectFrozenCodes(node, codes, new Set(envelopes));
-  return codes.size ? codes : null;
-}
+function findFrozenCodes(doc) {
+  const list = doc?.issueCodes;
+  if (!Array.isArray(list) || list.length === 0) return null;
 
-function collectFrozenCodes(node, out, skip) {
-  if (Array.isArray(node)) {
-    for (const v of node) collectFrozenCodes(v, out, skip);
-    return;
+  const codes = new Set();
+  for (const entry of list) {
+    const code = typeof entry === "string" ? entry : entry?.code;
+    // A non-conforming ENTRY is a layout change, not something to skip past:
+    // silently dropping it would shrink the frozen set and turn a producer-side
+    // rename into a green run.
+    assert.ok(
+      typeof code === "string" && ISSUE_CODE_SHAPE.test(code),
+      `${ASSET} issueCodes[] entry is not an issue code or a {code} object: ` +
+        `${JSON.stringify(entry)?.slice(0, 120)}`,
+    );
+    codes.add(code);
   }
-  if (!node || typeof node !== "object") return;
-  // A golden envelope's own payload is tan DEMONSTRATING a code, not the
-  // producer PROMISING to keep it. Without this, a `data.handledCodes` list
-  // inside a golden is unioned into the frozen set and masks a rename of every
-  // pinned code at once — driven: renaming all three in the frozen list while a
-  // golden carried the old names went `fail 2` to `pass 6`.
-  if (skip.has(node)) return;
-  for (const [key, value] of Object.entries(node)) {
-    if (/codes?$/i.test(key)) {
-      const codes = Array.isArray(value)
-        ? value
-        : value && typeof value === "object"
-          ? Object.keys(value)
-          : null;
-      if (
-        codes?.length &&
-        codes.every((c) => typeof c === "string" && ISSUE_CODE_SHAPE.test(c))
-      ) {
-        for (const code of codes) out.add(code);
-        // A matched list is not descended into — its entries are strings.
-        continue;
-      }
-    }
-    collectFrozenCodes(value, out, skip);
-  }
+  return codes;
 }
 
 const present = fs.existsSync(assetPath);
@@ -244,7 +227,7 @@ const skip =
 
 const doc = present ? JSON.parse(fs.readFileSync(assetPath, "utf8")) : null;
 const envelopes = present ? findEnvelopes(doc) : [];
-const frozenCodes = present ? findFrozenCodes(doc, envelopes) : null;
+const frozenCodes = present ? findFrozenCodes(doc) : null;
 
 /**
  * Assertions made against a SUBSTANTIVE family of the artefact's content —

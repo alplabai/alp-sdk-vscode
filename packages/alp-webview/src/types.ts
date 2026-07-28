@@ -413,13 +413,15 @@ export interface DependencyRow {
 
 export interface DependencyReport {
   rows: DependencyRow[];
-  /** tan's `data.summary` verbatim. There is deliberately no `ok` boolean:
-   *  tan caps an absent PATH tool at `warn`, so any `fail === 0` verdict would
-   *  print "all good" while Ninja is missing. The view must not invent one. */
+  /** tan's `data.summary` verbatim. There is deliberately no `ok` boolean: an
+   *  older tan caps an absent PATH tool at `warn`, so any `fail === 0` verdict
+   *  would print "all good" while Ninja is missing. The pinned v0.4.0 rates it
+   *  `fail` (tan-cli#103), but a binary set through `alpSdk.cliPath` may not.
+   *  The view must not invent one. */
   counts: { pass: number; warn: number; fail: number };
-  /** True when this tan emitted no `missingPrerequisites` at all (the pinned
-   *  v0.3.1). The panel says so in one line instead of implying tan looked and
-   *  found nothing. */
+  /** True when this tan emitted no `missingPrerequisites` at all — v0.3.1 and
+   *  earlier, not the pinned v0.4.0. The panel says so in one line instead of
+   *  implying tan looked and found nothing. */
   prerequisiteDataUnavailable: boolean;
 }
 
