@@ -975,7 +975,7 @@ export function isDebugConfigData(value: unknown): value is DebugConfigData {
 }
 
 /**
- * The `<resolved-…>` placeholders left in a launch configuration, if any.
+ * Every unresolved `<…>` placeholder left in a launch configuration, if any.
  *
  * `tan debug-config` resolves what the build recorded and leaves a placeholder
  * for what it could not — a board that registers no OpenOCD runner still ships
@@ -984,12 +984,29 @@ export function isDebugConfigData(value: unknown): value is DebugConfigData {
  * "the command succeeded" does NOT mean "this configuration can launch", and
  * the caller must look at the object rather than the exit code — otherwise the
  * user is told the profile is ready and the session dies inside the adapter.
+ *
+ * THE TEST IS ANY `<…>` TOKEN, NOT a `<resolved-` prefix. `${…}` is VS Code's
+ * own variable substitution (`${workspaceFolder}`): VS Code expands it at
+ * launch, it carries no angle bracket, and it is resolved as far as this
+ * extension is concerned. `<…>` is ours and nothing expands it — handed to a
+ * debug adapter verbatim it is a literal device name, path or TCP address. The
+ * prefix test this replaced did not see `<host>:<port>`, which EVERY
+ * `yocto-userspace` draft carries, so a Yocto profile reported launchable with
+ * a gdbserver address no adapter can dial. tan closed the same hole on its own
+ * side in v0.4.0 and its predicate names this regex as its twin
+ * (`is_unresolved_placeholder`, crates/tan-core/src/debug_launch.rs:
+ * "Equivalent to the TS `/<[^<>]*>/`").
+ *
+ * This is the repo's ONE unresolved-value predicate. The orphan rescue in
+ * `src/debug/service.ts` decides "concrete or placeholder" by calling it
+ * rather than re-typing the rule, because three divergent copies of exactly
+ * this test is a defect this repo has already shipped once and removed.
  */
 export function launchConfigPlaceholders(value: unknown): string[] {
   const found: string[] = [];
   const walk = (node: unknown): void => {
     if (typeof node === "string") {
-      if (node.includes("<resolved-")) found.push(node);
+      if (/<[^<>]*>/.test(node)) found.push(node);
     } else if (Array.isArray(node)) {
       node.forEach(walk);
     } else if (typeof node === "object" && node !== null) {
