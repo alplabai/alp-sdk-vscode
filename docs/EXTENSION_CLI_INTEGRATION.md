@@ -175,6 +175,25 @@ just arrived over the same connection, so failing to obtain the digest means the
 release is malformed or something is intercepting; neither justifies executing
 an unverified binary. See `ChecksumError` in `src/alpCli/download.ts`.
 
+A refusal reaches the customer through **two** surfaces, and both keep the three
+messages distinct. Activation-time provisioning goes through
+`checksumFailurePlan`. But `resolveAlpBinary` has a live `case "download"` and
+`extension.ts` fires provisioning un-awaited, so a command issued before or
+instead of it downloads INLINE and the refusal arrives as a resolution failure —
+`CliUnavailableReason` therefore carries a dedicated `checksumRefused`
+(`classifyUnavailable` matches it ahead of `corrupt`), and `unavailablePlan`
+renders the `ChecksumError` sentence verbatim. Neither surface offers
+**`alpSdk.cliPath`**: that resolution source is never checksum-verified, so
+offering it during an active tamper would be a one-click route to permanently
+executing the very binary that was just refused. Both offer Retry, which is safe
+because it re-verifies.
+
+The `checksums.txt` body is read into memory rather than streamed to disk (it is
+849 bytes at tan v0.4.0) and is therefore **capped** at 64 KiB — a hostile origin
+is this check's threat model, and without the cap the read is bounded only by
+the 120 s wall clock. Overrunning it refuses rather than truncates: a truncated
+manifest could be missing the digest line and would read as "unlisted".
+
 **Out of scope: GitHub build-provenance attestation.**
 `gh attestation verify <file> --repo alplabai/tan-cli` does work, and does fail
 on a tampered copy, but it needs the `gh` CLI installed and authenticated —

@@ -363,13 +363,14 @@ export function classifyOutcome(
 export function classifyUnavailable(raw: string): CliUnavailableReason {
   if (/^No prebuilt tan CLI/.test(raw)) return "noPrebuilt";
   if (/did not produce a binary|Downloaded 0 bytes/.test(raw)) return "corrupt";
-  // Every `ChecksumError` sentence (`download.ts`) says "checksum", and all
-  // three of them mean the same thing to a consumer: the managed binary is not
-  // trustworthy and was discarded. `corrupt` — "a binary is present but
-  // unusable" — is that verdict; it must NOT fall through to `downloadFailed`
-  // below, which offers "retry when you're back online" for bytes that were
-  // served fine and simply weren't the published ones.
-  if (/checksum/i.test(raw)) return "corrupt";
+  // Every `ChecksumError` sentence (`download.ts`) says "checksum". Matched
+  // AHEAD of both `corrupt` and `downloadFailed`, and mapped to neither:
+  // `downloadFailed` offers "retry when you're back online" for bytes that were
+  // served fine and simply weren't the published ones, and `corrupt` claims an
+  // installed copy is broken when nothing was installed — then hands the
+  // customer `alpSdk.cliPath`, the ONE resolution source with no checksum path
+  // at all. See `checksumRefused` in `models.ts`.
+  if (/checksum/i.test(raw)) return "checksumRefused";
   if (
     /Download failed|Timed out downloading|Too many redirects|ENOTFOUND|ECONNRESET|ECONNREFUSED|getaddrinfo/.test(
       raw,

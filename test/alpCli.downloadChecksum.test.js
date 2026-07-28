@@ -23,7 +23,11 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { ChecksumError, downloadFile } = require("../out/alpCli/download.js");
+const {
+  ChecksumError,
+  downloadFile,
+  downloadSeam,
+} = require("../out/alpCli/download.js");
 // The real planner the adapter feeds this rejection to. Imported (not mimicked)
 // so "the customer reads this sentence" is asserted by the code that decides
 // it — `planFailure` demotes a `cause` carrying an errno or an absolute path
@@ -308,6 +312,118 @@ test("downloadFile: the refusal reaches the TOAST; the digests stay on the chann
         /[0-9a-f]{64}/,
         "the digests still reach the output channel",
       );
+    },
+  );
+});
+
+test("downloadSeam: the seam the extension actually injects REFUSES a tampered binary", async () => {
+  // The one unprotected link in the chain, and the reason `downloadSeam` is a
+  // named export rather than an arrow in `vscodeAdapter.ts`.
+  //
+  // Making `verify` required on `ResolveDeps.download` guards the CALLER:
+  // dropping the 4th argument in `downloadCli` is a TS2554. It does NOT guard
+  // the PROVIDER — TypeScript's function assignability accepts a 3-parameter
+  // implementation for a 4-parameter type, so
+  //
+  //     download: (url, dest, signal) =>
+  //       downloadFile(url, dest, signal, proxySettings()),
+  //
+  // typechecks clean, `verify` arrives `undefined`, `downloadFile` takes its
+  // `expectedDigest: null` branch, and the extension is silently back to
+  // installing and executing unverified bytes with a fully green board.
+  // `vscodeAdapter.ts` imports `vscode`, so no unit test loads it — this
+  // assertion is what makes that edit expressible only as deleting a parameter
+  // THIS function names, which reds this test.
+  const published = Buffer.from("the real tan binary\n");
+  const tampered = Buffer.from(published);
+  tampered[4] ^= 0x01;
+  let proxyReads = 0;
+  const seam = downloadSeam(() => {
+    proxyReads += 1;
+    return {};
+  });
+  await withServer(
+    serveRelease({
+      body: tampered,
+      manifest: manifestFor([[sha256(published), ASSET_NAME]]),
+    }),
+    async (baseUrl) => {
+      const { dir, dest } = tmpDest();
+      const rejection = await rejectionOf(
+        seam(`${baseUrl}/asset`, dest, undefined, verifySpec(baseUrl)),
+      );
+      assert.ok(
+        rejection instanceof ChecksumError,
+        "the injected seam dropped `verify` — it installed bytes that do not " +
+          "match the published digest, which is issue #378 back again",
+      );
+      assert.ok(!fs.existsSync(dest), "nothing may be installed");
+      assert.deepEqual(fs.readdirSync(dir), []);
+    },
+  );
+  // Read per call, not memoized: changing `http.proxy` has to take effect on
+  // the next download without a window reload.
+  assert.equal(proxyReads, 1, "the proxy settings must be read per download");
+});
+
+test("downloadSeam: bytes matching the published digest install through it", async () => {
+  const body = Buffer.from("the real tan binary\n");
+  await withServer(
+    serveRelease({ body, manifest: manifestFor([[sha256(body), ASSET_NAME]]) }),
+    async (baseUrl) => {
+      const { dest } = tmpDest();
+      await downloadSeam(() => ({}))(
+        `${baseUrl}/asset`,
+        dest,
+        undefined,
+        verifySpec(baseUrl),
+      );
+      assert.deepEqual(fs.readFileSync(dest), body);
+    },
+  );
+});
+
+test("downloadFile: an oversized checksums.txt is REFUSED, not buffered", async () => {
+  // `checksums.txt` is read whole into memory (849 bytes at tan v0.4.0) and a
+  // hostile origin is precisely this change's threat model. Without a cap the
+  // read is bounded only by the 120 s wall clock — two minutes of unbounded
+  // growth in the extension host's heap. Refusing (rather than truncating) is
+  // load-bearing too: a truncated manifest could be missing the digest line and
+  // would then read as "the release does not list this asset".
+  const body = Buffer.from("the real tan binary\n");
+  const oversized = `${"#".repeat(70 * 1024)}\n${sha256(body)}  ${ASSET_NAME}\n`;
+  await withServer(
+    serveRelease({ body, manifest: oversized }),
+    async (baseUrl) => {
+      const { dir, dest } = tmpDest();
+      const rejection = await rejectionOf(fetchAsset(baseUrl, dest));
+      assert.ok(
+        rejection instanceof ChecksumError,
+        "an unbounded manifest body must not be swallowed whole",
+      );
+      assert.match(rejection.message, /could not be fetched/);
+      assert.match(rejection.detail, /exceeded 65536 bytes/);
+      assert.ok(!fs.existsSync(dest), "and nothing is installed");
+      assert.deepEqual(fs.readdirSync(dir), []);
+    },
+  );
+});
+
+test("downloadFile: a real-sized checksums.txt is comfortably under the cap", async () => {
+  // The cap must not be so tight that a genuine release trips it. tan publishes
+  // eight targets plus the envelope contract; this is a generous multiple.
+  const body = Buffer.from("the real tan binary\n");
+  const entries = Array.from({ length: 200 }, (_unused, i) => [
+    sha256(Buffer.from(`asset ${i}`)),
+    `tan-target-number-${i}-with-a-long-triple-name`,
+  ]);
+  entries.push([sha256(body), ASSET_NAME]);
+  await withServer(
+    serveRelease({ body, manifest: manifestFor(entries) }),
+    async (baseUrl) => {
+      const { dest } = tmpDest();
+      await fetchAsset(baseUrl, dest);
+      assert.deepEqual(fs.readFileSync(dest), body);
     },
   );
 });

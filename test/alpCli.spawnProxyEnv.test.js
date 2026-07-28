@@ -45,12 +45,21 @@ function fakeChild() {
 }
 
 /**
- * Run one `tan` envelope command through the real adapter with `http.proxy` set
- * to `proxySetting`, and return the options object `cp.spawn` was handed.
+ * Load a FRESH copy of the real adapter with `http.proxy` set to
+ * `proxySetting`, and hand back both child-launch seams it can reach:
+ * `cp.spawn` options (the in-process envelope path) and every `runInTerminal`
+ * call (the TERMINAL path).
+ *
+ * `runInTerminal` used to be stubbed here as a bare no-op, which made both
+ * terminal seams structurally invisible to this file — `runAlpInTerminal` could
+ * lose its `env` with the whole suite still green, and that is the seam `tan
+ * bootstrap` runs on: the command that downloads Zephyr and the pip packages,
+ * i.e. the one that needs the proxy most.
  */
-async function spawnOptionsFor(proxySetting) {
+function loadAdapter(proxySetting) {
   delete require.cache[ADAPTER];
   let captured = null;
+  const terminalRuns = [];
   const stubs = {
     vscode: {
       workspace: {
@@ -88,7 +97,12 @@ async function spawnOptionsFor(proxySetting) {
         pythonBinary: "python",
       }),
     },
-    "../util": { log() {}, runInTerminal() {} },
+    "../util": {
+      log() {},
+      runInTerminal(options) {
+        terminalRuns.push(options);
+      },
+    },
   };
   const originalLoad = Module._load;
   Module._load = function (request, ...rest) {
@@ -103,15 +117,42 @@ async function spawnOptionsFor(proxySetting) {
     Module._load = originalLoad;
     delete require.cache[ADAPTER];
   }
-  await adapter.runAlpCommand(
-    {
-      extensionPath: path.join(root, "no-such-extension-dir"),
+  return {
+    adapter,
+    terminalRuns,
+    spawnOptions: () => captured,
+    // The REAL extension path: `installTanCliGlobally` refuses (and never
+    // reaches `runInTerminal`) when the bundled installer is missing, so this
+    // has to point where `media/tan-install/` actually is.
+    context: {
+      extensionPath: root,
       globalStorageUri: { fsPath: path.join(root, "no-such-storage-dir") },
     },
-    ["sdk", "list"],
-  );
+  };
+}
+
+/**
+ * Run one `tan` envelope command through the real adapter with `http.proxy` set
+ * to `proxySetting`, and return the options object `cp.spawn` was handed.
+ */
+async function spawnOptionsFor(proxySetting) {
+  const { adapter, spawnOptions, context } = loadAdapter(proxySetting);
+  await adapter.runAlpCommand(context, ["sdk", "list"]);
+  const captured = spawnOptions();
   assert.ok(captured, "cp.spawn was never called — the harness is broken");
   return captured;
+}
+
+/** The single `runInTerminal` options object `fn(adapter, context)` produced. */
+async function terminalRunFor(proxySetting, fn) {
+  const { adapter, terminalRuns, context } = loadAdapter(proxySetting);
+  await fn(adapter, context);
+  assert.equal(
+    terminalRuns.length,
+    1,
+    "expected exactly one runInTerminal call — the harness is broken",
+  );
+  return terminalRuns[0];
 }
 
 /** Run `fn` with `process.env` patched, then put it back exactly. A patch value
@@ -183,4 +224,70 @@ test("no http.proxy set: the child's environment is process.env unchanged", asyn
   assert.equal(options.env.HTTPS_PROXY, undefined);
   assert.equal(options.env.HTTP_PROXY, undefined);
   assert.deepEqual({ ...options.env }, { ...process.env });
+});
+
+// ── the TERMINAL seams ───────────────────────────────────────────────────────
+//
+// `ProcessExecution` MERGES its `env` into the parent's, so these two carry
+// ADDITIONS only — asserting `PATH` survives (as the cp.spawn cases above do)
+// would be asserting the opposite contract.
+
+test("runAlpInTerminal hands the proxy to the terminal — this is the tan bootstrap seam", async () => {
+  const run = await withEnv(
+    { HTTPS_PROXY: undefined, HTTP_PROXY: undefined, ALL_PROXY: undefined },
+    () =>
+      terminalRunFor("http://proxy.corp:8080", (adapter, context) =>
+        adapter.runAlpInTerminal(context, ["bootstrap"], {
+          name: "Alp: Bootstrap",
+          cwd: undefined,
+        }),
+      ),
+  );
+  assert.ok(
+    run.env,
+    "runAlpInTerminal passed no `env`, so `tan bootstrap` — the command that " +
+      "downloads Zephyr and the pip packages — runs with no proxy at all. A " +
+      "ProcessExecution task is not a login shell: it inherits the extension " +
+      "host's environment, not the user's profile, so nothing else supplies it",
+  );
+  assert.equal(run.env.HTTPS_PROXY, "http://proxy.corp:8080");
+  assert.equal(run.env.HTTP_PROXY, "http://proxy.corp:8080");
+});
+
+test("runAlpInTerminal leaves an exported proxy alone", async () => {
+  const run = await withEnv(
+    { HTTPS_PROXY: "http://from-shell:3128", ALL_PROXY: undefined },
+    () =>
+      terminalRunFor("http://from-settings:8080", (adapter, context) =>
+        adapter.runAlpInTerminal(context, ["build"], {
+          name: "Alp: Build",
+          cwd: undefined,
+        }),
+      ),
+  );
+  assert.equal(
+    run.env.HTTPS_PROXY,
+    undefined,
+    "an exported HTTPS_PROXY is already in the parent environment this task " +
+      "merges into, so the gap-filler must write NOTHING for it — writing the " +
+      "setting here would override the variable the user chose",
+  );
+});
+
+test("installTanCliGlobally hands the proxy to the installer script", async () => {
+  const run = await withEnv(
+    { HTTPS_PROXY: undefined, HTTP_PROXY: undefined, ALL_PROXY: undefined },
+    () =>
+      terminalRunFor("http://proxy.corp:8080", (adapter, context) => {
+        adapter.installTanCliGlobally(context);
+      }),
+  );
+  assert.equal(run.name, "Install tan");
+  assert.ok(
+    run.env,
+    "the bundled installer's ENTIRE job is to download tan from GitHub — " +
+      "without the proxy it is the one script guaranteed to fail on the " +
+      "machines this fix exists for",
+  );
+  assert.equal(run.env.HTTPS_PROXY, "http://proxy.corp:8080");
 });

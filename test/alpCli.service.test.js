@@ -975,27 +975,19 @@ test("expectedSha256 tolerates the sha256sum spelling variants, normalising the 
   assert.equal(expectedSha256(`${digest.toUpperCase()}  tan`, "tan"), digest);
 });
 
-test("classifyUnavailable files a refused checksum as corrupt, not as a network failure", () => {
-  // The exact sentences `download.ts` throws. `downloadFailed` would offer
-  // "retry when you're back online" for bytes that arrived perfectly well.
-  assert.equal(
-    classifyUnavailable(
-      "The downloaded tan CLI does not match the checksum Alp Lab published for it, so it was discarded and nothing was installed.",
-    ),
-    "corrupt",
-  );
-  assert.equal(
-    classifyUnavailable(
-      "The tan CLI download was discarded: the checksum file that vouches for it could not be fetched, so there was no way to tell whether the binary is the one Alp Lab published.",
-    ),
-    "corrupt",
-  );
-  assert.equal(
-    classifyUnavailable(
-      "The tan CLI download was discarded: the release's checksum file does not list this binary, so nothing vouches for the bytes that were served.",
-    ),
-    "corrupt",
-  );
+test("classifyUnavailable files a refused checksum as its OWN reason, not as corrupt or a network failure", () => {
+  // The exact sentences `download.ts` throws. Neither neighbouring reason is
+  // survivable here: `downloadFailed` offers "retry when you're back online"
+  // for bytes that arrived perfectly well, and `corrupt` says "the installed
+  // copy looks broken" — false, nothing was installed — and then offers
+  // `alpSdk.cliPath`, the one resolution source that is NEVER checksum-checked.
+  for (const sentence of [
+    "The downloaded tan CLI does not match the checksum Alp Lab published for it, so it was discarded and nothing was installed.",
+    "The tan CLI download was discarded: the checksum file that vouches for it could not be fetched, so there was no way to tell whether the binary is the one Alp Lab published.",
+    "The tan CLI download was discarded: the release's checksum file does not list this binary, so nothing vouches for the bytes that were served.",
+  ]) {
+    assert.equal(classifyUnavailable(sentence), "checksumRefused", sentence);
+  }
 });
 
 test("binaryName is platform-specific", () => {

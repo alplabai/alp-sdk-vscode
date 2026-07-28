@@ -44,8 +44,25 @@
   the bundled roots MERGED WITH THE OS TRUST STORE, so a TLS-intercepting
   middlebox's CA installed in system trust is already accepted. Setting it to
   `false` now logs that once, with the remedy (install the CA in the OS trust
-  store, which fixes tan, git, pip and west at once), instead of leaving the
-  user believing a switch they flipped is in effect.
+  store), instead of leaving the user believing a switch they flipped is in
+  effect. The message promises that for **tan only**, and says so: tan's own
+  module doc is explicit that the subprocesses it spawns — `git clone`, `pip`,
+  `west update` — "do their own networking with their own trust stores"
+  (tan-cli `crates/tan-cli/src/http.rs`). pip verifies against `certifi`'s
+  bundled CA and never consults the Windows/macOS store; Git for Windows built
+  against OpenSSL uses its own `ca-bundle.crt`. Promising those too is how a
+  user installs the CA as instructed, watches tan start working, then hits
+  `CERTIFICATE_VERIFY_FAILED` on the pip step and concludes the extension lied,
+  so the message now names `PIP_CERT` / `REQUESTS_CA_BUNDLE` and
+  `http.sslCAInfo` instead.
+
+  All five child-launch seams are covered by tests that fail when `env` is
+  dropped from any one of them — including both TERMINAL seams, which the
+  original `alpCli.spawnProxyEnv` suite could not see at all (it stubbed
+  `runInTerminal` as a no-op), and the two non-`tan` children, which no test
+  loaded. That gap was not evenly distributed: `runAlpInTerminal` is the seam
+  `tan bootstrap` runs on — the command that downloads Zephyr and the pip
+  packages, i.e. the one that needs the proxy most.
 
 - **The downloaded `tan` binary is now verified against the release's
   `checksums.txt` before it is ever executed (#378).** The extension fetched a
@@ -87,6 +104,35 @@
   digests stay on the output channel, the sentence reaches the toast, and
   `alpSdk.cliPath` is not offered as the remedy — hand-placing a binary is the
   workaround this check exists to prevent.
+
+  That holds on **both** surfaces, not just the provisioning one. Activation
+  fires `ensureTanCliProvisioned` un-awaited and `resolveAlpBinary` has a live
+  `case "download"`, so a command issued before or instead of provisioning
+  downloads inline and the refusal arrives as a resolution failure instead.
+  `CliUnavailableReason` gains a dedicated `checksumRefused` for it, matched
+  ahead of `corrupt`: the three refusals stay three sentences there too, the
+  toast no longer claims "the installed copy looks broken" (nothing was
+  installed, and a good installed copy is deliberately left untouched), and it
+  no longer offers **`alpSdk.cliPath`** — the one resolution source with no
+  checksum path at all, i.e. a one-click route, mid-tamper, to permanently
+  executing exactly the binary that had just been refused.
+
+  The `ResolveDeps.download` seam is now built by `downloadSeam` in
+  `download.ts` rather than an arrow in `vscodeAdapter.ts`. Requiring `verify`
+  in the seam's type guards the CALLER (dropping it in `downloadCli` is a
+  `TS2554`) but NOT the provider: TypeScript's function assignability accepts a
+  3-parameter implementation for a 4-parameter type, so an inline arrow could
+  omit `verify`, take `downloadFile`'s unverified branch, and leave the
+  extension executing unchecked bytes with a fully green board —
+  `vscodeAdapter.ts` imports `vscode`, so no unit test loads it. Extracted, it
+  is driven against a local release server serving a tampered body.
+
+  The `checksums.txt` read is capped at 64 KiB. It is buffered in memory (849
+  bytes for tan v0.4.0) and was bounded only by the 120 s wall clock, which a
+  hostile origin — precisely this change's threat model — could spend growing
+  the extension host's heap. Overrunning the cap refuses rather than truncates:
+  a truncated manifest could be missing the digest line and would then read as
+  "the release does not list this asset".
 
   GitHub build-provenance attestation (`gh attestation verify`) stays OUT of the
   runtime path: it requires the `gh` CLI installed and authenticated, which no

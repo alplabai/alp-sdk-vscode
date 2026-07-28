@@ -27,7 +27,7 @@ import {
   CliInUseError,
   ProxyConfig,
   ProxyError,
-  downloadFile,
+  downloadSeam,
 } from "./download";
 import { BinarySource, CliOutcome } from "./models";
 import {
@@ -227,6 +227,44 @@ function checksumFailurePlan(
   });
 }
 
+/**
+ * The `CliOutcome` a binary-RESOLUTION failure becomes, so `planCliOutcome`
+ * picks the remedy from `unavailable.reason` instead of each call site
+ * guessing. Shared by the two lazy-download surfaces — `runAlpCommand` (which
+ * returns the outcome for its caller to present) and `surfaceResolutionError`
+ * (which presents it itself) — so they cannot drift apart on the one path where
+ * they must not.
+ *
+ * That path is `resolveAlpBinary`'s live `case "download"`: activation fires
+ * `ensureTanCliProvisioned` un-awaited, so a command issued before or instead of
+ * provisioning downloads inline, and a `ChecksumError` surfaces HERE rather than
+ * through `checksumFailurePlan`. Branching on the TYPE — same discipline as
+ * `cliInUsePlan` / `proxyFailurePlan` / `checksumFailurePlan` — is what carries
+ * the three refusals through as three sentences instead of flattening them into
+ * one. The sentence goes to the toast; the digests ride on `detail`, which the
+ * presenter logs and never renders.
+ */
+function unavailableOutcome(error: unknown): CliOutcome {
+  const raw = error instanceof Error ? error.message : String(error);
+  return {
+    exitCode: -1,
+    kind: "unknown",
+    ok: false,
+    severity: "error",
+    // The raw resolver text (`No prebuilt tan CLI for win32/x64…`, an HTTP
+    // status, an errno) rides on `unavailable.detail`, which the notification
+    // planner logs and never renders — it used to be interpolated straight into
+    // a buttonless toast.
+    message:
+      error instanceof ChecksumError ? error.message : "tan CLI unavailable.",
+    envelope: null,
+    unavailable: {
+      reason: classifyUnavailable(raw),
+      detail: error instanceof ChecksumError ? error.detail : raw,
+    },
+  };
+}
+
 function proxyFailurePlan(
   error: unknown,
   operation: string,
@@ -283,10 +321,20 @@ let strictSSLNotForwardableWarned = false;
  * It also should not need one. That same `tls_config` trusts the bundled webpki
  * roots MERGED WITH THE OS TRUST STORE, so a middlebox CA installed in
  * Windows/macOS/Linux system trust is already accepted. The remedy for this
- * user is to install their proxy's CA there — one place that fixes tan, git,
- * pip and west at once — not a per-tool "skip verification" switch we would
- * have to invent. Inventing one is also the wrong trade: it would turn a
- * verified download of an executable we then run into an unverified one.
+ * user is to install their proxy's CA there — not a per-tool "skip
+ * verification" switch we would have to invent. Inventing one is also the wrong
+ * trade: it would turn a verified download of an executable we then run into an
+ * unverified one.
+ *
+ * The OS trust store is NOT claimed to fix the subprocesses, because it does
+ * not. tan's own module doc is explicit that `git clone`, `pip` and `west
+ * update` "do their own networking with their own trust stores" (tan-cli
+ * `crates/tan-cli/src/http.rs`): pip verifies against `certifi`'s bundled CA
+ * and never consults the Windows/macOS store (it needs `PIP_CERT` /
+ * `REQUESTS_CA_BUNDLE` / `--trusted-host`), and Git for Windows built against
+ * OpenSSL uses its own `ca-bundle.crt`. Promising them here is how a user
+ * installs the CA as told, watches tan start working, then hits
+ * `CERTIFICATE_VERIFY_FAILED` on the pip step and concludes the extension lied.
  *
  * So this logs the honest answer once instead of silently doing nothing.
  */
@@ -299,8 +347,11 @@ function warnIfStrictSSLNotForwardable(strictSSL: boolean | undefined): void {
     "[cli] http.proxyStrictSSL is off, but that setting does not reach the " +
       "tan CLI — tan always verifies TLS, against the bundled roots plus your " +
       "OS trust store. If a TLS-inspecting proxy is breaking tan, install its " +
-      "CA certificate into the OS trust store (that also fixes git, pip and " +
-      "west); there is no way to disable the check for tan alone.",
+      "CA certificate into the OS trust store; there is no way to disable the " +
+      "check for tan alone. Note that this fixes tan itself only — the tools " +
+      "it runs (git, pip, west) each verify against their own trust store, so " +
+      "a TLS-inspecting proxy may still need PIP_CERT / REQUESTS_CA_BUNDLE " +
+      "for pip and http.sslCAInfo for git.",
   );
 }
 
@@ -376,13 +427,12 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     fileExists: fs.existsSync,
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
-    // Settings read at call time (see `proxySettings`) so the seam's signature
-    // carries only what the caller knows. `verify` reaches `downloadFile`
-    // alongside the SAME `proxySettings()` the binary uses — the checksum file
-    // is fetched over the same proxy, because a machine that needs a proxy to
-    // reach the release host needs it for both or it can install nothing.
-    download: (url, dest, signal, verify) =>
-      downloadFile(url, dest, signal, proxySettings(), verify),
+    // NOT an inline arrow, deliberately: an arrow here can silently drop
+    // `verify` and still typecheck, and nothing in this file is unit-tested.
+    // `downloadSeam` lives in `download.ts` so a test drives it. Settings are
+    // read at call time (see `proxySettings`), so the seam's signature carries
+    // only what the caller knows.
+    download: downloadSeam(proxySettings),
     chmodExec: (p) => fs.chmodSync(p, 0o755),
   };
 }
@@ -1132,22 +1182,7 @@ export async function runAlpCommand(
     const message = error instanceof Error ? error.message : String(error);
     log(`[cli] ✗ CLI unavailable: ${message}`);
     return {
-      outcome: {
-        exitCode: -1,
-        kind: "unknown",
-        ok: false,
-        severity: "error",
-        // The raw resolver text (`No prebuilt tan CLI for win32/x64…`, an HTTP
-        // status, an errno) rides on `unavailable.detail`, which the
-        // notification planner logs and never renders — it used to be
-        // interpolated straight into a buttonless toast.
-        message: "tan CLI unavailable.",
-        envelope: null,
-        unavailable: {
-          reason: classifyUnavailable(message),
-          detail: message,
-        },
-      },
+      outcome: unavailableOutcome(error),
       raw: {
         status: null,
         stdout: "",
@@ -1255,21 +1290,7 @@ async function surfaceResolutionError(
   error: unknown,
   operation: string,
 ): Promise<ActionId | undefined> {
-  const detail = error instanceof Error ? error.message : String(error);
-  return notify(
-    planCliOutcome(
-      {
-        exitCode: -1,
-        kind: "unknown",
-        ok: false,
-        severity: "error",
-        message: "tan CLI unavailable.",
-        envelope: null,
-        unavailable: { reason: classifyUnavailable(detail), detail },
-      },
-      { operation },
-    ),
-  );
+  return notify(planCliOutcome(unavailableOutcome(error), { operation }));
 }
 
 // ── real seams ───────────────────────────────────────────────────────────────

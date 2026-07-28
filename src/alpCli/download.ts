@@ -165,6 +165,12 @@ const IDLE_TIMEOUT_MS = 30_000;
 // Does NOT reset on activity — catches a connection that stays alive but
 // dribbles bytes slowly enough to keep beating the idle timeout forever.
 const WALL_CLOCK_TIMEOUT_MS = 120_000;
+/** Ceiling on the `checksums.txt` body, which is buffered in memory rather than
+ *  streamed to disk. 64 KiB is ~77x the real file (849 bytes at tan v0.4.0) and
+ *  leaves room for a release with far more assets, while keeping a hostile or
+ *  broken origin from growing the extension host's heap for the full wall
+ *  clock. See `publishedSha256`. */
+const MAX_CHECKSUMS_BYTES = 64 * 1024;
 
 /** A proxy's `host:port`, with any `user:password@` stripped AND without the
  *  scheme. Every user-visible mention of a proxy goes through this: the output
@@ -207,7 +213,17 @@ function bypassesProxy(target: URL, noProxy: string): boolean {
  *  Throws when a proxy IS configured but unparseable: going direct instead
  *  would fail (or hang) with a message that never mentions the proxy, which is
  *  the whole defect this exists to fix. The offending value is NOT echoed — it
- *  may carry credentials. */
+ *  may carry credentials.
+ *
+ *  PRECEDENCE: `config.proxy` (VS Code's `http.proxy`) WINS over the
+ *  environment. That is the OPPOSITE order from `proxyEnvOverrides` in
+ *  `service.ts`, on purpose, and the two must not be "unified" — read that
+ *  function before changing this one. The difference is which layer picks the
+ *  proxy: here the request is made in-process, so the setting can simply win,
+ *  which is what VS Code's own `http.proxy` documents. There the environment is
+ *  handed to a CHILD that picks its own proxy from four variable names in its
+ *  own precedence order, so "the setting always wins" would mean overwriting a
+ *  variable the user deliberately exported. */
 function proxyForUrl(target: URL, config: ProxyConfig): URL | null {
   const env = config.env ?? process.env;
   const fromEnv =
@@ -646,7 +662,22 @@ async function publishedSha256(
     const chunks: Buffer[] = [];
     // Read whole rather than streamed to disk: `checksums.txt` is well under a
     // kilobyte (849 bytes for tan v0.4.0) and never lands on the filesystem.
+    // CAPPED, because "is small" and "cannot be large" are different claims and
+    // only the second one holds against the threat model this file exists for.
+    // A hostile origin serving an endless body would otherwise be bounded only
+    // by WALL_CLOCK_TIMEOUT_MS — two minutes of unbounded growth in the
+    // extension host's heap. Overrunning the cap throws, which lands in the
+    // catch below and REFUSES: a truncated manifest must never be parsed, or a
+    // digest could be missed and the asset read as unlisted.
+    let read = 0;
     for await (const chunk of response) {
+      read += (chunk as Buffer).length;
+      if (read > MAX_CHECKSUMS_BYTES) {
+        response.destroy();
+        throw new Error(
+          `checksums.txt exceeded ${MAX_CHECKSUMS_BYTES} bytes — refusing to buffer it`,
+        );
+      }
       chunks.push(chunk as Buffer);
     }
     manifest = Buffer.concat(chunks).toString("utf8");
@@ -790,6 +821,42 @@ async function attempt(
  * bodies no release ever published a digest for. A failed verification rejects
  * with a `ChecksumError` and installs nothing.
  */
+/**
+ * Build the `ResolveDeps.download` seam the adapter injects, bound to a reader
+ * for VS Code's proxy settings (read per call, so changing `http.proxy` takes
+ * effect on the next download without a reload).
+ *
+ * THIS EXISTS TO BE TESTED, and the reason is narrow. Making `verify` required
+ * on `ResolveDeps.download` guards the CALLER — dropping the 4th argument in
+ * `downloadCli` is a `TS2554`. It does NOT guard the PROVIDER: TypeScript's
+ * arity-tolerant function assignability accepts a 3-parameter implementation
+ * for a 4-parameter type, so an arrow written inline in the adapter can quietly
+ * omit `verify`, `downloadFile` takes its `expectedDigest: null` branch, and the
+ * extension is back to executing unverified bytes with a fully green board —
+ * `vscodeAdapter.ts` imports `vscode`, so no unit test loads it. Extracted here,
+ * where `test/alpCli.downloadChecksum.test.js` drives it against a real local
+ * release server and a tampered body: drop the argument and that test reds.
+ *
+ * `verify` is REQUIRED in this signature (unlike `downloadFile`'s, where it
+ * stays optional for transfer-mechanics tests), which is what makes the
+ * omission expressible only as deleting a parameter this function names.
+ */
+export function downloadSeam(
+  readProxy: () => ProxyConfig,
+): (
+  url: string,
+  destFile: string,
+  signal: AbortSignal | undefined,
+  verify: ChecksumSpec,
+) => Promise<void> {
+  // The checksum file is fetched over the SAME proxy as the binary, because a
+  // machine that needs a proxy to reach the release host needs it for both or
+  // it can install nothing — the proxy support and the verification would
+  // cancel each other out.
+  return (url, destFile, signal, verify) =>
+    downloadFile(url, destFile, signal, readProxy(), verify);
+}
+
 export async function downloadFile(
   url: string,
   destFile: string,
