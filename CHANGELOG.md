@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **The argv the extension hands `tan debug-config` is now pinned by a test**
+  (`test/debug.configArgs.test.js`). Since #387 the extension does not write
+  `launch.json` — it builds an argv, spawns tan, and reads `data.configuration`
+  back. tan's merge is covered in tan; the argv was ours and nothing checked it.
+  The asymmetry is what makes it worth a test: a wrong FLAG fails loudly, since
+  tan exits 2 on an unknown argument and that already surfaces as the
+  version-skew message, but a wrong VALUE is silent — `--core m55_hp` against
+  `--core m55_he` is a valid invocation that debugs the wrong core and reports
+  nothing. Construction moved into a pure `debugConfigArgs` — both invocations
+  in `writeLaunchProfile` and the one in the orphan-rescue's name probe, so no
+  call site spells the argv itself any more — and the assertions are on the
+  array element for element rather than on the fact that a spawn happened,
+  which would survive exactly the mutation this guards (#397).
+
 - **The end-to-end suite now runs in CI** (`.github/workflows/e2e.yml`), on
   every push to `dev`/`main`, nightly, and on demand. It was not merely an
   unrequired check before — `ci.yml` never invoked it at all, which is how the

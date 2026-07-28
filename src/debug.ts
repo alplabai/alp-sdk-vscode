@@ -35,7 +35,11 @@ import {
   readLaunchJsonDocument,
   writeLaunchJsonDocument,
 } from "./debug/launchJsonFile";
-import { findRescuablePairs, planOrphanRescue } from "./debug/service";
+import {
+  debugConfigArgs,
+  findRescuablePairs,
+  planOrphanRescue,
+} from "./debug/service";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import {
@@ -225,24 +229,16 @@ async function writeLaunchProfile(
   }
 
   const slice = resolveManifestSlice(context.workspaceRoot, targetKind);
-  const args = [
-    "debug-config",
-    "--target-kind",
-    targetKind,
-    "--server",
-    server,
-  ];
-  // Pin the CLI to the same slice this command's readiness report describes.
-  // `resolveManifestSlice` takes the first slice matching the target's OS —
-  // the identical default the CLI documents — so this makes the two agree
-  // rather than choosing between cores. A user wanting the SECOND Zephyr core
-  // is still never asked; that is a separate gap.
-  if (slice?.core_id) args.push("--core", slice.core_id);
+  // Built by `debugConfigArgs` rather than here, so the argv is pinned by a
+  // test instead of by reading (#397). A wrong flag exits 2 and says so; a
+  // wrong VALUE — `--core m55_hp` against `--core m55_he` — is a valid command
+  // that debugs the wrong core and reports nothing.
+  const spec = { targetKind, server, coreId: slice?.core_id ?? null };
 
   const preview = await runDebugConfig(
     extensionContext,
     context.workspaceRoot,
-    [...args, "--preview"],
+    debugConfigArgs(spec, { preview: true }),
   );
   if (!preview) return null;
 
@@ -250,7 +246,7 @@ async function writeLaunchProfile(
   const written = await runDebugConfig(
     extensionContext,
     context.workspaceRoot,
-    args,
+    debugConfigArgs(spec),
   );
   if (!written) return null;
 
@@ -599,14 +595,20 @@ async function previewMaintainedConfigName(
   context: vscode.ExtensionContext,
   workspaceRoot: string,
 ): Promise<string | null> {
-  const preview = await runDebugConfig(context, workspaceRoot, [
-    "debug-config",
-    "--target-kind",
-    "zephyr-mcu",
-    "--server",
-    "jlink",
-    "--preview",
-  ]);
+  // Through `debugConfigArgs` like `writeLaunchProfile`, not spelled inline:
+  // this was the second construction site, byte-identical but uncovered, so a
+  // pin bump that renamed the subcommand or added a required flag would move
+  // the tested function and leave this one behind. `runDebugConfig` returns
+  // null on the resulting exit 2, which here means the rescue silently loses
+  // the maintained config name mid-repair.
+  const preview = await runDebugConfig(
+    context,
+    workspaceRoot,
+    debugConfigArgs(
+      { targetKind: "zephyr-mcu", server: "jlink", coreId: null },
+      { preview: true },
+    ),
+  );
   return preview?.configuration.name ?? null;
 }
 
