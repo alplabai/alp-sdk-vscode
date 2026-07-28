@@ -52,6 +52,20 @@ jobs:
         # them, so the webview is otherwise never type-checked at all.
         run: pnpm run typecheck
 
+      - name: Gate — fetch tan's published envelope contract for the pinned version
+        # Must run BEFORE the tests, not beside the other network-touching gate
+        # below: test/tanContract.test.js is pure and reads whatever this leaves
+        # in test/golden/tan-contract/.
+        #
+        # Exits 0 with a `::warning::` while the asset does not exist yet
+        # (alplabai/tan-cli#106 is open), and exits 0 with a DIFFERENT, equally
+        # loud `::warning::` when GitHub rate-limits or falls over — neither is
+        # a defect in this repo, and reddening every PR on a gate that today
+        # cannot verify anything only teaches people to ignore it. The two are
+        # worded so the log never conflates "not published" with "could not
+        # check". A published-but-malformed asset is the one hard failure.
+        run: node scripts/fetch-tan-contract.mjs
+
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 

@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- **The `tan` envelope contract is now checked against what tan publishes, not
+  against a copy of it.** Every match this extension makes on tan's JSON
+  envelope fails open: rename an issue code and `bootstrapHostVerdict` returns
+  `{ refuse: false }`, rename a `data` field and a `?? []` yields an empty
+  catalogue — no error, no log line, CI green on both sides, and the customer's
+  first project scaffolds wrong. `scripts/fetch-tan-contract.mjs` (also
+  `pnpm run contract:fetch`, and a CI step ahead of the tests) downloads the
+  `envelope-contract.json` release asset for the pinned `SUPPORTED_CLI_VERSION`,
+  and `test/tanContract.test.js` asserts every golden envelope still satisfies
+  the repo's own `parseEnvelope` / `classifyExitCode`, and that the issue codes
+  the pinned tan emits are in its frozen list. Nothing is copied into this repo:
+  a hand-copied corpus drifts in exactly the way the gate reading it exists to
+  catch.
+
+  The six codes this extension matches by exact string are split by whether the
+  PINNED tan emits them, because three of them deliberately do not. Membership
+  is asserted only for the three that do; `bootstrap.windows-unsupported` is
+  matched for a binary OLDER than the pin (v0.3.0 and earlier, reachable through
+  `alpSdk.cliPath`) and `bootstrap.python-not-runnable` /
+  `bootstrap.python-too-old` for one NEWER, so asserting either way about them
+  would be wrong. What is asserted instead is that every code matched anywhere
+  in `src/` is classified as exactly one of the two — a new match site cannot be
+  added without someone deciding which kind it is.
+
+  That asset does not exist yet — `alplabai/tan-cli#106` is the open issue that
+  will publish it — so the gate is built to be loudly inconclusive rather than
+  quietly green. A 404 prints a `::warning::` naming the pin, the URL and the
+  issue and exits 0, and the test then skips with all three facts in its reason,
+  so the runner's own `# SKIP` line says the contract was not checked. A
+  rate-limit, an outage or a timeout prints a second, distinctly worded
+  `::warning::` and also exits 0 — "could not check" is a different fact from
+  "not published", and neither is a defect in this repo. What does fail hard is
+  anything that is not an availability problem: an asset that is published and
+  does not parse as JSON, an unexpected non-OK status that is neither a 404, a
+  rate-limit nor an outage, and an artefact that is present but yields zero
+  assertions against anything only tan can be the source of —
+  present-but-vacuous is the same defect wearing a different hat.
 - **The tan CLI download now goes through a proxy when there is one.** Node
   honours no proxy variable of its own and the extension never read VS Code's
   `http.proxy`, so on a machine behind a corporate proxy the download could not

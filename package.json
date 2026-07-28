@@ -502,6 +502,7 @@
   "scripts": {
     "compile": "tsc --build && pnpm --filter ./packages/alp-webview run build",
     "vendor:kconfig-metadata": "node scripts/vendor-kconfig-metadata.mjs",
+    "contract:fetch": "node scripts/fetch-tan-contract.mjs",
     "compile:watch": "tsc --build --watch",
     "typecheck": "tsc --noEmit -p packages/alp-core --tsBuildInfoFile node_modules/.cache/alp-core.typecheck.tsbuildinfo && tsc --noEmit -p tsconfig.json && pnpm --filter ./packages/alp-webview run typecheck",
     "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap && node -e \"require('fs').rmSync('tsconfig.tsbuildinfo',{force:true})\"",
