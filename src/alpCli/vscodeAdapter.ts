@@ -40,6 +40,7 @@ import {
   isCliBehind,
   isNativeTanVersionOutput,
   parseTanVersion,
+  proxyEnvOverrides,
   releaseAssetForTarget,
   shouldFetchManagedCli,
   shouldWarnCliAhead,
@@ -264,6 +265,74 @@ function proxySettings(): ProxyConfig {
     proxy: httpConfig.get<string>("proxy", "").trim(),
     strictSSL: httpConfig.get<boolean>("proxyStrictSSL", true),
   };
+}
+
+/** One-shot per window: `http.proxyStrictSSL: false` cannot be forwarded to a
+ *  spawned `tan`, and saying nothing would leave the user believing a switch
+ *  they flipped is in effect. See `warnIfStrictSSLNotForwardable`. */
+let strictSSLNotForwardableWarned = false;
+
+/**
+ * `http.proxyStrictSSL: false` says "a TLS-intercepting middlebox re-signs my
+ * traffic, accept it". Examined and NOT representable in the spawn environment:
+ * `tan` has no environment knob (nor a flag) that relaxes certificate
+ * verification — the only env vars it reads for the network are the proxy names
+ * in `proxyEnvOverrides`, and its rustls config is built unconditionally
+ * (tan-cli `crates/tan-cli/src/http.rs` `tls_config`).
+ *
+ * It also should not need one. That same `tls_config` trusts the bundled webpki
+ * roots MERGED WITH THE OS TRUST STORE, so a middlebox CA installed in
+ * Windows/macOS/Linux system trust is already accepted. The remedy for this
+ * user is to install their proxy's CA there — one place that fixes tan, git,
+ * pip and west at once — not a per-tool "skip verification" switch we would
+ * have to invent. Inventing one is also the wrong trade: it would turn a
+ * verified download of an executable we then run into an unverified one.
+ *
+ * So this logs the honest answer once instead of silently doing nothing.
+ */
+function warnIfStrictSSLNotForwardable(strictSSL: boolean | undefined): void {
+  if (strictSSL !== false || strictSSLNotForwardableWarned) {
+    return;
+  }
+  strictSSLNotForwardableWarned = true;
+  log(
+    "[cli] http.proxyStrictSSL is off, but that setting does not reach the " +
+      "tan CLI — tan always verifies TLS, against the bundled roots plus your " +
+      "OS trust store. If a TLS-inspecting proxy is breaking tan, install its " +
+      "CA certificate into the OS trust store (that also fixes git, pip and " +
+      "west); there is no way to disable the check for tan alone.",
+  );
+}
+
+/**
+ * The proxy variables to ADD to a spawned `tan`'s environment — VS Code's
+ * `http.proxy` filling gaps the inherited environment left, never overwriting
+ * it. The precedence rule and why it is this way round live on
+ * `proxyEnvOverrides`; read that before changing anything here.
+ *
+ * Returns ADDITIONS ONLY, which is what `runInTerminal` wants:
+ * `vscode.ProcessExecution` merges its `env` into the parent's. Callers using
+ * `child_process` (which REPLACES the environment when `env` is passed) go
+ * through `spawnEnv()` below instead.
+ *
+ * Exported because the extension's other two NETWORK-bound child processes are
+ * not `tan` and so cannot reach this through the `tan` spawn seams: `west
+ * update` (`src/west/vscodeAdapter.ts`) and the SDK-install `git clone`
+ * (`src/ideHub/sdkManagerMessages.ts`). They fail on a proxied machine for the
+ * identical reason, and `proxySettings()` above must stay the ONE reader of
+ * `http.proxy` in this extension.
+ */
+export function proxyEnvAdditions(): Record<string, string> {
+  const settings = proxySettings();
+  warnIfStrictSSLNotForwardable(settings.strictSSL);
+  return proxyEnvOverrides(settings.proxy ?? "", process.env);
+}
+
+/** The full environment for a `child_process` spawn of `tan`: everything the
+ *  extension host inherited (so `NO_PROXY`, `PATH`, `ZEPHYR_BASE` and the rest
+ *  survive) plus the proxy gap-fillers. */
+function spawnEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, ...proxyEnvAdditions() };
 }
 
 function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
@@ -513,8 +582,13 @@ async function readResolvedCliVersion(
 ): Promise<string | null> {
   try {
     const bin = await resolveAlpBinary(deps);
+    // `--version` touches no network, so the proxy env changes nothing here —
+    // it is passed anyway so there is exactly ONE answer to "what environment
+    // does this extension run tan in", rather than a seam a future networked
+    // probe could be added to without anyone noticing the gap.
     const { stdout } = await execFileAsyncCli(bin.command, ["--version"], {
       timeout: 3000,
+      env: spawnEnv(),
     });
     return parseTanVersion(stdout);
   } catch {
@@ -763,6 +837,7 @@ async function runCliVersionCheck(
   const probe = cp.spawnSync(binary.command, ["--version"], {
     encoding: "utf8",
     timeout: 5000,
+    env: spawnEnv(),
   });
   if (probe.error) {
     // Couldn't even exec it (ENOENT, EACCES, or — on Windows — a `.cmd`/
@@ -1012,7 +1087,18 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
   // install location and never to its working directory, so it is the one
   // run here with nothing project-specific to run in — and it is reachable
   // with no folder open, so there would be no root to pass anyway.
-  runInTerminal({ name: "Install tan", argv, cwd: undefined });
+  // The installer's whole job is to DOWNLOAD tan from GitHub, so it needs the
+  // proxy more than tan itself does. Effective on the POSIX script (curl and
+  // wget both read HTTPS_PROXY); on Windows the argv is `powershell`, i.e.
+  // 5.1, whose `Invoke-WebRequest` takes its proxy from the system/IE config
+  // and ignores the environment — harmless there, not a reason to withhold it
+  // from the platform where it works.
+  runInTerminal({
+    name: "Install tan",
+    argv,
+    cwd: undefined,
+    env: proxyEnvAdditions(),
+  });
 }
 
 /**
@@ -1143,10 +1229,16 @@ export async function runAlpInTerminal(
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (terminal: ${options.name})`,
   );
+  // The terminal gets the proxy too. A `ProcessExecution` task is not a login
+  // shell — it inherits the EXTENSION HOST's environment, not the user's
+  // profile — so `tan bootstrap` (which downloads Zephyr and pip packages) is
+  // exactly as blind to `http.proxy` here as the `cp.spawn` seam is. Additions
+  // only: ProcessExecution merges its `env` into the parent's.
   runInTerminal({
     name: options.name,
     argv: [binary.command, ...finalArgs],
     cwd: options.cwd,
+    env: proxyEnvAdditions(),
   });
 }
 
@@ -1204,7 +1296,11 @@ function spawnAlpAsync(
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const child = cp.spawn(command, args, { cwd, signal });
+    // `env` REPLACES the environment for `cp.spawn` (unlike ProcessExecution,
+    // which merges), so this is the whole inherited environment plus the proxy
+    // gap-fillers — see `spawnEnv`. This is the seam `tan sdk list` runs on, the
+    // one a proxied machine notices first.
+    const child = cp.spawn(command, args, { cwd, signal, env: spawnEnv() });
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
 
@@ -1271,6 +1367,7 @@ function commandOnPath(command: string): boolean {
   const probe = cp.spawnSync(command, ["--version"], {
     encoding: "utf8",
     timeout: 5000,
+    env: spawnEnv(),
   });
   if (probe.error) {
     return false;

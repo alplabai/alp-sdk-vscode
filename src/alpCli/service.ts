@@ -485,6 +485,87 @@ export function binaryName(platform: NodeJS.Platform): string {
   return platform === "win32" ? "tan.exe" : "tan";
 }
 
+/** The variables `tan` consults for an `https://` request, in ITS precedence
+ *  order (`tan_core::select_https_proxy`). `HTTP_PROXY` is deliberately absent
+ *  from tan's https list — it, git, curl and pip all read that one as
+ *  http-only. */
+const HTTPS_PROXY_ENV_VARS = [
+  "ALL_PROXY",
+  "all_proxy",
+  "HTTPS_PROXY",
+  "https_proxy",
+] as const;
+
+/** The variables the subprocesses `tan` itself spawns (`git clone`, `pip`,
+ *  `west update`) consult for a plain-`http://` request. */
+const HTTP_PROXY_ENV_VARS = [
+  "ALL_PROXY",
+  "all_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+] as const;
+
+/**
+ * The proxy environment variables to ADD when spawning `tan`, given VS Code's
+ * `http.proxy` and the environment the extension host inherited. Returns `{}`
+ * when there is nothing to add.
+ *
+ * `tan` takes no `--proxy` flag: it reads the environment (see tan-cli
+ * `crates/tan-cli/src/http.rs`), so handing VS Code's setting to the child is
+ * the whole mechanism. Both variables are set because they reach different
+ * things — `HTTPS_PROXY` is what tan's own in-process GitHub call honours, and
+ * `HTTP_PROXY` is for the `git`/`pip`/`west` subprocesses tan spawns, which
+ * inherit this environment and would otherwise have no http-side proxy at all.
+ *
+ * ── PRECEDENCE: AN ALREADY-SET ENVIRONMENT VARIABLE WINS OVER THE IDE SETTING ──
+ * A variable exported in the shell VS Code was launched from is left exactly as
+ * it is; the setting only FILLS A GAP. Two reasons, and the second is the one
+ * that makes the other order unimplementable rather than merely unfriendly:
+ *
+ *  1. The shell export is the machine's own answer and is shared with every
+ *     other tool the user runs; a stale `http.proxy` silently overriding it
+ *     would break a box that worked, for a setting the user may not remember.
+ *  2. The child picks its own proxy, and `ALL_PROXY` beats `HTTPS_PROXY` in
+ *     tan's order. "The setting always wins" would therefore require also
+ *     overwriting the user's `ALL_PROXY` — deleting a deliberate machine-wide
+ *     configuration to impose an IDE one. Filling gaps is the only rule that
+ *     stays consistent with how the child actually chooses.
+ *
+ * This is the OPPOSITE order from `proxyForUrl` in `download.ts`, on purpose:
+ * that path picks the proxy ITSELF for an in-process request, so "setting wins"
+ * there is both implementable and what VS Code's own `http.proxy` documents.
+ * Here the child picks, and we can only seed it.
+ *
+ * Presence, not truthiness, is what counts as "the user set it": exporting
+ * `HTTPS_PROXY=` is the conventional way to DISABLE an inherited proxy, and tan
+ * reads an empty value as unset — so an empty export means "go direct", and
+ * filling it from the setting would override exactly the wish it expresses.
+ *
+ * `NO_PROXY` / `no_proxy` are never written here. VS Code has no setting for a
+ * bypass list, so the environment is its only source and it must pass through
+ * untouched — a caller that spreads this over `process.env` carries it along.
+ */
+export function proxyEnvOverrides(
+  proxy: string,
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  const setting = proxy.trim();
+  if (!setting) {
+    return {};
+  }
+  const overrides: Record<string, string> = {};
+  // NOTE on Windows: `process.env` is case-insensitive, so `"https_proxy" in
+  // env` is already true when `HTTPS_PROXY` is set. That only makes this
+  // check MORE conservative there, which is the safe direction.
+  if (!HTTPS_PROXY_ENV_VARS.some((name) => name in env)) {
+    overrides.HTTPS_PROXY = setting;
+  }
+  if (!HTTP_PROXY_ENV_VARS.some((name) => name in env)) {
+    overrides.HTTP_PROXY = setting;
+  }
+  return overrides;
+}
+
 /**
  * Verdict from a `tan bootstrap --no-pip --no-west --format json` pre-flight
  * call: whether `src/bootstrap.ts` must refuse to spawn the real bootstrap

@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+- **VS Code's `http.proxy` now reaches every child process the extension
+  spawns (#379).** A corporate user who set `http.proxy` got a `tan` that
+  ignored it: `spawnAlpAsync` passed no `env` at all, so the child inherited
+  `process.env` verbatim and `tan sdk list` failed with a raw transport error
+  pointing at nothing. `tan` takes no `--proxy` flag — it reads the environment
+  (tan-cli `crates/tan-cli/src/http.rs`) — so handing the setting to the child
+  is the entire mechanism, and no protocol change was needed.
+
+  Covered: `spawnAlpAsync` (the envelope path), both `--version` probes,
+  `execFileAsyncCli`, and BOTH terminal seams (`runAlpInTerminal` and the
+  bundled `Install tan` script). A `ProcessExecution` task is not a login shell
+  — it inherits the extension host's environment, not the user's profile — so
+  `tan bootstrap`, which downloads Zephyr and pip packages, was as blind to the
+  setting as the in-process seams were. The two network-bound children that are
+  not `tan` are fixed with it, because they failed for the identical reason:
+  `west update` (`executeWestPlan`) and the SDK-install `git clone`.
+
+  **Precedence: an already-exported environment variable WINS over the IDE
+  setting.** The setting only fills a gap; a variable the user exported in the
+  shell VS Code was launched from is left exactly as it is. Beyond "do not
+  silently override a deliberate machine-wide configuration", the other order is
+  not implementable: the child picks its own proxy and `ALL_PROXY` outranks
+  `HTTPS_PROXY` in tan's order, so "the setting always wins" would require
+  overwriting the user's `ALL_PROXY` too. This is the opposite order from the
+  in-process download path, deliberately — that one picks the proxy itself, so
+  it can. The rule is stated on `proxyEnvOverrides`, which is pure and tested.
+
+  Both `HTTPS_PROXY` and `HTTP_PROXY` are set, and each gap is judged against
+  ALL the names its consumer reads (`ALL_PROXY`/`all_proxy` plus the upper- and
+  lowercase spelling) — checking only `HTTPS_PROXY` would let ours outrank a
+  user's lowercase `https_proxy` inside tan, re-introducing the override through
+  the back door. An empty exported value counts as set: `export HTTPS_PROXY=` is
+  how a user disables an inherited proxy. `NO_PROXY` is never written — VS Code
+  has no setting for a bypass list, so the environment is its only source and it
+  passes through untouched.
+
+  `http.proxyStrictSSL: false` is **not forwardable and is not silently
+  dropped**: `tan` has no environment knob or flag that relaxes certificate
+  verification, and it should not need one — its rustls config already trusts
+  the bundled roots MERGED WITH THE OS TRUST STORE, so a TLS-intercepting
+  middlebox's CA installed in system trust is already accepted. Setting it to
+  `false` now logs that once, with the remedy (install the CA in the OS trust
+  store, which fixes tan, git, pip and west at once), instead of leaving the
+  user believing a switch they flipped is in effect.
+
 - **The downloaded `tan` binary is now verified against the release's
   `checksums.txt` before it is ever executed (#378).** The extension fetched a
   binary from a GitHub release, renamed it into the managed cache, marked it
