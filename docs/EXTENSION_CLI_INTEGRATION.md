@@ -170,7 +170,11 @@ extension to use it regardless of what's cached/bundled.
 Two VSIX shapes ship side by side:
 
 - **Platform-specific VSIXes** (`--target darwin-arm64`, and eventually the
-  other five targets `tan-cli` publishes) embed `bin/tan[.exe]` for that host.
+  other five `TARGETS` entries this extension resolves) embed `bin/tan[.exe]`
+  for that host. Note the two counts that are easy to conflate: `tan-cli`
+  publishes **eight** raw target assets, and this extension's `TARGETS` map
+  consumes **six** of them — a deliberate musl-over-gnu choice on Linux, not an
+  omission. The VSIX targets track the six we resolve, not the eight tan ships.
   First run needs no network call, no GitHub reachability, no proxy config —
   the `bundled` resolver source picks the binary up directly.
 - **The universal (binary-less) VSIX** keeps download-on-demand as the
