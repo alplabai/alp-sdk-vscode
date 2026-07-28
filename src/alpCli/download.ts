@@ -217,13 +217,28 @@ function redactProxy(proxy: URL): string {
   return proxy.host;
 }
 
+/** `[::1]` → `::1`. Both spellings of an IPv6 literal have to compare equal:
+ *  WHATWG `URL.hostname` always brackets one, while a `NO_PROXY` entry is
+ *  normally written bare. */
+function unbracket(host: string): string {
+  return host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+}
+
 /** `NO_PROXY` / `no_proxy`. Comma- or whitespace-separated; `*` bypasses
  *  everything; a leading dot is a suffix match (`.example.com` also matches
  *  `example.com`); an entry may carry an explicit `:port` that must match.
  *  Applied whichever source the proxy came from — a host the user excluded is
- *  excluded, which is what curl, git and pip all do. */
+ *  excluded, which is what curl, git and pip all do.
+ *
+ *  IPv6 (#380) is why the port is not simply split at the last colon, and why
+ *  both sides are unbracketed. A customer who excluded their IPv6 host was
+ *  proxied anyway: `lastIndexOf(":")` read the trailing `1` of `::1` as a port
+ *  number, and even once that was past, `target.hostname` is `[::1]` while the
+ *  entry says `::1`. Since tan-cli#176 the managed download makes TWO proxied
+ *  fetches and REFUSES the install if the second fails, so this stopped being a
+ *  slow path and became a failed one. */
 function bypassesProxy(target: URL, noProxy: string): boolean {
-  const host = target.hostname.toLowerCase();
+  const host = unbracket(target.hostname.toLowerCase());
   const port = target.port || (target.protocol === "https:" ? "443" : "80");
   return noProxy
     .split(/[,\s]+/)
@@ -231,12 +246,22 @@ function bypassesProxy(target: URL, noProxy: string): boolean {
     .some((entry) => {
       if (entry === "*") return true;
       let pattern = entry.toLowerCase();
-      const colon = pattern.lastIndexOf(":");
+      // Where a `:port` may begin. Only two spellings can carry one without
+      // ambiguity: bracketed (`[::1]:443`, port after the `]`) and
+      // single-colon (`example.com:443`). Anything else holding two or more
+      // colons is a bare IPv6 address and is taken WHOLE — `::1:443` is itself
+      // a valid address, so splitting a port out of it would be a guess, which
+      // is the same reason curl requires the brackets.
+      const close = pattern.lastIndexOf("]");
+      const colon =
+        close >= 0 || pattern.indexOf(":") === pattern.lastIndexOf(":")
+          ? pattern.indexOf(":", close + 1)
+          : -1;
       if (colon > 0 && /^\d+$/.test(pattern.slice(colon + 1))) {
         if (pattern.slice(colon + 1) !== port) return false;
         pattern = pattern.slice(0, colon);
       }
-      pattern = pattern.replace(/^\./, "");
+      pattern = unbracket(pattern.replace(/^\./, ""));
       return (
         pattern !== "" && (host === pattern || host.endsWith(`.${pattern}`))
       );
@@ -271,25 +296,55 @@ function proxyForUrl(target: URL, config: ProxyConfig): URL | null {
   const raw = config.proxy?.trim() || fromEnv?.trim() || "";
   if (!raw) return null;
   if (bypassesProxy(target, env.NO_PROXY ?? env.no_proxy ?? "")) return null;
+  let parsed: URL;
   try {
     // A bare `host:port` with no scheme is a common spelling in both the
     // setting and the environment; default it to http, as every other client
-    // does.
-    return new URL(
+    // does. A bare IPv6 address does NOT survive this and is not made to:
+    // `::1:8080` cannot be split into host and port without guessing, so it
+    // throws below and the sentence names the bracketed spelling instead —
+    // `[::1]:8080`, which is what curl requires too.
+    parsed = new URL(
       /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`,
     );
   } catch {
     throw new ProxyError(
       "The configured proxy is not a valid URL, so the tan CLI can't be " +
         "downloaded. Fix the http.proxy setting, or the HTTPS_PROXY / " +
-        "HTTP_PROXY environment variable.",
+        "HTTP_PROXY environment variable. An IPv6 address needs brackets, " +
+        "written as [::1]:8080.",
       "unparseable proxy URL — value withheld, it may carry credentials",
     );
   }
+  // ALLOW-LIST, not a socks deny-list (#380). Everything below tunnels with an
+  // HTTP `CONNECT`, so any other scheme means speaking HTTP at a listener that
+  // is not one — and the failure that comes back is a transport error, which
+  // `proxyUnreachable` honestly but WRONGLY reports as "the connection to it
+  // failed". That sends the customer to debug a proxy that is working fine. A
+  // deny-list of the five socks spellings would fix the five and leave the next
+  // scheme to be rediscovered the same way; this refuses on the one property
+  // that actually matters, which is whether the tunnel can be spoken at all.
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    // The scheme is safe to name — the credential lives in the userinfo, which
+    // is never touched here. No `://` in the sentence: `planFailure`'s
+    // absolute-path guard reads the `s:/` of `socks://` as a drive letter and
+    // would demote the whole message into the output channel.
+    const scheme = parsed.protocol.replace(/:$/, "");
+    throw new ProxyError(
+      `The proxy is configured as a ${scheme} proxy, which the tan CLI ` +
+        `download can't use — it speaks http and https proxies only. Point ` +
+        `the http.proxy setting, or the HTTPS_PROXY / HTTP_PROXY environment ` +
+        `variable, at an http or https proxy.`,
+      `unsupported proxy scheme ${scheme} at ${redactProxy(parsed)}`,
+    );
+  }
+  return parsed;
 }
 
 /** Transport for the hop TO the proxy. An `https://` proxy means that hop is
- *  itself TLS; the tunnel carried inside it is unaffected. */
+ *  itself TLS; the tunnel carried inside it is unaffected. `proxyForUrl` has
+ *  already refused every scheme that is neither, so the `http` fallback here is
+ *  a real choice between two rather than a default for anything at all. */
 function proxyTransport(proxy: URL): typeof http | typeof https {
   return proxy.protocol === "https:" ? https : http;
 }
@@ -406,6 +461,11 @@ function tunnelledGet(
   config: ProxyConfig,
   signal: AbortSignal,
 ): Promise<http.IncomingMessage> {
+  // Already correct for an IPv6 literal, and #380 filed it as a defect that it
+  // is not: WHATWG `URL.hostname` returns an IPv6 address WITH its brackets, so
+  // this yields `[::1]:8443` and not the `::1:8443` the report predicted. Left
+  // exactly as it was, and pinned by a test now, so the next reader does not
+  // "fix" it into a genuine defect.
   const authority = `${target.hostname}:${target.port || 443}`;
   return new Promise((resolve, reject) => {
     const connect = proxyTransport(proxy).request({

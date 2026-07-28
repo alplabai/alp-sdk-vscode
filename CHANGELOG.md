@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **A SOCKS proxy is now named as unsupported instead of reported as
+  unreachable, and an IPv6 host in `NO_PROXY` is honoured.** VS Code's
+  `http.proxy` accepts `socks5://host:1080`, and all five SOCKS spellings
+  (`socks:`, `socks4:`, `socks4a:`, `socks5:`, `socks5h:`) parse as URLs — so
+  the managed `tan` download spoke an HTTP `CONNECT` at a SOCKS listener and
+  reported "Couldn't reach the proxy — the connection to it failed". Right
+  category, wrong sub-diagnosis, which sent the customer to fix a proxy that was
+  working. `proxyForUrl` now refuses on an ALLOW-list — only `http` and `https`
+  tunnel — so `ftp` and every future scheme get the same honest sentence rather
+  than being rediscovered one at a time. Credentials still never reach either
+  string: the customer sentence names only the scheme, and the channel detail
+  carries `redactProxy`'s `host:port` — the same redaction the 407 and
+  unreachable paths already use. The scheme is named without its `://`, because
+  `planFailure`'s absolute-path guard reads the `s:/` of `socks://` as a drive
+  letter and would demote the whole message into the output channel. Separately,
+  `bypassesProxy` never matched a BARE IPv6 entry — the spelling customers
+  actually write: `lastIndexOf(":")` read the trailing `1` of `::1` as a port
+  number, and `URL.hostname` yields `[::1]` while a `NO_PROXY` entry is written
+  `::1`. The bracketed form did match, by accident of both sides carrying the
+  brackets and `]` not being a digit. Both spellings now match, bracketed
+  or bare, with or without an explicit port; a bare address holding two or more
+  colons is taken whole, since `::1:443` is itself a valid address and splitting
+  a port out of it would be a guess — the same reason curl requires the
+  brackets. That reason is now in the unparseable-proxy sentence too, which
+  names `[::1]:8080` rather than leaving the customer to find which part of the
+  value was wrong. This became urgent with tan-cli#176: the managed download now
+  makes TWO proxied fetches — `checksums.txt` from the resolved tag FIRST, then
+  the binary — and REFUSES the install if the checksum fetch fails, so a proxy
+  defect that used to slow one fetch now blocks the install before a byte of the
+  binary moves.
+  The `host:` the tunnel hands `tls.connect`, load-bearing only for IP-literal
+  targets (where the `net.isIP` guard withholds `servername`) and until now
+  covered by nothing, has a test that fails when it is dropped; so does the
+  claim that the checksums fetch shares the binary's proxy. The tunnel authority
+  that #380 also reported as unbracketed was NOT changed: `URL.hostname` returns
+  `[::1]`, so `[::1]:8443` was already what it built, and a test now pins that
+  so it is not "fixed" into a real defect. (#380)
+
 - **A `launch.json` that can launch is no longer reported as unlaunchable.**
   `tan debug-config` resolves the probe and tool values from the build's own
   `runners.yaml` — driven against tan 0.4.0 with an E1M-AEN801 build, all three
