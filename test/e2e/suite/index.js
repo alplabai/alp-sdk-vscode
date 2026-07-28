@@ -459,11 +459,16 @@ async function runChecks() {
   await check("every debug type the extension emits is registered", () => {
     // Read the values straight out of the compiled core, so this tracks the
     // real emitter rather than a copy of it.
+    // `debugProfileToLaunchDraft` used to be rendered here and its `type` read
+    // off the draft. #387 moved draft-building to `tan debug-config`, so the
+    // value this extension still owns -- and still writes into every profile it
+    // creates -- is the map. `DEBUG_TARGET_ADAPTER` feeds `createDebugProfile`'s
+    // `adapter`, and tan is gated on the same value by its own
+    // `debug_launch.rs` tests.
     const {
-      createDebugProfile,
-      debugProfileToLaunchDraft,
       serverChoicesForTarget,
       DEBUG_TARGET_CHOICES,
+      DEBUG_TARGET_ADAPTER,
     } = require(
       path.resolve(
         __dirname,
@@ -471,10 +476,10 @@ async function runChecks() {
       ),
     );
     for (const { targetKind } of DEBUG_TARGET_CHOICES) {
+      const type = DEBUG_TARGET_ADAPTER[targetKind];
+      // The server loop stays: the type must not vary by backend, and a new
+      // backend must not be able to slip in with a type of its own.
       for (const { server } of serverChoicesForTarget(targetKind)) {
-        const { type } = debugProfileToLaunchDraft(
-          createDebugProfile(targetKind, server),
-        );
         assert.ok(
           contributedDebugTypes.has(type),
           `${targetKind}/${server} emits type "${type}", which no installed extension registers`,
@@ -489,15 +494,21 @@ async function runChecks() {
   // this asserts the ADAPTER accepts our config shape -- not that a Zephyr
   // native_sim build is present in a headless run.
   await check("a native-sim debug session starts in a real host", async () => {
-    const { createDebugProfile, debugProfileToLaunchDraft } = require(
+    // Built from the map rather than a rendered draft, for the same reason as
+    // the check above: tan owns the draft since #387. The fields below are the
+    // ones the ADAPTER has to accept -- which is what this check is for -- and
+    // `program` is repointed anyway, so nothing here depended on the renderer.
+    const { DEBUG_TARGET_ADAPTER } = require(
       path.resolve(
         __dirname,
         "../../../packages/alp-core/dist/debug/service.js",
       ),
     );
-    const draft = debugProfileToLaunchDraft(
-      createDebugProfile("native-host", "none"),
-    );
+    const draft = {
+      name: "Alp: Native Sim Debug",
+      type: DEBUG_TARGET_ADAPTER["native-host"],
+      request: "launch",
+    };
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "no workspace folder to launch against");
 
