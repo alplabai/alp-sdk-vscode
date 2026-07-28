@@ -118,18 +118,26 @@
   executing exactly the binary that had just been refused.
 
   `downloadFile` takes `verify` as a REQUIRED 3rd parameter, ahead of an
-  optional `{ signal, proxy }` options bag, and that ORDER is what makes
-  skipping verification unwritable. Requiring `verify` on the
-  `ResolveDeps.download` seam guards only the CALLER (dropping it in
-  `downloadCli` is a `TS2554`); it does not guard the provider, because
+  optional `{ signal, proxy }` options bag, so no caller reaches the transfer
+  without STATING what it wants, in one of two greppable forms. Requiring
+  `verify` on the `ResolveDeps.download` seam guards only the CALLER (dropping
+  it in `downloadCli` is a `TS2554`); it does not guard the provider, because
   TypeScript's function assignability accepts a 3-parameter implementation for
-  a 4-parameter type, so an inline arrow in `vscodeAdapter.ts` — a file that
-  imports `vscode` and so is loadable by no unit test — could leave `verify`
-  off its own parameter list and keep the board fully green while the extension
-  executed unchecked bytes. The arrow's body,
+  a 4-parameter type, so an inline arrow in `vscodeAdapter.ts` could leave
+  `verify` off its own parameter list and keep the board fully green while the
+  extension executed unchecked bytes. The arrow's body,
   `downloadFile(url, dest, signal, proxySettings())`, now puts an `AbortSignal`
   where a `ChecksumSpec | null` is required: a `TS2345`, whatever the arrow's
-  arity. `null` is the explicit, greppable opt-out used by the
+  arity.
+
+  The compiler cannot go further than that — an arrow may still say `null` out
+  loud, and `downloadFile(url, dest, null, { signal, proxy })` compiles. So the
+  wiring is pinned behaviourally as well:
+  `test/alpCli.downloadSeamWiring.test.js` captures the `ResolveDeps` the
+  adapter actually builds and drives its `download` against a release server
+  serving a tampered body under a correct manifest. It passes today and reds on
+  the `null` arrow, which typechecks clean. `null` is the explicit, greppable
+  opt-out used by the
   transfer-mechanics tests, which serve bodies no release published a digest
   for; no production caller passes it. The seam itself stays a named
   `downloadSeam` in `download.ts` so a test can drive the exact function the

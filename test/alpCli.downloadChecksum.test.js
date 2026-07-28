@@ -317,9 +317,11 @@ test("downloadFile: the refusal reaches the TOAST; the digests stay on the chann
 });
 
 test("downloadSeam: the seam the extension actually injects REFUSES a tampered binary", async () => {
-  // The seam `vscodeAdapter.ts` injects, exercised end to end. It is a named
-  // export rather than an inline arrow because `vscodeAdapter.ts` imports
-  // `vscode` and no unit test can load it; the arrow's body would go untested.
+  // The seam `vscodeAdapter.ts` injects, exercised end to end — that the seam
+  // ITSELF verifies. That the adapter actually injects THIS seam, rather than
+  // an arrow that passes `null`, is a separate fact and is pinned separately by
+  // `test/alpCli.downloadSeamWiring.test.js`. Both halves are needed: neither
+  // catches the other's failure.
   //
   // The provider hole this pins used to be reachable. Making `verify` required
   // on `ResolveDeps.download` guards the CALLER — dropping the 4th argument in

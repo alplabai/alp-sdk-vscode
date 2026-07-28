@@ -427,14 +427,22 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     fileExists: fs.existsSync,
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
-    // NOT an inline arrow, deliberately: nothing in this file is unit-tested
-    // (it imports `vscode`), so an arrow's body would ship uncovered.
-    // `downloadSeam` lives in `download.ts` where a test drives the exact seam
-    // injected here. An arrow that dropped `verify` no longer compiles either —
-    // `downloadFile` takes it as a required 3rd parameter — but that is the
-    // compiler's guarantee, not this line's. Settings are read at call time
-    // (see `proxySettings`), so the seam's signature carries only what the
-    // caller knows.
+    // NOT an inline arrow, deliberately — but the reason is narrower than it
+    // looks, and two review rounds got it wrong, so it is worth stating
+    // exactly. `downloadFile`'s signature stops an arrow reaching the transfer
+    // without SAYING what it wants: `downloadFile(url, dest, signal, …)` is
+    // TS2345 and omitting the argument is TS2554. What it cannot stop is an
+    // arrow that says `null` — `downloadFile(url, dest, null, { signal, proxy })`
+    // compiles, and ships unverified bytes to `cachedBinaryPath`.
+    //
+    // So the compiler is half of it and `test/alpCli.downloadSeamWiring.test.js`
+    // is the other half: it captures the `ResolveDeps` this function builds and
+    // drives THIS `download` against a tampered release server. (Earlier
+    // comments here claimed no unit test could load this file because it
+    // imports `vscode`. That was never true — several tests load it behind a
+    // `Module._load` stub.) Settings are read at call time (see
+    // `proxySettings`), so the seam's signature carries only what the caller
+    // knows.
     download: downloadSeam(proxySettings),
     chmodExec: (p) => fs.chmodSync(p, 0o755),
   };
