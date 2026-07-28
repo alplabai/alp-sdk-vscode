@@ -198,6 +198,8 @@ export const CACHED_CLI_UNVERIFIED =
  * refusal exists to prevent, and #389 had to remove that same button from the
  * download refusal for the same reason.
  *
+ * @quotes package.json "Alp: Reinstall the pinned tan CLI"
+ *
  * The word "checksum" is load-bearing in both of these, not decoration:
  * `classifyUnavailable` below matches it to reach `checksumRefused`. That is a
  * backstop — `unavailableOutcome` (`vscodeAdapter.ts`) classifies a

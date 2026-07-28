@@ -70,6 +70,7 @@ async function previewEffectiveConfig(): Promise<void> {
   // which routes through it — is the only caller. Uncaught, VS Code shows its
   // own unbranded "command failed" popup with the raw error, no channel entry
   // and no action; catch it once here where every caller passes.
+  // @callers 1 requestEffectiveConfigPreview
   let preview: unknown;
   try {
     preview = await requestEffectiveConfigPreview(boardYamlUri);

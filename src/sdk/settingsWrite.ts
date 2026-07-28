@@ -23,15 +23,22 @@ const SAVE_AND_RETRY = "Save settings & retry";
  * `false` when the window went away mid-write. Only a genuinely unrelated
  * failure is rethrown for the caller to surface.
  *
- * THE CANCELLATION GUARD IS HERE, not in the three callers. `update()` is a
- * main-thread RPC and the recovery path awaits a toast, so at window teardown
- * (reload, close, a folder-open replacing the workspace) either can reject with
- * a CancellationError — and every caller turns a throw from here into a toast
- * ("Alp: couldn't set the active SDK", "the removed SDK is still named as the
- * active one"). One guard at the seam every caller routes through beats three
- * that can drift apart. `false` is already each caller's silent path, because
- * it means "not written, and the user has been told" — and a user whose window
- * is closing has nothing left to be told.
+ * THE CANCELLATION GUARD IS HERE, not spread across the callers — three
+ * calling FUNCTIONS (`setActiveSdk`, `clearActiveSdk`, and the SDK-manager
+ * remove handler in `ideHub/sdkManagerMessages.ts`), six call sites once the
+ * retry below is counted. `update()` is a main-thread RPC and the recovery
+ * path awaits a toast, so at window teardown (reload, close, a folder-open
+ * replacing the workspace) either can reject with a CancellationError — and
+ * every caller turns a throw from here into a toast ("Alp: couldn't set the
+ * active SDK", "the removed SDK is still named as the active one"). One guard
+ * at the seam every caller routes through beats three that can drift apart.
+ * `false` is already each caller's silent path, because it means "not written,
+ * and the user has been told" — and a user whose window is closing has nothing
+ * left to be told.
+ *
+ * @callers 6 writeAlpSetting
+ * @quotes src/ideHub/sdkManagerMessages.ts "couldn't set the active SDK"
+ * @quotes src/ideHub/sdkManagerMessages.ts "still named as the active one"
  */
 export async function writeAlpSetting(
   key: string,
