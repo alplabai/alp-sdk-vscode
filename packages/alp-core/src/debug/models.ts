@@ -214,20 +214,21 @@ export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "lldb";
  * `foldLaunchConfigPlaceholders`.
  *
  * `cwd`, `name` and `os` went with them for the same reason. `cwd` was
- * `"${workspaceFolder}"`; `name` was `Alp: Zephyr Debug (J-Link)` and its three
- * siblings — constant per `targetKind`, a launch.json key, and by tan 0.4.0
- * ALREADY DRIFTED from the `ALP: …` merge key tan writes, which is the whole
- * reason the orphan rescue in src/debug/service.ts exists. It reads the two
- * spellings off the customer's own file and off `tan debug-config --preview`,
- * never off a profile. `os` was a fifth spelling of `targetKind`. None of the
- * three had a reader in `src/`, `packages/` or `test/`.
+ * `"${workspaceFolder}"`; `name` was `Alp: Zephyr Debug (J-Link)` and its
+ * siblings — a launch.json key, and a constant of `(targetKind, server)` like
+ * the nine above, `serverLabel(server)` spelling the suffix on the MCU
+ * targets. By tan 0.4.0 it had ALREADY DRIFTED from the `ALP: …` merge key tan
+ * writes, which is the whole reason the orphan rescue in src/debug/service.ts
+ * exists. It reads the two spellings off the customer's own file and off
+ * `tan debug-config --preview`, never off a profile. `os` was a fifth spelling
+ * of `targetKind`. None of the three had a reader in `src/`, `packages/` or
+ * `test/`.
  *
  * A field belongs here only when the extension itself must READ it to grade a
  * host fact. `executablePath` qualifies — `createExecutableCheck` stats the
- * ELF, which is a fact about this machine. It is now the only field here that
- * also appears in launch.json. A value the extension only wants to SEE there
- * does not qualify: that is tan's output, and re-deriving it is the defect,
- * not the fix.
+ * ELF, which is a fact about this machine. A value the extension only wants to
+ * SEE in launch.json does not: that is tan's output, and re-deriving it is the
+ * defect, not the fix.
  */
 export interface DebugProfile {
   id: string;

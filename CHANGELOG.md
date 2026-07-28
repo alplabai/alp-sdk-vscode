@@ -18,18 +18,39 @@
   `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`, `miMode`,
   `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` and the dead
   `cwd` — are deleted from `DebugProfile`, along with the equally dead `name`
-  and `os`. `name` was `Alp: Zephyr Debug (J-Link)` and its three siblings: a
-  `launch.json` key, constant per target, unread anywhere in `src/`,
+  and `os`. `name` was `Alp: Zephyr Debug (J-Link)` and its siblings: a
+  `launch.json` key, a constant of `(targetKind, server)` like the nine above
+  (`serverLabel(server)` spelled the suffix), unread anywhere in `src/`,
   `packages/` or `test/`, and already DRIFTED from the `ALP: …` merge key tan
   0.4.0 writes — the drift the orphan rescue exists to repair, which learns the
   spelling from the customer's file and from `tan debug-config --preview`
-  rather than from a profile. `os` was a fifth spelling of `targetKind`. That
-  leaves `executablePath` as the only field that also appears in `launch.json`,
-  and it stays because the extension STATS it. The preflight report now grades
-  host readiness only: which debugger
+  rather than from a profile. `os` was a fifth spelling of `targetKind`.
+  `executablePath` stays because the extension STATS it, which is the rule for
+  what may live on a `DebugProfile` at all: a field belongs there only when the
+  extension itself must READ it to grade a fact about this machine. The
+  preflight report now grades host readiness only: which debugger
   extension is installed, whether the server tool is on PATH, the host platform,
   whether the build artefact exists. The configuration's own values are graded
   once, against the object tan actually wrote (#339).
+
+- **The next step offered for an unresolved field now fits the target.** Where
+  a placeholder survives, the fold turns it into a failing check whose `fix`
+  reaches both the "not launchable yet" toast's channel and the report's
+  `nextSteps`. That string was "Build the project first, or set `<key>` in
+  launch.json by hand." on every target, and on two of them building is a loop
+  that cannot terminate: `baremetal-mcu` has no Zephyr build, so no
+  `runners.yaml` is ever written for tan to read `device` from, and
+  `yocto-userspace`'s `<host>:<port>` and cross-gdb path describe a remote
+  target — driven against tan 0.4.0, that target's configuration keeps both
+  placeholders even against a fully populated `runners.yaml`, which it never
+  reads. #339 is about being handed something that reads like a value and is
+  not; a next step that cannot work is the same defect. The fold now branches
+  on the report's `targetKind` and names what the customer must supply, keeping
+  "build first" only for `zephyr-mcu`, where a build genuinely resolves it. The
+  wording is therefore split, not tan's alone: tan owns the general
+  placeholders-remain note, which the extension still logs verbatim; the
+  extension owns the per-key next step, being the half that knows the key and
+  the target class (#339).
 
 - **The three diagnostic surfaces say which verdict they are giving.** `Alp:
   Debug preflight`, the troubleshooting panel and `Alp: Export support bundle`

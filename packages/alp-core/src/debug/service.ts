@@ -303,6 +303,9 @@ export function buildDebugPreflightReport(
  * click. It still flips `configurationGraded`, because it did grade it and
  * found nothing: that flag says whether the configuration was READ, not
  * whether it was faulty, and the surfaces that never read one keep it `false`.
+ *
+ * The next step comes from `placeholderFix`, which needs the report's
+ * `targetKind` — see there for why one sentence does not fit all four.
  */
 export function foldLaunchConfigPlaceholders(
   report: DebugPreflightReport,
@@ -322,7 +325,7 @@ export function foldLaunchConfigPlaceholders(
         name,
         status: "fail",
         detail: placeholder.value,
-        fix: `Build the project first, or set "${name}" in launch.json by hand.`,
+        fix: placeholderFix(report.targetKind, name),
       };
     }),
   ];
@@ -339,6 +342,41 @@ export function foldLaunchConfigPlaceholders(
     canLaunch: countPreflightChecks(checks, "fail") === 0,
     configurationGraded: true,
   };
+}
+
+/**
+ * The next step for an unresolved launch.json key — which is not the same
+ * sentence on every target class (#339).
+ *
+ * "Build the project first" is only advice where a build would in fact produce
+ * the value. On `zephyr-mcu` it would: `tan debug-config` reads `device`,
+ * `configFiles`, `targetId` and `gdbPath` out of the build's own
+ * `runners.yaml`, so a placeholder seen before the build is gone after it. On
+ * the two targets where a placeholder legitimately survives a SUCCESSFUL build
+ * that sentence sends the customer around a loop that cannot terminate, which
+ * is #339's own defect wearing a different hat — something that reads like a
+ * way forward and is not one. Driven against tan 0.4.0:
+ *
+ * - `baremetal-mcu` has no Zephyr build and so no `runners.yaml` to read; all
+ *   three servers write `"device": "<resolved-device>"` whatever the build tree
+ *   holds. Only the customer knows the part.
+ * - `yocto-userspace` writes `"miDebuggerServerAddress": "<host>:<port>"` and
+ *   `"miDebuggerPath": "<resolved-gdb>"` even against a fully populated
+ *   `runners.yaml` — it never reads one. Both describe a remote target and the
+ *   cross-toolchain reaching it, neither of which a local build produces.
+ *
+ * `native-host` takes the default and never exercises it: tan's configuration
+ * for it carries no placeholder to fold.
+ */
+function placeholderFix(targetKind: DebugTargetKind, key: string): string {
+  switch (targetKind) {
+    case "baremetal-mcu":
+      return `Set "${key}" in launch.json by hand — a baremetal build writes no runners.yaml, so building cannot resolve it.`;
+    case "yocto-userspace":
+      return `Set "${key}" in launch.json by hand — the remote target address and the cross-gdb reaching it come from your target, not from a build.`;
+    default:
+      return `Build the project first, or set "${key}" in launch.json by hand.`;
+  }
 }
 
 export function buildDoctorReport(

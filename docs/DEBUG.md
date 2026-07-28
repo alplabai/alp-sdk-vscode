@@ -371,19 +371,23 @@ interface DebugProfile {
 ```
 
 That is the whole of it. `DebugProfile` describes the session the extension is
-REPORTING ON, not a launch configuration: `executablePath` is here because
-`buildDebugPreflightReport` stats the ELF, which is a fact about this machine,
-and it is the only field here that also appears in launch.json. It used to
-carry `device`, `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`,
-`miMode`, `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands`, `cwd`,
-`name` and `os` as well, all hardcoded constants of `(targetKind, server)` —
-see §12 for why grading those was #339. `name` is the one worth naming twice:
-it said `Alp: Zephyr Debug (J-Link)` while the pinned tan 0.4.0 writes
-`ALP: Zephyr Debug (J-Link)`, so the extension's copy of tan's merge key had
-already drifted from it — which is exactly the stranded-duplicate defect §12's
-orphan rescue repairs, and that rescue reads the spelling off the customer's
-own file and off `tan debug-config --preview`, never off a profile. The
-configuration keys are tan's; §10 shows what it writes.
+REPORTING ON, not a launch configuration. The rule for what may live here: a
+field belongs only when the extension itself must READ it to grade a fact about
+this machine. `executablePath` qualifies — `createExecutableCheck` stats the
+ELF. A value the extension only wants to SEE in launch.json does not; that is
+tan's output.
+
+It used to carry `device`, `interface`, `svdFile`, `openOcdConfigFiles`,
+`targetId`, `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`,
+`setupCommands`, `cwd`, `name` and `os` as well, all hardcoded constants of
+`(targetKind, server)` — see §12 for why grading those was #339. `name` is the
+one worth naming twice: it said `Alp: Zephyr Debug (J-Link)` (the suffix from
+`serverLabel(server)`, so one string per target/server pair) while the pinned
+tan 0.4.0 writes `ALP: Zephyr Debug (J-Link)`, so the extension's copy of tan's
+merge key had already drifted from it — which is exactly the stranded-duplicate
+defect §12's orphan rescue repairs, and that rescue reads the spelling off the
+customer's own file and off `tan debug-config --preview`, never off a profile.
+The configuration keys are tan's; §10 shows what it writes.
 
 ## 10. MVP Launch Profiles
 
@@ -594,10 +598,19 @@ target class come out of the picker and are carried as the report's own
 `targetKind` / `server` metadata; the one judgement made about the pair,
 `serverCompatibility`, lives in `buildDoctorReport`.
 
-The last two are configuration VALUES, and `tan debug-config` resolves them
-from the build's own `runners.yaml` — so they are graded against the
+The last two are configuration VALUES. Both are graded against the
 configuration tan actually wrote, by `foldLaunchConfigPlaceholders`, and
-nowhere else.
+nowhere else — but they differ in whether tan can fill them, and that
+difference is not cosmetic. Bullet 6 it resolves: on a Zephyr build
+`tan debug-config --server openocd` reads the OpenOCD paths out of the build's
+own `runners.yaml`, driven on tan 0.4.0 to `"configFiles":
+["/home/dev/board/e1m_aen801.cfg"]` with a matching `serverpath` and
+`searchDir`. Bullet 7 it cannot: `yocto-userspace` comes out
+`"miDebuggerServerAddress": "<host>:<port>"` with `"miDebuggerPath":
+"<resolved-gdb>"` even against a `runners.yaml` that is fully populated, which
+that target never reads. So the fold sees a resolved value in the first case
+and a surviving placeholder in the second, and the next step it prints has to
+differ accordingly — see the end of this section.
 
 That split is the fix for #339, not a refactor. The preflight report used to
 grade a second, in-process draft as well: `createDebugProfile` filled `device`
@@ -639,12 +652,26 @@ Two consequences worth stating:
   and carries no path to one, alp-sdk#948; when it does, tan writes the key and
   the fold is what would see an unresolved one.)
 
-Where a value genuinely cannot be filled — `baremetal-mcu` has no Zephyr build,
-so there is no `runners.yaml` to read, and `yocto-userspace` needs a remote
-`<host>:<port>` nothing can derive — **tan owns the wording**. It emits the
-placeholder and the note "Placeholder fields such as `<resolved-device>` still
-need project-specific resolution."; the extension logs that note verbatim and
-names the key in its own check. Neither is duplicated here.
+Two targets are where a value genuinely cannot be filled. `baremetal-mcu` has
+no Zephyr build, so no `runners.yaml` ever exists to read and all three servers
+come out with `"device": "<resolved-device>"` whatever the build tree holds;
+`yocto-userspace` needs a remote `<host>:<port>` and a cross-gdb path that
+nothing local derives. The wording is SPLIT between the two processes, and it
+is worth being exact about which half is whose:
+
+- **tan owns the general note.** It emits the placeholder and, alongside it,
+  "Placeholder fields such as `<resolved-device>` still need project-specific
+  resolution."; `logUnlaunchableDetail` logs that note verbatim rather than
+  writing a second version of it. This document does not restate it either.
+- **The extension owns the per-key next step**, because it is the half that
+  knows the key and the target class. `foldLaunchConfigPlaceholders` writes the
+  failing check's `fix`, and that string must fit the target: "Build the project
+  first" is right for a `zephyr-mcu` placeholder seen before the build and is
+  advice that cannot terminate on the two above, where no build will ever
+  produce the value. Handing a customer a next step that cannot work is #339's
+  own defect in a different hat, so the fold branches on `report.targetKind` and
+  says what they must supply instead (`placeholderFix`, covered by
+  `test/debug.service.test.js`).
 
 If preflight fails, the product should not attempt a debug launch. It
 should explain the failure and offer the next action. Only `fail` checks

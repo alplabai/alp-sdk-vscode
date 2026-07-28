@@ -238,7 +238,8 @@ test("buildDebugPreflightReport grades host readiness, never a drafted configura
     undefined,
   );
   // `cwd`, `name` and `os` were the ones the sweep missed: launch.json keys (or,
-  // for `os`, a fifth spelling of `targetKind`), constant per target, and read
+  // for `os`, a fifth spelling of `targetKind`), constants of
+  // `(targetKind, server)` -- `name` through `serverLabel(server)` -- and read
   // by nothing. `name` mattered most -- it said "Alp: Zephyr Debug (J-Link)"
   // while the pinned tan 0.4.0 writes "ALP: Zephyr Debug (J-Link)", so it was
   // already drifted from tan's merge key. The spellings live in
@@ -620,6 +621,64 @@ test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the r
   assert.equal(launchConfigChecks[0].status, "fail");
   assert.equal(launchConfigChecks[0].detail, "<resolved-device>");
   assert.match(launchConfigChecks[0].fix, /"device"/);
+});
+
+// #339's defect wearing a different hat. The customer was handed a placeholder
+// that reads like a value; handing them a next step that cannot work is the
+// same thing. "Build the project first" is true only where a build resolves the
+// value -- driven against tan 0.4.0, `baremetal-mcu` writes
+// "device": "<resolved-device>" on all three servers whatever the build tree
+// holds (no Zephyr build, so no runners.yaml), and `yocto-userspace` writes
+// "miDebuggerServerAddress": "<host>:<port>" with "miDebuggerPath":
+// "<resolved-gdb>" even against a fully populated runners.yaml, which it never
+// reads. On those two the fold must say what the customer has to supply.
+test("the fold's next step fits the target, not only the key", () => {
+  const foldFor = (targetKind, server, placeholder) =>
+    foldLaunchConfigPlaceholders(
+      buildDebugPreflightReport(
+        "2026-05-14T00:00:00.000Z",
+        createDebugContext(),
+        createDebugProfile(targetKind, server),
+        createRuntime(),
+        { pathExists: () => true },
+      ),
+      [placeholder],
+    );
+
+  // zephyr-mcu, pre-build: building really is the next step, so keep it.
+  const zephyr = foldFor("zephyr-mcu", "jlink", {
+    key: "device",
+    value: "<resolved-device>",
+  });
+  const zephyrFix = zephyr.checks.find((check) => check.name === "device").fix;
+  assert.match(zephyrFix, /^Build the project first/);
+  assert.ok(zephyr.nextSteps.includes(zephyrFix));
+
+  // baremetal-mcu: no Zephyr build exists to produce a runners.yaml, ever.
+  const baremetal = foldFor("baremetal-mcu", "jlink", {
+    key: "device",
+    value: "<resolved-device>",
+  });
+  const baremetalFix = baremetal.checks.find(
+    (check) => check.name === "device",
+  ).fix;
+  assert.doesNotMatch(baremetalFix, /Build the project first/);
+  assert.match(baremetalFix, /"device"/);
+  assert.match(baremetalFix, /runners\.yaml/);
+  assert.ok(baremetal.nextSteps.includes(baremetalFix));
+
+  // yocto-userspace: a remote address no local build produces.
+  const yocto = foldFor("yocto-userspace", "gdbserver", {
+    key: "miDebuggerServerAddress",
+    value: "<host>:<port>",
+  });
+  const yoctoFix = yocto.checks.find(
+    (check) => check.name === "miDebuggerServerAddress",
+  ).fix;
+  assert.doesNotMatch(yoctoFix, /Build the project first/);
+  assert.match(yoctoFix, /"miDebuggerServerAddress"/);
+  assert.match(yoctoFix, /remote target/);
+  assert.ok(yocto.nextSteps.includes(yoctoFix));
 });
 
 // A bare string has no surrounding key to be named after, and the fold must
