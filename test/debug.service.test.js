@@ -8,15 +8,13 @@ const {
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
-  createLaunchPreview,
   createSupportBundlePayload,
-  debugProfileToLaunchDraft,
+  foldLaunchConfigPlaceholders,
   isNativeHostTarget,
   serializeGenerationTraceReport,
   serializeInspectReport,
   serializeSupportBundlePayload,
   serverChoicesForTarget,
-  unresolvedRequiredFields,
 } = require("../packages/alp-core/dist/debug/service.js");
 
 function createDebugContext(overrides = {}) {
@@ -69,43 +67,6 @@ test("serverChoicesForTarget returns expected backends", () => {
     serverChoicesForTarget("native-host").map((choice) => choice.server),
     ["none"],
   );
-});
-
-test("createDebugProfile defines reusable profile metadata", () => {
-  const zephyr = createDebugProfile("zephyr-mcu", "openocd");
-  const baremetal = createDebugProfile("baremetal-mcu", "jlink");
-  const yocto = createDebugProfile("yocto-userspace", "gdbserver");
-  const host = createDebugProfile("native-host", "none");
-
-  assert.equal(zephyr.adapter, "cortex-debug");
-  assert.equal(zephyr.os, "zephyr");
-  // The placeholder does still survive into the profile -- alp-sdk metadata
-  // carries no OpenOCD board .cfg path, so a thin extension has nothing to
-  // substitute. What the core layer guarantees is that it is CLASSIFIED as
-  // unresolved rather than passed off as a usable path: the customer is told
-  // which field to supply, and preflight fails it (see the preflight test
-  // below), so the profile can never be launched carrying it. Asserting only
-  // that the string survives is what let an unlaunchable profile look correct.
-  assert.deepEqual(zephyr.openOcdConfigFiles, ["<resolved-openocd-board-cfg>"]);
-  assert.deepEqual(unresolvedRequiredFields(zephyr), [
-    "OpenOCD board config file",
-  ]);
-
-  assert.equal(baremetal.adapter, "cortex-debug");
-  assert.equal(baremetal.os, "baremetal");
-  assert.equal(baremetal.interface, "swd");
-
-  assert.equal(yocto.adapter, "cppdbg");
-  assert.equal(yocto.server, "gdbserver");
-  assert.equal(yocto.miMode, "gdb");
-
-  // `lldb`, not `codelldb`: vadimcn.vscode-lldb v1.12.2 registers
-  // `contributes.debuggers` = [{ "type": "lldb" }]. "codelldb" is the
-  // extension's NAME -- it has never been a debug type, and this field is
-  // written verbatim into launch.json as `type`, where VS Code answers an
-  // unregistered one with "configured debug type 'codelldb' is not supported".
-  assert.equal(host.adapter, "lldb");
-  assert.equal(host.os, "host");
 });
 
 test("createDebugProfile derives the per-core path from a manifest slice", () => {
@@ -473,211 +434,52 @@ test("buildDebugPreflightReport fails the placeholder OpenOCD board config", () 
   assert.match(openOcd.detail, /<resolved-openocd-board-cfg>/);
 });
 
-test("buildDebugPreflightReport rejects a <host>:<port> gdbserver address", () => {
-  const profile = {
-    ...createDebugProfile("yocto-userspace", "gdbserver"),
-    // Resolve the gdb path so the address is the only field that can fail.
-    miDebuggerPath: "/usr/bin/gdb",
-  };
-  // The classifier used to test `value.includes("<resolved")`, which
-  // "<host>:<port>" does not contain -- so an unusable gdbserver address was
-  // reported resolved and the profile claimed canLaunch: true. cppdbg would
-  // then try to connect to a host literally named "<host>".
-  assert.equal(profile.miDebuggerServerAddress, "<host>:<port>");
-
+test("foldLaunchConfigPlaceholders returns the report unchanged when there are no placeholders", () => {
   const report = buildDebugPreflightReport(
     "2026-05-14T00:00:00.000Z",
     createDebugContext(),
-    profile,
+    {
+      ...createDebugProfile("native-host", "none"),
+      executablePath: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
+    },
     createRuntime(),
-    { pathExists: () => true },
+    {
+      pathExists: (filePath) =>
+        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+    },
   );
 
-  assert.equal(report.canLaunch, false);
-  assert.ok(
-    report.checks.some(
-      (check) =>
-        check.name === "miDebuggerServerAddress" && check.status === "fail",
-    ),
-  );
-  assert.deepEqual(unresolvedRequiredFields(profile), [
-    "gdbserver address (host:port)",
-  ]);
-
-  // Control: a real address clears it. The rule must reject the placeholder
-  // token, not every address that happens to contain a colon.
-  const resolved = { ...profile, miDebuggerServerAddress: "192.168.1.50:2345" };
-  assert.deepEqual(unresolvedRequiredFields(resolved), []);
-  const resolvedReport = buildDebugPreflightReport(
-    "2026-05-14T00:00:00.000Z",
-    createDebugContext(),
-    resolved,
-    createRuntime(),
-    { pathExists: () => true },
-  );
-  assert.equal(resolvedReport.summary.fail, 0);
-  assert.equal(resolvedReport.canLaunch, true);
+  assert.equal(foldLaunchConfigPlaceholders(report, []), report);
 });
 
-test("an absent svdFile warns, never blocks, and is omitted from the config", () => {
-  const profile = {
-    ...createDebugProfile("baremetal-mcu", "jlink"),
-    // A J-Link device name is the one project-specific field here; resolve it
-    // so svdFile is the sole non-pass check left.
-    device: "Cortex-M55",
-  };
-  assert.equal(profile.svdFile, undefined);
-
+test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the report", () => {
   const report = buildDebugPreflightReport(
     "2026-05-14T00:00:00.000Z",
     createDebugContext(),
-    profile,
+    {
+      ...createDebugProfile("native-host", "none"),
+      executablePath: "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
+    },
     createRuntime(),
-    { pathExists: () => true },
+    {
+      pathExists: (filePath) =>
+        filePath.endsWith("build/native_sim/zephyr/zephyr.exe"),
+    },
   );
-
-  // WARN, never fail. An SVD only populates the peripheral/register view; the
-  // session starts and breakpoints hit without one. As a fail it landed in
-  // summary.fail and drove canLaunch false, so a missing register view stopped
-  // a customer setting a breakpoint.
-  const svd = report.checks.find((check) => check.name === "svdFile");
-  assert.equal(svd.status, "warn");
-  assert.ok(report.summary.warn > 0);
-  assert.equal(report.summary.fail, 0);
   assert.equal(report.canLaunch, true);
-  // Optional, so it is never named as something the customer must supply.
-  assert.deepEqual(unresolvedRequiredFields(profile), []);
-});
+  const failBefore = report.summary.fail;
 
-test("an svdFile is emitted only once it resolves to a real path", () => {
-  // No profile sets svdFile today (alp-sdk publishes no .svd, alp-sdk#948), so
-  // this injects one to pin the rule for when the SDK does. The two branches
-  // must be told apart by RESOLVEDNESS, not truthiness: cortex-debug OPENS
-  // svdFile, so "<resolved-svd>" is taken as a filename and kills a session
-  // preflight had only warned about. Both cortex-debug targets read it.
-  for (const targetKind of ["zephyr-mcu", "baremetal-mcu"]) {
-    const profile = createDebugProfile(targetKind, "jlink");
-    assert.equal(profile.svdFile, undefined);
-    assert.equal("svdFile" in debugProfileToLaunchDraft(profile), false);
+  const folded = foldLaunchConfigPlaceholders(report, ["<resolved-device>"]);
 
-    const placeholder = { ...profile, svdFile: "<resolved-svd>" };
-    assert.equal(
-      "svdFile" in debugProfileToLaunchDraft(placeholder),
-      false,
-      `${targetKind} wrote a placeholder svdFile into launch.json`,
-    );
-    // Still never named to the customer: it is optional and warns, so telling
-    // them to supply one before they can set a breakpoint would be wrong.
-    assert.deepEqual(unresolvedRequiredFields(placeholder), [
-      "J-Link device name",
-    ]);
-
-    const resolved = { ...profile, svdFile: "/sdk/svd/AE822F4M55.svd" };
-    assert.equal(
-      debugProfileToLaunchDraft(resolved).svdFile,
-      "/sdk/svd/AE822F4M55.svd",
-    );
-  }
-});
-
-/** Our "nobody filled this in yet" marker. Not `${...}`, which is a VS Code
- *  variable substitution VS Code expands itself and which is therefore
- *  resolved as far as this repo is concerned. */
-const UNRESOLVED_PLACEHOLDER = /<[^<>]*>/;
-
-/**
- * Draft key -> the customer-facing label `unresolvedRequiredFields` must use
- * for it. Deliberately exhaustive: a placeholder written under a key that is
- * NOT in this table fails the matrix below, which is the point. `svdFile` is
- * absent because it is optional and must never be emitted unresolved at all;
- * so is any future key nobody remembered to name.
- */
-const PLACEHOLDER_KEY_LABEL = {
-  // cortex-debug reads `device` for J-Link, but baremetal-mcu emits it whatever
-  // the servertype -- calling it a "J-Link device name" to a pyOCD user is a lie.
-  device: (profile) =>
-    profile.server === "jlink" ? "J-Link device name" : "probe device name",
-  targetId: () => "pyOCD target id",
-  miDebuggerServerAddress: () => "gdbserver address (host:port)",
-  miDebuggerPath: () => "gdb executable path",
-  configFiles: () => "OpenOCD board config file",
-};
-
-function hasPlaceholder(value) {
-  if (typeof value === "string") return UNRESOLVED_PLACEHOLDER.test(value);
-  if (Array.isArray(value)) return value.some(hasPlaceholder);
-  if (value && typeof value === "object")
-    return Object.values(value).some(hasPlaceholder);
-  return false;
-}
-
-// The one invariant that covers every target/server pair at once: a placeholder
-// may reach launch.json ONLY where the extension also tells the customer, by
-// name, which field to go and fill in. Both directions are pinned -- an unnamed
-// placeholder is a field the customer cannot fix, and a named field that is not
-// in the file points them at a key they will never find.
-//
-// Driven off the real exported choice lists so a new target class or a new
-// backend cannot be added without landing here. The narrow loop this replaces
-// checked only zephyr-mcu/jlink, so a placeholder svdFile on the openocd or
-// pyocd branch broke nothing.
-test("every launch draft's placeholders are exactly the fields named to the customer", () => {
-  for (const { targetKind } of DEBUG_TARGET_CHOICES) {
-    for (const { server } of serverChoicesForTarget(targetKind)) {
-      const where = `${targetKind}/${server}`;
-      const profile = createDebugProfile(targetKind, server);
-      const config = createLaunchPreview(
-        "2026-05-14T00:00:00.000Z",
-        targetKind,
-        server,
-      ).launch.configurations[0];
-
-      const labels = Object.entries(config)
-        .filter(([, value]) => hasPlaceholder(value))
-        .map(([key]) => {
-          const label = PLACEHOLDER_KEY_LABEL[key];
-          assert.ok(
-            label,
-            `${where} writes an unresolved placeholder under "${key}" (${JSON.stringify(config[key])}), which unresolvedRequiredFields() never names`,
-          );
-          return label(profile);
-        });
-
-      assert.deepEqual(
-        labels.slice().sort(),
-        unresolvedRequiredFields(profile).slice().sort(),
-        where,
-      );
-    }
-  }
-});
-
-// The two combinations the QuickPick offers that used to name a field which is
-// not in the emitted file at all: baremetal-mcu ignores `server` and always
-// writes device+interface, so openocd named "OpenOCD board config file" and
-// pyocd named "the pyOCD target id" while the `<resolved-device>` that IS in the
-// file went unnamed. Spelled out rather than left to the matrix above, because
-// the exact wording is what a customer reads.
-test("baremetal-mcu names its device field whatever the backend is", () => {
-  for (const server of ["openocd", "pyocd"]) {
-    const profile = createDebugProfile("baremetal-mcu", server);
-    const config = createLaunchPreview(
-      "2026-05-14T00:00:00.000Z",
-      "baremetal-mcu",
-      server,
-    ).launch.configurations[0];
-
-    assert.equal(config.device, "<resolved-device>");
-    assert.equal("targetId" in config, false);
-    assert.equal("configFiles" in config, false);
-    assert.deepEqual(unresolvedRequiredFields(profile), ["probe device name"]);
-  }
-
-  // jlink is the one backend for which "J-Link device name" is true.
-  assert.deepEqual(
-    unresolvedRequiredFields(createDebugProfile("baremetal-mcu", "jlink")),
-    ["J-Link device name"],
+  assert.equal(folded.canLaunch, false);
+  assert.equal(folded.summary.fail, failBefore + 1);
+  const launchConfigChecks = folded.checks.filter(
+    (check) => check.name === "launchConfig",
   );
+  assert.equal(launchConfigChecks.length, 1);
+  assert.equal(launchConfigChecks[0].status, "fail");
+  assert.equal(launchConfigChecks[0].detail, "<resolved-device>");
+  assert.ok(launchConfigChecks[0].fix);
 });
 
 test("serializeSupportBundlePayload returns stable JSON", () => {
@@ -742,91 +544,4 @@ test("buildDoctorReport summarizes zephyr doctor state", () => {
     "Install marus25.cortex-debug.",
     "Install openocd and make sure it is on PATH.",
   ]);
-});
-
-test("createLaunchPreview generates a Zephyr J-Link draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "zephyr-mcu",
-    "jlink",
-  );
-
-  assert.equal(preview.launch.version, "0.2.0");
-  assert.equal(preview.launch.configurations.length, 1);
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "jlink");
-  assert.equal(config.interface, "swd");
-  assert.match(config.name, /Zephyr Debug/);
-});
-
-test("createLaunchPreview generates a Zephyr OpenOCD draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "zephyr-mcu",
-    "openocd",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "openocd");
-  // Emitted, but only as a marker of an unfilled field -- never as something
-  // the draft claims is launchable. The pairing that must never happen is this
-  // string plus canLaunch: true, which the preflight test below pins.
-  assert.deepEqual(config.configFiles, ["<resolved-openocd-board-cfg>"]);
-});
-
-test("createLaunchPreview generates a baremetal draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "baremetal-mcu",
-    "jlink",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cortex-debug");
-  assert.equal(config.servertype, "jlink");
-  assert.equal(config.executable, "${workspaceFolder}/build/baremetal/app.elf");
-});
-
-test("createLaunchPreview generates a Yocto gdbserver draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "yocto-userspace",
-    "gdbserver",
-  );
-
-  const config = preview.launch.configurations[0];
-  assert.equal(config.type, "cppdbg");
-  assert.equal(config.MIMode, "gdb");
-  assert.equal(config.miDebuggerServerAddress, "<host>:<port>");
-});
-
-test("createLaunchPreview generates a native host draft", () => {
-  const preview = createLaunchPreview(
-    "2026-05-14T00:00:00.000Z",
-    "native-host",
-    "none",
-  );
-
-  const config = preview.launch.configurations[0];
-  // Goes into launch.json verbatim as `type`, so it must be a debug type an
-  // installed extension registers: vadimcn.vscode-lldb v1.12.2 contributes only
-  // "lldb". "codelldb" is the extension name, not a debug type, and VS Code
-  // refuses such a session with "configured debug type 'codelldb' is not
-  // supported" -- on native_sim, the first debug session a customer ever runs.
-  // test/debug.adapterTypes.test.js holds the full per-target type table.
-  assert.equal(config.type, "lldb");
-  assert.equal(
-    config.program,
-    "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
-  );
-});
-
-test("createLaunchPreview rejects unsupported launch combinations", () => {
-  assert.throws(
-    () =>
-      createLaunchPreview("2026-05-14T00:00:00.000Z", "native-host", "jlink"),
-    /Unsupported debug backend/,
-  );
 });

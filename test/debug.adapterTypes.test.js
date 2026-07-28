@@ -23,7 +23,6 @@ const {
   DEBUG_ADAPTER_EXTENSION_ID,
   DEBUG_TARGET_ADAPTER,
   DEBUG_TARGET_CHOICES,
-  createLaunchPreview,
   serverChoicesForTarget,
 } = require("../packages/alp-core/dist/debug/service.js");
 
@@ -103,21 +102,23 @@ test("each target emits a debug type its owning extension contributes", () => {
     const expected = EXPECTED_ADAPTER[targetKind];
     // Every backend the target offers: the type must not vary by server, and a
     // new backend cannot slip in with a type of its own.
+    // `createLaunchPreview` used to be rendered here and its `type` read off the
+    // draft. The draft is built by `tan debug-config` now, so this asserts the
+    // MAP the extension still owns and still writes into every profile it
+    // creates -- `DEBUG_TARGET_ADAPTER` feeds `createDebugProfile`'s `adapter`,
+    // and tan is gated on the same value by its own `debug_launch.rs` tests.
+    // The server loop is kept: the type must not vary by backend, and a new
+    // backend must not be able to slip in with a type of its own.
+    const emitted = DEBUG_TARGET_ADAPTER[targetKind];
     for (const { server } of serverChoicesForTarget(targetKind)) {
-      const config = createLaunchPreview(
-        "2026-05-14T00:00:00.000Z",
-        targetKind,
-        server,
-      ).launch.configurations[0];
-
       assert.equal(
-        config.type,
+        emitted,
         expected.type,
-        `${targetKind}/${server} emitted debug type "${config.type}"`,
+        `${targetKind}/${server} maps to debug type "${emitted}"`,
       );
       assert.ok(
-        CONTRIBUTED_DEBUG_TYPES[expected.extension].includes(config.type),
-        `"${config.type}" is not contributed by ${expected.extension}`,
+        CONTRIBUTED_DEBUG_TYPES[expected.extension].includes(emitted),
+        `"${emitted}" is not contributed by ${expected.extension}`,
       );
     }
   }

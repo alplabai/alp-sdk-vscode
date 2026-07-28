@@ -41,6 +41,7 @@
     "onCommand:alp.newProjectWizard",
     "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
+    "onTaskType:alp",
     "workspaceContains:**/board.yaml",
     "workspaceContains:**/prj*.conf"
   ],
@@ -376,6 +377,17 @@
         ],
         "properties": {
           "run": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "alp",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
             "type": "string"
           }
         }

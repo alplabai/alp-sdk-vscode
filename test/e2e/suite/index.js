@@ -529,6 +529,40 @@ async function runChecks() {
     }
   });
 
+  // The four `preLaunchTask` labels `tan debug-config` writes into launch.json
+  // must actually resolve in a REAL extension host — the unit test only proves
+  // the strings agree with each other. VS Code composes a provided task's label
+  // as `${source}: ${name}`, which is what `preLaunchTask` matches against; if
+  // this set ever stops matching, Debug writes a profile whose pre-launch task
+  // cannot be found and `startDebugging` aborts with no useful error (#342).
+  // Hard-coded here rather than imported so a rename in src/tasks/service.ts
+  // fails this check instead of silently moving with it.
+
+  // The provider behind the four `preLaunchTask` labels `tan debug-config`
+  // writes into launch.json must actually be REGISTERED and answering in a real
+  // extension host — the unit test only proves the strings agree with each other
+  // and that package.json contributes the type. What this pins: the extension
+  // activated, `registerTaskProvider("alp", …)` ran, and `fetchTasks` returns a
+  // task per spec whose `${source}: ${name}` is what `preLaunchTask` matches
+  // against. What it does NOT pin: that a build task, once run, succeeds — the
+  // execution is a CustomExecution that only dispatches when the task is
+  // actually started, which needs a real project and toolchain. Labels are
+  // hard-coded rather than imported so a rename in src/tasks/service.ts fails
+  // this check instead of silently moving with it.
+  await check(
+    "the four alp: preLaunchTask labels resolve as tasks",
+    async () => {
+      const tasks = await vscode.tasks.fetchTasks({ type: "alp" });
+      const labels = tasks.map((task) => `${task.source}: ${task.name}`).sort();
+      assert.deepEqual(labels, [
+        "alp: build active target",
+        "alp: build baremetal target",
+        "alp: build native_sim target",
+        "alp: deploy and start gdbserver",
+      ]);
+    },
+  );
+
   // The Alp IDE side panel is a single webview (SidebarHubView / HubViewProvider,
   // registered at activation); the former five native tree views were folded
   // into it.
