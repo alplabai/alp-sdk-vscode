@@ -11,22 +11,27 @@
   category, wrong sub-diagnosis, which sent the customer to fix a proxy that was
   working. `proxyForUrl` now refuses on an ALLOW-list — only `http` and `https`
   tunnel — so `ftp` and every future scheme get the same honest sentence rather
-  than being rediscovered one at a time. The proxy value is still never echoed
-  (`redactProxy`); only the scheme is named, and without its `://`, because
+  than being rediscovered one at a time. Credentials still never reach either
+  string: the customer sentence names only the scheme, and the channel detail
+  carries `redactProxy`'s `host:port` — the same redaction the 407 and
+  unreachable paths already use. The scheme is named without its `://`, because
   `planFailure`'s absolute-path guard reads the `s:/` of `socks://` as a drive
   letter and would demote the whole message into the output channel. Separately,
-  `bypassesProxy` never matched an IPv6 host: `lastIndexOf(":")` read the
-  trailing `1` of `::1` as a port number, and `URL.hostname` yields `[::1]`
-  while a `NO_PROXY` entry is written `::1`. Both spellings now match, bracketed
+  `bypassesProxy` never matched a BARE IPv6 entry — the spelling customers
+  actually write: `lastIndexOf(":")` read the trailing `1` of `::1` as a port
+  number, and `URL.hostname` yields `[::1]` while a `NO_PROXY` entry is written
+  `::1`. The bracketed form did match, by accident of both sides carrying the
+  brackets and `]` not being a digit. Both spellings now match, bracketed
   or bare, with or without an explicit port; a bare address holding two or more
   colons is taken whole, since `::1:443` is itself a valid address and splitting
   a port out of it would be a guess — the same reason curl requires the
   brackets. That reason is now in the unparseable-proxy sentence too, which
   names `[::1]:8080` rather than leaving the customer to find which part of the
   value was wrong. This became urgent with tan-cli#176: the managed download now
-  makes TWO proxied fetches, the binary and then `checksums.txt` from the same
-  resolved tag, and REFUSES the install if the second fails — so a proxy defect
-  that used to slow one fetch now blocks the install outright on first contact.
+  makes TWO proxied fetches — `checksums.txt` from the resolved tag FIRST, then
+  the binary — and REFUSES the install if the checksum fetch fails, so a proxy
+  defect that used to slow one fetch now blocks the install before a byte of the
+  binary moves.
   The `host:` the tunnel hands `tls.connect`, load-bearing only for IP-literal
   targets (where the `net.isIP` guard withholds `servername`) and until now
   covered by nothing, has a test that fails when it is dropped; so does the

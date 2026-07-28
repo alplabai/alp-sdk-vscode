@@ -364,10 +364,12 @@ test("a 407 from a credentialed proxy says proxy and never leaks the password", 
 // ---------------------------------------------------------------------------
 // #380 — the three proxy defects, and the one the issue got wrong.
 //
-// Urgency: since tan-cli#176 the managed download makes TWO proxied fetches
-// (the binary, then `checksums.txt` from the same resolved tag) and REFUSES the
-// install if the second fails. A proxy defect that used to degrade one fetch
-// now blocks the install outright, on a corporate host, on first contact.
+// Urgency: since tan-cli#176 the managed download makes TWO proxied fetches —
+// `checksums.txt` from the resolved tag first, then the binary — and REFUSES
+// the install if the checksum fetch fails. A proxy defect that used to degrade
+// one fetch now blocks the install outright, on a corporate host, on first
+// contact, before a byte of the binary moves. (Order asserted below, where the
+// recorded request paths must come back `[checksums.txt, asset]`.)
 // ---------------------------------------------------------------------------
 
 const rejectionOf = (promise) =>
@@ -653,14 +655,18 @@ async function tlsOptionsForTunnel(target, proxyHostname) {
 }
 
 test("the tunnelled TLS connect is given the TARGET's host, never the proxy's", async () => {
-  // `host:` is what the certificate is checked against. Reviewing #377 drove
-  // this in Node 26.5.0: with a DNS-named target, dropping `host` or
-  // `servername` alone still verifies, and dropping BOTH falls back to the
-  // wrapped socket's `_host` — which is the PROXY. So `host:` is load-bearing
+  // `host:` is what the certificate is checked against, and it is load-bearing
   // exactly where the `net.isIP` guard withholds `servername`: an IP-literal
   // target. The proxy is reached as `localhost` here while the target is
-  // `127.0.0.1`, so the two names differ and the fallback would be visible
-  // rather than coincidentally identical.
+  // `127.0.0.1`, so the two names differ and a fallback to the socket's would
+  // be visible rather than coincidentally identical.
+  //
+  // What this test pins is the OPTIONS handed to `tls.connect`, not a
+  // verification outcome — asserting the latter would need a real certificate
+  // chain. The narrower reading of how Node resolves `host` against
+  // `servername` came from reviewing #377 (driven there on Node 26.5.0, not
+  // re-driven here); treat it as the reason this test exists, not as something
+  // this file establishes.
   const options = await tlsOptionsForTunnel(
     "https://127.0.0.1:9/asset",
     "localhost",
