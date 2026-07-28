@@ -187,6 +187,105 @@ export const CACHED_CLI_UNVERIFIED =
   "— reconnect and retry.";
 
 /**
+ * `CACHED_CLI_UNVERIFIED` for the machine that ALSO has a global `tan` — the
+ * residual offline window of #396. The un-digested cache is skipped by
+ * `decideBinarySource`, so the ladder has ALREADY fallen through to the `path`
+ * rung and commands are running that binary right now. "It will not be run" is
+ * true and useless there; the customer's question is what IS being run, and the
+ * honest answer is a binary nothing here verified.
+ *
+ * Reached ONLY by a heal that failed while a prebuilt for this host exists —
+ * offline, in practice — which is what makes "reconnect and retry" true here.
+ * An online machine on a published target re-acquires the cache before this can
+ * matter; a host with no published prebuilt gets the pair below instead,
+ * because on that host reconnecting settles nothing, ever.
+ *
+ * Same shape rules as the sentence above: the fact leads (VS Code clips a toast
+ * to about two lines), no path/URL/errno (`planFailure` demotes a `cause`
+ * carrying any of those into the output channel), and no mention of
+ * `alpSdk.cliPath` — pointing at a hand-placed binary is the bypass this
+ * refusal exists to prevent, and here a verified binary really is one
+ * reconnection away.
+ */
+export const CACHED_CLI_UNVERIFIED_ON_PATH =
+  "This extension's copy of the tan CLI predates the checksum check, so it " +
+  "will not be run — commands are falling back to the tan on your PATH, which " +
+  "nothing here verified. Reconnect and retry to settle this for good.";
+
+/**
+ * The two sentences above, for the host tan-cli publishes NO binary for
+ * (`releaseAssetForTarget` → null). Both of those end in "reconnect and retry",
+ * and on this host that instruction is not merely unhelpful, it is FALSE: there
+ * is nothing to fetch, ever, so reconnecting settles nothing and the same toast
+ * returns on every activation for good.
+ *
+ * These NAME `alpSdk.cliPath`, which the two above deliberately withhold, and
+ * that is a decision rather than an oversight. The suppression is #389's:
+ * offering `cliPath` as the escape from a CHECKSUM REFUSAL routes the user off
+ * a verified binary they could have had and onto one nothing checks. The reason
+ * does not survive the trip to this host — no verified binary is obtainable
+ * here at all, so `cliPath` is not an escape from verification, it is the only
+ * way to have a `tan`. It is also already the remedy `downloadCli` names when
+ * it throws for this same missing asset. Withholding it would leave a permanent
+ * notice with no remedy in it, pointing at a Retry that cannot work.
+ */
+export const CACHED_CLI_UNVERIFIED_NO_PREBUILT =
+  "This extension's copy of the tan CLI predates the checksum check, so it " +
+  "will not be run, and Alp Lab publishes no tan build for this OS and CPU to " +
+  "replace it with. Point alpSdk.cliPath at a tan you build yourself.";
+
+/**
+ * `CACHED_CLI_UNVERIFIED_NO_PREBUILT` for the machine that ALSO has a global
+ * `tan`: same permanence, plus the fall-through named as in
+ * `CACHED_CLI_UNVERIFIED_ON_PATH`, because commands are running that binary
+ * right now and "it will not be run" answers the wrong question.
+ */
+export const CACHED_CLI_UNVERIFIED_NO_PREBUILT_ON_PATH =
+  "This extension's copy of the tan CLI predates the checksum check, so it " +
+  "will not be run — commands are falling back to the tan on your PATH, which " +
+  "nothing here verified. Alp Lab publishes no tan build for this OS and CPU, " +
+  "so point alpSdk.cliPath at a tan you build yourself.";
+
+/**
+ * Which of the four un-digested-cache sentences a machine gets, or `undefined`
+ * when its cache is not in that state at all — every other refusal then keeps
+ * its own wording.
+ *
+ * One rule rather than a condition per call site, because the four are chosen
+ * on two INDEPENDENT axes and picking three by hand is how the fourth goes
+ * wrong: the no-prebuilt host was handed the "reconnect and retry" pair, which
+ * instructs it to do the one thing that cannot work there.
+ *
+ *  - IS THE LADDER RUNNING THE PATH BINARY RIGHT NOW? `decideBinarySource` has
+ *    already stepped over the cache, so a resolved `path` means commands are on
+ *    a binary nothing verified and the sentence has to say so. Rung 2 — the
+ *    `preferGlobalCli` opt-in — is excluded: that user chose their global `tan`,
+ *    and telling them their own choice is suspicious is not this heal's
+ *    business. Activation never asks about them at all (`shouldFetchManagedCli`
+ *    leaves rung 2 alone entirely), but `updateAlpCli` does when such a user
+ *    runs the palette command themselves — and they get the plain sentence,
+ *    which describes the extension's own cache and nothing about their binary.
+ *  - CAN A HEAL EVER RUN? `prebuiltAvailable` is `releaseAssetForTarget` being
+ *    non-null, and false turns "reconnect and retry" from unhelpful into false.
+ */
+export function unverifiedCacheCause(
+  input: BinaryResolutionInput,
+  prebuiltAvailable: boolean,
+): string | undefined {
+  if (!isUnverifiableCache(input)) return undefined;
+  const onPathFallback =
+    decideBinarySource(input) === "path" && !input.preferGlobalCli;
+  if (prebuiltAvailable) {
+    return onPathFallback
+      ? CACHED_CLI_UNVERIFIED_ON_PATH
+      : CACHED_CLI_UNVERIFIED;
+  }
+  return onPathFallback
+    ? CACHED_CLI_UNVERIFIED_NO_PREBUILT_ON_PATH
+    : CACHED_CLI_UNVERIFIED_NO_PREBUILT;
+}
+
+/**
  * The sentence for a cached binary that no longer hashes to the digest recorded
  * when it was downloaded. REFUSES the spawn; see `resolveAlpBinary`'s `cached`
  * arm for why this is not a warning.
@@ -319,21 +418,71 @@ export function isCliBehind(
 }
 
 /**
- * Whether activation should (re)fetch the managed `tan` binary. Fetch when
- * nothing resolves yet (`download`), OR when the resolved binary is the
- * extension's own managed cache (`cached`) AND its version is behind the pinned
- * `supported` — self-healing a stale managed install to the pin (the "tan shows
- * an old version and never updates" symptom). User/build-owned sources
- * (`cliPath` / `localBuild` / `bundled` / `path`) are never auto-replaced; the
- * per-command outdated/ahead warning nudges those instead. `cachedVersion` is
- * the parsed cached-binary version (null when unknown/unprobed → not behind).
+ * Whether activation should (re)fetch the managed `tan` binary. Three triggers,
+ * one per resolved source that can want one:
+ *
+ *  - `download` — nothing resolves yet. A fresh install, which would download
+ *    on first use anyway.
+ *  - `path` — but ONLY the UNCHOSEN fallback (rung 6, i.e. `!preferGlobalCli`),
+ *    and only when an un-digested copy sits in the cache
+ *    (`isUnverifiableCache`): the #386 migration population, on a machine that
+ *    also has a global `tan`. `decideBinarySource` SKIPS an un-digested copy,
+ *    so the ladder has already stepped over it onto a binary nothing verified —
+ *    a refusal falling through onto an unverified arm, the zero-click form of
+ *    the one-click bypass #389 removed. This is the #396 trigger, and the old
+ *    `source === "cached"` could never fire it: the source is never `cached` for
+ *    exactly the machines the heal was written for.
+ *  - `cached` — the managed copy is behind the pinned `supported`: the
+ *    stale-install self-heal (the "tan shows an old version and never updates"
+ *    symptom).
+ *
+ * THE #396 TRIGGER IS NARROW ON PURPOSE — never a user/build-owned source, and
+ * `alpSdk.preferGlobalCli` makes rung 2 exactly that. Firing on whatever
+ * resolved would hand a `cliPath` user, a `localBuild` developer and a
+ * platform-VSIX `bundled` install one "this extension's copy … will not be run"
+ * plan on EVERY activation (and, online, a ~3 MB download they never asked for)
+ * while their commands run fine on a binary they chose. It buys nothing: the
+ * heal fires when the un-digested cache would otherwise be silently STEPPED
+ * OVER, and a user running their own binary is left alone until they stop —
+ * clear `cliPath`, delete the local build, install the universal VSIX, and the
+ * ladder reaches the `path` FALLBACK or `download` and heals then.
+ *
+ * RUNG 2 IS IN THAT SAME CLASS, and gets the same treatment for the same
+ * argument. `preferGlobalCli` is an explicit user choice, and healing under it
+ * changes nothing about what runs: resolution still answers `path` afterwards,
+ * so online the heal is a silent ~3 MB fetch of dead weight, and offline it is
+ * a per-activation error toast telling that user the extension's copy "will not
+ * be run" — about a copy they opted out of running. Their cache heals the
+ * moment they stop insisting, exactly like the other three. Withholding only
+ * the notice, and fetching anyway, stopped one rung short of the rule this
+ * function already states.
+ *
+ * Where it does fire, replacing the cache is safe because it replaces the
+ * EXTENSION'S OWN STORAGE, so it overrides nobody's choice, and the ladder's
+ * precedence is untouched: once the digest is recorded, `cached` outranks the
+ * `path` FALLBACK again and the effective source snaps back with no reordering
+ * ever made.
+ *
+ * `cachedVersion` is the parsed cached-binary version (null when
+ * unknown/unprobed → not behind).
  */
 export function shouldFetchManagedCli(
-  source: BinarySource,
+  // The whole input, not a `BinarySource`: the `path` arm has to ask whether
+  // the copy the ladder just stepped over is un-digested, and that is
+  // unanswerable from the resolved source.
+  input: BinaryResolutionInput,
   cachedVersion: string | null,
   supported: string = SUPPORTED_CLI_VERSION,
 ): boolean {
+  const source = decideBinarySource(input);
   if (source === "download") return true;
+  // The UNCHOSEN fallback only. `source === "path"` with `preferGlobalCli` set
+  // is ladder rung 2 — a user/build-owned source by the rule above — and
+  // `decideBinarySource` reaches rung 2 only with the flag on, so this one
+  // negation separates the two rungs exactly.
+  if (source === "path") {
+    return isUnverifiableCache(input) && !input.preferGlobalCli;
+  }
   if (source === "cached") return isCliBehind(cachedVersion, supported);
   return false;
 }

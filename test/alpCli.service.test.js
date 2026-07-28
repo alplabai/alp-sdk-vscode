@@ -22,6 +22,11 @@ const {
   classifyUnavailable,
   binaryName,
   shouldFetchManagedCli,
+  unverifiedCacheCause,
+  CACHED_CLI_UNVERIFIED,
+  CACHED_CLI_UNVERIFIED_ON_PATH,
+  CACHED_CLI_UNVERIFIED_NO_PREBUILT,
+  CACHED_CLI_UNVERIFIED_NO_PREBUILT_ON_PATH,
   SUPPORTED_CLI_VERSION,
   isDebugConfigData,
   launchConfigPlaceholders,
@@ -77,22 +82,194 @@ test("parseTanVersion KEEPS a pre-release suffix, so an rc is not the final rele
   assert.equal(isNativeTanVersionOutput("tan 0.4.0-rc.1"), true);
 });
 
+/** A `BinaryResolutionInput` with every source absent, plus overrides. */
+const resolutionInput = (over = {}) => ({
+  cliPathSetting: "",
+  cliPathExists: false,
+  onPath: false,
+  bundledExists: false,
+  localBuildExists: false,
+  cachedExists: false,
+  cachedDigestRecorded: false,
+  preferGlobalCli: false,
+  ...over,
+});
+
+/** The inputs that resolve to each NON-download source, whatever the cache
+ *  holds. `path` carries `preferGlobalCli` so it resolves via ladder rung 2
+ *  (the explicit opt-in) even when a DIGESTED cache is present — the unchosen
+ *  rung-6 fallback is exercised separately below, where it is the whole point. */
+const OWNED_SOURCES = {
+  cliPath: { cliPathSetting: "/x/tan", cliPathExists: true },
+  bundled: { bundledExists: true },
+  localBuild: { localBuildExists: true },
+  path: { onPath: true, preferGlobalCli: true },
+};
+
 test("shouldFetchManagedCli fetches when nothing resolves, and self-heals a stale cache", () => {
   // Fresh install: nothing resolves yet → download.
-  assert.equal(shouldFetchManagedCli("download", null), true);
+  assert.equal(shouldFetchManagedCli(resolutionInput(), null), true);
+
+  const digestedCache = { cachedExists: true, cachedDigestRecorded: true };
+  const cached = resolutionInput(digestedCache);
+  assert.equal(decideBinarySource(cached), "cached");
   // Managed cache behind the pin → self-heal (re-fetch the pin).
-  assert.equal(shouldFetchManagedCli("cached", "0.1.0", "0.3.0"), true);
+  assert.equal(shouldFetchManagedCli(cached, "0.1.0", "0.3.0"), true);
   // Managed cache at/ahead of the pin → leave it.
-  assert.equal(shouldFetchManagedCli("cached", "0.3.0", "0.3.0"), false);
-  assert.equal(shouldFetchManagedCli("cached", "0.4.0", "0.3.0"), false);
+  assert.equal(shouldFetchManagedCli(cached, "0.3.0", "0.3.0"), false);
+  assert.equal(shouldFetchManagedCli(cached, "0.4.0", "0.3.0"), false);
   // Cache present but version unprobed/unparseable → not behind, don't thrash.
-  assert.equal(shouldFetchManagedCli("cached", null, "0.3.0"), false);
-  // User/build-owned sources are NEVER auto-replaced, even when behind.
-  for (const source of ["cliPath", "localBuild", "bundled", "path"]) {
+  assert.equal(shouldFetchManagedCli(cached, null, "0.3.0"), false);
+
+  // User/build-owned sources are NEVER auto-replaced, even when behind — and
+  // the cache they sit above is digested, so there is nothing to heal either.
+  for (const [source, over] of Object.entries(OWNED_SOURCES)) {
+    const input = resolutionInput({ ...digestedCache, ...over });
+    assert.equal(decideBinarySource(input), source);
     assert.equal(
-      shouldFetchManagedCli(source, "0.1.0", "0.3.0"),
+      shouldFetchManagedCli(input, "0.1.0", "0.3.0"),
       false,
       `${source} must not auto-fetch`,
+    );
+  }
+});
+
+test("shouldFetchManagedCli heals an UN-DIGESTED cache the ladder steps OVER (#396)", () => {
+  // The defect, stated as the pure decision it is: keying this on the RESOLVED
+  // SOURCE cannot work, because `decideBinarySource` SKIPS an un-digested copy
+  // — so the source is never `cached` on precisely the machines the heal is
+  // for. A migrating machine with a global `tan` resolves `path` and runs a
+  // binary nothing verified.
+  //
+  // Re-derive this from a `BinarySource` alone and the `path` rows below flip
+  // to false — which IS the defect. (The `download` rows stay true either way:
+  // that trigger never depended on the cache. They are here to pin the arm, not
+  // to catch that regression.)
+  const migrating = { cachedExists: true, cachedDigestRecorded: false };
+
+  // The population the defect is actually about: rung 6, the UNCHOSEN `path`
+  // fallback. No opt-in, no other managed copy — the skipped cache is what puts
+  // the ladder here.
+  const fallback = resolutionInput({ ...migrating, onPath: true });
+  assert.equal(decideBinarySource(fallback), "path");
+  assert.equal(shouldFetchManagedCli(fallback, null), true);
+
+  // …and with nothing else on the machine it lands on `download` anyway.
+  assert.equal(decideBinarySource(resolutionInput(migrating)), "download");
+  assert.equal(shouldFetchManagedCli(resolutionInput(migrating), null), true);
+
+  // NARROW ON PURPOSE. A user/build-owned source is not stepping over the
+  // cache, so it is not told and not made to fetch — firing here gave each of
+  // these one "this extension's copy … will not be run" plan per activation,
+  // plus a ~3 MB download online, while their commands ran fine on a binary
+  // they chose. Nothing is lost: clear the setting or delete the build and the
+  // ladder reaches the `path` FALLBACK or `download`, where the rows above heal.
+  //
+  // Rung 2 (`preferGlobalCli`) is in that list, and the SAME argument put it
+  // there: healing under the flag changes nothing about what runs — resolution
+  // still answers `path` — so online it is a ~3 MB fetch of dead weight and
+  // offline it is a per-activation toast about a copy the user opted out of
+  // running. Withholding only the notice, and fetching anyway, stopped one rung
+  // short of the rule this function states.
+  for (const source of ["cliPath", "bundled", "localBuild", "path"]) {
+    const input = resolutionInput({ ...migrating, ...OWNED_SOURCES[source] });
+    assert.equal(decideBinarySource(input), source);
+    assert.equal(
+      shouldFetchManagedCli(input, null),
+      false,
+      `${source} must be left alone`,
+    );
+  }
+  // …and the flag is what separates the two `path` rungs, nothing else: drop it
+  // from that last row and it becomes the rung-6 fallback, which heals.
+  assert.equal(
+    shouldFetchManagedCli(
+      resolutionInput({ ...migrating, onPath: true, preferGlobalCli: false }),
+      null,
+    ),
+    true,
+  );
+
+  // Both halves of `isUnverifiableCache` are load-bearing, proven by breaking
+  // each: no cache at all, and a cache that IS digested. Either one alone would
+  // make the trigger fire for a fresh install / every verified machine forever.
+  const pathOnly = resolutionInput({ onPath: true });
+  assert.equal(decideBinarySource(pathOnly), "path");
+  assert.equal(shouldFetchManagedCli(pathOnly, null), false);
+  // `preferGlobalCli` so the ladder still answers `path` with a cache present —
+  // without it a digested cache simply outranks the fallback and resolves
+  // `cached`, which is a different arm and would not test this.
+  const digested = resolutionInput({
+    ...OWNED_SOURCES.path,
+    cachedExists: true,
+    cachedDigestRecorded: true,
+  });
+  assert.equal(decideBinarySource(digested), "path");
+  assert.equal(shouldFetchManagedCli(digested, null), false);
+});
+
+test("unverifiedCacheCause picks the sentence on TWO axes, and never promises a retry that cannot work", () => {
+  const migrating = { cachedExists: true, cachedDigestRecorded: false };
+
+  // Axis 1 — is the ladder on the PATH binary right now? Only the UNCHOSEN
+  // fallback names it. Rung 2 is the user's own opt-in and is left alone (and
+  // never gets here: `shouldFetchManagedCli` does not heal it at all).
+  const fallback = resolutionInput({ ...migrating, onPath: true });
+  const optIn = resolutionInput({ ...migrating, ...OWNED_SOURCES.path });
+  const alone = resolutionInput(migrating);
+  assert.equal(decideBinarySource(fallback), "path");
+  assert.equal(decideBinarySource(optIn), "path");
+  assert.equal(decideBinarySource(alone), "download");
+  assert.equal(
+    unverifiedCacheCause(fallback, true),
+    CACHED_CLI_UNVERIFIED_ON_PATH,
+  );
+  assert.equal(unverifiedCacheCause(optIn, true), CACHED_CLI_UNVERIFIED);
+  assert.equal(unverifiedCacheCause(alone, true), CACHED_CLI_UNVERIFIED);
+
+  // Axis 2 — can a heal EVER run here? `releaseAssetForTarget` null means no,
+  // permanently, and that is what makes "reconnect and retry" false rather than
+  // merely unhelpful. Both no-prebuilt sentences must therefore drop it and
+  // name the one remedy this host has.
+  assert.equal(
+    unverifiedCacheCause(fallback, false),
+    CACHED_CLI_UNVERIFIED_NO_PREBUILT_ON_PATH,
+  );
+  assert.equal(
+    unverifiedCacheCause(alone, false),
+    CACHED_CLI_UNVERIFIED_NO_PREBUILT,
+  );
+  for (const sentence of [
+    CACHED_CLI_UNVERIFIED_NO_PREBUILT,
+    CACHED_CLI_UNVERIFIED_NO_PREBUILT_ON_PATH,
+  ]) {
+    assert.doesNotMatch(sentence, /reconnect|retry/i);
+    assert.match(sentence, /alpSdk\.cliPath/);
+    // `classifyUnavailable` reaches `checksumRefused` by matching this word,
+    // and must not be shadowed by its earlier `^No prebuilt tan CLI` row.
+    assert.match(sentence, /checksum/);
+    assert.equal(classifyUnavailable(sentence), "checksumRefused");
+  }
+  // …and the two that DO promise a retry keep it, because on a published target
+  // a verified binary really is one reconnection away.
+  for (const sentence of [
+    CACHED_CLI_UNVERIFIED,
+    CACHED_CLI_UNVERIFIED_ON_PATH,
+  ]) {
+    assert.match(sentence, /retry/i);
+    assert.doesNotMatch(sentence, /alpSdk\.cliPath/);
+  }
+
+  // No un-digested cache → no sentence at all, on either axis, so every other
+  // refusal keeps its own wording.
+  for (const prebuilt of [true, false]) {
+    assert.equal(unverifiedCacheCause(resolutionInput(), prebuilt), undefined);
+    assert.equal(
+      unverifiedCacheCause(
+        resolutionInput({ cachedExists: true, cachedDigestRecorded: true }),
+        prebuilt,
+      ),
+      undefined,
     );
   }
 });

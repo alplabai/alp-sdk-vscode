@@ -425,7 +425,14 @@ function extensionHome() {
  *    `downloadFile`: the seam closes over the module-internal `downloadFile`,
  *    so stubbing that export is a silent no-op and a false green.
  */
-function loadAdapter({ onPath = false, releaseAsset, service, transfer } = {}) {
+function loadAdapter({
+  onPath = false,
+  releaseAsset,
+  service,
+  transfer,
+  /** `"<section>.<key>"` → value, e.g. `{ "alpSdk.preferGlobalCli": true }`. */
+  config = {},
+} = {}) {
   const spawned = [];
   const versionProbes = [];
   const terminals = [];
@@ -436,7 +443,12 @@ function loadAdapter({ onPath = false, releaseAsset, service, transfer } = {}) {
     vscode: {
       Uri: { file: (p) => ({ fsPath: p }) },
       workspace: {
-        getConfiguration: () => ({ get: (_key, fallback) => fallback }),
+        getConfiguration: (section) => ({
+          get: (key, fallback) =>
+            Object.hasOwn(config, `${section}.${key}`)
+              ? config[`${section}.${key}`]
+              : fallback,
+        }),
       },
       window: {
         withProgress: async (_options, task) =>
@@ -871,6 +883,608 @@ test("wiring: a ChecksumError is classified by its TYPE, not by the word 'checks
   }
 });
 
+// ── half 3: the migrating machine that ALSO has a global `tan` (#396) ────────
+//
+// The population above resolves `path`, not `download`: the un-digested cache
+// is skipped, the next rung is PATH, and it is taken. Nothing prompts, nothing
+// notices — a REFUSAL falling through onto an unverified arm, which is the
+// zero-click version of the one-click bypass #389 removed.
+//
+// The fix is entirely in `shouldFetchManagedCli`'s trigger: an un-digested
+// cache the ladder STEPS OVER, i.e. a resolved `path` or `download` — never a
+// binary the user chose or built, which is the noise the wide version made. It
+// is proven here by DRIVING every population through the real adapter, because
+// the pure test cannot show the effective source snapping back, the notice,
+// where its button lands, or the absence of a give-up latch.
+//
+// The stale-version self-heal HAS a give-up latch. This heal must not adopt it:
+// its common failure is being offline, which is transient, and one latched
+// activation would leave the machine on the unverified PATH binary until the
+// pin moved.
+
+/** A migrating machine: an un-digested binary in the cache, a global `tan` on
+ *  PATH, and a release server (or a refused port) to heal from. */
+function migratingHome() {
+  const home = extensionHome();
+  home.writeCachedBinary(TAMPERED); // present, unrecorded, and NOT what ships
+  return home;
+}
+
+const OFFLINE_ASSET = {
+  target: "test-target",
+  assetName: BINARY,
+  tag: "v0.0.0-test",
+  // Port 1 on loopback: refused immediately. No network, no waiting.
+  url: `http://127.0.0.1:1/${BINARY}`,
+  checksumsUrl: "http://127.0.0.1:1/checksums.txt",
+};
+
+test("#396 migrating + ONLINE: heals the stepped-over cache, and the effective source snaps back to it", async () => {
+  const home = migratingHome();
+  const server = await releaseServer(GOOD);
+  try {
+    // Before the fix this activation did NOTHING: `decideBinarySource` answers
+    // `path` (the cache is skipped), and the heal keyed on that source, so it
+    // returned early at `shouldFetchManagedCli` and the window carried on
+    // running the PATH binary.
+    const { adapter, plans } = loadAdapter({
+      onPath: true,
+      releaseAsset: server.asset,
+    });
+    await adapter.ensureTanCliProvisioned(home.context);
+
+    // The extension's OWN storage was replaced — nobody's choice overridden.
+    assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
+    assert.equal(
+      home.store.get("alp.tanCachedBinarySha256"),
+      sha256(GOOD),
+      "the heal did not record the digest it verified",
+    );
+    assert.deepEqual(plans, [], "a successful heal must be silent");
+
+    // …and precedence does the rest: with the digest recorded, `cached`
+    // outranks the `path` FALLBACK again. No reordering was made anywhere.
+    const { adapter: next } = loadAdapter({
+      onPath: true,
+      releaseAsset: server.asset,
+    });
+    assert.deepEqual(await next.resolveAlpBinaryForContext(home.context), {
+      command: home.cachedBinaryPath,
+      source: "cached",
+    });
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("#396 migrating + OFFLINE: keeps working on PATH, is told which binary that is, and is NOT latched off", async () => {
+  const home = migratingHome();
+  try {
+    const { adapter, plans } = loadAdapter({
+      onPath: true,
+      releaseAsset: OFFLINE_ASSET,
+    });
+    await adapter.ensureTanCliProvisioned(home.context);
+
+    // The residual window, stated honestly. `CACHED_CLI_UNVERIFIED` alone says
+    // only "it will not be run", which leaves the customer's actual question —
+    // what IS being run — unanswered on exactly the machine where the answer is
+    // an unverified binary.
+    assert.equal(plans.length, 1, "activation raised no notification");
+    const [plan] = plans;
+    assert.equal(plan.message, SERVICE.CACHED_CLI_UNVERIFIED_ON_PATH);
+    assert.match(plan.message, /PATH/);
+    // The existing update action, and NOTHING that routes onto an unverified
+    // binary — the same bar #389 set for the refusals themselves.
+    assert.ok(plan.actions.some((a) => a.id === "updateCli"));
+    for (const id of ["installTanCli", "openSettings"]) {
+      assert.deepEqual(
+        plan.actions.filter((a) => a.id === id),
+        [],
+        `the fallback notice offered ${id}`,
+      );
+    }
+    // Still WORKING, which is the point of not reordering the ladder.
+    assert.equal(
+      (await adapter.resolveAlpBinaryForContext(home.context)).source,
+      "path",
+    );
+    // A failed heal must not write the stale-version give-up marker.
+    assert.equal(
+      home.store.has("alp.tanSelfHealGaveUpPin"),
+      false,
+      "an offline heal latched itself off",
+    );
+
+    // Two more offline activations, driven rather than reasoned about. The
+    // stale-pin heal's `HEAL_GAVE_UP_KEY` latch would make these silent — and
+    // a machine stranded on the unverified PATH binary until the pin moved, so
+    // NOT adopting it is what these rows watch. Exactly one plan each: the
+    // notice repeats per activation because the state does, and `extension.ts`
+    // calls `ensureTanCliProvisioned` once per window.
+    for (let activation = 2; activation <= 3; activation++) {
+      const { adapter: again, plans: againPlans } = loadAdapter({
+        onPath: true,
+        releaseAsset: OFFLINE_ASSET,
+      });
+      await again.ensureTanCliProvisioned(home.context);
+      assert.equal(
+        againPlans.length,
+        1,
+        `the heal went quiet on offline activation ${activation}`,
+      );
+      assert.equal(
+        againPlans[0].message,
+        SERVICE.CACHED_CLI_UNVERIFIED_ON_PATH,
+      );
+      assert.equal(home.store.has("alp.tanSelfHealGaveUpPin"), false);
+    }
+
+    // Driven, not inferred: the NEXT activation, back online, heals.
+    const server = await releaseServer(GOOD);
+    try {
+      const { adapter: online, plans: onlinePlans } = loadAdapter({
+        onPath: true,
+        releaseAsset: server.asset,
+      });
+      await online.ensureTanCliProvisioned(home.context);
+      assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
+      assert.deepEqual(onlinePlans, []);
+      assert.equal(
+        (await online.resolveAlpBinaryForContext(home.context)).source,
+        "cached",
+      );
+    } finally {
+      await server.close();
+    }
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("#396 preferGlobalCli ON is left ENTIRELY alone: no toast, no fetch — and the cache heals the moment the flag goes off", async () => {
+  // Rung 2 is a user/build-owned source by the same rule that excludes
+  // `cliPath` / `localBuild` / `bundled`, and gets the same treatment. Healing
+  // under the flag changes nothing about what runs — resolution still answers
+  // `path` afterwards — so online it was a ~3 MB fetch of dead weight, and
+  // offline it was an error toast PER ACTIVATION saying the extension's copy
+  // "will not be run. Downloading it once more settles this for good", about a
+  // copy this user opted out of running. On the base commit they got neither.
+  //
+  // Three activations, because "every activation" is the complaint, and
+  // OFFLINE_ASSET is the measurement: any fetch at all hits a refused port and
+  // surfaces as a plan, so an empty `plans` is a real assertion.
+  const home = migratingHome();
+  const config = { "alpSdk.preferGlobalCli": true };
+  try {
+    for (let activation = 0; activation < 3; activation++) {
+      const { adapter, plans } = loadAdapter({
+        onPath: true,
+        releaseAsset: OFFLINE_ASSET,
+        config,
+      });
+      await adapter.ensureTanCliProvisioned(home.context);
+      assert.deepEqual(
+        plans,
+        [],
+        `an opted-in user was disturbed on activation ${activation + 1}`,
+      );
+      assert.equal(
+        (await adapter.resolveAlpBinaryForContext(home.context)).source,
+        "path",
+      );
+    }
+    // Untouched: not re-downloaded, and no digest invented for it either.
+    assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), TAMPERED);
+    assert.equal(home.store.has("alp.tanCachedBinarySha256"), false);
+
+    // Online, still opted in: silent, and STILL no fetch. This is the row that
+    // reds if the heal is narrowed only in the notice and not in the trigger —
+    // the toast would be gone but the ~3 MB would not.
+    const server = await releaseServer(GOOD);
+    try {
+      const { adapter: online, plans: onlinePlans } = loadAdapter({
+        onPath: true,
+        releaseAsset: server.asset,
+        config,
+      });
+      await online.ensureTanCliProvisioned(home.context);
+      assert.deepEqual(onlinePlans, []);
+      assert.equal(
+        fs.readFileSync(home.cachedBinaryPath, "utf8"),
+        TAMPERED,
+        "an opted-in user was made to download a copy they never run",
+      );
+      assert.equal(home.store.has("alp.tanCachedBinarySha256"), false);
+
+      // Nothing is lost by leaving them alone — the same promise the other
+      // three owned sources get. Stop insisting and the ladder reaches the
+      // rung-6 fallback, where the heal fires on the very next activation.
+      const { adapter: off, plans: offPlans } = loadAdapter({
+        onPath: true,
+        releaseAsset: server.asset,
+      });
+      await off.ensureTanCliProvisioned(home.context);
+      assert.deepEqual(offPlans, [], "a successful heal must be silent");
+      assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
+      assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(GOOD));
+      assert.equal(
+        (await off.resolveAlpBinaryForContext(home.context)).source,
+        "cached",
+      );
+    } finally {
+      await server.close();
+    }
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("#396 the heal is NARROW: cliPath / localBuild / bundled keep an un-digested cache and are never disturbed", async () => {
+  // The noise the wide trigger produced, driven. Each of these resolves a
+  // binary the USER chose or built, with an un-digested copy still sitting in
+  // our cache underneath it. Firing there told them "this extension's copy …
+  // will not be run" on EVERY activation and, online, fetched ~3 MB they never
+  // asked for — while their commands ran fine the whole time.
+  //
+  // OFFLINE_ASSET is the guard: any fetch at all hits a refused port and
+  // surfaces as a plan, so `plans` staying empty is a real measurement, not an
+  // absence of assertions. Three consecutive activations because "every
+  // activation, forever" is the actual complaint.
+  const populations = {
+    cliPath: (home) => {
+      const chosen = path.join(home.dir, "chosen-tan");
+      fs.writeFileSync(chosen, GOOD);
+      return { config: { "alpSdk.cliPath": chosen } };
+    },
+    localBuild: (home) => {
+      const dir = path.join(home.dir, "tan-cli", "target", "release");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, BINARY), GOOD);
+      return {};
+    },
+    bundled: (home) => {
+      const dir = path.join(home.dir, "ext", "bin");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, BINARY), GOOD);
+      return {};
+    },
+  };
+
+  for (const [source, setup] of Object.entries(populations)) {
+    const home = migratingHome(); // un-digested cache present the whole time
+    try {
+      const extra = setup(home);
+      for (let activation = 0; activation < 3; activation++) {
+        const { adapter, plans } = loadAdapter({
+          onPath: true,
+          releaseAsset: OFFLINE_ASSET,
+          ...extra,
+        });
+        await adapter.ensureTanCliProvisioned(home.context);
+        assert.deepEqual(
+          plans,
+          [],
+          `${source} was disturbed on activation ${activation + 1}`,
+        );
+        assert.equal(
+          (await adapter.resolveAlpBinaryForContext(home.context)).source,
+          source,
+        );
+      }
+      // Untouched: not re-downloaded, and no digest invented for it either.
+      assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), TAMPERED);
+      assert.equal(home.store.has("alp.tanCachedBinarySha256"), false);
+    } finally {
+      home.cleanup();
+    }
+  }
+});
+
+test("#396 no prebuilt for this host: the re-acquire that cannot even START still says so", async () => {
+  // `releaseAssetForTarget` is null on a host tan-cli publishes no binary for,
+  // and the fetch used to `return` bare — AFTER `shouldFetchManagedCli` said
+  // yes and after the fall-through was computed. Un-digested cache, `tan` on
+  // PATH, nothing to download ever: the extension ran the unverified PATH
+  // binary and said nothing, every activation, forever. Narrow, permanent, and
+  // exactly the defect this branch exists to close, so it may not stay silent.
+  //
+  // And it may not say "reconnect and retry" while it is at it. That is the one
+  // instruction this host can never act on: `releaseAssetForTarget` is null
+  // FOREVER here, so reconnecting settles nothing and the same toast returns on
+  // every activation. The remedy that does exist is `alpSdk.cliPath` — the
+  // setting the two "reconnect" sentences withhold, because there it is an
+  // escape from a checksum refusal onto an unverified binary while a verified
+  // one is a download away. Here no verified binary is obtainable at all, so it
+  // is not an escape from verification, it is the only way to have a `tan`.
+  const home = migratingHome();
+  try {
+    const { adapter, plans } = loadAdapter({
+      onPath: true,
+      service: { releaseAssetForTarget: () => null },
+    });
+    await adapter.ensureTanCliProvisioned(home.context);
+
+    assert.equal(plans.length, 1, "the no-asset host stayed silent");
+    const [plan] = plans;
+    assert.equal(
+      plan.message,
+      SERVICE.CACHED_CLI_UNVERIFIED_NO_PREBUILT_ON_PATH,
+    );
+    assert.match(plan.message, /PATH/);
+    assert.doesNotMatch(plan.message, /reconnect|retry/i);
+    // No Retry: `alp.updateCli` re-enters `downloadCli`, which throws on this
+    // same missing asset — a dead button, which is exactly why the sentence may
+    // not tell them to press one. The remedy is named AND clickable.
+    assert.deepEqual(
+      plan.actions.map((a) => a.id),
+      ["openSettings"],
+    );
+    assert.equal(plan.actions[0].arg, "alpSdk.cliPath");
+    // FOLLOW THE BUTTON, same as the Retry below: the presenter's table is what
+    // makes it land on the setting the sentence names, and an `arg` asserted
+    // against nothing is how a dead button ships.
+    assert.match(
+      fs.readFileSync(
+        path.join(root, "out", "notify", "vscodeAdapter.js"),
+        "utf8",
+      ),
+      /openSettings:[\s\S]{0,400}?executeCommand\(\s*"workbench\.action\.openSettings"/,
+    );
+    // The host string is not lost by naming a remedy: the presenter writes
+    // `detail` to the channel whether or not a button opens it.
+    assert.match(plan.detail ?? "", /no prebuilt tan CLI for /);
+    // Still working, on the binary the notice names.
+    assert.equal(
+      (await adapter.resolveAlpBinaryForContext(home.context)).source,
+      "path",
+    );
+  } finally {
+    home.cleanup();
+  }
+
+  // The same host with NO global `tan`: the un-digested cache is skipped and
+  // nothing is left, so the source is `download` and the fall-through clause
+  // would be a lie. It reached this branch through `CACHED_CLI_UNVERIFIED`,
+  // which carries the same dead "reconnect and retry".
+  const stranded = migratingHome();
+  try {
+    const { adapter, plans } = loadAdapter({
+      service: { releaseAssetForTarget: () => null },
+    });
+    await adapter.ensureTanCliProvisioned(stranded.context);
+    assert.equal(plans.length, 1, "the no-asset host stayed silent");
+    assert.equal(
+      plans[0].message,
+      SERVICE.CACHED_CLI_UNVERIFIED_NO_PREBUILT,
+      "a machine with no PATH tan was told commands fall back to one",
+    );
+    assert.doesNotMatch(plans[0].message, /PATH/);
+    assert.doesNotMatch(plans[0].message, /reconnect|retry/i);
+  } finally {
+    stranded.cleanup();
+  }
+
+  // The guard reds: the SAME host on a FRESH install must keep skipping
+  // silently (a command surfaces the "set alpSdk.cliPath" guidance if one is
+  // ever invoked). No cache and no PATH `tan`, so the source is `download` and
+  // this really does reach the guard above — with `onPath` it would return at
+  // `shouldFetchManagedCli` instead and prove nothing. Make that notice
+  // unconditional and this row starts raising a plan.
+  const fresh = extensionHome();
+  try {
+    const { adapter, plans } = loadAdapter({
+      service: { releaseAssetForTarget: () => null },
+    });
+    await adapter.ensureTanCliProvisioned(fresh.context);
+    assert.deepEqual(plans, [], "a fresh install on a no-asset host was told");
+  } finally {
+    fresh.cleanup();
+  }
+});
+
+test("#396 the notice's Retry lands on a DOWNLOAD, not back on alpSdk.cliPath", async () => {
+  // The dead end, driven end to end. `alpSdk.cliPath` pointing at a path that
+  // no longer exists (moved checkout, synced settings) does NOT resolve, so the
+  // ladder skips it, skips the un-digested cache, and takes PATH — the notice
+  // fires. Its only action is `updateCli`, and `updateAlpCli` gated on the
+  // setting being NON-EMPTY rather than existing, so the button answered
+  // "alpSdk.cliPath is set …" with `openSettings → alpSdk.cliPath`: two clicks
+  // from a verification refusal onto the one arm nothing verifies, which is the
+  // button #389 removed.
+  const home = migratingHome();
+  const server = await releaseServer(GOOD);
+  try {
+    const config = {
+      "alpSdk.cliPath": path.join(home.dir, "gone", "tan"), // never created
+    };
+    const { adapter, plans } = loadAdapter({
+      onPath: true,
+      releaseAsset: OFFLINE_ASSET,
+      config,
+    });
+    await adapter.ensureTanCliProvisioned(home.context);
+    assert.equal(
+      (await adapter.resolveAlpBinaryForContext(home.context)).source,
+      "path",
+    );
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].message, SERVICE.CACHED_CLI_UNVERIFIED_ON_PATH);
+    assert.ok(plans[0].actions.some((a) => a.id === "updateCli"));
+
+    // FOLLOW THE BUTTON — the hop the old test never crossed, which is how the
+    // dead end shipped: it inspected the plan's own `actions` and stopped. Both
+    // links pinned from the compiled sources, then the destination is driven.
+    const wiring = (file) =>
+      fs.readFileSync(path.join(root, "out", file), "utf8");
+    assert.match(
+      wiring(path.join("notify", "vscodeAdapter.js")),
+      /updateCli:[\s\S]{0,400}?executeCommand\("alp\.updateCli"\)/,
+    );
+    assert.match(
+      wiring("extension.js"),
+      /registerCommand\("alp\.updateCli",[\s\S]{0,160}?updateAlpCli/,
+    );
+
+    const { adapter: retry, plans: retryPlans } = loadAdapter({
+      onPath: true,
+      releaseAsset: server.asset,
+      config,
+    });
+    await retry.updateAlpCli(home.context);
+
+    // It DOWNLOADED, and nothing sent the customer to the unverified arm.
+    assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
+    assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(GOOD));
+    for (const plan of retryPlans) {
+      assert.deepEqual(
+        plan.actions.filter((a) => a.id === "openSettings"),
+        [],
+        "the retry routed back to alpSdk.cliPath",
+      );
+      assert.doesNotMatch(plan.message, /alpSdk\.cliPath/);
+    }
+    // …and the machine is healed: the cache outranks the PATH fallback again.
+    const { adapter: next } = loadAdapter({
+      onPath: true,
+      releaseAsset: server.asset,
+      config,
+    });
+    assert.equal(
+      (await next.resolveAlpBinaryForContext(home.context)).source,
+      "cached",
+    );
+
+    // The guard reds: a cliPath that DOES exist still refuses the download, and
+    // says so — that refusal is true, because the ladder really would take it.
+    const chosen = path.join(home.dir, "chosen-tan");
+    fs.writeFileSync(chosen, GOOD);
+    const { adapter: honest, plans: honestPlans } = loadAdapter({
+      onPath: true,
+      releaseAsset: server.asset,
+      config: { "alpSdk.cliPath": chosen },
+    });
+    await honest.updateAlpCli(home.context);
+    assert.equal(honestPlans.length, 1);
+    assert.match(honestPlans[0].message, /alpSdk\.cliPath is set/);
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("#396 Retry pressed while STILL offline keeps the honest sentence, one hop along", async () => {
+  // The route this branch created, followed one click further. Activation
+  // raises "commands are falling back to the tan on your PATH, which nothing
+  // here verified"; the user presses its only button while still offline, and
+  // `updateAlpCli` worded the SAME refusal — same machine, same un-digested
+  // cache, same PATH binary running — as "Downloading it once more settles this
+  // for good", dropping the one fact activation had just corrected.
+  //
+  // `ensureTanCliProvisioned` passed `migrationCause` into `checksumFailurePlan`
+  // and `updateAlpCli` did not. Not a routing hole; a wording regression.
+  const home = migratingHome();
+  try {
+    const { adapter, plans } = loadAdapter({
+      onPath: true,
+      releaseAsset: OFFLINE_ASSET,
+    });
+    await adapter.ensureTanCliProvisioned(home.context);
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].message, SERVICE.CACHED_CLI_UNVERIFIED_ON_PATH);
+
+    const { adapter: retry, plans: retryPlans } = loadAdapter({
+      onPath: true,
+      releaseAsset: OFFLINE_ASSET,
+    });
+    await retry.updateAlpCli(home.context);
+    assert.equal(retryPlans.length, 1);
+    assert.equal(retryPlans[0].message, SERVICE.CACHED_CLI_UNVERIFIED_ON_PATH);
+    assert.notEqual(
+      retryPlans[0].message,
+      SERVICE.CACHED_CLI_UNVERIFIED,
+      "Retry reverted to the wording activation just corrected",
+    );
+    // Still offerable, and still nothing that routes onto an unverified arm.
+    assert.ok(retryPlans[0].actions.some((a) => a.id === "updateCli"));
+    assert.deepEqual(
+      retryPlans[0].actions.filter((a) => a.id === "openSettings"),
+      [],
+    );
+
+    // The guard reds: a DIGESTED cache is not this state at all, so
+    // `unverifiedCacheCause` answers `undefined` and the failure keeps its OWN
+    // sentence — here the checksum file that could not be fetched, which says
+    // something the migration framing would bury. Make the substitution
+    // unconditional and this row starts claiming a PATH fall-through to a
+    // machine that is not falling through to anything.
+    home.store.set("alp.tanCachedBinarySha256", sha256(TAMPERED));
+    const { adapter: digested, plans: digestedPlans } = loadAdapter({
+      onPath: true,
+      releaseAsset: OFFLINE_ASSET,
+    });
+    await digested.updateAlpCli(home.context);
+    assert.equal(digestedPlans.length, 1);
+    assert.match(digestedPlans[0].message, /checksum file that vouches for it/);
+    for (const sentence of [
+      SERVICE.CACHED_CLI_UNVERIFIED,
+      SERVICE.CACHED_CLI_UNVERIFIED_ON_PATH,
+    ]) {
+      assert.notEqual(digestedPlans[0].message, sentence);
+    }
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("#396 nothing to heal: a fresh install and a localBuild developer are unchanged", async () => {
+  // Each guard broken in turn. The trigger is `cachedExists &&
+  // !cachedDigestRecorded`; drop either half and one of these starts fetching.
+
+  // No cache at all, `tan` on PATH — a fresh install on a machine that already
+  // has a global tan. Nothing is re-acquired and nothing is said.
+  const fresh = extensionHome();
+  try {
+    const { adapter, plans } = loadAdapter({
+      onPath: true,
+      releaseAsset: OFFLINE_ASSET,
+    });
+    await adapter.ensureTanCliProvisioned(fresh.context);
+    assert.deepEqual(
+      plans,
+      [],
+      "a fresh install with a PATH tan was disturbed",
+    );
+    assert.equal(fs.existsSync(fresh.cachedBinaryPath), false);
+    assert.equal(
+      (await adapter.resolveAlpBinaryForContext(fresh.context)).source,
+      "path",
+    );
+  } finally {
+    fresh.cleanup();
+  }
+
+  // A developer running from a source checkout with a sibling `tan-cli` build
+  // and no cache: `localBuild` resolves, and it is theirs, not ours.
+  const dev = extensionHome();
+  try {
+    const localBuild = path.join(dev.dir, "tan-cli", "target", "release");
+    fs.mkdirSync(localBuild, { recursive: true });
+    fs.writeFileSync(path.join(localBuild, BINARY), GOOD);
+    const { adapter, plans } = loadAdapter({ releaseAsset: OFFLINE_ASSET });
+    await adapter.ensureTanCliProvisioned(dev.context);
+    assert.deepEqual(plans, [], "a localBuild developer was disturbed");
+    assert.equal(fs.existsSync(dev.cachedBinaryPath), false);
+    assert.equal(
+      (await adapter.resolveAlpBinaryForContext(dev.context)).source,
+      "localBuild",
+    );
+  } finally {
+    dev.cleanup();
+  }
+});
+
 test("wiring: `alp.updateCli` records the digest, so the remedy the mismatch names actually ends", async () => {
   const home = extensionHome();
   const server = await releaseServer(GOOD);
@@ -908,6 +1522,45 @@ test("wiring: `alp.updateCli` records the digest, so the remedy the mismatch nam
     });
   } finally {
     await server.close();
+    home.cleanup();
+  }
+});
+
+test("#396 preferGlobalCli ON still reaches unverifiedCacheCause through the PALETTE, and gets the plain sentence there", async () => {
+  // The coverage gap review found. `shouldFetchManagedCli` excludes rung 2, so
+  // ACTIVATION never raises anything for a `preferGlobalCli` user — proved by
+  // the test above. But `updateAlpCli`'s catch calls `unverifiedCacheCause`
+  // UNCONDITIONALLY, so the palette command "Alp: Reinstall the pinned tan CLI"
+  // reaches it with the flag on.
+  //
+  // That is correct and deliberate: the user asked for a reinstall, so a
+  // refusal owes them a reason. It must be the PLAIN sentence, not the ON_PATH
+  // one — "commands are falling back to the tan on your PATH" would be telling
+  // a rung-2 user their own explicit choice is a fallback.
+  //
+  // Without this, mutating `!input.preferGlobalCli` inside `unverifiedCacheCause`
+  // reddens only a pure test, and nothing proves the adapter route behaves.
+  const home = migratingHome();
+  try {
+    const { adapter, plans } = loadAdapter({
+      onPath: true,
+      config: { "alpSdk.preferGlobalCli": true },
+      releaseAsset: OFFLINE_ASSET,
+    });
+    await adapter.updateAlpCli(home.context);
+
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].message, SERVICE.CACHED_CLI_UNVERIFIED);
+    assert.notEqual(
+      plans[0].message,
+      SERVICE.CACHED_CLI_UNVERIFIED_ON_PATH,
+      "a rung-2 user was told their own explicit choice is a fallback",
+    );
+    assert.deepEqual(
+      plans[0].actions.filter((a) => a.id === "openSettings"),
+      [],
+    );
+  } finally {
     home.cleanup();
   }
 });
