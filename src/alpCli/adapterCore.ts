@@ -64,8 +64,16 @@ export interface ResolveDeps {
   ensureDir: (dir: string) => void;
   /** `verify` is REQUIRED, not optional: the managed binary is executed, so
    *  every fetch of it must be checked against the digest the release
-   *  publishes. Making it part of the seam's type is what stops a future call
-   *  site from quietly downloading unverified bytes — the compiler refuses. */
+   *  publishes.
+   *
+   *  What this type buys is the CALLER: omitting the argument in `downloadCli`
+   *  is a `TS2554`. It does NOT constrain the PROVIDER — several spellings of
+   *  an unverifying implementation assign to it cleanly (a 3-parameter arrow, a
+   *  hard-coded `null`, a cast, a spread over the deps object). Those are
+   *  pinned behaviourally by `test/alpCli.downloadSeamWiring.test.js`, which
+   *  drives the `download` each real entry point ends up with against a
+   *  tampered release. Do not read this as "the compiler refuses"; it refuses
+   *  half. */
   download: (
     url: string,
     destFile: string,

@@ -797,14 +797,23 @@ async function attempt(
  * for a 4-parameter type, so an arrow written inline in the adapter can leave
  * `verify` off its own parameter list and the assignment still checks.
  *
- * What refuses that arrow is `downloadFile`'s signature, not this one. `verify`
+ * What refuses THAT arrow is `downloadFile`'s signature, not this one. `verify`
  * is `downloadFile`'s 3rd and REQUIRED parameter, so the body such an arrow
  * carries — `downloadFile(url, dest, signal, proxySettings())` — puts an
  * `AbortSignal` where a `ChecksumSpec | null` is required, and does not
- * compile. This function is where that call lives, in a file that imports no
- * `vscode` and so is loadable by the unit tests, which is why
- * `test/alpCli.downloadChecksum.test.js` can drive the seam the extension
- * actually injects against a real local release server and a tampered body.
+ * compile.
+ *
+ * The compiler stops there, and the gap is worth naming rather than leaving for
+ * the next reader to discover the hard way: an arrow may still say `null` out
+ * loud (`downloadFile(url, dest, null, { signal, proxy })` compiles), and a
+ * caller may spread over the deps object this seam is assigned into. Neither is
+ * a type error. `test/alpCli.downloadSeamWiring.test.js` is what covers those —
+ * it drives the `download` each real entry point ends up with against a
+ * tampered release. Two halves, and neither catches the other's failure.
+ *
+ * This function is where the verified call lives, in a file that imports no
+ * `vscode`, which is why `test/alpCli.downloadChecksum.test.js` can drive the
+ * seam itself against a real local release server and a tampered body.
  */
 export function downloadSeam(
   readProxy: () => ProxyConfig,
