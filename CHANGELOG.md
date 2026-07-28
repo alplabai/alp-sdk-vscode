@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+- **The checkable slices of doc-comment drift are now a gate
+  (`test/comment-claims.guard.test.js`).** Across #389 and #386, eight doc
+  comments asserted a guarantee, a caller or a label the code did not match.
+  Every one was caught by a human review round and NONE by a check — a stale
+  sentence is invisible to `tsc`, to Prettier and to `node --test`. Two were
+  worse than inert: they were the stated justification for not writing the test
+  that would have caught the real defect.
+
+  Three slices are converted, and only those. Comments now carry a
+  machine-readable annotation beside the prose, so no English is parsed and a
+  sentence that merely narrates a past count (`runAlpInTerminal`'s "Two call
+  sites shipped that way") carries none and is left alone:
+
+  - `@callers <n> <symbol>` — asserted against the real call sites under
+    `src/`. Five claims annotated (`resolveAlpBinary`, `checkCliVersion`,
+    `requestEffectiveConfigPreview`, `writeAlpSetting`,
+    `resolveOrchestratorTarget`).
+  - `@quotes <path> "<text>"` — a comment quoting a string that lives in
+    another file, with the PATH pinning which surface it belongs to. Three
+    claims annotated.
+  - `test/fixtures/comment-claims.ts` — every "the compiler refuses X /
+    `TSnnnn`" claim about `downloadFile`'s `verify` argument, compiled on
+    demand with the repo's own compilerOptions. The documented HOLES (`null`
+    opt-out, arity-tolerant provider) are pinned as compiling too: a hole that
+    quietly closes is drift as much as a guarantee that quietly opens.
+
+  What stays UNGUARDED is stated in that file's header, at length. "Is this
+  comment true?" is not gateable; a test that tried would be flaky enough that
+  everyone learns to ignore it, which is worse than no gate.
+
+- **Three comment claims corrected, two of them false.** Both
+  `src/alpCli/download.ts` and `src/alpCli/vscodeAdapter.ts` said that sliding
+  an `AbortSignal` into `downloadFile`'s `verify` position is a `TS2345`.
+  Measured under the pinned compiler it is a **`TS2739`** — "Type
+  'AbortSignal' is missing the following properties from type 'ChecksumSpec':
+  assetName, checksumsUrl". `src/alpCli/adapterCore.ts` said "no other file in
+  `src/` names `cachedBinaryPath`"; `vscodeAdapter.ts` names it in code six
+  times (it builds the path and logs it, and never spawns from it). And
+  `src/sdk/settingsWrite.ts`'s "the three callers" counted calling functions,
+  not call sites, of which there are six — the unit is now explicit.
+
 - **VS Code's `http.proxy` now reaches every child process the extension
   spawns (#379).** A corporate user who set `http.proxy` got a `tan` that
   ignored it: `spawnAlpAsync` passed no `env` at all, so the child inherited

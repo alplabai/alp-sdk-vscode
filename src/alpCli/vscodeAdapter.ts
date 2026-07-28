@@ -507,9 +507,12 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     // looks, and two review rounds got it wrong, so it is worth stating
     // exactly. `downloadFile`'s signature stops an arrow reaching the transfer
     // without SAYING what it wants: `downloadFile(url, dest, signal, …)` is
-    // TS2345 and omitting the argument is TS2554. What it cannot stop is an
-    // arrow that says `null` — `downloadFile(url, dest, null, { signal, proxy })`
-    // compiles, and ships unverified bytes to `cachedBinaryPath`.
+    // TS2739 ("Type 'AbortSignal' is missing the following properties from
+    // type 'ChecksumSpec': assetName, checksumsUrl") and omitting the argument
+    // is TS2554 — both pinned by test/fixtures/comment-claims.ts. What it
+    // cannot stop is an arrow that says `null` —
+    // `downloadFile(url, dest, null, { signal, proxy })` compiles, and ships
+    // unverified bytes to `cachedBinaryPath`.
     //
     // So the compiler is half of it and `test/alpCli.downloadSeamWiring.test.js`
     // is the other half: it captures the `ResolveDeps` this function builds and
@@ -969,6 +972,8 @@ function aheadCliMessage(version: string): string {
  * is a no-op; a `--version` spawn failure (ENOENT/EACCES/timeout — the probe
  * couldn't even exec the binary) tells us nothing about the binary's identity,
  * so it's logged and NOT treated as "not the native CLI".
+ *
+ * @callers 2 checkCliVersion
  */
 export async function checkCliVersion(
   context: vscode.ExtensionContext,

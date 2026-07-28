@@ -894,7 +894,10 @@ export function downloadSeam(
  * parameter exists to close: no caller reaches the transfer without stating
  * what it wants, in one of two greppable forms. Omitting the argument is a
  * `TS2554`; the shape the omission used to take, sliding an `AbortSignal` into
- * this position, is a `TS2345`. `null` is the explicit opt-out, and NO
+ * this position, is a `TS2739` — "Type 'AbortSignal' is missing the following
+ * properties from type 'ChecksumSpec': assetName, checksumsUrl", not a bare
+ * assignability error. Both codes are pinned by
+ * test/fixtures/comment-claims.ts. `null` is the explicit opt-out, and NO
  * production caller passes it — every managed `tan` download passes a spec
  * (`downloadCli` builds it from `releaseAssetForTarget`, which makes the field
  * non-optional). `null` is there for the transfer-mechanics tests, which serve

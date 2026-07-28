@@ -68,6 +68,8 @@ async function pickAppPath(value: string): Promise<string | undefined> {
  *
  * `operation` is the verb phrase `planPrecondition` renders into "Open a folder
  * to <operation>.", so it is per-command, not per-resolver.
+ *
+ * @callers 5 resolveOrchestratorTarget
  */
 async function resolveOrchestratorTarget(
   fallbackExample: string,

@@ -152,9 +152,13 @@ export function resolutionInputFromDeps(
  * feeds `runAlpCommand`, `runAlpInTerminal` and `runCliVersionCheck`) and
  * `readResolvedCliVersion` (which feeds `probeTanVersion` and
  * `ensureTanCliProvisioned`) are its only two callers, the `alp` task provider
- * delegates to `runAlpInTerminal` rather than spawning `tan` itself, and no
- * other file in `src/` names `cachedBinaryPath`. If that stops being true, the
- * check below stops covering the extension.
+ * delegates to `runAlpInTerminal` rather than spawning `tan` itself, and the
+ * only other file in `src/` that names `cachedBinaryPath` is
+ * `vscodeAdapter.ts` — which BUILDS the path into `ResolveDeps` and logs it,
+ * never spawns from it. If that stops being true, the check below stops
+ * covering the extension.
+ *
+ * @callers 2 resolveAlpBinary
  *
  * ── WHICH ARMS ARE VERIFIED, AND WHY THE OTHER FOUR ARE NOT ──
  * Two of the six. Do not read this function as "the tan we run is verified":
