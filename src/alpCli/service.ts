@@ -1092,18 +1092,32 @@ export function isDebugConfigData(value: unknown): value is DebugConfigData {
  * `src/debug/service.ts` decides "concrete or placeholder" by calling it
  * rather than re-typing the rule, because three divergent copies of exactly
  * this test is a defect this repo has already shipped once and removed.
+ *
+ * EACH FINDING CARRIES ITS KEY, because it is the only thing that can name it.
+ * `foldLaunchConfigPlaceholders` turns each into a preflight check named after
+ * the key, and the toast is built from failing check names — so a customer is
+ * told to "resolve: device", the field cortex-debug will choke on, instead of
+ * "resolve: launchConfig", the name of a check that is in nothing they own
+ * (#339). `key` is the path from the configuration root (`device`,
+ * `configFiles[0]`, `setupCommands[0].text`) and is `""` for a bare string
+ * handed in with no surrounding object — the rescue's `isConcrete` does that
+ * and reads the length only.
  */
-export function launchConfigPlaceholders(value: unknown): string[] {
-  const found: string[] = [];
-  const walk = (node: unknown): void => {
+export function launchConfigPlaceholders(
+  value: unknown,
+): { key: string; value: string }[] {
+  const found: { key: string; value: string }[] = [];
+  const walk = (node: unknown, key: string): void => {
     if (typeof node === "string") {
-      if (/<[^<>]*>/.test(node)) found.push(node);
+      if (/<[^<>]*>/.test(node)) found.push({ key, value: node });
     } else if (Array.isArray(node)) {
-      node.forEach(walk);
+      node.forEach((item, index) => walk(item, `${key}[${index}]`));
     } else if (typeof node === "object" && node !== null) {
-      Object.values(node).forEach(walk);
+      for (const [name, item] of Object.entries(node)) {
+        walk(item, key ? `${key}.${name}` : name);
+      }
     }
   };
-  walk(value);
+  walk(value, "");
   return found;
 }

@@ -2,6 +2,139 @@
 
 ## Unreleased
 
+- **A `launch.json` that can launch is no longer reported as unlaunchable.**
+  `tan debug-config` resolves the probe and tool values from the build's own
+  `runners.yaml` — driven against tan 0.4.0 with an E1M-AEN801 build, all three
+  Zephyr backends come out with nothing left to fill in: J-Link with
+  `"device": "Cortex-M55"`, OpenOCD with a real `configFiles`/`serverpath`/
+  `searchDir`, pyOCD with `"targetId": "cortex_m55"`. The extension then graded
+  a SECOND, in-process draft instead of that file. The draft's `device` was the
+  hardcoded literal `"<resolved-device>"`, so the verdict was `canLaunch: false`
+  naming `device` — for every project, built or not. On the first-blink path tan
+  wrote a configuration that runs as-is and the extension put a "Start Anyway /
+  Show Details" gate in front of it. The placeholders had left the file and
+  stayed in the verdict. The draft is now gone rather than patched: the ten
+  configuration fields `createDebugProfile` used to invent — `device`,
+  `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`, `miMode`,
+  `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` and the dead
+  `cwd` — are deleted from `DebugProfile`, along with the equally dead `name`
+  and `os`. `name` was `Alp: Zephyr Debug (J-Link)` and its siblings: a
+  `launch.json` key, a constant of `(targetKind, server)` like the nine above
+  (`serverLabel(server)` spelled the suffix), unread anywhere in `src/`,
+  `packages/` or `test/`, and already DRIFTED from the `ALP: …` merge key tan
+  0.4.0 writes — the drift the orphan rescue exists to repair, which learns the
+  spelling from the customer's file and from `tan debug-config --preview`
+  rather than from a profile. `os` was a second name for `targetKind` —
+  `"zephyr" | "baremetal" | "yocto" | "host"`, one value per target class and
+  derived from nothing else.
+  `executablePath` stays because the extension STATS it, which is the rule for
+  what may live on a `DebugProfile` at all: a field belongs there only when the
+  extension itself must READ it to grade a fact about this machine. The
+  preflight report now grades host readiness only: which debugger
+  extension is installed, whether the server tool is on PATH, the host platform,
+  whether the build artefact exists. The configuration's own values are graded
+  once, against the `launch.json` entry tan merged into (#339).
+
+- **That verdict is taken against the `launch.json` on disk, not against tan's
+  draft.** `tan debug-config` reports the configuration it composed in
+  `data.configuration` and MERGES that draft into the customer's file; the two
+  are not the same object. The merge preserves a value the customer hand-filled
+  while the draft still carries the placeholder tan could not resolve, so
+  grading the draft fails a file that launches — the bullet above, pointed the
+  other way. Driven on tan 0.4.0, `--server pyocd` against a board registering
+  only `jlink`/`openocd`, with `"targetId": "cortex_m55"` already in
+  `.vscode/launch.json`: exit 0, `replaced: true`, envelope
+  `"targetId": "<resolved-target-id>"`, file `"targetId": "cortex_m55"` — one
+  placeholder from the draft, none from the file. The same holds inside an
+  array, where tan's merge keeps an all-placeholder incoming `configFiles` from
+  overwriting the customer's list. `gradeWrittenLaunchConfig`
+  (`src/debug/service.ts`) reads the file back and finds the entry by the `name`
+  tan itself reports — never by an `ALP:`/`Alp:` prefix guess, which is the
+  defect the orphan rescue in that same file exists to repair.
+  `packages/alp-core` stays pure: it gains no `fs`, and the fold still takes
+  placeholders as data. A failed read does NOT invent a green verdict — a
+  missing, unparseable or entry-less file falls back to the envelope, which is
+  the previous behaviour, and `configurationGraded` carries three values to say
+  which was graded (`"launchJson"` / `"cliEnvelope"` / `"none"`) rather than
+  passing silently. Covered by `test/debug.gradedConfig.test.js` (#339).
+
+  One consequence worth knowing before you meet it: what gets graded is the
+  whole merged entry, not only the keys tan wrote. A key you added by hand that
+  still holds a `<…>` token — say `"gdbTarget": "<host>:3333"` — now fails the
+  preflight and is named. That is deliberate: the merged entry is what F5
+  launches, and the adapter reads that token as a literal. The `fix` offered
+  for such a key still says "Build the project first, or set …"; the build half
+  cannot resolve a key of your own, but the hand-edit half names the right key.
+
+- **The next step offered for an unresolved field now fits the target.** Where
+  a placeholder survives, the fold turns it into a failing check whose `fix`
+  reaches both the "not launchable yet" toast's channel and the report's
+  `nextSteps`. That string was "Build the project first, or set `<key>` in
+  launch.json by hand." on every target, and on two of them building is a loop
+  that cannot terminate: `baremetal-mcu` has no Zephyr build, so no
+  `runners.yaml` is ever written for tan to read `device` from, and
+  `yocto-userspace`'s `<host>:<port>` and cross-gdb path describe a remote
+  target — driven against tan 0.4.0, that target's configuration keeps both
+  placeholders against a fully populated `runners.yaml`, which makes no
+  difference to it. #339 is about being handed something that reads like a value and is
+  not; a next step that cannot work is the same defect. The fold now branches
+  on the report's `targetKind` and names what the customer must supply, keeping
+  "build first" only for `zephyr-mcu`, where a build CAN resolve it — and there
+  it still offers the hand-edit alongside, because that half is right often
+  rather than always. A SUCCESSFUL Zephyr build whose board registers no runner
+  for the chosen server leaves the placeholder standing too, and tan says so:
+  driven on tan 0.4.0 against a `runners.yaml` listing only `jlink` and
+  `openocd`, `--server pyocd` exits 0 with `"targetId": "<resolved-target-id>"`
+  and the note "This build registers no 'pyocd' runner (runners.yaml: `["jlink",
+  "openocd"]`), so its fields could not be resolved.", which
+  `logUnlaunchableDetail` logs verbatim. The
+  wording is therefore split, not tan's alone: tan owns the general
+  placeholders-remain note, which the extension still logs verbatim; the
+  extension owns the per-key next step, being the half that knows the key and
+  the target class (#339).
+
+- **The three diagnostic surfaces say which verdict they are giving.** `Alp:
+  Debug preflight`, the troubleshooting panel and `Alp: Export support bundle`
+  build that host-readiness report and never read the written `launch.json`, so
+  their `canLaunch` answers "is this machine ready", not "does this file
+  launch". It is now labelled as such: the report carries
+  `configurationGraded`, `"none"` until the fold sets it, the panel prints it
+  beside `canLaunch`, and the support bundle — the artefact a customer sends
+  once a session has ALREADY failed — records `hostReady=` rather than
+  `canLaunch=`. That bundle note is the whole reason the marker exists and it is
+  a hand-built string in `src/debug.ts`, so it gets its own test
+  (`test/debug.supportBundle.test.js`): it drives the real registered
+  `alp.exportSupportBundle` handler and asserts on the notes the bundle carries,
+  including that none of them may call a configuration-blind verdict
+  `canLaunch=`. Grading the configuration on those paths would mean spawning tan
+  from a diagnostic command; the marker is the honest cheap half (#339).
+
+  On `dev` this was not, as first written, invisible behind a constant `false`.
+  `native-host` drew no configuration check at all — `requiredPlaceholderFields`
+  filtered on `value !== undefined` and its profile set none of them, it carried
+  no `openOcdConfigFiles`, and the `svdFile` check was gated on
+  `adapter === "cortex-debug"` while native-host is `lldb`. dev's own
+  "buildDebugPreflightReport can pass for resolved native-host profile" asserts
+  `canLaunch === true`. So a dev support bundle could already print an unlabelled
+  `canLaunch=true`, for the target class that is most often a customer's first
+  debug session. Harmless in practice, because tan's `native-host` configuration
+  carries no `<…>` token to be blind to — but the marker is a fix, not only a
+  guard against a future one.
+
+- **An unresolved value in the written `launch.json` still blocks the launch,
+  and now names the field.** The fold produces one check
+  per unresolved `launch.json` key rather than a single one called `launchConfig`
+  — so a build whose `runners.yaml` records no `--device` reports `canLaunch:
+  false` and tells the customer to "resolve: device", a field in their own file,
+  instead of "resolve: launchConfig", the name of a check that is in nothing they
+  own. The placeholder itself stays in the check detail and in the log. Where a
+  value genuinely cannot be filled — `baremetal-mcu` has no Zephyr build and so
+  no `runners.yaml`, `yocto-userspace` needs a remote `<host>:<port>` nothing can
+  derive — tan emits both the placeholder and a general note saying so, and the
+  extension logs that note verbatim rather than writing a second version of it.
+  The per-key next step is the extension's own, and fits the target: see the
+  bullet above (#339).
+
 - **The argv the extension hands `tan debug-config` is now pinned by a test**
   (`test/debug.configArgs.test.js`). Since #387 the extension does not write
   `launch.json` — it builds an argv, spawns tan, and reads `data.configuration`

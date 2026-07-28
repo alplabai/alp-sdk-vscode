@@ -153,9 +153,10 @@ class BuildDelegatePty implements vscode.Pseudoterminal {
 }
 
 /** "deploy and start gdbserver" has no tan equivalent: the extension has no
- *  deploy story, and the yocto-userspace debug profile ships
- *  `miDebuggerServerAddress: "<host>:<port>"` for the user to fill in by
- *  hand (see docs/DEBUG.md §10.4). This must never silently succeed — a
+ *  deploy story, and the yocto-userspace configuration `tan debug-config`
+ *  writes ships `miDebuggerServerAddress: "<host>:<port>"` for the user to
+ *  fill in by hand — a remote address nothing can derive from a build (see
+ *  docs/DEBUG.md §10.4). This must never silently succeed — a
  *  no-op preLaunchTask would send the user straight into a cppdbg session
  *  with no gdbserver listening on the other end and no explanation. Exiting
  *  1 makes VS Code raise its "the preLaunchTask terminated with exit code 1

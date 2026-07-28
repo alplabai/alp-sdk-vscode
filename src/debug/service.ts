@@ -39,13 +39,23 @@
 // remaining pair and asks again. Each pass moves values and deletes nothing
 // that was not merged first, so a partial repair loses nothing.
 //
+// Two pure helpers sit below the rescue and are not part of it: the argv this
+// extension hands `tan debug-config`, and `gradeWrittenLaunchConfig`, which
+// READS the file (never writes) to decide which configuration the preflight
+// verdict is about. Both are here because both are launch.json domain logic
+// that must stay out of the surface layer.
+//
 // HOW IT ENDS. alplabai/tan-cli#169 asks tan to do this inside its own writer,
 // which is where it belongs — that would also cover someone running
 // `tan debug-config` from a terminal with no extension installed, which this
 // module can never reach. This is the bridge until that ships, and it should
 // be deleted when it does.
 
-import { DebugServerKind, DebugTargetKind } from "@alp-sdk/core/debug/models";
+import {
+  DebugConfigurationGrade,
+  DebugServerKind,
+  DebugTargetKind,
+} from "@alp-sdk/core/debug/models";
 import { launchConfigPlaceholders } from "../alpCli/service";
 
 type JsonObject = Record<string, unknown>;
@@ -429,6 +439,66 @@ export function planOrphanRescue(
     },
     pairs,
   };
+}
+
+// ── Which configuration the preflight verdict grades ────────────────────────
+
+export interface GradedLaunchConfig {
+  /** Every unresolved `<…>` placeholder in the configuration that was graded,
+   *  keyed by its path from the configuration root (`device`,
+   *  `configFiles[0]`). Handed to `foldLaunchConfigPlaceholders` as data. */
+  placeholders: { key: string; value: string }[];
+  /** Which configuration those came from, carried into the report so a reader
+   *  can tell a verdict about the customer's file from a worst case about
+   *  tan's draft. */
+  source: Exclude<DebugConfigurationGrade, "none">;
+}
+
+/**
+ * The placeholders that decide `canLaunch`, taken from the launch.json entry
+ * `tan debug-config` just MERGED into — not from the draft it composed.
+ *
+ * WHY THE DISTINCTION IS THE WHOLE POINT. tan reports its draft in
+ * `data.configuration` and merges that draft into the customer's file; the
+ * merge preserves a value they hand-filled, while the draft still carries the
+ * placeholder it could not resolve. Grading the draft therefore fails a file
+ * that launches. Driven on tan 0.4.0, `--server pyocd` against a board
+ * registering only `jlink`/`openocd`, with `"targetId": "cortex_m55"` already
+ * in `.vscode/launch.json`: exit 0, `replaced: true`, envelope
+ * `"targetId": "<resolved-target-id>"`, file `"targetId": "cortex_m55"`. The
+ * draft yields one placeholder and the file none, so the draft's verdict is
+ * `canLaunch: false` naming `targetId` and a Start Anyway gate in front of a
+ * session that would have worked — #339's own symptom pointed the other way.
+ * The same holds inside an array: tan's merge keeps an all-placeholder
+ * incoming `configFiles` from overwriting the customer's list, so the draft
+ * reports `configFiles[0]` unresolved where the file has a real `.cfg`.
+ *
+ * FOUND BY NAME, never by prefix. `written.name` is the configuration's own,
+ * straight out of the envelope, and it is also tan's merge key — so it names
+ * the entry the merge landed on with no `ALP:`/`Alp:` guessing. Guessing the
+ * spelling is the defect `planOrphanRescue` above exists to repair, and this
+ * must not reintroduce it.
+ *
+ * A FAILED READ FALLS BACK, IT DOES NOT PASS. Missing file, JSONC or malformed
+ * JSON, no `configurations` array, no entry under that name — all of them land
+ * on tan's envelope, which is the pre-#403 behaviour and still catches every
+ * placeholder tan itself left. `source` is what says which happened, so a
+ * fallback verdict is never mistaken for a reading of the file. The one thing
+ * it must not do is return "no placeholders" for a configuration nobody read.
+ */
+export function gradeWrittenLaunchConfig(
+  document: unknown,
+  written: { name: string } & Record<string, unknown>,
+): GradedLaunchConfig {
+  const merged = (configurationsOf(document) ?? []).find(
+    (entry) => asObject(entry)?.name === written.name,
+  );
+  return merged
+    ? { placeholders: launchConfigPlaceholders(merged), source: "launchJson" }
+    : {
+        placeholders: launchConfigPlaceholders(written),
+        source: "cliEnvelope",
+      };
 }
 
 // ── The `tan debug-config` argv ─────────────────────────────────────────────
