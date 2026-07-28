@@ -150,10 +150,11 @@ const CACHED_DIGEST_KEY = "alp.tanCachedBinarySha256";
  *  MEASURED, not guessed: hashing the 3.2 MB `tan` binary (readFileSync +
  *  sha256) takes ~2.5-3.2 ms on this machine, and `statSync` ~0.08 ms. Without
  *  the memo that cost is per STATE REFRESH, not per-window:
- *  `resolveAlpBinaryForContext` memoizes into `resolved`, but
- *  `readResolvedCliVersion` builds its own deps and calls `resolveAlpBinary`
- *  directly, and `probeTanVersion` runs it on every state refresh — window
- *  focus, file save, task start, terminal finish, any `alpSdk` settings edit.
+ *  `resolveAlpBinaryForContext` memoizes into `resolved`, but `probeTanVersion`
+ *  builds its OWN deps and hands them to `readResolvedCliVersion`, which calls
+ *  `resolveAlpBinary` directly — so that path never sees the `resolved` memo,
+ *  and it runs on every state refresh: window focus, file save, task start,
+ *  terminal finish, any `alpSdk` settings edit.
  *  That is a synchronous multi-millisecond hash on the extension-host main
  *  thread per focus event.
  *
@@ -295,9 +296,11 @@ function checksumFailurePlan(
  * provisioning downloads inline, and a `ChecksumError` surfaces HERE rather than
  * through `checksumFailurePlan`. Branching on the TYPE — same discipline as
  * `cliInUsePlan` / `proxyFailurePlan` / `checksumFailurePlan` — is what carries
- * the three refusals through as three sentences instead of flattening them into
- * one. The sentence goes to the toast; the digests ride on `detail`, which the
- * presenter logs and never renders.
+ * each refusal through as its own sentence instead of flattening them into one.
+ * There are five: the three download refusals (mismatch, unfetchable manifest,
+ * asset unlisted) plus the two CACHED ones (#386) — an unrecorded migrating
+ * copy and a digest mismatch on disk. The sentence goes to the toast; the
+ * digests ride on `detail`, which the presenter logs and never renders.
  */
 function unavailableOutcome(error: unknown): CliOutcome {
   const raw = error instanceof Error ? error.message : String(error);

@@ -271,11 +271,11 @@ export async function resolveAlpBinary(
  *     branched on that: `isCancellation` (`src/notify/service.ts`) requires
  *     `name === message === "Canceled"`. On the per-command route it therefore
  *     escaped un-reframed, reached `unavailableOutcome` as a
- *     non-`ChecksumError`, classified `spawnFailed`, and the toast offered
- *     "Install tan CLI (global)" — which puts a `tan` on PATH, one of the four
- *     arms `resolveAlpBinary` never verifies. A one-click route onto an
- *     unverified binary, the exact class #389 had to remove. No caller signal,
- *     no cancel;
+ *     non-`ChecksumError`, classified `spawnFailed`, and the toast offered that
+ *     plan's default "Install tan CLI" button (`src/notify/vscodeAdapter.ts`) —
+ *     which puts a `tan` on PATH, one of the four arms `resolveAlpBinary` never
+ *     verifies. A one-click route onto an unverified binary, the exact class
+ *     #389 had to remove. No caller signal, no cancel;
  *   - a `CliInUseError` / `ProxyError` — already presented backwards from a
  *     network failure by their own plan, and a proxy that said no is a fact the
  *     migration framing would bury.

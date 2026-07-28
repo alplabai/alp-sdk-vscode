@@ -94,9 +94,12 @@
   does not know to update the record.
 
   A copy cached BEFORE the digest was recorded — i.e. every existing install —
-  cannot be checked against anything, so it is re-acquired through the verified
-  download path rather than accepted and recorded, which would launder an
-  unverified binary into a "verified" one. That customer gets a sentence about
+  cannot be checked against anything, so it is never accepted and recorded,
+  which would launder an unverified binary into a "verified" one. It is skipped,
+  and resolution continues down the ladder: normally that means re-acquiring it
+  through the verified download path, but on a machine that already has a global
+  `tan`, the (unverified) `path` arm is reached first and takes over instead —
+  the same precedence that applied before this change. That customer gets a sentence about
   the one-time migration instead of a generic outage; the precise transport
   cause stays on the output channel.
 
@@ -106,7 +109,7 @@
   re-framing on its name alone. Nothing downstream branched on it
   (`isCancellation` requires `name === message === "Canceled"`), so on the
   per-command download route it surfaced as `spawnFailed` and the toast offered
-  "Install tan CLI (global)" — which puts a `tan` on PATH, one of the four
+  an "Install tan CLI" button — which puts a `tan` on PATH, one of the four
   unverified arms above. A cancel is now decided by the CALLER's own
   `AbortSignal` having fired rather than by an error name, so a timeout is
   re-framed like any other unreachable-network case and neither refusal offers

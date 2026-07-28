@@ -317,7 +317,7 @@ test("migration: a wall-clock TIMEOUT is re-framed, because nothing downstream b
   // travel unchanged on the name alone. `isCancellation` (notify/service.ts)
   // requires `name === message === "Canceled"`, so no caller ever branched on
   // it — on the per-command route below it reached the toast as `spawnFailed`
-  // with an "Install tan CLI (global)" button, i.e. a one-click route onto a
+  // with that plan's default "Install tan CLI" button, i.e. a one-click route onto a
   // PATH binary nothing verifies.
   const timeout = new Error("The operation was aborted due to timeout");
   timeout.name = "TimeoutError";
@@ -853,7 +853,7 @@ test("wiring: a ChecksumError is classified by its TYPE, not by the word 'checks
     // The same refusal, re-worded WITHOUT the word `classifyUnavailable`
     // string-sniffs for. These are customer sentences and they get edited; the
     // classification must not ride on their wording. Sniffing this text lands
-    // on `spawnFailed`, whose plan hands out "Install tan CLI (global)".
+    // on `spawnFailed`, whose plan hands out an "Install tan CLI" button.
     const REWORDED =
       "The tan CLI installed for this extension is not the copy that was " +
       "verified when it was downloaded, so it was not run. Reinstall the " +
