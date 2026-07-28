@@ -358,11 +358,12 @@ ceiling is stated where it lives — a rewrite preserving both size and mtime
 inside one window reuses the answer, which sits inside the limit the record
 already has.
 
-**Verification covers the MANAGED ACQUISITION CHANNEL — `download` and `cached`.**
-Everything else executes what the user's environment offers, which is the same
-trust boundary as their terminal. Do not read "the extension verifies tan" as
-covering all six arms, and do not flatten the other four into one reason; they
-are different statements:
+**TWO OF THE SIX ARMS ARE VERIFIED: `download` and `cached`** — the managed
+acquisition channel. The count is stated out loud because "the extension
+verifies tan" is how this section gets read otherwise, and that reading is false
+on four arms out of six. Those four execute what the user's environment offers,
+which is the same trust boundary as their terminal, and their reasons must not
+be flattened into one; they are different statements:
 
 - `cliPath`, `localBuild` — the user pointed at this binary deliberately, or
   built it themselves. No reference digest exists for either, and manufacturing
@@ -384,13 +385,39 @@ are different statements:
   `alp`", which is the only claim `commandOnPath` makes. Do not read the noun as
   the adjective.
 
+**The FALLBACK rung now says so, once per install (#393).** A machine with a
+global `tan` and no managed copy never acquires a verified binary — not a
+migration, the steady state for anyone with `tan` on PATH — so
+`shouldNoticeUnverifiedPath` raises one **informational** notice
+(`UNVERIFIED_PATH_IN_USE`, severity `info`, action "Use the managed copy"), and
+the record lives in `globalState` so it is once per install rather than per
+window. It is **not** a demotion and **not** a refusal: demoting would break an
+offline machine whose only `tan` is the global one and displace a deliberate
+global install, and verify-to-refuse cannot work at all, since a self-built or
+distro `tan` legitimately will not match the pinned digest — a check that can
+never act on its own result is theatre. **Rung 2 gets nothing**: no toast, no log
+line, no fetch. That is the same constraint #396 got wrong one rung earlier, and
+it is why the notice is excluded for an un-digested cache too — that machine is
+#396's, and `CACHED_CLI_UNVERIFIED_ON_PATH` already says this and more.
+
+Worth knowing while reading this section: the extension's own **"Install tan CLI
+(global)"** button runs `media/tan-install/install.{sh,ps1}`, vendored copies of
+tan's own installer, which download a release asset and install it with **no
+checksum step at all** — so the extension itself creates the unverified-PATH
+state it now reports. Filed upstream as `alplabai/tan-cli#176`; patching the
+vendored copies here would diverge them from the installer they mirror.
+
 After resolution both `path` rungs collapse to the same `BinarySource` value
 `"path"`, so a consumer needing the opt-in/fallback distinction re-derives it
-from the flag. Four sites do: `cliFixAction`, `aheadPathFixAction`, and the two
-#396 rules in `service.ts` — `shouldFetchManagedCli` and `unverifiedCacheCause`.
-Fine at four; a fifth is the point where "rung 2 or rung 6" should be a value
-instead of a question every consumer re-asks, so split the resolved label rather
-than sprinkling more flag checks.
+from the flag. #393 would have been the FIFTH site to re-type that expression —
+the point at which this note said to split the resolved label — so it was given
+a NAME instead: `isUnverifiedPathFallback` (`service.ts`), which both
+`unverifiedCacheCause` and `shouldNoticeUnverifiedPath` call. Four sites still
+ask: those two through the shared rule, plus `cliFixAction` and
+`aheadPathFixAction` (post-resolution, holding a `BinarySource` and a flag rather
+than an input, so they cannot call it) and `shouldFetchManagedCli` (already
+inside a `source === "path"` branch). Split the label if a consumer appears that
+the shared rule cannot serve.
 
 **Out of scope: GitHub build-provenance attestation.**
 `gh attestation verify <file> --repo alplabai/tan-cli` does work, and does fail

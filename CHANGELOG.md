@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+- **The end-to-end suite now runs in CI** (`.github/workflows/e2e.yml`), on
+  every push to `dev`/`main`, nightly, and on demand. It was not merely an
+  unrequired check before — `ci.yml` never invoked it at all, which is how the
+  two debug checks in #392 called a deleted function for the whole of #387's
+  lifetime unnoticed. It is deliberately NOT a required pull-request check: the
+  suite downloads a full VS Code build, installs two Marketplace extensions and
+  needs a display server, and a required check with that surface is a flaky one
+  that gets re-run or bypassed rather than fixed — leaving the repo believing in
+  a gate it does not have. The rot that actually happened is already caught on
+  every PR by #395's symbol guard; this covers the behavioural half, where a
+  reliable daily signal beats a blocking one (#394).
+
+- **When the extension runs the `tan` on your PATH because nothing else
+  resolved, it now says so — once.** That binary is whichever one your shell
+  resolves, and nothing here verified it: the `tan --version` check the
+  extension makes is a format probe on the output of a binary it is about to
+  run, not an integrity check. Two of the six ways a `tan` is resolved are
+  verified (a fresh download, checked against the `checksums.txt` Alp Lab
+  publishes, and the copy cached from one, re-checked on every resolution); the
+  other four run what your machine offers, which is the same trust boundary as
+  your terminal.
+
+  What it does and does not do:
+
+  - It **changes nothing about which binary runs**. Nothing is downloaded,
+    nothing is refused, and an offline machine whose only `tan` is the global
+    one keeps working exactly as before. The notice is informational, not an
+    error — the setup is fine.
+  - It offers **"Use the managed copy"**, which downloads the pinned `tan` into
+    the extension's own storage; that copy is checksum-verified and outranks the
+    PATH fallback from then on. Nothing happens unless you click it.
+  - It appears **once per install**, not once per window — the state it reports
+    is permanent, so repeating it would be a nag.
+  - **`alpSdk.preferGlobalCli` is left completely alone.** With that setting on,
+    a `tan` on PATH is your explicit instruction, so there is no notice, no log
+    line and no download.
+  - It does **not** offer `alpSdk.cliPath`: pointing at a hand-placed binary is
+    also unverified, so it is no answer to "this one was not verified".
+  - Known, and filed upstream as `alplabai/tan-cli#176`: the extension's own
+    "Install tan CLI (global)" button downloads a release asset with no checksum
+    check, so it creates exactly the state this notice reports.
+
 - **A hand-filled value stranded on a duplicate `Alp:` / `ALP:` debug
   configuration is now offered a repair, instead of being lost or left
   broken.** The configuration `name` is the merge key `tan debug-config` uses.

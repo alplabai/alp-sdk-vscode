@@ -161,11 +161,12 @@ export function resolutionInputFromDeps(
  * @callers 2 resolveAlpBinary
  *
  * ── WHAT IS VERIFIED, AND WHY THE REST IS NOT — THE REASONS DIFFER ──
- * In one line: verification covers the MANAGED ACQUISITION CHANNEL — `download`
- * and `cached`. Every other arm executes what the user's environment offers,
- * which is the same trust boundary as their terminal. Do not read this function
- * as "the tan we run is verified", and do not flatten the other four into one
- * reason, because they are not the same statement:
+ * TWO OF THE SIX ARMS ARE VERIFIED: `download` and `cached`, i.e. the MANAGED
+ * ACQUISITION CHANNEL. The count is stated out loud because "the tan we run is
+ * verified" is what this section gets read as otherwise, and that reading is
+ * false on four arms out of six. Those four execute what the user's environment
+ * offers, which is the same trust boundary as their terminal — and their reasons
+ * must not be flattened into one, because they are not the same statement:
  *
  *   - `download` — verified at write time (#389): the bytes are checked against
  *     the release's own `checksums.txt` before anything lands at
@@ -196,6 +197,19 @@ export function resolutionInputFromDeps(
  *     `alp` — which is the only claim `commandOnPath` makes and the only one
  *     `input.onPath` carries. Do not read the noun as the adjective.
  *
+ *     Since #393 the FALLBACK rung SAYS SO to the customer, once per install:
+ *     an informational notice (`shouldNoticeUnverifiedPath` /
+ *     `UNVERIFIED_PATH_IN_USE`), never a refusal and never a demotion — see
+ *     that rule for why both were rejected. Rung 2 stays completely silent,
+ *     because `preferGlobalCli` is that user telling us which `tan` to run.
+ *     Note also who CREATES this state: the extension's own "Install tan CLI
+ *     (global)" button runs `media/tan-install/install.{sh,ps1}`, vendored
+ *     copies of tan's own installer that download a release asset and install
+ *     it with no checksum step at all (verified by reading both scripts:
+ *     neither names sha256/shasum/Get-FileHash). Filed upstream as
+ *     alplabai/tan-cli#176 — patching the vendored copies locally would diverge
+ *     them from the installer they mirror, which is worse.
+ *
  * A refusal must never fall through onto one of those arms, which is what #396
  * closed — and the mechanism upstream is a SKIP, not a refusal, which is the
  * only reason the ladder continues at all. `decideBinarySource` steps over an
@@ -210,13 +224,16 @@ export function resolutionInputFromDeps(
  *
  * ponytail: after resolution both `path` rungs collapse to the same
  * `BinarySource` value `"path"`, so a consumer needing the opt-in/fallback
- * distinction re-derives it from `preferGlobalCli` — `cliFixAction`,
- * `aheadPathFixAction`, and the two #396 rules in `service.ts`
- * (`shouldFetchManagedCli`, `unverifiedCacheCause`), which are the pure pair the
- * adapter now reads rather than a flag check of its own. Four call sites, all
- * fine today. If more accrue, split the resolved label rather than sprinkling
- * flag checks — a fifth is the point where "rung 2 or rung 6" should be a value
- * instead of a question every consumer re-asks.
+ * distinction re-derives it from `preferGlobalCli`. #393 would have been the
+ * FIFTH site to re-type that expression — the point this note named as "split
+ * the resolved label instead" — so it was given a NAME rather than a fifth
+ * copy: `isUnverifiedPathFallback` (`service.ts`), which `unverifiedCacheCause`
+ * and `shouldNoticeUnverifiedPath` both call. Four sites still ask the question:
+ * `cliFixAction` and `aheadPathFixAction` (post-resolution, they hold a
+ * `BinarySource` and a flag, not an input, so they cannot call it),
+ * `shouldFetchManagedCli` (already inside a `source === "path"` branch), and
+ * that one shared rule. Split the label if a consumer appears that this rule
+ * cannot serve.
  */
 export async function resolveAlpBinary(
   deps: ResolveDeps,

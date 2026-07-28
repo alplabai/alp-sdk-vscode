@@ -163,6 +163,25 @@ export function isUnverifiableCache(
 }
 
 /**
+ * True when resolution lands on ladder RUNG 6 — the `path` FALLBACK nobody
+ * chose, reached only because no managed copy resolved above it.
+ *
+ * `path` is reached at TWO rungs and both collapse to the same `BinarySource`
+ * value after resolution, so the distinction can only be re-derived from the
+ * flag: rung 2 is `preferGlobalCli && onPath`, so `!preferGlobalCli` identifies
+ * rung 6 exactly. ONE named rule rather than that expression re-typed per
+ * consumer — the two questions that ask it (`unverifiedCacheCause` and
+ * `shouldNoticeUnverifiedPath`) must never disagree about which rung they are
+ * describing, and telling a rung-2 user their own explicit choice is a
+ * "fallback" is a mistake this file has already had to correct once.
+ */
+export function isUnverifiedPathFallback(
+  input: BinaryResolutionInput,
+): boolean {
+  return decideBinarySource(input) === "path" && !input.preferGlobalCli;
+}
+
+/**
  * The sentence for the ONE-TIME #386 migration: a binary cached before this
  * extension recorded digests, which therefore has to be fetched again, and the
  * fetch failed (offline, in practice).
@@ -273,8 +292,7 @@ export function unverifiedCacheCause(
   prebuiltAvailable: boolean,
 ): string | undefined {
   if (!isUnverifiableCache(input)) return undefined;
-  const onPathFallback =
-    decideBinarySource(input) === "path" && !input.preferGlobalCli;
+  const onPathFallback = isUnverifiedPathFallback(input);
   if (prebuiltAvailable) {
     return onPathFallback
       ? CACHED_CLI_UNVERIFIED_ON_PATH
@@ -485,6 +503,79 @@ export function shouldFetchManagedCli(
   }
   if (source === "cached") return isCliBehind(cachedVersion, supported);
   return false;
+}
+
+/**
+ * The ONE sentence for the rung-6 PATH fallback (#393). INFORMATIONAL — nothing
+ * failed, nothing is broken, and the customer's setup keeps working, which is
+ * why the call site plans it at severity `info` and why it names no error.
+ *
+ * It says only what is true. `commandOnPath`'s `isNativeTanVersionOutput` is a
+ * FORMAT PROBE on the stdout of a binary about to be run, so nothing here may
+ * suggest that binary's identity or integrity was established — only that this
+ * extension did not check it. "Whichever one your shell resolves" is the honest
+ * description: PATH order, not a choice this extension made.
+ *
+ * Same shape rules as the four cache sentences above: the fact leads (VS Code
+ * clips a toast to about two lines) and no path, URL or errno — `planFailure`
+ * demotes a `cause` carrying any of those into the output channel and replaces
+ * the toast with a bare "<operation> failed.", which here would be a lie as
+ * well as a loss.
+ *
+ * `alpSdk.cliPath` is NOT named, for the reason #389 established: that arm is
+ * never verified either, so pointing at it as the response to "this one is not
+ * verified" moves the customer sideways. The action offered instead is the
+ * managed download, which really does end this state — with `preferGlobalCli`
+ * off, a digested `cached` copy outranks the rung-6 fallback.
+ */
+export const UNVERIFIED_PATH_IN_USE =
+  "Alp is running the tan CLI from your PATH — whichever one your shell " +
+  "resolves, which nothing here verified. Nothing is wrong; the copy this " +
+  "extension manages is the one it checks.";
+
+/**
+ * Whether this activation should say the sentence above — that the `tan` being
+ * run is the one the shell resolves and is not one this extension verified.
+ *
+ * Three clauses, one per way the notice would otherwise be wrong:
+ *
+ *  - RUNG 6 ONLY (`isUnverifiedPathFallback`). `alpSdk.preferGlobalCli` must
+ *    keep winning SILENTLY: that user chose their global `tan`, and a standing
+ *    note about the binary they opted into is noise they cannot act on without
+ *    reversing their own decision. This is the trap #396 hit one rung earlier —
+ *    there the `!preferGlobalCli` gate withheld the SENTENCE but not the FETCH,
+ *    so an opted-in user still got a recurring error about a copy they had
+ *    opted out of running, plus a ~3 MB download resolution then ignored. Same
+ *    rung, so the same rule, checked in one place.
+ *  - NOT THE MIGRATING MACHINE (`isUnverifiableCache`). That machine is #396's:
+ *    activation re-acquires the stepped-over cache through the verified
+ *    channel, so the PATH binary is not what it goes on running; and when the
+ *    re-acquire fails, `CACHED_CLI_UNVERIFIED_ON_PATH` already says this same
+ *    thing plus the fact that a verified copy is one reconnection away. Two
+ *    notices about one situation, one of them about to be false, is worse than
+ *    either alone. (With the flag off a DIGESTED cache outranks rung 6, so this
+ *    clause narrows the notice to exactly "no managed copy at all" — the
+ *    residual population, and the steady state for anyone with `tan` on PATH.)
+ *  - ONCE PER INSTALL. `noticed` is persisted by the adapter, exactly like
+ *    `shouldWarnCliAhead`'s `warnedForVersion`. There is no second state worth
+ *    keying on — a `tan` on PATH is a steady state, not an event — so the
+ *    record is a bare "this was said".
+ *
+ * NOT a refusal, and deliberately not a demotion. Demoting to a download breaks
+ * an offline machine whose only `tan` is the global one, and displaces a
+ * deliberate global install with a copy that buys that user nothing.
+ * Verify-to-refuse cannot work either: a self-built or distro `tan` legitimately
+ * will not match the pinned digest, so a mismatch there cannot mean refuse — and
+ * a check that can never act on its own result is theatre. Saying it once, and
+ * offering the managed copy to whoever wants it, is the whole remedy.
+ */
+export function shouldNoticeUnverifiedPath(
+  input: BinaryResolutionInput,
+  noticed: boolean,
+): boolean {
+  return (
+    !noticed && isUnverifiedPathFallback(input) && !isUnverifiableCache(input)
+  );
 }
 
 /**

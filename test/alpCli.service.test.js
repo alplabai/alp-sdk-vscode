@@ -22,7 +22,10 @@ const {
   classifyUnavailable,
   binaryName,
   shouldFetchManagedCli,
+  shouldNoticeUnverifiedPath,
+  isUnverifiedPathFallback,
   unverifiedCacheCause,
+  UNVERIFIED_PATH_IN_USE,
   CACHED_CLI_UNVERIFIED,
   CACHED_CLI_UNVERIFIED_ON_PATH,
   CACHED_CLI_UNVERIFIED_NO_PREBUILT,
@@ -272,6 +275,109 @@ test("unverifiedCacheCause picks the sentence on TWO axes, and never promises a 
       undefined,
     );
   }
+});
+
+test("isUnverifiedPathFallback separates the two `path` rungs, and nothing else answers true", () => {
+  // Rung 6: the fallback nobody chose. Nothing else resolved, `tan` is on PATH.
+  assert.equal(
+    isUnverifiedPathFallback(resolutionInput({ onPath: true })),
+    true,
+  );
+  // Rung 2: the same resolved `BinarySource`, the opposite meaning. The flag is
+  // the ONLY thing that tells them apart after resolution, which is why this
+  // question has one name instead of a copy per consumer.
+  assert.equal(
+    isUnverifiedPathFallback(resolutionInput(OWNED_SOURCES.path)),
+    false,
+  );
+  // Every other arm is not `path` at all.
+  for (const [source, over] of Object.entries(OWNED_SOURCES)) {
+    if (source === "path") continue;
+    const input = resolutionInput({ ...over, onPath: true });
+    assert.equal(decideBinarySource(input), source);
+    assert.equal(isUnverifiedPathFallback(input), false, source);
+  }
+  for (const over of [
+    {},
+    { cachedExists: true, cachedDigestRecorded: true },
+    { cachedExists: true, cachedDigestRecorded: false },
+  ]) {
+    const input = resolutionInput(over);
+    assert.notEqual(decideBinarySource(input), "path");
+    assert.equal(isUnverifiedPathFallback(input), false);
+  }
+});
+
+test("shouldNoticeUnverifiedPath: the rung-6 fallback is told once; rung 2 and every other arm never (#393)", () => {
+  // THE RESIDUAL POPULATION. A machine with a global `tan` and no managed copy
+  // never acquires a verified binary — not a migration, the steady state for
+  // anyone with `tan` on PATH. It keeps working; it is told what it is running.
+  const fallback = resolutionInput({ onPath: true });
+  assert.equal(decideBinarySource(fallback), "path");
+  assert.equal(shouldNoticeUnverifiedPath(fallback, false), true);
+  // ONCE. The state is permanent, so without the persisted flag this is a toast
+  // on every activation forever.
+  assert.equal(shouldNoticeUnverifiedPath(fallback, true), false);
+
+  // RUNG 2 GETS NOTHING. `preferGlobalCli` is that user naming the binary they
+  // want run; a standing note about their own choice is unactionable without
+  // reversing it. #396 hit this exact rung by gating the sentence and not the
+  // fetch — so the gate is on the rule, not on the wording.
+  const optIn = resolutionInput(OWNED_SOURCES.path);
+  assert.equal(decideBinarySource(optIn), "path");
+  assert.equal(shouldNoticeUnverifiedPath(optIn, false), false);
+
+  // NOT THE MIGRATING MACHINE (#396 owns it): the un-digested cache is about to
+  // be re-acquired through the verified channel, and if that fails
+  // CACHED_CLI_UNVERIFIED_ON_PATH already says this and more.
+  const migrating = resolutionInput({
+    onPath: true,
+    cachedExists: true,
+    cachedDigestRecorded: false,
+  });
+  assert.equal(decideBinarySource(migrating), "path");
+  assert.equal(isUnverifiedPathFallback(migrating), true);
+  assert.equal(unverifiedCacheCause(migrating, true), CACHED_CLI_UNVERIFIED_ON_PATH); // prettier-ignore
+  assert.equal(shouldNoticeUnverifiedPath(migrating, false), false);
+
+  // Every other arm is silent — including `download`, which has no binary yet
+  // to say anything about.
+  for (const [source, over] of Object.entries(OWNED_SOURCES)) {
+    if (source === "path") continue;
+    const input = resolutionInput({ ...over, onPath: true });
+    assert.equal(decideBinarySource(input), source);
+    assert.equal(shouldNoticeUnverifiedPath(input, false), false, source);
+  }
+  const cached = resolutionInput({
+    cachedExists: true,
+    cachedDigestRecorded: true,
+  });
+  assert.equal(decideBinarySource(cached), "cached");
+  assert.equal(shouldNoticeUnverifiedPath(cached, false), false);
+  assert.equal(decideBinarySource(resolutionInput()), "download");
+  assert.equal(shouldNoticeUnverifiedPath(resolutionInput(), false), false);
+});
+
+test("UNVERIFIED_PATH_IN_USE states the fact without claiming a failure or offering the unverified arm", () => {
+  // The one claim it must make, and the only one it may: this extension did not
+  // check that binary. `isNativeTanVersionOutput` is a format probe on
+  // attacker-controllable stdout, so no wording here may imply integrity.
+  assert.match(UNVERIFIED_PATH_IN_USE, /nothing here verified/i);
+  assert.match(UNVERIFIED_PATH_IN_USE, /PATH/);
+  // NOT an error. Nothing failed and the customer's setup works.
+  assert.doesNotMatch(UNVERIFIED_PATH_IN_USE, /\bfail(ed|s|ure)?\b|\berror\b/i);
+  // #389's rule: `alpSdk.cliPath` is the one arm with no checksum path at all,
+  // so it is never the answer to "this one was not verified".
+  assert.doesNotMatch(UNVERIFIED_PATH_IN_USE, /alpSdk\.cliPath/);
+  // VS Code clips a toast to about two lines.
+  assert.ok(
+    UNVERIFIED_PATH_IN_USE.length <= 200,
+    `too long to read unexpanded (${UNVERIFIED_PATH_IN_USE.length} chars)`,
+  );
+  // No path, URL or errno — `planFailure` would demote a cause carrying any of
+  // those into the channel and replace the toast with "<operation> failed.",
+  // which for this notice would be a lie as well as a loss.
+  assert.doesNotMatch(UNVERIFIED_PATH_IN_USE, /https?:\/\/|[A-Za-z]:[\\/]/);
 });
 
 test("isCliBehind compares numeric version tuples", () => {
