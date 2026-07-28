@@ -153,7 +153,9 @@ const CACHED_DIGEST_KEY = "alp.tanCachedBinarySha256";
  *  `resolveAlpBinaryForContext` memoizes into `resolved`, but `probeTanVersion`
  *  builds its OWN deps and hands them to `readResolvedCliVersion`, which calls
  *  `resolveAlpBinary` directly — so that path never sees the `resolved` memo,
- *  and it runs on every state refresh: window focus, file save, task start,
+ *  and it runs on every state refresh: window focus, board.yaml save, BOOTSTRAP
+ *  task start (`src/extension.ts` filters `onDidStartTask` on
+ *  `def.run === BOOTSTRAP_RUN_NAME`, so a user's own tasks do not sweep),
  *  terminal finish, any `alpSdk` settings edit.
  *  That is a synchronous multi-millisecond hash on the extension-host main
  *  thread per focus event.
@@ -248,9 +250,13 @@ function cliInUsePlan(
  * which the presenter writes to the channel only.
  */
 /**
- * The plan for a download that was REFUSED rather than failed: the bytes did not
- * match the checksum the release publishes, or that checksum could not be
- * obtained at all (`ChecksumError`). Returns null for every other failure.
+ * The plan for an acquisition that was REFUSED rather than failed
+ * (`ChecksumError`). Returns null for every other failure.
+ *
+ * Not download-only, despite the name's history: `downloadCli` re-frames an
+ * unverifiable CACHED copy (#386) into a `ChecksumError` too, so the migration
+ * refusal arrives here as well — which is what the `unavailableOutcome`
+ * paragraph below means when it says this plan already caught those.
  *
  * Split out on the TYPE, like `cliInUsePlan` and `proxyFailurePlan` above, and
  * for a sharper reason than either: without it a refused binary falls into
@@ -260,8 +266,10 @@ function cliInUsePlan(
  * the published ones — the single most important thing this check can say would
  * be the one thing it never said.
  *
- * `ChecksumError.message` states which of the three refusals it was and carries
- * no digest or URL; the digests ride on `detail` (channel only). "Retry" is
+ * `ChecksumError.message` states which of the five refusal sentences it was
+ * (four kinds; `mismatch` has one wording for a download and another for a
+ * cached copy) and carries no digest or URL; the digests ride on `detail`
+ * (channel only). "Retry" is
  * still offered — it is safe by construction, since the retry re-verifies and a
  * mismatching binary can never be installed by it, and the common cause of a
  * one-off mismatch really is a corrupted transfer. `alpSdk.cliPath` is NOT

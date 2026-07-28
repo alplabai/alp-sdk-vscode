@@ -98,10 +98,12 @@
   which would launder an unverified binary into a "verified" one. It is skipped,
   and resolution continues down the ladder: normally that means re-acquiring it
   through the verified download path, but on a machine that already has a global
-  `tan`, the (unverified) `path` arm is reached first and takes over instead —
-  the same precedence that applied before this change. That customer gets a sentence about
-  the one-time migration instead of a generic outage; the precise transport
-  cause stays on the output channel.
+  `tan`, the (unverified) `path` arm is reached first and takes over instead.
+  That machine's resolved source really does change, cached to path; what is
+  unchanged is the path-over-download precedence itself, which predates this
+  work. The re-acquiring customer gets a sentence about the one-time migration
+  instead of a generic outage; the precise transport cause stays on the output
+  channel.
 
   A stalled link no longer turns that migration into a **one-click bypass**. The
   120 s wall clock (`AbortSignal.timeout`) throws a bare `TimeoutError`, which is
@@ -119,7 +121,8 @@
   "checksum" in its sentence — otherwise editing a customer-facing string would
   silently reclassify a refusal and hand it a "Run doctor" button. The hash is
   memoized on path + size + mtime because `probeTanVersion` re-resolves on every
-  state refresh (window focus, file save, task start), and a synchronous 2.6 ms
+  state refresh (window focus, board.yaml save, bootstrap task start, terminal
+  finish, an `alpSdk` settings edit), and a synchronous 2.6 ms
   hash of the 3282944-byte binary per focus event is not free; the memo's ceiling
   is stated where it lives, and it sits inside the limit the record already has.
 

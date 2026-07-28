@@ -169,11 +169,14 @@ function unavailablePlan(
     case "checksumRefused":
       return {
         // `outcome.message` VERBATIM, not a sentence composed here. This is the
-        // one reason whose three causes — the bytes did not match / the
-        // checksum could not be fetched / the release does not list this asset
-        // — must stay distinguishable, and only the producer knows which it
-        // was. It is a customer sentence by construction: `ChecksumError` keeps
-        // every digest, URL and path on `detail`, which stays channel-only.
+        // one reason carrying FIVE distinct causes over two arms, all of which
+        // must stay distinguishable and only the producer knows which fired.
+        // Downloading (#389): the bytes did not match / the checksum could not
+        // be fetched / the release does not list this asset. Cached (#386): the
+        // copy predates the digest record and cannot be checked against
+        // anything / the copy on disk no longer matches its record. It is a
+        // customer sentence by construction: `ChecksumError` keeps every
+        // digest, URL and path on `detail`, which stays channel-only.
         message: outcome.message,
         // Retry is safe by construction — it re-verifies, so it can never
         // install the refused bytes — and a one-off mismatch really is often a

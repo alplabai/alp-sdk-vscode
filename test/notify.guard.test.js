@@ -192,3 +192,47 @@ test("the guard can actually see an offending call", () => {
     "the interpolated call on line 3 must be the only offender detected",
   );
 });
+
+// ── Button label vs command-palette title ───────────────────────────────────
+//
+// These two are different strings for the same action and prose keeps quoting
+// the wrong one. A toast button reading "Install tan CLI" was described in four
+// places — a doc comment, the CHANGELOG and two test comments — as
+// "Install tan CLI (global)", which is the COMMAND PALETTE entry. Nothing
+// caught it: the label is real, just not the one the customer sees on that
+// toast, so every gate stayed green and it took a review round.
+//
+// Pinning both, together, puts the distinction somewhere executable. A rename
+// of either reds this test and the message says which surface it belongs to,
+// so the renamer sweeps the prose instead of leaving it to a reviewer.
+test("the notification button and the palette title stay distinct, and prose quotes the right one", () => {
+  const presenter = fs.readFileSync(path.join(SRC, PRESENTER), "utf8");
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"),
+  );
+
+  const buttonTitle = /installTanCli:\s*\{\s*title:\s*"([^"]+)"/.exec(
+    presenter,
+  )?.[1];
+  const paletteTitle = manifest.contributes.commands.find(
+    (command) => command.command === "alp.installTanCli",
+  )?.title;
+
+  assert.equal(
+    buttonTitle,
+    "Install tan CLI",
+    "the ACTIONS title is what a notification button renders; prose across " +
+      "src/ and CHANGELOG.md quotes this string, so a rename has to sweep them",
+  );
+  assert.equal(
+    paletteTitle,
+    "Alp: Install tan CLI (global)",
+    "the package.json command title is what the palette renders — never what " +
+      "a toast button says",
+  );
+  assert.notEqual(
+    buttonTitle,
+    paletteTitle,
+    "if these ever converge, delete this test rather than weakening it",
+  );
+});
