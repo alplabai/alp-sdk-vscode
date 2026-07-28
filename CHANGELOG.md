@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+- **Pinned to tan v0.4.0, and the envelope-contract gate now actually verifies
+  something.** `SUPPORTED_CLI_VERSION` moves `0.3.1` -> `0.4.0`. That is not
+  bookkeeping: v0.4.0 is the FIRST tan release to publish
+  `envelope-contract.json`, and `scripts/fetch-tan-contract.mjs` builds its
+  download URL from this pin. Before the bump the fetch 404'd on every run and
+  five contract assertions skipped; after it they run. Skips across the suite go
+  7 -> 2.
+
+  Pointing the gate at a real artefact immediately showed it could not read one.
+  `findFrozenCodes` DISCOVERED the frozen list by shape -- walking the document
+  for any `*code(s)` key holding an array of code-shaped strings, or an object
+  keyed by them -- because when it was written no published artefact existed to
+  read the layout off. The real asset ships `issueCodes` as an array of OBJECTS
+  (`{code, status, severity, consumer, consumerEffect, note}`), which matches
+  neither accepted shape, so it collected nothing, `frozenCodes` came back
+  `null`, and the one assertion the file exists for -- every code the pinned tan
+  emits is in tan's frozen list -- SKIPPED on the very first artefact it was
+  ever given. Loudly, to its credit, but skipped.
+
+  The heuristic carried its own instruction for this moment: "when the layout is
+  frozen, replace this with the one declared key and delete the heuristic rather
+  than hardening it further." Done -- `doc.issueCodes`, accepting an entry as
+  either a `{code}` object or a plain string, and a non-conforming entry now
+  ASSERTS rather than being skipped past, because silently dropping one would
+  shrink the frozen set and turn a producer-side rename into a green run.
+
+  Verified by mutation, not by the green: renaming `bootstrap.yocto-host` to
+  `bootstrap.yocto-only` inside the fetched artefact now fails the gate with
+  "the match fails open -- it will never fire and nothing will say so". The same
+  mutation before this change skipped, and passed.
+
+  Stale comments in the same files are corrected while the facts are fresh: the
+  artefact is no longer "does not exist yet", and its layout is no longer
+  "not frozen".
+
 - **The `tan` envelope contract is now checked against what tan publishes, not
   against a copy of it.** Every match this extension makes on tan's JSON
   envelope fails open: rename an issue code and `bootstrapHostVerdict` returns
