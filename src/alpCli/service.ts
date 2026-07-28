@@ -102,6 +102,20 @@ const EXIT_KINDS: Readonly<Record<number, CliExitKind>> = {
  * It still sits below an explicit `alpSdk.cliPath`, which always wins — that
  * setting is the user's most explicit override and must never be shadowed,
  * not even by their own global install.
+ *
+ * ── A CACHED BINARY WITH NO RECORDED DIGEST IS NOT A RESOLUTION (#386) ──
+ * `cachedExists` alone no longer picks `cached`; `cachedDigestRecorded` must
+ * hold too. The cache is the one source that is written once and then spawned
+ * on every activation forever, so it is the one that has to be re-checked — and
+ * it can only be checked against the digest recorded when it was fetched. With
+ * no record the ladder simply CONTINUES past it, exactly as if the file were
+ * not there, which lands on PATH if a verified-native `tan` is installed and
+ * otherwise on `download`, where it is re-acquired through the verified path.
+ *
+ * The decision is HERE, in the pure function everyone reads to answer "which
+ * binary runs", rather than as a second gate inside the resolver — a caller
+ * that must never fetch (`probeTanVersion`) branches on this answer, and would
+ * silently start fetching on window focus if the rule lived downstream of it.
  */
 export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   if (input.cliPathSetting && input.cliPathExists) {
@@ -116,7 +130,7 @@ export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   if (input.localBuildExists) {
     return "localBuild";
   }
-  if (input.cachedExists) {
+  if (input.cachedExists && input.cachedDigestRecorded) {
     return "cached";
   }
   if (input.onPath) {
@@ -124,6 +138,76 @@ export function decideBinarySource(input: BinaryResolutionInput): BinarySource {
   }
   return "download";
 }
+
+/**
+ * True when a cached binary is on disk that this extension cannot vouch for:
+ * it was downloaded before the digest was recorded (#386). `decideBinarySource`
+ * has already skipped it, so the ladder is about to re-acquire it — this says
+ * so, and it exists as one named rule because BOTH the resolver
+ * (`adapterCore.ts`) and the activation-time provisioner (`vscodeAdapter.ts`)
+ * have to word their failure differently for it, and a second copy of the
+ * expression in either is how the two start disagreeing.
+ *
+ * Not reachable together with a `cached` source: `cachedExists &&
+ * cachedDigestRecorded` returns `cached` above, so inside the `download` arm
+ * `cachedExists` already implies the record is missing.
+ */
+export function isUnverifiableCache(
+  // A `Pick`, not the whole input, for one concrete reason: `downloadCli` asks
+  // this question and building a full `BinaryResolutionInput` there would call
+  // `commandOnPath`, which SPAWNS `tan --version`. A process spawn per download
+  // to answer a question about two booleans.
+  input: Pick<BinaryResolutionInput, "cachedExists" | "cachedDigestRecorded">,
+): boolean {
+  return input.cachedExists && !input.cachedDigestRecorded;
+}
+
+/**
+ * The sentence for the ONE-TIME #386 migration: a binary cached before this
+ * extension recorded digests, which therefore has to be fetched again, and the
+ * fetch failed (offline, in practice).
+ *
+ * It must NOT read as a generic download failure, which is what it fell into
+ * before: "Couldn't download the tan CLI … retry when you're back online, or
+ * point alpSdk.cliPath at a local build" describes a machine with no CLI at
+ * all, tells the customer nothing about why the working copy they already have
+ * stopped being used, and offers `alpSdk.cliPath` — the one resolution source
+ * that is never verified.
+ *
+ * Front-loaded on purpose: VS Code clips a toast to about two lines, so the
+ * fact leads and the remedy follows (same constraint `aheadCliMessage` in
+ * `vscodeAdapter.ts` documents). No path, no URL, no errno — `planFailure`
+ * demotes a `cause` carrying any of those into the output channel and replaces
+ * the toast with a generic "<operation> failed.".
+ */
+export const CACHED_CLI_UNVERIFIED =
+  "This extension's copy of the tan CLI was downloaded before downloads were " +
+  "checked against the checksum Alp Lab publishes, so nothing can vouch for " +
+  "it and it will not be run. Downloading it once more settles this for good " +
+  "— reconnect and retry.";
+
+/**
+ * The sentence for a cached binary that no longer hashes to the digest recorded
+ * when it was downloaded. REFUSES the spawn; see `resolveAlpBinary`'s `cached`
+ * arm for why this is not a warning.
+ *
+ * Points at the palette command that fixes it (`alp.updateCli`, published as
+ * "Alp: Reinstall the pinned tan CLI") because that is the remedy that goes
+ * through the verified download path. It deliberately does NOT mention
+ * `alpSdk.cliPath`: pointing at a hand-placed binary is exactly the bypass this
+ * refusal exists to prevent, and #389 had to remove that same button from the
+ * download refusal for the same reason.
+ *
+ * The word "checksum" is load-bearing in both of these, not decoration:
+ * `classifyUnavailable` below matches it to reach `checksumRefused`. That is a
+ * backstop — `unavailableOutcome` (`vscodeAdapter.ts`) classifies a
+ * `ChecksumError` by TYPE — but the two must not be allowed to disagree.
+ */
+export const CACHED_CLI_MISMATCH =
+  "The tan CLI installed for this extension no longer matches the checksum " +
+  "that was verified when it was downloaded, so it was not run. Something " +
+  "replaced or corrupted the file — reinstall the pinned tan CLI from the " +
+  "command palette, and do not work around this check.";
 
 /**
  * True when `tan --version` stdout is the NATIVE (Rust/clap) CLI — e.g.

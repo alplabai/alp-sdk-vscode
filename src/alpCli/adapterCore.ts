@@ -4,6 +4,7 @@
 // (filesystem / process / network) so it is unit-testable without `vscode`.
 // The thin `vscodeAdapter` wires the real implementations.
 
+import { ChecksumError, CliInUseError, ProxyError } from "./download";
 import {
   BinaryResolutionInput,
   BinarySource,
@@ -11,9 +12,12 @@ import {
   CliOutcome,
 } from "./models";
 import {
+  CACHED_CLI_MISMATCH,
+  CACHED_CLI_UNVERIFIED,
   classifyOutcome,
   classifyUnavailable,
   decideBinarySource,
+  isUnverifiableCache,
   parseEnvelope,
   releaseAssetForTarget,
 } from "./service";
@@ -81,6 +85,31 @@ export interface ResolveDeps {
     verify: ChecksumSpec,
   ) => Promise<void>;
   chmodExec: (path: string) => void;
+  /** Lowercase hex sha256 of a file, or null when it cannot be read. Injected
+   *  (rather than hashed here) so the tests can drive a mismatch without
+   *  writing 3 MB to disk, and so the real implementation can memoize — see
+   *  `sha256File` in `vscodeAdapter.ts` for the measured cost. */
+  sha256File: (path: string) => string | null;
+  /** The sha256 this extension recorded for the file now at
+   *  `cachedBinaryPath`, or undefined when there is none.
+   *
+   *  Backed by `context.globalState`, NOT a sidecar file in `cacheDir`. Two
+   *  reasons: it is already this extension's pattern for cross-activation state
+   *  (`HEAL_GAVE_UP_KEY`, `AHEAD_WARNED_KEY`), and it lives in a different
+   *  directory from the binary, so something that merely drops a file into the
+   *  cache directory does not thereby also control the record it is checked
+   *  against.
+   *
+   *  WHAT THIS DOES AND DOES NOT BUY, stated plainly because the tempting word
+   *  here is "tamper-proof" and that would be false: an attacker who already
+   *  has write access to this user account can rewrite the binary AND the
+   *  record, and nothing here stops them. What it does detect is corruption, a
+   *  partial or interrupted write, a half-restored backup, and replacement by
+   *  anything that does not know to update the record. */
+  recordedCachedDigest: () => string | undefined;
+  /** Record the digest of the binary just installed at `cachedBinaryPath`.
+   *  Async because the real implementation is `globalState.update`. */
+  recordCachedDigest: (digest: string) => Promise<void>;
 }
 
 export interface ResolvedBinary {
@@ -106,6 +135,7 @@ export function resolutionInputFromDeps(
     bundledExists: deps.bundledExists,
     localBuildExists: Boolean(deps.localBuildBinaryPath),
     cachedExists: deps.fileExists(deps.cachedBinaryPath),
+    cachedDigestRecorded: deps.recordedCachedDigest() !== undefined,
     preferGlobalCli: deps.preferGlobalCli,
   };
 }
@@ -113,8 +143,35 @@ export function resolutionInputFromDeps(
 /**
  * Resolve the `tan` command to invoke, downloading on demand when nothing else
  * is available. Throws when the host has no prebuilt binary and none is
- * configured/on PATH, or when a download fails — the surface maps that to a
- * one-click "install the tan CLI" action.
+ * configured/on PATH, when a download fails, or when the cached binary fails
+ * verification — the surface maps each to its own action (see
+ * `classifyUnavailable` / `planCliOutcome`).
+ *
+ * This is the ONE chokepoint every spawn of `tan` goes through. Verified by
+ * enumeration, not by assumption: `resolveAlpBinaryForContext` (whose memo
+ * feeds `runAlpCommand`, `runAlpInTerminal` and `runCliVersionCheck`) and
+ * `readResolvedCliVersion` (which feeds `probeTanVersion` and
+ * `ensureTanCliProvisioned`) are its only two callers, the `alp` task provider
+ * delegates to `runAlpInTerminal` rather than spawning `tan` itself, and no
+ * other file in `src/` names `cachedBinaryPath`. If that stops being true, the
+ * check below stops covering the extension.
+ *
+ * ── WHICH ARMS ARE VERIFIED, AND WHY THE OTHER FOUR ARE NOT ──
+ * Two of the six. Do not read this function as "the tan we run is verified":
+ *
+ *   - `download` — verified at write time (#389): the bytes are checked against
+ *     the release's own `checksums.txt` before anything lands at
+ *     `cachedBinaryPath`. `downloadCli` below then RECORDS that digest.
+ *   - `cached`   — verified here, on every resolution, against that record
+ *     (#386). This is the arm that actually gets reached: the download happens
+ *     once, the cache is read forever.
+ *
+ *   - `cliPath` / `path` / `localBuild` — a binary the user pointed at, put on
+ *     their PATH, or built themselves. There is no reference digest for any of
+ *     them anywhere, so there is nothing to verify against; checking them is
+ *     not possible rather than not done.
+ *   - `bundled` — staged inside the VSIX by `vsce package --target`, so it is
+ *     covered by the signature on the extension package itself.
  */
 export async function resolveAlpBinary(
   deps: ResolveDeps,
@@ -136,15 +193,99 @@ export async function resolveAlpBinary(
         deps.chmodExec(deps.localBuildBinaryPath!);
       }
       return { command: deps.localBuildBinaryPath!, source };
-    case "cached":
+    case "cached": {
+      const recorded = deps.recordedCachedDigest();
+      if (recorded === undefined) {
+        // Not reachable through `decideBinarySource`, which only answers
+        // "cached" when `cachedDigestRecorded` holds — and kept anyway, because
+        // this function is exported and takes its `deps` from the caller. The
+        // alternative to throwing is returning a path nobody checked, which is
+        // #386 itself.
+        throw new ChecksumError(
+          "unrecorded",
+          CACHED_CLI_UNVERIFIED,
+          `no recorded digest for ${deps.cachedBinaryPath}`,
+        );
+      }
+      const actual = deps.sha256File(deps.cachedBinaryPath);
+      if (actual !== recorded) {
+        // REFUSES, and must stay a refusal rather than a warning: the next
+        // thing that happens to this path is a spawn. A warning would mean
+        // "we noticed this binary is not the one we verified, and ran it".
+        throw new ChecksumError(
+          "mismatch",
+          CACHED_CLI_MISMATCH,
+          // Both digests and the path are channel-only — `ChecksumError.detail`
+          // is what `planFailure` logs and never renders.
+          `sha256 on disk is ${actual ?? "unreadable"}, recorded digest is ` +
+            `${recorded} (${deps.cachedBinaryPath})`,
+        );
+      }
       return { command: deps.cachedBinaryPath, source };
+    }
     case "download":
+      // The #386 re-acquire is re-framed inside `downloadCli`, not here: this
+      // is one of THREE routes into a download, and the other two
+      // (`ensureTanCliProvisioned`, `updateAlpCli`) call `downloadCli`
+      // directly. A wrapper here would have covered the one route a unit test
+      // reaches first and left the activation path — the one the customer
+      // actually hits — on the generic sentence.
       await downloadCli(deps);
       if (!deps.fileExists(deps.cachedBinaryPath)) {
         throw new Error("The tan CLI download did not produce a binary.");
       }
       return { command: deps.cachedBinaryPath, source };
   }
+}
+
+/**
+ * Re-frame a failure that happened while RE-ACQUIRING a cached binary that
+ * predates the digest record (#386), or null to let `error` travel unchanged.
+ *
+ * This customer has a working `tan` on disk and is being told it will not be
+ * used. Every sentence they would otherwise get — "couldn't download the tan
+ * CLI, retry when you're back online", "the checksum file could not be fetched"
+ * — is accurate about the fetch and silent about the only thing they need to
+ * know: that the copy they already had predates verification and this is a
+ * one-time step. So the migration sentence LEADS and the precise cause is kept
+ * on `detail`, which the presenter logs to the channel and never renders.
+ *
+ * Three things travel unchanged, and each for its own reason:
+ *
+ *   - a `mismatch` — the release served bytes that are not the published ones.
+ *     That outranks the migration framing and must never be softened into
+ *     "reconnect and retry", which is #389's whole lesson about not flattening
+ *     distinct refusals into one sentence;
+ *   - an ABORT — the customer pressed Cancel, or the window is closing. Not a
+ *     failure, and both callers branch on it before they reach any wording;
+ *   - a `CliInUseError` / `ProxyError` — already presented backwards from a
+ *     network failure by their own plan, and a proxy that said no is a fact the
+ *     migration framing would bury.
+ */
+function migrationRefusal(error: unknown): ChecksumError | null {
+  if (error instanceof ChecksumError) {
+    return error.kind === "mismatch"
+      ? null
+      : new ChecksumError(
+          "unrecorded",
+          CACHED_CLI_UNVERIFIED,
+          `${error.message} — ${error.detail}`,
+        );
+  }
+  if (error instanceof CliInUseError || error instanceof ProxyError) {
+    return null;
+  }
+  if (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  ) {
+    return null;
+  }
+  return new ChecksumError(
+    "unrecorded",
+    CACHED_CLI_UNVERIFIED,
+    error instanceof Error ? error.message : String(error),
+  );
 }
 
 export async function downloadCli(
@@ -158,6 +299,13 @@ export async function downloadCli(
         "Set alpSdk.cliPath to a local build (tan-cli/target/release/tan).",
     );
   }
+  // Read BEFORE the transfer: afterwards a success has written the record, so
+  // the same question would answer differently and the wording would depend on
+  // where in the function it was asked.
+  const migrating = isUnverifiableCache({
+    cachedExists: deps.fileExists(deps.cachedBinaryPath),
+    cachedDigestRecorded: deps.recordedCachedDigest() !== undefined,
+  });
   deps.ensureDir(deps.cacheDir);
   // tan-cli ships a RAW binary per target (not an archive): download it straight
   // to the cached binary path. `download` itself chmods +x before the rename
@@ -169,10 +317,38 @@ export async function downloadCli(
   // already carries `assetName` and `checksumsUrl` for the SAME release tag, so
   // the digest can never be looked up against a different release than the
   // bytes came from. Nothing lands at `cachedBinaryPath` unless it matches.
-  await deps.download(asset.url, deps.cachedBinaryPath, signal, asset);
+  try {
+    await deps.download(asset.url, deps.cachedBinaryPath, signal, asset);
+  } catch (error) {
+    throw (migrating ? migrationRefusal(error) : null) ?? error;
+  }
   if (deps.platform !== "win32") {
     deps.chmodExec(deps.cachedBinaryPath);
   }
+  // Record what `resolveAlpBinary`'s `cached` arm will check on every later
+  // activation (#386). Hashed off the file that LANDED rather than plumbed out
+  // of the transfer: it costs one read of a file that was written moments ago,
+  // it needs no change to the `download` seam's contract, and it also catches
+  // the (unlikely) case of the rename itself producing something different from
+  // what was verified.
+  //
+  // Written LAST, and a failure to write it is not swallowed. The download
+  // itself already succeeded, so this leaves a good binary on disk with no
+  // record — which the next resolution treats as the migration case and
+  // re-acquires. Fail-closed: the alternative is a binary nothing will ever
+  // check again.
+  //
+  // ALL THREE download routes reach this, because they all call this function:
+  // `resolveAlpBinary`'s `download` arm, `ensureTanCliProvisioned`, and
+  // `updateAlpCli` (`test/alpCli.downloadSeamWiring.test.js` enumerates them
+  // for the same reason).
+  const digest = deps.sha256File(deps.cachedBinaryPath);
+  if (!digest) {
+    throw new Error(
+      "The tan CLI download did not produce a binary that could be read back.",
+    );
+  }
+  await deps.recordCachedDigest(digest);
 }
 
 /**

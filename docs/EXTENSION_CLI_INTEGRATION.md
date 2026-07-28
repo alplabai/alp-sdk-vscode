@@ -122,7 +122,9 @@ download-on-demand.** `resolveAlpBinary()` resolves in that order: an explicit
 binary staged at `<extensionPath>/bin/tan[.exe]` — present only in a
 platform-specific VSIX built with `vsce package --target <triple>`; then a
 locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]` (source checkout);
-then a previously downloaded binary cached in `globalStorage`; then `tan` on
+then a previously downloaded binary cached in `globalStorage`, but only when a
+sha256 was recorded for it and the file still hashes to that digest (#386 — see
+§7; with no record the ladder skips straight past it); then `tan` on
 PATH, but only once verified to be the native (clap) CLI — `commandOnPath`
 accepts a PATH `tan` only when `tan --version` prints the native version line
 (`tan X.Y.Z`), so a stale or non-native `tan` that could otherwise shadow the
@@ -169,7 +171,8 @@ is left in place.
 
 Three outcomes all REFUSE, with three distinct messages: a digest **mismatch**,
 a `checksums.txt` that **could not be fetched**, and a `checksums.txt` with **no
-line for this asset**. The last two are refusals rather than warnings on
+line for this asset**. (A fourth, `unrecorded`, comes from the cached arm below.)
+The middle two are refusals rather than warnings on
 purpose — every tagged tan release publishes the file, and the binary itself
 just arrived over the same connection, so failing to obtain the digest means the
 release is malformed or something is intercepting; neither justifies executing
@@ -193,6 +196,53 @@ The `checksums.txt` body is read into memory rather than streamed to disk (it is
 is this check's threat model, and without the cap the read is bounded only by
 the 120 s wall clock. Overrunning it refuses rather than truncates: a truncated
 manifest could be missing the digest line and would read as "unlisted".
+
+**The CACHED binary is re-checked on every resolution, not only at download.**
+The download happens once; the cache is read on every activation for the life of
+the install, so checking only at write time left every machine spawning an
+unverified binary indefinitely, and left anything that rewrote the cache file
+afterwards executing unchecked (#386). `downloadCli` now records the sha256 of
+the binary that landed in `context.globalState`
+(`alp.tanCachedBinarySha256`), and `resolveAlpBinary`'s `cached` arm hashes the
+file on disk and compares before returning a command. A mismatch **refuses the
+spawn** — not a warning, because the next thing that happens to that path is
+execution.
+
+The record lives in `globalState` rather than beside the binary so that dropping
+a file into the cache directory does not also grant control of the record, and
+because that is already this file's pattern for cross-activation state. Be clear
+about what it does and does not buy: it is **not** a defence against an attacker
+who already has write access to the user account — such an attacker can rewrite
+both. It detects corruption, partial writes, and replacement by anything that
+does not know to update the record.
+
+A **missing** record is the one-time migration for binaries cached before this
+existed. It is treated as *not verifiable* and is **not** accepted-and-recorded
+— recording whatever is already on disk would launder an unverified binary into
+a "verified" one and reproduce the defect with extra steps. `decideBinarySource`
+therefore skips a cache with no record, so the ladder re-acquires it through the
+verified `download` arm. That decision is in the pure function rather than
+downstream on purpose: `probeTanVersion` must never fetch, and it branches on
+this answer. Offline, the re-acquire fails and says so in its own words
+(`CACHED_CLI_UNVERIFIED`) rather than as a generic download failure — a
+`mismatch` during the re-acquire keeps its own sentence, and `alpSdk.cliPath` is
+withheld here for the same reason as above.
+
+Cost, measured on a 3.2 MB binary (Windows, Node 26): 4.2 ms for the cold
+resolve including the hash. `resolveAlpBinaryForContext` memoizes per window,
+but `probeTanVersion` builds its own deps and runs on every state refresh
+(focus, save, settings edit, task start, terminal finish), so `sha256File`
+memoizes on `path|size|mtime`: 20 refreshes cost **0 additional reads and
+18.2 ms** with the memo versus **20 reads and 73.7 ms** without it. The memo's
+ceiling is stated where it lives — a rewrite preserving both size and mtime
+inside one window reuses the answer, which sits inside the limit the record
+already has.
+
+**Verification covers two of the six resolution arms, deliberately.** `download`
+(at write time) and `cached` (on every resolution). `cliPath`, `path` and
+`localBuild` are user-chosen or user-built binaries with no reference digest
+anywhere — there is nothing to verify them against; `bundled` ships inside the
+signed VSIX. Do not read "the extension verifies tan" as covering all six.
 
 **Out of scope: GitHub build-provenance attestation.**
 `gh attestation verify <file> --repo alplabai/tan-cli` does work, and does fail

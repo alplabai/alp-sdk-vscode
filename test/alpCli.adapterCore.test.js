@@ -10,7 +10,22 @@ const {
 
 function baseDeps(overrides = {}) {
   const existing = new Set(overrides.existing ?? []);
-  const calls = { ensureDir: 0, download: 0, chmod: 0, verify: undefined };
+  // What `sha256File` reports per path. A file with no entry hashes to a stable
+  // value derived from its path, so a download always yields SOMETHING to
+  // record; a test corrupts a file by overriding its entry (#386).
+  const digests = new Map(Object.entries(overrides.digests ?? {}));
+  const hashOf = (p) =>
+    digests.get(p) ?? (existing.has(p) ? `sha256(${p})` : null);
+  // undefined = no digest was ever recorded for the cached binary, i.e. every
+  // machine that cached one before verification existed.
+  let recorded = overrides.recordedDigest;
+  const calls = {
+    ensureDir: 0,
+    download: 0,
+    chmod: 0,
+    verify: undefined,
+    recorded: [],
+  };
   const deps = {
     cliPathSetting: "",
     platform: "linux",
@@ -34,9 +49,25 @@ function baseDeps(overrides = {}) {
     chmodExec: () => {
       calls.chmod++;
     },
+    sha256File: hashOf,
+    recordedCachedDigest: () => recorded,
+    recordCachedDigest: async (digest) => {
+      recorded = digest;
+      calls.recorded.push(digest);
+    },
     ...overrides,
   };
-  return { deps, existing, calls };
+  return { deps, existing, calls, digests };
+}
+
+/** Deps for a cached binary this extension DID record a digest for — the state
+ *  every machine reaches after one verified download. */
+function cachedAndRecorded(overrides = {}) {
+  return baseDeps({
+    existing: ["/cache/cli/tan"],
+    recordedDigest: "sha256(/cache/cli/tan)",
+    ...overrides,
+  });
 }
 
 test("resolveAlpBinary: explicit cliPath wins, no download", async () => {
@@ -57,9 +88,8 @@ test("resolveAlpBinary: PATH when cliPath unset", async () => {
 });
 
 test("resolveAlpBinary: bundled binary when not on PATH (platform-specific VSIX)", async () => {
-  const { deps, calls } = baseDeps({
-    bundledExists: true,
-    existing: ["/cache/cli/tan"], // cached also exists — bundled must still win
+  const { deps, calls } = cachedAndRecorded({
+    bundledExists: true, // a verified cached copy also exists — bundled wins
   });
   const r = await resolveAlpBinary(deps);
   assert.deepEqual(r, { command: "/ext/bin/tan", source: "bundled" });
@@ -79,15 +109,14 @@ test("resolveAlpBinary: windows bundled binary skips chmod", async () => {
 });
 
 test("resolveAlpBinary: cached binary when not on PATH", async () => {
-  const { deps, calls } = baseDeps({ existing: ["/cache/cli/tan"] });
+  const { deps, calls } = cachedAndRecorded();
   const r = await resolveAlpBinary(deps);
   assert.deepEqual(r, { command: "/cache/cli/tan", source: "cached" });
   assert.equal(calls.download, 0);
 });
 
 test("resolveAlpBinary: a cached binary wins over a verified-native PATH tan (managed binary preferred; PATH is a last resort)", async () => {
-  const { deps, calls } = baseDeps({
-    existing: ["/cache/cli/tan"],
+  const { deps, calls } = cachedAndRecorded({
     commandOnPath: () => true,
   });
   const r = await resolveAlpBinary(deps);
@@ -126,8 +155,26 @@ test("resolveAlpBinary: throws on unsupported host (no prebuilt asset)", async (
   await assert.rejects(() => resolveAlpBinary(deps), /No prebuilt tan CLI/);
 });
 
-test("resolveAlpBinary: throws when download yields no binary", async () => {
+test("resolveAlpBinary: throws when the download leaves nothing to hash", async () => {
   const { deps } = baseDeps({
+    download: async () => {
+      /* download produced nothing */
+    },
+  });
+  // Nothing on disk to hash, so there is nothing to RECORD either — and a
+  // binary with no record would be refused on every later resolution anyway
+  // (#386), so this refuses now rather than installing a dead end.
+  await assert.rejects(
+    () => resolveAlpBinary(deps),
+    /did not produce a binary that could be read back/,
+  );
+});
+
+test("resolveAlpBinary: throws when the download produces no binary at the cached path", async () => {
+  const { deps } = baseDeps({
+    // Hashable but absent: isolates the `fileExists` guard from the hash guard
+    // above, so neither can be deleted while the other keeps the suite green.
+    digests: { "/cache/cli/tan": "d".repeat(64) },
     download: async () => {
       /* download produced nothing */
     },
@@ -143,10 +190,6 @@ test("resolveAlpBinary: windows skips chmod", async () => {
     platform: "win32",
     arch: "x64",
     cachedBinaryPath: "/cache/cli/tan.exe",
-    download: async (_url, destFile) => {
-      calls.download++;
-      deps.fileExists = (p) => p === destFile;
-    },
     existing: [],
   });
   const r = await resolveAlpBinary(deps);
