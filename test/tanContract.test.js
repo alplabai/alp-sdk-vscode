@@ -173,7 +173,7 @@ function findEnvelopes(node, out = []) {
 /**
  * The artefact's FROZEN issue-code list, or null when it carries none. Accepts
  * any key ending in `code`/`codes` holding a non-empty array of issue codes or
- * an object keyed by them — #106 is still open and the layout is not frozen, so
+ * an object keyed by them — no published artefact exists to pin the layout against, so
  * this is tolerant by design. Codes scraped out of golden envelopes are
  * deliberately NOT included: a golden that happens to carry one code is not the
  * producer promising to keep it.
@@ -191,7 +191,8 @@ function findEnvelopes(node, out = []) {
  * KNOWN LIMIT, and it cannot be closed from this side today: if the artefact
  * ships a list of LEGACY code names, unioning it in means a code tan actually
  * renamed still resolves, and the gate greens on the drift it exists to catch.
- * Discovering the list by shape is a stopgap for #106 being open; when the
+ * Discovering the list by shape is a stopgap until a tagged release ships the
+ * asset and its layout can be read off a real artefact; when the
  * layout is frozen, replace this with the one declared key and delete the
  * heuristic rather than hardening it further.
  */
@@ -237,7 +238,8 @@ const present = fs.existsSync(assetPath);
 const skip =
   !present &&
   `NOT CHECKED — no ${ASSET} is published for the pinned tan v${SUPPORTED_CLI_VERSION} ` +
-    `at ${URL}. The producer is ${ISSUE} (open). Run \`pnpm run contract:fetch\` once it ships. ` +
+    `at ${URL}. The producer (${ISSUE}) is merged; what is missing is a tan release carrying it. ` +
+    `Run \`pnpm run contract:fetch\` once one ships. ` +
     `Nothing here verified that tan still emits the envelope this extension parses.`;
 
 const doc = present ? JSON.parse(fs.readFileSync(assetPath, "utf8")) : null;
@@ -313,7 +315,7 @@ test(
     if (!key) {
       t.skip(
         `the ${ASSET} published for v${SUPPORTED_CLI_VERSION} carries no top-level ` +
-          `version/tanVersion/cliVersion field (${ISSUE} has not frozen the layout). ` +
+          `version/tanVersion/cliVersion field (no published artefact has pinned the layout). ` +
           `The VERSION stamp is checked instead; the asset's own claim is not.`,
       );
       return;
@@ -338,7 +340,7 @@ test(
     if (!frozenCodes) {
       t.skip(
         `the ${ASSET} published for v${SUPPORTED_CLI_VERSION} at ${URL} carries no ` +
-          `frozen issue-code list (${ISSUE} has not frozen the layout). The ` +
+          `frozen issue-code list (no published artefact has pinned the layout). The ` +
           `${PINNED_CODES.length} codes the pinned tan emits are UNVERIFIED.`,
       );
       return;
@@ -364,7 +366,7 @@ test(
     if (envelopes.length === 0) {
       t.skip(
         `the ${ASSET} published for v${SUPPORTED_CLI_VERSION} at ${URL} carries no ` +
-          `golden envelopes (${ISSUE} has not frozen the layout). The envelope shape is UNVERIFIED.`,
+          `golden envelopes (no published artefact has pinned the layout). The envelope shape is UNVERIFIED.`,
       );
       return;
     }

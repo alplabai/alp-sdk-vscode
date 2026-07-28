@@ -6,9 +6,11 @@
 // than a fixture hand-copied into this repo. A hand-copied corpus drifts in
 // exactly the way the thing it is testing drifts, which is why this fetches.
 //
-// The artefact does not exist yet — `alplabai/tan-cli#106` is the open issue
-// that will publish it. So the 404 path is the normal path today, and the one
-// thing it must never do is look like a pass. FOUR outcomes, four messages, and
+// The artefact does not exist yet, though the producer does: `alplabai/tan-cli#106`
+// is MERGED and `release.yml` attaches `envelope-contract.json` to every tagged
+// release. The missing piece is a TAG -- no tan release has been cut since #106
+// landed, and the newest one (v0.3.1) predates it. So the 404 path is the normal
+// path today, and the one thing it must never do is look like a pass. FOUR outcomes, four messages, and
 // the log must never let two of them read the same:
 //
 //   * 404            → `::warning::` naming the pin, the URL and the issue,
@@ -74,7 +76,7 @@ const why = (error) =>
 /**
  * COULD NOT CHECK. Deliberately worded so it cannot be misread as the 404's
  * "not published": those are different facts, and a log that conflates them
- * turns a rate-limit into evidence that #106 is still open. Exit 0 — see the
+ * turns a rate-limit into evidence that no release publishes the asset. Exit 0 -- see the
  * header. Any corpus already on disk is LEFT ALONE, because the right corpus
  * for this pin surviving an outage is the good case; the VERSION stamp test
  * reds if it belongs to a different pin.
@@ -109,7 +111,8 @@ if (response.status === 404) {
   rmSync(OUT_DIR, { recursive: true, force: true });
   console.warn(
     `::warning::No ${ASSET} published for the pinned tan v${pin} (404 at ${url}). ` +
-      `The producer is ${ISSUE}, still open — the envelope-contract test will SKIP, ` +
+      `The producer (${ISSUE}) is MERGED and publishes it on every tagged release; no tan `
+      + `release has been cut since. The envelope-contract test will SKIP, ` +
       `so nothing verified that tan still emits the envelope this extension parses.`,
   );
   console.log(

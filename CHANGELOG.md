@@ -26,9 +26,12 @@
   in `src/` is classified as exactly one of the two — a new match site cannot be
   added without someone deciding which kind it is.
 
-  That asset does not exist yet — `alplabai/tan-cli#106` is the open issue that
-  will publish it — so the gate is built to be loudly inconclusive rather than
-  quietly green. A 404 prints a `::warning::` naming the pin, the URL and the
+  That asset does not exist yet, but not because the producer is missing:
+  `alplabai/tan-cli#106` is MERGED and `release.yml` publishes
+  `envelope-contract.json` on every tagged release. What is missing is a TAG —
+  no tan release has been cut since #106 landed, and the newest that exists
+  (v0.3.1) predates it. So the gate is built to be loudly inconclusive rather
+  than quietly green. A 404 prints a `::warning::` naming the pin, the URL and the
   issue and exits 0, and the test then skips with all three facts in its reason,
   so the runner's own `# SKIP` line says the contract was not checked. A
   rate-limit, an outage or a timeout prints a second, distinctly worded

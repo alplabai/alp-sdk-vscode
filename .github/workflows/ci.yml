@@ -58,7 +58,8 @@ jobs:
         # in test/golden/tan-contract/.
         #
         # Exits 0 with a `::warning::` while the asset does not exist yet
-        # (alplabai/tan-cli#106 is open), and exits 0 with a DIFFERENT, equally
+        # (alplabai/tan-cli#106 is merged, but no tan release has been tagged
+        # since, so nothing publishes it yet), and exits 0 with a DIFFERENT, equally
         # loud `::warning::` when GitHub rate-limits or falls over — neither is
         # a defect in this repo, and reddening every PR on a gate that today
         # cannot verify anything only teaches people to ignore it. The two are
