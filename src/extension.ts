@@ -30,6 +30,7 @@ import { planFailure, planSuccess } from "./notify/service";
 import { notifyAsync, setExtensionId } from "./notify/vscodeAdapter";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
+import { registerAlpTaskProvider } from "./tasks/vscodeAdapter";
 import {
   disposeTaskTracking,
   log,
@@ -188,8 +189,12 @@ export function activate(context: vscode.ExtensionContext): void {
     ...registerLoaderCommands(context),
     ...registerWestCommands(context),
     ...registerBootstrapCommand(context),
+    // Backs the `preLaunchTask` labels tan's generated launch.json profiles
+    // reference (e.g. "alp: build active target") — without this VS Code has
+    // nothing to resolve those against and pre-launch aborts silently.
+    registerAlpTaskProvider(context),
     createStatusBar(stateMgr),
-    registerSelectSdkCommand(),
+    registerSelectSdkCommand(context),
     ...registerConfiguratorEditor(context),
     vscode.commands.registerCommand("alp.openDependencies", () =>
       DependencyPanel.open(context, stateMgr),

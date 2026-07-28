@@ -154,6 +154,38 @@
   runtime path: it requires the `gh` CLI installed and authenticated, which no
   customer machine can be assumed to have. It remains a maintainer/CI check.
 
+- **Switching the active SDK now reconciles the west workspace, instead of
+  reporting success beside a stale one (#364, closing the half #350 left).**
+  Activation wrote `alpSdk.path` and mirrored `.alp/sdk-path`, but neither
+  touches `<topdir>/.west/config` -- the pointer `west` reads directly. If it
+  named an SDK that was gone, the toast said "active SDK set" while every later
+  build and flash resolved a different workspace (#349). `setActiveSdk` now
+  shells `tan sdk switch`, which repairs exactly that.
+
+  This could not ship before: the reconcile is tan-cli#74, and #364 required the
+  pin bump and the wiring in one change because split, the extension shells a
+  binary that silently never reconciles. The pin reached `0.4.0` in #385, so
+  this is the other half. v0.4.0 also carries tan-cli#88, which closed #74's
+  gaps -- including the one that mattered here: the bare-version form resolved
+  only against `~/.alp/sdk-cache` while this extension installs to `~/.alp/sdk`,
+  so the repair could not reach the layout that reported the bug.
+
+  Best-effort by design, like the pointer mirror: the setting write stays
+  authoritative, and a tan that is absent, older or failing must not break
+  activation. It must not fail SILENTLY though, so both outcomes log, and the
+  failure line says what is still wrong rather than just that a command exited
+  non-zero.
+
+  The outcome is read as STATE, not as a string. tan emits
+  `sdk.west-config-reconciled` / `sdk.west-config-not-reconciled`, and neither
+  is in tan's frozen `contract/issue-codes.json` -- so matching them by exact
+  string here would have been a new fail-open surface of exactly the kind
+  tan-cli#106 froze codes to prevent: rename one upstream and this reads as
+  success forever. `warnIfWestManifestDangling` re-probes the workspace
+  afterwards instead, and a state probe cannot be renamed out from under us.
+  Reaching that warning now means the repair ran and did not fix it, which is a
+  different fact from "nobody tried".
+
 - **Pinned to tan v0.4.0, and the envelope-contract gate now actually verifies
   something.** `SUPPORTED_CLI_VERSION` moves `0.3.1` -> `0.4.0`. That is not
   bookkeeping: v0.4.0 is the FIRST tan release to publish
@@ -487,6 +519,42 @@
   so leaving it behind made the *next* install of that version fail for an
   unrelated-looking reason.
 
+- The debug launch configuration now comes from `tan debug-config` instead of
+  being drafted a second time in TypeScript. The extension had its own copy of
+  that decision, and both copies shipped the same unresolved
+  `"device": "<resolved-device>"` placeholders — fixing either left the other
+  handing out a `launch.json` that cannot start a session. `tan` resolves
+  `device` / `gdbPath` / `serverpath` / `searchDir` / `configFiles` from the
+  build's own `runners.yaml` and writes the file; there is deliberately no
+  fallback draft. What stays in-process is the readiness report, which probes
+  which debugger extensions are installed — host state a separate process
+  cannot observe. Closes #339.
+- **Requires `tan` 0.4.0 or newer.** This is a hard requirement, not a
+  preference: an older binary has no `--core` flag (it exits 2 with
+  `error: unexpected argument '--core' found`) and carries no
+  `data.configuration`, so it cannot produce a debug configuration at all. The
+  command now says so and points at "Alp: Update CLI" rather than reporting a
+  failure and "Command completed." in the same breath.
+- Debug pre-launch works instead of aborting. Every generated profile
+  references a pre-launch task by label — `alp: build active target`,
+  `alp: build baremetal target`, `alp: build native_sim target`,
+  `alp: deploy and start gdbserver` — and nothing defined them, so VS Code
+  could not resolve the task and refused to start the session, pointing at a
+  `launch.json` that looked perfectly fine. The extension now contributes all
+  four as an `alp` task type: the three build labels run the project build (the
+  same run the Build button dispatches, so the two can never race), and the
+  Yocto one names the manual deploy step and fails rather than dropping the
+  user into a session with no `gdbserver` on the other end.
+- A `launch.json` that still holds `<resolved-…>` values now says which ones.
+  The "not launchable yet" warning listed nothing at all (`resolve: .`) because
+  the finding never reached the readiness report's checks; the unresolved
+  fields and their fix are now in the report and in the Alp SDK channel.
+- A bootstrap refused over Python is reported instead of dying as a launch
+  failure. `tan` refuses with `bootstrap.python-not-runnable` or
+  `bootstrap.python-too-old` (e.g. a Microsoft Store stub, or 3.9 against the
+  3.10 floor) and only `bootstrap.prerequisites-missing` was recognised, so
+  those refusals fell through to a real bootstrap terminal that died with
+  `failed to launch (exit code: 1)` — hiding tan's own actionable message.
 - A stranded west workspace no longer stays silent. Switching or uninstalling an
   SDK never touched `<topdir>/.west/config`, whose `[manifest] path` `west`
   reads directly and independently of the active-SDK pointer — so removing the

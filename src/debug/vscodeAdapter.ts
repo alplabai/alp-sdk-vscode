@@ -47,25 +47,6 @@ export function launchJsonPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".vscode", "launch.json");
 }
 
-export function readLaunchJson(workspaceRoot: string): string | null {
-  const filePath = launchJsonPath(workspaceRoot);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-
-  return fs.readFileSync(filePath, "utf-8");
-}
-
-export function writeLaunchJson(
-  workspaceRoot: string,
-  content: string,
-): string {
-  const filePath = launchJsonPath(workspaceRoot);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, "utf-8");
-  return filePath;
-}
-
 export function fileExists(filePath: string): boolean {
   return fs.existsSync(filePath);
 }

@@ -329,7 +329,18 @@ The recommended path is:
 - later: add dynamic profile generation once the model stabilizes
 
 Current implementation follows the MVP path: `alp.configureDebugProfile`
-writes or updates `launch.json` entries from generated launch drafts.
+writes or updates `launch.json` entries. The configuration itself comes from
+`tan debug-config` (tan-cli#67), which resolves `device` / `gdbPath` /
+`serverpath` / `searchDir` / `configFiles` from the build's own `runners.yaml`
+and writes the file; the extension keeps **no** second draft, because two
+drafts in two languages is exactly what shipped users a `launch.json` that
+could not start a session (#339). Requires `tan` >= the pinned
+`SUPPORTED_CLI_VERSION` (`src/alpCli/service.ts`) — an older binary carries no
+`data.configuration` and the command reports version skew instead of writing.
+
+What stays in-process is the readiness report: it probes which debugger
+extensions are installed, host state a separate process cannot observe
+(`docs/EXTENSION_CLI_INTEGRATION.md` §4a).
 
 ## 9. Shared Debug Model
 
@@ -503,6 +514,38 @@ Two behaviours are worth knowing before they surprise someone:
 
 See the companion-extensions section above for which debug views attach to an
 `lldb` session and which do not.
+
+### 10.6 The `preLaunchTask` names above
+
+Every profile in §10 references a pre-launch task by label. VS Code renders a
+provider-contributed task's label as `${source}: ${name}`, so those labels
+resolve only while something contributes them — an unresolvable
+`preLaunchTask` aborts the pre-launch and `vscode.debug.startDebugging`
+returns `false` with no useful error, pointing the user at a `launch.json`
+that looks perfectly fine.
+
+The extension contributes all four (`src/tasks/service.ts` holds the string
+contract, `src/tasks/vscodeAdapter.ts` the VS Code seam, task type + source
+`alp`):
+
+| label                             | runs                                          |
+| --------------------------------- | --------------------------------------------- |
+| `alp: build active target`        | `tan build`                                   |
+| `alp: build baremetal target`     | `tan build`                                   |
+| `alp: build native_sim target`    | `tan build`                                   |
+| `alp: deploy and start gdbserver` | nothing — reports the manual step, exits **1** |
+
+The three build labels run the identical command because `tan build` has no
+per-target selector: it builds every slice `board.yaml` declares. Three labels
+exist because three debug-target classes reference them under different names.
+
+`alp: deploy and start gdbserver` has no `tan` equivalent — the extension has
+no deploy story, and §10.4's profile ships `miDebuggerServerAddress:
+"<host>:<port>"` for the user to fill in by hand. It deliberately fails rather
+than faking success, so VS Code raises its "the preLaunchTask terminated with
+exit code 1 — Debug Anyway / Show Errors" dialog with the manual step named,
+instead of dropping the user into a cppdbg session with no gdbserver on the
+other end.
 
 ## 11. Product Commands to Support Debug
 

@@ -87,6 +87,12 @@ function clip(text: string, max = 4000): string {
  * extension must READ tan's answer, never compute a competing one (a
  * TypeScript copy of tan's walk-up would drift from it). Reporting the SDK
  * root tan actually used is a tan-side envelope ask.
+ *
+ * Exported for the `alp` task provider (`src/tasks/vscodeAdapter.ts`), which
+ * spawns `tan build` itself rather than through `runAlpCommand`/
+ * `runAlpInTerminal` and must not re-derive this rule — a second copy is how a
+ * task-driven build silently starts using a different SDK than every other
+ * command in the window.
  */
 function withSdkRoot(args: string[]): string[] {
   if (args.includes("--sdk-root")) return args;
