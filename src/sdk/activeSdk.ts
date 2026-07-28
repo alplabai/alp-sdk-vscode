@@ -152,18 +152,32 @@ export async function setActiveSdk(
   // rename one upstream and this reads as success forever. The STATE is
   // observable instead (`warnIfWestManifestDangling` below re-probes it), and a
   // state probe cannot be renamed out from under us.
+  //
+  // Gated on `workspaceRoot`, not run with an undefined cwd: the thing being
+  // repaired is `<topdir>/.west/config`, which only exists inside a workspace.
+  // With no folder open there is nothing to reconcile, and letting tan pick its
+  // own cwd would aim the switch at whatever directory the extension host
+  // happens to be in. `sdkPath` is absolute for the same class of reason -- a
+  // bare version resolves against `~/.alp/sdk-cache`, not the `~/.alp/sdk` this
+  // extension installs into (tan-cli#88).
   try {
-    const { outcome } = await runAlpCommand(
-      context,
-      ["sdk", "switch", sdkPath],
-      workspaceRoot ?? undefined,
-    );
-    log(
-      outcome.ok
-        ? `[sdk] tan sdk switch reconciled the workspace for ${sdkPath}`
-        : `[sdk] tan sdk switch did not reconcile (${outcome.message}) -- the active-SDK setting is set, but west may still resolve a stale workspace`,
-      outcome.ok ? "info" : "warn",
-    );
+    if (!workspaceRoot) {
+      log(
+        "[sdk] no workspace folder — skipping `tan sdk switch` (nothing to reconcile without a west topdir)",
+      );
+    } else {
+      const { outcome } = await runAlpCommand(
+        context,
+        ["sdk", "switch", sdkPath],
+        workspaceRoot,
+      );
+      log(
+        outcome.ok
+          ? `[sdk] tan sdk switch reconciled the workspace for ${sdkPath}`
+          : `[sdk] tan sdk switch did not reconcile (${outcome.message}) -- the active-SDK setting is set, but west may still resolve a stale workspace`,
+        outcome.ok ? "info" : "warn",
+      );
+    }
   } catch (err) {
     log(
       `[sdk] tan sdk switch could not run (best-effort): ${String(err)}`,

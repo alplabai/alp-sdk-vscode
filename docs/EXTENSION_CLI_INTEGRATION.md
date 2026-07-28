@@ -299,11 +299,19 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   writer with an independently-evolving guard is how the two diverge on a file
   `west` depends on. The extension only **detects** it (`inspectWestManifest`,
   read-only, `packages/alp-core/src/sdk/service.ts`) and points at Bootstrap.
-  Delegating the switch itself is queued behind a `SUPPORTED_CLI_VERSION` bump
-  to the first tan-cli release carrying #74 — the pin bump and the
-  `tan sdk switch` call must land in the **same** PR, using the **absolute**
-  SDK path (a bare version resolves against `~/.alp/sdk-cache`, not the
-  extension's `~/.alp/sdk`) and an explicit `cwd` of the workspace root.
+  **Done (#364).** The pin reached `0.4.0` (#385) and `setActiveSdk` now shells
+  `tan sdk switch <absolute path>` with an explicit `cwd` of the workspace root,
+  skipped entirely when no folder is open — there is no `<topdir>/.west/config`
+  to reconcile without one, and an undefined `cwd` would aim the switch at
+  whatever directory the extension host happens to sit in. The absolute path is
+  required because a bare version resolves against `~/.alp/sdk-cache`, not the
+  `~/.alp/sdk` this extension installs into (tan-cli#88).
+  Still not a second writer: the extension shells the repair and then re-probes
+  the STATE (`warnIfWestManifestDangling`). It deliberately does not match
+  tan's `sdk.west-config-reconciled` / `sdk.west-config-not-reconciled` issue
+  codes, because neither is in tan's frozen `contract/issue-codes.json` — an
+  exact-string match on an unfrozen code reads as success forever the day it is
+  renamed (tan-cli#106). A state probe cannot be renamed.
 - **B4 — retire the TS CLI. ✅ done (retire); core shrink = n/a.** Inventory found
   the extension (`src/`) imports **nearly all** of `@alp-sdk/core` (board,
   boardSummary, configurator, the whole debug domain [in-process per §4a], loader,
