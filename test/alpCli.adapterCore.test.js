@@ -10,7 +10,7 @@ const {
 
 function baseDeps(overrides = {}) {
   const existing = new Set(overrides.existing ?? []);
-  const calls = { ensureDir: 0, download: 0, chmod: 0 };
+  const calls = { ensureDir: 0, download: 0, chmod: 0, verify: undefined };
   const deps = {
     cliPathSetting: "",
     platform: "linux",
@@ -26,8 +26,9 @@ function baseDeps(overrides = {}) {
     },
     // tan-cli ships a RAW binary: a successful download writes it straight to
     // the cached binary path (no archive, no extract step).
-    download: async (_url, destFile) => {
+    download: async (_url, destFile, _signal, verify) => {
       calls.download++;
+      calls.verify = verify;
       existing.add(destFile);
     },
     chmodExec: () => {
@@ -102,6 +103,21 @@ test("resolveAlpBinary: downloads the raw binary when nothing else resolves", as
   assert.equal(calls.ensureDir, 1);
   assert.equal(calls.download, 1);
   assert.equal(calls.chmod, 1); // non-windows → chmod +x
+});
+
+test("resolveAlpBinary: the download is handed the checksum spec for the SAME release", async () => {
+  const { deps, calls } = baseDeps();
+  await resolveAlpBinary(deps);
+  assert.equal(calls.download, 1);
+  // Without this the binary is fetched and executed having verified nothing —
+  // and a dropped 4th argument is a silent, invisible regression at runtime.
+  assert.ok(calls.verify, "downloadCli must pass a checksum spec");
+  assert.equal(calls.verify.assetName, "tan-x86_64-unknown-linux-musl");
+  assert.ok(calls.verify.checksumsUrl.endsWith("/checksums.txt"));
+  // Same release tag as the binary URL: a digest from another release proves
+  // nothing about these bytes.
+  const tag = `/download/v${require("../out/alpCli/service.js").SUPPORTED_CLI_VERSION}/`;
+  assert.ok(calls.verify.checksumsUrl.includes(tag), calls.verify.checksumsUrl);
 });
 
 test("resolveAlpBinary: throws on unsupported host (no prebuilt asset)", async () => {

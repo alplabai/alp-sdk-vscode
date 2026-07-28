@@ -27,6 +27,10 @@ export const SUPPORTED_CLI_VERSION = "0.4.0";
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
 
+/** The checksum manifest every tagged tan release publishes alongside its
+ *  binaries (verified against the live v0.4.0 release). */
+const CHECKSUMS_ASSET = "checksums.txt";
+
 /** Host platform/arch → rust target triple (the six targets tan-cli publishes a
  *  raw binary for). Windows ships BOTH x64 and arm64, picked by `process.arch`. */
 const TARGETS: Readonly<Record<string, string>> = {
@@ -359,6 +363,13 @@ export function classifyOutcome(
 export function classifyUnavailable(raw: string): CliUnavailableReason {
   if (/^No prebuilt tan CLI/.test(raw)) return "noPrebuilt";
   if (/did not produce a binary|Downloaded 0 bytes/.test(raw)) return "corrupt";
+  // Every `ChecksumError` sentence (`download.ts`) says "checksum", and all
+  // three of them mean the same thing to a consumer: the managed binary is not
+  // trustworthy and was discarded. `corrupt` — "a binary is present but
+  // unusable" — is that verdict; it must NOT fall through to `downloadFailed`
+  // below, which offers "retry when you're back online" for bytes that were
+  // served fine and simply weren't the published ones.
+  if (/checksum/i.test(raw)) return "corrupt";
   if (
     /Download failed|Timed out downloading|Too many redirects|ENOTFOUND|ECONNRESET|ECONNREFUSED|getaddrinfo/.test(
       raw,
@@ -411,7 +422,13 @@ function summarize(kind: CliExitKind, envelope: AlpEnvelope | null): string {
 /** The release asset (and download URL) for a host, or null when the host has
  *  no prebuilt binary — caller should point `alpSdk.cliPath` at a dev build.
  *  tan-cli ships a RAW binary per target (not an archive): `tan-<triple>` on
- *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`. */
+ *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`.
+ *  `checksumsUrl` is the same release's `checksums.txt`, which every tagged tan
+ *  release publishes next to the binaries — resolved HERE, from the same `tag`,
+ *  so the digest a download is checked against always belongs to the release the
+ *  bytes came from. The asset names are contract-frozen on the producer side
+ *  (tan-cli's `release.yml` names this function), which is what makes the
+ *  filename lookup in that file reliable. */
 export function releaseAssetForTarget(
   platform: NodeJS.Platform,
   arch: string,
@@ -423,12 +440,44 @@ export function releaseAssetForTarget(
   }
   const tag = `v${version}`;
   const assetName = `tan-${target}${platform === "win32" ? ".exe" : ""}`;
+  const releaseBase = `https://github.com/${RELEASE_REPO}/releases/download/${tag}`;
   return {
     target,
     assetName,
     tag,
-    url: `https://github.com/${RELEASE_REPO}/releases/download/${tag}/${assetName}`,
+    url: `${releaseBase}/${assetName}`,
+    checksumsUrl: `${releaseBase}/${CHECKSUMS_ASSET}`,
   };
+}
+
+/**
+ * The sha256 `checksums.txt` publishes for `assetName`, lowercased, or null when
+ * the file carries no line for that exact name.
+ *
+ * The file is `sha256sum` output — `<64 hex><two spaces><filename>` per line,
+ * LF-terminated (confirmed byte-for-byte against the published v0.4.0 file).
+ * Parsed tolerantly around that: any run of whitespace as the separator, CRLF
+ * accepted, and the `*` binary-mode marker `sha256sum -b` writes before the
+ * filename stripped — none of which weakens the check, because the DIGEST is
+ * still matched exactly and the filename still has to be exactly `assetName`.
+ *
+ * Filename matching is case-SENSITIVE on purpose: the release assets are
+ * lowercase rust triples and a case-folded match could pair a digest with a
+ * different asset on a release that ever published two names differing only in
+ * case. Returning null (no line) is a REFUSAL at the caller, not a pass — see
+ * `ChecksumError` in `download.ts`.
+ */
+export function expectedSha256(
+  checksums: string,
+  assetName: string,
+): string | null {
+  for (const line of checksums.split(/\r?\n/)) {
+    const match = /^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$/.exec(line.trim());
+    if (match && match[2] === assetName) {
+      return match[1].toLowerCase();
+    }
+  }
+  return null;
 }
 
 /** The on-disk binary filename for a platform. */

@@ -113,4 +113,15 @@ export interface ReleaseAsset {
   assetName: string; // tan-<target>[.exe] (raw binary)
   tag: string; // v<version>
   url: string;
+  /** The release's own `checksums.txt`, published at the SAME tag alongside the
+   *  binaries. Part of the asset rather than a URL rebuilt at the call site, so
+   *  the checksum can never be looked up against a different release than the
+   *  binary came from. */
+  checksumsUrl: string;
 }
+
+/** What checksum verification needs for one asset: where the release publishes
+ *  its `checksums.txt`, and the exact filename to look up inside it. A `Pick` of
+ *  `ReleaseAsset` rather than a parallel type, so a `ReleaseAsset` satisfies it
+ *  as-is and the two can never disagree about the asset's name. */
+export type ChecksumSpec = Pick<ReleaseAsset, "assetName" | "checksumsUrl">;

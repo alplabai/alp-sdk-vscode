@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+- **The downloaded `tan` binary is now verified against the release's
+  `checksums.txt` before it is ever executed (#378).** The extension fetched a
+  binary from a GitHub release, renamed it into the managed cache, marked it
+  executable and ran it, having verified nothing about the bytes beyond "the
+  transfer finished" — a byte count and a `content-length`, both of which a
+  substituted binary satisfies exactly.
+
+  `releaseAssetForTarget` now resolves `checksumsUrl` from the SAME release tag
+  as the asset (so a digest can never be looked up against a different release
+  than the bytes came from), `downloadFile` fetches it through the SAME proxy
+  settings as the binary (a machine that needs a proxy needs it for both, or the
+  proxy support and the verification would cancel each other out), and the
+  transferred bytes are hashed with `crypto.createHash("sha256")` off the same
+  chunks the byte counter already sees — no new dependency, no second pass over
+  the file.
+
+  The check runs while the download is still a temp file, BEFORE the `chmod +x`
+  and the rename. A rejected binary therefore never appears at
+  `cachedBinaryPath` even briefly, which matters because the `cached` resolution
+  source spawns whatever is sitting there without asking again; and an
+  already-installed good binary is never moved aside for bytes that turn out to
+  be wrong.
+
+  Three outcomes, three distinct sentences, and all three REFUSE: a digest
+  MISMATCH, a `checksums.txt` that COULD NOT BE FETCHED, and a `checksums.txt`
+  with NO LINE for this asset. The last two are deliberately not softened into
+  warnings — every tagged tan release publishes the file and the binary itself
+  just arrived over the same connection, so failing to obtain the digest means
+  the release is malformed or something is intercepting. Neither is a reason to
+  execute an unverified binary, and the reasoning is written into
+  `ChecksumError` so it is not quietly relaxed later.
+
+  A refusal is also no longer reported as an outage. `ChecksumError` gets its
+  own notification plan alongside `CliInUseError` and `ProxyError`; previously a
+  refused binary would have surfaced as "Couldn't download the tan CLI — retry
+  when you're back online", sending the customer to check their Wi-Fi for bytes
+  that arrived perfectly intact and simply were not the published ones. The
+  digests stay on the output channel, the sentence reaches the toast, and
+  `alpSdk.cliPath` is not offered as the remedy — hand-placing a binary is the
+  workaround this check exists to prevent.
+
+  GitHub build-provenance attestation (`gh attestation verify`) stays OUT of the
+  runtime path: it requires the `gh` CLI installed and authenticated, which no
+  customer machine can be assumed to have. It remains a maintainer/CI check.
+
 - **Pinned to tan v0.4.0, and the envelope-contract gate now actually verifies
   something.** `SUPPORTED_CLI_VERSION` moves `0.3.1` -> `0.4.0`. That is not
   bookkeeping: v0.4.0 is the FIRST tan release to publish

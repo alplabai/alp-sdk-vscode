@@ -23,6 +23,7 @@ import {
   runAlpAsync,
 } from "./adapterCore";
 import {
+  ChecksumError,
   CliInUseError,
   ProxyConfig,
   ProxyError,
@@ -189,6 +190,42 @@ function cliInUsePlan(
  * and never carries the `user:password@`; the errno/status rides on `detail`,
  * which the presenter writes to the channel only.
  */
+/**
+ * The plan for a download that was REFUSED rather than failed: the bytes did not
+ * match the checksum the release publishes, or that checksum could not be
+ * obtained at all (`ChecksumError`). Returns null for every other failure.
+ *
+ * Split out on the TYPE, like `cliInUsePlan` and `proxyFailurePlan` above, and
+ * for a sharper reason than either: without it a refused binary falls into
+ * "Couldn't download the tan CLI … retry when you're back online", which is a
+ * flatly wrong account of what happened. The transfer worked. The customer is
+ * being told to blame their network for bytes that arrived intact and were not
+ * the published ones — the single most important thing this check can say would
+ * be the one thing it never said.
+ *
+ * `ChecksumError.message` states which of the three refusals it was and carries
+ * no digest or URL; the digests ride on `detail` (channel only). "Retry" is
+ * still offered — it is safe by construction, since the retry re-verifies and a
+ * mismatching binary can never be installed by it, and the common cause of a
+ * one-off mismatch really is a corrupted transfer. `alpSdk.cliPath` is NOT
+ * offered: pointing at a hand-placed binary is precisely the workaround this
+ * refusal exists to prevent, and must not be suggested as the remedy.
+ */
+function checksumFailurePlan(
+  error: unknown,
+  operation: string,
+): NotificationPlan | null {
+  if (!(error instanceof ChecksumError)) {
+    return null;
+  }
+  return planFailure({
+    operation,
+    cause: error.message,
+    detail: error.detail,
+    actions: [{ id: "updateCli", title: "Retry" }],
+  });
+}
+
 function proxyFailurePlan(
   error: unknown,
   operation: string,
@@ -271,9 +308,12 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
     // Settings read at call time (see `proxySettings`) so the seam's signature
-    // stays the plain `(url, dest, signal)` every other caller and test uses.
-    download: (url, dest, signal) =>
-      downloadFile(url, dest, signal, proxySettings()),
+    // carries only what the caller knows. `verify` reaches `downloadFile`
+    // alongside the SAME `proxySettings()` the binary uses — the checksum file
+    // is fetched over the same proxy, because a machine that needs a proxy to
+    // reach the release host needs it for both or it can install nothing.
+    download: (url, dest, signal, verify) =>
+      downloadFile(url, dest, signal, proxySettings(), verify),
     chmodExec: (p) => fs.chmodSync(p, 0o755),
   };
 }
@@ -441,6 +481,10 @@ export async function ensureTanCliProvisioned(
       // wrong advice when the network is fine and the proxy said no.
       cliInUsePlan(error, "Provisioning the tan CLI") ??
         proxyFailurePlan(error, "Provisioning the tan CLI") ??
+        // …nor is a binary that was REFUSED. It downloaded fine; it just
+        // wasn't the published binary, and "retry when you're back online"
+        // would bury the only fact that matters here.
+        checksumFailurePlan(error, "Provisioning the tan CLI") ??
         planFailure({
           operation: "Provisioning the tan CLI",
           cause: updatingStaleCache
@@ -912,6 +956,9 @@ export async function updateAlpCli(
       cliInUsePlan(error, "Updating the tan CLI") ??
         // …and the one a retry cannot clear either until the proxy changes.
         proxyFailurePlan(error, "Updating the tan CLI") ??
+        // …and the one that is not a failure at all but a refusal: the bytes
+        // arrived and were rejected. The existing binary is untouched.
+        checksumFailurePlan(error, "Updating the tan CLI") ??
         planFailure({
           operation: "Updating the tan CLI",
           cause: "The tan CLI update failed.",
