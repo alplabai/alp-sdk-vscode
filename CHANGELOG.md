@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **Switching the active SDK now reconciles the west workspace, instead of
+  reporting success beside a stale one (#364, closing the half #350 left).**
+  Activation wrote `alpSdk.path` and mirrored `.alp/sdk-path`, but neither
+  touches `<topdir>/.west/config` -- the pointer `west` reads directly. If it
+  named an SDK that was gone, the toast said "active SDK set" while every later
+  build and flash resolved a different workspace (#349). `setActiveSdk` now
+  shells `tan sdk switch`, which repairs exactly that.
+
+  This could not ship before: the reconcile is tan-cli#74, and #364 required the
+  pin bump and the wiring in one change because split, the extension shells a
+  binary that silently never reconciles. The pin reached `0.4.0` in #385, so
+  this is the other half. v0.4.0 also carries tan-cli#88, which closed #74's
+  gaps -- including the one that mattered here: the bare-version form resolved
+  only against `~/.alp/sdk-cache` while this extension installs to `~/.alp/sdk`,
+  so the repair could not reach the layout that reported the bug.
+
+  Best-effort by design, like the pointer mirror: the setting write stays
+  authoritative, and a tan that is absent, older or failing must not break
+  activation. It must not fail SILENTLY though, so both outcomes log, and the
+  failure line says what is still wrong rather than just that a command exited
+  non-zero.
+
+  The outcome is read as STATE, not as a string. tan emits
+  `sdk.west-config-reconciled` / `sdk.west-config-not-reconciled`, and neither
+  is in tan's frozen `contract/issue-codes.json` -- so matching them by exact
+  string here would have been a new fail-open surface of exactly the kind
+  tan-cli#106 froze codes to prevent: rename one upstream and this reads as
+  success forever. `warnIfWestManifestDangling` re-probes the workspace
+  afterwards instead, and a state probe cannot be renamed out from under us.
+  Reaching that warning now means the repair ran and did not fix it, which is a
+  different fact from "nobody tried".
+
 - **Pinned to tan v0.4.0, and the envelope-contract gate now actually verifies
   something.** `SUPPORTED_CLI_VERSION` moves `0.3.1` -> `0.4.0`. That is not
   bookkeeping: v0.4.0 is the FIRST tan release to publish

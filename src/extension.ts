@@ -194,7 +194,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // nothing to resolve those against and pre-launch aborts silently.
     registerAlpTaskProvider(context),
     createStatusBar(stateMgr),
-    registerSelectSdkCommand(),
+    registerSelectSdkCommand(context),
     ...registerConfiguratorEditor(context),
     vscode.commands.registerCommand("alp.openDependencies", () =>
       DependencyPanel.open(context, stateMgr),
