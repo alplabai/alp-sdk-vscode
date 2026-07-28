@@ -60,6 +60,10 @@ jobs:
   e2e:
     name: e2e · real extension host
     runs-on: ubuntu-latest
+    # A VS Code download, two Marketplace installs and an Electron boot. The
+    # default 360 min is far more rope than this needs, and a hung host should
+    # be reported rather than left holding a runner for six hours.
+    timeout-minutes: 30
     steps:
       - name: Checkout (with submodule)
         uses: actions/checkout@v4
@@ -83,3 +87,40 @@ jobs:
       # rather than assuming :99 is unused.
       - name: Run the e2e suite
         run: xvfb-run -a pnpm run test:e2e
+
+      # A push run reddens a branch someone is watching. A SCHEDULED run reddens
+      # nothing anyone is looking at, so on that path the failure becomes an
+      # issue -- the only channel here that survives nobody reading Actions
+      # email. A nightly no one watches is a nightly that does not exist.
+      #
+      # Gated on `schedule`, not on `failure()` alone: a push failure is already
+      # attached to a commit and a person, and filing an issue for it as well is
+      # noise that trains people to close these unread.
+      #
+      # The `nightly-e2e` label must exist -- `gh issue create --label` FAILS on
+      # a missing one, which would make this reporting step itself fail and
+      # report nothing. It was created before this landed.
+      - name: File an issue when the scheduled run breaks
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          # One open issue, not one per night: re-filing every 24h buries the
+          # first occurrence, which is the one carrying the commit range that
+          # explains it.
+          existing="$(gh issue list --label nightly-e2e --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -n "${existing:-}" ]; then
+            gh issue comment "${existing}" --body "Still failing: ${RUN_URL}"
+            exit 0
+          fi
+          {
+            echo "The extension-host e2e suite failed on its scheduled run."
+            echo
+            echo "Run: ${RUN_URL}"
+            echo
+            echo "This suite is deliberately not a PR gate (#394), so check the"
+            echo "whole commit range in the run, not just the newest commit."
+          } > /tmp/e2e-issue.md
+          gh issue create --title "e2e is failing on the scheduled run" --label nightly-e2e --body-file /tmp/e2e-issue.md
