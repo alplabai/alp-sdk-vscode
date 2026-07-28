@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **The end-to-end suite now runs in CI** (`.github/workflows/e2e.yml`), on
+  every push to `dev`/`main`, nightly, and on demand. It was not merely an
+  unrequired check before — `ci.yml` never invoked it at all, which is how the
+  two debug checks in #392 called a deleted function for the whole of #387's
+  lifetime unnoticed. It is deliberately NOT a required pull-request check: the
+  suite downloads a full VS Code build, installs two Marketplace extensions and
+  needs a display server, and a required check with that surface is a flaky one
+  that gets re-run or bypassed rather than fixed — leaving the repo believing in
+  a gate it does not have. The rot that actually happened is already caught on
+  every PR by #395's symbol guard; this covers the behavioural half, where a
+  reliable daily signal beats a blocking one (#394).
+
 - **When the extension runs the `tan` on your PATH because nothing else
   resolved, it now says so — once.** That binary is whichever one your shell
   resolves, and nothing here verified it: the `tan --version` check the

@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The end-to-end suite, in a real VS Code extension host.
+#
+# WHY THIS IS A SEPARATE WORKFLOW AND NOT A STEP IN ci.yml, i.e. why it is NOT
+# a required check on every pull request.
+#
+# #394 asked for the gating decision. `test:e2e` was not merely unrequired
+# before this file — `ci.yml` never invoked it at all, which is how the two
+# debug checks in #392 came to call a deleted function for the whole of #387's
+# lifetime without anyone noticing.
+#
+# The obvious repair is "make it required on PRs". That is the wrong trade
+# here, for reasons specific to what this suite needs to run:
+#
+#   * it downloads a full VS Code build (~150 MB) through @vscode/test-electron;
+#   * it installs `redhat.vscode-yaml` and `marus25.cortex-debug` from the
+#     Marketplace at runtime, because they are real `extensionDependencies`;
+#   * on Linux it needs a display server, hence `xvfb-run` below.
+#
+# Three network dependencies and a display, per run. A required check with that
+# surface is a flaky one, and a flaky required check does not get fixed — it
+# gets re-run until it passes, or bypassed, which leaves the repo believing it
+# has a gate it does not have. That is a worse position than this one, because
+# it is a false belief rather than a known gap.
+#
+# What makes the trade acceptable is that the specific rot #392 found is
+# already caught cheaply on every PR: #395's `test/e2eSymbols.test.js` fails
+# when the suite names a symbol the core no longer exports, which is exactly
+# how those two checks died. This workflow covers the other half — behavioural
+# regressions a static check cannot see — where a reliable daily signal is
+# worth more than a blocking one.
+#
+# So: every push to `dev`/`main`, nightly, and on demand. If it proves stable
+# over a few weeks, promoting it to a required PR check is a one-line change to
+# `on:` and a branch-protection setting — and that decision should be made from
+# its observed flake rate, not from first principles.
+#
+# NOT VERIFIED ON LINUX BEFORE MERGE. This was authored on Windows, where the
+# harness runs but `xvfb-run` is not the mechanism. The first run of this
+# workflow is its own verification; if it fails, that is a finding about the
+# harness on Linux and not a reason to quietly delete the job.
+
+name: e2e
+
+on:
+  push:
+    branches: [main, dev]
+  schedule:
+    # 03:00 UTC daily. Nothing depends on the hour; it is outside the working
+    # day in CET so a red run is waiting rather than interrupting.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e · real extension host
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `test:e2e` compiles and bundles first (see package.json), so there is no
+      # separate build step here. `xvfb-run -a` picks a free display number
+      # rather than assuming :99 is unused.
+      - name: Run the e2e suite
+        run: xvfb-run -a pnpm run test:e2e
