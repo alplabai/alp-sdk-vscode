@@ -8,6 +8,7 @@ import {
 } from "@alp-sdk/core/sdk/service";
 import * as fs from "fs";
 import * as vscode from "vscode";
+import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import { danglingWestManifest } from "../environment/vscodeAdapter";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
 import { planFailure, planSuccess } from "../notify/service";
@@ -23,8 +24,14 @@ import { writeAlpSetting } from "./settingsWrite";
  * pointer says. Returns true when it warned, so callers can suppress a bare
  * "success" that would read as "nothing left to do".
  *
- * Reports only. The repair is `tan`'s: `tan bootstrap` reconciles the pointer,
- * and `tan sdk switch` will too once this extension's pinned CLI carries it.
+ * Reports only. The repair is `tan`'s, and as of the pinned v0.4.0 BOTH routes
+ * exist: `tan bootstrap` reconciles the pointer, and so does `tan sdk switch`
+ * (tan-cli#74, with the three gaps #88 closed -- notably the bare-version form
+ * resolving only against `~/.alp/sdk-cache` while this extension installs to
+ * `~/.alp/sdk`, so the repair could not reach the layout that reported #349).
+ * `setActiveSdk` runs that switch itself now, so reaching this warning means
+ * the repair RAN and did not fix it -- worth saying differently from "nobody
+ * tried".
  */
 export function warnIfWestManifestDangling(sdkRoot: string | null): boolean {
   const status = danglingWestManifest(sdkRoot);
@@ -58,7 +65,10 @@ export function warnIfWestManifestDangling(sdkRoot: string | null): boolean {
  * for windows without one); VS Code merges Workspace over Global. Refreshes the
  * native trees + status bar afterwards.
  */
-export async function setActiveSdk(sdkPath: string): Promise<void> {
+export async function setActiveSdk(
+  context: vscode.ExtensionContext,
+  sdkPath: string,
+): Promise<void> {
   // Probe readiness before writing: a folder that is not an SDK root (missing
   // scripts/alp_project.py) would poison alpSdk.path — resolveSdkRoot rejects it
   // AND skips auto-discovery of a valid sibling. Surface the error, write nothing.
@@ -125,6 +135,40 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
         `[sdk] .alp/sdk-path pointer mirror failed (best-effort): ${String(err)}`,
       );
     }
+  }
+
+  // #364: hand the switch to tan so it reconciles `<topdir>/.west/config`'s own
+  // manifest pointer -- the thing west reads directly, which the setting write
+  // and the `.alp/sdk-path` mirror above both leave untouched (#349/#350).
+  //
+  // Best-effort, exactly like the pointer mirror: the setting write is
+  // authoritative, and a tan that is absent, older or failing must not break
+  // activation. What it must not do is fail SILENTLY, so both outcomes log.
+  //
+  // Deliberately NOT matched on `sdk.west-config-reconciled` /
+  // `sdk.west-config-not-reconciled`: neither is in tan's frozen
+  // `contract/issue-codes.json`, so an exact-string match here would be a new
+  // fail-open surface of exactly the kind tan-cli#106 froze codes to prevent --
+  // rename one upstream and this reads as success forever. The STATE is
+  // observable instead (`warnIfWestManifestDangling` below re-probes it), and a
+  // state probe cannot be renamed out from under us.
+  try {
+    const { outcome } = await runAlpCommand(
+      context,
+      ["sdk", "switch", sdkPath],
+      workspaceRoot ?? undefined,
+    );
+    log(
+      outcome.ok
+        ? `[sdk] tan sdk switch reconciled the workspace for ${sdkPath}`
+        : `[sdk] tan sdk switch did not reconcile (${outcome.message}) -- the active-SDK setting is set, but west may still resolve a stale workspace`,
+      outcome.ok ? "info" : "warn",
+    );
+  } catch (err) {
+    log(
+      `[sdk] tan sdk switch could not run (best-effort): ${String(err)}`,
+      "warn",
+    );
   }
 
   await vscode.commands.executeCommand("alp.views.refresh");
@@ -213,7 +257,7 @@ type SdkPickItem = vscode.QuickPickItem & {
 };
 
 /** Quick Pick to choose the active SDK from the installed (side-by-side) set. */
-async function selectSdk(): Promise<void> {
+async function selectSdk(context: vscode.ExtensionContext): Promise<void> {
   const state = await queryAlpIdeState().catch(() => null);
   const active = state?.sdk.activePath ?? null;
   const entries = state?.sdk.localEntries ?? [];
@@ -261,12 +305,16 @@ async function selectSdk(): Promise<void> {
       canSelectMany: false,
       title: "Select Alp SDK root directory",
     });
-    if (uris?.[0]) await setActiveSdk(uris[0].fsPath);
+    if (uris?.[0]) await setActiveSdk(context, uris[0].fsPath);
   } else if (pick.sdkPath) {
-    await setActiveSdk(pick.sdkPath);
+    await setActiveSdk(context, pick.sdkPath);
   }
 }
 
-export function registerSelectSdkCommand(): vscode.Disposable {
-  return vscode.commands.registerCommand("alp.selectSdk", selectSdk);
+export function registerSelectSdkCommand(
+  context: vscode.ExtensionContext,
+): vscode.Disposable {
+  return vscode.commands.registerCommand("alp.selectSdk", () =>
+    selectSdk(context),
+  );
 }
