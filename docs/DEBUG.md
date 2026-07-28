@@ -369,21 +369,17 @@ interface DebugProfile {
   adapter: DebugAdapterKind;
   server: DebugServerKind;
   executablePath: string;
-  cwd: string;
-  preLaunchTask?: string;
-  device?: string;
-  interface?: "swd" | "jtag";
-  svdFile?: string;
-  openOcdConfigFiles?: string[];
-  targetId?: string;
-  miMode?: "gdb";
-  miDebuggerPath?: string;
-  miDebuggerServerAddress?: string;
-  setupCommands?: Array<{ text: string }>;
-  remoteHost?: string;
-  remotePort?: number;
 }
 ```
+
+That is the whole of it. `DebugProfile` describes the session the extension is
+REPORTING ON, not a launch configuration: `executablePath` is here because
+`buildDebugPreflightReport` stats the ELF, which is a fact about this machine.
+It used to carry `device`, `interface`, `svdFile`, `openOcdConfigFiles`,
+`targetId`, `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`,
+`setupCommands` and `cwd` as well, all hardcoded constants of
+`(targetKind, server)` — see §12 for why grading those was #339. The
+configuration keys are tan's; §10 shows what it writes.
 
 ## 10. MVP Launch Profiles
 
@@ -580,12 +576,24 @@ validate:
 - required paths such as the OpenOCD config are valid
 - target connection info exists for remote userspace debug
 
-**Where each of those is decided (#339).** The first five are host facts a
-separate process cannot observe, so `buildDebugPreflightReport` in
-`packages/alp-core/src/debug/service.ts` owns them. The last two are
-configuration VALUES, and `tan debug-config` resolves them from the build's own
-`runners.yaml` — so they are graded against the configuration tan actually
-wrote, by `foldLaunchConfigPlaceholders`, and nowhere else.
+**Where each of those is decided (#339).** Bullets 3–5 are the extension's:
+`buildDebugPreflightReport` in `packages/alp-core/src/debug/service.ts` grades
+them as `buildArtifact`, `adapterExtension` and `serverTool`, alongside
+`workspaceRoot`, `boardYaml` and the native-host `hostPlatform` gate this list
+predates. That is an OWNERSHIP split, not an observability one — only
+`adapterExtension` is out of a separate process's reach (which debugger
+extensions this VS Code host has installed); tan reads the build tree, so
+bullet 3 is perfectly observable from outside.
+
+Bullets 1–2 get no check in that function at all. The active OS/backend and the
+target class come out of the picker and are carried as the report's own
+`targetKind` / `server` metadata; the one judgement made about the pair,
+`serverCompatibility`, lives in `buildDoctorReport`.
+
+The last two are configuration VALUES, and `tan debug-config` resolves them
+from the build's own `runners.yaml` — so they are graded against the
+configuration tan actually wrote, by `foldLaunchConfigPlaceholders`, and
+nowhere else.
 
 That split is the fix for #339, not a refactor. The preflight report used to
 grade a second, in-process draft as well: `createDebugProfile` filled `device`
@@ -606,10 +614,19 @@ Two consequences worth stating:
   recorded on another host (a container/WSL build leaves `serverpath` and
   `configFiles` pointing at `/home/…` paths that do not exist on the Windows
   box reading them). Tracked separately.
-- **`svdFile` no longer produces a check at all.** It was a constant `warn` —
-  no profile ever set it — and `Alp: Debug preflight` force-opens the output
-  channel whenever `summary.warn > 0`, so it nagged on every run. The rule
-  below still holds and is what keeps it out: `svdFile` is **optional and
+- **`svdFile` no longer produces a check at all.** It was a constant `warn`:
+  `createDebugProfile("baremetal-mcu", …)` set `svdFile: "<resolved-svd>"` — a
+  hardcoded placeholder, so the check never resolved — and every other profile
+  left the field unset, which warned too. It never once opened the output
+  channel on its own, for two reasons: the check was added only for
+  `adapter === "cortex-debug"`, so `yocto-userspace` (cppdbg) and `native-host`
+  (lldb) never got it; and on the two targets that did, `canLaunch` was already
+  `false` for every server the picker offers, so the `!report.canLaunch` half of
+  `Alp: Debug preflight`'s `if (!report.canLaunch || report.summary.warn > 0)`
+  had already fired. What makes keeping it out matter is FORWARD-looking: a
+  resolved preflight now reports `canLaunch: true`, so from here a surviving
+  constant `warn` would be the sole reason the channel is forced open, on every
+  run. The rule below is what keeps it out: `svdFile` is **optional and
   warn-only**. cortex-debug reads it to populate the peripheral/register view
   and nothing else, so a missing SVD leaves that view empty while breakpoints,
   stepping and memory reads all work. It must never appear in a launch-blocking

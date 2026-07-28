@@ -174,8 +174,10 @@ async function debugPreflight(): Promise<void> {
     },
   );
 
+  // Same reason as the support bundle below: this command never reads the
+  // written launch.json, so its verdict is about the host, not the file.
   log(
-    `alp.debugPreflight: ran preflight for ${targetKind}/${server}, canLaunch=${report.canLaunch}`,
+    `alp.debugPreflight: ran preflight for ${targetKind}/${server}, hostReady=${report.canLaunch}`,
   );
   await showJsonDocument(report);
   if (!report.canLaunch || report.summary.warn > 0) {
@@ -786,7 +788,13 @@ async function exportSupportBundle(): Promise<void> {
     notes: [
       `targetKind=${targetKind}`,
       `server=${server}`,
-      `canLaunch=${preflight.canLaunch}`,
+      // NOT `canLaunch=`. This bundle is what a customer sends after a debug
+      // session already died, and nothing here read their launch.json — the
+      // report is host readiness only (#339). Labelling an unfolded verdict
+      // `canLaunch` would tell the reader the file launches while the session
+      // is dying on a placeholder inside it, i.e. send them to the wrong half.
+      `hostReady=${preflight.canLaunch}`,
+      `configurationGraded=${preflight.configurationGraded}`,
     ],
   });
 

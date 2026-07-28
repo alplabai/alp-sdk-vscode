@@ -150,6 +150,20 @@ export interface DebugPreflightReport {
   checks: PreflightCheck[];
   nextSteps: string[];
   canLaunch: boolean;
+  /**
+   * Whether the launch.json configuration's OWN values were graded in reaching
+   * `canLaunch` (#339).
+   *
+   * `buildDebugPreflightReport` grades host readiness and nothing else, so it
+   * sets this `false`; `foldLaunchConfigPlaceholders` sets it `true`, and only
+   * `writeLaunchProfile` has a written configuration to fold. The three
+   * diagnostic surfaces — `Alp: Debug preflight`, the troubleshooting panel and
+   * the support bundle — never do, so their `canLaunch: true` means "the host
+   * is ready", NOT "this file can launch". Read on its own it would send the
+   * reader of a support bundle, sent precisely because a session already
+   * failed, looking away from the placeholder that killed it.
+   */
+  configurationGraded: boolean;
 }
 
 export interface DebugSupportBundlePayload {
@@ -181,18 +195,34 @@ export type DebugProfileOs = "zephyr" | "baremetal" | "yocto" | "host";
  * The session the extension is REPORTING ON, not a launch configuration.
  *
  * It carries only what `buildDebugPreflightReport` needs to grade host
- * readiness. It used to also carry the cortex-debug/cppdbg configuration
- * values — `device`, `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`,
- * `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` — and
- * `createDebugProfile` could only ever fill them with `<resolved-…>`
- * placeholder literals, because the values come from the build's
- * `runners.yaml` and only `tan debug-config` reads that (#387). Grading those
- * literals made a fully resolved profile report unlaunchable (#339), so they
- * are gone. tan owns the configuration; the written configuration is what gets
- * graded, by `foldLaunchConfigPlaceholders`.
+ * readiness. Nine cortex-debug/cppdbg configuration fields used to ride here
+ * too — `device`, `targetId`, `openOcdConfigFiles`, `svdFile`, `interface`,
+ * `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` —
+ * and every one of them was a CONSTANT of `(targetKind, server)`:
+ * `createDebugProfile` invented them, no project input reached them, and a
+ * customer's actual values live in the build's `runners.yaml`, which only
+ * `tan debug-config` reads (#387). Five were `<resolved-…>` literals
+ * (`"<resolved-device>"`, `"<resolved-target-id>"`,
+ * `"<resolved-openocd-board-cfg>"`, `"<resolved-svd>"`, `"<resolved-gdb>"`);
+ * `miDebuggerServerAddress` was `"<host>:<port>"`, a placeholder but NOT a
+ * `<resolved-…>` one — the distinction `isConcrete` in src/debug/service.ts
+ * exists to record; and `interface: "swd"`, `miMode: "gdb"` and
+ * `setupCommands: [{ text: "-enable-pretty-printing" }]` were concrete values
+ * that no code in `src/`, `packages/` or `test/` ever read. The other six were
+ * read only by the preflight checks that graded them, so a placeholder check
+ * failed for every project on earth and a fully resolved launch.json reported
+ * unlaunchable (#339). All nine are gone. tan owns the configuration; the
+ * written configuration is what gets graded, by
+ * `foldLaunchConfigPlaceholders`.
  *
- * Do not add a field here to describe something that ends up IN launch.json —
- * that is tan's output and re-deriving it is the defect, not the fix.
+ * `cwd` went with them for the same reason: `"${workspaceFolder}"`, constant,
+ * a launch.json key, and no reader.
+ *
+ * A field belongs here only when the extension itself must READ it to grade a
+ * host fact. `executablePath` qualifies — `createExecutableCheck` stats the
+ * ELF, which is a fact about this machine. A value the extension only wants to
+ * SEE in launch.json does not: that is tan's output, and re-deriving it is the
+ * defect, not the fix.
  */
 export interface DebugProfile {
   id: string;
@@ -202,7 +232,6 @@ export interface DebugProfile {
   server: DebugServerKind;
   os: DebugProfileOs;
   executablePath: string;
-  cwd: string;
 }
 
 export type LaunchConfigurationDraft = Record<string, unknown>;

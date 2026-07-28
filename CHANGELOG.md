@@ -13,12 +13,27 @@
   naming `device` — for every project, built or not. On the first-blink path tan
   wrote a configuration that runs as-is and the extension put a "Start Anyway /
   Show Details" gate in front of it. The placeholders had left the file and
-  stayed in the verdict. The draft is now gone rather than patched: `DebugProfile`
-  carries no configuration values at all, `createDebugProfile` invents none, and
-  the preflight report grades only what a separate process cannot see — which
-  debugger extension is installed, whether the server tool is on PATH, the host
-  platform, whether the build artefact exists. The configuration's own values are
-  graded once, against the object tan actually wrote (#339).
+  stayed in the verdict. The draft is now gone rather than patched: the ten
+  configuration fields `createDebugProfile` used to invent — `device`,
+  `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`, `miMode`,
+  `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` and the dead
+  `cwd` — are deleted from `DebugProfile`, leaving `executablePath` as the only
+  field that also appears in `launch.json`, and it stays because the extension
+  STATS it. The preflight report now grades host readiness only: which debugger
+  extension is installed, whether the server tool is on PATH, the host platform,
+  whether the build artefact exists. The configuration's own values are graded
+  once, against the object tan actually wrote (#339).
+
+- **The three diagnostic surfaces say which verdict they are giving.** `Alp:
+  Debug preflight`, the troubleshooting panel and `Alp: Export support bundle`
+  build that host-readiness report and never read the written `launch.json`, so
+  their `canLaunch` answers "is this machine ready", not "does this file
+  launch". It is now labelled as such: the report carries
+  `configurationGraded`, `false` until the fold sets it, the panel prints it
+  beside `canLaunch`, and the support bundle — the artefact a customer sends
+  once a session has ALREADY failed — records `hostReady=` rather than
+  `canLaunch=`. Grading the configuration on those paths would mean spawning
+  tan from a diagnostic command; the marker is the honest cheap half (#339).
 
 - **An unresolved value in that written configuration still blocks the launch,
   and now names the field.** The fold that reads tan's output produces one check

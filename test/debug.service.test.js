@@ -179,9 +179,12 @@ test("createSupportBundlePayload composes inspect and trace reports", () => {
   assert.deepEqual(bundle.notes, ["sample-note"]);
 });
 
-// Every launch.json key a preflight check was ever named after. None of them
-// may come back: they are tan's to resolve from runners.yaml and the fold's to
-// grade, and a check here would be a second derivation of the same value.
+// Every preflight check that graded a configuration value. None of them may
+// come back: those values are tan's to resolve from runners.yaml and the
+// fold's to grade, and a check here would be a second derivation of the same
+// value. Five are named after the launch.json key itself; `openOcdConfig` is
+// not — the key tan writes is `configFiles`, and the check was named after the
+// server. Either name reappearing means the draft is back.
 const CONFIGURATION_KEY_CHECKS = [
   "device",
   "targetId",
@@ -234,6 +237,43 @@ test("buildDebugPreflightReport grades host readiness, never a drafted configura
     createDebugProfile("yocto-userspace", "gdbserver").miDebuggerPath,
     undefined,
   );
+  // `cwd` was the one the sweep missed: a launch.json key, "${workspaceFolder}"
+  // for every target, and read by nothing. It went with the other nine.
+  assert.equal(createDebugProfile("zephyr-mcu", "jlink").cwd, undefined);
+});
+
+// #339 residual, stated where it is consumed. This report never reads the
+// written launch.json, so `canLaunch: true` here means "the host is ready" and
+// not "this file launches". The support bundle is why that matters: a customer
+// exports one AFTER a session has failed, and a bundle asserting the profile is
+// launchable sends its reader away from the placeholder that killed it. The
+// flag is what tells the two apart -- false out of the builder, true only once
+// the fold has read a configuration.
+test("a preflight report says whether it read the configuration", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    createDebugProfile("zephyr-mcu", "jlink"),
+    createRuntime(),
+    { pathExists: () => true },
+  );
+
+  // The dangerous combination, and the one the bundle used to print bare.
+  assert.equal(report.canLaunch, true);
+  assert.equal(report.configurationGraded, false);
+
+  // A fully resolved configuration: no new check, but it WAS read.
+  const clean = foldLaunchConfigPlaceholders(report, []);
+  assert.equal(clean.configurationGraded, true);
+  assert.deepEqual(clean.checks, report.checks);
+  assert.equal(clean.canLaunch, true);
+
+  // An unresolved one: read, and failing.
+  const folded = foldLaunchConfigPlaceholders(report, [
+    { key: "device", value: "<resolved-device>" },
+  ]);
+  assert.equal(folded.configurationGraded, true);
+  assert.equal(folded.canLaunch, false);
 });
 
 // The defect of #339 in one assertion. With the host ready and the ELF built,
@@ -241,9 +281,16 @@ test("buildDebugPreflightReport grades host readiness, never a drafted configura
 // resolves device / configFiles / targetId / gdbPath out of the build's own
 // runners.yaml. Before this, all three failed on the draft -- jlink on
 // `device`, openocd on `openOcdConfig`, pyocd on `targetId` -- and F5 sat
-// behind a "Start Anyway" click on a launch.json that ran as-is. `warn` is
-// pinned to 0 as well: the constant `svdFile` warn force-opened the output
-// channel on every single preflight run.
+// behind a "Start Anyway" click on a launch.json that ran as-is.
+//
+// `warn` is pinned to 0 for a FORWARD-looking reason, not a past one. The old
+// constant `svdFile` warn never opened the output channel by itself: `Alp:
+// Debug preflight` opens it on `!report.canLaunch || report.summary.warn > 0`
+// and the left half was already true on every cortex-debug target -- which is
+// the only adapter the check was ever added for. Now that a resolved preflight
+// reports canLaunch true, a surviving constant warn WOULD be the sole reason
+// the channel is forced open, on every run, so 0 is the assertion that keeps
+// it out.
 test("a host-ready zephyr-mcu preflight can launch on every backend", () => {
   for (const { server } of serverChoicesForTarget("zephyr-mcu")) {
     const report = buildDebugPreflightReport(
@@ -496,7 +543,7 @@ test("an unresolved OpenOCD board cfg in the WRITTEN configuration blocks the la
   assert.match(openOcd.detail, /<resolved-openocd-board-cfg>/);
 });
 
-test("foldLaunchConfigPlaceholders returns the report unchanged when there are no placeholders", () => {
+test("foldLaunchConfigPlaceholders adds no check when there are no placeholders", () => {
   const report = buildDebugPreflightReport(
     "2026-05-14T00:00:00.000Z",
     createDebugContext(),
@@ -511,7 +558,17 @@ test("foldLaunchConfigPlaceholders returns the report unchanged when there are n
     },
   );
 
-  assert.equal(foldLaunchConfigPlaceholders(report, []), report);
+  const folded = foldLaunchConfigPlaceholders(report, []);
+  // Everything a surface renders is identical -- a fully resolved configuration
+  // must not gain a check, or the first-blink path is back behind a Start
+  // Anyway click. Only `configurationGraded` moves, and it says the
+  // configuration was READ, not that it was faulty.
+  assert.deepEqual(
+    { ...folded, configurationGraded: report.configurationGraded },
+    report,
+  );
+  assert.equal(report.configurationGraded, false);
+  assert.equal(folded.configurationGraded, true);
 });
 
 test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the report", () => {

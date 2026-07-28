@@ -214,11 +214,18 @@ export function serializeSupportBundlePayload(
  * verdict.
  *
  * The division of labour is EXTENSION_CLI_INTEGRATION.md §4a: tan owns the
- * configuration, the extension owns what a separate process cannot observe —
- * which debugger extension is installed, whether the server tool is on PATH,
- * the host platform, whether the build artefact exists. All of those are here.
+ * configuration, the extension owns the host — which debugger extension is
+ * installed, whether the server tool is on PATH, the host platform, whether
+ * the build artefact exists. All four are here. It is an OWNERSHIP split, not
+ * an observability one: only `adapterExtension` is genuinely out of a separate
+ * process's reach, and tan reads the build tree as happily as this does.
  * The configuration's own values are graded by `foldLaunchConfigPlaceholders`,
  * against the object tan actually WROTE, and nowhere else.
+ *
+ * So the report it returns carries `configurationGraded: false`, and only the
+ * fold flips it. A caller that does not fold — the preflight command, the
+ * troubleshooting panel, the support bundle — gets a `canLaunch` that means
+ * "the host is ready", and the flag beside it is what says so.
  */
 export function buildDebugPreflightReport(
   generatedAt: string,
@@ -265,6 +272,9 @@ export function buildDebugPreflightReport(
     checks,
     nextSteps: uniquePreflightNextSteps(checks),
     canLaunch: countPreflightChecks(checks, "fail") === 0,
+    // Nothing above read the configuration, so say so rather than let
+    // `canLaunch: true` be read as "this launch.json runs".
+    configurationGraded: false,
   };
 }
 
@@ -288,15 +298,19 @@ export function buildDebugPreflightReport(
  * is the field cortex-debug will choke on and the field they can fill in. The
  * placeholder itself stays in `detail`, which is where the log line finds it.
  *
- * Returns `report` unchanged when `placeholders` is empty — a fully resolved
- * configuration must not gain a check at all, or the first-blink path is back
- * behind a Start Anyway click.
+ * Adds no CHECK when `placeholders` is empty — a fully resolved configuration
+ * must not gain one, or the first-blink path is back behind a Start Anyway
+ * click. It still flips `configurationGraded`, because it did grade it and
+ * found nothing: that flag says whether the configuration was READ, not
+ * whether it was faulty, and the surfaces that never read one keep it `false`.
  */
 export function foldLaunchConfigPlaceholders(
   report: DebugPreflightReport,
   placeholders: ReadonlyArray<{ key: string; value: string }>,
 ): DebugPreflightReport {
-  if (placeholders.length === 0) return report;
+  if (placeholders.length === 0) {
+    return { ...report, configurationGraded: true };
+  }
 
   const checks: PreflightCheck[] = [
     ...report.checks,
@@ -323,6 +337,7 @@ export function foldLaunchConfigPlaceholders(
     },
     nextSteps: uniquePreflightNextSteps(checks),
     canLaunch: countPreflightChecks(checks, "fail") === 0,
+    configurationGraded: true,
   };
 }
 
@@ -475,17 +490,22 @@ function sliceExecutablePath(
  * What the extension knows about the session it is about to REPORT ON — not a
  * launch configuration, and no longer anything close to one (#339).
  *
- * It carries exactly what `buildDebugPreflightReport` reads: which target
+ * It returns exactly what `buildDebugPreflightReport` reads: which target
  * class and server were picked, which debug-adapter extension that needs, and
- * where the build artefact should be. Every probe/tool VALUE it used to
- * carry — `device`, `targetId`, `openOcdConfigFiles`, `svdFile`, `miMode`,
- * `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands`, `interface` —
- * is gone. Those were hardcoded `<resolved-…>` literals: a second derivation
- * of what `tan debug-config` resolves from the build's `runners.yaml`, and one
- * that could only ever produce a placeholder. It had no reader other than the
- * preflight checks that graded it, and grading it is precisely the defect
- * #339 reports. The written configuration is the only thing worth grading, and
- * `foldLaunchConfigPlaceholders` grades that.
+ * where the build artefact should be. The nine configuration fields it used to
+ * invent — `device`, `targetId`, `openOcdConfigFiles`, `svdFile`, `interface`,
+ * `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` — plus
+ * `cwd` are gone. They were not all placeholders (`interface: "swd"`,
+ * `miMode: "gdb"` and the `-enable-pretty-printing` `setupCommands` were
+ * concrete, and `miDebuggerServerAddress` was `"<host>:<port>"`, not a
+ * `<resolved-…>` token), but they were all CONSTANTS of `(targetKind, server)`:
+ * a second derivation of what `tan debug-config` resolves from the build's
+ * `runners.yaml`, one that no project input could reach. Three of them
+ * (`interface`, `miMode`, `setupCommands`) and `cwd` had no reader at all once
+ * #387 deleted `debugProfileToLaunchDraft`; the rest were read only by the
+ * preflight checks that graded them, and grading a constant placeholder is
+ * precisely the defect #339 reports. The written configuration is the only
+ * thing worth grading, and `foldLaunchConfigPlaceholders` grades that.
  */
 export function createDebugProfile(
   targetKind: DebugTargetKind,
@@ -509,7 +529,6 @@ export function createDebugProfile(
     targetKind,
     server,
     adapter: DEBUG_TARGET_ADAPTER[targetKind],
-    cwd: "${workspaceFolder}",
   } as const;
 
   switch (targetKind) {
