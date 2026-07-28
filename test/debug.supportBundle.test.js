@@ -134,7 +134,7 @@ test("the support bundle labels a host-only verdict hostReady, never canLaunch",
     "targetKind=zephyr-mcu",
     "server=jlink",
     "hostReady=true",
-    "configurationGraded=false",
+    "configurationGraded=none",
   ]);
 
   // The failure this note exists to prevent, asserted as its own sentence: the
@@ -148,7 +148,7 @@ test("the support bundle labels a host-only verdict hostReady, never canLaunch",
   );
   // And the embedded report must agree with the note it is labelled by.
   assert.equal(bundle.preflight.canLaunch, true);
-  assert.equal(bundle.preflight.configurationGraded, false);
+  assert.equal(bundle.preflight.configurationGraded, "none");
 });
 
 test("the support bundle reports the host NOT ready when it is not", async () => {
@@ -157,5 +157,5 @@ test("the support bundle reports the host NOT ready when it is not", async () =>
   const bundle = await exportBundle({ pathExists: () => false });
 
   assert.ok(bundle.notes.includes("hostReady=false"));
-  assert.ok(bundle.notes.includes("configurationGraded=false"));
+  assert.ok(bundle.notes.includes("configurationGraded=none"));
 });

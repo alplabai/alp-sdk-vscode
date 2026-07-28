@@ -79,7 +79,7 @@ test("createDebugTroubleshootingPanelHtml includes sections and command links", 
       ],
       nextSteps: [],
       canLaunch: true,
-      configurationGraded: false,
+      configurationGraded: "none",
     },
   });
 
@@ -92,5 +92,5 @@ test("createDebugTroubleshootingPanelHtml includes sections and command links", 
   // The panel builds its report the same config-blind way the support bundle
   // does, so `canLaunch=true` on its own would read as "this launch.json runs"
   // when nothing here opened the file (#339). Both halves, side by side.
-  assert.match(html, /canLaunch=true configurationGraded=false/);
+  assert.match(html, /canLaunch=true configurationGraded=none/);
 });

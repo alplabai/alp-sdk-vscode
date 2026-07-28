@@ -598,9 +598,10 @@ target class come out of the picker and are carried as the report's own
 `targetKind` / `server` metadata; the one judgement made about the pair,
 `serverCompatibility`, lives in `buildDoctorReport`.
 
-The last two are configuration VALUES. Both are graded against the
-configuration tan actually wrote, by `foldLaunchConfigPlaceholders`, and
-nowhere else — but they differ in whether tan can fill them, and that
+The last two are configuration VALUES. Both are graded by
+`foldLaunchConfigPlaceholders` and nowhere else, against the `launch.json`
+entry tan MERGED into rather than the draft it reported — see "Which
+configuration is graded" below — but they differ in whether tan can fill them, and that
 difference is not cosmetic. Bullet 6 it resolves: on a Zephyr build
 `tan debug-config --server openocd` reads the OpenOCD paths out of the build's
 own `runners.yaml`, driven on tan 0.4.0 to `"configFiles":
@@ -631,8 +632,9 @@ Two consequences worth stating:
   recorded on another host (a container/WSL build leaves `serverpath` and
   `configFiles` pointing at `/home/…` paths that do not exist on the Windows
   box reading them). Tracked separately.
-- **`svdFile` no longer produces a check at all.** Exactly two profiles ever
-  drew one, because it was added only for `adapter === "cortex-debug"`:
+- **`svdFile` no longer produces a check at all.** Only the two cortex-debug
+  target classes ever drew one, because it was added only for
+  `adapter === "cortex-debug"`:
   `yocto-userspace` (cppdbg) and `native-host` (lldb) never got it. On both that
   did it was a constant `warn` — `createDebugProfile("baremetal-mcu", …)` set
   `svdFile: "<resolved-svd>"`, a hardcoded placeholder that never resolved, and
@@ -652,6 +654,32 @@ Two consequences worth stating:
   and carries no path to one, alp-sdk#948; when it does, tan writes the key and
   the fold is what would see an unresolved one.)
 
+**Which configuration is graded.** The `launch.json` entry on disk, found by the
+`name` tan reports — not `data.configuration` from the envelope. tan MERGES its
+draft into the customer's file, and the merge preserves a value they hand-filled
+while the draft it reported still carries the placeholder it could not resolve.
+Driven on tan 0.4.0, `--server pyocd` against a board registering only
+`jlink`/`openocd`, with `"targetId": "cortex_m55"` already in the file: exit 0,
+`replaced: true`, envelope `"targetId": "<resolved-target-id>"`, file
+`"targetId": "cortex_m55"`. Grading the envelope reports `canLaunch: false`
+naming `targetId` for a session that would have worked — #339's own symptom
+pointed the other way. The same holds inside an array: tan's merge keeps an
+all-placeholder incoming `configFiles` from overwriting the customer's list, so
+the envelope reports `configFiles[0]` unresolved where the file holds a real
+`.cfg`.
+
+`gradeWrittenLaunchConfig` (`src/debug/service.ts`) does the read-back and the
+lookup; `packages/alp-core` stays pure and the fold keeps taking placeholders as
+data. The entry is found by tan's own configuration `name`, never by an
+`ALP:`/`Alp:` prefix guess — guessing the spelling is the defect the orphan
+rescue in that same file exists to repair. When the file is missing, does not
+parse (JSONC included), or holds no entry under that name, the fold still runs
+against the envelope, which is the pre-#403 behaviour and still catches every
+placeholder tan itself left. `DebugPreflightReport.configurationGraded` says
+which happened — `"launchJson"`, `"cliEnvelope"` or `"none"` — so a fallback
+verdict is never mistaken for a reading of the file, and a failed read can never
+pass for a clean one. Covered by `test/debug.gradedConfig.test.js`.
+
 Two targets are where a value genuinely cannot be filled. `baremetal-mcu` has
 no Zephyr build, so no `runners.yaml` of its own to read, and all three servers
 come out with `"device": "<resolved-device>"` even with a fully populated one
@@ -665,13 +693,21 @@ is worth being exact about which half is whose:
   writing a second version of it. This document does not restate it either.
 - **The extension owns the per-key next step**, because it is the half that
   knows the key and the target class. `foldLaunchConfigPlaceholders` writes the
-  failing check's `fix`, and that string must fit the target: "Build the project
-  first" is right for a `zephyr-mcu` placeholder seen before the build and is
-  advice that cannot terminate on the two above, where no build will ever
-  produce the value. Handing a customer a next step that cannot work is #339's
-  own defect in a different hat, so the fold branches on `report.targetKind` and
-  says what they must supply instead (`placeholderFix`, covered by
-  `test/debug.service.test.js`).
+  failing check's `fix`, and that string must fit the target. On the two above
+  no build will ever produce the value, so "Build the project first" alone would
+  be advice that cannot terminate — handing a customer a next step that cannot
+  work is #339's own defect in a different hat. The fold therefore branches on
+  `report.targetKind` and says what they must supply instead (`placeholderFix`,
+  covered by `test/debug.service.test.js`).
+
+  `zephyr-mcu` keeps the default, and it offers the hand-edit alongside the
+  build because the build half is right often rather than always: a SUCCESSFUL
+  Zephyr build whose board registers no runner for the chosen server also leaves
+  the placeholder standing. Driven on tan 0.4.0 against a `runners.yaml` listing
+  only `jlink` and `openocd`, `--server pyocd` exits 0 with `"targetId":
+  "<resolved-target-id>"` and this note, which `logUnlaunchableDetail` logs
+  verbatim: "This build registers no 'pyocd' runner (runners.yaml: `["jlink",
+  "openocd"]`), so its fields could not be resolved."
 
 If preflight fails, the product should not attempt a debug launch. It
 should explain the failure and offer the next action. Only `fail` checks

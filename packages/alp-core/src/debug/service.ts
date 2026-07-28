@@ -5,6 +5,7 @@ import { toPosix } from "../paths";
 
 import {
   DebugAdapterKind,
+  DebugConfigurationGrade,
   DebugDoctorRequest,
   DebugGenerationTraceDecision,
   DebugGenerationTraceReport,
@@ -220,12 +221,12 @@ export function serializeSupportBundlePayload(
  * an observability one: only `adapterExtension` is genuinely out of a separate
  * process's reach, and tan reads the build tree as happily as this does.
  * The configuration's own values are graded by `foldLaunchConfigPlaceholders`,
- * against the object tan actually WROTE, and nowhere else.
+ * and nowhere else.
  *
- * So the report it returns carries `configurationGraded: false`, and only the
- * fold flips it. A caller that does not fold — the preflight command, the
+ * So the report it returns carries `configurationGraded: "none"`, and only the
+ * fold sets it. A caller that does not fold — the preflight command, the
  * troubleshooting panel, the support bundle — gets a `canLaunch` that means
- * "the host is ready", and the flag beside it is what says so.
+ * "the host is ready", and the field beside it is what says so.
  */
 export function buildDebugPreflightReport(
   generatedAt: string,
@@ -272,24 +273,33 @@ export function buildDebugPreflightReport(
     checks,
     nextSteps: uniquePreflightNextSteps(checks),
     canLaunch: countPreflightChecks(checks, "fail") === 0,
-    // Nothing above read the configuration, so say so rather than let
+    // Nothing above read a configuration, so say so rather than let
     // `canLaunch: true` be read as "this launch.json runs".
-    configurationGraded: false,
+    configurationGraded: "none",
   };
 }
 
 /**
- * Fold the unresolved values left in the launch.json configuration
+ * Fold the unresolved values left in the launch configuration
  * `tan debug-config` just wrote into an already-built preflight report.
  *
- * This is the ONLY configuration-value check the extension makes (#339), and
- * it grades the object tan WROTE — never a draft. `buildDebugPreflightReport`
- * above is host readiness and nothing else, so the surface layer
- * (src/debug.ts) that ran `launchConfigPlaceholders` over the written
- * configuration calls this to fold its finding back in, rather than overriding
- * `canLaunch` directly and leaving `checks`/`summary`/`nextSteps` to disagree
- * with it. Reuses the same summary/canLaunch/nextSteps arithmetic, so the
- * result is indistinguishable from a report that had the check all along.
+ * This is the ONLY configuration-value check the extension makes (#339).
+ * `buildDebugPreflightReport` above is host readiness and nothing else, so the
+ * caller folds its finding back in here rather than overriding `canLaunch`
+ * directly and leaving `checks`/`summary`/`nextSteps` to disagree with it.
+ * Reuses the same summary/canLaunch/nextSteps arithmetic, so the result is
+ * indistinguishable from a report that had the check all along.
+ *
+ * IT GRADES PLACEHOLDERS AS DATA, and `graded` says which configuration they
+ * were read out of. The fold cannot go and look itself — this package is pure,
+ * with no `fs` — and it must not assume: `gradeWrittenLaunchConfig` in
+ * src/debug/service.ts prefers the entry in the customer's `.vscode/launch.json`
+ * and falls back to tan's envelope draft, which are not the same object. tan
+ * MERGES, so a `targetId` the customer hand-filled survives while the draft it
+ * composed still carries `<resolved-target-id>`; grading the draft then reports
+ * a file that launches as unlaunchable, which is #339's own symptom pointed the
+ * other way. `graded` is carried into the report so a reader can tell a verdict
+ * about the file from a worst case about the draft.
  *
  * ONE CHECK PER KEY, NAMED AFTER THE KEY. `logUnlaunchableDetail` builds the
  * toast out of failing check NAMES, so a single check called `launchConfig`
@@ -300,9 +310,9 @@ export function buildDebugPreflightReport(
  *
  * Adds no CHECK when `placeholders` is empty — a fully resolved configuration
  * must not gain one, or the first-blink path is back behind a Start Anyway
- * click. It still flips `configurationGraded`, because it did grade it and
- * found nothing: that flag says whether the configuration was READ, not
- * whether it was faulty, and the surfaces that never read one keep it `false`.
+ * click. It still records `graded`, because it did grade it and found nothing:
+ * that field says WHICH configuration was read, not whether it was faulty, and
+ * the surfaces that never read one keep `"none"`.
  *
  * The next step comes from `placeholderFix`, which needs the report's
  * `targetKind` — see there for why one sentence does not fit all four.
@@ -310,9 +320,10 @@ export function buildDebugPreflightReport(
 export function foldLaunchConfigPlaceholders(
   report: DebugPreflightReport,
   placeholders: ReadonlyArray<{ key: string; value: string }>,
+  graded: Exclude<DebugConfigurationGrade, "none">,
 ): DebugPreflightReport {
   if (placeholders.length === 0) {
-    return { ...report, configurationGraded: true };
+    return { ...report, configurationGraded: graded };
   }
 
   const checks: PreflightCheck[] = [
@@ -340,7 +351,7 @@ export function foldLaunchConfigPlaceholders(
     },
     nextSteps: uniquePreflightNextSteps(checks),
     canLaunch: countPreflightChecks(checks, "fail") === 0,
-    configurationGraded: true,
+    configurationGraded: graded,
   };
 }
 
@@ -349,13 +360,24 @@ export function foldLaunchConfigPlaceholders(
  * sentence on every target class (#339).
  *
  * "Build the project first" is only advice where a build would in fact produce
- * the value. On `zephyr-mcu` it would: `tan debug-config` reads `device`,
+ * the value. On `zephyr-mcu` it CAN: `tan debug-config` reads `device`,
  * `configFiles`, `targetId` and `gdbPath` out of the build's own
- * `runners.yaml`, so a placeholder seen before the build is gone after it. On
- * the two targets where a placeholder legitimately survives a SUCCESSFUL build
- * that sentence sends the customer around a loop that cannot terminate, which
- * is #339's own defect wearing a different hat — something that reads like a
- * way forward and is not one. Driven against tan 0.4.0:
+ * `runners.yaml`, so a placeholder seen before the build is gone after one —
+ * PROVIDED the board registers a runner for the server that was picked. Where
+ * it does not, a successful build leaves the placeholder standing and tan says
+ * why, in a note `logUnlaunchableDetail` logs verbatim: driven on tan 0.4.0
+ * against a `runners.yaml` listing only `jlink` and `openocd`, `--server pyocd`
+ * exits 0 with `"targetId": "<resolved-target-id>"` and *"This build registers
+ * no 'pyocd' runner (runners.yaml: [\"jlink\", \"openocd\"]), so its fields
+ * could not be resolved."* So the default sentence offers the hand-edit as well
+ * as the build, and it has to: on `zephyr-mcu` the build half is right often,
+ * not always.
+ *
+ * On the two targets below a placeholder survives a SUCCESSFUL build
+ * unconditionally, and there "build first" alone would send the customer around
+ * a loop that cannot terminate — #339's own defect wearing a different hat,
+ * something that reads like a way forward and is not one. Driven against tan
+ * 0.4.0:
  *
  * - `baremetal-mcu` has no Zephyr build and so no `runners.yaml` of its own to
  *   read; all three servers write `"device": "<resolved-device>"` even with a
@@ -550,8 +572,8 @@ function sliceExecutablePath(
  * tan's merge key would have appended a duplicate. That is the very defect
  * `planOrphanRescue` in src/debug/service.ts repairs, and it learns the
  * spelling from the customer's file and from `tan debug-config --preview`,
- * never from here. The written configuration is the only thing worth grading,
- * and `foldLaunchConfigPlaceholders` grades that.
+ * never from here. The `launch.json` entry tan merged into is the only thing
+ * worth grading, and `foldLaunchConfigPlaceholders` grades that.
  */
 export function createDebugProfile(
   targetKind: DebugTargetKind,

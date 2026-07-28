@@ -141,6 +141,21 @@ export interface DoctorReport {
   nextSteps: string[];
 }
 
+/**
+ * WHICH configuration a preflight report's `canLaunch` graded (#339).
+ *
+ * - `"none"` — none was read, so `canLaunch` is host readiness alone.
+ * - `"launchJson"` — the entry in the customer's `.vscode/launch.json`, found
+ *   by the `name` tan reports. That file is what F5 launches, so this is the
+ *   verdict that answers the question the customer asked.
+ * - `"cliEnvelope"` — tan's own `data.configuration`, which is the DRAFT it
+ *   composed, not necessarily what landed. tan MERGES, and a value the
+ *   customer hand-filled survives the merge while the draft still carries the
+ *   placeholder. So this source can name a key that is fine in the file, and
+ *   the fold's verdict is a worst case rather than the file's own.
+ */
+export type DebugConfigurationGrade = "none" | "launchJson" | "cliEnvelope";
+
 export interface DebugPreflightReport {
   generatedAt: string;
   targetKind: DebugTargetKind;
@@ -151,19 +166,25 @@ export interface DebugPreflightReport {
   nextSteps: string[];
   canLaunch: boolean;
   /**
-   * Whether the launch.json configuration's OWN values were graded in reaching
-   * `canLaunch` (#339).
+   * Which launch configuration's OWN values were graded in reaching `canLaunch`
+   * (#339) — see `DebugConfigurationGrade`.
    *
    * `buildDebugPreflightReport` grades host readiness and nothing else, so it
-   * sets this `false`; `foldLaunchConfigPlaceholders` sets it `true`, and only
-   * `writeLaunchProfile` has a written configuration to fold. The three
-   * diagnostic surfaces — `Alp: Debug preflight`, the troubleshooting panel and
-   * the support bundle — never do, so their `canLaunch: true` means "the host
-   * is ready", NOT "this file can launch". Read on its own it would send the
-   * reader of a support bundle, sent precisely because a session already
-   * failed, looking away from the placeholder that killed it.
+   * sets `"none"`; `foldLaunchConfigPlaceholders` records what its caller
+   * graded, and only `writeLaunchProfile` has a configuration to fold. The
+   * three diagnostic surfaces — `Alp: Debug preflight`, the troubleshooting
+   * panel and the support bundle — never do, so their `canLaunch: true` means
+   * "the host is ready", NOT "this file can launch". Read on its own it would
+   * send the reader of a support bundle, sent precisely because a session
+   * already failed, looking away from the placeholder that killed it.
+   *
+   * It has three values rather than two because a failed read must not pass
+   * for a clean one. When `.vscode/launch.json` cannot be read, does not parse,
+   * or holds no entry under tan's name, the fold still runs — against the CLI
+   * envelope, the pre-#403 behaviour — and `"cliEnvelope"` is what says the
+   * verdict came from the draft rather than from the file.
    */
-  configurationGraded: boolean;
+  configurationGraded: DebugConfigurationGrade;
 }
 
 export interface DebugSupportBundlePayload {
@@ -210,8 +231,8 @@ export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "lldb";
  * read only by the preflight checks that graded them, so a placeholder check
  * failed for every project on earth and a fully resolved launch.json reported
  * unlaunchable (#339). All nine are gone. tan owns the configuration; the
- * written configuration is what gets graded, by
- * `foldLaunchConfigPlaceholders`.
+ * `launch.json` entry it merged into is what gets graded, by
+ * `foldLaunchConfigPlaceholders` over `gradeWrittenLaunchConfig`.
  *
  * `cwd`, `name` and `os` went with them for the same reason. `cwd` was
  * `"${workspaceFolder}"`; `name` was `Alp: Zephyr Debug (J-Link)` and its
@@ -220,8 +241,10 @@ export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "lldb";
  * targets. By tan 0.4.0 it had ALREADY DRIFTED from the `ALP: …` merge key tan
  * writes, which is the whole reason the orphan rescue in src/debug/service.ts
  * exists. It reads the two spellings off the customer's own file and off
- * `tan debug-config --preview`, never off a profile. `os` was a fifth spelling
- * of `targetKind`. None of the three had a reader in `src/`, `packages/` or
+ * `tan debug-config --preview`, never off a profile. `os` was a second name
+ * for `targetKind`: `"zephyr" | "baremetal" | "yocto" | "host"`, one value per
+ * target class, derived from nothing else. None of the three had a reader in
+ * `src/`, `packages/` or
  * `test/`.
  *
  * A field belongs here only when the extension itself must READ it to grade a

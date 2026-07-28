@@ -238,7 +238,8 @@ test("buildDebugPreflightReport grades host readiness, never a drafted configura
     undefined,
   );
   // `cwd`, `name` and `os` were the ones the sweep missed: launch.json keys (or,
-  // for `os`, a fifth spelling of `targetKind`), constants of
+  // for `os`, a second name for `targetKind` -- one value per target class,
+  // derived from nothing else), constants of
   // `(targetKind, server)` -- `name` through `serverLabel(server)` -- and read
   // by nothing. `name` mattered most -- it said "Alp: Zephyr Debug (J-Link)"
   // while the pinned tan 0.4.0 writes "ALP: Zephyr Debug (J-Link)", so it was
@@ -276,20 +277,29 @@ test("a preflight report says whether it read the configuration", () => {
 
   // The dangerous combination, and the one the bundle used to print bare.
   assert.equal(report.canLaunch, true);
-  assert.equal(report.configurationGraded, false);
+  assert.equal(report.configurationGraded, "none");
 
   // A fully resolved configuration: no new check, but it WAS read.
-  const clean = foldLaunchConfigPlaceholders(report, []);
-  assert.equal(clean.configurationGraded, true);
+  const clean = foldLaunchConfigPlaceholders(report, [], "launchJson");
+  assert.equal(clean.configurationGraded, "launchJson");
   assert.deepEqual(clean.checks, report.checks);
   assert.equal(clean.canLaunch, true);
 
   // An unresolved one: read, and failing.
-  const folded = foldLaunchConfigPlaceholders(report, [
-    { key: "device", value: "<resolved-device>" },
-  ]);
-  assert.equal(folded.configurationGraded, true);
+  const folded = foldLaunchConfigPlaceholders(
+    report,
+    [{ key: "device", value: "<resolved-device>" }],
+    "launchJson",
+  );
+  assert.equal(folded.configurationGraded, "launchJson");
   assert.equal(folded.canLaunch, false);
+
+  // The fallback: the same placeholders, but read out of tan's draft because
+  // the file could not be. The verdict is identical and the LABEL is not --
+  // "clean" must never be mistaken for "clean in the file the customer runs".
+  const fallback = foldLaunchConfigPlaceholders(report, [], "cliEnvelope");
+  assert.equal(fallback.configurationGraded, "cliEnvelope");
+  assert.equal(fallback.canLaunch, true);
 });
 
 // The defect of #339 in one assertion. With the host ready and the ELF built,
@@ -548,9 +558,11 @@ test("an unresolved OpenOCD board cfg in the WRITTEN configuration blocks the la
   );
   assert.equal(report.canLaunch, true);
 
-  const folded = foldLaunchConfigPlaceholders(report, [
-    { key: "configFiles[0]", value: "<resolved-openocd-board-cfg>" },
-  ]);
+  const folded = foldLaunchConfigPlaceholders(
+    report,
+    [{ key: "configFiles[0]", value: "<resolved-openocd-board-cfg>" }],
+    "launchJson",
+  );
   assert.equal(folded.canLaunch, false);
   const openOcd = folded.checks.find(
     (check) => check.name === "configFiles[0]",
@@ -574,17 +586,17 @@ test("foldLaunchConfigPlaceholders adds no check when there are no placeholders"
     },
   );
 
-  const folded = foldLaunchConfigPlaceholders(report, []);
+  const folded = foldLaunchConfigPlaceholders(report, [], "launchJson");
   // Everything a surface renders is identical -- a fully resolved configuration
   // must not gain a check, or the first-blink path is back behind a Start
-  // Anyway click. Only `configurationGraded` moves, and it says the
-  // configuration was READ, not that it was faulty.
+  // Anyway click. Only `configurationGraded` moves, and it says WHICH
+  // configuration was read, not that it was faulty.
   assert.deepEqual(
     { ...folded, configurationGraded: report.configurationGraded },
     report,
   );
-  assert.equal(report.configurationGraded, false);
-  assert.equal(folded.configurationGraded, true);
+  assert.equal(report.configurationGraded, "none");
+  assert.equal(folded.configurationGraded, "launchJson");
 });
 
 test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the report", () => {
@@ -604,9 +616,11 @@ test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the r
   assert.equal(report.canLaunch, true);
   const failBefore = report.summary.fail;
 
-  const folded = foldLaunchConfigPlaceholders(report, [
-    { key: "device", value: "<resolved-device>" },
-  ]);
+  const folded = foldLaunchConfigPlaceholders(
+    report,
+    [{ key: "device", value: "<resolved-device>" }],
+    "launchJson",
+  );
 
   assert.equal(folded.canLaunch, false);
   assert.equal(folded.summary.fail, failBefore + 1);
@@ -643,6 +657,7 @@ test("the fold's next step fits the target, not only the key", () => {
         { pathExists: () => true },
       ),
       [placeholder],
+      "launchJson",
     );
 
   // zephyr-mcu, pre-build: building really is the next step, so keep it.
@@ -692,9 +707,11 @@ test("foldLaunchConfigPlaceholders falls back to launchConfig for an unkeyed pla
     { pathExists: () => true },
   );
 
-  const folded = foldLaunchConfigPlaceholders(report, [
-    { key: "", value: "<host>:<port>" },
-  ]);
+  const folded = foldLaunchConfigPlaceholders(
+    report,
+    [{ key: "", value: "<host>:<port>" }],
+    "launchJson",
+  );
   assert.equal(folded.canLaunch, false);
   const check = folded.checks.find((entry) => entry.name === "launchConfig");
   assert.equal(check.status, "fail");

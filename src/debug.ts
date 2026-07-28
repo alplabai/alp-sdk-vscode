@@ -38,6 +38,7 @@ import {
 import {
   debugConfigArgs,
   findRescuablePairs,
+  gradeWrittenLaunchConfig,
   planOrphanRescue,
 } from "./debug/service";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
@@ -46,7 +47,6 @@ import {
   DebugConfigData,
   SUPPORTED_CLI_VERSION,
   isDebugConfigData,
-  launchConfigPlaceholders,
 } from "./alpCli/service";
 import { ensureNativeSimOverlay } from "./west";
 import { log, showOutput } from "./util";
@@ -252,7 +252,14 @@ async function writeLaunchProfile(
   );
   if (!written) return null;
 
-  const placeholders = launchConfigPlaceholders(written.configuration);
+  // Read the file BACK and grade that, not tan's draft: tan merges, so a value
+  // the customer hand-filled survives while `data.configuration` still carries
+  // the placeholder (`gradeWrittenLaunchConfig`). Falls back to the draft when
+  // the file cannot be read, and says which it did.
+  const graded = gradeWrittenLaunchConfig(
+    readLaunchJsonDocument(context.workspaceRoot),
+    written.configuration,
+  );
   log(
     `alp debug: ${written.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
@@ -275,14 +282,19 @@ async function writeLaunchProfile(
     // tool on PATH, artefact built) and NOTHING about the configuration's own
     // values — it no longer drafts any, so it no longer grades any (#339).
     // This fold is the whole configuration verdict, and it is taken against
-    // the object the CLI actually wrote: `tan debug-config` reports ok for a
+    // the launch.json entry on disk: `tan debug-config` reports ok for a
     // partly-resolved draft by design, so a zero exit does not mean the file
     // can launch. Without this the user is told the profile is ready and the
-    // session dies inside the adapter; with it, a config tan DID fully resolve
-    // adds no check at all and F5 goes straight through. Each unresolved key
-    // becomes a check named after that key, so `checks`/`summary`/`nextSteps`
-    // name the field — both consumers below build their message from `checks`.
-    report: foldLaunchConfigPlaceholders(report, placeholders),
+    // session dies inside the adapter; with it, a config that IS fully
+    // resolved — by tan, or by the customer's own hand before it — adds no
+    // check at all and F5 goes straight through. Each unresolved key becomes a
+    // check named after that key, so `checks`/`summary`/`nextSteps` name the
+    // field — both consumers below build their message from `checks`.
+    report: foldLaunchConfigPlaceholders(
+      report,
+      graded.placeholders,
+      graded.source,
+    ),
     // The placeholders are now named by the folded check's own detail/fix, so
     // no separate note is needed here — keep only the CLI's own notes.
     notes: written.notes,
