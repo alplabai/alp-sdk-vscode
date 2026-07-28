@@ -680,6 +680,15 @@ which happened — `"launchJson"`, `"cliEnvelope"` or `"none"` — so a fallback
 verdict is never mistaken for a reading of the file, and a failed read can never
 pass for a clean one. Covered by `test/debug.gradedConfig.test.js`.
 
+Grading the file rather than the envelope widens what is graded, and the
+widening is deliberate: the object is the whole merged entry, so keys tan never
+wrote are graded too. A hand-added `"gdbTarget": "<host>:3333"` fails the
+preflight and is named. That entry is what F5 launches and the adapter reads
+`<host>:3333` as a literal, so a customer is better served by the check than by
+a session that dies on it. The `fix` for such a key reads "Build the project
+first, or set `gdbTarget` in launch.json by hand." — no build resolves a key of
+the customer's own, but the hand-edit half names the right key.
+
 Two targets are where a value genuinely cannot be filled. `baremetal-mcu` has
 no Zephyr build, so no `runners.yaml` of its own to read, and all three servers
 come out with `"device": "<resolved-device>"` even with a fully populated one

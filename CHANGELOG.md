@@ -54,9 +54,17 @@
   `packages/alp-core` stays pure: it gains no `fs`, and the fold still takes
   placeholders as data. A failed read does NOT invent a green verdict — a
   missing, unparseable or entry-less file falls back to the envelope, which is
-  the previous behaviour, and `configurationGraded` grew a third value to say
+  the previous behaviour, and `configurationGraded` carries three values to say
   which was graded (`"launchJson"` / `"cliEnvelope"` / `"none"`) rather than
   passing silently. Covered by `test/debug.gradedConfig.test.js` (#339).
+
+  One consequence worth knowing before you meet it: what gets graded is the
+  whole merged entry, not only the keys tan wrote. A key you added by hand that
+  still holds a `<…>` token — say `"gdbTarget": "<host>:3333"` — now fails the
+  preflight and is named. That is deliberate: the merged entry is what F5
+  launches, and the adapter reads that token as a literal. The `fix` offered
+  for such a key still says "Build the project first, or set …"; the build half
+  cannot resolve a key of your own, but the hand-edit half names the right key.
 
 - **The next step offered for an unresolved field now fits the target.** Where
   a placeholder survives, the fold turns it into a failing check whose `fix`
