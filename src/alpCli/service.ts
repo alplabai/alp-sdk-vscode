@@ -36,6 +36,10 @@ export const SUPPORTED_CLI_VERSION = "0.4.0";
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
 
+/** The checksum manifest every tagged tan release publishes alongside its
+ *  binaries (verified against the live v0.4.0 release). */
+const CHECKSUMS_ASSET = "checksums.txt";
+
 /** Host platform/arch → rust target triple (the six targets tan-cli publishes a
  *  raw binary for). Windows ships BOTH x64 and arm64, picked by `process.arch`. */
 const TARGETS: Readonly<Record<string, string>> = {
@@ -368,6 +372,14 @@ export function classifyOutcome(
 export function classifyUnavailable(raw: string): CliUnavailableReason {
   if (/^No prebuilt tan CLI/.test(raw)) return "noPrebuilt";
   if (/did not produce a binary|Downloaded 0 bytes/.test(raw)) return "corrupt";
+  // Every `ChecksumError` sentence (`download.ts`) says "checksum". Matched
+  // AHEAD of both `corrupt` and `downloadFailed`, and mapped to neither:
+  // `downloadFailed` offers "retry when you're back online" for bytes that were
+  // served fine and simply weren't the published ones, and `corrupt` claims an
+  // installed copy is broken when nothing was installed — then hands the
+  // customer `alpSdk.cliPath`, the ONE resolution source with no checksum path
+  // at all. See `checksumRefused` in `models.ts`.
+  if (/checksum/i.test(raw)) return "checksumRefused";
   if (
     /Download failed|Timed out downloading|Too many redirects|ENOTFOUND|ECONNRESET|ECONNREFUSED|getaddrinfo/.test(
       raw,
@@ -420,7 +432,13 @@ function summarize(kind: CliExitKind, envelope: AlpEnvelope | null): string {
 /** The release asset (and download URL) for a host, or null when the host has
  *  no prebuilt binary — caller should point `alpSdk.cliPath` at a dev build.
  *  tan-cli ships a RAW binary per target (not an archive): `tan-<triple>` on
- *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`. */
+ *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`.
+ *  `checksumsUrl` is the same release's `checksums.txt`, which every tagged tan
+ *  release publishes next to the binaries — resolved HERE, from the same `tag`,
+ *  so the digest a download is checked against always belongs to the release the
+ *  bytes came from. The asset names are contract-frozen on the producer side
+ *  (tan-cli's `release.yml` names this function), which is what makes the
+ *  filename lookup in that file reliable. */
 export function releaseAssetForTarget(
   platform: NodeJS.Platform,
   arch: string,
@@ -432,17 +450,130 @@ export function releaseAssetForTarget(
   }
   const tag = `v${version}`;
   const assetName = `tan-${target}${platform === "win32" ? ".exe" : ""}`;
+  const releaseBase = `https://github.com/${RELEASE_REPO}/releases/download/${tag}`;
   return {
     target,
     assetName,
     tag,
-    url: `https://github.com/${RELEASE_REPO}/releases/download/${tag}/${assetName}`,
+    url: `${releaseBase}/${assetName}`,
+    checksumsUrl: `${releaseBase}/${CHECKSUMS_ASSET}`,
   };
+}
+
+/**
+ * The sha256 `checksums.txt` publishes for `assetName`, lowercased, or null when
+ * the file carries no line for that exact name.
+ *
+ * The file is `sha256sum` output — `<64 hex><two spaces><filename>` per line,
+ * LF-terminated (confirmed byte-for-byte against the published v0.4.0 file).
+ * Parsed tolerantly around that: any run of whitespace as the separator, CRLF
+ * accepted, and the `*` binary-mode marker `sha256sum -b` writes before the
+ * filename stripped — none of which weakens the check, because the DIGEST is
+ * still matched exactly and the filename still has to be exactly `assetName`.
+ *
+ * Filename matching is case-SENSITIVE on purpose: the release assets are
+ * lowercase rust triples and a case-folded match could pair a digest with a
+ * different asset on a release that ever published two names differing only in
+ * case. Returning null (no line) is a REFUSAL at the caller, not a pass — see
+ * `ChecksumError` in `download.ts`.
+ */
+export function expectedSha256(
+  checksums: string,
+  assetName: string,
+): string | null {
+  for (const line of checksums.split(/\r?\n/)) {
+    const match = /^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$/.exec(line.trim());
+    if (match && match[2] === assetName) {
+      return match[1].toLowerCase();
+    }
+  }
+  return null;
 }
 
 /** The on-disk binary filename for a platform. */
 export function binaryName(platform: NodeJS.Platform): string {
   return platform === "win32" ? "tan.exe" : "tan";
+}
+
+/** The variables `tan` consults for an `https://` request, in ITS precedence
+ *  order (`tan_core::select_https_proxy`). `HTTP_PROXY` is deliberately absent
+ *  from tan's https list — it, git, curl and pip all read that one as
+ *  http-only. */
+const HTTPS_PROXY_ENV_VARS = [
+  "ALL_PROXY",
+  "all_proxy",
+  "HTTPS_PROXY",
+  "https_proxy",
+] as const;
+
+/** The variables the subprocesses `tan` itself spawns (`git clone`, `pip`,
+ *  `west update`) consult for a plain-`http://` request. */
+const HTTP_PROXY_ENV_VARS = [
+  "ALL_PROXY",
+  "all_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+] as const;
+
+/**
+ * The proxy environment variables to ADD when spawning `tan`, given VS Code's
+ * `http.proxy` and the environment the extension host inherited. Returns `{}`
+ * when there is nothing to add.
+ *
+ * `tan` takes no `--proxy` flag: it reads the environment (see tan-cli
+ * `crates/tan-cli/src/http.rs`), so handing VS Code's setting to the child is
+ * the whole mechanism. Both variables are set because they reach different
+ * things — `HTTPS_PROXY` is what tan's own in-process GitHub call honours, and
+ * `HTTP_PROXY` is for the `git`/`pip`/`west` subprocesses tan spawns, which
+ * inherit this environment and would otherwise have no http-side proxy at all.
+ *
+ * ── PRECEDENCE: AN ALREADY-SET ENVIRONMENT VARIABLE WINS OVER THE IDE SETTING ──
+ * A variable exported in the shell VS Code was launched from is left exactly as
+ * it is; the setting only FILLS A GAP. Two reasons, and the second is the one
+ * that makes the other order unimplementable rather than merely unfriendly:
+ *
+ *  1. The shell export is the machine's own answer and is shared with every
+ *     other tool the user runs; a stale `http.proxy` silently overriding it
+ *     would break a box that worked, for a setting the user may not remember.
+ *  2. The child picks its own proxy, and `ALL_PROXY` beats `HTTPS_PROXY` in
+ *     tan's order. "The setting always wins" would therefore require also
+ *     overwriting the user's `ALL_PROXY` — deleting a deliberate machine-wide
+ *     configuration to impose an IDE one. Filling gaps is the only rule that
+ *     stays consistent with how the child actually chooses.
+ *
+ * This is the OPPOSITE order from `proxyForUrl` in `download.ts`, on purpose:
+ * that path picks the proxy ITSELF for an in-process request, so "setting wins"
+ * there is both implementable and what VS Code's own `http.proxy` documents.
+ * Here the child picks, and we can only seed it.
+ *
+ * Presence, not truthiness, is what counts as "the user set it": exporting
+ * `HTTPS_PROXY=` is the conventional way to DISABLE an inherited proxy, and tan
+ * reads an empty value as unset — so an empty export means "go direct", and
+ * filling it from the setting would override exactly the wish it expresses.
+ *
+ * `NO_PROXY` / `no_proxy` are never written here. VS Code has no setting for a
+ * bypass list, so the environment is its only source and it must pass through
+ * untouched — a caller that spreads this over `process.env` carries it along.
+ */
+export function proxyEnvOverrides(
+  proxy: string,
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  const setting = proxy.trim();
+  if (!setting) {
+    return {};
+  }
+  const overrides: Record<string, string> = {};
+  // NOTE on Windows: `process.env` is case-insensitive, so `"https_proxy" in
+  // env` is already true when `HTTPS_PROXY` is set. That only makes this
+  // check MORE conservative there, which is the safe direction.
+  if (!HTTPS_PROXY_ENV_VARS.some((name) => name in env)) {
+    overrides.HTTPS_PROXY = setting;
+  }
+  if (!HTTP_PROXY_ENV_VARS.some((name) => name in env)) {
+    overrides.HTTP_PROXY = setting;
+  }
+  return overrides;
 }
 
 /**

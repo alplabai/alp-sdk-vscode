@@ -10,13 +10,15 @@
 // destination: `resolveAlpBinary` trusts whatever already exists there (the
 // "cached" source), so a half-written file would spawn a dead binary forever
 // with no self-heal. The body is written to a unique temp file beside the
-// destination and only renamed into place once the byte count is non-zero and
-// agrees with `content-length` (when the server sends one). That proves the
-// transfer completed, not that the bytes are the right binary — there's no
-// checksum/signature check here (the `.tar.gz` flow this replaced had an
-// implicit gzip CRC and nothing replaces that either; tan-cli publishing a
-// checksum is tracked separately, alplabai/tan-cli#7).
+// destination and only renamed into place once the byte count is non-zero, it
+// agrees with `content-length` (when the server sends one), AND its sha256
+// equals the digest the release publishes for this asset in its own
+// `checksums.txt` (`verify`). The first two prove the transfer completed; only
+// the third proves the bytes are the binary the producer published — and this
+// file is about to be EXECUTED, so the digest is checked while the download is
+// still a temp file and the destination is never touched unless it matches.
 
+import { createHash } from "crypto";
 import * as fs from "fs";
 import * as http from "http";
 import * as https from "https";
@@ -24,6 +26,9 @@ import * as net from "net";
 import * as path from "path";
 import { pipeline } from "stream/promises";
 import * as tls from "tls";
+
+import { ChecksumSpec } from "./models";
+import { expectedSha256 } from "./service";
 
 /**
  * The installed binary could not be moved aside under ANY name, so the update
@@ -89,6 +94,51 @@ export class ProxyError extends Error {
 }
 
 /**
+ * The downloaded bytes were NOT accepted, so nothing was installed: either they
+ * do not match the sha256 the producer published for this asset, or that
+ * published digest could not be obtained at all.
+ *
+ * THREE causes, THREE sentences, and all three REFUSE. That is deliberate and
+ * must stay that way — do not "relax" any of them into a warning:
+ *
+ *   - MISMATCH. The bytes are not what the producer published. This is the case
+ *     that matters and the reason the whole check exists.
+ *   - The checksum file would not FETCH. This is NOT "probably fine": every
+ *     tagged tan release publishes `checksums.txt`, and the binary itself just
+ *     came down the same connection, through the same proxy, moments earlier.
+ *     A checksum fetch that fails after a binary fetch that succeeded means the
+ *     release is malformed or something is sitting in the middle — neither is a
+ *     reason to execute an unverified binary.
+ *   - The checksum file has NO LINE for this asset. The release does not vouch
+ *     for the file it just served.
+ *
+ * The alternative to refusing, in all three cases, is spawning an unverified
+ * executable on a customer's machine. There is no third option here: the
+ * extension runs this binary, it does not merely store it.
+ *
+ * A distinct type for the same reason `CliInUseError` and `ProxyError` are ones:
+ * the caller must present it differently. Every other download failure funnels
+ * into "retry when you're back online", which is the wrong sentence — the
+ * network delivered the bytes just fine, they were simply the wrong bytes.
+ *
+ * `message` is the CUSTOMER sentence and carries no digest, no URL and no path:
+ * `planFailure` (`src/notify/service.ts`) demotes a `cause` holding an absolute
+ * path into the output channel — and its guard reads the `p:/` inside `http://`
+ * as one — replacing the toast with a generic "<operation> failed.". The
+ * digests and the URL ride on `detail`, which is channel-only.
+ */
+export class ChecksumError extends Error {
+  /** Raw digests / URL / transport error — channel only. */
+  readonly detail: string;
+
+  constructor(message: string, detail: string) {
+    super(message);
+    this.name = "ChecksumError";
+    this.detail = detail;
+  }
+}
+
+/**
  * Proxy configuration for one download.
  *
  * VS Code's own settings (`http.proxy`, `http.proxyStrictSSL`) are read in the
@@ -115,6 +165,12 @@ const IDLE_TIMEOUT_MS = 30_000;
 // Does NOT reset on activity — catches a connection that stays alive but
 // dribbles bytes slowly enough to keep beating the idle timeout forever.
 const WALL_CLOCK_TIMEOUT_MS = 120_000;
+/** Ceiling on the `checksums.txt` body, which is buffered in memory rather than
+ *  streamed to disk. 64 KiB is ~77x the real file (849 bytes at tan v0.4.0) and
+ *  leaves room for a release with far more assets, while keeping a hostile or
+ *  broken origin from growing the extension host's heap for the full wall
+ *  clock. See `publishedSha256`. */
+const MAX_CHECKSUMS_BYTES = 64 * 1024;
 
 /** A proxy's `host:port`, with any `user:password@` stripped AND without the
  *  scheme. Every user-visible mention of a proxy goes through this: the output
@@ -157,7 +213,17 @@ function bypassesProxy(target: URL, noProxy: string): boolean {
  *  Throws when a proxy IS configured but unparseable: going direct instead
  *  would fail (or hang) with a message that never mentions the proxy, which is
  *  the whole defect this exists to fix. The offending value is NOT echoed — it
- *  may carry credentials. */
+ *  may carry credentials.
+ *
+ *  PRECEDENCE: `config.proxy` (VS Code's `http.proxy`) WINS over the
+ *  environment. That is the OPPOSITE order from `proxyEnvOverrides` in
+ *  `service.ts`, on purpose, and the two must not be "unified" — read that
+ *  function before changing this one. The difference is which layer picks the
+ *  proxy: here the request is made in-process, so the setting can simply win,
+ *  which is what VS Code's own `http.proxy` documents. There the environment is
+ *  handed to a CHILD that picks its own proxy from four variable names in its
+ *  own precedence order, so "the setting always wins" would mean overwriting a
+ *  variable the user deliberately exported. */
 function proxyForUrl(target: URL, config: ProxyConfig): URL | null {
   const env = config.env ?? process.env;
   const fromEnv =
@@ -372,9 +438,16 @@ function tunnelledGet(
                 : { servername: target.hostname }),
               // Scoped to the tunnel on purpose. `http.proxyStrictSSL` is
               // about trusting a TLS-inspecting proxy; the DIRECT download
-              // keeps full verification either way, because this transfer has
-              // no checksum or signature of its own (see the header) and TLS
-              // is the only thing vouching for the bytes.
+              // keeps full verification either way.
+              //
+              // The checksum check does NOT make this laxer. `checksums.txt`
+              // travels over this same tunnel, so whoever can rewrite the
+              // binary here can rewrite the digest to match: the checksum
+              // catches a corrupted or substituted ASSET, TLS is still what
+              // authenticates the CHANNEL, and neither replaces the other.
+              // Signature verification (a producer key, checked offline) is
+              // what would make the transport untrusted — see the note on
+              // attestation in docs/EXTENSION_CLI_INTEGRATION.md.
               rejectUnauthorized: config.strictSSL !== false,
             }),
         },
@@ -515,14 +588,22 @@ function moveAside(destFile: string): void {
   }
 }
 
-async function attempt(
+/** GET `url`, following redirects (capped) and refusing an https→non-https
+ *  downgrade, and resolve the 200 response together with the URL it finally came
+ *  from (error messages below quote the final hop, as they always have).
+ *
+ *  Shared by the binary transfer and the checksum fetch so there is exactly ONE
+ *  redirect implementation. The checksum fetch needs it every bit as much as the
+ *  binary does: a GitHub release-asset URL always redirects to the object store,
+ *  so a fetch that did not follow redirects would fail on every real release and
+ *  turn the verification into a permanent refusal. */
+async function getFinal(
   url: string,
-  destFile: string,
   requireHttps: boolean,
   redirectsLeft: number,
   config: ProxyConfig,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<{ response: http.IncomingMessage; url: string }> {
   const response = await get(url, config, signal);
   const status = response.statusCode ?? 0;
 
@@ -537,20 +618,110 @@ async function attempt(
         `Refusing to follow an https redirect to a non-https URL: ${next}`,
       );
     }
-    return attempt(
-      next,
-      destFile,
-      requireHttps,
-      redirectsLeft - 1,
-      config,
-      signal,
-    );
+    return getFinal(next, requireHttps, redirectsLeft - 1, config, signal);
   }
 
   if (status !== 200) {
     response.resume();
     throw new Error(`Download failed (HTTP ${status}) for ${url}`);
   }
+
+  return { response, url };
+}
+
+/**
+ * The sha256 the release publishes for `verify.assetName`, read from that
+ * release's own `checksums.txt`.
+ *
+ * Fetched through the SAME `get` path as the binary, so it inherits the proxy
+ * settings, the redirect cap, the https-downgrade refusal and both timeouts. It
+ * has to: a machine that can only reach the release host through a proxy would
+ * otherwise fail this fetch on every download and never install the CLI at all —
+ * the proxy support and the verification would cancel each other out.
+ *
+ * Fetched BEFORE the binary, so a release with no usable checksum costs no
+ * transfer at all. An abort (user cancel / wall clock) and a `ProxyError` travel
+ * unchanged — the callers branch on both, and neither is a checksum verdict.
+ * Everything else becomes a `ChecksumError`; see that class for why none of
+ * these outcomes may be softened into a warning.
+ */
+async function publishedSha256(
+  verify: ChecksumSpec,
+  config: ProxyConfig,
+  signal?: AbortSignal,
+): Promise<string> {
+  let manifest: string;
+  try {
+    const { response } = await getFinal(
+      verify.checksumsUrl,
+      verify.checksumsUrl.startsWith("https:"),
+      MAX_REDIRECTS,
+      config,
+      signal,
+    );
+    const chunks: Buffer[] = [];
+    // Read whole rather than streamed to disk: `checksums.txt` is well under a
+    // kilobyte (849 bytes for tan v0.4.0) and never lands on the filesystem.
+    // CAPPED, because "is small" and "cannot be large" are different claims and
+    // only the second one holds against the threat model this file exists for.
+    // A hostile origin serving an endless body would otherwise be bounded only
+    // by WALL_CLOCK_TIMEOUT_MS — two minutes of unbounded growth in the
+    // extension host's heap. Overrunning the cap throws, which lands in the
+    // catch below and REFUSES: a truncated manifest must never be parsed, or a
+    // digest could be missed and the asset read as unlisted.
+    let read = 0;
+    for await (const chunk of response) {
+      read += (chunk as Buffer).length;
+      if (read > MAX_CHECKSUMS_BYTES) {
+        response.destroy();
+        throw new Error(
+          `checksums.txt exceeded ${MAX_CHECKSUMS_BYTES} bytes — refusing to buffer it`,
+        );
+      }
+      chunks.push(chunk as Buffer);
+    }
+    manifest = Buffer.concat(chunks).toString("utf8");
+  } catch (error) {
+    if (isAbort(error) || error instanceof ProxyError) {
+      throw error;
+    }
+    throw new ChecksumError(
+      "The tan CLI download was discarded: the checksum file that vouches " +
+        "for it could not be fetched, so there was no way to tell whether the " +
+        "binary is the one Alp Lab published. Check your connection or proxy, " +
+        "then try again.",
+      `could not fetch ${verify.checksumsUrl} — ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const digest = expectedSha256(manifest, verify.assetName);
+  if (!digest) {
+    throw new ChecksumError(
+      "The tan CLI download was discarded: the release's checksum file does " +
+        "not list this binary, so nothing vouches for the bytes that were " +
+        "served.",
+      `no entry for ${verify.assetName} in ${verify.checksumsUrl}`,
+    );
+  }
+  return digest;
+}
+
+async function attempt(
+  url: string,
+  destFile: string,
+  requireHttps: boolean,
+  redirectsLeft: number,
+  config: ProxyConfig,
+  expectedDigest: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { response, url: finalUrl } = await getFinal(
+    url,
+    requireHttps,
+    redirectsLeft,
+    config,
+    signal,
+  );
 
   const expectedLength = response.headers["content-length"]
     ? Number(response.headers["content-length"])
@@ -559,8 +730,12 @@ async function attempt(
   // destination never share a temp file.
   const tmpFile = `${destFile}.${process.pid}.${Date.now()}.tmp`;
   let received = 0;
+  // Hashed off the same chunks the byte counter sees, so verification costs no
+  // second pass over the file and no re-read of what was just written.
+  const hash = createHash("sha256");
   response.on("data", (chunk: Buffer) => {
     received += chunk.length;
+    hash.update(chunk);
   });
 
   try {
@@ -569,11 +744,28 @@ async function attempt(
     // a server that advertises `content-length` and then closes the socket.
     await pipeline(response, fs.createWriteStream(tmpFile));
     if (received === 0) {
-      throw new Error(`Downloaded 0 bytes for ${url}`);
+      throw new Error(`Downloaded 0 bytes for ${finalUrl}`);
     }
     if (expectedLength !== null && received !== expectedLength) {
       throw new Error(
-        `Downloaded ${received} of ${expectedLength} expected bytes for ${url}`,
+        `Downloaded ${received} of ${expectedLength} expected bytes for ${finalUrl}`,
+      );
+    }
+    // BEFORE the chmod and the rename, deliberately. Everything below this line
+    // makes the file executable and puts it where `resolveAlpBinary`'s "cached"
+    // source will spawn it without asking again — so a binary that fails here
+    // must never reach that path even briefly. Throwing lands in the `catch`
+    // below, which removes the temp file; `destFile` is untouched, so a machine
+    // with a good binary already installed keeps it.
+    const digest = hash.digest("hex");
+    if (expectedDigest !== null && digest !== expectedDigest) {
+      throw new ChecksumError(
+        "The downloaded tan CLI does not match the checksum Alp Lab " +
+          "published for it, so it was discarded and nothing was installed. " +
+          "The bytes that arrived are not the ones that were released — that " +
+          "means a corrupted transfer or something tampering with it, so do " +
+          "not work around this check.",
+        `sha256 of the downloaded bytes is ${digest}, published digest is ${expectedDigest} (${finalUrl})`,
       );
     }
     if (process.platform !== "win32") {
@@ -594,11 +786,59 @@ async function attempt(
 }
 
 /**
+ * Build the `ResolveDeps.download` seam the adapter injects, bound to a reader
+ * for VS Code's proxy settings (read per call, so changing `http.proxy` takes
+ * effect on the next download without a reload).
+ *
+ * THIS EXISTS TO BE TESTED, and the reason is narrow. Making `verify` required
+ * on `ResolveDeps.download` guards the CALLER — dropping the 4th argument in
+ * `downloadCli` is a `TS2554`. It does NOT guard the PROVIDER: TypeScript's
+ * arity-tolerant function assignability accepts a 3-parameter implementation
+ * for a 4-parameter type, so an arrow written inline in the adapter can leave
+ * `verify` off its own parameter list and the assignment still checks.
+ *
+ * What refuses THAT arrow is `downloadFile`'s signature, not this one. `verify`
+ * is `downloadFile`'s 3rd and REQUIRED parameter, so the body such an arrow
+ * carries — `downloadFile(url, dest, signal, proxySettings())` — puts an
+ * `AbortSignal` where a `ChecksumSpec | null` is required, and does not
+ * compile.
+ *
+ * The compiler stops there, and the gap is worth naming rather than leaving for
+ * the next reader to discover the hard way: an arrow may still say `null` out
+ * loud (`downloadFile(url, dest, null, { signal, proxy })` compiles), and a
+ * caller may spread over the deps object this seam is assigned into. Neither is
+ * a type error. `test/alpCli.downloadSeamWiring.test.js` is what covers those —
+ * it drives the `download` each real entry point ends up with against a
+ * tampered release. Two halves, and neither catches the other's failure.
+ *
+ * This function is where the verified call lives, in a file that imports no
+ * `vscode`, which is why `test/alpCli.downloadChecksum.test.js` can drive the
+ * seam itself against a real local release server and a tampered body.
+ */
+export function downloadSeam(
+  readProxy: () => ProxyConfig,
+): (
+  url: string,
+  destFile: string,
+  signal: AbortSignal | undefined,
+  verify: ChecksumSpec,
+) => Promise<void> {
+  // The checksum file is fetched over the SAME proxy as the binary, because a
+  // machine that needs a proxy to reach the release host needs it for both or
+  // it can install nothing — the proxy support and the verification would
+  // cancel each other out.
+  return (url, destFile, signal, verify) =>
+    downloadFile(url, destFile, verify, { signal, proxy: readProxy() });
+}
+
+/**
  * Download `url` to `destFile`. Rejects on a non-200 response, a redirect
  * loop deeper than 5 hops, an https→non-https redirect downgrade, a
  * connection drop mid-transfer, an idle or wall-clock timeout, a byte count
- * that disagrees with `content-length`, or a 0-byte body. Never leaves a
- * partial file at `destFile` — every failure path removes its temp file. Any
+ * that disagrees with `content-length`, a 0-byte body, or — when a `verify`
+ * spec is given — bytes whose sha256 is not the digest the release publishes
+ * for that asset. Never leaves a partial file at `destFile` — every failure
+ * path removes its temp file. Any
  * existing `destFile` is moved aside (`.old`, or a uniquely-suffixed `.old`
  * when that name is locked) rather than overwritten in place, so this is safe
  * even while the previous binary is still running. It rejects with a
@@ -606,31 +846,54 @@ async function attempt(
  * genuinely pinned open — the old binary is left working and the message says
  * what to close.
  *
- * Pass `signal` (bridged from a progress notification's CancellationToken) to
- * make the download abortable: the request is destroyed, `pipeline` rejects,
+ * `verify` (the release asset's `checksums.txt` URL + its exact asset filename)
+ * checks the transferred bytes against the digest the producer published,
+ * BEFORE anything is renamed into `destFile`. A failed verification rejects
+ * with a `ChecksumError` and installs nothing.
+ *
+ * It is REQUIRED, and it sits ahead of the optional `options` on purpose. That
+ * ordering — not a comment, and not a test — is what shuts the hole this
+ * parameter exists to close: no caller reaches the transfer without stating
+ * what it wants, in one of two greppable forms. Omitting the argument is a
+ * `TS2554`; the shape the omission used to take, sliding an `AbortSignal` into
+ * this position, is a `TS2345`. `null` is the explicit opt-out, and NO
+ * production caller passes it — every managed `tan` download passes a spec
+ * (`downloadCli` builds it from `releaseAssetForTarget`, which makes the field
+ * non-optional). `null` is there for the transfer-mechanics tests, which serve
+ * bodies no release ever published a digest for.
+ *
+ * `options.signal` (bridged from a progress notification's CancellationToken)
+ * makes the download abortable: the request is destroyed, `pipeline` rejects,
  * and the temp file is removed on the way out, so a cancel leaves no partial
  * binary behind — the same cleanup path every other failure takes.
  *
- * Pass `proxy` (VS Code's `http.proxy` / `http.proxyStrictSSL`, read by the
- * adapter) to route the transfer through a proxy; the `HTTPS_PROXY` /
+ * `options.proxy` (VS Code's `http.proxy` / `http.proxyStrictSSL`, read by the
+ * adapter) routes the transfer through a proxy; the `HTTPS_PROXY` /
  * `HTTP_PROXY` / `NO_PROXY` environment variables are honoured with or without
- * it. Node does NOT do this natively, so before this parameter existed a
+ * it. Node does NOT do this natively, so before this option existed a
  * corporate-proxy machine could never download the CLI at all. Anything that
  * fails at the proxy rejects with a `ProxyError` whose sentence says so.
  */
-export function downloadFile(
+export async function downloadFile(
   url: string,
   destFile: string,
-  signal?: AbortSignal,
-  proxy: ProxyConfig = {},
+  verify: ChecksumSpec | null,
+  options: { signal?: AbortSignal; proxy?: ProxyConfig } = {},
 ): Promise<void> {
+  const { signal, proxy = {} } = options;
   sweepLeftovers(destFile);
+  // Before the transfer: a release whose checksum can't be resolved is refused
+  // either way, so there is no reason to move the binary's bytes first.
+  const expectedDigest = verify
+    ? await publishedSha256(verify, proxy, signal)
+    : null;
   return attempt(
     url,
     destFile,
     url.startsWith("https:"),
     MAX_REDIRECTS,
     proxy,
+    expectedDigest,
     signal,
   );
 }

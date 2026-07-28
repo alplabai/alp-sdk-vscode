@@ -23,10 +23,11 @@ import {
   runAlpAsync,
 } from "./adapterCore";
 import {
+  ChecksumError,
   CliInUseError,
   ProxyConfig,
   ProxyError,
-  downloadFile,
+  downloadSeam,
 } from "./download";
 import { BinarySource, CliOutcome } from "./models";
 import {
@@ -39,6 +40,7 @@ import {
   isCliBehind,
   isNativeTanVersionOutput,
   parseTanVersion,
+  proxyEnvOverrides,
   releaseAssetForTarget,
   shouldFetchManagedCli,
   shouldWarnCliAhead,
@@ -195,6 +197,80 @@ function cliInUsePlan(
  * and never carries the `user:password@`; the errno/status rides on `detail`,
  * which the presenter writes to the channel only.
  */
+/**
+ * The plan for a download that was REFUSED rather than failed: the bytes did not
+ * match the checksum the release publishes, or that checksum could not be
+ * obtained at all (`ChecksumError`). Returns null for every other failure.
+ *
+ * Split out on the TYPE, like `cliInUsePlan` and `proxyFailurePlan` above, and
+ * for a sharper reason than either: without it a refused binary falls into
+ * "Couldn't download the tan CLI … retry when you're back online", which is a
+ * flatly wrong account of what happened. The transfer worked. The customer is
+ * being told to blame their network for bytes that arrived intact and were not
+ * the published ones — the single most important thing this check can say would
+ * be the one thing it never said.
+ *
+ * `ChecksumError.message` states which of the three refusals it was and carries
+ * no digest or URL; the digests ride on `detail` (channel only). "Retry" is
+ * still offered — it is safe by construction, since the retry re-verifies and a
+ * mismatching binary can never be installed by it, and the common cause of a
+ * one-off mismatch really is a corrupted transfer. `alpSdk.cliPath` is NOT
+ * offered: pointing at a hand-placed binary is precisely the workaround this
+ * refusal exists to prevent, and must not be suggested as the remedy.
+ */
+function checksumFailurePlan(
+  error: unknown,
+  operation: string,
+): NotificationPlan | null {
+  if (!(error instanceof ChecksumError)) {
+    return null;
+  }
+  return planFailure({
+    operation,
+    cause: error.message,
+    detail: error.detail,
+    actions: [{ id: "updateCli", title: "Retry" }],
+  });
+}
+
+/**
+ * The `CliOutcome` a binary-RESOLUTION failure becomes, so `planCliOutcome`
+ * picks the remedy from `unavailable.reason` instead of each call site
+ * guessing. Shared by the two lazy-download surfaces — `runAlpCommand` (which
+ * returns the outcome for its caller to present) and `surfaceResolutionError`
+ * (which presents it itself) — so they cannot drift apart on the one path where
+ * they must not.
+ *
+ * That path is `resolveAlpBinary`'s live `case "download"`: activation fires
+ * `ensureTanCliProvisioned` un-awaited, so a command issued before or instead of
+ * provisioning downloads inline, and a `ChecksumError` surfaces HERE rather than
+ * through `checksumFailurePlan`. Branching on the TYPE — same discipline as
+ * `cliInUsePlan` / `proxyFailurePlan` / `checksumFailurePlan` — is what carries
+ * the three refusals through as three sentences instead of flattening them into
+ * one. The sentence goes to the toast; the digests ride on `detail`, which the
+ * presenter logs and never renders.
+ */
+function unavailableOutcome(error: unknown): CliOutcome {
+  const raw = error instanceof Error ? error.message : String(error);
+  return {
+    exitCode: -1,
+    kind: "unknown",
+    ok: false,
+    severity: "error",
+    // The raw resolver text (`No prebuilt tan CLI for win32/x64…`, an HTTP
+    // status, an errno) rides on `unavailable.detail`, which the notification
+    // planner logs and never renders — it used to be interpolated straight into
+    // a buttonless toast.
+    message:
+      error instanceof ChecksumError ? error.message : "tan CLI unavailable.",
+    envelope: null,
+    unavailable: {
+      reason: classifyUnavailable(raw),
+      detail: error instanceof ChecksumError ? error.detail : raw,
+    },
+  };
+}
+
 function proxyFailurePlan(
   error: unknown,
   operation: string,
@@ -233,6 +309,87 @@ function proxySettings(): ProxyConfig {
     proxy: httpConfig.get<string>("proxy", "").trim(),
     strictSSL: httpConfig.get<boolean>("proxyStrictSSL", true),
   };
+}
+
+/** One-shot per window: `http.proxyStrictSSL: false` cannot be forwarded to a
+ *  spawned `tan`, and saying nothing would leave the user believing a switch
+ *  they flipped is in effect. See `warnIfStrictSSLNotForwardable`. */
+let strictSSLNotForwardableWarned = false;
+
+/**
+ * `http.proxyStrictSSL: false` says "a TLS-intercepting middlebox re-signs my
+ * traffic, accept it". Examined and NOT representable in the spawn environment:
+ * `tan` has no environment knob (nor a flag) that relaxes certificate
+ * verification — the only env vars it reads for the network are the proxy names
+ * in `proxyEnvOverrides`, and its rustls config is built unconditionally
+ * (tan-cli `crates/tan-cli/src/http.rs` `tls_config`).
+ *
+ * It also should not need one. That same `tls_config` trusts the bundled webpki
+ * roots MERGED WITH THE OS TRUST STORE, so a middlebox CA installed in
+ * Windows/macOS/Linux system trust is already accepted. The remedy for this
+ * user is to install their proxy's CA there — not a per-tool "skip
+ * verification" switch we would have to invent. Inventing one is also the wrong
+ * trade: it would turn a verified download of an executable we then run into an
+ * unverified one.
+ *
+ * The OS trust store is NOT claimed to fix the subprocesses, because it does
+ * not. tan's own module doc is explicit that `git clone`, `pip` and `west
+ * update` "do their own networking with their own trust stores" (tan-cli
+ * `crates/tan-cli/src/http.rs`): pip verifies against `certifi`'s bundled CA
+ * and never consults the Windows/macOS store (it needs `PIP_CERT` /
+ * `REQUESTS_CA_BUNDLE` / `--trusted-host`), and Git for Windows built against
+ * OpenSSL uses its own `ca-bundle.crt`. Promising them here is how a user
+ * installs the CA as told, watches tan start working, then hits
+ * `CERTIFICATE_VERIFY_FAILED` on the pip step and concludes the extension lied.
+ *
+ * So this logs the honest answer once instead of silently doing nothing.
+ */
+function warnIfStrictSSLNotForwardable(strictSSL: boolean | undefined): void {
+  if (strictSSL !== false || strictSSLNotForwardableWarned) {
+    return;
+  }
+  strictSSLNotForwardableWarned = true;
+  log(
+    "[cli] http.proxyStrictSSL is off, but that setting does not reach the " +
+      "tan CLI — tan always verifies TLS, against the bundled roots plus your " +
+      "OS trust store. If a TLS-inspecting proxy is breaking tan, install its " +
+      "CA certificate into the OS trust store; there is no way to disable the " +
+      "check for tan alone. Note that this fixes tan itself only — the tools " +
+      "it runs (git, pip, west) each verify against their own trust store, so " +
+      "a TLS-inspecting proxy may still need PIP_CERT / REQUESTS_CA_BUNDLE " +
+      "for pip and http.sslCAInfo for git.",
+  );
+}
+
+/**
+ * The proxy variables to ADD to a spawned `tan`'s environment — VS Code's
+ * `http.proxy` filling gaps the inherited environment left, never overwriting
+ * it. The precedence rule and why it is this way round live on
+ * `proxyEnvOverrides`; read that before changing anything here.
+ *
+ * Returns ADDITIONS ONLY, which is what `runInTerminal` wants:
+ * `vscode.ProcessExecution` merges its `env` into the parent's. Callers using
+ * `child_process` (which REPLACES the environment when `env` is passed) go
+ * through `spawnEnv()` below instead.
+ *
+ * Exported because the extension's other two NETWORK-bound child processes are
+ * not `tan` and so cannot reach this through the `tan` spawn seams: `west
+ * update` (`src/west/vscodeAdapter.ts`) and the SDK-install `git clone`
+ * (`src/ideHub/sdkManagerMessages.ts`). They fail on a proxied machine for the
+ * identical reason, and `proxySettings()` above must stay the ONE reader of
+ * `http.proxy` in this extension.
+ */
+export function proxyEnvAdditions(): Record<string, string> {
+  const settings = proxySettings();
+  warnIfStrictSSLNotForwardable(settings.strictSSL);
+  return proxyEnvOverrides(settings.proxy ?? "", process.env);
+}
+
+/** The full environment for a `child_process` spawn of `tan`: everything the
+ *  extension host inherited (so `NO_PROXY`, `PATH`, `ZEPHYR_BASE` and the rest
+ *  survive) plus the proxy gap-fillers. */
+function spawnEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, ...proxyEnvAdditions() };
 }
 
 function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
@@ -276,10 +433,23 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     fileExists: fs.existsSync,
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
-    // Settings read at call time (see `proxySettings`) so the seam's signature
-    // stays the plain `(url, dest, signal)` every other caller and test uses.
-    download: (url, dest, signal) =>
-      downloadFile(url, dest, signal, proxySettings()),
+    // NOT an inline arrow, deliberately — but the reason is narrower than it
+    // looks, and two review rounds got it wrong, so it is worth stating
+    // exactly. `downloadFile`'s signature stops an arrow reaching the transfer
+    // without SAYING what it wants: `downloadFile(url, dest, signal, …)` is
+    // TS2345 and omitting the argument is TS2554. What it cannot stop is an
+    // arrow that says `null` — `downloadFile(url, dest, null, { signal, proxy })`
+    // compiles, and ships unverified bytes to `cachedBinaryPath`.
+    //
+    // So the compiler is half of it and `test/alpCli.downloadSeamWiring.test.js`
+    // is the other half: it captures the `ResolveDeps` this function builds and
+    // drives THIS `download` against a tampered release server. (Earlier
+    // comments here claimed no unit test could load this file because it
+    // imports `vscode`. That was never true — several tests load it behind a
+    // `Module._load` stub.) Settings are read at call time (see
+    // `proxySettings`), so the seam's signature carries only what the caller
+    // knows.
+    download: downloadSeam(proxySettings),
     chmodExec: (p) => fs.chmodSync(p, 0o755),
   };
 }
@@ -447,6 +617,10 @@ export async function ensureTanCliProvisioned(
       // wrong advice when the network is fine and the proxy said no.
       cliInUsePlan(error, "Provisioning the tan CLI") ??
         proxyFailurePlan(error, "Provisioning the tan CLI") ??
+        // …nor is a binary that was REFUSED. It downloaded fine; it just
+        // wasn't the published binary, and "retry when you're back online"
+        // would bury the only fact that matters here.
+        checksumFailurePlan(error, "Provisioning the tan CLI") ??
         planFailure({
           operation: "Provisioning the tan CLI",
           cause: updatingStaleCache
@@ -475,8 +649,13 @@ async function readResolvedCliVersion(
 ): Promise<string | null> {
   try {
     const bin = await resolveAlpBinary(deps);
+    // `--version` touches no network, so the proxy env changes nothing here —
+    // it is passed anyway so there is exactly ONE answer to "what environment
+    // does this extension run tan in", rather than a seam a future networked
+    // probe could be added to without anyone noticing the gap.
     const { stdout } = await execFileAsyncCli(bin.command, ["--version"], {
       timeout: 3000,
+      env: spawnEnv(),
     });
     return parseTanVersion(stdout);
   } catch {
@@ -725,6 +904,7 @@ async function runCliVersionCheck(
   const probe = cp.spawnSync(binary.command, ["--version"], {
     encoding: "utf8",
     timeout: 5000,
+    env: spawnEnv(),
   });
   if (probe.error) {
     // Couldn't even exec it (ENOENT, EACCES, or — on Windows — a `.cmd`/
@@ -918,6 +1098,9 @@ export async function updateAlpCli(
       cliInUsePlan(error, "Updating the tan CLI") ??
         // …and the one a retry cannot clear either until the proxy changes.
         proxyFailurePlan(error, "Updating the tan CLI") ??
+        // …and the one that is not a failure at all but a refusal: the bytes
+        // arrived and were rejected. The existing binary is untouched.
+        checksumFailurePlan(error, "Updating the tan CLI") ??
         planFailure({
           operation: "Updating the tan CLI",
           cause: "The tan CLI update failed.",
@@ -971,7 +1154,18 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
   // install location and never to its working directory, so it is the one
   // run here with nothing project-specific to run in — and it is reachable
   // with no folder open, so there would be no root to pass anyway.
-  runInTerminal({ name: "Install tan", argv, cwd: undefined });
+  // The installer's whole job is to DOWNLOAD tan from GitHub, so it needs the
+  // proxy more than tan itself does. Effective on the POSIX script (curl and
+  // wget both read HTTPS_PROXY); on Windows the argv is `powershell`, i.e.
+  // 5.1, whose `Invoke-WebRequest` takes its proxy from the system/IE config
+  // and ignores the environment — harmless there, not a reason to withhold it
+  // from the platform where it works.
+  runInTerminal({
+    name: "Install tan",
+    argv,
+    cwd: undefined,
+    env: proxyEnvAdditions(),
+  });
 }
 
 /**
@@ -1005,22 +1199,7 @@ export async function runAlpCommand(
     const message = error instanceof Error ? error.message : String(error);
     log(`[cli] ✗ CLI unavailable: ${message}`);
     return {
-      outcome: {
-        exitCode: -1,
-        kind: "unknown",
-        ok: false,
-        severity: "error",
-        // The raw resolver text (`No prebuilt tan CLI for win32/x64…`, an HTTP
-        // status, an errno) rides on `unavailable.detail`, which the
-        // notification planner logs and never renders — it used to be
-        // interpolated straight into a buttonless toast.
-        message: "tan CLI unavailable.",
-        envelope: null,
-        unavailable: {
-          reason: classifyUnavailable(message),
-          detail: message,
-        },
-      },
+      outcome: unavailableOutcome(error),
       raw: {
         status: null,
         stdout: "",
@@ -1102,10 +1281,16 @@ export async function runAlpInTerminal(
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (terminal: ${options.name})`,
   );
+  // The terminal gets the proxy too. A `ProcessExecution` task is not a login
+  // shell — it inherits the EXTENSION HOST's environment, not the user's
+  // profile — so `tan bootstrap` (which downloads Zephyr and pip packages) is
+  // exactly as blind to `http.proxy` here as the `cp.spawn` seam is. Additions
+  // only: ProcessExecution merges its `env` into the parent's.
   runInTerminal({
     name: options.name,
     argv: [binary.command, ...finalArgs],
     cwd: options.cwd,
+    env: proxyEnvAdditions(),
   });
 }
 
@@ -1122,21 +1307,7 @@ async function surfaceResolutionError(
   error: unknown,
   operation: string,
 ): Promise<ActionId | undefined> {
-  const detail = error instanceof Error ? error.message : String(error);
-  return notify(
-    planCliOutcome(
-      {
-        exitCode: -1,
-        kind: "unknown",
-        ok: false,
-        severity: "error",
-        message: "tan CLI unavailable.",
-        envelope: null,
-        unavailable: { reason: classifyUnavailable(detail), detail },
-      },
-      { operation },
-    ),
-  );
+  return notify(planCliOutcome(unavailableOutcome(error), { operation }));
 }
 
 // ── real seams ───────────────────────────────────────────────────────────────
@@ -1163,7 +1334,11 @@ function spawnAlpAsync(
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const child = cp.spawn(command, args, { cwd, signal });
+    // `env` REPLACES the environment for `cp.spawn` (unlike ProcessExecution,
+    // which merges), so this is the whole inherited environment plus the proxy
+    // gap-fillers — see `spawnEnv`. This is the seam `tan sdk list` runs on, the
+    // one a proxied machine notices first.
+    const child = cp.spawn(command, args, { cwd, signal, env: spawnEnv() });
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
 
@@ -1230,6 +1405,7 @@ function commandOnPath(command: string): boolean {
   const probe = cp.spawnSync(command, ["--version"], {
     encoding: "utf8",
     timeout: 5000,
+    env: spawnEnv(),
   });
   if (probe.error) {
     return false;

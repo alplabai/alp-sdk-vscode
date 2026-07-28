@@ -18,7 +18,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { sameUserPath } from "@alp-sdk/core/paths";
 import * as vscode from "vscode";
-import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   isCancellation,
   planCliOutcome,
@@ -319,7 +319,15 @@ export function createSdkMessageHandler(
             "https://github.com/alplabai/alp-sdk.git",
             destPath,
           ],
-          { signal: installAbort.signal },
+          // Same proxy gap-fill as the tan seams: git reads HTTPS_PROXY, and a
+          // corporate machine that needs a proxy to reach GitHub fails this
+          // clone for the identical reason `tan sdk list` failed. `env`
+          // REPLACES the environment for `cp.spawn`, hence the spread — which
+          // is also what carries NO_PROXY and PATH through untouched.
+          {
+            signal: installAbort.signal,
+            env: { ...process.env, ...proxyEnvAdditions() },
+          },
         );
         proc.on("exit", (code) =>
           code === 0

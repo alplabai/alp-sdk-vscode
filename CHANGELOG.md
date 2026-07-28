@@ -2,6 +2,158 @@
 
 ## Unreleased
 
+- **VS Code's `http.proxy` now reaches every child process the extension
+  spawns (#379).** A corporate user who set `http.proxy` got a `tan` that
+  ignored it: `spawnAlpAsync` passed no `env` at all, so the child inherited
+  `process.env` verbatim and `tan sdk list` failed with a raw transport error
+  pointing at nothing. `tan` takes no `--proxy` flag — it reads the environment
+  (tan-cli `crates/tan-cli/src/http.rs`) — so handing the setting to the child
+  is the entire mechanism, and no protocol change was needed.
+
+  Covered: `spawnAlpAsync` (the envelope path), both `--version` probes,
+  `execFileAsyncCli`, and BOTH terminal seams (`runAlpInTerminal` and the
+  bundled `Install tan` script). A `ProcessExecution` task is not a login shell
+  — it inherits the extension host's environment, not the user's profile — so
+  `tan bootstrap`, which downloads Zephyr and pip packages, was as blind to the
+  setting as the in-process seams were. The two network-bound children that are
+  not `tan` are fixed with it, because they failed for the identical reason:
+  `west update` (`executeWestPlan`) and the SDK-install `git clone`.
+
+  **Precedence: an already-exported environment variable WINS over the IDE
+  setting.** The setting only fills a gap; a variable the user exported in the
+  shell VS Code was launched from is left exactly as it is. Beyond "do not
+  silently override a deliberate machine-wide configuration", the other order is
+  not implementable: the child picks its own proxy and `ALL_PROXY` outranks
+  `HTTPS_PROXY` in tan's order, so "the setting always wins" would require
+  overwriting the user's `ALL_PROXY` too. This is the opposite order from the
+  in-process download path, deliberately — that one picks the proxy itself, so
+  it can. The rule is stated on `proxyEnvOverrides`, which is pure and tested.
+
+  Both `HTTPS_PROXY` and `HTTP_PROXY` are set, and each gap is judged against
+  ALL the names its consumer reads (`ALL_PROXY`/`all_proxy` plus the upper- and
+  lowercase spelling) — checking only `HTTPS_PROXY` would let ours outrank a
+  user's lowercase `https_proxy` inside tan, re-introducing the override through
+  the back door. An empty exported value counts as set: `export HTTPS_PROXY=` is
+  how a user disables an inherited proxy. `NO_PROXY` is never written — VS Code
+  has no setting for a bypass list, so the environment is its only source and it
+  passes through untouched.
+
+  `http.proxyStrictSSL: false` is **not forwardable and is not silently
+  dropped**: `tan` has no environment knob or flag that relaxes certificate
+  verification, and it should not need one — its rustls config already trusts
+  the bundled roots MERGED WITH THE OS TRUST STORE, so a TLS-intercepting
+  middlebox's CA installed in system trust is already accepted. Setting it to
+  `false` now logs that once, with the remedy (install the CA in the OS trust
+  store), instead of leaving the user believing a switch they flipped is in
+  effect. The message promises that for **tan only**, and says so: tan's own
+  module doc is explicit that the subprocesses it spawns — `git clone`, `pip`,
+  `west update` — "do their own networking with their own trust stores"
+  (tan-cli `crates/tan-cli/src/http.rs`). pip verifies against `certifi`'s
+  bundled CA and never consults the Windows/macOS store; Git for Windows built
+  against OpenSSL uses its own `ca-bundle.crt`. Promising those too is how a
+  user installs the CA as instructed, watches tan start working, then hits
+  `CERTIFICATE_VERIFY_FAILED` on the pip step and concludes the extension lied,
+  so the message now names `PIP_CERT` / `REQUESTS_CA_BUNDLE` and
+  `http.sslCAInfo` instead.
+
+  All five child-launch seams are covered by tests that fail when `env` is
+  dropped from any one of them — including both TERMINAL seams, which the
+  original `alpCli.spawnProxyEnv` suite could not see at all (it stubbed
+  `runInTerminal` as a no-op), and the two non-`tan` children, which no test
+  loaded. That gap was not evenly distributed: `runAlpInTerminal` is the seam
+  `tan bootstrap` runs on — the command that downloads Zephyr and the pip
+  packages, i.e. the one that needs the proxy most.
+
+- **The downloaded `tan` binary is now verified against the release's
+  `checksums.txt` before it is ever executed (#378).** The extension fetched a
+  binary from a GitHub release, renamed it into the managed cache, marked it
+  executable and ran it, having verified nothing about the bytes beyond "the
+  transfer finished" — a byte count and a `content-length`, both of which a
+  substituted binary satisfies exactly.
+
+  `releaseAssetForTarget` now resolves `checksumsUrl` from the SAME release tag
+  as the asset (so a digest can never be looked up against a different release
+  than the bytes came from), `downloadFile` fetches it through the SAME proxy
+  settings as the binary (a machine that needs a proxy needs it for both, or the
+  proxy support and the verification would cancel each other out), and the
+  transferred bytes are hashed with `crypto.createHash("sha256")` off the same
+  chunks the byte counter already sees — no new dependency, no second pass over
+  the file.
+
+  The check runs while the download is still a temp file, BEFORE the `chmod +x`
+  and the rename. A rejected binary therefore never appears at
+  `cachedBinaryPath` even briefly, which matters because the `cached` resolution
+  source spawns whatever is sitting there without asking again; and an
+  already-installed good binary is never moved aside for bytes that turn out to
+  be wrong.
+
+  Three outcomes, three distinct sentences, and all three REFUSE: a digest
+  MISMATCH, a `checksums.txt` that COULD NOT BE FETCHED, and a `checksums.txt`
+  with NO LINE for this asset. The last two are deliberately not softened into
+  warnings — every tagged tan release publishes the file and the binary itself
+  just arrived over the same connection, so failing to obtain the digest means
+  the release is malformed or something is intercepting. Neither is a reason to
+  execute an unverified binary, and the reasoning is written into
+  `ChecksumError` so it is not quietly relaxed later.
+
+  A refusal is also no longer reported as an outage. `ChecksumError` gets its
+  own notification plan alongside `CliInUseError` and `ProxyError`; previously a
+  refused binary would have surfaced as "Couldn't download the tan CLI — retry
+  when you're back online", sending the customer to check their Wi-Fi for bytes
+  that arrived perfectly intact and simply were not the published ones. The
+  digests stay on the output channel, the sentence reaches the toast, and
+  `alpSdk.cliPath` is not offered as the remedy — hand-placing a binary is the
+  workaround this check exists to prevent.
+
+  That holds on **both** surfaces, not just the provisioning one. Activation
+  fires `ensureTanCliProvisioned` un-awaited and `resolveAlpBinary` has a live
+  `case "download"`, so a command issued before or instead of provisioning
+  downloads inline and the refusal arrives as a resolution failure instead.
+  `CliUnavailableReason` gains a dedicated `checksumRefused` for it, matched
+  ahead of `corrupt`: the three refusals stay three sentences there too, the
+  toast no longer claims "the installed copy looks broken" (nothing was
+  installed, and a good installed copy is deliberately left untouched), and it
+  no longer offers **`alpSdk.cliPath`** — the one resolution source with no
+  checksum path at all, i.e. a one-click route, mid-tamper, to permanently
+  executing exactly the binary that had just been refused.
+
+  `downloadFile` takes `verify` as a REQUIRED 3rd parameter, ahead of an
+  optional `{ signal, proxy }` options bag, so no caller reaches the transfer
+  without STATING what it wants, in one of two greppable forms. Requiring
+  `verify` on the `ResolveDeps.download` seam guards only the CALLER (dropping
+  it in `downloadCli` is a `TS2554`); it does not guard the provider, because
+  TypeScript's function assignability accepts a 3-parameter implementation for
+  a 4-parameter type, so an inline arrow in `vscodeAdapter.ts` could leave
+  `verify` off its own parameter list and keep the board fully green while the
+  extension executed unchecked bytes. The arrow's body,
+  `downloadFile(url, dest, signal, proxySettings())`, now puts an `AbortSignal`
+  where a `ChecksumSpec | null` is required: a `TS2345`, whatever the arrow's
+  arity.
+
+  The compiler cannot go further than that — an arrow may still say `null` out
+  loud, and `downloadFile(url, dest, null, { signal, proxy })` compiles. So the
+  wiring is pinned behaviourally as well:
+  `test/alpCli.downloadSeamWiring.test.js` captures the `ResolveDeps` the
+  adapter actually builds and drives its `download` against a release server
+  serving a tampered body under a correct manifest. It passes today and reds on
+  the `null` arrow, which typechecks clean. `null` is the explicit, greppable
+  opt-out used by the
+  transfer-mechanics tests, which serve bodies no release published a digest
+  for; no production caller passes it. The seam itself stays a named
+  `downloadSeam` in `download.ts` so a test can drive the exact function the
+  adapter injects against a local release server serving a tampered body.
+
+  The `checksums.txt` read is capped at 64 KiB. It is buffered in memory (849
+  bytes for tan v0.4.0) and was bounded only by the 120 s wall clock, which a
+  hostile origin — precisely this change's threat model — could spend growing
+  the extension host's heap. Overrunning the cap refuses rather than truncates:
+  a truncated manifest could be missing the digest line and would then read as
+  "the release does not list this asset".
+
+  GitHub build-provenance attestation (`gh attestation verify`) stays OUT of the
+  runtime path: it requires the `gh` CLI installed and authenticated, which no
+  customer machine can be assumed to have. It remains a maintainer/CI check.
+
 - **Switching the active SDK now reconciles the west workspace, instead of
   reporting success beside a stale one (#364, closing the half #350 left).**
   Activation wrote `alpSdk.path` and mirrored `.alp/sdk-path`, but neither

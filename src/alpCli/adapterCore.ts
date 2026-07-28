@@ -4,7 +4,12 @@
 // (filesystem / process / network) so it is unit-testable without `vscode`.
 // The thin `vscodeAdapter` wires the real implementations.
 
-import { BinaryResolutionInput, BinarySource, CliOutcome } from "./models";
+import {
+  BinaryResolutionInput,
+  BinarySource,
+  ChecksumSpec,
+  CliOutcome,
+} from "./models";
 import {
   classifyOutcome,
   classifyUnavailable,
@@ -57,10 +62,23 @@ export interface ResolveDeps {
   fileExists: (path: string) => boolean;
   commandOnPath: (command: string) => boolean;
   ensureDir: (dir: string) => void;
+  /** `verify` is REQUIRED, not optional: the managed binary is executed, so
+   *  every fetch of it must be checked against the digest the release
+   *  publishes.
+   *
+   *  What this type buys is the CALLER: omitting the argument in `downloadCli`
+   *  is a `TS2554`. It does NOT constrain the PROVIDER — several spellings of
+   *  an unverifying implementation assign to it cleanly (a 3-parameter arrow, a
+   *  hard-coded `null`, a cast, a spread over the deps object). Those are
+   *  pinned behaviourally by `test/alpCli.downloadSeamWiring.test.js`, which
+   *  drives the `download` each real entry point ends up with against a
+   *  tampered release. Do not read this as "the compiler refuses"; it refuses
+   *  half. */
   download: (
     url: string,
     destFile: string,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    verify: ChecksumSpec,
   ) => Promise<void>;
   chmodExec: (path: string) => void;
 }
@@ -146,7 +164,12 @@ export async function downloadCli(
   // that makes it appear at `cachedBinaryPath` (closes the race where a
   // concurrent window resolves "cached" and spawns a not-yet-executable
   // file); this call is now a harmless idempotent safety net.
-  await deps.download(asset.url, deps.cachedBinaryPath, signal);
+  //
+  // `asset` is passed as the verification spec as well as the source URL: it
+  // already carries `assetName` and `checksumsUrl` for the SAME release tag, so
+  // the digest can never be looked up against a different release than the
+  // bytes came from. Nothing lands at `cachedBinaryPath` unless it matches.
+  await deps.download(asset.url, deps.cachedBinaryPath, signal, asset);
   if (deps.platform !== "win32") {
     deps.chmodExec(deps.cachedBinaryPath);
   }

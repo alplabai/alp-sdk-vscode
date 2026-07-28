@@ -18,6 +18,8 @@ const {
   parseEnvelope,
   classifyOutcome,
   releaseAssetForTarget,
+  expectedSha256,
+  classifyUnavailable,
   binaryName,
   shouldFetchManagedCli,
   SUPPORTED_CLI_VERSION,
@@ -924,6 +926,123 @@ test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary,
 
   // A host with no published target (e.g. 32-bit ARM Linux) has no asset.
   assert.equal(releaseAssetForTarget("linux", "arm"), null);
+});
+
+test("releaseAssetForTarget resolves checksums.txt at the SAME tag as the binary", () => {
+  for (const [platform, arch] of [
+    ["linux", "x64"],
+    ["win32", "arm64"],
+    ["darwin", "arm64"],
+  ]) {
+    const asset = releaseAssetForTarget(platform, arch);
+    assert.equal(
+      asset.checksumsUrl,
+      `https://github.com/alplabai/tan-cli/releases/download/${asset.tag}/checksums.txt`,
+    );
+    // The property that matters: the digest can never be looked up against a
+    // different release than the bytes came from.
+    assert.equal(
+      asset.checksumsUrl.slice(0, asset.checksumsUrl.lastIndexOf("/")),
+      asset.url.slice(0, asset.url.lastIndexOf("/")),
+    );
+  }
+  // An explicit version pins both halves together too.
+  const pinned = releaseAssetForTarget("linux", "x64", "0.9.9");
+  assert.ok(pinned.url.includes("/download/v0.9.9/"));
+  assert.ok(pinned.checksumsUrl.includes("/download/v0.9.9/"));
+});
+
+// The corpus is the REAL published tan v0.4.0 `checksums.txt` (digests are
+// public release metadata), so the parser is proven against the producer's
+// actual bytes rather than a hand-invented approximation of them: `<64 hex>` +
+// TWO spaces + filename + LF.
+const V040_CHECKSUMS = `76197d72333e05dcdb50172d8ca21eb761d49a8cd4d0aab26104eb9e287342a5  envelope-contract.json
+b31a9b1673e7bd91297927445ba1a2ec24b03edb30aa760ffb77436dd5ffe86f  tan-aarch64-apple-darwin
+d30b2a5536111e30394dbad0a43f18b369c49299cca7538b39ae8fd78278cb92  tan-aarch64-pc-windows-msvc.exe
+09a58537dd64b0853e8c06ee03ea64c11e67556e8f044b1fe12353ec99ee4a2d  tan-aarch64-unknown-linux-gnu
+95e4cfd820c6ece0f9383f1e140befcdad8ddac92557a93d321b7635c28bdf48  tan-aarch64-unknown-linux-musl
+a2696088acd082de19673032b8aceeb353c06d7cd1176c004e26a6e51e353805  tan-x86_64-apple-darwin
+a80fb5da183798335d87438c634dcf018763c4ab2089a17a2631464aadfc6b76  tan-x86_64-pc-windows-msvc.exe
+cc5b6f1d0ce9a19bcce48fd8addd88fe6f9ec4fbf52d766155b0f651cc68ccec  tan-x86_64-unknown-linux-gnu
+d8491a3e23d2ea99ca3d7743ecc5944282489ece62a3bc4c415d03a50e31a273  tan-x86_64-unknown-linux-musl
+`;
+
+test("expectedSha256 reads the real published tan v0.4.0 checksums.txt", () => {
+  // Verified by hand against the release: downloading
+  // tan-x86_64-pc-windows-msvc.exe (3282944 bytes) and hashing it yields
+  // exactly this digest, so the published pair really is self-consistent —
+  // which is what makes refusing on a mismatch shippable rather than a
+  // permanent block.
+  assert.equal(
+    expectedSha256(V040_CHECKSUMS, "tan-x86_64-pc-windows-msvc.exe"),
+    "a80fb5da183798335d87438c634dcf018763c4ab2089a17a2631464aadfc6b76",
+  );
+  assert.equal(
+    expectedSha256(V040_CHECKSUMS, "tan-x86_64-unknown-linux-musl"),
+    "d8491a3e23d2ea99ca3d7743ecc5944282489ece62a3bc4c415d03a50e31a273",
+  );
+  // Every one of the eight published binaries resolves — the extension has a
+  // host for each, so a name this parser could not find would be a dead target.
+  for (const line of V040_CHECKSUMS.trim().split("\n")) {
+    const name = line.split("  ")[1];
+    assert.equal(expectedSha256(V040_CHECKSUMS, name)?.length, 64, name);
+  }
+});
+
+test("expectedSha256 returns null rather than guessing, which is a REFUSAL upstream", () => {
+  // No line for the asset. Not a pass: `download.ts` turns this into a
+  // ChecksumError, because a release that doesn't list the file it served
+  // vouches for nothing.
+  assert.equal(expectedSha256(V040_CHECKSUMS, "tan-mips-unknown-linux"), null);
+  // A prefix/suffix of a real name must never match a longer or shorter one.
+  assert.equal(expectedSha256(V040_CHECKSUMS, "tan-x86_64-apple"), null);
+  assert.equal(
+    expectedSha256(V040_CHECKSUMS, "tan-x86_64-pc-windows-msvc"),
+    null,
+    "the .exe asset must not answer for a name without the suffix",
+  );
+  // Case-sensitive on the FILENAME: the release assets are lowercase triples,
+  // and folding case could pair a digest with a different asset.
+  assert.equal(expectedSha256(V040_CHECKSUMS, "TAN-x86_64-apple-darwin"), null);
+  assert.equal(expectedSha256("", "tan-x86_64-apple-darwin"), null);
+  // A truncated / non-hex digest is not a digest, so the line does not count.
+  assert.equal(
+    expectedSha256(
+      "deadbeef  tan-x86_64-apple-darwin",
+      "tan-x86_64-apple-darwin",
+    ),
+    null,
+  );
+});
+
+test("expectedSha256 tolerates the sha256sum spelling variants, normalising the digest", () => {
+  const digest =
+    "a80fb5da183798335d87438c634dcf018763c4ab2089a17a2631464aadfc6b76";
+  // CRLF (a manifest that went through a Windows tool).
+  assert.equal(expectedSha256(`${digest}  tan\r\n`, "tan"), digest);
+  // `sha256sum -b` binary-mode marker.
+  assert.equal(expectedSha256(`${digest} *tan`, "tan"), digest);
+  // A single space / a tab instead of the canonical two spaces.
+  assert.equal(expectedSha256(`${digest} tan`, "tan"), digest);
+  assert.equal(expectedSha256(`${digest}\ttan`, "tan"), digest);
+  // UPPERCASE hex normalises to lower, so the comparison downstream is a plain
+  // string equality and can't fail on presentation alone.
+  assert.equal(expectedSha256(`${digest.toUpperCase()}  tan`, "tan"), digest);
+});
+
+test("classifyUnavailable files a refused checksum as its OWN reason, not as corrupt or a network failure", () => {
+  // The exact sentences `download.ts` throws. Neither neighbouring reason is
+  // survivable here: `downloadFailed` offers "retry when you're back online"
+  // for bytes that arrived perfectly well, and `corrupt` says "the installed
+  // copy looks broken" — false, nothing was installed — and then offers
+  // `alpSdk.cliPath`, the one resolution source that is NEVER checksum-checked.
+  for (const sentence of [
+    "The downloaded tan CLI does not match the checksum Alp Lab published for it, so it was discarded and nothing was installed.",
+    "The tan CLI download was discarded: the checksum file that vouches for it could not be fetched, so there was no way to tell whether the binary is the one Alp Lab published.",
+    "The tan CLI download was discarded: the release's checksum file does not list this binary, so nothing vouches for the bytes that were served.",
+  ]) {
+    assert.equal(classifyUnavailable(sentence), "checksumRefused", sentence);
+  }
 });
 
 test("binaryName is platform-specific", () => {

@@ -94,7 +94,10 @@ async function activate({ installed, globalState, source = "cached" }) {
       },
       downloadCli: async () => {},
     },
-    "./download": { downloadFile: async () => {} },
+    // `downloadSeam` is a FACTORY: the adapter calls it once at
+    // `buildResolveDeps` time to build the `ResolveDeps.download` seam, so the
+    // stub has to return a function, not be one.
+    "./download": { downloadSeam: () => async () => {} },
     "../notify/vscodeAdapter": {
       notify: async (plan) => {
         plans.push(plan);

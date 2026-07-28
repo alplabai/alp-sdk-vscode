@@ -166,6 +166,27 @@ function unavailablePlan(
         message: `${op} couldn't start the tan CLI — the installed copy looks broken.`,
         actions: [{ id: "installTanCli" }, settings],
       };
+    case "checksumRefused":
+      return {
+        // `outcome.message` VERBATIM, not a sentence composed here. This is the
+        // one reason whose three causes — the bytes did not match / the
+        // checksum could not be fetched / the release does not list this asset
+        // — must stay distinguishable, and only the producer knows which it
+        // was. It is a customer sentence by construction: `ChecksumError` keeps
+        // every digest, URL and path on `detail`, which stays channel-only.
+        message: outcome.message,
+        // Retry is safe by construction — it re-verifies, so it can never
+        // install the refused bytes — and a one-off mismatch really is often a
+        // corrupted transfer. `showOutput` is named explicitly rather than left
+        // to `finalize`'s backstop, because `retry` is caller-handled and
+        // `notifyAsync` strips it: without this the toast would be a dead end
+        // at exactly the moment the digests matter most.
+        //
+        // `settings` is deliberately ABSENT, and must stay absent. Every other
+        // remedy here can be offered mid-tamper; `alpSdk.cliPath` cannot,
+        // because that source is never checksum-verified.
+        actions: [{ id: "retry" }, { id: "showOutput" }],
+      };
     case "timeout":
       return {
         message: `${op} timed out waiting for the tan CLI.`,

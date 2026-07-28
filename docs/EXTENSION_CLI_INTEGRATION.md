@@ -156,6 +156,56 @@ progress notification instead of stalling on the first build/validate command
 (a no-op when a binary already resolves), and a version check then warns if the
 resolved `tan` is older than the version this build targets.
 
+**Every managed download is checked against the release's `checksums.txt`.**
+The extension does not merely store this binary, it executes it, so a completed
+transfer is not sufficient — `releaseAssetForTarget` resolves `checksumsUrl`
+from the same release tag as the asset, `downloadFile` fetches it through the
+same proxy settings as the binary, and the transferred bytes' sha256 must equal
+the digest published for that exact asset name before anything is renamed into
+the cache. Verification happens while the download is still a temp file, so a
+rejected binary never appears at `cachedBinaryPath` (where the `cached`
+resolution source would spawn it unasked) and an already-installed good binary
+is left in place.
+
+Three outcomes all REFUSE, with three distinct messages: a digest **mismatch**,
+a `checksums.txt` that **could not be fetched**, and a `checksums.txt` with **no
+line for this asset**. The last two are refusals rather than warnings on
+purpose — every tagged tan release publishes the file, and the binary itself
+just arrived over the same connection, so failing to obtain the digest means the
+release is malformed or something is intercepting; neither justifies executing
+an unverified binary. See `ChecksumError` in `src/alpCli/download.ts`.
+
+A refusal reaches the customer through **two** surfaces, and both keep the three
+messages distinct. Activation-time provisioning goes through
+`checksumFailurePlan`. But `resolveAlpBinary` has a live `case "download"` and
+`extension.ts` fires provisioning un-awaited, so a command issued before or
+instead of it downloads INLINE and the refusal arrives as a resolution failure —
+`CliUnavailableReason` therefore carries a dedicated `checksumRefused`
+(`classifyUnavailable` matches it ahead of `corrupt`), and `unavailablePlan`
+renders the `ChecksumError` sentence verbatim. Neither surface offers
+**`alpSdk.cliPath`**: that resolution source is never checksum-verified, so
+offering it during an active tamper would be a one-click route to permanently
+executing the very binary that was just refused. Both offer Retry, which is safe
+because it re-verifies.
+
+The `checksums.txt` body is read into memory rather than streamed to disk (it is
+849 bytes at tan v0.4.0) and is therefore **capped** at 64 KiB — a hostile origin
+is this check's threat model, and without the cap the read is bounded only by
+the 120 s wall clock. Overrunning it refuses rather than truncates: a truncated
+manifest could be missing the digest line and would read as "unlisted".
+
+**Out of scope: GitHub build-provenance attestation.**
+`gh attestation verify <file> --repo alplabai/tan-cli` does work, and does fail
+on a tampered copy, but it needs the `gh` CLI installed and authenticated —
+which a customer machine cannot be assumed to have. It stays a maintainer/CI
+check; the extension never shells out to `gh`. (When running it by hand: in gh
+2.89.0 a successful verify prints nothing, so exit 0 is the only signal and
+empty output is not a failure.) Note also what the checksum does and does not
+buy: `checksums.txt` travels over the same TLS connection as the binary, so it
+catches a corrupted or substituted asset, while TLS remains what authenticates
+the channel. Only signature verification against a producer key held by the
+extension would make the transport itself untrusted.
+
 **Compat note (PATH order reorder, 2026-07):** before this reorder, `tan` on
 PATH was tried right after `alpSdk.cliPath` — ahead of anything the extension
 itself manages. Now PATH is a last resort, tried only once nothing

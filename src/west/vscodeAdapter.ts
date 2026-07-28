@@ -2,6 +2,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { proxyEnvAdditions } from "../alpCli/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { runInTerminal } from "../util";
 import {
@@ -64,6 +65,10 @@ export function executeWestPlan(plan: WestCommandPlan): void {
     name: plan.terminalName,
     argv,
     cwd: plan.westCwd ?? undefined,
-    env: plan.env,
+    // `west update` clones and fetches from GitHub, so it is as proxy-dependent
+    // as `tan` is and this task inherits the extension host's environment, not
+    // a login shell's. The plan's own vars win on a key clash: the proxy
+    // additions never write EXTRA_ZEPHYR_MODULES, so today there is none.
+    env: { ...proxyEnvAdditions(), ...plan.env },
   });
 }
