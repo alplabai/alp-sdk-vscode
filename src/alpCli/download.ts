@@ -112,12 +112,16 @@ export type ChecksumRefusal =
  * nothing was RUN: either they do not match the sha256 that vouches for them, or
  * that digest could not be obtained at all.
  *
- * FOUR causes, FOUR sentences, and all four REFUSE. That is deliberate and must
- * stay that way — do not "relax" any of them into a warning:
+ * FOUR kinds, FIVE sentences, and every one of them REFUSES. That is deliberate
+ * and must stay that way — do not "relax" any of them into a warning:
  *
  *   - MISMATCH. The bytes are not what the producer published (download), or no
  *     longer what was recorded for them (cache, #386). This is the case that
- *     matters and the reason the whole check exists.
+ *     matters and the reason the whole check exists — and it is the kind that
+ *     carries TWO sentences, because those are two different facts: the release
+ *     served the wrong bytes, versus something rewrote a binary this extension
+ *     had already verified (`CACHED_CLI_MISMATCH` in `service.ts`, whose remedy
+ *     is a reinstall rather than a retry).
  *   - The checksum file would not FETCH. This is NOT "probably fine": every
  *     tagged tan release publishes `checksums.txt`, and the binary itself just
  *     came down the same connection, through the same proxy, moments earlier.
@@ -131,7 +135,7 @@ export type ChecksumRefusal =
  *     the fetch did not complete. Accepting it and recording its current digest
  *     instead would launder an unverified binary into a "verified" one.
  *
- * The alternative to refusing, in all four cases, is spawning an unverified
+ * The alternative to refusing, in every one of them, is spawning an unverified
  * executable on a customer's machine. There is no third option here: the
  * extension runs this binary, it does not merely store it.
  *

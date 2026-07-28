@@ -149,12 +149,13 @@ const CACHED_DIGEST_KEY = "alp.tanCachedBinarySha256";
  *
  *  MEASURED, not guessed: hashing the 3.2 MB `tan` binary (readFileSync +
  *  sha256) takes ~2.5-3.2 ms on this machine, and `statSync` ~0.08 ms. Without
- *  the memo that cost is per-COMMAND, not per-window: `resolveAlpBinaryForContext`
- *  memoizes into `resolved`, but `readResolvedCliVersion` builds its own deps
- *  and calls `resolveAlpBinary` directly, and `probeTanVersion` runs it on every
- *  state refresh — window focus, file save, task start, terminal finish, any
- *  `alpSdk` settings edit. That is a synchronous multi-millisecond hash on the
- *  extension-host main thread per focus event.
+ *  the memo that cost is per STATE REFRESH, not per-window:
+ *  `resolveAlpBinaryForContext` memoizes into `resolved`, but
+ *  `readResolvedCliVersion` builds its own deps and calls `resolveAlpBinary`
+ *  directly, and `probeTanVersion` runs it on every state refresh — window
+ *  focus, file save, task start, terminal finish, any `alpSdk` settings edit.
+ *  That is a synchronous multi-millisecond hash on the extension-host main
+ *  thread per focus event.
  *
  *  ponytail: size + mtime, so a rewrite that preserves BOTH within one window
  *  reuses the memo. That is a real ceiling and it is stated rather than papered
@@ -704,10 +705,13 @@ export async function ensureTanCliProvisioned(
             ? // NOT the generic sentence below: this machine has a tan CLI, it
               // just isn't one anything can vouch for (#386). Narrow by the
               // time it is reached — `downloadCli` re-frames every TRANSPORT
-              // failure of a re-acquire into a `ChecksumError`, which
-              // `checksumFailurePlan` above already caught. What lands here is
-              // the residue: the transfer succeeded and then the binary could
-              // not be read back or its digest not stored.
+              // failure of a re-acquire into a `ChecksumError` (the wall-clock
+              // `TimeoutError` included: it used to escape that re-framing, and
+              // reached this branch on a transfer that had NOT succeeded), and
+              // `checksumFailurePlan` above already caught those. A cancel and
+              // a closing window returned further up. So what lands here is the
+              // residue of a transfer that DID succeed: the binary could not be
+              // read back, or its digest not stored.
               CACHED_CLI_UNVERIFIED
             : updatingStaleCache
               ? `Couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION}. The installed version still works — retry when you're back online.`

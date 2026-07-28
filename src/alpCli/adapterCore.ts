@@ -256,13 +256,37 @@ export async function resolveAlpBinary(
  *     That outranks the migration framing and must never be softened into
  *     "reconnect and retry", which is #389's whole lesson about not flattening
  *     distinct refusals into one sentence;
- *   - an ABORT — the customer pressed Cancel, or the window is closing. Not a
- *     failure, and both callers branch on it before they reach any wording;
+ *   - a CANCEL, and `cancelled` is the CALLER'S OWN `AbortSignal` having fired
+ *     — the customer pressed Cancel, or the window is closing. Not a failure.
+ *     Only two of the three routes into `downloadCli` pass a signal at all
+ *     (`ensureTanCliProvisioned` and `updateAlpCli`), and each branches on its
+ *     own `cancelled` flag before it reaches any wording; the third, the
+ *     per-command `resolveAlpBinary` `download` arm, passes none and branches
+ *     on nothing.
+ *
+ *     Decided STRUCTURALLY rather than by the error's `name`, which is what
+ *     this used to do and what made it wrong. `downloadFile` races the caller's
+ *     signal against `AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS)`, so a stalled
+ *     link throws a bare `TimeoutError` — abort-SHAPED, and a failure. Nothing
+ *     branched on that: `isCancellation` (`src/notify/service.ts`) requires
+ *     `name === message === "Canceled"`. On the per-command route it therefore
+ *     escaped un-reframed, reached `unavailableOutcome` as a
+ *     non-`ChecksumError`, classified `spawnFailed`, and the toast offered
+ *     "Install tan CLI (global)" — which puts a `tan` on PATH, one of the four
+ *     arms `resolveAlpBinary` never verifies. A one-click route onto an
+ *     unverified binary, the exact class #389 had to remove. No caller signal,
+ *     no cancel;
  *   - a `CliInUseError` / `ProxyError` — already presented backwards from a
  *     network failure by their own plan, and a proxy that said no is a fact the
  *     migration framing would bury.
  */
-function migrationRefusal(error: unknown): ChecksumError | null {
+function migrationRefusal(
+  error: unknown,
+  cancelled: boolean,
+): ChecksumError | null {
+  if (cancelled) {
+    return null;
+  }
   if (error instanceof ChecksumError) {
     return error.kind === "mismatch"
       ? null
@@ -273,12 +297,6 @@ function migrationRefusal(error: unknown): ChecksumError | null {
         );
   }
   if (error instanceof CliInUseError || error instanceof ProxyError) {
-    return null;
-  }
-  if (
-    error instanceof Error &&
-    (error.name === "AbortError" || error.name === "TimeoutError")
-  ) {
     return null;
   }
   return new ChecksumError(
@@ -320,7 +338,10 @@ export async function downloadCli(
   try {
     await deps.download(asset.url, deps.cachedBinaryPath, signal, asset);
   } catch (error) {
-    throw (migrating ? migrationRefusal(error) : null) ?? error;
+    throw (
+      (migrating ? migrationRefusal(error, signal?.aborted === true) : null) ??
+      error
+    );
   }
   if (deps.platform !== "win32") {
     deps.chmodExec(deps.cachedBinaryPath);

@@ -63,10 +63,10 @@ const ADAPTER = require.resolve(
 const CORE = require(CORE_PATH);
 const SERVICE = require(SERVICE_PATH);
 // NOT reloaded anywhere, so `instanceof` stays meaningful across every fresh
-// adapter load below.
-const { ChecksumError } = require(
-  path.join(root, "out", "alpCli", "download.js"),
-);
+// adapter load below — which is also why the `./download` stub in `loadAdapter`
+// SPREADS this module rather than replacing it.
+const DOWNLOAD = require(path.join(root, "out", "alpCli", "download.js"));
+const { ChecksumError } = DOWNLOAD;
 
 const sha256 = (buffer) =>
   crypto.createHash("sha256").update(buffer).digest("hex");
@@ -278,28 +278,66 @@ test("migration: an UNFETCHABLE checksum during the re-acquire IS re-framed, cau
   );
 });
 
-test("migration: a user CANCEL is not re-framed as a verification refusal", async () => {
-  const abort = new Error("The operation was aborted");
-  abort.name = "AbortError";
-  const { deps } = coreDeps({
+/** A cached-but-unrecorded machine whose re-acquire throws `error`. */
+function migratingDeps(error) {
+  return coreDeps({
     existing: ["/cache/cli/tan"],
     bytes: { "/cache/cli/tan": GOOD },
     recordedDigest: undefined,
     deps: {
       download: async () => {
-        throw abort;
+        throw error;
       },
     },
-  });
-  // The customer pressed Cancel. Both download callers branch on that before
-  // any wording, and turning it into a ChecksumError would put a refusal toast
-  // in front of someone who asked for the abort.
+  }).deps;
+}
+
+test("migration: a user CANCEL is not re-framed as a verification refusal", async () => {
+  const abort = new Error("The operation was aborted");
+  abort.name = "AbortError";
+  // The customer pressed Cancel, and the CALLER'S OWN signal having fired is
+  // what says so — not the error's name. Both signal-passing callers
+  // (`ensureTanCliProvisioned`, `updateAlpCli`) branch on their `cancelled`
+  // flag before any wording, and turning this into a ChecksumError would put a
+  // refusal toast in front of someone who asked for the abort.
+  const controller = new AbortController();
+  controller.abort();
   await assert.rejects(
-    () => CORE.resolveAlpBinary(deps),
+    () => CORE.downloadCli(migratingDeps(abort), controller.signal),
     (error) => {
       assert.equal(error, abort);
       return true;
     },
+  );
+});
+
+test("migration: a wall-clock TIMEOUT is re-framed, because nothing downstream branches on it", async () => {
+  // What `AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS)` throws and `downloadFile`
+  // re-throws raw: abort-SHAPED, and a failure rather than a cancel. It used to
+  // travel unchanged on the name alone. `isCancellation` (notify/service.ts)
+  // requires `name === message === "Canceled"`, so no caller ever branched on
+  // it — on the per-command route below it reached the toast as `spawnFailed`
+  // with an "Install tan CLI (global)" button, i.e. a one-click route onto a
+  // PATH binary nothing verifies.
+  const timeout = new Error("The operation was aborted due to timeout");
+  timeout.name = "TimeoutError";
+  // The per-command route: `resolveAlpBinary`'s `download` arm passes NO signal.
+  await assert.rejects(
+    () => CORE.resolveAlpBinary(migratingDeps(timeout)),
+    (error) => {
+      assert.equal(error.name, "ChecksumError");
+      assert.equal(error.kind, "unrecorded");
+      assert.equal(error.message, SERVICE.CACHED_CLI_UNVERIFIED);
+      assert.match(error.detail, /timeout/i);
+      return true;
+    },
+  );
+  // …and the same on a route that DOES pass a signal, when that signal has not
+  // fired: the wall clock is the download's own, not the customer's.
+  await assert.rejects(
+    () =>
+      CORE.downloadCli(migratingDeps(timeout), new AbortController().signal),
+    { name: "ChecksumError", message: SERVICE.CACHED_CLI_UNVERIFIED },
   );
 });
 
@@ -377,11 +415,17 @@ function extensionHome() {
 /**
  * Load a FRESH copy of the real `vscodeAdapter` (fresh module state: the
  * per-window resolution memo and the hash memo), keeping the REAL `adapterCore`,
- * `service`, `download` and `fs`. Only the host seams are stubbed, plus — when
- * `releaseAsset` is given — `releaseAssetForTarget`, so a download can be served
- * from 127.0.0.1 instead of github.com.
+ * `service`, `download` and `fs`. Only the host seams are stubbed, plus:
+ *
+ *  - `releaseAsset` → `releaseAssetForTarget`, so a download can be served from
+ *    127.0.0.1 instead of github.com;
+ *  - `service` → any other `./service` export (a customer sentence, to prove a
+ *    classification does not depend on its wording);
+ *  - `transfer` → what `downloadSeam` RETURNS. `downloadSeam`, never
+ *    `downloadFile`: the seam closes over the module-internal `downloadFile`,
+ *    so stubbing that export is a silent no-op and a false green.
  */
-function loadAdapter({ onPath = false, releaseAsset } = {}) {
+function loadAdapter({ onPath = false, releaseAsset, service, transfer } = {}) {
   const spawned = [];
   const versionProbes = [];
   const terminals = [];
@@ -441,13 +485,19 @@ function loadAdapter({ onPath = false, releaseAsset } = {}) {
       log() {},
       runInTerminal: (options) => terminals.push(options),
     },
-    ...(releaseAsset
+    ...(releaseAsset || service
       ? {
           "./service": {
             ...SERVICE,
-            releaseAssetForTarget: () => releaseAsset,
+            ...(releaseAsset
+              ? { releaseAssetForTarget: () => releaseAsset }
+              : {}),
+            ...service,
           },
         }
+      : {}),
+    ...(transfer
+      ? { "./download": { ...DOWNLOAD, downloadSeam: () => transfer } }
       : {}),
   };
 
@@ -731,6 +781,130 @@ test("wiring: download → record in globalState → verified on the next resolu
     await assert.rejects(() => after.resolveAlpBinaryForContext(home.context), {
       name: "ChecksumError",
       message: SERVICE.CACHED_CLI_MISMATCH,
+    });
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("wiring: a STALLED re-acquire on the per-command route refuses, and its toast offers no bypass", async () => {
+  const home = extensionHome();
+  try {
+    home.writeCachedBinary(GOOD); // present, unrecorded — the migration
+    const timeout = new Error("The operation was aborted due to timeout");
+    timeout.name = "TimeoutError";
+    // The whole loop for a migrating customer on a stalled link, on the route
+    // that branches on nothing: activation fires `ensureTanCliProvisioned`
+    // un-awaited, so a command issued before or instead of it downloads inline.
+    // The transfer seam is stubbed at `downloadSeam` — NOT `downloadFile`,
+    // which the seam closes over module-internally, so stubbing that export is
+    // a silent no-op and a false green.
+    const { adapter, plans, terminals } = loadAdapter({
+      releaseAsset: {
+        target: "test-target",
+        assetName: BINARY,
+        tag: "v0.0.0-test",
+        url: `http://127.0.0.1:1/${BINARY}`,
+        checksumsUrl: "http://127.0.0.1:1/checksums.txt",
+      },
+      transfer: async () => {
+        throw timeout;
+      },
+    });
+
+    await adapter.runAlpInTerminal(home.context, ["build"], {
+      name: "alp build",
+      cwd: undefined,
+    });
+
+    assert.deepEqual(
+      terminals,
+      [],
+      "a stalled re-acquire still reached a spawn",
+    );
+    assert.equal(plans.length, 1);
+    // The migration sentence, not "couldn't start the tan CLI".
+    assert.equal(plans[0].message, SERVICE.CACHED_CLI_UNVERIFIED);
+    // …and above all NO `installTanCli`. That button runs the bundled installer,
+    // which puts a `tan` on PATH — and `path` is one of the four arms
+    // `resolveAlpBinary` never verifies, so offering it here is a one-click
+    // route onto an unverified binary. #389 removed exactly this class of
+    // bypass; a raw `TimeoutError` re-introduced it through `spawnFailed`.
+    for (const id of ["installTanCli", "openSettings"]) {
+      assert.deepEqual(
+        plans[0].actions.filter((a) => a.id === id),
+        [],
+        `the stalled re-acquire offered ${id}`,
+      );
+    }
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("wiring: a ChecksumError is classified by its TYPE, not by the word 'checksum' in its sentence", async () => {
+  const home = extensionHome();
+  try {
+    const file = home.writeCachedBinary(GOOD);
+    home.store.set("alp.tanCachedBinarySha256", sha256File(file));
+    fs.writeFileSync(file, TAMPERED);
+
+    // The same refusal, re-worded WITHOUT the word `classifyUnavailable`
+    // string-sniffs for. These are customer sentences and they get edited; the
+    // classification must not ride on their wording. Sniffing this text lands
+    // on `spawnFailed`, whose plan hands out "Install tan CLI (global)".
+    const REWORDED =
+      "The tan CLI installed for this extension is not the copy that was " +
+      "verified when it was downloaded, so it was not run. Reinstall the " +
+      "pinned tan CLI from the command palette.";
+    assert.notEqual(SERVICE.classifyUnavailable(REWORDED), "checksumRefused");
+
+    const { adapter } = loadAdapter({
+      service: { CACHED_CLI_MISMATCH: REWORDED },
+    });
+    const { outcome } = await adapter.runAlpCommand(home.context, ["validate"]);
+    assert.equal(outcome.message, REWORDED);
+    assert.equal(outcome.unavailable.reason, "checksumRefused");
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("wiring: `alp.updateCli` records the digest, so the remedy the mismatch names actually ends", async () => {
+  const home = extensionHome();
+  const server = await releaseServer(GOOD);
+  try {
+    home.writeCachedBinary(TAMPERED);
+    // A record that matches neither what is on disk nor what will be
+    // downloaded — otherwise a `recordCachedDigest` that writes NOTHING leaves
+    // the right value behind by luck and this test proves nothing.
+    home.store.set("alp.tanCachedBinarySha256", sha256("an older binary\n"));
+    const { adapter } = loadAdapter({ releaseAsset: server.asset });
+
+    // What the customer is looking at, and `CACHED_CLI_MISMATCH` names exactly
+    // one escape from it: reinstall the pinned CLI from the command palette.
+    await assert.rejects(
+      () => adapter.resolveAlpBinaryForContext(home.context),
+      { name: "ChecksumError", message: SERVICE.CACHED_CLI_MISMATCH },
+    );
+
+    await adapter.updateAlpCli(home.context);
+
+    assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
+    assert.equal(
+      home.store.get("alp.tanCachedBinarySha256"),
+      sha256(GOOD),
+      "the reinstall did not record the digest it verified",
+    );
+    // The point of the record: the NEXT resolution reaches a verified cache.
+    // With the write neutered the reinstall downloads a good binary, records
+    // nothing, and every later resolution refuses again on the stale record —
+    // fail-closed, but the one documented way out is bricked.
+    const { adapter: next } = loadAdapter({ releaseAsset: server.asset });
+    assert.deepEqual(await next.resolveAlpBinaryForContext(home.context), {
+      command: home.cachedBinaryPath,
+      source: "cached",
     });
   } finally {
     await server.close();
