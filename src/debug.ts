@@ -42,7 +42,7 @@ import {
 import { ensureNativeSimOverlay } from "./west";
 import { log, showOutput } from "./util";
 import { NotifyAction } from "./notify/models";
-import { planFailure } from "./notify/service";
+import { planFailure, planPrecondition, planSuccess } from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
 
 async function showJsonDocument(data: unknown): Promise<void> {
@@ -208,8 +208,8 @@ async function writeLaunchProfile(
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
   if (!context.workspaceRoot) {
-    await vscode.window.showErrorMessage(
-      "Alp: no workspace folder is open, cannot write launch.json.",
+    await notify(
+      planPrecondition("noWorkspace", { operation: "write launch.json" }),
     );
     return null;
   }
@@ -372,17 +372,20 @@ async function configureDebugProfile(
 
   const verb = result.replaced ? "updated" : "wrote";
   if (result.report.canLaunch) {
-    await vscode.window.showInformationMessage(
-      `Alp: ${verb} ${result.relPath}.`,
-    );
+    await notify(planSuccess(`Alp: ${verb} ${result.relPath}.`));
     return;
   }
 
   const unresolved = logUnlaunchableDetail(result);
-  await vscode.window.showWarningMessage(
-    `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
+  await notify(
+    planFailure({
+      operation: "Alp: refreshing the launch profile",
+      cause: `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}.`,
+      detail: result.report.nextSteps.join(" "),
+      severity: "warning",
+      actions: [{ id: "openLaunchJson", arg: result.launchPath }],
+    }),
   );
-  showOutput();
 }
 
 /** Log everything behind a "not launchable yet" toast, and return the check
@@ -425,12 +428,18 @@ function requiredDebugExtension(configName: string): {
 async function ensureDebugExtension(configName: string): Promise<boolean> {
   const { id, label } = requiredDebugExtension(configName);
   if (vscode.extensions.getExtension(id)) return true;
-  const choice = await vscode.window.showWarningMessage(
-    `Alp: the ${label} extension (${id}) is required to debug this target but is not installed.`,
-    "Install",
-    "Cancel",
+  // `custom` is the caller-handled id (no `run` in the presenter's table), so
+  // the pick comes back here and gates the install below.
+  const choice = await notify(
+    planFailure({
+      operation: "Alp: starting the debug session",
+      cause: `Alp: the ${label} extension is required to debug this target but is not installed.`,
+      detail: id,
+      severity: "warning",
+      actions: [{ id: "custom", title: "Install" }],
+    }),
   );
-  if (choice !== "Install") return false;
+  if (choice !== "custom") return false;
   await vscode.commands.executeCommand(
     "workbench.extensions.installExtension",
     id,
@@ -455,24 +464,31 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   }
 
   if (!(await ensureDebugExtension(result.configName))) {
-    await vscode.window.showWarningMessage(
-      `Alp: cannot start debugging without ${requiredDebugExtension(result.configName).label}.`,
+    await notify(
+      planFailure({
+        operation: "Alp: starting the debug session",
+        cause: `Alp: cannot start debugging without ${requiredDebugExtension(result.configName).label}.`,
+        severity: "warning",
+      }),
     );
     return;
   }
 
   if (!result.report.canLaunch) {
     const unresolved = logUnlaunchableDetail(result);
-    const choice = await vscode.window.showWarningMessage(
-      `Alp: ${result.relPath} is not launchable yet — resolve: ${unresolved}. ${result.report.nextSteps.join(" ")}`,
-      "Start Anyway",
-      "Show Details",
+    // Both ids are caller-handled, so the pick comes back here. `showOutput`
+    // IS presenter-run, so it opens the channel and returns undefined — which
+    // correctly does NOT start the session.
+    const choice = await notify(
+      planFailure({
+        operation: "Alp: starting the debug session",
+        cause: `Alp: ${result.relPath} is not launchable yet — resolve: ${unresolved}.`,
+        detail: result.report.nextSteps.join(" "),
+        severity: "warning",
+        actions: [{ id: "startAnyway" }, { id: "showOutput" }],
+      }),
     );
-    if (choice === "Show Details") {
-      showOutput();
-      return;
-    }
-    if (choice !== "Start Anyway") return;
+    if (choice !== "startAnyway") return;
   }
 
   // `result.workspaceRoot` is toPosix'd by the project service while
@@ -500,8 +516,10 @@ async function exportSupportBundle(): Promise<void> {
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
   if (!context.workspaceRoot) {
-    await vscode.window.showErrorMessage(
-      "Alp: no workspace folder is open, cannot export a support bundle.",
+    await notify(
+      planPrecondition("noWorkspace", {
+        operation: "export a support bundle",
+      }),
     );
     return;
   }
@@ -555,8 +573,8 @@ async function exportSupportBundle(): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(filePath);
   await vscode.window.showTextDocument(doc, { preview: false });
 
-  await vscode.window.showInformationMessage(
-    `Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`,
+  await notify(
+    planSuccess(`Alp: exported ${vscode.workspace.asRelativePath(filePath)}.`),
   );
 
   if (

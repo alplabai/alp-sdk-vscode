@@ -4,6 +4,7 @@ import * as path from "path";
 import { toPosix } from "../paths";
 
 import {
+  DebugAdapterKind,
   DebugDoctorRequest,
   DebugGenerationTraceDecision,
   DebugGenerationTraceReport,
@@ -65,6 +66,31 @@ export const DEBUG_TARGET_CHOICES: ReadonlyArray<DebugTargetChoice> = [
     targetKind: "native-host",
   },
 ];
+
+export const DEBUG_ADAPTER_EXTENSION_ID: Record<DebugAdapterKind, string> = {
+  "cortex-debug": "marus25.cortex-debug",
+  cppdbg: "ms-vscode.cpptools",
+  lldb: "vadimcn.vscode-lldb",
+};
+
+/**
+ * Debug type each target class launches with. `createDebugProfile` reads it, so
+ * the `type` written into launch.json and the extension checks above cannot
+ * name different adapters for the same target.
+ */
+export const DEBUG_TARGET_ADAPTER: Record<DebugTargetKind, DebugAdapterKind> = {
+  "zephyr-mcu": "cortex-debug",
+  "baremetal-mcu": "cortex-debug",
+  "yocto-userspace": "cppdbg",
+  // `lldb`, not `codelldb`: CodeLLDB (vadimcn.vscode-lldb) registers its debug
+  // type as `lldb` in its own `contributes.debuggers` — `codelldb` is the
+  // extension's NAME and has never been a debug type. This value is written
+  // verbatim into launch.json as `type`, so `codelldb` made VS Code refuse the
+  // session with "configured debug type 'codelldb' is not supported".
+  // native_sim is the only target that needs neither probe nor board, so this
+  // is the first debug session a customer ever runs.
+  "native-host": "lldb",
+};
 
 /** Whether a debug target is the native_sim / native-host host-binary class
  *  (CodeLLDB, no on-chip probe) — the class that needs the native_sim GPIO
@@ -201,6 +227,9 @@ export function buildDebugPreflightReport(
     createServerToolCheck(profile.server, runtime),
     createExecutableCheck(profile, context, dependencies),
   ];
+
+  // #374: the ONLY host-OS gate. Empty for every other target and host.
+  checks.push(...nativeHostPlatformChecks(profile.targetKind, runtime));
 
   checks.push(
     ...createProfileConfigurationChecks(profile, context, dependencies),
@@ -361,15 +390,20 @@ export function buildDoctorReport(
           ? undefined
           : "Install vadimcn.vscode-lldb.",
       });
+      // Doctor and preflight must agree on the host dead end, or doctor reports
+      // a healthy native-host setup on the very box where F5 cannot work (#374).
+      checks.push(...nativeHostPlatformChecks(request.targetKind, runtime));
+      // Informational, never a warn: CodeLLDB SHIPS its own LLDB (lldb/bin/ inside
+      // vadimcn.vscode-lldb v1.12.2) and never consults PATH, so an lldb on PATH
+      // is neither needed nor used. Warning about it put "Install LLDB or
+      // lldb-dap" into `nextSteps` on every stock Windows box and made doctor
+      // contradict `createServerToolCheck`, which now passes the same condition.
       checks.push({
         name: "lldb",
-        status: runtime.lldbExecutable ? "pass" : "warn",
+        status: "pass",
         detail:
           runtime.lldbExecutable ??
-          "No local LLDB executable was found on PATH.",
-        fix: runtime.lldbExecutable
-          ? undefined
-          : "Install LLDB or lldb-dap for native-host debug flows.",
+          "vadimcn.vscode-lldb ships its own LLDB, so none is needed on PATH.",
       });
       break;
   }
@@ -489,10 +523,9 @@ export function createDebugProfile(
         id: `alp:${targetKind}:${server}`,
         name: "Alp: Native Sim Debug",
         targetKind,
-        // `lldb`, not `codelldb` (#369, and tan-cli#104 on the producer
-        // side): CodeLLDB's manifest declares
-        // `contributes.debuggers[0].type = "lldb"`. `codelldb` is the
-        // EXTENSION id, and VS Code refuses the session with
+        // `lldb`, not `codelldb` (#369; tan-cli#104): CodeLLDB's manifest
+        // declares `contributes.debuggers[0].type = "lldb"`. `codelldb` is the
+        // EXTENSION id, and VS Code refuses the session outright with
         // `Configured debug type 'codelldb' is not supported.`
         adapter: "lldb",
         server,
@@ -716,6 +749,24 @@ function createServerToolCheck(
   server: DebugProfile["server"],
   runtime: DebugRuntimeCapabilities,
 ): PreflightCheck {
+  // `none` is not a tool name — it is the native-host "there is no debug
+  // server" marker. CodeLLDB (vadimcn.vscode-lldb v1.12.2) SHIPS its own LLDB
+  // (lldb/bin/lldb.exe, liblldb, lldb-server) and never consults PATH, so
+  // probing `where lldb-dap` / `where lldb` failed this check on every stock
+  // machine and put F5 on "Alp: Native Sim Debug" behind a Start Anyway click —
+  // while rendering "No none executable was found on PATH." and interpolating
+  // "Install none and make sure it is on PATH." into the customer toast. The
+  // extension's own presence is the real requirement, and `adapterExtension`
+  // already covers it.
+  if (server === "none") {
+    return {
+      name: "serverTool",
+      status: "pass",
+      detail:
+        "No debug server is needed: vadimcn.vscode-lldb ships its own LLDB (checked by adapterExtension).",
+    };
+  }
+
   const executable = resolveBackendExecutable(server, runtime);
   return {
     name: "serverTool",
@@ -727,28 +778,40 @@ function createServerToolCheck(
   };
 }
 
-function createExecutableCheck(
-  profile: DebugProfile,
-  context: DebugWorkspaceContext,
-  dependencies: DebugPreflightDependencies,
-): PreflightCheck {
-  const resolvedPath = resolveWorkspacePath(profile.executablePath, context);
-  if (!resolvedPath) {
-    return {
-      name: "buildArtifactPath",
+/**
+ * native_sim is a POSIX-architecture board: Zephyr's own board documentation
+ * says it builds "a normal Linux executable". So `native-host` is not a
+ * missing-tool problem on Windows, it is a dead end — the Zephyr build cannot
+ * emit a Windows binary, and one built under WSL is a Linux ELF that a
+ * Windows-side CodeLLDB cannot launch. Nothing the customer installs on
+ * Windows clears it, so this FAILS (blocking `canLaunch`) rather than warns.
+ *
+ * It is deliberately the ONLY host-OS gate here: every other target class
+ * debugs over a probe or a remote gdbserver and is perfectly launchable from
+ * Windows, so this returns an empty list for them and on every non-Windows
+ * host. Both `buildDebugPreflightReport` and `buildDoctorReport` call it, so
+ * the two cannot disagree about whether this box can run the target.
+ *
+ * Wording contract (see src/notify/models.ts): `fix` reaches the customer
+ * through `nextSteps` and the toast detail, so it carries no errno, no path
+ * and no internal check id. "Reopen … in WSL" is the same affordance
+ * `src/bootstrap.ts` already offers for the same host dead end.
+ */
+function nativeHostPlatformChecks(
+  targetKind: DebugTargetKind,
+  runtime: DebugRuntimeCapabilities,
+): PreflightCheck[] {
+  if (!isNativeHostTarget(targetKind)) return [];
+  if (runtime.hostPlatform !== "win32") return [];
+  return [
+    {
+      name: "hostPlatform",
       status: "fail",
-      detail: `Executable path is unresolved: ${profile.executablePath}`,
-      fix: "Resolve executable path placeholders before launch.",
-    };
-  }
-
-  const exists = dependencies.pathExists(resolvedPath);
-  return {
-    name: "buildArtifact",
-    status: exists ? "pass" : "fail",
-    detail: resolvedPath,
-    fix: exists ? undefined : "Build the selected target before launch.",
-  };
+      detail:
+        "native_sim builds a Linux executable, so it cannot run on this Windows host.",
+      fix: "Reopen the folder in WSL, or build and debug native_sim on a Linux or macOS host.",
+    },
+  ];
 }
 
 /**
@@ -811,6 +874,28 @@ function requiredPlaceholderFields(profile: DebugProfile): ReadonlyArray<{
   return fields.filter((field) => field.value !== undefined);
 }
 
+/**
+ * SVD is OPTIONAL to cortex-debug: it populates the peripheral/register view
+ * (mcu-debug.peripheral-viewer) and affects nothing else — the session starts,
+ * breakpoints hit and memory reads work without it. So this WARNS and never
+ * fails. It used to be a `fail` on baremetal-mcu, which put it in
+ * `summary.fail` and so drove `canLaunch` false: a missing register view
+ * blocked the launch outright. A missing SVD must never stop a customer
+ * setting a breakpoint.
+ *
+ * Warn is the normal state right now and nothing in this repo can change it:
+ * alp-sdk ships no `.svd` files and its metadata carries no path to one
+ * (alp-sdk#948), and this is a thin extension — it must not vendor an SVD or
+ * invent where one lives. So no profile sets `svdFile`; when the SDK starts
+ * publishing per-SoC SVD metadata, `createDebugProfile` is where it gets read,
+ * and `debugProfileToLaunchDraft` already emits the key only once it RESOLVES
+ * (cortex-debug OPENS `svdFile`, so a placeholder is worse than no key).
+ *
+ * No `fix` on the unresolved branch: `uniquePreflightNextSteps` collects `fix`
+ * from every non-pass check, so advice nobody can act on would be mixed into
+ * `nextSteps` permanently — and the surface interpolates those into the toast
+ * detail and into every support bundle. The explanation stays in `detail`.
+ */
 function createSvdCheck(profile: DebugProfile): PreflightCheck {
   const resolved = isResolvedValue(profile.svdFile);
   return {
@@ -819,6 +904,30 @@ function createSvdCheck(profile: DebugProfile): PreflightCheck {
     detail: resolved
       ? profile.svdFile!
       : "No SVD file is available, so the peripheral/register view will be empty. Debugging is otherwise unaffected.",
+  };
+}
+
+function createExecutableCheck(
+  profile: DebugProfile,
+  context: DebugWorkspaceContext,
+  dependencies: DebugPreflightDependencies,
+): PreflightCheck {
+  const resolvedPath = resolveWorkspacePath(profile.executablePath, context);
+  if (!resolvedPath) {
+    return {
+      name: "buildArtifactPath",
+      status: "fail",
+      detail: `Executable path is unresolved: ${profile.executablePath}`,
+      fix: "Resolve executable path placeholders before launch.",
+    };
+  }
+
+  const exists = dependencies.pathExists(resolvedPath);
+  return {
+    name: "buildArtifact",
+    status: exists ? "pass" : "fail",
+    detail: resolvedPath,
+    fix: exists ? undefined : "Build the selected target before launch.",
   };
 }
 
