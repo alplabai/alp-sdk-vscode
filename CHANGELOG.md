@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **A `launch.json` that can launch is no longer reported as unlaunchable.**
+  `tan debug-config` resolves the probe and tool values from the build's own
+  `runners.yaml` — driven against tan 0.4.0 with an E1M-AEN801 build, all three
+  Zephyr backends come out with nothing left to fill in: J-Link with
+  `"device": "Cortex-M55"`, OpenOCD with a real `configFiles`/`serverpath`/
+  `searchDir`, pyOCD with `"targetId": "cortex_m55"`. The extension then graded
+  a SECOND, in-process draft instead of that file. The draft's `device` was the
+  hardcoded literal `"<resolved-device>"`, so the verdict was `canLaunch: false`
+  naming `device` — for every project, built or not. On the first-blink path tan
+  wrote a configuration that runs as-is and the extension put a "Start Anyway /
+  Show Details" gate in front of it. The placeholders had left the file and
+  stayed in the verdict. The draft is now gone rather than patched: `DebugProfile`
+  carries no configuration values at all, `createDebugProfile` invents none, and
+  the preflight report grades only what a separate process cannot see — which
+  debugger extension is installed, whether the server tool is on PATH, the host
+  platform, whether the build artefact exists. The configuration's own values are
+  graded once, against the object tan actually wrote (#339).
+
+- **An unresolved value in that written configuration still blocks the launch,
+  and now names the field.** The fold that reads tan's output produces one check
+  per unresolved `launch.json` key rather than a single one called `launchConfig`
+  — so a build whose `runners.yaml` records no `--device` reports `canLaunch:
+  false` and tells the customer to "resolve: device", a field in their own file,
+  instead of "resolve: launchConfig", the name of a check that is in nothing they
+  own. The placeholder itself stays in the check detail and in the log. Where a
+  value genuinely cannot be filled — `baremetal-mcu` has no Zephyr build and so
+  no `runners.yaml`, `yocto-userspace` needs a remote `<host>:<port>` nothing can
+  derive — tan already emits both the placeholder and a note saying so, and the
+  extension logs that note verbatim rather than writing a second version of it
+  (#339).
+
 - **The argv the extension hands `tan debug-config` is now pinned by a test**
   (`test/debug.configArgs.test.js`). Since #387 the extension does not write
   `launch.json` — it builds an argv, spawns tan, and reads `data.configuration`

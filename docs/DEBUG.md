@@ -580,12 +580,49 @@ validate:
 - required paths such as the OpenOCD config are valid
 - target connection info exists for remote userspace debug
 
-`svdFile` is **optional and warn-only**: cortex-debug reads it to populate the
-peripheral/register view and nothing else, so a missing SVD leaves that view
-empty while breakpoints, stepping and memory reads all work. It must never
-appear in a launch-blocking check or in the fields a customer is told to
-supply. (Warn is the normal state today — alp-sdk ships no `.svd` and carries
-no path to one, alp-sdk#948.)
+**Where each of those is decided (#339).** The first five are host facts a
+separate process cannot observe, so `buildDebugPreflightReport` in
+`packages/alp-core/src/debug/service.ts` owns them. The last two are
+configuration VALUES, and `tan debug-config` resolves them from the build's own
+`runners.yaml` — so they are graded against the configuration tan actually
+wrote, by `foldLaunchConfigPlaceholders`, and nowhere else.
+
+That split is the fix for #339, not a refactor. The preflight report used to
+grade a second, in-process draft as well: `createDebugProfile` filled `device`
+with the hardcoded literal `"<resolved-device>"`, `openOcdConfigFiles` with
+`"<resolved-openocd-board-cfg>"` and so on, so the matching checks failed for
+every project on earth — including one whose `launch.json` tan had fully
+resolved. The customer got a working `launch.json` and a "not launchable"
+verdict with a Start Anyway gate in front of it. `DebugProfile` no longer
+carries any configuration value, and `createDebugProfile` no longer invents
+one; a check named after a `launch.json` key must come from the fold.
+
+Two consequences worth stating:
+
+- **A path-EXISTENCE check on the OpenOCD cfg is not in either half.** The old
+  one lived on the draft, whose only entry was the placeholder, so it never
+  once ran. Running it against tan's resolved path is new behaviour, not
+  restored coverage, and it would misfire the moment `runners.yaml` was
+  recorded on another host (a container/WSL build leaves `serverpath` and
+  `configFiles` pointing at `/home/…` paths that do not exist on the Windows
+  box reading them). Tracked separately.
+- **`svdFile` no longer produces a check at all.** It was a constant `warn` —
+  no profile ever set it — and `Alp: Debug preflight` force-opens the output
+  channel whenever `summary.warn > 0`, so it nagged on every run. The rule
+  below still holds and is what keeps it out: `svdFile` is **optional and
+  warn-only**. cortex-debug reads it to populate the peripheral/register view
+  and nothing else, so a missing SVD leaves that view empty while breakpoints,
+  stepping and memory reads all work. It must never appear in a launch-blocking
+  check or in the fields a customer is told to supply. (alp-sdk ships no `.svd`
+  and carries no path to one, alp-sdk#948; when it does, tan writes the key and
+  the fold is what would see an unresolved one.)
+
+Where a value genuinely cannot be filled — `baremetal-mcu` has no Zephyr build,
+so there is no `runners.yaml` to read, and `yocto-userspace` needs a remote
+`<host>:<port>` nothing can derive — **tan owns the wording**. It emits the
+placeholder and the note "Placeholder fields such as `<resolved-device>` still
+need project-specific resolution."; the extension logs that note verbatim and
+names the key in its own check. Neither is duplicated here.
 
 If preflight fails, the product should not attempt a debug launch. It
 should explain the failure and offer the next action. Only `fail` checks

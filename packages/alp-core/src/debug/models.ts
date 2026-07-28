@@ -177,10 +177,23 @@ export type DebugAdapterKind = "cortex-debug" | "cppdbg" | "lldb";
 
 export type DebugProfileOs = "zephyr" | "baremetal" | "yocto" | "host";
 
-export interface DebugSetupCommand {
-  text: string;
-}
-
+/**
+ * The session the extension is REPORTING ON, not a launch configuration.
+ *
+ * It carries only what `buildDebugPreflightReport` needs to grade host
+ * readiness. It used to also carry the cortex-debug/cppdbg configuration
+ * values — `device`, `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`,
+ * `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` — and
+ * `createDebugProfile` could only ever fill them with `<resolved-…>`
+ * placeholder literals, because the values come from the build's
+ * `runners.yaml` and only `tan debug-config` reads that (#387). Grading those
+ * literals made a fully resolved profile report unlaunchable (#339), so they
+ * are gone. tan owns the configuration; the written configuration is what gets
+ * graded, by `foldLaunchConfigPlaceholders`.
+ *
+ * Do not add a field here to describe something that ends up IN launch.json —
+ * that is tan's output and re-deriving it is the defect, not the fix.
+ */
 export interface DebugProfile {
   id: string;
   name: string;
@@ -190,15 +203,6 @@ export interface DebugProfile {
   os: DebugProfileOs;
   executablePath: string;
   cwd: string;
-  device?: string;
-  interface?: "swd" | "jtag";
-  svdFile?: string;
-  openOcdConfigFiles?: string[];
-  targetId?: string;
-  miMode?: "gdb";
-  miDebuggerPath?: string;
-  miDebuggerServerAddress?: string;
-  setupCommands?: DebugSetupCommand[];
 }
 
 export type LaunchConfigurationDraft = Record<string, unknown>;

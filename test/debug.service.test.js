@@ -179,12 +179,29 @@ test("createSupportBundlePayload composes inspect and trace reports", () => {
   assert.deepEqual(bundle.notes, ["sample-note"]);
 });
 
-test("buildDebugPreflightReport fails for unresolved profile placeholders", () => {
-  const profile = createDebugProfile("zephyr-mcu", "jlink");
+// Every launch.json key a preflight check was ever named after. None of them
+// may come back: they are tan's to resolve from runners.yaml and the fold's to
+// grade, and a check here would be a second derivation of the same value.
+const CONFIGURATION_KEY_CHECKS = [
+  "device",
+  "targetId",
+  "openOcdConfig",
+  "svdFile",
+  "miDebuggerPath",
+  "miDebuggerServerAddress",
+];
+
+// #339. The report grades HOST readiness only. It used to also grade a
+// `createDebugProfile` draft whose `device` was the hardcoded literal
+// "<resolved-device>" -- so a zephyr-mcu/jlink preflight failed on `device` for
+// every project on earth, including one whose launch.json tan had fully
+// resolved from the build's runners.yaml. `buildArtifact` still fails here,
+// because whether the ELF exists is a host fact and genuinely the extension's.
+test("buildDebugPreflightReport grades host readiness, never a drafted configuration", () => {
   const report = buildDebugPreflightReport(
     "2026-05-14T00:00:00.000Z",
     createDebugContext(),
-    profile,
+    createDebugProfile("zephyr-mcu", "jlink"),
     createRuntime(),
     {
       pathExists: () => false,
@@ -192,17 +209,55 @@ test("buildDebugPreflightReport fails for unresolved profile placeholders", () =
   );
 
   assert.equal(report.canLaunch, false);
-  assert.ok(report.summary.fail > 0);
   assert.ok(
     report.checks.some(
       (check) => check.name === "buildArtifact" && check.status === "fail",
     ),
   );
-  assert.ok(
-    report.checks.some(
-      (check) => check.name === "device" && check.status === "fail",
-    ),
+  for (const name of CONFIGURATION_KEY_CHECKS) {
+    assert.equal(
+      report.checks.some((check) => check.name === name),
+      false,
+      `preflight still grades the drafted ${name}`,
+    );
+  }
+  // And the profile must not carry the value either -- if it did, someone would
+  // grade it again.
+  assert.equal(createDebugProfile("zephyr-mcu", "jlink").device, undefined);
+  assert.equal(createDebugProfile("zephyr-mcu", "pyocd").targetId, undefined);
+  assert.equal(
+    createDebugProfile("zephyr-mcu", "openocd").openOcdConfigFiles,
+    undefined,
   );
+  assert.equal(createDebugProfile("baremetal-mcu", "jlink").svdFile, undefined);
+  assert.equal(
+    createDebugProfile("yocto-userspace", "gdbserver").miDebuggerPath,
+    undefined,
+  );
+});
+
+// The defect of #339 in one assertion. With the host ready and the ELF built,
+// every zephyr-mcu backend must report launchable, because `tan debug-config`
+// resolves device / configFiles / targetId / gdbPath out of the build's own
+// runners.yaml. Before this, all three failed on the draft -- jlink on
+// `device`, openocd on `openOcdConfig`, pyocd on `targetId` -- and F5 sat
+// behind a "Start Anyway" click on a launch.json that ran as-is. `warn` is
+// pinned to 0 as well: the constant `svdFile` warn force-opened the output
+// channel on every single preflight run.
+test("a host-ready zephyr-mcu preflight can launch on every backend", () => {
+  for (const { server } of serverChoicesForTarget("zephyr-mcu")) {
+    const report = buildDebugPreflightReport(
+      "2026-05-14T00:00:00.000Z",
+      createDebugContext(),
+      createDebugProfile("zephyr-mcu", server),
+      createRuntime(),
+      { pathExists: () => true },
+    );
+    assert.equal(report.canLaunch, true, server);
+    assert.equal(report.summary.fail, 0, server);
+    assert.equal(report.summary.warn, 0, server);
+    assert.deepEqual(report.nextSteps, [], server);
+  }
 });
 
 test("buildDebugPreflightReport can pass for resolved native-host profile", () => {
@@ -416,20 +471,27 @@ test("no other debug target gains a host-OS check on win32", () => {
   }
 });
 
-test("buildDebugPreflightReport fails the placeholder OpenOCD board config", () => {
+// The OpenOCD board cfg still blocks a launch when it is unresolved -- OpenOCD
+// takes "<resolved-openocd-board-cfg>" as a literal filename and fails to open
+// it. What moved is WHERE that is decided: off the extension's own draft, which
+// could only ever hold the placeholder, and onto the configuration tan wrote.
+test("an unresolved OpenOCD board cfg in the WRITTEN configuration blocks the launch", () => {
   const report = buildDebugPreflightReport(
     "2026-05-14T00:00:00.000Z",
     createDebugContext(),
     createDebugProfile("zephyr-mcu", "openocd"),
     createRuntime(),
-    // Every path that could exist does, so the only thing left to object to is
-    // the <resolved-openocd-board-cfg> placeholder itself. OpenOCD would take
-    // it as a literal filename and fail to open it.
     { pathExists: () => true },
   );
+  assert.equal(report.canLaunch, true);
 
-  assert.equal(report.canLaunch, false);
-  const openOcd = report.checks.find((check) => check.name === "openOcdConfig");
+  const folded = foldLaunchConfigPlaceholders(report, [
+    { key: "configFiles[0]", value: "<resolved-openocd-board-cfg>" },
+  ]);
+  assert.equal(folded.canLaunch, false);
+  const openOcd = folded.checks.find(
+    (check) => check.name === "configFiles[0]",
+  );
   assert.equal(openOcd.status, "fail");
   assert.match(openOcd.detail, /<resolved-openocd-board-cfg>/);
 });
@@ -469,17 +531,43 @@ test("foldLaunchConfigPlaceholders folds a failing launchConfig check into the r
   assert.equal(report.canLaunch, true);
   const failBefore = report.summary.fail;
 
-  const folded = foldLaunchConfigPlaceholders(report, ["<resolved-device>"]);
+  const folded = foldLaunchConfigPlaceholders(report, [
+    { key: "device", value: "<resolved-device>" },
+  ]);
 
   assert.equal(folded.canLaunch, false);
   assert.equal(folded.summary.fail, failBefore + 1);
+  // Named after the launch.json KEY, not after the check. `logUnlaunchableDetail`
+  // builds the toast from failing check names, so this is the difference between
+  // telling a customer to "resolve: device" -- a field in their own file -- and
+  // "resolve: launchConfig", which is in nothing they own.
   const launchConfigChecks = folded.checks.filter(
-    (check) => check.name === "launchConfig",
+    (check) => check.name === "device",
   );
   assert.equal(launchConfigChecks.length, 1);
   assert.equal(launchConfigChecks[0].status, "fail");
   assert.equal(launchConfigChecks[0].detail, "<resolved-device>");
-  assert.ok(launchConfigChecks[0].fix);
+  assert.match(launchConfigChecks[0].fix, /"device"/);
+});
+
+// A bare string has no surrounding key to be named after, and the fold must
+// still produce a usable check rather than one called "".
+test("foldLaunchConfigPlaceholders falls back to launchConfig for an unkeyed placeholder", () => {
+  const report = buildDebugPreflightReport(
+    "2026-05-14T00:00:00.000Z",
+    createDebugContext(),
+    createDebugProfile("native-host", "none"),
+    createRuntime(),
+    { pathExists: () => true },
+  );
+
+  const folded = foldLaunchConfigPlaceholders(report, [
+    { key: "", value: "<host>:<port>" },
+  ]);
+  assert.equal(folded.canLaunch, false);
+  const check = folded.checks.find((entry) => entry.name === "launchConfig");
+  assert.equal(check.status, "fail");
+  assert.equal(check.detail, "<host>:<port>");
 });
 
 test("serializeSupportBundlePayload returns stable JSON", () => {

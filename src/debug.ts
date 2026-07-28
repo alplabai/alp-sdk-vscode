@@ -269,14 +269,17 @@ async function writeLaunchProfile(
     launchPath: written.launchJsonPath,
     relPath: vscode.workspace.asRelativePath(written.launchJsonPath),
     replaced: written.replaced,
-    // The in-process report answers "is the HOST ready" (adapters installed).
-    // It cannot see that the CLI left `<resolved-device>` in the file it just
-    // wrote — `tan debug-config` reports ok for a partly-resolved draft by
-    // design. Without this the user is told the profile is ready and the
-    // session dies inside the adapter. foldLaunchConfigPlaceholders adds a
-    // real "launchConfig" check (rather than just flipping `canLaunch`), so
-    // `report.checks`/`summary`/`nextSteps` name the failure too — both
-    // consumers below build their message from `checks`.
+    // The in-process report answers "is the HOST ready" (adapters installed,
+    // tool on PATH, artefact built) and NOTHING about the configuration's own
+    // values — it no longer drafts any, so it no longer grades any (#339).
+    // This fold is the whole configuration verdict, and it is taken against
+    // the object the CLI actually wrote: `tan debug-config` reports ok for a
+    // partly-resolved draft by design, so a zero exit does not mean the file
+    // can launch. Without this the user is told the profile is ready and the
+    // session dies inside the adapter; with it, a config tan DID fully resolve
+    // adds no check at all and F5 goes straight through. Each unresolved key
+    // becomes a check named after that key, so `checks`/`summary`/`nextSteps`
+    // name the field — both consumers below build their message from `checks`.
     report: foldLaunchConfigPlaceholders(report, placeholders),
     // The placeholders are now named by the folded check's own detail/fix, so
     // no separate note is needed here — keep only the CLI's own notes.
@@ -613,14 +616,14 @@ async function previewMaintainedConfigName(
 }
 
 /** Log everything behind a "not launchable yet" toast, and return the check
- *  names that toast lists. The toast has room for names only, so the WHY has
- *  to reach the channel it sends the user to (`showOutput()`): each failing
- *  check's `detail`/`fix`. That is the ONLY place the unresolved values
- *  themselves survive — the folded `launchConfig` check
- *  (`foldLaunchConfigPlaceholders`) carries the `<resolved-…>` list in its
- *  detail, and the CLI's own notes only say placeholders exist in general,
- *  never which. Logging names alone would leave "resolve: launchConfig" with
- *  no way to find out which field. */
+ *  names that toast lists. The toast has room for names only — which is why
+ *  `foldLaunchConfigPlaceholders` names each folded check after the launch.json
+ *  KEY that is still unresolved, so the sentence reads "resolve: device". The
+ *  WHY has to reach the channel it sends the user to (`showOutput()`): each
+ *  failing check's `detail`/`fix`. That is the ONLY place the unresolved values
+ *  themselves survive — the folded check carries the `<resolved-…>` token in
+ *  its detail, and the CLI's own notes only say placeholders exist in general,
+ *  never which. */
 function logUnlaunchableDetail(result: LaunchProfileResult): string {
   for (const note of result.notes) log(note);
   const failures = result.report.checks.filter(
