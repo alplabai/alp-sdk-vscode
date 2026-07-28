@@ -43,10 +43,6 @@ export function collectRuntimeCapabilities(): DebugRuntimeCapabilities {
   };
 }
 
-export function launchJsonPath(workspaceRoot: string): string {
-  return path.join(workspaceRoot, ".vscode", "launch.json");
-}
-
 export function fileExists(filePath: string): boolean {
   return fs.existsSync(filePath);
 }

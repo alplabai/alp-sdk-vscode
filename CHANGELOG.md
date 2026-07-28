@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+- **A hand-filled value stranded on a duplicate `Alp:` / `ALP:` debug
+  configuration is now offered a repair, instead of being lost or left
+  broken.** The configuration `name` is the merge key `tan debug-config` uses.
+  tan `v0.4.0` — the release `SUPPORTED_CLI_VERSION` pins — writes `ALP: …`,
+  while the extension-side writer #387 removed wrote `Alp: …`. So on a
+  `launch.json` that predates #387 the merge matches nothing and APPENDS, and
+  the customer is left with two entries: their own `"device":
+  "AE822F4M55_HP"` on one nothing maintains, and `"device":
+  "<resolved-device>"` on the one F5 actually launches. Deleting the stale
+  entry by hand loses the value; keeping it leaves a permanent duplicate. The
+  repair runs in BOTH directions, because tan's rename back to `Alp:` strands
+  the mirror image on every machine now on `v0.4.0`.
+
+  What it does and does not do:
+
+  - It **offers**, and applies nothing until the customer accepts. It is their
+    file.
+  - It **composes no configuration** — it moves values between two entries that
+    already exist and deletes one. Which spelling is maintained cannot be known
+    statically and is not guessed: it is read from a real
+    `tan debug-config --preview` run, which by design does not touch the file,
+    and only after the offer is accepted.
+  - It follows tan's own `merge_value` rule, all three branches of it. A
+    placeholder on the stale entry never overwrites a resolved value, and never
+    travels onto a key the maintained entry does not have (re-inserting a
+    removed `<resolved-svd>` makes cortex-debug fail on start). Lists merge per
+    element, so a `configFiles` you added an `interface/stlink-v2-1.cfg` to
+    keeps it. Keys tan never writes — a customer's own `myOwnKey` — come across
+    untouched.
+  - Where BOTH entries hold a value for the same key and the two differ, the
+    maintained entry's value stands — it is the one F5 already used — and the
+    stale entry's is discarded rather than moved. The repair **names every
+    value it discards**, in the toast that follows and in the Alp output
+    channel, because the file is rewritten in place with no backup.
+  - It refuses a `launch.json` it cannot parse as strict JSON rather than strip
+    the customer's comments to rewrite it.
+  - Offered on activation (the symptom is "F5 fails", so nobody would think to
+    run a command for it) and from **Alp: Configure Debug Profile**. Dismissing
+    the offer does NOT silence it — only **Don't show again** does, per
+    workspace — so an accidental dismissal cannot strand the value for good. A
+    `launch.json` holding three entries with the same name needs a second pass,
+    and gets one for the same reason; each pass merges before it deletes, so a
+    partial repair loses nothing.
+
+  `alplabai/tan-cli#169` asks tan to own this inside its own writer, which
+  would also cover running `tan debug-config` from a terminal with no extension
+  installed. This is the bridge until that ships.
+
+- **`launchConfigPlaceholders` now treats ANY `<…>` token as unresolved, not
+  just a `<resolved-` prefix.** The prefix test did not see `<host>:<port>`,
+  which every `yocto-userspace` profile carries, so a Yocto configuration was
+  reported launchable with a gdbserver address no adapter can dial. tan closed
+  the same hole on its side in `v0.4.0`. This stays the repo's ONE
+  unresolved-value predicate — the new repair calls it rather than re-typing
+  the rule.
+
 - **The checkable slices of doc-comment drift are now a gate
   (`test/comment-claims.guard.test.js`).** Across #389 and #386, eight doc
   comments asserted a guarantee, a caller or a label the code did not match.

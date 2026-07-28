@@ -10,7 +10,10 @@ import {
 } from "./alpCli/vscodeAdapter";
 import { registerBootstrapCommand } from "./bootstrap";
 import { registerConfiguratorEditor } from "./configurator/customEditor";
-import { registerDebugCommands } from "./debug";
+import {
+  maybeRescueOrphanedLaunchConfig,
+  registerDebugCommands,
+} from "./debug";
 import { DependencyPanel } from "./deps/panel";
 import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
@@ -279,6 +282,14 @@ export function activate(context: vscode.ExtensionContext): void {
   // silenced a genuine tool move whenever VS Code auto-updated the extension in
   // the same activation — which is the common case, not the rare one.
   void maybeOfferSetupPanel(context);
+  // The customer this reaches sees only "F5 fails" — they will conclude
+  // debugging is broken, not that a command they have never run would fix it,
+  // so waiting to be asked is waiting forever. Detection is synchronous and
+  // spawns nothing — the workspace context (see maybeRescueOrphanedLaunchConfig
+  // for what that costs) and one launch.json read — and stays silent unless
+  // the file really holds an ALP:/Alp: duplicate with a concrete value stranded
+  // on it (src/debug/service.ts).
+  void maybeRescueOrphanedLaunchConfig(context, { oneShot: true });
   // Provision the managed `tan` CLI up front so a fresh install fetches it once,
   // streamlined (progress notification), instead of stalling on the first
   // build/validate command. No-op when a binary already resolves. The version

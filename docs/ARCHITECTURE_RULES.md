@@ -49,7 +49,8 @@ Rules:
 Owners:
 
 - `src/*/service.ts`
-- pure helper modules such as `src/debug/launchJsonCore.ts`
+- pure helper modules such as `src/sdk/settingsFiles.ts` and
+  `src/ideHub/projectScaffold.ts`
 
 Responsibilities:
 
@@ -72,6 +73,9 @@ Owners:
 - `src/alpCli/download.ts` — a real network/filesystem seam extracted out of
   `vscodeAdapter.ts` so it's unit-testable under `node:test` (against a local
   http server) without `vscode`
+- `src/debug/launchJsonFile.ts` — same shape: the `.vscode/launch.json`
+  read/write seam, out of `vscodeAdapter.ts` so the strict-JSON refusal and the
+  tan-shaped output can be driven against real files without `vscode`
 
 Responsibilities:
 

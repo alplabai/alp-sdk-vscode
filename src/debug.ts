@@ -31,6 +31,11 @@ import {
   fileExists,
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
+import {
+  readLaunchJsonDocument,
+  writeLaunchJsonDocument,
+} from "./debug/launchJsonFile";
+import { findRescuablePairs, planOrphanRescue } from "./debug/service";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import {
@@ -42,7 +47,12 @@ import {
 import { ensureNativeSimOverlay } from "./west";
 import { log, showOutput } from "./util";
 import { NotifyAction } from "./notify/models";
-import { planFailure, planPrecondition, planSuccess } from "./notify/service";
+import {
+  isCancellation,
+  planFailure,
+  planPrecondition,
+  planSuccess,
+} from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
 
 async function showJsonDocument(data: unknown): Promise<void> {
@@ -373,19 +383,231 @@ async function configureDebugProfile(
   const verb = result.replaced ? "updated" : "wrote";
   if (result.report.canLaunch) {
     await notify(planSuccess(`Alp: ${verb} ${result.relPath}.`));
+  } else {
+    const unresolved = logUnlaunchableDetail(result);
+    await notify(
+      planFailure({
+        operation: "Alp: refreshing the launch profile",
+        cause: `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}.`,
+        detail: result.report.nextSteps.join(" "),
+        severity: "warning",
+        actions: [{ id: "openLaunchJson", arg: result.launchPath }],
+      }),
+    );
+  }
+
+  // The write above is what CREATES the duplicate on a launch.json older than
+  // #387, so this is both the moment it exists and the moment the maintained
+  // name is known for free — no `--preview` run needed. Not one-shot: the
+  // customer ran this command, so an offer here is an answer, not a nag.
+  // Offered after the status toast rather than before it, because the toast
+  // describes the report taken BEFORE the repair; reordering them would need
+  // the whole preflight recomputed to stay honest.
+  await maybeRescueOrphanedLaunchConfig(context, {
+    maintainedName: result.configName,
+    oneShot: false,
+  });
+}
+
+/** One offer per WORKSPACE, and only once the customer has said "stop asking".
+ *  Not global: the stranded value lives in one project's launch.json, and
+ *  declining for that project says nothing about the next one. */
+const RESCUE_PROMPT_KEY_PREFIX = "alp.launchConfigRescueOffered";
+
+/**
+ * Offer to repair a `launch.json` that holds the same debug configuration
+ * twice, once under each of `ALP:` / `Alp:` — see `./debug/service.ts` for what
+ * that is, why it strands a customer's hand-filled value, and what bounds this.
+ *
+ * OFFERS, NEVER APPLIES. It is the customer's file; a silent rewrite of it is
+ * not acceptable at any level of confidence, so the write is gated on an
+ * `applyChanges` pick coming back from the seam.
+ *
+ * ACTIVATION, and the configure command as well. The affected customer's
+ * symptom is "F5 fails", so they will conclude debugging is broken and will
+ * never think to run Configure Debug Profile — waiting to be asked is waiting
+ * forever. The counterweight is that activation work is intrusive and this
+ * repo is strict about not nagging, so the trigger is deliberately narrow:
+ * only when a pair really exists AND a concrete value is really at risk
+ * (`findRescuablePairs`), decided offline. A launch.json with no pair never
+ * says a word, and never spawns a process to find that out — but it is not one
+ * read either: `collectWorkspaceDebugContext()` runs first, which is a
+ * `readdirSync` of `~/.alp/sdk` plus a `statSync` per entry, the extension's
+ * own settings, a handful of `existsSync`/`readFileSync` probes and three
+ * `vscode.extensions.getExtension` calls, and then the launch.json
+ * `readFileSync`. All synchronous, all cheap, none of it the CLI.
+ *
+ * ONCE, BUT ONLY AFTER AN ANSWER. `src/ideHub/setupOrchestrator.ts` already
+ * ruled on this shape: an auto-dismissed toast returns undefined and stays
+ * unrecorded, so it is retried on the next activation rather than lost for the
+ * lifetime of the workspace. The same applies here and harder — an accidental
+ * dismissal would strand the value permanently and hand the customer back a
+ * broken F5 whose only remaining fix is a command they have never heard of,
+ * which is the very argument for triggering on activation at all. So the
+ * `Don't show again` button is the ONLY response that records the key.
+ * Accepting does not need to: a successful repair removes the pair, and
+ * `findRescuablePairs` is then silent on its own — while a repair that failed
+ * to land is a state still worth offering.
+ *
+ * "Activation" means package.json's own `activationEvents`, and that is a real
+ * limit, not an oversight: a folder holding nothing but a stranded
+ * `.vscode/launch.json` — no `board.yaml`, no `prj*.conf`, no Alp view opened —
+ * never activates this extension at all, so the offer never comes. Widening
+ * the manifest to `workspaceContains:.vscode/launch.json` would activate the
+ * whole extension in almost every VS Code window on the machine to cover a
+ * folder that has no Alp project in it. The command path is the answer for
+ * that case; alplabai/tan-cli#169 is the real one, since tan needs no
+ * activation event.
+ *
+ * `maintainedName` is the configuration name the CURRENTLY PINNED tan writes —
+ * the only thing that says which half of the pair is maintained and which is
+ * the orphan, and something this extension cannot know statically. The
+ * configure command already has one; otherwise a `--preview` run answers it,
+ * and that runs ONLY after the customer has accepted. `--preview` is
+ * documented not to touch launch.json, so asking costs them nothing.
+ *
+ * Never throws: it is `void`-ed from activation, and the toast plus the
+ * `workspaceState` write are both pending main-thread RPCs that a closing
+ * window rejects with a CancellationError — the same reason
+ * `maybeOfferFirstRunWizard` catches.
+ */
+export async function maybeRescueOrphanedLaunchConfig(
+  context: vscode.ExtensionContext,
+  options: { maintainedName?: string; oneShot: boolean },
+): Promise<void> {
+  const workspaceRoot = collectWorkspaceDebugContext().workspaceRoot;
+  if (!workspaceRoot) return;
+  if (findRescuablePairs(readLaunchJsonDocument(workspaceRoot)).length === 0) {
     return;
   }
 
-  const unresolved = logUnlaunchableDetail(result);
-  await notify(
-    planFailure({
-      operation: "Alp: refreshing the launch profile",
-      cause: `Alp: ${verb} ${result.relPath}, but it is not launchable yet — resolve: ${unresolved}.`,
-      detail: result.report.nextSteps.join(" "),
+  const key = `${RESCUE_PROMPT_KEY_PREFIX}:${workspaceRoot}`;
+  if (options.oneShot && context.workspaceState.get<boolean>(key, false)) {
+    return;
+  }
+
+  try {
+    // Spelled out rather than built by `planFailure`: nothing has failed, so
+    // the operation-and-cause shape that builder is for would misdescribe it.
+    // `applyChanges` is caller-handled (no `run` in the presenter's table) so
+    // the pick comes back here and gates the write; `openLaunchJson` IS
+    // presenter-run, so "let me look first" opens the file and correctly
+    // repairs nothing.
+    //
+    // The sentence has to be true about the losing case too: where both entries
+    // hold a different hand-filled value, one of them does NOT move — the
+    // maintained entry's stands, and the success message below names what was
+    // dropped.
+    const actions: NotifyAction[] = [
+      { id: "applyChanges" },
+      { id: "openLaunchJson" },
+    ];
+    // Only the activation offer can nag, so only it needs a way to be told to
+    // stop. From the configure command the customer asked the question, and an
+    // answer there is an answer, not a nag.
+    if (options.oneShot)
+      actions.push({ id: "custom", title: "Don't show again" });
+    const choice = await notify({
       severity: "warning",
-      actions: [{ id: "openLaunchJson", arg: result.launchPath }],
-    }),
-  );
+      channel: "toast",
+      message:
+        "Alp: this project's launch.json holds the same debug configuration " +
+        'twice — once as "Alp:" and once as "ALP:". Only one of them is kept ' +
+        "up to date, and values you filled in by hand may be sitting on the " +
+        "other. Move what is missing onto the maintained one and remove the " +
+        "duplicate? Where both entries have a value, the maintained one is " +
+        "kept and the other is discarded.",
+      actions,
+    });
+    // The one-shot key is recorded HERE, on an explicit "stop asking", and
+    // nowhere else — see the header. A dismissal must come back.
+    if (choice === "custom") {
+      await context.workspaceState.update(key, true);
+      return;
+    }
+    if (choice !== "applyChanges") return;
+
+    const maintainedName =
+      options.maintainedName ??
+      (await previewMaintainedConfigName(context, workspaceRoot));
+    if (!maintainedName) return;
+
+    // Re-read rather than reuse the document detection parsed. launch.json is
+    // very likely OPEN in the editor while the offer sits on screen — the
+    // configure command opens it — so the copy read a moment ago may already
+    // be stale, and writing it back would revert whatever was typed.
+    const rescue = planOrphanRescue(
+      readLaunchJsonDocument(workspaceRoot),
+      maintainedName,
+    );
+    if (!rescue) {
+      log("alp debug: launch.json no longer has a duplicate to repair");
+      return;
+    }
+
+    writeLaunchJsonDocument(workspaceRoot, rescue.document);
+    for (const pair of rescue.pairs) {
+      log(
+        `alp debug: removed "${pair.removedName}" from launch.json, keeping ` +
+          `"${pair.keptName}"` +
+          (pair.movedKeys.length > 0
+            ? `, moving across: ${pair.movedKeys.join(", ")}`
+            : " (the removed entry held no concrete value of its own)") +
+          // A deleted value is never left to be discovered later. The file was
+          // overwritten in place with no backup, so the channel is the only
+          // record of what the removed entry said.
+          (pair.discardedKeys.length > 0
+            ? `; the kept entry's own ${pair.discardedKeys.join(", ")} stood, ` +
+              `so the removed entry's value for it was discarded, not moved`
+            : ""),
+      );
+    }
+    const discarded = [
+      ...new Set(rescue.pairs.flatMap((p) => p.discardedKeys)),
+    ];
+    // A discarded value earns a toast, not the status bar: it is the one
+    // outcome where the repair DELETED something the customer may have typed,
+    // and a status-bar line that clears itself in five seconds is not a place
+    // to report that. `openLaunchJson` so they can go and look.
+    await notify(
+      discarded.length > 0
+        ? {
+            severity: "warning",
+            channel: "toast",
+            message:
+              "Alp: repaired the duplicate debug configuration. The removed " +
+              `entry's ${discarded.join(", ")} was discarded — the kept entry ` +
+              "already had a value of its own, and that is the one F5 uses.",
+            actions: [{ id: "openLaunchJson" }],
+          }
+        : planSuccess("Alp: repaired the duplicate debug configuration."),
+    );
+  } catch (error) {
+    if (isCancellation(error)) {
+      log("[debug] launch.json repair abandoned, window closing", "info");
+      return;
+    }
+    log(`[debug] launch.json repair failed: ${String(error)}`, "warn");
+  }
+}
+
+/** The configuration name the currently pinned tan writes, LEARNED rather than
+ *  guessed. The target/server pair asked for is arbitrary — every draft tan
+ *  emits carries the same prefix and the prefix is the entire question — so it
+ *  asks for the one target class every project has. */
+async function previewMaintainedConfigName(
+  context: vscode.ExtensionContext,
+  workspaceRoot: string,
+): Promise<string | null> {
+  const preview = await runDebugConfig(context, workspaceRoot, [
+    "debug-config",
+    "--target-kind",
+    "zephyr-mcu",
+    "--server",
+    "jlink",
+    "--preview",
+  ]);
+  return preview?.configuration.name ?? null;
 }
 
 /** Log everything behind a "not launchable yet" toast, and return the check
