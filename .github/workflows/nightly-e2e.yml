@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The extension-host e2e suite, nightly. #394, option 2.
+#
+# WHY THIS IS NOT A PR GATE, and why it is not nothing either.
+#
+# `test:e2e` is the only thing in this repo that drives a REAL VS Code
+# extension host: it activates the extension, runs every contributed command,
+# and calls `vscode.debug.startDebugging` for real. Its own comment calls that
+# check "the strongest evidence available without a human at a GUI".
+#
+# It is also not a required check -- and #392 is what that cost. #387 deleted
+# `debugProfileToLaunchDraft`, updated the unit tests, missed the e2e suite, and
+# two checks threw `TypeError: ... is not a function` on every run from that
+# merge until #392 found them. Every PR in between was green. The PR whose whole
+# subject was WHO WRITES launch.json had silently disabled the one check that
+# would have caught it going wrong.
+#
+# Making it a required PR gate is the other option and was rejected on cost that
+# is real rather than theoretical: it downloads ~296 MB of VS Code plus eight
+# extension dependencies per run, and needs a display-less Electron host, which
+# is the part most likely to flake. Paying that on every PR to catch a class of
+# rot that moves in days, not minutes, is the wrong trade.
+#
+# So: nightly. Rot surfaces within a day instead of within a PR, and #395's
+# symbol guard -- which DOES run on every PR, in milliseconds -- catches the
+# specific shape that actually bit us (a name the compiled core no longer
+# exports). The two are complements: #395 is fast and narrow, this is slow and
+# broad, and neither replaces the other.
+#
+# NOT run on `pull_request`, deliberately. A nightly that also fires per-PR is
+# a required gate wearing a different name, and would reintroduce the cost this
+# schedule exists to avoid.
+
+name: nightly-e2e
+
+on:
+  schedule:
+    # 03:17 UTC. Off the hour on purpose -- GitHub's scheduler queues heavily at
+    # :00 and a 296 MB download behind a long queue is how a nightly quietly
+    # becomes a no-op.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: "e2e · real extension host"
+    runs-on: ubuntu-latest
+    # The suite downloads VS Code, installs eight extensions and boots Electron.
+    # The default 360 min is far more rope than this needs; a hung host should
+    # be reported, not left occupying a runner.
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout (with submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # Nightly runs against `dev`, which is where the rot would land. `main`
+          # is covered by whatever released from it.
+          ref: dev
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `runTest.js` boots a real Electron window. On a headless runner that
+      # fails at window creation, which reads like a test failure and is not
+      # one -- so the virtual display is set up explicitly rather than left to
+      # whatever the image happens to provide.
+      - name: Run the extension-host suite
+        run: xvfb-run -a pnpm run test:e2e
+
+      # A nightly nobody watches is a nightly that does not exist. This turns a
+      # red run into an issue on the repo, which is the only channel here that
+      # survives someone not reading Actions email.
+      #
+      # `if: failure()` and not `always()`: an issue per green night would train
+      # everyone to close them unread, which is the same attention-erosion the
+      # gate exists to avoid.
+      - name: File an issue when the nightly breaks
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # One open issue, not one per night: re-opening the same report every
+          # 24h buries the first occurrence, which carries the commit range that
+          # actually explains it.
+          existing="$(gh issue list --label nightly-e2e --state open \
+                        --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -n "${existing:-}" ]; then
+            gh issue comment "${existing}" --body "Still failing: ${run_url}"
+            echo "commented on existing #${existing}"
+            exit 0
+          fi
+          gh issue create \
+            --title "nightly-e2e is failing on dev" \
+            --label nightly-e2e \
+            --body "$(printf '%s\n' \
+              "The extension-host e2e suite failed on \`dev\`." \
+              "" \
+              "Run: ${run_url}" \
+              "" \
+              "This suite is not a PR gate (see #394), so a break here means every PR since the last green night has been merging over it. Check the commit range in the run, not just the newest commit." \
+              "" \
+              "Two known environment traps, neither a product defect (#392): extension installs fail with \`Signature verification failed with 'ENOENT'\` unless the test instance's own \`user-data/User/settings.json\` sets \`\"extensions.verifySignature\": false\`, and from a deep working path Electron reports \`workbench.html … ERR_FILE_NOT_FOUND\` for a file that exists, because the path hits exactly 260 characters (Windows MAX_PATH). Neither applies to this Linux runner, but they are why the suite is easy to leave unrun locally.")"
