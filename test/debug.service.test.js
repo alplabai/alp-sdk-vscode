@@ -547,7 +547,8 @@ test("no other debug target gains a host-OS check on win32", () => {
 // The OpenOCD board cfg still blocks a launch when it is unresolved -- OpenOCD
 // takes "<resolved-openocd-board-cfg>" as a literal filename and fails to open
 // it. What moved is WHERE that is decided: off the extension's own draft, which
-// could only ever hold the placeholder, and onto the configuration tan wrote.
+// could only ever hold the placeholder, and onto the launch.json entry tan
+// merged into (see test/debug.gradedConfig.test.js for which object that is).
 test("an unresolved OpenOCD board cfg in the WRITTEN configuration blocks the launch", () => {
   const report = buildDebugPreflightReport(
     "2026-05-14T00:00:00.000Z",
