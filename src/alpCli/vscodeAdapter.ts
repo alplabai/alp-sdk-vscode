@@ -33,6 +33,7 @@ import {
 import { BinarySource, CliOutcome } from "./models";
 import {
   CACHED_CLI_UNVERIFIED,
+  CACHED_CLI_UNVERIFIED_NO_PREBUILT,
   SUPPORTED_CLI_VERSION,
   aheadPathFixAction,
   binaryName,
@@ -47,6 +48,7 @@ import {
   releaseAssetForTarget,
   shouldFetchManagedCli,
   shouldWarnCliAhead,
+  unverifiedCacheCause,
 } from "./service";
 import { ActionId, NotificationPlan, NotifyAction } from "../notify/models";
 import {
@@ -279,13 +281,25 @@ function cliInUsePlan(
 function checksumFailurePlan(
   error: unknown,
   operation: string,
+  /** Replaces the sentence for the ONE refusal whose wording depends on things
+   *  `downloadCli` cannot see: which arm the ladder fell through to while the
+   *  re-acquire was failing, and whether this host has a published binary to
+   *  retry at all (#396 — `unverifiedCacheCause` in `service.ts` picks between
+   *  the four). Applied to `unrecorded` ONLY — a `mismatch` says the release
+   *  served bytes that are not the published ones, which outranks any framing
+   *  and must arrive verbatim. Branching on `kind` rather than on the sentence,
+   *  like everything else here. */
+  unrecordedCause?: string,
 ): NotificationPlan | null {
   if (!(error instanceof ChecksumError)) {
     return null;
   }
   return planFailure({
     operation,
-    cause: error.message,
+    cause:
+      unrecordedCause && error.kind === "unrecorded"
+        ? unrecordedCause
+        : error.message,
     detail: error.detail,
     actions: [{ id: "updateCli", title: "Retry" }],
   });
@@ -571,11 +585,13 @@ export async function probeTanVersion(
  * Ensure the managed `tan` binary is present up front (called on activation) so
  * a fresh install feels "installed together" instead of stalling on the first
  * command. Fetches when nothing else resolves (a download would happen on first
- * use anyway), or self-heals a managed *cached* copy that's fallen behind the
- * pinned SUPPORTED_CLI_VERSION; surfaced with a one-time progress notification.
- * User/build-owned sources are never auto-replaced (see shouldFetchManagedCli).
- * Never throws: a failure here is logged and the normal per-command resolution
- * ladder still runs (and can retry the download) later.
+ * use anyway), self-heals a managed *cached* copy that's fallen behind the
+ * pinned SUPPORTED_CLI_VERSION, and re-acquires an UN-DIGESTED cached copy
+ * whatever else resolved (#396 — see shouldFetchManagedCli for why that one
+ * cannot key on the resolved source); surfaced with a one-time progress
+ * notification. User/build-owned sources are never auto-replaced. Never throws:
+ * a failure here is logged and the normal per-command resolution ladder still
+ * runs (and can retry the download) later.
  */
 export async function ensureTanCliProvisioned(
   context: vscode.ExtensionContext,
@@ -587,14 +603,23 @@ export async function ensureTanCliProvisioned(
 
   const source = decideBinarySource(input);
   // A binary already resolves (cliPath / bundled / local build / cached / PATH)
-  // — nothing to fetch, EXCEPT a managed *cached* copy behind the pin, which is
-  // the extension's own to self-heal (see shouldFetchManagedCli). Only probe the
-  // cached binary's version when it can change the decision. With
-  // `preferGlobalCli` on and a PATH `tan` present, source is `path`, so
-  // activation does not fetch a shadow managed copy the user didn't ask for.
+  // — nothing to fetch, EXCEPT the two things in the extension's OWN cache that
+  // are its own to heal: a copy behind the pin, and a copy with no recorded
+  // digest the ladder just stepped over onto PATH (see shouldFetchManagedCli).
+  //
+  // Only probe when the answer can change the decision, i.e. on the stale-pin
+  // arm alone. Not because an un-digested copy would refuse the probe — it
+  // would not: `decideBinarySource` SKIPS that copy, so `readResolvedCliVersion`
+  // would resolve something else entirely and answer a question about the
+  // cached binary with the PATH binary's version (or take the `download` arm and
+  // fetch from a function whose contract is "decide, don't fetch").
   const cachedVersion =
     source === "cached" ? await readResolvedCliVersion(deps) : null;
-  if (!shouldFetchManagedCli(source, cachedVersion)) {
+  // Asked with the whole INPUT, not with `source`: the un-digested-cache heal
+  // has to key on the state of the cache, and `source` cannot express it (see
+  // shouldFetchManagedCli). Passing `source` here is what left the heal unable
+  // to fire on the very machines it was written for (#396).
+  if (!shouldFetchManagedCli(input, cachedVersion)) {
     return;
   }
   // Reached the fetch: a `download` source is a fresh provision; a `cached`
@@ -607,19 +632,87 @@ export async function ensureTanCliProvisioned(
   // customer HAS a tan CLI, and telling them it "couldn't be downloaded, build
   // and validate need it" explains nothing about why the one they have stopped
   // being used.
+  //
+  // True here implies `source` is `path` or `download`: `shouldFetchManagedCli`
+  // only reaches the fetch on those two when the cache is un-digested, and a
+  // `cached` source means a digest was recorded. A `cliPath`/`bundled`/
+  // `localBuild` machine returned above and never sees any of this.
   const reacquiringUnverifiedCache = isUnverifiableCache(input);
+  // Resolved ONCE, because it decides two things that must not disagree:
+  // whether the fetch below can happen at all, and whether the sentence for a
+  // heal that did not happen may say "reconnect and retry" — on a host with no
+  // published binary that instruction is false, not merely unhelpful.
+  const asset = releaseAssetForTarget(deps.platform, deps.arch);
+  // The ONE sentence that depends on the machine rather than on the failure:
+  // which arm the ladder fell through to, and whether a re-acquire is possible
+  // here at all. `undefined` when the cache is not un-digested, so every other
+  // refusal keeps its own wording. Hoisted above the two early returns below
+  // because BOTH ways a heal can fail to happen have to be able to say it.
+  const migrationCause = unverifiedCacheCause(input, Boolean(asset));
   // Don't re-attempt a self-heal we already proved futile for this pin (the
   // fetched pin's binary still read behind — a mis-published release). Bounds
   // the download + toast to once per pin across activations; a pin bump re-arms.
+  //
+  // GATED ON `updatingStaleCache` ONLY, and that is load-bearing rather than
+  // incidental. The un-digested-cache heal must NOT adopt this latch: its
+  // common failure is being offline, which is transient, and one latched
+  // activation would disable the heal until the pin moved — leaving the machine
+  // on the unverified PATH binary permanently, i.e. #396 with a marker written
+  // on top of it. The only failure that would justify giving up is a heal that
+  // COMPLETES and still cannot record a digest, and that one is unlatchable by
+  // construction: the record and this marker are both `globalState` writes, so
+  // whatever stopped the first stops the second.
   if (
     updatingStaleCache &&
     context.globalState.get<string>(HEAL_GAVE_UP_KEY) === SUPPORTED_CLI_VERSION
   ) {
     return;
   }
-  // No prebuilt binary for this host: skip silently (a command will surface the
-  // "set alpSdk.cliPath" guidance if the user actually invokes one).
-  if (!releaseAssetForTarget(deps.platform, deps.arch)) {
+  // No prebuilt binary for this host. A fresh install skips SILENTLY — a
+  // command will surface the "set alpSdk.cliPath" guidance if the user actually
+  // invokes one. A RE-ACQUIRE may not: the un-digested cache has already been
+  // stepped over, so a bare return here is the same zero-click fall-through onto
+  // the PATH binary this heal exists to close — it just never reaches the
+  // network to fail. Narrow (a host with no published target) and permanent,
+  // which is exactly why it must say so rather than repeat the silence every
+  // activation forever.
+  //
+  // No Retry, and that is not an oversight: `alp.updateCli` re-enters
+  // `downloadCli`, which throws on this same missing asset, so the button is
+  // dead by construction here — which is also why the sentence may not be one
+  // of the "reconnect and retry" pair (`unverifiedCacheCause` picks the
+  // no-prebuilt wording off the same `asset` this branch tests).
+  //
+  // The button IS `alpSdk.cliPath`, the setting the two "reconnect" sentences
+  // withhold. That suppression is #389's and does not survive the trip here:
+  // it exists because `cliPath` lets a user escape a checksum refusal onto an
+  // unverified binary when a verified one was one download away, and on this
+  // host no verified binary is obtainable at all. `downloadCli`'s own throw for
+  // this same missing asset already names it. The alternative is a permanent
+  // per-activation toast whose only click is "Show Output".
+  if (!asset) {
+    if (reacquiringUnverifiedCache) {
+      log(
+        `[cli] no prebuilt tan CLI for ${deps.platform}/${deps.arch}, so the ` +
+          `un-digested cached binary cannot be re-acquired on this host`,
+      );
+      notifyAsync(
+        planFailure({
+          operation: "Provisioning the tan CLI",
+          // The `??` is the type's, not a real branch: `migrationCause` is
+          // defined exactly when `isUnverifiableCache(input)` holds, which is
+          // the enclosing `if`. The default is still the no-prebuilt sentence
+          // rather than the plain one, because the plain one ends "reconnect
+          // and retry" — the clause this whole branch exists to keep off a host
+          // where there is nothing to fetch, ever.
+          cause: migrationCause ?? CACHED_CLI_UNVERIFIED_NO_PREBUILT,
+          // Logged to the channel by the presenter whether or not a button
+          // opens it, so the host string is never lost by naming a remedy.
+          detail: `no prebuilt tan CLI for ${deps.platform}/${deps.arch}`,
+          actions: [{ id: "openSettings", arg: "alpSdk.cliPath" }],
+        }),
+      );
+    }
     return;
   }
   let cancelled = false;
@@ -643,8 +736,7 @@ export async function ensureTanCliProvisioned(
           controller.abort();
         });
         try {
-          const asset = releaseAssetForTarget(deps.platform, deps.arch);
-          log(`[cli] downloading tan CLI: ${asset?.url ?? "unknown asset"}`);
+          log(`[cli] downloading tan CLI: ${asset.url}`);
           await downloadCli(deps, controller.signal);
           log(
             `[cli] tan CLI downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
@@ -712,7 +804,11 @@ export async function ensureTanCliProvisioned(
         // …nor is a binary that was REFUSED. It downloaded fine; it just
         // wasn't the published binary, and "retry when you're back online"
         // would bury the only fact that matters here.
-        checksumFailurePlan(error, "Provisioning the tan CLI") ??
+        checksumFailurePlan(
+          error,
+          "Provisioning the tan CLI",
+          migrationCause,
+        ) ??
         planFailure({
           operation: "Provisioning the tan CLI",
           cause: reacquiringUnverifiedCache
@@ -726,7 +822,7 @@ export async function ensureTanCliProvisioned(
               // a closing window returned further up. So what lands here is the
               // residue of a transfer that DID succeed: the binary could not be
               // read back, or its digest not stored.
-              CACHED_CLI_UNVERIFIED
+              (migrationCause ?? CACHED_CLI_UNVERIFIED)
             : updatingStaleCache
               ? `Couldn't update the tan CLI to ${SUPPORTED_CLI_VERSION}. The installed version still works — retry when you're back online.`
               : "Couldn't download the tan CLI. Build and validate commands need it — retry when you're back online, or point alpSdk.cliPath at a local build.",
@@ -1130,15 +1226,28 @@ async function runCliVersionCheck(
 
 /**
  * Force-download the pinned `tan` release into the extension cache and reset
- * resolution so the next command uses it. A set `alpSdk.cliPath` wins over the
- * download, so guide the user to Settings instead of downloading a binary that
- * won't be used.
+ * resolution so the next command uses it. An `alpSdk.cliPath` that points at a
+ * file which EXISTS wins over the download, so guide that user to Settings
+ * instead of fetching a binary that won't be used — but a setting that does not
+ * resolve is not a refusal: the ladder skips it, the download does win, and
+ * this command must run it (see the guard below).
  */
 export async function updateAlpCli(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   const deps = buildResolveDeps(context);
-  if (deps.cliPathSetting) {
+  // Asks the SAME question `decideBinarySource` does — the setting must point
+  // at a file that EXISTS, not merely be non-empty. A `cliPath` left over from
+  // a moved checkout or arriving via settings sync does not resolve, the ladder
+  // skips it, and a download DOES win, so refusing on the bare string was a
+  // refusal that wasn't true.
+  //
+  // It also dead-ended the one thing this command exists to unblock: the #396
+  // notice's only button is this command, and on such a machine it answered
+  // "alpSdk.cliPath is set …" with an `openSettings → alpSdk.cliPath` button —
+  // two clicks from a verification refusal to the arm that is never verified,
+  // the exact button #389 removed.
+  if (deps.cliPathSetting && deps.fileExists(deps.cliPathSetting)) {
     // The warning is the whole point of this guard — the `return` below is a
     // refusal the user has to be told about, never a silent no-op.
     await notify(
@@ -1206,6 +1315,19 @@ export async function updateAlpCli(
       log(`[cli] tan CLI update abandoned, window closing`);
       return;
     }
+    // This command is the Retry on the #396 notice, so it lands here on the
+    // machine that notice was raised for — still offline, still stepping over
+    // an un-digested cache onto PATH. Without this the click one hop earlier
+    // said "commands are falling back to the tan on your PATH", and one hop
+    // later said only "downloading it once more settles this for good": the
+    // same defect, on the route this branch created. Built from the same pure
+    // rule as activation's, off the state on disk, which a failed download
+    // leaves exactly as it found it (`downloadCli` writes to a temp file and
+    // records the digest only on success).
+    const migrationCause = unverifiedCacheCause(
+      resolutionInputFromDeps(deps),
+      Boolean(releaseAssetForTarget(deps.platform, deps.arch)),
+    );
     notifyAsync(
       // The one failure a retry cannot clear — a live process is holding the
       // installed binary, so the same rename fails the same way until it exits.
@@ -1214,7 +1336,7 @@ export async function updateAlpCli(
         proxyFailurePlan(error, "Updating the tan CLI") ??
         // …and the one that is not a failure at all but a refusal: the bytes
         // arrived and were rejected. The existing binary is untouched.
-        checksumFailurePlan(error, "Updating the tan CLI") ??
+        checksumFailurePlan(error, "Updating the tan CLI", migrationCause) ??
         planFailure({
           operation: "Updating the tan CLI",
           cause: "The tan CLI update failed.",

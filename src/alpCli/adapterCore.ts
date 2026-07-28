@@ -160,8 +160,12 @@ export function resolutionInputFromDeps(
  *
  * @callers 2 resolveAlpBinary
  *
- * ── WHICH ARMS ARE VERIFIED, AND WHY THE OTHER FOUR ARE NOT ──
- * Two of the six. Do not read this function as "the tan we run is verified":
+ * ── WHAT IS VERIFIED, AND WHY THE REST IS NOT — THE REASONS DIFFER ──
+ * In one line: verification covers the MANAGED ACQUISITION CHANNEL — `download`
+ * and `cached`. Every other arm executes what the user's environment offers,
+ * which is the same trust boundary as their terminal. Do not read this function
+ * as "the tan we run is verified", and do not flatten the other four into one
+ * reason, because they are not the same statement:
  *
  *   - `download` — verified at write time (#389): the bytes are checked against
  *     the release's own `checksums.txt` before anything lands at
@@ -170,12 +174,49 @@ export function resolutionInputFromDeps(
  *     (#386). This is the arm that actually gets reached: the download happens
  *     once, the cache is read forever.
  *
- *   - `cliPath` / `path` / `localBuild` — a binary the user pointed at, put on
- *     their PATH, or built themselves. There is no reference digest for any of
- *     them anywhere, so there is nothing to verify against; checking them is
- *     not possible rather than not done.
+ *   - `cliPath` / `localBuild` — the user pointed at this binary deliberately,
+ *     or built it themselves. There is no reference digest for either anywhere,
+ *     and manufacturing one would be theatre: it would check a binary against
+ *     itself and dress up "the user chose this" as an integrity guarantee.
  *   - `bundled` — staged inside the VSIX by `vsce package --target`, so it is
- *     covered by the signature on the extension package itself.
+ *     covered by the signature on the extension package itself. Already checked
+ *     upstream, which is a different claim from the two above, not a weaker one.
+ *   - `path`, BOTH RUNGS — the `preferGlobalCli` opt-in above the managed
+ *     copies, and the unchosen fallback below them. This executes whatever the
+ *     environment offers and NOTHING about it is verified. `commandOnPath`'s
+ *     `isNativeTanVersionOutput` is a FORMAT PROBE on the stdout of a binary we
+ *     are about to run — attacker-controllable text, matched by a regex. It
+ *     answers "does this look like the native clap CLI", never "is this what
+ *     Alp Lab published". No wording anywhere may claim INTEGRITY for a PATH
+ *     binary — that it is what Alp Lab published, or that anything checked it;
+ *     a `package.json` description already had to be corrected for exactly that.
+ *     The house compound `verified-native` (`service.ts`, `models.ts`, this
+ *     file's callers, CLAUDE.md) is the one carve-out and stays: it names the
+ *     format probe's verdict — this is the native clap CLI and not the retired
+ *     `alp` — which is the only claim `commandOnPath` makes and the only one
+ *     `input.onPath` carries. Do not read the noun as the adjective.
+ *
+ * A refusal must never fall through onto one of those arms, which is what #396
+ * closed — and the mechanism upstream is a SKIP, not a refusal, which is the
+ * only reason the ladder continues at all. `decideBinarySource` steps over an
+ * un-digested cache BEFORE this function runs (the `cached` arm's `unrecorded`
+ * throw below is unreachable through it, and a refusal there would throw rather
+ * than reach `path`), so on a machine that also had a global `tan` the next rung
+ * was `path` — a zero-click route onto an unverified binary. The fix is upstream
+ * too, in `shouldFetchManagedCli`: activation re-acquires the cache through the
+ * verified channel whenever the ladder would otherwise step over it onto `path`
+ * or `download`, and precedence puts `cached` back above the `path` fallback on
+ * its own. Neither the ladder's order nor either `path` rung's meaning changed.
+ *
+ * ponytail: after resolution both `path` rungs collapse to the same
+ * `BinarySource` value `"path"`, so a consumer needing the opt-in/fallback
+ * distinction re-derives it from `preferGlobalCli` — `cliFixAction`,
+ * `aheadPathFixAction`, and the two #396 rules in `service.ts`
+ * (`shouldFetchManagedCli`, `unverifiedCacheCause`), which are the pure pair the
+ * adapter now reads rather than a flag check of its own. Four call sites, all
+ * fine today. If more accrue, split the resolved label rather than sprinkling
+ * flag checks — a fifth is the point where "rung 2 or rung 6" should be a value
+ * instead of a question every consumer re-asks.
  */
 export async function resolveAlpBinary(
   deps: ResolveDeps,

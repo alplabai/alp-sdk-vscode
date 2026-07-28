@@ -42,6 +42,92 @@
   times (it builds the path and logs it, and never spawns from it). And
   `src/sdk/settingsWrite.ts`'s "the three callers" counted calling functions,
   not call sites, of which there are six — the unit is now explicit.
+- **A migrating machine no longer falls through onto an unverified PATH `tan`
+  (#396).** Treating a cached binary with no recorded digest as unverifiable
+  made the `cached` arm safe, but only half-fixed the machine: the ladder
+  CONTINUES past a skipped cache, and for anyone who also has a global `tan` the
+  next rung is `path`. So the exact population that fix was written for — people
+  who used the extension before downloads were checked — moved silently from
+  `cached` onto a binary nothing verified. No prompt, no notice. A refusal must
+  never offer a one-click route onto an unverified binary; a silent fall-through
+  is the zero-click version of the same thing.
+
+  Fixed where the broken state lives, in the extension's own storage, not by
+  reordering the ladder. `shouldFetchManagedCli` now takes the whole
+  `BinaryResolutionInput` rather than a `BinarySource`, and re-acquires an
+  un-digested cache when the ladder would otherwise step over it — i.e. when the
+  resolved source is the UNCHOSEN `path` fallback, or `download`. Keying that
+  trigger on `source === "cached"` is precisely why it could never fire here:
+  `decideBinarySource` skips such a copy, so the source is never `cached` on the
+  affected machines and activation returned early every time. Replacing the
+  extension's own cache overrides nobody, and precedence does the rest — once the
+  digest is recorded, `cached` outranks the `path` fallback again and the
+  effective source snaps back with no ordering change ever made.
+
+  **A user running their own binary is left alone.** `cliPath`, `localBuild`, a
+  platform-VSIX `bundled` install and the `alpSdk.preferGlobalCli` opt-in are
+  silent and fetch nothing, because a heal there buys nothing: the hole is the
+  cache being silently stepped over, and those machines are not stepping over
+  it. `preferGlobalCli` belongs in that list for its own reason too — healing
+  under it cannot change what runs, since resolution still answers `path`
+  afterwards, so online it is a ~3 MB fetch of dead weight and offline it is an
+  error toast per activation about a copy that user opted out of running. Clear
+  the flag (or the setting, or the local build) and the ladder reaches the
+  fallback, where the heal fires on the next activation.
+
+  **The residual offline window is named rather than papered over.** A migrating
+  machine with no network genuinely does run the PATH binary, so the failed heal
+  now says which binary that is instead of only "it will not be run", and offers
+  the same Retry — which keeps that same wording if it is pressed while still
+  offline, rather than reverting one click later to "downloading it once more
+  settles this for good".
+
+  **A host with no published prebuilt gets its own sentence, and never a Retry
+  it cannot act on.** `releaseAssetForTarget` is null there, so the heal cannot
+  start and the silent return it used to take was the same zero-click
+  fall-through — but the migration sentences all end in "reconnect and retry",
+  which on that host is not merely unhelpful, it is false: nothing will ever be
+  published to fetch. It now says so and names `alpSdk.cliPath`, in the sentence
+  and as the one button. That setting is withheld from every other verification
+  refusal (#389) because it is an escape onto an unverified binary while a
+  verified one is a download away; here no verified binary is obtainable at all,
+  so it is not an escape from verification, it is the only way to have a `tan` —
+  and it is already what the download names when it throws for this same missing
+  asset.
+
+  That Retry now goes somewhere. `alp.updateCli` refused whenever
+  `alpSdk.cliPath` was NON-EMPTY, rather than when it points at a file that
+  exists — so on a machine whose `cliPath` no longer resolves (a moved checkout,
+  synced settings) the notice's only button answered "alpSdk.cliPath is set …"
+  and offered `Open Settings → alpSdk.cliPath`: two clicks from a verification
+  refusal to the one arm that is never verified, which is the button #389
+  removed. The guard now asks the same question `decideBinarySource` does.
+
+  **This heal deliberately does not take the stale-version give-up latch.** That
+  latch bounds a futile re-download for a mis-tagged pin; adopting it here would
+  let one offline activation permanently disable the heal and strand the machine
+  on the unverified binary. Offline is transient and retries on the next
+  activation, which is driven end to end in the tests rather than reasoned about.
+
+  **Two routes to a silent PATH `tan` are pre-existing and stay open** — the
+  docs say so rather than implying the fall-through is closed in general. A
+  fresh install on a machine with a global `tan` never fetched a managed copy,
+  so there is no cache to heal; and a cache deleted or quarantined with the
+  digest record left behind (antivirus, a cleaner, a partial profile restore)
+  silently downgrades a machine that WAS running a verified managed binary to
+  the PATH one, permanently. Both resolve `path` with an EMPTY cache — neither is
+  the migration population, and closing them needs a different trigger.
+
+  Also documented, because the four unverified arms are not equivalent and were
+  being described as if they were: verification covers the MANAGED ACQUISITION
+  CHANNEL (download and cache); `cliPath`/`localBuild` are binaries the user
+  pointed at or built, where checking is theatre; `bundled` is covered by the
+  VSIX signature; and both `path` rungs execute whatever the environment offers
+  — `isNativeTanVersionOutput` is a FORMAT probe on attacker-controllable stdout,
+  never an integrity check, so no wording may claim INTEGRITY for a PATH binary.
+  The house compound `verified-native` is the explicit carve-out: it names that
+  format probe's verdict ("the native clap CLI, not the retired `alp`"), which is
+  all `commandOnPath` ever decides.
 
 - **VS Code's `http.proxy` now reaches every child process the extension
   spawns (#379).** A corporate user who set `http.proxy` got a `tan` that
