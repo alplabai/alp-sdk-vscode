@@ -98,7 +98,7 @@ const verifySpec = (baseUrl) => ({
 });
 
 const fetchAsset = (baseUrl, dest) =>
-  downloadFile(`${baseUrl}/asset`, dest, undefined, {}, verifySpec(baseUrl));
+  downloadFile(`${baseUrl}/asset`, dest, verifySpec(baseUrl));
 
 test("downloadFile: bytes matching the published digest install normally", async () => {
   const body = Buffer.from("the real tan binary\n");
@@ -317,23 +317,26 @@ test("downloadFile: the refusal reaches the TOAST; the digests stay on the chann
 });
 
 test("downloadSeam: the seam the extension actually injects REFUSES a tampered binary", async () => {
-  // The one unprotected link in the chain, and the reason `downloadSeam` is a
-  // named export rather than an arrow in `vscodeAdapter.ts`.
+  // The seam `vscodeAdapter.ts` injects, exercised end to end. It is a named
+  // export rather than an inline arrow because `vscodeAdapter.ts` imports
+  // `vscode` and no unit test can load it; the arrow's body would go untested.
   //
-  // Making `verify` required on `ResolveDeps.download` guards the CALLER:
-  // dropping the 4th argument in `downloadCli` is a TS2554. It does NOT guard
-  // the PROVIDER — TypeScript's function assignability accepts a 3-parameter
-  // implementation for a 4-parameter type, so
+  // The provider hole this pins used to be reachable. Making `verify` required
+  // on `ResolveDeps.download` guards the CALLER — dropping the 4th argument in
+  // `downloadCli` is a TS2554 — but NOT the provider: TypeScript's function
+  // assignability accepts a 3-parameter implementation for a 4-parameter type,
+  // so
   //
   //     download: (url, dest, signal) =>
   //       downloadFile(url, dest, signal, proxySettings()),
   //
-  // typechecks clean, `verify` arrives `undefined`, `downloadFile` takes its
-  // `expectedDigest: null` branch, and the extension is silently back to
-  // installing and executing unverified bytes with a fully green board.
-  // `vscodeAdapter.ts` imports `vscode`, so no unit test loads it — this
-  // assertion is what makes that edit expressible only as deleting a parameter
-  // THIS function names, which reds this test.
+  // typechecked clean, `verify` arrived `undefined`, and the extension was
+  // silently back to installing and executing unverified bytes on a fully
+  // green board. What refuses that edit today is `downloadFile`'s parameter
+  // ORDER, not this test: `verify` is its 3rd and required parameter, so an
+  // `AbortSignal` in that position is a TS2345 wherever the arrow is written.
+  // This test covers the other half — that the seam really does verify, rather
+  // than merely being handed a spec it ignores.
   const published = Buffer.from("the real tan binary\n");
   const tampered = Buffer.from(published);
   tampered[4] ^= 0x01;
@@ -428,16 +431,19 @@ test("downloadFile: a real-sized checksums.txt is comfortably under the cap", as
   );
 });
 
-test("downloadFile: an unverified transfer is still possible only where no digest is published", async () => {
-  // `verify` is optional in the signature purely so transfer-mechanics tests
-  // can serve bodies no release ever published a digest for. The PRODUCTION
-  // path cannot reach this branch: `ResolveDeps.download` types the spec as
-  // required, and `releaseAssetForTarget` always supplies one. This test pins
-  // that the optionality is a test affordance, not a runtime fallback.
+test("downloadFile: an unverified transfer must be asked for by name", async () => {
+  // `verify` is REQUIRED, so this branch is not reachable by forgetting: the
+  // literal `null` below is the only way in, and it greps. It exists for the
+  // transfer-mechanics tests, which serve bodies no release ever published a
+  // digest for. No production caller passes it — `downloadCli` builds the spec
+  // from `releaseAssetForTarget`, which types the field as non-optional, and
+  // `ResolveDeps.download` requires it of the seam too. This test pins that
+  // `null` still means "transfer without verifying", so the tests that rely on
+  // it are exercising the real code path and not a stub.
   const body = Buffer.from("no manifest for this one\n");
   await withServer(serveRelease({ body }), async (baseUrl) => {
     const { dest } = tmpDest();
-    await downloadFile(`${baseUrl}/asset`, dest);
+    await downloadFile(`${baseUrl}/asset`, dest, null);
     assert.deepEqual(fs.readFileSync(dest), body);
   });
 });

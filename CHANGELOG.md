@@ -117,15 +117,23 @@
   checksum path at all, i.e. a one-click route, mid-tamper, to permanently
   executing exactly the binary that had just been refused.
 
-  The `ResolveDeps.download` seam is now built by `downloadSeam` in
-  `download.ts` rather than an arrow in `vscodeAdapter.ts`. Requiring `verify`
-  in the seam's type guards the CALLER (dropping it in `downloadCli` is a
-  `TS2554`) but NOT the provider: TypeScript's function assignability accepts a
-  3-parameter implementation for a 4-parameter type, so an inline arrow could
-  omit `verify`, take `downloadFile`'s unverified branch, and leave the
-  extension executing unchecked bytes with a fully green board —
-  `vscodeAdapter.ts` imports `vscode`, so no unit test loads it. Extracted, it
-  is driven against a local release server serving a tampered body.
+  `downloadFile` takes `verify` as a REQUIRED 3rd parameter, ahead of an
+  optional `{ signal, proxy }` options bag, and that ORDER is what makes
+  skipping verification unwritable. Requiring `verify` on the
+  `ResolveDeps.download` seam guards only the CALLER (dropping it in
+  `downloadCli` is a `TS2554`); it does not guard the provider, because
+  TypeScript's function assignability accepts a 3-parameter implementation for
+  a 4-parameter type, so an inline arrow in `vscodeAdapter.ts` — a file that
+  imports `vscode` and so is loadable by no unit test — could leave `verify`
+  off its own parameter list and keep the board fully green while the extension
+  executed unchecked bytes. The arrow's body,
+  `downloadFile(url, dest, signal, proxySettings())`, now puts an `AbortSignal`
+  where a `ChecksumSpec | null` is required: a `TS2345`, whatever the arrow's
+  arity. `null` is the explicit, greppable opt-out used by the
+  transfer-mechanics tests, which serve bodies no release published a digest
+  for; no production caller passes it. The seam itself stays a named
+  `downloadSeam` in `download.ts` so a test can drive the exact function the
+  adapter injects against a local release server serving a tampered body.
 
   The `checksums.txt` read is capped at 64 KiB. It is buffered in memory (849
   bytes for tan v0.4.0) and was bounded only by the 120 s wall clock, which a

@@ -124,7 +124,7 @@ test("no proxy configured: the download goes direct and the proxy never sees it"
   await withOrigin(async (origin) => {
     await withProxy(NEVER, async (_proxyUrl, seen) => {
       const { dest } = tmpDest();
-      await downloadFile(`${origin}/asset`, dest, undefined, { env: {} });
+      await downloadFile(`${origin}/asset`, dest, null, { proxy: { env: {} } });
       assert.deepEqual(fs.readFileSync(dest), BODY);
       assert.deepEqual(seen.requests, [], "nothing may reach the proxy");
       assert.deepEqual(seen.connects, []);
@@ -143,8 +143,8 @@ test("HTTP_PROXY routes a plain-http download through the proxy in absolute form
       },
       async (proxyUrl, seen) => {
         const { dest } = tmpDest();
-        await downloadFile(`${origin}/asset`, dest, undefined, {
-          env: { HTTP_PROXY: proxyUrl },
+        await downloadFile(`${origin}/asset`, dest, null, {
+          proxy: { env: { HTTP_PROXY: proxyUrl } },
         });
         assert.deepEqual(fs.readFileSync(dest), BODY);
         // The absolute-form request URI is the whole point: it is how the
@@ -168,9 +168,8 @@ test("http.proxy (the VS Code setting) wins over the environment", async () => {
       async (chosen, seen) => {
         await withProxy(NEVER, async (fromEnv, ignored) => {
           const { dest } = tmpDest();
-          await downloadFile(`${origin}/asset`, dest, undefined, {
-            proxy: chosen,
-            env: { HTTP_PROXY: fromEnv },
+          await downloadFile(`${origin}/asset`, dest, null, {
+            proxy: { proxy: chosen, env: { HTTP_PROXY: fromEnv } },
           });
           assert.deepEqual(fs.readFileSync(dest), BODY);
           assert.deepEqual(seen.requests, [`${origin}/asset`]);
@@ -189,10 +188,12 @@ test("NO_PROXY bypasses a configured proxy entirely", async () => {
   await withOrigin(async (origin) => {
     await withProxy(NEVER, async (proxyUrl, seen) => {
       const { dest } = tmpDest();
-      await downloadFile(`${origin}/asset`, dest, undefined, {
-        // Set BOTH sources, so the bypass is proven against the stronger one.
-        proxy: proxyUrl,
-        env: { HTTP_PROXY: proxyUrl, NO_PROXY: "example.com,127.0.0.1" },
+      await downloadFile(`${origin}/asset`, dest, null, {
+        proxy: {
+          // Set BOTH sources, so the bypass is proven against the stronger one.
+          proxy: proxyUrl,
+          env: { HTTP_PROXY: proxyUrl, NO_PROXY: "example.com,127.0.0.1" },
+        },
       });
       assert.deepEqual(fs.readFileSync(dest), BODY);
       assert.deepEqual(seen.requests, [], "NO_PROXY must win over http.proxy");
@@ -226,8 +227,8 @@ test("an https download is tunnelled with CONNECT through the proxy", async () =
       const rejection = await downloadFile(
         `https://127.0.0.1:${dead}/asset`,
         dest,
-        undefined,
-        { proxy: proxyUrl, env: {} },
+        null,
+        { proxy: { proxy: proxyUrl, env: {} } },
       ).then(
         () => null,
         (error) => error,
@@ -258,10 +259,10 @@ test("an unparseable proxy fails loudly and never echoes the value back", async 
   const rejection = await downloadFile(
     "https://example.invalid/asset",
     dest,
-    undefined,
+    null,
     // Credentials are the reason this value is not echoed: a typo'd proxy URL
     // is usually a typo in a URL that carries a password.
-    { proxy: "http://", env: {} },
+    { proxy: { proxy: "http://", env: {} } },
   ).then(
     () => null,
     (error) => error,
@@ -279,8 +280,8 @@ test("a proxy that cannot be reached names the proxy, not the download", async (
   const rejection = await downloadFile(
     "https://example.invalid/asset",
     dest,
-    undefined,
-    { proxy: `http://127.0.0.1:${deadProxy}`, env: {} },
+    null,
+    { proxy: { proxy: `http://127.0.0.1:${deadProxy}`, env: {} } },
   ).then(
     () => null,
     (error) => error,
@@ -312,8 +313,8 @@ test("a 407 from a credentialed proxy says proxy and never leaks the password", 
       const rejection = await downloadFile(
         `https://127.0.0.1:${dead}/asset`,
         dest,
-        undefined,
-        { proxy: credentialed, env: {} },
+        null,
+        { proxy: { proxy: credentialed, env: {} } },
       ).then(
         () => null,
         (error) => error,

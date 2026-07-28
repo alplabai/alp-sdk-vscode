@@ -427,11 +427,14 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     fileExists: fs.existsSync,
     commandOnPath,
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
-    // NOT an inline arrow, deliberately: an arrow here can silently drop
-    // `verify` and still typecheck, and nothing in this file is unit-tested.
-    // `downloadSeam` lives in `download.ts` so a test drives it. Settings are
-    // read at call time (see `proxySettings`), so the seam's signature carries
-    // only what the caller knows.
+    // NOT an inline arrow, deliberately: nothing in this file is unit-tested
+    // (it imports `vscode`), so an arrow's body would ship uncovered.
+    // `downloadSeam` lives in `download.ts` where a test drives the exact seam
+    // injected here. An arrow that dropped `verify` no longer compiles either —
+    // `downloadFile` takes it as a required 3rd parameter — but that is the
+    // compiler's guarantee, not this line's. Settings are read at call time
+    // (see `proxySettings`), so the seam's signature carries only what the
+    // caller knows.
     download: downloadSeam(proxySettings),
     chmodExec: (p) => fs.chmodSync(p, 0o755),
   };

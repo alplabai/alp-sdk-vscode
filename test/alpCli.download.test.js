@@ -82,7 +82,9 @@ test(
       },
       async (baseUrl) => {
         const { dir, dest } = tmpDest();
-        await assert.rejects(() => downloadFile(`${baseUrl}/asset`, dest));
+        await assert.rejects(() =>
+          downloadFile(`${baseUrl}/asset`, dest, null),
+        );
         assert.ok(!fs.existsSync(dest), "destination must not exist");
         assert.deepEqual(
           fs.readdirSync(dir),
@@ -103,7 +105,7 @@ test("downloadFile: success writes the exact expected bytes to the destination",
     },
     async (baseUrl) => {
       const { dir, dest } = tmpDest();
-      await downloadFile(`${baseUrl}/asset`, dest);
+      await downloadFile(`${baseUrl}/asset`, dest, null);
       assert.ok(fs.existsSync(dest));
       assert.deepEqual(fs.readFileSync(dest), body);
       // No leftover temp file next to the renamed-into-place destination.
@@ -121,7 +123,7 @@ test("downloadFile: HTTP 404 rejects", async () => {
     async (baseUrl) => {
       const { dest } = tmpDest();
       await assert.rejects(
-        () => downloadFile(`${baseUrl}/missing`, dest),
+        () => downloadFile(`${baseUrl}/missing`, dest, null),
         /Download failed \(HTTP 404\)/,
       );
     },
@@ -149,7 +151,7 @@ test("downloadFile: a locked leftover the sweep cannot delete does not abort the
       },
       // The sweep runs before a single byte is fetched, so a throw here used
       // to kill the upgrade outright.
-      () => downloadFile(`${baseUrl}/asset`, dest),
+      () => downloadFile(`${baseUrl}/asset`, dest, null),
     );
     assert.deepEqual(fs.readFileSync(dest), body);
     // The undeletable leftover survives to the next sweep, as documented.
@@ -174,7 +176,7 @@ test("downloadFile: a locked .old slot falls back to a unique suffix and complet
           return realRename(from, to);
         },
       },
-      () => downloadFile(`${baseUrl}/asset`, dest),
+      () => downloadFile(`${baseUrl}/asset`, dest, null),
     );
     assert.deepEqual(
       fs.readFileSync(dest),
@@ -212,7 +214,7 @@ test("downloadFile: a first-ever download (no previous binary) stays silent", as
       // the expected first-download case, not a locked destination: it must
       // not escalate to the unique-suffix retry (which would ENOENT too, and
       // surface as a bogus "CLI is in use" failure).
-      () => downloadFile(`${baseUrl}/asset`, dest),
+      () => downloadFile(`${baseUrl}/asset`, dest, null),
     );
     assert.deepEqual(fs.readFileSync(dest), body);
     assert.deepEqual(
@@ -245,7 +247,7 @@ test("downloadFile: when the installed binary cannot be moved aside at all, the 
         },
       },
       async () => {
-        rejection = await downloadFile(`${baseUrl}/asset`, dest).then(
+        rejection = await downloadFile(`${baseUrl}/asset`, dest, null).then(
           () => null,
           (error) => error,
         );
@@ -328,7 +330,7 @@ test(
       async (baseUrl) => {
         const { dest } = tmpDest();
         await assert.rejects(
-          () => downloadFile(`${baseUrl}/loop`, dest),
+          () => downloadFile(`${baseUrl}/loop`, dest, null),
           /Too many redirects/,
         );
       },

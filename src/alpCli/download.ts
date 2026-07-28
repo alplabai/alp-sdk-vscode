@@ -786,42 +786,6 @@ async function attempt(
 }
 
 /**
- * Download `url` to `destFile`. Rejects on a non-200 response, a redirect
- * loop deeper than 5 hops, an https→non-https redirect downgrade, a
- * connection drop mid-transfer, an idle or wall-clock timeout, a byte count
- * that disagrees with `content-length`, a 0-byte body, or — when `verify` is
- * given — bytes whose sha256 is not the digest the release publishes for that
- * asset. Never leaves a partial file at `destFile` — every failure path removes
- * its temp file. Any
- * existing `destFile` is moved aside (`.old`, or a uniquely-suffixed `.old`
- * when that name is locked) rather than overwritten in place, so this is safe
- * even while the previous binary is still running. It rejects with a
- * `CliInUseError` only if both moves fail, which means the installed CLI is
- * genuinely pinned open — the old binary is left working and the message says
- * what to close.
- *
- * Pass `signal` (bridged from a progress notification's CancellationToken) to
- * make the download abortable: the request is destroyed, `pipeline` rejects,
- * and the temp file is removed on the way out, so a cancel leaves no partial
- * binary behind — the same cleanup path every other failure takes.
- *
- * Pass `proxy` (VS Code's `http.proxy` / `http.proxyStrictSSL`, read by the
- * adapter) to route the transfer through a proxy; the `HTTPS_PROXY` /
- * `HTTP_PROXY` / `NO_PROXY` environment variables are honoured with or without
- * it. Node does NOT do this natively, so before this parameter existed a
- * corporate-proxy machine could never download the CLI at all. Anything that
- * fails at the proxy rejects with a `ProxyError` whose sentence says so.
- *
- * Pass `verify` (the release asset's `checksums.txt` URL + its exact asset
- * filename) to check the transferred bytes against the digest the producer
- * published, BEFORE anything is renamed into `destFile`. Every managed `tan`
- * download does — `downloadCli` builds it from `releaseAssetForTarget`, which
- * makes the field non-optional, so the production path cannot forget it. It is
- * optional only in this signature, for transfer-mechanics tests that serve
- * bodies no release ever published a digest for. A failed verification rejects
- * with a `ChecksumError` and installs nothing.
- */
-/**
  * Build the `ResolveDeps.download` seam the adapter injects, bound to a reader
  * for VS Code's proxy settings (read per call, so changing `http.proxy` takes
  * effect on the next download without a reload).
@@ -830,16 +794,17 @@ async function attempt(
  * on `ResolveDeps.download` guards the CALLER — dropping the 4th argument in
  * `downloadCli` is a `TS2554`. It does NOT guard the PROVIDER: TypeScript's
  * arity-tolerant function assignability accepts a 3-parameter implementation
- * for a 4-parameter type, so an arrow written inline in the adapter can quietly
- * omit `verify`, `downloadFile` takes its `expectedDigest: null` branch, and the
- * extension is back to executing unverified bytes with a fully green board —
- * `vscodeAdapter.ts` imports `vscode`, so no unit test loads it. Extracted here,
- * where `test/alpCli.downloadChecksum.test.js` drives it against a real local
- * release server and a tampered body: drop the argument and that test reds.
+ * for a 4-parameter type, so an arrow written inline in the adapter can leave
+ * `verify` off its own parameter list and the assignment still checks.
  *
- * `verify` is REQUIRED in this signature (unlike `downloadFile`'s, where it
- * stays optional for transfer-mechanics tests), which is what makes the
- * omission expressible only as deleting a parameter this function names.
+ * What refuses that arrow is `downloadFile`'s signature, not this one. `verify`
+ * is `downloadFile`'s 3rd and REQUIRED parameter, so the body such an arrow
+ * carries — `downloadFile(url, dest, signal, proxySettings())` — puts an
+ * `AbortSignal` where a `ChecksumSpec | null` is required, and does not
+ * compile. This function is where that call lives, in a file that imports no
+ * `vscode` and so is loadable by the unit tests, which is why
+ * `test/alpCli.downloadChecksum.test.js` can drive the seam the extension
+ * actually injects against a real local release server and a tampered body.
  */
 export function downloadSeam(
   readProxy: () => ProxyConfig,
@@ -854,16 +819,59 @@ export function downloadSeam(
   // it can install nothing — the proxy support and the verification would
   // cancel each other out.
   return (url, destFile, signal, verify) =>
-    downloadFile(url, destFile, signal, readProxy(), verify);
+    downloadFile(url, destFile, verify, { signal, proxy: readProxy() });
 }
 
+/**
+ * Download `url` to `destFile`. Rejects on a non-200 response, a redirect
+ * loop deeper than 5 hops, an https→non-https redirect downgrade, a
+ * connection drop mid-transfer, an idle or wall-clock timeout, a byte count
+ * that disagrees with `content-length`, a 0-byte body, or — when a `verify`
+ * spec is given — bytes whose sha256 is not the digest the release publishes
+ * for that asset. Never leaves a partial file at `destFile` — every failure
+ * path removes its temp file. Any
+ * existing `destFile` is moved aside (`.old`, or a uniquely-suffixed `.old`
+ * when that name is locked) rather than overwritten in place, so this is safe
+ * even while the previous binary is still running. It rejects with a
+ * `CliInUseError` only if both moves fail, which means the installed CLI is
+ * genuinely pinned open — the old binary is left working and the message says
+ * what to close.
+ *
+ * `verify` (the release asset's `checksums.txt` URL + its exact asset filename)
+ * checks the transferred bytes against the digest the producer published,
+ * BEFORE anything is renamed into `destFile`. A failed verification rejects
+ * with a `ChecksumError` and installs nothing.
+ *
+ * It is REQUIRED, and it sits ahead of the optional `options` on purpose. That
+ * ordering — not a comment, and not a test — is what shuts the hole this
+ * parameter exists to close: no caller reaches the transfer without stating
+ * what it wants, in one of two greppable forms. Omitting the argument is a
+ * `TS2554`; the shape the omission used to take, sliding an `AbortSignal` into
+ * this position, is a `TS2345`. `null` is the explicit opt-out, and NO
+ * production caller passes it — every managed `tan` download passes a spec
+ * (`downloadCli` builds it from `releaseAssetForTarget`, which makes the field
+ * non-optional). `null` is there for the transfer-mechanics tests, which serve
+ * bodies no release ever published a digest for.
+ *
+ * `options.signal` (bridged from a progress notification's CancellationToken)
+ * makes the download abortable: the request is destroyed, `pipeline` rejects,
+ * and the temp file is removed on the way out, so a cancel leaves no partial
+ * binary behind — the same cleanup path every other failure takes.
+ *
+ * `options.proxy` (VS Code's `http.proxy` / `http.proxyStrictSSL`, read by the
+ * adapter) routes the transfer through a proxy; the `HTTPS_PROXY` /
+ * `HTTP_PROXY` / `NO_PROXY` environment variables are honoured with or without
+ * it. Node does NOT do this natively, so before this option existed a
+ * corporate-proxy machine could never download the CLI at all. Anything that
+ * fails at the proxy rejects with a `ProxyError` whose sentence says so.
+ */
 export async function downloadFile(
   url: string,
   destFile: string,
-  signal?: AbortSignal,
-  proxy: ProxyConfig = {},
-  verify?: ChecksumSpec,
+  verify: ChecksumSpec | null,
+  options: { signal?: AbortSignal; proxy?: ProxyConfig } = {},
 ): Promise<void> {
+  const { signal, proxy = {} } = options;
   sweepLeftovers(destFile);
   // Before the transfer: a release whose checksum can't be resolved is refused
   // either way, so there is no reason to move the binary's bytes first.
