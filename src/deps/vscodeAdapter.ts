@@ -47,9 +47,14 @@ const LATEST_SDK_CACHE_KEY = "alp.deps.latestSdkTag";
  *
  * `tan sdk list` is a LIVE unauthenticated GitHub call (measured ~0.57 s and
  * ~72 KB) against a 60-requests-per-hour-per-IP budget already shared with the
- * Hub's SDK Manager, and the pinned tan v0.3.1 sets no HTTP timeout on it — an
- * unreachable host stalls until tan's own spawn cap. So the panel must never
- * make it a per-open cost.
+ * Hub's SDK Manager. So the panel must never make it a per-open cost.
+ *
+ * The pinned tan v0.4.0 DOES bound the request (`http.rs` builds one shared
+ * agent with a total timeout, covered by its own
+ * `the_timeout_bounds_a_request_the_peer_never_answers` test), so an
+ * unreachable host no longer stalls until tan's spawn cap. v0.3.1 and earlier
+ * set none — still reachable through `alpSdk.cliPath` — and the rate budget
+ * argument above holds either way, so the cache stays.
  *
  * 12 h and not shorter: SDK releases land weeks apart, so a tighter TTL buys
  * nothing but requests. 12 h and not longer: a customer who opens the IDE the
@@ -156,8 +161,11 @@ async function latestSdkTag(
  *
  * Deliberately does NOT look at `missingPrerequisites`: this narrows the value,
  * it never rebuilds it, so the key's ABSENCE survives into the planner — which
- * is what its feature detection turns on (the pinned tan v0.3.1 emits no such
- * key; tan dev does).
+ * is what its feature detection turns on. The pinned tan v0.4.0 DOES emit the
+ * key, so that detection now resolves to the real data on a default install;
+ * the absent branch remains live for an older binary pointed at through
+ * `alpSdk.cliPath`, which is why the key is still passed through untouched
+ * rather than defaulted here.
  */
 function isDoctorEnvelopeData(value: unknown): value is DoctorEnvelopeData {
   if (typeof value !== "object" || value === null) return false;

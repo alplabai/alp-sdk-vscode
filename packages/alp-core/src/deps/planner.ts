@@ -59,8 +59,10 @@ export interface DoctorEnvelopeData {
   checks: DoctorCheckEnvelope[];
   summary: { pass: number; warn: number; fail: number };
   /**
-   * ABSENT on the pinned tan v0.3.1 (it landed after the tag, tan-cli #78/#81),
-   * so this is feature-detected and never assumed — see the tri-state in
+   * PRESENT on the pinned tan v0.4.0 (tan-cli #78/#81 shipped in it), absent on
+   * v0.3.1 and earlier — still reachable through `alpSdk.cliPath`. Still
+   * feature-detected and never assumed: the pin moving is exactly the event
+   * that must not silently change what this type promises. See the tri-state in
    * `planDependencyReport`.
    */
   missingPrerequisites?: MissingPrerequisite[] | null;
@@ -165,16 +167,21 @@ export interface DependencyReport {
   /**
    * tan's own `data.summary`, verbatim, and NOTHING derived from it.
    *
-   * There is deliberately no `ok` / `ready` boolean: tan caps an absent PATH
-   * tool at `warn` (tan-cli#103, unmerged), so any `fail === 0` verdict prints
-   * "all good" while `ninja` is missing — the exact bug in src/toolchain.ts:244.
-   * When #103 lands, `counts.fail > 0` becomes truthful with no change here.
+   * There is deliberately no `ok` / `ready` boolean. tan-cli#103 has since
+   * landed (in v0.4.0, the pin), so `counts.fail` is now truthful — an absent
+   * `ninja` rates `fail`, not `warn`. As that comment predicted, it needed no
+   * change here: this type forwards tan's verdict and derives nothing, which is
+   * exactly why the producer fix arrived for free. An older binary reached
+   * through `alpSdk.cliPath` still caps at `warn`, and inventing an `ok` here
+   * would misreport it.
    */
   counts: { pass: number; warn: number; fail: number };
   /**
-   * True when the envelope carried NO `missingPrerequisites` key at all — the
-   * pinned tan v0.3.1 cannot tell us what is missing, so actions fell back to
-   * the local fix map. The UI says so rather than implying tan found nothing.
+   * True when the envelope carried NO `missingPrerequisites` key at all, so
+   * actions fell back to the local fix map and the UI says so rather than
+   * implying tan looked and found nothing. The pinned tan v0.4.0 emits the key,
+   * so this is now the OLD-BINARY path (`alpSdk.cliPath` at v0.3.1 or earlier),
+   * not the default one.
    */
   prerequisiteDataUnavailable: boolean;
 }
@@ -223,9 +230,11 @@ const LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Fallback actions for the pinned tan, which emits no `missingPrerequisites`.
- * Only names whose fix this extension actually knows appear; a miss means no
- * button, never a missing row.
+ * Fallback actions for a tan that emits no `missingPrerequisites` — v0.3.1 and
+ * earlier, reachable through `alpSdk.cliPath`. The pinned v0.4.0 supplies the
+ * real commands, so this is no longer the default path, but it is not dead
+ * code. Only names whose fix this extension actually knows appear; a miss means
+ * no button, never a missing row.
  */
 const FIX_IDS: Readonly<Record<string, ToolchainFixId>> = {
   west: "west",
