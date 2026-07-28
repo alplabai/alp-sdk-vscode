@@ -45,6 +45,7 @@
 // module can never reach. This is the bridge until that ships, and it should
 // be deleted when it does.
 
+import { DebugServerKind, DebugTargetKind } from "@alp-sdk/core/debug/models";
 import { launchConfigPlaceholders } from "../alpCli/service";
 
 type JsonObject = Record<string, unknown>;
@@ -428,4 +429,67 @@ export function planOrphanRescue(
     },
     pairs,
   };
+}
+
+// ── The `tan debug-config` argv ─────────────────────────────────────────────
+
+/** Everything the CLI invocation depends on. `coreId` is null before a build:
+ *  `resolveManifestSlice` reads `build/system-manifest.yaml`, which does not
+ *  exist yet, and tan then picks the slice itself. */
+export interface DebugConfigArgsSpec {
+  targetKind: DebugTargetKind;
+  server: DebugServerKind;
+  coreId: string | null;
+}
+
+/**
+ * The argv for `tan debug-config`, and the reason it is a function rather than
+ * four lines inside `writeLaunchProfile`.
+ *
+ * Since #387 the extension does not write `launch.json` — it builds this argv,
+ * spawns tan, and takes `data.configuration` from the envelope. The merge
+ * algorithm is tan's and is covered there. **The argv is ours, and nothing
+ * pinned it** (#397). No test exercised the extension's CONSTRUCTION of it:
+ * the envelope guard in `alpCli.service.test.js` pins the response SHAPE
+ * rather than the flags that produced it, and `test/e2e/cli-smoke.sh` invokes
+ * `debug-config` for real but spells its own argv, so it proves tan works and
+ * nothing about what this extension sends.
+ *
+ * The asymmetry that makes it worth a test rather than a comment:
+ *
+ *   * a wrong FLAG fails loudly — tan exits 2 on an unknown argument and the
+ *     extension already maps that to the version-skew message, which is how
+ *     the missing `--core` on v0.3.1 was caught in the field;
+ *   * a wrong VALUE is silent. `--core m55_hp` against `--core m55_he` is a
+ *     perfectly valid invocation that debugs the wrong core, writes a working
+ *     `launch.json` for it, and reports nothing anywhere.
+ *
+ * So the test asserts the ARRAY, element for element. Asserting that a spawn
+ * happened would be the tautology this exists to avoid.
+ *
+ * `--preview` is appended rather than passed separately so the two invocations
+ * cannot drift apart: the preview must be the same command, or it stops being
+ * a preview of it. That ordering — preview first, and only then the real write
+ * — is what keeps a version-skewed tan from touching the file at all, and it
+ * still lives in `writeLaunchProfile`; this function cannot pin it.
+ */
+export function debugConfigArgs(
+  spec: DebugConfigArgsSpec,
+  options: { preview?: boolean } = {},
+): string[] {
+  const args = [
+    "debug-config",
+    "--target-kind",
+    spec.targetKind,
+    "--server",
+    spec.server,
+  ];
+  // Pin the CLI to the same slice this command's readiness report describes.
+  // `resolveManifestSlice` takes the first slice matching the target's OS —
+  // the identical default the CLI documents — so this makes the two agree
+  // rather than choosing between cores. A user wanting the SECOND Zephyr core
+  // is still never asked; that is a separate gap.
+  if (spec.coreId) args.push("--core", spec.coreId);
+  if (options.preview) args.push("--preview");
+  return args;
 }
