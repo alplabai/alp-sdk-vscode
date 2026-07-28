@@ -182,11 +182,54 @@ function callSites(symbol) {
   for (const source of SOURCES) {
     for (const match of source.code.matchAll(call)) {
       const at = match.index + match[1].length;
-      if (/\bfunction\s*$/.test(source.code.slice(0, at))) continue;
+      if (isDeclaration(source.code, at)) continue;
       sites.push(`${source.rel}:${lineOf(source.code, at)}`);
     }
   }
   return sites;
+}
+
+/**
+ * True when the `symbol(` at `at` is the symbol being DECLARED rather than
+ * called.
+ *
+ * Four spellings, and the first version of this guard caught only the first —
+ * which mattered more than it looks. A declaration counted as a call inflates
+ * the real count by one, the annotator bumps the number to green the gate, and
+ * the annotation now asserts a caller count the code does not have. That is
+ * this file's own failure mode, laundered through the thing meant to prevent
+ * it, so the exclusion is deliberately wider than the symbols in use today:
+ * none of the five currently annotated is a method, a signature or a generator.
+ *
+ *   function foo(        — plain declaration
+ *   function* foo(       — generator; `*` is not `\s`, so a `\s*$` test misses it
+ *   class C { foo( }     — method definition
+ *   interface I { foo( } — call-signature member
+ *
+ * The last two cannot be told from a call by looking left alone (`obj.foo()` is
+ * already excluded by the `[^A-Za-z0-9_$.]` prefix, but a bare `foo(` inside a
+ * class body is shaped exactly like a call). They are identified by the
+ * enclosing `class`/`interface` block, which is the cheapest thing that is
+ * correct here — a real reference search would need the type checker, and that
+ * is the trade the UNGUARDED list already records.
+ */
+function isDeclaration(code, at) {
+  const before = code.slice(0, at);
+  if (/\bfunction\s*\*?\s*$/.test(before)) return true;
+
+  // Walk back to the innermost unclosed `{` and see what opened it.
+  let depth = 0;
+  for (let i = before.length - 1; i >= 0; i -= 1) {
+    const ch = before[i];
+    if (ch === "}") depth += 1;
+    else if (ch === "{") {
+      if (depth === 0) {
+        return /\b(class|interface)\b[^{};]*$/.test(before.slice(0, i));
+      }
+      depth -= 1;
+    }
+  }
+  return false;
 }
 
 function annotations(pattern) {
@@ -220,7 +263,11 @@ test("every @callers annotation matches the real call-site count", () => {
       claimed: Number(claimed),
       sites: callSites(symbol),
     }))
-    .filter((c) => c.sites.length !== c.claimed)
+    // Zero is never a legitimate claim, and treating it as one is how this
+    // guard passes while checking nothing: a misspelt or renamed symbol finds
+    // no sites, and `0 === 0` would hold. An annotation exists to pin a
+    // chokepoint, so there is always at least one caller to pin.
+    .filter((c) => c.sites.length !== c.claimed || c.claimed === 0)
     .map(
       (c) =>
         `${c.at}  @callers ${c.claimed} ${c.symbol}  ->  ${c.sites.length} ` +
@@ -280,14 +327,52 @@ test("every @quotes annotation names a file that really contains the string", ()
 const EXPECT = /^\s*\/\/\s*@expect\s+(TS\d+|none)\s*$/;
 
 test("the compiler emits exactly the codes the download-seam comments name", () => {
-  const markers = fs
-    .readFileSync(FIXTURE, "utf8")
-    .split("\n")
+  const fixtureLines = fs.readFileSync(FIXTURE, "utf8").split("\n");
+  const markers = fixtureLines
     .map((text, index) => ({ line: index + 1, match: EXPECT.exec(text) }))
     .filter((m) => m.match)
     .map((m) => ({ line: m.line, expected: m.match[1] }));
 
   assert.ok(markers.length > 0, "the fixture carries no @expect markers");
+
+  // An `@expect none` marker whose statement was deleted asserts nothing and
+  // stays green — the three `@expect TSnnnn` markers cannot go vacuous this way
+  // (a missing error is a mismatch), but the hole-pinning `none` markers can.
+  // Require every marker to still have CODE under it.
+  //
+  // Getting this right took three attempts and both failures were the same
+  // mistake this whole file is about — a check that looked correct and asserted
+  // nothing on the input it was written for:
+  //
+  //   1. "next non-blank line that is not a marker" — a `//` comment satisfied
+  //      it, and deleting a statement leaves the prose introducing the NEXT
+  //      case sitting right there.
+  //   2. "next non-blank, non-comment line" — that search runs straight PAST
+  //      the following marker and finds ITS statement, so an orphan in the
+  //      middle of the file is always adopted by its neighbour.
+  //
+  // So the scan must stop at the next marker: hitting one before any code means
+  // this marker has none of its own.
+  const orphaned = markers
+    .filter(({ line }) => {
+      for (const text of fixtureLines.slice(line)) {
+        if (text.trim() === "" || /^\s*\/\//.test(text)) {
+          if (EXPECT.test(text)) return true;
+          continue;
+        }
+        return /^\s*[}\])]/.test(text);
+      }
+      return true;
+    })
+    .map(({ line, expected }) => `${rel(FIXTURE)}:${line} @expect ${expected}`);
+  assert.deepEqual(
+    orphaned,
+    [],
+    "an @expect marker has no statement under it, so it asserts nothing about " +
+      "the compiler. Restore the line it was written for, or delete the marker " +
+      "with it.\nOrphaned:\n  " +
+      orphaned.join("\n  "),
+  );
 
   const tsc = path.join(ROOT, "node_modules", "typescript", "bin", "tsc");
   const run = spawnSync(
