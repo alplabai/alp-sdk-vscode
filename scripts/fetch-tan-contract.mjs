@@ -111,8 +111,8 @@ if (response.status === 404) {
   rmSync(OUT_DIR, { recursive: true, force: true });
   console.warn(
     `::warning::No ${ASSET} published for the pinned tan v${pin} (404 at ${url}). ` +
-      `The producer (${ISSUE}) is MERGED and publishes it on every tagged release; no tan `
-      + `release has been cut since. The envelope-contract test will SKIP, ` +
+      `The producer (${ISSUE}) is MERGED and publishes it on every tagged release; no tan ` +
+      `release has been cut since. The envelope-contract test will SKIP, ` +
       `so nothing verified that tan still emits the envelope this extension parses.`,
   );
   console.log(
