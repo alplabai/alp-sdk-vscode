@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **"Alp: Install tan CLI (global)" now works on Windows.** The bundled
+  `install.ps1` did not parse at all under Windows PowerShell 5.1 — which is
+  exactly what the command spawns (`powershell`, not `pwsh`) — so the terminal
+  showed two parse errors and no `tan` was installed. The file carries no BOM,
+  so 5.1 decodes it as the ANSI codepage; on cp1252 the em dash in a `Write-Host`
+  string turned into `â€”`, whose third character is one PowerShell honours as a
+  string terminator, and the script ended mid-string. Measured on 5.1.26100.8894:
+  two parse errors, at lines 61 and 55. The two non-ASCII characters are now
+  plain `...` and `--`. Only this global-install command was affected; the
+  extension's own managed `tan` download never ran the script, so a user who had
+  let the extension fetch `tan` for itself already had a working binary. Three
+  new gates keep the class out: the vendored `.ps1` must be ASCII-only or carry
+  a BOM (runs everywhere), it must parse under real Windows PowerShell 5.1 (runs
+  on Windows, and reports loudly as NOT RUN elsewhere rather than as a pass), and
+  both vendored installers are now pinned by sha256 to a named tan-cli ref with
+  the upstream hashes recorded alongside — so a silent re-vendor, or an
+  undeclared edit hiding behind the declared one, fails the suite instead of
+  reaching the Marketplace.
+
 - **A SOCKS proxy is now named as unsupported instead of reported as
   unreachable, and an IPv6 host in `NO_PROXY` is honoured.** VS Code's
   `http.proxy` accepts `socks5://host:1080`, and all five SOCKS spellings
