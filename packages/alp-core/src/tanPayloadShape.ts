@@ -5,13 +5,19 @@
 //
 // A cast is a compile-time claim about a runtime value that crossed a process
 // boundary, so it verifies nothing. Rename a field in tan and the cast still
-// compiles here: the reader gets `undefined`, `?? []` turns it into an empty
-// list, and the panel paints nothing with no error anywhere. That is the
-// failure this module exists to convert into a message.
+// compiles here; the reader gets `undefined`, and what the customer is left
+// with depends only on how that reader spells its access. `plan.slices.filter`
+// and `manifest.ipc.length` throw mid-render and blank the panel — measured in
+// test/webview/run.mjs as "Cannot read properties of undefined (reading
+// 'filter')". `size` is the quiet one: `sizes?.slices ?? []` swallows it and
+// the footprint column simply goes missing. None of the three names tan, names
+// a field, or writes a log line. That is the failure this module exists to
+// convert into a message.
 //
 // WHAT IS CHECKED: only the fields a consumer in this repo actually READS, and
-// only that each is present with the right broad kind (object / array /
-// string). Requiring more would be worse than requiring nothing — tan's
+// only that each is present and of the right broad kind (`TanFieldKind` — an
+// array or a string; `data` itself must be an object that is neither null nor
+// an array). Requiring more would be worse than requiring nothing — tan's
 // payloads are additive, so a check that demanded every declared field would
 // red a working panel the next time tan adds one. Element shapes are
 // deliberately NOT checked: a per-element check would have to encode tan's
@@ -30,7 +36,7 @@ export type TanPayloadShape = Readonly<Record<string, TanFieldKind>>;
  * the webview's BuildPlanView.
  *
  * Read: `sku` and `boardYaml` as text, `slices` / `sharedArtefacts` /
- * `warnings` as lists. NOT read anywhere, so not required: `schemaVersion`,
+ * `warnings` as lists. NOT read on this path, so not required: `schemaVersion`,
  * `generatedBy`, `buildRoot`.
  */
 export const BUILD_PLAN_SHAPE: TanPayloadShape = {
@@ -58,8 +64,8 @@ export const SYSTEM_MANIFEST_SHAPE: TanPayloadShape = {
  * `tan size` -> `SizeReport` (packages/alp-core/src/systemManifest/models.ts).
  *
  * Only `slices` is read — the view keys it by `core_id` to annotate each
- * manifest slice. NOT read, so not required: `schema`, and `summary` with its
- * `over_budget` / `unknown_budget` lists.
+ * manifest slice. NOT read on this path, so not required: `schema`, and
+ * `summary` with its `over_budget` / `unknown_budget` lists.
  */
 export const SIZE_REPORT_SHAPE: TanPayloadShape = {
   slices: "array",
@@ -75,10 +81,11 @@ function hasKind(value: unknown, kind: TanFieldKind): boolean {
  * Returns `null` when the payload is usable, or a customer-facing sentence
  * naming the command and every field that is missing or the wrong kind.
  *
- * The message stops at "the two disagree" on purpose. Which side moved is not
- * knowable from here — an extension newer than the binary and a binary newer
- * than the extension produce the identical payload — so it names the remedy
- * that covers both instead of guessing a cause.
+ * The message stops at "the two disagree" on purpose. A shape mismatch looks
+ * identical whichever side moved, and this function is handed a payload and
+ * never a version, so it names the remedy that covers both rather than guessing
+ * a cause. (The extension does compare the resolved binary against
+ * `SUPPORTED_CLI_VERSION` — in `src/alpCli`, with its own notice.)
  *
  * @param data the envelope's `data`, straight off `parseEnvelope`
  * @param shape the fields the caller reads, and the kind each must have

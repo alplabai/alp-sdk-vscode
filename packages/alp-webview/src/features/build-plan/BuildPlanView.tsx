@@ -105,8 +105,14 @@ function SystemManifestSection({
     return notes.length > 0 ? (
       <section className={styles.section}>
         <p className={styles.sectionTitle}>System manifest</p>
-        {notes.map((note) => (
-          <p key={note} className={styles.manifestNote}>
+        {/* Keyed by position, not by the note text: the two notes fall back to
+         *  the same `outcome.message` when tan itself is what failed, and React
+         *  calls a repeated key unsupported ("may cause children to be
+         *  duplicated and/or omitted"). The index is identity enough here: at
+         *  most two notes, always manifest-then-size, static text with no state
+         *  to carry across a re-render. */}
+        {notes.map((note, i) => (
+          <p key={i} className={styles.manifestNote}>
             {note}
           </p>
         ))}

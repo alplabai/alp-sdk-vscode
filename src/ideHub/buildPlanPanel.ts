@@ -139,8 +139,10 @@ export class BuildPlanPanel {
     let msg: ExtToWebviewMessage;
     if (envelope && envelope.ok) {
       // `data` crossed a process boundary, so the cast below proves nothing on
-      // its own. Without this check a renamed field reaches the view as
-      // `undefined` and the panel paints an empty plan with no error at all.
+      // its own. Without this check a renamed `slices` reaches the view as
+      // `undefined` and `plan.slices.filter` throws mid-render — measured in
+      // test/webview/run.mjs as "Cannot read properties of undefined (reading
+      // 'filter')", which blanks the panel and names neither tan nor a field.
       const shapeError = checkTanPayload(
         envelope.data,
         BUILD_PLAN_SHAPE,

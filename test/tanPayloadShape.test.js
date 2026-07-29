@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The three tan payloads the build-plan panel reads through an `as` cast, and
-// the runtime check that stands between a renamed tan field and an empty panel.
+// the runtime check that stands between a renamed tan field and a panel that
+// either crashes mid-render or drops a column without saying so.
 //
 // The predicate is pure and tested directly; the three CALL SITES are tested
 // through the compiled panel with `vscode` and the CLI adapter stubbed, because
@@ -96,7 +97,7 @@ test("every missing field is listed, not just the first", () => {
 
 test("a field of the wrong kind fails as loudly as a missing one", () => {
   // tan turning a list into a keyed object is the change a presence-only check
-  // would wave through, and the view's `.map` would throw on.
+  // would wave through, and the view's `plan.slices.filter` would throw on.
   const message = checkTanPayload(
     { ...PLAN, slices: { m55_he: {} } },
     BUILD_PLAN_SHAPE,
@@ -266,7 +267,7 @@ const withDropped = (command, field) => (args) => {
   return payload;
 };
 
-test("call site: a `build --plan` payload with no `slices` reaches the panel as an error, not an empty plan", async () => {
+test("call site: a `build --plan` payload with no `slices` reaches the panel as an error, not a plan the view throws on", async () => {
   const posted = await drivePanel(withDropped("build --plan", "slices"));
   const msg = posted.find((m) => m.type === "buildPlanData");
   assert.ok(msg, "the panel posted no buildPlanData at all");
