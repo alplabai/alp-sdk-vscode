@@ -14,6 +14,7 @@ const assert = require("node:assert/strict");
 const {
   TASK_SOURCE,
   TASK_SPECS,
+  preLaunchTaskFor,
   taskLabel,
 } = require("../out/tasks/service.js");
 
@@ -50,6 +51,29 @@ test("deploy-gdbserver has no tan equivalent and gets its own kind", () => {
   const deploy = TASK_SPECS.filter((spec) => spec.kind === "deployGdbserver");
   assert.equal(deploy.length, 1);
   assert.equal(taskLabel(deploy[0]), "alp: deploy and start gdbserver");
+});
+
+// `preLaunchTaskFor` resolves with `TASK_SPECS.find`, which silently takes the
+// FIRST match. Two specs claiming one target kind would make the loser dead —
+// no compile error, no failing behaviour, just a profile referencing whichever
+// happened to be earlier in the array.
+test("no two specs claim the same target kind", () => {
+  const claimed = TASK_SPECS.map((spec) => spec.targetKind).filter(Boolean);
+  assert.equal(new Set(claimed).size, claimed.length);
+});
+
+test("preLaunchTaskFor names a build task for the three build kinds only", () => {
+  assert.equal(preLaunchTaskFor("zephyr-mcu"), "alp: build active target");
+  assert.equal(
+    preLaunchTaskFor("baremetal-mcu"),
+    "alp: build baremetal target",
+  );
+  assert.equal(preLaunchTaskFor("native-host"), "alp: build native_sim target");
+  // Not an oversight: the "deploy and start gdbserver" placeholder exits 1 by
+  // design, so referencing it would raise VS Code's failed-preLaunchTask
+  // dialog on every F5, including a remote setup the customer got working by
+  // hand. Omitting the flag keeps that profile as it ships today.
+  assert.equal(preLaunchTaskFor("yocto-userspace"), undefined);
 });
 
 // The manifest half of the same contract. A provider whose tasks nobody can

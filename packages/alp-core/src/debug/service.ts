@@ -5,6 +5,7 @@ import { toPosix } from "../paths";
 
 import {
   DebugAdapterKind,
+  DebugConfigurationGrade,
   DebugDoctorRequest,
   DebugGenerationTraceDecision,
   DebugGenerationTraceReport,
@@ -199,6 +200,34 @@ export function serializeSupportBundlePayload(
   return JSON.stringify(payload, null, 2);
 }
 
+/**
+ * HOST READINESS ONLY — it grades nothing that belongs in the launch
+ * configuration itself (#339).
+ *
+ * `tan debug-config` is the single author of launch.json (#387) and resolves
+ * the probe/tool values from the build's own `runners.yaml`. This report used
+ * to grade a SECOND, in-process draft instead: `createDebugProfile` handed it
+ * `device: "<resolved-device>"` — a hardcoded literal, identical for every
+ * project — and the resulting `device` check failed unconditionally. So on the
+ * first-blink path tan wrote a launch.json that runs as-is and this told the
+ * customer it was not launchable, putting a "Start Anyway" gate in front of a
+ * working profile. The placeholders had left the file and stayed in the
+ * verdict.
+ *
+ * The division of labour is EXTENSION_CLI_INTEGRATION.md §4a: tan owns the
+ * configuration, the extension owns the host — which debugger extension is
+ * installed, whether the server tool is on PATH, the host platform, whether
+ * the build artefact exists. All four are here. It is an OWNERSHIP split, not
+ * an observability one: only `adapterExtension` is genuinely out of a separate
+ * process's reach, and tan reads the build tree as happily as this does.
+ * The configuration's own values are graded by `foldLaunchConfigPlaceholders`,
+ * and nowhere else.
+ *
+ * So the report it returns carries `configurationGraded: "none"`, and only the
+ * fold sets it. A caller that does not fold — the preflight command, the
+ * troubleshooting panel, the support bundle — gets a `canLaunch` that means
+ * "the host is ready", and the field beside it is what says so.
+ */
 export function buildDebugPreflightReport(
   generatedAt: string,
   context: DebugWorkspaceContext,
@@ -231,10 +260,6 @@ export function buildDebugPreflightReport(
   // #374: the ONLY host-OS gate. Empty for every other target and host.
   checks.push(...nativeHostPlatformChecks(profile.targetKind, runtime));
 
-  checks.push(
-    ...createProfileConfigurationChecks(profile, context, dependencies),
-  );
-
   return {
     generatedAt,
     targetKind: profile.targetKind,
@@ -248,34 +273,72 @@ export function buildDebugPreflightReport(
     checks,
     nextSteps: uniquePreflightNextSteps(checks),
     canLaunch: countPreflightChecks(checks, "fail") === 0,
+    // Nothing above read a configuration, so say so rather than let
+    // `canLaunch: true` be read as "this launch.json runs".
+    configurationGraded: "none",
   };
 }
 
-/** Fold a "launchConfig" failure into an already-built preflight report when
- *  the caller has spotted `<resolved-…>` placeholders left in the launch.json
- *  configuration `tan debug-config` just wrote. The in-process preflight
- *  report can't see this itself — it only checks host readiness (adapters and
- *  tools installed) — so the surface layer (src/debug.ts) that DID diff the
- *  written configuration against `launchConfigPlaceholders` calls this to
- *  fold its finding back in, rather than overriding `canLaunch` directly and
- *  leaving `checks`/`summary`/`nextSteps` to disagree with it. Reuses the same
- *  summary/canLaunch/nextSteps arithmetic `buildDebugPreflightReport` uses, so
- *  the result is indistinguishable from a report that had the check all
- *  along. Returns `report` unchanged when `placeholders` is empty. */
+/**
+ * Fold the unresolved values left in the launch configuration
+ * `tan debug-config` just wrote into an already-built preflight report.
+ *
+ * This is the ONLY configuration-value check the extension makes (#339).
+ * `buildDebugPreflightReport` above is host readiness and nothing else, so the
+ * caller folds its finding back in here rather than overriding `canLaunch`
+ * directly and leaving `checks`/`summary`/`nextSteps` to disagree with it.
+ * Reuses the same summary/canLaunch/nextSteps arithmetic, so the result is
+ * indistinguishable from a report that had the check all along.
+ *
+ * IT GRADES PLACEHOLDERS AS DATA, and `graded` says which configuration they
+ * were read out of. The fold cannot go and look itself — this package is pure,
+ * with no `fs` — and it must not assume: `gradeWrittenLaunchConfig` in
+ * src/debug/service.ts prefers the entry in the customer's `.vscode/launch.json`
+ * and falls back to tan's envelope draft, which are not the same object. tan
+ * MERGES, so a `targetId` the customer hand-filled survives while the draft it
+ * composed still carries `<resolved-target-id>`; grading the draft then reports
+ * a file that launches as unlaunchable, which is #339's own symptom pointed the
+ * other way. `graded` is carried into the report so a reader can tell a verdict
+ * about the file from a worst case about the draft.
+ *
+ * ONE CHECK PER KEY, NAMED AFTER THE KEY. `logUnlaunchableDetail` builds the
+ * toast out of failing check NAMES, so a single check called `launchConfig`
+ * would tell a customer to "resolve: launchConfig" — the name of a check, not
+ * of anything in their file. Named per key it reads "resolve: device", which
+ * is the field cortex-debug will choke on and the field they can fill in. The
+ * placeholder itself stays in `detail`, which is where the log line finds it.
+ *
+ * Adds no CHECK when `placeholders` is empty — a fully resolved configuration
+ * must not gain one, or the first-blink path is back behind a Start Anyway
+ * click. It still records `graded`, because it did grade it and found nothing:
+ * that field says WHICH configuration was read, not whether it was faulty, and
+ * the surfaces that never read one keep `"none"`.
+ *
+ * The next step comes from `placeholderFix`, which needs the report's
+ * `targetKind` — see there for why one sentence does not fit all four.
+ */
 export function foldLaunchConfigPlaceholders(
   report: DebugPreflightReport,
-  placeholders: readonly string[],
+  placeholders: ReadonlyArray<{ key: string; value: string }>,
+  graded: Exclude<DebugConfigurationGrade, "none">,
 ): DebugPreflightReport {
-  if (placeholders.length === 0) return report;
+  if (placeholders.length === 0) {
+    return { ...report, configurationGraded: graded };
+  }
 
   const checks: PreflightCheck[] = [
     ...report.checks,
-    {
-      name: "launchConfig",
-      status: "fail",
-      detail: placeholders.join(", "),
-      fix: "Build the project first, or set these by hand.",
-    },
+    ...placeholders.map((placeholder): PreflightCheck => {
+      // Empty `key` means the placeholder was a bare string, not a value under
+      // a configuration key — nothing to name it after, so keep the generic id.
+      const name = placeholder.key || "launchConfig";
+      return {
+        name,
+        status: "fail",
+        detail: placeholder.value,
+        fix: placeholderFix(report.targetKind, name),
+      };
+    }),
   ];
 
   return {
@@ -288,7 +351,55 @@ export function foldLaunchConfigPlaceholders(
     },
     nextSteps: uniquePreflightNextSteps(checks),
     canLaunch: countPreflightChecks(checks, "fail") === 0,
+    configurationGraded: graded,
   };
+}
+
+/**
+ * The next step for an unresolved launch.json key — which is not the same
+ * sentence on every target class (#339).
+ *
+ * "Build the project first" is only advice where a build would in fact produce
+ * the value. On `zephyr-mcu` it CAN: `tan debug-config` reads `device`,
+ * `configFiles`, `targetId` and `gdbPath` out of the build's own
+ * `runners.yaml`, so a placeholder seen before the build is gone after one —
+ * PROVIDED the board registers a runner for the server that was picked. Where
+ * it does not, a successful build leaves the placeholder standing and tan says
+ * why, in a note `logUnlaunchableDetail` logs verbatim: driven on tan 0.4.0
+ * against a `runners.yaml` listing only `jlink` and `openocd`, `--server pyocd`
+ * exits 0 with `"targetId": "<resolved-target-id>"` and *"This build registers
+ * no 'pyocd' runner (runners.yaml: [\"jlink\", \"openocd\"]), so its fields
+ * could not be resolved."* So the default sentence offers the hand-edit as well
+ * as the build, and it has to: on `zephyr-mcu` the build half is right often,
+ * not always.
+ *
+ * On the two targets below a placeholder survives a SUCCESSFUL build
+ * unconditionally, and there "build first" alone would send the customer around
+ * a loop that cannot terminate — #339's own defect wearing a different hat,
+ * something that reads like a way forward and is not one. Driven against tan
+ * 0.4.0:
+ *
+ * - `baremetal-mcu` has no Zephyr build and so no `runners.yaml` of its own to
+ *   read; all three servers write `"device": "<resolved-device>"` even with a
+ *   fully populated one sitting in the tree. Only the customer knows the part.
+ * - `yocto-userspace` writes `"miDebuggerServerAddress": "<host>:<port>"` and
+ *   `"miDebuggerPath": "<resolved-gdb>"` against that same populated
+ *   `runners.yaml` — the file makes no difference to that output. Both describe
+ *   a remote target and the cross-toolchain reaching it, neither of which a
+ *   local build produces.
+ *
+ * `native-host` takes the default and never exercises it: tan's configuration
+ * for it carries no placeholder to fold.
+ */
+function placeholderFix(targetKind: DebugTargetKind, key: string): string {
+  switch (targetKind) {
+    case "baremetal-mcu":
+      return `Set "${key}" in launch.json by hand — a baremetal build writes no runners.yaml, so building cannot resolve it.`;
+    case "yocto-userspace":
+      return `Set "${key}" in launch.json by hand — the remote target address and the cross-gdb reaching it come from your target, not from a build.`;
+    default:
+      return `Build the project first, or set "${key}" in launch.json by hand.`;
+  }
 }
 
 export function buildDoctorReport(
@@ -436,6 +547,34 @@ function sliceExecutablePath(
   }
 }
 
+/**
+ * What the extension knows about the session it is about to REPORT ON — not a
+ * launch configuration, and no longer anything close to one (#339).
+ *
+ * It returns exactly what `buildDebugPreflightReport` reads: which target
+ * class and server were picked, which debug-adapter extension that needs, and
+ * where the build artefact should be. The nine configuration fields it used to
+ * invent — `device`, `targetId`, `openOcdConfigFiles`, `svdFile`, `interface`,
+ * `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` — plus
+ * `cwd`, `name` and `os` are gone. They were not all placeholders
+ * (`interface: "swd"`,
+ * `miMode: "gdb"` and the `-enable-pretty-printing` `setupCommands` were
+ * concrete, and `miDebuggerServerAddress` was `"<host>:<port>"`, not a
+ * `<resolved-…>` token), but they were all CONSTANTS of `(targetKind, server)`:
+ * a second derivation of what `tan debug-config` resolves from the build's
+ * `runners.yaml`, one that no project input could reach. Three of them
+ * (`interface`, `miMode`, `setupCommands`), `cwd`, `name` and `os` had no
+ * reader at all once #387 deleted `debugProfileToLaunchDraft`; the rest were
+ * read only by the preflight checks that graded them, and grading a constant
+ * placeholder is precisely the defect #339 reports. `name` was worse than
+ * unread — it said `Alp: Zephyr Debug (J-Link)` while the pinned tan 0.4.0
+ * writes `ALP: Zephyr Debug (J-Link)`, so anything that had trusted it as
+ * tan's merge key would have appended a duplicate. That is the very defect
+ * `planOrphanRescue` in src/debug/service.ts repairs, and it learns the
+ * spelling from the customer's file and from `tan debug-config --preview`,
+ * never from here. The `launch.json` entry tan merged into is the only thing
+ * worth grading, and `foldLaunchConfigPlaceholders` grades that.
+ */
 export function createDebugProfile(
   targetKind: DebugTargetKind,
   server: DebugServerKind,
@@ -453,91 +592,37 @@ export function createDebugProfile(
   const exe = (fallback: string): string =>
     (slice && sliceExecutablePath(targetKind, slice)) || fallback;
 
-  switch (targetKind) {
-    case "zephyr-mcu": {
-      const base: DebugProfile = {
-        id: `alp:${targetKind}:${server}`,
-        name: `Alp: Zephyr Debug (${serverLabel(server)})`,
-        targetKind,
-        adapter: "cortex-debug",
-        server,
-        os: "zephyr",
-        executablePath: exe("${workspaceFolder}/build/app/zephyr/zephyr.elf"),
-        cwd: "${workspaceFolder}",
-      };
+  const base = {
+    id: `alp:${targetKind}:${server}`,
+    targetKind,
+    server,
+    adapter: DEBUG_TARGET_ADAPTER[targetKind],
+  } as const;
 
-      switch (server) {
-        case "openocd":
-          return {
-            ...base,
-            openOcdConfigFiles: ["<resolved-openocd-board-cfg>"],
-          };
-        case "pyocd":
-          return {
-            ...base,
-            targetId: "<resolved-target-id>",
-          };
-        case "jlink":
-          return {
-            ...base,
-            device: "<resolved-device>",
-            interface: "swd",
-          };
-        case "gdbserver":
-        case "none":
-          break;
-      }
-      break;
-    }
+  switch (targetKind) {
+    case "zephyr-mcu":
+      return {
+        ...base,
+        executablePath: exe("${workspaceFolder}/build/app/zephyr/zephyr.elf"),
+      };
     case "baremetal-mcu":
       return {
-        id: `alp:${targetKind}:${server}`,
-        name: `Alp: Baremetal Debug (${serverLabel(server)})`,
-        targetKind,
-        adapter: "cortex-debug",
-        server,
-        os: "baremetal",
+        ...base,
         executablePath: exe("${workspaceFolder}/build/baremetal/app.elf"),
-        cwd: "${workspaceFolder}",
-        device: "<resolved-device>",
-        interface: "swd",
-        svdFile: "<resolved-svd>",
       };
     case "yocto-userspace":
       return {
-        id: `alp:${targetKind}:${server}`,
-        name: "Alp: Yocto Remote Debug",
-        targetKind,
-        adapter: "cppdbg",
-        server,
-        os: "yocto",
+        ...base,
         executablePath: exe("${workspaceFolder}/build/yocto/app"),
-        cwd: "${workspaceFolder}",
-        miMode: "gdb",
-        miDebuggerServerAddress: "<host>:<port>",
-        miDebuggerPath: "<resolved-gdb>",
-        setupCommands: [{ text: "-enable-pretty-printing" }],
       };
     case "native-host":
       return {
-        id: `alp:${targetKind}:${server}`,
-        name: "Alp: Native Sim Debug",
-        targetKind,
-        // `lldb`, not `codelldb` (#369; tan-cli#104): CodeLLDB's manifest
-        // declares `contributes.debuggers[0].type = "lldb"`. `codelldb` is the
-        // EXTENSION id, and VS Code refuses the session outright with
-        // `Configured debug type 'codelldb' is not supported.`
-        adapter: "lldb",
-        server,
-        os: "host",
+        ...base,
         executablePath: exe(
           "${workspaceFolder}/build/native_sim/zephyr/zephyr.exe",
         ),
-        cwd: "${workspaceFolder}",
       };
   }
-
-  throw new Error(`Unsupported debug target '${targetKind}'.`);
 }
 
 function createDoctorReport(
@@ -599,21 +684,6 @@ function supportsServerForTarget(
   return serverChoicesForTarget(targetKind).some(
     (choice) => choice.server === server,
   );
-}
-
-function serverLabel(server: DebugServerKind): string {
-  switch (server) {
-    case "jlink":
-      return "J-Link";
-    case "openocd":
-      return "OpenOCD";
-    case "pyocd":
-      return "pyOCD";
-    case "gdbserver":
-      return "gdbserver";
-    case "none":
-      return "local";
-  }
 }
 
 function collectResolvedValues(
@@ -814,99 +884,6 @@ function nativeHostPlatformChecks(
   ];
 }
 
-/**
- * The profile fields that MUST resolve before a session can start, in one
- * place, so the preflight check and the customer-facing
- * `unresolvedRequiredFields` cannot drift on what "required" means.
- *
- * `name` is the internal `PreflightCheck` id (report/panel wiring, never shown
- * in a toast); `label` is what a customer is told to go and supply.
- *
- * Derived from the fields the profile ACTUALLY carries, because those are
- * exactly the keys `debugProfileToLaunchDraft` emits. Switching on `server`
- * instead was wrong for baremetal-mcu, which ignores `server` entirely and
- * always emits device+interface: baremetal-mcu + pyocd named "the pyOCD target
- * id" — a key not in the file — while the `<resolved-device>` that IS in the
- * file went unnamed.
- *
- * `svdFile` is deliberately absent: it is optional to cortex-debug and only
- * feeds the peripheral/register view, so it warns (`createSvdCheck`) and never
- * blocks. `openOcdConfigFiles` is a list whose entries also get a per-file
- * existence check, so it is handled separately by both callers.
- */
-function requiredPlaceholderFields(profile: DebugProfile): ReadonlyArray<{
-  name: string;
-  label: string;
-  value: string | undefined;
-  fix: string;
-}> {
-  const fields = [
-    {
-      name: "device",
-      // cortex-debug reads `device` for J-Link; baremetal-mcu emits it whatever
-      // the server is, and telling a pyOCD user to supply a "J-Link device
-      // name" would be a lie.
-      label:
-        profile.server === "jlink" ? "J-Link device name" : "probe device name",
-      value: profile.device,
-      fix: "Resolve J-Link device before launch.",
-    },
-    {
-      name: "targetId",
-      label: "pyOCD target id",
-      value: profile.targetId,
-      fix: "Resolve pyOCD targetId before launch.",
-    },
-    {
-      name: "miDebuggerServerAddress",
-      label: "gdbserver address (host:port)",
-      value: profile.miDebuggerServerAddress,
-      fix: "Resolve gdbserver address before launch.",
-    },
-    {
-      name: "miDebuggerPath",
-      label: "gdb executable path",
-      value: profile.miDebuggerPath,
-      fix: "Resolve local gdb path before launch.",
-    },
-  ];
-
-  return fields.filter((field) => field.value !== undefined);
-}
-
-/**
- * SVD is OPTIONAL to cortex-debug: it populates the peripheral/register view
- * (mcu-debug.peripheral-viewer) and affects nothing else — the session starts,
- * breakpoints hit and memory reads work without it. So this WARNS and never
- * fails. It used to be a `fail` on baremetal-mcu, which put it in
- * `summary.fail` and so drove `canLaunch` false: a missing register view
- * blocked the launch outright. A missing SVD must never stop a customer
- * setting a breakpoint.
- *
- * Warn is the normal state right now and nothing in this repo can change it:
- * alp-sdk ships no `.svd` files and its metadata carries no path to one
- * (alp-sdk#948), and this is a thin extension — it must not vendor an SVD or
- * invent where one lives. So no profile sets `svdFile`; when the SDK starts
- * publishing per-SoC SVD metadata, `createDebugProfile` is where it gets read,
- * and `debugProfileToLaunchDraft` already emits the key only once it RESOLVES
- * (cortex-debug OPENS `svdFile`, so a placeholder is worse than no key).
- *
- * No `fix` on the unresolved branch: `uniquePreflightNextSteps` collects `fix`
- * from every non-pass check, so advice nobody can act on would be mixed into
- * `nextSteps` permanently — and the surface interpolates those into the toast
- * detail and into every support bundle. The explanation stays in `detail`.
- */
-function createSvdCheck(profile: DebugProfile): PreflightCheck {
-  const resolved = isResolvedValue(profile.svdFile);
-  return {
-    name: "svdFile",
-    status: resolved ? "pass" : "warn",
-    detail: resolved
-      ? profile.svdFile!
-      : "No SVD file is available, so the peripheral/register view will be empty. Debugging is otherwise unaffected.",
-  };
-}
-
 function createExecutableCheck(
   profile: DebugProfile,
   context: DebugWorkspaceContext,
@@ -928,74 +905,6 @@ function createExecutableCheck(
     status: exists ? "pass" : "fail",
     detail: resolvedPath,
     fix: exists ? undefined : "Build the selected target before launch.",
-  };
-}
-
-function createProfileConfigurationChecks(
-  profile: DebugProfile,
-  context: DebugWorkspaceContext,
-  dependencies: DebugPreflightDependencies,
-): PreflightCheck[] {
-  const checks: PreflightCheck[] = requiredPlaceholderFields(profile).map(
-    (field) => createResolvedValueCheck(field.name, field.value, field.fix),
-  );
-
-  // Same presence rule as `unresolvedRequiredFields`: only check the list when
-  // the profile actually carries one, because that is when it is written.
-  const configs = profile.openOcdConfigFiles;
-  if (configs) {
-    if (configs.length === 0) {
-      checks.push({
-        name: "openOcdConfig",
-        status: "fail",
-        detail: "OpenOCD config file list is empty.",
-        fix: "Set openOcdConfigFiles before launch.",
-      });
-    } else {
-      for (const configFile of configs) {
-        const resolved = resolveWorkspacePath(configFile, context);
-        if (!resolved) {
-          checks.push({
-            name: "openOcdConfig",
-            status: "fail",
-            detail: `OpenOCD config path is unresolved: ${configFile}`,
-            fix: "Resolve OpenOCD config placeholders before launch.",
-          });
-          continue;
-        }
-
-        checks.push({
-          name: "openOcdConfig",
-          status: dependencies.pathExists(resolved) ? "pass" : "fail",
-          detail: resolved,
-          fix: dependencies.pathExists(resolved)
-            ? undefined
-            : "Provide a valid OpenOCD config file path.",
-        });
-      }
-    }
-  }
-
-  // cortex-debug is the only adapter that reads svdFile, and it reads it for
-  // zephyr-mcu and baremetal-mcu alike.
-  if (profile.adapter === "cortex-debug") {
-    checks.push(createSvdCheck(profile));
-  }
-
-  return checks;
-}
-
-function createResolvedValueCheck(
-  name: string,
-  value: string | undefined,
-  fix: string,
-): PreflightCheck {
-  const resolved = isResolvedValue(value);
-  return {
-    name,
-    status: resolved ? "pass" : "fail",
-    detail: value ?? "<unset>",
-    fix: resolved ? undefined : fix,
   };
 }
 

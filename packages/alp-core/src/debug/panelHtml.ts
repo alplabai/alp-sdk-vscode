@@ -104,7 +104,7 @@ ${doctorRows}
   </table>
 
   <h2>Preflight Summary</h2>
-  <p>pass=${input.preflight.summary.pass} warn=${input.preflight.summary.warn} fail=${input.preflight.summary.fail} canLaunch=${input.preflight.canLaunch}</p>
+  <p>pass=${input.preflight.summary.pass} warn=${input.preflight.summary.warn} fail=${input.preflight.summary.fail} canLaunch=${input.preflight.canLaunch} configurationGraded=${input.preflight.configurationGraded}</p>
   <table>
     <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
     <tbody>

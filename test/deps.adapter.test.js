@@ -53,12 +53,30 @@ function loadDepsAdapter(overrides = {}) {
   return loadWithStubs("deps/vscodeAdapter.js", {
     vscode: { window: {}, Uri: {} },
     "../alpCli/vscodeAdapter": {},
+    "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {},
     "../toolchain": {},
     "../util": { log() {} },
     ...overrides,
   });
 }
+
+/**
+ * The two doctor envelopes a REAL `tan 0.4.0` printed on a Windows 11 host,
+ * captured with `tan doctor --format json` and `tan doctor --build --format
+ * json` and committed verbatim except for two redactions: the home directory's
+ * account name and the temp directory the no-project run was launched in.
+ *
+ * They are here because the split this file asserts is a claim about tan, not
+ * about a stub: that four host checks — `longPaths`, `homePath`,
+ * `zephyrSdkHost`, `hostPrerequisites` — exist ONLY on plain `doctor`, and that
+ * `--build` alone can therefore never report them. tan says so in
+ * `doctor.rs`'s `append_host_environment` ("`--build` deliberately does NOT get
+ * them"); these files are that sentence, measured.
+ */
+const REAL_PLAIN = require("./fixtures/tan-doctor.v0.4.0.windows.json").data;
+const REAL_BUILD =
+  require("./fixtures/tan-doctor-build.v0.4.0.windows.json").data;
 
 const { pickLatestSdkTag, latestSdkCacheStale } = loadDepsAdapter();
 
@@ -160,19 +178,33 @@ const STATE = {
   },
 };
 
-/** Build a report against a fake CLI, collecting every argv it was asked to
- *  spawn. `workspaceRoot: null` is the no-folder-open machine. */
-async function report(workspaceRoot = "/home/dev/proj") {
+/** The plain-`doctor` half, minimal, for the tests that only care about `--build`
+ *  cells. The real captured one is `REAL_PLAIN`. */
+const PLAIN_DATA = {
+  checks: [
+    { name: "longPaths", status: "pass", detail: "long paths are enabled" },
+  ],
+  summary: { pass: 1, warn: 0, fail: 0 },
+};
+
+/** Build a report against a fake CLI, collecting every argv (and cwd) it was
+ *  asked to spawn. `workspaceRoot: null` is the no-folder-open machine; a `null`
+ *  envelope stands for a run that produced nothing usable. */
+async function report(
+  workspaceRoot = "/home/dev/proj",
+  { build = DOCTOR_DATA, plain = PLAIN_DATA } = {},
+) {
   const spawns = [];
   const { buildDependencyReport } = loadDepsAdapter({
     "../alpCli/vscodeAdapter": {
-      runAlpCommand: async (_context, args) => {
-        spawns.push(args);
+      runAlpCommand: async (_context, args, cwd) => {
+        spawns.push({ args, cwd });
+        const data = args.includes("--build") ? build : plain;
         return {
           outcome: {
             ok: true,
-            message: "",
-            envelope: { ok: true, data: DOCTOR_DATA },
+            message: "tan produced no usable envelope",
+            envelope: data ? { ok: true, data } : undefined,
           },
         };
       },
@@ -214,10 +246,11 @@ test("the table does not wait on the latest-SDK lookup", async () => {
   const { report: built, spawns } = await report();
 
   assert.deepEqual(
-    spawns,
-    [["doctor", "--build"]],
-    "one spawn only — the live GitHub call that fills the sdk row's 'latest' " +
-      "cell must not be awaited before the ten rows already in hand are posted",
+    spawns.map((spawn) => spawn.args),
+    [["doctor", "--build"], ["doctor"]],
+    "the two doctor runs, and NOTHING else — the live GitHub call that fills " +
+      "the sdk row's 'latest' cell must not be awaited before the rows already " +
+      "in hand are posted",
   );
   assert.equal(
     built.rows.find((row) => row.name === "sdk").latest,
@@ -227,19 +260,334 @@ test("the table does not wait on the latest-SDK lookup", async () => {
   );
 });
 
-test("with no folder open nothing is spawned", async () => {
-  // `tan doctor --build` reports on the directory it runs in, and tan 0.4.0+
-  // walks UP from there looking for an enclosing SDK. With no folder open the
-  // child would inherit the extension host's own cwd (on Windows, the VS Code
-  // install directory) and describe a directory the customer never chose.
-  const { report: built, error, spawns } = await report(null);
+// ── A-0f: the four checks that live on PLAIN `tan doctor` only ───────────────
 
-  assert.deepEqual(spawns, [], "no folder open must mean no child process");
-  assert.equal(built, null, "no report, rather than a report about nowhere");
+test("the host checks tan puts on plain `doctor` reach the table", async () => {
+  // Measured on a real tan 0.4.0 (the pin) on Windows 11, not asserted from a
+  // stub: `--build` emits 14 checks and NOT ONE of these four is among them.
+  const buildOnly = new Set(REAL_BUILD.checks.map((check) => check.name));
+  for (const name of [
+    "longPaths",
+    "homePath",
+    "zephyrSdkHost",
+    "hostPrerequisites",
+  ]) {
+    assert.equal(
+      buildOnly.has(name),
+      false,
+      `${name} is absent from \`tan doctor --build\` — running only --build is ` +
+        "structurally blind to it, which is why the panel had no row for it",
+    );
+  }
+
+  const { report: built, spawns } = await report("/home/dev/proj", {
+    build: REAL_BUILD,
+    plain: REAL_PLAIN,
+  });
+  const row = (name) => built.rows.find((candidate) => candidate.name === name);
+
+  assert.ok(
+    spawns.some(
+      (spawn) => spawn.args.length === 1 && spawn.args[0] === "doctor",
+    ),
+    "plain `tan doctor` must actually be run — before this it never was, " +
+      "anywhere in the extension",
+  );
+  // The concrete customer: LongPathsEnabled = 0 is the stock Windows default,
+  // and the build then dies in CMake complaining about a file that exists.
+  assert.ok(row("longPaths"), "the long-paths row exists");
+  assert.equal(
+    row("longPaths").status,
+    "pass",
+    "and carries tan's verdict verbatim — this host has it enabled",
+  );
   assert.match(
+    row("longPaths").detail,
+    /LongPathsEnabled = 1/,
+    "with tan's own detail, registry value and all",
+  );
+  assert.ok(row("homePath"), "the home-directory row exists");
+  assert.ok(row("zephyrSdkHost"), "the Zephyr-SDK-host-support row exists");
+  assert.equal(
+    row("hostPrerequisites").status,
+    "fail",
+    "the bootstrap prerequisite gate is reported as tan rated it",
+  );
+});
+
+test("the two runs' rows are not merged into each other", async () => {
+  const { report: built } = await report("/home/dev/proj", {
+    build: REAL_BUILD,
+    plain: REAL_PLAIN,
+  });
+  const names = built.rows.map((row) => row.name);
+
+  assert.equal(
+    new Set(names).size,
+    names.length,
+    "no duplicate row ids: plain `doctor` re-reports sdk / workspace / " +
+      "westResolved, and taking them alongside --build's would render one fact " +
+      "twice under one name and collide the view's `key={row.name}`",
+  );
+  assert.deepEqual(
+    names.slice(0, REAL_BUILD.checks.length),
+    REAL_BUILD.checks.map((check) => check.name),
+    "--build's block comes first, in tan's own order and unchanged",
+  );
+  assert.deepEqual(
+    names.slice(REAL_BUILD.checks.length, -1),
+    ["lldb", "hostPrerequisites", "zephyrSdkHost", "longPaths", "homePath"],
+    "then plain `doctor`'s host block, also in tan's order — so which run a " +
+      "row came from is readable off the table",
+  );
+  for (const name of ["workspaceRoot", "sdkRoot", "codeLLDBExtension"]) {
+    assert.equal(
+      names.includes(name),
+      false,
+      `${name} is a project fact (or, for codeLLDBExtension, one tan itself ` +
+        "answers `unknown` from a standalone binary) and is not this table's",
+    );
+  }
+});
+
+test("the summary counts exactly the rows on screen, using tan's arithmetic", async () => {
+  const { tallyChecks } = loadDepsAdapter();
+
+  // First: the tally IS tan's own. Re-run over each real envelope's checks it
+  // reproduces that envelope's own summary byte for byte — including tan's rule
+  // that a status outside pass/warn/fail (`codeLLDBExtension: unknown`) counts
+  // toward nothing.
+  assert.deepEqual(tallyChecks(REAL_BUILD.checks), REAL_BUILD.summary);
+  assert.deepEqual(tallyChecks(REAL_PLAIN.checks), REAL_PLAIN.summary);
+
+  const { report: built } = await report("/home/dev/proj", {
+    build: REAL_BUILD,
+    plain: REAL_PLAIN,
+  });
+  // The header must describe the table under it. With rows from two envelopes,
+  // neither envelope's own summary does — `--build` alone would report 0 of the
+  // five host rows, so a failing `hostPrerequisites` sat under "4 fail".
+  // The five host rows this host produced: zephyrSdkHost / longPaths / homePath
+  // pass, lldb warns, hostPrerequisites fails.
+  assert.deepEqual(built.counts, {
+    pass: REAL_BUILD.summary.pass + 3,
+    warn: REAL_BUILD.summary.warn + 1,
+    fail: REAL_BUILD.summary.fail + 1,
+  });
+});
+
+// ── 0b: the panel with no project folder open ────────────────────────────────
+
+test("with no folder open the host checks still run", async () => {
+  // The ordering deadlock this breaks: the prerequisite table needed a folder,
+  // the folder needed the SDK, the SDK needed git, and git was installed from
+  // the prerequisite table. The published walkthrough order (installSdk →
+  // project → bootstrap) gave a customer no way out, and nothing said that
+  // opening any unrelated folder unlocked the table.
+  const {
+    report: built,
     error,
-    /open your alp sdk project folder/i,
-    "and the panel says what to do about it",
+    spawns,
+  } = await report(null, {
+    build: REAL_BUILD,
+    plain: REAL_PLAIN,
+  });
+  const row = (name) => built.rows.find((candidate) => candidate.name === name);
+
+  assert.equal(error, undefined, "no refusal — this is a table, not a wall");
+  assert.ok(built, "a report, with the host half of it filled in");
+  for (const spawn of spawns) {
+    assert.ok(
+      spawn.cwd,
+      "an explicit cwd on every spawn (#371): with none the child inherits " +
+        "the extension host's own directory — on Windows the VS Code install " +
+        "directory — and reports on it",
+    );
+  }
+
+  // The host facts, which is the whole point: none of these reads a project.
+  for (const name of ["git", "python", "cmake", "ninja", "longPaths"]) {
+    assert.equal(
+      row(name).status,
+      REAL_BUILD.checks.concat(REAL_PLAIN.checks).find((c) => c.name === name)
+        .status,
+      `${name} is a host probe and carries tan's real verdict with no folder open`,
+    );
+  }
+  assert.equal(
+    row("ninja").action.command,
+    "winget install -e --id Ninja-build.Ninja",
+    "and the missing prerequisite is still one click away — that button is " +
+      "the exit from the deadlock",
+  );
+});
+
+test("with no folder open a project check is withheld, and says so", async () => {
+  const { report: built } = await report(null, {
+    build: REAL_BUILD,
+    plain: REAL_PLAIN,
+  });
+  const row = (name) => built.rows.find((candidate) => candidate.name === name);
+
+  for (const name of ["sdk", "boardYaml", "workspace", "westResolved"]) {
+    // Reporting these would be worse than the old refusal: tan answers them
+    // about whatever directory it was launched in, so a customer with no folder
+    // open would read "board.yaml not found" about a temp directory.
+    assert.ok(
+      row(name),
+      `${name} is still a row — a vanished row teaches nothing`,
+    );
+    assert.equal(
+      row(name).status,
+      "not checked",
+      `${name} must not carry a verdict about a project that is not open`,
+    );
+    assert.match(
+      row(name).detail,
+      /no project folder is open/i,
+      "and the row itself says why",
+    );
+    assert.equal(
+      row(name).hint,
+      null,
+      "tan's remedy prose belongs to the verdict it never reached",
+    );
+  }
+  assert.equal(
+    built.counts.fail,
+    REAL_BUILD.summary.fail - 3 + 1,
+    "a withheld row counts as nothing — `sdk`, `boardYaml` and `workspace` " +
+      "each rated `fail` about nowhere, and counting them would put three red " +
+      "marks in the header for checks that never ran",
+  );
+});
+
+test("a plain `doctor` that answers nothing leaves a row saying so", async () => {
+  const { report: built } = await report("/home/dev/proj", {
+    build: REAL_BUILD,
+    plain: null,
+  });
+  const row = built.rows.find(
+    (candidate) => candidate.name === "hostEnvironment",
+  );
+
+  assert.ok(
+    row,
+    "silently dropping the host half is the A-0f defect coming back invisibly",
+  );
+  assert.equal(row.status, "not checked");
+  assert.match(row.detail, /long paths/i);
+});
+
+test("a `--build` that answers nothing is still an error state", async () => {
+  const { report: built, error } = await report("/home/dev/proj", {
+    build: null,
+    plain: REAL_PLAIN,
+  });
+
+  assert.equal(
+    built,
+    null,
+    "--build carries every PATH probe in the table, so losing it is losing " +
+      "the table — five host rows that looked complete would be the worse answer",
+  );
+  assert.match(error, /no usable envelope/);
+});
+
+// ── A-0g: a winget install leaves a stale PATH ───────────────────────────────
+
+test("a terminal install says what actually makes the row go green", async () => {
+  const sent = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: {
+      window: {
+        createTerminal: () => ({
+          show() {},
+          sendText: (text) => sent.push(text),
+        }),
+      },
+      Uri: {},
+    },
+    "../notify/vscodeAdapter": {
+      notifyAsync: (plan) => plans.push(plan),
+    },
+  });
+
+  runDependencyAction(
+    {
+      kind: "command",
+      // tan 0.4.0's own `missingPrerequisites[].command` on this Windows host,
+      // verbatim.
+      command: "winget install -e --id Ninja-build.Ninja",
+      effect: "install",
+      title: "winget install -e --id Ninja-build.Ninja",
+    },
+    "/home/dev/proj",
+  );
+
+  assert.deepEqual(sent, ["winget install -e --id Ninja-build.Ninja"]);
+  assert.equal(
+    plans.length,
+    1,
+    "winget installs onto the MACHINE's PATH; the extension host inherited its " +
+      "environment at launch, so the row the customer just fixed still reads " +
+      "`fail / ninja not found` and nothing on screen said why",
+  );
+  // NO reload button. A reload re-forks the extension host from a main process
+  // whose environment was captured at launch — VS Code skips shell-environment
+  // resolution on Windows entirely — so it inherits the same stale PATH and
+  // cannot turn the row green. Offering it would be a wrong diagnosis with a
+  // button attached, and pressing it mid-install disposes the terminal.
+  assert.equal(
+    (plans[0].actions ?? []).some((action) => action.id === "reloadWindow"),
+    false,
+    "a reload cannot pick up a new PATH, so it must not be offered as if it can",
+  );
+  assert.equal(plans[0].severity, "info", "an offer, not a failure");
+  assert.match(
+    plans[0].message,
+    /refresh/i,
+    "Refresh is the step that usually works: winget's shim lands in a " +
+      "directory that was already on PATH when the editor started",
+  );
+  assert.match(
+    plans[0].message,
+    /close VS Code completely|reopen/i,
+    "and when Refresh is not enough, only a full restart picks up a new PATH",
+  );
+  assert.equal(
+    /reload the window|only picks up a new PATH on reload/i.test(
+      plans[0].message,
+    ),
+    false,
+    "the sentence must not promise a reload that cannot deliver",
+  );
+  assert.ok(
+    plans[0].dedupeKey,
+    "three Install presses must not stack three toasts",
+  );
+});
+
+test("an open-docs fix offers no PATH notice", async () => {
+  const plans = [];
+  const fixes = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    "../notify/vscodeAdapter": { notifyAsync: (plan) => plans.push(plan) },
+    "../toolchain": { runToolchainFix: (id) => fixes.push(id) },
+  });
+
+  runDependencyAction({ kind: "fix", fixId: "zephyr-sdk" }, "/home/dev/proj");
+
+  assert.deepEqual(fixes, ["zephyr-sdk"]);
+  assert.deepEqual(
+    plans,
+    [],
+    "the `zephyr-sdk` fix opens a web page and installs nothing, so there is " +
+      "no new PATH to pick up and the notice would be noise. NOT true of every " +
+      "`fix` id: on Windows the `west` fix is a real `pip install --user`, " +
+      "which does write a PATH entry and gets no notice either — reachable " +
+      "only against a pre-v0.4.0 binary via `alpSdk.cliPath`",
   );
 });
 

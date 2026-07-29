@@ -363,27 +363,31 @@ type DebugServerKind = "jlink" | "openocd" | "pyocd" | "gdbserver" | "none";
 
 interface DebugProfile {
   id: string;
-  name: string;
-  os: "zephyr" | "baremetal" | "yocto" | "host";
   targetKind: DebugTargetKind;
   adapter: DebugAdapterKind;
   server: DebugServerKind;
   executablePath: string;
-  cwd: string;
-  preLaunchTask?: string;
-  device?: string;
-  interface?: "swd" | "jtag";
-  svdFile?: string;
-  openOcdConfigFiles?: string[];
-  targetId?: string;
-  miMode?: "gdb";
-  miDebuggerPath?: string;
-  miDebuggerServerAddress?: string;
-  setupCommands?: Array<{ text: string }>;
-  remoteHost?: string;
-  remotePort?: number;
 }
 ```
+
+That is the whole of it. `DebugProfile` describes the session the extension is
+REPORTING ON, not a launch configuration. The rule for what may live here: a
+field belongs only when the extension itself must READ it to grade a fact about
+this machine. `executablePath` qualifies — `createExecutableCheck` stats the
+ELF. A value the extension only wants to SEE in launch.json does not; that is
+tan's output.
+
+It used to carry `device`, `interface`, `svdFile`, `openOcdConfigFiles`,
+`targetId`, `miMode`, `miDebuggerPath`, `miDebuggerServerAddress`,
+`setupCommands`, `cwd`, `name` and `os` as well, all hardcoded constants of
+`(targetKind, server)` — see §12 for why grading those was #339. `name` is the
+one worth naming twice: it said `Alp: Zephyr Debug (J-Link)` (the suffix from
+`serverLabel(server)`, so one string per target/server pair) while the pinned
+tan 0.4.0 writes `ALP: Zephyr Debug (J-Link)`, so the extension's copy of tan's
+merge key had already drifted from it — which is exactly the stranded-duplicate
+defect §12's orphan rescue repairs, and that rescue reads the spelling off the
+customer's own file and off `tan debug-config --preview`, never off a profile.
+The configuration keys are tan's; §10 shows what it writes.
 
 ## 10. MVP Launch Profiles
 
@@ -459,10 +463,12 @@ resolves (see §12).
   "miDebuggerPath": "<resolved-gdb>",
   "setupCommands": [
     { "text": "-enable-pretty-printing" }
-  ],
-  "preLaunchTask": "alp: deploy and start gdbserver"
+  ]
 }
 ```
+
+No `preLaunchTask` key: this is the one profile the extension asks for without
+one — see §10.6.
 
 ### 10.5 Native Sim / Host Binary + CodeLLDB
 
@@ -517,23 +523,29 @@ See the companion-extensions section above for which debug views attach to an
 
 ### 10.6 The `preLaunchTask` names above
 
-Every profile in §10 references a pre-launch task by label. VS Code renders a
-provider-contributed task's label as `${source}: ${name}`, so those labels
-resolve only while something contributes them — an unresolvable
-`preLaunchTask` aborts the pre-launch and `vscode.debug.startDebugging`
-returns `false` with no useful error, pointing the user at a `launch.json`
-that looks perfectly fine.
+VS Code renders a provider-contributed task's label as `${source}: ${name}`,
+so those labels resolve only while something contributes them — an
+unresolvable `preLaunchTask` aborts the pre-launch and
+`vscode.debug.startDebugging` returns `false` with no useful error, pointing
+the user at a `launch.json` that looks perfectly fine.
 
-The extension contributes all four (`src/tasks/service.ts` holds the string
-contract, `src/tasks/vscodeAdapter.ts` the VS Code seam, task type + source
-`alp`):
+`tan` emits the key only when told to: `debug-config` writes `preLaunchTask`
+only for a `--pre-launch-task <TASK>` the caller passes, and drops the key
+otherwise. The extension passes it from `debugConfigArgs`
+(`src/debug/service.ts`), mapping the target class to a label via
+`preLaunchTaskFor` (`src/tasks/service.ts`) — without that, §10.1–10.3 and
+§10.5 would start a debug session against an ELF nothing had built.
 
-| label                             | runs                                          |
-| --------------------------------- | --------------------------------------------- |
-| `alp: build active target`        | `tan build`                                   |
-| `alp: build baremetal target`     | `tan build`                                   |
-| `alp: build native_sim target`    | `tan build`                                   |
-| `alp: deploy and start gdbserver` | nothing — reports the manual step, exits **1** |
+The extension contributes all four labels (`src/tasks/service.ts` holds the
+string contract, `src/tasks/vscodeAdapter.ts` the VS Code seam, task type +
+source `alp`):
+
+| label                             | referenced by  | runs                                           |
+| --------------------------------- | -------------- | ---------------------------------------------- |
+| `alp: build active target`        | §10.1, §10.2   | `tan build`                                    |
+| `alp: build baremetal target`     | §10.3          | `tan build`                                    |
+| `alp: build native_sim target`    | §10.5          | `tan build`                                    |
+| `alp: deploy and start gdbserver` | no profile     | nothing — reports the manual step, exits **1** |
 
 The three build labels run the identical command because `tan build` has no
 per-target selector: it builds every slice `board.yaml` declares. Three labels
@@ -542,10 +554,15 @@ exist because three debug-target classes reference them under different names.
 `alp: deploy and start gdbserver` has no `tan` equivalent — the extension has
 no deploy story, and §10.4's profile ships `miDebuggerServerAddress:
 "<host>:<port>"` for the user to fill in by hand. It deliberately fails rather
-than faking success, so VS Code raises its "the preLaunchTask terminated with
-exit code 1 — Debug Anyway / Show Errors" dialog with the manual step named,
-instead of dropping the user into a cppdbg session with no gdbserver on the
-other end.
+than faking success, so running it from the Tasks picker names the manual step
+and exits 1 instead of implying a deploy happened.
+
+That exit is also why §10.4's profile references no task at all. A profile
+naming it would raise VS Code's "the preLaunchTask terminated with exit code 1
+— Debug Anyway / Show Errors" dialog on **every** F5 — including one where the
+customer has already copied the binary across, started `gdbserver` on the
+target and filled in the address, which is the setup that works. The label
+stays registered so the Tasks picker can still spell out the manual step.
 
 ## 11. Product Commands to Support Debug
 
@@ -580,12 +597,139 @@ validate:
 - required paths such as the OpenOCD config are valid
 - target connection info exists for remote userspace debug
 
-`svdFile` is **optional and warn-only**: cortex-debug reads it to populate the
-peripheral/register view and nothing else, so a missing SVD leaves that view
-empty while breakpoints, stepping and memory reads all work. It must never
-appear in a launch-blocking check or in the fields a customer is told to
-supply. (Warn is the normal state today — alp-sdk ships no `.svd` and carries
-no path to one, alp-sdk#948.)
+**Where each of those is decided (#339).** Bullets 3–5 are the extension's:
+`buildDebugPreflightReport` in `packages/alp-core/src/debug/service.ts` grades
+them as `buildArtifact`, `adapterExtension` and `serverTool`, alongside
+`workspaceRoot`, `boardYaml` and the native-host `hostPlatform` gate this list
+predates. That is an OWNERSHIP split, not an observability one — only
+`adapterExtension` is out of a separate process's reach (which debugger
+extensions this VS Code host has installed); tan reads the build tree, so
+bullet 3 is perfectly observable from outside.
+
+Bullets 1–2 get no check in that function at all. The active OS/backend and the
+target class come out of the picker and are carried as the report's own
+`targetKind` / `server` metadata; the one judgement made about the pair,
+`serverCompatibility`, lives in `buildDoctorReport`.
+
+The last two are configuration VALUES. Both are graded by
+`foldLaunchConfigPlaceholders` and nowhere else, against the `launch.json`
+entry tan MERGED into rather than the draft it reported — see "Which
+configuration is graded" below — but they differ in whether tan can fill them, and that
+difference is not cosmetic. Bullet 6 it resolves: on a Zephyr build
+`tan debug-config --server openocd` reads the OpenOCD paths out of the build's
+own `runners.yaml`, driven on tan 0.4.0 to `"configFiles":
+["/home/dev/board/e1m_aen801.cfg"]` with a matching `serverpath` and
+`searchDir`. Bullet 7 it cannot: `yocto-userspace` comes out
+`"miDebuggerServerAddress": "<host>:<port>"` with `"miDebuggerPath":
+"<resolved-gdb>"` against that same fully populated `runners.yaml` — the file
+makes no difference to it. So the fold sees a resolved value in the first case
+and a surviving placeholder in the second, and the next step it prints has to
+differ accordingly — see the end of this section.
+
+That split is the fix for #339, not a refactor. The preflight report used to
+grade a second, in-process draft as well: `createDebugProfile` filled `device`
+with the hardcoded literal `"<resolved-device>"`, `openOcdConfigFiles` with
+`"<resolved-openocd-board-cfg>"` and so on, so the matching checks failed for
+every project on earth — including one whose `launch.json` tan had fully
+resolved. The customer got a working `launch.json` and a "not launchable"
+verdict with a Start Anyway gate in front of it. `DebugProfile` no longer
+carries any configuration value, and `createDebugProfile` no longer invents
+one; a check named after a `launch.json` key must come from the fold.
+
+Two consequences worth stating:
+
+- **A path-EXISTENCE check on the OpenOCD cfg is not in either half.** The old
+  one lived on the draft, whose only entry was the placeholder, so it never
+  once ran. Running it against tan's resolved path is new behaviour, not
+  restored coverage, and it would misfire the moment `runners.yaml` was
+  recorded on another host (a container/WSL build leaves `serverpath` and
+  `configFiles` pointing at `/home/…` paths that do not exist on the Windows
+  box reading them). Tracked separately.
+- **`svdFile` no longer produces a check at all.** Only the two cortex-debug
+  target classes ever drew one, because it was added only for
+  `adapter === "cortex-debug"`:
+  `yocto-userspace` (cppdbg) and `native-host` (lldb) never got it. On both that
+  did it was a constant `warn` — `createDebugProfile("baremetal-mcu", …)` set
+  `svdFile: "<resolved-svd>"`, a hardcoded placeholder that never resolved, and
+  `zephyr-mcu` left the field unset, which `isResolvedValue(undefined)` warned on
+  too. It never once opened the output channel on its own: on those same two
+  targets `canLaunch` was already `false` for every server the picker offers, so
+  the `!report.canLaunch` half of `Alp: Debug preflight`'s
+  `if (!report.canLaunch || report.summary.warn > 0)` had already fired. What
+  makes keeping it out matter is FORWARD-looking: a
+  resolved preflight now reports `canLaunch: true`, so from here a surviving
+  constant `warn` would be the sole reason the channel is forced open, on every
+  run. The rule below is what keeps it out: `svdFile` is **optional and
+  warn-only**. cortex-debug reads it to populate the peripheral/register view
+  and nothing else, so a missing SVD leaves that view empty while breakpoints,
+  stepping and memory reads all work. It must never appear in a launch-blocking
+  check or in the fields a customer is told to supply. (alp-sdk ships no `.svd`
+  and carries no path to one, alp-sdk#948; when it does, tan writes the key and
+  the fold is what would see an unresolved one.)
+
+**Which configuration is graded.** The `launch.json` entry on disk, found by the
+`name` tan reports — not `data.configuration` from the envelope. tan MERGES its
+draft into the customer's file, and the merge preserves a value they hand-filled
+while the draft it reported still carries the placeholder it could not resolve.
+Driven on tan 0.4.0, `--server pyocd` against a board registering only
+`jlink`/`openocd`, with `"targetId": "cortex_m55"` already in the file: exit 0,
+`replaced: true`, envelope `"targetId": "<resolved-target-id>"`, file
+`"targetId": "cortex_m55"`. Grading the envelope reports `canLaunch: false`
+naming `targetId` for a session that would have worked — #339's own symptom
+pointed the other way. The same holds inside an array: tan's merge keeps an
+all-placeholder incoming `configFiles` from overwriting the customer's list, so
+the envelope reports `configFiles[0]` unresolved where the file holds a real
+`.cfg`.
+
+`gradeWrittenLaunchConfig` (`src/debug/service.ts`) does the read-back and the
+lookup; `packages/alp-core` stays pure and the fold keeps taking placeholders as
+data. The entry is found by tan's own configuration `name`, never by an
+`ALP:`/`Alp:` prefix guess — guessing the spelling is the defect the orphan
+rescue in that same file exists to repair. When the file is missing, does not
+parse (JSONC included), or holds no entry under that name, the fold still runs
+against the envelope, which is the pre-#403 behaviour and still catches every
+placeholder tan itself left. `DebugPreflightReport.configurationGraded` says
+which happened — `"launchJson"`, `"cliEnvelope"` or `"none"` — so a fallback
+verdict is never mistaken for a reading of the file, and a failed read can never
+pass for a clean one. Covered by `test/debug.gradedConfig.test.js`.
+
+Grading the file rather than the envelope widens what is graded, and the
+widening is deliberate: the object is the whole merged entry, so keys tan never
+wrote are graded too. A hand-added `"gdbTarget": "<host>:3333"` fails the
+preflight and is named. That entry is what F5 launches and the adapter reads
+`<host>:3333` as a literal, so a customer is better served by the check than by
+a session that dies on it. The `fix` for such a key reads "Build the project
+first, or set `gdbTarget` in launch.json by hand." — no build resolves a key of
+the customer's own, but the hand-edit half names the right key.
+
+Two targets are where a value genuinely cannot be filled. `baremetal-mcu` has
+no Zephyr build, so no `runners.yaml` of its own to read, and all three servers
+come out with `"device": "<resolved-device>"` even with a fully populated one
+sitting in the tree; `yocto-userspace` needs a remote `<host>:<port>` and a
+cross-gdb path that nothing local derives. The wording is SPLIT between the two processes, and it
+is worth being exact about which half is whose:
+
+- **tan owns the general note.** It emits the placeholder and, alongside it,
+  "Placeholder fields such as `<resolved-device>` still need project-specific
+  resolution."; `logUnlaunchableDetail` logs that note verbatim rather than
+  writing a second version of it. This document does not restate it either.
+- **The extension owns the per-key next step**, because it is the half that
+  knows the key and the target class. `foldLaunchConfigPlaceholders` writes the
+  failing check's `fix`, and that string must fit the target. On the two above
+  no build will ever produce the value, so "Build the project first" alone would
+  be advice that cannot terminate — handing a customer a next step that cannot
+  work is #339's own defect in a different hat. The fold therefore branches on
+  `report.targetKind` and says what they must supply instead (`placeholderFix`,
+  covered by `test/debug.service.test.js`).
+
+  `zephyr-mcu` keeps the default, and it offers the hand-edit alongside the
+  build because the build half is right often rather than always: a SUCCESSFUL
+  Zephyr build whose board registers no runner for the chosen server also leaves
+  the placeholder standing. Driven on tan 0.4.0 against a `runners.yaml` listing
+  only `jlink` and `openocd`, `--server pyocd` exits 0 with `"targetId":
+  "<resolved-target-id>"` and this note, which `logUnlaunchableDetail` logs
+  verbatim: "This build registers no 'pyocd' runner (runners.yaml: `["jlink",
+  "openocd"]`), so its fields could not be resolved."
 
 If preflight fails, the product should not attempt a debug launch. It
 should explain the failure and offer the next action. Only `fail` checks

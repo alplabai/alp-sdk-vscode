@@ -21,6 +21,12 @@ import {
 } from "../util";
 import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
+import {
+  BUILD_PLAN_SHAPE,
+  SIZE_REPORT_SHAPE,
+  SYSTEM_MANIFEST_SHAPE,
+  checkTanPayload,
+} from "@alp-sdk/core/tanPayloadShape";
 
 const PANEL_VIEW_TYPE = "alp-ide.buildPlan";
 const PANEL_TITLE = "Alp Build Plan";
@@ -139,7 +145,19 @@ export class BuildPlanPanel {
     const envelope = outcome.envelope;
     let msg: ExtToWebviewMessage;
     if (envelope && envelope.ok) {
-      msg = { type: "buildPlanData", plan: envelope.data as BuildPlanData };
+      // `data` crossed a process boundary, so the cast below proves nothing on
+      // its own. Without this check a renamed `slices` reaches the view as
+      // `undefined` and `plan.slices.filter` throws mid-render — measured in
+      // test/webview/run.mjs as "Cannot read properties of undefined (reading
+      // 'filter')", which blanks the panel and names neither tan nor a field.
+      const shapeError = checkTanPayload(
+        envelope.data,
+        BUILD_PLAN_SHAPE,
+        "build --plan",
+      );
+      msg = shapeError
+        ? { type: "buildPlanData", plan: null, error: shapeError }
+        : { type: "buildPlanData", plan: envelope.data as BuildPlanData };
     } else {
       // Surface the first issue (e.g. "no SDK / awaiting a tagged release")
       // or the runtime message so the view can explain the empty state.
@@ -167,11 +185,25 @@ export class BuildPlanPanel {
     const envelope = outcome.envelope;
     let msg: ExtToWebviewMessage;
     if (envelope && envelope.ok) {
-      msg = {
-        type: "systemManifestData",
-        manifest: envelope.data as SystemManifest,
-        postBuild,
-      };
+      // Named without the manifest path: the message is customer-facing and
+      // the argument is an absolute path on their machine.
+      const shapeError = checkTanPayload(
+        envelope.data,
+        SYSTEM_MANIFEST_SHAPE,
+        postBuild ? "build --manifest-from" : "build --manifest",
+      );
+      msg = shapeError
+        ? {
+            type: "systemManifestData",
+            manifest: null,
+            postBuild,
+            error: shapeError,
+          }
+        : {
+            type: "systemManifestData",
+            manifest: envelope.data as SystemManifest,
+            postBuild,
+          };
     } else {
       const error = envelope?.issues?.[0]?.message ?? outcome.message;
       msg = { type: "systemManifestData", manifest: null, postBuild, error };
@@ -206,13 +238,18 @@ export class BuildPlanPanel {
 
     const { outcome } = await runAlpCommand(this.context, ["size"], cwd);
     const envelope = outcome.envelope;
-    const msg: ExtToWebviewMessage =
+    const shapeError =
       envelope && envelope.ok
+        ? checkTanPayload(envelope.data, SIZE_REPORT_SHAPE, "size")
+        : null;
+    const msg: ExtToWebviewMessage =
+      envelope && envelope.ok && !shapeError
         ? { type: "sliceSizesData", report: envelope.data as SizeReport }
         : {
             type: "sliceSizesData",
             report: null,
-            error: envelope?.issues?.[0]?.message ?? outcome.message,
+            error:
+              shapeError ?? envelope?.issues?.[0]?.message ?? outcome.message,
           };
     void this.panel.webview.postMessage(msg);
   }

@@ -2,6 +2,395 @@
 
 ## Unreleased
 
+- **The Dependencies panel now checks your host tools with no folder open, and
+  reports the host checks it could never see before.** The panel refused
+  outright without a project folder, which closed a loop a customer following
+  the published walkthrough could not open: the prerequisite table needed a
+  folder, the folder needed the SDK, the SDK needed git, and git was installed
+  from the prerequisite table — and nothing said that opening any unrelated
+  folder unlocked it. Host-tool checks are facts about the machine, not the
+  project, so they now run either way. The checks that genuinely read a project
+  (`sdk`, `board.yaml`, the Zephyr workspace, west-in-the-workspace) stay in the
+  table as "not checked" rows saying why, rather than vanishing or — worse —
+  answering about whatever directory the checker happened to start in. They
+  count toward nothing in the pass/warn/fail header. Separately, the panel ran
+  only `tan doctor --build`, which deliberately omits a set of checks that plain
+  `tan doctor` carries; five of them are taken here — Windows long paths,
+  home-directory spaces, whether the Zephyr SDK publishes a build for this host,
+  the bootstrap prerequisite gate, and LLDB. The first is a build that dies deep
+  in CMake complaining about a file that plainly exists, on the stock Windows
+  default — with no row anywhere in the IDE to explain it. Both doctor runs now
+  happen, concurrently, so opening the panel costs about as long as the slower
+  of the two rather than their sum; it is twice the process work per refresh.
+  Rows keep tan's order, `--build`'s block first and the host block after it,
+  though the table draws as one list with no separator, so the boundary is not
+  visible to a reader who does not already know it. One consequence worth
+  knowing: a single missing tool can now be counted twice in the header, once
+  as its own row and once inside the bootstrap prerequisite gate that also
+  names it.
+
+- **Installing a dependency from the panel now says what actually makes the row
+  go green.** A `winget install` from a row's button puts the tool on the
+  machine's PATH, which the already-running extension host cannot see — so the
+  row the customer just fixed kept reading as missing, with nothing on screen
+  saying why. The notice now says to press Refresh when the install finishes,
+  which is enough in the common case because winget's shim lands in a directory
+  that was already on PATH when the editor started. It does NOT offer a window
+  reload: reloading re-forks the extension host from a main process whose
+  environment was captured at launch — VS Code skips shell-environment
+  resolution on Windows entirely — so the reload cannot pick up a new PATH, and
+  pressing it mid-install would take the install's own terminal with it. Where
+  Refresh is not enough the notice says to close VS Code completely and reopen.
+
+- **Installing an SDK on a machine without Git now says so, and offers the
+  download.** Installing an SDK is a `git clone`, and it is the only
+  implementation there is — so on a clean Windows 11 box, which ships no Git,
+  the very first step of the walkthrough failed with `Alp: couldn't install SDK
+  v0.13.0.` and a single Retry button that re-ran the identical missing-binary
+  spawn — a spawn that does not merely fail again but never returns. Nothing on
+  any surface named Git; the only mention of it was `Install failed: Error:
+  spawn git ENOENT` in the panel. The toast now names Git and carries **Download
+  Git**, which opens git-scm.com's download page. Retry is gone from that one
+  case and kept everywhere else: only a `spawn` that never started a process is
+  treated as a missing Git, so a clone that DID run and failed — no network, a
+  proxy refusing `CONNECT`, a tag that does not exist — keeps the Retry that can
+  actually fix it, and is never reported as a missing Git to someone who has
+  Git. The errno still goes only to the "Alp SDK" output channel. Neither
+  sentence claims Git is absent from the machine, only that Alp could not find
+  it: what the extension actually knows is that its own process could not
+  resolve `git`, and a Git installed while VS Code is running is invisible to it
+  either way. That is also why the advice is to reopen VS Code rather than to
+  press Install again — on Windows a new `PATH` does not reach an already-running
+  editor, and not on a window reload either, because the extension host is
+  forked from a main process whose environment was captured at launch.
+  **Download Git** is a pointer, not a second installer: the per-host install
+  lines live in the SDK's `metadata/bootstrap.json` and reach the IDE through
+  tan's doctor envelope, and a copy of them here would be exactly the drift the
+  Dependencies panel is built to avoid. Once a project folder is open, the
+  Dependencies panel carries tan's own `git` row with its per-host install
+  command; this toast is the reachable pointer for the case that comes before
+  any folder exists.
+
+- **The Zephyr SDK row in the dependency table now has a button, and it says
+  what the docs page does not.** The row is the one every Zephyr-on-M customer
+  hits, and on Windows it arrived as a bare `warn` with no action at all: tan
+  builds the `missingPrerequisites` list inside its `push_tool` helper, and the
+  `zephyrSdk` check is pushed as a plain struct literal that never goes through
+  it, so the tool can never appear in that list however missing it is. The
+  planner was reading "tan named no prerequisite for this check" as "there is
+  nothing to offer" and returning no action. It now falls back to the fix this
+  extension knows whenever tan's list is silent about a non-passing check —
+  general, so any check tan forgets to route through `push_tool` is covered, not
+  just this one. An entry tan DID emit still wins outright, `command: null`
+  included: that is tan's answer, not an invitation to look elsewhere. The
+  button is labelled **Open install guide**, not Install — pressing it opens the
+  Zephyr SDK page and installs nothing, and the row stays `warn` until the
+  customer acts. What is new is the tooltip, which now carries the two facts
+  that page leaves out: `west sdk install -t arm-zephyr-eabi` has to run from
+  the west workspace's top-level directory, and on native Windows a 7-Zip binary
+  must already be on PATH before it — west hands `.7z` extraction to `patoolib`,
+  which shells out to an external `7z` / `7za` / `7zr` / `7zz` / `7zzs` / `unar`
+  and has no pure-Python fallback. Both sentences are the producer's own
+  (alp-sdk `metadata/bootstrap.json` `manualInstallHints.windows.note`), which
+  until now only `tan bootstrap`'s text output rendered — a customer driving the
+  IDE never saw either. No Zephyr SDK version is printed: this repo pins tan's
+  version, not sdk-ng's, and a number with no gate behind it goes stale in
+  silence. Routing `zephyrSdk` through `push_tool` so tan can offer a real
+  install command remains tan-cli's half; this side makes the row actionable and
+  honest in the meantime.
+
+- **`west (workspace)` no longer offers a fix that cannot fix it.** That check
+  asks whether west resolves inside the workspace venv, and the fallback above
+  would have pointed it at the `west` fix — a global `python -m pip install
+  --user west` on Windows, which installs west somewhere the check does not look
+  and leaves the row exactly as it was. It now maps to a new `west-workspace`
+  fix that runs `tan bootstrap` on every host, which is both what creates the
+  venv and what tan's own hint for that check already says.
+
+- **The extension can now see whether a `.7z` extractor is on PATH.** Nothing in
+  this repo looked for one before, on any platform. The probe treats only
+  `ENOENT` as absence: these binaries reject an unknown switch with a non-zero
+  exit — a real `7z` answers a bogus flag with exit status 7 — so the ordinary
+  "any spawn failure means not installed" rule reports a fully installed
+  extractor as missing.
+
+- **F5 now runs a build before it debugs.** The generated debug profile
+  carried no `preLaunchTask` at all, so on a fresh clone Debug started
+  cortex-debug against a `zephyr.elf` nothing had produced. The four `alp:`
+  task labels have been contributed since the task provider landed, but
+  `tan debug-config` emits the key only for a `--pre-launch-task` its caller
+  passes, and the extension never passed one. It now does, per target class:
+  `alp: build active target` for Zephyr, `alp: build baremetal target` for
+  baremetal, and `alp: build native_sim target` for native_sim. All three run
+  the same plain `tan build` — it has no per-target selector and builds every
+  slice `board.yaml` declares — so on a project with no native_sim slice the
+  native-host profile still gets a pre-launch step that exits 0 without
+  producing the `zephyr.exe` it then launches. The remote Yocto profile is
+  deliberately left without one — the only task registered for it is the
+  "deploy and start gdbserver" placeholder, which exits 1 by design because
+  the extension cannot deploy or start a remote gdbserver, and naming it would
+  put a failed-pre-launch dialog in front of every F5 including a remote setup
+  the customer already had working. That label stays in the Tasks picker,
+  where it spells out the manual step. The argv is asserted element for
+  element, including the label VALUE: a wrong flag makes `tan` exit 2 and say
+  so, but a wrong label is a string VS Code resolves to a real registered
+  task, so it builds, F5 starts, and nothing anywhere reports that the profile
+  named the wrong one. A `tan` older than the one this extension requires now
+  says so when it refuses this flag: the "run Alp: Update CLI" hint was armed
+  only by `--core`, and `--core` is absent before the first build — precisely
+  when the new flag is the only young one in the argv — so the very first F5
+  against an old CLI reported tan's raw complaint about an unknown argument
+  and nothing about the CLI needing an update.
+
+- **The Build Plan panel now says so when `tan` returns a payload it cannot
+  read, instead of failing without a word.** Three commands feed that panel —
+  `build --plan`, `build --manifest` / `--manifest-from`, and `size` — and each
+  reached the view through a TypeScript `as` cast, which is a compile-time claim
+  about a value that came out of another process and therefore verifies nothing.
+  Rename `slices` in `tan` and the cast still compiles here; the reader gets
+  `undefined`, and what the customer is left with depends only on how that
+  reader spells its access. The plan and manifest views crash mid-render on it
+  — `Cannot read properties of undefined (reading 'filter')` — and the panel
+  goes blank; `size` is the quiet one, where a `?? []` swallows the miss and the
+  footprint column simply goes missing. None of the three names `tan`, names the
+  field, or writes a log line. Each of the three payloads is now checked at
+  runtime against the fields this panel actually READS, and a payload that fails
+  puts a sentence in the panel naming the command and every field that is
+  missing or of another type. The check requires nothing beyond what is read —
+  `schemaVersion`, `generatedBy`, `buildRoot`, `hw_info`, `boot_order`,
+  `storage`, `schema` and `summary` are declared in the models and touched by
+  nothing this panel renders, so a `tan` release that drops or adds a field the
+  panel never reads still draws. A `tan size` failure was also reaching the view
+  and being discarded unrendered, which read as "this build has no sizes" rather
+  than "the measurement failed"; it is now shown alongside the manifest note.
+
+- **"Alp: Install tan CLI (global)" now works on Windows.** The bundled
+  `install.ps1` did not parse at all under Windows PowerShell 5.1 — which is
+  exactly what the command spawns (`powershell`, not `pwsh`) — so the terminal
+  showed two parse errors and no `tan` was installed. The file carries no BOM,
+  so 5.1 decodes it as the ANSI codepage; on cp1252 the em dash in a `Write-Host`
+  string turned into `â€”`, whose third character is one PowerShell honours as a
+  string terminator, and the script ended mid-string. Measured on 5.1.26100.8894:
+  two parse errors, at lines 61 and 55. The two non-ASCII characters are now
+  plain `...` and `--`. Only this global-install command was affected; the
+  extension's own managed `tan` download never ran the script, so a user who had
+  let the extension fetch `tan` for itself already had a working binary. Three
+  new gates keep the class out: the vendored `.ps1` must be ASCII-only or carry
+  a BOM (runs everywhere), it must parse under real Windows PowerShell 5.1 (runs
+  on Windows, and reports loudly as NOT RUN elsewhere rather than as a pass), and
+  both vendored installers are now pinned by sha256 to a named tan-cli ref with
+  the upstream hashes recorded alongside — so a silent re-vendor, or an
+  undeclared edit hiding behind the declared one, fails the suite instead of
+  reaching the Marketplace.
+- **The tan envelope-contract gate now fails when it cannot verify, instead of
+  skipping.** `scripts/fetch-tan-contract.mjs` exited 0 on a 404, a rate-limit,
+  an outage and a dead network alike, and `test/tanContract.test.js` then
+  skipped — so a pin moved to a release without `envelope-contract.json` was
+  green CI with zero contract verification, and every offline local run was too.
+  Which releases publish the asset is now declared in tree, as
+  `RELEASES_PREDATING_CONTRACT_ASSET` in `src/alpCli/service.ts`: the closed set
+  of tan tags cut before the producer landed. A pin on that list still
+  skips, loudly, and makes no request. Every other pin fails on any way of not
+  getting the artefact — distinct messages per cause, one exit code, because the
+  outcome is the same and it is not "pass". An offline developer sets
+  `TAN_CONTRACT_OFFLINE=1`, which downgrades the failure to a skip and is
+  ignored when `CI` is set. Both jobs of the release workflow now run the fetch
+  before their tests, as CI already did — without it, failing closed would have
+  reddened the next tagged release on a corpus that is gitignored and therefore
+  never present in a release checkout.
+- **Two issue codes the extension matches are now watched, and the scan that
+  finds them is no longer family-blind.** `bootstrap.python-not-runnable` and
+  `bootstrap.python-too-old` sat in a bucket about which nothing was asserted,
+  while tan's own frozen-code gate iterates only the list they are absent from —
+  so a rename was invisible to both repos at once. Every code the extension
+  matches is now mapped to the status tan must declare for it, including "tan
+  declares this nowhere", which fails the moment tan starts to. The source scan
+  that keeps that map exhaustive read only `bootstrap.*` and `presets.*`
+  literals; it now recognises the two idioms this extension actually matches
+  with, in any family. That widening surfaced a latent bug: the issue-code shape
+  rejected a hyphenated family, so tan's `debug-config.*` codes would have
+  failed the frozen-list read as malformed on the first release to publish them.
+- **The envelope's seventh key, `sdk`, is readable and asserted.** tan-cli#129
+  added `{root, sourceTier}` and it has been on the wire since tan v0.4.0, but
+  `AlpEnvelope` had no member for it and the contract test asserted nothing
+  about it. It is typed optional and `isEnvelope` does not require it — tan
+  omits the key entirely from any envelope whose command resolved no SDK — most
+  of the published goldens — so requiring it would turn valid envelopes into
+  "no envelope at all" and silently fall back. The contract test asserts the
+  shape wherever the key appears, and fails if it appears nowhere. Nothing
+  surfaces it in the UI yet.
+
+- **A SOCKS proxy is now named as unsupported instead of reported as
+  unreachable, and an IPv6 host in `NO_PROXY` is honoured.** VS Code's
+  `http.proxy` accepts `socks5://host:1080`, and all five SOCKS spellings
+  (`socks:`, `socks4:`, `socks4a:`, `socks5:`, `socks5h:`) parse as URLs — so
+  the managed `tan` download spoke an HTTP `CONNECT` at a SOCKS listener and
+  reported "Couldn't reach the proxy — the connection to it failed". Right
+  category, wrong sub-diagnosis, which sent the customer to fix a proxy that was
+  working. `proxyForUrl` now refuses on an ALLOW-list — only `http` and `https`
+  tunnel — so `ftp` and every future scheme get the same honest sentence rather
+  than being rediscovered one at a time. Credentials still never reach either
+  string: the customer sentence names only the scheme, and the channel detail
+  carries `redactProxy`'s `host:port` — the same redaction the 407 and
+  unreachable paths already use. The scheme is named without its `://`, because
+  `planFailure`'s absolute-path guard reads the `s:/` of `socks://` as a drive
+  letter and would demote the whole message into the output channel. Separately,
+  `bypassesProxy` never matched a BARE IPv6 entry — the spelling customers
+  actually write: `lastIndexOf(":")` read the trailing `1` of `::1` as a port
+  number, and `URL.hostname` yields `[::1]` while a `NO_PROXY` entry is written
+  `::1`. The bracketed form did match, by accident of both sides carrying the
+  brackets and `]` not being a digit. Both spellings now match, bracketed
+  or bare, with or without an explicit port; a bare address holding two or more
+  colons is taken whole, since `::1:443` is itself a valid address and splitting
+  a port out of it would be a guess — the same reason curl requires the
+  brackets. That reason is now in the unparseable-proxy sentence too, which
+  names `[::1]:8080` rather than leaving the customer to find which part of the
+  value was wrong. This became urgent with tan-cli#176: the managed download now
+  makes TWO proxied fetches — `checksums.txt` from the resolved tag FIRST, then
+  the binary — and REFUSES the install if the checksum fetch fails, so a proxy
+  defect that used to slow one fetch now blocks the install before a byte of the
+  binary moves.
+  The `host:` the tunnel hands `tls.connect`, load-bearing only for IP-literal
+  targets (where the `net.isIP` guard withholds `servername`) and until now
+  covered by nothing, has a test that fails when it is dropped; so does the
+  claim that the checksums fetch shares the binary's proxy. The tunnel authority
+  that #380 also reported as unbracketed was NOT changed: `URL.hostname` returns
+  `[::1]`, so `[::1]:8443` was already what it built, and a test now pins that
+  so it is not "fixed" into a real defect. (#380)
+
+- **A `launch.json` that can launch is no longer reported as unlaunchable.**
+  `tan debug-config` resolves the probe and tool values from the build's own
+  `runners.yaml` — driven against tan 0.4.0 with an E1M-AEN801 build, all three
+  Zephyr backends come out with nothing left to fill in: J-Link with
+  `"device": "Cortex-M55"`, OpenOCD with a real `configFiles`/`serverpath`/
+  `searchDir`, pyOCD with `"targetId": "cortex_m55"`. The extension then graded
+  a SECOND, in-process draft instead of that file. The draft's `device` was the
+  hardcoded literal `"<resolved-device>"`, so the verdict was `canLaunch: false`
+  naming `device` — for every project, built or not. On the first-blink path tan
+  wrote a configuration that runs as-is and the extension put a "Start Anyway /
+  Show Details" gate in front of it. The placeholders had left the file and
+  stayed in the verdict. The draft is now gone rather than patched: the ten
+  configuration fields `createDebugProfile` used to invent — `device`,
+  `interface`, `svdFile`, `openOcdConfigFiles`, `targetId`, `miMode`,
+  `miDebuggerPath`, `miDebuggerServerAddress`, `setupCommands` and the dead
+  `cwd` — are deleted from `DebugProfile`, along with the equally dead `name`
+  and `os`. `name` was `Alp: Zephyr Debug (J-Link)` and its siblings: a
+  `launch.json` key, a constant of `(targetKind, server)` like the nine above
+  (`serverLabel(server)` spelled the suffix), unread anywhere in `src/`,
+  `packages/` or `test/`, and already DRIFTED from the `ALP: …` merge key tan
+  0.4.0 writes — the drift the orphan rescue exists to repair, which learns the
+  spelling from the customer's file and from `tan debug-config --preview`
+  rather than from a profile. `os` was a second name for `targetKind` —
+  `"zephyr" | "baremetal" | "yocto" | "host"`, one value per target class and
+  derived from nothing else.
+  `executablePath` stays because the extension STATS it, which is the rule for
+  what may live on a `DebugProfile` at all: a field belongs there only when the
+  extension itself must READ it to grade a fact about this machine. The
+  preflight report now grades host readiness only: which debugger
+  extension is installed, whether the server tool is on PATH, the host platform,
+  whether the build artefact exists. The configuration's own values are graded
+  once, against the `launch.json` entry tan merged into (#339).
+
+- **That verdict is taken against the `launch.json` on disk, not against tan's
+  draft.** `tan debug-config` reports the configuration it composed in
+  `data.configuration` and MERGES that draft into the customer's file; the two
+  are not the same object. The merge preserves a value the customer hand-filled
+  while the draft still carries the placeholder tan could not resolve, so
+  grading the draft fails a file that launches — the bullet above, pointed the
+  other way. Driven on tan 0.4.0, `--server pyocd` against a board registering
+  only `jlink`/`openocd`, with `"targetId": "cortex_m55"` already in
+  `.vscode/launch.json`: exit 0, `replaced: true`, envelope
+  `"targetId": "<resolved-target-id>"`, file `"targetId": "cortex_m55"` — one
+  placeholder from the draft, none from the file. The same holds inside an
+  array, where tan's merge keeps an all-placeholder incoming `configFiles` from
+  overwriting the customer's list. `gradeWrittenLaunchConfig`
+  (`src/debug/service.ts`) reads the file back and finds the entry by the `name`
+  tan itself reports — never by an `ALP:`/`Alp:` prefix guess, which is the
+  defect the orphan rescue in that same file exists to repair.
+  `packages/alp-core` stays pure: it gains no `fs`, and the fold still takes
+  placeholders as data. A failed read does NOT invent a green verdict — a
+  missing, unparseable or entry-less file falls back to the envelope, which is
+  the previous behaviour, and `configurationGraded` carries three values to say
+  which was graded (`"launchJson"` / `"cliEnvelope"` / `"none"`) rather than
+  passing silently. Covered by `test/debug.gradedConfig.test.js` (#339).
+
+  One consequence worth knowing before you meet it: what gets graded is the
+  whole merged entry, not only the keys tan wrote. A key you added by hand that
+  still holds a `<…>` token — say `"gdbTarget": "<host>:3333"` — now fails the
+  preflight and is named. That is deliberate: the merged entry is what F5
+  launches, and the adapter reads that token as a literal. The `fix` offered
+  for such a key still says "Build the project first, or set …"; the build half
+  cannot resolve a key of your own, but the hand-edit half names the right key.
+
+- **The next step offered for an unresolved field now fits the target.** Where
+  a placeholder survives, the fold turns it into a failing check whose `fix`
+  reaches both the "not launchable yet" toast's channel and the report's
+  `nextSteps`. That string was "Build the project first, or set `<key>` in
+  launch.json by hand." on every target, and on two of them building is a loop
+  that cannot terminate: `baremetal-mcu` has no Zephyr build, so no
+  `runners.yaml` is ever written for tan to read `device` from, and
+  `yocto-userspace`'s `<host>:<port>` and cross-gdb path describe a remote
+  target — driven against tan 0.4.0, that target's configuration keeps both
+  placeholders against a fully populated `runners.yaml`, which makes no
+  difference to it. #339 is about being handed something that reads like a value and is
+  not; a next step that cannot work is the same defect. The fold now branches
+  on the report's `targetKind` and names what the customer must supply, keeping
+  "build first" only for `zephyr-mcu`, where a build CAN resolve it — and there
+  it still offers the hand-edit alongside, because that half is right often
+  rather than always. A SUCCESSFUL Zephyr build whose board registers no runner
+  for the chosen server leaves the placeholder standing too, and tan says so:
+  driven on tan 0.4.0 against a `runners.yaml` listing only `jlink` and
+  `openocd`, `--server pyocd` exits 0 with `"targetId": "<resolved-target-id>"`
+  and the note "This build registers no 'pyocd' runner (runners.yaml: `["jlink",
+  "openocd"]`), so its fields could not be resolved.", which
+  `logUnlaunchableDetail` logs verbatim. The
+  wording is therefore split, not tan's alone: tan owns the general
+  placeholders-remain note, which the extension still logs verbatim; the
+  extension owns the per-key next step, being the half that knows the key and
+  the target class (#339).
+
+- **The three diagnostic surfaces say which verdict they are giving.** `Alp:
+  Debug preflight`, the troubleshooting panel and `Alp: Export support bundle`
+  build that host-readiness report and never read the written `launch.json`, so
+  their `canLaunch` answers "is this machine ready", not "does this file
+  launch". It is now labelled as such: the report carries
+  `configurationGraded`, `"none"` until the fold sets it, the panel prints it
+  beside `canLaunch`, and the support bundle — the artefact a customer sends
+  once a session has ALREADY failed — records `hostReady=` rather than
+  `canLaunch=`. That bundle note is the whole reason the marker exists and it is
+  a hand-built string in `src/debug.ts`, so it gets its own test
+  (`test/debug.supportBundle.test.js`): it drives the real registered
+  `alp.exportSupportBundle` handler and asserts on the notes the bundle carries,
+  including that none of them may call a configuration-blind verdict
+  `canLaunch=`. Grading the configuration on those paths would mean spawning tan
+  from a diagnostic command; the marker is the honest cheap half (#339).
+
+  On `dev` this was not, as first written, invisible behind a constant `false`.
+  `native-host` drew no configuration check at all — `requiredPlaceholderFields`
+  filtered on `value !== undefined` and its profile set none of them, it carried
+  no `openOcdConfigFiles`, and the `svdFile` check was gated on
+  `adapter === "cortex-debug"` while native-host is `lldb`. dev's own
+  "buildDebugPreflightReport can pass for resolved native-host profile" asserts
+  `canLaunch === true`. So a dev support bundle could already print an unlabelled
+  `canLaunch=true`, for the target class that is most often a customer's first
+  debug session. Harmless in practice, because tan's `native-host` configuration
+  carries no `<…>` token to be blind to — but the marker is a fix, not only a
+  guard against a future one.
+
+- **An unresolved value in the written `launch.json` still blocks the launch,
+  and now names the field.** The fold produces one check
+  per unresolved `launch.json` key rather than a single one called `launchConfig`
+  — so a build whose `runners.yaml` records no `--device` reports `canLaunch:
+  false` and tells the customer to "resolve: device", a field in their own file,
+  instead of "resolve: launchConfig", the name of a check that is in nothing they
+  own. The placeholder itself stays in the check detail and in the log. Where a
+  value genuinely cannot be filled — `baremetal-mcu` has no Zephyr build and so
+  no `runners.yaml`, `yocto-userspace` needs a remote `<host>:<port>` nothing can
+  derive — tan emits both the placeholder and a general note saying so, and the
+  extension logs that note verbatim rather than writing a second version of it.
+  The per-key next step is the extension's own, and fits the target: see the
+  bullet above (#339).
+
 - **The argv the extension hands `tan debug-config` is now pinned by a test**
   (`test/debug.configArgs.test.js`). Since #387 the extension does not write
   `launch.json` — it builds an argv, spawns tan, and reads `data.configuration`

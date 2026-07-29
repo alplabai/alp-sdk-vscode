@@ -38,6 +38,7 @@ import {
 import {
   debugConfigArgs,
   findRescuablePairs,
+  gradeWrittenLaunchConfig,
   planOrphanRescue,
 } from "./debug/service";
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
@@ -46,7 +47,6 @@ import {
   DebugConfigData,
   SUPPORTED_CLI_VERSION,
   isDebugConfigData,
-  launchConfigPlaceholders,
 } from "./alpCli/service";
 import { ensureNativeSimOverlay } from "./west";
 import { log, showOutput } from "./util";
@@ -174,8 +174,10 @@ async function debugPreflight(): Promise<void> {
     },
   );
 
+  // Same reason as the support bundle below: this command never reads the
+  // written launch.json, so its verdict is about the host, not the file.
   log(
-    `alp.debugPreflight: ran preflight for ${targetKind}/${server}, canLaunch=${report.canLaunch}`,
+    `alp.debugPreflight: ran preflight for ${targetKind}/${server}, hostReady=${report.canLaunch}`,
   );
   await showJsonDocument(report);
   if (!report.canLaunch || report.summary.warn > 0) {
@@ -250,7 +252,14 @@ async function writeLaunchProfile(
   );
   if (!written) return null;
 
-  const placeholders = launchConfigPlaceholders(written.configuration);
+  // Read the file BACK and grade that, not tan's draft: tan merges, so a value
+  // the customer hand-filled survives while `data.configuration` still carries
+  // the placeholder (`gradeWrittenLaunchConfig`). Falls back to the draft when
+  // the file cannot be read, and says which it did.
+  const graded = gradeWrittenLaunchConfig(
+    readLaunchJsonDocument(context.workspaceRoot),
+    written.configuration,
+  );
   log(
     `alp debug: ${written.replaced ? "updated" : "wrote"} launch profile for ${targetKind}/${server}`,
   );
@@ -269,15 +278,23 @@ async function writeLaunchProfile(
     launchPath: written.launchJsonPath,
     relPath: vscode.workspace.asRelativePath(written.launchJsonPath),
     replaced: written.replaced,
-    // The in-process report answers "is the HOST ready" (adapters installed).
-    // It cannot see that the CLI left `<resolved-device>` in the file it just
-    // wrote — `tan debug-config` reports ok for a partly-resolved draft by
-    // design. Without this the user is told the profile is ready and the
-    // session dies inside the adapter. foldLaunchConfigPlaceholders adds a
-    // real "launchConfig" check (rather than just flipping `canLaunch`), so
-    // `report.checks`/`summary`/`nextSteps` name the failure too — both
-    // consumers below build their message from `checks`.
-    report: foldLaunchConfigPlaceholders(report, placeholders),
+    // The in-process report answers "is the HOST ready" (adapters installed,
+    // tool on PATH, artefact built) and NOTHING about the configuration's own
+    // values — it no longer drafts any, so it no longer grades any (#339).
+    // This fold is the whole configuration verdict, and it is taken against
+    // the launch.json entry on disk: `tan debug-config` reports ok for a
+    // partly-resolved draft by design, so a zero exit does not mean the file
+    // can launch. Without this the user is told the profile is ready and the
+    // session dies inside the adapter; with it, a config that IS fully
+    // resolved — by tan, or by the customer's own hand before it — adds no
+    // check at all and F5 goes straight through. Each unresolved key becomes a
+    // check named after that key, so `checks`/`summary`/`nextSteps` name the
+    // field — both consumers below build their message from `checks`.
+    report: foldLaunchConfigPlaceholders(
+      report,
+      graded.placeholders,
+      graded.source,
+    ),
     // The placeholders are now named by the folded check's own detail/fix, so
     // no separate note is needed here — keep only the CLI's own notes.
     notes: written.notes,
@@ -316,8 +333,19 @@ async function runDebugConfig(
   );
 
   if (!outcome.ok) {
+    // An older tan exits 2 (validation) on an argument its clap definition
+    // does not know, with a message about the FLAG rather than the project —
+    // so a `debug-config` exit 2 whose argv carries a flag younger than the
+    // customer's binary is version skew, not a bad board.yaml. Both flags this
+    // argv can carry are that young: `--core` (the v0.3.1 field report) and
+    // `--pre-launch-task`, added by tan-cli#85 and shipped in 0.4.0. Listing
+    // only `--core` left the whole native-host/zephyr-mcu class — where
+    // `--pre-launch-task` is present and `--core` may not be, because
+    // `resolveManifestSlice` finds no slice before the first build — reporting
+    // tan's raw complaint with no hint that the CLI is what needs updating.
     const skew =
-      outcome.kind === "validation" && args.includes("--core")
+      outcome.kind === "validation" &&
+      (args.includes("--core") || args.includes("--pre-launch-task"))
         ? ` This extension requires tan ${SUPPORTED_CLI_VERSION} or newer; run "Alp: Update CLI" and retry.`
         : "";
     await notify(
@@ -613,14 +641,14 @@ async function previewMaintainedConfigName(
 }
 
 /** Log everything behind a "not launchable yet" toast, and return the check
- *  names that toast lists. The toast has room for names only, so the WHY has
- *  to reach the channel it sends the user to (`showOutput()`): each failing
- *  check's `detail`/`fix`. That is the ONLY place the unresolved values
- *  themselves survive — the folded `launchConfig` check
- *  (`foldLaunchConfigPlaceholders`) carries the `<resolved-…>` list in its
- *  detail, and the CLI's own notes only say placeholders exist in general,
- *  never which. Logging names alone would leave "resolve: launchConfig" with
- *  no way to find out which field. */
+ *  names that toast lists. The toast has room for names only — which is why
+ *  `foldLaunchConfigPlaceholders` names each folded check after the launch.json
+ *  KEY that is still unresolved, so the sentence reads "resolve: device". The
+ *  WHY has to reach the channel it sends the user to (`showOutput()`): each
+ *  failing check's `detail`/`fix`. That is the ONLY place the unresolved values
+ *  themselves survive — the folded check carries the `<resolved-…>` token in
+ *  its detail, and the CLI's own notes only say placeholders exist in general,
+ *  never which. */
 function logUnlaunchableDetail(result: LaunchProfileResult): string {
   for (const note of result.notes) log(note);
   const failures = result.report.checks.filter(
@@ -783,7 +811,13 @@ async function exportSupportBundle(): Promise<void> {
     notes: [
       `targetKind=${targetKind}`,
       `server=${server}`,
-      `canLaunch=${preflight.canLaunch}`,
+      // NOT `canLaunch=`. This bundle is what a customer sends after a debug
+      // session already died, and nothing here read their launch.json — the
+      // report is host readiness only (#339). Labelling an unfolded verdict
+      // `canLaunch` would tell the reader the file launches while the session
+      // is dying on a placeholder inside it, i.e. send them to the wrong half.
+      `hostReady=${preflight.canLaunch}`,
+      `configurationGraded=${preflight.configurationGraded}`,
     ],
   });
 

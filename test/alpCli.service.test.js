@@ -1537,7 +1537,7 @@ test("isDebugConfigData rejects junk", () => {
   }
 });
 
-test("launchConfigPlaceholders finds every unresolved value, nested", () => {
+test("launchConfigPlaceholders finds every unresolved value, nested, with its key", () => {
   // A board that registers no OpenOCD runner still gets configFiles with a
   // placeholder — inside an ARRAY, which a flat scan would miss.
   const partly = {
@@ -1547,10 +1547,18 @@ test("launchConfigPlaceholders finds every unresolved value, nested", () => {
     configFiles: ["<resolved-openocd-board-cfg>"],
     device: "<resolved-device>",
   };
+  // The KEY is what makes a finding actionable: `foldLaunchConfigPlaceholders`
+  // names its check after it and the toast is built from check names, so this
+  // is what turns "resolve: launchConfig" into "resolve: device" (#339).
   assert.deepStrictEqual(launchConfigPlaceholders(partly), [
-    "<resolved-openocd-board-cfg>",
-    "<resolved-device>",
+    { key: "configFiles[0]", value: "<resolved-openocd-board-cfg>" },
+    { key: "device", value: "<resolved-device>" },
   ]);
+  // Nested under an object inside an array — the cppdbg `setupCommands` shape.
+  assert.deepStrictEqual(
+    launchConfigPlaceholders({ setupCommands: [{ text: "<resolved-gdb>" }] }),
+    [{ key: "setupCommands[0].text", value: "<resolved-gdb>" }],
+  );
   // A fully resolved configuration must report clean, or every debug session
   // would be marked unlaunchable.
   assert.deepStrictEqual(

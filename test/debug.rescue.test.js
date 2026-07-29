@@ -58,11 +58,13 @@ test("the placeholder predicate sees any <…> token, not just <resolved-", () =
   // yocto-userspace draft, and the `<resolved-` prefix test did not see it. A
   // rescue reusing that would read a Yocto orphan's placeholder as a real
   // gdbserver address and overwrite a good one with it.
+  // A bare string has no surrounding key, so `key` is empty — the rescue reads
+  // the length only, and the fold falls back to a generic check name.
   assert.deepStrictEqual(launchConfigPlaceholders("<host>:<port>"), [
-    "<host>:<port>",
+    { key: "", value: "<host>:<port>" },
   ]);
   assert.deepStrictEqual(launchConfigPlaceholders("<resolved-device>"), [
-    "<resolved-device>",
+    { key: "", value: "<resolved-device>" },
   ]);
   // `${…}` is VS Code's own substitution and carries no angle bracket, so a
   // fully-resolved configuration must still report clean.

@@ -1,6 +1,6 @@
 # Getting Started (CLI)
 
-Last revised: 2026-07-20
+Last revised: 2026-07-29
 
 This guide covers the terminal-first `tan` CLI workflow. Two usage modes are
 supported: **standalone install** (download the prebuilt binary, recommended for
@@ -25,9 +25,10 @@ asset (no `.zip` / `.tar.gz`). Download the one for your host from the
 # Pick the asset for your host target (tag v<version>):
 #   tan-x86_64-unknown-linux-musl      (Linux x64, static)
 #   tan-aarch64-unknown-linux-musl     (Linux arm64, static)
-#   tan-x86_64-apple-darwin            (macOS Intel)
 #   tan-aarch64-apple-darwin           (macOS Apple silicon)
 #   tan-x86_64-pc-windows-msvc.exe     (Windows x64)
+# These two run tan but CANNOT build firmware -- see "Host support" below:
+#   tan-x86_64-apple-darwin            (macOS Intel)
 #   tan-aarch64-pc-windows-msvc.exe    (Windows arm64)
 curl -L -o /usr/local/bin/tan \
   https://github.com/alplabai/tan-cli/releases/download/v0.3.0/tan-x86_64-unknown-linux-musl
@@ -35,10 +36,52 @@ chmod +x /usr/local/bin/tan
 tan --help
 ```
 
+No `tan` release has ever published a 32-bit-ARM Linux asset
+(`arm-unknown-linux-*`), and building one from source would not unblock that
+host either — see [Host support](#host-support-tan-runs-vs-firmware-builds).
+
 For CI environments, pin to an exact release tag (`v<version>`) to ensure
 reproducibility. The VS Code extension provisions the same binary automatically
 (see [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md)); this guide is for
 terminal/CI use where you manage `tan` yourself.
+
+### Host support: `tan` runs vs. firmware builds
+
+Downloading `tan` for your host and **building firmware** on that host are two
+different claims. `tan` publishes binaries for more hosts than the pinned
+**Zephyr SDK 1.0.1** publishes a toolchain for, and where the toolchain is
+missing there is nothing for `west sdk install` to fetch — so `tan build`
+cannot produce an image no matter how `tan` got there.
+
+`zephyrproject-rtos/sdk-ng` `v1.0.1` publishes exactly **four** host families:
+`linux-aarch64`, `linux-x86_64`, `macos-aarch64`, `windows-x86_64`.
+
+| Host                | `tan` asset                        | Zephyr SDK 1.0.1 host build | Firmware builds?                                              |
+| ------------------- | ---------------------------------- | --------------------------- | ------------------------------------------------------------- |
+| Linux x64           | `tan-x86_64-unknown-linux-musl`    | `linux-x86_64`              | Yes                                                            |
+| Linux arm64         | `tan-aarch64-unknown-linux-musl`   | `linux-aarch64`             | Yes                                                            |
+| macOS Apple silicon | `tan-aarch64-apple-darwin`         | `macos-aarch64`             | Yes                                                            |
+| Windows x64         | `tan-x86_64-pc-windows-msvc.exe`   | `windows-x86_64`            | Yes                                                            |
+| Windows on ARM      | `tan-aarch64-pc-windows-msvc.exe`  | never published             | **No** — `wsl --install`, then run `tan` inside the distro     |
+| macOS Intel         | `tan-x86_64-apple-darwin`          | dropped in SDK 1.0.0        | **No** — build on a `linux-x86_64` VM, container, or remote box |
+| Linux armhf         | none published                     | none published              | **No** — move to a `linux-x86_64` / `linux-aarch64` host        |
+
+Two notes worth having before you pick a machine:
+
+- **Intel Mac.** The SDK published `macos-x86_64` through **0.17.4** and dropped
+  it in **1.0.0**; the pin is 1.0.1. `macos-aarch64` is not a substitute —
+  Rosetta translates x86_64 **for** Apple silicon, not aarch64 for an Intel Mac
+  — and macOS has no WSL2 equivalent. Pinning an older SDK is not an escape
+  either: the pinned Zephyr requires 1.0.1.
+- **Windows on ARM and Linux armhf.** A WSL2 distro on Windows-on-ARM hardware
+  is `linux-aarch64`, which **is** served, so that host has a first-class path —
+  just not the native one. Linux armhf has none: there is no `tan` asset and no
+  Zephyr SDK host build, so **building `tan` from source does not help** — it
+  would run and then have no toolchain to hand `west`.
+
+From `tan` v0.4.0 on, `tan doctor` reports this as a `zephyrSdkHost` check with
+a per-host remedy. Earlier builds omit the check — an older `tan` saying nothing
+about your host is not a pass.
 
 The `tan` command below is the native Rust binary. For development from source,
 substitute `tan-cli/target/release/tan`.
