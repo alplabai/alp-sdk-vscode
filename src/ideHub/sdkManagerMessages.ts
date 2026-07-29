@@ -455,12 +455,24 @@ export function createSdkMessageHandler(
           //
           // `notifyAsync`, and no Retry: retrying cannot work until git is
           // installed, and installing it is not something this handler can
-          // observe. The customer presses Install again — the panel's own
-          // button, still there — once Download Git has done its job.
+          // observe.
+          //
+          // Neither sentence says git is absent from the MACHINE — all this
+          // handler knows is that its own process could not resolve `git`, and
+          // those differ in the state its own advice creates. Installing git
+          // while VS Code is running leaves the running editor blind to it:
+          // Windows delivers a new `PATH` only to processes started afterwards,
+          // and a window reload does not help either, because the extension
+          // host is forked from a main process whose environment was captured
+          // at launch (VS Code skips shell-environment resolution on Windows
+          // outright). So the advice is to reopen VS Code, not to press Install
+          // again — a re-press in the same window reproduces this exact ENOENT.
           if (isMissingGit(err)) {
             sendProgress(
-              `Install failed: Git isn't installed. Alp fetches the SDK with ` +
-                `git clone, so install Git and press Install again.`,
+              `Install failed: Alp couldn't find Git. Alp fetches the SDK ` +
+                `with git clone, so install Git, then close VS Code completely ` +
+                `and reopen it — a new install isn't visible to an editor that ` +
+                `was already running.`,
               true,
               false,
             );
@@ -468,8 +480,8 @@ export function createSdkMessageHandler(
               planFailure({
                 operation: "Installing the SDK",
                 cause:
-                  `Alp: installing SDK ${version} needs Git, and Git isn't ` +
-                  `installed on this machine.`,
+                  `Alp: installing SDK ${version} needs Git, and Alp couldn't ` +
+                  `find Git.`,
                 detail: String(err),
                 actions: [{ id: "downloadGit" }],
               }),

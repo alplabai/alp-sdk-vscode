@@ -156,11 +156,15 @@ class BuildDelegatePty implements vscode.Pseudoterminal {
  *  deploy story, and the yocto-userspace configuration `tan debug-config`
  *  writes ships `miDebuggerServerAddress: "<host>:<port>"` for the user to
  *  fill in by hand — a remote address nothing can derive from a build (see
- *  docs/DEBUG.md §10.4). This must never silently succeed — a
- *  no-op preLaunchTask would send the user straight into a cppdbg session
- *  with no gdbserver listening on the other end and no explanation. Exiting
- *  1 makes VS Code raise its "the preLaunchTask terminated with exit code 1
- *  — Debug Anyway / Show Errors" dialog, which is where this message shows. */
+ *  docs/DEBUG.md §10.4). This must never silently succeed — exiting 0 would
+ *  imply a deploy happened, so it exits 1 with the manual step named.
+ *
+ *  That exit code is also why no generated profile references this label:
+ *  `preLaunchTaskFor` (./service.ts) maps yocto-userspace to nothing, because
+ *  a task that always fails would raise VS Code's failed-preLaunchTask dialog
+ *  on every F5, including a remote setup the customer already has working.
+ *  The label stays registered, reachable from the Tasks picker, which is
+ *  where this message shows. */
 const DEPLOY_GDBSERVER_MESSAGE =
   "Alp: no automated deploy for a Yocto/userspace target -- copy the built " +
   "binary to the target and start gdbserver there by hand, then fill in " +
@@ -274,9 +278,10 @@ class AlpTaskProvider implements vscode.TaskProvider {
   }
 }
 
-/** Registers the provider backing the four `preLaunchTask` labels tan's
- *  generated launch.json profiles reference. Caller pushes the returned
- *  disposable onto `context.subscriptions`. */
+/** Registers the provider backing the four `alp:` task labels — the three a
+ *  generated launch.json profile references as its `preLaunchTask`, plus the
+ *  picker-only gdbserver placeholder. Caller pushes the returned disposable
+ *  onto `context.subscriptions`. */
 export function registerAlpTaskProvider(
   context: vscode.ExtensionContext,
 ): vscode.Disposable {

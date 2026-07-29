@@ -72,9 +72,12 @@ test("the button's verb is the fix's REAL effect, not 'Install'", () => {
       "in your browser — nothing is installed",
   });
   assert.equal(rowFor(plan(), "zephyrSdk").action.effect, "open-docs");
+  // Same sentence, then the pointer's own `note` — the thing the customer
+  // still has to do once the page is open, which the page does not say.
+  // Asserted in full in test/deps.planner.zephyrSdk.test.js.
   assert.match(
     rowFor(plan(), "zephyrSdk").action.title,
-    /zephyr_sdk\.html\) in your browser — nothing is installed$/,
+    /zephyr_sdk\.html\) in your browser — nothing is installed\. Then run /,
   );
 
   // Same row, same fix id, two platforms, two different true verbs: a pip
@@ -89,10 +92,15 @@ test("the button's verb is the fix's REAL effect, not 'Install'", () => {
     rowFor(plan({ host: "linux" }), "west").action.effect,
     "bootstrap",
   );
-  assert.equal(
-    rowFor(plan({ host: "darwin" }), "westResolved").action.effect,
-    "bootstrap",
-  );
+  // `westResolved` is the VENV west, so it bootstraps on EVERY host — win32
+  // included, where the `west` row's pip command cannot satisfy it.
+  for (const host of ["win32", "linux", "darwin"]) {
+    assert.equal(
+      rowFor(plan({ host }), "westResolved").action.effect,
+      "bootstrap",
+      host,
+    );
+  }
 });
 
 test("every action carries a title, in both branches", () => {
@@ -156,13 +164,34 @@ test("key ABSENT: an unmapped check gets a row and no action", () => {
   assert.equal(rowFor(report, "vendorToolchain").action, null);
 });
 
-test("key NULL: tan looked and found nothing missing — no actions at all", () => {
+test("key NULL: tan named no missing PREREQUISITE — the fix map still answers", () => {
   const report = plan({ data: withPrereqs(null) });
-  // Distinct from `undefined`: tan CAN answer here and its answer is "nothing".
+  // Distinct from `undefined`: tan CAN answer here and its answer is "no PATH
+  // prerequisite is missing". That is not the same statement as "no check needs
+  // action" — tan builds this list inside `push_tool`, and the checks it pushes
+  // by struct literal (`zephyrSdk`) can never appear in it however broken they
+  // are. So the local fix map is still consulted for a check the list is
+  // silent about; see test/deps.planner.zephyrSdk.test.js for the driven case.
   assert.equal(report.prerequisiteDataUnavailable, false);
-  for (const row of report.rows) {
-    assert.equal(row.action, null, `${row.name} invented an action`);
+  assert.equal(rowFor(report, "zephyrSdk").action.fixId, "zephyr-sdk");
+  assert.equal(rowFor(report, "ninja").action.fixId, "build-tools");
+  // And a check with no known remedy still gets nothing invented for it.
+  for (const name of ["yoctoHost", "vendorToolchain", "sdk", "workspace"]) {
+    assert.equal(rowFor(report, name).action, null, `${name} invented one`);
   }
+  // A passing check is never offered a fix, in this branch either.
+  assert.equal(rowFor(report, "cmake").action, null);
+});
+
+test("key NULL: an entry tan DID emit still wins over the fix map", () => {
+  // The rule the fallback must not break: tan spoke, tan decides. `west` is in
+  // the fix map and would otherwise get `python -m pip install --user west` on
+  // win32 — contradicting tan's own "Install west via `tan bootstrap`.".
+  const report = plan({
+    host: "win32",
+    data: withPrereqs([{ tool: "west", command: null }]),
+  });
+  assert.equal(rowFor(report, "west").action, null);
 });
 
 test("entry with a command: carried VERBATIM", () => {

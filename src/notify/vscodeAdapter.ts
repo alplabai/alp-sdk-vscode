@@ -115,10 +115,17 @@ const ACTIONS: Record<
   // (`winget install -e --id Git.Git`, `sudo apt-get install -y git`,
   // `brew install git`) are the SDK's `metadata/bootstrap.json`
   // `prerequisites.install`, served through tan's doctor envelope — a second
-  // copy here is the drift `src/deps/vscodeAdapter.ts` refuses by design. Until
-  // tan emits a `git` check the honest offer is the canonical download page,
-  // the same `openExternal` pointer `runToolchainFix` already uses for the
-  // Zephyr SDK and the Zephyr build tools. Not login-gated.
+  // copy here is the drift `src/deps/vscodeAdapter.ts` refuses by design.
+  //
+  // The pinned tan DOES emit a `git` check — v0.4.0 answers a missing git with
+  // `{"name":"git","status":"fail","fix":"Install git. `winget install -e --id
+  // Git.Git`"}` plus a `missingPrerequisites` entry — so the Dependencies panel
+  // already carries a one-click install. This pointer exists for the case that
+  // reaches it: `buildDependencyReport` refuses without an open project folder,
+  // and the SDK install this fires from is what a customer does BEFORE they
+  // have a folder. The canonical download page is the same `openExternal`
+  // pointer `runToolchainFix` already uses for the Zephyr SDK and the Zephyr
+  // build tools. Not login-gated.
   downloadGit: {
     title: "Download Git",
     run: () =>

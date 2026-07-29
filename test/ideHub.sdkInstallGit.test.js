@@ -60,10 +60,14 @@ function loadWithStubs(relPath, stubs) {
  * for one that does not exist (real ENOENT); `"exitCode"` runs a real process
  * that exits non-zero, which is what a failed-but-started clone looks like.
  */
-async function driveInstall(spawnMode) {
+async function driveInstall(spawnMode, clickTitle) {
   const toasts = [];
   const channel = [];
   const posted = [];
+  // Every `openExternal` the presenter performs, so the ONE promise the new
+  // button makes is pinned. Without this, pointing `downloadGit` at any other
+  // URL passes the whole suite.
+  const opened = [];
 
   const log = (line, level) => channel.push({ level: level ?? "info", line });
 
@@ -72,7 +76,11 @@ async function driveInstall(spawnMode) {
       window: {
         showErrorMessage: (message, _options, ...titles) => {
           toasts.push({ severity: "error", message, titles });
-          return Promise.resolve(undefined);
+          // `clickTitle` simulates the customer pressing that button, so the
+          // action's `run` actually executes and its side effect is observable.
+          return Promise.resolve(
+            clickTitle && titles.includes(clickTitle) ? clickTitle : undefined,
+          );
         },
         showWarningMessage: (message, _options, ...titles) => {
           toasts.push({ severity: "warning", message, titles });
@@ -86,7 +94,12 @@ async function driveInstall(spawnMode) {
           toasts.push({ severity: "statusBar", message, titles: [] }),
       },
       commands: { executeCommand: async () => undefined },
-      env: { openExternal: async () => true },
+      env: {
+        openExternal: async (uri) => {
+          opened.push(String(uri));
+          return true;
+        },
+      },
       Uri: { parse: (u) => u, file: (p) => p },
       workspace: { openTextDocument: async () => ({}) },
     },
@@ -111,10 +124,24 @@ async function driveInstall(spawnMode) {
         ProgressLocation: { Notification: 15 },
       },
       child_process: {
-        spawn: (_cmd, args, opts) =>
-          spawnMode === "missing"
-            ? realCp.spawn(MISSING_BINARY, args, opts)
-            : realCp.spawn(process.execPath, ["-e", "process.exit(128)"], opts),
+        spawn: (_cmd, args, opts) => {
+          if (spawnMode === "missing") {
+            return realCp.spawn(MISSING_BINARY, args, opts);
+          }
+          if (spawnMode === "fsenoent") {
+            // Same `code` as a missing binary, different `syscall` — what a
+            // filesystem miss inside the same `try` looks like.
+            throw Object.assign(
+              new Error("ENOENT: no such file or directory, open 'dest'"),
+              { code: "ENOENT", syscall: "open" },
+            );
+          }
+          return realCp.spawn(
+            process.execPath,
+            ["-e", "process.exit(128)"],
+            opts,
+          );
+        },
       },
       "../alpCli/vscodeAdapter": {
         proxyEnvAdditions: () => ({}),
@@ -148,7 +175,7 @@ async function driveInstall(spawnMode) {
   } finally {
     fs.rmSync(cacheRoot, { recursive: true, force: true });
   }
-  return { toasts, channel, posted };
+  return { toasts, channel, posted, opened };
 }
 
 test("no git on the box: the toast names Git and offers a way to get it", async () => {
@@ -159,12 +186,24 @@ test("no git on the box: the toast names Git and offers a way to get it", async 
   assert.equal(toast.severity, "error");
   assert.equal(
     toast.message,
-    "Alp: installing SDK v0.13.0 needs Git, and Git isn't installed on this machine.",
+    "Alp: installing SDK v0.13.0 needs Git, and Alp couldn't find Git.",
   );
   // The customer sentence, not just the channel. Before this fix the sentence
   // was "Alp: couldn't install SDK v0.13.0." — which named nothing.
   assert.match(toast.message, /Git/);
   assert.deepEqual(toast.titles, ["Download Git", "Show Output"]);
+  // What the extension knows is that ITS process could not resolve `git` — not
+  // that the machine has none. The two differ in the state this very advice
+  // creates: install Git while VS Code is running and the running editor still
+  // cannot see it, so a sentence asserting machine state would be false to the
+  // customer standing in front of a freshly installed Git.
+  assert.equal(
+    /isn't installed|is not installed|not installed on this machine/.test(
+      toast.message,
+    ),
+    false,
+    "the toast must not assert machine state it cannot observe",
+  );
 });
 
 test("no git on the box: Retry is NOT offered", async () => {
@@ -196,7 +235,17 @@ test("no git on the box: the errno stays in the channel, never the toast", async
   // on screen after the toast is dismissed.
   const done = posted.find((msg) => msg.done);
   assert.equal(done.success, false);
-  assert.match(done.log, /Git isn't installed/);
+  assert.match(done.log, /Alp couldn't find Git/);
+  // Pressing Install again in the same window cannot work on Windows: a PATH
+  // written by the Git installer never reaches an already-running editor, and
+  // a window reload does not fetch it either. So the panel must not send them
+  // back to the button they just pressed.
+  assert.match(done.log, /reopen/i);
+  assert.equal(
+    /press Install again/i.test(done.log),
+    false,
+    "a re-press in the same window reproduces the same ENOENT",
+  );
 });
 
 test("a clone that RAN and failed keeps Retry and never blames git", async () => {
@@ -216,5 +265,33 @@ test("a clone that RAN and failed keeps Retry and never blames git", async () =>
   assert.ok(
     channel.some((entry) => entry.line.includes("exited with code 128")),
     "the real exit code still reaches the channel",
+  );
+});
+
+test("pressing Download Git opens git-scm.com, by exact URL", async () => {
+  // The button makes exactly one promise. Pointing it anywhere else — a typo, a
+  // dead host, a page behind a login — passed every other test in this file and
+  // in the suite, because nothing invoked the action's `run`.
+  const { opened } = await driveInstall("missing", "Download Git");
+
+  assert.deepEqual(opened, ["https://git-scm.com/downloads"]);
+});
+
+test("an ENOENT that is NOT a spawn is never reported as a missing Git", async () => {
+  // The predicate is `code === "ENOENT" && syscall startsWith "spawn"`. The
+  // `syscall` half is what stops a FILESYSTEM ENOENT — thrown inside the same
+  // `try`, e.g. staging the clone destination — from telling a customer who
+  // has Git installed to go and install Git. Dropping that half leaves every
+  // other test in this file passing, so it is driven here: same `code`,
+  // different `syscall`.
+  const { toasts } = await driveInstall("fsenoent");
+
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].message, "Alp: couldn't install SDK v0.13.0.");
+  assert.deepEqual(toasts[0].titles, ["Retry", "Show Output"]);
+  assert.equal(
+    /Git/.test(toasts[0].message),
+    false,
+    "a filesystem ENOENT must not be reported as a missing Git",
   );
 });

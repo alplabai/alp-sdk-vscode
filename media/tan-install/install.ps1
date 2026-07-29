@@ -45,7 +45,7 @@ if ($Version -eq "latest") {
 
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 $dest = Join-Path $Dir "tan.exe"
-Write-Host "install.ps1: downloading tan ($archPart, $Version)…"
+Write-Host "install.ps1: downloading tan ($archPart, $Version)..."
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
 
@@ -55,7 +55,7 @@ $curPath = [Environment]::GetEnvironmentVariable("Path", $scope)
 if (-not ($curPath -split ';' | Where-Object { $_ -eq $Dir })) {
 	$newPath = if ([string]::IsNullOrEmpty($curPath)) { $Dir } else { "$curPath;$Dir" }
 	[Environment]::SetEnvironmentVariable("Path", $newPath, $scope)
-	Write-Host "install.ps1: added $Dir to the $scope Path — restart the terminal for it to take effect."
+	Write-Host "install.ps1: added $Dir to the $scope Path -- restart the terminal for it to take effect."
 }
 
 Write-Host "install.ps1: installed tan -> $dest"
