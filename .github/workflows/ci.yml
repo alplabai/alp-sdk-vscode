@@ -32,8 +32,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      # A Windows failure must not cancel ubuntu: ubuntu is the required check,
-      # Windows is advisory until it has a track record.
+      # A Windows or macOS failure must not cancel ubuntu: ubuntu is the
+      # required check, the other two are advisory until they have a track
+      # record. Nor may either cancel the other — they routinely surface the
+      # same defect from different angles.
       fail-fast: false
       matrix:
         include:
@@ -41,6 +43,11 @@ jobs:
             name: build · extension + vsix
           - os: windows-latest
             name: build · windows
+          # `macos-latest` is arm64, and that is the point: it is the host the
+          # darwin-arm64 bundled-CLI VSIX targets. `macos-13` would be x64 and
+          # would test nothing we actually ship (#416).
+          - os: macos-latest
+            name: build · macos
 
     defaults:
       run:
@@ -145,3 +152,79 @@ jobs:
           test -f schemas/board.schema.json
           node -e "JSON.parse(require('fs').readFileSync('schemas/board.schema.json','utf8'))"
           echo "vendored board schema present + valid JSON"
+
+      # ---- macOS only ----------------------------------------------------
+      #
+      # The second half of #416, and the reason the macOS leg is worth its
+      # minutes beyond "one more POSIX host".
+      #
+      # `release-vsix.yml`'s `package_darwin_arm64` job downloads
+      # `tan-aarch64-apple-darwin` into `bin/tan` and packages it — while
+      # `runs-on: ubuntu-latest` (release-vsix.yml:182). Nothing anywhere has
+      # ever EXECUTED that binary; an ubuntu x64 runner physically cannot. So
+      # "the bundled CLI runs" has been an untested claim on every release of
+      # the one VSIX variant that bundles a CLI at all.
+      #
+      # Scope, stated so this is not mistaken for more than it is: this does
+      # NOT test the packaged VSIX. That artefact is only assembled at a
+      # release tag, so asserting on the package stays a release-time
+      # property. This tests the thing inside it — the pinned darwin-arm64
+      # binary, executed on darwin-arm64.
+      - name: Resolve the pinned tan version
+        if: matrix.os == 'macos-latest'
+        id: cli_version
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not resolve SUPPORTED_CLI_VERSION from src/alpCli/service.ts"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: The bundled darwin-arm64 tan binary runs on darwin-arm64
+        if: matrix.os == 'macos-latest'
+        # Same URL shape and the same non-`-f` curl accounting as
+        # release-vsix.yml:246-268, so a 404 stays distinguishable from a
+        # network failure instead of collapsing into curl's exit 22.
+        #
+        # Deliberately NOT fatal on a missing asset, and that is the one place
+        # it differs from the release job. There, no asset means the VSIX would
+        # ship broken, so it must stop the release. Here the pin can
+        # legitimately name a tag whose darwin asset is not published yet, and
+        # reddening every PR on that would only teach people to ignore this
+        # job. A published binary that does NOT run is a hard failure — that is
+        # the case worth having.
+        run: |
+          set -uo pipefail
+          VERSION="${{ steps.cli_version.outputs.version }}"
+          URL="https://github.com/alplabai/tan-cli/releases/download/v${VERSION}/tan-aarch64-apple-darwin"
+          mkdir -p /tmp/bundled
+          CURL_RC=0
+          STATUS=$(curl -sSL -w '%{http_code}' -o /tmp/bundled/tan "$URL") || CURL_RC=$?
+          BYTES=0
+          if [ -f /tmp/bundled/tan ]; then BYTES=$(wc -c < /tmp/bundled/tan); fi
+          if [ "$STATUS" = "404" ]; then
+            rm -f /tmp/bundled/tan
+            echo "::warning::No tan-aarch64-apple-darwin asset at tag v${VERSION} (SUPPORTED_CLI_VERSION, src/alpCli/service.ts). Nothing to execute — not a defect in this repo. url=${URL}"
+            exit 0
+          fi
+          if [ "$CURL_RC" -ne 0 ] || [ "$STATUS" != "200" ] || [ ! -s /tmp/bundled/tan ]; then
+            rm -f /tmp/bundled/tan
+            echo "::warning::Could not fetch the bundled tan binary — treat as network/proxy/outage, not a code defect. pin=v${VERSION} http_status=${STATUS} curl_exit=${CURL_RC} bytes=${BYTES} url=${URL}"
+            exit 0
+          fi
+          chmod +x /tmp/bundled/tan
+          # Published and downloaded, so from here a failure IS ours: an
+          # unrunnable bundled binary is exactly what reaches a Mac customer.
+          set -e
+          file /tmp/bundled/tan
+          OUT=$(/tmp/bundled/tan --version)
+          echo "bundled tan on darwin-arm64: ${OUT}"
+          case "$OUT" in
+            *"$VERSION"*) ;;
+            *)
+              echo "::error::The bundled darwin-arm64 binary runs but reports '${OUT}', which does not contain the pinned version ${VERSION}. The VSIX would ship a CLI that disagrees with SUPPORTED_CLI_VERSION."
+              exit 1
+              ;;
+          esac
