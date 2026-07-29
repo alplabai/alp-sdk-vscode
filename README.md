@@ -254,7 +254,11 @@ Load the local build via `Extensions: Install from VSIX`.
 ## Development
 
 Use `pnpm test` as the default verification step while changing the
-extension.
+extension. Run `pnpm run contract:fetch` once first: it downloads tan's
+published `envelope-contract.json` into the gitignored
+`test/golden/tan-contract/`, and `pnpm test` FAILS without it rather than
+skipping the contract gate. Offline, `TAN_CONTRACT_OFFLINE=1 pnpm test`
+downgrades that failure to a loud skip (ignored when `CI` is set).
 
 The current test setup is intentionally lightweight:
 

@@ -42,6 +42,43 @@
   the upstream hashes recorded alongside — so a silent re-vendor, or an
   undeclared edit hiding behind the declared one, fails the suite instead of
   reaching the Marketplace.
+- **The tan envelope-contract gate now fails when it cannot verify, instead of
+  skipping.** `scripts/fetch-tan-contract.mjs` exited 0 on a 404, a rate-limit,
+  an outage and a dead network alike, and `test/tanContract.test.js` then
+  skipped — so a pin moved to a release without `envelope-contract.json` was
+  green CI with zero contract verification, and every offline local run was too.
+  Which releases publish the asset is now declared in tree, as
+  `RELEASES_PREDATING_CONTRACT_ASSET` in `src/alpCli/service.ts`: the closed set
+  of tan tags cut before the producer landed. A pin on that list still
+  skips, loudly, and makes no request. Every other pin fails on any way of not
+  getting the artefact — distinct messages per cause, one exit code, because the
+  outcome is the same and it is not "pass". An offline developer sets
+  `TAN_CONTRACT_OFFLINE=1`, which downgrades the failure to a skip and is
+  ignored when `CI` is set. Both jobs of the release workflow now run the fetch
+  before their tests, as CI already did — without it, failing closed would have
+  reddened the next tagged release on a corpus that is gitignored and therefore
+  never present in a release checkout.
+- **Two issue codes the extension matches are now watched, and the scan that
+  finds them is no longer family-blind.** `bootstrap.python-not-runnable` and
+  `bootstrap.python-too-old` sat in a bucket about which nothing was asserted,
+  while tan's own frozen-code gate iterates only the list they are absent from —
+  so a rename was invisible to both repos at once. Every code the extension
+  matches is now mapped to the status tan must declare for it, including "tan
+  declares this nowhere", which fails the moment tan starts to. The source scan
+  that keeps that map exhaustive read only `bootstrap.*` and `presets.*`
+  literals; it now recognises the two idioms this extension actually matches
+  with, in any family. That widening surfaced a latent bug: the issue-code shape
+  rejected a hyphenated family, so tan's `debug-config.*` codes would have
+  failed the frozen-list read as malformed on the first release to publish them.
+- **The envelope's seventh key, `sdk`, is readable and asserted.** tan-cli#129
+  added `{root, sourceTier}` and it has been on the wire since tan v0.4.0, but
+  `AlpEnvelope` had no member for it and the contract test asserted nothing
+  about it. It is typed optional and `isEnvelope` does not require it — tan
+  omits the key entirely from any envelope whose command resolved no SDK — most
+  of the published goldens — so requiring it would turn valid envelopes into
+  "no envelope at all" and silently fall back. The contract test asserts the
+  shape wherever the key appears, and fails if it appears nowhere. Nothing
+  surfaces it in the UI yet.
 
 - **A SOCKS proxy is now named as unsupported instead of reported as
   unreachable, and an IPv6 host in `NO_PROXY` is honoured.** VS Code's
