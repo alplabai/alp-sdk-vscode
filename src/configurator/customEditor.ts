@@ -11,6 +11,8 @@ import {
   type WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
+import { planFailure, planSuccess } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { loadSdkCatalogue } from "../sdkCatalogue/vscodeAdapter";
 import { log } from "../util";
@@ -138,9 +140,16 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
           });
           break;
         case "saveBoardConfig": {
+          // Status bar, not a toast: the panel already clears its dirty
+          // baseline on the `configuratorSaved` ack, so this is transient
+          // confirmation of state the user can see. Fire-and-forget — this is
+          // a webview message handler, and awaiting reorders it against the
+          // `post()` below.
           const notifySaved = () =>
-            void vscode.window.showInformationMessage(
-              `Saved ${vscode.workspace.asRelativePath(document.uri)}`,
+            notifyAsync(
+              planSuccess(
+                `Saved ${vscode.workspace.asRelativePath(document.uri)}`,
+              ),
             );
           // Native save when there are unsaved edits (onDidSaveTextDocument posts
           // the configuratorSaved ack). When the document is already clean —
@@ -194,8 +203,15 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
 function openConfigurator(resource?: vscode.Uri): void {
   const target = resource?.fsPath ?? collectProjectContext().boardYamlPath;
   if (!target || !fs.existsSync(target)) {
-    void vscode.window.showErrorMessage(
-      "Alp: no board.yaml found — open a workspace folder with a board.yaml, or create a project first.",
+    notifyAsync(
+      planFailure({
+        operation: "Opening the board configurator",
+        cause:
+          "Alp: no board.yaml found — open a workspace folder with a board.yaml, or create a project first.",
+        // Both remedies the sentence names, as buttons: a first-run user hit a
+        // dead end here and could only dismiss it.
+        actions: [{ id: "newProject" }, { id: "openFolder" }],
+      }),
     );
     return;
   }

@@ -33,6 +33,10 @@ function catalogue() {
         capabilities: { deepx_dx: true },
         defaultBoard: "E1M-X-EVK",
         topologyCoreIds: ["a55_cluster", "m33_sm"],
+        topology: [
+          { id: "a55_cluster", app: "alp-image-edge" },
+          { id: "m33_sm", app: "system-manager", hwConsole: false },
+        ],
         onModule: [],
         preliminary: false,
       },
@@ -123,6 +127,17 @@ test("VM for a V2M board lights DeepX and offers the deepx chip", () => {
   );
   assert.equal(acc.deepx_dxm1, true);
   assert.ok(vm.chips.some((c) => c.chipId === "deepx_dxm1"));
+});
+
+// alp-sdk#686: per-core hw_console: false (headless, no console UART) must
+// flow from SoM topology into the CorePanel; absent/true stays undefined.
+test("CorePanel.hwConsole reflects the SoM topology's per-core hw_console fact", () => {
+  const vm = buildConfiguratorViewModel(parseBoardConfig(OBJDET), catalogue());
+  assert.equal(vm.cores.find((c) => c.id === "m33_sm").hwConsole, false);
+  assert.equal(
+    vm.cores.find((c) => c.id === "a55_cluster").hwConsole,
+    undefined,
+  );
 });
 
 // #165: libraries are declared ONCE at the top level (ADR 0018); a CorePanel's

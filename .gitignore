@@ -18,14 +18,33 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# tan's published envelope contract, fetched by scripts/fetch-tan-contract.mjs.
+# Deliberately NOT tracked: a corpus hand-copied into this repo drifts in exactly
+# the way the drift gate that reads it exists to catch. Refresh with
+# `pnpm run contract:fetch`.
+test/golden/tan-contract/
+
 # Local assistant instructions (keep private)
 .github/local-agent-instructions.md
 
 # Transient Claude Code runtime locks
 .claude/scheduled_tasks.lock
 
+# Per-machine Claude Code settings (never shared; also the last thing that
+# made repo-wide `pnpm run format:check` fail on a clean checkout)
+.claude/settings.local.json
+
+# Claude Code agent worktrees — FULL repo copies incl. node_modules. Never
+# commit these; `git add .claude` would otherwise pull in the whole tree.
+.claude/worktrees/
+.claude/alp-tasks.json
+
 # VS Code e2e test runtime (downloaded VS Code + user data)
 .vscode-test/
 
 # Cygwin/MSYS bash crash dumps (Windows dev hosts)
 *.stackdump
+
+# Retired in-repo Rust CLI (superseded by the standalone tan-cli repo) —
+# read-only local reference only, never tracked here.
+cli-rs/

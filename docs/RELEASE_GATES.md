@@ -61,7 +61,15 @@ and publishes each as a **raw** GitHub release asset
 contract (see the `tan-cli` release-asset contract).
 
 The extension pins the `tan` version it targets (`SUPPORTED_CLI_VERSION` in
-`src/alpCli/service.ts`) — bump it in lockstep when adopting a new `tan` release.
+`src/alpCli/service.ts`) — bump it in lockstep when adopting a new `tan` release,
+and **never ahead of a published tag**. The pin is a download target, not an
+aspiration: `shouldFetchManagedCli` re-fetches for a `download` source and for a
+`cached` binary behind the pin, so an unreleased pin makes every activation retry
+a 404 that nothing self-corrects. A feature needing an unreleased `tan` gets its
+own gate against the probed version instead (e.g. `RENODE_CORE_CLI_VERSION` in
+`src/west.ts`, which degrades to "don't offer the picker"). CI enforces this:
+`scripts/check-cli-pin.mjs` HEADs every per-target asset for `v<pin>` and fails
+on a 404 (a network error is skipped, not failed).
 
 Before bumping `MAJOR`:
 - all breaking CLI flag or JSON envelope changes must be documented in `COMPATIBILITY_RULES.md`.

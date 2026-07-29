@@ -3,15 +3,30 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { runAlpCommand, runAlpInTerminal } from "../alpCli/vscodeAdapter";
+import { runAlpCommand, runAlpStreamed } from "../alpCli/vscodeAdapter";
 import {
   type BuildPlanData,
   type ExtToWebviewMessage,
+  type SizeReport,
   type SystemManifest,
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
-import { reportError } from "../util";
+import {
+  BUILD_RUN_NAME,
+  FLASH_RUN_NAME,
+  isStreamedRunActive,
+  releaseStreamedRun,
+  reserveStreamedRun,
+} from "../util";
+import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
+import {
+  BUILD_PLAN_SHAPE,
+  SIZE_REPORT_SHAPE,
+  SYSTEM_MANIFEST_SHAPE,
+  checkTanPayload,
+} from "@alp-sdk/core/tanPayloadShape";
 
 const PANEL_VIEW_TYPE = "alp-ide.buildPlan";
 const PANEL_TITLE = "Alp Build Plan";
@@ -67,6 +82,7 @@ export class BuildPlanPanel {
     const refresh = () => {
       void this.handleRequestBuildPlan();
       void this.handleRequestSystemManifest();
+      void this.handleRequestSliceSizes();
     };
     for (const glob of ["**/board.yaml", "**/system-manifest.yaml"]) {
       const watcher = vscode.workspace.createFileSystemWatcher(glob);
@@ -96,6 +112,7 @@ export class BuildPlanPanel {
       case "requestBuildPlan":
         void this.handleRequestBuildPlan();
         void this.handleRequestSystemManifest();
+        void this.handleRequestSliceSizes();
         break;
       case "materialiseBuildPlan":
         void this.handleMaterialiseBuildPlan();
@@ -128,7 +145,19 @@ export class BuildPlanPanel {
     const envelope = outcome.envelope;
     let msg: ExtToWebviewMessage;
     if (envelope && envelope.ok) {
-      msg = { type: "buildPlanData", plan: envelope.data as BuildPlanData };
+      // `data` crossed a process boundary, so the cast below proves nothing on
+      // its own. Without this check a renamed `slices` reaches the view as
+      // `undefined` and `plan.slices.filter` throws mid-render — measured in
+      // test/webview/run.mjs as "Cannot read properties of undefined (reading
+      // 'filter')", which blanks the panel and names neither tan nor a field.
+      const shapeError = checkTanPayload(
+        envelope.data,
+        BUILD_PLAN_SHAPE,
+        "build --plan",
+      );
+      msg = shapeError
+        ? { type: "buildPlanData", plan: null, error: shapeError }
+        : { type: "buildPlanData", plan: envelope.data as BuildPlanData };
     } else {
       // Surface the first issue (e.g. "no SDK / awaiting a tagged release")
       // or the runtime message so the view can explain the empty state.
@@ -156,11 +185,25 @@ export class BuildPlanPanel {
     const envelope = outcome.envelope;
     let msg: ExtToWebviewMessage;
     if (envelope && envelope.ok) {
-      msg = {
-        type: "systemManifestData",
-        manifest: envelope.data as SystemManifest,
-        postBuild,
-      };
+      // Named without the manifest path: the message is customer-facing and
+      // the argument is an absolute path on their machine.
+      const shapeError = checkTanPayload(
+        envelope.data,
+        SYSTEM_MANIFEST_SHAPE,
+        postBuild ? "build --manifest-from" : "build --manifest",
+      );
+      msg = shapeError
+        ? {
+            type: "systemManifestData",
+            manifest: null,
+            postBuild,
+            error: shapeError,
+          }
+        : {
+            type: "systemManifestData",
+            manifest: envelope.data as SystemManifest,
+            postBuild,
+          };
     } else {
       const error = envelope?.issues?.[0]?.message ?? outcome.message;
       msg = { type: "systemManifestData", manifest: null, postBuild, error };
@@ -168,43 +211,129 @@ export class BuildPlanPanel {
     void this.panel.webview.postMessage(msg);
   }
 
+  /** Fetch per-slice firmware footprint vs the SoM memory budget from
+   *  `tan size --format json` (#359, the memory half of #331).
+   *
+   *  Post-build only. `tan size` measures the ELF each slice produced, so with
+   *  no `build/system-manifest.yaml` every row would read `not-built` — a
+   *  subprocess per refresh to render nothing. Posts `report: null` in that
+   *  case so the view clears any stale numbers from a previous build.
+   *
+   *  Never passes `--fail-over-budget`: that flag makes `tan size` exit
+   *  non-zero, and this panel reports a footprint, it does not fail anything.
+   *  A missing size tool is not an error either — tan falls back to reading
+   *  ELF section headers and still returns rows. */
+  private async handleRequestSliceSizes(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const built = cwd
+      ? path.join(cwd, "build", "system-manifest.yaml")
+      : undefined;
+    if (!built || !fs.existsSync(built)) {
+      void this.panel.webview.postMessage({
+        type: "sliceSizesData",
+        report: null,
+      } satisfies ExtToWebviewMessage);
+      return;
+    }
+
+    const { outcome } = await runAlpCommand(this.context, ["size"], cwd);
+    const envelope = outcome.envelope;
+    const shapeError =
+      envelope && envelope.ok
+        ? checkTanPayload(envelope.data, SIZE_REPORT_SHAPE, "size")
+        : null;
+    const msg: ExtToWebviewMessage =
+      envelope && envelope.ok && !shapeError
+        ? { type: "sliceSizesData", report: envelope.data as SizeReport }
+        : {
+            type: "sliceSizesData",
+            report: null,
+            error:
+              shapeError ?? envelope?.issues?.[0]?.message ?? outcome.message,
+          };
+    void this.panel.webview.postMessage(msg);
+  }
+
   private async handleMaterialiseBuildPlan(): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const { outcome } = await runAlpCommand(
-      this.context,
-      ["build", "--materialise"],
-      cwd,
-    );
-    const envelope = outcome.envelope;
-    if (envelope && envelope.ok) {
-      const written = (envelope.data as { written?: string[] }).written ?? [];
-      void vscode.window.showInformationMessage(
-        `Alp: materialised ${written.length} file(s) under the build tree.`,
+    // Envelope mode, but it WRITES into the build tree, so it takes the build
+    // reservation like a build does — materialising underneath a running build
+    // rewrites the very files that build is consuming.
+    if (!reserveStreamedRun(BUILD_RUN_NAME)) {
+      notifyAsync(
+        planFailure({
+          severity: "warning",
+          operation: "Materialising the build plan",
+          cause: `"${BUILD_RUN_NAME}" is still running.`,
+          detail: "Wait for it to finish before materialising the plan.",
+          actions: [
+            isStreamedRunActive(BUILD_RUN_NAME)
+              ? { id: "showOutput" }
+              : { id: "showTerminal", arg: BUILD_RUN_NAME },
+          ],
+        }),
       );
-      // The plan view reflects on-disk state — re-request so it isn't stale.
-      await this.handleRequestBuildPlan();
-    } else {
-      const error = envelope?.issues?.[0]?.message ?? outcome.message;
-      void reportError(`Alp: materialise failed — ${error}`);
+      return;
+    }
+    try {
+      const { outcome } = await runAlpCommand(
+        this.context,
+        ["build", "--materialise"],
+        cwd,
+      );
+      const envelope = outcome.envelope;
+      if (envelope && envelope.ok) {
+        const written = (envelope.data as { written?: string[] }).written ?? [];
+        // Status bar, not a toast: the very next line re-requests the plan, so
+        // the panel the user is looking at already reports the new on-disk
+        // state.
+        notifyAsync(
+          planSuccess(
+            `Materialised ${written.length} file(s) under the build tree.`,
+          ),
+        );
+        // The plan view reflects on-disk state — re-request so it isn't stale.
+        await this.handleRequestBuildPlan();
+      } else {
+        // Severity comes from the outcome: the most common materialise failure
+        // is a board.yaml validation error (exit 2 ⇒ warning), which must not
+        // read like the write failure that exits 3.
+        notifyAsync(
+          planCliOutcome(outcome, {
+            operation: "Materialising the build plan",
+          }),
+        );
+      }
+    } finally {
+      releaseStreamedRun(BUILD_RUN_NAME);
     }
   }
 
   private async handleRunBuild(): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    // Live build in a terminal (streams output, like `alp build`).
-    await runAlpInTerminal(this.context, ["build"], { name: "alp build", cwd });
+    // Stream to the "Alp SDK" channel (persistent), not a terminal that dies on
+    // exit — same reason as the Build/Flash orchestrator commands (util.ts).
+    await runAlpStreamed(this.context, ["build"], {
+      name: BUILD_RUN_NAME,
+      cwd,
+    });
   }
 
-  /** Flash a single manifest slice — `tan flash --core <id>` forwards to
-   *  `west alp-flash` for that core. The view only shows the button when the
-   *  manifest says the slice supports it, so this just runs it in a terminal.
+  /** Flash a single manifest slice — `tan flash --core <id>`. The view only
+   *  shows the button when the manifest says the slice supports it. Streams to
+   *  the "Alp SDK" channel (persistent) instead of a terminal that dies on exit:
+   *  a `tan flash --core` that fails (e.g. `west` not on PATH) otherwise left
+   *  only "failed to launch (exit 1)" with the real reason gone.
    *  There is no per-slice build equivalent: `tan build` has no `--core`
    *  option (only `flash`/`run` do), so the Build button only runs the whole
    *  plan (`runBuild`). */
   private handleSliceCommand(coreId: string): void {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    void runAlpInTerminal(this.context, ["flash", "--core", coreId], {
-      name: `alp flash ${coreId}`,
+    // FLASH_RUN_NAME, not a per-core name: a second core is a second write to
+    // the same board, so per-core names would be two reservations and two
+    // programmers at once. The core is in the logged command line.
+    void runAlpStreamed(this.context, ["flash", "--core", coreId], {
+      name: FLASH_RUN_NAME,
       cwd,
     });
   }

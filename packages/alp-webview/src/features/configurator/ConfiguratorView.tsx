@@ -9,6 +9,7 @@ import type {
   ModelEntry,
   Ota,
 } from "../../types";
+import { consoleRecommendation } from "./consoleRecommendation";
 import styles from "./ConfiguratorView.module.css";
 import {
   CONFIGURATOR_SECTIONS,
@@ -472,7 +473,11 @@ function runtimeOptions(id: string): Array<[string, string]> {
   ];
 }
 
-/** Per-core peripheral classes (board.schema.json `core_entry.peripherals` enum). */
+/** Per-core peripheral classes. Source of truth is the vendored schema's
+ * `$defs.core_entry.properties.peripherals.items.enum` in
+ * schemas/board.schema.json; kept in sync manually (webview doesn't depend
+ * on @alp-sdk/core). Drift-guarded by test/configurator.peripheralCatalog.test.js --
+ * a schema change fails that test until this array is updated to match. */
 const PERIPHERAL_CHOICES = [
   "adc",
   "can",
@@ -583,17 +588,26 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
       <div className={`${styles.core} ${styles.coreGhost}`}>
         <div className={styles.coreHd}>
           <span className={styles.coreId}>{core.id}</span>
+          {core.hwConsole === false ? (
+            <span
+              className={styles.warn}
+              title="No console UART on this core (alp-sdk#686) — use the ram console backend."
+            >
+              headless — no console UART
+            </span>
+          ) : null}
           <span className={styles.coreSpacer} />
           <span className={styles.coreInherit}>inherits SoM default</span>
         </div>
         <div className={styles.ghostNote}>
-          Runs the SoM preset&apos;s default image.{" "}
+          Runs the SoM preset&apos;s default image. Override to set this
+          core&apos;s runtime and its own app directory.{" "}
           <button
             type="button"
             className={styles.btn}
             onClick={() => mutate((d) => void ensure(d))}
           >
-            Override this core
+            Override (set app directory)
           </button>
         </div>
       </div>
@@ -606,6 +620,14 @@ function CoreCard({ core, cfg }: { core: CorePanel; cfg: UseConfigurator }) {
     <div className={styles.core}>
       <div className={styles.coreHd}>
         <span className={styles.coreId}>{core.id}</span>
+        {core.hwConsole === false ? (
+          <span
+            className={styles.warn}
+            title="No console UART on this core (alp-sdk#686) — use the ram console backend."
+          >
+            headless — no console UART
+          </span>
+        ) : null}
         <span className={styles.coreSpacer} />
         <select
           className={`${styles.control} ${styles.coreRuntime}`}
@@ -804,11 +826,36 @@ const LOG_LEVELS: Opt[] = [
   ["trace", "trace"],
 ];
 
+const CONSOLE_BACKENDS: Opt[] = [
+  ["auto", "auto — by slice OS"],
+  ["alp", "alp — module UART"],
+  ["uart", "uart — module UART"],
+  ["ram", "ram — RAM console (SWD)"],
+  ["linux", "linux — Linux console"],
+  ["none", "none — board default"],
+];
+
+/** Where a core's printf/LOG output goes, and how you read it, for each console
+ *  backend — shown live under the selector so the debug path is explicit. */
+const CONSOLE_BACKEND_HELP: Record<string, string> = {
+  auto: "Default. Picks by slice OS: a Zephyr slice → the module UART console; a Yocto slice → the Linux console.",
+  alp: "printf / LOG → the module console UART (e.g. E1M edge UART0). Read it on a serial terminal.",
+  uart: "printf / LOG → the module console UART (e.g. E1M edge UART0). Read it on a serial terminal.",
+  ram: "printf / LOG → the Zephyr RAM console buffer (ram_console_buf) — no UART needed. Read it over SWD/J-Link, for serial-less bench boards.",
+  linux:
+    "Kernel/console output → the Linux console (Yocto slice), on the Linux tty.",
+  none: "No console Kconfig emitted — inherits the board's default console (DT zephyr,console).",
+};
+
 function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
-  const { board, mutate } = cfg;
+  const { board, mutate, vm } = cfg;
   const d = board.diagnostics ?? {};
   const modules = d.modules ?? {};
   const [newMod, setNewMod] = useState("");
+  const { recommendation, warning } = consoleRecommendation(
+    vm?.cores ?? [],
+    d.console,
+  );
 
   const cleanup = (draft: BoardConfig) => {
     if (draft.diagnostics && Object.keys(draft.diagnostics).length === 0)
@@ -850,6 +897,42 @@ function DiagnosticsSection({ cfg }: { cfg: UseConfigurator }) {
           }
         />
       </Field>
+      <Field
+        label="Console backend"
+        hint={CONSOLE_BACKEND_HELP[d.console || "auto"]}
+      >
+        <Select
+          label="Console backend"
+          value={d.console || "auto"}
+          options={CONSOLE_BACKENDS}
+          onChange={(v) =>
+            mutate((draft) => {
+              draft.diagnostics = draft.diagnostics || {};
+              if (v === "auto") delete draft.diagnostics.console;
+              else draft.diagnostics.console = v as never;
+              cleanup(draft);
+            })
+          }
+        />
+      </Field>
+      {recommendation ? (
+        <div className={styles.hint}>{recommendation}</div>
+      ) : null}
+      {warning ? <div className={styles.warn}>{warning}</div> : null}
+      <div className={styles.field}>
+        <Check
+          checked={d.sim_console === true}
+          label="Simulator console for headless cores (issue #686)"
+          onChange={(c) =>
+            mutate((draft) => {
+              draft.diagnostics = draft.diagnostics || {};
+              if (c) draft.diagnostics.sim_console = true;
+              else delete draft.diagnostics.sim_console;
+              cleanup(draft);
+            })
+          }
+        />
+      </div>
       <Field label="Per-module overrides">
         <div className={styles.modules}>
           {Object.keys(modules).length === 0 ? (

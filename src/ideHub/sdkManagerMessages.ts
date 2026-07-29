@@ -16,11 +16,24 @@ import { installSdkRelease } from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { sameUserPath } from "@alp-sdk/core/paths";
 import * as vscode from "vscode";
-import { runAlpCommand } from "../alpCli/vscodeAdapter";
-import { clearActiveSdk, setActiveSdk } from "../sdk/activeSdk";
+import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
+import {
+  isCancellation,
+  planCliOutcome,
+  planConfirm,
+  planFailure,
+  planSuccess,
+} from "../notify/service";
+import { notify, notifyAsync } from "../notify/vscodeAdapter";
+import {
+  clearActiveSdk,
+  setActiveSdk,
+  warnIfWestManifestDangling,
+} from "../sdk/activeSdk";
 import { writeAlpSetting } from "../sdk/settingsWrite";
-import { log as logChannel, reportError } from "../util";
+import { log as logChannel } from "../util";
 import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
 import { sdkCacheRoot } from "./vscodeAdapter";
 
@@ -28,6 +41,34 @@ export interface SdkHandlerDeps {
   context: vscode.ExtensionContext;
   post: (msg: ExtToWebviewMessage) => void;
   refresh: () => Promise<void>;
+}
+
+/**
+ * True for the ONE clone failure the customer can act on: `git` is not on
+ * PATH, so `cp.spawn` never started a process at all and Node raised the
+ * failure on the `error` event with `code: "ENOENT"`.
+ *
+ * Deliberately narrow. A clone that STARTED and failed — no network, a proxy
+ * that refuses CONNECT, a private repo, a tag that does not exist — rejects
+ * with the `git clone exited with code <n>` Error built below, which carries no
+ * `code` at all. Collapsing the two would tell a customer behind a corporate
+ * proxy to install a git they already have, and hide the retry that is their
+ * actual fix.
+ *
+ * A cancelled install is not reached here (`cancelled` is checked first), and
+ * an `AbortSignal` kill raises `ABORT_ERR` rather than `ENOENT` regardless.
+ *
+ * `syscall` is checked as well as `code` so the predicate stays about the SPAWN
+ * and not about ENOENT in general — the `git` child is the only process this
+ * install path starts today, but a filesystem ENOENT added inside the same
+ * `try` later must not silently start telling customers to install git.
+ */
+function isMissingGit(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const errno = err as NodeJS.ErrnoException;
+  return (
+    errno.code === "ENOENT" && String(errno.syscall ?? "").startsWith("spawn")
+  );
 }
 
 /**
@@ -53,9 +94,29 @@ export function createSdkMessageHandler(
 
   async function handleSwitchSdk(sdkPath: string): Promise<void> {
     try {
-      await setActiveSdk(sdkPath);
+      await setActiveSdk(context, sdkPath);
     } catch (err) {
-      void reportError(`Alp: failed to set active SDK — ${String(err)}`);
+      // `setActiveSdk` awaits a toast and `alp.views.refresh` — both
+      // main-thread RPCs — so at window teardown it rejects with a
+      // CancellationError. The SDK switch was abandoned with the window; a
+      // "couldn't set the active SDK" toast there tells the customer their
+      // machine is broken when in fact their window closed.
+      if (isCancellation(err)) {
+        logChannel("[sdk] active-SDK switch abandoned, window closing");
+        return;
+      }
+      // setActiveSdk already toasts its own not-an-SDK-root case and
+      // writeAlpSetting its unsaved-settings case, so anything reaching here is
+      // an unrelated throw: state the operation, keep the raw text in `detail`.
+      // Fire-and-forget — the `refresh()` below must not wait on a toast.
+      notifyAsync(
+        planFailure({
+          operation: "Setting the active SDK",
+          cause: "Alp: couldn't set the active SDK.",
+          detail: String(err),
+          actions: [{ id: "openSettings", arg: "alpSdk.path" }],
+        }),
+      );
     }
     await refresh();
   }
@@ -75,67 +136,113 @@ export function createSdkMessageHandler(
       ? `This permanently deletes ${target}.`
       : `${target} is not an Alp-managed install (added via Browse or a ` +
         `checkout). Permanently delete this folder from disk? This cannot be undone.`;
-    const confirm = await vscode.window.showWarningMessage(
-      `Remove SDK ${name}?`,
-      { modal: true, detail },
-      "Delete from disk",
+    // Audit verdict `keep`. `modalDetail` — not the channel-only `detail` — is
+    // what keeps the absolute path and the "cannot be undone" warning ON the
+    // dialog; routing it anywhere else would turn an irreversible delete
+    // confirm into a dismissible toast. `deleteFromDisk` has no `run`, so the
+    // pick still comes back and gates the fs.rmSync below.
+    const confirm = await notify(
+      planConfirm({
+        message: `Remove SDK ${name}?`,
+        modalDetail: detail,
+        confirm: { id: "deleteFromDisk" },
+      }),
     );
-    if (confirm !== "Delete from disk") return;
+    if (confirm !== "deleteFromDisk") return;
 
     try {
       fs.rmSync(target, { recursive: true, force: true });
     } catch (err) {
-      void reportError(`Alp: failed to remove SDK — ${String(err)}`);
+      notifyAsync(
+        planFailure({
+          operation: "Removing the SDK",
+          cause:
+            "Alp: couldn't delete the SDK folder — close anything using it " +
+            "(an editor, a terminal, a running build), then try again.",
+          detail: `${target}: ${String(err)}`,
+        }),
+      );
       return;
     }
 
     // Clear the active SDK setting if it pointed at the removed install, so
     // nothing dangles after removal. The folder is already gone, so a failure
-    // to clear the pointer must not abort the flow — it downgrades the final
-    // message instead of throwing (which, on this fire-and-forget handler,
-    // would become an unhandled rejection and skip the refresh).
+    // to clear the pointer must not abort the flow — it is caught and reported
+    // instead of thrown (a throw on this fire-and-forget handler would become
+    // an unhandled rejection and skip the refresh).
     const cfg = vscode.workspace.getConfiguration("alpSdk");
     const inspected = cfg.inspect<string>("path");
+    // `sameUserPath`, not `===` (#361): these settings are HAND-TYPED, and
+    // `path.resolve` normalises separators without folding case or dropping a
+    // trailing slash. A setting of `c:\...0.13.0\` against a `target` of
+    // `C:\...0.13.0` left the pointer naming an SDK that no longer exists —
+    // the same dangling-pointer failure as #349, reached from the other side.
     const needWorkspace = Boolean(
       inspected?.workspaceValue &&
-      path.resolve(inspected.workspaceValue) === target,
+      sameUserPath(
+        path.resolve(inspected.workspaceValue),
+        target,
+        process.platform,
+      ),
     );
     const needGlobal = Boolean(
-      inspected?.globalValue && path.resolve(inspected.globalValue) === target,
+      inspected?.globalValue &&
+      sameUserPath(
+        path.resolve(inspected.globalValue),
+        target,
+        process.platform,
+      ),
     );
 
-    let pointerCleared = true;
     try {
       if (needWorkspace) {
-        pointerCleared =
-          (await writeAlpSetting(
-            "path",
-            undefined,
-            vscode.ConfigurationTarget.Workspace,
-          )) && pointerCleared;
+        await writeAlpSetting(
+          "path",
+          undefined,
+          vscode.ConfigurationTarget.Workspace,
+        );
       }
       if (needGlobal) {
-        pointerCleared =
-          (await writeAlpSetting(
-            "path",
-            undefined,
-            vscode.ConfigurationTarget.Global,
-          )) && pointerCleared;
+        await writeAlpSetting(
+          "path",
+          undefined,
+          vscode.ConfigurationTarget.Global,
+        );
       }
-    } catch {
-      pointerCleared = false;
-    }
-
-    if (pointerCleared) {
-      void vscode.window.showInformationMessage(`Alp: removed SDK ${name}.`);
-    } else {
-      void vscode.window.showWarningMessage(
-        `Alp: removed SDK ${name}, but its active-SDK setting couldn't be ` +
-          "cleared — save your settings file, then run Deactivate to finish.",
+    } catch (err) {
+      // Only an UNRELATED throw lands here. A `false` return means the settings
+      // file was dirty, and `writeAlpSetting` has already said so — with Open
+      // Settings + Retry on it — so notifying on that gave one Remove click two
+      // toasts for one cause. `dedupeKey` could not have suppressed the second:
+      // the pair is SEQUENTIAL (the first toast is awaited and already gone, so
+      // its key is out of the presenter's on-screen set), and dedupe only drops
+      // a plan whose key is on screen right now. Same rule as the Deactivate
+      // path in `sdk/activeSdk.ts`.
+      notifyAsync(
+        planFailure({
+          operation: "Clearing the active-SDK setting",
+          cause:
+            "Alp: the removed SDK is still named as the active one — clear " +
+            "alpSdk.path, or use Deactivate to finish.",
+          detail: String(err),
+          severity: "warning",
+          actions: [{ id: "openSettings", arg: "alpSdk.path" }],
+        }),
       );
     }
+
+    // The removal itself is transient news about a panel that re-renders one
+    // line below — status bar, not a toast to dismiss. Fire-and-forget:
+    // awaiting it would delay the repaint behind a user's click.
+    notifyAsync(planSuccess(`Alp: removed SDK ${name}.`));
     await vscode.commands.executeCommand("alp.views.refresh");
     await refresh();
+
+    // #349: deleting a version the west workspace's `.west/config` still names
+    // is exactly how the reported breakage is created. This is the earliest
+    // possible signal — `target` is gone, but `dirname(target)` is still the
+    // topdir whose manifest pointer now dangles.
+    warnIfWestManifestDangling(target);
   }
 
   /** Deactivate — clear the active SDK without deleting anything. */
@@ -143,7 +250,24 @@ export function createSdkMessageHandler(
     try {
       await clearActiveSdk();
     } catch (err) {
-      void reportError(`Alp: failed to deactivate SDK — ${String(err)}`);
+      // Same seam as handleSwitchSdk: `clearActiveSdk` awaits
+      // `alp.views.refresh`, so a closing window rejects it with a
+      // CancellationError. Nothing failed — the deactivate was abandoned.
+      if (isCancellation(err)) {
+        logChannel("[sdk] active-SDK deactivate abandoned, window closing");
+        return;
+      }
+      // writeAlpSetting handles (and explains) the dirty-settings case without
+      // throwing, so a throw here is unrelated — plain sentence, raw text to
+      // the channel.
+      notifyAsync(
+        planFailure({
+          operation: "Deactivating the SDK",
+          cause: "Alp: couldn't deactivate the SDK.",
+          detail: String(err),
+          actions: [{ id: "openSettings", arg: "alpSdk.path" }],
+        }),
+      );
     }
     await refresh();
   }
@@ -153,10 +277,16 @@ export function createSdkMessageHandler(
     const { outcome } = await runAlpCommand(context, ["sdk", "list"]);
     const envelope = outcome.envelope;
     if (!envelope || !envelope.ok) {
-      void reportError(
-        envelope
-          ? "Alp: failed to fetch SDK releases. Check your network connection."
-          : `Alp: ${outcome.message}`,
+      // One planner call replaces both old branches: severity now comes from
+      // `outcome.severity`, a missing binary offers Install tan CLI (the
+      // `unavailable.reason` discriminant) instead of blaming the network, and
+      // the envelope's own issues are named instead of being discarded.
+      //
+      // Fire-and-forget, never awaited: the `post` below is what stops the
+      // webview's "Loading SDK list…" spinner, and a toast the user never
+      // dismisses would otherwise hang the panel forever.
+      notifyAsync(
+        planCliOutcome(outcome, { operation: "Fetching the SDK list" }),
       );
       // Resolve the webview's "Loading SDK list…" spinner even on failure — the
       // toast explains why; an empty list drops the user to the actionable empty
@@ -175,25 +305,58 @@ export function createSdkMessageHandler(
 
     // Already installed → say so instead of a silent, instant no-op. Installs
     // are side-by-side under ~/.alp/sdk/<version>, so this never overwrites.
-    if (fs.existsSync(path.join(cacheRoot, version))) {
-      void vscode.window.showInformationMessage(
-        `Alp: SDK ${version} is already installed — activate it from the Local tab.`,
-      );
+    const installed = path.join(cacheRoot, version);
+    if (fs.existsSync(installed)) {
+      // Carry the one-click Activate rather than sending the user to another
+      // tab of the panel that raised this. `custom` has no `run` in the
+      // presenter's table, so the pick comes back and this handler does the
+      // work — chained off the promise instead of awaited, because the
+      // `refresh()` below must not wait on a toast.
+      void notify({
+        severity: "info",
+        channel: "toast",
+        message: `Alp: SDK ${version} is already installed.`,
+        actions: [{ id: "custom", title: "Activate" }],
+      }).then((picked) => {
+        if (picked === "custom") void handleSwitchSdk(installed);
+      });
       await refresh();
+      // Same #349 signal as the install below: this branch is the likelier one
+      // to hit it, since re-pressing Install is what a user does when the
+      // workspace is already misbehaving.
+      warnIfWestManifestDangling(installed);
       return;
     }
 
+    // Cloning the SDK is the longest operation this panel starts (minutes on a
+    // slow link), so it is cancellable. The controller lives out here so the
+    // adapter closure can hand its signal to `cp.spawn` — cancelling has to
+    // kill the actual `git` child, not just stop awaiting it.
+    const installAbort = new AbortController();
+    let cancelled = false;
     const gitInstallAdapter: SdkInstallAdapter = (ver, destPath) =>
       new Promise<void>((resolve, reject) => {
-        const proc = cp.spawn("git", [
-          "clone",
-          "--branch",
-          ver,
-          "--depth",
-          "1",
-          "https://github.com/alplabai/alp-sdk.git",
-          destPath,
-        ]);
+        const proc = cp.spawn(
+          "git",
+          [
+            "clone",
+            "--branch",
+            ver,
+            "--depth",
+            "1",
+            "https://github.com/alplabai/alp-sdk.git",
+            destPath,
+          ],
+          // Same proxy gap-fill as the tan seams: git reads HTTPS_PROXY, and a
+          // corporate machine that needs a proxy to reach GitHub fails this
+          // clone for the identical reason `tan sdk list` failed. `env`
+          // REPLACES the environment for `cp.spawn`, hence the spread — which
+          // is also what carries NO_PROXY and PATH through untouched.
+          {
+            signal: installAbort.signal,
+            env: { ...process.env, ...proxyEnvAdditions() },
+          },
+        );
         proc.on("exit", (code) =>
           code === 0
             ? resolve()
@@ -220,9 +383,13 @@ export function createSdkMessageHandler(
       {
         location: vscode.ProgressLocation.Notification,
         title: `Alp: Installing SDK ${version}`,
-        cancellable: false,
+        cancellable: true,
       },
-      async () => {
+      async (_progress, token) => {
+        const sub = token.onCancellationRequested(() => {
+          cancelled = true;
+          installAbort.abort();
+        });
         try {
           await installSdkRelease(
             version,
@@ -237,11 +404,110 @@ export function createSdkMessageHandler(
               }
             },
           );
-          sendProgress(`SDK ${version} installed successfully.`, true, true);
+          // #349: installing a version does NOT repair a `.west/config` whose
+          // `[manifest] path` still names a removed one — west reads that file
+          // directly and independently of the active-SDK pointer, so the
+          // workspace stays broken and a plain "installed successfully" reads
+          // as "nothing left to do". The switch and uninstall paths already
+          // give this signal; Install is the button the original report used.
+          //
+          // Unlike `setActiveSdk`, the done/success message is still sent: the
+          // webview's install panel resolves its progress state on it, and
+          // suppressing it would leave the spinner running. The wording carries
+          // the caveat instead.
+          const dangling = warnIfWestManifestDangling(
+            path.join(cacheRoot, version),
+          );
+          sendProgress(
+            dangling
+              ? `SDK ${version} installed, but the west workspace still points at a removed SDK — run Bootstrap to reconcile it.`
+              : `SDK ${version} installed successfully.`,
+            true,
+            true,
+          );
           await refresh();
         } catch (err) {
+          if (cancelled) {
+            // Killing `git clone` leaves a half-written <cacheRoot>/<version>
+            // behind, and git refuses to clone into a non-empty directory — so
+            // without this the NEXT install of the same version fails with an
+            // error that has nothing to do with what the user did. Remove it.
+            const partial = path.join(cacheRoot, version);
+            try {
+              fs.rmSync(partial, { recursive: true, force: true });
+            } catch (cleanupErr) {
+              logChannel(
+                `[sdk-install] could not remove the partial clone at ${partial}: ${String(cleanupErr)}`,
+              );
+            }
+            // `done: true` is required even here: the webview install panel
+            // resolves its spinner on it, so skipping it hangs the panel.
+            sendProgress(`SDK ${version} install cancelled.`, true, false);
+            notifyAsync(planSuccess(`SDK ${version} install cancelled.`));
+            return;
+          }
+          // No git on the box. This is walkthrough step 1 on a clean Windows
+          // 11 install, and it used to end at "Alp: couldn't install SDK
+          // <version>." with a single Retry — a button that re-spawned a binary
+          // that does not exist, which reads as "transient" and is the worst
+          // possible advice. The CUSTOMER sentence names git; the errno stays
+          // in `detail`, i.e. the channel.
+          //
+          // `notifyAsync`, and no Retry: retrying cannot work until git is
+          // installed, and installing it is not something this handler can
+          // observe.
+          //
+          // Neither sentence says git is absent from the MACHINE — all this
+          // handler knows is that its own process could not resolve `git`, and
+          // those differ in the state its own advice creates. Installing git
+          // while VS Code is running leaves the running editor blind to it:
+          // Windows delivers a new `PATH` only to processes started afterwards,
+          // and a window reload does not help either, because the extension
+          // host is forked from a main process whose environment was captured
+          // at launch (VS Code skips shell-environment resolution on Windows
+          // outright). So the advice is to reopen VS Code, not to press Install
+          // again — a re-press in the same window reproduces this exact ENOENT.
+          if (isMissingGit(err)) {
+            sendProgress(
+              `Install failed: Alp couldn't find Git. Alp fetches the SDK ` +
+                `with git clone, so install Git, then close VS Code completely ` +
+                `and reopen it — a new install isn't visible to an editor that ` +
+                `was already running.`,
+              true,
+              false,
+            );
+            notifyAsync(
+              planFailure({
+                operation: "Installing the SDK",
+                cause:
+                  `Alp: installing SDK ${version} needs Git, and Alp couldn't ` +
+                  `find Git.`,
+                detail: String(err),
+                actions: [{ id: "downloadGit" }],
+              }),
+            );
+            return;
+          }
           sendProgress(`Install failed: ${String(err)}`, true, false);
-          void reportError(`Alp: SDK install failed — ${String(err)}`);
+          // The raw reject text ("git clone exited with code 3") is already
+          // inline in the panel above and in the channel via `detail` — it does
+          // not belong in the toast. The Retry pick is wired here, since a
+          // `retry` action the presenter hands back to nobody would be a button
+          // that does nothing. Everything reaching this branch is a clone that
+          // RAN, so retrying is a real fix (the flaky link, the proxy that came
+          // back, the VPN that reconnected).
+          void notify(
+            planFailure({
+              operation: "Installing the SDK",
+              cause: `Alp: couldn't install SDK ${version}.`,
+              detail: String(err),
+              actions: [{ id: "retry" }],
+            }),
+          ).then((picked) => {
+            if (picked === "retry") void handleRequestSdkInstall(version);
+          });
+        } finally {
+          sub.dispose();
         }
       },
     );

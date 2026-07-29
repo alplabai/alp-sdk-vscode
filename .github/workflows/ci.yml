@@ -18,8 +18,39 @@ concurrency:
 
 jobs:
   build:
-    name: build · extension + vsix
-    runs-on: ubuntu-latest
+    # The matrix entries carry an explicit `name` because the ubuntu context
+    # name is load-bearing: `dev` and `main` require the check
+    # "build · extension + vsix" verbatim, with enforce_admins=true. A bare
+    # matrix renames it to "build (ubuntu-latest)"; the required context would
+    # then never report and every PR would block with no admin override. So the
+    # ubuntu entry keeps its name byte-for-byte and Windows arrives as a new,
+    # separate context.
+    #
+    # One step list, two OSes: the Windows job cannot drift into skipping the
+    # checks it exists to run, because there is only one copy of them.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # A Windows failure must not cancel ubuntu: ubuntu is the required check,
+      # Windows is advisory until it has a track record.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: build · extension + vsix
+          - os: windows-latest
+            name: build · windows
+
+    defaults:
+      run:
+        # On Windows `shell: bash` is Git Bash, so both OSes run identical step
+        # bodies — including check-vsix-allowlist.sh and the `test -f` block
+        # below, which are shell and would not parse under the pwsh default.
+        # Checkout is LF on both: .gitattributes pins `eol=lf`, overriding the
+        # Windows runner's core.autocrlf=true. Versus ubuntu's previous default
+        # this only adds `pipefail`; no step body here contains a pipe.
+        shell: bash
 
     steps:
       - name: Checkout (with submodule)
@@ -45,8 +76,45 @@ jobs:
       - name: Compile (extension + CLI bundle + webview)
         run: pnpm run compile
 
+      - name: Typecheck (extension + core + webview)
+        # Must follow Compile: `@alp-sdk/core/*` resolves through
+        # packages/alp-core/dist, which `tsc --build` produces. Its own job here
+        # is packages/alp-webview — `vite build` strips types without checking
+        # them, so the webview is otherwise never type-checked at all.
+        run: pnpm run typecheck
+
+      - name: Gate — fetch tan's published envelope contract for the pinned version
+        # Must run BEFORE the tests, not beside the other network-touching gate
+        # below: test/tanContract.test.js is pure and reads whatever this leaves
+        # in test/golden/tan-contract/.
+        #
+        # The asset EXISTS now: every tan tag from v0.4.0-rc1 on publishes
+        # `envelope-contract.json`, and `SUPPORTED_CLI_VERSION` pins v0.4.0,
+        # so this step fetches and the contract tests actually assert against a
+        # real artefact. This comment previously said "no tan release has been
+        # tagged since, so nothing publishes it yet" — true when written, false
+        # from v0.4.0 onward.
+        #
+        # ONE skip path survives, and it is a list, not a judgement call: a pin
+        # in `RELEASES_PREDATING_CONTRACT_ASSET` (src/alpCli/service.ts) exits 0
+        # with a `::warning::` and makes no request, because nothing is
+        # published for those tags. For any other pin — every release from
+        # v0.4.0 on — a 404, a rate-limit, an outage and a dead network all exit
+        # 1. They keep different messages because they are different
+        # facts, but they share one outcome: the contract was not verified, and
+        # a green run that verified nothing is what this gate exists to stop.
+        # The test then fails too, independently, if the artefact is not on disk.
+        run: node scripts/fetch-tan-contract.mjs
+
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
+
+      - name: Gate — extensionDependencies resolve on the Marketplace + Open VSX
+        run: node scripts/check-extension-deps.mjs
+
+      # Runs after compile: it reads the pin from the built out/alpCli/service.js.
+      - name: Gate — SUPPORTED_CLI_VERSION is a published tan-cli release
+        run: node scripts/check-cli-pin.mjs
 
       - name: Package (.vsix)
         # --no-dependencies: workspace:* protocol is not resolvable by vsce;
@@ -55,6 +123,10 @@ jobs:
         run: pnpm exec vsce package --no-dependencies --out alp-sdk.vsix
 
       - name: Upload vsix artefact
+        # ubuntu only: upload-artifact@v4 rejects a duplicate artifact name, and
+        # the shipped package is the ubuntu one. Windows still runs `vsce
+        # package` and the allowlist gate below — it just keeps the .vsix local.
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: alp-sdk-vsix

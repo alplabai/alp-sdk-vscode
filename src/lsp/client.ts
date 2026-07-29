@@ -10,7 +10,7 @@ import {
 } from "vscode-languageclient/node";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { reportError } from "../util";
+import { reportError } from "../notify/vscodeAdapter";
 import { resolveSlice } from "./buildConfig";
 import { isPrjConfPath } from "./kconfig";
 import type { KconfigSymbol } from "./kconfig";

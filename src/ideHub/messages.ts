@@ -3,26 +3,40 @@
 import type { BoardConfig } from "@alp-sdk/core/board/models";
 import type { ConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
 import type {
+  DependencyAction,
+  DependencyActionEffect,
+  DependencyReport,
+  DependencyRow,
+} from "@alp-sdk/core/deps/planner";
+import type {
   LocalSdkEntry,
   SdkReadinessState,
   SdkRelease,
 } from "@alp-sdk/core/sdk/models";
 import type { SocCore, SomPreset } from "@alp-sdk/core/sdkCatalogue/models";
-import type { SystemManifest } from "@alp-sdk/core/systemManifest/models";
+import type {
+  SizeReport,
+  SystemManifest,
+} from "@alp-sdk/core/systemManifest/models";
 import type { ToolchainFixId } from "@alp-sdk/core/toolchain/bootstrapPlan";
-import type { ToolchainReport } from "@alp-sdk/core/toolchain/doctor";
 
 // Re-export so callers only need this module.
 export type {
   BoardConfig,
   ConfiguratorViewModel,
+  DependencyAction,
+  // The verb a row's button promises (`install` / `open-docs` / `bootstrap`),
+  // read off the host's own fix dispatch. Mirrored in the webview types.
+  DependencyActionEffect,
+  DependencyReport,
+  DependencyRow,
   LocalSdkEntry,
   SdkRelease,
   SocCore,
+  SizeReport,
   SomPreset,
   SystemManifest,
   ToolchainFixId,
-  ToolchainReport,
 };
 
 // ---------------------------------------------------------------------------
@@ -45,9 +59,43 @@ export interface ToolVersions {
   ninja: string | null;
 }
 
+/**
+ * The `runInTerminal` task `name` EVERY bootstrap dispatch runs under —
+ * `alp.installDependencies`/`alp.bootstrap` (`tan bootstrap`, src/bootstrap.ts)
+ * and the Toolchain Doctor's build fix (`tan doctor --build --fix`,
+ * src/toolchain.ts). Both deliberately share ONE name so `runInTerminal`'s
+ * reservation refuses a second concurrent bootstrap against the same venv
+ * (issue #146); that shared name is also what lets a single probe
+ * (`bootstrapRunning`, src/ideHub/vscodeAdapter.ts) answer "is a bootstrap
+ * running" for either entry point.
+ *
+ * Lives HERE, next to the `SetupStatus.bootstrapRunning` field it feeds,
+ * because it is the one string the dispatch sites, the probe and the
+ * task-start refresh must all agree on — and this module is the only shared
+ * one all three can import (it pulls in no `vscode`, so importing it costs a
+ * dispatch site nothing). A second spelling anywhere and the probe watches a
+ * name nobody runs under: no spinner, and Build/Flash offered over a
+ * half-fetched module tree. Host-side only — the webview never dispatches a
+ * terminal, so this is NOT part of the mirrored protocol.
+ */
+export const BOOTSTRAP_RUN_NAME = "Alp Bootstrap";
+
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
+  /**
+   * True while a bootstrap run (`BOOTSTRAP_RUN_NAME`) is STILL EXECUTING in a
+   * terminal.
+   *
+   * Every other gate in this state is a snapshot of the disk, and
+   * `workspace.westInitialized` flips the moment `.west/config` is written —
+   * the FIRST thing `tan bootstrap` does, not the last. So without this term
+   * every readiness surface reports a half-fetched module tree as ready and
+   * offers Build/Flash over it. tan v0.4.0 widens that window: it no longer
+   * reuses a workspace across a patch-level Zephyr bump, so a `west update`
+   * can now run where none did before — minutes, not seconds.
+   */
+  bootstrapRunning: boolean;
   /** ISO timestamp of the last time the user triggered bootstrap. Null if never. */
   lastBootstrapAt: string | null;
   /** Raw version strings for each build tool, null when not found. */
@@ -78,6 +126,7 @@ export function emptyAlpIdeState(): AlpIdeState {
     setup: {
       pythonAvailable: false,
       westAvailable: false,
+      bootstrapRunning: false,
       lastBootstrapAt: null,
       toolVersions: {
         python: null,
@@ -99,8 +148,17 @@ export function emptyAlpIdeState(): AlpIdeState {
 // Extension → Webview messages
 // ---------------------------------------------------------------------------
 
-/** Increment whenever the message protocol changes in a breaking way. */
-export const PROTOCOL_VERSION = 2 as const;
+/**
+ * Increment whenever the message protocol changes in a breaking way.
+ *
+ * 3 — the Toolchain Doctor protocol (`toolchainReport` / `reloadToolchain` /
+ * `runToolchainFix`) was REMOVED and replaced by the dependency panel's
+ * `dependencyReport` / `refreshDependencies` / `runDependencyAction`. Removal is
+ * breaking in both directions: a stale webview posting `runToolchainFix` would
+ * be dropped on the floor, and one waiting on `toolchainReport` would spin
+ * forever. The bump is what makes it show the reload prompt instead.
+ */
+export const PROTOCOL_VERSION = 3 as const;
 
 export interface StateUpdateMessage {
   type: "stateUpdate";
@@ -151,9 +209,18 @@ export interface ConfiguratorSavedMessage {
   boardPath: string;
 }
 
-export interface ToolchainReportMessage {
-  type: "toolchainReport";
-  report: ToolchainReport;
+/**
+ * The dependency table (`tan doctor --build`, planned by
+ * `@alp-sdk/core/deps/planner`). One push carries the whole table — rows,
+ * tan's own three counts, and whether this tan could say what is missing.
+ *
+ * `report: null` + `error` is the honest "the CLI could not answer" state.
+ * The panel says so; it never renders an empty table as a clean bill of health.
+ */
+export interface DependencyReportMessage {
+  type: "dependencyReport";
+  report: DependencyReport | null;
+  error?: string;
 }
 
 export interface HardwareExplorerDataMessage {
@@ -224,6 +291,16 @@ export interface SystemManifestDataMessage {
   error?: string;
 }
 
+/** Per-slice firmware footprint vs the SoM memory budget — the `alp-size/1`
+ *  payload from `tan size --format json`, keyed by the same `core_id` as the
+ *  manifest slices. Only requested post-build: `tan size` measures ELFs, so
+ *  before a build every row would read `not-built`. */
+export interface SliceSizesDataMessage {
+  type: "sliceSizesData";
+  report: SizeReport | null;
+  error?: string;
+}
+
 /** The folder the user picked for the new project's parent directory. */
 export interface ProjectLocationPickedMessage {
   type: "projectLocationPicked";
@@ -238,11 +315,12 @@ export type ExtToWebviewMessage =
   | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
-  | ToolchainReportMessage
+  | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
   | BuildPlanDataMessage
-  | SystemManifestDataMessage;
+  | SystemManifestDataMessage
+  | SliceSizesDataMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -330,6 +408,9 @@ export interface CreateNewProjectMessage {
   sdkPath?: string;
   /** Parent directory chosen in the wizard; omitted = prompt with a dialog. */
   destination?: string;
+  /** Open the created project in the CURRENT window (replace the workspace) vs a
+   *  new window. Omitted = true (the wizard checkbox defaults to on). */
+  openInCurrentWindow?: boolean;
 }
 
 export interface OpenExistingProjectMessage {
@@ -355,13 +436,30 @@ export interface PreviewEffectiveConfigMessage {
   type: "previewEffectiveConfig";
 }
 
-export interface RunToolchainFixMessage {
-  type: "runToolchainFix";
-  fixId: ToolchainFixId;
+/**
+ * Re-run `tan doctor --build` and push a fresh `dependencyReport`. The user
+ * asked, so this is also the one path allowed to spend a GitHub request on the
+ * latest-SDK lookup regardless of the cache TTL (src/deps/panel.ts).
+ */
+export interface RefreshDependenciesMessage {
+  type: "refreshDependencies";
 }
 
-export interface ReloadToolchainMessage {
-  type: "reloadToolchain";
+/**
+ * Run one dependency row's action.
+ *
+ * Carries the ROW ID (`DependencyRow.name`, which is tan's `check.name`) and
+ * nothing else. The host looks the id up in the report it last sent and runs
+ * THAT row's `action` — so what executes is always something the host itself
+ * produced. A webview that handed over a command string to execute would be a
+ * command-injection seam: the panel renders untrusted CLI output, and a
+ * compromised or merely buggy renderer could then choose the command.
+ *
+ * An unknown id, or a row whose `action` is `null`, is a no-op.
+ */
+export interface RunDependencyActionMessage {
+  type: "runDependencyAction";
+  name: string;
 }
 
 export interface ReloadHardwareExplorerMessage {
@@ -422,8 +520,8 @@ export type WebviewToExtMessage =
   | ConfiguratorUpdateMessage
   | ReloadConfiguratorMessage
   | PreviewEffectiveConfigMessage
-  | RunToolchainFixMessage
-  | ReloadToolchainMessage
+  | RefreshDependenciesMessage
+  | RunDependencyActionMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage

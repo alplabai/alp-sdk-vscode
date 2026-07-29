@@ -1,0 +1,201 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+.shell {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  min-height: 0;
+}
+
+.header {
+  flex-shrink: 0;
+  padding: var(--space-7) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-4);
+}
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.counts {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+}
+
+.count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.countValue {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+}
+
+.count[data-status="pass"] .countValue {
+  color: var(--status-ok);
+}
+
+.count[data-status="warn"] .countValue {
+  color: var(--status-warn);
+}
+
+.count[data-status="fail"] .countValue {
+  color: var(--status-err);
+}
+
+.countLabel {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.note {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: var(--space-3) 0 0;
+  line-height: 1.5;
+}
+
+.summaryRow .note {
+  margin: 0;
+}
+
+.body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-6) var(--space-7);
+}
+
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-base);
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table thead th {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.name {
+  font-weight: 400;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.detail {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.mono {
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: nowrap;
+}
+
+.version {
+  color: var(--text-primary);
+}
+
+/* A pin is not an upgrade path — label it so nobody reads the version column
+   as "you are behind". */
+.pin,
+.update {
+  margin-left: var(--space-2);
+  font-family: var(--vscode-font-family);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  color: var(--text-secondary);
+}
+
+.update {
+  border-color: var(--status-warn);
+  color: var(--status-warn);
+}
+
+/* Statuses are whatever tan says. The three it emits today are coloured; any
+   word it adds tomorrow still renders, just in the default foreground. */
+.status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status[data-status="pass"] {
+  color: var(--status-ok);
+}
+
+.status[data-status="warn"] {
+  color: var(--status-warn);
+}
+
+.status[data-status="fail"] {
+  color: var(--status-err);
+}
+
+.action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

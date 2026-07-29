@@ -96,7 +96,7 @@ export class ExistingProjectFlowPanel {
       case "runCommand":
         runWebviewCommand(msg.command);
         // Bootstrap runs in a terminal; the standing onDidFinishTerminalCommand
-        // subscription refreshes when it closes. Stamp the time so it reads it.
+        // subscription refreshes when its process exits. Stamp the time so it reads it.
         if (isBootstrapCommand(msg.command)) {
           void this.context.globalState.update(
             "alp.lastBootstrapAt",

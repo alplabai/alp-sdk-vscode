@@ -391,6 +391,47 @@
   flex: 0 0 auto;
 }
 
+/* Why a slice ended the way it did, plus what it produced and where its log
+ * is (#331). `flex-basis: 100%` inside the wrapping `.manifestSlice` row puts
+ * it on its own line without restructuring the row into a column. */
+.manifestDetail {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  padding-left: var(--space-3);
+}
+
+.manifestReason {
+  color: var(--status-warn);
+}
+
+.manifestDetailPath {
+  font-family: var(--font-family-mono, monospace);
+  overflow-wrap: anywhere;
+}
+
+/* Budget verdict for a slice's footprint (#359). `over` is the one a firmware
+ * developer must act on, so it reads as an error; `warn` and `no-budget` are
+ * advisory; `not-built` / `n/a` are absence of data, not a problem. */
+.sizeStatus {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.sizeStatus[data-size-status="ok"] {
+  color: var(--status-ok);
+}
+.sizeStatus[data-size-status="warn"],
+.sizeStatus[data-size-status="no-budget"] {
+  color: var(--status-warn);
+}
+.sizeStatus[data-size-status="over"] {
+  color: var(--status-error, var(--status-warn));
+}
+
 .sliceBtn {
   font-size: var(--font-size-xs);
   font-weight: 600;

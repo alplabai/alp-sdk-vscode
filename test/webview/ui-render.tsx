@@ -14,12 +14,47 @@ import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flo
 import { NewProjectFlowView } from "../../packages/alp-webview/src/features/new-project-flow";
 import { ExistingProjectFlowView } from "../../packages/alp-webview/src/features/existing-project-flow";
 import { SdkView } from "../../packages/alp-webview/src/features/sdk";
-import { ToolchainDoctorView } from "../../packages/alp-webview/src/features/toolchain-doctor";
+import { DependenciesView } from "../../packages/alp-webview/src/features/dependencies";
 import { HardwareExplorerView } from "../../packages/alp-webview/src/features/hardware-explorer";
 import { BuildPlanView } from "../../packages/alp-webview/src/features/build-plan";
+// Imported, not hardcoded: a hardcoded `_v: 2` outlived the bump to 3, so every
+// AppProvider here saw a protocol mismatch, held `state` at null, and rendered
+// nine skeletons that the harness scored as PASS.
+import { PROTOCOL_VERSION } from "../../packages/alp-webview/src/types";
+import type {
+  DependencyAction,
+  DependencyRow,
+} from "../../packages/alp-webview/src/types";
 
 const g = globalThis as any;
 const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/**
+ * Drain enough macrotask turns for React to have committed and flushed passive
+ * effects, including for components mounted by an ancestor's state update.
+ *
+ * This used to be two bare `await tick()`s, which was silently too few. React
+ * 19 commits passive effects on its own scheduler turn, so a hook subscribing
+ * BELOW AppProvider — `useBuildPlan`, and every other feature hook — had not
+ * called `onMessage` yet when the harness dispatched its data. Instrumenting
+ * `onMessage` showed the nine AppProviders registering as listeners #1-#10 and
+ * receiving everything, while `useBuildPlan` registered as #11/#12 after the
+ * last dispatch and received nothing at all.
+ *
+ * The harness reported PASS regardless: it only looked for ERROR_MARKERS, and
+ * a view stuck in its loading/empty state contains none. So "9/9 views
+ * rendered" meant they rendered EMPTY. Any assertion about data-driven content
+ * depends on this settling, which is why the #331 checks below are the first
+ * thing that would have caught it.
+ */
+const settle = async (turns = 12): Promise<void> => {
+  for (let i = 0; i < turns; i++) await tick();
+};
+
+// Take and clear whatever jsdom-setup's window `error` / `unhandledrejection`
+// listeners collected since the last call. Draining (not just reading) keeps
+// one broken handler from being re-reported against every later button.
+const drainErrors = (): string[] => g.__ALP_ERRORS__.splice(0);
 
 // Error boundary that records the actual render error instead of letting React
 // swallow it — so a component that crashes shows up as a PROBLEM, not a pass.
@@ -65,9 +100,51 @@ const readyState = {
   },
 };
 
+// One dependency row, with the cells this harness never varies filled in: tan
+// reports no per-check version, so `installed`/`latest` are null and the view
+// renders a dash.
+const row = (
+  name: string,
+  label: string,
+  status: string,
+  detail: string,
+  hint: string | null = null,
+  action: DependencyAction | null = null,
+): DependencyRow => ({
+  name,
+  label,
+  status,
+  detail,
+  hint,
+  installed: null,
+  latest: null,
+  updateAvailable: false,
+  action,
+});
+
+// The two fallback actions the pinned tan v0.3.1 produces on a POSIX host, with
+// the effect + tooltip `fixPresentation` derives from `fixCommand` itself.
+const BOOTSTRAP_FIX: DependencyAction = {
+  kind: "fix",
+  fixId: "west",
+  effect: "bootstrap",
+  title:
+    "Runs the Alp SDK bootstrap in a terminal — installs west and the Zephyr Python dependencies into the workspace venv",
+};
+const docsFix = (fixId: "build-tools" | "zephyr-sdk"): DependencyAction => ({
+  kind: "fix",
+  fixId,
+  effect: "open-docs",
+  title: "Opens the Zephyr docs in your browser — nothing is installed",
+});
+
 // Messages that populate the data-driven views (New Project, SDK Manager).
 function feedState() {
-  g.__ALP_POST_TO_WEBVIEW__({ type: "stateUpdate", _v: 2, state: readyState });
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "stateUpdate",
+    _v: PROTOCOL_VERSION,
+    state: readyState,
+  });
   g.__ALP_POST_TO_WEBVIEW__({
     type: "projectTemplatesData",
     templates: [
@@ -121,10 +198,152 @@ function feedState() {
       warnings: [],
     },
   });
+  // A real post-build manifest, not `null` — the System manifest section was
+  // never rendered by this harness at all, so nothing here covered it. The
+  // shape is the one #331 is about: one slice that succeeded and one that did
+  // not, the latter carrying the `reason` the UI used to drop.
   g.__ALP_POST_TO_WEBVIEW__({
     type: "systemManifestData",
-    manifest: null,
-    postBuild: false,
+    postBuild: true,
+    manifest: {
+      schema_version: 1,
+      generated_by: "tan",
+      hw_info: { sku: "E1M-AEN801" },
+      slices: [
+        {
+          core_id: "m55_hp",
+          os: "zephyr",
+          status: "ok",
+          build_dir: "build/m55_hp",
+          output_artefact: "build/m55_hp/zephyr/zephyr.elf",
+          flash_method: "jlink",
+        },
+        {
+          core_id: "a32_cluster",
+          os: "yocto",
+          status: "skipped",
+          reason: "bitbake not found",
+          log_path: "build/a32_cluster/bitbake.log",
+        },
+      ],
+      ipc: [
+        {
+          name: "rpmsg0",
+          kind: "rpmsg",
+          endpoints: ["m55_hp", "a32_cluster"],
+          status: "degraded",
+          reason: "peer slice skipped",
+        },
+      ],
+      helper_mcus: [],
+      boot_order: [],
+    },
+  });
+  // #359: per-slice footprint from `tan size`. Deliberately mixed — one slice
+  // in budget with real numbers, one that produced nothing — so the harness
+  // covers both the measured and the no-data branch.
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "sliceSizesData",
+    report: {
+      schema: "alp-size/1",
+      slices: [
+        {
+          core_id: "m55_hp",
+          os: "zephyr",
+          status: "ok",
+          flash: { used: 99452, total: 5767168, pct: 1.7 },
+          ram: { used: 16968, total: 262144, pct: 6.5 },
+          source: "size-tool",
+        },
+        {
+          core_id: "a32_cluster",
+          os: "yocto",
+          status: "not-built",
+          flash: { used: null, total: null, pct: null },
+          ram: { used: null, total: null, pct: null },
+          source: null,
+        },
+      ],
+      summary: { over_budget: [], unknown_budget: [] },
+    },
+  });
+  // The tan-cli#103 machine, verbatim: `fail: 0` while `ninja` sits at `warn`
+  // because tan caps an absent PATH tool there. Ninja is missing, the build
+  // cannot run, and the old panel printed "All required tools present" over it.
+  // Rows are the pinned tan v0.3.1's own check names and detail strings; counts
+  // are tan's summary, which does NOT count the host-owned `tan` row.
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "dependencyReport",
+    report: {
+      counts: { pass: 4, warn: 6, fail: 0 },
+      // v0.3.1 emits no `missingPrerequisites`, so actions fall back to the
+      // fix ids this extension knows — which is what puts a button on ninja.
+      prerequisiteDataUnavailable: true,
+      rows: [
+        row("sdk", "alp-sdk", "pass", "alp-sdk 0.11.0 selected."),
+        row("boardYaml", "board.yaml", "pass", "board.yaml found."),
+        row(
+          "workspace",
+          "Zephyr workspace",
+          "pass",
+          "Zephyr workspace at /ws.",
+        ),
+        row("cmake", "CMake", "pass", "cmake is available."),
+        row(
+          "westResolved",
+          "west (workspace)",
+          "warn",
+          "west not found — run `tan bootstrap` to create the workspace venv",
+          "tan bootstrap",
+          BOOTSTRAP_FIX,
+        ),
+        row(
+          "west",
+          "west",
+          "warn",
+          "west not found on PATH — needed for Zephyr builds.",
+          "Install west via `tan bootstrap`.",
+          BOOTSTRAP_FIX,
+        ),
+        row(
+          "ninja",
+          "Ninja",
+          "warn",
+          "ninja not found on PATH — needed for Zephyr builds.",
+          "Install Ninja.",
+          docsFix("build-tools"),
+        ),
+        row(
+          "zephyrSdk",
+          "Zephyr SDK",
+          "warn",
+          "Zephyr SDK toolchain not detected (ZEPHYR_SDK_INSTALL_DIR unset).",
+          "Install the Zephyr SDK: https://docs.zephyrproject.org/latest/develop/toolchains/zephyr_sdk.html",
+          docsFix("zephyr-sdk"),
+        ),
+        // No button: this extension knows no fix for either, so tan's own prose
+        // hint is the whole remedy the user gets.
+        row(
+          "yoctoHost",
+          "Yocto host",
+          "warn",
+          "Yocto builds are Linux-only; use WSL2 or a Linux host/container.",
+          "Run Yocto builds on Linux (WSL2 / Docker).",
+        ),
+        row(
+          "vendorToolchain",
+          "Vendor toolchain",
+          "warn",
+          "Baremetal needs a vendor toolchain (Alif/Renesas/NXP), per SoC family.",
+          "Install the vendor toolchain for your SoC (see docs/getting-started.md §8).",
+        ),
+        {
+          ...row("tan", "tan CLI", "pass", "pinned to 0.3.1"),
+          installed: "0.3.1",
+          latest: { version: "0.3.1", kind: "pin" },
+        },
+      ],
+    },
   });
   g.__ALP_POST_TO_WEBVIEW__({
     type: "hardwareExplorerData",
@@ -150,7 +369,8 @@ const VIEWS: Array<[string, React.FC]> = [
   ["new-project-flow", NewProjectFlowView],
   ["existing-project-flow", ExistingProjectFlowView],
   ["sdk-manager", SdkView],
-  ["toolchain-doctor", ToolchainDoctorView],
+  // The mode string src/deps/panel.ts writes to `<body data-alp-mode>`.
+  ["dependencies", DependenciesView],
   ["hardware-explorer", HardwareExplorerView],
   ["build-plan", BuildPlanView],
 ];
@@ -187,14 +407,15 @@ async function main() {
           React.createElement(AppProvider, null, React.createElement(View)),
         ),
       );
-      await tick();
-      await tick(); // let AppProvider's message subscription mount (useEffect)
+      await settle();
       feedState();
-      await tick();
-      await tick();
-      feedState(); // re-dispatch in case a subscription mounted late
-      await tick();
-      await tick();
+      // AppProvider renders its children only once it HAS state, so a feature
+      // hook that subscribes below it (useBuildPlan, …) does not exist until
+      // this first feed has been processed and committed. Feed again once it
+      // does — see `settle` for why two ticks were never enough.
+      await settle();
+      feedState();
+      await settle();
     } catch (err) {
       ok = false;
       problems.push(`${mode}: RENDER THREW — ${String(err)}`);
@@ -210,6 +431,12 @@ async function main() {
       renderErr = null;
       return true;
     };
+    // Drain before the first click so a report from mount/effects is blamed on
+    // the view, not on whichever button happens to be clicked first.
+    for (const err of drainErrors()) {
+      ok = false;
+      problems.push(`${mode}: error reported during render — ${err}`);
+    }
     if (noteCrash()) {
       console.log(`  FAIL  ${mode}: render error`);
       continue;
@@ -220,6 +447,58 @@ async function main() {
     for (const marker of ERROR_MARKERS) {
       if (text.includes(marker)) {
         problems.push(`${mode}: visible text contains "${marker}"`);
+      }
+    }
+    // #331: a slice that did not build must say WHY. The manifest already
+    // carried `reason`, `log_path` and `output_artefact`; the row rendered
+    // only the status chip, so "skipped" arrived with no explanation and the
+    // produced artefact and log were invisible. `text` is lowercased above.
+    if (mode === "build-plan") {
+      for (const needle of [
+        "bitbake not found", // slice reason
+        "build/a32_cluster/bitbake.log", // slice log_path
+        "build/m55_hp/zephyr/zephyr.elf", // slice output_artefact
+        "peer slice skipped", // ipc link reason
+        // #359 — footprint from `tan size`, and the no-data branch beside it.
+        "97.1 kib / 5.50 mib (1.7%)", // flash, measured
+        "16.6 kib / 256.0 kib (6.5%)", // ram, measured
+        "in budget", // status verdict
+        "not built", // a slice tan could not measure
+      ]) {
+        if (!text.includes(needle)) {
+          problems.push(
+            `build-plan: system manifest detail missing "${needle}"`,
+          );
+        }
+      }
+    }
+    // The defect this panel exists to remove, asserted at the surface a customer
+    // actually reads. Fed the tan-cli#103 report — `fail: 0`, `ninja` at `warn`,
+    // Ninja missing — the panel must state the three counts and nothing else.
+    // src/toolchain.ts:244 drew `fail === 0` as a verdict and printed "All
+    // required tools present" over a build that cannot run; any of these words
+    // reaching the screen here means that verdict has grown back.
+    if (mode === "dependencies") {
+      // `textContent` glues adjacent elements together — the heading and the
+      // counts arrive as "dependenciesall required tools present4pass" — which
+      // silently defeats a \b match on the first and last word of every string.
+      // Strip the tags instead, so each rendered string is its own token.
+      // (Leaves HTML entities encoded; none of the words below is one.)
+      const spaced = (container.innerHTML || "")
+        .replace(/<[^>]*>/g, " ")
+        .toLowerCase();
+      // The rows must be on screen first — a panel still showing "Running
+      // checks…" carries no verdict either, and would pass vacuously.
+      if (!spaced.includes("ninja not found on path")) {
+        problems.push("dependencies: the ninja warn row did not render");
+      }
+      for (const word of ["all", "present", "ready"]) {
+        // Word boundaries: "Install", "Installed" and "already" are not verdicts.
+        if (new RegExp(`\\b${word}\\b`).test(spaced)) {
+          problems.push(
+            `dependencies: renders the verdict word "${word}" over a warn row`,
+          );
+        }
       }
     }
     // The Hub Environment card surfaces the tan CLI next to python/west.
@@ -262,9 +541,16 @@ async function main() {
         clickedHere += 1;
         totalClicked += 1;
       } catch (err) {
+        // Only a throw from click() ITSELF (a jsdom fault) reaches here — a
+        // handler's own throw is reported, not propagated. drainErrors() below
+        // is what actually catches a broken button.
         problems.push(
           `${mode}: button "${label}" threw on click — ${String(err)}`,
         );
+      }
+      for (const err of drainErrors()) {
+        ok = false;
+        problems.push(`${mode}: button "${label}" threw on click — ${err}`);
       }
       void before;
     }

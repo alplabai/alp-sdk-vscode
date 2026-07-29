@@ -14,9 +14,18 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { E1M_MODULES } from "./projectScaffold";
+import { buildProjectSettings } from "./projectSettings";
+import { resetSetupNudge } from "./setupOrchestrator";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
-import { log, reportError, showOutput } from "../util";
+import {
+  isCancellation,
+  planCliOutcome,
+  planFailure,
+  planSuccess,
+} from "../notify/service";
+import { notify, notifyAsync } from "../notify/vscodeAdapter";
+import { log } from "../util";
 
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
 const PANEL_TITLE = "Alp IDE — New Project";
@@ -52,8 +61,29 @@ export class NewProjectFlowPanel {
       "new-project-flow",
     );
 
+    // `handleMessage` is voided (a message pump must not be awaited), so
+    // without this handler every rejection inside it is an UNHANDLED one in the
+    // extension host, with no line naming which message produced it. It really
+    // can reject: the wizard awaits a folder picker, toasts, a globalState
+    // write and the workspace-replacing folder open — all main-thread RPCs, all
+    // rejected with a CancellationError when the window goes away. That is the
+    // "Create" button working (the new project's window is opening), so it is
+    // logged as abandoned, never as a failure.
     this.panel.webview.onDidReceiveMessage(
-      (msg: WebviewToExtMessage) => void this.handleMessage(msg),
+      (msg: WebviewToExtMessage) =>
+        void this.handleMessage(msg).catch((err: unknown) => {
+          if (isCancellation(err)) {
+            log(`[new-project] "${msg.type}" abandoned, window closing`);
+            return;
+          }
+          notifyAsync(
+            planFailure({
+              operation: "The New Project wizard",
+              cause: "Alp: the New Project wizard hit an unexpected error.",
+              detail: `${msg.type}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+            }),
+          );
+        }),
       undefined,
       this.disposables,
     );
@@ -163,8 +193,20 @@ export class NewProjectFlowPanel {
           (i) => i.code === "presets.sdk-root-unresolved",
         )
       ) {
-        void vscode.window.showWarningMessage(
-          "Alp: no SDK resolved, so the Hardware list can't report core topology — a multi-core SoM (e.g. E1M-V2N101) will scaffold as single-core with no IPC. Select an SDK for full multi-core scaffolding.",
+        // `reloadCatalog` re-runs on mount AND on every wizard SDK change, so
+        // the same warning would stack; `dedupeKey` drops a repeat while one is
+        // still on screen. TODO: this is degraded state for the Hardware step
+        // and belongs BESIDE that list — it needs a `catalogWarning` field on
+        // `projectTemplatesData` (src/ideHub/messages.ts + the webview mirror),
+        // which is outside this routing pass.
+        notifyAsync(
+          planFailure({
+            operation: "Loading the hardware list",
+            cause:
+              "No SDK resolved, so the Hardware list can't report core topology — a multi-core SoM (e.g. E1M-V2N101) will scaffold as single-core with no IPC. Select an SDK for full multi-core scaffolding.",
+            severity: "warning",
+            dedupeKey: "presets.sdk-root-unresolved",
+          }),
         );
       }
       this.somModules = E1M_MODULES;
@@ -187,12 +229,17 @@ export class NewProjectFlowPanel {
     if (overview.outcome.envelope === null) {
       // `runAlpCommand` never throws: an unresolvable/failed CLI returns a
       // null-envelope error outcome. Without surfacing it the template step
-      // renders blank with no trace (issue #129) — mirror the loader's null
-      // check and point the user at the setting / output channel. A resolved
-      // SDK with no templates returns a non-null envelope, so it falls through
-      // to the webview's empty-state instead.
-      log(`[new-project] ${overview.outcome.message}`);
-      void this.surfaceTemplateError(overview.outcome.message);
+      // renders blank with no trace (issue #129). The plan reads
+      // `outcome.unavailable` so a first-run "tan isn't installed yet" offers
+      // Install rather than the alpSdk.cliPath fix for a BROKEN path, and the
+      // resolver's raw text goes to the channel as `detail`. A resolved SDK
+      // with no templates returns a non-null envelope, so it falls through to
+      // the webview's empty-state instead.
+      notifyAsync(
+        planCliOutcome(overview.outcome, {
+          operation: "Loading the project templates",
+        }),
+      );
       this.templates = [];
       return this.templates;
     }
@@ -258,25 +305,6 @@ export class NewProjectFlowPanel {
     return templates;
   }
 
-  /** Surface a CLI-unavailable failure from `fetchTemplates` (mirrors the
-   *  alpCli adapter's `surfaceResolutionError`, plus a "Show Output" action)
-   *  instead of leaving the template step silently blank. */
-  private async surfaceTemplateError(message: string): Promise<void> {
-    const choice = await vscode.window.showErrorMessage(
-      message,
-      "Open Settings",
-      "Show Output",
-    );
-    if (choice === "Open Settings") {
-      await vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "alpSdk.cliPath",
-      );
-    } else if (choice === "Show Output") {
-      showOutput();
-    }
-  }
-
   private async handleMessage(msg: WebviewToExtMessage): Promise<void> {
     switch (msg.type) {
       case "ready":
@@ -296,6 +324,7 @@ export class NewProjectFlowPanel {
           msg.projectName,
           msg.sdkPath,
           msg.destination,
+          msg.openInCurrentWindow ?? true,
         );
         break;
 
@@ -326,6 +355,7 @@ export class NewProjectFlowPanel {
     projectName: string,
     sdkPath?: string,
     destination?: string,
+    openInCurrentWindow: boolean = true,
   ): Promise<void> {
     // Prefer the location chosen in the wizard; fall back to a picker if absent.
     let parentDir = destination?.trim() ?? "";
@@ -346,8 +376,17 @@ export class NewProjectFlowPanel {
     const projectDir = path.join(parentDir, projectName);
 
     if (fs.existsSync(projectDir)) {
-      void vscode.window.showErrorMessage(
-        `Folder already exists: ${projectDir}`,
+      // The colliding absolute path is channel detail; the sentence names the
+      // two fields the user can actually change. TODO: this is Name/Location
+      // form validation and belongs beside those fields — it needs its own
+      // ExtToWebviewMessage (src/ideHub/messages.ts + the webview mirror),
+      // which is outside this routing pass.
+      notifyAsync(
+        planFailure({
+          operation: "Creating the project",
+          cause: `A folder named "${projectName}" already exists in that location — pick a different name or location.`,
+          detail: projectDir,
+        }),
       );
       return;
     }
@@ -406,7 +445,12 @@ export class NewProjectFlowPanel {
     }
     const { outcome } = await runAlpCommand(this.context, initArgs);
     if (!outcome.envelope || !outcome.envelope.ok) {
-      await reportError(`Alp: ${outcome.message}`);
+      // Severity comes from the outcome, never from here: `alp init --som` with
+      // a bad SKU exits 2 (validation ⇒ warning) and must not read like the
+      // spawn failure that exits 1.
+      notifyAsync(
+        planCliOutcome(outcome, { operation: "Creating the project" }),
+      );
       return;
     }
 
@@ -429,57 +473,82 @@ export class NewProjectFlowPanel {
     // unknowingly open a scaffold with no SDK pinned (F5).
     let shouldOpen = false;
     if (pinError) {
-      const retry = "Retry Pin";
-      const openAnyway = "Open Anyway";
-      const choice = await vscode.window.showWarningMessage(
-        `Alp: project "${projectName}" was created at ${projectDir}, but pinning its SDK failed — ${pinError}. It will open WITHOUT a pinned SDK until you set "alpSdk.path" in its .vscode/settings.json.`,
-        retry,
-        openAnyway,
+      // The pick GATES the open, so this stays awaited and both actions are
+      // caller-handled (no `run` in the presenter's table). `pinError` is
+      // `String(err)` off an fs catch — an EACCES/EPERM/ENOENT string with an
+      // absolute path — so it and `projectDir` travel as channel `detail`.
+      const choice = await notify(
+        planFailure({
+          operation: "Pinning the project's SDK",
+          cause: `Project "${projectName}" was created, but pinning its SDK failed. It will open WITHOUT a pinned SDK until you set "alpSdk.path" in its .vscode/settings.json.`,
+          detail: `${projectDir}: ${pinError}`,
+          severity: "warning",
+          actions: [{ id: "retry", title: "Retry Pin" }, { id: "openAnyway" }],
+        }),
       );
-      if (choice === retry) {
+      if (choice === "retry") {
         if (sdkPath) {
           const retried = this.pinProjectSdk(projectDir, sdkPath);
           if (retried.ok) {
             log(`[new-project] SDK pin retry OK for ${projectDir}`);
-            void vscode.window.showInformationMessage(
-              `Alp: SDK pinned. Opening "${projectName}".`,
-            );
+            notifyAsync(planSuccess(`SDK pinned. Opening "${projectName}".`));
           } else {
-            log(
-              `[new-project] SDK pin retry FAILED for ${projectDir}: ${retried.error}`,
-            );
-            void reportError(
-              `Alp: pinning the SDK failed again — ${retried.error}. Opening without a pinned SDK; set "alpSdk.path" manually.`,
+            log(`[new-project] SDK pin retry FAILED for ${projectDir}`);
+            // Still a warning, not an error: the user already chose to open
+            // anyway, so the second failure of the same condition is not a
+            // worse outcome than the first.
+            notifyAsync(
+              planFailure({
+                operation: "Pinning the project's SDK",
+                cause:
+                  'Pinning the SDK failed again. Opening without a pinned SDK; set "alpSdk.path" manually.',
+                detail: `${projectDir}: ${retried.error}`,
+                severity: "warning",
+              }),
             );
           }
         }
         shouldOpen = true;
-      } else if (choice === openAnyway) {
+      } else if (choice === "openAnyway") {
         shouldOpen = true;
       }
       // Dismissed ⇒ don't open (safer than the old silent open).
     } else {
-      const open = "Open Project";
-      const choice = await vscode.window.showInformationMessage(
-        `Project "${projectName}" created at ${projectDir}`,
-        open,
-      );
-      shouldOpen = choice === open;
+      // Pin OK ⇒ auto-open so the new project becomes the ACTIVE project: the
+      // extension's project context (board.yaml / build / flash) resolves from
+      // the open workspace folder, so a created-but-unopened project is never
+      // active. Opens in the CURRENT window (see openProjectFolder) — the user
+      // just built this to work on it. Status bar, not a toast: the window
+      // replace tears a toast down before it can be read, and the new window
+      // IS the feedback.
+      notifyAsync(planSuccess(`Project "${projectName}" created — opening…`));
+      // Clear the setupOrchestrator's machine-wide "already shown" fingerprint
+      // so the freshly-created project's activation re-evaluates readiness and
+      // reliably shows the bootstrap nudge — a prior dismissal for the same
+      // issue set (e.g. from an earlier project) must not silently suppress it
+      // here. globalState is machine-wide, so this survives the window replace.
+      await resetSetupNudge(this.context);
+      shouldOpen = true;
     }
 
     if (shouldOpen) {
-      // Open in a new window when a workspace is already open, so we don't
-      // replace the user's current session.
-      await openProjectFolder(vscode.Uri.file(projectDir));
+      // Checkbox unchecked ⇒ open in a NEW window (keep the current workspace);
+      // checked (default) ⇒ replace the current window.
+      await openProjectFolder(
+        vscode.Uri.file(projectDir),
+        !openInCurrentWindow,
+      );
     }
 
     this.panel.dispose();
   }
 
-  /** Write `alpSdk.path` into the new project's .vscode/settings.json so it
-   *  opens with the SDK chosen in the wizard (merges if a file already exists).
-   *  Returns the outcome so the caller can surface a pin failure BEFORE offering
-   *  to open the project — never silently open an unpinned scaffold (F5). */
+  /** Write the new project's .vscode/settings.json (merging if it exists): pin
+   *  `alpSdk.path` to the SDK chosen in the wizard, and point the C/C++ extension
+   *  at the west build's compile DB so Zephyr + ALP headers resolve after the
+   *  first Build (see buildProjectSettings). Returns the outcome so the caller
+   *  can surface a failure BEFORE offering to open the project — never silently
+   *  open an unpinned scaffold (F5). */
   private pinProjectSdk(
     projectDir: string,
     sdkPath: string,
@@ -496,7 +565,7 @@ export class NewProjectFlowPanel {
           existing = {};
         }
       }
-      const settings = { ...existing, "alpSdk.path": sdkPath };
+      const settings = buildProjectSettings(existing, sdkPath);
       fs.writeFileSync(
         settingsPath,
         JSON.stringify(settings, null, 2) + "\n",

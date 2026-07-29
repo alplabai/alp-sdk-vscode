@@ -87,19 +87,28 @@ export class SetupTreeProvider
         sdk.readiness === "ready" ? readyIcon : warnIcon,
         { command: "alp.openSdkManager", title: "Open SDK Manager" },
       ),
+      // `westInitialized` goes true at the START of a bootstrap (the first
+      // write of `.west/config`), so it is checked LAST here: reported on its
+      // own it says "Initialized" for the whole run, while the status bar says
+      // "bootstrapping" — and the customer believes the surface that says the
+      // work is done. No command while it runs: waiting is the only action.
       new SetupItem(
         "Workspace",
-        workspace.westInitialized
-          ? "Initialized"
-          : workspace.workspaceRoot
-            ? "Not initialized"
-            : "No workspace",
-        workspace.westInitialized
-          ? readyIcon
-          : workspace.workspaceRoot
-            ? warnIcon
-            : unknownIcon,
-        workspace.westInitialized
+        setup.bootstrapRunning
+          ? "Bootstrapping… — do not build yet"
+          : workspace.westInitialized
+            ? "Initialized"
+            : workspace.workspaceRoot
+              ? "Not initialized"
+              : "No workspace",
+        setup.bootstrapRunning
+          ? new vscode.ThemeIcon("sync")
+          : workspace.westInitialized
+            ? readyIcon
+            : workspace.workspaceRoot
+              ? warnIcon
+              : unknownIcon,
+        setup.bootstrapRunning || workspace.westInitialized
           ? undefined
           : { command: "alp.openSetupFlow", title: "Open Setup" },
       ),

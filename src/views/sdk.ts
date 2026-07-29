@@ -43,10 +43,10 @@ export class SdkTreeProvider
     );
     const inactiveIcon = new vscode.ThemeIcon("package");
 
-    const activeEntry = sdk.localEntries.find((e) => e.path === sdk.activePath);
-    const otherEntries = sdk.localEntries.filter(
-      (e) => e.path !== sdk.activePath,
-    );
+    // `active` is decided host-side (#361) — a raw path compare here misses
+    // when a hand-typed alpSdk.path differs only in case or a trailing slash.
+    const activeEntry = sdk.localEntries.find((e) => e.active);
+    const otherEntries = sdk.localEntries.filter((e) => !e.active);
 
     this.items = [];
 

@@ -22,7 +22,7 @@ First-class IDE support for projects built against the
 
 ![ALP IDE Hub overview dashboard](media/screenshots/01-ide-hub-overview.png)
 
-_Workspace readiness at a glance — environment, west workspace and Alp SDK status, board-configurator / hardware-explorer / toolchain-doctor panels, and quick actions._
+_Workspace readiness at a glance — environment, west workspace and Alp SDK status, board-configurator / hardware-explorer / dependencies panels, and quick actions._
 
 ### Create a new project
 
@@ -254,7 +254,11 @@ Load the local build via `Extensions: Install from VSIX`.
 ## Development
 
 Use `pnpm test` as the default verification step while changing the
-extension.
+extension. Run `pnpm run contract:fetch` once first: it downloads tan's
+published `envelope-contract.json` into the gitignored
+`test/golden/tan-contract/`, and `pnpm test` FAILS without it rather than
+skipping the contract gate. Offline, `TAN_CONTRACT_OFFLINE=1 pnpm test`
+downgrades that failure to a loud skip (ignored when `CI` is set).
 
 The current test setup is intentionally lightweight:
 

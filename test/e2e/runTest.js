@@ -45,7 +45,19 @@ async function main() {
   const userDataDir = path.join(testRoot, "user-data");
   const extensionsDir = path.join(testRoot, "extensions");
 
-  const vscodeExecutablePath = await downloadAndUnzipVSCode("stable");
+  // PINNED, not "stable". VS Code 1.130.0's archive build ships no
+  // signature-verifying tool, so `--install-extension` fails for EVERY
+  // extension with:
+  //
+  //   Error while installing extension redhat.vscode-yaml: Signature
+  //   verification failed with 'ENOENT' error.
+  //
+  // and the install step below throws before a single check runs. The same
+  // install succeeds on 1.129.1 ("Extension 'redhat.vscode-yaml' v1.24.0 was
+  // successfully installed."), so this is a VS Code archive-build regression,
+  // not anything about this extension. Revisit — and move back to "stable" —
+  // once a later stable ships the verifier again.
+  const vscodeExecutablePath = await downloadAndUnzipVSCode("1.129.1");
 
   // The extension declares extensionDependencies: ["redhat.vscode-yaml"], so
   // VS Code refuses to activate it unless that extension is installed IN THE
@@ -65,6 +77,28 @@ async function main() {
       extensionsDir,
       "--install-extension",
       "redhat.vscode-yaml",
+      // cortex-debug is the second `extensionDependency`; without it the
+      // extension does not activate in the isolated --extensions-dir and every
+      // e2e case fails at activation. The VS Code CLI pulls ITS dependencies
+      // (debug-tracker-vscode, memory-view, rtos-views, peripheral-viewer)
+      // transitively, so they need no entries here.
+      "--install-extension",
+      "marus25.cortex-debug",
+      // CodeLLDB is an `extensionPack` entry, not a dependency, so VS Code does
+      // NOT pull it into an isolated --extensions-dir. Install it explicitly:
+      // it owns the `lldb` debug type that "Alp: Native Sim Debug" emits, and
+      // the debug-type case below is the only check that can prove a launch
+      // config this extension writes actually resolves. Without it that case
+      // could only ever report "type not supported" and would prove nothing.
+      "--install-extension",
+      "vadimcn.vscode-lldb",
+      // Same reasoning for the other `extensionPack` entry: cpptools owns the
+      // `cppdbg` type the yocto-userspace profile emits. Verifying three of the
+      // four emitted types and taking the fourth on trust is exactly how
+      // `codelldb` shipped broken -- so it is installed rather than exempted,
+      // at the cost of a slower first e2e run.
+      "--install-extension",
+      "ms-vscode.cpptools",
       "--force",
     ],
     {
@@ -75,7 +109,7 @@ async function main() {
   );
   if (install.status !== 0) {
     throw new Error(
-      "Failed to install the redhat.vscode-yaml dependency into the test instance",
+      "Failed to install an extensionDependency into the test instance",
     );
   }
 

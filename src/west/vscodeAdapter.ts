@@ -2,7 +2,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as vscode from "vscode";
+import { proxyEnvAdditions } from "../alpCli/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { runInTerminal } from "../util";
 import {
@@ -48,54 +48,12 @@ function findWorkspaceVenvWest(
   }
 }
 
-/**
- * West terminal names whose spawned command is still executing, keyed to the
- * terminal identity. runInTerminal disposes a same-named terminal before
- * recreating it, so without this a second invocation would KILL a still-running
- * `west build`/`flash` mid-run (interrupting a flash — issue #146). We warn and
- * leave the running terminal alone instead. Cleared when the command's shell
- * execution ends or the terminal closes.
- * ponytail: the end event needs terminal shell integration; with it off a name
- * stays in-flight until the terminal closes — the safe degraded mode (warn
- * rather than kill a live run).
- */
-const inFlightTerminals = new Map<string, vscode.Terminal>();
-let terminalTrackingReady = false;
-
-function ensureTerminalTracking(): void {
-  if (terminalTrackingReady) return;
-  terminalTrackingReady = true;
-  const clear = (terminal: vscode.Terminal): void => {
-    // Identity check: a disposed same-named terminal's close event must not
-    // clear a fresh run's flag.
-    if (inFlightTerminals.get(terminal.name) === terminal) {
-      inFlightTerminals.delete(terminal.name);
-    }
-  };
-  vscode.window.onDidEndTerminalShellExecution((event) =>
-    clear(event.terminal),
-  );
-  vscode.window.onDidCloseTerminal((terminal) => clear(terminal));
-}
-
 export function executeWestPlan(plan: WestCommandPlan): void {
-  ensureTerminalTracking();
-
-  // A previous run from this plan is still executing. runInTerminal would
-  // dispose that terminal to recreate it, killing the live command — so warn
-  // and reveal it instead of interrupting it (issue #146).
-  const running = inFlightTerminals.get(plan.terminalName);
-  if (running) {
-    void vscode.window
-      .showWarningMessage(
-        `"${plan.terminalName}" is still running — wait for it to finish before starting it again.`,
-        "Show Terminal",
-      )
-      .then((choice) => {
-        if (choice === "Show Terminal") running.show();
-      });
-    return;
-  }
+  // No "still running" pre-check here on purpose. `runInTerminal` refuses a
+  // live run under the same terminal name itself (issue #146: never terminate
+  // a flash mid-write to start a fresh one) with the byte-identical warning
+  // and the same "Show Terminal" action, so a second copy of that toast in
+  // this file only ever meant two places to keep in sync.
 
   // Prefer the workspace venv's west over PATH (hermetic; see findWorkspaceVenvWest).
   const venvWest = findWorkspaceVenvWest(plan.westCwd);
@@ -107,13 +65,10 @@ export function executeWestPlan(plan: WestCommandPlan): void {
     name: plan.terminalName,
     argv,
     cwd: plan.westCwd ?? undefined,
-    env: plan.env,
+    // `west update` clones and fetches from GitHub, so it is as proxy-dependent
+    // as `tan` is and this task inherits the extension host's environment, not
+    // a login shell's. The plan's own vars win on a key clash: the proxy
+    // additions never write EXTRA_ZEPHYR_MODULES, so today there is none.
+    env: { ...proxyEnvAdditions(), ...plan.env },
   });
-
-  // runInTerminal just (re)created the terminal with this name; track it as
-  // in-flight so a repeat invocation warns instead of killing it.
-  const created = vscode.window.terminals.find(
-    (terminal) => terminal.name === plan.terminalName,
-  );
-  if (created) inFlightTerminals.set(plan.terminalName, created);
 }

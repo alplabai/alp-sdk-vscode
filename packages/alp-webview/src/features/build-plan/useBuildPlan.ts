@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { BuildPlanData, SystemManifest } from "../../types";
+import type { BuildPlanData, SizeReport, SystemManifest } from "../../types";
 import { onMessage, postMessage } from "../../vscode";
 
 export interface UseBuildPlan {
@@ -11,6 +11,10 @@ export interface UseBuildPlan {
   /** True when `manifest` is the populated build output, false = SDK projection. */
   manifestPostBuild: boolean;
   manifestError: string | null;
+  /** Per-slice footprint vs the SoM budget (`tan size`). Null before a build
+   *  or when the measurement failed — never rendered as zero. */
+  sizes: SizeReport | null;
+  sizesError: string | null;
   reload(): void;
   /** Write the plan's files to disk (`alp build --materialise`). */
   materialise(): void;
@@ -31,6 +35,8 @@ export function useBuildPlan(): UseBuildPlan {
   const [manifest, setManifest] = useState<SystemManifest | null>(null);
   const [manifestPostBuild, setManifestPostBuild] = useState(false);
   const [manifestError, setManifestError] = useState<string | null>(null);
+  const [sizes, setSizes] = useState<SizeReport | null>(null);
+  const [sizesError, setSizesError] = useState<string | null>(null);
 
   useEffect(() => {
     const off = onMessage((msg) => {
@@ -42,6 +48,9 @@ export function useBuildPlan(): UseBuildPlan {
         setManifest(msg.manifest);
         setManifestPostBuild(msg.postBuild);
         setManifestError(msg.error ?? null);
+      } else if (msg.type === "sliceSizesData") {
+        setSizes(msg.report);
+        setSizesError(msg.error ?? null);
       }
     });
     postMessage({ type: "requestBuildPlan" });
@@ -56,12 +65,16 @@ export function useBuildPlan(): UseBuildPlan {
       manifest,
       manifestPostBuild,
       manifestError,
+      sizes,
+      sizesError,
       reload() {
         setLoading(true);
         setPlan(null);
         setError(null);
         setManifest(null);
         setManifestError(null);
+        setSizes(null);
+        setSizesError(null);
         postMessage({ type: "requestBuildPlan" });
       },
       materialise() {
@@ -74,6 +87,15 @@ export function useBuildPlan(): UseBuildPlan {
         postMessage({ type: "flashSlice", coreId });
       },
     }),
-    [plan, error, loading, manifest, manifestPostBuild, manifestError],
+    [
+      plan,
+      error,
+      loading,
+      manifest,
+      manifestPostBuild,
+      manifestError,
+      sizes,
+      sizesError,
+    ],
   );
 }

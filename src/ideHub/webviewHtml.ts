@@ -3,6 +3,9 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 
+import { planFailure } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
+
 /**
  * Build the HTML shell for any Alp IDE webview (sidebar or panel).
  *
@@ -34,8 +37,15 @@ export function buildWebviewHtml(
     ),
   );
 
-  // Per-render CSP nonce: only scripts carrying it may run, so 'unsafe-inline'
-  // stays out of script-src and injected inline handlers cannot execute.
+  // Per-render CSP nonce: only scripts and styles carrying it may run, so
+  // 'unsafe-inline' stays out of BOTH script-src and style-src — injected
+  // inline handlers cannot execute and injected style attributes are dropped.
+  //
+  // Nothing here needs `style-src 'unsafe-inline'`: the components' CSS ships as
+  // an external dist/main.css (covered by cspSource), React applies `style={{}}`
+  // props through the CSSOM (`style.setProperty` / `style[name] =`), which CSP
+  // does not govern, and the two rules the shell needs for itself live in the
+  // nonce'd <style> below rather than in style="" attributes.
   const nonce = randomBytes(16).toString("base64");
 
   return /* html */ `<!DOCTYPE html>
@@ -44,13 +54,24 @@ export function buildWebviewHtml(
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
+    content="default-src 'none'; style-src ${webview.cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
   <title>Alp IDE</title>
   <link rel="stylesheet" href="${styleUri}"/>
+  <style nonce="${nonce}">
+    /* The shell's own two rules. Kept here rather than in dist/main.css so the
+       loading state still renders correctly if that stylesheet fails to load —
+       which is one of the failures this state exists to show. */
+    body { margin: 0; padding: 0; }
+    .alp-shell-loading {
+      padding: 8px;
+      color: var(--vscode-foreground, #fff);
+      background: var(--vscode-sideBar-background, transparent);
+    }
+  </style>
 </head>
-<body data-alp-mode="${mode}" style="margin:0;padding:0">
+<body data-alp-mode="${mode}">
   <div id="root">
-    <p style="padding:8px;color:var(--vscode-foreground,#fff);background:var(--vscode-sideBar-background,transparent)">
+    <p class="alp-shell-loading">
       ⏳ Loading Alp IDE…
     </p>
   </div>
@@ -84,6 +105,7 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.installDependencies",
   "alp.newProjectWizard",
   "alp.openConfigurator",
+  "alp.openDependencies",
   "alp.openExistingProject",
   "alp.openHardwareExplorer",
   "alp.openHub",
@@ -93,7 +115,12 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.openSetupFlow",
   "alp.previewEffectiveConfig",
   "alp.showBuildPlan",
-  "alp.toolchainDoctor",
+  // `alp.toolchainDoctor` is deliberately NOT here. The id still exists (the
+  // notify seam's `runDoctor` action and shipped keybindings execute it, and it
+  // opens the dependency panel), but no webview posts it any more — the Hub
+  // tile and the Environment card both dispatch `alp.openDependencies`. A stale
+  // bundle that still posts the old id gets the "reload the window" notice,
+  // which is exactly the situation it describes.
   "alp.validateBoardYaml",
   "alp.westAlpClean",
   "alp.westAlpFlash",
@@ -124,8 +151,17 @@ export function isBootstrapCommand(command: string): boolean {
  */
 export function runWebviewCommand(command: string): void {
   if (!ALLOWED_WEBVIEW_COMMANDS.has(command)) {
-    void vscode.window.showErrorMessage(
-      `Alp IDE refused to run an unexpected command: ${command}`,
+    // The real cause is a stale webview bundle or an allowlist gap, so the
+    // remedy is a reload; the VS Code command id is an internal identifier and
+    // goes to the channel, not into the sentence.
+    notifyAsync(
+      planFailure({
+        operation: "Running an Alp IDE action",
+        cause: "This Alp IDE action isn't available in this version.",
+        detail: `refused webview command: ${command}`,
+        actions: [{ id: "reloadWindow" }],
+        dedupeKey: "webview-command-refused",
+      }),
     );
     return;
   }
