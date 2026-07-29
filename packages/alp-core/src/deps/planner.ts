@@ -222,6 +222,14 @@ const LABELS: Readonly<Record<string, string>> = {
   cmake: "CMake",
   ninja: "Ninja",
   zephyrSdk: "Zephyr SDK",
+  // Plain `tan doctor`'s host-environment half (src/deps/vscodeAdapter.ts's
+  // PLAIN_DOCTOR_HOST_CHECKS). `humanise` would render these "Zephyr sdk host"
+  // and "Lldb"; the acronyms are the whole point of the row.
+  zephyrSdkHost: "Zephyr SDK (host support)",
+  hostPrerequisites: "Bootstrap prerequisites",
+  longPaths: "Windows long paths",
+  homePath: "Home directory",
+  lldb: "LLDB",
   yoctoHost: "Yocto host",
   bitbake: "BitBake",
   dd: "dd",

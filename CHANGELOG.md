@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **The Dependencies panel now checks your host tools with no folder open, and
+  reports the four host checks it could never see before.** The panel refused
+  outright without a project folder, which closed a loop a customer following
+  the published walkthrough could not open: the prerequisite table needed a
+  folder, the folder needed the SDK, the SDK needed git, and git was installed
+  from the prerequisite table — and nothing said that opening any unrelated
+  folder unlocked it. Host-tool checks are facts about the machine, not the
+  project, so they now run either way. The checks that genuinely read a project
+  (`sdk`, `board.yaml`, the Zephyr workspace, west-in-the-workspace) stay in the
+  table as "not checked" rows saying why, rather than vanishing or — worse —
+  answering about whatever directory the checker happened to start in. They
+  count toward nothing in the pass/warn/fail header. Separately, the panel ran
+  only `tan doctor --build`, and tan puts four checks on plain `tan doctor`
+  alone: Windows long paths, home-directory spaces, whether the Zephyr SDK
+  publishes a build for this host, and the bootstrap prerequisite gate. The
+  first of those is a build that dies deep in CMake complaining about a file
+  that plainly exists, on the stock Windows default — with no row anywhere in
+  the IDE to explain it. Both doctor runs now happen, concurrently, so opening
+  the panel costs about as long as the slower of the two rather than their sum;
+  it is twice the process work per refresh, which is the price of the four rows.
+  Rows keep tan's order, `--build`'s block first and the host block after it, so
+  which run a row came from is readable off the table.
+- **Installing a dependency from the panel now offers "Reload Window".** A
+  `winget install` from a row's button puts the tool on the machine's PATH,
+  which the already-running extension host cannot see — so the row the customer
+  just fixed kept reading as missing, with nothing on screen saying why. The
+  reload is offered, never automatic: a build or a flash may be running, and
+  reloading takes the terminal with it, so the notice says to wait for the
+  install to finish first.
+
 - **A SOCKS proxy is now named as unsupported instead of reported as
   unreachable, and an IPv6 host in `NO_PROXY` is honoured.** VS Code's
   `http.proxy` accepts `socks5://host:1080`, and all five SOCKS spellings
