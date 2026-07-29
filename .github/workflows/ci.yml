@@ -18,8 +18,39 @@ concurrency:
 
 jobs:
   build:
-    name: build · extension + vsix
-    runs-on: ubuntu-latest
+    # The matrix entries carry an explicit `name` because the ubuntu context
+    # name is load-bearing: `dev` and `main` require the check
+    # "build · extension + vsix" verbatim, with enforce_admins=true. A bare
+    # matrix renames it to "build (ubuntu-latest)"; the required context would
+    # then never report and every PR would block with no admin override. So the
+    # ubuntu entry keeps its name byte-for-byte and Windows arrives as a new,
+    # separate context.
+    #
+    # One step list, two OSes: the Windows job cannot drift into skipping the
+    # checks it exists to run, because there is only one copy of them.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # A Windows failure must not cancel ubuntu: ubuntu is the required check,
+      # Windows is advisory until it has a track record.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: build · extension + vsix
+          - os: windows-latest
+            name: build · windows
+
+    defaults:
+      run:
+        # On Windows `shell: bash` is Git Bash, so both OSes run identical step
+        # bodies — including check-vsix-allowlist.sh and the `test -f` block
+        # below, which are shell and would not parse under the pwsh default.
+        # Checkout is LF on both: .gitattributes pins `eol=lf`, overriding the
+        # Windows runner's core.autocrlf=true. Versus ubuntu's previous default
+        # this only adds `pipefail`; no step body here contains a pipe.
+        shell: bash
 
     steps:
       - name: Checkout (with submodule)
@@ -88,6 +119,10 @@ jobs:
         run: pnpm exec vsce package --no-dependencies --out alp-sdk.vsix
 
       - name: Upload vsix artefact
+        # ubuntu only: upload-artifact@v4 rejects a duplicate artifact name, and
+        # the shipped package is the ubuntu one. Windows still runs `vsce
+        # package` and the allowlist gate below — it just keeps the .vsix local.
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: alp-sdk-vsix
