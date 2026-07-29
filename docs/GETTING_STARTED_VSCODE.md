@@ -64,7 +64,7 @@ Two different claims, and only the first one is about this extension:
   the extension resolves or downloads one and the editor-side features work.
 - **Firmware builds here** — the pinned **Zephyr SDK 1.0.1** publishes a host
   toolchain build for this OS and CPU. Without one there is nothing for
-  `west sdk install` to fetch, so **Alp: West build** cannot produce an image
+  `west sdk install` to fetch, so **Alp: Build** cannot produce an image
   however `tan` got onto the machine.
 
 `zephyrproject-rtos/sdk-ng` `v1.0.1` publishes exactly **four** host families —
@@ -81,9 +81,11 @@ others.
 | macOS Intel — `darwin/x64`                | `tan-x86_64-apple-darwin`          | dropped in SDK 1.0.0        | **No** — build on a Linux host |
 | Linux armhf — `linux/arm`                 | none published                     | none published              | **No** — move to another host  |
 
-`tan doctor` reports the same verdict as a `zephyrSdkHost` check, from `tan`
-v0.4.0 on. Earlier `tan` builds omit the check entirely — an older cached copy
-reporting nothing about your host is not a pass.
+Running `tan doctor` yourself, with no flags, reports the same verdict as a
+`zephyrSdkHost` check, from `tan` v0.4.0 on. Two things do NOT count as a pass:
+an older `tan` omits the check entirely, and `tan doctor --build` omits it by
+design — so silence about your host says nothing either way. This table is the
+source of truth.
 
 #### Windows on ARM — build inside WSL2
 
@@ -168,7 +170,7 @@ While editing board.yaml:
 
 Use:
 
-- Alp: West build (validate + generate + build)
+- Alp: Build (validate + generate + build)
 - Alp: West flash
 - Alp: Run under native_sim
 
