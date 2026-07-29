@@ -10,6 +10,16 @@
 // is what makes that contract testable without an extension host: no
 // `vscode`, `fs`, or `child_process` import here — those seams live in
 // `vscodeAdapter.ts`.
+//
+// Registering the tasks is only half of it: tan emits `preLaunchTask` ONLY
+// when `--pre-launch-task` names one (tan-cli v0.4.0
+// `crates/tan-core/src/debug_launch.rs`, `drop_absent_pre_launch_task`), so
+// four registered labels that nothing referenced left F5 launching
+// cortex-debug at an ELF no step had built. `preLaunchTaskFor` below is the
+// half that names them, and `debugConfigArgs` (../debug/service.ts) is its
+// only caller.
+
+import { DebugTargetKind } from "@alp-sdk/core/debug/models";
 
 /** VS Code renders `${source}: ${name}` for a task this provider contributes;
  *  `source` is fixed across all four. Must stay lowercase `alp` — that's the
@@ -23,6 +33,12 @@ export interface TaskSpec {
    *  `preLaunchTask` string a generated debug profile references. */
   name: string;
   kind: TaskKind;
+  /** The `--target-kind` whose generated debug profile should reference this
+   *  task, if any. Carried HERE rather than in a lookup table beside
+   *  `debugConfigArgs` so the label and the kind that names it cannot drift:
+   *  renaming a spec moves both at once, and a table keyed on these strings
+   *  from another file would not even fail to compile. */
+  targetKind?: DebugTargetKind;
 }
 
 /** The label VS Code shows and matches `preLaunchTask` against for `spec`. */
@@ -47,10 +63,47 @@ export function taskLabel(spec: TaskSpec): string {
  * `miDebuggerServerAddress: "<host>:<port>"` for the user to fill in by
  * hand. Its `deployGdbserver` kind gets a placeholder task (adapter side)
  * that names the manual step and fails loudly rather than faking success.
+ * That is why it carries NO `targetKind` — see `preLaunchTaskFor`.
  */
 export const TASK_SPECS: readonly TaskSpec[] = [
-  { name: "build active target", kind: "build" },
-  { name: "build baremetal target", kind: "build" },
-  { name: "build native_sim target", kind: "build" },
+  { name: "build active target", kind: "build", targetKind: "zephyr-mcu" },
+  {
+    name: "build baremetal target",
+    kind: "build",
+    targetKind: "baremetal-mcu",
+  },
+  {
+    name: "build native_sim target",
+    kind: "build",
+    targetKind: "native-host",
+  },
   { name: "deploy and start gdbserver", kind: "deployGdbserver" },
 ];
+
+/**
+ * The task label a `targetKind`'s generated debug profile should reference,
+ * or undefined when it should reference none.
+ *
+ * The three build kinds map one-to-one onto the three build labels — the same
+ * pairing tan itself hardcoded before tan-cli#85 made the key opt-in, so this
+ * restores the intended profiles rather than inventing an association.
+ *
+ * yocto-userspace deliberately gets NOTHING. The only task registered for it
+ * is the "deploy and start gdbserver" placeholder, which exits 1 by design
+ * (`vscodeAdapter.ts`) because the extension cannot deploy or start a remote
+ * gdbserver. Naming it would put VS Code's "the preLaunchTask terminated with
+ * exit code 1 — Debug Anyway / Show Errors" dialog in front of EVERY F5,
+ * including one where the customer has already copied the binary across,
+ * started gdbserver by hand and filled in `miDebuggerServerAddress` — the
+ * setup that works. Omitting the flag leaves that profile exactly as it is
+ * today; it is not a claim that the build step is unwanted there, only that
+ * no task this extension registers can supply it.
+ */
+export function preLaunchTaskFor(
+  targetKind: DebugTargetKind,
+): string | undefined {
+  const spec = TASK_SPECS.find(
+    (candidate) => candidate.targetKind === targetKind,
+  );
+  return spec ? taskLabel(spec) : undefined;
+}
