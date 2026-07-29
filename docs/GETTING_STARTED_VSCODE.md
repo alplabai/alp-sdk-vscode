@@ -1,6 +1,6 @@
 # Getting Started (VS Code)
 
-Last revised: 2026-07-20
+Last revised: 2026-07-29
 
 This guide covers the fastest path to a productive ALP SDK workflow inside VS Code.
 
@@ -37,17 +37,97 @@ the binary in this order:
    `alplabai/tan-cli` (a raw `tan-<triple>[.exe]` binary) into global storage
    (needs network access).
 
-> **All six host targets have a prebuilt release binary** — Windows (x64 +
-> arm64), Linux (x64 + arm64), and macOS (Intel x64 + Apple silicon arm64) — so
-> the download-on-demand path works on every supported host. To run a local
-> build instead, `cargo build --release` in a `tan-cli` checkout and point
-> `alpSdk.cliPath` at `tan-cli/target/release/tan` (or put a `tan` on `PATH`).
+> **Each of the six host targets the extension maps has a prebuilt release
+> binary** — Windows (x64 + arm64), Linux (x64 + arm64), and macOS (Intel x64 +
+> Apple silicon arm64) — so the download-on-demand path resolves an asset on
+> every one of them. To run a local build instead, `cargo build --release` in a
+> `tan-cli` checkout and point `alpSdk.cliPath` at `tan-cli/target/release/tan`
+> (or put a `tan` on `PATH`).
+>
+> **That is not the same as "you can build firmware here."** Two of those six
+> hosts get a working `tan` and still cannot compile a Zephyr image, and a
+> seventh host VS Code itself ships for gets neither. See
+> [Host support](#host-support-tan-runs-vs-firmware-builds) below **before** you
+> pick a machine.
 
 > **Both Linux assets are static musl builds, not glibc.** The extension
 > downloads `tan-x86_64-unknown-linux-musl` / `tan-aarch64-unknown-linux-musl`
 > (published from `tan-cli` v0.3.0 on) — fully static, so they run on any
 > distro/libc, including musl-only distros like Alpine, with no glibc-version
 > floor to worry about.
+
+### Host support: `tan` runs vs. firmware builds
+
+Two different claims, and only the first one is about this extension:
+
+- **`tan` runs here** — Alp Lab publishes a `tan` binary for this OS and CPU, so
+  the extension resolves or downloads one and the editor-side features work.
+- **Firmware builds here** — the pinned **Zephyr SDK 1.0.1** publishes a host
+  toolchain build for this OS and CPU. Without one there is nothing for
+  `west sdk install` to fetch, so **Alp: Build** cannot produce an image
+  however `tan` got onto the machine.
+
+`zephyrproject-rtos/sdk-ng` `v1.0.1` publishes exactly **four** host families —
+`linux-aarch64`, `linux-x86_64`, `macos-aarch64`, `windows-x86_64` — and no
+others.
+
+| Host (`process.platform`/`process.arch`) | `tan` binary                       | Zephyr SDK 1.0.1 host build | Firmware builds?               |
+| ---------------------------------------- | ---------------------------------- | --------------------------- | ------------------------------ |
+| Windows x64 — `win32/x64`                 | `tan-x86_64-pc-windows-msvc.exe`   | `windows-x86_64`            | Yes                            |
+| Linux x64 — `linux/x64`                   | `tan-x86_64-unknown-linux-musl`    | `linux-x86_64`              | Yes                            |
+| Linux arm64 — `linux/arm64`               | `tan-aarch64-unknown-linux-musl`   | `linux-aarch64`             | Yes                            |
+| macOS Apple silicon — `darwin/arm64`      | `tan-aarch64-apple-darwin`         | `macos-aarch64`             | Yes                            |
+| Windows on ARM — `win32/arm64`            | `tan-aarch64-pc-windows-msvc.exe`  | never published             | **No** — build inside WSL2     |
+| macOS Intel — `darwin/x64`                | `tan-x86_64-apple-darwin`          | dropped in SDK 1.0.0        | **No** — build on a Linux host |
+| Linux armhf — `linux/arm`                 | none published                     | none published              | **No** — move to another host  |
+
+Running `tan doctor` yourself, with no flags, reports the same verdict as a
+`zephyrSdkHost` check, from `tan` v0.4.0 on. Two things do NOT count as a pass:
+an older `tan` omits the check entirely, and `tan doctor --build` omits it by
+design — so silence about your host says nothing either way. This table is the
+source of truth.
+
+#### Windows on ARM — build inside WSL2
+
+`tan` resolves and runs here, and everything that does not need a compiler
+works. The Zephyr SDK has never published a `windows-arm64` host build at any
+release, so no native Windows toolchain can be provisioned on this hardware.
+
+Install a WSL2 Linux distribution (`wsl --install`) and do the build from inside
+it — a WSL2 distro on ARM hardware is `linux-aarch64`, which the Zephyr SDK does
+publish. Open the project through VS Code's WSL remote so the build runs on the
+Linux side.
+
+#### macOS Intel — build on a Linux host
+
+`tan-x86_64-apple-darwin` exists and installs, so the extension provisions
+cleanly and then the first build fails. The Zephyr SDK published `macos-x86_64`
+through **0.17.4** and dropped it in **1.0.0**; the pinned 1.0.1 serves
+`macos-aarch64` only.
+
+`macos-aarch64` is not a substitute — Rosetta translates x86_64 **for** Apple
+silicon, not aarch64 for an Intel Mac — and macOS has no WSL2 equivalent to fall
+back to. Pinning an older Zephyr SDK is not an escape either: the pinned Zephyr
+requires 1.0.1, which is past the release that dropped the host.
+
+Build on a Linux host instead — a `linux-x86_64` VM or container on this Mac, or
+a remote Linux builder.
+
+#### Linux armhf — neither half is available
+
+VS Code publishes a `linux-armhf` target, where `process.arch` is `arm`. The
+extension maps six `platform/arch` keys and `linux/arm` is not one of them, so
+download-on-demand refuses with:
+
+```text
+No prebuilt tan CLI for linux/arm. Set alpSdk.cliPath to a local build (tan-cli/target/release/tan).
+```
+
+**Building `tan` from source does not rescue this host.** The Zephyr SDK
+publishes no 32-bit-ARM Linux host build either, so a self-built `tan` would
+resolve, run, and then have no toolchain to hand `west` — the same wall, one
+step later. Use a `linux-x86_64` or `linux-aarch64` machine (64-bit arm64 Linux
+on the same board, where available, is served).
 
 ## 2. Install and Open
 
@@ -90,7 +170,7 @@ While editing board.yaml:
 
 Use:
 
-- Alp: West build (validate + generate + build)
+- Alp: Build (validate + generate + build)
 - Alp: West flash
 - Alp: Run under native_sim
 
