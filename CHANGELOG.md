@@ -32,7 +32,10 @@
   getting the artefact — distinct messages per cause, one exit code, because the
   outcome is the same and it is not "pass". An offline developer sets
   `TAN_CONTRACT_OFFLINE=1`, which downgrades the failure to a skip and is
-  ignored when `CI` is set.
+  ignored when `CI` is set. Both jobs of the release workflow now run the fetch
+  before their tests, as CI already did — without it, failing closed would have
+  reddened the next tagged release on a corpus that is gitignored and therefore
+  never present in a release checkout.
 - **Two issue codes the extension matches are now watched, and the scan that
   finds them is no longer family-blind.** `bootstrap.python-not-runnable` and
   `bootstrap.python-too-old` sat in a bucket about which nothing was asserted,
@@ -49,8 +52,8 @@
   added `{root, sourceTier}` and it has been on the wire since tan v0.4.0, but
   `AlpEnvelope` had no member for it and the contract test asserted nothing
   about it. It is typed optional and `isEnvelope` does not require it — tan
-  omits the key entirely from any envelope whose command resolved no SDK (13 of
-  the 15 published goldens), so requiring it would turn valid envelopes into
+  omits the key entirely from any envelope whose command resolved no SDK — most
+  of the published goldens — so requiring it would turn valid envelopes into
   "no envelope at all" and silently fall back. The contract test asserts the
   shape wherever the key appears, and fails if it appears nowhere. Nothing
   surfaces it in the UI yet.

@@ -19,11 +19,12 @@ import {
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
  *  (aligned with tan-cli's `[workspace.package] version`).
  *
- *  v0.4.0 is the first release that publishes `envelope-contract.json`, which
- *  is what `scripts/fetch-tan-contract.mjs` downloads for THIS pin — so the pin
- *  is what turns the envelope-contract gate from "skipped, loudly" into a check
- *  that verifies something. Which releases carry it is declared below, in
- *  `RELEASES_PREDATING_CONTRACT_ASSET`, rather than asserted in this prose.
+ *  v0.4.0 publishes `envelope-contract.json`, which is what
+ *  `scripts/fetch-tan-contract.mjs` downloads for THIS pin — so the pin is what
+ *  turns the envelope-contract gate from "skipped, loudly" into a check that
+ *  verifies something. (v0.4.0-rc1 was the first tag to carry the asset; v0.4.0
+ *  is the first NON-rc one, and the pin.) Which releases carry it is declared
+ *  below, in `RELEASES_PREDATING_CONTRACT_ASSET`, rather than in this prose.
  *
  *  It is also the first release carrying what this extension now REQUIRES, not
  *  merely prefers: `tan debug-config --core` and its `data.configuration`
@@ -37,9 +38,11 @@ export const SUPPORTED_CLI_VERSION = "0.4.0";
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
  * `envelope-contract.json` release asset. `alplabai/tan-cli#106` wired the
- * asset into `release.yml`, and v0.4.0 was the next tag — so this list is
- * CLOSED: no release cut from here on can predate the producer, and nothing
- * will ever be added to it.
+ * asset into `release.yml`, and every tag from v0.4.0-rc1 on carries it — so
+ * this list is CLOSED: no release cut from here on can predate the producer,
+ * and nothing will ever be added to it. Checked against the live releases
+ * rather than inferred from the issue: v0.3.1, the last tag before v0.4.0-rc1,
+ * publishes nine assets and this is not one of them.
  *
  * The default is therefore "the pinned release IS expected to carry it", which
  * is the point. `scripts/fetch-tan-contract.mjs` and `test/tanContract.test.js`

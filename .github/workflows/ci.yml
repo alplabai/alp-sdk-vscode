@@ -57,8 +57,8 @@ jobs:
         # below: test/tanContract.test.js is pure and reads whatever this leaves
         # in test/golden/tan-contract/.
         #
-        # The asset EXISTS now: tan v0.4.0 was the first release to publish
-        # `envelope-contract.json`, and `SUPPORTED_CLI_VERSION` pins that tag,
+        # The asset EXISTS now: every tan tag from v0.4.0-rc1 on publishes
+        # `envelope-contract.json`, and `SUPPORTED_CLI_VERSION` pins v0.4.0,
         # so this step fetches and the contract tests actually assert against a
         # real artefact. This comment previously said "no tan release has been
         # tagged since, so nothing publishes it yet" — true when written, false

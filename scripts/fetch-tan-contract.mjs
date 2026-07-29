@@ -7,8 +7,9 @@
 // exactly the way the thing it is testing drifts, which is why this fetches.
 //
 // The artefact EXISTS: `alplabai/tan-cli#106` wired `envelope-contract.json`
-// into `release.yml`, v0.4.0 was the next tag, and `SUPPORTED_CLI_VERSION` pins
-// it. So the fetch is the normal path, and whether a failed fetch may be
+// into `release.yml`, every tag from v0.4.0-rc1 on carries it, and
+// `SUPPORTED_CLI_VERSION` pins v0.4.0.
+// So the fetch is the normal path, and whether a failed fetch may be
 // tolerated turns on ONE question -- is the PINNED release expected to publish
 // the asset? That is not a judgement call and not a comment: it is
 // `RELEASES_PREDATING_CONTRACT_ASSET` in `src/alpCli/service.ts`, a closed list

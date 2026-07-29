@@ -15,8 +15,9 @@
 // hand-copied: a fixture copied into this repo drifts exactly the way the thing
 // it is testing drifts).
 //
-// The artefact EXISTS as of tan v0.4.0, the first release to publish it
-// (`alplabai/tan-cli#106` wired it into `release.yml`), and that is the pin. So
+// The artefact EXISTS as of tan v0.4.0-rc1, the first tag to publish it
+// (`alplabai/tan-cli#106` wired it into `release.yml`); every tag from there on
+// carries it, and v0.4.0 is the pin. So
 // a missing artefact is no longer a state of the world to be tolerated — it is
 // a fetch that did not happen or did not work, and this file FAILS on it.
 //
@@ -24,8 +25,9 @@
 // `RELEASES_PREDATING_CONTRACT_ASSET` (src/alpCli/service.ts), the closed set of
 // tan tags cut before #106 landed. Nothing is published for those, so
 // there is nothing to verify. Everything else that ends with no artefact on
-// disk is red — see `the artefact is present` below, which is the one test in
-// this file with no `{ skip }`.
+// disk is red — see `the artefact is present` below. It is one of the two tests
+// here that carry no `{ skip }`; the other is the source scan, which asserts
+// against this repo's own files and needs no artefact either way.
 //
 // The offline developer's escape is `TAN_CONTRACT_OFFLINE=1`, which downgrades
 // that red to a loud skip. It is ignored when `CI` is set, so it cannot green a
@@ -259,8 +261,8 @@ function findEnvelopes(node, out = []) {
  * own instruction: "when the layout is frozen, replace this with the one
  * declared key and delete the heuristic rather than hardening it further."
  *
- * v0.4.0 is the first release to publish the asset, and the heuristic could not
- * read it. `issueCodes` is an array of OBJECTS (`{code, status, severity,
+ * v0.4.0 publishes the asset, and the heuristic could not read it.
+ * `issueCodes` is an array of OBJECTS (`{code, status, severity,
  * consumer, consumerEffect, note}`), while the walker only accepted an array of
  * STRINGS or an object keyed by them — so it collected nothing, `frozenCodes`
  * came back null, and the one assertion that matters (every code the pinned tan
@@ -308,19 +310,31 @@ const expected = !RELEASES_PREDATING_CONTRACT_ASSET.includes(
  *  green a pipeline is not an opt-out, it is the fail-open with extra steps. */
 const offlineOptOut = !process.env.CI && process.env[OFFLINE_ENV] === "1";
 
+// Three ways to arrive with no artefact, three reasons. The opt-out branch is
+// NOT the default: a run that never set OFFLINE_ENV must not be told it did.
+// A skip that misreports why it skipped is the same class of defect as a gate
+// that passes without verifying — it puts a false fact in the log, and the log
+// is all anyone reads.
 const skip =
   !present &&
-  (expected
-    ? `NOT CHECKED — ${OFFLINE_ENV}=1 was set, so the missing ${ASSET} for the pinned tan ` +
-      `v${SUPPORTED_CLI_VERSION} is a skip rather than the failure it otherwise is. That ` +
-      `release DOES publish one, at ${URL}; it was never fetched here. Nothing below ` +
-      `verified that tan still emits the envelope this extension parses. ` +
-      `Run \`pnpm run contract:fetch\` when back online.`
-    : `NOT CHECKED — tan v${SUPPORTED_CLI_VERSION} predates ${ASSET}: it is listed in ` +
+  (!expected
+    ? `NOT CHECKED — tan v${SUPPORTED_CLI_VERSION} predates ${ASSET}: it is listed in ` +
       `RELEASES_PREDATING_CONTRACT_ASSET (src/alpCli/service.ts), the closed set of tags cut ` +
       `before ${ISSUE} added the asset to release.yml. Nothing is published at ${URL} to ` +
       `check against, so nothing below verified that tan still emits the envelope this ` +
-      `extension parses.`);
+      `extension parses.`
+    : offlineOptOut
+      ? `NOT CHECKED — ${OFFLINE_ENV}=1 was set, so the missing ${ASSET} for the pinned tan ` +
+        `v${SUPPORTED_CLI_VERSION} is a skip rather than the failure it otherwise is. That ` +
+        `release DOES publish one, at ${URL}; it was never fetched here. Nothing below ` +
+        `verified that tan still emits the envelope this extension parses. ` +
+        `Run \`pnpm run contract:fetch\` when back online.`
+      : `NOT CHECKED — no ${ASSET} for the pinned tan v${SUPPORTED_CLI_VERSION}, and ` +
+        `${OFFLINE_ENV}=1 was NOT set${process.env.CI ? " (or was, and is ignored under CI)" : ""}. ` +
+        `That release DOES publish one, at ${URL}; it was never fetched here. This is not a ` +
+        `tolerated absence — \`the artefact is present\` above has already FAILED this run, ` +
+        `and these skips are the downstream of that failure, not a reason it was excused. ` +
+        `Fix the fetch (\`pnpm run contract:fetch\`), do not read past this.`);
 
 const doc = present ? JSON.parse(fs.readFileSync(assetPath, "utf8")) : null;
 const envelopes = present ? findEnvelopes(doc) : [];
@@ -343,10 +357,11 @@ const frozenCodes = present ? findFrozenCodes(doc) : null;
  */
 let artefactChecks = 0;
 
-// The ONE test in this file with no `{ skip }`: it is what makes a missing
-// artefact a failure instead of a skip that reads like a pass. Everything below
-// it skips when the artefact is absent — that is fine precisely because getting
-// there at all now requires this to have passed.
+// The test that makes a missing artefact a failure instead of a skip that reads
+// like a pass. Every ARTEFACT-reading test below skips when it is absent — that
+// is fine precisely because getting there at all now requires this to have
+// passed. (Two tests in this file carry no `{ skip }`: this one and the source
+// scan below it, which reads src/ rather than the artefact.)
 test("tan contract: the artefact is present for a pin that publishes one", () => {
   assert.ok(
     present || !expected || offlineOptOut,
@@ -368,6 +383,22 @@ test("tan contract: the artefact is present for a pin that publishes one", () =>
 // the assertion that gives `GATED_CODES` its teeth — a new match site cannot be
 // added without someone deciding what tan declares about it.
 test("gated issue codes: every code matched in src/ is classified exactly once", () => {
+  // The shape this scan filters on, pinned against the family it was widened
+  // for. Without this the ISSUE_CODE_SHAPE fix is UNGATED: reverting the family
+  // to `[a-z][a-z0-9]*` passes every test here today, because the v0.4.0
+  // artefact happens to declare no hyphenated family. The day tan publishes
+  // `debug-config.*` — already in its `contract/issue-codes.json` on `dev` —
+  // the old shape makes `findFrozenCodes` throw at module scope and takes the
+  // whole file down with it. Asserted here, not in the artefact tests, because
+  // it is a fact about this file's regex and must hold with no artefact on disk.
+  assert.ok(
+    ISSUE_CODE_SHAPE.test("debug-config.legacy-entry-migrated"),
+    "ISSUE_CODE_SHAPE rejects a hyphenated family. tan already declares " +
+      "`debug-config.legacy-entry-migrated` and `debug-config.comments-dropped`; " +
+      "findFrozenCodes asserts every issueCodes[] entry matches this shape, so the " +
+      "first release to publish one would fail the frozen-list read at module scope " +
+      "and kill every test in this file.",
+  );
   const scanned = scanGatedCodes([
     path.join(__dirname, "..", "src"),
     path.join(__dirname, "..", "packages", "alp-core", "src"),
