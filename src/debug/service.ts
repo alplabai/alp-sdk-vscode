@@ -564,7 +564,7 @@ export function debugConfigArgs(
   // Without this the generated profile has no `preLaunchTask` at all — tan
   // drops the key unless `--pre-launch-task` names one — so F5 on a fresh
   // clone starts cortex-debug against an ELF nothing has built. The four
-  // labels have been registered since #342; nothing referenced them.
+  // labels have been registered since #387; nothing referenced them.
   const preLaunchTask = preLaunchTaskFor(spec.targetKind);
   if (preLaunchTask) args.push("--pre-launch-task", preLaunchTask);
   if (options.preview) args.push("--preview");

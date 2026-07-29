@@ -278,9 +278,10 @@ class AlpTaskProvider implements vscode.TaskProvider {
   }
 }
 
-/** Registers the provider backing the four `preLaunchTask` labels tan's
- *  generated launch.json profiles reference. Caller pushes the returned
- *  disposable onto `context.subscriptions`. */
+/** Registers the provider backing the four `alp:` task labels — the three a
+ *  generated launch.json profile references as its `preLaunchTask`, plus the
+ *  picker-only gdbserver placeholder. Caller pushes the returned disposable
+ *  onto `context.subscriptions`. */
 export function registerAlpTaskProvider(
   context: vscode.ExtensionContext,
 ): vscode.Disposable {

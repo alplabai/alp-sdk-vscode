@@ -23,7 +23,12 @@
   element, including the label VALUE: a wrong flag makes `tan` exit 2 and say
   so, but a wrong label is a string VS Code resolves to a real registered
   task, so it builds, F5 starts, and nothing anywhere reports that the profile
-  named the wrong one.
+  named the wrong one. A `tan` older than the one this extension requires now
+  says so when it refuses this flag: the "run Alp: Update CLI" hint was armed
+  only by `--core`, and `--core` is absent before the first build — precisely
+  when the new flag is the only young one in the argv — so the very first F5
+  against an old CLI reported tan's raw complaint about an unknown argument
+  and nothing about the CLI needing an update.
 
 - **"Alp: Install tan CLI (global)" now works on Windows.** The bundled
   `install.ps1` did not parse at all under Windows PowerShell 5.1 — which is

@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure task specs for the four `preLaunchTask` labels `tan debug-config`
-// writes into launch.json (tan-cli crates/tan-core/src/debug_launch.rs:49,62,
-// 75,93,107,115 — see docs/DEBUG.md §10). VS Code renders a *provided* task's
-// label as `${source}: ${name}`, so TASK_SOURCE plus each spec's `name` here
-// are the exact string contract with tan: renaming either side breaks
+// Pure task specs for the four `alp:` task labels this extension contributes.
+// All four are spelled the way tan itself hardcoded them before tan-cli#85
+// made the key opt-in (crates/tan-core/src/debug_launch.rs:49,62,75,93,107,
+// 115 — see docs/DEBUG.md §10). THREE of them are what a generated
+// launch.json now carries as its `preLaunchTask`; the fourth, "deploy and
+// start gdbserver" (line 107, under `DebugTargetKind::YoctoUserspace`), is
+// reachable only from the Tasks picker, because this extension deliberately
+// does not restore that pairing — see `preLaunchTaskFor`. VS Code renders a
+// *provided* task's label as `${source}: ${name}`, so TASK_SOURCE plus each
+// spec's `name` here are the exact string contract with tan: renaming either
+// side breaks
 // `vscode.debug.startDebugging`'s `preLaunchTask` resolution silently (no
 // compile error, no lint — the debug run just aborts pre-launch). This file
 // is what makes that contract testable without an extension host: no
@@ -16,8 +22,9 @@
 // `crates/tan-core/src/debug_launch.rs`, `drop_absent_pre_launch_task`), so
 // four registered labels that nothing referenced left F5 launching
 // cortex-debug at an ELF no step had built. `preLaunchTaskFor` below is the
-// half that names them, and `debugConfigArgs` (../debug/service.ts) is its
-// only caller.
+// half that names the three, and `debugConfigArgs` (../debug/service.ts) is
+// its only caller.
+// @callers 1 preLaunchTaskFor
 
 import { DebugTargetKind } from "@alp-sdk/core/debug/models";
 
@@ -47,7 +54,8 @@ export function taskLabel(spec: TaskSpec): string {
 }
 
 /**
- * The four tasks tan's generated launch.json profiles reference by label.
+ * The four tasks this extension contributes. THREE are referenced by label
+ * from a generated launch.json profile; the fourth is picker-only.
  *
  * `tan build` has NO per-target selector (crates/tan-cli/src/cli.rs
  * `BuildArgs`: only --plan/--plan-from/--materialise/--native/--manifest/
