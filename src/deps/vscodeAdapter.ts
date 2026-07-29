@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Host wiring for the dependency table. ONE `tan doctor --build` run per
-// report: the envelope goes to the pure planner (`@alp-sdk/core/deps/planner`),
-// and this file adds only the facts tan structurally cannot report — the `tan`
-// binary this extension resolved, the versions the extension already probed for
-// its own state, and the newest published SDK tag.
+// Host wiring for the dependency table. TWO doctor runs per report — plain `tan
+// doctor` and `tan doctor --build` — merged into one check list, fed to the pure
+// planner (`@alp-sdk/core/deps/planner`), plus only the facts tan structurally
+// cannot report: the `tan` binary this extension resolved, the versions the
+// extension already probed for its own state, and the newest published SDK tag.
 //
 // Nothing here re-derives a fact tan owns. Where tan is silent the cell is
 // `null` (the table renders a dash) and the fix is an issue against tan-cli,
@@ -15,16 +15,21 @@ import {
   DependencyLatest,
   DependencyReport,
   DependencyStatus,
+  DoctorCheckEnvelope,
   DoctorEnvelopeData,
+  MissingPrerequisite,
   planDependencyReport,
   TAN_ROW_NAME,
 } from "@alp-sdk/core/deps/planner";
 import type { SdkRelease } from "@alp-sdk/core/sdk/models";
+import * as os from "os";
 import * as vscode from "vscode";
 
 import { cliSkew, SUPPORTED_CLI_VERSION } from "../alpCli/service";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import type { AlpIdeState } from "../ideHub/messages";
+import { planFailure } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { runToolchainFix } from "../toolchain";
 import { log } from "../util";
@@ -248,6 +253,240 @@ function bareVersion(version: string | null): string | null {
   return version === null ? null : version.replace(/^v/, "");
 }
 
+// ── Two doctor runs, one check list ──────────────────────────────────────────
+
+/**
+ * The checks PLAIN `tan doctor` owns that `--build` never emits, and that hold
+ * without a project.
+ *
+ * tan puts these on plain `doctor` deliberately and says so:
+ * `tan-cli/crates/tan-cli/src/commands/doctor.rs` (v0.4.0) — "these need no
+ * `board.yaml`, no workspace and no SDK … `--build` deliberately does NOT get
+ * them" (`append_host_environment`), and the same for `append_host_prerequisites`.
+ * So `--build` alone is structurally blind to them, and the Dependencies panel —
+ * the surface the walkthrough tells a customer to open — had no row for any:
+ *
+ * - `longPaths`   Windows-only. `LongPathsEnabled = 0` is the STOCK WINDOWS
+ *                 DEFAULT, and tan's own wording is that a Zephyr `build/` tree
+ *                 "nests deep enough to cross the 260-character MAX_PATH limit,
+ *                 and it surfaces as a CMake or compiler error about a file that
+ *                 exists". That build death had no row here at all.
+ * - `homePath`    a space in the home directory (`C:\Users\Jane Doe`).
+ * - `zephyrSdkHost`  whether the Zephyr SDK publishes a build for this host at
+ *                 all — the opposite question to `--build`'s `zephyrSdk`, which
+ *                 asks whether one is installed.
+ * - `hostPrerequisites`  bootstrap's own prerequisite gate, carrying the
+ *                 `missingPrerequisites[]` commands.
+ * - `lldb`        a PATH probe for the native-host debug flow.
+ *
+ * VERIFIED against the pinned tan v0.4.0 by running it on this machine, not
+ * against tan's `dev`. Note the id is `zephyrSdkHost` — there is no
+ * `zephyrSdkAvailableForHost` check in v0.4.0.
+ *
+ * An ALLOWLIST, unlike the planner's row derivation, and that is a real cost:
+ * a host check tan adds to plain `doctor` tomorrow will NOT light up a row here
+ * until this set names it. It is an allowlist because plain `doctor` also
+ * re-reports `sdk` / `workspace` / `westResolved` (which `--build` already
+ * carries, so taking them would render one fact twice under one id and collide
+ * the view's row keys) and `workspaceRoot` / `sdkRoot` / `sdkProvenance` /
+ * `codeLLDBExtension` (project facts, plus one tan itself can only ever answer
+ * "unknown" from a standalone binary). The durable fix is tan-side: a
+ * host-versus-project scope on the check envelope, or these checks on `--build`
+ * too. Until then this list is the seam.
+ *
+ * FOUR of the five are unconditional host facts. `lldb` is NOT: tan emits it
+ * only for a `DebugTargetKind::NativeHost` target (tan-core's debug doctor), so
+ * a project whose target is Yocto userspace gets `gdb` + `cppToolsExtension`
+ * instead — and this allowlist takes neither, so that row simply does not
+ * appear. Read from the pinned v0.4.0 source; only the native-host branch was
+ * driven here, because resolving a target that reaches the other one needs an
+ * SDK this machine does not have.
+ */
+const PLAIN_DOCTOR_HOST_CHECKS: ReadonlySet<string> = new Set([
+  "hostPrerequisites",
+  "zephyrSdkHost",
+  "longPaths",
+  "homePath",
+  "lldb",
+]);
+
+/**
+ * The `tan doctor --build` checks that genuinely READ THE PROJECT, and so must
+ * not be reported when there is no project.
+ *
+ * Verified against tan v0.4.0 run on this machine: with no project every one of
+ * them answers about whatever directory tan was launched in — `sdk` "no SDK
+ * selected", `boardYaml` "board.yaml not found", `workspace` "no Zephyr
+ * workspace", `westResolved` "west not found". Every OTHER `--build` check
+ * (`git`, `python`, `west`, `cmake`, `ninja`, `dtc`, `gperf`, `zephyrSdk`,
+ * `yoctoHost`, `vendorToolchain`) is a PATH or host probe whose answer does not
+ * depend on the working directory at all — those are the host facts the panel
+ * may always show.
+ *
+ * `westResolved` is here and `west` is not, deliberately: `westResolved` asks
+ * whether west resolves inside the WORKSPACE venv, `west` is a plain PATH probe.
+ */
+const BUILD_PROJECT_CHECKS: ReadonlySet<string> = new Set([
+  "sdk",
+  "boardYaml",
+  "workspace",
+  "westResolved",
+]);
+
+/**
+ * The status a withheld row carries. Not one of tan's verdicts, on purpose: it
+ * must never be counted as a pass, a warn or a fail, and `tallyChecks` only
+ * counts tan's three words — the same way tan's own summary ignores its
+ * `unknown` status (measured: plain `doctor` reported 12 checks as
+ * `pass 4 / warn 3 / fail 4`, the twelfth being `codeLLDBExtension: unknown`).
+ */
+const NOT_CHECKED = "not checked";
+
+/** Why a project row is missing, said on the row rather than by its absence. */
+const WITHHELD_DETAIL =
+  "No project folder is open, so this was not checked. Open your Alp SDK " +
+  "project folder and refresh — the host tools in this table are checked " +
+  "either way.";
+
+/**
+ * tan's own arithmetic, re-run over exactly the checks this table shows.
+ *
+ * Needed because the rows now come from TWO envelopes, so neither envelope's
+ * `summary` describes the table any more — and a header reading "0 fail" over a
+ * red `longPaths` row is worse than no header. It counts tan's verdict words and
+ * derives nothing else; `test/deps.adapter.test.js` pins it against the real
+ * v0.4.0 summaries so it stays tan's arithmetic and not a second opinion.
+ */
+export function tallyChecks(
+  checks: readonly { status: string }[],
+): DoctorEnvelopeData["summary"] {
+  const counts = { pass: 0, warn: 0, fail: 0 };
+  for (const check of checks) {
+    if (
+      check.status === "pass" ||
+      check.status === "warn" ||
+      check.status === "fail"
+    ) {
+      counts[check.status] += 1;
+    }
+  }
+  return counts;
+}
+
+/**
+ * Fold the two doctor envelopes into the one the planner reads.
+ *
+ * Order is `--build`'s, verbatim, with plain `doctor`'s host checks appended —
+ * so the block a row came from is visible in the table rather than interleaved
+ * away, and `--build`'s rows sit exactly where they sat before.
+ *
+ * `hasProject === false` replaces each project check IN PLACE with a
+ * `not checked` row that says why. In place, not dropped: the shape of the table
+ * stays tan's, and a row that vanishes teaches a customer nothing.
+ *
+ * Pure — exported for the test, which drives it on the real captured envelopes.
+ */
+export function mergeDoctorEnvelopes(
+  build: DoctorEnvelopeData,
+  plain: DoctorEnvelopeData | null,
+  hasProject: boolean,
+): DoctorEnvelopeData {
+  const checks: DoctorCheckEnvelope[] = build.checks.map((check) =>
+    hasProject || !BUILD_PROJECT_CHECKS.has(check.name)
+      ? check
+      : {
+          name: check.name,
+          status: NOT_CHECKED,
+          detail: WITHHELD_DETAIL,
+          // tan's remedy prose is for the verdict it did not reach. Carrying it
+          // onto a row nobody checked would offer a fix for a finding.
+          fix: null,
+        },
+  );
+  const seen = new Set(checks.map((check) => check.name));
+  for (const check of plain?.checks ?? []) {
+    // The guard is not decoration: two rows with one name collide the view's
+    // `key={row.name}` and make `runDependencyAction`'s row lookup ambiguous.
+    if (PLAIN_DOCTOR_HOST_CHECKS.has(check.name) && !seen.has(check.name)) {
+      checks.push(check);
+      seen.add(check.name);
+    }
+  }
+  if (!plain) {
+    // The host-environment half is missing and the table must say so rather
+    // than quietly render as if it had been checked. One row, not five: the
+    // reason is one failed run.
+    checks.push({
+      name: "hostEnvironment",
+      status: NOT_CHECKED,
+      detail:
+        "`tan doctor` did not answer, so the host checks it alone reports " +
+        "(Windows long paths, home path, Zephyr SDK host support, bootstrap " +
+        "prerequisites) are missing from this table. See the Alp SDK output " +
+        "channel.",
+      fix: null,
+    });
+  }
+  return {
+    checks,
+    summary: tallyChecks(checks),
+    missingPrerequisites: mergePrerequisites(build, plain),
+  };
+}
+
+/**
+ * The two `missingPrerequisites[]` arrays, `--build`'s first.
+ *
+ * `undefined` — the planner's "this tan is too old to say" tri-state — survives
+ * only when NEITHER envelope carried the key; one that did is an answer.
+ * First-write-wins per tool so `--build`'s entry, whose row is the one on
+ * screen, is the one its button runs.
+ */
+function mergePrerequisites(
+  build: DoctorEnvelopeData,
+  plain: DoctorEnvelopeData | null,
+): MissingPrerequisite[] | null | undefined {
+  if (build.missingPrerequisites === undefined && !plain) return undefined;
+  if (
+    build.missingPrerequisites === undefined &&
+    plain?.missingPrerequisites === undefined
+  ) {
+    return undefined;
+  }
+  const byTool = new Map<string, MissingPrerequisite>();
+  for (const entry of [
+    ...(build.missingPrerequisites ?? []),
+    ...(plain?.missingPrerequisites ?? []),
+  ]) {
+    if (!byTool.has(entry.tool)) byTool.set(entry.tool, entry);
+  }
+  return [...byTool.values()];
+}
+
+/**
+ * Run one doctor invocation and return its `data`, or `null` when it produced
+ * nothing this planner can read. The failure is already in the channel
+ * (`runAlpCommand` logs the exit code and stderr); `message` is the sentence the
+ * panel shows when NOTHING usable came back at all.
+ */
+async function runDoctor(
+  context: vscode.ExtensionContext,
+  args: string[],
+  cwd: string,
+  signal: AbortSignal | undefined,
+): Promise<{ data: DoctorEnvelopeData | null; message: string }> {
+  const { outcome } = await runAlpCommand(context, args, cwd, { signal });
+  const data = outcome.envelope?.data;
+  if (!outcome.envelope || !isDoctorEnvelopeData(data)) {
+    log(
+      `[deps] \`tan ${args.join(" ")}\` produced no usable envelope: ` +
+        outcome.message,
+    );
+    return { data: null, message: outcome.message };
+  }
+  return { data, message: outcome.message };
+}
+
 // ── The report ───────────────────────────────────────────────────────────────
 
 export interface DependencyReportResult {
@@ -259,8 +498,25 @@ export interface DependencyReportResult {
 }
 
 /**
- * Build the dependency report: one `tan doctor --build` run, fed to the pure
- * planner, plus the host-known cells.
+ * Build the dependency report: `tan doctor --build` AND plain `tan doctor`,
+ * merged into one check list, fed to the pure planner, plus the host-known
+ * cells.
+ *
+ * TWO SPAWNS, not one — and that is a deliberate, stated cost. They run
+ * CONCURRENTLY, so opening the panel takes about as long as the slower of the
+ * two rather than their sum, but it is twice the process work per refresh. It
+ * buys the four checks tan puts on plain `doctor` only; `longPaths` alone is a
+ * build that dies in CMake on a stock Windows install with no row anywhere in
+ * the IDE to explain it.
+ *
+ * NO FOLDER OPEN is no longer a refusal. The old refusal closed a cycle a
+ * customer following the published walkthrough could not break: the prerequisite
+ * table needed a folder, the folder needed the SDK, the SDK needed git, and git
+ * was installed from the prerequisite table. Host-tool checks are host facts, so
+ * they now run with no folder; the four checks that read the project are
+ * withheld and SAY they were withheld (`mergeDoctorEnvelopes`), because a
+ * project check answered against no project — "board.yaml not found" about a
+ * directory the customer never chose — is worse than the refusal was.
  *
  * `state` is the shared `AlpIdeState` the panel already subscribes to — passed
  * in rather than re-probed, so this adds no readiness query of its own.
@@ -270,35 +526,27 @@ export async function buildDependencyReport(
   state: AlpIdeState,
   options: { signal?: AbortSignal } = {},
 ): Promise<DependencyReportResult> {
-  // cwd, always — and NO cwd means no run (#371). `tan doctor --build`
-  // discovers the project from where it runs, and tan 0.4.0+ walks UP from
-  // there looking for an enclosing SDK; with none passed the child inherits the
-  // extension host's own directory (on Windows, the VS Code install directory)
-  // and the report describes a directory the customer never chose. The deleted
-  // Toolchain Doctor command refused here with a `noWorkspace` precondition;
-  // this is the same refusal, rendered in the panel that replaced it.
   const project = collectProjectContext();
-  if (!project.workspaceRoot) {
-    return {
-      report: null,
-      error:
-        "No project folder is open, so there is nothing to check. " +
-        "Open your Alp SDK project folder and refresh.",
-    };
+  // cwd, always, explicitly (#371): doctor discovers the project from where it
+  // runs and tan 0.4.0+ walks UP looking for an enclosing SDK, so with none
+  // passed the child inherits the extension host's own directory — on Windows
+  // the VS Code install directory — and reports on a directory nobody chose.
+  // With no folder open the temp directory is the honest stand-in: it exists on
+  // every host, it is nobody's project, and every check whose answer would
+  // depend on it is withheld below rather than reported.
+  const hasProject = project.workspaceRoot !== null;
+  const cwd = project.workspaceRoot ?? os.tmpdir();
+  const [build, plain] = await Promise.all([
+    runDoctor(context, ["doctor", "--build"], cwd, options.signal),
+    runDoctor(context, ["doctor"], cwd, options.signal),
+  ]);
+  if (!build.data) {
+    // `--build` carries every PATH probe in the table, so losing it is losing
+    // the table. Plain `doctor`'s five host rows do not stand in for that, and
+    // a five-row table that looks complete would be the worse answer.
+    return { report: null, error: build.message };
   }
-  const { outcome } = await runAlpCommand(
-    context,
-    ["doctor", "--build"],
-    project.workspaceRoot,
-    { signal: options.signal },
-  );
-  const data = outcome.envelope?.data;
-  if (!outcome.envelope || !isDoctorEnvelopeData(data)) {
-    log(
-      `[deps] doctor --build produced no usable envelope: ${outcome.message}`,
-    );
-    return { report: null, error: outcome.message };
-  }
+  const data = mergeDoctorEnvelopes(build.data, plain.data, hasProject);
 
   const planned = planDependencyReport({
     data,
@@ -395,4 +643,50 @@ export function runDependencyAction(
   });
   terminal.show(true);
   terminal.sendText(action.command);
+  offerReloadAfterInstall();
+}
+
+/**
+ * The notice a terminal install cannot give itself.
+ *
+ * `winget install …` puts the tool on the MACHINE's PATH; the running extension
+ * host inherited its environment at launch and never sees it. So the row the
+ * customer just fixed still reads `fail / ninja not found` after a successful
+ * install, and nothing on screen says why or what to do — the panel looks
+ * broken and the fix looks like it did nothing.
+ *
+ * NO `reloadWindow` BUTTON, and that is deliberate rather than an omission.
+ * Reload re-forks the extension host from a main process whose environment was
+ * captured when VS Code started — on Windows VS Code skips shell-environment
+ * resolution outright — so a reload inherits exactly the same stale PATH and
+ * cannot turn the row green. Offering it would be a wrong diagnosis with a
+ * button attached, and pressing it mid-install would dispose the terminal and
+ * kill the install this very notice warns about.
+ *
+ * What DOES work, in order: Refresh is usually enough, because winget's shim
+ * lands in a directory that was already on PATH at launch and `cp.spawn`
+ * resolves the file rather than a cached lookup. When it is not enough, only
+ * quitting VS Code completely and reopening picks up a new PATH.
+ *
+ * Shown at DISPATCH, before the install finishes, because `sendText` writes a
+ * shell command line and there is no completion signal to wait for (that is the
+ * same reason the dispatch above is a terminal and not a `ProcessExecution`).
+ *
+ * `notifyAsync`, not `notify`: this is called from the webview's message pump.
+ */
+function offerReloadAfterInstall(): void {
+  notifyAsync(
+    planFailure({
+      operation: "Installing a dependency",
+      cause:
+        "Installing in the terminal. When it finishes, press Refresh. This " +
+        "window's PATH was captured when VS Code started, so if the row still " +
+        "reads as missing, close VS Code completely and reopen it — a window " +
+        "reload does not pick up a new PATH.",
+      severity: "info",
+      // One install at a time on screen: pressing Install on three rows must
+      // not stack three identical toasts.
+      dedupeKey: "deps-install-reload",
+    }),
+  );
 }
