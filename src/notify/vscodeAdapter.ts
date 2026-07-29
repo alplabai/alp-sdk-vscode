@@ -110,6 +110,22 @@ const ACTIONS: Record<
         `@id:${arg ?? thisExtensionId}`,
       ),
   },
+  // A POINTER, not an installer. This extension owns no per-host git install
+  // command and must not grow one: the per-host lines
+  // (`winget install -e --id Git.Git`, `sudo apt-get install -y git`,
+  // `brew install git`) are the SDK's `metadata/bootstrap.json`
+  // `prerequisites.install`, served through tan's doctor envelope — a second
+  // copy here is the drift `src/deps/vscodeAdapter.ts` refuses by design. Until
+  // tan emits a `git` check the honest offer is the canonical download page,
+  // the same `openExternal` pointer `runToolchainFix` already uses for the
+  // Zephyr SDK and the Zephyr build tools. Not login-gated.
+  downloadGit: {
+    title: "Download Git",
+    run: () =>
+      vscode.env.openExternal(
+        vscode.Uri.parse("https://git-scm.com/downloads"),
+      ),
+  },
   reloadWindow: {
     title: "Reload Window",
     run: () => vscode.commands.executeCommand("workbench.action.reloadWindow"),

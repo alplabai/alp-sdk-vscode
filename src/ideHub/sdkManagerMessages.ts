@@ -44,6 +44,34 @@ export interface SdkHandlerDeps {
 }
 
 /**
+ * True for the ONE clone failure the customer can act on: `git` is not on
+ * PATH, so `cp.spawn` never started a process at all and Node raised the
+ * failure on the `error` event with `code: "ENOENT"`.
+ *
+ * Deliberately narrow. A clone that STARTED and failed — no network, a proxy
+ * that refuses CONNECT, a private repo, a tag that does not exist — rejects
+ * with the `git clone exited with code <n>` Error built below, which carries no
+ * `code` at all. Collapsing the two would tell a customer behind a corporate
+ * proxy to install a git they already have, and hide the retry that is their
+ * actual fix.
+ *
+ * A cancelled install is not reached here (`cancelled` is checked first), and
+ * an `AbortSignal` kill raises `ABORT_ERR` rather than `ENOENT` regardless.
+ *
+ * `syscall` is checked as well as `code` so the predicate stays about the SPAWN
+ * and not about ENOENT in general — the `git` child is the only process this
+ * install path starts today, but a filesystem ENOENT added inside the same
+ * `try` later must not silently start telling customers to install git.
+ */
+function isMissingGit(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const errno = err as NodeJS.ErrnoException;
+  return (
+    errno.code === "ENOENT" && String(errno.syscall ?? "").startsWith("spawn")
+  );
+}
+
+/**
  * Build a handler for the SDK Manager webview messages. Returns a function that
  * returns `true` when it consumed the message, `false` otherwise (so the host
  * can handle `ready`/`runCommand`/`openUrl`/`closePanel`).
@@ -418,12 +446,44 @@ export function createSdkMessageHandler(
             notifyAsync(planSuccess(`SDK ${version} install cancelled.`));
             return;
           }
+          // No git on the box. This is walkthrough step 1 on a clean Windows
+          // 11 install, and it used to end at "Alp: couldn't install SDK
+          // <version>." with a single Retry — a button that re-spawned a binary
+          // that does not exist, which reads as "transient" and is the worst
+          // possible advice. The CUSTOMER sentence names git; the errno stays
+          // in `detail`, i.e. the channel.
+          //
+          // `notifyAsync`, and no Retry: retrying cannot work until git is
+          // installed, and installing it is not something this handler can
+          // observe. The customer presses Install again — the panel's own
+          // button, still there — once Download Git has done its job.
+          if (isMissingGit(err)) {
+            sendProgress(
+              `Install failed: Git isn't installed. Alp fetches the SDK with ` +
+                `git clone, so install Git and press Install again.`,
+              true,
+              false,
+            );
+            notifyAsync(
+              planFailure({
+                operation: "Installing the SDK",
+                cause:
+                  `Alp: installing SDK ${version} needs Git, and Git isn't ` +
+                  `installed on this machine.`,
+                detail: String(err),
+                actions: [{ id: "downloadGit" }],
+              }),
+            );
+            return;
+          }
           sendProgress(`Install failed: ${String(err)}`, true, false);
-          // The raw reject text ("git clone exited with code 3", a spawn ENOENT
-          // when git isn't installed) is already inline in the panel above and
-          // in the channel via `detail` — it does not belong in the toast. The
-          // Retry pick is wired here, since a `retry` action the presenter
-          // hands back to nobody would be a button that does nothing.
+          // The raw reject text ("git clone exited with code 3") is already
+          // inline in the panel above and in the channel via `detail` — it does
+          // not belong in the toast. The Retry pick is wired here, since a
+          // `retry` action the presenter hands back to nobody would be a button
+          // that does nothing. Everything reaching this branch is a clone that
+          // RAN, so retrying is a real fix (the flaky link, the proxy that came
+          // back, the VPN that reconnected).
           void notify(
             planFailure({
               operation: "Installing the SDK",

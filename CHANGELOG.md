@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Installing an SDK on a machine without Git now says so, and offers the
+  download.** Installing an SDK is a `git clone`, and it is the only
+  implementation there is — so on a clean Windows 11 box, which ships no Git,
+  the very first step of the walkthrough failed with `Alp: couldn't install SDK
+  v0.13.0.` and a single Retry button that re-ran the identical missing-binary
+  spawn. Nothing on any surface named Git; the only mention of it was
+  `Install failed: Error: spawn git ENOENT` in the panel. The toast now reads
+  `Alp: installing SDK <version> needs Git, and Git isn't installed on this
+  machine.` and carries **Download Git**, which opens git-scm.com's download
+  page. Retry is gone from that one case and kept everywhere else: only a
+  `spawn` that never started a process is treated as a missing Git, so a clone
+  that DID run and failed — no network, a proxy refusing `CONNECT`, a tag that
+  does not exist — keeps the Retry that can actually fix it, and is never
+  reported as a missing Git to someone who has Git. The errno still goes only to
+  the "Alp SDK" output channel. **Download Git** is a pointer, not a second
+  installer: the per-host install lines live in the SDK's
+  `metadata/bootstrap.json` and reach the IDE through tan's doctor envelope, and
+  a copy of them here would be exactly the drift the Dependencies panel is built
+  to avoid. `tan doctor --build` publishes no `git` check today, so no
+  Dependencies row exists to send anyone to; when tan grows one, this button can
+  become a link to it.
+
 - **A SOCKS proxy is now named as unsupported instead of reported as
   unreachable, and an IPv6 host in `NO_PROXY` is honoured.** VS Code's
   `http.proxy` accepts `socks5://host:1080`, and all five SOCKS spellings
