@@ -698,15 +698,19 @@ export function posixLoginShellCommand(
 
 /**
  * The action that actually clears an "ahead of supported" PATH-source `tan`
- * warning, chosen by `preferGlobalCli` state. Reinstalling the global tan is
- * never the answer (it fetches an even-newer latest).
+ * warning, chosen by `preferGlobalCli` state.
  * - Flag OFF: a PATH `tan` only resolved because no managed copy exists, and
  *   the cache outranks PATH when the flag is off — so downloading the pinned
  *   version into the cache (`updateManagedCli`) restores the supported version.
  * - Flag ON: PATH outranks the managed copy, so a download can't win; the
  *   remedy is turning the preference off (`openPreferGlobalSetting`), after
  *   which a managed copy wins (a follow-up warn offers the download if none
- *   exists yet).
+ *   exists yet). NOT reinstalling the global tan (`installTanCli`): now that
+ *   the bundled installer pins a version rather than fetching `latest`
+ *   (#408), reinstalling WOULD clear the skew — but by silently overwriting a
+ *   binary the customer opted into controlling with an older one, under a
+ *   button that never says it is a downgrade. Turning the flag off reaches
+ *   the same pinned CLI without touching their global install.
  */
 export type AheadCliFix = "updateManagedCli" | "openPreferGlobalSetting";
 export function aheadPathFixAction(preferGlobalCli: boolean): AheadCliFix {

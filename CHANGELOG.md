@@ -2,20 +2,23 @@
 
 ## Unreleased
 
-- **"Install tan CLI (global)" no longer loops on a stale global `tan` with
+- **"Install tan CLI (global)" no longer traps a customer in a loop with
   `alpSdk.preferGlobalCli` on, and it now installs the version this extension
   targets rather than whatever GitHub calls `latest`.** With that setting on
   and an outdated `tan` already on PATH, the extension's only offered fix was
   the same "Install" button — which ran the bundled installer with no
   `--version`, so it fell through to GitHub's `latest` release, whatever tag
-  that currently is. If that tag is not the version this extension targets,
-  the button can re-install a `tan` no newer than the one it's meant to
-  replace: a one-button loop with no way out shown on screen. The installer
-  now runs pinned to the version this build supports, matching the version
-  the extension's own managed download already uses, and the button's warning
-  now also offers turning `alpSdk.preferGlobalCli` off — clearing it always
-  breaks the loop, so it rides along instead of requiring the customer to
-  find it by hand.
+  that currently is. The installer now runs pinned to the version this build
+  supports, matching the version the extension's own managed download already
+  uses. The pin alone does not guarantee the loop ends, though: the bundled
+  scripts default to a user-local install directory, and a `tan` previously
+  installed with `--system`/`-System` sits elsewhere on PATH — so a freshly
+  pinned install can still lose to the old one, and the extension host's own
+  PATH is not re-read either way. The warning now also offers turning
+  `alpSdk.preferGlobalCli` off, and says so in the sentence rather than
+  leaving an unlabelled button — clearing the setting always ends the loop by
+  handing control back to the extension's own managed copy, whatever PATH
+  currently resolves to.
 
 - **The Dependencies panel now checks your host tools with no folder open, and
   reports the host checks it could never see before.** The panel refused

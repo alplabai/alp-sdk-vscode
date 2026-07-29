@@ -153,6 +153,17 @@ test("stale PATH tan + preferGlobalCli offers the escape hatch alongside the rei
       "breaks it, so it must ride along, exactly like the sibling notice " +
       "(`warnIfPreferGlobalCliHasNoPath`) already offers both.",
   );
+  // The `openSettings` action carries no title of its own (the house
+  // convention in this file — every other `openSettings` action is untitled
+  // and relies on the sentence naming the setting instead), so the button is
+  // only legible if the message says what it opens.
+  assert.match(
+    plan.message,
+    /alpSdk\.preferGlobalCli/,
+    "the untitled openSettings button is illegible unless the sentence " +
+      "names alpSdk.preferGlobalCli, same as warnIfPreferGlobalCliHasNoPath's " +
+      "sibling message does",
+  );
 });
 
 test("the same stale tan WITHOUT preferGlobalCli still offers only Update (no regression)", async () => {
