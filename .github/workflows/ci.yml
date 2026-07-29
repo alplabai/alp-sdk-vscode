@@ -88,21 +88,22 @@ jobs:
         # below: test/tanContract.test.js is pure and reads whatever this leaves
         # in test/golden/tan-contract/.
         #
-        # The asset EXISTS now: tan v0.4.0 was the first release to publish
-        # `envelope-contract.json`, and `SUPPORTED_CLI_VERSION` pins that tag,
-        # so this step fetches and the contract tests actually assert (verified:
-        # 20081 bytes, 4 issue codes, 15 envelopes). This comment previously
-        # said "no tan release has been tagged since, so nothing publishes it
-        # yet" — true when written, false from v0.4.0 onward.
+        # The asset EXISTS now: every tan tag from v0.4.0-rc1 on publishes
+        # `envelope-contract.json`, and `SUPPORTED_CLI_VERSION` pins v0.4.0,
+        # so this step fetches and the contract tests actually assert against a
+        # real artefact. This comment previously said "no tan release has been
+        # tagged since, so nothing publishes it yet" — true when written, false
+        # from v0.4.0 onward.
         #
-        # The skip paths stay, because a pin can still move to a release that
-        # predates the asset and a network can still fail: a 404 exits 0 with a
-        # `::warning::` naming the pin and the URL, and a rate-limit or outage
-        # exits 0 with a DIFFERENT, equally loud one. Neither is a defect in
-        # this repo, and reddening every PR on a gate that cannot verify
-        # anything only teaches people to ignore it. The two are worded so the
-        # log never conflates "not published" with "could not check". A
-        # published-but-malformed asset is the one hard failure.
+        # ONE skip path survives, and it is a list, not a judgement call: a pin
+        # in `RELEASES_PREDATING_CONTRACT_ASSET` (src/alpCli/service.ts) exits 0
+        # with a `::warning::` and makes no request, because nothing is
+        # published for those tags. For any other pin — every release from
+        # v0.4.0 on — a 404, a rate-limit, an outage and a dead network all exit
+        # 1. They keep different messages because they are different
+        # facts, but they share one outcome: the contract was not verified, and
+        # a green run that verified nothing is what this gate exists to stop.
+        # The test then fails too, independently, if the artefact is not on disk.
         run: node scripts/fetch-tan-contract.mjs
 
       - name: Unit / integration tests

@@ -41,6 +41,7 @@ esbuild (extension bundle), Vite (webview, invoked as `vp build`), `vsce` (packa
 ```bash
 pnpm install --frozen-lockfile      # always; submodule schemas needed for full build
 pnpm run compile                    # tsc --build + webview (vp build)
+pnpm run contract:fetch             # once per clone/pin bump; pnpm test FAILS without it
 pnpm test                           # compiles, then node --test test/*.test.js
 pnpm run bundle:ext                 # esbuild src/extension.ts + src/lsp/server.ts -> out/
 pnpm run package                    # full prepublish build, then vsce package --no-dependencies
