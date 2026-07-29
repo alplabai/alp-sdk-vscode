@@ -84,21 +84,32 @@ function SystemManifestSection({
   error,
   flashSlice,
   sizes,
+  sizesError,
 }: {
   manifest: SystemManifest | null;
   postBuild: boolean;
   error: string | null;
   flashSlice: (coreId: string) => void;
   sizes: SizeReport | null;
+  sizesError: string | null;
 }) {
   const sizeByCore = new Map<string, SliceSize>(
     (sizes?.slices ?? []).map((s) => [s.core_id, s]),
   );
+  // Two independent commands feed this section, so both notes are rendered.
+  // `sizesError` was reaching the view and being dropped on the floor: a
+  // `tan size` failure left the footprint column simply absent, which reads as
+  // "this build has no sizes" rather than "the measurement failed".
+  const notes = [error, sizesError].filter((n): n is string => !!n);
   if (!manifest) {
-    return error ? (
+    return notes.length > 0 ? (
       <section className={styles.section}>
         <p className={styles.sectionTitle}>System manifest</p>
-        <p className={styles.manifestNote}>{error}</p>
+        {notes.map((note) => (
+          <p key={note} className={styles.manifestNote}>
+            {note}
+          </p>
+        ))}
       </section>
     ) : null;
   }
@@ -110,6 +121,7 @@ function SystemManifestSection({
           {postBuild ? "post-build" : "projection"}
         </span>
       </p>
+      {sizesError && <p className={styles.manifestNote}>{sizesError}</p>}
       <ul className={styles.manifestSlices}>
         {manifest.slices.map((s) => {
           const active = s.os !== "off";
@@ -245,6 +257,7 @@ export function BuildPlanView() {
     manifestPostBuild,
     manifestError,
     sizes,
+    sizesError,
     reload,
     materialise,
     build,
@@ -417,6 +430,7 @@ export function BuildPlanView() {
             error={manifestError}
             flashSlice={flashSlice}
             sizes={sizes}
+            sizesError={sizesError}
           />
         </div>
       )}

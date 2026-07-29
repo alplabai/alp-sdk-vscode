@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **The Build Plan panel now says so when `tan` returns a payload it cannot
+  read, instead of painting an empty panel.** Three commands feed that panel —
+  `build --plan`, `build --manifest` / `--manifest-from`, and `size` — and each
+  reached the view through a TypeScript `as` cast, which is a compile-time claim
+  about a value that came out of another process and therefore verifies nothing.
+  Rename `slices` in `tan` and the cast still compiles here: the reader gets
+  `undefined`, the panel renders nothing, and there is no error and no log line
+  to explain it. Each of the three payloads is now checked at runtime against
+  the fields this repo actually READS, and a payload that fails puts a sentence
+  in the panel naming the command and every field that is missing or of another
+  type. The check requires nothing beyond what is read — `schemaVersion`,
+  `generatedBy`, `buildRoot`, `hw_info`, `boot_order`, `storage`, `schema` and
+  `summary` are all declared in the models and consumed by nothing, so a `tan`
+  release that drops or adds a field the panel never touches still renders. A
+  `tan size` failure was also reaching the view and being discarded unrendered,
+  which read as "this build has no sizes" rather than "the measurement failed";
+  it is now shown alongside the manifest note.
+
 - **"Alp: Install tan CLI (global)" now works on Windows.** The bundled
   `install.ps1` did not parse at all under Windows PowerShell 5.1 — which is
   exactly what the command spawns (`powershell`, not `pwsh`) — so the terminal
