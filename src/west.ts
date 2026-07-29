@@ -21,7 +21,13 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 
-import { runAlpCommand, runAlpInTerminal } from "./alpCli/vscodeAdapter";
+import {
+  probeTanVersion,
+  runAlpCommand,
+  runAlpInTerminal,
+  runAlpStreamed,
+} from "./alpCli/vscodeAdapter";
+import { isCliBehind } from "./alpCli/service";
 import { planPrecondition } from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
 import {
@@ -29,7 +35,11 @@ import {
   executeWestPlan,
   nativeSimOverlayExists,
 } from "./west/vscodeAdapter";
-import { log } from "./util";
+import {
+  parseSystemManifest,
+  zephyrCoreIds,
+} from "@alp-sdk/core/systemManifest/service";
+import { BUILD_RUN_NAME, FLASH_RUN_NAME, log } from "./util";
 
 /** The directory a `tan` run should use, or undefined when nothing resolves one
  *  (no folder open and no `alpSdk.westCwd`) — in which case the run must be
@@ -108,16 +118,37 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   const args = target.active
     ? ["build"]
     : ["--project", ...target.appArg, "build"];
-  await runAlpInTerminal(context, args, { name: "Alp Build", cwd: target.cwd });
+  // Channel mode (not terminal): a `tan` terminal dies when the process exits,
+  // scrolling the build result away; streaming to the "Alp SDK" output channel
+  // keeps the full log + verdict. Build is non-interactive, so no TTY is lost.
+  // BUILD_RUN_NAME, not a literal: the debug `preLaunchTask` build dispatches
+  // under the same name, and only one shared name makes the "already running"
+  // guard refuse the second of two builds over one `build/` directory.
+  await runAlpStreamed(context, args, {
+    name: BUILD_RUN_NAME,
+    cwd: target.cwd,
+  });
 }
 
+// Image/Flash/Clean, like Build, stream to the "Alp SDK" channel instead of a
+// terminal: a `tan` terminal dies when the process exits, so its output (and,
+// critically for flash, the per-slice failure reasons — e.g. "backend
+// zephyr_west_flash needs west on PATH") scrolls away, leaving only a cryptic
+// "failed to launch". Channel mode keeps the full log + verdict. All three are
+// non-interactive (runAlpStreamed forces `--non-interactive`), so no TTY is
+// lost. Renode streams too: `tan renode` boots Renode HEADLESS as a smoke test
+// and reads no stdin, and its most common outcome on a real project is a
+// PRE-BOOT refusal — e.g. "system-manifest.yaml has 2 zephyr slices (cores
+// [\"m55_hp\", \"m55_he\"]); the Renode smoke boots a single-Zephyr-slice
+// system" — which the dying terminal swallowed whole, surfacing to the user as
+// a bare "failed to launch (exit code: 1)" with no reason anywhere.
 async function alpImage(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/multicore/rpmsg-v2n",
     "build a flash image",
   );
   if (!target) return;
-  await runAlpInTerminal(context, ["image", ...target.appArg], {
+  await runAlpStreamed(context, ["image", ...target.appArg], {
     name: "Alp Image",
     cwd: target.cwd,
   });
@@ -129,8 +160,8 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
     "flash this device",
   );
   if (!target) return;
-  await runAlpInTerminal(context, ["flash", ...target.appArg], {
-    name: "Alp Flash",
+  await runAlpStreamed(context, ["flash", ...target.appArg], {
+    name: FLASH_RUN_NAME,
     cwd: target.cwd,
   });
 }
@@ -141,10 +172,96 @@ async function alpClean(context: vscode.ExtensionContext): Promise<void> {
     "clean this project",
   );
   if (!target) return;
-  await runAlpInTerminal(context, ["clean", ...target.appArg], {
+  await runAlpStreamed(context, ["clean", ...target.appArg], {
     name: "Alp Clean",
     cwd: target.cwd,
   });
+}
+
+/** First `tan` carrying `renode --core` (tan-cli#63, which shipped in v0.4.0 —
+ *  v0.3.2 was never published). Below this the flag is a parse error, not an
+ *  ignored argument.
+ *
+ *  BEHIND `SUPPORTED_CLI_VERSION` (0.4.0), so a managed install always clears
+ *  it and the picker is reachable — the #367 state, where the pin sat at 0.3.1
+ *  and this floor was unreachable for everyone but a local build, is over.
+ *  This floor still earns its keep for the binaries the pin does not govern: an
+ *  `alpSdk.cliPath` or `localBuild` tan can be any version, and the check is
+ *  against the PROBED one. It is deliberately not `SUPPORTED_CLI_VERSION`: a
+ *  feature gate compares against what is running, never against what this
+ *  build would download. */
+const RENODE_CORE_CLI_VERSION = "0.3.2";
+
+/** The Zephyr `core_id`s of the post-build manifest under `cwd`, in manifest
+ *  order. Empty pre-build, on a parse failure, or for an all-Yocto project —
+ *  every one of which means "don't prompt, let the CLI speak".
+ *
+ *  Only the `fs` read lives here; the selection is `zephyrCoreIds` in
+ *  `@alp-sdk/core`. Reading and parsing this file had grown three hand-rolled
+ *  copies, which CLAUDE.md's "no cross-slice copy-paste of domain rules"
+ *  forbids — and a non-exported function doing its own IO in a surface file
+ *  cannot be tested at all. */
+function zephyrCoresOf(cwd: string): string[] {
+  const manifestPath = path.join(cwd, "build", "system-manifest.yaml");
+  if (!fs.existsSync(manifestPath)) return [];
+  try {
+    return zephyrCoreIds(
+      parseSystemManifest(fs.readFileSync(manifestPath, "utf8")),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** Which core the Renode smoke should boot: `null` = pass no `--core` (the CLI
+ *  picks the project's only Zephyr slice, or refuses with its own message), a
+ *  string = the user's choice, `undefined` = the user dismissed the picker.
+ *
+ *  The manifest is read FIRST and the CLI version probed only if a picker could
+ *  actually appear: `probeTanVersion` spawns `tan --version` with a 3 s timeout,
+ *  which on a single-slice project is pure cost on every Renode click, for a
+ *  question whose answer cannot change the outcome. */
+async function pickRenodeCore(
+  context: vscode.ExtensionContext,
+  cwd: string | undefined,
+): Promise<string | null | undefined> {
+  const cores = cwd ? zephyrCoresOf(cwd) : [];
+  if (cores.length < 2) return null;
+
+  // `tan renode --core` only exists from RENODE_CORE_CLI_VERSION on. Sending it
+  // to an older binary turns an explanatory refusal ("system-manifest.yaml has
+  // 2 zephyr slices … the Renode smoke boots a single-Zephyr-slice system")
+  // into clap's `unexpected argument '--core'` — strictly worse.
+  const version = await probeTanVersion(context);
+  if (!version) {
+    // Either unreadable, or the managed binary has not been downloaded yet
+    // (probeTanVersion never fetches). Staying silent is the safe fallback —
+    // multi-slice just gets the CLI's own refusal — but it is invisible
+    // without this line, so a first-ever Renode run on a multicore project
+    // does not look like the picker is broken.
+    log(
+      "[renode] tan version not readable yet (not downloaded?); not offering the core picker",
+    );
+    return null;
+  }
+  if (isCliBehind(version, RENODE_CORE_CLI_VERSION)) {
+    log(
+      `[renode] tan ${version} predates --core (${RENODE_CORE_CLI_VERSION}); not offering the core picker`,
+    );
+    return null;
+  }
+
+  const picked = await vscode.window.showQuickPick(cores, {
+    title: "Renode: which core to boot?",
+    placeHolder: "The Renode smoke boots one Zephyr slice at a time",
+  });
+  if (!picked) {
+    // Fires AFTER the user engaged with a prompt, so a completely silent
+    // no-op reads as a broken button.
+    log("[renode] core picker dismissed — nothing run");
+    return undefined;
+  }
+  return picked;
 }
 
 async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
@@ -153,7 +270,14 @@ async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
     "run this project in Renode",
   );
   if (!target) return;
-  await runAlpInTerminal(context, ["renode", ...target.appArg], {
+  const core = await pickRenodeCore(context, target.cwd);
+  if (core === undefined) return;
+  // `--core` needs a tan that carries it (tan-cli#63). Sending it only in the
+  // multi-slice case keeps an older CLI no worse off than before: that case
+  // was already a hard refusal there, and a single-slice project never sees
+  // the flag at all.
+  const coreArg = core === null ? [] : ["--core", core];
+  await runAlpStreamed(context, ["renode", ...target.appArg, ...coreArg], {
     name: "Alp Renode",
     cwd: target.cwd,
   });
@@ -162,7 +286,11 @@ async function alpRenode(context: vscode.ExtensionContext): Promise<void> {
 // ── legacy plain-west commands (no CLI equivalent yet) ────────────────────────
 
 function westFlash(): void {
-  executeWestPlan(createWestFlashPlan(collectWestWorkspaceContext()));
+  const plan = createWestFlashPlan(collectWestWorkspaceContext());
+  // Run it under the SHARED flash name, not the plan's own "Alp · Flash": this
+  // programs the same board as `tan flash`, and two names are two reservations
+  // — i.e. two programmers writing at once. The plan is rebuilt, not mutated.
+  executeWestPlan({ ...plan, terminalName: FLASH_RUN_NAME });
 }
 
 function westUpdate(): void {

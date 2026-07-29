@@ -148,7 +148,7 @@ function activateWith(seed, version = "0.3.7") {
       log: (message) => lines.push(String(message)),
       showOutput: noop,
       runInTerminal: noop,
-      isRunInTerminalActive: () => false,
+      isRunActive: () => false,
       onDidFinishTerminalCommand: () => disposable,
       disposeTaskTracking: noop,
       revealRunInTerminal: noop,

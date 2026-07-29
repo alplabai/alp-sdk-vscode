@@ -3,7 +3,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { runAlpCommand, runAlpInTerminal } from "../alpCli/vscodeAdapter";
+import { runAlpCommand, runAlpStreamed } from "../alpCli/vscodeAdapter";
 import {
   type BuildPlanData,
   type ExtToWebviewMessage,
@@ -12,7 +12,14 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
-import { planCliOutcome, planSuccess } from "../notify/service";
+import {
+  BUILD_RUN_NAME,
+  FLASH_RUN_NAME,
+  isStreamedRunActive,
+  releaseStreamedRun,
+  reserveStreamedRun,
+} from "../util";
+import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import {
   BUILD_PLAN_SHAPE,
@@ -249,49 +256,84 @@ export class BuildPlanPanel {
 
   private async handleMaterialiseBuildPlan(): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const { outcome } = await runAlpCommand(
-      this.context,
-      ["build", "--materialise"],
-      cwd,
-    );
-    const envelope = outcome.envelope;
-    if (envelope && envelope.ok) {
-      const written = (envelope.data as { written?: string[] }).written ?? [];
-      // Status bar, not a toast: the very next line re-requests the plan, so
-      // the panel the user is looking at already reports the new on-disk state.
+    // Envelope mode, but it WRITES into the build tree, so it takes the build
+    // reservation like a build does — materialising underneath a running build
+    // rewrites the very files that build is consuming.
+    if (!reserveStreamedRun(BUILD_RUN_NAME)) {
       notifyAsync(
-        planSuccess(
-          `Materialised ${written.length} file(s) under the build tree.`,
-        ),
+        planFailure({
+          severity: "warning",
+          operation: "Materialising the build plan",
+          cause: `"${BUILD_RUN_NAME}" is still running.`,
+          detail: "Wait for it to finish before materialising the plan.",
+          actions: [
+            isStreamedRunActive(BUILD_RUN_NAME)
+              ? { id: "showOutput" }
+              : { id: "showTerminal", arg: BUILD_RUN_NAME },
+          ],
+        }),
       );
-      // The plan view reflects on-disk state — re-request so it isn't stale.
-      await this.handleRequestBuildPlan();
-    } else {
-      // Severity comes from the outcome: the most common materialise failure is
-      // a board.yaml validation error (exit 2 ⇒ warning), which must not read
-      // like the write failure that exits 3.
-      notifyAsync(
-        planCliOutcome(outcome, { operation: "Materialising the build plan" }),
+      return;
+    }
+    try {
+      const { outcome } = await runAlpCommand(
+        this.context,
+        ["build", "--materialise"],
+        cwd,
       );
+      const envelope = outcome.envelope;
+      if (envelope && envelope.ok) {
+        const written = (envelope.data as { written?: string[] }).written ?? [];
+        // Status bar, not a toast: the very next line re-requests the plan, so
+        // the panel the user is looking at already reports the new on-disk
+        // state.
+        notifyAsync(
+          planSuccess(
+            `Materialised ${written.length} file(s) under the build tree.`,
+          ),
+        );
+        // The plan view reflects on-disk state — re-request so it isn't stale.
+        await this.handleRequestBuildPlan();
+      } else {
+        // Severity comes from the outcome: the most common materialise failure
+        // is a board.yaml validation error (exit 2 ⇒ warning), which must not
+        // read like the write failure that exits 3.
+        notifyAsync(
+          planCliOutcome(outcome, {
+            operation: "Materialising the build plan",
+          }),
+        );
+      }
+    } finally {
+      releaseStreamedRun(BUILD_RUN_NAME);
     }
   }
 
   private async handleRunBuild(): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    // Live build in a terminal (streams output, like `alp build`).
-    await runAlpInTerminal(this.context, ["build"], { name: "alp build", cwd });
+    // Stream to the "Alp SDK" channel (persistent), not a terminal that dies on
+    // exit — same reason as the Build/Flash orchestrator commands (util.ts).
+    await runAlpStreamed(this.context, ["build"], {
+      name: BUILD_RUN_NAME,
+      cwd,
+    });
   }
 
-  /** Flash a single manifest slice — `tan flash --core <id>` forwards to
-   *  `west alp-flash` for that core. The view only shows the button when the
-   *  manifest says the slice supports it, so this just runs it in a terminal.
+  /** Flash a single manifest slice — `tan flash --core <id>`. The view only
+   *  shows the button when the manifest says the slice supports it. Streams to
+   *  the "Alp SDK" channel (persistent) instead of a terminal that dies on exit:
+   *  a `tan flash --core` that fails (e.g. `west` not on PATH) otherwise left
+   *  only "failed to launch (exit 1)" with the real reason gone.
    *  There is no per-slice build equivalent: `tan build` has no `--core`
    *  option (only `flash`/`run` do), so the Build button only runs the whole
    *  plan (`runBuild`). */
   private handleSliceCommand(coreId: string): void {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    void runAlpInTerminal(this.context, ["flash", "--core", coreId], {
-      name: `alp flash ${coreId}`,
+    // FLASH_RUN_NAME, not a per-core name: a second core is a second write to
+    // the same board, so per-core names would be two reservations and two
+    // programmers at once. The core is in the logged command line.
+    void runAlpStreamed(this.context, ["flash", "--core", coreId], {
+      name: FLASH_RUN_NAME,
       cwd,
     });
   }

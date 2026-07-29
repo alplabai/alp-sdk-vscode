@@ -252,7 +252,7 @@ test("runInTerminal: process-end then task-end fires terminalFinished exactly on
 
   util.runInTerminal({ name: "west build", argv: ["west", "build"] });
   await Promise.resolve(); // let executeTask's .then() settle
-  assert.equal(util.isRunInTerminalActive("west build"), true);
+  assert.equal(util.isRunActive("west build"), true);
 
   const execution = executed[0];
   onDidStartTask.fire({ execution });
@@ -260,7 +260,7 @@ test("runInTerminal: process-end then task-end fires terminalFinished exactly on
   onDidEndTask.fire({ execution }); // the same run's backstop event, arriving late
 
   assert.deepEqual(fires, [{ name: "west build", code: 0 }]);
-  assert.equal(util.isRunInTerminalActive("west build"), false);
+  assert.equal(util.isRunActive("west build"), false);
   // util.ts raises NO toast of its own any more: #332's glanceable verdict is
   // planned and presented by the onDidFinishTerminalCommand subscriber in
   // src/extension.ts (a status-bar line on success), so that a FAILED run gets
@@ -307,7 +307,7 @@ test("runInTerminal: task-end alone (no process ever started) fires terminalFini
   onDidEndTask.fire({ execution }); // idempotence: a duplicate end must not re-fire
 
   assert.deepEqual(fires, [{ name: "Install tan", code: undefined }]);
-  assert.equal(util.isRunInTerminalActive("Install tan"), false);
+  assert.equal(util.isRunActive("Install tan"), false);
   // An undefined code carries no verdict (the task ended without its process
   // ever starting), so #332's silence rule holds -- claiming success OR
   // failure here would be a guess.
@@ -320,9 +320,9 @@ test("runInTerminal: the reservation is synchronous, so a caller can block a con
 
   util.runInTerminal({ name: "west flash", argv: ["west", "flash"] });
   // True IMMEDIATELY, before executeTask's Thenable has any chance to
-  // resolve -- this is what lets executeWestPlan's isRunInTerminalActive
+  // resolve -- this is what lets executeWestPlan's isRunActive
   // pre-check reject a second dispatch instead of racing it (issue #146).
-  assert.equal(util.isRunInTerminalActive("west flash"), true);
+  assert.equal(util.isRunActive("west flash"), true);
 });
 
 test("runInTerminal: a second dispatch of an already-active name is refused, not raced (#146 root fix)", async () => {
@@ -343,7 +343,7 @@ test("runInTerminal: a second dispatch of an already-active name is refused, not
   assert.equal(warnings.length, 1);
   assert.match(warnings[0].message, /Alp Bootstrap.*still running/);
   assert.equal(terminated.length, 0);
-  assert.equal(util.isRunInTerminalActive("Alp Bootstrap"), true);
+  assert.equal(util.isRunActive("Alp Bootstrap"), true);
 });
 
 test("runInTerminal: concurrent runs under DIFFERENT names are unaffected", async () => {
@@ -355,6 +355,62 @@ test("runInTerminal: concurrent runs under DIFFERENT names are unaffected", asyn
   await Promise.resolve();
 
   assert.equal(executed.length, 2);
-  assert.equal(util.isRunInTerminalActive("Alp Build"), true);
-  assert.equal(util.isRunInTerminalActive("Alp Flash"), true);
+  assert.equal(util.isRunActive("Alp Build"), true);
+  assert.equal(util.isRunActive("Alp Flash"), true);
+});
+
+// ── one registry for terminal AND streamed runs ──────────────────────────────
+//
+// The two dispatch paths (`runInTerminal` here, `runAlpStreamed` in
+// alpCli/vscodeAdapter) reserve names in the SAME map. Two registries meant a
+// debug preLaunchTask build and a Build-button build could run concurrently
+// over one `build/` directory with neither #146 guard firing.
+
+test("a streamed reservation blocks a terminal dispatch of the same name", async () => {
+  const { fake, executed, warnings, terminated } = makeFakeVscode();
+  const util = loadUtil(fake);
+
+  assert.equal(util.reserveStreamedRun(util.BUILD_RUN_NAME), true);
+  assert.equal(util.isRunActive(util.BUILD_RUN_NAME), true);
+  assert.equal(util.isStreamedRunActive(util.BUILD_RUN_NAME), true);
+
+  util.runInTerminal({ name: util.BUILD_RUN_NAME, argv: ["tan", "build"] });
+  await Promise.resolve();
+
+  // Refused, not queued and not killed: the live run may be a flash.
+  assert.equal(executed.length, 0);
+  assert.equal(terminated.length, 0);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0].message, /Alp Build.*still running/);
+  // A streamed run has no terminal to reveal — offer the channel instead.
+  assert.deepEqual(warnings[0].actions, ["Show Output"]);
+
+  util.releaseStreamedRun(util.BUILD_RUN_NAME);
+  assert.equal(util.isRunActive(util.BUILD_RUN_NAME), false);
+  util.runInTerminal({ name: util.BUILD_RUN_NAME, argv: ["tan", "build"] });
+  await Promise.resolve();
+  assert.equal(executed.length, 1);
+});
+
+test("a live terminal run refuses a streamed reservation of the same name", async () => {
+  const { fake } = makeFakeVscode();
+  const util = loadUtil(fake);
+
+  util.runInTerminal({ name: util.BUILD_RUN_NAME, argv: ["tan", "build"] });
+  await Promise.resolve();
+
+  assert.equal(util.reserveStreamedRun(util.BUILD_RUN_NAME), false);
+  // …and a refused reservation must not have taken the slot on its way out.
+  assert.equal(util.isStreamedRunActive(util.BUILD_RUN_NAME), false);
+});
+
+test("a streamed reservation refuses a second streamed run of the same name", () => {
+  const { fake } = makeFakeVscode();
+  const util = loadUtil(fake);
+
+  assert.equal(util.reserveStreamedRun("Alp Flash"), true);
+  // The hardware case: a double-clicked Flash must be refused, never allowed
+  // to SIGTERM a programming run mid-write (#146).
+  assert.equal(util.reserveStreamedRun("Alp Flash"), false);
+  assert.equal(util.reserveStreamedRun("Alp Image"), true); // other names free
 });

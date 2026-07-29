@@ -198,7 +198,7 @@ test("build tree offers NOTHING runnable while a bootstrap is still running", ()
 // One name, one spelling.
 // ---------------------------------------------------------------------------
 
-// `bootstrapRunning()` probes `isRunInTerminalActive(BOOTSTRAP_RUN_NAME)`. Re-type
+// `bootstrapRunning()` probes `isRunActive(BOOTSTRAP_RUN_NAME)`. Re-type
 // the name at a dispatch site and the probe watches a run nobody starts: the
 // flag is false for the whole bootstrap, the spinner never appears, and every
 // gate above silently reopens — with the rest of the suite still green.

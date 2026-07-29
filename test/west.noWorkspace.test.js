@@ -75,6 +75,16 @@ function register(workspaceContext) {
       runAlpInTerminal: async (...args) => {
         spawns.push(args);
       },
+      // build/image/flash/clean/renode stream into the "Alp SDK" channel now
+      // (#333); this file is about the no-folder guard, so both dispatch seams
+      // land in the same `spawns` list and the assertions stay mode-agnostic.
+      runAlpStreamed: async (...args) => {
+        spawns.push(args);
+      },
+      // The Renode core picker probes the running tan; a multi-slice manifest
+      // is not what this file exercises, so answer "unknown version" and let
+      // the picker stay out of the way.
+      probeTanVersion: async () => null,
       runAlpCommand: async (...args) => {
         envelopeRuns.push(args);
         return { outcome: { ok: true }, raw: {}, source: "test" };
@@ -94,7 +104,11 @@ function register(workspaceContext) {
       createWestFlashPlan: () => ({}),
       createWestUpdatePlan: () => ({}),
     },
-    "./util": { log() {} },
+    "./util": {
+      log() {},
+      BUILD_RUN_NAME: "Alp Build",
+      FLASH_RUN_NAME: "Alp Flash",
+    },
     "./notify/vscodeAdapter": {
       notify: async (plan) => {
         plans.push(plan);

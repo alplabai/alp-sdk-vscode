@@ -1245,6 +1245,33 @@
   3.10 floor) and only `bootstrap.prerequisites-missing` was recognised, so
   those refusals fell through to a real bootstrap terminal that died with
   `failed to launch (exit code: 1)` — hiding tan's own actionable message.
+
+- Build, Image, Flash, Clean and Renode now stream their output into the
+  persistent "Alp SDK" channel instead of a terminal that dies with the
+  process. Flash motivated it: its per-slice failure reasons (e.g. "backend
+  zephyr_west_flash needs west on PATH") scrolled away with the terminal,
+  leaving a bare "failed to launch". On POSIX the child runs under the user's
+  login shell, so a venv `west` activated by `tan bootstrap` is still found.
+- A second click on a command already running is refused, in both directions
+  and across both run modes: the terminal path and the channel path now share
+  one reservation registry, every `tan build` dispatch shares one run name, and
+  every flash dispatch — whole-project, per-core, `tan` or legacy `west` —
+  shares another. Previously a streamed run was terminated to start the new
+  one; on Flash that meant a SIGTERM mid-write, which can leave a board
+  unbootable (#146).
+- Fixed the POSIX shell quoting for streamed runs. Any apostrophe in a binary,
+  project or SDK path (`/Users/o'connor/proj`) broke every Build/Flash/Image/
+  Clean/Renode run with `sh: -c: line 1: unexpected EOF while looking for
+  matching \`''`.
+- **CI now gates `SUPPORTED_CLI_VERSION` against the published tan-cli release
+  assets** (`scripts/check-cli-pin.mjs`). Pinned at a version that is not
+  published, the download-on-demand asset URL 404s — and because a `cached`
+  binary behind the pin also re-fetches, every activation retried a download
+  that could not succeed. That shipped twice from a rule which lived only in a
+  comment, so it is a gate now: every per-target asset for `v<pin>` is HEADed,
+  a 404 fails the build, and a network error skips rather than reddening the
+  PR on someone else's outage.
+
 - A stranded west workspace no longer stays silent. Switching or uninstalling an
   SDK never touched `<topdir>/.west/config`, whose `[manifest] path` `west`
   reads directly and independently of the active-SDK pointer — so removing the

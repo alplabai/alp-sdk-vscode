@@ -45,6 +45,7 @@ import {
   isNativeTanVersionOutput,
   isUnverifiableCache,
   parseTanVersion,
+  posixLoginShellCommand,
   proxyEnvOverrides,
   releaseAssetForTarget,
   shouldFetchManagedCli,
@@ -61,9 +62,24 @@ import {
 } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, runInTerminal } from "../util";
+import {
+  appendOutput,
+  isStreamedRunActive,
+  log,
+  releaseStreamedRun,
+  reserveStreamedRun,
+  runInTerminal,
+  showOutput,
+  signalStreamedFinished,
+} from "../util";
 
 const execFileAsyncCli = promisify(cp.execFile);
+
+/** How long a cancelled streamed run may ignore SIGTERM before it is SIGKILLed.
+ *  Generous on purpose — `tan` gets a real chance to unwind (closing a probe,
+ *  finishing a write) — but bounded, because the run name stays reserved until
+ *  the process is actually gone. */
+const CANCEL_GRACE_MS = 10_000;
 
 /** Bare binary name (not the full resolved path) for readable log lines. */
 function binaryLabel(command: string): string {
@@ -1621,6 +1637,236 @@ export async function runAlpInTerminal(
     cwd: options.cwd,
     env: proxyEnvAdditions(),
   });
+}
+
+/** Run `command` through the user's LOGIN shell on POSIX, so the child sees the
+ *  environment a terminal would — whatever `~/.zshrc` / `~/.bashrc` / `~/.profile`
+ *  export, which a GUI-launched VS Code (macOS `.app`, a Linux desktop launcher)
+ *  never sourced into the extension host.
+ *
+ *  This is the property terminal mode had for free and channel mode loses:
+ *  `cp.spawn` inherits the EXTENSION HOST's env, not the shell's. Reconstructing
+ *  one PATH entry instead would both miss everything else the user put in their
+ *  profile and fork the venv-resolution logic that already lives in `tan`.
+ *
+ *  WHAT THIS DOES AND DOES NOT RECOVER, measured on a real headless Linux host
+ *  under a stripped desktop-launcher environment. Before: `cp.spawn("west")` →
+ *  `spawn west ENOENT`, and `tan`'s own gate reads
+ *  `[!] westResolved  west not found`. After: exit 0, `West version: v1.5.0`,
+ *  and the gate reads `[+] westResolved  west resolved`. So the mechanism is
+ *  real and load-bearing.
+ *
+ *  But it restores THE PROFILE'S PATH, not "the venv `tan bootstrap` created".
+ *  On that host `~/.alp-venv/bin` was absent from the login PATH entirely —
+ *  nothing in the profile activates it — and what came back was `~/.local/bin`,
+ *  holding a system-python `west`. A user whose venv is only ever on PATH via
+ *  an interactive `activate` still will not get it here. Recovering that
+ *  deliberately is a different change, and it belongs in `tan`.
+ *
+ *  The command string itself — quoting, the `cd` into `cwd`, the `exec` —
+ *  comes from `posixLoginShellCommand` in the pure service, where its edge
+ *  cases are testable without a VS Code host.
+ *
+ *  `null` on Windows, where the extension host already inherits the login
+ *  session's environment and there is no `-lc` equivalent worth emulating. */
+function loginShellInvocation(
+  command: string,
+  args: string[],
+  cwd?: string,
+): { file: string; argv: string[] } | null {
+  if (process.platform === "win32") return null;
+  const shell = process.env.SHELL?.trim() || "/bin/sh";
+  return {
+    file: shell,
+    argv: ["-lc", posixLoginShellCommand(command, args, cwd)],
+  };
+}
+
+/**
+ * Run a `tan` command with its output streamed live into the "Alp SDK" output
+ * channel (channel mode). Unlike terminal mode the log PERSISTS after the
+ * process exits — the channel does not die with the command, so the outcome and
+ * full log stay visible. Forces `--no-color` (the channel renders plain text)
+ * and `--non-interactive` (no TTY to answer prompts), so this is for the
+ * orchestrator commands that don't need a live console: build/flash/image/clean.
+ * Flash matters most here — its per-slice failure reasons (e.g. "backend
+ * zephyr_west_flash needs west on PATH") used to vanish with the dying terminal,
+ * leaving only "failed to launch". Renode streams for the same reason: its
+ * headless smoke refuses a multi-Zephyr-slice manifest BEFORE booting, and that
+ * refusal died with the terminal. Bootstrap keeps runAlpInTerminal — it can
+ * prompt, so it genuinely needs the TTY. Raises a verdict toast on close.
+ *
+ * Env: on POSIX the child runs under the user's LOGIN shell
+ * (`loginShellInvocation`), so a tool the flash backend shells (`west`) is
+ * found via the user's own profile rather than only whatever PATH a
+ * GUI-launched VS Code inherited — measured, `spawn west ENOENT` before and
+ * `West version: v1.5.0` after. It recovers what the profile exports, which is
+ * not necessarily a `tan bootstrap` venv; see `loginShellInvocation` for what
+ * that does and does not cover. Windows spawns the binary directly, where the
+ * extension host already has the login environment.
+ *
+ * One run per name, shared with `runInTerminal` (see `reserveStreamedRun`): a
+ * second dispatch under a live name is refused, never allowed to terminate the
+ * first.
+ */
+export async function runAlpStreamed(
+  context: vscode.ExtensionContext,
+  args: string[],
+  options: { name: string; cwd?: string },
+): Promise<void> {
+  // Refuse a same-named re-run; never terminate one. `src/west.ts` routes
+  // FLASH through here, and killing a flash mid-write can leave a board
+  // unbootable — the hazard `runInTerminal`'s guard was written for (#146).
+  // Reserved BEFORE the first await, so two clicks landing back-to-back can't
+  // both pass while the binary is still being resolved.
+  if (!reserveStreamedRun(options.name)) {
+    log(
+      `[channel] "${options.name}" refused — a run under that name is still in flight`,
+    );
+    // The holder may be a TERMINAL run under the same name (one registry), and
+    // then there is no channel to show — offer the surface that has the output.
+    notifyAsync(
+      planFailure({
+        severity: "warning",
+        operation: options.name,
+        cause: `"${options.name}" is still running.`,
+        detail: "Wait for it to finish before starting it again.",
+        actions: [
+          isStreamedRunActive(options.name)
+            ? { id: "showOutput" }
+            : { id: "showTerminal", arg: options.name },
+        ],
+      }),
+    );
+    return;
+  }
+  try {
+    await streamRun(context, args, options);
+  } finally {
+    releaseStreamedRun(options.name);
+  }
+}
+
+/** The body of `runAlpStreamed`, split out so its every exit path — including
+ *  a failed binary resolution — releases the reservation via one `finally`. */
+async function streamRun(
+  context: vscode.ExtensionContext,
+  args: string[],
+  options: { name: string; cwd?: string },
+): Promise<void> {
+  let binary: ResolvedBinary;
+  try {
+    binary = await resolveAlpBinaryForContext(context);
+  } catch (error) {
+    log(
+      `[cli] ✗ CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
+    );
+    // NOT awaited: an error notification with a button does not auto-dismiss,
+    // so awaiting it would hold this run's reservation for as long as the toast
+    // sits unanswered — refusing every later click with "still running" when
+    // nothing is running at all.
+    void surfaceResolutionError(error, options.name);
+    return;
+  }
+  const finalArgs = [...withSdkRoot(args), "--no-color", "--non-interactive"];
+  log(
+    `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (channel: ${options.name})`,
+  );
+
+  showOutput();
+  appendOutput(`\n$ ${options.name}\n`);
+
+  const shellRun = loginShellInvocation(binary.command, finalArgs, options.cwd);
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: options.name,
+      cancellable: true,
+    },
+    (_progress, token) =>
+      new Promise<void>((resolve) => {
+        // `spawnEnv()`, not the inherited environment: `child_process` REPLACES
+        // the environment when `env` is passed, so this is the whole of
+        // `process.env` plus the proxy gap-fillers (#377). A streamed `tan
+        // build` that has to fetch is on a proxied machine's only path to the
+        // network, exactly like the envelope-mode runs.
+        const child = shellRun
+          ? cp.spawn(shellRun.file, shellRun.argv, {
+              cwd: options.cwd,
+              env: spawnEnv(),
+            })
+          : cp.spawn(binary.command, finalArgs, {
+              cwd: options.cwd,
+              env: spawnEnv(),
+            });
+        // Decode as UTF-8 on the stream, not per chunk: a multi-byte character
+        // split across a chunk boundary is mangled by a per-chunk toString().
+        child.stdout?.setEncoding("utf8");
+        child.stderr?.setEncoding("utf8");
+        child.stdout?.on("data", (text: string) => appendOutput(text));
+        child.stderr?.on("data", (text: string) => appendOutput(text));
+
+        // `settled` guards the racing ends: `error` can fire before the exit
+        // events, and a caller chaining off this must not see it resolve twice.
+        let settled = false;
+        let killTimer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(killTimer);
+          resolve();
+        };
+        token.onCancellationRequested(() => {
+          // The user's own explicit stop — the ONE kill left on this path.
+          // `posixLoginShellCommand` `exec`s the binary, so this signals `tan`
+          // itself rather than a wrapper shell that would leave it orphaned.
+          log(`[channel] "${options.name}" cancelled by the user`);
+          appendOutput(`\n[cancelled] ${options.name}\n`);
+          child.kill();
+          // Escalate if SIGTERM is not honoured. Without this the run can hang
+          // here forever, and since the reservation is released only when this
+          // promise settles, the command would stay refused ("still running")
+          // until the window is reloaded.
+          killTimer = setTimeout(() => {
+            if (settled) return;
+            log(
+              `[channel] "${options.name}" ignored SIGTERM after ${CANCEL_GRACE_MS / 1000}s — sending SIGKILL`,
+              "warn",
+            );
+            child.kill("SIGKILL");
+          }, CANCEL_GRACE_MS);
+        });
+        child.on("error", (err) => {
+          notifyAsync(
+            planFailure({
+              operation: options.name,
+              cause: `${options.name} could not start.`,
+              detail: err.message,
+              actions: [{ id: "showOutput" }],
+            }),
+          );
+          finish();
+        });
+        // `exit`, not `close`: `close` waits for every inherited stdio pipe to
+        // end, and `tan` shells build tools (`west`, `ninja`) that hold those
+        // pipes past their parent's death — after a cancel that can be
+        // indefinitely. The verdict is known at `exit`, and the reservation
+        // must be freed there; late output still reaches the channel because
+        // the `data` handlers stay attached.
+        child.on("exit", (code, signal) => {
+          // A kill (the Cancel button) is not a failure to report as one.
+          if (signal) {
+            log(`[channel] "${options.name}" stopped (signal=${signal})`);
+          } else {
+            signalStreamedFinished(options.name, code ?? undefined);
+          }
+          finish();
+        });
+        // Backstop for the one case `exit` cannot cover: a spawn that fails
+        // without ever producing a process still emits `close`.
+        child.on("close", () => finish());
+      }),
+  );
 }
 
 /**

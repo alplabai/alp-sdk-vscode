@@ -203,7 +203,26 @@ async function drivePanel(envelopeFor) {
   const { BuildPlanPanel } = loadPanel({
     fs: { existsSync: () => true },
     vscode: {
+      // `buildPlanPanel` imports `runAlpStreamed` (#333), which pulls in
+      // `../util`. That module builds the "Alp SDK" output channel AND an
+      // `EventEmitter` at LOAD time, so both have to exist before a single
+      // assertion runs — otherwise the require throws and the panel never gets
+      // far enough to be told anything about a payload shape.
+      EventEmitter: class {
+        constructor() {
+          this.event = () => ({ dispose() {} });
+        }
+        fire() {}
+        dispose() {}
+      },
       window: {
+        createOutputChannel: () => ({
+          appendLine() {},
+          append() {},
+          show() {},
+          clear() {},
+          dispose() {},
+        }),
         createWebviewPanel: () => ({
           webview: {
             set html(_v) {},

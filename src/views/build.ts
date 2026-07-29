@@ -36,10 +36,14 @@ const BUILD_ACTIONS: Array<{
     command: "alp.westBuild",
   },
   {
-    label: "Flash device (west)",
-    description: "flash connected device",
+    // The orchestrator flash (`tan flash`), not plain `west flash`: west lives
+    // in the bootstrap venv, so `alp.westFlash` dies before it can say why.
+    // That command stays in the palette for the explicit single-image case;
+    // no UI surface routes to it.
+    label: "Flash device",
+    description: "flash every slice onto the device",
     icon: "zap",
-    command: "alp.westFlash",
+    command: "alp.westAlpFlash",
   },
   {
     label: "Run (native_sim)",
@@ -52,12 +56,6 @@ const BUILD_ACTIONS: Array<{
     description: "assemble image bundle",
     icon: "package",
     command: "alp.westAlpImage",
-  },
-  {
-    label: "Flash",
-    description: "flash all slices",
-    icon: "rocket",
-    command: "alp.westAlpFlash",
   },
   {
     label: "Debug",

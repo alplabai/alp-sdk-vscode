@@ -13,7 +13,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { isCancellation } from "../notify/service";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { isRunInTerminalActive, log } from "../util";
+import { isRunActive, log } from "../util";
 import {
   resolveWestBinary,
   venvWestExists,
@@ -153,7 +153,7 @@ export function sdkCacheRoot(): string {
  * say no.
  */
 export function bootstrapRunning(): boolean {
-  return isRunInTerminalActive(BOOTSTRAP_RUN_NAME);
+  return isRunActive(BOOTSTRAP_RUN_NAME);
 }
 
 export async function queryAlpIdeState(

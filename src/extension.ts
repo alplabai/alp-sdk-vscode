@@ -169,7 +169,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const def = e.execution.task.definition as { run?: unknown };
       if (def.run === BOOTSTRAP_RUN_NAME) refreshState();
     }),
-    onDidFinishTerminalCommand(({ name, code }) => {
+    onDidFinishTerminalCommand(({ name, code, mode }) => {
       // Re-derive the shared state FIRST, whatever the verdict: a finished
       // bootstrap changed the workspace on disk and released the run's
       // reservation, and this event is the only signal of either. Repainting
@@ -179,12 +179,21 @@ export function activate(context: vscode.ExtensionContext): void {
       if (code === 0) {
         notifyAsync(planSuccess(`${name} finished.`));
       } else if (code !== undefined) {
+        // A channel-mode run has no terminal to reveal — its whole log is in
+        // the "Alp SDK" channel, which is the point of streaming it there. An
+        // action that opens nothing is worse than no action, so the reveal is
+        // picked from the mode the run actually used.
         notifyAsync(
           planFailure({
             operation: name,
             cause: `${name} failed.`,
             detail: `exit ${code}`,
-            actions: [{ id: "showTerminal", arg: name }, { id: "runDoctor" }],
+            actions: [
+              mode === "channel"
+                ? { id: "showOutput" }
+                : { id: "showTerminal", arg: name },
+              { id: "runDoctor" },
+            ],
           }),
         );
       }

@@ -289,7 +289,7 @@ function loadIdeHubAdapter(executeCommand) {
       westWorkspaceInitialized: () => false,
     },
     "../alpCli/vscodeAdapter": { probeTanVersion: async () => null },
-    "../util": { log: spy.log, isRunInTerminalActive: () => false },
+    "../util": { log: spy.log, isRunActive: () => false },
   });
   return { mod, spy };
 }

@@ -8,7 +8,7 @@
 // the CustomExecution pseudoterminals backing all four tasks. The three
 // build tasks do NOT spawn `tan` themselves — they delegate to
 // `runAlpInTerminal` (alpCli/vscodeAdapter.ts), the exact call the Build
-// Plan panel's build button uses, under the identical run name "alp build".
+// Plan panel's build button uses, under the identical run name (`BUILD_RUN_NAME`, exported by util.ts).
 // That keeps binary resolution, `--sdk-root` augmentation, and the
 // `runInTerminal` #146/#341 concurrency reservation in the ONE place that
 // already owns them, instead of a second copy here — and, just as
@@ -26,17 +26,23 @@ import * as vscode from "vscode";
 
 import { runAlpInTerminal } from "../alpCli/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { isRunInTerminalActive, onDidFinishTerminalCommand } from "../util";
+import {
+  BUILD_RUN_NAME,
+  isRunActive,
+  onDidFinishTerminalCommand,
+} from "../util";
 import { TASK_SOURCE, TASK_SPECS, TaskSpec } from "./service";
 
 const TASK_TYPE = "alp";
 
-/** The `runInTerminal` reservation name the build tasks share with the Build
- *  Plan panel's build button (`buildPlanPanel.ts` `handleRunBuild`). Using
- *  the identical name is what makes the #146/#341 concurrency guard refuse a
- *  second dispatch in BOTH directions — a preLaunchTask build can't start
- *  while the button's build is running, and vice versa. */
-const BUILD_RUN_NAME = "alp build";
+// `BUILD_RUN_NAME` is IMPORTED, never re-declared here. This file used to
+// carry its own `const BUILD_RUN_NAME = "alp build"` while the Build button
+// dispatched under `"Alp Build"` — two literals in one registry are two
+// reservations, i.e. a `preLaunchTask` build and a button build each running
+// `tan build`/`ninja` over the same `build/` directory. The #146/#341 guard
+// refuses a second dispatch only when both spell the name identically, which
+// is why the name has exactly one definition (`src/util.ts`) and
+// `test/util.terminalFinish.test.js` walks `src/**` for a re-typed literal.
 
 /** A trivial Pseudoterminal that writes one line then closes with
  *  `exitCode`. Backs the "deploy and start gdbserver" placeholder (no tan
@@ -73,9 +79,12 @@ class MessagePty implements vscode.Pseudoterminal {
  * in-flight run to finish, since a duplicate `tan build`/`ninja` against the
  * same build dir is exactly what the shared reservation exists to prevent.
  *
- * This pty's own output stays a one-line pointer: the real build output
- * streams into the "alp build" terminal `runAlpInTerminal` opens (or
- * reuses) — same as the Build button already shows, not a duplicate log.
+ * This pty's own output stays a one-line pointer, not a duplicate log: its
+ * own dispatch streams into the terminal `runAlpInTerminal` opens (or
+ * reuses), and a run it merely WAITED on may be a channel run instead — the
+ * Build button streams `tan build` into the "Alp SDK" output channel — so the
+ * pointer names both surfaces rather than promising a terminal that, in that
+ * case, does not exist.
  *
  * Residual behaviour: when a build is already running, this task WAITS for
  * it rather than failing fast, so a `preLaunchTask` stacked behind an
@@ -98,12 +107,12 @@ class BuildDelegatePty implements vscode.Pseudoterminal {
   ) {}
 
   open(): void {
-    const alreadyRunning = isRunInTerminalActive(BUILD_RUN_NAME);
+    const alreadyRunning = isRunActive(BUILD_RUN_NAME);
     const status = alreadyRunning
       ? "a build is already running -- waiting for it to finish"
       : "building";
     this.writeEmitter.fire(
-      `Alp: ${status} (see the "${BUILD_RUN_NAME}" terminal for output)...\r\n`,
+      `Alp: ${status} (output: the "${BUILD_RUN_NAME}" terminal, or the "Alp SDK" channel if it was started from the Build button)...\r\n`,
     );
     // Subscribe before dispatching so a same-tick finish can't be missed.
     this.subscription = onDidFinishTerminalCommand((event) => {
@@ -132,7 +141,7 @@ class BuildDelegatePty implements vscode.Pseudoterminal {
    *  slot synchronously before dispatching, so an active reservation here is
    *  proof a run really started. */
   private failIfNothingStarted(): void {
-    if (this.settled || isRunInTerminalActive(BUILD_RUN_NAME)) return;
+    if (this.settled || isRunActive(BUILD_RUN_NAME)) return;
     this.writeEmitter.fire(
       "Alp: the build did not start -- see the Alp SDK output channel.\r\n",
     );

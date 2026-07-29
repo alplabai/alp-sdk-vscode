@@ -16,8 +16,18 @@ import {
 } from "./models";
 
 /** The `tan` CLI version this extension build targets for download-on-demand.
- *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
+ *  Must match a PUBLISHED `v<version>` release tag in `alplabai/tan-cli`
  *  (aligned with tan-cli's `[workspace.package] version`).
+ *
+ *  Raising this to an UNRELEASED version is not a harmless forward-looking
+ *  pin: `shouldFetchManagedCli` returns true both for `download` and for a
+ *  `cached` binary that `isCliBehind` the pin, so every activation retries a
+ *  release-asset URL that 404s. That shipped twice, so the rule is a CI gate
+ *  now rather than this paragraph: `scripts/check-cli-pin.mjs` HEADs every
+ *  per-target asset for `v<pin>` and fails on a 404. A feature needing a newer
+ *  `tan` than the pin gets its OWN gate, compared against the PROBED version —
+ *  see `RENODE_CORE_CLI_VERSION` in `src/west.ts`, which degrades to "don't
+ *  offer the picker" instead of "download something that does not exist".
  *
  *  v0.4.0 publishes `envelope-contract.json`, which is what
  *  `scripts/fetch-tan-contract.mjs` downloads for THIS pin — so the pin is what
@@ -73,7 +83,7 @@ const CHECKSUMS_ASSET = "checksums.txt";
 
 /** Host platform/arch → rust target triple (the six targets tan-cli publishes a
  *  raw binary for). Windows ships BOTH x64 and arm64, picked by `process.arch`. */
-const TARGETS: Readonly<Record<string, string>> = {
+export const TARGETS: Readonly<Record<string, string>> = {
   "win32/x64": "x86_64-pc-windows-msvc",
   "win32/arm64": "aarch64-pc-windows-msvc",
   // musl (static), not gnu: the -gnu assets carry a glibc floor and break on
@@ -463,6 +473,9 @@ export function isCliBehind(
   installed: string | null,
   supported: string = SUPPORTED_CLI_VERSION,
 ): boolean {
+  // The pre-release case this used to get wrong (an `0.4.0-rc1` reading as
+  // "not behind" 0.4.0, then being handed a flag it does not have) is handled
+  // inside `cliSkew`: same numeric tuple, `a.pre && !b.pre` ⇒ `"behind"`.
   return cliSkew(installed, supported) === "behind";
 }
 
@@ -641,6 +654,46 @@ export function shouldWarnCliAhead(
     cliSkew(installed, supported) === "ahead-minor" &&
     warnedForVersion !== installed
   );
+}
+
+/**
+ * Single-quote `word` for a POSIX shell: wrap it, and close/escape/reopen at
+ * every embedded apostrophe (`'` → `'\''`), which is the only way to get a
+ * literal `'` past `sh` — there is no backslash escape inside single quotes.
+ *
+ * The escape is spelled in a plain string, NOT a template literal, and that is
+ * load-bearing: inside a template literal `\'` collapses to `'`, so the same
+ * sequence written as `` `'\''` `` emits `'''` (three characters) and every
+ * command carrying an apostrophe in a path — `/Users/o'connor/proj` — dies as
+ * `sh: -c: line 1: unexpected EOF while looking for matching \`''`.
+ */
+export function posixShellQuote(word: string): string {
+  return `'${word.split("'").join("'\\''")}'`;
+}
+
+/**
+ * The command string for `$SHELL -lc <string>`: run `command` with `args` from
+ * `cwd`, every word quoted by `posixShellQuote`.
+ *
+ * Two details the naive `[command, ...args].map(quote).join(" ")` gets wrong:
+ *
+ * - `cd` INTO `cwd` explicitly, even though the caller also passes it to
+ *   `spawn`. A login shell sources the user's profile AFTER it starts, so a
+ *   profile that `cd`s (a `cd ~/work` line, an auto-activating project
+ *   manager) silently moves the run — and `tan build` takes its project scope
+ *   from the cwd when no `--project` is passed. Ordering is what makes this
+ *   work: the profile is sourced first, then this `cd` runs, then the command.
+ * - `exec` the command, so it REPLACES the shell instead of running as its
+ *   child. Without it the caller's `kill()` (the Cancel button) signals the
+ *   shell and leaves `tan` — and whatever it is flashing — running orphaned.
+ */
+export function posixLoginShellCommand(
+  command: string,
+  args: string[],
+  cwd?: string,
+): string {
+  const line = `exec ${[command, ...args].map(posixShellQuote).join(" ")}`;
+  return cwd ? `cd ${posixShellQuote(cwd)} && ${line}` : line;
 }
 
 /**
