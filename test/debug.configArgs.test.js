@@ -31,17 +31,30 @@ const path = require("node:path");
 const { debugConfigArgs } = require(
   path.join(__dirname, "..", "out", "debug", "service.js"),
 );
+const { TASK_SPECS, taskLabel } = require(
+  path.join(__dirname, "..", "out", "tasks", "service.js"),
+);
 
 test("zephyr-mcu/jlink before a build carries no --core", () => {
   // `resolveManifestSlice` reads `build/system-manifest.yaml`, which does not
-  // exist pre-build, so `coreId` is null and tan picks the slice itself.
+  // exist pre-build, so `coreId` is null and tan picks the slice itself. The
+  // build task is still named: pre-build is exactly when it matters most —
+  // this is the first F5 on a fresh clone, with no ELF on disk at all.
   assert.deepStrictEqual(
     debugConfigArgs({
       targetKind: "zephyr-mcu",
       server: "jlink",
       coreId: null,
     }),
-    ["debug-config", "--target-kind", "zephyr-mcu", "--server", "jlink"],
+    [
+      "debug-config",
+      "--target-kind",
+      "zephyr-mcu",
+      "--server",
+      "jlink",
+      "--pre-launch-task",
+      "alp: build active target",
+    ],
   );
 });
 
@@ -63,6 +76,8 @@ test("a resolved slice pins the core, by value", () => {
       "jlink",
       "--core",
       "m55_hp",
+      "--pre-launch-task",
+      "alp: build active target",
     ],
   );
 });
@@ -71,23 +86,99 @@ test("every target/server pair the picker can produce is spelled exactly", () =>
   // Whole-array equality per pair, so a value swapped between two legal values
   // — `--server openocd` where the user picked `pyocd` — is caught. The picker
   // is what limits the pairs; these are the ones it can hand over.
+  //
+  // The `--pre-launch-task` VALUE is the half that only this file can defend.
+  // A wrong flag exits 2; a wrong LABEL — `alp: build native_sim target` on a
+  // zephyr-mcu profile — is a string VS Code resolves to a real registered
+  // task, so it builds, F5 starts, and nothing anywhere reports that the
+  // profile named the wrong one.
   const cases = [
-    ["zephyr-mcu", "jlink"],
-    ["zephyr-mcu", "openocd"],
-    ["zephyr-mcu", "pyocd"],
-    ["baremetal-mcu", "jlink"],
-    ["baremetal-mcu", "openocd"],
-    ["baremetal-mcu", "pyocd"],
-    ["yocto-userspace", "gdbserver"],
-    ["native-host", "none"],
+    ["zephyr-mcu", "jlink", "alp: build active target"],
+    ["zephyr-mcu", "openocd", "alp: build active target"],
+    ["zephyr-mcu", "pyocd", "alp: build active target"],
+    ["baremetal-mcu", "jlink", "alp: build baremetal target"],
+    ["baremetal-mcu", "openocd", "alp: build baremetal target"],
+    ["baremetal-mcu", "pyocd", "alp: build baremetal target"],
+    // No task: the only one registered for this kind exits 1 by design (see
+    // `preLaunchTaskFor`), so the flag is omitted and the profile keeps the
+    // no-preLaunchTask shape it has always had.
+    ["yocto-userspace", "gdbserver", null],
+    ["native-host", "none", "alp: build native_sim target"],
   ];
-  for (const [targetKind, server] of cases) {
+  for (const [targetKind, server, task] of cases) {
     assert.deepStrictEqual(
       debugConfigArgs({ targetKind, server, coreId: null }),
-      ["debug-config", "--target-kind", targetKind, "--server", server],
+      [
+        "debug-config",
+        "--target-kind",
+        targetKind,
+        "--server",
+        server,
+        ...(task ? ["--pre-launch-task", task] : []),
+      ],
       `${targetKind}/${server}`,
     );
   }
+});
+
+test("the task label is the one the provider really contributes, not a lookalike", () => {
+  // `debugConfigArgs` spells a label that has to survive a round trip through
+  // VS Code: it is matched against `${TASK_SOURCE}: ${spec.name}` for a task
+  // `AlpTaskProvider.provideTasks` returned. Comparing against the same
+  // TASK_SPECS the provider maps over is what makes a rename on either side
+  // fail here rather than at F5 — the case above pins the literal, this one
+  // pins that the literal is still a label something answers to.
+  const provided = new Set(TASK_SPECS.map(taskLabel));
+  const emitted = [
+    "zephyr-mcu",
+    "baremetal-mcu",
+    "yocto-userspace",
+    "native-host",
+  ].map((targetKind) => {
+    const args = debugConfigArgs({
+      targetKind,
+      server: targetKind === "yocto-userspace" ? "gdbserver" : "jlink",
+      coreId: null,
+    });
+    const at = args.indexOf("--pre-launch-task");
+    return at === -1 ? null : args[at + 1];
+  });
+
+  // Non-vacuity first: a `debugConfigArgs` that emits the flag for nothing
+  // would satisfy every "each emitted label is contributed" loop trivially,
+  // which is the shape of this test that would have passed on the bug it
+  // exists to prevent.
+  assert.equal(emitted.filter(Boolean).length, 3);
+  for (const label of emitted.filter(Boolean)) {
+    assert.ok(
+      provided.has(label),
+      `${JSON.stringify(label)} is not a contributed task label`,
+    );
+  }
+});
+
+test("--core and --pre-launch-task coexist without displacing each other", () => {
+  // Both are conditional pushes onto the same array. The post-build zephyr
+  // case is the only one carrying both, and it is the one a customer actually
+  // presses F5 on.
+  assert.deepStrictEqual(
+    debugConfigArgs({
+      targetKind: "zephyr-mcu",
+      server: "jlink",
+      coreId: "m55_hp",
+    }),
+    [
+      "debug-config",
+      "--target-kind",
+      "zephyr-mcu",
+      "--server",
+      "jlink",
+      "--core",
+      "m55_hp",
+      "--pre-launch-task",
+      "alp: build active target",
+    ],
+  );
 });
 
 test("the preview is the SAME command plus --preview, and --preview is last", () => {
@@ -117,7 +208,15 @@ test("an empty core id is omitted, not passed as an empty flag value", () => {
   for (const coreId of [null, ""]) {
     assert.deepStrictEqual(
       debugConfigArgs({ targetKind: "zephyr-mcu", server: "jlink", coreId }),
-      ["debug-config", "--target-kind", "zephyr-mcu", "--server", "jlink"],
+      [
+        "debug-config",
+        "--target-kind",
+        "zephyr-mcu",
+        "--server",
+        "jlink",
+        "--pre-launch-task",
+        "alp: build active target",
+      ],
       `coreId=${JSON.stringify(coreId)}`,
     );
   }

@@ -344,6 +344,7 @@ export interface ConfiguratorSavedMessage {
 export type ToolchainFixId =
   | "python-deps"
   | "west"
+  | "west-workspace"
   | "build-tools"
   | "zephyr-sdk"
   | "gdb";

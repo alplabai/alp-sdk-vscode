@@ -333,8 +333,19 @@ async function runDebugConfig(
   );
 
   if (!outcome.ok) {
+    // An older tan exits 2 (validation) on an argument its clap definition
+    // does not know, with a message about the FLAG rather than the project —
+    // so a `debug-config` exit 2 whose argv carries a flag younger than the
+    // customer's binary is version skew, not a bad board.yaml. Both flags this
+    // argv can carry are that young: `--core` (the v0.3.1 field report) and
+    // `--pre-launch-task`, added by tan-cli#85 and shipped in 0.4.0. Listing
+    // only `--core` left the whole native-host/zephyr-mcu class — where
+    // `--pre-launch-task` is present and `--core` may not be, because
+    // `resolveManifestSlice` finds no slice before the first build — reporting
+    // tan's raw complaint with no hint that the CLI is what needs updating.
     const skew =
-      outcome.kind === "validation" && args.includes("--core")
+      outcome.kind === "validation" &&
+      (args.includes("--core") || args.includes("--pre-launch-task"))
         ? ` This extension requires tan ${SUPPORTED_CLI_VERSION} or newer; run "Alp: Update CLI" and retry.`
         : "";
     await notify(
