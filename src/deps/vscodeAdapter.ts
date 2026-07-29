@@ -293,6 +293,14 @@ function bareVersion(version: string | null): string | null {
  * "unknown" from a standalone binary). The durable fix is tan-side: a
  * host-versus-project scope on the check envelope, or these checks on `--build`
  * too. Until then this list is the seam.
+ *
+ * FOUR of the five are unconditional host facts. `lldb` is NOT: tan emits it
+ * only for a `DebugTargetKind::NativeHost` target (tan-core's debug doctor), so
+ * a project whose target is Yocto userspace gets `gdb` + `cppToolsExtension`
+ * instead — and this allowlist takes neither, so that row simply does not
+ * appear. Read from the pinned v0.4.0 source; only the native-host branch was
+ * driven here, because resolving a target that reaches the other one needs an
+ * SDK this machine does not have.
  */
 const PLAIN_DOCTOR_HOST_CHECKS: ReadonlySet<string> = new Set([
   "hostPrerequisites",
@@ -337,7 +345,8 @@ const NOT_CHECKED = "not checked";
 /** Why a project row is missing, said on the row rather than by its absence. */
 const WITHHELD_DETAIL =
   "No project folder is open, so this was not checked. Open your Alp SDK " +
-  "project folder and refresh — the host tools above are checked either way.";
+  "project folder and refresh — the host tools in this table are checked " +
+  "either way.";
 
 /**
  * tan's own arithmetic, re-run over exactly the checks this table shows.
@@ -638,7 +647,7 @@ export function runDependencyAction(
 }
 
 /**
- * The reload notice a terminal install cannot give itself.
+ * The notice a terminal install cannot give itself.
  *
  * `winget install …` puts the tool on the MACHINE's PATH; the running extension
  * host inherited its environment at launch and never sees it. So the row the
@@ -646,31 +655,35 @@ export function runDependencyAction(
  * install, and nothing on screen says why or what to do — the panel looks
  * broken and the fix looks like it did nothing.
  *
- * NOT an automatic reload. A build or a flash may be running, and a reload takes
- * the window with it. The one-click remedy already exists (`reloadWindow` in
- * src/notify/vscodeAdapter.ts) — this only offers it.
+ * NO `reloadWindow` BUTTON, and that is deliberate rather than an omission.
+ * Reload re-forks the extension host from a main process whose environment was
+ * captured when VS Code started — on Windows VS Code skips shell-environment
+ * resolution outright — so a reload inherits exactly the same stale PATH and
+ * cannot turn the row green. Offering it would be a wrong diagnosis with a
+ * button attached, and pressing it mid-install would dispose the terminal and
+ * kill the install this very notice warns about.
+ *
+ * What DOES work, in order: Refresh is usually enough, because winget's shim
+ * lands in a directory that was already on PATH at launch and `cp.spawn`
+ * resolves the file rather than a cached lookup. When it is not enough, only
+ * quitting VS Code completely and reopening picks up a new PATH.
  *
  * Shown at DISPATCH, before the install finishes, because `sendText` writes a
  * shell command line and there is no completion signal to wait for (that is the
  * same reason the dispatch above is a terminal and not a `ProcessExecution`).
- * The wording therefore has to carry both halves: wait, then reload. Reloading
- * disposes the terminal, so a customer who presses it too early kills their own
- * install — that warning is the sentence, not a footnote.
  *
  * `notifyAsync`, not `notify`: this is called from the webview's message pump.
- * `reloadWindow` is presenter-handled, so it survives the fire-and-forget strip.
  */
 function offerReloadAfterInstall(): void {
   notifyAsync(
     planFailure({
       operation: "Installing a dependency",
       cause:
-        "Installing in the terminal. When it finishes, reload the window — " +
-        "VS Code only picks up a new PATH on reload, so until then this row " +
-        "keeps reading as missing. Reloading closes the terminal, so wait for " +
-        "the install to finish first.",
+        "Installing in the terminal. When it finishes, press Refresh. This " +
+        "window's PATH was captured when VS Code started, so if the row still " +
+        "reads as missing, close VS Code completely and reopen it — a window " +
+        "reload does not pick up a new PATH.",
       severity: "info",
-      actions: [{ id: "reloadWindow" }],
       // One install at a time on screen: pressing Install on three rows must
       // not stack three identical toasts.
       dedupeKey: "deps-install-reload",

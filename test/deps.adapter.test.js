@@ -496,7 +496,7 @@ test("a `--build` that answers nothing is still an error state", async () => {
 
 // ── A-0g: a winget install leaves a stale PATH ───────────────────────────────
 
-test("a terminal install offers the reload that makes it visible", async () => {
+test("a terminal install says what actually makes the row go green", async () => {
   const sent = [];
   const plans = [];
   const { runDependencyAction } = loadDepsAdapter({
@@ -534,17 +534,34 @@ test("a terminal install offers the reload that makes it visible", async () => {
       "environment at launch, so the row the customer just fixed still reads " +
       "`fail / ninja not found` and nothing on screen said why",
   );
-  assert.deepEqual(
-    plans[0].actions,
-    [{ id: "reloadWindow" }],
-    "the one-click remedy that already exists, wired to this case",
+  // NO reload button. A reload re-forks the extension host from a main process
+  // whose environment was captured at launch — VS Code skips shell-environment
+  // resolution on Windows entirely — so it inherits the same stale PATH and
+  // cannot turn the row green. Offering it would be a wrong diagnosis with a
+  // button attached, and pressing it mid-install disposes the terminal.
+  assert.equal(
+    (plans[0].actions ?? []).some((action) => action.id === "reloadWindow"),
+    false,
+    "a reload cannot pick up a new PATH, so it must not be offered as if it can",
   );
   assert.equal(plans[0].severity, "info", "an offer, not a failure");
   assert.match(
     plans[0].message,
-    /wait for the install to finish/i,
-    "reloading disposes the terminal, so a customer who presses it too early " +
-      "kills their own install — that has to be in the sentence",
+    /refresh/i,
+    "Refresh is the step that usually works: winget's shim lands in a " +
+      "directory that was already on PATH when the editor started",
+  );
+  assert.match(
+    plans[0].message,
+    /close VS Code completely|reopen/i,
+    "and when Refresh is not enough, only a full restart picks up a new PATH",
+  );
+  assert.equal(
+    /reload the window|only picks up a new PATH on reload/i.test(
+      plans[0].message,
+    ),
+    false,
+    "the sentence must not promise a reload that cannot deliver",
   );
   assert.ok(
     plans[0].dedupeKey,
@@ -552,7 +569,7 @@ test("a terminal install offers the reload that makes it visible", async () => {
   );
 });
 
-test("an open-docs fix offers no reload", async () => {
+test("an open-docs fix offers no PATH notice", async () => {
   const plans = [];
   const fixes = [];
   const { runDependencyAction } = loadDepsAdapter({
@@ -566,8 +583,11 @@ test("an open-docs fix offers no reload", async () => {
   assert.deepEqual(
     plans,
     [],
-    "that fix opens a web page and installs nothing, so there is no new PATH " +
-      "to pick up and a reload prompt would be noise",
+    "the `zephyr-sdk` fix opens a web page and installs nothing, so there is " +
+      "no new PATH to pick up and the notice would be noise. NOT true of every " +
+      "`fix` id: on Windows the `west` fix is a real `pip install --user`, " +
+      "which does write a PATH entry and gets no notice either — reachable " +
+      "only against a pre-v0.4.0 binary via `alpSdk.cliPath`",
   );
 });
 

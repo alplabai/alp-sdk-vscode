@@ -57,6 +57,7 @@ import {
   DebugTargetKind,
 } from "@alp-sdk/core/debug/models";
 import { launchConfigPlaceholders } from "../alpCli/service";
+import { preLaunchTaskFor } from "../tasks/service";
 
 type JsonObject = Record<string, unknown>;
 
@@ -560,6 +561,12 @@ export function debugConfigArgs(
   // rather than choosing between cores. A user wanting the SECOND Zephyr core
   // is still never asked; that is a separate gap.
   if (spec.coreId) args.push("--core", spec.coreId);
+  // Without this the generated profile has no `preLaunchTask` at all — tan
+  // drops the key unless `--pre-launch-task` names one — so F5 on a fresh
+  // clone starts cortex-debug against an ELF nothing has built. The four
+  // labels have been registered since #387; nothing referenced them.
+  const preLaunchTask = preLaunchTaskFor(spec.targetKind);
+  if (preLaunchTask) args.push("--pre-launch-task", preLaunchTask);
   if (options.preview) args.push("--preview");
   return args;
 }

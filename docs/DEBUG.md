@@ -463,10 +463,12 @@ resolves (see §12).
   "miDebuggerPath": "<resolved-gdb>",
   "setupCommands": [
     { "text": "-enable-pretty-printing" }
-  ],
-  "preLaunchTask": "alp: deploy and start gdbserver"
+  ]
 }
 ```
+
+No `preLaunchTask` key: this is the one profile the extension asks for without
+one — see §10.6.
 
 ### 10.5 Native Sim / Host Binary + CodeLLDB
 
@@ -521,23 +523,29 @@ See the companion-extensions section above for which debug views attach to an
 
 ### 10.6 The `preLaunchTask` names above
 
-Every profile in §10 references a pre-launch task by label. VS Code renders a
-provider-contributed task's label as `${source}: ${name}`, so those labels
-resolve only while something contributes them — an unresolvable
-`preLaunchTask` aborts the pre-launch and `vscode.debug.startDebugging`
-returns `false` with no useful error, pointing the user at a `launch.json`
-that looks perfectly fine.
+VS Code renders a provider-contributed task's label as `${source}: ${name}`,
+so those labels resolve only while something contributes them — an
+unresolvable `preLaunchTask` aborts the pre-launch and
+`vscode.debug.startDebugging` returns `false` with no useful error, pointing
+the user at a `launch.json` that looks perfectly fine.
 
-The extension contributes all four (`src/tasks/service.ts` holds the string
-contract, `src/tasks/vscodeAdapter.ts` the VS Code seam, task type + source
-`alp`):
+`tan` emits the key only when told to: `debug-config` writes `preLaunchTask`
+only for a `--pre-launch-task <TASK>` the caller passes, and drops the key
+otherwise. The extension passes it from `debugConfigArgs`
+(`src/debug/service.ts`), mapping the target class to a label via
+`preLaunchTaskFor` (`src/tasks/service.ts`) — without that, §10.1–10.3 and
+§10.5 would start a debug session against an ELF nothing had built.
 
-| label                             | runs                                          |
-| --------------------------------- | --------------------------------------------- |
-| `alp: build active target`        | `tan build`                                   |
-| `alp: build baremetal target`     | `tan build`                                   |
-| `alp: build native_sim target`    | `tan build`                                   |
-| `alp: deploy and start gdbserver` | nothing — reports the manual step, exits **1** |
+The extension contributes all four labels (`src/tasks/service.ts` holds the
+string contract, `src/tasks/vscodeAdapter.ts` the VS Code seam, task type +
+source `alp`):
+
+| label                             | referenced by  | runs                                           |
+| --------------------------------- | -------------- | ---------------------------------------------- |
+| `alp: build active target`        | §10.1, §10.2   | `tan build`                                    |
+| `alp: build baremetal target`     | §10.3          | `tan build`                                    |
+| `alp: build native_sim target`    | §10.5          | `tan build`                                    |
+| `alp: deploy and start gdbserver` | no profile     | nothing — reports the manual step, exits **1** |
 
 The three build labels run the identical command because `tan build` has no
 per-target selector: it builds every slice `board.yaml` declares. Three labels
@@ -546,10 +554,15 @@ exist because three debug-target classes reference them under different names.
 `alp: deploy and start gdbserver` has no `tan` equivalent — the extension has
 no deploy story, and §10.4's profile ships `miDebuggerServerAddress:
 "<host>:<port>"` for the user to fill in by hand. It deliberately fails rather
-than faking success, so VS Code raises its "the preLaunchTask terminated with
-exit code 1 — Debug Anyway / Show Errors" dialog with the manual step named,
-instead of dropping the user into a cppdbg session with no gdbserver on the
-other end.
+than faking success, so running it from the Tasks picker names the manual step
+and exits 1 instead of implying a deploy happened.
+
+That exit is also why §10.4's profile references no task at all. A profile
+naming it would raise VS Code's "the preLaunchTask terminated with exit code 1
+— Debug Anyway / Show Errors" dialog on **every** F5 — including one where the
+customer has already copied the binary across, started `gdbserver` on the
+target and filled in the address, which is the setup that works. The label
+stays registered so the Tasks picker can still spell out the manual step.
 
 ## 11. Product Commands to Support Debug
 

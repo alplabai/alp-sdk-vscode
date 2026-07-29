@@ -84,6 +84,16 @@ jobs:
       - name: Compile (extension + CLI bundle + webview)
         run: pnpm run compile
 
+      - name: Gate — fetch tan's published envelope contract for the pinned version
+        # Must run BEFORE the tests, exactly as in ci.yml (which carries the full
+        # rationale): test/tanContract.test.js is pure and reads whatever this
+        # leaves in test/golden/tan-contract/. That corpus is gitignored, so a
+        # release checkout has none — and since the contract gate now FAILS on a
+        # missing artefact rather than skipping, omitting this step reds the next
+        # `v*` tag at "Unit / integration tests" below. `CI` is set here, so the
+        # `TAN_CONTRACT_OFFLINE=1` opt-out cannot green it either.
+        run: node scripts/fetch-tan-contract.mjs
+
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 
@@ -208,6 +218,12 @@ jobs:
 
       - name: Compile (extension + CLI bundle + webview)
         run: pnpm run compile
+
+      - name: Gate — fetch tan's published envelope contract for the pinned version
+        # Same step, same reason, as the universal job above and ci.yml — this
+        # job runs the same test command and would red on the same missing
+        # corpus.
+        run: node scripts/fetch-tan-contract.mjs
 
       - name: Unit / integration tests
         run: node --test "test/*.test.js"

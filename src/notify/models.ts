@@ -51,6 +51,7 @@ export type ActionId =
   | "openSdkManager"
   | "openTroubleshooting"
   | "openExtensions" // arg = extension id, default this extension
+  | "downloadGit"
   | "reloadWindow"
   | "showTerminal" // arg = the runInTerminal run name
   // caller-handled — no `run`, so `notify()` returns the id and the caller

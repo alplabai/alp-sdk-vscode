@@ -238,15 +238,35 @@ const LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Fallback actions for a tan that emits no `missingPrerequisites` — v0.3.1 and
- * earlier, reachable through `alpSdk.cliPath`. The pinned v0.4.0 supplies the
- * real commands, so this is no longer the default path, but it is not dead
- * code. Only names whose fix this extension actually knows appear; a miss means
- * no button, never a missing row.
+ * Actions for a check tan's `missingPrerequisites` does not speak for. Only
+ * names whose fix this extension actually knows appear; a miss means no button,
+ * never a missing row.
+ *
+ * Reached in TWO situations, and the pinned tan v0.4.0 is in both:
+ *
+ *  - the whole key is absent (v0.3.1 and earlier, still reachable through
+ *    `alpSdk.cliPath`);
+ *  - the key is present but names no entry for this check AT ALL. That list is
+ *    built inside tan's `push_tool`, and `zephyrSdk` is pushed as a plain
+ *    struct literal that never goes through it (v0.4.0
+ *    `crates/tan-core/src/build_readiness.rs:384` vs `:553`, `missing.push` at
+ *    `:573`). So on a real Windows install the Zephyr SDK row arrived
+ *    `status: "warn"` with tan's prose and NO button — the customer was left to
+ *    discover `west sdk install` on their own. tan-cli must route it through
+ *    `push_tool`; until it does, "tan named no prerequisite for this check" is
+ *    not the same statement as "there is nothing to offer".
+ *
+ * An entry tan DID emit is never overridden here — `command: null` is tan's
+ * answer, not an invitation to look somewhere else.
  */
 const FIX_IDS: Readonly<Record<string, ToolchainFixId>> = {
   west: "west",
-  westResolved: "west",
+  // NOT `west`: that id installs west with `pip --user` on win32, and this
+  // check asks whether west resolves inside the WORKSPACE VENV — a global
+  // install cannot flip it, which is the same PATH-vs-venv confusion
+  // `src/deps/vscodeAdapter.ts` already refuses to render in the version cell.
+  // tan's own prose for this check is "tan bootstrap", on every host.
+  westResolved: "west-workspace",
   cmake: "build-tools",
   ninja: "build-tools",
   zephyrSdk: "zephyr-sdk",
@@ -277,11 +297,16 @@ function fixPresentation(
     case "command":
       // The exact command, shown rather than hidden.
       return { effect: "install", title: result.step.command };
-    case "pointer":
+    case "pointer": {
+      // A pointer installs nothing, so the tooltip is the only place the row
+      // can SAY what the customer has to do after the page opens. `note` is
+      // absent for a pointer that has nothing further to add.
+      const base = `Opens ${result.pointer.name} (${result.pointer.url}) in your browser — nothing is installed`;
       return {
         effect: "open-docs",
-        title: `Opens ${result.pointer.name} (${result.pointer.url}) in your browser — nothing is installed`,
+        title: result.pointer.note ? `${base}. ${result.pointer.note}` : base,
       };
+    }
     case "bootstrap":
       return {
         effect: "bootstrap",
@@ -327,31 +352,32 @@ export function planDependencyReport(
   const prerequisites = data.missingPrerequisites;
   const prerequisiteDataUnavailable = prerequisites === undefined;
 
-  /** The action for one check row, as a tri-state over `missingPrerequisites`. */
+  /** The action for one check row. tan's answer first, ours only where tan gave
+   *  none — see `FIX_IDS` for the two ways that happens. */
   const actionFor = (check: DoctorCheckEnvelope): DependencyAction | null => {
     // A bootstrap is mid-flight and already mutating the toolchain; a second
     // installer racing it is how half-written workspaces happen.
     if (bootstrapRunning) return null;
-    if (prerequisiteDataUnavailable) {
-      // The pinned CLI cannot tell us. Fall back to what this extension knows
-      // how to install — never to parsing `check.fix`, which is prose.
-      const fixId = FIX_IDS[check.name];
-      return fixId && check.status !== "pass"
-        ? { kind: "fix", fixId, ...fixPresentation(fixId, host) }
+    const entry = (prerequisites ?? []).find((p) => p.tool === check.name);
+    if (entry) {
+      // tan spoke for this tool and its answer is FINAL. `command: null` means
+      // tan knows no command — show the row, offer nothing.
+      return entry.command !== null
+        ? {
+            kind: "command",
+            command: entry.command,
+            // tan's own command line, run verbatim in a terminal — an install,
+            // and the tooltip is the command it will run.
+            effect: "install",
+            title: entry.command,
+          }
         : null;
     }
-    // Present but null: tan looked and found nothing missing.
-    const entry = (prerequisites ?? []).find((p) => p.tool === check.name);
-    // `command: null` means tan knows no command — show the row, offer nothing.
-    return entry && entry.command !== null
-      ? {
-          kind: "command",
-          command: entry.command,
-          // tan's own command line, run verbatim in a terminal — an install,
-          // and the tooltip is the command it will run.
-          effect: "install",
-          title: entry.command,
-        }
+    // tan named no prerequisite for this check. Fall back to what this
+    // extension knows how to remedy — never to parsing `check.fix`, prose.
+    const fixId = FIX_IDS[check.name];
+    return fixId && check.status !== "pass"
+      ? { kind: "fix", fixId, ...fixPresentation(fixId, host) }
       : null;
   };
 
