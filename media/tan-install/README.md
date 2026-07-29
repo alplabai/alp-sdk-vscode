@@ -9,6 +9,12 @@ from this extension's private, managed download (see `resolveAlpBinaryForContext
 in the same file), which stays local to the extension's global storage and is
 never put on PATH.
 
+The command invokes the script with `--version`/`-Version` pinned to
+`SUPPORTED_CLI_VERSION` (`src/alpCli/service.ts`) — **not** the script's own
+`latest` default. Both scripts resolve an unversioned run to GitHub's `latest`
+RELEASE, which can lag the tag this extension targets (#408); passing the pin
+keeps this command honest about which `tan` it installs.
+
 ## Drift is gated, not trusted
 
 These are plain copies, not a build-time fetch, but they can no longer drift

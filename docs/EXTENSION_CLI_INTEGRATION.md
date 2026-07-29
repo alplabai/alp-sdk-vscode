@@ -425,7 +425,10 @@ Worth knowing while reading this section: the extension's own **"Install tan CLI
 tan's own installer, which download a release asset and install it with **no
 checksum step at all** — so the extension itself creates the unverified-PATH
 state it now reports. Filed upstream as `alplabai/tan-cli#176`; patching the
-vendored copies here would diverge them from the installer they mirror.
+vendored copies here would diverge them from the installer they mirror. The
+invocation passes `--version`/`-Version` pinned to `SUPPORTED_CLI_VERSION`
+(#408) rather than letting the scripts fall back to GitHub's `latest` release,
+which can lag the tag this extension targets.
 
 After resolution both `path` rungs collapse to the same `BinarySource` value
 `"path"`, so a consumer needing the opt-in/fallback distinction re-derives it

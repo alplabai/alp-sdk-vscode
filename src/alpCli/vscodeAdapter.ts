@@ -1024,7 +1024,7 @@ function noticeUnverifiedPathFallback(
 /** One-shot per window: run once to avoid nagging on every command. */
 let versionChecked = false;
 
-/** The one-click action (if any) that can actually fix a stale/broken
+/** The one-click action(s) (if any) that can actually fix a stale/broken
  *  `source` on the NEXT resolution. `decideBinarySource` (service.ts) ranks
  *  `bundled` and `localBuild` ABOVE the managed cache, so `alp.updateCli`
  *  downloading a fresh binary into `cacheDir` would silently keep losing to
@@ -1035,24 +1035,35 @@ let versionChecked = false;
  *  EXCEPT `path` when `preferGlobalCli` is on: it re-ranks `path` ABOVE
  *  `bundled`/`localBuild`/`cached` (service.ts), so `alp.updateCli` would
  *  again be a dead end there (it downloads into the cache, which `path` now
- *  outranks) — offer re-running the global installer instead. */
+ *  outranks). Re-running the global installer is offered there — but so is
+ *  `openSettings(alpSdk.preferGlobalCli)`, alongside it (#408): re-running the
+ *  installer alone re-fetches the SAME re-ranked `path` rung it is meant to
+ *  fix, and until this pin fix nothing distinguished that from a genuine
+ *  no-op loop (a stale global `tan` whose "Install" button re-lands the
+ *  identical binary). Clearing the flag is the escape hatch that always
+ *  breaks the loop, so it rides along rather than requiring the customer to
+ *  discover it by hand — the same two-action shape
+ *  `warnIfPreferGlobalCliHasNoPath` already uses for the sibling rung 2 case. */
 function cliFixAction(
   source: BinarySource,
   preferGlobalCli: boolean,
-): NotifyAction | null {
+): NotifyAction[] {
   switch (source) {
     case "cliPath":
-      return { id: "openSettings", arg: "alpSdk.cliPath" };
+      return [{ id: "openSettings", arg: "alpSdk.cliPath" }];
     case "bundled":
     case "localBuild":
-      return null;
+      return [];
     case "path":
       if (preferGlobalCli) {
-        return { id: "installTanCli", title: "Install tan CLI (global)" };
+        return [
+          { id: "installTanCli", title: "Install tan CLI (global)" },
+          { id: "openSettings", arg: "alpSdk.preferGlobalCli" },
+        ];
       }
-      return { id: "updateCli", title: "Update" };
+      return [{ id: "updateCli", title: "Update" }];
     default:
-      return { id: "updateCli", title: "Update" };
+      return [{ id: "updateCli", title: "Update" }];
   }
 }
 
@@ -1068,13 +1079,12 @@ async function warnAboutResolvedBinary(
   message: string,
   preferGlobalCli: boolean,
 ): Promise<void> {
-  const fix = cliFixAction(binary.source, preferGlobalCli);
   await notify(
     planFailure({
       operation: "Checking the tan CLI",
       cause: message,
       severity: "warning",
-      actions: fix ? [fix] : [],
+      actions: cliFixAction(binary.source, preferGlobalCli),
     }),
   );
 }
@@ -1082,14 +1092,25 @@ async function warnAboutResolvedBinary(
 /** Message for a resolved binary whose `--version` output isn't the native
  *  `tan <MAJOR.MINOR.PATCH>` line at all — worded per source since the cause
  *  (and the fix) differs: a leftover retired `alp` binary pinned via
- *  `alpSdk.cliPath`, a stale bundled/local build, or a managed binary
- *  corrupted by an old non-atomic download.
+ *  `alpSdk.cliPath`, a stale bundled/local build, a stale/wrong global
+ *  install, or a managed binary corrupted by an old non-atomic download.
+ *
+ *  `preferGlobalCli` decides the `path` wording only: with it on,
+ *  `cliFixAction` pairs this message with an UNTITLED `openSettings`
+ *  button (house convention in this file — see every other `openSettings`
+ *  action), so the sentence itself must name `alpSdk.preferGlobalCli` or
+ *  that button is illegible (#408). Without it, `path` keeps the same
+ *  wording it fell through to `default` for before this function had a case
+ *  for it.
  *
  *  The resolved path and the line `--version` actually printed are NOT in the
  *  sentence: an unknown binary's first stdout line is unbounded, and both facts
  *  are already logged by the caller — "Show Output" is the click that reveals
  *  them. */
-function nonNativeCliMessage(binary: ResolvedBinary): string {
+function nonNativeCliMessage(
+  binary: ResolvedBinary,
+  preferGlobalCli: boolean,
+): string {
   const notTan = "doesn't look like the native tan CLI";
   switch (binary.source) {
     case "cliPath":
@@ -1098,16 +1119,25 @@ function nonNativeCliMessage(binary: ResolvedBinary): string {
       return `The tan binary bundled with this extension install ${notTan}. Reinstall from a current .vsix to refresh it.`;
     case "localBuild":
       return `The local tan-cli build ${notTan}. Rebuild the sibling tan-cli checkout.`;
+    case "path":
+      return preferGlobalCli
+        ? `The global tan CLI on PATH ${notTan}. Reinstall it, or clear alpSdk.preferGlobalCli to use the extension's managed copy.`
+        : `The managed tan CLI ${notTan}. It may be corrupted from an old download.`;
     default:
       return `The managed tan CLI ${notTan}. It may be corrupted from an old download.`;
   }
 }
 
 /** Message for a resolved binary that's older than `SUPPORTED_CLI_VERSION`,
- *  worded per source for the same reason as `nonNativeCliMessage` (and, for the
- *  same reason, without the resolved path — the caller logs it). The version
- *  numbers stay: they are the fact the user needs, not raw diagnostics. */
-function outdatedCliMessage(binary: ResolvedBinary, version: string): string {
+ *  worded per source for the same reason as `nonNativeCliMessage` — including
+ *  the same `preferGlobalCli`-only `path` wording, for the same button-legibility
+ *  reason (#408). The version numbers stay: they are the fact the user needs,
+ *  not raw diagnostics. Without the resolved path — the caller logs it. */
+function outdatedCliMessage(
+  binary: ResolvedBinary,
+  version: string,
+  preferGlobalCli: boolean,
+): string {
   const behind = `is ${version}, older than the ${SUPPORTED_CLI_VERSION} this extension expects — some features (e.g. project examples) may be missing`;
   switch (binary.source) {
     case "cliPath":
@@ -1116,6 +1146,10 @@ function outdatedCliMessage(binary: ResolvedBinary, version: string): string {
       return `The tan binary bundled with this extension install ${behind}. Reinstall from a current .vsix to refresh it.`;
     case "localBuild":
       return `The local tan-cli build ${behind}. Rebuild the sibling tan-cli checkout.`;
+    case "path":
+      return preferGlobalCli
+        ? `The global tan CLI on PATH ${behind}. Reinstall it, or clear alpSdk.preferGlobalCli to use the extension's managed copy.`
+        : `The tan CLI ${behind}.`;
     default:
       return `The tan CLI ${behind}.`;
   }
@@ -1251,7 +1285,7 @@ async function runCliVersionCheck(
     );
     await warnAboutResolvedBinary(
       binary,
-      nonNativeCliMessage(binary),
+      nonNativeCliMessage(binary, preferGlobalCli),
       preferGlobalCli,
     );
     return;
@@ -1265,7 +1299,7 @@ async function runCliVersionCheck(
     );
     await warnAboutResolvedBinary(
       binary,
-      outdatedCliMessage(binary, version),
+      outdatedCliMessage(binary, version, preferGlobalCli),
       preferGlobalCli,
     );
     return;
@@ -1302,16 +1336,24 @@ async function runCliVersionCheck(
     `[cli] resolved tan ${version} (${binary.command}, source: ${binary.source}) is newer than supported ${SUPPORTED_CLI_VERSION} — this extension matches exact issue codes and unversioned envelope data fields, all of which fail open, so a rename in that release skips a check instead of erroring`,
   );
   await context.globalState.update(AHEAD_WARNED_KEY, version);
-  // For a PATH tan, reinstalling is never the remedy (the installer fetches an
-  // even-newer latest); the fix depends on the flag (see `aheadPathFixAction`).
-  // Flag off → download the pinned version into the cache (which outranks PATH
-  // when off); flag on → turn the preference off so a managed copy wins. Every
-  // other source takes the same fix as any other bad-binary warning.
-  const fix: NotifyAction | null =
+  // For a PATH tan the fix depends on the flag (see `aheadPathFixAction`).
+  // Flag off → download the pinned version into the cache (which outranks
+  // PATH when off); flag on → turn the preference off so the managed
+  // (pinned) copy wins instead. Deliberately NOT `installTanCli` here even
+  // now that it pins rather than fetching `latest` (#408) — reinstalling
+  // WOULD clear the skew, but by silently overwriting a GLOBAL binary the
+  // customer opted into controlling (`preferGlobalCli`) with an OLDER one,
+  // under a generic "Install tan CLI (global)" button that says nothing
+  // about the downgrade. That is the exact silent-downgrade shape the
+  // `usePinnedCli` retitle below exists to avoid, so it is not offered as a
+  // reinstall — turning the flag off reaches the same pinned CLI without
+  // touching their global install at all. Every other source takes the same
+  // fix as any other bad-binary warning.
+  const fix: NotifyAction[] =
     binary.source === "path"
       ? aheadPathFixAction(preferGlobalCli) === "updateManagedCli"
-        ? usePinnedCli
-        : { id: "openSettings", arg: "alpSdk.preferGlobalCli" }
+        ? [usePinnedCli]
+        : [{ id: "openSettings", arg: "alpSdk.preferGlobalCli" }]
       : cliFixAction(binary.source, preferGlobalCli);
   await notify(
     planFailure({
@@ -1327,7 +1369,9 @@ async function runCliVersionCheck(
         // CLI is BEHIND the pin. HERE it downloads an OLDER tan, so the same
         // title would offer a silent downgrade to a customer who just read
         // "update the extension". Retitled to what it actually does.
-        ...(fix ? [fix.id === "updateCli" ? usePinnedCli : fix] : []),
+        ...fix.map((action) =>
+          action.id === "updateCli" ? usePinnedCli : action,
+        ),
       ],
     }),
   );
@@ -1469,6 +1513,50 @@ export async function updateAlpCli(
  * to this extension's global storage and is never put on PATH. Runs in a
  * terminal (not a silent child process) so the user sees the download
  * progress and any PATH/sudo notice the script prints.
+ *
+ * PINNED to `SUPPORTED_CLI_VERSION`, not the scripts' own `latest` default
+ * (#408): both scripts resolve an unversioned run to GitHub's `latest`
+ * RELEASE, which is whatever tag isn't marked pre-release there — not
+ * necessarily the newest tag, and not necessarily this extension's pin. That
+ * is exactly the loop #408 reported: `v0.4.0` sat hand-flagged pre-release
+ * while `SUPPORTED_CLI_VERSION` already named it, so every "latest" run
+ * re-installed the OLDER `v0.3.1` — including from this same button, offered
+ * as the fix for a stale global `tan`. `-Version`/`--version` take a git TAG
+ * (`releases/download/<tag>/<asset>`, per both scripts), hence the `v` —
+ * `releaseAssetForTarget` (service.ts) builds the identical
+ * `` `v${version}` `` tag for the managed download, so both installers of a
+ * `tan` binary land on the same release by the same rule.
+ *
+ * Pinned for both entry points that reach this one function — the
+ * stale-binary "fix" action above (which executes `alp.installTanCli`) and
+ * the plain palette command itself — not only the one #408 named. A customer
+ * running the palette command already has no local `tan` to compare against,
+ * so "the newest tan" and "the tan this extension was built for" are the same
+ * request from where they stand; the versions this extension actually
+ * understands are `SUPPORTED_CLI_VERSION` and whatever it's ahead-compatible
+ * with (`shouldWarnCliAhead`), never something released after this build. A
+ * `latest` default would let that command drift ahead of the pin on its own,
+ * silently reproducing the ahead-of-pin skew this file already warns about
+ * elsewhere (`aheadCliMessage`) — a needless second way to reach the same
+ * warning. `check-cli-pin.mjs` (CI) catches an unpublished/incomplete pin
+ * when GitHub answers normally, but it deliberately fails OPEN (skips, exit 0)
+ * on a 5xx/429/network hiccup rather than block a merge on someone else's
+ * outage — so this is the ordinary case, not an unconditional guarantee. A
+ * customer wanting a NEWER tan than this extension supports can still pass
+ * `--version`/`-Version` themselves in a terminal; nothing here blocks that,
+ * it just stops being the button's default.
+ *
+ * The pin is necessary but not sufficient for #408 on its own, and must not
+ * be read as the fix by itself: `install.sh`/`install.ps1` default to a
+ * user-local dir (`~/.local/bin`, `%LOCALAPPDATA%\Programs\tan`), but a prior
+ * `--system`/`-System` install sits in `/usr/local/bin` /
+ * `%ProgramFiles%\tan` — a different directory the merged PATH may still
+ * resolve ahead of a fresh user-local one, and the extension host's own PATH
+ * is not re-read regardless of where the new binary lands. The pin makes
+ * this button honest (it now installs the version it claims to); the
+ * `openSettings(alpSdk.preferGlobalCli)` escape hatch in `cliFixAction` is
+ * what actually terminates the loop when reinstalling does not change what
+ * the ladder resolves to. Both are required.
  */
 export function installTanCliGlobally(context: vscode.ExtensionContext): void {
   const scriptDir = path.join(context.extensionPath, "media", "tan-install");
@@ -1491,9 +1579,21 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
     );
     return;
   }
+  // The tag form both scripts expect (`releases/download/<tag>/<asset>`), and
+  // the same one `releaseAssetForTarget` builds for the managed download —
+  // ONE rule for "what tag does the pin name", not two that could drift.
+  const tag = `v${SUPPORTED_CLI_VERSION}`;
   const argv = isWindows
-    ? ["powershell", "-ExecutionPolicy", "Bypass", "-File", script]
-    : ["sh", script];
+    ? [
+        "powershell",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        script,
+        "-Version",
+        tag,
+      ]
+    : ["sh", script, "--version", tag];
   log(`[cli] $ ${argv.join(" ")}  (terminal: Install tan)`);
   // Stated, not omitted: the bundled installer writes to a fixed per-user
   // install location and never to its working directory, so it is the one
