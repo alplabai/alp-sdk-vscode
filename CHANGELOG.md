@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Re-vendored the `board.yaml` schema from alp-sdk **v0.14.0**: the `peripherals`
+enum gains `dac` and `i3c`, and the Configurator's peripheral picker now offers
+both. The `alp-sdk-upstream` submodule pin and the derived Kconfig LSP fixtures
+(`src/lsp/generated/kconfig-metadata.json`, `test/fixtures/alp-kconfig-symbols.txt`)
+move with it.
+
 ## 0.4.0
 
 First release on the **stable** Marketplace channel. Every release before this
