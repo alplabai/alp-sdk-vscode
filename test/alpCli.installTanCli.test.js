@@ -13,6 +13,7 @@ const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const Module = require("node:module");
 
 const root = path.join(__dirname, "..");
 const scriptDir = path.join(root, "media", "tan-install");
@@ -300,6 +301,85 @@ test(`vendored installers match tan-cli ${TAN_INSTALLER_REF} except where declar
         `TAN_INSTALLER_REF and both hashes.`,
     );
   }
+});
+
+// ── The version pin (#408) ─────────────────────────────────────────────────
+//
+// Both scripts default to installing GitHub's `latest` RELEASE when run with
+// no `--version`/`-Version` — which is whatever tag isn't flagged pre-release
+// there, not necessarily the newest tag and not necessarily this extension's
+// pin. Driven through the REAL `installTanCliGlobally` (out/alpCli/
+// vscodeAdapter.js), against the ACTUAL bundled scripts on disk (extensionPath
+// points at the repo root, where media/tan-install/ really lives) — a
+// source-text grep on the handler could not tell the difference between an
+// argument that reaches the spawned argv and one that is merely mentioned in
+// a comment.
+
+const ADAPTER = require.resolve(
+  path.join(root, "out", "alpCli", "vscodeAdapter.js"),
+);
+const { SUPPORTED_CLI_VERSION } = require(
+  path.join(root, "out", "alpCli", "service.js"),
+);
+
+/** One activation of `installTanCliGlobally`, with `runInTerminal` stubbed to
+ *  capture the argv it was asked to run rather than actually spawning a
+ *  terminal. `extensionPath: root` is deliberate — it's the one context field
+ *  the handler reads, and pointing it at the real repo root means the
+ *  "bundled script exists" guard sees the ACTUAL vendored install.sh/.ps1,
+ *  not a fixture that could drift from them. */
+function runInstallTanCli() {
+  const terminalCalls = [];
+  delete require.cache[ADAPTER];
+  const stubs = {
+    vscode: {
+      workspace: {
+        getConfiguration: () => ({ get: (_key, fallback) => fallback }),
+      },
+    },
+    "../notify/vscodeAdapter": {
+      notify: async () => undefined,
+      notifyAsync: () => {},
+    },
+    "../util": {
+      log: () => {},
+      runInTerminal: (options) => terminalCalls.push(options),
+    },
+  };
+  const originalLoad = Module._load;
+  Module._load = function (request, ...rest) {
+    return Object.prototype.hasOwnProperty.call(stubs, request)
+      ? stubs[request]
+      : originalLoad.call(this, request, ...rest);
+  };
+  let adapter;
+  try {
+    adapter = require(ADAPTER);
+  } finally {
+    Module._load = originalLoad;
+    delete require.cache[ADAPTER];
+  }
+  adapter.installTanCliGlobally({ extensionPath: root, subscriptions: [] });
+  return terminalCalls;
+}
+
+test("installTanCliGlobally pins --version/-Version to SUPPORTED_CLI_VERSION, not the installer's own 'latest' default", () => {
+  const calls = runInstallTanCli();
+  assert.equal(
+    calls.length,
+    1,
+    "installTanCliGlobally must run exactly one terminal command",
+  );
+  const { argv } = calls[0];
+  const tag = `v${SUPPORTED_CLI_VERSION}`;
+  const versionFlag = process.platform === "win32" ? "-Version" : "--version";
+  assert.deepEqual(
+    argv.slice(-2),
+    [versionFlag, tag],
+    `expected the installer invocation to end with ${versionFlag} ${tag} so ` +
+      `it targets the pin this extension supports rather than GitHub's ` +
+      `'latest' release: ${argv.join(" ")}`,
+  );
 });
 
 test("the README names the ref the installers are pinned to", () => {

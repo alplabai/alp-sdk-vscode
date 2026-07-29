@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **"Install tan CLI (global)" no longer loops on a stale global `tan` with
+  `alpSdk.preferGlobalCli` on, and it now installs the version this extension
+  targets rather than whatever GitHub calls `latest`.** With that setting on
+  and an outdated `tan` already on PATH, the extension's only offered fix was
+  the same "Install" button — which ran the bundled installer with no
+  `--version`, so it fell through to GitHub's `latest` release, whatever tag
+  that currently is. If that tag is not the version this extension targets,
+  the button can re-install a `tan` no newer than the one it's meant to
+  replace: a one-button loop with no way out shown on screen. The installer
+  now runs pinned to the version this build supports, matching the version
+  the extension's own managed download already uses, and the button's warning
+  now also offers turning `alpSdk.preferGlobalCli` off — clearing it always
+  breaks the loop, so it rides along instead of requiring the customer to
+  find it by hand.
+
 - **The Dependencies panel now checks your host tools with no folder open, and
   reports the host checks it could never see before.** The panel refused
   outright without a project folder, which closed a loop a customer following

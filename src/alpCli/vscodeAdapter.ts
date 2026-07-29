@@ -1024,7 +1024,7 @@ function noticeUnverifiedPathFallback(
 /** One-shot per window: run once to avoid nagging on every command. */
 let versionChecked = false;
 
-/** The one-click action (if any) that can actually fix a stale/broken
+/** The one-click action(s) (if any) that can actually fix a stale/broken
  *  `source` on the NEXT resolution. `decideBinarySource` (service.ts) ranks
  *  `bundled` and `localBuild` ABOVE the managed cache, so `alp.updateCli`
  *  downloading a fresh binary into `cacheDir` would silently keep losing to
@@ -1035,24 +1035,35 @@ let versionChecked = false;
  *  EXCEPT `path` when `preferGlobalCli` is on: it re-ranks `path` ABOVE
  *  `bundled`/`localBuild`/`cached` (service.ts), so `alp.updateCli` would
  *  again be a dead end there (it downloads into the cache, which `path` now
- *  outranks) — offer re-running the global installer instead. */
+ *  outranks). Re-running the global installer is offered there — but so is
+ *  `openSettings(alpSdk.preferGlobalCli)`, alongside it (#408): re-running the
+ *  installer alone re-fetches the SAME re-ranked `path` rung it is meant to
+ *  fix, and until this pin fix nothing distinguished that from a genuine
+ *  no-op loop (a stale global `tan` whose "Install" button re-lands the
+ *  identical binary). Clearing the flag is the escape hatch that always
+ *  breaks the loop, so it rides along rather than requiring the customer to
+ *  discover it by hand — the same two-action shape
+ *  `warnIfPreferGlobalCliHasNoPath` already uses for the sibling rung 2 case. */
 function cliFixAction(
   source: BinarySource,
   preferGlobalCli: boolean,
-): NotifyAction | null {
+): NotifyAction[] {
   switch (source) {
     case "cliPath":
-      return { id: "openSettings", arg: "alpSdk.cliPath" };
+      return [{ id: "openSettings", arg: "alpSdk.cliPath" }];
     case "bundled":
     case "localBuild":
-      return null;
+      return [];
     case "path":
       if (preferGlobalCli) {
-        return { id: "installTanCli", title: "Install tan CLI (global)" };
+        return [
+          { id: "installTanCli", title: "Install tan CLI (global)" },
+          { id: "openSettings", arg: "alpSdk.preferGlobalCli" },
+        ];
       }
-      return { id: "updateCli", title: "Update" };
+      return [{ id: "updateCli", title: "Update" }];
     default:
-      return { id: "updateCli", title: "Update" };
+      return [{ id: "updateCli", title: "Update" }];
   }
 }
 
@@ -1068,13 +1079,12 @@ async function warnAboutResolvedBinary(
   message: string,
   preferGlobalCli: boolean,
 ): Promise<void> {
-  const fix = cliFixAction(binary.source, preferGlobalCli);
   await notify(
     planFailure({
       operation: "Checking the tan CLI",
       cause: message,
       severity: "warning",
-      actions: fix ? [fix] : [],
+      actions: cliFixAction(binary.source, preferGlobalCli),
     }),
   );
 }
@@ -1307,11 +1317,11 @@ async function runCliVersionCheck(
   // Flag off → download the pinned version into the cache (which outranks PATH
   // when off); flag on → turn the preference off so a managed copy wins. Every
   // other source takes the same fix as any other bad-binary warning.
-  const fix: NotifyAction | null =
+  const fix: NotifyAction[] =
     binary.source === "path"
       ? aheadPathFixAction(preferGlobalCli) === "updateManagedCli"
-        ? usePinnedCli
-        : { id: "openSettings", arg: "alpSdk.preferGlobalCli" }
+        ? [usePinnedCli]
+        : [{ id: "openSettings", arg: "alpSdk.preferGlobalCli" }]
       : cliFixAction(binary.source, preferGlobalCli);
   await notify(
     planFailure({
@@ -1327,7 +1337,9 @@ async function runCliVersionCheck(
         // CLI is BEHIND the pin. HERE it downloads an OLDER tan, so the same
         // title would offer a silent downgrade to a customer who just read
         // "update the extension". Retitled to what it actually does.
-        ...(fix ? [fix.id === "updateCli" ? usePinnedCli : fix] : []),
+        ...fix.map((action) =>
+          action.id === "updateCli" ? usePinnedCli : action,
+        ),
       ],
     }),
   );
@@ -1469,6 +1481,36 @@ export async function updateAlpCli(
  * to this extension's global storage and is never put on PATH. Runs in a
  * terminal (not a silent child process) so the user sees the download
  * progress and any PATH/sudo notice the script prints.
+ *
+ * PINNED to `SUPPORTED_CLI_VERSION`, not the scripts' own `latest` default
+ * (#408): both scripts resolve an unversioned run to GitHub's `latest`
+ * RELEASE, which is whatever tag isn't marked pre-release there — not
+ * necessarily the newest tag, and not necessarily this extension's pin. That
+ * is exactly the loop #408 reported: `v0.4.0` sat hand-flagged pre-release
+ * while `SUPPORTED_CLI_VERSION` already named it, so every "latest" run
+ * re-installed the OLDER `v0.3.1` — including from this same button, offered
+ * as the fix for a stale global `tan`. `-Version`/`--version` take a git TAG
+ * (`releases/download/<tag>/<asset>`, per both scripts), hence the `v` —
+ * `releaseAssetForTarget` (service.ts) builds the identical
+ * `` `v${version}` `` tag for the managed download, so both installers of a
+ * `tan` binary land on the same release by the same rule.
+ *
+ * Pinned for BOTH callers this function has — the stale-binary "fix" actions
+ * above and the plain `alp.installTanCli` palette command — not only the one
+ * #408 named. A customer running the palette command already has no local
+ * `tan` to compare against, so "the newest tan" and "the tan this extension
+ * was built for" are the same request from where they stand; the versions
+ * this extension actually understands are `SUPPORTED_CLI_VERSION` and
+ * whatever it's ahead-compatible with (`shouldWarnCliAhead`), never
+ * something released after this build. A `latest` default would let that
+ * command drift ahead of the pin on its own, silently reproducing the
+ * ahead-of-pin skew this file already warns about elsewhere
+ * (`aheadCliMessage`) — a needless second way to reach the same warning.
+ * `check-cli-pin.mjs` (CI) keeps the pin itself always a published tag by the
+ * time this ships, so the ordinary failure mode is not "the tag doesn't
+ * exist" — it's a customer wanting a NEWER tan than this extension supports,
+ * who can pass `--version`/`-Version` themselves in a terminal; nothing here
+ * blocks that, it just stops being the button's default.
  */
 export function installTanCliGlobally(context: vscode.ExtensionContext): void {
   const scriptDir = path.join(context.extensionPath, "media", "tan-install");
@@ -1491,9 +1533,21 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
     );
     return;
   }
+  // The tag form both scripts expect (`releases/download/<tag>/<asset>`), and
+  // the same one `releaseAssetForTarget` builds for the managed download —
+  // ONE rule for "what tag does the pin name", not two that could drift.
+  const tag = `v${SUPPORTED_CLI_VERSION}`;
   const argv = isWindows
-    ? ["powershell", "-ExecutionPolicy", "Bypass", "-File", script]
-    : ["sh", script];
+    ? [
+        "powershell",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        script,
+        "-Version",
+        tag,
+      ]
+    : ["sh", script, "--version", tag];
   log(`[cli] $ ${argv.join(" ")}  (terminal: Install tan)`);
   // Stated, not omitted: the bundled installer writes to a fixed per-user
   // install location and never to its working directory, so it is the one
