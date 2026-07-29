@@ -30,6 +30,28 @@
   against an old CLI reported tan's raw complaint about an unknown argument
   and nothing about the CLI needing an update.
 
+- **The Build Plan panel now says so when `tan` returns a payload it cannot
+  read, instead of failing without a word.** Three commands feed that panel —
+  `build --plan`, `build --manifest` / `--manifest-from`, and `size` — and each
+  reached the view through a TypeScript `as` cast, which is a compile-time claim
+  about a value that came out of another process and therefore verifies nothing.
+  Rename `slices` in `tan` and the cast still compiles here; the reader gets
+  `undefined`, and what the customer is left with depends only on how that
+  reader spells its access. The plan and manifest views crash mid-render on it
+  — `Cannot read properties of undefined (reading 'filter')` — and the panel
+  goes blank; `size` is the quiet one, where a `?? []` swallows the miss and the
+  footprint column simply goes missing. None of the three names `tan`, names the
+  field, or writes a log line. Each of the three payloads is now checked at
+  runtime against the fields this panel actually READS, and a payload that fails
+  puts a sentence in the panel naming the command and every field that is
+  missing or of another type. The check requires nothing beyond what is read —
+  `schemaVersion`, `generatedBy`, `buildRoot`, `hw_info`, `boot_order`,
+  `storage`, `schema` and `summary` are declared in the models and touched by
+  nothing this panel renders, so a `tan` release that drops or adds a field the
+  panel never reads still draws. A `tan size` failure was also reaching the view
+  and being discarded unrendered, which read as "this build has no sizes" rather
+  than "the measurement failed"; it is now shown alongside the manifest note.
+
 - **"Alp: Install tan CLI (global)" now works on Windows.** The bundled
   `install.ps1` did not parse at all under Windows PowerShell 5.1 — which is
   exactly what the command spawns (`powershell`, not `pwsh`) — so the terminal
@@ -48,6 +70,43 @@
   the upstream hashes recorded alongside — so a silent re-vendor, or an
   undeclared edit hiding behind the declared one, fails the suite instead of
   reaching the Marketplace.
+- **The tan envelope-contract gate now fails when it cannot verify, instead of
+  skipping.** `scripts/fetch-tan-contract.mjs` exited 0 on a 404, a rate-limit,
+  an outage and a dead network alike, and `test/tanContract.test.js` then
+  skipped — so a pin moved to a release without `envelope-contract.json` was
+  green CI with zero contract verification, and every offline local run was too.
+  Which releases publish the asset is now declared in tree, as
+  `RELEASES_PREDATING_CONTRACT_ASSET` in `src/alpCli/service.ts`: the closed set
+  of tan tags cut before the producer landed. A pin on that list still
+  skips, loudly, and makes no request. Every other pin fails on any way of not
+  getting the artefact — distinct messages per cause, one exit code, because the
+  outcome is the same and it is not "pass". An offline developer sets
+  `TAN_CONTRACT_OFFLINE=1`, which downgrades the failure to a skip and is
+  ignored when `CI` is set. Both jobs of the release workflow now run the fetch
+  before their tests, as CI already did — without it, failing closed would have
+  reddened the next tagged release on a corpus that is gitignored and therefore
+  never present in a release checkout.
+- **Two issue codes the extension matches are now watched, and the scan that
+  finds them is no longer family-blind.** `bootstrap.python-not-runnable` and
+  `bootstrap.python-too-old` sat in a bucket about which nothing was asserted,
+  while tan's own frozen-code gate iterates only the list they are absent from —
+  so a rename was invisible to both repos at once. Every code the extension
+  matches is now mapped to the status tan must declare for it, including "tan
+  declares this nowhere", which fails the moment tan starts to. The source scan
+  that keeps that map exhaustive read only `bootstrap.*` and `presets.*`
+  literals; it now recognises the two idioms this extension actually matches
+  with, in any family. That widening surfaced a latent bug: the issue-code shape
+  rejected a hyphenated family, so tan's `debug-config.*` codes would have
+  failed the frozen-list read as malformed on the first release to publish them.
+- **The envelope's seventh key, `sdk`, is readable and asserted.** tan-cli#129
+  added `{root, sourceTier}` and it has been on the wire since tan v0.4.0, but
+  `AlpEnvelope` had no member for it and the contract test asserted nothing
+  about it. It is typed optional and `isEnvelope` does not require it — tan
+  omits the key entirely from any envelope whose command resolved no SDK — most
+  of the published goldens — so requiring it would turn valid envelopes into
+  "no envelope at all" and silently fall back. The contract test asserts the
+  shape wherever the key appears, and fails if it appears nowhere. Nothing
+  surfaces it in the UI yet.
 
 - **A SOCKS proxy is now named as unsupported instead of reported as
   unreachable, and an IPv6 host in `NO_PROXY` is honoured.** VS Code's

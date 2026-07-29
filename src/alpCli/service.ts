@@ -19,10 +19,12 @@ import {
  *  Must match a published `v<version>` release tag in `alplabai/tan-cli`
  *  (aligned with tan-cli's `[workspace.package] version`).
  *
- *  v0.4.0 is the first release that publishes `envelope-contract.json`, which
- *  is what `scripts/fetch-tan-contract.mjs` downloads for THIS pin — so the pin
- *  is what turns the envelope-contract gate from "skipped, loudly" into a check
- *  that verifies something.
+ *  v0.4.0 publishes `envelope-contract.json`, which is what
+ *  `scripts/fetch-tan-contract.mjs` downloads for THIS pin — so the pin is what
+ *  turns the envelope-contract gate from "skipped, loudly" into a check that
+ *  verifies something. (v0.4.0-rc1 was the first tag to carry the asset; v0.4.0
+ *  is the first NON-rc one, and the pin.) Which releases carry it is declared
+ *  below, in `RELEASES_PREDATING_CONTRACT_ASSET`, rather than in this prose.
  *
  *  It is also the first release carrying what this extension now REQUIRES, not
  *  merely prefers: `tan debug-config --core` and its `data.configuration`
@@ -32,6 +34,35 @@ import {
  *  exit 2. Native (non-WSL-only) Windows bootstrap arrived earlier, in v0.3.1. */
 
 export const SUPPORTED_CLI_VERSION = "0.4.0";
+
+/**
+ * Every published `alplabai/tan-cli` tag that does NOT carry an
+ * `envelope-contract.json` release asset. `alplabai/tan-cli#106` wired the
+ * asset into `release.yml`, and every tag from v0.4.0-rc1 on carries it — so
+ * this list is CLOSED: no release cut from here on can predate the producer,
+ * and nothing will ever be added to it. Checked against the live releases
+ * rather than inferred from the issue: v0.3.1, the last tag before v0.4.0-rc1,
+ * publishes nine assets and this is not one of them.
+ *
+ * The default is therefore "the pinned release IS expected to carry it", which
+ * is the point. `scripts/fetch-tan-contract.mjs` and `test/tanContract.test.js`
+ * both read this to tell a LEGITIMATE absence (the pin predates the asset)
+ * from a BROKEN fetch (the pin publishes one and we did not get it). Only the
+ * first may skip; the second is a failure. Before this list existed, both
+ * exited 0 and the contract test SKIPPED, so a pin bump to a release without
+ * the asset was green CI with zero contract verification.
+ *
+ * It lives next to `SUPPORTED_CLI_VERSION`, and holds versions rather than a
+ * floor, so that a pin bump cannot quietly re-enter the skip path: an unlisted
+ * version is expected to publish the asset, full stop.
+ */
+export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
+  "0.1.0",
+  "0.1.1",
+  "0.2.0",
+  "0.3.0",
+  "0.3.1",
+];
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
@@ -649,6 +680,14 @@ export function parseEnvelope(stdout: string): AlpEnvelope | null {
   return isEnvelope(value) ? value : null;
 }
 
+/**
+ * Deliberately checks FOUR of the seven top-level keys. `project` and `data`
+ * are unchecked because a command may legitimately carry either as `null`, and
+ * `sdk` because tan omits it entirely whenever no SDK resolved — see
+ * `AlpSdkInfo` in models.ts. Requiring any of the three would turn a valid
+ * envelope into `null`, which every caller reads as "tan produced no envelope"
+ * and falls back on silently.
+ */
 function isEnvelope(value: unknown): value is AlpEnvelope {
   if (typeof value !== "object" || value === null) {
     return false;

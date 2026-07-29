@@ -4,12 +4,39 @@
 // depends only on the documented JSON envelope (see CLI.md) — this is the seam
 // between the extension and the binary.
 
+/**
+ * The alp-sdk checkout a command actually resolved and used, plus which
+ * precedence tier produced it (tan-cli#129, `crates/tan-cli/src/envelope.rs`
+ * `SdkInfo`). `sourceTier` is tan's `SdkSourceTier` — kept a plain `string`
+ * because this repo does not branch on it and a closed union here would
+ * reject a tier tan adds.
+ */
+export interface AlpSdkInfo {
+  root: string;
+  sourceTier: string;
+}
+
 /** The stable top-level JSON envelope every `tan <cmd> --format json` emits. */
 export interface AlpEnvelope<T = unknown> {
   command: string;
   ok: boolean;
   exitCode: number;
   project: { root: string | null; boardYaml: string | null };
+  /**
+   * The SDK root + tier this command resolved, when one resolved at all — the
+   * SEVENTH top-level key, added in tan-cli#129 and on the wire since v0.4.0.
+   *
+   * OPTIONAL, and not merely for old binaries: tan serializes it
+   * `#[serde(skip_serializing_if = "Option::is_none")]`, so it is absent
+   * ENTIRELY (not `null`) from any envelope whose command resolved no SDK —
+   * most of tan v0.4.0's published goldens, as it happens. `isEnvelope`
+   * therefore must NOT require it: a required `sdk` would make `parseEnvelope`
+   * return `null` for all of those, and every caller reads `null` as "no
+   * envelope at all" and silently falls back. That is the exact fail-open the
+   * envelope contract gate exists to catch, so requiring it would be
+   * manufacturing one.
+   */
+  sdk?: AlpSdkInfo;
   data: T;
   issues: AlpIssue[];
 }
