@@ -5,6 +5,10 @@ export type BootstrapOs = "zephyr" | "yocto" | "baremetal";
 export type ToolchainFixId =
   | "python-deps"
   | "west"
+  // west inside the WORKSPACE VENV (tan's `westResolved` check), which only a
+  // bootstrap creates. Distinct from `west` because that one installs globally
+  // with `pip --user` on win32, and a global west never satisfies this check.
+  | "west-workspace"
   | "build-tools"
   | "zephyr-sdk"
   | "gdb";
@@ -16,6 +20,15 @@ export interface BootstrapStep {
 export interface BootstrapPointer {
   name: string;
   url: string;
+  /**
+   * What still has to happen AFTER the page opens, when the page alone does not
+   * finish the job. Optional: most pointers are self-contained.
+   *
+   * Shown to the customer (the dependency row's button tooltip). Deliberately
+   * prose, not a `BootstrapStep`: a step is something this extension offers to
+   * RUN, and none of these can be run from here.
+   */
+  note?: string;
 }
 export interface BootstrapPlan {
   title: string;
@@ -31,6 +44,39 @@ const ZEPHYR_SDK_INSTALLER: BootstrapPointer = {
   name: "Zephyr SDK installer",
   url: "https://docs.zephyrproject.org/latest/develop/toolchains/zephyr_sdk.html",
 };
+
+/**
+ * The Zephyr SDK pointer plus the two facts the docs page does not put in front
+ * of a customer who got here from the dependency table, both mirrored from the
+ * producer's own manual-install hint (alp-sdk `metadata/bootstrap.json`
+ * `manualInstallHints.windows.note`, which tan renders only in
+ * `tan bootstrap`'s text output — nothing this extension ever shows):
+ *
+ *  1. `west sdk install` needs an INITIALISED west workspace and must run from
+ *     its top-level directory. Run anywhere else it fails with west's own
+ *     "not in a west installation", which reads like a broken button.
+ *  2. On native Windows a 7-Zip binary must ALREADY be on PATH: west delegates
+ *     `.7z` extraction to `patoolib`, which shells out to an external
+ *     `7z`/`7za`/`7zr`/`7zz`/`7zzs`/`unar` and has no pure-Python fallback.
+ *
+ * Deliberately carries NO `--version`: this repo tracks tan's version
+ * (`SUPPORTED_CLI_VERSION`), not the Zephyr SDK's, so a pin written here would
+ * be a number nothing keeps true. `-t arm-zephyr-eabi` is stable — every Alp
+ * SoM family (Alif / Renesas / NXP) is Arm — and without it west fetches every
+ * toolchain there is.
+ */
+function zephyrSdkPointer(host: BootstrapHost): BootstrapPointer {
+  const runIt =
+    "Then run `west sdk install -t arm-zephyr-eabi` from your west " +
+    "workspace's top-level directory";
+  return {
+    ...ZEPHYR_SDK_INSTALLER,
+    note:
+      host === "win32"
+        ? `${runIt} — on native Windows a 7-Zip binary (7z / 7za / 7zr / 7zz / 7zzs / unar) must be on PATH first, or the extraction step fails`
+        : `${runIt}`,
+  };
+}
 
 function pythonDepsStep(host: BootstrapHost): BootstrapStep {
   return host === "win32"
@@ -198,10 +244,14 @@ export function fixCommand(
       return host === "win32"
         ? { kind: "command", step: westStep(host) }
         : { kind: "bootstrap" };
+    // The venv west, on EVERY host: `tan bootstrap` is the only thing that
+    // creates the workspace venv the `westResolved` check looks in.
+    case "west-workspace":
+      return { kind: "bootstrap" };
     case "build-tools":
       return { kind: "pointer", pointer: ZEPHYR_GETTING_STARTED };
     case "zephyr-sdk":
-      return { kind: "pointer", pointer: ZEPHYR_SDK_INSTALLER };
+      return { kind: "pointer", pointer: zephyrSdkPointer(host) };
     case "gdb":
       return { kind: "guide", guide: GDB_INSTALL_GUIDE };
   }

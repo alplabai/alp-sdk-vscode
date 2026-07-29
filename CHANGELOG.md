@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+- **The Zephyr SDK row in the dependency table now has a button, and it says
+  what the docs page does not.** The row is the one every Zephyr-on-M customer
+  hits, and on Windows it arrived as a bare `warn` with no action at all: tan
+  builds the `missingPrerequisites` list inside its `push_tool` helper, and the
+  `zephyrSdk` check is pushed as a plain struct literal that never goes through
+  it, so the tool can never appear in that list however missing it is. The
+  planner was reading "tan named no prerequisite for this check" as "there is
+  nothing to offer" and returning no action. It now falls back to the fix this
+  extension knows whenever tan's list is silent about a non-passing check —
+  general, so any check tan forgets to route through `push_tool` is covered, not
+  just this one. An entry tan DID emit still wins outright, `command: null`
+  included: that is tan's answer, not an invitation to look elsewhere. The
+  button is labelled **Open install guide**, not Install — pressing it opens the
+  Zephyr SDK page and installs nothing, and the row stays `warn` until the
+  customer acts. What is new is the tooltip, which now carries the two facts
+  that page leaves out: `west sdk install -t arm-zephyr-eabi` has to run from
+  the west workspace's top-level directory, and on native Windows a 7-Zip binary
+  must already be on PATH before it — west hands `.7z` extraction to `patoolib`,
+  which shells out to an external `7z` / `7za` / `7zr` / `7zz` / `7zzs` / `unar`
+  and has no pure-Python fallback. Both sentences are the producer's own
+  (alp-sdk `metadata/bootstrap.json` `manualInstallHints.windows.note`), which
+  until now only `tan bootstrap`'s text output rendered — a customer driving the
+  IDE never saw either. No Zephyr SDK version is printed: this repo pins tan's
+  version, not sdk-ng's, and a number with no gate behind it goes stale in
+  silence. Routing `zephyrSdk` through `push_tool` so tan can offer a real
+  install command remains tan-cli's half; this side makes the row actionable and
+  honest in the meantime.
+
+- **`west (workspace)` no longer offers a fix that cannot fix it.** That check
+  asks whether west resolves inside the workspace venv, and the fallback above
+  would have pointed it at the `west` fix — a global `python -m pip install
+  --user west` on Windows, which installs west somewhere the check does not look
+  and leaves the row exactly as it was. It now maps to a new `west-workspace`
+  fix that runs `tan bootstrap` on every host, which is both what creates the
+  venv and what tan's own hint for that check already says.
+
+- **The extension can now see whether a `.7z` extractor is on PATH.** Nothing in
+  this repo looked for one before, on any platform. The probe treats only
+  `ENOENT` as absence: these binaries reject an unknown switch with a non-zero
+  exit — a real `7z` answers a bogus flag with exit status 7 — so the ordinary
+  "any spawn failure means not installed" rule reports a fully installed
+  extractor as missing.
+
 - **A SOCKS proxy is now named as unsupported instead of reported as
   unreachable, and an IPv6 host in `NO_PROXY` is honoured.** VS Code's
   `http.proxy` accepts `socks5://host:1080`, and all five SOCKS spellings
