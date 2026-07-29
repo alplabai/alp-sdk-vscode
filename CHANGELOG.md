@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **Installing an SDK on a machine without Git now says so, and offers the
+  download.** Installing an SDK is a `git clone`, and it is the only
+  implementation there is — so on a clean Windows 11 box, which ships no Git,
+  the very first step of the walkthrough failed with `Alp: couldn't install SDK
+  v0.13.0.` and a single Retry button that re-ran the identical missing-binary
+  spawn — a spawn that does not merely fail again but never returns. Nothing on
+  any surface named Git; the only mention of it was `Install failed: Error:
+  spawn git ENOENT` in the panel. The toast now names Git and carries **Download
+  Git**, which opens git-scm.com's download page. Retry is gone from that one
+  case and kept everywhere else: only a `spawn` that never started a process is
+  treated as a missing Git, so a clone that DID run and failed — no network, a
+  proxy refusing `CONNECT`, a tag that does not exist — keeps the Retry that can
+  actually fix it, and is never reported as a missing Git to someone who has
+  Git. The errno still goes only to the "Alp SDK" output channel. Neither
+  sentence claims Git is absent from the machine, only that Alp could not find
+  it: what the extension actually knows is that its own process could not
+  resolve `git`, and a Git installed while VS Code is running is invisible to it
+  either way. That is also why the advice is to reopen VS Code rather than to
+  press Install again — on Windows a new `PATH` does not reach an already-running
+  editor, and not on a window reload either, because the extension host is
+  forked from a main process whose environment was captured at launch.
+  **Download Git** is a pointer, not a second installer: the per-host install
+  lines live in the SDK's `metadata/bootstrap.json` and reach the IDE through
+  tan's doctor envelope, and a copy of them here would be exactly the drift the
+  Dependencies panel is built to avoid. Once a project folder is open, the
+  Dependencies panel carries tan's own `git` row with its per-host install
+  command; this toast is the reachable pointer for the case that comes before
+  any folder exists.
+
 - **The Zephyr SDK row in the dependency table now has a button, and it says
   what the docs page does not.** The row is the one every Zephyr-on-M customer
   hits, and on Windows it arrived as a bare `warn` with no action at all: tan
