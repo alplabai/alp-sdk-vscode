@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **F5 now runs a build before it debugs.** The generated debug profile
+  carried no `preLaunchTask` at all, so on a fresh clone Debug started
+  cortex-debug against a `zephyr.elf` nothing had produced. The four `alp:`
+  task labels have been contributed since the task provider landed, but
+  `tan debug-config` emits the key only for a `--pre-launch-task` its caller
+  passes, and the extension never passed one. It now does, per target class:
+  `alp: build active target` for Zephyr, `alp: build baremetal target` for
+  baremetal, and `alp: build native_sim target` for native_sim. All three run
+  the same plain `tan build` — it has no per-target selector and builds every
+  slice `board.yaml` declares — so on a project with no native_sim slice the
+  native-host profile still gets a pre-launch step that exits 0 without
+  producing the `zephyr.exe` it then launches. The remote Yocto profile is
+  deliberately left without one — the only task registered for it is the
+  "deploy and start gdbserver" placeholder, which exits 1 by design because
+  the extension cannot deploy or start a remote gdbserver, and naming it would
+  put a failed-pre-launch dialog in front of every F5 including a remote setup
+  the customer already had working. That label stays in the Tasks picker,
+  where it spells out the manual step. The argv is asserted element for
+  element, including the label VALUE: a wrong flag makes `tan` exit 2 and say
+  so, but a wrong label is a string VS Code resolves to a real registered
+  task, so it builds, F5 starts, and nothing anywhere reports that the profile
+  named the wrong one. A `tan` older than the one this extension requires now
+  says so when it refuses this flag: the "run Alp: Update CLI" hint was armed
+  only by `--core`, and `--core` is absent before the first build — precisely
+  when the new flag is the only young one in the argv — so the very first F5
+  against an old CLI reported tan's raw complaint about an unknown argument
+  and nothing about the CLI needing an update.
+
 - **The Build Plan panel now says so when `tan` returns a payload it cannot
   read, instead of failing without a word.** Three commands feed that panel —
   `build --plan`, `build --manifest` / `--manifest-from`, and `size` — and each
