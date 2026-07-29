@@ -5,12 +5,13 @@
 // re-vendor BOTH schemas from the new tag, then update VENDORED_SDK_TAG and both
 // hashes below in this one place.
 module.exports = {
-  VENDORED_SDK_TAG: "v0.13.0",
-  // Unchanged from v0.11.0 -- board.schema.json is byte-identical at both tags,
-  // so this bump moves the label, not the file. (It moves for real at the next
-  // SDK release: alp-sdk#919 adds a `dac` peripheral class on dev.)
+  VENDORED_SDK_TAG: "v0.14.0",
+  // board.schema.json moves for real at this bump: the `peripherals` enum
+  // gains `dac` and `i3c` (18 entries, was 16).
   BOARD_SCHEMA_SHA256:
-    "d9393ab0d1c3df5550a84acc30639eddabb90ce35a080d7a6ec122cac999b3b8",
+    "0cc502abbaf52a7d5a56836392423371c23faf4f1fb68137987f93d138afe0cd",
+  // Unchanged from v0.11.0 -- system-manifest-v1.schema.json is byte-identical
+  // at v0.13.0 and v0.14.0, so this bump moves the label, not the file.
   SYSTEM_MANIFEST_SCHEMA_SHA256:
     "ea7383b56c69faa94679e311a6b8be5e99513a462ffaaafa778d281b1967aba6",
 };
