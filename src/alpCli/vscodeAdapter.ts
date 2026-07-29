@@ -1640,15 +1640,28 @@ export async function runAlpInTerminal(
 }
 
 /** Run `command` through the user's LOGIN shell on POSIX, so the child sees the
- *  environment a terminal would — `~/.zshrc` / `~/.bashrc`, venv activation,
- *  every PATH entry a GUI-launched VS Code (macOS `.app`, a Linux desktop
- *  launcher) never sourced into the extension host.
+ *  environment a terminal would — whatever `~/.zshrc` / `~/.bashrc` / `~/.profile`
+ *  export, which a GUI-launched VS Code (macOS `.app`, a Linux desktop launcher)
+ *  never sourced into the extension host.
  *
  *  This is the property terminal mode had for free and channel mode loses:
  *  `cp.spawn` inherits the EXTENSION HOST's env, not the shell's. Reconstructing
- *  one PATH entry (the bootstrap venv) instead would both miss everything else
- *  the user put in their profile and fork the venv-resolution logic that already
- *  lives in `tan` itself.
+ *  one PATH entry instead would both miss everything else the user put in their
+ *  profile and fork the venv-resolution logic that already lives in `tan`.
+ *
+ *  WHAT THIS DOES AND DOES NOT RECOVER, measured on a real headless Linux host
+ *  under a stripped desktop-launcher environment. Before: `cp.spawn("west")` →
+ *  `spawn west ENOENT`, and `tan`'s own gate reads
+ *  `[!] westResolved  west not found`. After: exit 0, `West version: v1.5.0`,
+ *  and the gate reads `[+] westResolved  west resolved`. So the mechanism is
+ *  real and load-bearing.
+ *
+ *  But it restores THE PROFILE'S PATH, not "the venv `tan bootstrap` created".
+ *  On that host `~/.alp-venv/bin` was absent from the login PATH entirely —
+ *  nothing in the profile activates it — and what came back was `~/.local/bin`,
+ *  holding a system-python `west`. A user whose venv is only ever on PATH via
+ *  an interactive `activate` still will not get it here. Recovering that
+ *  deliberately is a different change, and it belongs in `tan`.
  *
  *  The command string itself — quoting, the `cd` into `cwd`, the `exec` —
  *  comes from `posixLoginShellCommand` in the pure service, where its edge
@@ -1685,9 +1698,12 @@ function loginShellInvocation(
  *
  * Env: on POSIX the child runs under the user's LOGIN shell
  * (`loginShellInvocation`), so a tool the flash backend shells (`west`) is
- * found via the user's own profile — the venv a `tan bootstrap` activated, not
- * only whatever PATH a GUI-launched VS Code inherited. Windows spawns the
- * binary directly, where the extension host already has the login environment.
+ * found via the user's own profile rather than only whatever PATH a
+ * GUI-launched VS Code inherited — measured, `spawn west ENOENT` before and
+ * `West version: v1.5.0` after. It recovers what the profile exports, which is
+ * not necessarily a `tan bootstrap` venv; see `loginShellInvocation` for what
+ * that does and does not cover. Windows spawns the binary directly, where the
+ * extension host already has the login environment.
  *
  * One run per name, shared with `runInTerminal` (see `reserveStreamedRun`): a
  * second dispatch under a live name is refused, never allowed to terminate the
