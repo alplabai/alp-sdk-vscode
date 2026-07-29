@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+First release on the **stable** Marketplace channel. Every release before this
+one shipped as a pre-release, so an install that has only ever tracked stable
+is arriving here from nothing.
+
+Worth knowing before you upgrade: on macOS and Linux, build/flash/image/clean
+now run through your **login shell**, so they see what your `~/.zshrc`,
+`~/.bashrc` or `~/.profile` exports — the PATH a VS Code started from the dock
+or an application launcher never had. That is what makes `west` resolvable from
+a GUI-launched editor. It recovers what your login profile exports, so a
+toolchain that only reaches your PATH when you run `activate` by hand still
+needs that activation; put it in your profile if you want the IDE to find it.
+Windows is unaffected — the extension host already has the login environment
+there.
 
 - **"Install tan CLI (global)" no longer traps a customer in a loop with
   `alpSdk.preferGlobalCli` on, and it now installs the version this extension
