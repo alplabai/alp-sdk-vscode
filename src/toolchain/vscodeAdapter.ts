@@ -21,6 +21,78 @@ export function probeTool(cmd: string, args: string[]): ToolProbe {
   }
 }
 
+/**
+ * The extractor binaries `patoolib` shells out to for a `.7z`, in its own probe
+ * order.
+ *
+ * `west sdk install` — the only way to get the `arm-zephyr-eabi` cross
+ * toolchain on native Windows — delegates `.7z` extraction to `patoolib`, and
+ * `patoolib` has NO pure-Python `.7z` fallback. So on Windows this is a HARD
+ * prerequisite of the Zephyr SDK install, and it is one nothing else in this
+ * repo looks for: it exists upstream only as prose in alp-sdk's
+ * `metadata/bootstrap.json` `manualInstallHints.windows.note`, rendered by
+ * `tan bootstrap`'s text output and by nothing this extension shows.
+ *
+ * Any one of them is enough — patoolib takes the first it finds.
+ */
+const SEVEN_ZIP_BINARIES: readonly string[] = [
+  "7z",
+  "7za",
+  "7zr",
+  "7zz",
+  "7zzs",
+  "unar",
+];
+
+/**
+ * One extractor candidate, present/absent.
+ *
+ * NOT `probeTool`: that reads ANY spawn failure as absent, and these binaries
+ * are exactly the ones that reject a `--version`-style probe. Only `ENOENT`
+ * (nothing of that name on PATH) is absence here — a non-zero exit means the
+ * binary RAN, which is the whole question. Driven on Windows 11: a bogus switch
+ * to a real `7z` exits `status: 7` with no `code`, while an absent `7zz` throws
+ * `code: "ENOENT"`.
+ *
+ * Invoked with NO arguments on purpose: every 7-Zip-family binary answers a
+ * bare call with its banner, and the switch vocabulary differs between 7-Zip,
+ * p7zip, NanaZip and `unar`. `args` exists only so the test can drive the two
+ * outcomes against a real child process on any runner; production never passes
+ * it.
+ */
+export function probeExtractor(
+  cmd: string,
+  args: readonly string[] = [],
+): ToolProbe {
+  try {
+    const out = execFileSync(cmd, args, { encoding: "utf-8", timeout: 4000 });
+    return { present: true, detail: out.trim().split(/\r?\n/)[0] };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { present: false };
+    }
+    // It ran and complained. Present; its own name is all the detail there is.
+    return { present: true, detail: cmd };
+  }
+}
+
+/**
+ * Whether ANY `.7z` extractor west can drive is on PATH.
+ *
+ * `probe` and `names` are injectable so the ENOENT-vs-non-zero rule can be
+ * tested without a real 7-Zip on the runner.
+ */
+export function probeSevenZip(
+  probe: (cmd: string) => ToolProbe = probeExtractor,
+  names: readonly string[] = SEVEN_ZIP_BINARIES,
+): ToolProbe {
+  for (const name of names) {
+    const result = probe(name);
+    if (result.present) return result;
+  }
+  return { present: false };
+}
+
 function probePythonDep(pythonBin: string, module: string): boolean {
   try {
     execFileSync(pythonBin, ["-c", `import ${module}`], {
@@ -86,6 +158,10 @@ export function collectToolchainInputs(): ToolchainInputs {
       dtc: probeTool("dtc", ["--version"]),
       gdb: probeTool("gdb", ["--version"]),
       tan: probeTool("tan", ["--help"]),
+      // Only load-bearing on native Windows (`west sdk install` -> patoolib),
+      // but probed on every host: the answer is a fact about the machine, and
+      // gating the probe on the platform is how a fact grows two versions.
+      sevenZip: probeSevenZip(),
     },
     pythonDeps: {
       pyyaml: probePythonDep(depPython, "yaml"),
