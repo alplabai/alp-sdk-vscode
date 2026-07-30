@@ -57,6 +57,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub Release + upload the .vsix asset
+    # Observed outcomes for release_gate (#432) to assert against declared
+    # intent. release_outcome / marketplace_outcome read the PUBLISH STEP'S
+    # OWN outcome (success/failure/skipped) -- both legs are declared "always"
+    # (see release_gate below), so that alone is a safe, non-circular signal:
+    # it answers "did the step actually run and succeed", never "was the
+    # arming condition true". ovsx_published is different: Open VSX is the one
+    # OPTIONAL channel, so "skipped" must be distinguishable from "the wiring
+    # broke" -- that needs the self-reported true/false the two Open VSX steps
+    # below write explicitly, ported from alplabai/tan-cli#242's npm job.
+    outputs:
+      release_outcome: ${{ steps.create_release.outcome }}
+      marketplace_outcome: ${{ steps.marketplace_publish.outcome }}
+      ovsx_published: ${{ steps.ovsx_publish.outputs.published || steps.ovsx_skip.outputs.published }}
     env:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
@@ -127,6 +140,7 @@ jobs:
         # On a pushed tag only. Keeps the GitHub Releases page consistent with
         # tan-cli / alp-sdk (which both cut a GH Release per tag) instead of the
         # tag-only state that left v0.3.6 without a visible release.
+        id: create_release
         if: ${{ github.event_name == 'push' }}
         uses: softprops/action-gh-release@v2
         with:
@@ -142,17 +156,46 @@ jobs:
             `code --install-extension alp-sdk.vsix`.
 
       - name: Publish to VS Code Marketplace
+        id: marketplace_publish
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
         run: pnpm exec vsce publish --no-dependencies $PRERELEASE_FLAG --packagePath alp-sdk.vsix
         # VSCE_PAT is read from the environment by vsce.
 
       - name: Publish to Open VSX
+        id: ovsx_publish
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.OVSX_PAT != '' }}
-        run: npx --yes ovsx publish alp-sdk.vsix $PRERELEASE_FLAG --pat "$OVSX_PAT"
+        run: |
+          npx --yes ovsx publish alp-sdk.vsix $PRERELEASE_FLAG --pat "$OVSX_PAT"
+          echo "published=true" >> "$GITHUB_OUTPUT"
 
-      - name: Note when publish was skipped
+      - name: Note when Marketplace publish was skipped
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT == '' }}
-        run: echo "::warning::VSCE_PAT not set — built the .vsix but skipped Marketplace publish. Add the VSCE_PAT repo secret to enable it."
+        run: |
+          echo "::warning::VSCE_PAT not set — built the .vsix but skipped Marketplace publish. Add the VSCE_PAT repo secret to enable it."
+          {
+            echo "### Marketplace: NOT PUBLISHED"
+            echo
+            echo "VSCE_PAT repo secret is not set — built \`alp-sdk.vsix\` but skipped the VS Code Marketplace publish. Add the VSCE_PAT repo secret to enable it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # #432: Open VSX had no counterpart to the note above, so on v0.4.0 (where
+      # OVSX_PAT is absent from this repo's secrets) the skip was silent -- a
+      # green run said nothing, and Open VSX users stayed on 0.3.x with no
+      # announcement. tan-cli#151 is the proof that an annotation alone is the
+      # weakest signal GitHub has (a correctly-emitted skip warning on tan
+      # v0.4.0 still read as a publish) -- so this writes BOTH an annotation and
+      # a run-summary line, same as the Marketplace note above.
+      - name: Note when Open VSX publish was skipped
+        id: ovsx_skip
+        if: ${{ env.SHOULD_PUBLISH == 'true' && env.OVSX_PAT == '' }}
+        run: |
+          echo "published=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::OVSX_PAT not set — built the .vsix but skipped the Open VSX publish. Add the OVSX_PAT repo secret to enable it (this channel is optional)."
+          {
+            echo "### Open VSX: NOT PUBLISHED"
+            echo
+            echo "OVSX_PAT repo secret is not set — built \`alp-sdk.vsix\` but skipped the Open VSX publish. Open VSX users stay on the previous version until the secret is added. This channel is optional; omitting OVSX_PAT is a supported configuration, not an error."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Why is darwin-arm64 the ONLY platform that bundles a binary?
   #
@@ -192,6 +235,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # See package_and_publish's outputs: comment above -- same reasoning, this
+    # channel is declared "always" (always --pre-release) so its own step
+    # outcome is a safe, non-circular signal for release_gate (#432).
+    outputs:
+      marketplace_outcome: ${{ steps.marketplace_publish.outcome }}
     env:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
       # Publish on a pushed tag, or a manual run with publish=true (same gate
@@ -297,6 +345,7 @@ jobs:
         run: bash scripts/check-vsix-allowlist.sh alp-sdk-darwin-arm64.vsix
 
       - name: Publish to VS Code Marketplace
+        id: marketplace_publish
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT != '' }}
         # NB: --target must NOT be passed with --packagePath — the target is
         # already baked into the packaged .vsix by the earlier
@@ -307,6 +356,112 @@ jobs:
         run: pnpm exec vsce publish --no-dependencies --pre-release --packagePath alp-sdk-darwin-arm64.vsix
         # VSCE_PAT is read from the environment by vsce.
 
-      - name: Note when publish was skipped
+      - name: Note when Marketplace publish was skipped
         if: ${{ env.SHOULD_PUBLISH == 'true' && env.VSCE_PAT == '' }}
-        run: echo "::warning::VSCE_PAT not set — built the darwin-arm64 .vsix but skipped Marketplace publish. Add the VSCE_PAT repo secret to enable it."
+        run: |
+          echo "::warning::VSCE_PAT not set — built the darwin-arm64 .vsix but skipped Marketplace publish. Add the VSCE_PAT repo secret to enable it."
+          {
+            echo "### Marketplace (darwin-arm64): NOT PUBLISHED"
+            echo
+            echo "VSCE_PAT repo secret is not set — built \`alp-sdk-darwin-arm64.vsix\` but skipped the VS Code Marketplace publish. Add the VSCE_PAT repo secret to enable it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # #432: a real v0.4.0 run created a GitHub Release (step 13) and then failed
+  # to publish to the Marketplace (step 14, a gallery request timeout) — the
+  # run was red, but the Releases page looked complete, and nothing forced a
+  # second look at the Marketplace. Reordering the steps only inverts which
+  # side would get orphaned by the next failure; what was missing is an
+  # assertion, ported from alplabai/tan-cli#242 (`ci/release-outcome-gate`).
+  #
+  # Declaration-relative, no exemption list: a pushed `v*` tag MUST produce a
+  # GitHub Release with its assets, and every publish channel's outcome MUST
+  # match what it declares. A deliberately disarmed channel SATISFIES the
+  # invariant rather than being excused from it -- which is exactly Open VSX
+  # here (OVSX_PAT is documented optional at the top of this file):
+  #
+  #   | channel                    | declared                          |
+  #   |-----------------------------|-----------------------------------|
+  #   | GitHub Release              | always                            |
+  #   | Marketplace (universal)     | always (channel = minor parity)   |
+  #   | Marketplace (darwin-arm64)  | always (always --pre-release)     |
+  #   | Open VSX                    | optional (OVSX_PAT)               |
+  #
+  # so `skipped`/`failure` FAILS the gate for the first three, and only Open
+  # VSX may legitimately report "did not publish" and still pass.
+  release_gate:
+    name: release outcome matches intent
+    needs: [package_and_publish, package_darwin_arm64]
+    # always(), or a failed/skipped upstream job skips this gate too and the
+    # whole point is lost (this is the exact v0.4.1 tan-cli shape #237 fixed).
+    # Tag-only: nothing else pushes a `v*` ref, but the guard makes the scope
+    # explicit rather than inherited from the jobs above.
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: assert the release and every channel matched its declared intent
+        shell: bash
+        env:
+          RELEASE_OUTCOME: ${{ needs.package_and_publish.outputs.release_outcome }}
+          MARKETPLACE_OUTCOME: ${{ needs.package_and_publish.outputs.marketplace_outcome }}
+          DARWIN_MARKETPLACE_OUTCOME: ${{ needs.package_darwin_arm64.outputs.marketplace_outcome }}
+          OVSX_PUBLISHED: ${{ needs.package_and_publish.outputs.ovsx_published }}
+        run: |
+          set -euo pipefail
+          fail=0
+          note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          bad() { echo "::error::$1"; note "- FAIL: $1"; fail=1; }
+
+          note "### Release outcome vs declared intent"
+          note ""
+          note "| leg | declared | outcome |"
+          note "|---|---|---|"
+          note "| GitHub Release | always | \`${RELEASE_OUTCOME}\` |"
+          note "| Marketplace (universal) | always | \`${MARKETPLACE_OUTCOME}\` |"
+          note "| Marketplace (darwin-arm64) | always, --pre-release | \`${DARWIN_MARKETPLACE_OUTCOME}\` |"
+          note "| Open VSX | optional (OVSX_PAT) | published=\`${OVSX_PUBLISHED:-<none>}\` |"
+          note ""
+
+          # 1. Unconditional: a tag with no Release behind it is the #432 state.
+          if [ "$RELEASE_OUTCOME" != "success" ]; then
+            bad "no GitHub Release was published for ${GITHUB_REF_NAME} (outcome: ${RELEASE_OUTCOME}). A pushed tag must always produce a Release with its assets; the tag is now spent with nothing behind it."
+          fi
+
+          # 2. Marketplace, universal job -- always declared, channel picked by
+          # minor parity, but publish-or-not is never optional.
+          if [ "$MARKETPLACE_OUTCOME" != "success" ]; then
+            bad "the universal .vsix did not publish to the VS Code Marketplace for ${GITHUB_REF_NAME} (outcome: ${MARKETPLACE_OUTCOME}). This channel is always declared -- skipped or failed is never acceptable for a pushed tag."
+          fi
+
+          # 3. Marketplace, darwin-arm64 job -- always declared, always
+          # --pre-release, same as #2.
+          if [ "$DARWIN_MARKETPLACE_OUTCOME" != "success" ]; then
+            bad "the darwin-arm64 .vsix did not publish to the VS Code Marketplace for ${GITHUB_REF_NAME} (outcome: ${DARWIN_MARKETPLACE_OUTCOME}). This channel is always declared (always --pre-release) -- skipped or failed is never acceptable for a pushed tag."
+          fi
+
+          # 4. Open VSX is the one OPTIONAL channel. `published` must be exactly
+          # 'true' or 'false' -- anything else means the outputs wiring between
+          # package_and_publish and this gate is broken, and the checks below
+          # would be comparing against nothing rather than a real observation.
+          #
+          # This is the hole a re-derived value would hide: an unresolvable
+          # needs.package_and_publish.outputs.ovsx_published (a renamed step id,
+          # a removed outputs: entry, a context GitHub never populates)
+          # evaluates to the EMPTY STRING with no error, and empty satisfies
+          # `!= 'true'` -- which reads as "correctly declined" even though
+          # nothing ran the comparison at all. So this is checked BEFORE the
+          # declaration check, not folded into it, and it names the wiring as
+          # the cause rather than blaming the channel.
+          if [ "$OVSX_PUBLISHED" != "true" ] && [ "$OVSX_PUBLISHED" != "false" ]; then
+            bad "the package_and_publish job reported ovsx_published='${OVSX_PUBLISHED:-<empty>}', which is neither true nor false. The outputs wiring for Open VSX is broken, so its declaration cannot be checked. Check the ovsx_publish/ovsx_skip step ids and the job's outputs: block."
+          fi
+          # No further Open VSX check: true (published) and false (declined via
+          # a missing OVSX_PAT) BOTH satisfy the invariant, because the channel
+          # is declared optional. Only a non-boolean value fails it.
+
+          if [ "$fail" -ne 0 ]; then
+            note ""
+            note "This tag did NOT ship as declared. See the annotations above."
+            exit 1
+          fi
+          note "All legs matched their declared intent."
+          echo "release + every channel matched its declared intent."
