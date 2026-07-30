@@ -103,6 +103,15 @@ export type CliUnavailableReason =
    * binary this refusal just stopped.
    */
   | "checksumRefused"
+  /**
+   * A FRESH download (case 1 — no tan resolves anywhere, digest-clean cache)
+   * was refused for lack of consent — ADR 0021 Tier A. Distinct from every
+   * reason above: nothing about the BINARY is wrong, the extension simply
+   * has not been told it may fetch one yet (or was told not to). Never set
+   * for the two heals (`updatingStaleCache`, `reacquiringUnverifiedCache`) —
+   * those act on a tan the user already has and are never gated.
+   */
+  | "consentDeclined"
   /** The process started but couldn't be run to completion. */
   | "spawnFailed"
   /** The CLI exceeded the extension's spawn timeout. */

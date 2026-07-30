@@ -316,6 +316,46 @@ test("classifyUnavailable splits the resolver's failures by remedy", () => {
     classifyUnavailable("tan CLI output exceeded 16 MB"),
     "spawnFailed",
   );
+  // #414: the lazy per-command consent gate's refusal (resolveAlpBinary's
+  // `download` arm — see TAN_CLI_DOWNLOAD_CONSENT_NEEDED, src/alpCli/service.ts)
+  // must classify to its OWN reason, not fall into `corrupt`/`spawnFailed` and
+  // offer a "Run Doctor" button for a binary that was never even fetched.
+  assert.equal(
+    classifyUnavailable(
+      "The tan CLI download needs consent before it can run.",
+    ),
+    "consentDeclined",
+  );
+});
+
+// ── #414: the lazy-download consent refusal names the fix, not the binary ──
+
+test("consentDeclined names the setting, alpSdk.cliPath, and both explicit commands — never Run Doctor", () => {
+  const outcome = classifyOutcome(-1, null);
+  outcome.unavailable = {
+    reason: "consentDeclined",
+    detail: "The tan CLI download needs consent before it can run.",
+  };
+  const plan = planCliOutcome(outcome, { operation: "Building the project" });
+
+  assert.match(plan.message, /tanCliDownloadConsent/);
+  assert.match(plan.message, /alpSdk\.cliPath/);
+  assert.ok(plan.actions.some((a) => a.id === "installTanCli"));
+  assert.ok(plan.actions.some((a) => a.id === "updateCli"));
+  assert.ok(
+    plan.actions.some(
+      (a) =>
+        a.id === "openSettings" && a.arg === "alpSdk.tanCliDownloadConsent",
+    ),
+  );
+  // Nothing about the BINARY is broken here — it was never fetched — so
+  // Doctor (which diagnoses an installed-but-failing tan) is the wrong tool.
+  assert.deepEqual(
+    plan.actions.filter((a) => a.id === "runDoctor"),
+    [],
+  );
+  // The raw refusal text stays channel-only, never rendered.
+  assert.doesNotMatch(plan.message, /needs consent before it can run/);
 });
 
 // ── channel routing ────────────────────────────────────────────────────────
