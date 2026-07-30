@@ -150,7 +150,44 @@ accepts a PATH `tan` only when `tan --version` prints the native version line
 (`tan X.Y.Z`), so a stale or non-native `tan` that could otherwise shadow the
 version the extension targets falls straight through; then a fresh download of
 the raw `tan-<triple>[.exe]` release asset from `alplabai/tan-cli` for the host
-target. If all of those fail, surface a one-click "install the tan CLI" action.
+target — gated on `alpSdk.tanCliDownloadConsent` (ADR 0021 Tier A: a one-time
+consent dialog, or the setting's own `allow`/`deny`; see "Download consent"
+below) — and, only for a caller the customer just triggered directly, may show
+that dialog when unanswered. If all of those fail, surface a one-click "install
+the tan CLI" action.
+
+**Download consent (`alpSdk.tanCliDownloadConsent`, ADR 0021 Tier A).** The
+FIRST time nothing else resolves a `tan` (ladder rung "download-on-demand"
+above), the extension asks once — artifact, source, size, licence — before
+fetching it, and remembers the answer (`ask`, the default) or skips the dialog
+entirely (`allow`/`deny`, for a managed/CI image). The gate is UNCONDITIONAL on
+that rung: `decideBinarySource` can only reach `download` when `onPath` is
+false, so nothing is ever actually running a `tan` there, un-digested leftover
+cache file or not — there is no state on this rung where a customer could be
+"stranded" by asking, which is why the gate no longer special-cases one. Two
+LATER self-heals of a `tan` a customer already has are never gated by this
+setting: a stale-cache version update (`updatingStaleCache`), and the one-time
+re-verification of a binary cached before this extension recorded checksums
+(`reacquiringUnverifiedCache`, #396, below) — but only when that re-verification
+is replacing a binary the customer is ACTUALLY RUNNING right now via the PATH
+fallback (`onPath` true); the same un-digested cache with nothing on PATH is a
+plain fresh install and IS gated. Running **Install tan CLI (global)** /
+**Update tan CLI** from the command palette always proceeds regardless of a
+stored decline, and clears it — invoking either command IS consent.
+
+This dialog may appear ONLY for a resolution the customer just directly
+triggered (`runAlpCommand`/`runAlpInTerminal`/`runAlpStreamed` each take an
+`interactive` option, default **false**) — a build/validate/generate/
+debug-config/sdk-switch/materialise command, the Dependencies panel's explicit
+Refresh click, or opening the Build Plan panel. A resolution that runs on its
+own — the language server's completion-catalog refresh, the Dependencies
+panel's focus/settings-edit/bootstrap-boundary re-derives, the Build Plan
+panel's board.yaml/system-manifest.yaml file-watcher refresh, the
+activation-time version check — never shows it and simply refuses (silently,
+from the customer's point of view) when nothing is on record yet. Concurrent
+resolutions in the same window share ONE in-flight resolution rather than each
+running the ladder (and, for an interactive fresh install, each opening its
+own dialog).
 
 **Opt-in: `alpSdk.preferGlobalCli` (default off).** When set, `decideBinarySource`
 promotes a verified-native `tan` on PATH to outrank the extension's own managed
@@ -210,6 +247,18 @@ renders the `ChecksumError` sentence verbatim. Neither surface offers
 offering it during an active tamper would be a one-click route to permanently
 executing the very binary that was just refused. Both offer Retry, which is safe
 because it re-verifies.
+
+A download refused for **lack of consent** (`consentDeclined` — see "Download
+consent" above), a fourth `CliUnavailableReason` alongside `checksumRefused`,
+reaches the customer through the same shape of two surfaces, with the same
+gap closed the same way: `planCliOutcome`'s dedicated `consentDeclined` case
+(`src/notify/service.ts`) composes an operation-specific sentence naming
+`alpSdk.tanCliDownloadConsent`, but a reader that shows `CliOutcome.message`
+directly rather than going through `planCliOutcome` — the Dependencies panel's
+inline error text is the one that exists today — used to see only the generic
+"tan CLI unavailable.". `unavailableOutcome` (`src/alpCli/vscodeAdapter.ts`)
+now carries a real, setting-naming sentence on `message` for this reason too,
+the same way it already does for a `ChecksumError`.
 
 The `checksums.txt` body is read into memory rather than streamed to disk (it is
 849 bytes at tan v0.4.0) and is therefore **capped** at 64 KiB — a hostile origin

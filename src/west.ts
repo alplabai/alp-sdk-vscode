@@ -341,11 +341,14 @@ export async function ensureNativeSimOverlay(
   const root = collectWestWorkspaceContext().workspaceRoot;
   if (!root || nativeSimOverlayExists(root)) return;
 
-  const { outcome } = await runAlpCommand(context, [
-    "generate",
-    "--target",
-    "native-sim-overlay",
-  ]);
+  // `interactive: true`: both callers (`westRunNativeSim`'s "Alp: Run" and
+  // `startDebugging`'s "Alp: Debug", `debug.ts`) are explicit user actions.
+  const { outcome } = await runAlpCommand(
+    context,
+    ["generate", "--target", "native-sim-overlay"],
+    undefined,
+    { interactive: true },
+  );
   if (!outcome.ok) {
     log(`[native_sim] overlay generation skipped: ${outcome.message}`);
   }

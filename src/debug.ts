@@ -323,10 +323,14 @@ async function runDebugConfig(
     async (_progress, token) => {
       // A first-ever Debug may DOWNLOAD the tan binary inside this call; with
       // no progress UI the user stares at nothing after the two quick-picks.
+      // `interactive: true`: every caller of `runDebugConfig` is a debug
+      // command (F5 / "Alp: Configure Debug Profile" / preflight) the user
+      // just triggered, so ADR 0021's consent dialog is appropriate here.
       const controller = new AbortController();
       token.onCancellationRequested(() => controller.abort());
       const result = await runAlpCommand(extensionContext, args, cwd, {
         signal: controller.signal,
+        interactive: true,
       });
       return result.outcome;
     },

@@ -10,6 +10,7 @@ import {
   BinarySource,
   ChecksumSpec,
   CliOutcome,
+  ReleaseAsset,
 } from "./models";
 import {
   CACHED_CLI_MISMATCH,
@@ -20,6 +21,7 @@ import {
   isUnverifiableCache,
   parseEnvelope,
   releaseAssetForTarget,
+  TAN_CLI_DOWNLOAD_CONSENT_NEEDED,
 } from "./service";
 
 /** Normalized result of spawning a process (mirrors child_process.spawnSync). */
@@ -110,6 +112,35 @@ export interface ResolveDeps {
   /** Record the digest of the binary just installed at `cachedBinaryPath`.
    *  Async because the real implementation is `globalState.update`. */
   recordCachedDigest: (digest: string) => Promise<void>;
+  /**
+   * Whether a tan CLI download may proceed — ADR 0021 Tier A's
+   * one-consent-click rule. Called from `resolveAlpBinary`'s `download` arm
+   * UNCONDITIONALLY, not only for a from-scratch install: `input.onPath` is
+   * false by construction on every path that reaches the `download` arm
+   * (`decideBinarySource` returns `path` first whenever `onPath` holds), so
+   * there is no state inside this arm where a binary is actually in use — the
+   * #396 un-digested-cache heal (moving a customer OFF a binary they are
+   * running and unverified) cannot happen here no matter how the arm was
+   * reached. Gating unconditionally is therefore not "widening" the gate onto
+   * the heal; it closes a hole a review found after #434 merged, where a
+   * stale un-digested file left in global storage (with nothing on PATH)
+   * made `decideBinarySource` skip straight to `download` and this consent
+   * check was excluded on the mistaken belief that it was excluding the heal.
+   * See `isUnverifiableCacheInUse` (`service.ts`) for the corrected predicate
+   * — it is `false` in every state this arm can be in, which is the proof.
+   *
+   * Never called for `cliPath`/`bundled`/`localBuild`/`cached`/`path` — those
+   * never reach `downloadCli` at all.
+   *
+   * The real implementation (`vscodeAdapter.ts`) reads the SAME stored
+   * answer / `alpSdk.tanCliDownloadConsent` setting the activation-time gate
+   * does (`resolveTanCliDownloadConsent`, `service.ts`) — one decision, one
+   * place. It prompts when unanswered ONLY for an INTERACTIVE resolution
+   * (`buildResolveDeps`'s `interactive` option); a background resolution
+   * (today: the activation-time version probe, and every non-user-triggered
+   * `runAlpCommand` caller) never shows a dialog and simply refuses when
+   * nothing is on record. */
+  ensureFreshDownloadConsent: (asset: ReleaseAsset) => Promise<boolean>;
 }
 
 export interface ResolvedBinary {
@@ -285,18 +316,47 @@ export async function resolveAlpBinary(
       }
       return { command: deps.cachedBinaryPath, source };
     }
-    case "download":
+    case "download": {
       // The #386 re-acquire is re-framed inside `downloadCli`, not here: this
       // is one of THREE routes into a download, and the other two
       // (`ensureTanCliProvisioned`, `updateAlpCli`) call `downloadCli`
       // directly. A wrapper here would have covered the one route a unit test
       // reaches first and left the activation path — the one the customer
       // actually hits — on the generic sentence.
+      //
+      // ADR 0021 Tier A gate — UNCONDITIONAL in this arm, not "unless the #396
+      // security heal applies". `isUnverifiableCache` alone used to exclude
+      // the gate here, on the theory that it marked that heal — but
+      // `decideBinarySource` returns `"path"` BEFORE it ever reaches
+      // `"download"` whenever `input.onPath` holds (see the switch above), so
+      // `input.onPath` is false on every path that lands in this arm and
+      // `isUnverifiableCacheInUse(input)` (`service.ts`) is therefore
+      // PROVABLY always false here — there is no live state this arm can be
+      // in where a binary is actually running, un-digested cache or not, so
+      // there is no one to strand by asking. That is the review finding this
+      // closes (a stale un-digested file plus nothing on PATH used to make
+      // `deny` silently ignored) and it is why the call below is no longer
+      // guarded by that check: a guard that can never be false is not a
+      // safety net, it is a second unconditional gate wearing a costume, and
+      // the costume is where a later change routing into this arm from a
+      // state where `onPath` DOES hold could silently un-gate consent again
+      // with no test catching it. The activation-time heal in
+      // `ensureTanCliProvisioned` (`vscodeAdapter.ts`) is the one place the
+      // un-digested-cache exclusion is real (its `path`-sourced re-acquire
+      // DOES have a binary in use); this arm never reaches that state.
+      const asset = releaseAssetForTarget(deps.platform, deps.arch);
+      // No prebuilt binary for this host: let `downloadCli`'s own throw name
+      // that (it re-derives the same `asset`) rather than asking for consent
+      // to a download that could never happen anyway.
+      if (asset && !(await deps.ensureFreshDownloadConsent(asset))) {
+        throw new Error(TAN_CLI_DOWNLOAD_CONSENT_NEEDED);
+      }
       await downloadCli(deps);
       if (!deps.fileExists(deps.cachedBinaryPath)) {
         throw new Error("The tan CLI download did not produce a binary.");
       }
       return { command: deps.cachedBinaryPath, source };
+    }
   }
 }
 

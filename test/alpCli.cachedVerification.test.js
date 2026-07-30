@@ -110,6 +110,12 @@ function coreDeps(overrides = {}) {
         recorded = digest;
         calls.recorded.push(digest);
       },
+      // Consent already granted by default — these rows are about the
+      // CHECK (cached-digest verification, download wiring), not about
+      // ADR 0021's consent gate, which has its own file
+      // (test/alpCli.downloadConsent.test.js). A row that wants to drive the
+      // refusal overrides this via `overrides.deps`.
+      ensureFreshDownloadConsent: async () => true,
       ...overrides.deps,
     },
   };
@@ -706,6 +712,14 @@ test("wiring: an offline migration at ACTIVATION says it is a one-time migration
         url: `http://127.0.0.1:1/${BINARY}`,
         checksumsUrl: "http://127.0.0.1:1/checksums.txt",
       },
+      // `onPath` is false (default), so this row IS a fresh-install-shaped
+      // consent gate now (nothing is running — see
+      // `isUnverifiableCacheInUse`), which is not what this row means to
+      // measure — pre-answer it, exactly like "wiring: download → record"
+      // below does, so the row reaches the migration FAILURE this test is
+      // actually about. Consent has its own file
+      // (test/alpCli.downloadConsent.test.js).
+      config: { "alpSdk.tanCliDownloadConsent": "allow" },
     });
 
     await adapter.ensureTanCliProvisioned(home.context);
@@ -742,7 +756,13 @@ test("wiring: a re-acquire that downloads but cannot RECORD still refuses, and s
     home.context.globalState.update = async () => {
       throw new Error("globalState write failed");
     };
-    const { adapter, plans } = loadAdapter({ releaseAsset: server.asset });
+    // Pre-answer consent (see the comment on the "offline migration" row
+    // above) — "allow" returns before ever touching `globalState`, so the
+    // override above stays reserved for the record write this row tests.
+    const { adapter, plans } = loadAdapter({
+      releaseAsset: server.asset,
+      config: { "alpSdk.tanCliDownloadConsent": "allow" },
+    });
 
     await adapter.ensureTanCliProvisioned(home.context);
 
@@ -767,7 +787,18 @@ test("wiring: download → record in globalState → verified on the next resolu
     // recorded. This is what proves `recordCachedDigest` is wired to the real
     // `globalState` — a no-op there leaves every other test in this file green
     // and the shipped extension permanently refusing its own downloads.
-    const { adapter } = loadAdapter({ releaseAsset: server.asset });
+    //
+    // `tanCliDownloadConsent: "allow"` pre-answers ADR 0021's consent gate —
+    // this row is about the download-and-record WIRING, not consent, which
+    // has its own file (test/alpCli.downloadConsent.test.js). Without it a
+    // NON-interactive `resolveAlpBinaryForContext(context)` (no `{
+    // interactive: true }`, same call this row makes) refuses a fresh
+    // install with nothing on record — correctly, but not what this row
+    // means to measure.
+    const { adapter } = loadAdapter({
+      releaseAsset: server.asset,
+      config: { "alpSdk.tanCliDownloadConsent": "allow" },
+    });
 
     const first = await adapter.resolveAlpBinaryForContext(home.context);
     assert.equal(first.source, "download");
@@ -823,6 +854,12 @@ test("wiring: a STALLED re-acquire on the per-command route refuses, and its toa
       transfer: async () => {
         throw timeout;
       },
+      // `runAlpInTerminal` always resolves interactively, and `onPath` false
+      // (default) means this row's un-digested cache is now gated on consent
+      // like any fresh install (see the comment on the "offline migration"
+      // row above) — pre-answer it so the row still reaches the STALLED
+      // transfer this test is about, not the (correctly) unanswered dialog.
+      config: { "alpSdk.tanCliDownloadConsent": "allow" },
     });
 
     await adapter.runAlpInTerminal(home.context, ["build"], {

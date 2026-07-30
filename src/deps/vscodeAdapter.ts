@@ -21,18 +21,23 @@ import {
   planDependencyReport,
   TAN_ROW_NAME,
 } from "@alp-sdk/core/deps/planner";
+import { retargetWestCommand } from "@alp-sdk/core/deps/westCommand";
 import type { SdkRelease } from "@alp-sdk/core/sdk/models";
 import * as os from "os";
 import * as vscode from "vscode";
 
 import { cliSkew, SUPPORTED_CLI_VERSION } from "../alpCli/service";
-import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
+import {
+  venvWestInTopdir,
+  westWorkspaceTopdir,
+} from "../environment/vscodeAdapter";
 import type { AlpIdeState } from "../ideHub/messages";
-import { planFailure } from "../notify/service";
+import { planFailure, planPrecondition } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { runToolchainFix } from "../toolchain";
-import { log } from "../util";
+import { isRunActive, log, runInTerminal } from "../util";
 
 // ── The latest-SDK lookup (cached; must never block the panel) ───────────────
 
@@ -139,8 +144,15 @@ async function latestSdkTag(
   if (!force && !latestSdkCacheStale(cache, Date.now())) {
     return cache?.tag ?? null;
   }
+  // `interactive: force` — `force` IS "the user explicitly asked for a
+  // refresh" (this function's own opening doc, and `refreshDependencies` in
+  // `deps/panel.ts` is its one caller that passes `true`), so it doubles as
+  // the direct-ask signal ADR 0021 needs: ask consent on an explicit Refresh
+  // click, never on the window-focus/settings-edit/bootstrap-boundary
+  // re-derives that pass `false` here.
   const { outcome } = await runAlpCommand(context, ["sdk", "list"], undefined, {
     signal,
+    interactive: force,
   });
   const envelope = outcome.envelope;
   if (!envelope || !envelope.ok) {
@@ -474,8 +486,25 @@ async function runDoctor(
   args: string[],
   cwd: string,
   signal: AbortSignal | undefined,
+  // `false` for the panel's own re-derives (window focus, settings edit,
+  // bootstrap start/end — DependencyPanel's `onStateChange`) and for the
+  // initial `ready` open, so none of those pops ADR 0021's consent modal out
+  // of nowhere. `true` only for the explicit Refresh click
+  // (`refreshDependencies`, `deps/panel.ts`), which already carries this
+  // distinction as `refreshLatestSdk` — threaded through here under its own
+  // name so a Refresh click is not silently refused with consent unanswered.
+  // Note what this is NOT the remedy for: the `tan` row has no action
+  // (`action: null`, `packages/alp-core/src/deps/planner.ts`) — its own
+  // install/update path lives in `src/alpCli/`, not a row button, so a
+  // declined/unanswered consent here does not leave a dangling button. It
+  // leaves NO table at all: `build.data` is null, so `buildDependencyReport`
+  // returns `report: null` and the panel shows its inline error text instead.
+  interactive: boolean,
 ): Promise<{ data: DoctorEnvelopeData | null; message: string }> {
-  const { outcome } = await runAlpCommand(context, args, cwd, { signal });
+  const { outcome } = await runAlpCommand(context, args, cwd, {
+    signal,
+    interactive,
+  });
   const data = outcome.envelope?.data;
   if (!outcome.envelope || !isDoctorEnvelopeData(data)) {
     log(
@@ -524,7 +553,10 @@ export interface DependencyReportResult {
 export async function buildDependencyReport(
   context: vscode.ExtensionContext,
   state: AlpIdeState,
-  options: { signal?: AbortSignal } = {},
+  // `interactive` — see `runDoctor`'s doc: default false (window focus,
+  // settings edit, bootstrap boundary, the initial `ready` open), `true` only
+  // when the caller is the explicit Refresh click.
+  options: { signal?: AbortSignal; interactive?: boolean } = {},
 ): Promise<DependencyReportResult> {
   const project = collectProjectContext();
   // cwd, always, explicitly (#371): doctor discovers the project from where it
@@ -536,9 +568,10 @@ export async function buildDependencyReport(
   // depend on it is withheld below rather than reported.
   const hasProject = project.workspaceRoot !== null;
   const cwd = project.workspaceRoot ?? os.tmpdir();
+  const interactive = options.interactive === true;
   const [build, plain] = await Promise.all([
-    runDoctor(context, ["doctor", "--build"], cwd, options.signal),
-    runDoctor(context, ["doctor"], cwd, options.signal),
+    runDoctor(context, ["doctor", "--build"], cwd, options.signal, interactive),
+    runDoctor(context, ["doctor"], cwd, options.signal, interactive),
   ]);
   if (!build.data) {
     // `--build` carries every PATH probe in the table, so losing it is losing
@@ -620,16 +653,46 @@ export async function withLatestSdk(
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 /**
- * Run one row's action. The caller resolved it by ROW ID against the report it
- * last posted, so neither the command string nor the fix id is ever taken from
- * the webview — a `command` here came out of tan's own envelope.
+ * tan's own check name for the Zephyr SDK toolchain row — the ONE row whose
+ * install command needs retargeting onto this host's venv `west` and a run
+ * from the west workspace's own topdir.
+ *
+ * Gating on the ROW rather than "does the command start with `west`": the
+ * `workspace` and `westResolved` rows also carry a `west …` command through
+ * `missingPrerequisites` (`FIX_IDS` in the planner covers both with a fallback
+ * fix), and `west init` / `west update` must not be mislabelled "Installing
+ * the Zephyr SDK", nor refused for lacking the very topdir they exist to
+ * create.
  */
-export function runDependencyAction(
-  action: DependencyAction,
-  cwd: string | undefined,
-): void {
+const ZEPHYR_SDK_CHECK_NAME = "zephyrSdk";
+
+/**
+ * Run one row's action. The caller resolved it by ROW ID against the report it
+ * last posted, so neither the command string, the fix id, nor `rowName` is
+ * ever taken from the webview — they all came out of tan's own envelope.
+ *
+ * An options object, not four positional parameters: `rowName` and `cwd` are
+ * both plain strings, so swapping them at a call site type-checks silently —
+ * a shape only a test that actually asserts on `cwd` would catch, and the
+ * winget test that predates this signature did not.
+ *
+ * `sevenZipStatus` is tan's own `sevenZip` check row's status (undefined when
+ * that envelope carried no such row) — read only by the `zephyrSdk` branch's
+ * post-install notice, and never re-probed here: tan owns that fact.
+ */
+export function runDependencyAction(options: {
+  action: DependencyAction;
+  rowName: string;
+  cwd: string | undefined;
+  sevenZipStatus: DependencyStatus | undefined;
+}): void {
+  const { action, rowName, cwd, sevenZipStatus } = options;
   if (action.kind === "fix") {
     runToolchainFix(action.fixId);
+    return;
+  }
+  if (rowName === ZEPHYR_SDK_CHECK_NAME) {
+    runZephyrSdkInstall(action.command, sevenZipStatus);
     return;
   }
   // A terminal, not `runInTerminal`: tan's `missingPrerequisites[].command` is
@@ -637,12 +700,113 @@ export function runDependencyAction(
   // `runInTerminal` builds a `ProcessExecution` from an argv array — splitting
   // the line on whitespace to fit that would mangle any quoted argument. This
   // is the same dispatch `runToolchainFix` already uses for an install step.
+  runInNewTerminal(action.command, cwd);
+}
+
+/**
+ * The dedicated `runInTerminal` run name for the Zephyr SDK install, distinct
+ * from `runInNewTerminal`'s `"Alp: install dependency"`: with a `winget`
+ * terminal already open under that name, a refused second `zephyrSdk` press
+ * would offer "Show Terminal" for a name shared with an unrelated install —
+ * revealing the wrong one.
+ */
+const ZEPHYR_SDK_RUN_NAME = "Alp: install Zephyr SDK";
+
+/**
+ * tan owns WHAT to run (the command string, verbatim); the host owns WHERE
+ * and WITH WHICH binary. `west sdk install …` names a binary this host does
+ * NOT put on PATH (`tan bootstrap` installs it into the workspace venv) and
+ * must run from the west workspace's own top-level directory, not wherever
+ * the project happens to be — this is the one place that decides both.
+ *
+ * Dispatches via `runInTerminal` (an argv `ProcessExecution`, no shell) rather
+ * than `sendText` into a wrapper shell: a quoted Windows venv path put
+ * PowerShell — the default terminal profile on Windows — into EXPRESSION
+ * mode, so the quoted path parsed as a string literal instead of a command
+ * (measured: `Unexpected token '-v' in expression or statement`).
+ * `retargetWestCommand` hands back an argv array for exactly this reason, and
+ * `runInTerminal` also gets the real exit code and the concurrent-run guard
+ * `sendText` never had — reused here, not re-implemented, via `isRunActive`.
+ *
+ * Carries `proxyEnvAdditions()`: this is the one west run in the extension
+ * that downloads a gigabyte-class toolchain archive, and every other
+ * network-bound child process (`tan` itself, `west update`, the SDK-install
+ * `git clone`) already carries the same proxy gap-fillers.
+ */
+function runZephyrSdkInstall(
+  command: string,
+  sevenZipStatus: DependencyStatus | undefined,
+): void {
+  const project = collectProjectContext();
+  const topdir = westWorkspaceTopdir(project.westCwd, project.sdkRoot);
+  if (topdir === null) {
+    // No west workspace at all. `tan bootstrap` both creates one and installs
+    // `west` into it, so the panel's own Bootstrap offer is the fix, and the
+    // shared precondition already says exactly this — a terminal here would
+    // only print west's own "not in a west installation", trading one dead
+    // end for another.
+    notifyAsync(
+      planPrecondition("noZephyrWorkspace", {
+        dedupeKey: "deps-zephyr-sdk-no-workspace",
+      }),
+    );
+    return;
+  }
+  const west = venvWestInTopdir(topdir);
+  if (west === null) {
+    // A topdir resolves (an ambient `$ZEPHYR_BASE`, or a bare `.west/config`
+    // ancestor with no bootstrap venv under it — issue #349's mixed state)
+    // but its venv has no `west`. "No Zephyr workspace yet" would be FALSE
+    // here — one exists at `topdir` — so `planPrecondition` has no id for
+    // this; this is the one hand-built plan kept for exactly that gap, same
+    // severity rule as every precondition (`planPrecondition`'s own "ALWAYS
+    // warning, never error": a missing venv is a setup gap, not a fault) and
+    // the same fix action.
+    notifyAsync(
+      planFailure({
+        operation: "Installing the Zephyr SDK",
+        cause:
+          "No `west` was found in the workspace venv. Bootstrap the Alp SDK " +
+          "toolchain to create it, then try again.",
+        severity: "warning",
+        actions: [{ id: "bootstrap" }],
+        dedupeKey: "deps-zephyr-sdk-no-venv",
+      }),
+    );
+    return;
+  }
+  const argv = retargetWestCommand(command, west);
+  if (argv === null) {
+    // Not actually a plain `west …` command (a quoted argument, or tan
+    // changed the shape) — fall back to the ordinary shell dispatch rather
+    // than drop the button. Still `topdir`, not the open project's cwd: this
+    // is still `west sdk install`, which still needs its own workspace root —
+    // falling back to a DIFFERENT cwd here would fail it a second, unrelated
+    // way on top of the un-retargeted binary.
+    runInNewTerminal(command, topdir);
+    return;
+  }
+  // `runInTerminal` may refuse a concurrent press for this name (a second
+  // Install click while one is already running) rather than start a second
+  // one — in which case it already told the customer why, and a "press
+  // Refresh" notice on top would read as if a NEW install just started.
+  const alreadyRunning = isRunActive(ZEPHYR_SDK_RUN_NAME);
+  runInTerminal({
+    name: ZEPHYR_SDK_RUN_NAME,
+    argv,
+    cwd: topdir,
+    env: proxyEnvAdditions(),
+  });
+  if (!alreadyRunning) offerRefreshAfterZephyrSdkInstall(sevenZipStatus);
+}
+
+function runInNewTerminal(command: string, cwd: string | undefined): void {
   const terminal = vscode.window.createTerminal({
     name: "Alp: install dependency",
     cwd,
   });
   terminal.show(true);
-  terminal.sendText(action.command);
+  terminal.sendText(command);
   offerReloadAfterInstall();
 }
 
@@ -687,6 +851,45 @@ function offerReloadAfterInstall(): void {
       // One install at a time on screen: pressing Install on three rows must
       // not stack three identical toasts.
       dedupeKey: "deps-install-reload",
+    }),
+  );
+}
+
+/**
+ * The zephyrSdk branch's own "press Refresh" notice — deliberately NOT
+ * `offerReloadAfterInstall`, whose prose is PATH-specific ("This window's PATH
+ * was captured when VS Code started…"). The Zephyr SDK row does not flip on
+ * PATH at all — tan's `zephyrSdk` check reads the SDK install directory, so a
+ * plain Refresh always picks up a completed install with no restart needed,
+ * and asserting otherwise would be a wrong diagnosis attached to a real
+ * button.
+ *
+ * Folds in tan's own `sevenZip` verdict — never re-probed here, only read —
+ * when it is anything but `pass` on win32: the one host where west delegates
+ * `.7z` extraction to an external 7-Zip binary (`patoolib`, no pure-Python
+ * fallback), so a missing one fails the install after this notice already
+ * promised "when it finishes, press Refresh" with no reason given. tan grades
+ * the check `Warn`, not `Fail` — a missing extractor blocks THIS remedy, not
+ * the build, and the customer may have one tan did not detect — so this never
+ * refuses the dispatch, only says so up front.
+ */
+function offerRefreshAfterZephyrSdkInstall(
+  sevenZipStatus: DependencyStatus | undefined,
+): void {
+  const needsSevenZip =
+    process.platform === "win32" &&
+    sevenZipStatus !== undefined &&
+    sevenZipStatus !== "pass";
+  notifyAsync(
+    planFailure({
+      operation: "Installing the Zephyr SDK",
+      cause: needsSevenZip
+        ? "Installing in the terminal. When it finishes, press Refresh. On " +
+          "native Windows a 7-Zip binary (7z / 7za / 7zr / 7zz / 7zzs / unar) " +
+          "must be on PATH first, or the extraction step fails."
+        : "Installing in the terminal. When it finishes, press Refresh.",
+      severity: needsSevenZip ? "warning" : "info",
+      dedupeKey: "deps-zephyr-sdk-reload",
     }),
   );
 }

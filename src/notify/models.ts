@@ -61,6 +61,7 @@ export type ActionId =
   | "applyChanges"
   | "openAnyway"
   | "deleteFromDisk"
+  | "downloadTanCli"
   // presenter-only: an ad-hoc button whose title comes from `NotifyAction.title`.
   // Exists solely for `reportError`'s legacy `...actions: string[]` parameter;
   // the pure planner never emits it.

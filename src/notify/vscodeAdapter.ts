@@ -149,6 +149,7 @@ const ACTIONS: Record<
   applyChanges: { title: "Apply Changes" },
   openAnyway: { title: "Open Anyway" },
   deleteFromDisk: { title: "Delete from disk" },
+  downloadTanCli: { title: "Download" },
   custom: { title: "" }, // title always overridden by NotifyAction.title
 };
 

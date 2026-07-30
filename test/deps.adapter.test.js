@@ -193,12 +193,13 @@ const PLAIN_DATA = {
 async function report(
   workspaceRoot = "/home/dev/proj",
   { build = DOCTOR_DATA, plain = PLAIN_DATA } = {},
+  reportOptions = {},
 ) {
   const spawns = [];
   const { buildDependencyReport } = loadDepsAdapter({
     "../alpCli/vscodeAdapter": {
-      runAlpCommand: async (_context, args, cwd) => {
-        spawns.push({ args, cwd });
+      runAlpCommand: async (_context, args, cwd, options) => {
+        spawns.push({ args, cwd, options });
         const data = args.includes("--build") ? build : plain;
         return {
           outcome: {
@@ -213,7 +214,7 @@ async function report(
       collectProjectContext: () => ({ workspaceRoot, sdkRoot: null }),
     },
   });
-  const result = await buildDependencyReport({}, STATE);
+  const result = await buildDependencyReport({}, STATE, reportOptions);
   return { ...result, spawns };
 }
 
@@ -258,6 +259,89 @@ test("the table does not wait on the latest-SDK lookup", async () => {
     "the first report leaves the remote cell empty; `withLatestSdk` fills it in " +
       "a second post",
   );
+});
+
+test("a focus/settings-edit re-derive never asks tan CLI download consent", async () => {
+  const { spawns } = await report();
+  assert.ok(spawns.length > 0);
+  for (const spawn of spawns) {
+    assert.notEqual(
+      spawn.options?.interactive,
+      true,
+      "buildDependencyReport with no `interactive` option must run both doctor " +
+        "invocations non-interactively — a window-focus/settings-edit/bootstrap- " +
+        "boundary re-derive must never pop ADR 0021's consent modal",
+    );
+  }
+});
+
+test("the Dependencies panel's explicit Refresh click DOES ask tan CLI download consent", async () => {
+  const { spawns } = await report("/home/dev/proj", {}, { interactive: true });
+  assert.ok(spawns.length > 0);
+  for (const spawn of spawns) {
+    assert.equal(
+      spawn.options?.interactive,
+      true,
+      "`refreshDependencies` (deps/panel.ts) IS the user's Refresh click — " +
+        "it must reach runDoctor interactively so a fresh tan CLI download can " +
+        "show ADR 0021's consent dialog instead of being silently refused",
+    );
+  }
+});
+
+/** Drive the REAL `withLatestSdk` against a fake `runAlpCommand`, returning
+ *  the options every `sdk list` spawn was given. A bare `globalState` (no
+ *  cache entry) so the lookup always reaches the spawn regardless of `force` —
+ *  `latestSdkCacheStale` reads "nothing cached" as stale either way. */
+async function sdkListSpawnOptions(refreshLatestSdk) {
+  const spawns = [];
+  const { withLatestSdk } = loadDepsAdapter({
+    "../alpCli/vscodeAdapter": {
+      runAlpCommand: async (_context, args, _cwd, options) => {
+        spawns.push({ args, options });
+        return { outcome: { ok: true, envelope: null, message: "" } };
+      },
+    },
+  });
+  const store = new Map();
+  const context = {
+    globalState: {
+      get: (key, fallback) => (store.has(key) ? store.get(key) : fallback),
+      update: async (key, value) => void store.set(key, value),
+    },
+  };
+  await withLatestSdk(
+    context,
+    { rows: [{ name: "sdk", installed: null }] },
+    { refreshLatestSdk },
+  );
+  return spawns.filter((spawn) => spawn.args.includes("list"));
+}
+
+test("withLatestSdk: a focus/settings-edit re-derive never asks tan CLI download consent on `sdk list`", async () => {
+  const spawns = await sdkListSpawnOptions(false);
+  assert.ok(spawns.length > 0, "the lookup must still run with nothing cached");
+  for (const spawn of spawns) {
+    assert.notEqual(
+      spawn.options?.interactive,
+      true,
+      "`refreshLatestSdk: false` (a background re-derive) must not raise ADR " +
+        "0021's consent dialog on the `sdk list` call",
+    );
+  }
+});
+
+test("withLatestSdk: the explicit Refresh click DOES ask tan CLI download consent on `sdk list`", async () => {
+  const spawns = await sdkListSpawnOptions(true);
+  assert.ok(spawns.length > 0);
+  for (const spawn of spawns) {
+    assert.equal(
+      spawn.options?.interactive,
+      true,
+      "`refreshLatestSdk: true` IS the user's explicit Refresh click " +
+        "(deps/panel.ts) and must reach `sdk list` interactively",
+    );
+  }
 });
 
 // ── A-0f: the four checks that live on PLAIN `tan doctor` only ───────────────
@@ -498,14 +582,18 @@ test("a `--build` that answers nothing is still an error state", async () => {
 
 test("a terminal install says what actually makes the row go green", async () => {
   const sent = [];
+  const terminals = [];
   const plans = [];
   const { runDependencyAction } = loadDepsAdapter({
     vscode: {
       window: {
-        createTerminal: () => ({
-          show() {},
-          sendText: (text) => sent.push(text),
-        }),
+        createTerminal: (opts) => {
+          terminals.push(opts);
+          return {
+            show() {},
+            sendText: (text) => sent.push(text),
+          };
+        },
       },
       Uri: {},
     },
@@ -514,8 +602,8 @@ test("a terminal install says what actually makes the row go green", async () =>
     },
   });
 
-  runDependencyAction(
-    {
+  runDependencyAction({
+    action: {
       kind: "command",
       // tan 0.4.0's own `missingPrerequisites[].command` on this Windows host,
       // verbatim.
@@ -523,10 +611,20 @@ test("a terminal install says what actually makes the row go green", async () =>
       effect: "install",
       title: "winget install -e --id Ninja-build.Ninja",
     },
-    "/home/dev/proj",
-  );
+    rowName: "ninja",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
 
   assert.deepEqual(sent, ["winget install -e --id Ninja-build.Ninja"]);
+  assert.equal(
+    terminals[0].cwd,
+    "/home/dev/proj",
+    // `rowName` and `cwd` are both plain strings — an options object, not
+    // positional parameters, is what makes a swap between them fail to
+    // type-check instead of passing silently.
+    "the generic path's cwd is the caller's, unretargeted",
+  );
   assert.equal(
     plans.length,
     1,
@@ -569,6 +667,355 @@ test("a terminal install says what actually makes the row go green", async () =>
   );
 });
 
+// ── #412: `west sdk install …` retargeted onto the resolved venv binary ─────
+
+/** tan v0.4.1's own `missingPrerequisites[].command` for the `zephyrSdk` row,
+ *  verbatim. */
+const ZEPHYR_SDK_ACTION = {
+  kind: "command",
+  command: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
+  effect: "install",
+  title: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
+};
+
+/** Synthetic proxy env additions — distinct dummy keys/values so a test can
+ *  tell "the real proxyEnvAdditions() ran and its result reached runInTerminal"
+ *  from "env was silently dropped or hardcoded". */
+const FAKE_PROXY_ENV = { HTTP_PROXY: "http://proxy.example:8080" };
+
+/** A `zephyrSdk`-branch harness: a resolved topdir, a resolved venv `west`
+ *  inside it, `runInTerminal` and `notifyAsync` both captured. `running`
+ *  stands in for a concurrent press already occupying the run name. */
+function loadZephyrSdkHarness(running = false) {
+  const calls = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => calls.push(opts),
+      isRunActive: () => running,
+    },
+    "../alpCli/vscodeAdapter": {
+      proxyEnvAdditions: () => FAKE_PROXY_ENV,
+    },
+    "../notify/vscodeAdapter": { notifyAsync: (plan) => plans.push(plan) },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        westCwd: "/home/dev/proj",
+        sdkRoot: "/home/dev/.alp/sdk/v0.13.0",
+      }),
+    },
+    "../environment/vscodeAdapter": {
+      westWorkspaceTopdir: () => "/home/dev/.alp",
+      venvWestInTopdir: (topdir) => `${topdir}/.venv/bin/west`,
+    },
+  });
+  return { calls, plans, runDependencyAction };
+}
+
+test("the zephyrSdk row dispatches argv through runInTerminal, from the resolved topdir, with the proxy env", () => {
+  const { calls, plans, runDependencyAction } = loadZephyrSdkHarness();
+
+  runDependencyAction({
+    action: ZEPHYR_SDK_ACTION,
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: "pass",
+  });
+
+  assert.equal(
+    calls.length,
+    1,
+    "west sdk install dispatches via runInTerminal (argv, no shell), not sendText",
+  );
+  assert.equal(
+    calls[0].name,
+    "Alp: install Zephyr SDK",
+    "a name distinct from the generic install path — a winget terminal " +
+      "sharing the name would let a refusal's Show Terminal reveal the wrong one",
+  );
+  assert.deepEqual(calls[0].argv, [
+    "/home/dev/.alp/.venv/bin/west",
+    "sdk",
+    "install",
+    "--version",
+    "1.0.1",
+    "-t",
+    "arm-zephyr-eabi",
+  ]);
+  assert.equal(
+    calls[0].cwd,
+    "/home/dev/.alp",
+    "west needs the workspace TOPDIR, not the open project's cwd",
+  );
+  assert.deepEqual(
+    calls[0].env,
+    FAKE_PROXY_ENV,
+    "this is the one west run that downloads a gigabyte-class archive, and " +
+      "every other network-bound child process already carries proxyEnvAdditions()",
+  );
+  assert.equal(plans.length, 1, "a press-Refresh notice after dispatch");
+  assert.equal(
+    plans[0].severity,
+    "info",
+    "sevenZip passed: nothing to warn about",
+  );
+  assert.match(plans[0].message, /refresh/i);
+  assert.doesNotMatch(
+    plans[0].message,
+    /7-Zip/,
+    "the extractor caveat only appears when tan's own sevenZip check is not pass",
+  );
+});
+
+test(
+  "win32 + tan's sevenZip check not pass: the extractor sentence reaches the notice",
+  {
+    skip:
+      process.platform !== "win32" &&
+      "the 7-Zip caveat is win32-only by design; nothing to assert elsewhere",
+  },
+  () => {
+    const { plans, runDependencyAction } = loadZephyrSdkHarness();
+
+    runDependencyAction({
+      action: ZEPHYR_SDK_ACTION,
+      rowName: "zephyrSdk",
+      cwd: "/home/dev/proj",
+      sevenZipStatus: "warn",
+    });
+
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].severity, "warning");
+    assert.match(plans[0].message, /7-Zip/);
+    assert.match(plans[0].message, /7z \/ 7za \/ 7zr \/ 7zz \/ 7zzs \/ unar/);
+  },
+);
+
+test("tan's sevenZip check at pass: no extractor sentence reaches the notice, on any host", () => {
+  const { plans, runDependencyAction } = loadZephyrSdkHarness();
+
+  runDependencyAction({
+    action: ZEPHYR_SDK_ACTION,
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: "pass",
+  });
+
+  assert.equal(plans.length, 1);
+  assert.doesNotMatch(plans[0].message, /7-Zip/);
+});
+
+test("a concurrent zephyrSdk press: runInTerminal owns the refusal, no press-Refresh notice on top", () => {
+  const { calls, plans, runDependencyAction } = loadZephyrSdkHarness(
+    /* running */ true,
+  );
+
+  runDependencyAction({
+    action: ZEPHYR_SDK_ACTION,
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: "pass",
+  });
+
+  assert.equal(
+    calls.length,
+    1,
+    "still dispatches — runInTerminal itself is what refuses a same-named " +
+      "concurrent run and tells the customer why",
+  );
+  assert.equal(
+    plans.length,
+    0,
+    "a second notice on top would read as if a NEW install just started",
+  );
+});
+
+test("no west workspace at all: no terminal, a precondition pointing at Bootstrap", () => {
+  const calls = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => calls.push(opts),
+    },
+    "../notify/vscodeAdapter": { notifyAsync: (plan) => plans.push(plan) },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({ westCwd: null, sdkRoot: null }),
+    },
+    "../environment/vscodeAdapter": {
+      westWorkspaceTopdir: () => null,
+      venvWestInTopdir: () => {
+        throw new Error("must not be called when no topdir resolved");
+      },
+    },
+  });
+
+  runDependencyAction({
+    action: ZEPHYR_SDK_ACTION,
+    rowName: "zephyrSdk",
+    cwd: undefined,
+    sevenZipStatus: undefined,
+  });
+
+  assert.equal(
+    calls.length,
+    0,
+    "`west sdk install` cannot succeed with no west workspace — opening a " +
+      "terminal only relocates the dead end",
+  );
+  assert.equal(plans.length, 1);
+  assert.equal(plans[0].severity, "warning", "a precondition, never `info`");
+  assert.match(plans[0].message, /bootstrap/i);
+  assert.ok(
+    (plans[0].actions ?? []).some((action) => action.id === "bootstrap"),
+    "one click to the fix, not a name-only mention",
+  );
+  assert.ok(plans[0].dedupeKey);
+});
+
+test("a topdir resolves but its venv has no west: refused, warning severity, Bootstrap offered", () => {
+  const calls = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => calls.push(opts),
+    },
+    "../notify/vscodeAdapter": { notifyAsync: (plan) => plans.push(plan) },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        westCwd: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+    },
+    "../environment/vscodeAdapter": {
+      // The #349 mixed state: a topdir resolves (an ambient $ZEPHYR_BASE, or a
+      // bare `.west/config` ancestor) but nothing bootstrapped a venv under it.
+      westWorkspaceTopdir: () => "/home/dev/proj",
+      venvWestInTopdir: () => null,
+    },
+  });
+
+  runDependencyAction({
+    action: ZEPHYR_SDK_ACTION,
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  assert.equal(
+    calls.length,
+    0,
+    "no terminal opens on a byte-identical command",
+  );
+  assert.equal(plans.length, 1);
+  assert.equal(
+    plans[0].severity,
+    "warning",
+    "a setup gap, not a fault — matches planPrecondition's own rule",
+  );
+  assert.ok(
+    (plans[0].actions ?? []).some((action) => action.id === "bootstrap"),
+  );
+  assert.match(plans[0].message, /venv/i);
+  assert.notEqual(
+    plans[0].dedupeKey,
+    "deps-zephyr-sdk-no-workspace",
+    "distinct from the no-topdir-at-all case: a different notice must not be deduped against it",
+  );
+});
+
+test("a zephyrSdk command that cannot be retargeted falls back to the topdir, not the open project's cwd", () => {
+  const sent = [];
+  const terminals = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: {
+      window: {
+        createTerminal: (opts) => {
+          terminals.push(opts);
+          return { show() {}, sendText: (text) => sent.push(text) };
+        },
+      },
+      Uri: {},
+    },
+    "../notify/vscodeAdapter": { notifyAsync() {} },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        westCwd: "/home/dev/proj",
+        sdkRoot: "/home/dev/.alp/sdk/v0.13.0",
+      }),
+    },
+    "../environment/vscodeAdapter": {
+      westWorkspaceTopdir: () => "/home/dev/.alp",
+      venvWestInTopdir: (topdir) => `${topdir}/.venv/bin/west`,
+    },
+  });
+
+  runDependencyAction({
+    action: {
+      kind: "command",
+      // A shape `retargetWestCommand` refuses (a quoted argument) — never
+      // actually reachable on the measured v0.4.1 command, but drift
+      // insurance: it must fail in exactly ONE way, not two.
+      command: 'west sdk install --name "custom sdk"',
+      effect: "install",
+      title: 'west sdk install --name "custom sdk"',
+    },
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  assert.deepEqual(sent, ['west sdk install --name "custom sdk"']);
+  assert.equal(
+    terminals[0].cwd,
+    "/home/dev/.alp",
+    "still `west sdk install` — it still needs the west workspace topdir, " +
+      "not the open project folder, even un-retargeted",
+  );
+});
+
+test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
+  const sent = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: {
+      window: {
+        createTerminal: () => ({
+          show() {},
+          sendText: (text) => sent.push(text),
+        }),
+      },
+      Uri: {},
+    },
+    // No override for "../project/vscodeAdapter" or "../environment/
+    // vscodeAdapter": if the zephyrSdk branch fired by mistake for this row,
+    // `collectProjectContext` (stubbed to `{}` by default) would throw "is not
+    // a function" and fail this test loudly.
+  });
+
+  runDependencyAction({
+    action: {
+      kind: "command",
+      // `workspace`/`westResolved` also carry a `west …` command via
+      // `missingPrerequisites` (FIX_IDS in the planner) — only the `zephyrSdk`
+      // ROW gets retargeted.
+      command: "west update",
+      effect: "install",
+      title: "west update",
+    },
+    rowName: "workspace",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  assert.deepEqual(
+    sent,
+    ["west update"],
+    "the command reaches the plain terminal dispatch untouched",
+  );
+});
+
 test("an open-docs fix offers no PATH notice", async () => {
   const plans = [];
   const fixes = [];
@@ -577,7 +1024,12 @@ test("an open-docs fix offers no PATH notice", async () => {
     "../toolchain": { runToolchainFix: (id) => fixes.push(id) },
   });
 
-  runDependencyAction({ kind: "fix", fixId: "zephyr-sdk" }, "/home/dev/proj");
+  runDependencyAction({
+    action: { kind: "fix", fixId: "zephyr-sdk" },
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
 
   assert.deepEqual(fixes, ["zephyr-sdk"]);
   assert.deepEqual(

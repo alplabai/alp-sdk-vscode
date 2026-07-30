@@ -216,6 +216,36 @@ export function isUnverifiableCache(
 }
 
 /**
+ * True when the un-digested cache (`isUnverifiableCache`) is not merely a file
+ * on disk but the binary a customer is CURRENTLY RUNNING — i.e. `onPath`, since
+ * `decideBinarySource` can only reach the `path` rung after stepping over an
+ * un-digested cache. This, not `isUnverifiableCache` alone, is the ONLY state
+ * the #396 consent exclusion may skip: moving a customer OFF a binary they are
+ * actively running and unverified, and ONTO a digest-verified one — nobody is
+ * stranded, because someone is already running the unverified one.
+ *
+ * When the cache is un-digested but `onPath` is false, NOTHING is currently
+ * running: `decideBinarySource` has fallen all the way through to `download`,
+ * so a customer who set `alpSdk.tanCliDownloadConsent: "deny"` has nothing to
+ * be migrated off of — excluding that state from the gate was a hole a review
+ * found after #434 merged: with a stale un-digested file left in global storage
+ * and nothing on PATH, `deny` was silently ignored and the download proceeded.
+ *
+ * One named rule rather than the conjunction re-typed at both call sites
+ * (`adapterCore.ts`'s `download` arm and `vscodeAdapter.ts`'s
+ * `ensureTanCliProvisioned`), which is how the two would start disagreeing —
+ * same reasoning as `isUnverifiableCache` itself.
+ */
+export function isUnverifiableCacheInUse(
+  input: Pick<
+    BinaryResolutionInput,
+    "cachedExists" | "cachedDigestRecorded" | "onPath"
+  >,
+): boolean {
+  return isUnverifiableCache(input) && input.onPath;
+}
+
+/**
  * True when resolution lands on ladder RUNG 6 — the `path` FALLBACK nobody
  * chose, reached only because no managed copy resolved above it.
  *
@@ -561,6 +591,96 @@ export function shouldFetchManagedCli(
   return false;
 }
 
+/** `alpSdk.tanCliDownloadConsent` setting values. `ask` is the default: show
+ *  the one-time consent dialog ADR 0021's Tier A rule requires before a FRESH
+ *  install. `allow`/`deny` pre-answer it (a managed/CI image that already
+ *  vetted, or refuses, the download) and never prompt. */
+export type TanCliDownloadConsentSetting = "ask" | "allow" | "deny";
+
+/** The user's answer to a previously-shown consent prompt, persisted in
+ *  `globalState` so a fresh install asks only once. */
+export type TanCliDownloadConsentAnswer = "accepted" | "declined";
+
+/**
+ * Whether a FRESH tan CLI download (case 1 of `ensureTanCliProvisioned` — no
+ * tan resolves anywhere, digest-clean cache) may proceed: `"allow"`/`"deny"`
+ * are final, `"prompt"` means the caller must show the consent dialog and
+ * persist whatever it returns.
+ *
+ * Pure so the branch table is testable without a `vscode` window. The
+ * `alpSdk.tanCliDownloadConsent` setting always wins over a stored answer —
+ * flipping it from a managed/CI image re-arms or silences the prompt without
+ * touching `globalState` — and a stored answer only matters on `"ask"`
+ * (the default), which is also the only value that can still return
+ * `"prompt"`.
+ *
+ * CALLERS: this function decides ONLY the fresh-provision arm. It must never
+ * be consulted for `updatingStaleCache` (a self-heal of an ALREADY-accepted
+ * install) or for `reacquiringUnverifiedCache` WHILE `isUnverifiableCacheInUse`
+ * holds — moving a customer OFF a binary they are ACTUALLY RUNNING (unverified,
+ * via the PATH fallback) and ONTO a digest-verified one is a security heal, not
+ * a new install, and gating it would let a stored decline strand that customer
+ * on the unverified binary it exists to close, i.e. #396 again with a decline
+ * on top. It IS consulted for `reacquiringUnverifiedCache` when
+ * `isUnverifiableCacheInUse` does NOT hold — an un-digested cache file with
+ * nothing on PATH is nobody's heal, it is a fresh install wearing a leftover
+ * file, and there is no one to strand by asking. See `ensureTanCliProvisioned`'s
+ * `isFreshInstall` guard (the activation-time fetch) and `resolveAlpBinary`'s
+ * `download` arm (the per-command lazy fetch, where this is now unconditional
+ * because `isUnverifiableCacheInUse` is false in every state that arm can
+ * reach) — do not widen either past `isUnverifiableCacheInUse` "for
+ * consistency".
+ *
+ * ONE DECISION, ONE PLACE: both the activation path and the lazy per-command
+ * path read the SAME `alpSdk.tanCliDownloadConsent` setting and the SAME
+ * `globalState` answer through this one function — there is no second,
+ * parallel consent state. They differ only in whether an unanswered "ask"
+ * may show a dialog (see `ensureFreshInstallConsent` vs
+ * `resolveFreshInstallConsentSilently` in vscodeAdapter.ts).
+ */
+export function resolveTanCliDownloadConsent(input: {
+  setting: TanCliDownloadConsentSetting;
+  storedAnswer: TanCliDownloadConsentAnswer | undefined;
+}): "prompt" | "allow" | "deny" {
+  if (input.setting === "allow") return "allow";
+  if (input.setting === "deny") return "deny";
+  if (input.storedAnswer === "accepted") return "allow";
+  if (input.storedAnswer === "declined") return "deny";
+  return "prompt";
+}
+
+/**
+ * The message `resolveAlpBinary`'s `download` arm throws when the fresh-
+ * install consent gate refuses a lazy per-command download — either the
+ * setting/stored answer is `deny`, or the resolution is non-interactive (a
+ * background caller, which never prompts) and nothing is on record yet.
+ *
+ * A stable PREFIX, matched by `classifyUnavailable` below into
+ * `"consentDeclined"` — not reused verbatim as the customer sentence (unlike
+ * the checksum refusals' `ChecksumError.message`), so this text is channel
+ * `detail` only and may be reworded without touching the classifier or the
+ * guidance `notify/service.ts` composes.
+ */
+export const TAN_CLI_DOWNLOAD_CONSENT_NEEDED =
+  "The tan CLI download needs consent before it can run.";
+
+/**
+ * The customer-facing sentence for a resolution refused for lack of download
+ * consent (`unavailable.reason === "consentDeclined"`), for readers that show
+ * `CliOutcome.message` DIRECTLY rather than going through `planCliOutcome`
+ * (`notify/service.ts`) — e.g. the Dependencies panel's inline error text
+ * (`buildDependencyReport`'s `error: build.message`, `deps/vscodeAdapter.ts`).
+ * `planCliOutcome`'s own composed sentence (its `consentDeclined` case) names
+ * the setting too, but is parameterised on an operation name this generic
+ * `unavailableOutcome` (`vscodeAdapter.ts`) does not have — a decline reaching
+ * either surface must still name `alpSdk.tanCliDownloadConsent`, which is the
+ * one fact both sentences share, even though the two are not the same string.
+ */
+export const TAN_CLI_DOWNLOAD_CONSENT_DECLINED_MESSAGE =
+  "The tan CLI's download hasn't been consented to yet. Set " +
+  "alpSdk.tanCliDownloadConsent to allow it, or point alpSdk.cliPath at a " +
+  "tan you already have.";
+
 /**
  * The ONE sentence for the rung-6 PATH fallback (#393). INFORMATIONAL — nothing
  * failed, nothing is broken, and the customer's setup keeps working, which is
@@ -805,6 +925,11 @@ export function classifyOutcome(
  */
 export function classifyUnavailable(raw: string): CliUnavailableReason {
   if (/^No prebuilt tan CLI/.test(raw)) return "noPrebuilt";
+  // Matched by the stable PREFIX (`TAN_CLI_DOWNLOAD_CONSENT_NEEDED`) ahead of
+  // every other rule: nothing about the binary is broken here, so it must not
+  // fall into `corrupt`/`spawnFailed` and offer a "Run Doctor" button for a
+  // question doctor cannot answer.
+  if (raw.startsWith(TAN_CLI_DOWNLOAD_CONSENT_NEEDED)) return "consentDeclined";
   if (/did not produce a binary|Downloaded 0 bytes/.test(raw)) return "corrupt";
   // Every `ChecksumError` sentence (`download.ts`) says "checksum". Matched
   // AHEAD of both `corrupt` and `downloadFailed`, and mapped to neither:

@@ -55,6 +55,11 @@ function baseDeps(overrides = {}) {
       recorded = digest;
       calls.recorded.push(digest);
     },
+    // Consent already granted by default — these rows are about the
+    // resolution LADDER, not ADR 0021's consent gate (its own file:
+    // test/alpCli.downloadConsent.test.js). A row that wants to drive a
+    // refusal overrides this via `overrides`.
+    ensureFreshDownloadConsent: async () => true,
     ...overrides,
   };
   return { deps, existing, calls, digests };
@@ -147,6 +152,49 @@ test("resolveAlpBinary: the download is handed the checksum spec for the SAME re
   // nothing about these bytes.
   const tag = `/download/v${require("../out/alpCli/service.js").SUPPORTED_CLI_VERSION}/`;
   assert.ok(calls.verify.checksumsUrl.includes(tag), calls.verify.checksumsUrl);
+});
+
+// ── consent gate (finding 1: a stale un-digested cache must not bypass it) ──
+
+test("resolveAlpBinary: an un-digested cache with nothing on PATH is STILL gated on consent (deny is honoured)", async () => {
+  // The exact state a review found: a leftover un-digested cache file (#386
+  // migration population) plus nothing on PATH. `decideBinarySource` skips the
+  // un-digested cache (no record) and, with `onPath` false, falls all the way
+  // to `download` — so NOTHING is currently running, and there is no one to
+  // strand by asking. Before the fix, `isUnverifiableCache(input)` alone
+  // excluded this state from the gate, so a `deny` here downloaded anyway.
+  const { deps, calls } = baseDeps({
+    existing: ["/cache/cli/tan"], // present, but recordedDigest is undefined
+    commandOnPath: () => false,
+    ensureFreshDownloadConsent: async () => false, // simulates `deny`
+  });
+  await assert.rejects(
+    () => resolveAlpBinary(deps),
+    new RegExp(
+      require("../out/alpCli/service.js").TAN_CLI_DOWNLOAD_CONSENT_NEEDED,
+    ),
+  );
+  assert.equal(calls.download, 0, "a denied consent must not download");
+});
+
+test("resolveAlpBinary: an un-digested cache with nothing on PATH still asks (consent granted proceeds)", async () => {
+  let asked = 0;
+  const { deps, calls } = baseDeps({
+    existing: ["/cache/cli/tan"],
+    commandOnPath: () => false,
+    ensureFreshDownloadConsent: async () => {
+      asked++;
+      return true;
+    },
+  });
+  const r = await resolveAlpBinary(deps);
+  assert.equal(
+    asked,
+    1,
+    "the download arm must always ask, un-digested cache or not",
+  );
+  assert.equal(r.source, "download");
+  assert.equal(calls.download, 1);
 });
 
 test("resolveAlpBinary: throws on unsupported host (no prebuilt asset)", async () => {
