@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - **New setting `alpSdk.tanCliDownloadConsent` (`ask` / `allow` / `deny`,
   default `ask`, machine-overridable) gates the extension's first managed
