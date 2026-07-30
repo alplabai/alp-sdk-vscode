@@ -173,6 +173,11 @@ async function fetchEnvelopeData(
   cwd?: string,
 ): Promise<unknown> {
   try {
+    // Deliberately NOT `{ interactive: true }`: `pushSdkCatalog` (its only
+    // caller) fires on LSP start, on every `alpSdk` settings edit, and on
+    // opening any prj.conf — none of those is the customer asking to
+    // download a tan CLI, so an interactive resolution here would pop ADR
+    // 0021's consent modal out of opening an editor tab.
     const { outcome } = await runAlpCommand(context, args, cwd);
     return outcome.envelope?.data;
   } catch {

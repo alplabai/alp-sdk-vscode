@@ -144,8 +144,15 @@ async function latestSdkTag(
   if (!force && !latestSdkCacheStale(cache, Date.now())) {
     return cache?.tag ?? null;
   }
+  // `interactive: force` — `force` IS "the user explicitly asked for a
+  // refresh" (this function's own opening doc, and `refreshDependencies` in
+  // `deps/panel.ts` is its one caller that passes `true`), so it doubles as
+  // the direct-ask signal ADR 0021 needs: ask consent on an explicit Refresh
+  // click, never on the window-focus/settings-edit/bootstrap-boundary
+  // re-derives that pass `false` here.
   const { outcome } = await runAlpCommand(context, ["sdk", "list"], undefined, {
     signal,
+    interactive: force,
   });
   const envelope = outcome.envelope;
   if (!envelope || !envelope.ok) {
@@ -479,8 +486,25 @@ async function runDoctor(
   args: string[],
   cwd: string,
   signal: AbortSignal | undefined,
+  // `false` for the panel's own re-derives (window focus, settings edit,
+  // bootstrap start/end — DependencyPanel's `onStateChange`) and for the
+  // initial `ready` open, so none of those pops ADR 0021's consent modal out
+  // of nowhere. `true` only for the explicit Refresh click
+  // (`refreshDependencies`, `deps/panel.ts`), which already carries this
+  // distinction as `refreshLatestSdk` — threaded through here under its own
+  // name so a Refresh click is not silently refused with consent unanswered.
+  // Note what this is NOT the remedy for: the `tan` row has no action
+  // (`action: null`, `packages/alp-core/src/deps/planner.ts`) — its own
+  // install/update path lives in `src/alpCli/`, not a row button, so a
+  // declined/unanswered consent here does not leave a dangling button. It
+  // leaves NO table at all: `build.data` is null, so `buildDependencyReport`
+  // returns `report: null` and the panel shows its inline error text instead.
+  interactive: boolean,
 ): Promise<{ data: DoctorEnvelopeData | null; message: string }> {
-  const { outcome } = await runAlpCommand(context, args, cwd, { signal });
+  const { outcome } = await runAlpCommand(context, args, cwd, {
+    signal,
+    interactive,
+  });
   const data = outcome.envelope?.data;
   if (!outcome.envelope || !isDoctorEnvelopeData(data)) {
     log(
@@ -529,7 +553,10 @@ export interface DependencyReportResult {
 export async function buildDependencyReport(
   context: vscode.ExtensionContext,
   state: AlpIdeState,
-  options: { signal?: AbortSignal } = {},
+  // `interactive` — see `runDoctor`'s doc: default false (window focus,
+  // settings edit, bootstrap boundary, the initial `ready` open), `true` only
+  // when the caller is the explicit Refresh click.
+  options: { signal?: AbortSignal; interactive?: boolean } = {},
 ): Promise<DependencyReportResult> {
   const project = collectProjectContext();
   // cwd, always, explicitly (#371): doctor discovers the project from where it
@@ -541,9 +568,10 @@ export async function buildDependencyReport(
   // depend on it is withheld below rather than reported.
   const hasProject = project.workspaceRoot !== null;
   const cwd = project.workspaceRoot ?? os.tmpdir();
+  const interactive = options.interactive === true;
   const [build, plain] = await Promise.all([
-    runDoctor(context, ["doctor", "--build"], cwd, options.signal),
-    runDoctor(context, ["doctor"], cwd, options.signal),
+    runDoctor(context, ["doctor", "--build"], cwd, options.signal, interactive),
+    runDoctor(context, ["doctor"], cwd, options.signal, interactive),
   ]);
   if (!build.data) {
     // `--build` carries every PATH probe in the table, so losing it is losing

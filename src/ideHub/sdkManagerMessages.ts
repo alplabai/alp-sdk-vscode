@@ -274,7 +274,18 @@ export function createSdkMessageHandler(
 
   async function handleRequestSdkReleases(): Promise<void> {
     // Delegate the GitHub releases fetch to `alp sdk list --format json`.
-    const { outcome } = await runAlpCommand(context, ["sdk", "list"]);
+    // `interactive: true`: reached only from the SDK Manager view's own mount
+    // effect and its explicit Refresh button (`requestSdkReleases`), both
+    // downstream of the user explicitly opening this panel — never a
+    // background re-derive.
+    const { outcome } = await runAlpCommand(
+      context,
+      ["sdk", "list"],
+      undefined,
+      {
+        interactive: true,
+      },
+    );
     const envelope = outcome.envelope;
     if (!envelope || !envelope.ok) {
       // One planner call replaces both old branches: severity now comes from

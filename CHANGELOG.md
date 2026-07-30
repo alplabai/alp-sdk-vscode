@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **New setting `alpSdk.tanCliDownloadConsent` (`ask` / `allow` / `deny`,
+  default `ask`, machine-overridable) gates the extension's first managed
+  download of the `tan` CLI.** The first time nothing else resolves a `tan`
+  binary, the extension shows a one-time consent dialog (artifact, source,
+  size, licence) before fetching it; the answer is remembered, so it asks only
+  once. `allow`/`deny` pre-answer it for a managed/CI image and never prompt.
+  `deny` is honoured in every state where nothing is currently running a `tan`
+  — including a machine with a stale, not-yet-checksum-verified copy left in
+  the extension's global storage and nothing on PATH, which is still "nothing
+  running", not a binary to migrate off of. Two later self-heals of a `tan` a
+  customer ALREADY HAS — a stale-cache version update, and the one-time
+  re-verification of a binary cached before this extension started recording
+  checksums — stay ungated by design and never consult this setting; the
+  second of those now applies only to a customer who is actually running the
+  unverified copy via the PATH fallback, the one case it exists to heal.
+  Running **Install tan CLI (global)** or **Update tan CLI** from the command
+  palette always proceeds regardless of a stored decline, and now clears it,
+  so declining once does not shadow a later explicit ask. This dialog is
+  reserved for a command the customer just triggered (build/validate/
+  generate/debug-config/sdk-switch/materialise/the Dependencies panel's
+  explicit Refresh click/opening the Build Plan panel/…); a resolution that
+  runs on its own — the language server's completion-catalog refresh, the
+  Dependencies panel's focus/settings-edit/bootstrap-boundary re-derives, the
+  Build Plan panel's file-watcher refresh, a background version check — never
+  raises it, and several such resolutions racing in the same window (e.g. two
+  open `prj.conf` tabs) now share one resolution instead of each opening its
+  own dialog or running its own download. A decline reaching a status surface
+  that reads the outcome directly (e.g. the Dependencies panel) now names the
+  setting explicitly and shows as a warning rather than a red error.
+
 - **The Zephyr SDK row's Install button now runs, instead of failing with
   `'west' is not recognized`.** The pinned tan v0.4.1's `west sdk install
   --version 1.0.1 -t arm-zephyr-eabi` command is correct, but `west` is not on

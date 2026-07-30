@@ -166,10 +166,13 @@ export async function setActiveSdk(
         "[sdk] no workspace folder — skipping `tan sdk switch` (nothing to reconcile without a west topdir)",
       );
     } else {
+      // `interactive: true`: `setActiveSdk` runs only from an explicit
+      // "switch SDK" / "browse for an SDK" webview action, never on its own.
       const { outcome } = await runAlpCommand(
         context,
         ["sdk", "switch", sdkPath],
         workspaceRoot,
+        { interactive: true },
       );
       log(
         outcome.ok

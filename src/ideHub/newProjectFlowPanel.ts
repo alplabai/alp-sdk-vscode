@@ -168,7 +168,13 @@ export class NewProjectFlowPanel {
    *  (presets returns an empty `soms`) so New Project works pre-SDK. */
   private async fetchSomModules(sdkPath?: string): Promise<E1mModule[]> {
     const args = sdkPath ? ["--sdk-root", sdkPath, "presets"] : ["presets"];
-    const { outcome } = await runAlpCommand(this.context, args);
+    // `interactive: true`: only reached from `sendState`/`reloadCatalog`,
+    // themselves only called on the wizard's own `ready`/`reloadProjectTemplates`
+    // messages — i.e. the user opened or is actively driving this wizard, never
+    // a background re-derive.
+    const { outcome } = await runAlpCommand(this.context, args, undefined, {
+      interactive: true,
+    });
     const soms =
       (
         outcome.envelope?.data as
@@ -225,7 +231,13 @@ export class NewProjectFlowPanel {
    *  truth): `alp explain` lists ids, then per-id explain gives title/blurb. */
   private async fetchTemplates(sdkPath?: string): Promise<ProjectTemplate[]> {
     const root = sdkPath ? ["--sdk-root", sdkPath] : [];
-    const overview = await runAlpCommand(this.context, [...root, "explain"]);
+    // `interactive: true` on all three calls below — see `fetchSomModules`.
+    const overview = await runAlpCommand(
+      this.context,
+      [...root, "explain"],
+      undefined,
+      { interactive: true },
+    );
     if (overview.outcome.envelope === null) {
       // `runAlpCommand` never throws: an unresolvable/failed CLI returns a
       // null-envelope error outcome. Without surfacing it the template step
@@ -252,12 +264,12 @@ export class NewProjectFlowPanel {
 
     const templates: ProjectTemplate[] = [];
     for (const id of ids) {
-      const detail = await runAlpCommand(this.context, [
-        ...root,
-        "explain",
-        "--template",
-        id,
-      ]);
+      const detail = await runAlpCommand(
+        this.context,
+        [...root, "explain", "--template", id],
+        undefined,
+        { interactive: true },
+      );
       const data = detail.outcome.envelope?.data as
         | { summary?: string; details?: string[] }
         | undefined;
@@ -273,10 +285,12 @@ export class NewProjectFlowPanel {
     // Append the SDK's ready-made example projects (`alp examples` → category
     // "example"), so users can scaffold from a real example, not just a starter.
     // Empty when no SDK resolves — the picker simply shows no Examples section.
-    const examplesRes = await runAlpCommand(this.context, [
-      ...root,
-      "examples",
-    ]);
+    const examplesRes = await runAlpCommand(
+      this.context,
+      [...root, "examples"],
+      undefined,
+      { interactive: true },
+    );
     const examples =
       (
         examplesRes.outcome.envelope?.data as
@@ -443,7 +457,11 @@ export class NewProjectFlowPanel {
     if (sdkPath) {
       initArgs.push("--sdk-root", sdkPath);
     }
-    const { outcome } = await runAlpCommand(this.context, initArgs);
+    // `interactive: true`: reached only from the wizard's "Create" button
+    // (`createNewProject`) — a direct, explicit user action.
+    const { outcome } = await runAlpCommand(this.context, initArgs, undefined, {
+      interactive: true,
+    });
     if (!outcome.envelope || !outcome.envelope.ok) {
       // Severity comes from the outcome, never from here: `alp init --som` with
       // a bad SKU exits 2 (validation ⇒ warning) and must not read like the

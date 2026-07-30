@@ -34,12 +34,14 @@ import {
   BinaryResolutionInput,
   BinarySource,
   CliOutcome,
+  CliUnavailableReason,
   ReleaseAsset,
 } from "./models";
 import {
   CACHED_CLI_UNVERIFIED,
   CACHED_CLI_UNVERIFIED_NO_PREBUILT,
   SUPPORTED_CLI_VERSION,
+  TAN_CLI_DOWNLOAD_CONSENT_DECLINED_MESSAGE,
   UNVERIFIED_PATH_IN_USE,
   aheadPathFixAction,
   binaryName,
@@ -49,6 +51,7 @@ import {
   isCliBehind,
   isNativeTanVersionOutput,
   isUnverifiableCache,
+  isUnverifiableCacheInUse,
   parseTanVersion,
   posixLoginShellCommand,
   proxyEnvOverrides,
@@ -144,10 +147,27 @@ function withSdkRoot(args: string[]): string[] {
 /** Session memo so we probe PATH / download at most once per window. */
 let resolved: ResolvedBinary | undefined;
 
+/** The in-flight resolution, while one is running — so concurrent callers
+ *  (e.g. several `prj.conf` tabs each triggering a Kconfig fetch) share the
+ *  one resolution in progress instead of each running the ladder and, for an
+ *  interactive fresh install, each opening its own consent modal. See
+ *  `resolveAlpBinaryForContext`'s doc. */
+let resolving: Promise<ResolvedBinary> | undefined;
+
 /** Reset the cached resolution (e.g. when `alpSdk.cliPath` or
  *  `alpSdk.preferGlobalCli` changes), and re-arm the one-shot version check so
  *  a repointed binary gets re-probed instead of staying silently unchecked
- *  for the rest of the window. */
+ *  for the rest of the window. Does NOT touch `resolving`: a resolution
+ *  already in flight was built from the deps at the time it started and must
+ *  be allowed to finish rather than be abandoned mid-flight.
+ *
+ *  KNOWN GAP, pre-existing (not introduced or fixed by the in-flight memo):
+ *  if a setting changes WHILE a resolution is in flight, this clears `resolved`
+ *  immediately, but `resolveAlpBinaryForContext`'s `resolved = await resolving`
+ *  still re-latches onto the OLD in-flight answer once it settles — built from
+ *  the deps snapshotted before the edit. So an `alpSdk.cliPath` edit made
+ *  mid-flight can stay unseen for the rest of that window rather than taking
+ *  effect on the very next call. Filed separately; not fixed here. */
 export function resetResolvedBinary(): void {
   resolved = undefined;
   versionChecked = false;
@@ -197,16 +217,19 @@ const PATH_NOTICED_KEY = "alp.tanUnverifiedPathNoticed";
 
 /** globalState key holding the user's answer to the one-time FRESH-install
  *  consent prompt (ADR 0021 Tier A: "install after one consent click") — see
- *  `resolveTanCliDownloadConsent` and `ensureFreshInstallConsent`. Written
- *  only by that prompt, so a fresh install asks ONCE, not on every activation.
+ *  `resolveTanCliDownloadConsent` and `ensureFreshInstallConsent`. Written by
+ *  that prompt (an "accepted"/"declined" pick) on a fresh install, so it asks
+ *  ONCE, not on every activation — and CLEARED (to `undefined`) by
+ *  `updateAlpCli` and `installTanCliGlobally`, below.
  *
  *  NEVER consulted by `updateAlpCli` or `installTanCliGlobally` — both are
  *  explicit, user-initiated entry points (`alp.updateCli` / `alp.installTanCli`),
  *  and running one of those command IS the consent; gating them on a stored
  *  decline would make "explicitly ask for the CLI" and "get told no because
  *  you said no once, to a different question, possibly months ago" the same
- *  click. A decline is revisited by running either command, or by setting
- *  `alpSdk.tanCliDownloadConsent` to `allow`. */
+ *  click. A decline is revisited by running either command (which clears the
+ *  record so a LATER lazy resolution does not still read "declined"), or by
+ *  setting `alpSdk.tanCliDownloadConsent` to `allow`. */
 const DOWNLOAD_CONSENT_KEY = "alp.tanCliDownloadConsentAnswer";
 
 /** Last `sha256File` answer, keyed by path + size + mtime.
@@ -388,30 +411,49 @@ function checksumFailurePlan(
  */
 function unavailableOutcome(error: unknown): CliOutcome {
   const raw = error instanceof Error ? error.message : String(error);
+  // TYPE first, string-sniff second. `classifyUnavailable` reaches
+  // `checksumRefused` by matching the word "checksum" in the sentence, which
+  // is fine for the three download refusals but would make the wording of the
+  // two CACHED refusals (#386) load-bearing for their classification — an
+  // edit to a customer sentence would silently reclassify a refusal as
+  // `spawnFailed` and hand it a "Run doctor" button. The type cannot be
+  // edited by accident. Computed once, shared by `severity` and `message`
+  // below as well as `unavailable.reason`, so the three can never disagree
+  // about which refusal this is.
+  const reason: CliUnavailableReason =
+    error instanceof ChecksumError
+      ? "checksumRefused"
+      : classifyUnavailable(raw);
   return {
     exitCode: -1,
     kind: "unknown",
     ok: false,
-    severity: "error",
+    // A decline is a choice the customer deliberately made (or a machine
+    // image's `alpSdk.tanCliDownloadConsent: "deny"`), not a broken CLI — a
+    // red error toast for someone's own setting is the wrong register, and
+    // `planCliOutcome`'s "warning"-flavoured wording already treats it that
+    // way; this generic fallback outcome must not contradict it.
+    severity: reason === "consentDeclined" ? "warning" : "error",
     // The raw resolver text (`No prebuilt tan CLI for win32/x64…`, an HTTP
     // status, an errno) rides on `unavailable.detail`, which the notification
     // planner logs and never renders — it used to be interpolated straight into
     // a buttonless toast.
+    //
+    // `consentDeclined` gets its own real sentence, not the bare "tan CLI
+    // unavailable." — this outcome reaches readers that show `message`
+    // directly, never through `planCliOutcome`'s composed wording (e.g. the
+    // Dependencies panel's `buildDependencyReport`), and those readers need
+    // to hear the same fact `planCliOutcome`'s own `consentDeclined` case
+    // says: which setting to change. See `TAN_CLI_DOWNLOAD_CONSENT_DECLINED_MESSAGE`.
     message:
-      error instanceof ChecksumError ? error.message : "tan CLI unavailable.",
+      error instanceof ChecksumError
+        ? error.message
+        : reason === "consentDeclined"
+          ? TAN_CLI_DOWNLOAD_CONSENT_DECLINED_MESSAGE
+          : "tan CLI unavailable.",
     envelope: null,
     unavailable: {
-      // TYPE first, string-sniff second. `classifyUnavailable` reaches
-      // `checksumRefused` by matching the word "checksum" in the sentence,
-      // which is fine for the three download refusals but would make the
-      // wording of the two CACHED refusals (#386) load-bearing for their
-      // classification — an edit to a customer sentence would silently
-      // reclassify a refusal as `spawnFailed` and hand it a "Run doctor"
-      // button. The type cannot be edited by accident.
-      reason:
-        error instanceof ChecksumError
-          ? "checksumRefused"
-          : classifyUnavailable(raw),
+      reason,
       detail: error instanceof ChecksumError ? error.detail : raw,
     },
   };
@@ -642,16 +684,28 @@ function buildResolveDeps(
  * `interactive` (default false — fail CLOSED, never surprise-prompt) governs
  * ONLY whether a FRESH download (case 1: nothing resolves anywhere) may show
  * ADR 0021's consent dialog when unanswered: `true` for something the user
- * just directly asked for (a build/validate/debug/flash command, a webview
- * button — `runAlpCommand`/`runAlpInTerminal`/`runAlpStreamed` all pass it),
- * `false` for anything that runs on its own (today: `runCliVersionCheck`'s
- * background version probe, on activation and on an `alpSdk` config change —
- * NOT something the user asked for just then, so popping a blocking modal out
- * of nowhere would be worse than the silent refusal this keeps instead). Both
- * modes read the SAME stored answer / `alpSdk.tanCliDownloadConsent` setting
- * (`resolveTanCliDownloadConsent`) — an `allow` proceeds silently either way;
- * only whether an UNANSWERED `ask` may show a dialog differs. See
- * `ResolveDeps.ensureFreshDownloadConsent` for where this is actually spent.
+ * just directly asked for (`runAlpCommand`/`runAlpInTerminal`/`runAlpStreamed`
+ * each take it as an explicit option now — see `runAlpCommand`'s doc for why
+ * the caller decides rather than this seam assuming), `false` for anything
+ * that runs on its own (`runCliVersionCheck`'s background version probe on
+ * activation and on an `alpSdk` config change, and every non-user-triggered
+ * `runAlpCommand` call — a file watcher, a settings-change re-derive, a panel
+ * opening a `prj.conf` — none of which is something the user asked for just
+ * then, so popping a blocking modal out of nowhere would be worse than the
+ * silent refusal this keeps instead). Both modes read the SAME stored answer
+ * / `alpSdk.tanCliDownloadConsent` setting (`resolveTanCliDownloadConsent`) —
+ * an `allow` proceeds silently either way; only whether an UNANSWERED `ask`
+ * may show a dialog differs. See `ResolveDeps.ensureFreshDownloadConsent` for
+ * where this is actually spent.
+ *
+ * `resolved` memoizes the SETTLED result so repeat calls in one window are
+ * free; `resolving` memoizes the IN-FLIGHT promise so CONCURRENT calls before
+ * that share one resolution instead of each running the ladder (and, for an
+ * interactive fresh install, each opening its own consent modal) — proven by
+ * driving three concurrent interactive resolutions against an unanswered
+ * "ask" and counting the consent dialogs raised. Cleared on settle (success
+ * or failure) so a failed resolution can be retried, not latched onto a
+ * rejected promise forever.
  */
 export async function resolveAlpBinaryForContext(
   context: vscode.ExtensionContext,
@@ -660,7 +714,12 @@ export async function resolveAlpBinaryForContext(
   if (resolved) {
     return resolved;
   }
-  resolved = await resolveAlpBinary(buildResolveDeps(context, options));
+  resolving ??= resolveAlpBinary(buildResolveDeps(context, options)).finally(
+    () => {
+      resolving = undefined;
+    },
+  );
+  resolved = await resolving;
   return resolved;
 }
 
@@ -687,11 +746,19 @@ export async function probeTanVersion(
 /**
  * ADR 0021 Tier A: "install after one consent click" — ask (once) whether a
  * FRESH tan CLI download may proceed, and persist the answer. Returns true iff
- * the download may proceed; NEVER throws for a teardown cancellation (that is
- * indistinguishable, at the `notify` seam, from the user picking neither
- * button, so it is treated the same way: no download THIS activation, and
- * nothing persisted — the next activation asks again, exactly like every
- * other abandoned-on-teardown flow in this file).
+ * the download may proceed; NEVER THROWS, full stop — a teardown cancellation
+ * and any OTHER `notify` rejection are both treated as "no consent obtained",
+ * never re-thrown. That is load-bearing, not merely tidy: the ONLY caller
+ * (`ensureTanCliProvisioned`'s `isFreshInstall` branch, below) sits OUTSIDE
+ * that function's own try/catch, and `ensureTanCliProvisioned` is documented
+ * "Never throws" and is invoked at `extension.ts` as `void
+ * ensureTanCliProvisioned(context).finally(…)` with no `.catch` — so a rethrow
+ * here used to become an UNHANDLED REJECTION in the extension host, not a
+ * caught failure. `notify` can reject for reasons other than cancellation
+ * (`src/notify/vscodeAdapter.ts`'s own doc names them), so this was reachable
+ * on a real (non-teardown) prompt failure, not only in theory. A failed prompt
+ * is not consent, so "log and return false" is the correct answer on its own
+ * merits, not just the safe one.
  *
  * Case 1 ONLY — see `ensureTanCliProvisioned`'s `isFreshInstall` guard, which
  * must keep this unreached for `updatingStaleCache` / `reacquiringUnverifiedCache`.
@@ -746,7 +813,14 @@ async function ensureFreshInstallConsent(
       log("[cli] tan CLI download consent prompt abandoned, window closing");
       return false;
     }
-    throw error;
+    // Not consent, not persisted (nothing was actually answered) — the next
+    // resolution attempt asks again. See the doc above for why this must not
+    // rethrow.
+    log(
+      `[cli] tan CLI download consent prompt failed, treating as declined: ${error instanceof Error ? error.message : String(error)}`,
+      "warn",
+    );
+    return false;
   }
   const accepted = picked === "downloadTanCli";
   await context.globalState.update(
@@ -930,15 +1004,28 @@ export async function ensureTanCliProvisioned(
     }
     return;
   }
-  // ADR 0021 Tier A gate — FRESH installs ONLY. `updatingStaleCache` and
-  // `reacquiringUnverifiedCache` never reach `ensureFreshInstallConsent`:
-  // both fetch on behalf of a tan the user (or this heal) already has or
-  // already accepted, and gating either would let a stored decline strand
-  // the customer on a stale/unverified binary — the opposite of what
-  // consent is for, and #396 again with a decline latched on top. Do not
-  // widen this condition to cover them "for consistency" — see
-  // `resolveTanCliDownloadConsent`'s doc for why that would be wrong.
-  const isFreshInstall = !updatingStaleCache && !reacquiringUnverifiedCache;
+  // ADR 0021 Tier A gate — FRESH installs ONLY. `updatingStaleCache` never
+  // reaches `ensureFreshInstallConsent`: it fetches on behalf of a tan the
+  // user already has and already accepted, and gating it would let a stored
+  // decline strand the customer on a stale binary.
+  //
+  // `reacquiringUnverifiedCache` is narrower than that, and this is the fix
+  // for a review finding against #434: `source` can be `path` OR `download`
+  // here (see the comment above `reacquiringUnverifiedCache`'s definition),
+  // and only the `path` case is the #396 heal — moving a customer OFF a
+  // binary they are ACTUALLY RUNNING (un-digested, `input.onPath`) and ONTO a
+  // digest-verified one. When `source` is `download` instead, nothing is
+  // running at all — the ladder fell through past a stale un-digested file to
+  // "fetch one" — and that is a plain fresh install wearing a leftover cache
+  // file, not a heal; excluding it let `alpSdk.tanCliDownloadConsent: "deny"`
+  // be silently ignored whenever such a file happened to exist. Gated on
+  // `isUnverifiableCacheInUse` (`service.ts`), the `onPath`-qualified
+  // predicate, instead of the bare `reacquiringUnverifiedCache` flag — do not
+  // revert to the bare flag "for consistency" with the wording below, which
+  // may still legitimately describe this state as a migration even when it is
+  // gated (see `unverifiedCacheCause`'s call site).
+  const isFreshInstall =
+    !updatingStaleCache && !isUnverifiableCacheInUse(input);
   if (isFreshInstall && !(await ensureFreshInstallConsent(context, asset))) {
     log("[cli] tan CLI download declined; skipping fresh provision");
     return;
@@ -1602,6 +1689,11 @@ export async function updateAlpCli(
     );
     return;
   }
+  // Running this command IS consent — see `DOWNLOAD_CONSENT_KEY`'s doc, which
+  // already documented "a decline is revisited by running either command" as
+  // the intended behaviour before this actually cleared the record. Cleared
+  // here, past the guard above, so a no-op run (cliPath set) touches nothing.
+  await context.globalState.update(DOWNLOAD_CONSENT_KEY, undefined);
   let cancelled = false;
   try {
     await vscode.window.withProgress(
@@ -1767,6 +1859,16 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
     );
     return;
   }
+  // Running this command IS consent — see `DOWNLOAD_CONSENT_KEY`'s doc. This
+  // function is sync and fire-and-forget (the terminal reports no completion
+  // back), so the write is best-effort: a failure here just means a future
+  // lazy resolution still sees "declined" and asks again, which is the safe
+  // direction, not a silent bypass.
+  void Promise.resolve(
+    context.globalState.update(DOWNLOAD_CONSENT_KEY, undefined),
+  ).then(undefined, () => {
+    /* best-effort — see comment above */
+  });
   // The tag form both scripts expect (`releases/download/<tag>/<asset>`), and
   // the same one `releaseAssetForTarget` builds for the managed download —
   // ONE rule for "what tag does the pin name", not two that could drift.
@@ -1812,12 +1914,30 @@ export function installTanCliGlobally(context: vscode.ExtensionContext): void {
  * call — resolution is memoized per window anyway, but the second call was
  * still a needless extra async round trip and try/catch just to read a field
  * this function already has in hand.
+ *
+ * `options.interactive` (default **false**) is threaded straight through to
+ * `resolveAlpBinaryForContext` and decides ONLY whether a from-scratch
+ * download may show ADR 0021's one-time consent dialog when unanswered — see
+ * that function's doc for the full split. Defaulting false is load-bearing,
+ * not a style choice: `runAlpCommand` is called from genuine user actions
+ * (build/validate/generate/debug-config/sdk-switch/…) AND from things that run
+ * on their own — a file watcher, `onDidChangeConfiguration`, a panel's
+ * `onStateChange` re-derive, `onDidOpenTextDocument` — and a bare "every
+ * caller just asked for this" used to be asserted here without being true:
+ * `pushSdkCatalog` (`src/lsp/client.ts`) fires on LSP start, on every
+ * `alpSdk` settings edit, and on opening any `prj.conf`, and the Dependencies
+ * panel's doctor/latest-SDK refresh (`src/deps/vscodeAdapter.ts`) re-derives
+ * on window focus — neither is something the customer "just asked for", so a
+ * hard-coded `interactive: true` here popped ADR 0021's blocking modal out of
+ * a window focus event. Callers that ARE a direct user action opt in
+ * explicitly with `{ interactive: true }`; every other caller gets the
+ * silent-refusal behaviour a background resolution has always had.
  */
 export async function runAlpCommand(
   context: vscode.ExtensionContext,
   args: string[],
   cwd?: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; interactive?: boolean },
 ): Promise<{
   outcome: CliOutcome;
   raw: SpawnResult;
@@ -1825,11 +1945,9 @@ export async function runAlpCommand(
 }> {
   let binary: ResolvedBinary;
   try {
-    // Every caller of `runAlpCommand` is a command the user just asked for
-    // (build/validate/generate/debug-config/sdk-switch/…) — see
-    // `resolveAlpBinaryForContext`'s doc for the full split — so a FRESH
-    // install's consent dialog is appropriate here, not a surprise.
-    binary = await resolveAlpBinaryForContext(context, { interactive: true });
+    binary = await resolveAlpBinaryForContext(context, {
+      interactive: options?.interactive ?? false,
+    });
   } catch (error) {
     // Never throw: a resolution failure becomes an error outcome so callers
     // can present it uniformly (the message already points at alpSdk.cliPath).
