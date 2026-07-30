@@ -8,6 +8,19 @@ both. The `alp-sdk-upstream` submodule pin and the derived Kconfig LSP fixtures
 (`src/lsp/generated/kconfig-metadata.json`, `test/fixtures/alp-kconfig-symbols.txt`)
 move with it.
 
+The bundled `tan` CLI this build targets moves to **v0.4.1**. That is also the
+first `tan` release published as a full release rather than a pre-release, so
+`releases/latest` now resolves to it — until it existed, `latest` pointed at
+v0.3.1, which is what made "Install tan CLI (global)" able to re-land a stale
+binary. The installer is version-pinned either way now, so nothing here depends
+on what `latest` means.
+
+v0.4.1 also freezes two issue codes this extension matches by name,
+`bootstrap.python-not-runnable` and `bootstrap.python-too-old`. Through v0.4.0
+`tan` declared them at no status, so a rename would have broken the prerequisite
+refusal path with neither repo's CI noticing; the contract gate tracked that
+deliberately and moved with this pin.
+
 ## 0.4.0
 
 First release on the **stable** Marketplace channel. Every release before this
