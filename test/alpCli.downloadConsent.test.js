@@ -120,6 +120,10 @@ function loadAdapter({
   config = {},
   version = SERVICE.SUPPORTED_CLI_VERSION,
   onNotify = () => undefined,
+  // Instrumentation only — counts `commandOnPath`'s PATH probe (#438: an
+  // interactive escalation must not rerun the whole resolution ladder for a
+  // `deny`/stored-declined answer that cannot change).
+  onSpawnSync = () => {},
 } = {}) {
   const plans = [];
   const nativeVersion = `tan ${version}\n`;
@@ -154,10 +158,12 @@ function loadAdapter({
         },
       }),
       // `commandOnPath` goes through this.
-      spawnSync: () =>
-        onPath
+      spawnSync: () => {
+        onSpawnSync();
+        return onPath
           ? { status: 0, stdout: nativeVersion, stderr: "" }
-          : { status: 1, stdout: "", stderr: "" },
+          : { status: 1, stdout: "", stderr: "" };
+      },
       // The cached-binary version probe (`readResolvedCliVersion`) goes
       // through this — same answer regardless of which binary path is
       // passed, which is all these rows need (only one binary is ever
@@ -659,6 +665,188 @@ test("ensureTanCliProvisioned: a `notify` rejection that is NOT a cancellation m
     );
     // A failed prompt is not consent — nothing should have downloaded.
     assert.equal(fs.existsSync(home.cachedBinaryPath), false);
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+// ── #438: an interactive caller landing during a non-interactive in-flight
+//    resolution must not inherit its silent refusal ──────────────────────────
+
+test("resolveAlpBinaryForContext: an interactive request landing during a non-interactive in-flight resolution ends up prompting, not silently refused", async () => {
+  // The defect: activation's non-interactive `runCliVersionCheck` starts a
+  // resolution first (unanswered "ask", so it will refuse quietly); a real
+  // click (Dependencies panel Refresh, opening the Build Plan panel) lands
+  // while that is still in flight and, before this fix, joined the SAME
+  // promise verbatim — inheriting `interactive: false` and getting the
+  // silent refusal instead of its own dialog.
+  const home = extensionHome();
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter, plans } = loadAdapter({
+      releaseAsset: server.asset,
+      onNotify: (plan) => (isConsentPlan(plan) ? "downloadTanCli" : undefined),
+    });
+
+    // All calls issued back-to-back with no `await` between them, exactly
+    // like `runCliVersionCheck` firing un-awaited on activation and clicks
+    // landing moments later while it is still resolving. `.catch` is attached
+    // to the background call IMMEDIATELY (not after the interactive calls
+    // below) so its expected rejection is never reported as an unhandled one.
+    // THREE interactive callers, not one: the first escalates
+    // (`chainInteractiveRetry`), and the second and third must join that
+    // SAME chain — via the `resolving === attempt` identity check that
+    // stops a later caller from starting a second retry (and a second
+    // dialog) while the escalation's own retry is in flight — rather than
+    // each building their own.
+    const background = adapter
+      .resolveAlpBinaryForContext(home.context)
+      .catch((error) => error);
+    const interactiveA = adapter.resolveAlpBinaryForContext(home.context, {
+      interactive: true,
+    });
+    const interactiveB = adapter.resolveAlpBinaryForContext(home.context, {
+      interactive: true,
+    });
+    const interactiveC = adapter.resolveAlpBinaryForContext(home.context, {
+      interactive: true,
+    });
+
+    const [resolvedA, resolvedB, resolvedC] = await Promise.all([
+      interactiveA,
+      interactiveB,
+      interactiveC,
+    ]);
+    const backgroundOutcome = await background;
+
+    assert.equal(
+      plans.filter(isConsentPlan).length,
+      1,
+      "three interactive callers landing on an in-flight background resolution must still share ONE dialog",
+    );
+    assert.equal(resolvedA.command, home.cachedBinaryPath);
+    assert.deepEqual(resolvedB, resolvedA);
+    assert.deepEqual(resolvedC, resolvedA);
+    assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
+    // The background caller's own behaviour is UNCHANGED by this fix — it
+    // still gets the quiet refusal `runCliVersionCheck` relies on (its own
+    // call site swallows this).
+    assert.ok(
+      backgroundOutcome instanceof Error,
+      "the non-interactive caller must still be refused quietly, not prompted",
+    );
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("resolveAlpBinaryForContext: an interactive caller joining a deny-refused background resolution does not retry — no dialog, no second PATH probe", async () => {
+  // `adapterCore.ts`'s `download` arm throws the IDENTICAL
+  // TAN_CLI_DOWNLOAD_CONSENT_NEEDED message for a `deny` setting as it does
+  // for a genuinely unanswered "ask" — neither depends on `interactive`. An
+  // interactive retry cannot turn a `deny` into a "yes", so escalating
+  // anyway would rerun the whole resolution ladder (a second `tan --version`
+  // PATH probe among it, each capped at 5s in production) for an answer that
+  // can never change — a real cost on exactly the enterprise images most
+  // likely to set `deny`.
+  const home = extensionHome();
+  const server = await releaseServer(GOOD);
+  try {
+    let spawnSyncCalls = 0;
+    const { adapter, plans } = loadAdapter({
+      releaseAsset: server.asset,
+      config: { "alpSdk.tanCliDownloadConsent": "deny" },
+      onSpawnSync: () => {
+        spawnSyncCalls += 1;
+      },
+      onNotify: () => {
+        throw new Error("a deny setting must never prompt, retry or not");
+      },
+    });
+
+    const background = adapter
+      .resolveAlpBinaryForContext(home.context)
+      .catch((error) => error);
+    const interactive = adapter
+      .resolveAlpBinaryForContext(home.context, { interactive: true })
+      .catch((error) => error);
+
+    const [backgroundOutcome, interactiveOutcome] = await Promise.all([
+      background,
+      interactive,
+    ]);
+
+    assert.deepEqual(plans.filter(isConsentPlan), []);
+    assert.ok(backgroundOutcome instanceof Error);
+    assert.ok(interactiveOutcome instanceof Error);
+    assert.equal(
+      spawnSyncCalls,
+      1,
+      "joining a deny-refused resolution must not rerun the resolution ladder for an answer that cannot change",
+    );
+    assert.equal(fs.existsSync(home.cachedBinaryPath), false);
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("resolveAlpBinaryForContext: a non-interactive-only fan-in still raises no plan (no regression)", async () => {
+  const home = extensionHome();
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter, plans } = loadAdapter({
+      releaseAsset: server.asset,
+      onNotify: () => {
+        throw new Error(
+          "a non-interactive-only in-flight resolution must never prompt",
+        );
+      },
+    });
+
+    const results = await Promise.all([
+      adapter.resolveAlpBinaryForContext(home.context).catch((error) => error),
+      adapter.resolveAlpBinaryForContext(home.context).catch((error) => error),
+    ]);
+
+    assert.deepEqual(plans.filter(isConsentPlan), []);
+    assert.ok(results[0] instanceof Error);
+    assert.ok(results[1] instanceof Error);
+    assert.equal(fs.existsSync(home.cachedBinaryPath), false);
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("resolveAlpBinaryForContext: a rejected resolution clears the slot so the next caller retries instead of inheriting a dead promise", async () => {
+  const home = extensionHome();
+  home.store.set(DOWNLOAD_CONSENT_KEY, "declined");
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter } = loadAdapter({
+      releaseAsset: server.asset,
+      onNotify: () => {
+        throw new Error("a stored decline must never prompt");
+      },
+    });
+
+    await assert.rejects(
+      adapter.resolveAlpBinaryForContext(home.context, { interactive: true }),
+    );
+
+    // Consent is now granted (the user flipped the setting) — the caller
+    // after the rejection must get a FRESH resolution, not the settled
+    // rejected promise the slot was left holding.
+    home.store.set(DOWNLOAD_CONSENT_KEY, "accepted");
+    const resolved = await adapter.resolveAlpBinaryForContext(home.context, {
+      interactive: true,
+    });
+
+    assert.equal(resolved.command, home.cachedBinaryPath);
+    assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
   } finally {
     await server.close();
     home.cleanup();

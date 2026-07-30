@@ -32,6 +32,22 @@
   that reads the outcome directly (e.g. the Dependencies panel) now names the
   setting explicitly and shows as a warning rather than a red error.
 
+- **A click that lands while a BACKGROUND resolution (activation's version
+  check, or another non-user-triggered caller) is still resolving the `tan`
+  binary now still raises its own consent dialog, instead of silently
+  inheriting the background caller's refusal.** The in-flight dedupe above
+  shares one resolution among concurrent callers, but joining it verbatim also
+  meant joining its `interactive` flag — so an unanswered "ask" left a real
+  click (the Dependencies panel's Refresh, opening the Build Plan panel)
+  quietly refused with nothing shown, on any window where the background
+  check was still running (it spawns `tan --version` with a 5 s cap on every
+  activation). It does not fork a second resolution to fix this — two
+  attempts racing to the download step is exactly what the dedupe exists to
+  prevent — it chains: the click's own resolution now waits for the
+  background one first, and only opens the dialog if that one failed
+  specifically because consent was unanswered; any other outcome (success, or
+  an unrelated failure) is used as-is.
+
 - **The Zephyr SDK row's Install button now runs, instead of failing with
   `'west' is not recognized`.** The pinned tan v0.4.1's `west sdk install
   --version 1.0.1 -t arm-zephyr-eabi` command is correct, but `west` is not on

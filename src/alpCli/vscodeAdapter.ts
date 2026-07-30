@@ -154,6 +154,150 @@ let resolved: ResolvedBinary | undefined;
  *  `resolveAlpBinaryForContext`'s doc. */
 let resolving: Promise<ResolvedBinary> | undefined;
 
+/** Whether the CURRENT `resolving` promise was started as (or has since
+ *  escalated to) an INTERACTIVE resolution — i.e. whether an unanswered
+ *  fresh-install consent prompt reaching it may show ADR 0021's dialog.
+ *  Tracked alongside `resolving` (not re-derived from it) so a second
+ *  interactive caller landing while the first escalation
+ *  (`resolveAlpBinaryForContext`'s doc) is still in flight joins that SAME
+ *  chain instead of starting a second retry — and a second dialog. */
+let resolvingInteractive = false;
+
+/**
+ * Start a fresh resolution, install it into `resolving`/`resolvingInteractive`,
+ * and clear both once it settles — but only if `resolving` still IS this
+ * attempt: an interactive escalation (see `resolveAlpBinaryForContext`) can
+ * have already replaced it with a retry by the time this one settles, and
+ * that retry owns clearing the slot for itself. Shared by the from-scratch
+ * case and the interactive retry so both paths clear the slot the same way,
+ * which is what lets a rejected resolution be retried rather than latching
+ * onto a dead promise forever.
+ */
+function startResolution(
+  context: vscode.ExtensionContext,
+  interactive: boolean,
+): Promise<ResolvedBinary> {
+  // `attempt` names the WHOLE `.finally()`-wrapped chain (self-referenced
+  // inside its own cleanup, safe because a `.finally()` callback can only run
+  // on a later microtask, after this `const` has finished initializing) —
+  // deliberately not a bare `resolveAlpBinary(...)` with the cleanup attached
+  // as a separate, discarded statement. A `.finally()`/`.catch()` call whose
+  // result nobody stores, returns, or awaits still creates its OWN promise
+  // that mirrors the rejection of what it derives from — an UNHANDLED one,
+  // since nothing else references that specific object. `resolving` and this
+  // function's return value must therefore be the SAME promise so it has
+  // exactly one real consumer chain, not two.
+  const attempt: Promise<ResolvedBinary> = resolveAlpBinary(
+    buildResolveDeps(context, { interactive }),
+  ).finally(() => {
+    if (resolving === attempt) {
+      resolving = undefined;
+      resolvingInteractive = false;
+    }
+  });
+  resolving = attempt;
+  resolvingInteractive = interactive;
+  return attempt;
+}
+
+/**
+ * Chain an INTERACTIVE caller onto a non-interactive resolution already in
+ * flight, rather than forking a second concurrent resolution — two attempts
+ * racing to the `download` arm at once is exactly what the in-flight memo
+ * exists to prevent (a red-before-green run for this finding failed with
+ * `ENOENT rename …tan.exe.tmp`, three racing downloads clobbering each
+ * other's temp file). See `resolveAlpBinaryForContext`'s doc for the shape.
+ *
+ * Awaits `inFlight` first: a success or a failure for any OTHER reason
+ * settles the chain with that same outcome untouched — there is no dialog
+ * to show for a binary that already resolved, and no reason to paper over
+ * an unrelated failure (a checksum refusal, a network error) that an
+ * interactive attempt would hit identically. A rejection classified
+ * `consentDeclined` is NECESSARY but not SUFFICIENT to retry:
+ * `adapterCore.ts`'s `download` arm throws the identical
+ * `TAN_CLI_DOWNLOAD_CONSENT_NEEDED` message for THREE distinct states —
+ * `alpSdk.tanCliDownloadConsent: "deny"`, a stored "declined" answer, and a
+ * genuinely UNANSWERED "ask" reached non-interactively — and none of the
+ * three depends on `interactive`, so the message alone cannot tell them
+ * apart. Only the third could come out differently for an interactive
+ * caller; retrying the first two reruns the whole resolution ladder (a
+ * second `tan --version` PATH probe among it, each capped at 5s) for an
+ * answer that cannot change — a real cost on exactly the machines most
+ * likely to have set `deny`. So the retry ALSO requires `consentUnanswered`
+ * — `resolveTanCliDownloadConsent` on the SAME setting/stored-answer pair
+ * `ensureFreshInstallConsent` reads — to say "prompt". Only then does the
+ * click get its dialog instead of silently inheriting the earlier refusal.
+ *
+ * `resolvingInteractive` is flipped and `resolving` reassigned to the chain
+ * SYNCHRONOUSLY, before any `await` runs in this module — see
+ * `resolveAlpBinaryForContext`'s doc for why that ordering is what lets a
+ * second interactive caller landing before this settles join the same
+ * chain instead of building its own.
+ *
+ * Like `startResolution`, `chain` is the WHOLE `.catch().finally()` pipeline
+ * — stored, returned, and the one thing `resolving` points at — so there is
+ * no discarded intermediate promise left to reject unhandled. When the
+ * `.catch` handler itself escalates via `startResolution`, THAT call installs
+ * its own attempt as `resolving` before this function's `.finally` next
+ * runs, so the identity check below correctly defers cleanup to it instead
+ * of double-clearing (or clearing a slot that has already moved on).
+ */
+function chainInteractiveRetry(
+  context: vscode.ExtensionContext,
+  inFlight: Promise<ResolvedBinary>,
+): Promise<ResolvedBinary> {
+  resolvingInteractive = true;
+  const chain: Promise<ResolvedBinary> = inFlight
+    .catch((error: unknown) => {
+      if (!isConsentDeclinedError(error) || !consentUnanswered(context)) {
+        throw error;
+      }
+      return startResolution(context, true);
+    })
+    .finally(() => {
+      if (resolving === chain) {
+        resolving = undefined;
+        resolvingInteractive = false;
+      }
+    });
+  resolving = chain;
+  return chain;
+}
+
+/** Whether `error` is the specific rejection `resolveAlpBinary`'s `download`
+ *  arm throws when the fresh-install consent gate refused it. NECESSARY but
+ *  not SUFFICIENT for `chainInteractiveRetry`'s escalation — the identical
+ *  message covers `deny`, a stored "declined", and a genuinely unanswered
+ *  "ask" alike (see that function's doc), so this only narrows a rejection
+ *  down to "a consent refusal of SOME kind"; the caller still has to ask
+ *  `consentUnanswered` below whether retrying could change anything. Reuses
+ *  `classifyUnavailable` (the same classifier `unavailableOutcome` below and
+ *  `runAlpCommand`'s outcome use) rather than re-matching the message, so
+ *  this can never disagree with them about which failure this is. */
+function isConsentDeclinedError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    classifyUnavailable(error.message) === "consentDeclined"
+  );
+}
+
+/** Whether the download-consent answer is genuinely UNANSWERED right now —
+ *  the one state `chainInteractiveRetry`'s retry can actually change, as
+ *  opposed to a `deny` setting or a stored "declined" (see that function's
+ *  doc for why `isConsentDeclinedError` alone cannot tell these apart).
+ *  Reads the SAME setting/stored-answer pair `ensureFreshInstallConsent`
+ *  does, through the same `resolveTanCliDownloadConsent` decision — one
+ *  place decides what an answer means, this just asks it "prompt?" instead
+ *  of acting on the answer. */
+function consentUnanswered(context: vscode.ExtensionContext): boolean {
+  const setting = vscode.workspace
+    .getConfiguration("alpSdk")
+    .get<TanCliDownloadConsentSetting>("tanCliDownloadConsent", "ask");
+  const storedAnswer =
+    context.globalState.get<TanCliDownloadConsentAnswer>(DOWNLOAD_CONSENT_KEY);
+  return resolveTanCliDownloadConsent({ setting, storedAnswer }) === "prompt";
+}
+
 /** Reset the cached resolution (e.g. when `alpSdk.cliPath` or
  *  `alpSdk.preferGlobalCli` changes), and re-arm the one-shot version check so
  *  a repointed binary gets re-probed instead of staying silently unchecked
@@ -163,11 +307,15 @@ let resolving: Promise<ResolvedBinary> | undefined;
  *
  *  KNOWN GAP, pre-existing (not introduced or fixed by the in-flight memo):
  *  if a setting changes WHILE a resolution is in flight, this clears `resolved`
- *  immediately, but `resolveAlpBinaryForContext`'s `resolved = await resolving`
- *  still re-latches onto the OLD in-flight answer once it settles — built from
- *  the deps snapshotted before the edit. So an `alpSdk.cliPath` edit made
- *  mid-flight can stay unseen for the rest of that window rather than taking
- *  effect on the very next call. Filed separately; not fixed here. */
+ *  immediately, but `resolveAlpBinaryForContext`'s final `resolved = await
+ *  promise` still re-latches onto the OLD in-flight answer once it settles —
+ *  built from the deps snapshotted before the edit. So an `alpSdk.cliPath`
+ *  edit made mid-flight can stay unseen for the rest of that window rather
+ *  than taking effect on the very next call. Filed separately; not fixed here
+ *  — and the interactive-escalation retry above does not change it: a retry
+ *  it starts calls `buildResolveDeps` fresh at retry time, which happens to
+ *  read the current settings, but this gap is about `resolved`'s own
+ *  re-latching, which this change does not touch. */
 export function resetResolvedBinary(): void {
   resolved = undefined;
   versionChecked = false;
@@ -706,6 +854,26 @@ function buildResolveDeps(
  * "ask" and counting the consent dialogs raised. Cleared on settle (success
  * or failure) so a failed resolution can be retried, not latched onto a
  * rejected promise forever.
+ *
+ * An INTERACTIVE caller landing while a NON-interactive resolution is already
+ * in flight (activation's background `runCliVersionCheck`, or any other
+ * non-user-triggered `runAlpCommand`, is still resolving when the Dependencies
+ * panel's Refresh or the Build Plan panel fires) does NOT simply join that
+ * promise as-is: joining verbatim would inherit its `interactive: false` and,
+ * on a fresh install with nothing on record, get the silent consent refusal
+ * instead of the dialog the click should raise — a real window, since
+ * `commandOnPath` spawns `tan --version` with a 5 s cap and the activation
+ * check runs on every window (pre-existing at cf8df4c, predating the consent
+ * gate; this memo just made it observable). Nor does it fork a second
+ * resolution: two attempts reaching the `download` arm at once is exactly
+ * what this memo exists to prevent. Instead it CHAINS via
+ * `chainInteractiveRetry` — await the in-flight one first, and only escalate
+ * to an interactive retry if it failed because consent was refused AND the
+ * answer is genuinely unanswered (a `deny` setting or a stored "declined"
+ * can't come out differently for a retry, so those are left alone). See that
+ * function's doc for the mechanics and the ordering guarantee that keeps a
+ * second interactive caller from starting a second retry (and a second
+ * dialog).
  */
 export async function resolveAlpBinaryForContext(
   context: vscode.ExtensionContext,
@@ -714,12 +882,16 @@ export async function resolveAlpBinaryForContext(
   if (resolved) {
     return resolved;
   }
-  resolving ??= resolveAlpBinary(buildResolveDeps(context, options)).finally(
-    () => {
-      resolving = undefined;
-    },
-  );
-  resolved = await resolving;
+  const interactive = options.interactive ?? false;
+
+  let promise = resolving;
+  if (!promise) {
+    promise = startResolution(context, interactive);
+  } else if (interactive && !resolvingInteractive) {
+    promise = chainInteractiveRetry(context, promise);
+  }
+
+  resolved = await promise;
   return resolved;
 }
 
