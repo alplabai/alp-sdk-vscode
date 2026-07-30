@@ -1,7 +1,5 @@
 # Changelog
 
-## Unreleased
-
 ## 0.4.0
 
 Re-vendored the `board.yaml` schema from alp-sdk **v0.14.0**: the `peripherals`

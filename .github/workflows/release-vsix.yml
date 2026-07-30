@@ -59,13 +59,17 @@ jobs:
       contents: write # create the GitHub Release + upload the .vsix asset
     # Observed outcomes for release_gate (#432) to assert against declared
     # intent. release_outcome / marketplace_outcome read the PUBLISH STEP'S
-    # OWN outcome (success/failure/skipped) -- both legs are declared "always"
-    # (see release_gate below), so that alone is a safe, non-circular signal:
-    # it answers "did the step actually run and succeed", never "was the
-    # arming condition true". ovsx_published is different: Open VSX is the one
-    # OPTIONAL channel, so "skipped" must be distinguishable from "the wiring
-    # broke" -- that needs the self-reported true/false the two Open VSX steps
-    # below write explicitly, ported from alplabai/tan-cli#242's npm job.
+    # OWN outcome (success/failure/skipped) -- release_gate compares that
+    # against SHOULD_PUBLISH/the event (the declaration) itself, so this is
+    # non-circular: the outcome comes from the step's actual run, never from
+    # re-deriving what the arming condition would predict. (outcome=='skipped'
+    # DOES mean the arming condition was false -- that part is expected; the
+    # trap this avoids is deriving the OUTCOME from the same condition that
+    # armed the step, which would make the comparison circular.) ovsx_published
+    # is different: Open VSX is the one OPTIONAL channel, so "declined" must be
+    # distinguishable from "the wiring broke" -- that needs the self-reported
+    # true/false the two Open VSX steps below write explicitly, ported from
+    # alplabai/tan-cli#242's npm job.
     outputs:
       release_outcome: ${{ steps.create_release.outcome }}
       marketplace_outcome: ${{ steps.marketplace_publish.outcome }}
@@ -187,7 +191,16 @@ jobs:
       # a run-summary line, same as the Marketplace note above.
       - name: Note when Open VSX publish was skipped
         id: ovsx_skip
-        if: ${{ env.SHOULD_PUBLISH == 'true' && env.OVSX_PAT == '' }}
+        # always(): all four publish-observing steps in this job run in FIXED
+        # ORDER (create_release -> marketplace_publish -> ovsx_publish -> this
+        # step), so without always() a marketplace_publish failure -- the #432
+        # scenario itself -- aborts the job before this step is even reached.
+        # Neither Open VSX step then writes `published`, ovsx_published
+        # resolves to the empty string, and release_gate misreports that as
+        # broken wiring instead of the real cause (the Marketplace failure).
+        # always() lets this step still record "declined" independently of
+        # whatever an earlier, unrelated channel did.
+        if: ${{ always() && env.SHOULD_PUBLISH == 'true' && env.OVSX_PAT == '' }}
         run: |
           echo "published=false" >> "$GITHUB_OUTPUT"
           echo "::notice::OVSX_PAT not set — built the .vsix but skipped the Open VSX publish. Add the OVSX_PAT repo secret to enable it (this channel is optional)."
@@ -373,34 +386,52 @@ jobs:
   # side would get orphaned by the next failure; what was missing is an
   # assertion, ported from alplabai/tan-cli#242 (`ci/release-outcome-gate`).
   #
-  # Declaration-relative, no exemption list: a pushed `v*` tag MUST produce a
-  # GitHub Release with its assets, and every publish channel's outcome MUST
-  # match what it declares. A deliberately disarmed channel SATISFIES the
-  # invariant rather than being excused from it -- which is exactly Open VSX
-  # here (OVSX_PAT is documented optional at the top of this file):
+  # Declaration-relative, no exemption list -- but the declaration is NOT "a
+  # pushed tag": this workflow also runs on workflow_dispatch, which can be
+  # run from a branch (no ref-based restriction would then even see this job)
+  # or from a tag with publish=false (a legitimate build-only dry run). So
+  # each leg's declaration is read from what actually arms it:
   #
-  #   | channel                    | declared                          |
-  #   |-----------------------------|-----------------------------------|
-  #   | GitHub Release              | always                            |
-  #   | Marketplace (universal)     | always (channel = minor parity)   |
-  #   | Marketplace (darwin-arm64)  | always (always --pre-release)     |
-  #   | Open VSX                    | optional (OVSX_PAT)               |
+  #   | leg                         | declared by                              |
+  #   |------------------------------|-------------------------------------------|
+  #   | GitHub Release               | github.event_name == 'push' only (that's |
+  #   |                              | create_release's own `if:` -- a dispatch |
+  #   |                              | never creates one, by design)            |
+  #   | Marketplace (universal)      | SHOULD_PUBLISH (push, or dispatch with   |
+  #   |                              | publish=true)                            |
+  #   | Marketplace (darwin-arm64)   | same SHOULD_PUBLISH, always --pre-release|
+  #   | Open VSX                     | optional -- only asserted at all when    |
+  #   |                              | SHOULD_PUBLISH=true (OVSX_PAT documented |
+  #   |                              | optional at the top of this file)        |
   #
-  # so `skipped`/`failure` FAILS the gate for the first three, and only Open
-  # VSX may legitimately report "did not publish" and still pass.
+  # A deliberately disarmed channel (Open VSX with no OVSX_PAT, or the whole
+  # publish leg on a publish=false dry run) SATISFIES the invariant rather
+  # than being excused from it: the assertion below checks the declaration
+  # AGAINST the outcome, not "was this declared" alone.
   release_gate:
     name: release outcome matches intent
     needs: [package_and_publish, package_darwin_arm64]
-    # always(), or a failed/skipped upstream job skips this gate too and the
-    # whole point is lost (this is the exact v0.4.1 tan-cli shape #237 fixed).
-    # Tag-only: nothing else pushes a `v*` ref, but the guard makes the scope
-    # explicit rather than inherited from the jobs above.
-    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
+    # !cancelled(), not always(): always() also fires on a deliberately
+    # cancelled run (this workflow sets concurrency: cancel-in-progress:
+    # true), which would otherwise red the gate over a cancellation instead of
+    # a real outcome mismatch. No ref/event restriction here -- see the table
+    # above; the job runs on every trigger this workflow has, and the SCRIPT
+    # decides what each trigger actually declared.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: assert the release and every channel matched its declared intent
         shell: bash
         env:
+          # Declarations, read directly from the event/inputs -- exactly what
+          # create_release's and the publish steps' own `if:` conditions read,
+          # so "declared" here can never disagree with what actually armed
+          # them. This is reading the DECLARATION, not the outcome -- the
+          # circularity trap is deriving the OUTCOME this way, which is why
+          # every *_OUTCOME/*_PUBLISHED below instead comes from the step
+          # itself (steps.<id>.outcome / a self-reported job output).
+          RELEASE_DECLARED: ${{ github.event_name == 'push' }}
+          SHOULD_PUBLISH: ${{ github.event_name == 'push' || inputs.publish == true }}
           RELEASE_OUTCOME: ${{ needs.package_and_publish.outputs.release_outcome }}
           MARKETPLACE_OUTCOME: ${{ needs.package_and_publish.outputs.marketplace_outcome }}
           DARWIN_MARKETPLACE_OUTCOME: ${{ needs.package_darwin_arm64.outputs.marketplace_outcome }}
@@ -415,43 +446,55 @@ jobs:
           note ""
           note "| leg | declared | outcome |"
           note "|---|---|---|"
-          note "| GitHub Release | always | \`${RELEASE_OUTCOME}\` |"
-          note "| Marketplace (universal) | always | \`${MARKETPLACE_OUTCOME}\` |"
-          note "| Marketplace (darwin-arm64) | always, --pre-release | \`${DARWIN_MARKETPLACE_OUTCOME}\` |"
-          note "| Open VSX | optional (OVSX_PAT) | published=\`${OVSX_PUBLISHED:-<none>}\` |"
+          note "| GitHub Release | push-only, declared=${RELEASE_DECLARED} | \`${RELEASE_OUTCOME:-<empty>}\` |"
+          note "| Marketplace (universal) | SHOULD_PUBLISH=${SHOULD_PUBLISH} | \`${MARKETPLACE_OUTCOME:-<empty>}\` |"
+          note "| Marketplace (darwin-arm64) | SHOULD_PUBLISH=${SHOULD_PUBLISH}, --pre-release | \`${DARWIN_MARKETPLACE_OUTCOME:-<empty>}\` |"
+          note "| Open VSX | optional when SHOULD_PUBLISH=true | published=\`${OVSX_PUBLISHED:-<none>}\` |"
           note ""
 
-          # 1. Unconditional: a tag with no Release behind it is the #432 state.
-          if [ "$RELEASE_OUTCOME" != "success" ]; then
-            bad "no GitHub Release was published for ${GITHUB_REF_NAME} (outcome: ${RELEASE_OUTCOME}). A pushed tag must always produce a Release with its assets; the tag is now spent with nothing behind it."
+          # 1. GitHub Release -- only declared on a pushed tag. A
+          # workflow_dispatch run (any ref, any publish= value) never attempts
+          # one at all, so there is nothing to assert there; a tag with no
+          # Release behind it is the #432 state.
+          if [ "$RELEASE_DECLARED" = "true" ] && [ "$RELEASE_OUTCOME" != "success" ]; then
+            bad "no GitHub Release was published for ${GITHUB_REF_NAME} (outcome: ${RELEASE_OUTCOME:-<empty>}). A pushed tag must always produce a Release with its assets; the tag is now spent with nothing behind it."
           fi
 
-          # 2. Marketplace, universal job -- always declared, channel picked by
-          # minor parity, but publish-or-not is never optional.
-          if [ "$MARKETPLACE_OUTCOME" != "success" ]; then
-            bad "the universal .vsix did not publish to the VS Code Marketplace for ${GITHUB_REF_NAME} (outcome: ${MARKETPLACE_OUTCOME}). This channel is always declared -- skipped or failed is never acceptable for a pushed tag."
-          fi
+          # 2/3. Marketplace, both jobs -- declared by SHOULD_PUBLISH, never by
+          # the ref alone (a workflow_dispatch tag with publish=false is a
+          # legitimate no-publish dry run; a workflow_dispatch BRANCH with
+          # publish=true still must publish, since SHOULD_PUBLISH says so).
+          check_marketplace() {
+            local label="$1" outcome="$2"
+            if [ "$SHOULD_PUBLISH" = "true" ]; then
+              if [ "$outcome" != "success" ]; then
+                bad "$label did not publish to the VS Code Marketplace for ${GITHUB_REF_NAME} (outcome: ${outcome:-<empty>}). SHOULD_PUBLISH=true declares this channel must publish."
+              fi
+            elif [ "$outcome" != "skipped" ]; then
+              bad "$label reported outcome '${outcome:-<empty>}' with SHOULD_PUBLISH=false. A non-publishing run must leave this channel cleanly skipped, not ${outcome:-<empty>}."
+            fi
+          }
+          check_marketplace "the universal .vsix" "$MARKETPLACE_OUTCOME"
+          check_marketplace "the darwin-arm64 .vsix" "$DARWIN_MARKETPLACE_OUTCOME"
 
-          # 3. Marketplace, darwin-arm64 job -- always declared, always
-          # --pre-release, same as #2.
-          if [ "$DARWIN_MARKETPLACE_OUTCOME" != "success" ]; then
-            bad "the darwin-arm64 .vsix did not publish to the VS Code Marketplace for ${GITHUB_REF_NAME} (outcome: ${DARWIN_MARKETPLACE_OUTCOME}). This channel is always declared (always --pre-release) -- skipped or failed is never acceptable for a pushed tag."
-          fi
-
-          # 4. Open VSX is the one OPTIONAL channel. `published` must be exactly
-          # 'true' or 'false' -- anything else means the outputs wiring between
-          # package_and_publish and this gate is broken, and the checks below
-          # would be comparing against nothing rather than a real observation.
+          # 4. Open VSX is the one OPTIONAL channel, and it only gets asserted
+          # at all when a publish was actually declared -- on a non-publishing
+          # run neither of its two steps even attempts to run (both require
+          # SHOULD_PUBLISH=true), so `ovsx_published` legitimately resolves
+          # empty there and that is NOT a wiring failure.
           #
-          # This is the hole a re-derived value would hide: an unresolvable
-          # needs.package_and_publish.outputs.ovsx_published (a renamed step id,
-          # a removed outputs: entry, a context GitHub never populates)
+          # When SHOULD_PUBLISH=true, `published` must be exactly 'true' or
+          # 'false' -- anything else means the outputs wiring between
+          # package_and_publish and this gate is broken, and the comparison
+          # would be against nothing rather than a real observation. This is
+          # the hole a re-derived value would hide: an unresolvable
+          # needs.package_and_publish.outputs.ovsx_published (a renamed step
+          # id, a removed outputs: entry, a context GitHub never populates)
           # evaluates to the EMPTY STRING with no error, and empty satisfies
           # `!= 'true'` -- which reads as "correctly declined" even though
-          # nothing ran the comparison at all. So this is checked BEFORE the
-          # declaration check, not folded into it, and it names the wiring as
-          # the cause rather than blaming the channel.
-          if [ "$OVSX_PUBLISHED" != "true" ] && [ "$OVSX_PUBLISHED" != "false" ]; then
+          # nothing ran the comparison at all. So this is checked explicitly,
+          # naming the wiring as the cause rather than blaming the channel.
+          if [ "$SHOULD_PUBLISH" = "true" ] && [ "$OVSX_PUBLISHED" != "true" ] && [ "$OVSX_PUBLISHED" != "false" ]; then
             bad "the package_and_publish job reported ovsx_published='${OVSX_PUBLISHED:-<empty>}', which is neither true nor false. The outputs wiring for Open VSX is broken, so its declaration cannot be checked. Check the ovsx_publish/ovsx_skip step ids and the job's outputs: block."
           fi
           # No further Open VSX check: true (published) and false (declined via
