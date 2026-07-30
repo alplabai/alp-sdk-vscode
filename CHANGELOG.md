@@ -2,13 +2,46 @@
 
 ## Unreleased
 
+- **The Zephyr SDK row's Install button now runs, instead of failing with
+  `'west' is not recognized`.** The pinned tan v0.4.1's `west sdk install
+  --version 1.0.1 -t arm-zephyr-eabi` command is correct, but `west` is not on
+  PATH after `tan bootstrap` — it lives in the workspace venv
+  (`.venv/Scripts/west.exe` / `.venv/bin/west`) — and the button ran the
+  command verbatim in a plain terminal. It now retargets the leading `west`
+  token onto the resolved venv binary and runs it from the west workspace's
+  top-level directory (the one holding `.west/`), which `west sdk install`
+  requires and the open project folder is not — as an argv array dispatched
+  with no shell in between, never a re-quoted command line: a quoted Windows
+  venv path put PowerShell, the default Windows terminal profile, into
+  expression mode instead of running it. tan still owns the command string end
+  to end; only WHERE it runs and WITH WHICH binary are the host's to decide.
+  When no west workspace can be found at all, or one is found but its venv has
+  no `west` in it, the button no longer opens a terminal that can only print
+  "not in a west installation" — it shows a notice pointing at Bootstrap
+  instead. On native Windows, when tan's own `sevenZip` check is not `pass`,
+  the post-install notice also names the 7-Zip binaries (`7z` / `7za` / `7zr` /
+  `7zz` / `7zzs` / `unar`) west's `.7z` extraction needs on PATH (#412).
+
+## 0.4.0
+
 Re-vendored the `board.yaml` schema from alp-sdk **v0.14.0**: the `peripherals`
 enum gains `dac` and `i3c`, and the Configurator's peripheral picker now offers
 both. The `alp-sdk-upstream` submodule pin and the derived Kconfig LSP fixtures
 (`src/lsp/generated/kconfig-metadata.json`, `test/fixtures/alp-kconfig-symbols.txt`)
 move with it.
 
-## 0.4.0
+The bundled `tan` CLI this build targets moves to **v0.4.1**. That is also the
+first `tan` release published as a full release rather than a pre-release, so
+`releases/latest` now resolves to it — until it existed, `latest` pointed at
+v0.3.1, which is what made "Install tan CLI (global)" able to re-land a stale
+binary. The installer is version-pinned either way now, so nothing here depends
+on what `latest` means.
+
+v0.4.1 also freezes two issue codes this extension matches by name,
+`bootstrap.python-not-runnable` and `bootstrap.python-too-old`. Through v0.4.0
+`tan` declared them at no status, so a rename would have broken the prerequisite
+refusal path with neither repo's CI noticing; the contract gate tracked that
+deliberately and moved with this pin.
 
 First release on the **stable** Marketplace channel. Every release before this
 one shipped as a pre-release, so an install that has only ever tracked stable

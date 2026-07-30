@@ -36,14 +36,26 @@ import {
  *  is the first NON-rc one, and the pin.) Which releases carry it is declared
  *  below, in `RELEASES_PREDATING_CONTRACT_ASSET`, rather than in this prose.
  *
- *  It is also the first release carrying what this extension now REQUIRES, not
+ *  v0.4.0 was the first release carrying what this extension REQUIRES, not
  *  merely prefers: `tan debug-config --core` and its `data.configuration`
  *  (tan-cli#67 — `writeLaunchProfile` has no second draft to fall back to), and
  *  the `bootstrap.python-*` refusal codes `prerequisitesMissingIssue` reads
  *  (tan-cli#78/#81). Against v0.3.1 `--core` is `error: unexpected argument`,
- *  exit 2. Native (non-WSL-only) Windows bootstrap arrived earlier, in v0.3.1. */
+ *  exit 2. Native (non-WSL-only) Windows bootstrap arrived earlier, in v0.3.1.
+ *
+ *  v0.4.1 is the pin, and it is also the first tan tag published as a NON
+ *  pre-release. That matters beyond this constant: until it existed, GitHub's
+ *  `releases/latest` resolved to v0.3.1, because v0.4.0 and v0.4.0-rc1 were
+ *  both flagged pre-release — which is what made the `preferGlobalCli` reinstall
+ *  loop reachable (#408). The installer is version-pinned now regardless, so
+ *  that no longer depends on what `latest` happens to mean.
+ *
+ *  It also freezes `bootstrap.python-not-runnable` and `bootstrap.python-too-old`:
+ *  through v0.4.0 this extension matched two codes tan declared at no status, so
+ *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
+ *  test/tanContract.test.js tracks that, and moved with this pin. */
 
-export const SUPPORTED_CLI_VERSION = "0.4.0";
+export const SUPPORTED_CLI_VERSION = "0.4.1";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an

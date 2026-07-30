@@ -94,6 +94,23 @@ export function venvWestExists(
 }
 
 /**
+ * The venv `west` INSIDE one specific topdir, or null if it is not there.
+ *
+ * Deliberately NOT `resolveWestBinary`: that scans the whole
+ * `westWorkspaceCandidates` list independently of any resolved topdir, so it
+ * can pair one candidate's venv with a DIFFERENT candidate's topdir — e.g. an
+ * ambient `$ZEPHYR_BASE` workspace's venv `west` reported as usable while the
+ * `.west` topdir a caller actually resolved (`westWorkspaceTopdir`) has no
+ * venv of its own. A caller that already resolved a topdir and needs the
+ * `west` THAT topdir owns — not merely a `west` somewhere in the candidate
+ * list — calls this on that topdir, never on a candidate of its own.
+ */
+export function venvWestInTopdir(topdir: string): string | null {
+  const candidate = path.join(topdir, venvRelative("west"));
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+/**
  * The bootstrap venv's Python (where Zephyr's Python deps were installed), or
  * null if no venv is found — callers fall back to the system interpreter.
  */
@@ -123,8 +140,9 @@ function manifestStatus(workspaceDir: string): WestManifestStatus {
 }
 
 /**
- * Whether an initialized west workspace exists — the shared bootstrap
- * workspace, not necessarily the open folder.
+ * The first candidate topdir that counts as an initialized west workspace, or
+ * null when none does — the shared bootstrap workspace, not necessarily the
+ * open folder.
  *
  * A `.west` directory alone is NOT enough. west reads `.west/config`'s own
  * `[manifest] path` directly, so a workspace whose manifest names a directory
@@ -133,20 +151,36 @@ function manifestStatus(workspaceDir: string): WestManifestStatus {
  * satisfy this probe while the real SDK workspace stayed silently stranded
  * (issue #349). A `dangling` candidate is skipped; the next candidate still
  * gets its chance, so a legitimate `$ZEPHYR_BASE` workspace is demoted, never
- * disqualified. `unparsable` still counts — never demote on parse ambiguity.
+ * disqualified. `unparsable` still counts — never demote on parse ambiguity:
+ * a config this extension cannot parse is not evidence west cannot either.
  */
-export function westWorkspaceInitialized(
+export function westWorkspaceTopdir(
   westCwd: string | null,
   sdkRoot: string | null,
   // Candidate list; overridable so a test can pin it. In production the derived
   // list is correct (same injection idiom as the `p` parameter on the pure
-  // services). Kept lazy: `.some` short-circuits before reading every config.
+  // services). Kept lazy: `.find` short-circuits before reading every config.
+  candidates: string[] = westWorkspaceCandidates(westCwd, sdkRoot),
+): string | null {
+  return (
+    candidates.find((workspaceDir) => {
+      const state = manifestStatus(workspaceDir).state;
+      return state === "ok" || state === "unparsable";
+    }) ?? null
+  );
+}
+
+/**
+ * Whether an initialized west workspace exists. Same acceptance rule as
+ * {@link westWorkspaceTopdir} — re-expressed in terms of it, one loop, so the
+ * two can never drift apart.
+ */
+export function westWorkspaceInitialized(
+  westCwd: string | null,
+  sdkRoot: string | null,
   candidates: string[] = westWorkspaceCandidates(westCwd, sdkRoot),
 ): boolean {
-  return candidates.some((workspaceDir) => {
-    const state = manifestStatus(workspaceDir).state;
-    return state === "ok" || state === "unparsable";
-  });
+  return westWorkspaceTopdir(westCwd, sdkRoot, candidates) !== null;
 }
 
 /**

@@ -115,19 +115,24 @@ const GATED_CODES = {
   // back-compat branch is only safe while the spelling stays reserved.
   "bootstrap.windows-unsupported": "retired",
 
-  // UNDECLARED — tan does not list these at any status, on `main` or `dev`.
+  // FROZEN as of tan v0.4.1 — and this pair is why the `null` status exists.
   //
   // Both are LIVE on tan's wire (tan-core/src/bootstrap/prerequisites.rs,
   // prefixed by commands/bootstrap/mod.rs's `format!("bootstrap.{code}")`) and
   // LIVE in this extension (`BOOTSTRAP_PREREQUISITE_CODES`,
-  // `prerequisitesMissingIssue`) — they are simply outside tan's frozen
-  // contract, so a rename would break this extension with neither repo's CI
-  // saying a word. tan's own artefact note points straight at the gap: "a
-  // consumer wanting those two must match them by name". Filing an issue on
-  // tan-cli to freeze them is the real fix; asserting absence here is what
-  // makes the day they land unmissable.
-  "bootstrap.python-not-runnable": null,
-  "bootstrap.python-too-old": null,
+  // `prerequisitesMissingIssue`), but through v0.4.0 they were outside tan's
+  // frozen contract — so a rename would have broken this extension with neither
+  // repo's CI saying a word. They were pinned here as `null` ("tan declares
+  // this at no status") precisely so that the day tan declared them, this gate
+  // went red and said so, instead of the gap closing unnoticed.
+  //
+  // That day is this pin. tan v0.4.1's published `envelope-contract.json`
+  // declares both `frozen` (verified against the release asset, not tan's
+  // `dev`: `tanVersion: 0.4.1`, 68 issue codes), so the assertion moves from
+  // "absent" to "frozen" and the spelling is now tan's promise rather than this
+  // extension's hope.
+  "bootstrap.python-not-runnable": "frozen",
+  "bootstrap.python-too-old": "frozen",
 };
 
 /**
