@@ -10,6 +10,7 @@ import {
   BinarySource,
   ChecksumSpec,
   CliOutcome,
+  ReleaseAsset,
 } from "./models";
 import {
   CACHED_CLI_MISMATCH,
@@ -20,6 +21,7 @@ import {
   isUnverifiableCache,
   parseEnvelope,
   releaseAssetForTarget,
+  TAN_CLI_DOWNLOAD_CONSENT_NEEDED,
 } from "./service";
 
 /** Normalized result of spawning a process (mirrors child_process.spawnSync). */
@@ -110,6 +112,24 @@ export interface ResolveDeps {
   /** Record the digest of the binary just installed at `cachedBinaryPath`.
    *  Async because the real implementation is `globalState.update`. */
   recordCachedDigest: (digest: string) => Promise<void>;
+  /**
+   * Whether a FRESH tan CLI download (case 1: no tan resolves anywhere,
+   * digest-clean cache) may proceed — ADR 0021 Tier A's one-consent-click
+   * rule. Called ONLY from `resolveAlpBinary`'s `download` arm, and ONLY
+   * when that arm is NOT the #396 un-digested-cache re-acquire
+   * (`isUnverifiableCache(input)`, checked before this is ever invoked —
+   * that heal must never be gated, same rule as `ensureTanCliProvisioned`'s
+   * `isFreshInstall`). Never called for `cliPath`/`bundled`/`localBuild`/
+   * `cached`/`path` — those never reach `downloadCli` at all.
+   *
+   * The real implementation (`vscodeAdapter.ts`) reads the SAME stored
+   * answer / `alpSdk.tanCliDownloadConsent` setting the activation-time gate
+   * does (`resolveTanCliDownloadConsent`, `service.ts`) — one decision, one
+   * place. It prompts when unanswered ONLY for an INTERACTIVE resolution
+   * (`buildResolveDeps`'s `interactive` option); a background resolution
+   * (today: the activation-time version probe) never shows a dialog and
+   * simply refuses when nothing is on record. */
+  ensureFreshDownloadConsent: (asset: ReleaseAsset) => Promise<boolean>;
 }
 
 export interface ResolvedBinary {
@@ -285,18 +305,36 @@ export async function resolveAlpBinary(
       }
       return { command: deps.cachedBinaryPath, source };
     }
-    case "download":
+    case "download": {
       // The #386 re-acquire is re-framed inside `downloadCli`, not here: this
       // is one of THREE routes into a download, and the other two
       // (`ensureTanCliProvisioned`, `updateAlpCli`) call `downloadCli`
       // directly. A wrapper here would have covered the one route a unit test
       // reaches first and left the activation path — the one the customer
       // actually hits — on the generic sentence.
+      //
+      // ADR 0021 Tier A gate — FRESH installs ONLY, mirroring
+      // `ensureTanCliProvisioned`'s `isFreshInstall`. `isUnverifiableCache`
+      // marks the #396 security heal (this per-command route is the "STALLED
+      // re-acquire" `test/alpCli.cachedVerification.test.js` already covers):
+      // gating it would strand the customer on the unverified binary this
+      // heal exists to replace, so it is excluded here exactly as it is on
+      // the activation path. Do not widen this "for consistency".
+      if (!isUnverifiableCache(input)) {
+        const asset = releaseAssetForTarget(deps.platform, deps.arch);
+        // No prebuilt binary for this host: let `downloadCli`'s own throw
+        // name that (it re-derives the same `asset`) rather than asking for
+        // consent to a download that could never happen anyway.
+        if (asset && !(await deps.ensureFreshDownloadConsent(asset))) {
+          throw new Error(TAN_CLI_DOWNLOAD_CONSENT_NEEDED);
+        }
+      }
       await downloadCli(deps);
       if (!deps.fileExists(deps.cachedBinaryPath)) {
         throw new Error("The tan CLI download did not produce a binary.");
       }
       return { command: deps.cachedBinaryPath, source };
+    }
   }
 }
 

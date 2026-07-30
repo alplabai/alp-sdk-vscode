@@ -55,6 +55,11 @@ function baseDeps(overrides = {}) {
       recorded = digest;
       calls.recorded.push(digest);
     },
+    // Consent already granted by default — these rows are about the
+    // resolution LADDER, not ADR 0021's consent gate (its own file:
+    // test/alpCli.downloadConsent.test.js). A row that wants to drive a
+    // refusal overrides this via `overrides`.
+    ensureFreshDownloadConsent: async () => true,
     ...overrides,
   };
   return { deps, existing, calls, digests };

@@ -608,7 +608,13 @@ function cliDownloadWith(rejection) {
     },
     "../project/vscodeAdapter": { collectProjectContext: () => ({}) },
     "../notify/vscodeAdapter": {
-      notify: async () => undefined,
+      // `resolutionInputFromDeps` answers `{}` (a real fresh install), so
+      // `ensureTanCliProvisioned`'s consent gate awaits this once, for the
+      // confirm dialog, before it ever reaches `withProgress` — the RPC this
+      // fixture is actually about. Answering with the dialog's own action
+      // simulates the user accepting, so the teardown/real-error split below
+      // still exercises `withProgress`, not the consent step.
+      notify: async (plan) => plan.actions[0]?.id,
       notifyAsync: (plan) => plans.push(plan),
     },
     "../util": { log: spy.log, runInTerminal: () => {} },

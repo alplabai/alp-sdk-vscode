@@ -561,6 +561,73 @@ export function shouldFetchManagedCli(
   return false;
 }
 
+/** `alpSdk.tanCliDownloadConsent` setting values. `ask` is the default: show
+ *  the one-time consent dialog ADR 0021's Tier A rule requires before a FRESH
+ *  install. `allow`/`deny` pre-answer it (a managed/CI image that already
+ *  vetted, or refuses, the download) and never prompt. */
+export type TanCliDownloadConsentSetting = "ask" | "allow" | "deny";
+
+/** The user's answer to a previously-shown consent prompt, persisted in
+ *  `globalState` so a fresh install asks only once. */
+export type TanCliDownloadConsentAnswer = "accepted" | "declined";
+
+/**
+ * Whether a FRESH tan CLI download (case 1 of `ensureTanCliProvisioned` — no
+ * tan resolves anywhere, digest-clean cache) may proceed: `"allow"`/`"deny"`
+ * are final, `"prompt"` means the caller must show the consent dialog and
+ * persist whatever it returns.
+ *
+ * Pure so the branch table is testable without a `vscode` window. The
+ * `alpSdk.tanCliDownloadConsent` setting always wins over a stored answer —
+ * flipping it from a managed/CI image re-arms or silences the prompt without
+ * touching `globalState` — and a stored answer only matters on `"ask"`
+ * (the default), which is also the only value that can still return
+ * `"prompt"`.
+ *
+ * CALLERS: this function decides ONLY the fresh-provision arm. It must never
+ * be consulted for `updatingStaleCache` (a self-heal of an ALREADY-accepted
+ * install) or `reacquiringUnverifiedCache` (moving a customer OFF an
+ * unverified cached binary and ONTO a digest-verified one — a security heal,
+ * not a new install, and gating it would let a stored decline strand the
+ * customer on the unverified binary it exists to close, i.e. #396 again with
+ * a decline on top). See `ensureTanCliProvisioned`'s `isFreshInstall` guard
+ * (the activation-time fetch) and `resolveAlpBinary`'s `download` arm (the
+ * per-command lazy fetch) — do not widen either to cover those two "for
+ * consistency".
+ *
+ * ONE DECISION, ONE PLACE: both the activation path and the lazy per-command
+ * path read the SAME `alpSdk.tanCliDownloadConsent` setting and the SAME
+ * `globalState` answer through this one function — there is no second,
+ * parallel consent state. They differ only in whether an unanswered "ask"
+ * may show a dialog (see `ensureFreshInstallConsent` vs
+ * `resolveFreshInstallConsentSilently` in vscodeAdapter.ts).
+ */
+export function resolveTanCliDownloadConsent(input: {
+  setting: TanCliDownloadConsentSetting;
+  storedAnswer: TanCliDownloadConsentAnswer | undefined;
+}): "prompt" | "allow" | "deny" {
+  if (input.setting === "allow") return "allow";
+  if (input.setting === "deny") return "deny";
+  if (input.storedAnswer === "accepted") return "allow";
+  if (input.storedAnswer === "declined") return "deny";
+  return "prompt";
+}
+
+/**
+ * The message `resolveAlpBinary`'s `download` arm throws when the fresh-
+ * install consent gate refuses a lazy per-command download — either the
+ * setting/stored answer is `deny`, or the resolution is non-interactive (a
+ * background caller, which never prompts) and nothing is on record yet.
+ *
+ * A stable PREFIX, matched by `classifyUnavailable` below into
+ * `"consentDeclined"` — not reused verbatim as the customer sentence (unlike
+ * the checksum refusals' `ChecksumError.message`), so this text is channel
+ * `detail` only and may be reworded without touching the classifier or the
+ * guidance `notify/service.ts` composes.
+ */
+export const TAN_CLI_DOWNLOAD_CONSENT_NEEDED =
+  "The tan CLI download needs consent before it can run.";
+
 /**
  * The ONE sentence for the rung-6 PATH fallback (#393). INFORMATIONAL — nothing
  * failed, nothing is broken, and the customer's setup keeps working, which is
@@ -805,6 +872,11 @@ export function classifyOutcome(
  */
 export function classifyUnavailable(raw: string): CliUnavailableReason {
   if (/^No prebuilt tan CLI/.test(raw)) return "noPrebuilt";
+  // Matched by the stable PREFIX (`TAN_CLI_DOWNLOAD_CONSENT_NEEDED`) ahead of
+  // every other rule: nothing about the binary is broken here, so it must not
+  // fall into `corrupt`/`spawnFailed` and offer a "Run Doctor" button for a
+  // question doctor cannot answer.
+  if (raw.startsWith(TAN_CLI_DOWNLOAD_CONSENT_NEEDED)) return "consentDeclined";
   if (/did not produce a binary|Downloaded 0 bytes/.test(raw)) return "corrupt";
   // Every `ChecksumError` sentence (`download.ts`) says "checksum". Matched
   // AHEAD of both `corrupt` and `downloadFailed`, and mapped to neither:

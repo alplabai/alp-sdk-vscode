@@ -110,6 +110,12 @@ function coreDeps(overrides = {}) {
         recorded = digest;
         calls.recorded.push(digest);
       },
+      // Consent already granted by default — these rows are about the
+      // CHECK (cached-digest verification, download wiring), not about
+      // ADR 0021's consent gate, which has its own file
+      // (test/alpCli.downloadConsent.test.js). A row that wants to drive the
+      // refusal overrides this via `overrides.deps`.
+      ensureFreshDownloadConsent: async () => true,
       ...overrides.deps,
     },
   };
@@ -767,7 +773,18 @@ test("wiring: download → record in globalState → verified on the next resolu
     // recorded. This is what proves `recordCachedDigest` is wired to the real
     // `globalState` — a no-op there leaves every other test in this file green
     // and the shipped extension permanently refusing its own downloads.
-    const { adapter } = loadAdapter({ releaseAsset: server.asset });
+    //
+    // `tanCliDownloadConsent: "allow"` pre-answers ADR 0021's consent gate —
+    // this row is about the download-and-record WIRING, not consent, which
+    // has its own file (test/alpCli.downloadConsent.test.js). Without it a
+    // NON-interactive `resolveAlpBinaryForContext(context)` (no `{
+    // interactive: true }`, same call this row makes) refuses a fresh
+    // install with nothing on record — correctly, but not what this row
+    // means to measure.
+    const { adapter } = loadAdapter({
+      releaseAsset: server.asset,
+      config: { "alpSdk.tanCliDownloadConsent": "allow" },
+    });
 
     const first = await adapter.resolveAlpBinaryForContext(home.context);
     assert.equal(first.source, "download");

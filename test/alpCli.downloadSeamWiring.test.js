@@ -151,7 +151,13 @@ function loadAdapterCapturingDownloadCli() {
       },
     },
     "../notify/vscodeAdapter": {
-      notify: async () => undefined,
+      // `ensureTanCliProvisioned`'s fresh-install consent gate awaits this
+      // for exactly one plan (the confirm dialog) before it ever reaches
+      // `downloadCli`. Answering with the dialog's own (sole) action
+      // simulates the user clicking through — this file is about the
+      // download SEAM, not consent, so it must not be blocked by a stub
+      // that always declines.
+      notify: async (plan) => plan.actions[0]?.id,
       notifyAsync() {},
     },
     "../util": { log() {}, runInTerminal() {} },

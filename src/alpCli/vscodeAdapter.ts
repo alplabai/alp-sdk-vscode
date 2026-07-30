@@ -30,7 +30,12 @@ import {
   ProxyError,
   downloadSeam,
 } from "./download";
-import { BinaryResolutionInput, BinarySource, CliOutcome } from "./models";
+import {
+  BinaryResolutionInput,
+  BinarySource,
+  CliOutcome,
+  ReleaseAsset,
+} from "./models";
 import {
   CACHED_CLI_UNVERIFIED,
   CACHED_CLI_UNVERIFIED_NO_PREBUILT,
@@ -48,15 +53,19 @@ import {
   posixLoginShellCommand,
   proxyEnvOverrides,
   releaseAssetForTarget,
+  resolveTanCliDownloadConsent,
   shouldFetchManagedCli,
   shouldNoticeUnverifiedPath,
   shouldWarnCliAhead,
+  TanCliDownloadConsentAnswer,
+  TanCliDownloadConsentSetting,
   unverifiedCacheCause,
 } from "./service";
 import { ActionId, NotificationPlan, NotifyAction } from "../notify/models";
 import {
   isCancellation,
   planCliOutcome,
+  planConfirm,
   planFailure,
   planSuccess,
 } from "../notify/service";
@@ -185,6 +194,20 @@ const CACHED_DIGEST_KEY = "alp.tanCachedBinarySha256";
  *  which is the nag both files exist to prevent. Different question, so a
  *  different answer — deliberately, not by oversight. */
 const PATH_NOTICED_KEY = "alp.tanUnverifiedPathNoticed";
+
+/** globalState key holding the user's answer to the one-time FRESH-install
+ *  consent prompt (ADR 0021 Tier A: "install after one consent click") — see
+ *  `resolveTanCliDownloadConsent` and `ensureFreshInstallConsent`. Written
+ *  only by that prompt, so a fresh install asks ONCE, not on every activation.
+ *
+ *  NEVER consulted by `updateAlpCli` or `installTanCliGlobally` — both are
+ *  explicit, user-initiated entry points (`alp.updateCli` / `alp.installTanCli`),
+ *  and running one of those command IS the consent; gating them on a stored
+ *  decline would make "explicitly ask for the CLI" and "get told no because
+ *  you said no once, to a different question, possibly months ago" the same
+ *  click. A decline is revisited by running either command, or by setting
+ *  `alpSdk.tanCliDownloadConsent` to `allow`. */
+const DOWNLOAD_CONSENT_KEY = "alp.tanCliDownloadConsentAnswer";
 
 /** Last `sha256File` answer, keyed by path + size + mtime.
  *
@@ -515,7 +538,22 @@ function spawnEnv(): NodeJS.ProcessEnv {
   return { ...process.env, ...proxyEnvAdditions() };
 }
 
-function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
+/**
+ * `interactive` (default false — see the rationale on `ResolveDeps
+ * .ensureFreshDownloadConsent`) picks which of the two fresh-install consent
+ * closures below `deps.ensureFreshDownloadConsent` resolves to. Kept OUT of
+ * `ResolveDeps` itself as a separate boolean: `resolveAlpBinary`
+ * (adapterCore.ts) never branches on it directly, only the closure built here
+ * does, so threading a second field through the whole seam type would let a
+ * future case ask `deps.interactive` instead of going through the one
+ * function that is allowed to decide — the same reason `preferGlobalCli`
+ * lives on `BinaryResolutionInput` but this does not.
+ */
+function buildResolveDeps(
+  context: vscode.ExtensionContext,
+  options: { interactive?: boolean } = {},
+): ResolveDeps {
+  const interactive = options.interactive ?? false;
   const cacheDir = cacheDirFor(context);
   const platform = process.platform;
   // Only present in a platform-specific VSIX (`vsce package --target <triple>`
@@ -586,17 +624,43 @@ function buildResolveDeps(context: vscode.ExtensionContext): ResolveDeps {
     recordCachedDigest: async (digest) => {
       await context.globalState.update(CACHED_DIGEST_KEY, digest);
     },
+    // See `ensureFreshInstallConsent` (prompts, activation's own consent
+    // seam — reused verbatim here for an INTERACTIVE lazy resolution: same
+    // stored answer, same dialog, same one-shot persistence) and
+    // `resolveFreshInstallConsentSilently` (never prompts, for the one
+    // BACKGROUND caller — see `runCliVersionCheck`).
+    ensureFreshDownloadConsent: (asset) =>
+      interactive
+        ? ensureFreshInstallConsent(context, asset)
+        : resolveFreshInstallConsentSilently(context),
   };
 }
 
-/** Resolve (and if needed download) the `tan` binary for this window. */
+/**
+ * Resolve (and if needed download) the `tan` binary for this window.
+ *
+ * `interactive` (default false — fail CLOSED, never surprise-prompt) governs
+ * ONLY whether a FRESH download (case 1: nothing resolves anywhere) may show
+ * ADR 0021's consent dialog when unanswered: `true` for something the user
+ * just directly asked for (a build/validate/debug/flash command, a webview
+ * button — `runAlpCommand`/`runAlpInTerminal`/`runAlpStreamed` all pass it),
+ * `false` for anything that runs on its own (today: `runCliVersionCheck`'s
+ * background version probe, on activation and on an `alpSdk` config change —
+ * NOT something the user asked for just then, so popping a blocking modal out
+ * of nowhere would be worse than the silent refusal this keeps instead). Both
+ * modes read the SAME stored answer / `alpSdk.tanCliDownloadConsent` setting
+ * (`resolveTanCliDownloadConsent`) — an `allow` proceeds silently either way;
+ * only whether an UNANSWERED `ask` may show a dialog differs. See
+ * `ResolveDeps.ensureFreshDownloadConsent` for where this is actually spent.
+ */
 export async function resolveAlpBinaryForContext(
   context: vscode.ExtensionContext,
+  options: { interactive?: boolean } = {},
 ): Promise<ResolvedBinary> {
   if (resolved) {
     return resolved;
   }
-  resolved = await resolveAlpBinary(buildResolveDeps(context));
+  resolved = await resolveAlpBinary(buildResolveDeps(context, options));
   return resolved;
 }
 
@@ -621,6 +685,108 @@ export async function probeTanVersion(
 }
 
 /**
+ * ADR 0021 Tier A: "install after one consent click" — ask (once) whether a
+ * FRESH tan CLI download may proceed, and persist the answer. Returns true iff
+ * the download may proceed; NEVER throws for a teardown cancellation (that is
+ * indistinguishable, at the `notify` seam, from the user picking neither
+ * button, so it is treated the same way: no download THIS activation, and
+ * nothing persisted — the next activation asks again, exactly like every
+ * other abandoned-on-teardown flow in this file).
+ *
+ * Case 1 ONLY — see `ensureTanCliProvisioned`'s `isFreshInstall` guard, which
+ * must keep this unreached for `updatingStaleCache` / `reacquiringUnverifiedCache`.
+ * `resolveTanCliDownloadConsent`'s doc explains why gating either of those
+ * would be wrong, not merely unnecessary; this function trusts the caller to
+ * have already excluded them and does not re-derive the check.
+ */
+async function ensureFreshInstallConsent(
+  context: vscode.ExtensionContext,
+  asset: ReleaseAsset,
+): Promise<boolean> {
+  const setting = vscode.workspace
+    .getConfiguration("alpSdk")
+    .get<TanCliDownloadConsentSetting>("tanCliDownloadConsent", "ask");
+  const storedAnswer =
+    context.globalState.get<TanCliDownloadConsentAnswer>(DOWNLOAD_CONSENT_KEY);
+  const decision = resolveTanCliDownloadConsent({ setting, storedAnswer });
+  if (decision === "allow") return true;
+  if (decision === "deny") return false;
+
+  // The itemised disclosure ADR 0021's Tier A rule requires: artifact,
+  // source, size, licence. `asset.url` is the SAME url `downloadCli` is about
+  // to fetch (this function is called with it, never a re-derived one), so the
+  // dialog can never name a different release than the one that runs. Size is
+  // genuinely unknown here — `ReleaseAsset` carries no content-length, and
+  // HEADing the URL to learn one would itself be network activity before the
+  // answer, which requirement 4 forbids — so it says so rather than invent a
+  // number. Licence is tan-cli's own (github.com/alplabai/tan-cli, Apache
+  // License 2.0), not this extension's — the two repos could diverge and this
+  // string must track the one actually being downloaded.
+  let picked: string | undefined;
+  try {
+    picked = await notify(
+      planConfirm({
+        message: `Alp: download the tan CLI (v${SUPPORTED_CLI_VERSION})?`,
+        modalDetail:
+          `Artifact: tan v${SUPPORTED_CLI_VERSION} (the build/validate command-line tool)\n` +
+          `Source: ${asset.url}\n` +
+          "Size: not known before the download starts (this dialog fetches " +
+          "nothing itself, so the size on the release page is the only " +
+          "figure available in advance)\n" +
+          "Licence: Apache License 2.0 (github.com/alplabai/tan-cli)\n\n" +
+          "Declining leaves tan unresolved until you set alpSdk.cliPath, " +
+          "change alpSdk.tanCliDownloadConsent, or run “Install tan CLI " +
+          "(global)” / “Update tan CLI” from the command palette — " +
+          "both proceed regardless of this choice.",
+        confirm: { id: "downloadTanCli" },
+      }),
+    );
+  } catch (error) {
+    if (isCancellation(error)) {
+      log("[cli] tan CLI download consent prompt abandoned, window closing");
+      return false;
+    }
+    throw error;
+  }
+  const accepted = picked === "downloadTanCli";
+  await context.globalState.update(
+    DOWNLOAD_CONSENT_KEY,
+    accepted ? "accepted" : "declined",
+  );
+  return accepted;
+}
+
+/**
+ * The non-interactive twin of `ensureFreshInstallConsent`: NEVER shows a
+ * dialog. For a resolution that did not originate from a direct user action
+ * (today: `runCliVersionCheck`'s background version probe, fired on
+ * activation and on an `alpSdk` config change) — popping a blocking modal out
+ * of something the user never asked for is worse than the refusal this
+ * returns instead, and this function's caller (`resolveAlpBinary`'s
+ * `download` arm) already turns a `false` here into a resolution failure the
+ * background caller quietly swallows, exactly like every other resolution
+ * failure it already tolerates.
+ *
+ * Reads the SAME stored answer / setting `ensureFreshInstallConsent` does —
+ * `resolveTanCliDownloadConsent`, never a second consent state — so an
+ * `allow` (from either) still proceeds silently: the user (or the managed
+ * image) already said yes, and a background caller staying quiet about a
+ * yes it already has would just be a slower first build. Only "unanswered"
+ * differs: there is no dialog here to answer it with, so it refuses — never
+ * persisted, since nothing was actually asked.
+ */
+async function resolveFreshInstallConsentSilently(
+  context: vscode.ExtensionContext,
+): Promise<boolean> {
+  const setting = vscode.workspace
+    .getConfiguration("alpSdk")
+    .get<TanCliDownloadConsentSetting>("tanCliDownloadConsent", "ask");
+  const storedAnswer =
+    context.globalState.get<TanCliDownloadConsentAnswer>(DOWNLOAD_CONSENT_KEY);
+  return resolveTanCliDownloadConsent({ setting, storedAnswer }) === "allow";
+}
+
+/**
  * Ensure the managed `tan` binary is present up front (called on activation) so
  * a fresh install feels "installed together" instead of stalling on the first
  * command. Fetches when nothing else resolves (a download would happen on first
@@ -628,9 +794,13 @@ export async function probeTanVersion(
  * pinned SUPPORTED_CLI_VERSION, and re-acquires an UN-DIGESTED cached copy
  * whatever else resolved (#396 — see shouldFetchManagedCli for why that one
  * cannot key on the resolved source); surfaced with a one-time progress
- * notification. User/build-owned sources are never auto-replaced. Never throws:
- * a failure here is logged and the normal per-command resolution ladder still
- * runs (and can retry the download) later.
+ * notification. User/build-owned sources are never auto-replaced. A FRESH
+ * install (nothing resolves anywhere) additionally gates on
+ * `ensureFreshInstallConsent` — ADR 0021 Tier A's one-click consent — before
+ * ever reaching `downloadCli`; the stale-cache self-heal and the un-digested-
+ * cache security heal never do (see the `isFreshInstall` guard below). Never
+ * throws: a failure here is logged and the normal per-command resolution
+ * ladder still runs (and can retry the download) later.
  */
 export async function ensureTanCliProvisioned(
   context: vscode.ExtensionContext,
@@ -758,6 +928,19 @@ export async function ensureTanCliProvisioned(
         }),
       );
     }
+    return;
+  }
+  // ADR 0021 Tier A gate — FRESH installs ONLY. `updatingStaleCache` and
+  // `reacquiringUnverifiedCache` never reach `ensureFreshInstallConsent`:
+  // both fetch on behalf of a tan the user (or this heal) already has or
+  // already accepted, and gating either would let a stored decline strand
+  // the customer on a stale/unverified binary — the opposite of what
+  // consent is for, and #396 again with a decline latched on top. Do not
+  // widen this condition to cover them "for consistency" — see
+  // `resolveTanCliDownloadConsent`'s doc for why that would be wrong.
+  const isFreshInstall = !updatingStaleCache && !reacquiringUnverifiedCache;
+  if (isFreshInstall && !(await ensureFreshInstallConsent(context, asset))) {
+    log("[cli] tan CLI download declined; skipping fresh provision");
     return;
   }
   let cancelled = false;
@@ -1245,6 +1428,11 @@ async function runCliVersionCheck(
 
   let binary: ResolvedBinary;
   try {
+    // Deliberately NOT `{ interactive: true }`: this runs on activation and
+    // on every `alpSdk` config change, never because the user asked for a
+    // version check just then. A FRESH install with no consent on record
+    // must refuse quietly here (the default) rather than pop a dialog out of
+    // nowhere — see `resolveAlpBinaryForContext`'s doc.
     binary = await resolveAlpBinaryForContext(context);
   } catch {
     return; // resolution failure is surfaced by the command that triggered it
@@ -1637,7 +1825,11 @@ export async function runAlpCommand(
 }> {
   let binary: ResolvedBinary;
   try {
-    binary = await resolveAlpBinaryForContext(context);
+    // Every caller of `runAlpCommand` is a command the user just asked for
+    // (build/validate/generate/debug-config/sdk-switch/…) — see
+    // `resolveAlpBinaryForContext`'s doc for the full split — so a FRESH
+    // install's consent dialog is appropriate here, not a surprise.
+    binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     // Never throw: a resolution failure becomes an error outcome so callers
     // can present it uniformly (the message already points at alpSdk.cliPath).
@@ -1708,7 +1900,12 @@ export async function runAlpInTerminal(
 ): Promise<void> {
   let binary: ResolvedBinary;
   try {
-    binary = await resolveAlpBinaryForContext(context);
+    // Every caller runs a terminal command the user just triggered (a build/
+    // flash/bootstrap command, or the `alp` task provider's pseudoterminal —
+    // itself only reached when a task actually RUNS, i.e. the user pressed
+    // Debug/Run Task, never while merely populating a picker) — see
+    // `resolveAlpBinaryForContext`'s doc for the full split.
+    binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     log(
       `[cli] ✗ CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
@@ -1856,7 +2053,10 @@ async function streamRun(
 ): Promise<void> {
   let binary: ResolvedBinary;
   try {
-    binary = await resolveAlpBinaryForContext(context);
+    // Every caller of `runAlpStreamed` (west.ts's build/image/flash/clean/
+    // renode commands, the Build Plan panel's buttons) is a command the user
+    // just triggered — see `resolveAlpBinaryForContext`'s doc for the split.
+    binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     log(
       `[cli] ✗ CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,

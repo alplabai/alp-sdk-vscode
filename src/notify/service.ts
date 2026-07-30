@@ -190,6 +190,24 @@ function unavailablePlan(
         // because that source is never checksum-verified.
         actions: [{ id: "retry" }, { id: "showOutput" }],
       };
+    case "consentDeclined":
+      return {
+        // Names all three routes past this refusal: the setting (this
+        // sentence's own subject), `alpSdk.cliPath` (a binary the customer
+        // already has, no download needed), and the two commands below,
+        // which proceed regardless of this setting — running one of them IS
+        // consent. Nothing here claims the BINARY is broken (it is `corrupt`
+        // /`checksumRefused` that say that), so no Doctor button.
+        message:
+          `${op} needs the tan CLI, and its download hasn't been consented ` +
+          "to yet. Set alpSdk.tanCliDownloadConsent to allow it, or point " +
+          "alpSdk.cliPath at a tan you already have.",
+        actions: [
+          { id: "openSettings", arg: "alpSdk.tanCliDownloadConsent" },
+          { id: "installTanCli" },
+          { id: "updateCli" },
+        ],
+      };
     case "timeout":
       return {
         message: `${op} timed out waiting for the tan CLI.`,
