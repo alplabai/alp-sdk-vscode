@@ -90,6 +90,11 @@ export const CANCELLED = Symbol("cancelled");
  * caller skips its error toast. Exported: `bootstrap.ts` reuses this exact
  * `withProgress` + CancellationToken->AbortController bridge for its win32
  * pre-flight rather than duplicating it.
+ *
+ * `interactive: true` unconditionally: every caller (the `alp.generate*` /
+ * `alp.validateBoardYaml` command-palette entries, and `bootstrap.ts`'s win32
+ * pre-flight, itself only reached from the explicit "Install Dependencies"
+ * command) is a direct user action, never a background re-derive.
  */
 export async function runAlpWithProgress(
   context: vscode.ExtensionContext,
@@ -109,6 +114,7 @@ export async function runAlpWithProgress(
       try {
         const result = await runAlpCommand(context, args, cwd, {
           signal: controller.signal,
+          interactive: true,
         });
         return token.isCancellationRequested ? CANCELLED : result;
       } finally {

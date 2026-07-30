@@ -144,6 +144,15 @@ In VS Code settings, configure these values when auto-detection is not enough:
 - alpSdk.boardYamlPath
 - alpSdk.westCwd
 
+**First run: tan CLI download consent.** The first time nothing else resolves
+a `tan` binary on your machine, the extension shows a one-time consent dialog
+(artifact, source, size, licence) before downloading it; your answer is
+remembered, so it asks only once. `alpSdk.tanCliDownloadConsent` (`ask`
+default / `allow` / `deny`, machine-overridable) pre-answers it for a
+managed/CI image. A later stale-cache update or one-time re-verification of an
+already-downloaded binary is never gated by this setting — both act on a `tan`
+you already have.
+
 ## 4. Validate and Generate
 
 Use Command Palette (Cmd+Shift+P):

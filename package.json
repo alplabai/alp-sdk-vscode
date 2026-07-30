@@ -518,7 +518,7 @@
           "enumDescriptions": [
             "Show a one-time consent dialog (artifact, source, size, licence) the first time nothing else resolves a tan CLI. Your answer is remembered, so this asks only once.",
             "Skip the dialog and allow the download. For a managed/CI image that already vetted it.",
-            "Skip the dialog and never auto-download. tan stays unresolved until you set alpSdk.cliPath, or run \"Install tan CLI (global)\" / \"Update tan CLI\", which proceed regardless of this setting."
+            "Skip the dialog and refuse a first-time download; tan stays unresolved until you set alpSdk.cliPath, or run \"Install tan CLI (global)\" / \"Update tan CLI\", which proceed regardless of this setting. Does NOT stop a stale-cache self-update or the one-time re-verification of a binary cached before checksums were recorded — both act on a tan you already have and are never gated by this setting."
           ],
           "default": "ask",
           "scope": "machine-overridable",

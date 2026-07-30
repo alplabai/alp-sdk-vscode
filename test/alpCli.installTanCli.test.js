@@ -359,7 +359,14 @@ function runInstallTanCli() {
     Module._load = originalLoad;
     delete require.cache[ADAPTER];
   }
-  adapter.installTanCliGlobally({ extensionPath: root, subscriptions: [] });
+  adapter.installTanCliGlobally({
+    extensionPath: root,
+    subscriptions: [],
+    // Running this command clears a stored consent decline
+    // (`DOWNLOAD_CONSENT_KEY`) — a bare stub is enough, this file doesn't
+    // assert on it (see test/alpCli.downloadConsent.test.js for that).
+    globalState: { update: async () => {} },
+  });
   return terminalCalls;
 }
 

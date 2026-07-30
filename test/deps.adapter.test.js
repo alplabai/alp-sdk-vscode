@@ -193,12 +193,13 @@ const PLAIN_DATA = {
 async function report(
   workspaceRoot = "/home/dev/proj",
   { build = DOCTOR_DATA, plain = PLAIN_DATA } = {},
+  reportOptions = {},
 ) {
   const spawns = [];
   const { buildDependencyReport } = loadDepsAdapter({
     "../alpCli/vscodeAdapter": {
-      runAlpCommand: async (_context, args, cwd) => {
-        spawns.push({ args, cwd });
+      runAlpCommand: async (_context, args, cwd, options) => {
+        spawns.push({ args, cwd, options });
         const data = args.includes("--build") ? build : plain;
         return {
           outcome: {
@@ -213,7 +214,7 @@ async function report(
       collectProjectContext: () => ({ workspaceRoot, sdkRoot: null }),
     },
   });
-  const result = await buildDependencyReport({}, STATE);
+  const result = await buildDependencyReport({}, STATE, reportOptions);
   return { ...result, spawns };
 }
 
@@ -258,6 +259,89 @@ test("the table does not wait on the latest-SDK lookup", async () => {
     "the first report leaves the remote cell empty; `withLatestSdk` fills it in " +
       "a second post",
   );
+});
+
+test("a focus/settings-edit re-derive never asks tan CLI download consent", async () => {
+  const { spawns } = await report();
+  assert.ok(spawns.length > 0);
+  for (const spawn of spawns) {
+    assert.notEqual(
+      spawn.options?.interactive,
+      true,
+      "buildDependencyReport with no `interactive` option must run both doctor " +
+        "invocations non-interactively — a window-focus/settings-edit/bootstrap- " +
+        "boundary re-derive must never pop ADR 0021's consent modal",
+    );
+  }
+});
+
+test("the Dependencies panel's explicit Refresh click DOES ask tan CLI download consent", async () => {
+  const { spawns } = await report("/home/dev/proj", {}, { interactive: true });
+  assert.ok(spawns.length > 0);
+  for (const spawn of spawns) {
+    assert.equal(
+      spawn.options?.interactive,
+      true,
+      "`refreshDependencies` (deps/panel.ts) IS the user's Refresh click — " +
+        "it must reach runDoctor interactively so a fresh tan CLI download can " +
+        "show ADR 0021's consent dialog instead of being silently refused",
+    );
+  }
+});
+
+/** Drive the REAL `withLatestSdk` against a fake `runAlpCommand`, returning
+ *  the options every `sdk list` spawn was given. A bare `globalState` (no
+ *  cache entry) so the lookup always reaches the spawn regardless of `force` —
+ *  `latestSdkCacheStale` reads "nothing cached" as stale either way. */
+async function sdkListSpawnOptions(refreshLatestSdk) {
+  const spawns = [];
+  const { withLatestSdk } = loadDepsAdapter({
+    "../alpCli/vscodeAdapter": {
+      runAlpCommand: async (_context, args, _cwd, options) => {
+        spawns.push({ args, options });
+        return { outcome: { ok: true, envelope: null, message: "" } };
+      },
+    },
+  });
+  const store = new Map();
+  const context = {
+    globalState: {
+      get: (key, fallback) => (store.has(key) ? store.get(key) : fallback),
+      update: async (key, value) => void store.set(key, value),
+    },
+  };
+  await withLatestSdk(
+    context,
+    { rows: [{ name: "sdk", installed: null }] },
+    { refreshLatestSdk },
+  );
+  return spawns.filter((spawn) => spawn.args.includes("list"));
+}
+
+test("withLatestSdk: a focus/settings-edit re-derive never asks tan CLI download consent on `sdk list`", async () => {
+  const spawns = await sdkListSpawnOptions(false);
+  assert.ok(spawns.length > 0, "the lookup must still run with nothing cached");
+  for (const spawn of spawns) {
+    assert.notEqual(
+      spawn.options?.interactive,
+      true,
+      "`refreshLatestSdk: false` (a background re-derive) must not raise ADR " +
+        "0021's consent dialog on the `sdk list` call",
+    );
+  }
+});
+
+test("withLatestSdk: the explicit Refresh click DOES ask tan CLI download consent on `sdk list`", async () => {
+  const spawns = await sdkListSpawnOptions(true);
+  assert.ok(spawns.length > 0);
+  for (const spawn of spawns) {
+    assert.equal(
+      spawn.options?.interactive,
+      true,
+      "`refreshLatestSdk: true` IS the user's explicit Refresh click " +
+        "(deps/panel.ts) and must reach `sdk list` interactively",
+    );
+  }
 });
 
 // ── A-0f: the four checks that live on PLAIN `tan doctor` only ───────────────

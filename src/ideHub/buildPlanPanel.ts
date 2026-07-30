@@ -79,10 +79,11 @@ export class BuildPlanPanel {
 
     // Re-request the plan + manifest when board.yaml or the emitted manifest
     // changes under the active workspace (a build refreshes the manifest).
+    // `interactive: false` — a file save, not a direct user ask.
     const refresh = () => {
-      void this.handleRequestBuildPlan();
-      void this.handleRequestSystemManifest();
-      void this.handleRequestSliceSizes();
+      void this.handleRequestBuildPlan(false);
+      void this.handleRequestSystemManifest(false);
+      void this.handleRequestSliceSizes(false);
     };
     for (const glob of ["**/board.yaml", "**/system-manifest.yaml"]) {
       const watcher = vscode.workspace.createFileSystemWatcher(glob);
@@ -110,9 +111,11 @@ export class BuildPlanPanel {
       case "ready":
         break;
       case "requestBuildPlan":
-        void this.handleRequestBuildPlan();
-        void this.handleRequestSystemManifest();
-        void this.handleRequestSliceSizes();
+        // The view posts this on mount, i.e. the user's explicit "Alp: Build
+        // Plan" open — `interactive: true`, unlike the file-watcher `refresh`.
+        void this.handleRequestBuildPlan(true);
+        void this.handleRequestSystemManifest(true);
+        void this.handleRequestSliceSizes(true);
         break;
       case "materialiseBuildPlan":
         void this.handleMaterialiseBuildPlan();
@@ -134,13 +137,19 @@ export class BuildPlanPanel {
     }
   }
 
-  private async handleRequestBuildPlan(): Promise<void> {
+  private async handleRequestBuildPlan(interactive: boolean): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     // Consume the SDK build plan via the CLI envelope (`alp build --plan`).
+    // `interactive` comes from the caller: `true` for the webview's own
+    // `requestBuildPlan` (posted on mount — the user opened this panel),
+    // `false` for the constructor's file watcher (a board.yaml save is not a
+    // direct ask, and an interactive resolution there would pop ADR 0021's
+    // consent modal out of a file save).
     const { outcome } = await runAlpCommand(
       this.context,
       ["build", "--plan"],
       cwd,
+      { interactive },
     );
     const envelope = outcome.envelope;
     let msg: ExtToWebviewMessage;
@@ -171,7 +180,9 @@ export class BuildPlanPanel {
    *  populated `build/system-manifest.yaml` (`--manifest-from`) when a build has
    *  written one; otherwise asks the SDK for the pre-build projection
    *  (`--manifest`). Posts a `systemManifestData` message either way. */
-  private async handleRequestSystemManifest(): Promise<void> {
+  private async handleRequestSystemManifest(
+    interactive: boolean,
+  ): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const built = cwd
       ? path.join(cwd, "build", "system-manifest.yaml")
@@ -181,7 +192,10 @@ export class BuildPlanPanel {
       ? ["build", "--manifest-from", built as string]
       : ["build", "--manifest"];
 
-    const { outcome } = await runAlpCommand(this.context, args, cwd);
+    // `interactive` — see `handleRequestBuildPlan`'s doc.
+    const { outcome } = await runAlpCommand(this.context, args, cwd, {
+      interactive,
+    });
     const envelope = outcome.envelope;
     let msg: ExtToWebviewMessage;
     if (envelope && envelope.ok) {
@@ -223,7 +237,7 @@ export class BuildPlanPanel {
    *  non-zero, and this panel reports a footprint, it does not fail anything.
    *  A missing size tool is not an error either — tan falls back to reading
    *  ELF section headers and still returns rows. */
-  private async handleRequestSliceSizes(): Promise<void> {
+  private async handleRequestSliceSizes(interactive: boolean): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const built = cwd
       ? path.join(cwd, "build", "system-manifest.yaml")
@@ -236,7 +250,10 @@ export class BuildPlanPanel {
       return;
     }
 
-    const { outcome } = await runAlpCommand(this.context, ["size"], cwd);
+    // `interactive` — see `handleRequestBuildPlan`'s doc.
+    const { outcome } = await runAlpCommand(this.context, ["size"], cwd, {
+      interactive,
+    });
     const envelope = outcome.envelope;
     const shapeError =
       envelope && envelope.ok
@@ -276,10 +293,16 @@ export class BuildPlanPanel {
       return;
     }
     try {
+      // `interactive: true`: reached only from the "Materialise" button click
+      // (`materialiseBuildPlan`), never from the file-watcher `refresh()` in
+      // the constructor — unlike `handleRequestBuildPlan`/
+      // `handleRequestSystemManifest`/`handleRequestSliceSizes` below, which
+      // that same watcher calls and must stay non-interactive.
       const { outcome } = await runAlpCommand(
         this.context,
         ["build", "--materialise"],
         cwd,
+        { interactive: true },
       );
       const envelope = outcome.envelope;
       if (envelope && envelope.ok) {
@@ -293,7 +316,9 @@ export class BuildPlanPanel {
           ),
         );
         // The plan view reflects on-disk state — re-request so it isn't stale.
-        await this.handleRequestBuildPlan();
+        // `interactive: true`: the direct follow-through of the "Materialise"
+        // click just above, not a background re-derive.
+        await this.handleRequestBuildPlan(true);
       } else {
         // Severity comes from the outcome: the most common materialise failure
         // is a board.yaml validation error (exit 2 ⇒ warning), which must not

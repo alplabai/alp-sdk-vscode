@@ -127,6 +127,9 @@ function loadAdapter(proxySetting) {
     context: {
       extensionPath: root,
       globalStorageUri: { fsPath: path.join(root, "no-such-storage-dir") },
+      // `installTanCliGlobally` clears a stored consent decline on invocation
+      // — a bare stub, this file doesn't assert on it.
+      globalState: { update: async () => {} },
     },
   };
 }

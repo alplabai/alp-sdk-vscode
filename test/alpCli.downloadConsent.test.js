@@ -379,13 +379,19 @@ test("updatingStaleCache (behind-pin self-heal): no prompt, downloads", async ()
   }
 });
 
-test("reacquiringUnverifiedCache (#396 security heal): no prompt, downloads", async () => {
+test("reacquiringUnverifiedCache (#396 security heal), onPath TRUE: no prompt, downloads", async () => {
+  // The genuine heal: a customer is CURRENTLY RUNNING the un-digested cache
+  // via the PATH fallback (`onPath: true` — `decideBinarySource` can only
+  // reach `path` after stepping over the un-digested cache), so migrating
+  // them onto a digest-verified copy strands nobody — they already have a
+  // binary in use. This is the only state the exclusion may cover.
   const home = extensionHome();
   const file = home.writeCachedBinary(TAMPERED); // present, no digest recorded
   home.store.set(DOWNLOAD_CONSENT_KEY, "declined"); // must not matter
   const server = await releaseServer(GOOD);
   try {
     const { adapter, plans } = loadAdapter({
+      onPath: true,
       releaseAsset: server.asset,
       onNotify: () => {
         throw new Error(
@@ -398,6 +404,74 @@ test("reacquiringUnverifiedCache (#396 security heal): no prompt, downloads", as
     assert.deepEqual(plans.filter(isConsentPlan), []);
     assert.equal(fs.readFileSync(file, "utf8"), GOOD);
     assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(GOOD));
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("un-digested cache, onPath FALSE (nothing running): a stored decline IS honoured, no download", async () => {
+  // A review found this after #434 merged: `onPath: false` (the default) means
+  // NOTHING resolves anywhere — `decideBinarySource` skips the un-digested
+  // cache and, with no PATH fallback either, falls through to `download`. That
+  // is a plain fresh install wearing a leftover cache file, not the #396 heal,
+  // and there is nobody to strand by honouring `deny`. Before the fix this row
+  // downloaded anyway, silently ignoring the stored decline.
+  const home = extensionHome();
+  const file = home.writeCachedBinary(TAMPERED); // present, no digest recorded
+  home.store.set(DOWNLOAD_CONSENT_KEY, "declined");
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter, plans } = loadAdapter({
+      onPath: false,
+      releaseAsset: server.asset,
+      onNotify: () => {
+        throw new Error("a stored decline must never re-prompt");
+      },
+    });
+    await adapter.ensureTanCliProvisioned(home.context);
+
+    assert.deepEqual(plans.filter(isConsentPlan), []);
+    assert.equal(
+      fs.readFileSync(file, "utf8"),
+      TAMPERED,
+      "a denied consent must leave the un-digested cache file untouched",
+    );
+    assert.equal(home.store.has("alp.tanCachedBinarySha256"), false);
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("un-digested cache, onPath FALSE (nothing running): no stored answer prompts, like any fresh install", async () => {
+  const home = extensionHome();
+  home.writeCachedBinary(TAMPERED); // present, no digest recorded
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter, plans } = loadAdapter({
+      onPath: false,
+      releaseAsset: server.asset,
+      onNotify: () => undefined, // no button pressed
+    });
+    await adapter.ensureTanCliProvisioned(home.context);
+
+    const shown = plans.filter(isConsentPlan);
+    assert.equal(
+      shown.length,
+      1,
+      "an un-digested cache with nothing on PATH must ask like any fresh install",
+    );
+    assert.equal(
+      fs.existsSync(home.cachedBinaryPath),
+      true,
+      "the tampered file is still there",
+    );
+    assert.equal(
+      fs.readFileSync(home.cachedBinaryPath, "utf8"),
+      TAMPERED,
+      "an unanswered prompt must not have re-downloaded",
+    );
   } finally {
     await server.close();
     home.cleanup();
@@ -469,6 +543,122 @@ test("alpSdk.tanCliDownloadConsent: allow overrides a PRIOR stored decline", asy
 
     assert.deepEqual(plans.filter(isConsentPlan), []);
     assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+// ── `runAlpCommand`'s `interactive` default (finding 3) ─────────────────────
+
+test("runAlpCommand: WITHOUT interactive, a fresh install never raises the consent dialog", async () => {
+  // The bug: every caller of `runAlpCommand` used to be treated as "the user
+  // just asked for this", so a background caller (the language server's
+  // catalog refresh, a Dependencies-panel status probe) could pop ADR 0021's
+  // blocking modal out of a window-focus event or a `prj.conf` open.
+  const home = extensionHome();
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter, plans } = loadAdapter({
+      releaseAsset: server.asset,
+      onNotify: () => {
+        throw new Error("a non-interactive runAlpCommand must never prompt");
+      },
+    });
+    const { outcome } = await adapter.runAlpCommand(home.context, ["presets"]);
+
+    assert.deepEqual(plans.filter(isConsentPlan), []);
+    assert.equal(outcome.unavailable?.reason, "consentDeclined");
+    assert.equal(fs.existsSync(home.cachedBinaryPath), false);
+    // A reader that shows `outcome.message` DIRECTLY (never through
+    // `planCliOutcome`'s composed wording — e.g. the Dependencies panel's
+    // inline error text) must still be told which setting to change, and must
+    // not see it dressed up as a broken CLI.
+    assert.match(outcome.message, /alpSdk\.tanCliDownloadConsent/);
+    assert.equal(outcome.severity, "warning");
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+test("runAlpCommand: interactive: true DOES raise the consent dialog for a fresh install", async () => {
+  const home = extensionHome();
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter, plans } = loadAdapter({
+      releaseAsset: server.asset,
+      onNotify: (plan) => (isConsentPlan(plan) ? "downloadTanCli" : undefined),
+    });
+    await adapter.runAlpCommand(home.context, ["presets"], undefined, {
+      interactive: true,
+    });
+
+    assert.equal(plans.filter(isConsentPlan).length, 1);
+    assert.equal(fs.existsSync(home.cachedBinaryPath), true);
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+// ── in-flight dedupe (finding 4) ─────────────────────────────────────────────
+
+test("resolveAlpBinaryForContext: concurrent interactive resolutions share ONE in-flight resolution", async () => {
+  // Proven directly: 3 concurrent interactive resolutions against an
+  // unanswered "ask" must raise exactly ONE consent modal, not one per caller
+  // — the shape of the bug `pushSdkCatalog`'s fan-out over several open
+  // `prj.conf` tabs hit.
+  const home = extensionHome();
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter, plans } = loadAdapter({
+      releaseAsset: server.asset,
+      onNotify: (plan) => (isConsentPlan(plan) ? "downloadTanCli" : undefined),
+    });
+    const results = await Promise.all([
+      adapter.resolveAlpBinaryForContext(home.context, { interactive: true }),
+      adapter.resolveAlpBinaryForContext(home.context, { interactive: true }),
+      adapter.resolveAlpBinaryForContext(home.context, { interactive: true }),
+    ]);
+
+    assert.equal(
+      plans.filter(isConsentPlan).length,
+      1,
+      "three concurrent resolutions must share one in-flight resolution, not open three dialogs",
+    );
+    assert.deepEqual(results[1], results[0]);
+    assert.deepEqual(results[2], results[0]);
+  } finally {
+    await server.close();
+    home.cleanup();
+  }
+});
+
+// ── a rejecting `notify` must not break "never throws" (finding 5) ──────────
+
+test("ensureTanCliProvisioned: a `notify` rejection that is NOT a cancellation must not propagate", async () => {
+  // `notify` can reject for reasons other than the user closing the window
+  // (`src/notify/vscodeAdapter.ts`) — this used to rethrow out of
+  // `ensureFreshInstallConsent`, past `ensureTanCliProvisioned`'s own
+  // try/catch (the call site sits outside it), breaking that function's
+  // documented "Never throws" contract into an unhandled rejection at
+  // `extension.ts`'s un-awaited `void ensureTanCliProvisioned(context)
+  // .finally(...)` (no `.catch`).
+  const home = extensionHome();
+  const server = await releaseServer(GOOD);
+  try {
+    const { adapter } = loadAdapter({
+      releaseAsset: server.asset,
+      onNotify: () => {
+        throw new Error("some other VS Code API failure, not a decline");
+      },
+    });
+    await assert.doesNotReject(() =>
+      adapter.ensureTanCliProvisioned(home.context),
+    );
+    // A failed prompt is not consent — nothing should have downloaded.
+    assert.equal(fs.existsSync(home.cachedBinaryPath), false);
   } finally {
     await server.close();
     home.cleanup();
