@@ -279,10 +279,18 @@ export class DependencyPanel {
       (candidate) => candidate.name === name,
     );
     if (!row?.action) return;
-    runDependencyAction(
-      row.action,
-      collectProjectContext().workspaceRoot ?? undefined,
+    // tan's own `sevenZip` row status (`this.lastReport` already holds it) —
+    // the Zephyr SDK dispatch reads it for its post-install notice and must
+    // not re-probe the host for it.
+    const sevenZip = this.lastReport?.rows.find(
+      (candidate) => candidate.name === "sevenZip",
     );
+    runDependencyAction({
+      action: row.action,
+      rowName: row.name,
+      cwd: collectProjectContext().workspaceRoot ?? undefined,
+      sevenZipStatus: sevenZip?.status,
+    });
   }
 
   private dispose(): void {

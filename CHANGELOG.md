@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **The Zephyr SDK row's Install button now runs, instead of failing with
+  `'west' is not recognized`.** The pinned tan v0.4.1's `west sdk install
+  --version 1.0.1 -t arm-zephyr-eabi` command is correct, but `west` is not on
+  PATH after `tan bootstrap` — it lives in the workspace venv
+  (`.venv/Scripts/west.exe` / `.venv/bin/west`) — and the button ran the
+  command verbatim in a plain terminal. It now retargets the leading `west`
+  token onto the resolved venv binary and runs it from the west workspace's
+  top-level directory (the one holding `.west/`), which `west sdk install`
+  requires and the open project folder is not — as an argv array dispatched
+  with no shell in between, never a re-quoted command line: a quoted Windows
+  venv path put PowerShell, the default Windows terminal profile, into
+  expression mode instead of running it. tan still owns the command string end
+  to end; only WHERE it runs and WITH WHICH binary are the host's to decide.
+  When no west workspace can be found at all, or one is found but its venv has
+  no `west` in it, the button no longer opens a terminal that can only print
+  "not in a west installation" — it shows a notice pointing at Bootstrap
+  instead. On native Windows, when tan's own `sevenZip` check is not `pass`,
+  the post-install notice also names the 7-Zip binaries (`7z` / `7za` / `7zr` /
+  `7zz` / `7zzs` / `unar`) west's `.7z` extraction needs on PATH (#412).
+
 ## 0.4.0
 
 Re-vendored the `board.yaml` schema from alp-sdk **v0.14.0**: the `peripherals`
