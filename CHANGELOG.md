@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 Re-vendored the `board.yaml` schema from alp-sdk **v0.14.0**: the `peripherals`
 enum gains `dac` and `i3c`, and the Configurator's peripheral picker now offers
@@ -20,8 +20,6 @@ v0.4.1 also freezes two issue codes this extension matches by name,
 `tan` declared them at no status, so a rename would have broken the prerequisite
 refusal path with neither repo's CI noticing; the contract gate tracked that
 deliberately and moved with this pin.
-
-## 0.4.0
 
 First release on the **stable** Marketplace channel. Every release before this
 one shipped as a pre-release, so an install that has only ever tracked stable
