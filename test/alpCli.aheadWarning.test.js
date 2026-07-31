@@ -32,13 +32,24 @@ const { SUPPORTED_CLI_VERSION } = require(
 /** globalState key the adapter persists the already-warned version under. */
 const AHEAD_WARNED_KEY = "alp.tanAheadWarnedVersion";
 
-const [MAJOR, MINOR, PATCH] = SUPPORTED_CLI_VERSION.split(".").map(Number);
+// Strip any pre-release suffix before parsing the numeric tuple -- a naive
+// `.split(".").map(Number)` on a pin like "0.5.0-rc1" reads its PATCH chunk
+// as "0-rc1" and produces NaN (#446 pinned the first pre-release SUPPORTED_CLI_VERSION).
+const [, MAJOR_STR, MINOR_STR, PATCH_STR, PRE] =
+  SUPPORTED_CLI_VERSION.match(/^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/) ?? [];
+const [MAJOR, MINOR, PATCH] = [MAJOR_STR, MINOR_STR, PATCH_STR].map(Number);
 /** One MINOR ahead of the pin — the skew that CAN move the envelope contract
  *  (with the current 0.3.1 pin: "0.4.0"). Derived, not hardcoded, so a pin bump
  *  keeps testing the same relationship instead of silently changing it. */
 const AHEAD_MINOR = `${MAJOR}.${MINOR + 1}.0`;
-/** One PATCH ahead — the skew that must stay SILENT ("0.3.2" today). */
-const AHEAD_PATCH = `${MAJOR}.${MINOR}.${PATCH + 1}`;
+/** One PATCH ahead — the skew that must stay SILENT. When the pin itself is a
+ *  pre-release, the same MAJOR.MINOR.PATCH tuple WITHOUT a pre-release suffix
+ *  is already "ahead-patch" per `cliSkew` (SemVer §11: a final release beats
+ *  its own rc) — bumping PATCH again would skip past that relationship
+ *  instead of testing it. */
+const AHEAD_PATCH = PRE
+  ? `${MAJOR}.${MINOR}.${PATCH}`
+  : `${MAJOR}.${MINOR}.${PATCH + 1}`;
 
 /** A `vscode.Memento` over a plain object. */
 function memento(initial = {}) {

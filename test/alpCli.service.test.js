@@ -1352,10 +1352,12 @@ test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary,
     ),
   );
 
-  assert.equal(
-    releaseAssetForTarget("linux", "arm64").target,
-    "aarch64-unknown-linux-musl",
-  );
+  // `TARGETS` still names the triple `linux/arm64` WOULD use — a Python
+  // release just doesn't publish it (declared in HOSTS_WITHOUT_RELEASE_ASSET,
+  // see the next test), so resolving it against the ACTIVE pin is null, not
+  // the triple. Ask the triple table directly to keep asserting it's there.
+  assert.equal(TARGETS["linux/arm64"], "aarch64-unknown-linux-musl");
+  assert.equal(releaseAssetForTarget("linux", "arm64"), null);
 
   // both macOS arches are published (Intel + Apple Silicon).
   assert.equal(
@@ -1367,14 +1369,14 @@ test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary,
     "aarch64-apple-darwin",
   );
 
-  // Windows ships BOTH x64 and arm64; the asset carries a `.exe` suffix.
+  // Windows x64 ships; the asset carries a `.exe` suffix. arm64 is also a
+  // declared gap for the active (Python) pin -- same reasoning as linux/arm64
+  // above, and again TARGETS still has the triple.
   const winX64 = releaseAssetForTarget("win32", "x64");
   assert.equal(winX64.target, "x86_64-pc-windows-msvc");
   assert.equal(winX64.assetName, "tan-x86_64-pc-windows-msvc.exe");
-  assert.equal(
-    releaseAssetForTarget("win32", "arm64").target,
-    "aarch64-pc-windows-msvc",
-  );
+  assert.equal(TARGETS["win32/arm64"], "aarch64-pc-windows-msvc");
+  assert.equal(releaseAssetForTarget("win32", "arm64"), null);
 
   // A host with no published target (e.g. 32-bit ARM Linux) has no asset.
   assert.equal(releaseAssetForTarget("linux", "arm"), null);
@@ -1481,7 +1483,7 @@ test("noPrebuiltMessage names the host, the release and the way forward", () => 
 test("releaseAssetForTarget resolves checksums.txt at the SAME tag as the binary", () => {
   for (const [platform, arch] of [
     ["linux", "x64"],
-    ["win32", "arm64"],
+    ["win32", "x64"],
     ["darwin", "arm64"],
   ]) {
     const asset = releaseAssetForTarget(platform, arch);
