@@ -173,9 +173,17 @@ jobs:
       - name: Resolve the pinned tan version
         if: matrix.os == 'macos-latest'
         id: cli_version
+        # The `(-[0-9A-Za-z.-]+)?` suffix is not decoration: without it a
+        # PRERELEASE pin (tan publishes them — `v0.4.0-rc1` exists) resolves to
+        # the empty string and this step errors out (#443). BOTH greps carry it,
+        # and that is the part worth reading twice — widening only the first
+        # leaves the second extracting `0.5.0` out of `0.5.0-rc1`, which is a
+        # silently WRONG version rather than a loud failure. Whether the pattern
+        # still resolves a prerelease is asserted by
+        # test/cliPin.prerelease.test.js, which reads this line out of this file.
         run: |
           set -euo pipefail
-          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?')
           if [ -z "$VERSION" ]; then
             echo "::error::Could not resolve SUPPORTED_CLI_VERSION from src/alpCli/service.ts"
             exit 1
