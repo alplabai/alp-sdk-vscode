@@ -55,7 +55,7 @@ import {
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
  *  test/tanContract.test.js tracks that, and moved with this pin. */
 
-export const SUPPORTED_CLI_VERSION = "0.4.1";
+export const SUPPORTED_CLI_VERSION = "0.5.0-rc1";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
