@@ -104,8 +104,7 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * Keyed by version, never a floor, for the same reason
  * `RELEASES_PREDATING_CONTRACT_ASSET` is a list: a pin bump must not silently
  * inherit the previous release's gaps. An unlisted version is expected to
- * publish every target in `TARGETS`, full stop — which is the state TODAY, so
- * this table is empty and no host loses the download it has now.
+ * publish every target in `TARGETS`, full stop.
  *
  * IT CANNOT ROT INTO A LIE, because nothing trusts it: `check-cli-pin.mjs`
  * HEAD-probes every `TARGETS` host against the pinned release on every CI run
@@ -114,10 +113,23 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * asset 404s is the missing-asset failure that gate has always caught. A later
  * tan that publishes the missing hosts again therefore reds CI until the entry
  * is removed, instead of quietly leaving those customers on `alpSdk.cliPath`.
+ *
+ * `"0.5.0-rc1"` is declared ahead of the pin actually moving to it (#446):
+ * alplabai/tan-cli#271 publishes exactly four assets for that tag (Windows
+ * x64, macOS x64/arm64, Linux x64 as `-gnu`) and none for `win32/arm64` or
+ * `linux/arm64` — GitHub's standard runner pool has no aarch64 Windows or
+ * Linux host, and PyInstaller cannot cross-compile onto one it doesn't run
+ * on. Declaring it now, before `SUPPORTED_CLI_VERSION` names this tag, is
+ * inert — the entry is looked up by the ACTIVE pin, so nothing reads it until
+ * that lands — and means `check-cli-pin.mjs` has an answer to probe against
+ * the moment the tag and the pin move together, instead of two separate PRs
+ * racing to add a declaration and a pin without either being wrong alone.
  */
 export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   Record<string, readonly string[]>
-> = {};
+> = {
+  "0.5.0-rc1": ["win32/arm64", "linux/arm64"],
+};
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
