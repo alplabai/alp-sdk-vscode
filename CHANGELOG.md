@@ -19,10 +19,12 @@ the Rust binary every prior release used.
   declares ELF interpreter `/lib/ld-musl-x86_64.so.1`), not the static
   artefact the Rust `-musl` build was, so it does not start on
   Ubuntu/Debian/Fedora at all — `-gnu` is the only usable Linux asset a Python
-  `tan` release publishes. Its glibc floor is low (built inside a
-  `manylinux2014` container) for the same reason the Rust `-musl` asset was
-  chosen: to run on the widest range of distros without a version floor
-  surprise. `win32/arm64` and `linux/arm64` are unaffected by this change and
+  `tan` release publishes. It is built inside `python:3.12-slim-bullseye`
+  (Debian 11, glibc 2.31); the measured floor over the PyInstaller payload is
+  `GLIBC_2.30`, for the same reason the Rust `-musl` asset was chosen: to run
+  on the widest range of distros without a version floor surprise. (Not a
+  `manylinux2014` container — static CPython there fails PyInstaller's own
+  build.) `win32/arm64` and `linux/arm64` are unaffected by this change and
   remain declared gaps (below).
 
 - **`win32/arm64` and `linux/arm64` are now declared unpublished for

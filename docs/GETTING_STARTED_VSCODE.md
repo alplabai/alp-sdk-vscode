@@ -55,9 +55,11 @@ the binary in this order:
 > `tan-x86_64-unknown-linux-gnu`. A PyInstaller musl freeze is musl-*dynamic*,
 > not static — it needs `/lib/ld-musl-x86_64.so.1` present and would not
 > start on Ubuntu/Debian/Fedora at all — so `-gnu` is the only usable Linux
-> asset the Python `tan` publishes. Its glibc floor is low (~2.17) because it
-> is built inside a `manylinux2014` container, not because of anything this
-> extension does.
+> asset the Python `tan` publishes. It is built inside `python:3.12-slim-bullseye`
+> (Debian 11, glibc 2.31), and the measured floor over the PyInstaller payload
+> is `GLIBC_2.30` — a manylinux2014 container is NOT used: static CPython in
+> that container fails PyInstaller's own build (`Python was built without a
+> shared library, which is required by PyInstaller`).
 
 ### Host support: `tan` runs vs. firmware builds
 
@@ -80,7 +82,7 @@ others.
 | Linux x64 — `linux/x64`                   | `tan-x86_64-unknown-linux-gnu`     | `linux-x86_64`              | Yes                            |
 | Linux arm64 — `linux/arm64`               | none published for this pin        | `linux-aarch64`             | **No** — see below             |
 | macOS Apple silicon — `darwin/arm64`      | `tan-aarch64-apple-darwin`         | `macos-aarch64`             | Yes                            |
-| Windows on ARM — `win32/arm64`            | `tan-aarch64-pc-windows-msvc.exe`  | never published             | **No** — build inside WSL2     |
+| Windows on ARM — `win32/arm64`            | none published for this pin        | never published             | **No** — see below             |
 | macOS Intel — `darwin/x64`                | `tan-x86_64-apple-darwin`          | dropped in SDK 1.0.0        | **No** — build on a Linux host |
 | Linux armhf — `linux/arm`                 | none published                     | none published              | **No** — move to another host  |
 
@@ -100,16 +102,24 @@ binary at all. The extension's download path explains this (point
 attempting a download and failing with a 404. A later `tan` release may add
 this host; check `docs.alplab.ai` or `alplabai/tan-cli`'s releases.
 
-#### Windows on ARM — build inside WSL2
+#### Windows on ARM — no `tan` binary either natively or via WSL2
 
-`tan` resolves and runs here, and everything that does not need a compiler
-works. The Zephyr SDK has never published a `windows-arm64` host build at any
-release, so no native Windows toolchain can be provisioned on this hardware.
+Neither route to this host has a prebuilt `tan` under the current pin. Natively
+(`win32/arm64`) there is no asset, for the same PyInstaller-cannot-cross-compile
+reason as Linux arm64 above. The usual WSL2 escape hatch does not clear
+it either: a WSL2 distro on ARM hardware is `linux-aarch64`, which is a
+**different** declared gap (above) with the same root cause, not a workaround
+for it — so `tan` will not run there any more than it runs natively.
 
-Install a WSL2 Linux distribution (`wsl --install`) and do the build from inside
-it — a WSL2 distro on ARM hardware is `linux-aarch64`, which the Zephyr SDK does
-publish. Open the project through VS Code's WSL remote so the build runs on the
-Linux side.
+The Zephyr SDK toolchain itself IS available inside that WSL2 distro
+(`linux-aarch64` is one of its four published host builds), so once a `tan`
+is on the machine, firmware builds work. Getting one there means building or
+`pip install`ing `tan` from source (`git clone
+https://github.com/alplabai/tan-cli && pip install ./tan-cli/python`, inside
+the WSL2 distro so it lands on `linux-aarch64`) and pointing `alpSdk.cliPath`
+at it — the extension's own download-on-demand cannot help on either hop of
+this host. A later `tan` release may add the missing binary; check
+`docs.alplab.ai` or `alplabai/tan-cli`'s releases.
 
 #### macOS Intel — build on a Linux host
 

@@ -91,9 +91,13 @@ If a published **`tan` CLI** release is defective, the rollback lives in the
 corrected `v<version>` and update its release notes). Because the extension pins
 `SUPPORTED_CLI_VERSION`, hold or advance that pin to keep the extension on a
 known-good `tan` binary, and add an incident note to `COMPATIBILITY_RULES.md`.
-**Floor:** while the pin targets a Python `tan` (v0.5.0 on), it cannot go
-below `v0.5.0` — the Linux asset there is `-gnu`, which every tan-cli tag has
-published, but `win32/arm64` and `linux/arm64` have no asset at any Python
-release and must stay declared in `HOSTS_WITHOUT_RELEASE_ASSET`, and rolling
-back past v0.5.0 to a Rust tag needs `TARGETS`' Linux entry reverted to
-`-musl` in lockstep (see `src/alpCli/service.ts`) or the Linux download 404s.
+**Floor:** while the pin targets a Python `tan` (from `v0.5.0-rc1` on), it
+cannot go below that tag — `win32/arm64` and `linux/arm64` have no asset at
+any Python release and must stay declared in `HOSTS_WITHOUT_RELEASE_ASSET`
+for whichever Python tag is pinned. Rolling back past `v0.5.0-rc1` to a Rust
+tag does NOT 404 the Linux download either way: Rust tags publish both `-gnu`
+and `-musl`, so `TARGETS`' `linux/x64` entry resolves regardless of which one
+it names. The real consequence of leaving it at `-gnu` against a Rust tag is
+the glibc floor `-musl` existed to avoid (see `src/alpCli/service.ts`), not a
+missing asset — revert it to `-musl` in lockstep to get that back, not to
+avoid a 404 that was never going to happen.

@@ -1392,8 +1392,10 @@ test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary,
 // empty today: the mechanism has to be proven BEFORE a release with gaps is
 // pinned, which is the whole point of it existing before then.
 test("releaseAssetForTarget: a release that publishes no asset for a host has none, and its siblings still do", () => {
-  // Shaped like alplabai/tan-cli#271: PyInstaller has no aarch64 Windows or
-  // Linux runner, so those two get nothing and the other four are untouched.
+  // Shaped like alplabai/tan-cli#252's actual v0.5.0-rc1 build matrix:
+  // PyInstaller cannot cross-compile and that tag's matrix scopes to four
+  // assets, so win32/arm64 and linux/arm64 get nothing while the other four
+  // are untouched -- a release decision, not a platform one.
   const pythonRelease = {
     "0.5.0": ["win32/arm64", "linux/arm64"],
   };

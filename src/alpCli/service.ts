@@ -93,9 +93,13 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * target triple" — and its answer does not change from release to release.
  * WHICH of those targets a release actually ships is a property OF THAT
  * RELEASE, and the two stopped being the same thing at the Python port:
- * PyInstaller cannot cross-compile and GitHub's standard runner pool has no
- * aarch64 Windows or Linux host, so a PyInstaller-built tan publishes four
- * assets where the cargo-zigbuild ones published eight (alplabai/tan-cli#271).
+ * PyInstaller cannot cross-compile, so each asset needs a runner that IS that
+ * host, and `release.yml`'s build matrix (alplabai/tan-cli#252) scopes to four
+ * for this tag — Windows x64, macOS x64/arm64, Linux x64 as `-gnu` — where the
+ * cargo-zigbuild releases published eight. NOT a platform limit: aarch64
+ * runners exist (`windows-11-arm`, `ubuntu-24.04-arm` are current GitHub-hosted
+ * labels, proven working in tan-cli's `python-binaries.yml`) and a later tag
+ * can add them without anything here assuming otherwise.
  * Deleting those hosts from `TARGETS` instead would conflate the two facts, and
  * would also drop them from `scripts/check-cli-pin.mjs`'s probe list, which is
  * derived from that table — a genuinely failed upload for such a host would
@@ -115,15 +119,19 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * is removed, instead of quietly leaving those customers on `alpSdk.cliPath`.
  *
  * `"0.5.0-rc1"` is declared ahead of the pin actually moving to it (#446):
- * alplabai/tan-cli#271 publishes exactly four assets for that tag (Windows
- * x64, macOS x64/arm64, Linux x64 as `-gnu`) and none for `win32/arm64` or
- * `linux/arm64` — GitHub's standard runner pool has no aarch64 Windows or
- * Linux host, and PyInstaller cannot cross-compile onto one it doesn't run
- * on. Declaring it now, before `SUPPORTED_CLI_VERSION` names this tag, is
- * inert — the entry is looked up by the ACTIVE pin, so nothing reads it until
- * that lands — and means `check-cli-pin.mjs` has an answer to probe against
- * the moment the tag and the pin move together, instead of two separate PRs
- * racing to add a declaration and a pin without either being wrong alone.
+ * `release.yml`'s build matrix (alplabai/tan-cli#252) publishes exactly four
+ * assets for that tag (Windows x64, macOS x64/arm64, Linux x64 as `-gnu`) and
+ * none for `win32/arm64` or `linux/arm64` — a SCOPE decision for this tag, not
+ * a platform limit: `windows-11-arm` and `ubuntu-24.04-arm` are real,
+ * currently-labelled GitHub-hosted runners and tan-cli's own
+ * `python-binaries.yml` already builds and verifies both arches on them, this
+ * release's matrix just doesn't include them. Declaring the gap now, before
+ * `SUPPORTED_CLI_VERSION` names this tag (two commits later), is harmless in
+ * THIS commit alone — the entry is looked up by the ACTIVE pin, so nothing
+ * reads it until that lands — and means `check-cli-pin.mjs` has an answer to
+ * probe against the moment the tag and the pin move together, instead of two
+ * separate PRs racing to add a declaration and a pin without either being
+ * wrong alone.
  */
 export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   Record<string, readonly string[]>

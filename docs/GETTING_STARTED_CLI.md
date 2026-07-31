@@ -62,28 +62,35 @@ cannot produce an image no matter how `tan` got there.
 | Linux arm64         | none published from v0.5.0 on¹     | `linux-aarch64`             | **No** from v0.5.0 on¹                                         |
 | macOS Apple silicon | `tan-aarch64-apple-darwin`         | `macos-aarch64`             | Yes                                                            |
 | Windows x64         | `tan-x86_64-pc-windows-msvc.exe`   | `windows-x86_64`            | Yes                                                            |
-| Windows on ARM      | `tan-aarch64-pc-windows-msvc.exe`  | never published             | **No** — `wsl --install`, then run `tan` inside the distro     |
+| Windows on ARM      | none published from v0.5.0 on²     | never published             | **No** — see note 2, `wsl --install` gets a toolchain but not a `tan` |
 | macOS Intel         | `tan-x86_64-apple-darwin`          | dropped in SDK 1.0.0        | **No** — build on a `linux-x86_64` VM, container, or remote box |
 | Linux armhf         | none published                     | none published              | **No** — move to a `linux-x86_64` / `linux-aarch64` host        |
 
-Three notes worth having before you pick a machine:
+Four notes worth having before you pick a machine:
 
 - **Intel Mac.** The SDK published `macos-x86_64` through **0.17.4** and dropped
   it in **1.0.0**; the pin is 1.0.1. `macos-aarch64` is not a substitute —
   Rosetta translates x86_64 **for** Apple silicon, not aarch64 for an Intel Mac
   — and macOS has no WSL2 equivalent. Pinning an older SDK is not an escape
   either: the pinned Zephyr requires 1.0.1.
-- **Windows on ARM and Linux armhf.** A WSL2 distro on Windows-on-ARM hardware
-  is `linux-aarch64`, which **is** served, so that host has a first-class path —
-  just not the native one. Linux armhf has none: there is no `tan` asset and no
-  Zephyr SDK host build, so **building `tan` from source does not help** — it
-  would run and then have no toolchain to hand `west`.
+- **Linux armhf.** There is no `tan` asset and no Zephyr SDK host build, so
+  **building `tan` from source does not help** — it would run and then have
+  no toolchain to hand `west`.
 - ¹ **Linux arm64.** Through `tan` v0.4.x (Rust) both `-gnu` and `-musl` Linux
   arm64 assets were published. From `tan` v0.5.0 the binary is a PyInstaller
   freeze of the Python port, and PyInstaller cannot cross-compile — the
   release publishes no arm64 Linux asset at all, so this host has no prebuilt
   `tan` regardless of the Zephyr SDK supporting it. Build from source
   (`pip install`) on an arm64 Linux machine instead.
+- ² **Windows on ARM.** Neither route to this host has a prebuilt `tan` under
+  the current pin. Natively (`win32/arm64`) there is no asset, same reason as
+  note 1. The usual `wsl --install` escape hatch does NOT clear it either — a
+  WSL2 distro on ARM hardware is `linux-aarch64`, which is note 1's gap, not a
+  workaround for it, so `tan` will not run there any more than natively. The
+  Zephyr SDK toolchain itself IS available inside that WSL2 distro
+  (`linux-aarch64` is one of its four published host builds) once a `tan`
+  actually reaches the machine — build/`pip install` one there from source and
+  point `alpSdk.cliPath` (or a `tan` on `PATH`) at it.
 
 From `tan` v0.4.0 on, `tan doctor` reports this as a `zephyrSdkHost` check with
 a per-host remedy. Earlier builds omit the check — an older `tan` saying nothing
