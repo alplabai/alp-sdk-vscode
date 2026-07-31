@@ -660,6 +660,67 @@ test("cliSkew is the single comparison: behind / same / ahead-patch / ahead-mino
   assert.equal(isCliBehind(null, "0.1.14"), false);
 });
 
+test("cliSkew orders pre-releases identifier-wise, numeric-suffix aware (#451)", () => {
+  // THE DECISION THIS PINS. tan's published prerelease precedent is
+  // `v0.4.0-rc1` -- no dot -- and under a LITERAL SemVer §11 read `rc1` is one
+  // alphanumeric identifier compared by ASCII, i.e. `rc10` < `rc9`: the same
+  // wrong answer as the plain string compare this replaces. So the comparison
+  // splits digit runs INSIDE an identifier and compares them numerically, and
+  // the dotless spelling is a first-class input rather than something a
+  // convention has to forbid. Every assertion below that names a dotless `rcN`
+  // FAILS under a literal §11 implementation.
+  //
+  // The reported failure (installed rc9 vs pinned rc10 reads as ahead, so the
+  // stale-cache self-heal never fires and the user silently stays on rc9):
+  assert.equal(cliSkew("0.5.0-rc9", "0.5.0-rc10"), "behind");
+  assert.equal(isCliBehind("0.5.0-rc9", "0.5.0-rc10"), true);
+  // ...and its mirror, so an rc10 install is not reported as behind an rc9 pin.
+  assert.equal(cliSkew("0.5.0-rc10", "0.5.0-rc9"), "ahead-patch");
+
+  // The cases that were already right stay right.
+  assert.equal(cliSkew("0.5.0-rc1", "0.5.0-rc2"), "behind");
+  assert.equal(cliSkew("0.5.0-rc2", "0.5.0-rc1"), "ahead-patch");
+  assert.equal(cliSkew("0.5.0-rc2", "0.5.0-rc10"), "behind");
+  assert.equal(cliSkew("0.5.0-rc10", "0.5.0-rc10"), "same");
+
+  // Both spellings, and ACROSS spellings: `rc1` and `rc.1` are one release
+  // written two ways, so they compare EQUAL rather than by punctuation.
+  assert.equal(cliSkew("0.5.0-rc.9", "0.5.0-rc.10"), "behind");
+  assert.equal(cliSkew("0.5.0-rc1", "0.5.0-rc.1"), "same");
+  assert.equal(cliSkew("0.5.0-rc.1", "0.5.0-rc1"), "same");
+  assert.equal(cliSkew("0.5.0-rc9", "0.5.0-rc.10"), "behind");
+  assert.equal(cliSkew("0.5.0-rc.9", "0.5.0-rc10"), "behind");
+
+  // A pre-release is lower than the same tuple without one (§11), unchanged.
+  assert.equal(cliSkew("0.5.0-rc10", "0.5.0"), "behind");
+  assert.equal(cliSkew("0.5.0", "0.5.0-rc10"), "ahead-patch");
+
+  // The §11 precedence chain from semver.org, each step read as "behind":
+  //   alpha < alpha.1 < alpha.beta < beta < beta.2 < beta.11 < rc.1
+  const chain = [
+    "1.0.0-alpha",
+    "1.0.0-alpha.1",
+    "1.0.0-alpha.beta",
+    "1.0.0-beta",
+    "1.0.0-beta.2",
+    "1.0.0-beta.11",
+    "1.0.0-rc.1",
+    "1.0.0",
+  ];
+  for (let i = 0; i < chain.length - 1; i++) {
+    assert.equal(cliSkew(chain[i], chain[i + 1]), "behind", chain[i]);
+    assert.notEqual(cliSkew(chain[i + 1], chain[i]), "behind", chain[i + 1]);
+  }
+
+  // A numeric identifier always ranks LOWER than an alphanumeric one (§11)...
+  assert.equal(cliSkew("1.0.0-1", "1.0.0-alpha"), "behind");
+  assert.equal(cliSkew("1.0.0-rc.1", "1.0.0-rc.beta"), "behind");
+  // ...and a larger set of identifiers outranks a smaller one when all the
+  // preceding ones are equal.
+  assert.equal(cliSkew("1.0.0-rc.1", "1.0.0-rc.1.1"), "behind");
+  assert.equal(cliSkew("1.0.0-rc.1.1", "1.0.0-rc.1"), "ahead-patch");
+});
+
 test("shouldWarnCliAhead: PATCH-newer is silent, MINOR/MAJOR-newer warns exactly once", () => {
   // PATCH newer -> NO notification. A patch can't move the envelope contract,
   // and a toast on every activation is the nagging the notify seam fought.

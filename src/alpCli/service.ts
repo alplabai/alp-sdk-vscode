@@ -507,6 +507,61 @@ function parseVersion(
 }
 
 /**
+ * Split a pre-release into comparable chunks: `.` is a separator, every run of
+ * digits becomes a number, every other run stays text — so `rc.10` and `rc10`
+ * both become `["rc", 10]`.
+ *
+ * SPLITTING INSIDE AN IDENTIFIER IS A DELIBERATE STEP PAST SemVer §11, which
+ * reads `rc10` as ONE alphanumeric identifier ordered by ASCII — i.e. `rc10` <
+ * `rc9`, the same wrong answer as the plain string compare this replaces
+ * (#451). The alternative was to declare `rc.N` the only legal spelling and
+ * make anything else loud, and that option is not available on this side of
+ * the seam: `installed` is whatever `tan --version` prints on the user's
+ * machine (tan's published precedent is the tag `v0.4.0-rc1`, no dot), and the
+ * only refusal `cliSkew` can express is `"unknown"` — which every caller reads
+ * as "stay quiet", i.e. the same silent missing upgrade the numeric-blind
+ * compare caused. A convention cannot be enforced where the string is only
+ * read, so both spellings are first-class and compare EQUAL to each other:
+ * `rc1` and `rc.1` are one release written two ways.
+ *
+ * Leading zeros collapse the same way (`rc.01` == `rc.1`) — §11 forbids them
+ * outright, so reading them as the number they spell is the quiet answer. The
+ * canonical §11 chain is unaffected (`alpha` < `alpha.1` < `alpha.beta` <
+ * `beta` < `beta.2` < `beta.11` < `rc.1`); `test/alpCli.service.test.js` pins
+ * it alongside the dotless cases.
+ */
+function preChunks(pre: string): (string | number)[] {
+  return (pre.match(/\d+|[^.\d]+/g) ?? []).map((chunk) =>
+    /^\d+$/.test(chunk) ? Number(chunk) : chunk,
+  );
+}
+
+/**
+ * SemVer §11 precedence over `preChunks`: compare chunk by chunk, numerically
+ * for two numbers, and a numeric chunk always ranks BELOW an alphanumeric one;
+ * when every shared chunk is equal, the longer list wins. Returns -1/0/1, with
+ * `0` meaning "the same release" (see `preChunks` on the two spellings).
+ */
+function comparePrerelease(a: string, b: string): number {
+  const left = preChunks(a);
+  const right = preChunks(b);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    if (i >= left.length) return -1;
+    if (i >= right.length) return 1;
+    const l = left[i];
+    const r = right[i];
+    if (typeof l === "number") {
+      if (typeof r !== "number") return -1;
+      if (l !== r) return l < r ? -1 : 1;
+    } else {
+      if (typeof r === "number") return 1;
+      if (l !== r) return l < r ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+/**
  * Compare the installed tan against the pinned `supported` version — the ONE
  * comparison every version-skew decision in this repo routes through (tuple
  * compare over numeric `MAJOR.MINOR.PATCH` + SemVer pre-release rule, no semver
@@ -537,11 +592,12 @@ export function cliSkew(
   // form narrows BOTH to `string` for the comparison below — the other does
   // not, and TS18047 rejects it.
   if (!a.pre || !b.pre) return "ahead-patch";
-  // ponytail: two DIFFERENT pre-releases on the same tuple compare as plain
-  // strings (so `rc.10` sorts before `rc.9`). Nothing pins a pre-release as
-  // SUPPORTED_CLI_VERSION, so this only picks between two silent branches;
-  // upgrade to identifier-wise SemVer compare if a pin ever carries a suffix.
-  return a.pre < b.pre ? "behind" : "ahead-patch";
+  // Two DIFFERENT pre-releases on the same tuple. `SUPPORTED_CLI_VERSION` can
+  // name one now, so this branch decides a real upgrade and no longer gets to
+  // be a string compare (`"rc9" > "rc10"` read as ahead, and the stale-cache
+  // self-heal never fired — #451).
+  const order = comparePrerelease(a.pre, b.pre);
+  return order < 0 ? "behind" : order > 0 ? "ahead-patch" : "same";
 }
 
 /**
