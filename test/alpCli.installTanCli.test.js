@@ -65,7 +65,8 @@ const VENDORED_INSTALLERS = {
       {
         upstream:
           '\techo "install.sh: download failed: ${url}" >&2\n\t# Only name the musl floor when the requested tag is actually below it --\n\t# a DNS/proxy/500 failure, or a perfectly valid >=v0.3.0 tag, gets no\n\t# invented explanation.\n\tif [ "$os_part" = "unknown-linux-musl" ]; then\n\t\tcase "$VERSION" in\n\t\tv0.0.* | v0.1.* | v0.2.*)\n\t\t\techo "install.sh: note — Linux musl assets only exist from v0.3.0 onward; ${VERSION} predates that and has no ${asset} asset." >&2\n\t\t\t;;\n\t\tesac\n\tfi\n\texit 1\nfi',
-        vendored: '\techo "install.sh: download failed: ${url}" >&2\n\texit 1\nfi',
+        vendored:
+          '\techo "install.sh: download failed: ${url}" >&2\n\texit 1\nfi',
       },
     ],
   },
