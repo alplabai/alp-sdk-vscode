@@ -35,72 +35,84 @@ const scriptDir = path.join(root, "media", "tan-install");
 // gates) so a Windows checkout with core.autocrlf=true still matches. No
 // network: `upstream` is a recorded constant, never fetched at test time.
 //
-// TO RE-VENDOR (e.g. at tan-cli v0.4.1): copy the new upstream files in, bump
-// TAN_INSTALLER_REF and BOTH hashes, and re-check `deviations` — if upstream
-// has adopted a deviation, delete it rather than carrying it forever.
+// TO RE-VENDOR (e.g. at the tan-cli tag that ships this rework): copy the new
+// upstream files in, bump TAN_INSTALLER_REF and BOTH hashes, and re-check
+// `deviations` — if upstream has adopted a deviation, delete it rather than
+// carrying it forever.
 //   node -e "const c=require('crypto'),f=require('fs');for(const n of ['install.sh','install.ps1'])console.log(n,c.createHash('sha256').update(f.readFileSync('media/tan-install/'+n,'utf-8').replace(/\r\n/g,'\n'),'utf-8').digest('hex'))"
-const TAN_INSTALLER_REF = "v0.4.0";
+const TAN_INSTALLER_REF = "v0.4.1";
 const VENDORED_INSTALLERS = {
   "install.sh": {
     upstream:
-      "51449e2d01822207a66d71ea8db8e23a3899f323e986c752a3a70086b1a651ba",
+      "9b48a1c00bb3e0ff63b0628278b340bcdac7b4d7977e8e184d887f28c3628865",
     vendored:
-      "8e6fce1801e80f9b5642b80360e15a315f11a020d4f6de29436e92201336af2c",
-    // Upstream v0.4.0 maps Linux to `unknown-linux-musl`, correct for the Rust
-    // releases it shipped against. From v0.5.0 the binary is a PyInstaller
-    // freeze, which cannot produce musl's static artefact -- a musl freeze is
-    // dynamically linked against /lib/ld-musl-x86_64.so.1 and would not start
-    // on Ubuntu/Debian/Fedora at all (alp-sdk-vscode#447, mirroring the
-    // `TARGETS` rationale in src/alpCli/service.ts, #444). -gnu has published
-    // at every tan-cli tag since v0.1.0, so the pre-v0.3.0 musl-floor note this
-    // also removes no longer applies to anything. A future re-vendor at the
-    // tan-cli tag that ships this fix upstream should delete both entries.
+      "e37df9dd92e377ee8fe828581dd8d17d360c66d22c9a296d799d4a02555349f5",
+    // Upstream v0.4.1 still maps Linux to `unknown-linux-musl` (correct for
+    // the Rust releases it ships against) and has no musl-host guard -- the
+    // Python cutover (#444/#446/#447) has not reached a tan-cli TAG yet, only
+    // its unreleased `release/python-tan-pipeline` branch. Both deviations
+    // below are ported from that branch's real fix verbatim (same diagnosis
+    // a maintainer review gave independently), not invented here, so a
+    // re-vendor once it tags should make both a byte-for-byte no-op.
+    //
+    // Deviation 1 (Linux case): -gnu, not -musl -- a PyInstaller Linux freeze
+    // is musl-DYNAMIC (its bootloader needs /lib/ld-musl-x86_64.so.1 present),
+    // not the static artefact the Rust -musl build was, so it does not start
+    // on Ubuntu/Debian/Fedora at all. -gnu is the only usable Linux asset a
+    // Python tan release publishes.
+    //
+    // Deviation 1 also adds the pre-download musl-HOST guard the plain
+    // -gnu swap by itself would be missing (a maintainer review caught this
+    // as the sharpest defect: with no guard, running THIS script on an
+    // Alpine/musl host downloads the gnu asset, sha256-verifies it correctly
+    // -- verification only proves the bytes are what was published, not that
+    // they will execute on this libc -- `chmod +x`s it, `mv`s it into place,
+    // prints "installed", and only the final `"$dest" --version 2>/dev/null
+    // || echo ...` line's stderr-swallow hides the exec failure, so the
+    // script exits 0 having silently produced a binary that can never run).
+    // `ldd --version | grep -qi musl` names musl on the first line where
+    // glibc's ldd names itself; `ls /lib/ld-musl-*.so.1` catches a minimal
+    // image with no `ldd` at all. Refuses BEFORE any download, pointing at
+    // `pip install ./tan-cli/python` from a checkout instead.
+    //
+    // Deviation 2 (download-failure note): swaps the now-irrelevant
+    // "musl assets predate v0.3.0" case for a "no Linux arm64 asset from
+    // v0.5.0 on" one, matching HOSTS_WITHOUT_RELEASE_ASSET.
     deviations: [
       {
         upstream:
-          '# musl (static): no glibc floor, runs on any distro; TLS is rustls/ring so\n# there are no extra runtime deps either. Only published from tan-cli\n# v0.3.0 onward — see the --version 404 note below.\nLinux) os_part="unknown-linux-musl" ;;',
+          'Darwin) os_part="apple-darwin" ;;\n# musl (static): no glibc floor, runs on any distro; TLS is rustls/ring so\n# there are no extra runtime deps either. Only published from tan-cli\n# v0.3.0 onward -- see the --version 404 note below.\nLinux) os_part="unknown-linux-musl" ;;\n*) echo "install.sh: unsupported OS \'$os\' -- on Windows use install.ps1" >&2; exit 1 ;;\nesac\n\n# host arch -> rust target arch part',
         vendored:
-          '# gnu, NOT musl. From v0.5.0 the binary is a PyInstaller freeze of the Python\n# port, and PyInstaller cannot produce the "static, runs on any libc" artefact\n# the old Rust -musl target did — a musl freeze is dynamically linked against\n# /lib/ld-musl-x86_64.so.1 and runs ONLY on musl distros. -gnu has been\n# published at every tan-cli tag since v0.1.0, so this needs no version floor.\nLinux) os_part="unknown-linux-gnu" ;;',
+          'Darwin) os_part="apple-darwin" ;;\n# gnu, NOT musl. From v0.5.0 the binary is a PyInstaller freeze of the Python\n# port, and PyInstaller cannot produce the "static, runs on any libc" artefact\n# the Rust -musl target did: a musl freeze is dynamically linked against\n# /lib/ld-musl-x86_64.so.1 and runs ONLY on musl distros. So the Linux asset is\n# built on Debian 11 and named -gnu, and requesting -musl here would 404 on\n# every v0.5.0+ tag. Older (Rust) releases published BOTH, so this also\n# resolves for them -- with that build\'s measured GLIBC_2.30 floor.\nLinux) os_part="unknown-linux-gnu" ;;\n*) echo "install.sh: unsupported OS \'$os\' -- on Windows use install.ps1" >&2; exit 1 ;;\nesac\n\n# musl hosts (Alpine and similar) cannot run the -gnu binary above AT ALL --\n# not a checksum failure, a bare "not found" from the shell AFTER the sha256\n# verify below already passed, so none of that section\'s four refusals ever\n# fires and the script reports success. Catch it here instead, before any\n# download: `ldd --version` names musl on the first line where glibc\'s ldd\n# names itself; some minimal images have no ldd at all, so also check for the\n# musl dynamic loader directly.\nif [ "$os_part" = "unknown-linux-gnu" ]; then\n\tis_musl=0\n\tif command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then\n\t\tis_musl=1\n\telif ls /lib/ld-musl-*.so.1 >/dev/null 2>&1; then\n\t\tis_musl=1\n\tfi\n\tif [ "$is_musl" = "1" ]; then\n\t\techo "install.sh: this host\'s libc is musl (e.g. Alpine) -- no Linux asset is published for it. From v0.5.0 the binary is a PyInstaller freeze, which cannot produce the static musl artefact older Rust releases did; the only Linux asset now is -unknown-linux-gnu, and it cannot exec on a musl host." >&2\n\t\techo "install.sh: refusing to install. Install from a checkout instead: git clone https://github.com/${REPO} && pip install ./tan-cli/python" >&2\n\t\texit 1\n\tfi\nfi\n\n# host arch -> rust target arch part',
       },
       {
         upstream:
-          '\techo "install.sh: download failed: ${url}" >&2\n\t# Only name the musl floor when the requested tag is actually below it --\n\t# a DNS/proxy/500 failure, or a perfectly valid >=v0.3.0 tag, gets no\n\t# invented explanation.\n\tif [ "$os_part" = "unknown-linux-musl" ]; then\n\t\tcase "$VERSION" in\n\t\tv0.0.* | v0.1.* | v0.2.*)\n\t\t\techo "install.sh: note — Linux musl assets only exist from v0.3.0 onward; ${VERSION} predates that and has no ${asset} asset." >&2\n\t\t\t;;\n\t\tesac\n\tfi\n\texit 1\nfi',
+          'echo "install.sh: download failed: ${url}" >&2\n\t# Only name the musl floor when the requested tag is actually below it --\n\t# a DNS/proxy/500 failure, or a perfectly valid >=v0.3.0 tag, gets no\n\t# invented explanation.\n\tif [ "$os_part" = "unknown-linux-musl" ]; then\n\t\tcase "$VERSION" in\n\t\tv0.0.* | v0.1.* | v0.2.*)\n\t\t\techo "install.sh: note -- Linux musl assets only exist from v0.3.0 onward; ${VERSION} predates that and has no ${asset} asset." >&2\n\t\t\t;;\n\t\tesac\n\tfi\n\texit 1\nfi',
         vendored:
-          '\techo "install.sh: download failed: ${url}" >&2\n\texit 1\nfi',
+          'echo "install.sh: download failed: ${url}" >&2\n\t# The transport error above says THAT it failed, never why, and a 404 for\n\t# an asset that was never published looks identical to a proxy outage. Name\n\t# the causes this script can actually know; guess at nothing else.\n\tcase "${arch_part}-${os_part}" in\n\taarch64-unknown-linux-gnu)\n\t\techo "install.sh: note -- there is no prebuilt Linux arm64 asset from v0.5.0 onward. The binary is a frozen build that must be produced on the architecture it runs on, and the release builds no arm64 Linux. Install from a checkout instead: git clone https://github.com/${REPO} && pip install ./tan-cli/python" >&2\n\t\t;;\n\tesac\n\techo "install.sh: if this is a 404 rather than a network failure, check which assets ${VERSION} actually publishes: https://github.com/${REPO}/releases" >&2\n\texit 1\nfi',
       },
     ],
   },
   "install.ps1": {
     upstream:
-      "eb8dd7e697b17c71d2996fd1390256109b76dd97de0f02f355836e4fd61198fb",
+      "8c596261d6ddb42770c42cf2d8b226209d03bd8e5cc5dc05dd8e44ccd626be8d",
     vendored:
-      "dd2856659a9302014d7995513651ae0d08edcaa6709ea1a685133b33d522724c",
-    // Upstream v0.4.0 ships two non-ASCII characters in Write-Host strings and
-    // no BOM. Windows PowerShell 5.1 -- which is exactly what the handler's
-    // `powershell` argv resolves to -- then decodes the file as the ANSI
-    // codepage: on cp1252 the em dash's E2 80 94 becomes `â€”`, whose third
-    // character is U+201D, which PowerShell honours as a string terminator.
-    // Driven on 5.1.26100.8894: 2 parse errors, the script does not run at all.
-    // So these two substitutions are a defect fix, not a style preference.
-    //
-    // ASCII rather than a BOM on purpose: ASCII decodes identically under every
-    // codepage and under the documented `irm ... | iex` path, while a BOM only
-    // helps `-File`. Either way a wholesale re-vendor overwrites this, so the
-    // fix worth making is the one upstream is also likely to hold -- and as of
-    // 2026-07-29 tan-cli's unreleased installer rework had independently made
-    // these same two substitutions. If a release ships it, delete this entry.
+      "101ec74ba21dd51789b61f41218147ae735aafe560e40845d1fed8f9b030d45e",
+    // Upstream v0.4.1 already adopted both non-ASCII substitutions the old
+    // v0.4.0 pin needed (checked: no U+2026/U+2014 anywhere in the file), so
+    // that whole prior deviation is gone -- upstream now matches. The one
+    // deviation left is the Windows-arm64 mirror of install.sh's Deviation 2
+    // above, ported from the same unreleased branch: a bare
+    // `Invoke-WebRequest` 404 under `$ErrorActionPreference = "Stop"` says
+    // nothing about why, so this wraps it in try/catch and names the one
+    // cause this script can know (no Windows arm64 asset from v0.5.0 on --
+    // PyInstaller cannot cross-compile) instead of a raw exception.
     deviations: [
       {
         upstream:
-          'Write-Host "install.ps1: downloading tan ($archPart, $Version)…"',
+          "\tInvoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing",
         vendored:
-          'Write-Host "install.ps1: downloading tan ($archPart, $Version)..."',
-      },
-      {
-        upstream:
-          '\tWrite-Host "install.ps1: added $Dir to the $scope Path — restart the terminal for it to take effect."',
-        vendored:
-          '\tWrite-Host "install.ps1: added $Dir to the $scope Path -- restart the terminal for it to take effect."',
+          '\t# The transport error a 404 throws here says only THAT the fetch failed,\n\t# never why -- and a 404 for an asset that was never published looks\n\t# identical to a network/proxy outage otherwise. Name the one cause this\n\t# script can actually know (there is no Windows arm64 asset, ever, from\n\t# v0.5.0 -- a PyInstaller freeze cannot be cross-compiled, and this release\n\t# builds on four runners, not six) and point at the source install; guess\n\t# at nothing else. Mirrors install.sh\'s equivalent case for linux/arm64.\n\ttry {\n\t\tInvoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing\n\t} catch {\n\t\tWrite-Host "install.ps1: download failed: $url" -ForegroundColor Red\n\t\tif ($archPart -eq "aarch64") {\n\t\t\tWrite-Error "install.ps1: there is no prebuilt Windows arm64 asset from v0.5.0 onward. The binary is a frozen build that must be produced on the architecture it runs on, and the release builds no Windows arm64 leg. Install from a checkout instead: git clone https://github.com/$repo && pip install ./tan-cli/python"\n\t\t} else {\n\t\t\tWrite-Error "install.ps1: if this is a 404 rather than a network failure, check which assets $Version actually publishes: https://github.com/$repo/releases"\n\t\t}\n\t\texit 1\n\t}',
       },
     ],
   },
@@ -345,13 +357,20 @@ const { SUPPORTED_CLI_VERSION } = require(
 );
 
 /** One activation of `installTanCliGlobally`, with `runInTerminal` stubbed to
- *  capture the argv it was asked to run rather than actually spawning a
- *  terminal. `extensionPath: root` is deliberate — it's the one context field
- *  the handler reads, and pointing it at the real repo root means the
- *  "bundled script exists" guard sees the ACTUAL vendored install.sh/.ps1,
- *  not a fixture that could drift from them. */
-function runInstallTanCli() {
+ *  capture the argv it was asked to run (and `notifyAsync` stubbed to capture
+ *  any plan raised instead) rather than actually spawning a terminal.
+ *  `extensionPath: root` is deliberate — it's the one context field the
+ *  handler reads, and pointing it at the real repo root means the "bundled
+ *  script exists" guard sees the ACTUAL vendored install.sh/.ps1, not a
+ *  fixture that could drift from them.
+ *
+ *  `platform`/`arch` (default the REAL host's) let a test drive the
+ *  declared-gap short-circuit for a host this machine isn't — `process.platform`
+ *  is `configurable: true` in Node (confirmed, not assumed), so this restores
+ *  it in a `finally` rather than leaving a later test on a fake host. */
+function runInstallTanCli({ platform, arch } = {}) {
   const terminalCalls = [];
+  const notifyCalls = [];
   delete require.cache[ADAPTER];
   const stubs = {
     vscode: {
@@ -361,7 +380,7 @@ function runInstallTanCli() {
     },
     "../notify/vscodeAdapter": {
       notify: async () => undefined,
-      notifyAsync: () => {},
+      notifyAsync: (plan) => notifyCalls.push(plan),
     },
     "../util": {
       log: () => {},
@@ -374,32 +393,49 @@ function runInstallTanCli() {
       ? stubs[request]
       : originalLoad.call(this, request, ...rest);
   };
+  const originalPlatform = process.platform;
+  const originalArch = process.arch;
+  if (platform)
+    Object.defineProperty(process, "platform", {
+      value: platform,
+      configurable: true,
+    });
+  if (arch)
+    Object.defineProperty(process, "arch", { value: arch, configurable: true });
   let adapter;
   try {
     adapter = require(ADAPTER);
+    adapter.installTanCliGlobally({
+      extensionPath: root,
+      subscriptions: [],
+      // Running this command clears a stored consent decline
+      // (`DOWNLOAD_CONSENT_KEY`) — a bare stub is enough, this file doesn't
+      // assert on it (see test/alpCli.downloadConsent.test.js for that).
+      globalState: { update: async () => {} },
+    });
   } finally {
     Module._load = originalLoad;
     delete require.cache[ADAPTER];
+    Object.defineProperty(process, "platform", {
+      value: originalPlatform,
+      configurable: true,
+    });
+    Object.defineProperty(process, "arch", {
+      value: originalArch,
+      configurable: true,
+    });
   }
-  adapter.installTanCliGlobally({
-    extensionPath: root,
-    subscriptions: [],
-    // Running this command clears a stored consent decline
-    // (`DOWNLOAD_CONSENT_KEY`) — a bare stub is enough, this file doesn't
-    // assert on it (see test/alpCli.downloadConsent.test.js for that).
-    globalState: { update: async () => {} },
-  });
-  return terminalCalls;
+  return { terminalCalls, notifyCalls };
 }
 
 test("installTanCliGlobally pins --version/-Version to SUPPORTED_CLI_VERSION, not the installer's own 'latest' default", () => {
-  const calls = runInstallTanCli();
+  const { terminalCalls } = runInstallTanCli();
   assert.equal(
-    calls.length,
+    terminalCalls.length,
     1,
     "installTanCliGlobally must run exactly one terminal command",
   );
-  const { argv } = calls[0];
+  const { argv } = terminalCalls[0];
   const tag = `v${SUPPORTED_CLI_VERSION}`;
   const versionFlag = process.platform === "win32" ? "-Version" : "--version";
   assert.deepEqual(
@@ -408,6 +444,46 @@ test("installTanCliGlobally pins --version/-Version to SUPPORTED_CLI_VERSION, no
     `expected the installer invocation to end with ${versionFlag} ${tag} so ` +
       `it targets the pin this extension supports rather than GitHub's ` +
       `'latest' release: ${argv.join(" ")}`,
+  );
+});
+
+// ── The declared-gap short-circuit (maintainer review, MAJOR 2) ────────────
+//
+// The vendored installers pick an asset from `uname -m` alone — they know
+// nothing about `HOSTS_WITHOUT_RELEASE_ASSET`. Before this guard, running
+// `installTanCliGlobally` on a declared-gap host (e.g. `linux/arm64` against
+// the pinned tan v0.5.0-rc1) spawned the script anyway and let it 404 with no
+// explanation, instead of the same "no prebuilt tan for your platform"
+// message the managed download already gives that host.
+test("installTanCliGlobally short-circuits a declared-gap host to noPrebuiltMessage, no terminal spawned", () => {
+  const {
+    noPrebuiltMessage,
+    HOSTS_WITHOUT_RELEASE_ASSET,
+    SUPPORTED_CLI_VERSION: pin,
+  } = require(path.join(root, "out", "alpCli", "service.js"));
+  const [gapHost] = HOSTS_WITHOUT_RELEASE_ASSET[pin] ?? [];
+  assert.ok(
+    gapHost,
+    `HOSTS_WITHOUT_RELEASE_ASSET[${pin}] must declare at least one gap for ` +
+      "this test to mean anything — if the pin moved to a release with no " +
+      "gaps, point this test at a fixture pin instead of deleting it.",
+  );
+  const [platform, arch] = gapHost.split("/");
+
+  const { terminalCalls, notifyCalls } = runInstallTanCli({ platform, arch });
+
+  assert.equal(
+    terminalCalls.length,
+    0,
+    `no terminal should spawn for the declared-gap host ${gapHost}`,
+  );
+  assert.equal(notifyCalls.length, 1);
+  assert.equal(notifyCalls[0].message, noPrebuiltMessage(platform, arch));
+  assert.ok(
+    notifyCalls[0].actions.some(
+      (a) => a.id === "openSettings" && a.arg === "alpSdk.cliPath",
+    ),
+    "the only remedy on a host with no asset is alpSdk.cliPath -- no Retry, which would just 404 again",
   );
 });
 
