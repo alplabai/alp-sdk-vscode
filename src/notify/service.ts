@@ -143,7 +143,16 @@ function unavailablePlan(
       };
     case "noPrebuilt":
       return {
-        message: `${op} needs the tan CLI, and there's no prebuilt build for this machine.`,
+        // `outcome.message` VERBATIM, for the same reason `checksumRefused`
+        // below takes it verbatim: only the producer knows the two facts that
+        // make this sentence worth reading — WHICH host, and WHICH tan release.
+        // It is `noPrebuiltMessage` (`src/alpCli/service.ts`) by construction:
+        // `classifyUnavailable` reaches this reason by matching that function's
+        // own opening. The composed sentence this replaced ("there's no
+        // prebuilt build for this machine") named neither, so a customer on a
+        // host the pinned release simply doesn't build for could not tell it
+        // from a broken install — and the remedy button alone doesn't say it.
+        message: outcome.message,
         actions: [settings],
       };
     case "cliPathMissing":

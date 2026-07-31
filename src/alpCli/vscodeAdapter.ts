@@ -539,6 +539,46 @@ function checksumFailurePlan(
 }
 
 /**
+ * The plan for a host the pinned release publishes no binary for
+ * (`noPrebuiltMessage`, raised by `downloadCli`), or null for anything else.
+ *
+ * Same split-by-cause discipline as the three plans above, and the same failure
+ * mode if it is missing: without it this lands on the generic "The tan CLI
+ * update failed." with a **Retry** button — and here a retry is dead by
+ * construction, since it re-enters the same `downloadCli` and throws on the
+ * same absent asset. The customer would be clicking forever at a release that
+ * was never going to have a binary for their machine, while the sentence that
+ * says so sits in the output channel (#445).
+ *
+ * Classified by `classifyUnavailable` rather than an error type, deliberately:
+ * that is the single classifier this repo already trusts to recognise this
+ * refusal (`unavailableOutcome` reads it too), and inventing a second rule for
+ * the same fact is how the two would eventually disagree.
+ *
+ * Only `updateAlpCli` needs it. `ensureTanCliProvisioned` returns at its own
+ * `!asset` branch before any download, so a plan there could never fire — and
+ * a guard that can never be true is not a safety net.
+ */
+function noPrebuiltPlan(
+  error: unknown,
+  operation: string,
+): NotificationPlan | null {
+  const message = error instanceof Error ? error.message : String(error);
+  if (classifyUnavailable(message) !== "noPrebuilt") {
+    return null;
+  }
+  return planFailure({
+    operation,
+    // `noPrebuiltMessage` is written for a toast: it names the host and the
+    // release and carries no path, URL or errno, so it survives `planFailure`'s
+    // leak guard intact.
+    cause: message,
+    // The one remedy that works on this host. No Retry: see above.
+    actions: [{ id: "openSettings", arg: "alpSdk.cliPath" }],
+  });
+}
+
+/**
  * The `CliOutcome` a binary-RESOLUTION failure becomes, so `planCliOutcome`
  * picks the remedy from `unavailable.reason` instead of each call site
  * guessing. Shared by the two lazy-download surfaces — `runAlpCommand` (which
@@ -593,12 +633,25 @@ function unavailableOutcome(error: unknown): CliOutcome {
     // Dependencies panel's `buildDependencyReport`), and those readers need
     // to hear the same fact `planCliOutcome`'s own `consentDeclined` case
     // says: which setting to change. See `TAN_CLI_DOWNLOAD_CONSENT_DECLINED_MESSAGE`.
+    //
+    // `noPrebuilt` keeps the RESOLVER'S sentence, and that is the one exception
+    // to the paragraph above: the raw text for this reason is not an errno or a
+    // status, it is `noPrebuiltMessage` (`service.ts`) — an authored customer
+    // sentence, and the only place the HOST and the pinned RELEASE are named.
+    // `classifyUnavailable` reaches `noPrebuilt` by matching that function's own
+    // `^No prebuilt tan CLI` opening and nothing else does, so there is no other
+    // string this branch can carry. Generalising it to "tan CLI unavailable."
+    // here is what left both this outcome's direct readers and
+    // `unavailablePlan`'s toast unable to say which machine, or that the gap
+    // belongs to one tan release rather than to the customer's install.
     message:
       error instanceof ChecksumError
         ? error.message
         : reason === "consentDeclined"
           ? TAN_CLI_DOWNLOAD_CONSENT_DECLINED_MESSAGE
-          : "tan CLI unavailable.",
+          : reason === "noPrebuilt"
+            ? raw
+            : "tan CLI unavailable.",
     envelope: null,
     unavailable: {
       reason,
@@ -1939,6 +1992,11 @@ export async function updateAlpCli(
       cliInUsePlan(error, "Updating the tan CLI") ??
         // …and the one a retry cannot clear either until the proxy changes.
         proxyFailurePlan(error, "Updating the tan CLI") ??
+        // …nor can it clear a release that has no binary for this machine: the
+        // palette command is the one route that reaches `downloadCli` without
+        // the `!asset` early return, so this is where that host would otherwise
+        // be handed "The tan CLI update failed." and a Retry that re-throws.
+        noPrebuiltPlan(error, "Updating the tan CLI") ??
         // …and the one that is not a failure at all but a refusal: the bytes
         // arrived and were rejected. The existing binary is untouched.
         checksumFailurePlan(error, "Updating the tan CLI", migrationCause) ??

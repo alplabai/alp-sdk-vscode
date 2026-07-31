@@ -7,6 +7,7 @@ const {
   runAlp,
   runAlpAsync,
 } = require("../out/alpCli/adapterCore.js");
+const { noPrebuiltMessage } = require("../out/alpCli/service.js");
 
 function baseDeps(overrides = {}) {
   const existing = new Set(overrides.existing ?? []);
@@ -199,8 +200,20 @@ test("resolveAlpBinary: an un-digested cache with nothing on PATH still asks (co
 
 test("resolveAlpBinary: throws on unsupported host (no prebuilt asset)", async () => {
   // linux/arm (32-bit) is not in TARGETS, so it has no download asset.
-  const { deps } = baseDeps({ platform: "linux", arch: "arm" });
+  const { deps, calls } = baseDeps({ platform: "linux", arch: "arm" });
   await assert.rejects(() => resolveAlpBinary(deps), /No prebuilt tan CLI/);
+
+  // #445: the throw carries the EXPLAINED sentence, not a bare refusal — the
+  // host and the release are in it, and nothing was fetched to find that out.
+  // Both shapes of "no asset" (an unmapped host, and a mapped one the pinned
+  // release publishes nothing for) come through this one throw.
+  const error = await resolveAlpBinary(deps).catch((e) => e);
+  assert.equal(error.message, noPrebuiltMessage("linux", "arm"));
+  assert.equal(
+    calls.download,
+    0,
+    "a host with no asset must never reach the network to find out",
+  );
 });
 
 test("resolveAlpBinary: throws when the download leaves nothing to hash", async () => {
