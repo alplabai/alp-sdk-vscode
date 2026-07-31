@@ -1271,17 +1271,19 @@ test("classifyOutcome sets severity by kind and prefers the first issue", () => 
 });
 
 test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary, v<version> tag)", () => {
+  // gnu, not musl: a PyInstaller musl freeze is musl-DYNAMIC and would not
+  // start on Ubuntu/Debian/Fedora — see the TARGETS comment (#444). Pinned here
+  // so flipping the table back is a test failure, not a silent Linux break.
   const linux = releaseAssetForTarget("linux", "x64");
-  assert.equal(linux.target, "x86_64-unknown-linux-musl");
+  assert.equal(linux.target, "x86_64-unknown-linux-gnu");
   assert.equal(linux.tag, `v${SUPPORTED_CLI_VERSION}`);
-  assert.equal(linux.assetName, "tan-x86_64-unknown-linux-musl");
+  assert.equal(linux.assetName, "tan-x86_64-unknown-linux-gnu");
   assert.ok(
     linux.url.endsWith(
-      `/alplabai/tan-cli/releases/download/v${SUPPORTED_CLI_VERSION}/tan-x86_64-unknown-linux-musl`,
+      `/alplabai/tan-cli/releases/download/v${SUPPORTED_CLI_VERSION}/tan-x86_64-unknown-linux-gnu`,
     ),
   );
 
-  // arm64 Linux ships the static musl build too (no glibc floor on either arch).
   assert.equal(
     releaseAssetForTarget("linux", "arm64").target,
     "aarch64-unknown-linux-musl",
