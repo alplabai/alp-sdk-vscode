@@ -12,7 +12,7 @@ the Rust binary every prior release used.
 - **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc1`, the first Python `tan`
   release candidate.** Its own commit, deliberately not combined with this
   extension's version bump — the two are different numbers that happen to
-  look alike. The four items below are its direct prerequisites.
+  look alike. The items below are its direct prerequisites.
 
 - **`TARGETS`' `linux/x64` now resolves `x86_64-unknown-linux-gnu`, not
   `-musl`.** A PyInstaller Linux freeze is musl-*dynamic* (its bootloader
@@ -36,15 +36,36 @@ the Rust binary every prior release used.
   download that 404s, and `scripts/check-cli-pin.mjs` verifies the declaration
   against the real release rather than trusting it.
 
-- **`install.sh` (the standalone global-install script bundled under
-  `media/tan-install/`) and the docs stop naming a Linux `-musl` asset a
-  Python `tan` release does not publish.** Every doc naming
+- **`install.sh`/`install.ps1` (the standalone global-install scripts bundled
+  under `media/tan-install/`) re-vendor to tan-cli `v0.4.1` and stop naming a
+  Linux `-musl` asset a Python `tan` release does not publish.** `v0.4.1`
+  shipped a checksum-verification rework of both scripts (237/169 lines) that
+  the prior `v0.4.0` pin predates — installing via the global command put an
+  **unverified** binary on PATH while the extension's own managed download
+  already refused one (#386/#389). On top of that base, `install.sh`'s Linux
+  case now maps to `-gnu`, with a pre-download refusal on an actual musl host
+  (Alpine): without it, the script would download the `-gnu` asset, verify its
+  sha256 (proves the bytes match what was published, not that they can
+  execute on this libc), install it, and exit 0 having silently produced a
+  binary that can never run. Both scripts' vendored-parity test
+  (`test/alpCli.installTanCli.test.js`) declares all of this as tracked
+  deviations from the upstream `v0.4.1` files, reverse-applied and re-hashed
+  against the real upstream bytes — the sha256 parity gate stays honest about
+  the edits rather than silently accepting a hand change. Every doc naming
   `tan-x86_64-unknown-linux-musl`, and every comment arguing the old
   musl-over-gnu rationale, now names `-gnu` and explains why a PyInstaller
-  freeze cannot use musl instead. `install.sh`'s vendored-parity test
-  (`test/alpCli.installTanCli.test.js`) declares this as a tracked deviation
-  from the upstream `v0.4.0` file it is pinned to, so the sha256 parity gate
-  stays honest about the edit rather than silently accepting a hand change.
+  freeze cannot use musl instead.
+
+- **`installTanCliGlobally` ("Install tan CLI (global)") now short-circuits a
+  declared-gap host instead of running the installer script and letting it
+  404.** The vendored scripts pick an asset from `uname -m` alone — they know
+  nothing about `HOSTS_WITHOUT_RELEASE_ASSET` — so `win32/arm64` and
+  `linux/arm64` used to split from the managed download's behaviour: that
+  path already explained the gap with no network call, but this command ran
+  the script anyway (`install.ps1`: a raw `Invoke-WebRequest` exception;
+  `install.sh`: `download failed: ...`, exit 1). Now shows the identical
+  "no prebuilt tan CLI for your platform" message and remedy
+  (`alpSdk.cliPath`) either way.
 
 - **A tan release candidate now compares by number, so an installed `rc9` is no
   longer read as newer than a pinned `rc10`.** Two pre-releases on the same
