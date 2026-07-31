@@ -60,14 +60,23 @@ const ROOT = path.join(import.meta.dirname, "..");
 const OUT_DIR = path.join(ROOT, "test", "golden", "tan-contract");
 const TIMEOUT_MS = 15_000;
 
-// The same grep release-vsix.yml uses to resolve the pin (its "Resolve pinned
-// CLI version" step). Deliberately re-derived from the source of truth instead
-// of duplicated into a second constant that could drift from it.
+// The same grep release-vsix.yml and ci.yml use to resolve the pin (their
+// "Resolve pinned CLI version" steps). Deliberately re-derived from the source
+// of truth instead of duplicated into a second constant that could drift from
+// it.
+//
+// The `(?:-[0-9A-Za-z.-]+)?` suffix accepts a SemVer PRERELEASE pin. That is
+// not hypothetical and it is not only the release workflow's problem (#443):
+// this script is a gate step in ci.yml on all three runners, so a narrow
+// pattern here reds every PR the moment the pin names an rc — before the
+// release job the issue was filed against is ever reached. Asserted by
+// test/cliPin.prerelease.test.js, which reads this regex out of this file.
 const PIN_SOURCE = path.join(ROOT, "src", "alpCli", "service.ts");
 const pinSource = readFileSync(PIN_SOURCE, "utf8");
-const pin = /SUPPORTED_CLI_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"/.exec(
-  pinSource,
-)?.[1];
+const pin =
+  /SUPPORTED_CLI_VERSION = "([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)"/.exec(
+    pinSource,
+  )?.[1];
 if (!pin) {
   console.error(
     `::error::Could not resolve SUPPORTED_CLI_VERSION from ${PIN_SOURCE}`,

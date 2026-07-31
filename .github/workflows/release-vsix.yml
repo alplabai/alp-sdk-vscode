@@ -114,6 +114,24 @@ jobs:
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 
+      # #443: nothing on the release path asserted that the pinned tan tag is
+      # PUBLISHED. The darwin job discovers it at its download step (a 404 on
+      # one asset, after the tag is already pushed); the universal job never
+      # discovered it at all — it ships binary-less and every install resolves
+      # `tan` by download-on-demand, so a bad pin reached users as a 404 loop on
+      # activation with a fully green release run behind it.
+      #
+      # `check-cli-pin.mjs` is what ci.yml already runs for this, and it is a
+      # stronger check than `gh release view "v${VERSION}"`: it HEADs the asset
+      # for EVERY host in `TARGETS`, so a release whose Windows binary failed to
+      # upload fails here too — invisible to a tag-existence check. It reads the
+      # pin by IMPORTING the constant from out/alpCli/service.js, so it also
+      # cannot disagree with the grep in the darwin job below. Only a 404 fails
+      # it; a rate-limit or an outage reports "skipped, not a repo defect", so
+      # this cannot red a release over someone else's downtime.
+      - name: Gate — SUPPORTED_CLI_VERSION is a published tan-cli release
+        run: node scripts/check-cli-pin.mjs
+
       - name: Resolve pre-release flag (VS Code convention — odd minor = pre-release)
         run: |
           MINOR=$(node -p "require('./package.json').version.split('.')[1]")
@@ -291,8 +309,18 @@ jobs:
 
       - name: Resolve pinned CLI version (mirrors SUPPORTED_CLI_VERSION in src/alpCli/service.ts)
         id: cli_version
+        # The `(-[0-9A-Za-z.-]+)?` suffix is not decoration: without it a
+        # PRERELEASE pin (tan publishes them — `v0.4.0-rc1` exists) resolves to
+        # the empty string and this job dies at the `::error::` below — at
+        # RELEASE time, on a tag already pushed, since nothing type-checks the
+        # constant (#443). BOTH greps carry it, and that is the part worth
+        # reading twice: widening only the first leaves the second extracting
+        # `0.5.0` out of `0.5.0-rc1`, which would bundle a DIFFERENT tan than
+        # the pin names instead of failing. Whether the pattern still resolves a
+        # prerelease is asserted by test/cliPin.prerelease.test.js, which reads
+        # this line out of this file.
         run: |
-          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?')
           if [ -z "$VERSION" ]; then
             echo "::error::Could not resolve SUPPORTED_CLI_VERSION from src/alpCli/service.ts"
             exit 1

@@ -16,6 +16,23 @@
   both ways — a platform declared unpublished whose asset does exist is a
   stale entry, exactly as loudly as an asset that is genuinely missing.
 
+- **`SUPPORTED_CLI_VERSION` can now name a tan prerelease.** The three places
+  that resolved the pin by pattern — the release workflow's darwin packaging
+  job, CI's macOS bundled-binary check, and the envelope-contract fetch script —
+  all matched `MAJOR.MINOR.PATCH` only, so a pin such as `0.5.0-rc1` resolved to
+  the empty string and failed the job. All three accept a SemVer prerelease
+  suffix now, in both greps of the shell pipeline so the suffix cannot be
+  silently truncated to a version the pin never named, and
+  `test/cliPin.prerelease.test.js` drives the real patterns against real
+  prerelease fixtures. The pin's value is unchanged.
+
+- **A release now verifies up front that the pinned tan tag is published.**
+  `scripts/check-cli-pin.mjs`, already a CI gate, runs on the release path too:
+  it HEADs the release asset for every host the extension downloads for, so a
+  missing tag or a half-uploaded release stops the run instead of reaching
+  customers as a 404 loop on activation. Only a 404 fails it — a rate-limit or
+  an outage reports as skipped.
+
 ## 0.4.1
 
 - **New setting `alpSdk.tanCliDownloadConsent` (`ask` / `allow` / `deny`,
