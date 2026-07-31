@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **A `tan` release that publishes no binary for your platform is now an
+  explained state instead of a download that 404s.** Which platforms a release
+  ships is a property of that release — a PyInstaller-built `tan` cannot
+  cross-compile, so it publishes fewer assets than the cargo-built ones did —
+  and the extension now knows which hosts the pinned release skips before it
+  builds a URL for one. Those hosts get a sentence naming the platform and the
+  `tan` version, saying the gap belongs to that release rather than to their
+  install, and pointing at `alpSdk.cliPath` for a locally built or
+  `pip install`ed `tan`; every other platform keeps the managed download
+  unchanged. The declaration cannot go stale: the `SUPPORTED_CLI_VERSION` CI
+  gate probes every mapped platform against the pinned release and now fails
+  both ways — a platform declared unpublished whose asset does exist is a
+  stale entry, exactly as loudly as an asset that is genuinely missing.
+
 - **`SUPPORTED_CLI_VERSION` can now name a tan prerelease.** The three places
   that resolved the pin by pattern — the release workflow's darwin packaging
   job, CI's macOS bundled-binary check, and the envelope-contract fetch script —

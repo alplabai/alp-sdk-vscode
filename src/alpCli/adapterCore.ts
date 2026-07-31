@@ -19,6 +19,7 @@ import {
   classifyUnavailable,
   decideBinarySource,
   isUnverifiableCache,
+  noPrebuiltMessage,
   parseEnvelope,
   releaseAssetForTarget,
   TAN_CLI_DOWNLOAD_CONSENT_NEEDED,
@@ -434,10 +435,13 @@ export async function downloadCli(
 ): Promise<void> {
   const asset = releaseAssetForTarget(deps.platform, deps.arch);
   if (!asset) {
-    throw new Error(
-      `No prebuilt tan CLI for ${deps.platform}/${deps.arch}. ` +
-        "Set alpSdk.cliPath to a local build (tan-cli/target/release/tan).",
-    );
+    // The ONE throw for both shapes of "no asset for this host" — an unmapped
+    // platform, and a mapped one the pinned release ships nothing for
+    // (`HOSTS_WITHOUT_RELEASE_ASSET`). The sentence is built in `service.ts`
+    // rather than here because it is the one a TOAST renders verbatim, and it
+    // has to name the host and the release: a download this function never
+    // attempted must not reach the customer as a bare failure.
+    throw new Error(noPrebuiltMessage(deps.platform, deps.arch));
   }
   // Read BEFORE the transfer: afterwards a success has written the record, so
   // the same question would answer differently and the wording would depend on

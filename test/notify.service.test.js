@@ -19,6 +19,8 @@ const {
 const {
   classifyOutcome,
   classifyUnavailable,
+  noPrebuiltMessage,
+  SUPPORTED_CLI_VERSION,
 } = require("../out/alpCli/service.js");
 
 /** An envelope with `issues`, shaped like the real CLI contract. */
@@ -281,6 +283,7 @@ test("notInstalled and a broken install differ in both text and remedy", () => {
   );
 
   const noPrebuilt = classifyOutcome(-1, null);
+  noPrebuilt.message = noPrebuiltMessage("win32", "arm64");
   noPrebuilt.unavailable = {
     reason: "noPrebuilt",
     detail: "No prebuilt tan CLI for win32/arm64.",
@@ -288,6 +291,54 @@ test("notInstalled and a broken install differ in both text and remedy", () => {
   assert.notEqual(
     planCliOutcome(noPrebuilt, { operation: "Validating board.yaml" }).message,
     a.message,
+  );
+});
+
+// ── alp-sdk-vscode#445 ─────────────────────────────────────────────────────
+//
+// A tan release that publishes no asset for the customer's platform used to
+// reach them as a download failure from a URL this extension constructed
+// itself. The remedy button was right; the sentence named neither the machine
+// nor the release, so it read as "this vendor's release is broken".
+test("a host the pinned release publishes nothing for is EXPLAINED, not reported as a failed download", () => {
+  const outcome = classifyOutcome(-1, null);
+  // Exactly what `unavailableOutcome` (src/alpCli/vscodeAdapter.ts) puts here:
+  // the resolver's own authored sentence, which is the only place the host and
+  // the release are named.
+  outcome.message = noPrebuiltMessage("win32", "arm64");
+  outcome.unavailable = {
+    reason: "noPrebuilt",
+    detail: "no prebuilt tan CLI for win32/arm64",
+  };
+
+  const plan = planCliOutcome(outcome, { operation: "Validating board.yaml" });
+
+  // The sentence survives to the toast verbatim — composing over it is what
+  // dropped both facts.
+  assert.equal(plan.message, outcome.message);
+  assert.match(plan.message, /win32\/arm64/);
+  assert.match(plan.message, new RegExp(`tan v${SUPPORTED_CLI_VERSION}`));
+  assert.match(plan.message, /rather than a broken install/);
+
+  // The remedy is the one route that works on this host…
+  assert.ok(
+    plan.actions.some(
+      (x) => x.id === "openSettings" && x.arg === "alpSdk.cliPath",
+    ),
+  );
+  // …and NOT a retry or an install: both re-enter a download this release can
+  // never satisfy, so either button is dead by construction here.
+  assert.ok(
+    !plan.actions.some((x) => x.id === "retry" || x.id === "installTanCli"),
+    "a host with no asset must not be offered a download that cannot exist",
+  );
+
+  // Distinct from the genuine transport failure it used to be flattened into.
+  const failed = classifyOutcome(-1, null);
+  failed.unavailable = { reason: "downloadFailed", detail: "HTTP 404" };
+  assert.notEqual(
+    plan.message,
+    planCliOutcome(failed, { operation: "Validating board.yaml" }).message,
   );
 });
 

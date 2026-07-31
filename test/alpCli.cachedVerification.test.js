@@ -1610,3 +1610,47 @@ test("#396 preferGlobalCli ON still reaches unverifiedCacheCause through the PAL
     home.cleanup();
   }
 });
+
+test("#445 the palette's update command on a host this release has no asset for explains it, and offers no dead Retry", async () => {
+  // The ONE route that reaches `downloadCli` without an `!asset` early return:
+  // `ensureTanCliProvisioned` checks the asset itself and returns, so the
+  // palette command is where a host with no published binary actually hits the
+  // resolver's throw. It used to land on the generic "The tan CLI update
+  // failed." with a Retry — a button that re-enters the same download and
+  // throws on the same absent asset, forever, while the sentence naming the
+  // host and the release sat in the output channel.
+  //
+  // Driven with `releaseAssetForTarget` stubbed to null because that is the
+  // state BOTH shapes of "no asset" reduce to: a host absent from TARGETS, and
+  // a host the pinned release publishes nothing for
+  // (`HOSTS_WITHOUT_RELEASE_ASSET`, empty until a Python tan is pinned).
+  const home = extensionHome();
+  try {
+    const { adapter, plans } = loadAdapter({
+      service: { releaseAssetForTarget: () => null },
+    });
+    await adapter.updateAlpCli(home.context);
+
+    assert.equal(plans.length, 1);
+    const [plan] = plans;
+    // The customer sentence itself, not "The tan CLI update failed."
+    assert.equal(
+      plan.message,
+      SERVICE.noPrebuiltMessage(process.platform, process.arch),
+    );
+    assert.match(plan.message, new RegExp(`${process.platform}/`));
+    assert.match(plan.message, /rather than a broken install/);
+    // The only remedy that can work here, and NOT a retry of a download that
+    // this release can never satisfy.
+    assert.deepEqual(
+      plan.actions.map((a) => a.id),
+      ["openSettings"],
+    );
+    assert.equal(plan.actions[0].arg, "alpSdk.cliPath");
+    // Nothing was written: no cache, no digest record, no half-installed file.
+    assert.equal(fs.existsSync(home.cachedBinaryPath), false);
+    assert.equal(home.store.has("alp.tanCachedBinarySha256"), false);
+  } finally {
+    home.cleanup();
+  }
+});
