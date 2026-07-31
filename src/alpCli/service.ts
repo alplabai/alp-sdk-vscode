@@ -86,6 +86,39 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
   "0.3.1",
 ];
 
+/**
+ * Hosts a given tan release publishes NO binary for, keyed by version.
+ *
+ * `TARGETS` below answers a DIFFERENT question — "what is this host's rust
+ * target triple" — and its answer does not change from release to release.
+ * WHICH of those targets a release actually ships is a property OF THAT
+ * RELEASE, and the two stopped being the same thing at the Python port:
+ * PyInstaller cannot cross-compile and GitHub's standard runner pool has no
+ * aarch64 Windows or Linux host, so a PyInstaller-built tan publishes four
+ * assets where the cargo-zigbuild ones published eight (alplabai/tan-cli#271).
+ * Deleting those hosts from `TARGETS` instead would conflate the two facts, and
+ * would also drop them from `scripts/check-cli-pin.mjs`'s probe list, which is
+ * derived from that table — a genuinely failed upload for such a host would
+ * then never be caught again.
+ *
+ * Keyed by version, never a floor, for the same reason
+ * `RELEASES_PREDATING_CONTRACT_ASSET` is a list: a pin bump must not silently
+ * inherit the previous release's gaps. An unlisted version is expected to
+ * publish every target in `TARGETS`, full stop — which is the state TODAY, so
+ * this table is empty and no host loses the download it has now.
+ *
+ * IT CANNOT ROT INTO A LIE, because nothing trusts it: `check-cli-pin.mjs`
+ * HEAD-probes every `TARGETS` host against the pinned release on every CI run
+ * and fails BOTH ways — a host declared here whose asset DOES resolve is a
+ * stale entry the gate tells you to delete, and a host not declared here whose
+ * asset 404s is the missing-asset failure that gate has always caught. A later
+ * tan that publishes the missing hosts again therefore reds CI until the entry
+ * is removed, instead of quietly leaving those customers on `alpSdk.cliPath`.
+ */
+export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
+  Record<string, readonly string[]>
+> = {};
+
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
 
@@ -318,8 +351,12 @@ export const CACHED_CLI_UNVERIFIED_ON_PATH =
  * The two sentences above, for the host tan-cli publishes NO binary for
  * (`releaseAssetForTarget` → null). Both of those end in "reconnect and retry",
  * and on this host that instruction is not merely unhelpful, it is FALSE: there
- * is nothing to fetch, ever, so reconnecting settles nothing and the same toast
- * returns on every activation for good.
+ * is nothing to fetch while this pin stands, so reconnecting settles nothing
+ * and the same toast returns on every activation until the pin moves. ("While
+ * this pin stands" rather than "ever" since `HOSTS_WITHOUT_RELEASE_ASSET`: a
+ * host can now be assetless on ONE release and served by the next. Nothing in
+ * the wording turns on the difference — the extension only ever downloads the
+ * pinned release, so the customer's position is the same either way.)
  *
  * These NAME `alpSdk.cliPath`, which the two above deliberately withhold, and
  * that is a decision rather than an oversight. The suppression is #389's:
@@ -988,8 +1025,42 @@ function summarize(kind: CliExitKind, envelope: AlpEnvelope | null): string {
   }
 }
 
+/**
+ * The sentence for a host that has no prebuilt `tan` — BOTH ways
+ * `releaseAssetForTarget` returns null, because the customer's position and
+ * their remedy are identical in the two: a host that is not in `TARGETS` at all
+ * (no tan release has ever shipped for it), and a host the PINNED release
+ * publishes no asset for (`HOSTS_WITHOUT_RELEASE_ASSET`).
+ *
+ * It names the HOST and the RELEASE on purpose. Without them the toast reads as
+ * "this vendor's tooling is broken on my machine"; with them it reads as a
+ * limit of one tan version, which is what it is — the hosts a PyInstaller
+ * release cannot build are expected back on a later one. This is often a
+ * customer's first contact with the toolchain, and a bare download failure from
+ * a URL the extension itself constructed is the worst possible first sentence.
+ *
+ * The opening is load-bearing beyond the prose: `classifyUnavailable` matches
+ * `^No prebuilt tan CLI` to reach `noPrebuilt`, and `unavailablePlan`
+ * (`src/notify/service.ts`) renders this VERBATIM in the toast. So it carries no
+ * path, no URL and no errno — see `CACHED_CLI_UNVERIFIED` for the guard that
+ * would otherwise demote it into the output channel.
+ */
+export function noPrebuiltMessage(
+  platform: NodeJS.Platform,
+  arch: string,
+  version: string = SUPPORTED_CLI_VERSION,
+): string {
+  return (
+    `No prebuilt tan CLI for ${platform}/${arch} — tan v${version} publishes ` +
+    "binaries for other platforms only, so this is a limit of that release " +
+    "rather than a broken install. Point alpSdk.cliPath at a tan you build " +
+    "locally or install with pip."
+  );
+}
+
 /** The release asset (and download URL) for a host, or null when the host has
- *  no prebuilt binary — caller should point `alpSdk.cliPath` at a dev build.
+ *  no prebuilt binary — caller should point `alpSdk.cliPath` at a dev build,
+ *  and `noPrebuiltMessage` above is the sentence that says so.
  *  tan-cli ships a RAW binary per target (not an archive): `tan-<triple>` on
  *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`.
  *  `checksumsUrl` is the same release's `checksums.txt`, which every tagged tan
@@ -997,14 +1068,26 @@ function summarize(kind: CliExitKind, envelope: AlpEnvelope | null): string {
  *  so the digest a download is checked against always belongs to the release the
  *  bytes came from. The asset names are contract-frozen on the producer side
  *  (tan-cli's `release.yml` names this function), which is what makes the
- *  filename lookup in that file reliable. */
+ *  filename lookup in that file reliable.
+ *
+ *  TWO reasons for null, and they are different facts: the host has no triple
+ *  at all, or `version` is a release that publishes nothing for it. `gaps` is a
+ *  parameter rather than a direct read of the module constant so that the two
+ *  readers who must NOT see the declared gaps can say so — `check-cli-pin.mjs`
+ *  passes `{}` to get the URL it has to probe in order to VERIFY the
+ *  declaration, and the unit tests drive a release with gaps without waiting
+ *  for one to be pinned. */
 export function releaseAssetForTarget(
   platform: NodeJS.Platform,
   arch: string,
   version: string = SUPPORTED_CLI_VERSION,
+  gaps: Readonly<
+    Record<string, readonly string[]>
+  > = HOSTS_WITHOUT_RELEASE_ASSET,
 ): ReleaseAsset | null {
-  const target = TARGETS[`${platform}/${arch}`];
-  if (!target) {
+  const host = `${platform}/${arch}`;
+  const target = TARGETS[host];
+  if (!target || (gaps[version] ?? []).includes(host)) {
     return null;
   }
   const tag = `v${version}`;
