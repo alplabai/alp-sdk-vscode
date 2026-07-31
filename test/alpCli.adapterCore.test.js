@@ -147,7 +147,7 @@ test("resolveAlpBinary: the download is handed the checksum spec for the SAME re
   // Without this the binary is fetched and executed having verified nothing —
   // and a dropped 4th argument is a silent, invisible regression at runtime.
   assert.ok(calls.verify, "downloadCli must pass a checksum spec");
-  assert.equal(calls.verify.assetName, "tan-x86_64-unknown-linux-musl");
+  assert.equal(calls.verify.assetName, "tan-x86_64-unknown-linux-gnu");
   assert.ok(calls.verify.checksumsUrl.endsWith("/checksums.txt"));
   // Same release tag as the binary URL: a digest from another release proves
   // nothing about these bytes.
