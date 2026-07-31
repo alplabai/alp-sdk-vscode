@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **A tan release candidate now compares by number, so an installed `rc9` is no
+  longer read as newer than a pinned `rc10`.** Two pre-releases on the same
+  `MAJOR.MINOR.PATCH` were compared as plain text, which is correct up to `rc9`
+  and silently wrong from `rc10` on: the older binary looked ahead of the pin,
+  nothing reported it as behind, and the stale-cache self-heal never ran — no
+  error, no prompt, the user simply stayed on the older release candidate. The
+  single comparison every skew decision routes through now walks the
+  pre-release identifier by identifier, comparing digit runs as numbers, so
+  both spellings tan may tag (`0.5.0-rc1` and `0.5.0-rc.1`) order correctly and
+  compare equal to each other. Ordering against a finished release is
+  unchanged: a release candidate is still older than its own release.
+
 - **A `tan` release that publishes no binary for your platform is now an
   explained state instead of a download that 404s.** Which platforms a release
   ships is a property of that release — a PyInstaller-built `tan` cannot
