@@ -45,8 +45,29 @@ const VENDORED_INSTALLERS = {
     upstream:
       "51449e2d01822207a66d71ea8db8e23a3899f323e986c752a3a70086b1a651ba",
     vendored:
-      "51449e2d01822207a66d71ea8db8e23a3899f323e986c752a3a70086b1a651ba",
-    deviations: [],
+      "8e6fce1801e80f9b5642b80360e15a315f11a020d4f6de29436e92201336af2c",
+    // Upstream v0.4.0 maps Linux to `unknown-linux-musl`, correct for the Rust
+    // releases it shipped against. From v0.5.0 the binary is a PyInstaller
+    // freeze, which cannot produce musl's static artefact -- a musl freeze is
+    // dynamically linked against /lib/ld-musl-x86_64.so.1 and would not start
+    // on Ubuntu/Debian/Fedora at all (alp-sdk-vscode#447, mirroring the
+    // `TARGETS` rationale in src/alpCli/service.ts, #444). -gnu has published
+    // at every tan-cli tag since v0.1.0, so the pre-v0.3.0 musl-floor note this
+    // also removes no longer applies to anything. A future re-vendor at the
+    // tan-cli tag that ships this fix upstream should delete both entries.
+    deviations: [
+      {
+        upstream:
+          '# musl (static): no glibc floor, runs on any distro; TLS is rustls/ring so\n# there are no extra runtime deps either. Only published from tan-cli\n# v0.3.0 onward — see the --version 404 note below.\nLinux) os_part="unknown-linux-musl" ;;',
+        vendored:
+          '# gnu, NOT musl. From v0.5.0 the binary is a PyInstaller freeze of the Python\n# port, and PyInstaller cannot produce the "static, runs on any libc" artefact\n# the old Rust -musl target did — a musl freeze is dynamically linked against\n# /lib/ld-musl-x86_64.so.1 and runs ONLY on musl distros. -gnu has been\n# published at every tan-cli tag since v0.1.0, so this needs no version floor.\nLinux) os_part="unknown-linux-gnu" ;;',
+      },
+      {
+        upstream:
+          '\techo "install.sh: download failed: ${url}" >&2\n\t# Only name the musl floor when the requested tag is actually below it --\n\t# a DNS/proxy/500 failure, or a perfectly valid >=v0.3.0 tag, gets no\n\t# invented explanation.\n\tif [ "$os_part" = "unknown-linux-musl" ]; then\n\t\tcase "$VERSION" in\n\t\tv0.0.* | v0.1.* | v0.2.*)\n\t\t\techo "install.sh: note — Linux musl assets only exist from v0.3.0 onward; ${VERSION} predates that and has no ${asset} asset." >&2\n\t\t\t;;\n\t\tesac\n\tfi\n\texit 1\nfi',
+        vendored: '\techo "install.sh: download failed: ${url}" >&2\n\texit 1\nfi',
+      },
+    ],
   },
   "install.ps1": {
     upstream:

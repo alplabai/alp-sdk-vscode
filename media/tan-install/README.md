@@ -53,10 +53,18 @@ did here, so the fix worth making is the one upstream is also likely to hold.
 these same two substitutions; if the next release ships it, delete this
 deviation rather than carrying it forward.)
 
-`install.sh` has no deviations; it is byte-identical to upstream `v0.4.0`.
+## Declared deviation: `install.sh` maps Linux to `-gnu`, not upstream `v0.4.0`'s `-musl`
 
-> An earlier revision of this file claimed a "known, intentional divergence" in
-> `install.sh` — an `unknown-linux-musl` Linux asset against an upstream
-> `unknown-linux-gnu`. That is no longer true: upstream adopted `musl`, and the
-> two files now agree byte for byte. The claim outlived its subject because
-> nothing tied it to a check, which is what the sha256 pin above is for.
+Upstream `v0.4.0` maps Linux to `unknown-linux-musl`, correct for the Rust
+releases it shipped against at the time. From tan-cli v0.5.0 the binary is a
+PyInstaller freeze of the Python port, which cannot produce musl's static
+artefact — a musl freeze is dynamically linked against
+`/lib/ld-musl-x86_64.so.1` and does not start on Ubuntu/Debian/Fedora at all.
+`-gnu` has published at every tan-cli tag since `v0.1.0`, so this needs no
+version floor the way the removed pre-`v0.3.0` musl note did.
+
+The test declares and enforces this deviation the same way as `install.ps1`'s,
+below: it reverse-applies the recorded substitution and requires the result to
+hash to the `v0.4.0` upstream value. When tan-cli ships this fix upstream (its
+own `install.sh` already carries it on the Python release branch, ahead of a
+tag), re-vendor and delete this entry rather than carrying it forward.

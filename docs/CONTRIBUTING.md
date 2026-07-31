@@ -118,7 +118,7 @@ Download the pinned raw binary for your host target from the
 - name: Install tan CLI
   run: |
     curl -L -o /usr/local/bin/tan \
-      https://github.com/alplabai/tan-cli/releases/download/v0.3.0/tan-x86_64-unknown-linux-musl
+      https://github.com/alplabai/tan-cli/releases/download/v0.3.0/tan-x86_64-unknown-linux-gnu
     chmod +x /usr/local/bin/tan
 
 - name: Validate board config
@@ -135,9 +135,9 @@ unpack step:
 # On the connected machine, grab the asset for the target platform from the
 # GitHub release (tag v<version>):
 #   https://github.com/alplabai/tan-cli/releases
-#   tan-<triple>[.exe]   (e.g. tan-x86_64-unknown-linux-musl)
+#   tan-<triple>[.exe]   (e.g. tan-x86_64-unknown-linux-gnu)
 
 # On the air-gapped machine, put `tan` on PATH:
-install -m 0755 tan-x86_64-unknown-linux-musl /usr/local/bin/tan
+install -m 0755 tan-x86_64-unknown-linux-gnu /usr/local/bin/tan
 tan --help
 ```

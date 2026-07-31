@@ -23,15 +23,15 @@ asset (no `.zip` / `.tar.gz`). Download the one for your host from the
 
 ```bash
 # Pick the asset for your host target (tag v<version>):
-#   tan-x86_64-unknown-linux-musl      (Linux x64, static)
-#   tan-aarch64-unknown-linux-musl     (Linux arm64, static)
+#   tan-x86_64-unknown-linux-gnu       (Linux x64)
 #   tan-aarch64-apple-darwin           (macOS Apple silicon)
 #   tan-x86_64-pc-windows-msvc.exe     (Windows x64)
-# These two run tan but CANNOT build firmware -- see "Host support" below:
+# This one runs tan but CANNOT build firmware -- see "Host support" below:
 #   tan-x86_64-apple-darwin            (macOS Intel)
-#   tan-aarch64-pc-windows-msvc.exe    (Windows arm64)
+# Not published for a PyInstaller-built tan (from v0.5.0 on) -- see Host support:
+#   Linux arm64, Windows arm64
 curl -L -o /usr/local/bin/tan \
-  https://github.com/alplabai/tan-cli/releases/download/v0.3.0/tan-x86_64-unknown-linux-musl
+  https://github.com/alplabai/tan-cli/releases/download/v0.3.0/tan-x86_64-unknown-linux-gnu
 chmod +x /usr/local/bin/tan
 tan --help
 ```
@@ -58,15 +58,15 @@ cannot produce an image no matter how `tan` got there.
 
 | Host                | `tan` asset                        | Zephyr SDK 1.0.1 host build | Firmware builds?                                              |
 | ------------------- | ---------------------------------- | --------------------------- | ------------------------------------------------------------- |
-| Linux x64           | `tan-x86_64-unknown-linux-musl`    | `linux-x86_64`              | Yes                                                            |
-| Linux arm64         | `tan-aarch64-unknown-linux-musl`   | `linux-aarch64`             | Yes                                                            |
+| Linux x64           | `tan-x86_64-unknown-linux-gnu`     | `linux-x86_64`              | Yes                                                            |
+| Linux arm64         | none published from v0.5.0 on¹     | `linux-aarch64`             | **No** from v0.5.0 on¹                                         |
 | macOS Apple silicon | `tan-aarch64-apple-darwin`         | `macos-aarch64`             | Yes                                                            |
 | Windows x64         | `tan-x86_64-pc-windows-msvc.exe`   | `windows-x86_64`            | Yes                                                            |
 | Windows on ARM      | `tan-aarch64-pc-windows-msvc.exe`  | never published             | **No** — `wsl --install`, then run `tan` inside the distro     |
 | macOS Intel         | `tan-x86_64-apple-darwin`          | dropped in SDK 1.0.0        | **No** — build on a `linux-x86_64` VM, container, or remote box |
 | Linux armhf         | none published                     | none published              | **No** — move to a `linux-x86_64` / `linux-aarch64` host        |
 
-Two notes worth having before you pick a machine:
+Three notes worth having before you pick a machine:
 
 - **Intel Mac.** The SDK published `macos-x86_64` through **0.17.4** and dropped
   it in **1.0.0**; the pin is 1.0.1. `macos-aarch64` is not a substitute —
@@ -78,6 +78,12 @@ Two notes worth having before you pick a machine:
   just not the native one. Linux armhf has none: there is no `tan` asset and no
   Zephyr SDK host build, so **building `tan` from source does not help** — it
   would run and then have no toolchain to hand `west`.
+- ¹ **Linux arm64.** Through `tan` v0.4.x (Rust) both `-gnu` and `-musl` Linux
+  arm64 assets were published. From `tan` v0.5.0 the binary is a PyInstaller
+  freeze of the Python port, and PyInstaller cannot cross-compile — the
+  release publishes no arm64 Linux asset at all, so this host has no prebuilt
+  `tan` regardless of the Zephyr SDK supporting it. Build from source
+  (`pip install`) on an arm64 Linux machine instead.
 
 From `tan` v0.4.0 on, `tan doctor` reports this as a `zephyrSdkHost` check with
 a per-host remedy. Earlier builds omit the check — an older `tan` saying nothing

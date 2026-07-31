@@ -36,10 +36,12 @@ done
 os="$(uname -s)"
 case "$os" in
 Darwin) os_part="apple-darwin" ;;
-# musl (static): no glibc floor, runs on any distro; TLS is rustls/ring so
-# there are no extra runtime deps either. Only published from tan-cli
-# v0.3.0 onward — see the --version 404 note below.
-Linux) os_part="unknown-linux-musl" ;;
+# gnu, NOT musl. From v0.5.0 the binary is a PyInstaller freeze of the Python
+# port, and PyInstaller cannot produce the "static, runs on any libc" artefact
+# the old Rust -musl target did — a musl freeze is dynamically linked against
+# /lib/ld-musl-x86_64.so.1 and runs ONLY on musl distros. -gnu has been
+# published at every tan-cli tag since v0.1.0, so this needs no version floor.
+Linux) os_part="unknown-linux-gnu" ;;
 *) echo "install.sh: unsupported OS '$os' — on Windows use install.ps1" >&2; exit 1 ;;
 esac
 
@@ -74,16 +76,6 @@ else
 fi
 if [ "$dl_ok" = "0" ]; then
 	echo "install.sh: download failed: ${url}" >&2
-	# Only name the musl floor when the requested tag is actually below it --
-	# a DNS/proxy/500 failure, or a perfectly valid >=v0.3.0 tag, gets no
-	# invented explanation.
-	if [ "$os_part" = "unknown-linux-musl" ]; then
-		case "$VERSION" in
-		v0.0.* | v0.1.* | v0.2.*)
-			echo "install.sh: note — Linux musl assets only exist from v0.3.0 onward; ${VERSION} predates that and has no ${asset} asset." >&2
-			;;
-		esac
-	fi
 	exit 1
 fi
 chmod +x "$tmp"
