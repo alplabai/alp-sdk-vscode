@@ -3,7 +3,7 @@
   "displayName": "Alp IDE",
   "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for Alp SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "AlpLabAI",
   "license": "Apache-2.0",
   "repository": {
