@@ -50,9 +50,8 @@ export function warnIfWestManifestDangling(sdkRoot: string | null): boolean {
     severity: "warning",
     channel: "toast",
     message: westManifestWarning(status) as string,
-    // `tan bootstrap`, NOT `tan doctor --build --fix`: the latter only
-    // bootstraps when its `workspace` check FAILS, and a workspace that
-    // exists but dangles passes that check — so it would repair nothing.
+    // `tan bootstrap` reconciles the manifest pointer (tan-cli #31) for a
+    // workspace that exists but dangles.
     actions: [{ id: "bootstrap" }],
   });
   return true;

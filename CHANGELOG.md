@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.1
+
+**Pre-release.** Continues `0.5`'s odd-minor pre-release channel —
+`release-vsix.yml` still publishes this build with `--pre-release`, reaching
+only Marketplace/Open VSX users opted into pre-release updates.
+
+- **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc2`, was `0.5.0-rc1`.** The
+  previous pin, `0.5.0-rc1`, is a published tag but was never the target of a
+  follow-up bump, so nobody on the pre-release channel actually received it.
+  `0.5.0-rc2` is the RC that fixes the venv resolver, the bootstrap
+  relocation, and the six dropped `doctor` checks. `HOSTS_WITHOUT_RELEASE_ASSET`
+  carries the identical `win32/arm64` / `linux/arm64` gap forward — rc2's
+  release matrix ships the same four assets as rc1, not a wider one.
+
+- **The Toolchain Doctor's build fix now runs `tan bootstrap`, not `tan doctor
+  --build --fix`.** The flag does not exist on the Python `tan` — it exits 2
+  with `No such option: --fix` and returns a `cli` usage envelope, not a
+  doctor envelope, so the fix path got neither a report nor a usable error.
+  `tan bootstrap` is what the flag was meant to trigger in the first place (it
+  only bootstraps when its own `workspace` check fails). tan-cli#295.
+
 ## 0.5.0
 
 **Pre-release.** `0.5` is an odd minor, so `release-vsix.yml` publishes this
