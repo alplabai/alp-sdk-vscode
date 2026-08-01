@@ -117,6 +117,13 @@ the Rust binary every prior release used.
   bootstrap` is what the flag was meant to trigger in the first place (it only
   bootstraps when its own `workspace` check fails). tan-cli#295.
 
+- **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc2`.** The previous pin,
+  `0.5.0-rc1`, is a published tag but was never the target of a follow-up
+  bump, so nobody on the pre-release channel actually received it.
+  `HOSTS_WITHOUT_RELEASE_ASSET` carries the identical `win32/arm64` /
+  `linux/arm64` gap forward — rc2's release matrix ships the same four assets
+  as rc1, not a wider one.
+
 ## 0.4.1
 
 - **New setting `alpSdk.tanCliDownloadConsent` (`ask` / `allow` / `deny`,
