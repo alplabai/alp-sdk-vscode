@@ -336,10 +336,10 @@ export function runInTerminal(options: {
    *  working directory" is a decision a caller states and a reviewer can see,
    *  never an omission. `undefined` reaches `ProcessExecution` as "inherit the
    *  extension host's own cwd", which on Windows is the VS Code INSTALL
-   *  DIRECTORY; a command that writes where it runs (`tan bootstrap`, `tan
-   *  doctor --build --fix` — both create a venv + west workspace) then
-   *  bootstraps there. Two `runAlpInTerminal` sites shipped with `cwd` simply
-   *  left off, which is why this is not optional. */
+   *  DIRECTORY; a command that writes where it runs (`tan bootstrap` —
+   *  creates a venv + west workspace) then bootstraps there. Two
+   *  `runAlpInTerminal` sites shipped with `cwd` simply left off, which is
+   *  why this is not optional. */
   cwd: string | undefined;
   env?: Record<string, string>;
 }): void {

@@ -62,8 +62,8 @@ export interface ToolVersions {
 /**
  * The `runInTerminal` task `name` EVERY bootstrap dispatch runs under —
  * `alp.installDependencies`/`alp.bootstrap` (`tan bootstrap`, src/bootstrap.ts)
- * and the Toolchain Doctor's build fix (`tan doctor --build --fix`,
- * src/toolchain.ts). Both deliberately share ONE name so `runInTerminal`'s
+ * and the Toolchain Doctor's build fix (`tan bootstrap`, src/toolchain.ts).
+ * Both deliberately share ONE name so `runInTerminal`'s
  * reservation refuses a second concurrent bootstrap against the same venv
  * (issue #146); that shared name is also what lets a single probe
  * (`bootstrapRunning`, src/ideHub/vscodeAdapter.ts) answer "is a bootstrap

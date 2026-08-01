@@ -2255,9 +2255,9 @@ export async function runAlpCommand(
  * to point `alpSdk.cliPath` at a build.
  *
  * `cwd` is a REQUIRED key (its value may still be `undefined`), and that is a
- * data-safety guard, not tidiness. Several `tan` subcommands WRITE where they
- * run — `bootstrap` and `doctor --build --fix` create a venv and a west
- * workspace in the working directory. An OMITTED `cwd` reached
+ * data-safety guard, not tidiness. `tan bootstrap` WRITES where it runs — it
+ * creates a venv and a west workspace in the working directory. An OMITTED `cwd`
+ * reached
  * `new vscode.ProcessExecution(…, { cwd: undefined })`, so the child inherited
  * the extension host's own directory — on Windows the VS Code install
  * directory — and bootstrapped THERE. Two call sites shipped that way
