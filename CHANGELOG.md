@@ -1,6 +1,71 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
+
+**Pre-release.** `0.5` is an odd minor, so `release-vsix.yml` publishes this
+build with `--pre-release` — it reaches only Marketplace/Open VSX users opted
+into pre-release updates. Stable users stay on the even-minor `0.4.x` line,
+pinned to a Rust `tan`, untouched. This is the first extension build that pins
+a **Python** `tan` (`alplabai/tan-cli`'s PyInstaller-freeze port) instead of
+the Rust binary every prior release used.
+
+- **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc1`, the first Python `tan`
+  release candidate.** Its own commit, deliberately not combined with this
+  extension's version bump — the two are different numbers that happen to
+  look alike. The items below are its direct prerequisites.
+
+- **`TARGETS`' `linux/x64` now resolves `x86_64-unknown-linux-gnu`, not
+  `-musl`.** A PyInstaller Linux freeze is musl-*dynamic* (its bootloader
+  declares ELF interpreter `/lib/ld-musl-x86_64.so.1`), not the static
+  artefact the Rust `-musl` build was, so it does not start on
+  Ubuntu/Debian/Fedora at all — `-gnu` is the only usable Linux asset a Python
+  `tan` release publishes. It is built inside `python:3.12-slim-bullseye`
+  (Debian 11, glibc 2.31); the measured floor over the PyInstaller payload is
+  `GLIBC_2.30`, for the same reason the Rust `-musl` asset was chosen: to run
+  on the widest range of distros without a version floor surprise. (Not a
+  `manylinux2014` container — static CPython there fails PyInstaller's own
+  build.) `win32/arm64` and `linux/arm64` are unaffected by this change and
+  remain declared gaps (below).
+
+- **`win32/arm64` and `linux/arm64` are now declared unpublished for
+  `0.5.0-rc1`, not silently expected to resolve.** `alplabai/tan-cli`'s
+  PyInstaller build cannot cross-compile, and its release publishes exactly
+  four assets (Windows x64, macOS x64/arm64, Linux x64) — none for either
+  arm64 host. `HOSTS_WITHOUT_RELEASE_ASSET["0.5.0-rc1"]` records both, so the
+  "no prebuilt tan CLI for this platform" message (below) fires instead of a
+  download that 404s, and `scripts/check-cli-pin.mjs` verifies the declaration
+  against the real release rather than trusting it.
+
+- **`install.sh`/`install.ps1` (the standalone global-install scripts bundled
+  under `media/tan-install/`) re-vendor to tan-cli `v0.4.1` and stop naming a
+  Linux `-musl` asset a Python `tan` release does not publish.** `v0.4.1`
+  shipped a checksum-verification rework of both scripts (237/169 lines) that
+  the prior `v0.4.0` pin predates — installing via the global command put an
+  **unverified** binary on PATH while the extension's own managed download
+  already refused one (#386/#389). On top of that base, `install.sh`'s Linux
+  case now maps to `-gnu`, with a pre-download refusal on an actual musl host
+  (Alpine): without it, the script would download the `-gnu` asset, verify its
+  sha256 (proves the bytes match what was published, not that they can
+  execute on this libc), install it, and exit 0 having silently produced a
+  binary that can never run. Both scripts' vendored-parity test
+  (`test/alpCli.installTanCli.test.js`) declares all of this as tracked
+  deviations from the upstream `v0.4.1` files, reverse-applied and re-hashed
+  against the real upstream bytes — the sha256 parity gate stays honest about
+  the edits rather than silently accepting a hand change. Every doc naming
+  `tan-x86_64-unknown-linux-musl`, and every comment arguing the old
+  musl-over-gnu rationale, now names `-gnu` and explains why a PyInstaller
+  freeze cannot use musl instead.
+
+- **`installTanCliGlobally` ("Install tan CLI (global)") now short-circuits a
+  declared-gap host instead of running the installer script and letting it
+  404.** The vendored scripts pick an asset from `uname -m` alone — they know
+  nothing about `HOSTS_WITHOUT_RELEASE_ASSET` — so `win32/arm64` and
+  `linux/arm64` used to split from the managed download's behaviour: that
+  path already explained the gap with no network call, but this command ran
+  the script anyway (`install.ps1`: a raw `Invoke-WebRequest` exception;
+  `install.sh`: `download failed: ...`, exit 1). Now shows the identical
+  "no prebuilt tan CLI for your platform" message and remedy
+  (`alpSdk.cliPath`) either way.
 
 - **A tan release candidate now compares by number, so an installed `rc9` is no
   longer read as newer than a pinned `rc10`.** Two pre-releases on the same

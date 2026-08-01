@@ -234,12 +234,17 @@ jobs:
   # docs/EXTENSION_CLI_INTEGRATION.md §5 states the end state — platform-specific
   # VSIXes for "`--target darwin-arm64`, and eventually the other five targets
   # `tan-cli` publishes" — with darwin-arm64 as the first one shipped. That
-  # "five" is stale; the release is what counts, and tan-cli v0.3.1 publishes
-  # EIGHT raw target binaries (aarch64/x86_64 × apple-darwin, pc-windows-msvc,
-  # unknown-linux-gnu, unknown-linux-musl) alongside checksums.txt. Eight is the
-  # authoritative number throughout this comment: one shipped, SEVEN to go.
-  # Expanding this is a matter of adding jobs, not of missing assets. (Correcting
-  # the doc is a separate change — not this one.)
+  # "five" is stale, and so was the "eight" this comment used to cite (from
+  # tan-cli v0.3.1, a Rust release): `TARGETS` (src/alpCli/service.ts) maps
+  # SIX platform/arch combos, so six is the ceiling for jobs to add, one
+  # shipped, FIVE to go — but the release actually pinned, not the ceiling, is
+  # what decides whether a job has an asset to bundle. A Python `tan` release
+  # (v0.5.0 on, a PyInstaller freeze that cannot cross-compile) publishes only
+  # FOUR raw target binaries (x86_64 × pc-windows-msvc/apple-darwin, aarch64 ×
+  # apple-darwin, and Linux x64 as unknown-linux-gnu only — no musl, no arm64
+  # Linux or Windows), declared in `HOSTS_WITHOUT_RELEASE_ASSET`. A job added
+  # for one of those two undeclared hosts would have nothing to bundle against
+  # the current pin. (Correcting the doc is a separate change — not this one.)
   #
   # Until then, every Windows, Linux and darwin-x64 install ships binary-less and
   # acquires `tan` through the universal VSIX's normal resolver chain

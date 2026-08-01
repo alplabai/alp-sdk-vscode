@@ -52,6 +52,7 @@ import {
   isNativeTanVersionOutput,
   isUnverifiableCache,
   isUnverifiableCacheInUse,
+  noPrebuiltMessage,
   parseTanVersion,
   posixLoginShellCommand,
   proxyEnvOverrides,
@@ -2069,6 +2070,33 @@ export async function updateAlpCli(
  * the ladder resolves to. Both are required.
  */
 export function installTanCliGlobally(context: vscode.ExtensionContext): void {
+  // The vendored installers pick an asset from `uname -m` / `%PROCESSOR_
+  // ARCHITECTURE%` alone -- they know nothing about `TARGETS` or
+  // `HOSTS_WITHOUT_RELEASE_ASSET`. Without this check, the two declared-gap
+  // hosts (e.g. `linux/arm64` for tan v0.5.0-rc1) split from the managed
+  // download's behaviour: that path already returns the same `noPrebuiltMessage`
+  // plan below with no network call, but this command would run the script
+  // anyway and let it 404 -- `install.ps1` as a raw `Invoke-WebRequest`
+  // exception under `$ErrorActionPreference = "Stop"`, `install.sh` as
+  // `download failed: .../tan-aarch64-unknown-linux-gnu`, exit 1 -- one
+  // sentence the customer never sees versus a bare terminal failure for the
+  // same fact. Checked BEFORE the bundled-script existence guard below: if
+  // there is nothing to download for this host, whether the script itself is
+  // present is beside the point.
+  if (!releaseAssetForTarget(process.platform, process.arch)) {
+    notifyAsync(
+      planFailure({
+        operation: "Installing the tan CLI",
+        // Same sentence and remedy as the managed download's declared-gap
+        // plan (`noPrebuiltPlan`, above) -- names the host and the pinned
+        // release, and says the gap belongs to that release, not to this
+        // install.
+        cause: noPrebuiltMessage(process.platform, process.arch),
+        actions: [{ id: "openSettings", arg: "alpSdk.cliPath" }],
+      }),
+    );
+    return;
+  }
   const scriptDir = path.join(context.extensionPath, "media", "tan-install");
   const isWindows = process.platform === "win32";
   const script = path.join(scriptDir, isWindows ? "install.ps1" : "install.sh");

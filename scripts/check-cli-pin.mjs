@@ -20,8 +20,11 @@
 //
 // ── AND THE OTHER DIRECTION ────────────────────────────────────────────────
 // Not every release publishes all six. A PyInstaller-built tan cannot
-// cross-compile, so it ships four (alplabai/tan-cli#271), and the extension
-// declares which hosts that costs in `HOSTS_WITHOUT_RELEASE_ASSET`
+// cross-compile, and this tag's build matrix (alplabai/tan-cli#252) scopes to
+// four assets -- a release decision, not a platform one: aarch64 GitHub-hosted
+// runners exist (windows-11-arm, ubuntu-24.04-arm) and tan-cli already builds
+// on them elsewhere. The extension declares which hosts that costs in
+// `HOSTS_WITHOUT_RELEASE_ASSET`
 // (src/alpCli/service.ts) so it can explain itself offline instead of
 // constructing a URL that 404s. A DECLARATION IS A CLAIM ABOUT A RELEASE, and
 // this is the only place it ever meets that release — so it is probed too, and

@@ -55,7 +55,7 @@ import {
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
  *  test/tanContract.test.js tracks that, and moved with this pin. */
 
-export const SUPPORTED_CLI_VERSION = "0.4.1";
+export const SUPPORTED_CLI_VERSION = "0.5.0-rc1";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -93,9 +93,13 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * target triple" — and its answer does not change from release to release.
  * WHICH of those targets a release actually ships is a property OF THAT
  * RELEASE, and the two stopped being the same thing at the Python port:
- * PyInstaller cannot cross-compile and GitHub's standard runner pool has no
- * aarch64 Windows or Linux host, so a PyInstaller-built tan publishes four
- * assets where the cargo-zigbuild ones published eight (alplabai/tan-cli#271).
+ * PyInstaller cannot cross-compile, so each asset needs a runner that IS that
+ * host, and `release.yml`'s build matrix (alplabai/tan-cli#252) scopes to four
+ * for this tag — Windows x64, macOS x64/arm64, Linux x64 as `-gnu` — where the
+ * cargo-zigbuild releases published eight. NOT a platform limit: aarch64
+ * runners exist (`windows-11-arm`, `ubuntu-24.04-arm` are current GitHub-hosted
+ * labels, proven working in tan-cli's `python-binaries.yml`) and a later tag
+ * can add them without anything here assuming otherwise.
  * Deleting those hosts from `TARGETS` instead would conflate the two facts, and
  * would also drop them from `scripts/check-cli-pin.mjs`'s probe list, which is
  * derived from that table — a genuinely failed upload for such a host would
@@ -104,8 +108,7 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * Keyed by version, never a floor, for the same reason
  * `RELEASES_PREDATING_CONTRACT_ASSET` is a list: a pin bump must not silently
  * inherit the previous release's gaps. An unlisted version is expected to
- * publish every target in `TARGETS`, full stop — which is the state TODAY, so
- * this table is empty and no host loses the download it has now.
+ * publish every target in `TARGETS`, full stop.
  *
  * IT CANNOT ROT INTO A LIE, because nothing trusts it: `check-cli-pin.mjs`
  * HEAD-probes every `TARGETS` host against the pinned release on every CI run
@@ -114,10 +117,27 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * asset 404s is the missing-asset failure that gate has always caught. A later
  * tan that publishes the missing hosts again therefore reds CI until the entry
  * is removed, instead of quietly leaving those customers on `alpSdk.cliPath`.
+ *
+ * `"0.5.0-rc1"` is declared ahead of the pin actually moving to it (#446):
+ * `release.yml`'s build matrix (alplabai/tan-cli#252) publishes exactly four
+ * assets for that tag (Windows x64, macOS x64/arm64, Linux x64 as `-gnu`) and
+ * none for `win32/arm64` or `linux/arm64` — a SCOPE decision for this tag, not
+ * a platform limit: `windows-11-arm` and `ubuntu-24.04-arm` are real,
+ * currently-labelled GitHub-hosted runners and tan-cli's own
+ * `python-binaries.yml` already builds and verifies both arches on them, this
+ * release's matrix just doesn't include them. Declaring the gap now, before
+ * `SUPPORTED_CLI_VERSION` names this tag (two commits later), is harmless in
+ * THIS commit alone — the entry is looked up by the ACTIVE pin, so nothing
+ * reads it until that lands — and means `check-cli-pin.mjs` has an answer to
+ * probe against the moment the tag and the pin move together, instead of two
+ * separate PRs racing to add a declaration and a pin without either being
+ * wrong alone.
  */
 export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   Record<string, readonly string[]>
-> = {};
+> = {
+  "0.5.0-rc1": ["win32/arm64", "linux/arm64"],
+};
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
@@ -131,22 +151,39 @@ const CHECKSUMS_ASSET = "checksums.txt";
 export const TARGETS: Readonly<Record<string, string>> = {
   "win32/x64": "x86_64-pc-windows-msvc",
   "win32/arm64": "aarch64-pc-windows-msvc",
-  // musl (static), not gnu: the -gnu assets carry a glibc floor and break on
-  // older distros. -musl is fully static, so it runs on any distro/libc.
+  // ── gnu, NOT musl. Do not "restore" -musl here (#444) ──
   //
-  // Two numbers, and they are NOT the same one (this comment used to conflate
-  // them and both figures were wrong — see #370):
-  //   - zigbuild PIN, from tan-cli's release.yml:  x86_64-unknown-linux-gnu.2.31
-  //   - MEASURED floor of the shipped v0.3.1 -gnu asset (`readelf -V`): GLIBC_2.30
-  // The pin caps which symbols may be used; the binary needs nothing above 2.30.
-  // Measured: runs on debian:11 (2.31), ubuntu:22.04 (2.35), ubuntu:24.04 (2.39);
-  // fails on ubuntu:18.04 (2.27) with `version 'GLIBC_2.30' not found`. So the
-  // break is roughly pre-Ubuntu-20.04 / pre-Debian-11, NOT at 2.31, and the error
-  // never says 2.39. -musl ran on all four.
+  // This entry is coupled to WHICH tan is pinned, and the right answer flips
+  // with it. A RUST tan needs `-musl`; a PYTHON tan cannot use it. The comment
+  // that stood here argued the musl case well, and for the Rust assets it was
+  // right — what changed is the artefact, not the reasoning about it, so read
+  // the pin before touching this.
   //
-  // TLS is rustls/ring, so musl needs no extra runtime deps. musl assets only
-  // exist from tan-cli v0.3.0 on — see SUPPORTED_CLI_VERSION.
-  "linux/x64": "x86_64-unknown-linux-musl",
+  // 1. `-musl` is not a fallback, it is unusable. A PyInstaller musl freeze is
+  //    musl-DYNAMIC, not static: the bootloader in
+  //    `pyinstaller-6.21.0-py3-none-musllinux_1_1_x86_64.whl`
+  //    (`PyInstaller/bootloader/Linux-64bit-intel-musl/run`) declares ELF
+  //    interpreter `/lib/ld-musl-x86_64.so.1`, so it needs musl libc at that
+  //    path and does not start on Ubuntu/Debian/Fedora at all. Onefile mode
+  //    dlopens libpython, so a fully static bootloader is not reachable either.
+  //    A `-musl` Python asset would be strictly worse than the glibc floor musl
+  //    was picked to dodge.
+  //
+  // 2. The floor is low because of WHERE the asset is frozen, not because gnu
+  //    is inherently portable. tan-cli freezes the Linux asset inside
+  //    `python:3.12-slim-bullseye` (glibc 2.31) and measures the real floor over
+  //    the PyInstaller payload: GLIBC_2.30. That container pin is load-bearing
+  //    and lives in tan-cli's release workflow — freeze on a newer base and the
+  //    floor rises with it, silently, with nothing here to notice. It is a
+  //    different number from the 2.31/2.39 story the old comment told, which
+  //    described the zigbuild-cross Rust asset and does not apply to this one.
+  //
+  // 3. It lands with the pin, not before. Flipping this while
+  //    SUPPORTED_CLI_VERSION still names a Rust tan regresses every Linux user
+  //    onto a glibc-floored asset that the musl mapping existed to avoid — the
+  //    cutover is #446. Note that `scripts/check-cli-pin.mjs` will NOT catch
+  //    that: Rust releases publish gnu AND musl, so the URL resolves either way.
+  "linux/x64": "x86_64-unknown-linux-gnu",
   "linux/arm64": "aarch64-unknown-linux-musl",
   "darwin/x64": "x86_64-apple-darwin",
   "darwin/arm64": "aarch64-apple-darwin",
