@@ -523,12 +523,19 @@ Two VSIX shapes ship side by side:
 
 - **Platform-specific VSIXes** (`--target darwin-arm64`, and eventually the
   other five `TARGETS` entries this extension resolves) embed `bin/tan[.exe]`
-  for that host. Note the two counts that are easy to conflate: `tan-cli`
-  publishes **eight** raw target assets, and this extension's `TARGETS` map
-  consumes **six** of them — a deliberate musl-over-gnu choice on Linux, not an
-  omission. The VSIX targets track the six we resolve, not the eight tan ships.
-  First run needs no network call, no GitHub reachability, no proxy config —
-  the `bundled` resolver source picks the binary up directly.
+  for that host. Note the counts, and that they now depend on which `tan` is
+  pinned: `TARGETS` always maps **six** `platform/arch` triples, but a Rust
+  `tan` release (through v0.4.x) publishes **eight** raw assets (gnu AND musl
+  per Linux arch) covering all six, while a Python `tan` release (v0.5.0 on,
+  a PyInstaller freeze) publishes **four** — Windows x64, both macOS arches,
+  and Linux x64 as `-gnu` only, never `-musl` (a PyInstaller musl freeze is
+  musl-*dynamic* and would not start on Ubuntu/Debian/Fedora, so `-gnu` is not
+  a downgrade here). The two triples a Python release does not cover
+  (`win32/arm64`, `linux/arm64`) are declared in `HOSTS_WITHOUT_RELEASE_ASSET`
+  (`src/alpCli/service.ts`), so the extension explains the gap instead of
+  attempting a download that 404s. First run needs no network call, no GitHub
+  reachability, no proxy config — the `bundled` resolver source picks the
+  binary up directly.
 - **The universal (binary-less) VSIX** keeps download-on-demand as the
   fallback. It is also the sideload / air-gapped artifact: a single package
   that works with any host once `alpSdk.cliPath` is pointed at a local build,

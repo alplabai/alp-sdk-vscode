@@ -19,7 +19,7 @@ Recommended command sequence:
 ```bash
 TAN_VERSION=v0.3.0
 curl -fL --retry 3 -o /usr/local/bin/tan \
-  "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-musl"
+  "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-gnu"
 chmod +x /usr/local/bin/tan
 tan validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
 tan generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
@@ -51,7 +51,7 @@ jobs:
       - name: Install the tan CLI
         run: |
           curl -fL --retry 3 -o /usr/local/bin/tan \
-            "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-musl"
+            "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-gnu"
           chmod +x /usr/local/bin/tan
 
       - name: Validate board config
@@ -104,7 +104,7 @@ tan_cli_verify:
     ALP_SDK_ROOT: "$CI_PROJECT_DIR/alp-sdk-upstream"
     TAN_VERSION: "v0.3.0"
   script:
-    - curl -fL --retry 3 -o /usr/local/bin/tan "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-musl"
+    - curl -fL --retry 3 -o /usr/local/bin/tan "https://github.com/alplabai/tan-cli/releases/download/${TAN_VERSION}/tan-x86_64-unknown-linux-gnu"
     - chmod +x /usr/local/bin/tan
     - tan validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
     - tan generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json

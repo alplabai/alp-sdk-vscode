@@ -52,12 +52,17 @@ Version format: `MAJOR.MINOR.PATCH` following semantic versioning.
 Extension releases are tagged and published to the VS Code Marketplace from this
 repo. The build CLI is released **separately** from
 [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli): a `v<version>` tag
-push there triggers its `release` workflow, which builds the eight per-target
-binaries (Windows x64/arm64, macOS x64/arm64, Linux x64/arm64 gnu, Linux
-x64/arm64 musl — musl published from v0.3.0 on; the extension downloads musl)
-and publishes each as a **raw** GitHub release asset
-(`tan-<triple>[.exe]`, no archive). The extension resolves the matching
-`v<version>` asset on activation; the tag scheme and asset names are a stable
+push there triggers its `release` workflow, which builds and publishes each
+target as a **raw** GitHub release asset (`tan-<triple>[.exe]`, no archive).
+Through v0.4.x (the Rust CLI) that is **eight** per-target binaries (Windows
+x64/arm64, macOS x64/arm64, Linux x64/arm64 gnu, Linux x64/arm64 musl). From
+v0.5.0 (the Python CLI, a PyInstaller freeze that cannot cross-compile) it is
+**four**: Windows x64, macOS x64/arm64, and Linux x64 as `-gnu` only — no
+Linux `-musl` (a PyInstaller musl freeze is musl-*dynamic* and would not start
+on Ubuntu/Debian/Fedora) and no arm64 Linux or Windows asset at all. The
+extension resolves the matching `v<version>` asset on activation and declares
+the two hosts a Python release does not cover in `HOSTS_WITHOUT_RELEASE_ASSET`
+(`src/alpCli/service.ts`); the tag scheme and asset names are a stable
 contract (see the `tan-cli` release-asset contract).
 
 The extension pins the `tan` version it targets (`SUPPORTED_CLI_VERSION` in
@@ -86,7 +91,13 @@ If a published **`tan` CLI** release is defective, the rollback lives in the
 corrected `v<version>` and update its release notes). Because the extension pins
 `SUPPORTED_CLI_VERSION`, hold or advance that pin to keep the extension on a
 known-good `tan` binary, and add an incident note to `COMPATIBILITY_RULES.md`.
-**Floor:** the pin cannot go below `v0.3.0` — the extension downloads the
-Linux musl asset (see `TARGETS` in `src/alpCli/service.ts`), and musl assets
-don't exist on any earlier tag; holding/rolling back below `v0.3.0` 404s the
-Linux download.
+**Floor:** while the pin targets a Python `tan` (from `v0.5.0-rc1` on), it
+cannot go below that tag — `win32/arm64` and `linux/arm64` have no asset at
+any Python release and must stay declared in `HOSTS_WITHOUT_RELEASE_ASSET`
+for whichever Python tag is pinned. Rolling back past `v0.5.0-rc1` to a Rust
+tag does NOT 404 the Linux download either way: Rust tags publish both `-gnu`
+and `-musl`, so `TARGETS`' `linux/x64` entry resolves regardless of which one
+it names. The real consequence of leaving it at `-gnu` against a Rust tag is
+the glibc floor `-musl` existed to avoid (see `src/alpCli/service.ts`), not a
+missing asset — revert it to `-musl` in lockstep to get that back, not to
+avoid a 404 that was never going to happen.

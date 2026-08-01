@@ -18,6 +18,9 @@ const {
   parseEnvelope,
   classifyOutcome,
   releaseAssetForTarget,
+  noPrebuiltMessage,
+  HOSTS_WITHOUT_RELEASE_ASSET,
+  TARGETS,
   expectedSha256,
   classifyUnavailable,
   binaryName,
@@ -37,6 +40,10 @@ const {
   launchConfigPlaceholders,
 } = require("../out/alpCli/service.js");
 const { resolutionInputFromDeps } = require("../out/alpCli/adapterCore.js");
+// The real planner, imported rather than mimicked: whether a customer sentence
+// survives to the toast is decided by `planFailure`'s leak guard, not by
+// reading it.
+const { planFailure } = require("../out/notify/service.js");
 
 /** The adapter source, whitespace-normalised. Two gates below are single
  *  expressions in the adapter (which imports `vscode`, so it can't be loaded
@@ -651,6 +658,67 @@ test("cliSkew is the single comparison: behind / same / ahead-patch / ahead-mino
   // isCliBehind is a thin read of it, with its legacy behaviour unchanged.
   assert.equal(isCliBehind("0.2.0", "0.1.14"), false);
   assert.equal(isCliBehind(null, "0.1.14"), false);
+});
+
+test("cliSkew orders pre-releases identifier-wise, numeric-suffix aware (#451)", () => {
+  // THE DECISION THIS PINS. tan's published prerelease precedent is
+  // `v0.4.0-rc1` -- no dot -- and under a LITERAL SemVer §11 read `rc1` is one
+  // alphanumeric identifier compared by ASCII, i.e. `rc10` < `rc9`: the same
+  // wrong answer as the plain string compare this replaces. So the comparison
+  // splits digit runs INSIDE an identifier and compares them numerically, and
+  // the dotless spelling is a first-class input rather than something a
+  // convention has to forbid. Every assertion below that names a dotless `rcN`
+  // FAILS under a literal §11 implementation.
+  //
+  // The reported failure (installed rc9 vs pinned rc10 reads as ahead, so the
+  // stale-cache self-heal never fires and the user silently stays on rc9):
+  assert.equal(cliSkew("0.5.0-rc9", "0.5.0-rc10"), "behind");
+  assert.equal(isCliBehind("0.5.0-rc9", "0.5.0-rc10"), true);
+  // ...and its mirror, so an rc10 install is not reported as behind an rc9 pin.
+  assert.equal(cliSkew("0.5.0-rc10", "0.5.0-rc9"), "ahead-patch");
+
+  // The cases that were already right stay right.
+  assert.equal(cliSkew("0.5.0-rc1", "0.5.0-rc2"), "behind");
+  assert.equal(cliSkew("0.5.0-rc2", "0.5.0-rc1"), "ahead-patch");
+  assert.equal(cliSkew("0.5.0-rc2", "0.5.0-rc10"), "behind");
+  assert.equal(cliSkew("0.5.0-rc10", "0.5.0-rc10"), "same");
+
+  // Both spellings, and ACROSS spellings: `rc1` and `rc.1` are one release
+  // written two ways, so they compare EQUAL rather than by punctuation.
+  assert.equal(cliSkew("0.5.0-rc.9", "0.5.0-rc.10"), "behind");
+  assert.equal(cliSkew("0.5.0-rc1", "0.5.0-rc.1"), "same");
+  assert.equal(cliSkew("0.5.0-rc.1", "0.5.0-rc1"), "same");
+  assert.equal(cliSkew("0.5.0-rc9", "0.5.0-rc.10"), "behind");
+  assert.equal(cliSkew("0.5.0-rc.9", "0.5.0-rc10"), "behind");
+
+  // A pre-release is lower than the same tuple without one (§11), unchanged.
+  assert.equal(cliSkew("0.5.0-rc10", "0.5.0"), "behind");
+  assert.equal(cliSkew("0.5.0", "0.5.0-rc10"), "ahead-patch");
+
+  // The §11 precedence chain from semver.org, each step read as "behind":
+  //   alpha < alpha.1 < alpha.beta < beta < beta.2 < beta.11 < rc.1
+  const chain = [
+    "1.0.0-alpha",
+    "1.0.0-alpha.1",
+    "1.0.0-alpha.beta",
+    "1.0.0-beta",
+    "1.0.0-beta.2",
+    "1.0.0-beta.11",
+    "1.0.0-rc.1",
+    "1.0.0",
+  ];
+  for (let i = 0; i < chain.length - 1; i++) {
+    assert.equal(cliSkew(chain[i], chain[i + 1]), "behind", chain[i]);
+    assert.notEqual(cliSkew(chain[i + 1], chain[i]), "behind", chain[i + 1]);
+  }
+
+  // A numeric identifier always ranks LOWER than an alphanumeric one (§11)...
+  assert.equal(cliSkew("1.0.0-1", "1.0.0-alpha"), "behind");
+  assert.equal(cliSkew("1.0.0-rc.1", "1.0.0-rc.beta"), "behind");
+  // ...and a larger set of identifiers outranks a smaller one when all the
+  // preceding ones are equal.
+  assert.equal(cliSkew("1.0.0-rc.1", "1.0.0-rc.1.1"), "behind");
+  assert.equal(cliSkew("1.0.0-rc.1.1", "1.0.0-rc.1"), "ahead-patch");
 });
 
 test("shouldWarnCliAhead: PATCH-newer is silent, MINOR/MAJOR-newer warns exactly once", () => {
@@ -1271,21 +1339,25 @@ test("classifyOutcome sets severity by kind and prefers the first issue", () => 
 });
 
 test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary, v<version> tag)", () => {
+  // gnu, not musl: a PyInstaller musl freeze is musl-DYNAMIC and would not
+  // start on Ubuntu/Debian/Fedora — see the TARGETS comment (#444). Pinned here
+  // so flipping the table back is a test failure, not a silent Linux break.
   const linux = releaseAssetForTarget("linux", "x64");
-  assert.equal(linux.target, "x86_64-unknown-linux-musl");
+  assert.equal(linux.target, "x86_64-unknown-linux-gnu");
   assert.equal(linux.tag, `v${SUPPORTED_CLI_VERSION}`);
-  assert.equal(linux.assetName, "tan-x86_64-unknown-linux-musl");
+  assert.equal(linux.assetName, "tan-x86_64-unknown-linux-gnu");
   assert.ok(
     linux.url.endsWith(
-      `/alplabai/tan-cli/releases/download/v${SUPPORTED_CLI_VERSION}/tan-x86_64-unknown-linux-musl`,
+      `/alplabai/tan-cli/releases/download/v${SUPPORTED_CLI_VERSION}/tan-x86_64-unknown-linux-gnu`,
     ),
   );
 
-  // arm64 Linux ships the static musl build too (no glibc floor on either arch).
-  assert.equal(
-    releaseAssetForTarget("linux", "arm64").target,
-    "aarch64-unknown-linux-musl",
-  );
+  // `TARGETS` still names the triple `linux/arm64` WOULD use — a Python
+  // release just doesn't publish it (declared in HOSTS_WITHOUT_RELEASE_ASSET,
+  // see the next test), so resolving it against the ACTIVE pin is null, not
+  // the triple. Ask the triple table directly to keep asserting it's there.
+  assert.equal(TARGETS["linux/arm64"], "aarch64-unknown-linux-musl");
+  assert.equal(releaseAssetForTarget("linux", "arm64"), null);
 
   // both macOS arches are published (Intel + Apple Silicon).
   assert.equal(
@@ -1297,23 +1369,123 @@ test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary,
     "aarch64-apple-darwin",
   );
 
-  // Windows ships BOTH x64 and arm64; the asset carries a `.exe` suffix.
+  // Windows x64 ships; the asset carries a `.exe` suffix. arm64 is also a
+  // declared gap for the active (Python) pin -- same reasoning as linux/arm64
+  // above, and again TARGETS still has the triple.
   const winX64 = releaseAssetForTarget("win32", "x64");
   assert.equal(winX64.target, "x86_64-pc-windows-msvc");
   assert.equal(winX64.assetName, "tan-x86_64-pc-windows-msvc.exe");
-  assert.equal(
-    releaseAssetForTarget("win32", "arm64").target,
-    "aarch64-pc-windows-msvc",
-  );
+  assert.equal(TARGETS["win32/arm64"], "aarch64-pc-windows-msvc");
+  assert.equal(releaseAssetForTarget("win32", "arm64"), null);
 
   // A host with no published target (e.g. 32-bit ARM Linux) has no asset.
   assert.equal(releaseAssetForTarget("linux", "arm"), null);
 });
 
+// ── A release that publishes only SOME of the targets (alp-sdk-vscode#445) ──
+//
+// A PyInstaller-built tan cannot cross-compile, so it ships four assets where
+// the cargo-zigbuild releases shipped eight. The two hosts that costs are still
+// real hosts with real target triples — `TARGETS` keeps them — so "which triple
+// is this host" and "does THIS release publish it" have to be two questions.
+// Driven through the `gaps` parameter rather than the module constant, which is
+// empty today: the mechanism has to be proven BEFORE a release with gaps is
+// pinned, which is the whole point of it existing before then.
+test("releaseAssetForTarget: a release that publishes no asset for a host has none, and its siblings still do", () => {
+  // Shaped like alplabai/tan-cli#252's actual v0.5.0-rc1 build matrix:
+  // PyInstaller cannot cross-compile and that tag's matrix scopes to four
+  // assets, so win32/arm64 and linux/arm64 get nothing while the other four
+  // are untouched -- a release decision, not a platform one.
+  const pythonRelease = {
+    "0.5.0": ["win32/arm64", "linux/arm64"],
+  };
+
+  assert.equal(
+    releaseAssetForTarget("win32", "arm64", "0.5.0", pythonRelease),
+    null,
+    "a declared gap must resolve to NO asset, not to a URL that 404s",
+  );
+  assert.equal(
+    releaseAssetForTarget("linux", "arm64", "0.5.0", pythonRelease),
+    null,
+  );
+
+  // The still-works path: same release, the hosts it DOES publish are unaffected
+  // and keep the exact asset name + tag the download uses.
+  const winX64 = releaseAssetForTarget("win32", "x64", "0.5.0", pythonRelease);
+  assert.equal(winX64.assetName, "tan-x86_64-pc-windows-msvc.exe");
+  assert.equal(winX64.tag, "v0.5.0");
+  assert.ok(
+    winX64.url.endsWith("/download/v0.5.0/tan-x86_64-pc-windows-msvc.exe"),
+  );
+  assert.ok(releaseAssetForTarget("darwin", "arm64", "0.5.0", pythonRelease));
+
+  // Scoped to the version that has the gap, never inherited by another one: a
+  // pin bump must not carry the previous release's gaps forward, and a pin
+  // rollback must not lose the assets the older release really published.
+  assert.ok(
+    releaseAssetForTarget("win32", "arm64", "0.4.1", pythonRelease),
+    "the gap belongs to v0.5.0 alone",
+  );
+});
+
+test("releaseAssetForTarget: the PINNED release's gaps are exactly what it declares", () => {
+  // Both directions, over every host the extension maps — this is the assertion
+  // that fails if someone declares a gap without the download path following,
+  // or removes one without restoring it. (`scripts/check-cli-pin.mjs` checks
+  // the other half offline-impossible half: whether the DECLARATION matches the
+  // real release, which needs the network.)
+  const declared = HOSTS_WITHOUT_RELEASE_ASSET[SUPPORTED_CLI_VERSION] ?? [];
+  for (const host of Object.keys(TARGETS)) {
+    const [platform, arch] = host.split("/");
+    const asset = releaseAssetForTarget(platform, arch);
+    assert.equal(
+      asset === null,
+      declared.includes(host),
+      `${host}: asset resolution and the declared gap list disagree`,
+    );
+  }
+});
+
+test("noPrebuiltMessage names the host, the release and the way forward", () => {
+  const message = noPrebuiltMessage("win32", "arm64", "0.5.0");
+
+  // The host, or the customer cannot tell this is about their machine.
+  assert.match(message, /win32\/arm64/);
+  // The RELEASE, or it reads as a permanent property of the product rather than
+  // of one tan version — this is a customer's first contact with the toolchain.
+  assert.match(message, /tan v0\.5\.0/);
+  // Not a broken install, and what to do instead.
+  assert.match(message, /rather than a broken install/);
+  assert.match(message, /alpSdk\.cliPath/);
+  assert.match(message, /pip/);
+
+  // The opening is load-bearing: this is how the sentence reaches the
+  // `noPrebuilt` remedy (Open Settings → alpSdk.cliPath) instead of a generic
+  // "couldn't start the tan CLI" with a Run Doctor button that answers nothing.
+  assert.equal(classifyUnavailable(message), "noPrebuilt");
+  // …and it must not be mistaken for a download that failed on the wire, which
+  // is the sentence #445 exists to stop the customer from seeing.
+  assert.notEqual(classifyUnavailable(message), "downloadFailed");
+
+  // Toast-safe: `planFailure` demotes a cause carrying a path, a URL, an errno
+  // or an exit code into the output channel and shows "<operation> failed."
+  // instead — which would delete every fact asserted above.
+  const plan = planFailure({
+    operation: "Provisioning the tan CLI",
+    cause: message,
+  });
+  assert.equal(plan.message, message);
+
+  // Defaults to the pin, so the resolver's throw needs no version argument.
+  assert.match(noPrebuiltMessage("linux", "arm"), /tan v/);
+  assert.ok(noPrebuiltMessage("linux", "arm").includes(SUPPORTED_CLI_VERSION));
+});
+
 test("releaseAssetForTarget resolves checksums.txt at the SAME tag as the binary", () => {
   for (const [platform, arch] of [
     ["linux", "x64"],
-    ["win32", "arm64"],
+    ["win32", "x64"],
     ["darwin", "arm64"],
   ]) {
     const asset = releaseAssetForTarget(platform, arch);

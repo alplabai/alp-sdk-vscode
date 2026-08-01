@@ -55,7 +55,7 @@ import {
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
  *  test/tanContract.test.js tracks that, and moved with this pin. */
 
-export const SUPPORTED_CLI_VERSION = "0.4.1";
+export const SUPPORTED_CLI_VERSION = "0.5.0-rc1";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -86,6 +86,59 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
   "0.3.1",
 ];
 
+/**
+ * Hosts a given tan release publishes NO binary for, keyed by version.
+ *
+ * `TARGETS` below answers a DIFFERENT question — "what is this host's rust
+ * target triple" — and its answer does not change from release to release.
+ * WHICH of those targets a release actually ships is a property OF THAT
+ * RELEASE, and the two stopped being the same thing at the Python port:
+ * PyInstaller cannot cross-compile, so each asset needs a runner that IS that
+ * host, and `release.yml`'s build matrix (alplabai/tan-cli#252) scopes to four
+ * for this tag — Windows x64, macOS x64/arm64, Linux x64 as `-gnu` — where the
+ * cargo-zigbuild releases published eight. NOT a platform limit: aarch64
+ * runners exist (`windows-11-arm`, `ubuntu-24.04-arm` are current GitHub-hosted
+ * labels, proven working in tan-cli's `python-binaries.yml`) and a later tag
+ * can add them without anything here assuming otherwise.
+ * Deleting those hosts from `TARGETS` instead would conflate the two facts, and
+ * would also drop them from `scripts/check-cli-pin.mjs`'s probe list, which is
+ * derived from that table — a genuinely failed upload for such a host would
+ * then never be caught again.
+ *
+ * Keyed by version, never a floor, for the same reason
+ * `RELEASES_PREDATING_CONTRACT_ASSET` is a list: a pin bump must not silently
+ * inherit the previous release's gaps. An unlisted version is expected to
+ * publish every target in `TARGETS`, full stop.
+ *
+ * IT CANNOT ROT INTO A LIE, because nothing trusts it: `check-cli-pin.mjs`
+ * HEAD-probes every `TARGETS` host against the pinned release on every CI run
+ * and fails BOTH ways — a host declared here whose asset DOES resolve is a
+ * stale entry the gate tells you to delete, and a host not declared here whose
+ * asset 404s is the missing-asset failure that gate has always caught. A later
+ * tan that publishes the missing hosts again therefore reds CI until the entry
+ * is removed, instead of quietly leaving those customers on `alpSdk.cliPath`.
+ *
+ * `"0.5.0-rc1"` is declared ahead of the pin actually moving to it (#446):
+ * `release.yml`'s build matrix (alplabai/tan-cli#252) publishes exactly four
+ * assets for that tag (Windows x64, macOS x64/arm64, Linux x64 as `-gnu`) and
+ * none for `win32/arm64` or `linux/arm64` — a SCOPE decision for this tag, not
+ * a platform limit: `windows-11-arm` and `ubuntu-24.04-arm` are real,
+ * currently-labelled GitHub-hosted runners and tan-cli's own
+ * `python-binaries.yml` already builds and verifies both arches on them, this
+ * release's matrix just doesn't include them. Declaring the gap now, before
+ * `SUPPORTED_CLI_VERSION` names this tag (two commits later), is harmless in
+ * THIS commit alone — the entry is looked up by the ACTIVE pin, so nothing
+ * reads it until that lands — and means `check-cli-pin.mjs` has an answer to
+ * probe against the moment the tag and the pin move together, instead of two
+ * separate PRs racing to add a declaration and a pin without either being
+ * wrong alone.
+ */
+export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
+  Record<string, readonly string[]>
+> = {
+  "0.5.0-rc1": ["win32/arm64", "linux/arm64"],
+};
+
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
 const RELEASE_REPO = "alplabai/tan-cli";
 
@@ -98,22 +151,39 @@ const CHECKSUMS_ASSET = "checksums.txt";
 export const TARGETS: Readonly<Record<string, string>> = {
   "win32/x64": "x86_64-pc-windows-msvc",
   "win32/arm64": "aarch64-pc-windows-msvc",
-  // musl (static), not gnu: the -gnu assets carry a glibc floor and break on
-  // older distros. -musl is fully static, so it runs on any distro/libc.
+  // ── gnu, NOT musl. Do not "restore" -musl here (#444) ──
   //
-  // Two numbers, and they are NOT the same one (this comment used to conflate
-  // them and both figures were wrong — see #370):
-  //   - zigbuild PIN, from tan-cli's release.yml:  x86_64-unknown-linux-gnu.2.31
-  //   - MEASURED floor of the shipped v0.3.1 -gnu asset (`readelf -V`): GLIBC_2.30
-  // The pin caps which symbols may be used; the binary needs nothing above 2.30.
-  // Measured: runs on debian:11 (2.31), ubuntu:22.04 (2.35), ubuntu:24.04 (2.39);
-  // fails on ubuntu:18.04 (2.27) with `version 'GLIBC_2.30' not found`. So the
-  // break is roughly pre-Ubuntu-20.04 / pre-Debian-11, NOT at 2.31, and the error
-  // never says 2.39. -musl ran on all four.
+  // This entry is coupled to WHICH tan is pinned, and the right answer flips
+  // with it. A RUST tan needs `-musl`; a PYTHON tan cannot use it. The comment
+  // that stood here argued the musl case well, and for the Rust assets it was
+  // right — what changed is the artefact, not the reasoning about it, so read
+  // the pin before touching this.
   //
-  // TLS is rustls/ring, so musl needs no extra runtime deps. musl assets only
-  // exist from tan-cli v0.3.0 on — see SUPPORTED_CLI_VERSION.
-  "linux/x64": "x86_64-unknown-linux-musl",
+  // 1. `-musl` is not a fallback, it is unusable. A PyInstaller musl freeze is
+  //    musl-DYNAMIC, not static: the bootloader in
+  //    `pyinstaller-6.21.0-py3-none-musllinux_1_1_x86_64.whl`
+  //    (`PyInstaller/bootloader/Linux-64bit-intel-musl/run`) declares ELF
+  //    interpreter `/lib/ld-musl-x86_64.so.1`, so it needs musl libc at that
+  //    path and does not start on Ubuntu/Debian/Fedora at all. Onefile mode
+  //    dlopens libpython, so a fully static bootloader is not reachable either.
+  //    A `-musl` Python asset would be strictly worse than the glibc floor musl
+  //    was picked to dodge.
+  //
+  // 2. The floor is low because of WHERE the asset is frozen, not because gnu
+  //    is inherently portable. tan-cli freezes the Linux asset inside
+  //    `python:3.12-slim-bullseye` (glibc 2.31) and measures the real floor over
+  //    the PyInstaller payload: GLIBC_2.30. That container pin is load-bearing
+  //    and lives in tan-cli's release workflow — freeze on a newer base and the
+  //    floor rises with it, silently, with nothing here to notice. It is a
+  //    different number from the 2.31/2.39 story the old comment told, which
+  //    described the zigbuild-cross Rust asset and does not apply to this one.
+  //
+  // 3. It lands with the pin, not before. Flipping this while
+  //    SUPPORTED_CLI_VERSION still names a Rust tan regresses every Linux user
+  //    onto a glibc-floored asset that the musl mapping existed to avoid — the
+  //    cutover is #446. Note that `scripts/check-cli-pin.mjs` will NOT catch
+  //    that: Rust releases publish gnu AND musl, so the URL resolves either way.
+  "linux/x64": "x86_64-unknown-linux-gnu",
   "linux/arm64": "aarch64-unknown-linux-musl",
   "darwin/x64": "x86_64-apple-darwin",
   "darwin/arm64": "aarch64-apple-darwin",
@@ -318,8 +388,12 @@ export const CACHED_CLI_UNVERIFIED_ON_PATH =
  * The two sentences above, for the host tan-cli publishes NO binary for
  * (`releaseAssetForTarget` → null). Both of those end in "reconnect and retry",
  * and on this host that instruction is not merely unhelpful, it is FALSE: there
- * is nothing to fetch, ever, so reconnecting settles nothing and the same toast
- * returns on every activation for good.
+ * is nothing to fetch while this pin stands, so reconnecting settles nothing
+ * and the same toast returns on every activation until the pin moves. ("While
+ * this pin stands" rather than "ever" since `HOSTS_WITHOUT_RELEASE_ASSET`: a
+ * host can now be assetless on ONE release and served by the next. Nothing in
+ * the wording turns on the difference — the extension only ever downloads the
+ * pinned release, so the customer's position is the same either way.)
  *
  * These NAME `alpSdk.cliPath`, which the two above deliberately withhold, and
  * that is a decision rather than an oversight. The suppression is #389's:
@@ -470,6 +544,61 @@ function parseVersion(
 }
 
 /**
+ * Split a pre-release into comparable chunks: `.` is a separator, every run of
+ * digits becomes a number, every other run stays text — so `rc.10` and `rc10`
+ * both become `["rc", 10]`.
+ *
+ * SPLITTING INSIDE AN IDENTIFIER IS A DELIBERATE STEP PAST SemVer §11, which
+ * reads `rc10` as ONE alphanumeric identifier ordered by ASCII — i.e. `rc10` <
+ * `rc9`, the same wrong answer as the plain string compare this replaces
+ * (#451). The alternative was to declare `rc.N` the only legal spelling and
+ * make anything else loud, and that option is not available on this side of
+ * the seam: `installed` is whatever `tan --version` prints on the user's
+ * machine (tan's published precedent is the tag `v0.4.0-rc1`, no dot), and the
+ * only refusal `cliSkew` can express is `"unknown"` — which every caller reads
+ * as "stay quiet", i.e. the same silent missing upgrade the numeric-blind
+ * compare caused. A convention cannot be enforced where the string is only
+ * read, so both spellings are first-class and compare EQUAL to each other:
+ * `rc1` and `rc.1` are one release written two ways.
+ *
+ * Leading zeros collapse the same way (`rc.01` == `rc.1`) — §11 forbids them
+ * outright, so reading them as the number they spell is the quiet answer. The
+ * canonical §11 chain is unaffected (`alpha` < `alpha.1` < `alpha.beta` <
+ * `beta` < `beta.2` < `beta.11` < `rc.1`); `test/alpCli.service.test.js` pins
+ * it alongside the dotless cases.
+ */
+function preChunks(pre: string): (string | number)[] {
+  return (pre.match(/\d+|[^.\d]+/g) ?? []).map((chunk) =>
+    /^\d+$/.test(chunk) ? Number(chunk) : chunk,
+  );
+}
+
+/**
+ * SemVer §11 precedence over `preChunks`: compare chunk by chunk, numerically
+ * for two numbers, and a numeric chunk always ranks BELOW an alphanumeric one;
+ * when every shared chunk is equal, the longer list wins. Returns -1/0/1, with
+ * `0` meaning "the same release" (see `preChunks` on the two spellings).
+ */
+function comparePrerelease(a: string, b: string): number {
+  const left = preChunks(a);
+  const right = preChunks(b);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    if (i >= left.length) return -1;
+    if (i >= right.length) return 1;
+    const l = left[i];
+    const r = right[i];
+    if (typeof l === "number") {
+      if (typeof r !== "number") return -1;
+      if (l !== r) return l < r ? -1 : 1;
+    } else {
+      if (typeof r === "number") return 1;
+      if (l !== r) return l < r ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+/**
  * Compare the installed tan against the pinned `supported` version — the ONE
  * comparison every version-skew decision in this repo routes through (tuple
  * compare over numeric `MAJOR.MINOR.PATCH` + SemVer pre-release rule, no semver
@@ -500,11 +629,12 @@ export function cliSkew(
   // form narrows BOTH to `string` for the comparison below — the other does
   // not, and TS18047 rejects it.
   if (!a.pre || !b.pre) return "ahead-patch";
-  // ponytail: two DIFFERENT pre-releases on the same tuple compare as plain
-  // strings (so `rc.10` sorts before `rc.9`). Nothing pins a pre-release as
-  // SUPPORTED_CLI_VERSION, so this only picks between two silent branches;
-  // upgrade to identifier-wise SemVer compare if a pin ever carries a suffix.
-  return a.pre < b.pre ? "behind" : "ahead-patch";
+  // Two DIFFERENT pre-releases on the same tuple. `SUPPORTED_CLI_VERSION` can
+  // name one now, so this branch decides a real upgrade and no longer gets to
+  // be a string compare (`"rc9" > "rc10"` read as ahead, and the stale-cache
+  // self-heal never fired — #451).
+  const order = comparePrerelease(a.pre, b.pre);
+  return order < 0 ? "behind" : order > 0 ? "ahead-patch" : "same";
 }
 
 /**
@@ -988,8 +1118,42 @@ function summarize(kind: CliExitKind, envelope: AlpEnvelope | null): string {
   }
 }
 
+/**
+ * The sentence for a host that has no prebuilt `tan` — BOTH ways
+ * `releaseAssetForTarget` returns null, because the customer's position and
+ * their remedy are identical in the two: a host that is not in `TARGETS` at all
+ * (no tan release has ever shipped for it), and a host the PINNED release
+ * publishes no asset for (`HOSTS_WITHOUT_RELEASE_ASSET`).
+ *
+ * It names the HOST and the RELEASE on purpose. Without them the toast reads as
+ * "this vendor's tooling is broken on my machine"; with them it reads as a
+ * limit of one tan version, which is what it is — the hosts a PyInstaller
+ * release cannot build are expected back on a later one. This is often a
+ * customer's first contact with the toolchain, and a bare download failure from
+ * a URL the extension itself constructed is the worst possible first sentence.
+ *
+ * The opening is load-bearing beyond the prose: `classifyUnavailable` matches
+ * `^No prebuilt tan CLI` to reach `noPrebuilt`, and `unavailablePlan`
+ * (`src/notify/service.ts`) renders this VERBATIM in the toast. So it carries no
+ * path, no URL and no errno — see `CACHED_CLI_UNVERIFIED` for the guard that
+ * would otherwise demote it into the output channel.
+ */
+export function noPrebuiltMessage(
+  platform: NodeJS.Platform,
+  arch: string,
+  version: string = SUPPORTED_CLI_VERSION,
+): string {
+  return (
+    `No prebuilt tan CLI for ${platform}/${arch} — tan v${version} publishes ` +
+    "binaries for other platforms only, so this is a limit of that release " +
+    "rather than a broken install. Point alpSdk.cliPath at a tan you build " +
+    "locally or install with pip."
+  );
+}
+
 /** The release asset (and download URL) for a host, or null when the host has
- *  no prebuilt binary — caller should point `alpSdk.cliPath` at a dev build.
+ *  no prebuilt binary — caller should point `alpSdk.cliPath` at a dev build,
+ *  and `noPrebuiltMessage` above is the sentence that says so.
  *  tan-cli ships a RAW binary per target (not an archive): `tan-<triple>` on
  *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`.
  *  `checksumsUrl` is the same release's `checksums.txt`, which every tagged tan
@@ -997,14 +1161,26 @@ function summarize(kind: CliExitKind, envelope: AlpEnvelope | null): string {
  *  so the digest a download is checked against always belongs to the release the
  *  bytes came from. The asset names are contract-frozen on the producer side
  *  (tan-cli's `release.yml` names this function), which is what makes the
- *  filename lookup in that file reliable. */
+ *  filename lookup in that file reliable.
+ *
+ *  TWO reasons for null, and they are different facts: the host has no triple
+ *  at all, or `version` is a release that publishes nothing for it. `gaps` is a
+ *  parameter rather than a direct read of the module constant so that the two
+ *  readers who must NOT see the declared gaps can say so — `check-cli-pin.mjs`
+ *  passes `{}` to get the URL it has to probe in order to VERIFY the
+ *  declaration, and the unit tests drive a release with gaps without waiting
+ *  for one to be pinned. */
 export function releaseAssetForTarget(
   platform: NodeJS.Platform,
   arch: string,
   version: string = SUPPORTED_CLI_VERSION,
+  gaps: Readonly<
+    Record<string, readonly string[]>
+  > = HOSTS_WITHOUT_RELEASE_ASSET,
 ): ReleaseAsset | null {
-  const target = TARGETS[`${platform}/${arch}`];
-  if (!target) {
+  const host = `${platform}/${arch}`;
+  const target = TARGETS[host];
+  if (!target || (gaps[version] ?? []).includes(host)) {
     return null;
   }
   const tag = `v${version}`;
