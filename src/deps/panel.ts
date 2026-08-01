@@ -252,9 +252,9 @@ export class DependencyPanel {
   private maybeOfferBootstrap(report: DependencyReport): void {
     if (this.offeredBootstrap) return;
     const project = collectProjectContext();
-    // `tan bootstrap` and `tan doctor --build --fix` both CREATE a venv and a
-    // west workspace in their working directory, so with no folder open there
-    // is nowhere safe to run and the offer is withheld entirely.
+    // `tan bootstrap` CREATES a venv and a west workspace in its working
+    // directory, so with no folder open there is nowhere safe to run and the
+    // offer is withheld entirely.
     const root = project.workspaceRoot;
     if (!root) return;
     // Local filesystem probe — true even when tan's own `workspace` check

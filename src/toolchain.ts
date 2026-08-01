@@ -148,14 +148,14 @@ async function showInstallGuide(guide: InstallGuide): Promise<void> {
 }
 
 /** Offer to bootstrap a missing — or manifest-broken — Zephyr workspace via
- *  `alp doctor --build --fix` (streams live in a terminal). After it finishes
- *  the shared state refresh repaints the dependency panel.
+ *  `tan bootstrap` (streams live in a terminal). After it finishes the shared
+ *  state refresh repaints the dependency panel.
  *
  *  Called by `src/deps/panel.ts` off the report it already has, so this costs
  *  no CLI run of its own. */
 export async function offerBootstrapFix(
   context: vscode.ExtensionContext,
-  /** The open folder to bootstrap IN. Required — `tan doctor --build --fix`
+  /** The open folder to bootstrap IN. Required — `tan bootstrap`
    *  creates a venv and a west workspace in its working directory, so there is
    *  no safe default; the caller withholds the whole offer when there is none. */
   cwd: string,
@@ -193,19 +193,25 @@ export async function offerBootstrapFix(
   const choice = await notify(plan);
   if (choice !== "custom") return;
 
-  // `tan doctor --build --fix` bootstraps ONLY when its own `workspace` check
-  // fails (re-verified against the pinned tan v0.4.0: `doctor.rs`
-  // `run_build_readiness` gates the bootstrap on
-  // `c.name == "workspace" && c.status == Fail`). A workspace that exists but dangles
-  // passes that check, so `--fix` would print a green report and repair
-  // nothing. Run `tan bootstrap` directly for that case — it reconciles the
-  // manifest pointer (tan-cli #31), unless it reuses a `$ZEPHYR_BASE`
-  // workspace, which the logged line above spells out.
+  // `tan doctor --build --fix` used to bootstrap ONLY when its own `workspace`
+  // check failed (`doctor.rs` `run_build_readiness` gated on
+  // `c.name == "workspace" && c.status == Fail`) — a workspace that exists but
+  // dangles passed that check, so `--fix` printed a green report and repaired
+  // nothing. That is still why the dangling case below routes to
+  // `alp.installDependencies` instead: it reconciles the manifest pointer
+  // (tan-cli #31), unless it reuses a `$ZEPHYR_BASE` workspace, which the
+  // logged line above spells out.
   if (dangling) {
     await vscode.commands.executeCommand("alp.installDependencies");
     return;
   }
-  await runAlpInTerminal(context, ["doctor", "--build", "--fix"], {
+  // The remaining case — no Zephyr workspace at all — is exactly the case
+  // `--fix` used to handle, and exactly what `tan bootstrap` creates. The
+  // Python `tan` (the pinned `SUPPORTED_CLI_VERSION`) has no `--fix` option at
+  // all — it exits 2 with `No such option: --fix` and a `cli`-usage envelope,
+  // not a doctor one (tan-cli#295) — so this calls `tan bootstrap` directly
+  // instead of a flag that no longer exists.
+  await runAlpInTerminal(context, ["bootstrap"], {
     // Same run name as `tan bootstrap` (src/bootstrap.ts) on purpose: this
     // fix bootstraps too, so it must take the same reservation and light the
     // same "bootstrapping, don't build yet" gate.

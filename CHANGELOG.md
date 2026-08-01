@@ -110,6 +110,13 @@ the Rust binary every prior release used.
   customers as a 404 loop on activation. Only a 404 fails it — a rate-limit or
   an outage reports as skipped.
 
+- **The Toolchain Doctor's build fix now runs `tan bootstrap`, not `tan doctor
+  --build --fix`.** The flag does not exist on the Python `tan` — it exits 2
+  with `No such option: --fix` and returns a `cli` usage envelope, not a doctor
+  envelope, so the fix path got neither a report nor a usable error. `tan
+  bootstrap` is what the flag was meant to trigger in the first place (it only
+  bootstraps when its own `workspace` check fails). tan-cli#295.
+
 ## 0.4.1
 
 - **New setting `alpSdk.tanCliDownloadConsent` (`ask` / `allow` / `deny`,
