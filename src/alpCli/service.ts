@@ -55,7 +55,7 @@ import {
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
  *  test/tanContract.test.js tracks that, and moved with this pin. */
 
-export const SUPPORTED_CLI_VERSION = "0.5.0-rc2";
+export const SUPPORTED_CLI_VERSION = "0.5.0-rc3";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -137,12 +137,22 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * assets as rc1 (verified against the published tag, not assumed from it) —
  * `win32/arm64` and `linux/arm64` are still unbuilt, so the entry moves with
  * the pin rather than being dropped as if rc2 had closed the gap.
+ *
+ * `"0.5.0-rc3"` too, and by now the omission is explicit rather than incidental:
+ * tan-cli's `release.yml` states in its own header that
+ * `tan-aarch64-pc-windows-msvc.exe` and `tan-aarch64-unknown-linux-musl` are
+ * "DELIBERATELY NOT PUBLISHED — an accepted 404 on those two hosts". The reason
+ * moved too. It is no longer only scope: PyInstaller cannot cross-compile, so
+ * each asset must be frozen on its own architecture, and rc3's matrix still
+ * runs four (`windows-latest`, `macos-15-intel`, `macos-15`, `ubuntu-latest`).
+ * Same four assets, same two gaps.
  */
 export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   Record<string, readonly string[]>
 > = {
   "0.5.0-rc1": ["win32/arm64", "linux/arm64"],
   "0.5.0-rc2": ["win32/arm64", "linux/arm64"],
+  "0.5.0-rc3": ["win32/arm64", "linux/arm64"],
 };
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
