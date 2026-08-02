@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.2
+
+**Pre-release.** Continues `0.5`'s odd-minor pre-release channel —
+`release-vsix.yml` still publishes this build with `--pre-release`, reaching
+only Marketplace/Open VSX users opted into pre-release updates.
+
+- **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc3`, was `0.5.0-rc2`.** rc3 is the
+  RC found by running the published rc2 binary end to end on real Windows and
+  macOS hosts rather than testing the source. Two of its six fixes matter
+  directly to this extension's users: the macOS asset shipped with no CA trust
+  anchors at all, so every HTTPS call failed `CERTIFICATE_VERIFY_FAILED`
+  (tan-cli#304), and `tan doctor` exited 4 on every fresh install because
+  "west in the venv, absent from PATH" — the guaranteed state of a
+  GUI-launched VS Code — was reported as a broken host (tan-cli#299).
+  `HOSTS_WITHOUT_RELEASE_ASSET` carries the identical `win32/arm64` /
+  `linux/arm64` gap forward; rc3's matrix still freezes the same four assets,
+  and tan-cli's `release.yml` now names that omission deliberate rather than
+  incidental.
+
 ## 0.5.1
 
 **Pre-release.** Continues `0.5`'s odd-minor pre-release channel —
