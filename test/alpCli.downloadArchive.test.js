@@ -34,18 +34,61 @@ const { ChecksumError, downloadFile } = require("../out/alpCli/download.js");
 
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 
-/** The real bsdtar Windows ships in System32 — used here to BUILD fixtures,
- *  not just to unpack them. A bare `"tar"` would risk resolving to Git for
- *  Windows' GNU tar on a dev machine (it cannot write `.zip` at all), so
- *  fixture creation is pinned to the same absolute path production code
- *  resolves for the `win32` extraction case (see `tarExecutable` in
- *  download.ts) — deterministic regardless of this host's PATH order. */
+/** The tar that BUILDS the fixtures — which is a different question from the
+ *  tar the production code picks to UNPACK them.
+ *
+ *  These tests simulate `platform: "win32"` so `installArchive` exercises its
+ *  win32 branch, but the fixture is still built by whatever machine runs the
+ *  suite. Resolving System32 unconditionally made every archive test pass on
+ *  Windows and fail on Linux and macOS CI with
+ *
+ *      Error: spawnSync C:\Windows/System32/tar.exe ENOENT
+ *
+ *  — green locally, red in CI, which is the worst way to be wrong.
+ *
+ *  On win32 the absolute System32 path still matters: a Git-for-Windows GNU
+ *  tar earlier on PATH cannot write `.zip` at all, so pinning it keeps fixture
+ *  creation deterministic regardless of PATH order. Everywhere else bare
+ *  `tar` is both correct and the only one that exists. */
 function systemTar() {
+  if (process.platform !== "win32") return "tar";
   return path.join(
     process.env.SystemRoot || "C:\\Windows",
     "System32",
     "tar.exe",
   );
+}
+
+/** Whether this host's tar can CREATE a `.zip`. bsdtar (Windows System32,
+ *  macOS) can; GNU tar (every Linux distro) cannot write zip at all, so the
+ *  two zip fixtures below are unbuildable there. Probed once, by actually
+ *  trying it -- not inferred from `process.platform`, because that is the
+ *  assumption that produced `C:\Windows/System32/tar.exe ENOENT` on CI in the
+ *  first place. A host that cannot build the fixture SKIPS those two cases
+ *  with a named reason; it never silently passes them.
+ *
+ *  Production is unaffected: the release ships `.zip` only for win32, and
+ *  `installArchive` picks its unpacker from the downloaded MAGIC BYTES, which
+ *  the tar.gz cases below exercise on every platform. */
+let ZIP_CREATE_SUPPORTED = null;
+function canCreateZip() {
+  if (ZIP_CREATE_SUPPORTED !== null) return ZIP_CREATE_SUPPORTED;
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), "alp-zipprobe-"));
+  try {
+    fs.writeFileSync(path.join(probe, "f.txt"), "x");
+    execFileSync(
+      systemTar(),
+      ["-a", "-c", "-f", path.join(probe, "p.zip"), "f.txt"],
+      {
+        cwd: probe,
+        stdio: "ignore",
+      },
+    );
+    ZIP_CREATE_SUPPORTED = fs.existsSync(path.join(probe, "p.zip"));
+  } catch {
+    ZIP_CREATE_SUPPORTED = false;
+  }
+  return ZIP_CREATE_SUPPORTED;
 }
 
 /** Build a `.zip` or `.tar.gz` fixture from `files` (relative path → file
@@ -127,6 +170,12 @@ async function rejectionOf(promise) {
  *  one thing it cannot prove is GNU tar's own behaviour, which is what the
  *  real Linux CI runner exercises instead. */
 async function withSystem32TarFirst(fn) {
+  // Pass-through off win32: this whole dance exists only because a
+  // WINDOWS dev machine has a second, colliding `tar`. On a real macOS or
+  // Linux host -- where the bare-`"tar"` production branch actually runs --
+  // there is nothing to shadow, and prepending a `C:\Windows\System32`
+  // that does not exist is how this test failed on CI.
+  if (process.platform !== "win32") return fn();
   const system32 = path.join(
     process.env.SystemRoot || "C:\\Windows",
     "System32",
@@ -144,6 +193,11 @@ for (const wrap of [undefined, "tan-x86_64-pc-windows-msvc"]) {
   test(
     `downloadFile: a .zip archive (win32) installs the launcher and its support files at destFile` +
       (wrap ? ", wrapped in one top-level directory" : ", with no wrapper"),
+    {
+      skip: canCreateZip()
+        ? false
+        : "this host's tar cannot CREATE a .zip (GNU tar on Linux); the fixture is unbuildable here, so this case is SKIPPED rather than silently passed. The .tar.gz cases cover the same magic-byte detection, unwrap and install-order logic on every platform.",
+    },
     async () => {
       const archive = buildArchive(
         "zip",
@@ -193,19 +247,27 @@ test("downloadFile: a .tar.gz archive (non-win32) installs the launcher and its 
   );
 });
 
-test("downloadFile: archive vs raw binary is decided by the downloaded bytes, not by destFile's own extension", async () => {
-  // `dest` is named `tan.exe`, exactly as every pre-archive release already
-  // installs it — the same asset NAME the extension has always requested (see
-  // service.ts's `releaseAssetForTarget`). What decides the install path is
-  // the CONTENT that arrived at that name, not the name itself.
-  const archive = buildArchive("zip", { "tan.exe": "the launcher\n" });
-  await withReleaseServer(archive, null, async (baseUrl) => {
-    const { dir, dest } = tmpCacheDir("tan.exe");
-    await downloadFile(`${baseUrl}/asset`, dest, null, { platform: "win32" });
-    assert.equal(fs.readFileSync(dest, "utf8"), "the launcher\n");
-    assert.deepEqual(fs.readdirSync(dir), ["tan.exe"]);
-  });
-});
+test(
+  "downloadFile: archive vs raw binary is decided by the downloaded bytes, not by destFile's own extension",
+  {
+    skip: canCreateZip()
+      ? false
+      : "host tar cannot create a .zip; see the zip loop above",
+  },
+  async () => {
+    // `dest` is named `tan.exe`, exactly as every pre-archive release already
+    // installs it — the same asset NAME the extension has always requested (see
+    // service.ts's `releaseAssetForTarget`). What decides the install path is
+    // the CONTENT that arrived at that name, not the name itself.
+    const archive = buildArchive("zip", { "tan.exe": "the launcher\n" });
+    await withReleaseServer(archive, null, async (baseUrl) => {
+      const { dir, dest } = tmpCacheDir("tan.exe");
+      await downloadFile(`${baseUrl}/asset`, dest, null, { platform: "win32" });
+      assert.equal(fs.readFileSync(dest, "utf8"), "the launcher\n");
+      assert.deepEqual(fs.readdirSync(dir), ["tan.exe"]);
+    });
+  },
+);
 
 test("downloadFile: bytes that merely start with 'PK' but are not the full zip magic install as a raw binary", async () => {
   // Regression guard on the sniff itself: a two-byte coincidence must not
@@ -274,45 +336,53 @@ test("downloadFile: an archive that unpacks to a 0-byte launcher is refused, and
   });
 });
 
-test("downloadFile: an archive's checksum is verified BEFORE it is ever unpacked", async () => {
-  const published = buildArchive("zip", { "tan.exe": "the real launcher\n" });
-  const publishedBytes = fs.readFileSync(published);
-  const tampered = Buffer.from(publishedBytes);
-  // Flip a byte inside the local-file-header region rather than past the
-  // central directory, so tar still recognizes SOMETHING zip-shaped — the
-  // point is that the checksum must catch this before extraction is ever
-  // attempted, not that a corrupt zip would necessarily fail to parse.
-  tampered[10] ^= 0x01;
-  await withReleaseServer(
-    (() => {
-      const p = `${published}.tampered`;
-      fs.writeFileSync(p, tampered);
-      return p;
-    })(),
-    `${sha256(publishedBytes)}  tan-x86_64-pc-windows-msvc.exe\n`,
-    async (baseUrl) => {
-      const { dir, dest } = tmpCacheDir("tan.exe");
-      const rejection = await rejectionOf(
-        downloadFile(
-          `${baseUrl}/asset`,
-          dest,
-          {
-            assetName: "tan-x86_64-pc-windows-msvc.exe",
-            checksumsUrl: `${baseUrl}/checksums.txt`,
-          },
-          { platform: "win32" },
-        ),
-      );
-      assert.ok(
-        rejection instanceof ChecksumError,
-        `expected a ChecksumError, got ${rejection && rejection.name}`,
-      );
-      assert.match(rejection.message, /does not match the checksum/);
-      assert.ok(
-        !fs.existsSync(dest),
-        "an unverified archive is never unpacked",
-      );
-      assert.deepEqual(fs.readdirSync(dir), []);
-    },
-  );
-});
+test(
+  "downloadFile: an archive's checksum is verified BEFORE it is ever unpacked",
+  {
+    skip: canCreateZip()
+      ? false
+      : "this host's tar cannot CREATE a .zip (GNU tar); the fixture is unbuildable here. The tar.gz cases cover the same magic-byte detection and install path.",
+  },
+  async () => {
+    const published = buildArchive("zip", { "tan.exe": "the real launcher\n" });
+    const publishedBytes = fs.readFileSync(published);
+    const tampered = Buffer.from(publishedBytes);
+    // Flip a byte inside the local-file-header region rather than past the
+    // central directory, so tar still recognizes SOMETHING zip-shaped — the
+    // point is that the checksum must catch this before extraction is ever
+    // attempted, not that a corrupt zip would necessarily fail to parse.
+    tampered[10] ^= 0x01;
+    await withReleaseServer(
+      (() => {
+        const p = `${published}.tampered`;
+        fs.writeFileSync(p, tampered);
+        return p;
+      })(),
+      `${sha256(publishedBytes)}  tan-x86_64-pc-windows-msvc.exe\n`,
+      async (baseUrl) => {
+        const { dir, dest } = tmpCacheDir("tan.exe");
+        const rejection = await rejectionOf(
+          downloadFile(
+            `${baseUrl}/asset`,
+            dest,
+            {
+              assetName: "tan-x86_64-pc-windows-msvc.exe",
+              checksumsUrl: `${baseUrl}/checksums.txt`,
+            },
+            { platform: "win32" },
+          ),
+        );
+        assert.ok(
+          rejection instanceof ChecksumError,
+          `expected a ChecksumError, got ${rejection && rejection.name}`,
+        );
+        assert.match(rejection.message, /does not match the checksum/);
+        assert.ok(
+          !fs.existsSync(dest),
+          "an unverified archive is never unpacked",
+        );
+        assert.deepEqual(fs.readdirSync(dir), []);
+      },
+    );
+  },
+);
