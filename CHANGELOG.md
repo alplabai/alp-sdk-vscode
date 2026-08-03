@@ -6,18 +6,29 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
-- **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc3`, was `0.5.0-rc2`.** rc3 is the
-  RC found by running the published rc2 binary end to end on real Windows and
-  macOS hosts rather than testing the source. Two of its six fixes matter
-  directly to this extension's users: the macOS asset shipped with no CA trust
-  anchors at all, so every HTTPS call failed `CERTIFICATE_VERIFY_FAILED`
-  (tan-cli#304), and `tan doctor` exited 4 on every fresh install because
-  "west in the venv, absent from PATH" — the guaranteed state of a
-  GUI-launched VS Code — was reported as a broken host (tan-cli#299).
+- **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc4`, was `0.5.0-rc2`.** This
+  extension release has not shipped yet, so rc3 never reached a user through
+  it; the pin goes straight to rc4 rather than stacking two entries for what is
+  one bump from a user's point of view.
+
+  Both RCs came from running the *published* binary end to end on real Windows,
+  macOS and Linux hosts rather than from testing the source. Four of their
+  fixes matter directly to this extension's users: the macOS asset shipped with
+  no CA trust anchors at all, so every HTTPS call failed
+  `CERTIFICATE_VERIFY_FAILED` (tan-cli#304); `tan doctor` exited 4 on every
+  fresh install because "west in the venv, absent from PATH" — the guaranteed
+  state of a GUI-launched VS Code — was reported as a broken host
+  (tan-cli#299); `tan init` and `tan generate` could follow a symlinked parent
+  and write outside the project while reporting success (tan-cli#325); and
+  `envelope.serialize-failed` printed `exitCode: 5` while the process exited
+  `0`, breaking the `process exit code == stdout envelope.exitCode` invariant
+  this extension relies on to decide whether a run failed (tan-cli#327).
+
   `HOSTS_WITHOUT_RELEASE_ASSET` carries the identical `win32/arm64` /
-  `linux/arm64` gap forward; rc3's matrix still freezes the same four assets,
-  and tan-cli's `release.yml` now names that omission deliberate rather than
-  incidental.
+  `linux/arm64` gap forward. Checked against the published rc4 tag rather than
+  carried on the assumption it would hold: rc4 ships the same four binaries as
+  rc1–rc3, and tan-cli's `release.yml` names that omission deliberate rather
+  than incidental.
 
 ## 0.5.1
 
