@@ -55,7 +55,7 @@ import {
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
  *  test/tanContract.test.js tracks that, and moved with this pin. */
 
-export const SUPPORTED_CLI_VERSION = "0.5.0-rc3";
+export const SUPPORTED_CLI_VERSION = "0.5.0-rc4";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -146,6 +146,13 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * each asset must be frozen on its own architecture, and rc3's matrix still
  * runs four (`windows-latest`, `macos-15-intel`, `macos-15`, `ubuntu-latest`).
  * Same four assets, same two gaps.
+ *
+ * `"0.5.0-rc4"` is unchanged again, and this was checked against the published
+ * tag rather than carried forward on the assumption that it would be: rc4
+ * publishes `tan-x86_64-pc-windows-msvc.exe`, `tan-x86_64-apple-darwin`,
+ * `tan-aarch64-apple-darwin` and `tan-x86_64-unknown-linux-gnu`, plus
+ * `checksums.txt` and `envelope-contract.json` — six assets, the same four
+ * binaries as rc1-rc3. `win32/arm64` and `linux/arm64` remain unbuilt.
  */
 export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   Record<string, readonly string[]>
@@ -153,6 +160,7 @@ export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   "0.5.0-rc1": ["win32/arm64", "linux/arm64"],
   "0.5.0-rc2": ["win32/arm64", "linux/arm64"],
   "0.5.0-rc3": ["win32/arm64", "linux/arm64"],
+  "0.5.0-rc4": ["win32/arm64", "linux/arm64"],
 };
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
