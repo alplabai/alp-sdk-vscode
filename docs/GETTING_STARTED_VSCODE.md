@@ -34,8 +34,12 @@ the binary in this order:
    emit the native `tan X.Y.Z` version line is treated as not present and falls
    through, so a stale or non-native PATH copy never shadows the managed one),
 6. otherwise it **downloads the matching `v<version>` release** of
-   `alplabai/tan-cli` (a raw `tan-<triple>[.exe]` binary) into global storage
-   (needs network access).
+   `alplabai/tan-cli` into global storage (needs network access) — named
+   `tan-<triple>[.exe]` and holding a raw binary through v0.5.0-rc4, or named
+   `tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz` (elsewhere) and holding
+   an archive from tan-cli#349 on. Which name a given release actually
+   published is resolved from that release's own `checksums.txt`, never
+   guessed from the version.
 
 > **Four of the six host targets the extension maps have a prebuilt release
 > binary** — Windows x64, Linux x64, and macOS (Intel x64 + Apple silicon

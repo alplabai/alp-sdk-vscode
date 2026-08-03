@@ -177,22 +177,71 @@ export interface BinaryResolutionInput {
   preferGlobalCli: boolean;
 }
 
-/** A GitHub release asset for the host target. tan-cli ships a RAW binary per
- *  target (not an archive). */
+/** One name tan-cli might have published a target's asset under, and the URL
+ *  it would live at for a given release. */
+export interface ReleaseAssetCandidate {
+  assetName: string;
+  url: string;
+}
+
+/** A `ReleaseAssetCandidate` that has been resolved against the release's own
+ *  `checksums.txt` — i.e. the candidate `resolvePublishedAsset` (download.ts)
+ *  picked, PLUS the digest that same read of the manifest already found for
+ *  it. #465: carrying `digest` forward is what lets `download` skip fetching
+ *  `checksums.txt` a second time to re-derive the exact value this resolution
+ *  step already had — see `ChecksumSpec.digest`. */
+export interface ResolvedAssetCandidate extends ReleaseAssetCandidate {
+  digest: string;
+}
+
+/** A GitHub release asset for the host target — GitHub Release, not a single
+ *  known filename. tan-cli published a RAW binary per target through
+ *  v0.5.0-rc4 (`tan-<target>[.exe]`); a release built with the archive freeze
+ *  (tan-cli#349) publishes the same target under a DIFFERENT name instead —
+ *  `tan-<target>.zip` (win32) / `tan-<target>.tar.gz` (elsewhere) — because the
+ *  archive holds a onedir tree, not a single file. Both possible names are
+ *  listed in `candidates`; which one a given release actually used is decided
+ *  from that release's own `checksums.txt` (`resolvePublishedAsset` in
+ *  download.ts), never guessed from a version number (#463: a per-version
+ *  table needs editing on every release and silently breaks a pin nobody
+ *  remembered to update — the same trap `HOSTS_WITHOUT_RELEASE_ASSET` and
+ *  `RELEASES_PREDATING_CONTRACT_ASSET` in service.ts exist to avoid for their
+ *  own questions). There is deliberately no top-level `assetName`/`url` here:
+ *  a single "the" name is exactly the assumption that 404'd on the first
+ *  archive release, and reintroducing one would just move the footgun. */
 export interface ReleaseAsset {
   target: string; // rust triple, e.g. aarch64-apple-darwin
-  assetName: string; // tan-<target>[.exe] (raw binary)
   tag: string; // v<version>
-  url: string;
   /** The release's own `checksums.txt`, published at the SAME tag alongside the
    *  binaries. Part of the asset rather than a URL rebuilt at the call site, so
    *  the checksum can never be looked up against a different release than the
-   *  binary came from. */
+   *  binary came from. Release-level, not per-candidate: both names below, if
+   *  either is published, are vouched for by this SAME file. */
   checksumsUrl: string;
+  /** [raw-binary name, archive name] — see the type doc above. Always both,
+   *  regardless of which (if either) `SUPPORTED_CLI_VERSION` actually
+   *  publishes; a real release is expected to have an entry in its
+   *  `checksums.txt` for exactly one. */
+  candidates: readonly [ReleaseAssetCandidate, ReleaseAssetCandidate];
 }
 
-/** What checksum verification needs for one asset: where the release publishes
- *  its `checksums.txt`, and the exact filename to look up inside it. A `Pick` of
- *  `ReleaseAsset` rather than a parallel type, so a `ReleaseAsset` satisfies it
- *  as-is and the two can never disagree about the asset's name. */
-export type ChecksumSpec = Pick<ReleaseAsset, "assetName" | "checksumsUrl">;
+/** What checksum verification needs for one RESOLVED asset: where the release
+ *  publishes its `checksums.txt`, and the exact filename to look up inside it.
+ *  Deliberately not a `Pick` of `ReleaseAsset` any more — `ReleaseAsset` now
+ *  carries two candidate names, and this type exists precisely to hold the
+ *  ONE that was actually selected (`resolvePublishedAsset`), so a caller can
+ *  never absent-mindedly pass the whole candidate set where a single verified
+ *  name belongs. */
+export interface ChecksumSpec {
+  assetName: string;
+  checksumsUrl: string;
+  /** The digest to verify against, when the caller already has it (#465) —
+   *  `downloadCli` fills this from `resolveAsset`'s `ResolvedAssetCandidate`,
+   *  which read `checksumsUrl` to pick the candidate in the first place, so
+   *  re-fetching the same file here would just re-derive a value already in
+   *  hand. OPTIONAL, and deliberately not required: the transfer-mechanics
+   *  tests, and any future caller that has an asset name but no prior read of
+   *  the manifest, still work by leaving this unset — `downloadFile` fetches
+   *  and parses `checksumsUrl` itself in that case, exactly as it always did. */
+  digest?: string;
+}

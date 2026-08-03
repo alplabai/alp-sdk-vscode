@@ -171,10 +171,13 @@ const RELEASE_REPO = "alplabai/tan-cli";
 const CHECKSUMS_ASSET = "checksums.txt";
 
 /** Host platform/arch → rust target triple (the six targets tan-cli publishes
- *  an asset for — a raw binary through v0.5.0-rc4, an archive holding one
- *  from tan-cli#349 on; `download.ts` tells the two apart from the bytes, not
- *  from this table). Windows ships BOTH x64 and arm64, picked by
- *  `process.arch`. */
+ *  an asset for — under the raw name through v0.5.0-rc4, the archive name from
+ *  tan-cli#349 on; `releaseAssetForTarget` builds both candidate names from
+ *  this table and `resolvePublishedAsset`/download.ts picks between them from
+ *  the release's own checksums.txt, never from this table, `version`, or the
+ *  downloaded bytes' magic number — that sniff decides how to INSTALL what
+ *  already downloaded, a separate question from which NAME to request).
+ *  Windows ships BOTH x64 and arm64, picked by `process.arch`. */
 export const TARGETS: Readonly<Record<string, string>> = {
   "win32/x64": "x86_64-pc-windows-msvc",
   "win32/arm64": "aarch64-pc-windows-msvc",
@@ -1178,30 +1181,37 @@ export function noPrebuiltMessage(
   );
 }
 
-/** The release asset (and download URL) for a host, or null when the host has
- *  no prebuilt binary — caller should point `alpSdk.cliPath` at a dev build,
- *  and `noPrebuiltMessage` above is the sentence that says so.
+/** The release asset (candidate names + download URLs) for a host, or null
+ *  when the host has no prebuilt binary — caller should point
+ *  `alpSdk.cliPath` at a dev build, and `noPrebuiltMessage` above is the
+ *  sentence that says so.
  *
- *  The asset NAME is unchanged by the archive migration: `tan-<triple>` on
- *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`. What
- *  changed is what tan-cli puts INSIDE that name. Every release through
- *  v0.5.0-rc4 ships a RAW binary there; a release built with the archive
- *  freeze (tan-cli#349 — a onedir PyInstaller freeze zipped/tarred up, because
- *  the old onefile freeze re-extracted 14 MB on every invocation, 13-19 s on
- *  macOS) ships the SAME name holding a `.zip` (win32) or `.tar.gz`
- *  (elsewhere) instead. This function does not need to know which, and does
- *  not try to: the two are told apart by `download.ts` sniffing the
- *  downloaded bytes' own magic number, never by this URL, by an extension
- *  (there isn't one), or by `version` — a per-version table for THIS would
- *  need editing on every release and would silently break a pin nobody
- *  remembered to add, the same trap `HOSTS_WITHOUT_RELEASE_ASSET` and
- *  `RELEASES_PREDATING_CONTRACT_ASSET` above exist to avoid for their own
- *  questions.
+ *  #463: the asset NAME is NOT unchanged by the archive migration, and
+ *  treating it as if it were is exactly the bug that issue is about. Every
+ *  release through v0.5.0-rc4 publishes `tan-<triple>[.exe]` holding a RAW
+ *  binary. A release built with the archive freeze (tan-cli#349 — a onedir
+ *  PyInstaller freeze zipped/tarred up, because the old onefile freeze
+ *  re-extracted 14 MB on every invocation, 13-19 s on macOS) publishes a
+ *  DIFFERENT name — `tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz`
+ *  (elsewhere) — because the archive holds a onedir tree (the launcher plus
+ *  its `_internal/` siblings), not a single file that could keep the old
+ *  name. Requesting the old name against an archive release 404s; it is not
+ *  merely the wrong content at the right URL.
+ *
+ *  This function therefore returns BOTH possible names as `candidates`,
+ *  rather than picking one, and does not try to guess which the pinned
+ *  release actually used: `resolvePublishedAsset` (download.ts) is what
+ *  decides, by reading the release's own `checksums.txt` and taking whichever
+ *  candidate has an entry — never a comparison against `version`. A
+ *  per-version table for THIS would need editing on every release and would
+ *  silently break a pin nobody remembered to add, the same trap
+ *  `HOSTS_WITHOUT_RELEASE_ASSET` and `RELEASES_PREDATING_CONTRACT_ASSET` above
+ *  exist to avoid for their own questions.
  *
  *  `checksumsUrl` is the same release's `checksums.txt`, which every tagged tan
  *  release publishes next to the binaries — resolved HERE, from the same `tag`,
  *  so the digest a download is checked against always belongs to the release the
- *  bytes came from, and vouches for whichever bytes were actually published,
+ *  bytes came from, and vouches for whichever candidate was actually published,
  *  archive or raw, since it is computed over the asset exactly as served
  *  either way. The asset names are contract-frozen on the producer side
  *  (tan-cli's `release.yml` names this function), which is what makes the
@@ -1211,7 +1221,7 @@ export function noPrebuiltMessage(
  *  at all, or `version` is a release that publishes nothing for it. `gaps` is a
  *  parameter rather than a direct read of the module constant so that the two
  *  readers who must NOT see the declared gaps can say so — `check-cli-pin.mjs`
- *  passes `{}` to get the URL it has to probe in order to VERIFY the
+ *  passes `{}` to get the URLs it has to probe in order to VERIFY the
  *  declaration, and the unit tests drive a release with gaps without waiting
  *  for one to be pinned. */
 export function releaseAssetForTarget(
@@ -1228,15 +1238,35 @@ export function releaseAssetForTarget(
     return null;
   }
   const tag = `v${version}`;
-  const assetName = `tan-${target}${platform === "win32" ? ".exe" : ""}`;
   const releaseBase = `https://github.com/${RELEASE_REPO}/releases/download/${tag}`;
+  const rawName = `tan-${target}${platform === "win32" ? ".exe" : ""}`;
+  const archiveName = `tan-${target}.${platform === "win32" ? "zip" : "tar.gz"}`;
   return {
     target,
-    assetName,
     tag,
-    url: `${releaseBase}/${assetName}`,
     checksumsUrl: `${releaseBase}/${CHECKSUMS_ASSET}`,
+    candidates: [
+      { assetName: rawName, url: `${releaseBase}/${rawName}` },
+      { assetName: archiveName, url: `${releaseBase}/${archiveName}` },
+    ],
   };
+}
+
+/** Human-readable label for a `ReleaseAsset` BEFORE it is resolved — a consent
+ *  dialog or an activity log that wants to name the download before it starts
+ *  has no digest-verified answer yet (resolving one means fetching
+ *  `checksums.txt`, which the consent dialog in particular must not do ahead
+ *  of the user's answer — this repo's own rule for a Tier A consent screen,
+ *  not a numbered requirement in ADR 0021: the ADR states "three tiers, one
+ *  consent screen" naming artifact/source/size/licence as the FOUR fields
+ *  that screen must show, and "install after one consent click" for Tier A;
+ *  it says nothing about network activity before the click, which is this
+ *  repo's own tighter rule for what "one click" has to mean). Names every
+ *  candidate rather than picking one, which is the honest version of "what
+ *  will this download": the pinned release published exactly one of them, and
+ *  which is decided at download time, not here. */
+export function describeReleaseAsset(asset: ReleaseAsset): string {
+  return `${asset.tag}: ${asset.candidates.map((c) => c.assetName).join(" or ")}`;
 }
 
 /**

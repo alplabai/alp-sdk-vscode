@@ -1338,19 +1338,26 @@ test("classifyOutcome sets severity by kind and prefers the first issue", () => 
   assert.equal(classifyOutcome(3, null).severity, "error"); // write
 });
 
-test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary, v<version> tag)", () => {
+test("releaseAssetForTarget mirrors the six tan-cli release targets, EACH under both a raw and an archive candidate name (#463)", () => {
   // gnu, not musl: a PyInstaller musl freeze is musl-DYNAMIC and would not
   // start on Ubuntu/Debian/Fedora — see the TARGETS comment (#444). Pinned here
   // so flipping the table back is a test failure, not a silent Linux break.
   const linux = releaseAssetForTarget("linux", "x64");
   assert.equal(linux.target, "x86_64-unknown-linux-gnu");
   assert.equal(linux.tag, `v${SUPPORTED_CLI_VERSION}`);
-  assert.equal(linux.assetName, "tan-x86_64-unknown-linux-gnu");
-  assert.ok(
-    linux.url.endsWith(
-      `/alplabai/tan-cli/releases/download/v${SUPPORTED_CLI_VERSION}/tan-x86_64-unknown-linux-gnu`,
-    ),
+  // [raw, archive] — see `ReleaseAsset.candidates`'s doc. `.tar.gz` off
+  // win32, never `.zip`.
+  assert.deepEqual(
+    linux.candidates.map((c) => c.assetName),
+    ["tan-x86_64-unknown-linux-gnu", "tan-x86_64-unknown-linux-gnu.tar.gz"],
   );
+  for (const candidate of linux.candidates) {
+    assert.ok(
+      candidate.url.endsWith(
+        `/alplabai/tan-cli/releases/download/v${SUPPORTED_CLI_VERSION}/${candidate.assetName}`,
+      ),
+    );
+  }
 
   // `TARGETS` still names the triple `linux/arm64` WOULD use — a Python
   // release just doesn't publish it (declared in HOSTS_WITHOUT_RELEASE_ASSET,
@@ -1359,22 +1366,31 @@ test("releaseAssetForTarget mirrors the six tan-cli release targets (raw binary,
   assert.equal(TARGETS["linux/arm64"], "aarch64-unknown-linux-musl");
   assert.equal(releaseAssetForTarget("linux", "arm64"), null);
 
-  // both macOS arches are published (Intel + Apple Silicon).
-  assert.equal(
-    releaseAssetForTarget("darwin", "x64").target,
-    "x86_64-apple-darwin",
+  // both macOS arches are published (Intel + Apple Silicon), each under
+  // `.tar.gz` for its archive candidate.
+  const darwinX64 = releaseAssetForTarget("darwin", "x64");
+  assert.equal(darwinX64.target, "x86_64-apple-darwin");
+  assert.deepEqual(
+    darwinX64.candidates.map((c) => c.assetName),
+    ["tan-x86_64-apple-darwin", "tan-x86_64-apple-darwin.tar.gz"],
   );
-  assert.equal(
-    releaseAssetForTarget("darwin", "arm64").target,
-    "aarch64-apple-darwin",
+  const darwinArm64 = releaseAssetForTarget("darwin", "arm64");
+  assert.equal(darwinArm64.target, "aarch64-apple-darwin");
+  assert.deepEqual(
+    darwinArm64.candidates.map((c) => c.assetName),
+    ["tan-aarch64-apple-darwin", "tan-aarch64-apple-darwin.tar.gz"],
   );
 
-  // Windows x64 ships; the asset carries a `.exe` suffix. arm64 is also a
-  // declared gap for the active (Python) pin -- same reasoning as linux/arm64
-  // above, and again TARGETS still has the triple.
+  // Windows x64 ships; the RAW candidate carries a `.exe` suffix and the
+  // ARCHIVE candidate carries `.zip`, never `.tar.gz`. arm64 is also a
+  // declared gap for the active (Python) pin -- same reasoning as
+  // linux/arm64 above, and again TARGETS still has the triple.
   const winX64 = releaseAssetForTarget("win32", "x64");
   assert.equal(winX64.target, "x86_64-pc-windows-msvc");
-  assert.equal(winX64.assetName, "tan-x86_64-pc-windows-msvc.exe");
+  assert.deepEqual(
+    winX64.candidates.map((c) => c.assetName),
+    ["tan-x86_64-pc-windows-msvc.exe", "tan-x86_64-pc-windows-msvc.zip"],
+  );
   assert.equal(TARGETS["win32/arm64"], "aarch64-pc-windows-msvc");
   assert.equal(releaseAssetForTarget("win32", "arm64"), null);
 
@@ -1411,12 +1427,17 @@ test("releaseAssetForTarget: a release that publishes no asset for a host has no
   );
 
   // The still-works path: same release, the hosts it DOES publish are unaffected
-  // and keep the exact asset name + tag the download uses.
+  // and keep the exact candidate names + tag the download uses.
   const winX64 = releaseAssetForTarget("win32", "x64", "0.5.0", pythonRelease);
-  assert.equal(winX64.assetName, "tan-x86_64-pc-windows-msvc.exe");
+  assert.equal(
+    winX64.candidates[0].assetName,
+    "tan-x86_64-pc-windows-msvc.exe",
+  );
   assert.equal(winX64.tag, "v0.5.0");
   assert.ok(
-    winX64.url.endsWith("/download/v0.5.0/tan-x86_64-pc-windows-msvc.exe"),
+    winX64.candidates[0].url.endsWith(
+      "/download/v0.5.0/tan-x86_64-pc-windows-msvc.exe",
+    ),
   );
   assert.ok(releaseAssetForTarget("darwin", "arm64", "0.5.0", pythonRelease));
 
@@ -1494,15 +1515,20 @@ test("releaseAssetForTarget resolves checksums.txt at the SAME tag as the binary
       `https://github.com/alplabai/tan-cli/releases/download/${asset.tag}/checksums.txt`,
     );
     // The property that matters: the digest can never be looked up against a
-    // different release than the bytes came from.
-    assert.equal(
-      asset.checksumsUrl.slice(0, asset.checksumsUrl.lastIndexOf("/")),
-      asset.url.slice(0, asset.url.lastIndexOf("/")),
-    );
+    // different release than the bytes came from — true of EVERY candidate,
+    // not just one.
+    for (const candidate of asset.candidates) {
+      assert.equal(
+        asset.checksumsUrl.slice(0, asset.checksumsUrl.lastIndexOf("/")),
+        candidate.url.slice(0, candidate.url.lastIndexOf("/")),
+      );
+    }
   }
   // An explicit version pins both halves together too.
   const pinned = releaseAssetForTarget("linux", "x64", "0.9.9");
-  assert.ok(pinned.url.includes("/download/v0.9.9/"));
+  for (const candidate of pinned.candidates) {
+    assert.ok(candidate.url.includes("/download/v0.9.9/"));
+  }
   assert.ok(pinned.checksumsUrl.includes("/download/v0.9.9/"));
 });
 

@@ -28,6 +28,14 @@
 // only proves the archive arrived intact, not that unpacking it produced a
 // working launcher — before anything lands beside `destFile`, which is left
 // untouched (never even attempted) if that check fails.
+//
+// #463: the archive and raw shapes are published under DIFFERENT asset names
+// (`tan-<triple>[.exe]` vs `tan-<triple>.zip`/`.tar.gz`), not the same name
+// with different bytes — so which NAME to even request is a question this
+// file also answers, ahead of any of the above: `resolvePublishedAsset`
+// resolves it from the release's own `checksums.txt`, before a single byte of
+// the asset itself is fetched. `sniffArchiveKind` above is a SEPARATE, later
+// decision once bytes exist — never used to pick the name.
 
 import { execFile } from "child_process";
 import { createHash } from "crypto";
@@ -39,7 +47,11 @@ import * as path from "path";
 import { pipeline } from "stream/promises";
 import * as tls from "tls";
 
-import { ChecksumSpec } from "./models";
+import {
+  ChecksumSpec,
+  ReleaseAssetCandidate,
+  ResolvedAssetCandidate,
+} from "./models";
 import { binaryName, expectedSha256 } from "./service";
 
 /**
@@ -744,8 +756,13 @@ async function getFinal(
 }
 
 /**
- * The sha256 the release publishes for `verify.assetName`, read from that
- * release's own `checksums.txt`.
+ * Fetch and return `checksumsUrl`'s body as text — the half of checksum
+ * verification that is the SAME regardless of which asset name is being
+ * looked up (a release's `checksums.txt` is one file covering every asset it
+ * published), split out so both `publishedSha256` (one known name) and
+ * `resolvePublishedAsset` (choosing between several candidate names, #463)
+ * fetch it exactly once each rather than duplicating the GET/cap/error
+ * handling below.
  *
  * Fetched through the SAME `get` path as the binary, so it inherits the proxy
  * settings, the redirect cap, the https-downgrade refusal and both timeouts. It
@@ -753,22 +770,20 @@ async function getFinal(
  * otherwise fail this fetch on every download and never install the CLI at all —
  * the proxy support and the verification would cancel each other out.
  *
- * Fetched BEFORE the binary, so a release with no usable checksum costs no
- * transfer at all. An abort (user cancel / wall clock) and a `ProxyError` travel
- * unchanged — the callers branch on both, and neither is a checksum verdict.
- * Everything else becomes a `ChecksumError`; see that class for why none of
- * these outcomes may be softened into a warning.
+ * An abort (user cancel / wall clock) and a `ProxyError` travel unchanged —
+ * the callers branch on both, and neither is a checksum verdict. Everything
+ * else becomes a `ChecksumError("unfetchable", …)`; see that class for why
+ * none of these outcomes may be softened into a warning.
  */
-async function publishedSha256(
-  verify: ChecksumSpec,
+async function fetchChecksumsManifest(
+  checksumsUrl: string,
   config: ProxyConfig,
   signal?: AbortSignal,
 ): Promise<string> {
-  let manifest: string;
   try {
     const { response } = await getFinal(
-      verify.checksumsUrl,
-      verify.checksumsUrl.startsWith("https:"),
+      checksumsUrl,
+      checksumsUrl.startsWith("https:"),
       MAX_REDIRECTS,
       config,
       signal,
@@ -794,7 +809,7 @@ async function publishedSha256(
       }
       chunks.push(chunk as Buffer);
     }
-    manifest = Buffer.concat(chunks).toString("utf8");
+    return Buffer.concat(chunks).toString("utf8");
   } catch (error) {
     if (isAbort(error) || error instanceof ProxyError) {
       throw error;
@@ -805,10 +820,35 @@ async function publishedSha256(
         "for it could not be fetched, so there was no way to tell whether the " +
         "binary is the one Alp Lab published. Check your connection or proxy, " +
         "then try again.",
-      `could not fetch ${verify.checksumsUrl} — ${error instanceof Error ? error.message : String(error)}`,
+      `could not fetch ${checksumsUrl} — ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
 
+/**
+ * The sha256 the release publishes for `verify.assetName`, read from that
+ * release's own `checksums.txt`.
+ *
+ * Fetched BEFORE the binary, so a release with no usable checksum costs no
+ * transfer at all. Only reached when `verify.digest` was NOT already supplied
+ * — #465: `resolvePublishedAsset` below reads this same manifest to CHOOSE
+ * the candidate and, having read it, already has the digest for that exact
+ * name; `downloadCli` threads that value through as `ChecksumSpec.digest` so
+ * a managed download never fetches `checksums.txt` twice. This function stays
+ * for the callers that have not already read the manifest — the
+ * transfer-mechanics tests, and any future caller with an asset name but no
+ * prior resolution step.
+ */
+async function publishedSha256(
+  verify: ChecksumSpec,
+  config: ProxyConfig,
+  signal?: AbortSignal,
+): Promise<string> {
+  const manifest = await fetchChecksumsManifest(
+    verify.checksumsUrl,
+    config,
+    signal,
+  );
   const digest = expectedSha256(manifest, verify.assetName);
   if (!digest) {
     throw new ChecksumError(
@@ -820,6 +860,82 @@ async function publishedSha256(
     );
   }
   return digest;
+}
+
+/**
+ * Which of `candidates` this release actually published, decided by reading
+ * its own `checksums.txt` ONCE and taking whichever candidate name has an
+ * entry — #463's fix: never a comparison against a version number, which is
+ * the same trap `HOSTS_WITHOUT_RELEASE_ASSET` (service.ts) exists to avoid
+ * for a different question, and never the downloaded bytes (there are none
+ * yet — this runs BEFORE any asset transfer starts, so a wrong guess costs no
+ * wasted transfer either).
+ *
+ * SEARCHED ARCHIVE-FIRST (#465), independent of `candidates`' own array
+ * order — `releaseAssetForTarget` still builds `[raw, archive]` and that
+ * order stays load-bearing elsewhere (`describeReleaseAsset` names them in
+ * that order; the tuple TYPE is unchanged), this function just no longer
+ * takes "first match" to mean "array-position 0 wins". Exactly one candidate
+ * is expected to match — tan-cli's `release.yml` publishes one shape or the
+ * other for a given target, never both — so the preference only bites for a
+ * release that lists BOTH, e.g. a transition tag kept for backward
+ * compatibility with an older resolver that only knows the raw name. Such a
+ * release is not asking a resolver that understands both names to pick the
+ * slow one: picking raw there would silently resurrect the 13.25-19.74 s
+ * macOS onefile startup tan-cli#349 exists to kill, with no error to catch
+ * it — it is a valid asset, correctly verified, just the wrong shape.
+ *
+ * Returns the candidate PLUS the digest this same manifest read already found
+ * for it (`ResolvedAssetCandidate`) — #465: the caller no longer has to
+ * re-fetch `checksums.txt` to learn what this function already knows.
+ *
+ * Throws `ChecksumError("unlisted", …)`, naming every candidate name tried,
+ * when NONE has an entry — fail LOUD rather than silently falling through to
+ * either guess, which is what a caller that skipped this step and picked
+ * `candidates[0]` unconditionally would do.
+ */
+export async function resolvePublishedAsset(
+  candidates: readonly ReleaseAssetCandidate[],
+  checksumsUrl: string,
+  config: ProxyConfig,
+  signal?: AbortSignal,
+): Promise<ResolvedAssetCandidate> {
+  const manifest = await fetchChecksumsManifest(checksumsUrl, config, signal);
+  for (const candidate of [...candidates].reverse()) {
+    const digest = expectedSha256(manifest, candidate.assetName);
+    if (digest !== null) {
+      return { ...candidate, digest };
+    }
+  }
+  throw new ChecksumError(
+    "unlisted",
+    "The tan CLI download was discarded: the release's checksum file does " +
+      "not list any of the asset names this extension knows for this " +
+      "platform, so nothing vouches for what it published.",
+    `no entry for ${candidates.map((c) => c.assetName).join(" or ")} in ${checksumsUrl}`,
+  );
+}
+
+/**
+ * Build the `ResolveDeps.resolveAsset` seam the adapter injects — the
+ * candidate-selection half of #463's fix, bound to the same proxy-settings
+ * reader `downloadSeam` uses (read per call, so a `http.proxy` change takes
+ * effect on the next resolution without a reload). Kept as its OWN seam
+ * rather than folded into `download` itself: `downloadFile`'s signature (one
+ * URL, one `ChecksumSpec`) is unchanged and still covered by every existing
+ * transfer/proxy/checksum test — this seam runs BEFORE it, decides which
+ * name, URL and digest to hand it, at the cost of one `checksums.txt` fetch
+ * (tiny, capped at `MAX_CHECKSUMS_BYTES`) that `downloadCli` (#465) then
+ * reuses instead of `downloadFile` fetching it again. */
+export function resolveAssetSeam(
+  readProxy: () => ProxyConfig,
+): (
+  candidates: readonly ReleaseAssetCandidate[],
+  checksumsUrl: string,
+  signal: AbortSignal | undefined,
+) => Promise<ResolvedAssetCandidate> {
+  return (candidates, checksumsUrl, signal) =>
+    resolvePublishedAsset(candidates, checksumsUrl, readProxy(), signal);
 }
 
 /** Magic-number sniffs for the archive formats a tan-cli release may publish
@@ -974,6 +1090,16 @@ function findFile(root: string, name: string): string | null {
  * what every downstream consumer treats as "the cached CLI" — is left
  * pointing at whichever binary was there before, fully old or fully new,
  * never a launcher beside a half-updated support directory.
+ *
+ * TRAVERSAL CONTAINMENT (a member named `../etc/passwd` or an absolute path)
+ * is NOT this function's own check — `runTar` shells the OS extractor
+ * unconditionally and trusts ITS handling of such a member (GNU tar and
+ * bsdtar both refuse one outright rather than write outside the destination,
+ * measured against both on this repo's supported hosts), so the guarantee is
+ * INHERITED from the extractor, not enforced here. `payloadRoot`'s "exactly
+ * one top-level directory" unwrap runs on whatever `staging` actually
+ * contains AFTER that extraction, so it inherits the same containment rather
+ * than re-deciding it.
  */
 async function installArchive(
   archiveFile: string,
@@ -1245,8 +1371,17 @@ export async function downloadFile(
   sweepLeftovers(destFile);
   // Before the transfer: a release whose checksum can't be resolved is refused
   // either way, so there is no reason to move the binary's bytes first.
+  //
+  // #465: `verify.digest`, when the caller already has it, is used AS-IS
+  // rather than re-fetching `checksums.txt` to re-derive the same value —
+  // `downloadCli` supplies it from `resolveAsset`'s manifest read, which
+  // picked THIS exact `assetName` from THIS exact `checksumsUrl` moments
+  // earlier. Skipping the second fetch is not just fewer requests: it also
+  // makes "the digest came from the SAME manifest read as the candidate
+  // selection" a fact by construction rather than an assumption resting on
+  // `checksumsUrl` returning identical bytes twice.
   const expectedDigest = verify
-    ? await publishedSha256(verify, proxy, signal)
+    ? (verify.digest ?? (await publishedSha256(verify, proxy, signal)))
     : null;
   return attempt(
     url,

@@ -44,6 +44,15 @@
 // For each route: take the deps that route actually built, drive its `download`
 // against a release server serving a tampered body under a correct manifest,
 // and require a refusal that leaves nothing behind.
+//
+// #465 finding 1: the SAME hazard exists one step earlier, for `resolveAsset`
+// (#463's candidate-selection seam) — `buildResolveDeps` could wire it to a
+// `candidates[0]` stand-in exactly as easily as `download` could be wired to
+// a `null`-verifying arrow, and nothing here was watching for it. So each
+// route below is ALSO driven with its captured `deps.resolveAsset` against a
+// release whose `checksums.txt` lists ONLY the archive name — proving the
+// seam this repo's `buildResolveDeps` actually builds reads the manifest,
+// not a hardcoded array index.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -85,6 +94,40 @@ async function releaseServer(body) {
   return {
     assetUrl: `${base}/${ASSET_NAME}`,
     spec: { assetName: ASSET_NAME, checksumsUrl: `${base}/checksums.txt` },
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+const RAW_NAME = "tan-x86_64-unknown-linux-gnu";
+const ARCHIVE_NAME = "tan-x86_64-unknown-linux-gnu.tar.gz";
+
+/** #465 finding 1: a release whose `checksums.txt` lists ONLY the archive
+ *  name — never the raw one — so `deps.resolveAsset(candidates, …)` resolving
+ *  to `candidates[0]` (raw, `releaseAssetForTarget`'s array order) rather
+ *  than the ARCHIVE candidate is distinguishable from the wiring actually
+ *  reading the manifest: `candidates[0]` has no entry here at all. */
+async function archiveOnlyReleaseServer() {
+  const digest = crypto
+    .createHash("sha256")
+    .update("archive body")
+    .digest("hex");
+  const server = http.createServer((req, res) => {
+    if (req.url === "/checksums.txt") {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end(`${digest}  ${ARCHIVE_NAME}\n`);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  return {
+    checksumsUrl: `${base}/checksums.txt`,
+    candidates: [
+      { assetName: RAW_NAME, url: `${base}/${RAW_NAME}` },
+      { assetName: ARCHIVE_NAME, url: `${base}/${ARCHIVE_NAME}` },
+    ],
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -252,6 +295,45 @@ for (const route of ROUTES) {
         await assertSeamRefuses(deps.download, route.name);
       }
     } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  // #465 finding 1: the candidate-SELECTION half of the seam, alongside the
+  // verified-TRANSFER half above. Drives the captured (real) `deps
+  // .resolveAsset` — `resolveAssetSeam` bound in `buildResolveDeps`, never a
+  // test double — against a release whose `checksums.txt` lists ONLY the
+  // archive name, so a wiring that silently fell back to `candidates[0]`
+  // (raw — `releaseAssetForTarget`'s array order) would resolve to a name
+  // with NO entry in that manifest and this assertion would catch it.
+  test(`${route.name}: the resolveAsset seam it builds picks the candidate the release actually published`, async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "alp-seam-wiring-"));
+    const server = await archiveOnlyReleaseServer();
+    try {
+      const { adapter, captured } = loadAdapterCapturingDownloadCli();
+      await route.run(adapter, fakeContext(home));
+
+      assert.ok(
+        captured.length > 0,
+        `${route.name} never reached downloadCli — the route changed, so this ` +
+          "guard is no longer watching it",
+      );
+      for (const deps of captured) {
+        assert.equal(typeof deps.resolveAsset, "function");
+        const resolved = await deps.resolveAsset(
+          server.candidates,
+          server.checksumsUrl,
+          undefined,
+        );
+        assert.equal(
+          resolved.assetName,
+          ARCHIVE_NAME,
+          `${route.name}: resolveAsset did not pick the candidate this ` +
+            "release actually published",
+        );
+      }
+    } finally {
+      await server.close();
       fs.rmSync(home, { recursive: true, force: true });
     }
   });

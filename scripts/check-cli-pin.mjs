@@ -88,11 +88,11 @@ const declaredGaps = HOSTS_WITHOUT_RELEASE_ASSET[SUPPORTED_CLI_VERSION] ?? [];
 const results = await Promise.all(
   HOSTS.map(async ([platform, arch]) => {
     const host = `${platform}/${arch}`;
-    // `{}` — the empty gap table — on purpose: this gate has to probe the URL a
+    // `{}` — the empty gap table — on purpose: this gate has to probe the URLs a
     // download WOULD use even for a declared gap, or the declaration could
     // never be checked against the release it describes. Passing the real table
     // would make `releaseAssetForTarget` return null for exactly the hosts this
-    // gate most needs a URL for, and the gate would then confirm the
+    // gate most needs URLs for, and the gate would then confirm the
     // declaration by reading it.
     const asset = releaseAssetForTarget(
       platform,
@@ -109,14 +109,39 @@ const results = await Promise.all(
         detail: "no target triple for this host in TARGETS",
       };
     }
-    const { state, detail } = await probeAsset(asset.url);
+    // #463: a release publishes EXACTLY ONE of `asset.candidates` — the raw
+    // name every release through v0.5.0-rc4 used, or the archive name
+    // tan-cli#349 introduces — never both, and this gate must not assume
+    // which from `SUPPORTED_CLI_VERSION` any more than the extension itself
+    // does (`resolvePublishedAsset` in download.ts decides that from the
+    // release's own checksums.txt, not from the version). So it probes BOTH
+    // candidate URLs and the host counts as "present" if either resolves.
+    const probes = await Promise.all(
+      asset.candidates.map(async (candidate) => ({
+        candidate,
+        ...(await probeAsset(candidate.url)),
+      })),
+    );
+    const present = probes.find((p) => p.state === "present");
+    const state = present
+      ? "present"
+      : probes.every((p) => p.state === "unknown")
+        ? "unknown" // every probe hit a 5xx/429/network hiccup — not a repo defect
+        : "missing";
     return {
       host,
-      label: `${asset.tag} ${asset.assetName}`,
+      label: `${asset.tag} ${asset.candidates.map((c) => c.assetName).join(" / ")}`,
       state,
       expected,
-      detail,
-      url: asset.url,
+      detail: probes
+        .map(
+          (p) =>
+            `${p.candidate.assetName}: ${p.state}${p.detail ? ` (${p.detail})` : ""}`,
+        )
+        .join("; "),
+      url: present
+        ? present.candidate.url
+        : asset.candidates.map((c) => c.url).join(" | "),
     };
   }),
 );

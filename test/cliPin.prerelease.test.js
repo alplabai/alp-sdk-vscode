@@ -138,24 +138,36 @@ test("the shell sites' two-grep pipeline keeps the prerelease suffix", () => {
 });
 
 test("a prerelease pin round-trips into a real tan-cli release URL", () => {
-  // v0.4.0-rc1 is PUBLISHED, so this URL is the live one, not a shape guess.
+  // v0.4.0-rc1 is PUBLISHED (as a raw binary — pre-dates tan-cli#349), so this
+  // URL is the live one, not a shape guess.
   const asset = releaseAssetForTarget("darwin", "arm64", "0.4.0-rc1");
 
   assert.equal(asset.tag, "v0.4.0-rc1");
-  assert.equal(asset.assetName, "tan-aarch64-apple-darwin");
+  // [raw, archive] — see `ReleaseAsset.candidates`'s doc (#463).
+  assert.equal(asset.candidates[0].assetName, "tan-aarch64-apple-darwin");
   assert.equal(
-    asset.url,
+    asset.candidates[0].url,
     "https://github.com/alplabai/tan-cli/releases/download/v0.4.0-rc1/tan-aarch64-apple-darwin",
+  );
+  assert.equal(
+    asset.candidates[1].assetName,
+    "tan-aarch64-apple-darwin.tar.gz",
   );
   assert.equal(
     asset.checksumsUrl,
     "https://github.com/alplabai/tan-cli/releases/download/v0.4.0-rc1/checksums.txt",
   );
 
-  // The Windows asset carries `.exe`, and the suffix must not disturb that —
-  // this is the one target where the name is not just the triple.
+  // The Windows RAW candidate carries `.exe`, and the suffix must not disturb
+  // that — this is the one target where the name is not just the triple. Its
+  // ARCHIVE candidate carries `.zip`, never `.tar.gz`.
+  const winX64 = releaseAssetForTarget("win32", "x64", "0.5.0-rc.1");
   assert.equal(
-    releaseAssetForTarget("win32", "x64", "0.5.0-rc.1").url,
+    winX64.candidates[0].url,
     "https://github.com/alplabai/tan-cli/releases/download/v0.5.0-rc.1/tan-x86_64-pc-windows-msvc.exe",
+  );
+  assert.equal(
+    winX64.candidates[1].url,
+    "https://github.com/alplabai/tan-cli/releases/download/v0.5.0-rc.1/tan-x86_64-pc-windows-msvc.zip",
   );
 });

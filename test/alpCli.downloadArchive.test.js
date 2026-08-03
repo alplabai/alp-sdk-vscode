@@ -29,8 +29,14 @@ const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const zlib = require("node:zlib");
 
-const { ChecksumError, downloadFile } = require("../out/alpCli/download.js");
+const {
+  ChecksumError,
+  downloadFile,
+  resolvePublishedAsset,
+} = require("../out/alpCli/download.js");
+const { releaseAssetForTarget } = require("../out/alpCli/service.js");
 
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 
@@ -386,3 +392,327 @@ test(
     );
   },
 );
+
+// ── traversal safety: an archive entry cannot be written outside the
+//    destination. Built as RAW ustar bytes rather than shelled out to the
+//    host `tar -c`, because tar implementations disagree on whether `..` in a
+//    member name given at CREATE time is normalized away before it ever
+//    reaches the archive — the point of this test is what `runTar`'s
+//    EXTRACTING invocation (`tar -xf …`, no `-P`/`--insecure`) does with a
+//    member name that already contains `..`, which only a hand-built archive
+//    guarantees. ─────────────────────────────────────────────────────────────
+
+/** One minimal ustar (POSIX tar) header + content block for `name`/`content`.
+ *  Just enough of the format for a single regular-file entry: name, size,
+ *  checksum, typeflag '0', the "ustar\0"+"00" magic/version. Every other
+ *  field is zero-filled, which every real tar accepts. */
+function ustarEntry(name, content) {
+  const body = Buffer.from(content, "utf8");
+  const header = Buffer.alloc(512);
+  header.write(name, 0, "utf8"); // name (100 bytes)
+  header.write("0000644\0", 100, "utf8"); // mode
+  header.write("0000000\0", 108, "utf8"); // uid
+  header.write("0000000\0", 116, "utf8"); // gid
+  header.write(`${body.length.toString(8).padStart(11, "0")}\0`, 124, "utf8"); // size
+  header.write("00000000000\0", 136, "utf8"); // mtime
+  header.write("        ", 148, "utf8"); // chksum placeholder: 8 spaces
+  header.write("0", 156, "utf8"); // typeflag: regular file
+  header.write("ustar\x0000", 257, "utf8"); // magic "ustar\0" + version "00"
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "utf8"); // chksum, for real this time
+  const padded = Buffer.alloc(Math.ceil(body.length / 512) * 512);
+  body.copy(padded);
+  return Buffer.concat([header, padded]);
+}
+
+/** A `.tar.gz` containing exactly the given `{name, content}` entries, built
+ *  byte-for-byte rather than through any tar CLI — see the section banner
+ *  above for why. */
+function buildRawTarGz(entries) {
+  const blocks = entries.map(({ name, content }) => ustarEntry(name, content));
+  blocks.push(Buffer.alloc(1024)); // two zero blocks = the tar EOF marker
+  return zlib.gzipSync(Buffer.concat(blocks));
+}
+
+test("downloadFile: an archive entry named with a path-traversal ('../../') prefix never lands outside the destination", async () => {
+  const marker = `alp-traversal-marker-${process.pid}-${Date.now()}.txt`;
+  const archiveDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alp-traversal-src-"),
+  );
+  const archiveFile = path.join(archiveDir, "archive.tar.gz");
+  fs.writeFileSync(
+    archiveFile,
+    buildRawTarGz([
+      { name: "tan", content: "the launcher\n" },
+      // Two levels: `installArchive` extracts into a staging dir ONE level
+      // inside the cache dir (`<destFile>.extract.<pid>.<ts>.tmp`), so `../`
+      // alone would only reach the cache dir itself — `../../` is what it
+      // takes to escape the cache dir into the shared OS temp root, the
+      // sharpest version of "written outside the destination" this test can
+      // demonstrate without touching a real filesystem root.
+      { name: `../../${marker}`, content: "must never land here\n" },
+    ]),
+  );
+  await withSystem32TarFirst(() =>
+    withReleaseServer(archiveFile, null, async (baseUrl) => {
+      const { dir, dest } = tmpCacheDir("tan");
+      const outcome = await rejectionOf(
+        downloadFile(`${baseUrl}/asset`, dest, null, { platform: "linux" }),
+      );
+      // #465 finding 5: MEASURED on both extractors this repo runs on (GNU
+      // tar 1.34, bsdtar 3.8.4/System32) — a `../../` member makes `tar`
+      // exit non-zero and refuse the whole archive, which `runTar` turns
+      // into a rejection. Pinned as an assertion, not an assumption: if a
+      // future host's tar instead SANITIZED the entry (stripped the leading
+      // `../../` and wrote it under the extraction root) this would catch
+      // that shift rather than silently taking the `outcome` truthy branch
+      // below on a host where it happens not to hold — which is what made
+      // the un-taken branch here dead in the first place.
+      assert.ok(
+        outcome,
+        "a `../../` archive member did not cause a refusal — extractor " +
+          "behaviour changed, and the containment assumptions below need " +
+          "re-checking against it",
+      );
+      assert.ok(
+        !fs.existsSync(dest),
+        "a refused archive must leave nothing installed, including the launcher",
+      );
+      // Whichever way the host tar handles the unsafe member — silently
+      // sanitized (GNU tar strips a leading `../`; bsdtar refuses to write
+      // outside the extraction root by default) or an outright non-zero exit
+      // `runTar` turns into a rejection — is acceptable; what must NEVER be
+      // true is the marker existing outside `dir`.
+      assert.ok(
+        !fs.existsSync(path.join(os.tmpdir(), marker)),
+        "a `../../` archive member escaped into the shared OS temp root",
+      );
+      // THE CACHE DIR ITSELF, not `path.join(dir, "..", marker)` — `dir` is
+      // already an `os.tmpdir()` mkdtemp, so that path and the one above
+      // resolve to the SAME location and neither one checks the spot a
+      // STRIPPED (not refused) member would actually land: one `../` from
+      // the extraction root (`installArchive`'s staging dir, one level
+      // inside `dir`) reaches `dir` itself, and `installArchive`'s own move
+      // loop (download.ts, "every extracted top-level entry is moved into
+      // the cache dir") would then install it there as a top-level sibling
+      // of the launcher.
+      assert.ok(
+        !fs.existsSync(path.join(dir, marker)),
+        "a `../../` archive member landed as a top-level entry in the cache directory",
+      );
+    }),
+  );
+});
+
+// ── #463: which candidate NAME a release published, resolved from its own
+//    checksums.txt — the bug this file's other tests do not cover, because
+//    they all start from a URL that already names the right asset. A pin
+//    naming a RAW release and a pin naming an ARCHIVE release must both
+//    resolve `releaseAssetForTarget`'s two candidates (raw, archive) to the
+//    one the release actually published, without comparing against a
+//    version — see `resolvePublishedAsset` in download.ts. ──────────────────
+
+/** Serve `manifest` at `/checksums.txt` on 127.0.0.1, run `fn(checksumsUrl)`,
+ *  and always close the server after. Narrower than `withReleaseServer`
+ *  above: these tests drive candidate SELECTION, which reads only
+ *  `checksums.txt` and never touches an asset body. */
+async function withChecksumsServer(manifest, fn) {
+  const server = http.createServer((req, res) => {
+    const body = manifest ?? "";
+    res.writeHead(200, { "content-length": String(Buffer.byteLength(body)) });
+    res.end(body);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    await fn(`http://127.0.0.1:${port}/checksums.txt`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+/** The four hosts tan-cli's PyInstaller matrix actually publishes an asset
+ *  for (alplabai/tan-cli#252) — win32/arm64 and linux/arm64 are declared
+ *  gaps and covered separately below. `{}` for `gaps`, same reason
+ *  `scripts/check-cli-pin.mjs` passes it: these rows probe candidate NAMES,
+ *  not whether the ACTIVE pin happens to publish this host. */
+const PUBLISHED_HOSTS = [
+  ["win32", "x64"],
+  ["darwin", "x64"],
+  ["darwin", "arm64"],
+  ["linux", "x64"],
+];
+
+test("resolvePublishedAsset: each of the four published targets resolves to the ARCHIVE candidate when that is what checksums.txt lists", async () => {
+  for (const [platform, arch] of PUBLISHED_HOSTS) {
+    const asset = releaseAssetForTarget(platform, arch, "0.6.0", {});
+    const [rawCandidate, archiveCandidate] = asset.candidates;
+    const digest = sha256(Buffer.from("archive body"));
+    await withChecksumsServer(
+      `${digest}  ${archiveCandidate.assetName}\n`,
+      async (checksumsUrl) => {
+        const resolved = await resolvePublishedAsset(
+          asset.candidates,
+          checksumsUrl,
+          {},
+        );
+        // #465: resolved carries the digest this same manifest read already
+        // found, so `download` never fetches checksums.txt a second time.
+        assert.deepEqual(
+          resolved,
+          { ...archiveCandidate, digest },
+          `${platform}/${arch}: expected the archive candidate ` +
+            `(${archiveCandidate.assetName}), not the raw one ` +
+            `(${rawCandidate.assetName})`,
+        );
+      },
+    );
+  }
+});
+
+test("resolvePublishedAsset: the currently pinned RAW shape still resolves to the extensionless/.exe candidate", async () => {
+  for (const [platform, arch] of PUBLISHED_HOSTS) {
+    // 0.5.0-rc4 IS the currently pinned raw-shape release (SUPPORTED_CLI_VERSION
+    // at the time of writing) — pinned by version string here so this test
+    // keeps meaning "the raw shape" even after the pin itself moves on.
+    const asset = releaseAssetForTarget(platform, arch, "0.5.0-rc4", {});
+    const [rawCandidate] = asset.candidates;
+    const digest = sha256(Buffer.from("raw body"));
+    await withChecksumsServer(
+      `${digest}  ${rawCandidate.assetName}\n`,
+      async (checksumsUrl) => {
+        const resolved = await resolvePublishedAsset(
+          asset.candidates,
+          checksumsUrl,
+          {},
+        );
+        assert.deepEqual(resolved, { ...rawCandidate, digest });
+      },
+    );
+  }
+});
+
+test("resolvePublishedAsset: a release listing BOTH candidates (a transition tag) resolves to the ARCHIVE, not candidates[0] (#465 finding 2)", async () => {
+  // A release kept BOTH names for backward compatibility with an older
+  // resolver that only knows the raw one. Picking raw here — "first match in
+  // array order", i.e. `candidates[0]`, which is what `releaseAssetForTarget`
+  // builds as [raw, archive] — would silently resurrect the 13.25-19.74 s
+  // macOS onefile startup tan-cli#349 exists to kill: a VALID asset, correctly
+  // verified, just the slow shape, with no error to catch the regression.
+  const asset = releaseAssetForTarget("linux", "x64", "0.6.0", {});
+  const [rawCandidate, archiveCandidate] = asset.candidates;
+  const rawDigest = sha256(Buffer.from("raw body"));
+  const archiveDigest = sha256(Buffer.from("archive body"));
+  await withChecksumsServer(
+    `${rawDigest}  ${rawCandidate.assetName}\n` +
+      `${archiveDigest}  ${archiveCandidate.assetName}\n`,
+    async (checksumsUrl) => {
+      const resolved = await resolvePublishedAsset(
+        asset.candidates,
+        checksumsUrl,
+        {},
+      );
+      assert.deepEqual(resolved, {
+        ...archiveCandidate,
+        digest: archiveDigest,
+      });
+    },
+  );
+});
+
+test("resolvePublishedAsset: a release listing NEITHER candidate refuses loudly, naming both names tried — no crash, no silent fall-through", async () => {
+  const asset = releaseAssetForTarget("linux", "x64", "0.6.0", {});
+  await withChecksumsServer(
+    // A real but UNRELATED entry — proves this is "neither candidate is
+    // here", not "the file is empty/unparseable".
+    `${sha256(Buffer.from("x"))}  some-other-tool-x86_64-unknown-linux-gnu\n`,
+    async (checksumsUrl) => {
+      const rejection = await rejectionOf(
+        resolvePublishedAsset(asset.candidates, checksumsUrl, {}),
+      );
+      assert.ok(
+        rejection instanceof ChecksumError,
+        `expected a ChecksumError, got ${rejection && rejection.name}`,
+      );
+      assert.equal(rejection.kind, "unlisted");
+      assert.match(rejection.message, /does not list any of the asset names/);
+      for (const candidate of asset.candidates) {
+        assert.ok(
+          rejection.detail.includes(candidate.assetName),
+          `detail must name the tried candidate ${candidate.assetName}: ${rejection.detail}`,
+        );
+      }
+    },
+  );
+});
+
+test("resolvePublishedAsset: an unfetchable checksums.txt refuses loudly rather than guessing a candidate", async () => {
+  const asset = releaseAssetForTarget("linux", "x64", "0.6.0", {});
+  const rejection = await rejectionOf(
+    // Port 1 on loopback: refused immediately. No network, no waiting.
+    resolvePublishedAsset(
+      asset.candidates,
+      "http://127.0.0.1:1/checksums.txt",
+      {},
+    ),
+  );
+  assert.ok(
+    rejection instanceof ChecksumError,
+    `expected a ChecksumError, got ${rejection && rejection.name}`,
+  );
+  assert.equal(rejection.kind, "unfetchable");
+});
+
+test("resolveAsset → download: checksums.txt is fetched ONCE for a managed download, not twice (#465 finding 3)", async () => {
+  const RAW_NAME = "tan-x86_64-unknown-linux-gnu";
+  const BODY = "raw body";
+  const digest = sha256(Buffer.from(BODY));
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push(req.url);
+    if (req.url === "/checksums.txt") {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end(`${digest}  ${RAW_NAME}\n`);
+      return;
+    }
+    res.writeHead(200, { "content-length": String(Buffer.byteLength(BODY)) });
+    res.end(BODY);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { dir, dest } = tmpCacheDir(RAW_NAME);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const checksumsUrl = `${base}/checksums.txt`;
+    const candidates = [
+      { assetName: RAW_NAME, url: `${base}/asset` },
+      { assetName: `${RAW_NAME}.tar.gz`, url: `${base}/asset.tar.gz` },
+    ];
+
+    // The exact wiring `downloadCli` (adapterCore.ts) drives: resolve the
+    // candidate + its digest from ONE read of checksums.txt, then hand that
+    // digest straight to the transfer rather than letting it fetch the same
+    // file again to re-derive the value.
+    const resolved = await resolvePublishedAsset(candidates, checksumsUrl, {});
+    await downloadFile(resolved.url, dest, {
+      assetName: resolved.assetName,
+      checksumsUrl,
+      digest: resolved.digest,
+    });
+
+    assert.equal(fs.readFileSync(dest, "utf8"), BODY);
+    // tan-cli#176's design is TWO requests per managed download: checksums.txt
+    // once, the asset once. Measured at THREE before #465 — resolveAsset's own
+    // read, discarded after picking the candidate, then downloadFile fetching
+    // checksums.txt again inside `publishedSha256` to re-derive the digest it
+    // had a moment earlier.
+    assert.deepEqual(
+      requests,
+      ["/checksums.txt", "/asset"],
+      `expected exactly [checksums.txt, asset], got ${JSON.stringify(requests)}`,
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
