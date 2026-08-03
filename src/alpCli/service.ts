@@ -170,8 +170,11 @@ const RELEASE_REPO = "alplabai/tan-cli";
  *  binaries (verified against the live v0.4.0 release). */
 const CHECKSUMS_ASSET = "checksums.txt";
 
-/** Host platform/arch → rust target triple (the six targets tan-cli publishes a
- *  raw binary for). Windows ships BOTH x64 and arm64, picked by `process.arch`. */
+/** Host platform/arch → rust target triple (the six targets tan-cli publishes
+ *  an asset for — a raw binary through v0.5.0-rc4, an archive holding one
+ *  from tan-cli#349 on; `download.ts` tells the two apart from the bytes, not
+ *  from this table). Windows ships BOTH x64 and arm64, picked by
+ *  `process.arch`. */
 export const TARGETS: Readonly<Record<string, string>> = {
   "win32/x64": "x86_64-pc-windows-msvc",
   "win32/arm64": "aarch64-pc-windows-msvc",
@@ -1178,12 +1181,29 @@ export function noPrebuiltMessage(
 /** The release asset (and download URL) for a host, or null when the host has
  *  no prebuilt binary — caller should point `alpSdk.cliPath` at a dev build,
  *  and `noPrebuiltMessage` above is the sentence that says so.
- *  tan-cli ships a RAW binary per target (not an archive): `tan-<triple>` on
- *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`.
+ *
+ *  The asset NAME is unchanged by the archive migration: `tan-<triple>` on
+ *  Unix, `tan-<triple>.exe` on Windows; the release tag is `v<version>`. What
+ *  changed is what tan-cli puts INSIDE that name. Every release through
+ *  v0.5.0-rc4 ships a RAW binary there; a release built with the archive
+ *  freeze (tan-cli#349 — a onedir PyInstaller freeze zipped/tarred up, because
+ *  the old onefile freeze re-extracted 14 MB on every invocation, 13-19 s on
+ *  macOS) ships the SAME name holding a `.zip` (win32) or `.tar.gz`
+ *  (elsewhere) instead. This function does not need to know which, and does
+ *  not try to: the two are told apart by `download.ts` sniffing the
+ *  downloaded bytes' own magic number, never by this URL, by an extension
+ *  (there isn't one), or by `version` — a per-version table for THIS would
+ *  need editing on every release and would silently break a pin nobody
+ *  remembered to add, the same trap `HOSTS_WITHOUT_RELEASE_ASSET` and
+ *  `RELEASES_PREDATING_CONTRACT_ASSET` above exist to avoid for their own
+ *  questions.
+ *
  *  `checksumsUrl` is the same release's `checksums.txt`, which every tagged tan
  *  release publishes next to the binaries — resolved HERE, from the same `tag`,
  *  so the digest a download is checked against always belongs to the release the
- *  bytes came from. The asset names are contract-frozen on the producer side
+ *  bytes came from, and vouches for whichever bytes were actually published,
+ *  archive or raw, since it is computed over the asset exactly as served
+ *  either way. The asset names are contract-frozen on the producer side
  *  (tan-cli's `release.yml` names this function), which is what makes the
  *  filename lookup in that file reliable.
  *

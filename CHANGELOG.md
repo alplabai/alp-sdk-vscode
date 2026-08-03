@@ -6,6 +6,34 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **The managed `tan` download now unpacks an archive release, not just a raw
+  binary (tan-cli#349).** tan-cli's onefile PyInstaller freeze re-extracted
+  itself on every invocation — 14 MB, 13-19 s on macOS — which could outrun
+  this extension's own `commandOnPath` probe and version checks well before a
+  user ever ran a build. A onedir freeze zipped/tarred into one archive per
+  target fixes that, at the cost of `download.ts` needing an unpack step it
+  never had.
+
+  `.zip` (win32) and `.tar.gz` (elsewhere) are both unpacked with the OS's own
+  `tar` — Windows has shipped a real `tar.exe` in `System32` since 10 1803
+  (bsdtar/libarchive, which reads `.zip` as readily as `.tar.gz`), and macOS
+  and Linux ship one too; Node's stdlib has no tar reader and nothing was
+  added to work around that. Windows resolves it by absolute path rather than
+  a PATH lookup, deliberately: Git for Windows ships its own `tar.exe` (GNU
+  tar) which cannot read `.zip` at all, and a bare `"tar"` risks finding that
+  one first on a great many developer machines.
+
+  Which of the two install paths runs is decided by the downloaded bytes' own
+  magic number, never by the pinned version or the asset's name — there is no
+  extension to read either way, `tan-<triple>[.exe]` is unchanged by this
+  release. That is what lets a pin naming any release through `v0.5.0-rc4`
+  (a raw binary) and a pin naming an archive release both keep installing
+  correctly through the exact same code, with nothing here to edit on tan-cli's
+  next release either way. The archive's checksum is still verified before
+  anything is unpacked, exactly as the raw binary always was; unpacking it is
+  checked again afterward, since a checksum on the archive proves it arrived
+  intact, not that what came out of it is a working launcher.
+
 - **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc4`, was `0.5.0-rc2`.** This
   extension release has not shipped yet, so rc3 never reached a user through
   it; the pin goes straight to rc4 rather than stacking two entries for what is

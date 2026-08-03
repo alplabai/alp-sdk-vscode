@@ -17,7 +17,19 @@
 // the third proves the bytes are the binary the producer published — and this
 // file is about to be EXECUTED, so the digest is checked while the download is
 // still a temp file and the destination is never touched unless it matches.
+//
+// The downloaded bytes may be the binary itself, or an archive (`.zip` /
+// `.tar.gz`) holding it plus support files (tan-cli#349 — a onedir PyInstaller
+// freeze, because the old onefile freeze re-extracted itself on every
+// invocation). Which one arrived is read from the bytes' own magic number
+// (`sniffArchiveKind`), never from the URL or the pinned version, so a pin
+// naming either kind of release installs correctly. An archive is unpacked to
+// a staging directory and its integrity re-checked THERE — the checksum above
+// only proves the archive arrived intact, not that unpacking it produced a
+// working launcher — before anything lands beside `destFile`, which is left
+// untouched (never even attempted) if that check fails.
 
+import { execFile } from "child_process";
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as http from "http";
@@ -28,7 +40,7 @@ import { pipeline } from "stream/promises";
 import * as tls from "tls";
 
 import { ChecksumSpec } from "./models";
-import { expectedSha256 } from "./service";
+import { binaryName, expectedSha256 } from "./service";
 
 /**
  * The installed binary could not be moved aside under ANY name, so the update
@@ -610,10 +622,19 @@ function get(
   });
 }
 
-/** Best-effort removal of stale artifacts next to `destFile`: a `*.tmp` left
- *  by an interrupted download (extension host killed mid-transfer), or a
- *  `*.old` left by the rename-aside below when it couldn't be deleted because
- *  the previous binary was still running.
+/** Best-effort removal of stale artifacts in `destFile`'s directory: a `*.tmp`
+ *  left by an interrupted download or unpack (extension host killed
+ *  mid-transfer or mid-extract), or a `*.old` left by a rename-aside below
+ *  that couldn't be deleted because the previous binary — or, for an archive
+ *  install, one of its support entries (`_internal/`, or whatever a future
+ *  freeze calls it) — was still running.
+ *
+ *  Swept by SUFFIX only, not by `destFile`'s own basename as a prefix: an
+ *  archive's support entries are named after the archive's own payload, not
+ *  after `destFile`, so a leftover `_internal.<pid>.<ts>.old` would never be
+ *  found by a prefix scoped to `tan.exe`. The whole directory is safe to sweep
+ *  this broadly because nothing else is expected to live there — it is
+ *  `ResolveDeps.cacheDir`, storage this extension owns exclusively.
  *
  *  Never throws, per entry: on Windows `rmSync` raises EPERM/EBUSY on a file
  *  that is still running or still has an open handle, and `force` does not
@@ -621,7 +642,9 @@ function get(
  *  the sharing violation lasts as long as the holder lives, it isn't a race.
  *  This sweep runs before a single byte is fetched, so letting one locked
  *  leftover escape would kill the whole upgrade; it survives to the next
- *  sweep instead. */
+ *  sweep instead. `recursive: true` is needed now too, since a leftover
+ *  archive-support entry may be a directory rather than a lone file — it is a
+ *  no-op for the plain-file case this already handled. */
 function sweepLeftovers(destFile: string): void {
   const dir = path.dirname(destFile);
   let entries: string[];
@@ -630,14 +653,10 @@ function sweepLeftovers(destFile: string): void {
   } catch {
     return;
   }
-  const prefix = path.basename(destFile);
   for (const entry of entries) {
-    if (
-      entry.startsWith(prefix) &&
-      (entry.endsWith(".tmp") || entry.endsWith(".old"))
-    ) {
+    if (entry.endsWith(".tmp") || entry.endsWith(".old")) {
       try {
-        fs.rmSync(path.join(dir, entry), { force: true });
+        fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
       } catch {
         // Still locked. Leave it; the next sweep gets it.
       }
@@ -803,6 +822,220 @@ async function publishedSha256(
   return digest;
 }
 
+/** Magic-number sniffs for the archive formats a tan-cli release may publish
+ *  an asset as (tan-cli#349). Read from the bytes that actually arrived —
+ *  never from `url`, from the asset name (there is no extension to read; see
+ *  `releaseAssetForTarget` in `service.ts`), or from the pinned version. A
+ *  per-version table for "is THIS release an archive" would need editing on
+ *  every release and would silently break a pin nobody remembered to add —
+ *  the same trap `HOSTS_WITHOUT_RELEASE_ASSET` exists to avoid for a
+ *  different question. A pin naming any release through v0.5.0-rc4 serves a
+ *  raw executable at this same URL and must keep installing exactly as it
+ *  always did; sniffing the content is what lets both keep working without
+ *  either repo's release process needing to agree on a version cutover. */
+const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
+
+/** `null` — a raw executable — for every byte pattern that is neither magic
+ *  above. That is the correct default: it is what every release through
+ *  v0.5.0-rc4 serves, and a truncated or unrecognized body must fall back to
+ *  "not an archive" rather than a guess that could try to unpack garbage. */
+function sniffArchiveKind(file: string): "zip" | "gzip" | null {
+  const fd = fs.openSync(file, "r");
+  try {
+    const head = Buffer.alloc(4);
+    const read = fs.readSync(fd, head, 0, 4, 0);
+    if (
+      read >= ZIP_MAGIC.length &&
+      head.subarray(0, ZIP_MAGIC.length).equals(ZIP_MAGIC)
+    ) {
+      return "zip";
+    }
+    if (
+      read >= GZIP_MAGIC.length &&
+      head.subarray(0, GZIP_MAGIC.length).equals(GZIP_MAGIC)
+    ) {
+      return "gzip";
+    }
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** The `tar` to invoke for extraction, resolved by absolute path on Windows
+ *  rather than a bare `"tar"` PATH lookup.
+ *
+ *  Windows has shipped a real `tar.exe` in `System32` since 10 1803 — bsdtar,
+ *  built on libarchive, which reads `.zip` exactly as readily as `.tar.gz`
+ *  (`tar -xf x.zip -C dir` round-trips a fixture byte-for-byte, checked
+ *  against this exact binary). But a bare `"tar"` is a PATH lookup, and Git
+ *  for Windows ships its OWN `tar.exe` (MSYS2's GNU tar) in `usr/bin`, which a
+ *  great many developer machines put ahead of `System32` on PATH. GNU tar
+ *  cannot read `.zip` at all — not a compression gap, `.zip`'s central
+ *  directory sits at the END of the file, a different container shape than
+ *  tar was ever built to stream — so on a machine where Git's tar wins the
+ *  PATH lookup, every `.zip` extraction would fail. Resolving `System32` by
+ *  `%SystemRoot%` sidesteps the ambiguity instead of hoping PATH order
+ *  cooperates.
+ *
+ *  Elsewhere a bare `"tar"` is unambiguous: macOS ships the same
+ *  libarchive-based `bsdtar`, Linux ships GNU tar, and both read `.tar.gz` —
+ *  the only format tan-cli ever asks either of them for — identically. */
+function tarExecutable(platform: NodeJS.Platform): string {
+  if (platform === "win32") {
+    return path.join(
+      process.env.SystemRoot || "C:\\Windows",
+      "System32",
+      "tar.exe",
+    );
+  }
+  return "tar";
+}
+
+/** Run `tar -xf archiveFile -C destDir`, rejecting on a non-zero exit.
+ *  `destDir` is created first — `tar -C` requires it to already exist.
+ *  `windowsHide` keeps a console window from flashing in front of the IDE;
+ *  `timeout` bounds a corrupt archive that hangs the extractor rather than
+ *  failing fast, so an unpack can never stall a download indefinitely the way
+ *  the transfer itself is already bounded by `WALL_CLOCK_TIMEOUT_MS`. */
+function runTar(
+  archiveFile: string,
+  destDir: string,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  fs.mkdirSync(destDir, { recursive: true });
+  return new Promise((resolve, reject) => {
+    execFile(
+      tarExecutable(platform),
+      ["-xf", archiveFile, "-C", destDir],
+      { windowsHide: true, timeout: 60_000 },
+      (error, _stdout, stderr) => {
+        if (error) {
+          reject(
+            new Error(
+              `Failed to unpack the tan CLI archive: ${stderr.toString().trim() || error.message}`,
+            ),
+          );
+          return;
+        }
+        resolve();
+      },
+    );
+  });
+}
+
+/** Find the first file named `name` under `root`, shallowest match first —
+ *  breadth-first, so a release archive that wraps its payload in one
+ *  top-level directory (the common convention — see `installArchive`'s
+ *  unwrap step) still resolves whether or not that unwrap already ran. */
+function findFile(root: string, name: string): string | null {
+  const queue: string[] = [root];
+  while (queue.length > 0) {
+    const dir = queue.shift() as string;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name === name) {
+        return path.join(dir, entry.name);
+      }
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        queue.push(path.join(dir, entry.name));
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Unpack the archive at `archiveFile` and install its contents around
+ * `destFile`, so `destFile` itself ends up BEING the launcher — nothing
+ * downstream of this (`resolveAlpBinary`, the doctor checks, `chmodExec`) has
+ * to learn that a launcher can now have siblings on disk, because `destFile`
+ * is exactly `cacheDir + binaryName(platform)` either way.
+ *
+ * Extracted to a uniquely-named staging directory first, never straight into
+ * `path.dirname(destFile)` (the cache dir): a corrupt archive, or one missing
+ * the launcher, must leave the cache dir exactly as it was — the same
+ * never-half-installed guarantee `attempt` already gives the raw-binary path.
+ *
+ * The archive's payload may be wrapped in one top-level directory (the
+ * common release convention — a PyInstaller onedir tree's own folder name) or
+ * not; both shapes are handled by unwrapping ONLY when there is exactly one
+ * top-level entry and it is a directory, never by name.
+ *
+ * Every extracted top-level entry is moved into the cache dir with the SAME
+ * move-aside-then-rename `moveAside` already uses for the raw-binary case, so
+ * an entry a running process still holds open degrades exactly the way a
+ * locked `destFile` already does — a `CliInUseError` naming the remedy, not a
+ * silent partial upgrade. The launcher moves LAST, after every support entry
+ * has landed: if a support entry's move-aside fails partway, `destFile` —
+ * what every downstream consumer treats as "the cached CLI" — is left
+ * pointing at whichever binary was there before, fully old or fully new,
+ * never a launcher beside a half-updated support directory.
+ */
+async function installArchive(
+  archiveFile: string,
+  destFile: string,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  const cacheDir = path.dirname(destFile);
+  const staging = `${destFile}.extract.${process.pid}.${Date.now()}.tmp`;
+  await runTar(archiveFile, staging, platform);
+  try {
+    const topEntries = fs.readdirSync(staging);
+    const payloadRoot =
+      topEntries.length === 1 &&
+      fs.statSync(path.join(staging, topEntries[0])).isDirectory()
+        ? path.join(staging, topEntries[0])
+        : staging;
+
+    const launcherName = binaryName(platform);
+    const launcherPath = findFile(payloadRoot, launcherName);
+    if (!launcherPath) {
+      throw new Error(`The tan CLI archive did not contain ${launcherName}.`);
+    }
+    // Verify the UNPACKED bytes, not just the archive that carried them: the
+    // checksum already checked (in `attempt`, before this function runs)
+    // vouches only for the .zip/.tar.gz arriving intact, not for what came out
+    // of it. A 0-byte result here is what a truncated member, or a bug in the
+    // unpack step itself, looks like — and it must refuse exactly as a 0-byte
+    // raw download already does.
+    if (fs.statSync(launcherPath).size === 0) {
+      throw new Error(
+        `The tan CLI archive unpacked to a 0-byte ${launcherName}.`,
+      );
+    }
+    if (platform !== "win32") {
+      fs.chmodSync(launcherPath, 0o755);
+    }
+
+    const launcherIsTopLevel = path.dirname(launcherPath) === payloadRoot;
+    for (const entry of fs.readdirSync(payloadRoot)) {
+      if (launcherIsTopLevel && entry === launcherName) {
+        continue; // moved last, below.
+      }
+      const dst = path.join(cacheDir, entry);
+      moveAside(dst);
+      fs.renameSync(path.join(payloadRoot, entry), dst);
+    }
+    if (launcherIsTopLevel) {
+      moveAside(destFile);
+      fs.renameSync(launcherPath, destFile);
+    }
+    if (!fs.existsSync(destFile)) {
+      // Not reachable by any archive shape this function unwraps above —
+      // cheaper to assert than to leave a silent "resolved to nothing".
+      throw new Error(
+        `The tan CLI archive unpacked but ${launcherName} is not at the expected path.`,
+      );
+    }
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
+}
+
 async function attempt(
   url: string,
   destFile: string,
@@ -810,6 +1043,7 @@ async function attempt(
   redirectsLeft: number,
   config: ProxyConfig,
   expectedDigest: string | null,
+  platform: NodeJS.Platform,
   signal?: AbortSignal,
 ): Promise<void> {
   const { response, url: finalUrl } = await getFinal(
@@ -866,17 +1100,30 @@ async function attempt(
         `sha256 of the downloaded bytes is ${digest}, published digest is ${expectedDigest} (${finalUrl})`,
       );
     }
-    if (process.platform !== "win32") {
-      // Before the rename, not after: closes the window where the freshly
-      // renamed `destFile` briefly exists non-executable and a concurrent
-      // window resolving "cached" spawns it and gets EACCES.
-      fs.chmodSync(tmpFile, 0o755);
+    // Which of these two branches runs is decided by the bytes that just
+    // arrived (`sniffArchiveKind`) — never by `url`, by `destFile`'s
+    // extension (there isn't one to read), or by the pinned version. See the
+    // comment on `ZIP_MAGIC` above for why that has to be true both ways.
+    if (sniffArchiveKind(tmpFile)) {
+      await installArchive(tmpFile, destFile, platform);
+      // `installArchive` consumes `tmpFile` by reading it, not by renaming
+      // it away (unlike the raw-binary branch below) — remove it explicitly,
+      // or every archive install would leave the downloaded .zip/.tar.gz
+      // sitting in the cache dir forever.
+      fs.rmSync(tmpFile, { force: true });
+    } else {
+      if (platform !== "win32") {
+        // Before the rename, not after: closes the window where the freshly
+        // renamed `destFile` briefly exists non-executable and a concurrent
+        // window resolving "cached" spawns it and gets EACCES.
+        fs.chmodSync(tmpFile, 0o755);
+      }
+      // Move any existing binary aside instead of overwriting it in place —
+      // overwriting a running executable is the EPERM `runAlpInTerminal`
+      // mid-build + "Update the tan CLI" collision this exists to avoid.
+      moveAside(destFile);
+      fs.renameSync(tmpFile, destFile);
     }
-    // Move any existing binary aside instead of overwriting it in place —
-    // overwriting a running executable is the EPERM `runAlpInTerminal`
-    // mid-build + "Update the tan CLI" collision this exists to avoid.
-    moveAside(destFile);
-    fs.renameSync(tmpFile, destFile);
   } catch (error) {
     fs.rmSync(tmpFile, { force: true });
     throw error;
@@ -974,14 +1221,27 @@ export function downloadSeam(
  * it. Node does NOT do this natively, so before this option existed a
  * corporate-proxy machine could never download the CLI at all. Anything that
  * fails at the proxy rejects with a `ProxyError` whose sentence says so.
+ *
+ * `options.platform` (default `process.platform`) decides which archive
+ * extractor a downloaded `.zip`/`.tar.gz` is unpacked with — see
+ * `tarExecutable`. It exists as an override only so a test can drive the
+ * archive-install path for a platform other than the one actually running the
+ * test; every real caller lets it default, because the real caller and the
+ * download always run on the same host. It has NO effect on whether the
+ * response is treated as an archive at all — that is `sniffArchiveKind`,
+ * decided from the downloaded bytes alone, not from this parameter.
  */
 export async function downloadFile(
   url: string,
   destFile: string,
   verify: ChecksumSpec | null,
-  options: { signal?: AbortSignal; proxy?: ProxyConfig } = {},
+  options: {
+    signal?: AbortSignal;
+    proxy?: ProxyConfig;
+    platform?: NodeJS.Platform;
+  } = {},
 ): Promise<void> {
-  const { signal, proxy = {} } = options;
+  const { signal, proxy = {}, platform = process.platform } = options;
   sweepLeftovers(destFile);
   // Before the transfer: a release whose checksum can't be resolved is refused
   // either way, so there is no reason to move the binary's bytes first.
@@ -995,6 +1255,7 @@ export async function downloadFile(
     MAX_REDIRECTS,
     proxy,
     expectedDigest,
+    platform,
     signal,
   );
 }
