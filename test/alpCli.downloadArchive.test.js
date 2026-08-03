@@ -82,15 +82,33 @@ function canCreateZip() {
   const probe = fs.mkdtempSync(path.join(os.tmpdir(), "alp-zipprobe-"));
   try {
     fs.writeFileSync(path.join(probe, "f.txt"), "x");
-    execFileSync(
-      systemTar(),
-      ["-a", "-c", "-f", path.join(probe, "p.zip"), "f.txt"],
-      {
-        cwd: probe,
-        stdio: "ignore",
-      },
-    );
-    ZIP_CREATE_SUPPORTED = fs.existsSync(path.join(probe, "p.zip"));
+    const out = path.join(probe, "p.zip");
+    execFileSync(systemTar(), ["-a", "-c", "-f", out, "f.txt"], {
+      cwd: probe,
+      stdio: "ignore",
+    });
+    // `existsSync` alone is not proof: GNU tar's `-a` (auto-compress) only
+    // recognizes ITS OWN compressor suffixes (.gz, .bz2, .xz, ...) -- .zip is
+    // not one of them, and on an unrecognized suffix GNU tar does not error,
+    // it silently writes a plain UNCOMPRESSED TAR-formatted file under the
+    // requested name and exits 0. That made this probe report "yes" on every
+    // GNU tar host (every Linux CI runner): the fixture this function's
+    // callers went on to build was a ustar archive named "archive.zip", which
+    // `sniffArchiveKind` (download.ts) correctly did NOT recognize as zip or
+    // gzip, correctly fell through to "raw binary", and installed the whole
+    // tar-formatted file's bytes as if they were the launcher -- exactly the
+    // corruption these tests exist to catch, self-inflicted by the fixture.
+    // Read back the same 4-byte magic `sniffArchiveKind` sniffs, so this
+    // probe answers "can this host's tar make bytes that MEAN zip", not
+    // "did a file happen to land at that path".
+    const head = Buffer.alloc(4);
+    const fd = fs.openSync(out, "r");
+    try {
+      fs.readSync(fd, head, 0, 4, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+    ZIP_CREATE_SUPPORTED = head.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
   } catch {
     ZIP_CREATE_SUPPORTED = false;
   }
@@ -298,48 +316,59 @@ test("downloadFile: bytes that merely start with 'PK' but are not the full zip m
   );
 });
 
+// These two refuse-and-install-nothing cases are built as `.tar.gz`, not
+// `.zip` -- unlike the happy-path zip tests above, gzip creation is NOT
+// gated behind `canCreateZip()` (GNU tar writes real gzip on every host; see
+// the `.tar.gz` install test above). A launcher that's missing or 0 bytes is
+// exactly the corrupt-install case this file exists to catch, so it runs for
+// real on every CI platform rather than skipping on Linux -- the zip-only
+// fixture this used to be would have left it completely unverified there.
 test("downloadFile: an archive missing the launcher is refused, and nothing is installed", async () => {
   const archive = buildArchive(
-    "zip",
+    "gzip",
     { "_internal/lib.txt": "a support file, but no launcher\n" },
-    { wrap: "tan-x86_64-pc-windows-msvc" },
+    { wrap: "tan-x86_64-unknown-linux-gnu" },
   );
-  await withReleaseServer(archive, null, async (baseUrl) => {
-    const { dir, dest } = tmpCacheDir("tan.exe");
-    const rejection = await rejectionOf(
-      downloadFile(`${baseUrl}/asset`, dest, null, { platform: "win32" }),
-    );
-    assert.ok(rejection, "an archive with no launcher must not resolve");
-    assert.match(rejection.message, /did not contain tan\.exe/);
-    assert.ok(!fs.existsSync(dest));
-    assert.deepEqual(
-      fs.readdirSync(dir),
-      [],
-      "nothing from the archive — not even the support directory — is installed",
-    );
-  });
+  await withSystem32TarFirst(() =>
+    withReleaseServer(archive, null, async (baseUrl) => {
+      const { dir, dest } = tmpCacheDir("tan");
+      const rejection = await rejectionOf(
+        downloadFile(`${baseUrl}/asset`, dest, null, { platform: "linux" }),
+      );
+      assert.ok(rejection, "an archive with no launcher must not resolve");
+      assert.match(rejection.message, /did not contain tan\./);
+      assert.ok(!fs.existsSync(dest));
+      assert.deepEqual(
+        fs.readdirSync(dir),
+        [],
+        "nothing from the archive — not even the support directory — is installed",
+      );
+    }),
+  );
 });
 
 test("downloadFile: an archive that unpacks to a 0-byte launcher is refused, and nothing is installed", async () => {
   const archive = buildArchive(
-    "zip",
-    { "tan.exe": "", "_internal/lib.txt": "a support file\n" },
-    { wrap: "tan-x86_64-pc-windows-msvc" },
+    "gzip",
+    { tan: "", "_internal/lib.txt": "a support file\n" },
+    { wrap: "tan-x86_64-unknown-linux-gnu" },
   );
-  await withReleaseServer(archive, null, async (baseUrl) => {
-    const { dir, dest } = tmpCacheDir("tan.exe");
-    const rejection = await rejectionOf(
-      downloadFile(`${baseUrl}/asset`, dest, null, { platform: "win32" }),
-    );
-    assert.ok(rejection, "a 0-byte extracted launcher must not resolve");
-    assert.match(rejection.message, /0-byte tan\.exe/);
-    assert.ok(!fs.existsSync(dest));
-    assert.deepEqual(
-      fs.readdirSync(dir),
-      [],
-      "the checksum on the ARCHIVE proves nothing about what came out of it",
-    );
-  });
+  await withSystem32TarFirst(() =>
+    withReleaseServer(archive, null, async (baseUrl) => {
+      const { dir, dest } = tmpCacheDir("tan");
+      const rejection = await rejectionOf(
+        downloadFile(`${baseUrl}/asset`, dest, null, { platform: "linux" }),
+      );
+      assert.ok(rejection, "a 0-byte extracted launcher must not resolve");
+      assert.match(rejection.message, /0-byte tan\./);
+      assert.ok(!fs.existsSync(dest));
+      assert.deepEqual(
+        fs.readdirSync(dir),
+        [],
+        "the checksum on the ARCHIVE proves nothing about what came out of it",
+      );
+    }),
+  );
 });
 
 test(
