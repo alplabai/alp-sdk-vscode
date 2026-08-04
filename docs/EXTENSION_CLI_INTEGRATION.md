@@ -144,12 +144,22 @@ adds one, decision 4 of issue #376 is the rule that keeps it out of this path.
 `tan doctor` is target-agnostic, so `alp.debugDoctor` no longer prompts for a
 target/server pair either — that picker stays `alp.debugPreflight`'s.
 
-A missing workspace or an unresolvable `tan` collapse to exactly ONE message
-where the doctor table was — never a second, in-process doctor rebuilt as a
-fallback. The support bundle is the one exception: it is exported precisely
-when things are broken, so it is still written either way, carrying the
-resolver's own failure message verbatim when `tan` could not be reached
-(`DebugSupportBundlePayload.doctor`, `DebugDoctorSection`).
+A missing workspace collapses to exactly ONE `planPrecondition` message. An
+unresolvable `tan` collapses to exactly ONE toast — never a second, in-process
+doctor rebuilt as a fallback — but that toast is `planCliOutcome(outcome, …)`
+(`src/notify/service.ts`), the same classifier every other CLI-backed command
+in this repo uses, NOT a bare sentence built off `outcome.message` alone: it
+is what splits "tan was never installed" (an Install action) from "tan is
+there but broken" (Settings/Doctor actions) and offers Retry, so the toast is
+never a buttonless dead end. It still never carries the raw errno/resolver
+text (`CliOutcome.unavailable.detail` is explicitly not for a toast — see
+`src/alpCli/models.ts`). The support bundle and the troubleshooting panel are
+where that restriction does NOT apply: a FILE and a channel-grade panel, not a
+toast, so both carry the resolver's curated message AND the raw detail behind
+it verbatim (`DebugSupportBundlePayload.doctor`, `DebugDoctorSection`'s
+`error`/`detail`) — the support bundle is exported precisely when things are
+broken, and a bundle with the curated sentence but not the diagnosis under it
+defeats the reason it exists.
 
 ## 5. Binary resolution (hybrid: bundled + universal)
 

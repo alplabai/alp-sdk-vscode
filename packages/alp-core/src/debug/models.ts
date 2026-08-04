@@ -127,11 +127,19 @@ export interface PreflightSummary {
  * - `"unavailable"` is the ONE thing a consumer is still allowed to say on its
  *   own — that `tan` itself could not be resolved or run — carrying the
  *   resolver's own message verbatim rather than falling back to a second,
- *   in-process doctor.
+ *   in-process doctor. `error` is the curated, toast-safe sentence
+ *   (`CliOutcome.message` — never an errno, a path, or a stack). `detail`,
+ *   when the resolver had one (`CliOutcome.unavailable.detail`), is the raw
+ *   diagnosis underneath it — spawn errno text, or the resolver's own
+ *   failure text for a download/cache/checksum problem. It is deliberately
+ *   NOT folded into `error`: a bundle written on exactly the day `tan` is
+ *   broken is worthless without it, but nothing that renders `error` alone
+ *   as a toast may read `detail` too (`src/alpCli/models.ts`'s own rule on
+ *   `CliOutcome.unavailable.detail`).
  */
 export type DebugDoctorSection =
   | { kind: "envelope"; data: DoctorEnvelopeData }
-  | { kind: "unavailable"; error: string };
+  | { kind: "unavailable"; error: string; detail?: string };
 
 /**
  * WHICH configuration a preflight report's `canLaunch` graded (#339).

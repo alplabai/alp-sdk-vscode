@@ -196,15 +196,28 @@ function copyDoctorSection(doctor: DebugDoctorSection): DebugDoctorSection {
  * for what "verbatim" protects), or the resolver's own message carried whole
  * when tan could not be resolved or run.
  *
- * Never a second in-process doctor: an unavailable run becomes ONE message,
- * not a rebuilt check list — see the callers in `src/debug.ts`.
+ * `unavailableDetail` is `CliOutcome.unavailable.detail` — the raw errno /
+ * resolver text behind `unavailableMessage`. Callers that write it to a FILE
+ * (the support bundle) or a PANEL (channel-grade text) pass it through; a
+ * caller that shows a TOAST (`alp.debugDoctor`'s degraded path) must not —
+ * see `DebugDoctorSection`'s own doc for why.
+ *
+ * Never a second in-process doctor: an unavailable run becomes ONE message
+ * (plus, where the caller allows it, the detail behind it) — not a rebuilt
+ * check list. See the callers in `src/debug.ts`.
  */
 export function buildDebugDoctorSection(
   data: DoctorEnvelopeData | null,
   unavailableMessage: string,
+  unavailableDetail?: string,
 ): DebugDoctorSection {
-  return data
-    ? { kind: "envelope", data }
+  if (data) return { kind: "envelope", data };
+  return unavailableDetail
+    ? {
+        kind: "unavailable",
+        error: unavailableMessage,
+        detail: unavailableDetail,
+      }
     : { kind: "unavailable", error: unavailableMessage };
 }
 

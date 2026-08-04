@@ -148,6 +148,44 @@ test("no envelope at all (tan unresolvable / unparsable output) returns data: nu
 
   assert.equal(result.data, null);
   assert.equal(result.message, "tan could not be resolved.");
+  assert.equal(
+    result.detail,
+    undefined,
+    "no `unavailable` on the outcome means no detail to carry",
+  );
+});
+
+// The defect an adversarial review caught: `outcome.unavailable.detail` — the
+// raw errno / resolver text behind the curated `message` — was being dropped
+// on the floor. For a spawn error (ENOENT/timeout/abort,
+// `classifyAlpSpawn`/adapterCore.ts) and most resolution failures
+// (`unavailableOutcome`/vscodeAdapter.ts), `message` alone is a generic
+// sentence ("Could not run the tan CLI.", "tan CLI unavailable.") — `detail`
+// is the entire diagnosis. It must reach a caller that writes it to a FILE or
+// a channel-grade PANEL (never a toast — see `CliOutcome.unavailable`'s own
+// doc in src/alpCli/models.ts).
+test("an unavailable outcome's raw `unavailable.detail` reaches the caller alongside the curated message", async () => {
+  const { runDoctor } = loadWithFakeRun(async () => ({
+    outcome: {
+      ok: false,
+      message: "tan CLI unavailable.",
+      envelope: null,
+      unavailable: {
+        reason: "spawnFailed",
+        detail: "spawn tan ENOENT — distinctive-errno-marker",
+      },
+    },
+  }));
+
+  const result = await runDoctor({}, ["doctor"], "/w", undefined, false);
+
+  assert.equal(result.data, null);
+  assert.equal(result.message, "tan CLI unavailable.");
+  assert.equal(
+    result.detail,
+    "spawn tan ENOENT — distinctive-errno-marker",
+    "the raw diagnosis must not be dropped",
+  );
 });
 
 test("an envelope whose data does not shape-check as a doctor payload returns data: null", async () => {

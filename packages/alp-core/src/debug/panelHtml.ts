@@ -57,8 +57,14 @@ ${input.doctor.data.checks
     </tbody>
   </table>`
       : // Exactly ONE message where the table was (#376) — never a second,
-        // in-process doctor rendered in its place.
-        `  <p>${escapeHtml(input.doctor.error)}</p>`;
+        // in-process doctor rendered in its place. `detail`, when the
+        // resolver had one, is the raw diagnosis behind `error` — safe here
+        // (this panel is channel-grade text, unlike a toast) and the whole
+        // reason a customer reading it can tell WHY tan was unresolvable.
+        `  <p>${escapeHtml(input.doctor.error)}</p>` +
+        (input.doctor.detail
+          ? `\n  <p>${escapeHtml(input.doctor.detail)}</p>`
+          : "");
 
   const preflightRows = input.preflight.checks
     .map(

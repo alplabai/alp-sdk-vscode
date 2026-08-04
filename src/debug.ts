@@ -55,6 +55,7 @@ import { log, showOutput } from "./util";
 import { NotifyAction } from "./notify/models";
 import {
   isCancellation,
+  planCliOutcome,
   planFailure,
   planPrecondition,
   planSuccess,
@@ -152,18 +153,25 @@ async function debugDoctor(
     return;
   }
 
-  const { data, message } = await runDebugDoctor(
+  const { data, outcome } = await runDebugDoctor(
     extensionContext,
     context.workspaceRoot,
     { interactive: true },
   );
   if (!data) {
-    await notify(
-      planFailure({
-        operation: "Alp: running the debug doctor",
-        cause: message,
-      }),
-    );
+    // `planCliOutcome`, like every other CLI consumer in this repo
+    // (src/loader.ts, ideHub/sdkManagerMessages.ts, ideHub/buildPlanPanel.ts)
+    // — never a bare sentence built off `outcome.message` alone. It is what
+    // splits "tan was never installed" (an Install action) from "tan is
+    // there but broken" (Settings/Doctor), and offers Retry; a plain
+    // `planFailure` here was a buttonless dead end.
+    if (
+      (await notify(
+        planCliOutcome(outcome, { operation: "Running the debug doctor" }),
+      )) === "retry"
+    ) {
+      await debugDoctor(extensionContext);
+    }
     return;
   }
 
@@ -880,13 +888,21 @@ async function exportSupportBundle(
   // A customer exports this precisely when things are broken, i.e. exactly
   // when `tan` may be unresolvable — so the bundle is still WRITTEN either
   // way. `buildDebugDoctorSection` carries the resolver's own failure verbatim
-  // rather than leaving `doctor` silently absent (#376).
-  const { data: doctorData, message: doctorMessage } = await runDebugDoctor(
-    extensionContext,
-    context.workspaceRoot,
-    { interactive: true },
+  // — message AND the raw detail behind it — rather than leaving `doctor`
+  // silently absent or reduced to a generic sentence (#376). This is a FILE,
+  // not a toast, so the detail (errno / resolver text) belongs in it.
+  const {
+    data: doctorData,
+    message: doctorMessage,
+    detail: doctorDetail,
+  } = await runDebugDoctor(extensionContext, context.workspaceRoot, {
+    interactive: true,
+  });
+  const doctor = buildDebugDoctorSection(
+    doctorData,
+    doctorMessage,
+    doctorDetail,
   );
-  const doctor = buildDebugDoctorSection(doctorData, doctorMessage);
 
   const inspect = createInspectReport(context);
   const bundle = createSupportBundlePayload({
@@ -971,12 +987,20 @@ async function openDebugTroubleshootingPanel(
     },
   );
 
-  const { data: doctorData, message: doctorMessage } = await runDebugDoctor(
-    extensionContext,
-    context.workspaceRoot,
-    { interactive: true },
+  // Channel-grade text, not a toast — the detail behind `doctorMessage`
+  // belongs on this panel too (#376).
+  const {
+    data: doctorData,
+    message: doctorMessage,
+    detail: doctorDetail,
+  } = await runDebugDoctor(extensionContext, context.workspaceRoot, {
+    interactive: true,
+  });
+  const doctor = buildDebugDoctorSection(
+    doctorData,
+    doctorMessage,
+    doctorDetail,
   );
-  const doctor = buildDebugDoctorSection(doctorData, doctorMessage);
   const inspect = createInspectReport(context);
   const trace = createGenerationTraceReport(
     generatedAt,

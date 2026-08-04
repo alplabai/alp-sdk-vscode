@@ -209,6 +209,31 @@ test("the support bundle is still written when tan is unresolvable, and the doct
   assert.ok(bundle.inspect);
 });
 
+// The defect an adversarial review caught: the curated `message` alone (e.g.
+// tan's own generic "tan CLI unavailable.") is often not the diagnosis — the
+// raw errno / resolver text lives on `CliOutcome.unavailable.detail`, one
+// layer below `runDebugDoctor`. A bundle exported on precisely the day `tan`
+// is broken is worthless if that detail never reaches the file. Constructs a
+// DISTINCTIVE detail string, distinct from the curated message, and proves it
+// survives all the way into the WRITTEN payload — not just into
+// `buildDebugDoctorSection` (already covered in test/debug.service.test.js;
+// the loss this guards against was upstream of that helper).
+test("the resolver's raw failure detail reaches the WRITTEN support bundle, not just the curated message", async () => {
+  const bundle = await exportBundle({
+    runDebugDoctor: async () => ({
+      data: null,
+      message: "tan CLI unavailable.",
+      detail: "spawn tan ENOENT — distinctive-errno-marker-9f3a",
+    }),
+  });
+
+  assert.deepEqual(bundle.doctor, {
+    kind: "unavailable",
+    error: "tan CLI unavailable.",
+    detail: "spawn tan ENOENT — distinctive-errno-marker-9f3a",
+  });
+});
+
 test("the support bundle reports the host NOT ready when it is not", async () => {
   // Same run, one host fact flipped: the ELF was never built. `hostReady` has
   // to track the report rather than be a constant.

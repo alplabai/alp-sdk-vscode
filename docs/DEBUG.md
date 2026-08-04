@@ -785,7 +785,10 @@ Current implementation status:
 
 - `Alp: Debug preflight` emits a structured preflight report with
   actionable checks.
-- `Alp: Debug doctor` emits environment and compatibility diagnostics.
+- `Alp: Debug doctor` emits environment diagnostics from `tan doctor`, target-
+  agnostic — it no longer prompts for a target/server pair, and the
+  compatibility check that once paired with it (`serverCompatibility`) is gone
+  with `buildDoctorReport` (#376; see line 612 above).
 - `Alp: Configure debug profile` remains draft-oriented (`launch.json`
   generation) and does not start debugger sessions.
 

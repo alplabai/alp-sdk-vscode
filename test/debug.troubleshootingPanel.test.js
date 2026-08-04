@@ -146,6 +146,9 @@ test("the panel still opens, with one message in place of the doctor table, when
       data: null,
       message:
         "tan could not be resolved: no prebuilt tan CLI is available for this platform.",
+      // #376 fix: the raw detail behind the curated message must also reach
+      // this panel — it is channel-grade text, not a toast.
+      detail: "spawn tan ENOENT — distinctive-errno-marker-9f3a",
     }),
   });
 
@@ -155,6 +158,10 @@ test("the panel still opens, with one message in place of the doctor table, when
   assert.match(
     panels[0].webview.html,
     /tan could not be resolved: no prebuilt tan CLI is available for this platform\./,
+  );
+  assert.match(
+    panels[0].webview.html,
+    /spawn tan ENOENT — distinctive-errno-marker-9f3a/,
   );
   assert.match(panels[0].webview.html, /Preflight Summary/);
 });

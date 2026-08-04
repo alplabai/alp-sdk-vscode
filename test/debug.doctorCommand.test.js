@@ -39,13 +39,34 @@ const HEALTHY_DATA = {
   summary: { pass: 1, warn: 0, fail: 0 },
 };
 
+/** A `CliOutcome`-shaped fixture for the unavailable path (`src/alpCli/
+ *  models.ts`), matching what `unavailableOutcome`/`classifyAlpSpawn`
+ *  actually produce closely enough for `planCliOutcome` to plan off it. */
+function unavailableOutcome(reason, message, detail) {
+  return {
+    exitCode: -1,
+    kind: "unknown",
+    ok: false,
+    severity: "error",
+    message,
+    envelope: null,
+    unavailable: { reason, detail },
+  };
+}
+
 function register({
   workspaceRoot = "/w",
-  runDebugDoctor = async () => ({ data: HEALTHY_DATA, message: "ok" }),
+  runDebugDoctor = async () => ({
+    data: HEALTHY_DATA,
+    message: "ok",
+    outcome: { ok: true, severity: "info", message: "ok", envelope: null },
+  }),
+  notifyReturns = [],
 } = {}) {
   const docs = [];
   const notifications = [];
   const outputShown = { count: 0 };
+  const notifyResponses = [...notifyReturns];
 
   const { registerDebugCommands } = loadDebug({
     vscode: {
@@ -102,7 +123,7 @@ function register({
     "./notify/vscodeAdapter": {
       notify: async (plan) => {
         notifications.push(plan);
-        return undefined;
+        return notifyResponses.shift();
       },
     },
   });
@@ -124,11 +145,13 @@ test("alp.debugDoctor refuses with one message when no workspace is open", async
 });
 
 test("alp.debugDoctor shows one message, not a second doctor, when tan is unresolvable", async () => {
+  const message =
+    "tan could not be resolved: no prebuilt tan CLI is available for this platform.";
   const { handlers, docs, notifications } = register({
     runDebugDoctor: async () => ({
       data: null,
-      message:
-        "tan could not be resolved: no prebuilt tan CLI is available for this platform.",
+      message,
+      outcome: unavailableOutcome("noPrebuilt", message),
     }),
   });
 
@@ -141,6 +164,65 @@ test("alp.debugDoctor shows one message, not a second doctor, when tan is unreso
   );
   assert.equal(notifications.length, 1);
   assert.match(notifications[0].message, /tan could not be resolved/);
+});
+
+// The defect an adversarial review caught: a bare `planFailure` off
+// `outcome.message` alone is a buttonless dead end. Routed through
+// `planCliOutcome` (like every other CLI consumer in this repo), the SAME
+// unavailable state offers a real remedy — proven here by asserting an
+// action is actually present, not just the message text.
+test("the degraded toast is not a buttonless dead end — it offers a remedy action", async () => {
+  const { handlers, notifications } = register({
+    runDebugDoctor: async () => ({
+      data: null,
+      message: "tan CLI unavailable.",
+      outcome: unavailableOutcome("notInstalled", "tan CLI unavailable."),
+    }),
+  });
+
+  await handlers.get("alp.debugDoctor")();
+
+  assert.equal(notifications.length, 1);
+  assert.ok(
+    notifications[0].actions.length > 0,
+    "a first-run customer with no tan installed must get an action, not a dead end",
+  );
+  assert.ok(
+    notifications[0].actions.some((action) => action.id === "installTanCli"),
+    "notInstalled offers Install, not Settings/Doctor (those are for a tan that IS installed but broken)",
+  );
+});
+
+test("picking Retry on the degraded toast re-runs the doctor spawn", async () => {
+  let calls = 0;
+  const { handlers, docs, notifications } = register({
+    runDebugDoctor: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          data: null,
+          message: "tan CLI unavailable.",
+          outcome: unavailableOutcome("spawnFailed", "tan CLI unavailable."),
+        };
+      }
+      return {
+        data: HEALTHY_DATA,
+        message: "ok",
+        outcome: { ok: true, severity: "info", message: "ok", envelope: null },
+      };
+    },
+    // The presenter's `notify` resolves to the picked action id — "retry" on
+    // the first (failing) toast, and the second run never fails so nothing
+    // else is asked.
+    notifyReturns: ["retry"],
+  });
+
+  await handlers.get("alp.debugDoctor")();
+
+  assert.equal(calls, 2, "Retry must reach a second, real spawn");
+  assert.equal(notifications.length, 1, "no failure toast on the retried run");
+  assert.equal(docs.length, 1, "the retried run's report is the one rendered");
+  assert.deepEqual(JSON.parse(docs[0].content), HEALTHY_DATA);
 });
 
 test("alp.debugDoctor renders tan's envelope verbatim on success", async () => {

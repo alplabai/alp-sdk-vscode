@@ -6,6 +6,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { runDoctor } from "../alpCli/doctor";
+import type { CliOutcome } from "../alpCli/models";
 import {
   collectRuntimeCapabilitiesFromCommands,
   createDebugWorkspaceContext,
@@ -58,12 +59,22 @@ export function fileExists(filePath: string): boolean {
  * Delegates to the ONE shared doctor spawn (`../alpCli/doctor`) so this slice
  * and the Dependencies panel (`src/deps/vscodeAdapter.ts`) never drift into
  * two ways of running the same command.
+ *
+ * Returns `outcome` alongside the convenience fields: `alp.debugDoctor`'s
+ * degraded path needs the full `CliOutcome` to route its toast through
+ * `planCliOutcome` (never a bare, buttonless sentence built off `message`
+ * alone) — see `runDoctor`'s own doc.
  */
 export async function runDebugDoctor(
   context: vscode.ExtensionContext,
   cwd: string,
   options: { signal?: AbortSignal; interactive?: boolean } = {},
-): Promise<{ data: DoctorEnvelopeData | null; message: string }> {
+): Promise<{
+  data: DoctorEnvelopeData | null;
+  message: string;
+  detail?: string;
+  outcome: CliOutcome;
+}> {
   return runDoctor(
     context,
     ["doctor"],

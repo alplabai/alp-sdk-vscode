@@ -725,6 +725,35 @@ test("buildDebugDoctorSection carries the resolver's failure verbatim when tan i
   });
 });
 
+// The defect an adversarial review caught: the curated `message` alone is
+// often a generic sentence ("tan CLI unavailable.") with the actual diagnosis
+// living only in `CliOutcome.unavailable.detail`. This helper must carry that
+// detail through rather than drop it — its callers write it to a FILE (the
+// support bundle) or a channel-grade PANEL, neither of which is a toast.
+test("buildDebugDoctorSection also carries the raw detail behind the curated message", () => {
+  const section = buildDebugDoctorSection(
+    null,
+    "tan CLI unavailable.",
+    "spawn tan ENOENT — distinctive-errno-marker",
+  );
+
+  assert.deepEqual(section, {
+    kind: "unavailable",
+    error: "tan CLI unavailable.",
+    detail: "spawn tan ENOENT — distinctive-errno-marker",
+  });
+});
+
+test("buildDebugDoctorSection omits `detail` rather than inventing one when the resolver gave none", () => {
+  const section = buildDebugDoctorSection(null, "tan CLI unavailable.");
+
+  assert.deepEqual(section, {
+    kind: "unavailable",
+    error: "tan CLI unavailable.",
+  });
+  assert.equal("detail" in section, false);
+});
+
 test("createSupportBundlePayload carries an envelope doctor section, deep-copied", () => {
   const doctor = {
     kind: "envelope",
