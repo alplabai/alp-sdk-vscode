@@ -106,32 +106,60 @@ Keep **in-process** (`@alp-sdk/core`, TS) — must be synchronous / per-edit:
 Delegate to the **`tan` binary** — user-triggered "actions":
 
 - `validate` (full, Python spawn), `generate`, `init`, `scaffold`, `diff`,
-  `presets`, `explain`, `inspect`, `trace`, `debug-config`, `support-bundle`,
-  `sdk *`, `bootstrap`, and (future) `build`.
+  `presets`, `explain`, `inspect`, `trace`, `debug-config`, `doctor`,
+  `support-bundle`, `sdk *`, `bootstrap`, and (future) `build`.
 
 Rule of thumb: **per-keystroke → in-process TS; per-click → CLI binary.**
 
-### 4a. Debug doctor / preflight stay in-process (host-state exception)
+### 4a. Debug preflight stays in-process; debug doctor delegates to `tan` (#376)
 
 There is a third class beyond per-keystroke vs per-click: **commands whose
-answer depends on VS Code host state the CLI cannot observe.** The debug-domain
-commands — `alp.debugDoctor`, `alp.debugPreflight` (and the debug parts of
-`inspect` / `support-bundle`) — probe **which debugger extensions are installed**
-via `vscode.extensions.getExtension(...)` (Cortex-Debug, CodeLLDB, C/C++). A
-separate `tan` process cannot see the host's installed extensions, so the Rust
-`tan doctor` deliberately *assumes* the marquee extensions are present
-(`resolveCliDebugContext` sets them all to `true`). That assumption is fine for a
-terminal/CI doctor, but in the extension it would turn a real "CodeLLDB is not
-installed" finding into a false "installed" — a correctness regression.
+answer depends on VS Code host state the CLI cannot observe.** A separate `tan`
+process cannot see this window's installed extensions
+(`vscode.extensions.getExtension(...)` — Cortex-Debug, CodeLLDB, C/C++), so
+anything that must answer "which debugger extension will actually resolve for
+*this* launch" has to stay in-process.
 
-**Decision:** the debug doctor/preflight readiness checks **stay in-process**
-(`@alp-sdk/core/debug` via `src/debug.ts` + `collectRuntimeCapabilities`), even
-though a same-named `tan doctor` envelope exists. They are part of the live/LSP
-side of this split, not delegated. The CLI `tan doctor` remains the surface for
-terminals and CI (where extension state is irrelevant). Only commands whose full
-result is reproducible from `board.yaml` + the SDK + PATH (validate, generate,
-sdk, …) are delegated. If a future need arises, the extension could pass its
-observed extension state to the CLI via flags — out of scope for now.
+**That question is `alp.debugPreflight`'s, not the doctor's, and the boundary
+is drawn by QUESTION, not by command name (issue #376's field-by-field map).**
+`buildDebugPreflightReport` (`@alp-sdk/core/debug` via `src/debug.ts` +
+`collectRuntimeCapabilities`) answers "will *this* F5, with *this*
+configuration, in *this* window, start" — it grades `adapterExtension`,
+`serverTool`, `buildArtifact` and the native-host `hostPlatform` gate, and
+stays in-process for exactly that reason. `alp.debugDoctor` answers a
+different, machine/project-scoped question — "can this machine and project
+build and debug at all" — which plain `tan doctor` already answers more
+completely than the former in-process `buildDoctorReport` ever did (SDK/board/
+Zephyr-workspace/west/Python-floor/host-prerequisite/toolchain checks with no
+TypeScript equivalent), so `alp.debugDoctor`, the debug parts of
+`support-bundle`, and the troubleshooting panel's doctor table now spawn
+`tan doctor` and render its `checks[]`/`summary` verbatim (`src/alpCli/doctor.ts`,
+shared with the Dependencies panel) rather than re-deriving a doctor report in
+TypeScript. **`tan doctor` is never the source of an "extension X is
+installed" claim in the IDE** — verified against the pinned tan
+(`SUPPORTED_CLI_VERSION`): a plain `tan doctor --format json` run against a
+real project emits no extension-presence check of any kind, so there is
+nothing here for the extension consumer to filter or distrust; if a future tan
+adds one, decision 4 of issue #376 is the rule that keeps it out of this path.
+`tan doctor` is target-agnostic, so `alp.debugDoctor` no longer prompts for a
+target/server pair either — that picker stays `alp.debugPreflight`'s.
+
+A missing workspace collapses to exactly ONE `planPrecondition` message. An
+unresolvable `tan` collapses to exactly ONE toast — never a second, in-process
+doctor rebuilt as a fallback — but that toast is `planCliOutcome(outcome, …)`
+(`src/notify/service.ts`), the same classifier every other CLI-backed command
+in this repo uses, NOT a bare sentence built off `outcome.message` alone: it
+is what splits "tan was never installed" (an Install action) from "tan is
+there but broken" (Settings/Doctor actions) and offers Retry, so the toast is
+never a buttonless dead end. It still never carries the raw errno/resolver
+text (`CliOutcome.unavailable.detail` is explicitly not for a toast — see
+`src/alpCli/models.ts`). The support bundle and the troubleshooting panel are
+where that restriction does NOT apply: a FILE and a channel-grade panel, not a
+toast, so both carry the resolver's curated message AND the raw detail behind
+it verbatim (`DebugSupportBundlePayload.doctor`, `DebugDoctorSection`'s
+`error`/`detail`) — the support bundle is exported precisely when things are
+broken, and a bundle with the curated sentence but not the diagnosis under it
+defeats the reason it exists.
 
 ## 5. Binary resolution (hybrid: bundled + universal)
 
@@ -680,9 +708,20 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   `loader.ts`). **Scope finding:** the debug-domain commands (`debugDoctor`,
   `debugPreflight`, …) probe **VS Code-host-only state** —
   `vscode.extensions.getExtension(...)` for installed debuggers — which the CLI
-  can't see (it assumes the marquee extensions present). Migrating them would
-  regress accuracy, so they **stay in-process** (they belong to the live/LSP
-  side of §4, see §4a). **sdk list ✅** — both release-fetchers (the SDK Manager
+  can't see. Migrating them would regress accuracy, so they **stay in-process**
+  (they belong to the live/LSP side of §4, see §4a).
+  **Correction (#376): that scope finding was truer of `debugPreflight` than of
+  `debugDoctor`.** The field-by-field map in issue #376 found the two in-process
+  reports shared five judgements (`workspaceRoot`, `boardYaml`, extension
+  presence, backend-on-PATH, host platform) — so migrating the WHOLE debug
+  domain as one unit would have left `tan` judging those five for
+  `alp.debugDoctor` while TypeScript judged the identical five for F5, the same
+  fork relocated rather than closed. `buildDoctorReport` (the in-process
+  doctor) is deleted rather than migrated; `alp.debugDoctor` and the doctor
+  parts of the troubleshooting panel and support bundle now consume plain
+  `tan doctor` directly (§4a). `buildDebugPreflightReport` is untouched and
+  still stays in-process — extension presence never moved. **sdk list ✅** —
+  both release-fetchers (the SDK Manager
   panel and the IDE Hub sidebar provider) now call `tan sdk list --format json`
   and post `data.releases` to the webview, replacing two copies of an in-process
   `listRemoteSdkReleases` + hand-rolled `https.get`. **B3 effectively complete:**

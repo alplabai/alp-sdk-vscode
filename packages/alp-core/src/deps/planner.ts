@@ -16,57 +16,30 @@ import {
   fixCommand,
   type ToolchainFixId,
 } from "../toolchain/bootstrapPlan";
+import type {
+  DoctorCheckEnvelope,
+  DoctorEnvelopeData,
+  MissingPrerequisite,
+} from "../cli/doctorEnvelope";
 
 // ── The envelope slice this planner reads (see docs/CLI.md) ──────────────────
+//
+// The check/envelope shapes themselves live in `../cli/doctorEnvelope` (#376)
+// so the debug slice's doctor consumers can read them without importing this
+// (deps) slice. Re-exported here so every existing import of this module
+// keeps working unchanged.
+
+export type { DoctorCheckEnvelope, DoctorEnvelopeData, MissingPrerequisite };
 
 /**
- * A check's status, VERBATIM from tan. Deliberately `string`, not a union: the
+ * A row's status, VERBATIM from tan. Deliberately `string`, not a union: the
  * planner passes it through untouched, so a status tan adds later must survive
- * the trip instead of being coerced into today's vocabulary.
+ * the trip instead of being coerced into today's vocabulary. Same underlying
+ * concept as `DoctorCheckStatus` (`../cli/doctorEnvelope`), named for this
+ * slice's own row shape rather than re-exported, since `DependencyRow` is
+ * deps-panel presentation, not the envelope itself.
  */
 export type DependencyStatus = string;
-
-/** One entry of the doctor envelope's `data.checks[]`. */
-export interface DoctorCheckEnvelope {
-  name: string;
-  status: DependencyStatus;
-  detail: string;
-  /**
-   * PROSE in tan v0.3.1 — "Install Ninja.", "Run Yocto builds on Linux (WSL2 /
-   * Docker)." It is shown to the user (as `DependencyRow.hint`) and NEVER
-   * parsed into a command: commit e359d37 (#347) established that the parse is
-   * unrecoverable, and a mangled command reaching a terminal is worse than no
-   * button at all.
-   */
-  fix?: string | null;
-}
-
-/**
- * tan dev's `MissingPrerequisite` (tan-cli #78/#81), verbatim:
- * `{ tool: String, command: Option<String> }`.
- *
- * `command: null` is a real answer — "tan knows of no command for this tool" —
- * not an invitation to look somewhere else. Its own doc says: NEVER prose, an
- * unknown tool must be `null`, not advice.
- */
-export interface MissingPrerequisite {
-  tool: string;
-  command: string | null;
-}
-
-/** The `data` payload of `tan doctor --build --format json`. */
-export interface DoctorEnvelopeData {
-  checks: DoctorCheckEnvelope[];
-  summary: { pass: number; warn: number; fail: number };
-  /**
-   * PRESENT on the pinned tan v0.4.0 (tan-cli #78/#81 shipped in it), absent on
-   * v0.3.1 and earlier — still reachable through `alpSdk.cliPath`. Still
-   * feature-detected and never assumed: the pin moving is exactly the event
-   * that must not silently change what this type promises. See the tri-state in
-   * `planDependencyReport`.
-   */
-  missingPrerequisites?: MissingPrerequisite[] | null;
-}
 
 // ── Version skew (injected — this repo has exactly one comparator) ───────────
 

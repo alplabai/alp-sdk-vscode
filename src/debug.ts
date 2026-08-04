@@ -13,8 +13,8 @@ import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
 import { samePath } from "@alp-sdk/core/paths";
 import { createDebugTroubleshootingPanelHtml } from "@alp-sdk/core/debug/panelHtml";
 import {
+  buildDebugDoctorSection,
   buildDebugPreflightReport,
-  buildDoctorReport,
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
@@ -29,6 +29,7 @@ import {
   collectRuntimeCapabilities,
   collectWorkspaceDebugContext,
   fileExists,
+  runDebugDoctor,
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { readSvdPath } from "./project/vscodeAdapter";
@@ -54,6 +55,7 @@ import { log, showOutput } from "./util";
 import { NotifyAction } from "./notify/models";
 import {
   isCancellation,
+  planCliOutcome,
   planFailure,
   planPrecondition,
   planSuccess,
@@ -129,19 +131,53 @@ async function inspectProjectState(): Promise<void> {
   await showJsonDocument(snapshot);
 }
 
-async function debugDoctor(): Promise<void> {
-  const targetKind = await pickTargetKind();
-  if (!targetKind) return;
-  const server = await pickServer(targetKind);
+/**
+ * `tan doctor` — "can this machine and project build and debug at all",
+ * target-agnostic (#376). No target/server QuickPicks: those pickers exist
+ * for `alp.debugPreflight`'s per-target readiness, which this command no
+ * longer drafts (`buildDoctorReport` and its `serverCompatibility` check are
+ * gone — see docs/EXTENSION_CLI_INTEGRATION.md §4a).
+ *
+ * A missing workspace or an unresolvable `tan` both end in exactly ONE
+ * message where the table used to render — never a second, in-process
+ * doctor.
+ */
+async function debugDoctor(
+  extensionContext: vscode.ExtensionContext,
+): Promise<void> {
   const context = collectWorkspaceDebugContext();
-  const summary = buildDoctorReport(
-    context,
-    { targetKind, server },
-    collectRuntimeCapabilities(),
+  if (!context.workspaceRoot) {
+    await notify(
+      planPrecondition("noWorkspace", { operation: "run the debug doctor" }),
+    );
+    return;
+  }
+
+  const { data, outcome } = await runDebugDoctor(
+    extensionContext,
+    context.workspaceRoot,
+    { interactive: true },
   );
-  log(`alp.debugDoctor: ran doctor for ${targetKind}/${server}`);
-  await showJsonDocument(summary);
-  if (summary.summary.fail > 0 || summary.summary.warn > 0) {
+  if (!data) {
+    // `planCliOutcome`, like every other CLI consumer in this repo
+    // (src/loader.ts, ideHub/sdkManagerMessages.ts, ideHub/buildPlanPanel.ts)
+    // — never a bare sentence built off `outcome.message` alone. It is what
+    // splits "tan was never installed" (an Install action) from "tan is
+    // there but broken" (Settings/Doctor), and offers Retry; a plain
+    // `planFailure` here was a buttonless dead end.
+    if (
+      (await notify(
+        planCliOutcome(outcome, { operation: "Running the debug doctor" }),
+      )) === "retry"
+    ) {
+      await debugDoctor(extensionContext);
+    }
+    return;
+  }
+
+  log("alp.debugDoctor: ran tan doctor");
+  await showJsonDocument(data);
+  if (data.summary.fail > 0 || data.summary.warn > 0) {
     showOutput();
   }
 }
@@ -808,7 +844,9 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   }
 }
 
-async function exportSupportBundle(): Promise<void> {
+async function exportSupportBundle(
+  extensionContext: vscode.ExtensionContext,
+): Promise<void> {
   const targetKind = await pickTargetKind();
   if (!targetKind) return;
   const server = await pickServer(targetKind);
@@ -847,7 +885,25 @@ async function exportSupportBundle(): Promise<void> {
     },
   );
 
-  const doctor = buildDoctorReport(context, { targetKind, server }, runtime);
+  // A customer exports this precisely when things are broken, i.e. exactly
+  // when `tan` may be unresolvable — so the bundle is still WRITTEN either
+  // way. `buildDebugDoctorSection` carries the resolver's own failure verbatim
+  // — message AND the raw detail behind it — rather than leaving `doctor`
+  // silently absent or reduced to a generic sentence (#376). This is a FILE,
+  // not a toast, so the detail (errno / resolver text) belongs in it.
+  const {
+    data: doctorData,
+    message: doctorMessage,
+    detail: doctorDetail,
+  } = await runDebugDoctor(extensionContext, context.workspaceRoot, {
+    interactive: true,
+  });
+  const doctor = buildDebugDoctorSection(
+    doctorData,
+    doctorMessage,
+    doctorDetail,
+  );
+
   const inspect = createInspectReport(context);
   const bundle = createSupportBundlePayload({
     generatedAt,
@@ -883,18 +939,29 @@ async function exportSupportBundle(): Promise<void> {
 
   if (
     !preflight.canLaunch ||
-    doctor.summary.fail > 0 ||
-    doctor.summary.warn > 0
+    doctor.kind === "unavailable" ||
+    doctor.data.summary.fail > 0 ||
+    doctor.data.summary.warn > 0
   ) {
     showOutput();
   }
 }
 
-async function openDebugTroubleshootingPanel(): Promise<void> {
+async function openDebugTroubleshootingPanel(
+  extensionContext: vscode.ExtensionContext,
+): Promise<void> {
   const targetKind = await pickTargetKind();
   if (!targetKind) return;
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
+  if (!context.workspaceRoot) {
+    await notify(
+      planPrecondition("noWorkspace", {
+        operation: "open the troubleshooting panel",
+      }),
+    );
+    return;
+  }
   const runtime = collectRuntimeCapabilities();
   const generatedAt = new Date().toISOString();
 
@@ -920,7 +987,20 @@ async function openDebugTroubleshootingPanel(): Promise<void> {
     },
   );
 
-  const doctor = buildDoctorReport(context, { targetKind, server }, runtime);
+  // Channel-grade text, not a toast — the detail behind `doctorMessage`
+  // belongs on this panel too (#376).
+  const {
+    data: doctorData,
+    message: doctorMessage,
+    detail: doctorDetail,
+  } = await runDebugDoctor(extensionContext, context.workspaceRoot, {
+    interactive: true,
+  });
+  const doctor = buildDebugDoctorSection(
+    doctorData,
+    doctorMessage,
+    doctorDetail,
+  );
   const inspect = createInspectReport(context);
   const trace = createGenerationTraceReport(
     generatedAt,
@@ -1024,7 +1104,9 @@ export function registerDebugCommands(
     vscode.commands.registerCommand("alp.inspectProjectState", () =>
       inspectProjectState(),
     ),
-    vscode.commands.registerCommand("alp.debugDoctor", () => debugDoctor()),
+    vscode.commands.registerCommand("alp.debugDoctor", () =>
+      debugDoctor(context),
+    ),
     vscode.commands.registerCommand("alp.debugPreflight", () =>
       debugPreflight(),
     ),
@@ -1033,10 +1115,10 @@ export function registerDebugCommands(
     ),
     vscode.commands.registerCommand("alp.debug", () => startDebugging(context)),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>
-      exportSupportBundle(),
+      exportSupportBundle(context),
     ),
     vscode.commands.registerCommand("alp.openDebugTroubleshootingPanel", () =>
-      openDebugTroubleshootingPanel(),
+      openDebugTroubleshootingPanel(context),
     ),
   ];
 }

@@ -409,7 +409,14 @@ The following command payloads map to shared-core contracts:
 
 - `tan inspect` -> `DebugInspectReport`
 - `tan trace` -> `DebugGenerationTraceReport`
-- `tan doctor` -> `DoctorReport` and optional `DebugPreflightReport`
+- `tan doctor` -> `data.checks[]` / `data.summary`, rendered through the
+  shared envelope types (`DoctorCheckEnvelope` / `DoctorEnvelopeData`,
+  `packages/alp-core/src/cli/doctorEnvelope.ts`) verbatim — no allowlist, no
+  recomputed counts, an `unknown` status renders as itself (#376; the
+  in-process `DoctorReport` / `buildDoctorReport` this replaced is deleted).
+  `DebugPreflightReport` (host readiness — extension presence, backend on
+  PATH, build artefact, native-host platform gate) stays a SEPARATE,
+  in-process report; `tan doctor` never carries it.
 - `tan support-bundle` -> `DebugSupportBundlePayload`
 - `tan generate` -> generation summary shaped from loader batch
   (`written`, `failed`) with deterministic ordering

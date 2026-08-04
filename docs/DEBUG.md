@@ -648,8 +648,13 @@ bullet 3 is perfectly observable from outside.
 
 Bullets 1–2 get no check in that function at all. The active OS/backend and the
 target class come out of the picker and are carried as the report's own
-`targetKind` / `server` metadata; the one judgement made about the pair,
-`serverCompatibility`, lives in `buildDoctorReport`.
+`targetKind` / `server` metadata; the one judgement about the pair —
+compatibility between them — was never reachable in practice, on either side
+of the fork: the extension's own `pickServer` only ever offers a legal server
+for the chosen target class, and tan rejects an illegal pair before building
+its report. `buildDoctorReport`, the in-process report that carried this dead
+`serverCompatibility` check, is deleted rather than migrated (#376); nothing
+replaces it.
 
 The last two are configuration VALUES. Both are graded by
 `foldLaunchConfigPlaceholders` and nowhere else, against the `launch.json`
@@ -780,7 +785,10 @@ Current implementation status:
 
 - `Alp: Debug preflight` emits a structured preflight report with
   actionable checks.
-- `Alp: Debug doctor` emits environment and compatibility diagnostics.
+- `Alp: Debug doctor` emits environment diagnostics from `tan doctor`, target-
+  agnostic — it no longer prompts for a target/server pair, and the
+  compatibility check that once paired with it (`serverCompatibility`) is gone
+  with `buildDoctorReport` (#376; see line 612 above).
 - `Alp: Configure debug profile` remains draft-oriented (`launch.json`
   generation) and does not start debugger sessions.
 

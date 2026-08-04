@@ -34,6 +34,26 @@ only Marketplace/Open VSX users opted into pre-release updates.
   channel reveal plus Run Doctor); the panel stays reachable from the palette
   and status bar either way.
 
+- **`Alp: Debug doctor`, the troubleshooting panel and the support bundle now
+  render `tan doctor`'s own checks instead of a TypeScript re-implementation
+  (#376).** `buildDoctorReport` was a second, in-process doctor that judged
+  five of the same facts `alp.debugPreflight` already judges (workspace root,
+  `board.yaml`, extension presence, backend-on-PATH, host platform) and
+  reported zero of the build-environment facts plain `tan doctor` now covers
+  (Python floor, host prerequisites, Zephyr SDK host support, Windows long
+  paths, a crowded home path). It is deleted rather than migrated; the three
+  call sites spawn plain `tan doctor` through a spawn path shared with the
+  Dependencies panel (`src/alpCli/doctor.ts`) and render `checks[]`/`summary`
+  verbatim — no allowlist, no recomputed counts, an `unknown` status renders
+  as itself. `alp.debugDoctor` no longer prompts for a target/server pair
+  (plain `tan doctor` is target-agnostic); per-target F5 readiness — which
+  debugger extension is installed, is the build artefact present — is
+  unchanged and stays `alp.debugPreflight`'s, in-process, because only this
+  window can see its own installed extensions. A missing workspace or an
+  unresolvable `tan` collapse to one message where the doctor table was; the
+  support bundle is the exception and is still written either way, carrying
+  the resolver's own failure message when `tan` could not be reached.
+
 - **The managed `tan` download now unpacks an archive release, not just a raw
   binary (tan-cli#349).** tan-cli's onefile PyInstaller freeze re-extracted
   itself on every invocation — 14 MB, 13-19 s on macOS — which could outrun
