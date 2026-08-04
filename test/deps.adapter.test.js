@@ -53,6 +53,7 @@ function loadDepsAdapter(overrides = {}) {
   return loadWithStubs("deps/vscodeAdapter.js", {
     vscode: { window: {}, Uri: {} },
     "../alpCli/vscodeAdapter": {},
+    "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {},
     "../toolchain": {},
@@ -197,17 +198,11 @@ async function report(
 ) {
   const spawns = [];
   const { buildDependencyReport } = loadDepsAdapter({
-    "../alpCli/vscodeAdapter": {
-      runAlpCommand: async (_context, args, cwd, options) => {
-        spawns.push({ args, cwd, options });
+    "../alpCli/doctor": {
+      runDoctor: async (_context, args, cwd, _signal, interactive) => {
+        spawns.push({ args, cwd, options: { interactive } });
         const data = args.includes("--build") ? build : plain;
-        return {
-          outcome: {
-            ok: true,
-            message: "tan produced no usable envelope",
-            envelope: data ? { ok: true, data } : undefined,
-          },
-        };
+        return { data, message: "tan produced no usable envelope" };
       },
     },
     "../project/vscodeAdapter": {

@@ -109,8 +109,10 @@ docs/CLI.md for the full contract. This repo does not build, test, or release
 The VS Code extension resolves and shells `tan` via its own binary resolver
 (`src/alpCli/`, setting `alpSdk.cliPath` → bundled → local build → cached →
 verified-native PATH → download-on-demand), invoking it for bootstrap/build
-(terminal) and validate/generate/sdk-list (envelope); host-coupled debug
-commands stay in-process (see docs/EXTENSION_CLI_INTEGRATION.md §4a). See
+(terminal), validate/generate/sdk-list/doctor (envelope); the debug preflight
+(F5 host readiness — which debugger extension is installed, is the build
+artefact present) stays in-process, since only this window can see its own
+installed extensions (see docs/EXTENSION_CLI_INTEGRATION.md §4a). See
 docs/CLI.md for the command/envelope contract this repo depends on.
 
 ## Conventions

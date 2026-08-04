@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  DebugDoctorSection,
   DebugGenerationTraceReport,
   DebugInspectReport,
   DebugPreflightReport,
   DebugServerKind,
   DebugTargetKind,
-  DoctorReport,
 } from "./models";
 
 export interface DebugTroubleshootingPanelHtmlInput {
@@ -16,7 +16,7 @@ export interface DebugTroubleshootingPanelHtmlInput {
   server: DebugServerKind;
   inspect: DebugInspectReport;
   trace: DebugGenerationTraceReport;
-  doctor: DoctorReport;
+  doctor: DebugDoctorSection;
   preflight: DebugPreflightReport;
 }
 
@@ -42,12 +42,23 @@ export function createDebugTroubleshootingPanelHtml(
     )
     .join("\n");
 
-  const doctorRows = input.doctor.checks
-    .map(
-      (check) =>
-        `<tr><td>${escapeHtml(check.name)}</td><td>${escapeHtml(check.status)}</td><td>${escapeHtml(check.detail)}</td></tr>`,
-    )
-    .join("\n");
+  const doctorSection =
+    input.doctor.kind === "envelope"
+      ? `  <p>pass=${input.doctor.data.summary.pass} warn=${input.doctor.data.summary.warn} fail=${input.doctor.data.summary.fail}</p>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+    <tbody>
+${input.doctor.data.checks
+  .map(
+    (check) =>
+      `<tr><td>${escapeHtml(check.name)}</td><td>${escapeHtml(check.status)}</td><td>${escapeHtml(check.detail)}</td></tr>`,
+  )
+  .join("\n")}
+    </tbody>
+  </table>`
+      : // Exactly ONE message where the table was (#376) — never a second,
+        // in-process doctor rendered in its place.
+        `  <p>${escapeHtml(input.doctor.error)}</p>`;
 
   const preflightRows = input.preflight.checks
     .map(
@@ -95,13 +106,7 @@ ${traceRows}
   </table>
 
   <h2>Environment: Doctor Summary</h2>
-  <p>pass=${input.doctor.summary.pass} warn=${input.doctor.summary.warn} fail=${input.doctor.summary.fail}</p>
-  <table>
-    <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
-    <tbody>
-${doctorRows}
-    </tbody>
-  </table>
+${doctorSection}
 
   <h2>Preflight Summary</h2>
   <p>pass=${input.preflight.summary.pass} warn=${input.preflight.summary.warn} fail=${input.preflight.summary.fail} canLaunch=${input.preflight.canLaunch} configurationGraded=${input.preflight.configurationGraded}</p>

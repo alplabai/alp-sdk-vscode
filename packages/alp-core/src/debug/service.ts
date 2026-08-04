@@ -7,6 +7,7 @@ import {
   DebugAdapterKind,
   DebugConfigurationGrade,
   DebugDoctorRequest,
+  DebugDoctorSection,
   DebugGenerationTraceDecision,
   DebugGenerationTraceReport,
   DebugInspectReport,
@@ -25,6 +26,7 @@ import {
   PreflightCheck,
   PreflightStatus,
 } from "./models";
+import type { DoctorEnvelopeData } from "../cli/doctorEnvelope";
 import { ManifestSlice } from "../systemManifest/models";
 
 export interface DebugPreflightDependencies {
@@ -145,7 +147,7 @@ export function createSupportBundlePayload(input: {
   inspect: DebugInspectReport;
   preflight?: DebugPreflightReport;
   trace?: DebugGenerationTraceReport;
-  doctor?: DoctorReport;
+  doctor?: DebugDoctorSection;
   notes?: string[];
 }): DebugSupportBundlePayload {
   return {
@@ -172,16 +174,41 @@ export function createSupportBundlePayload(input: {
           decisions: input.trace.decisions.map((decision) => ({ ...decision })),
         }
       : undefined,
-    doctor: input.doctor
-      ? {
-          ...input.doctor,
-          summary: { ...input.doctor.summary },
-          checks: input.doctor.checks.map((check) => ({ ...check })),
-          nextSteps: [...input.doctor.nextSteps],
-        }
-      : undefined,
+    doctor: input.doctor ? copyDoctorSection(input.doctor) : undefined,
     notes: input.notes ? [...input.notes] : [],
   };
+}
+
+function copyDoctorSection(doctor: DebugDoctorSection): DebugDoctorSection {
+  if (doctor.kind === "unavailable") {
+    return { ...doctor };
+  }
+  return {
+    kind: "envelope",
+    data: {
+      ...doctor.data,
+      summary: { ...doctor.data.summary },
+      checks: doctor.data.checks.map((check) => ({ ...check })),
+    },
+  };
+}
+
+/**
+ * Assemble the doctor half of a debug report/bundle from one `tan doctor`
+ * spawn's result (#376) — `data` verbatim on success (see `DebugDoctorSection`
+ * for what "verbatim" protects), or the resolver's own message carried whole
+ * when tan could not be resolved or run.
+ *
+ * Never a second in-process doctor: an unavailable run becomes ONE message,
+ * not a rebuilt check list — see the callers in `src/debug.ts`.
+ */
+export function buildDebugDoctorSection(
+  data: DoctorEnvelopeData | null,
+  unavailableMessage: string,
+): DebugDoctorSection {
+  return data
+    ? { kind: "envelope", data }
+    : { kind: "unavailable", error: unavailableMessage };
 }
 
 export function serializeInspectReport(report: DebugInspectReport): string {

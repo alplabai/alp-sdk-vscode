@@ -54,7 +54,17 @@ function loadDebug(stubs) {
  *  with the first choice, every adapter extension is installed, every tool is
  *  on PATH, and the ELF exists. That is the dangerous combination — the report
  *  passes, and it still read no `launch.json`. */
-function register({ pathExists = () => true } = {}) {
+/** Default `tan doctor` result: a healthy report, one row. Override via
+ *  `runDebugDoctor` to drive the unavailable path. */
+const DOCTOR_DATA = {
+  checks: [{ name: "sdk", status: "pass", detail: "alp-sdk v0.6.0" }],
+  summary: { pass: 1, warn: 0, fail: 0 },
+};
+
+function register({
+  pathExists = () => true,
+  runDebugDoctor = async () => ({ data: DOCTOR_DATA, message: "ok" }),
+} = {}) {
   const written = [];
 
   const { registerDebugCommands } = loadDebug({
@@ -104,6 +114,7 @@ function register({ pathExists = () => true } = {}) {
         written.push({ workspaceRoot, fileName, content });
         return path.posix.join(workspaceRoot, ".alp-support", fileName);
       },
+      runDebugDoctor,
     },
     // Module-level imports of src/debug.ts that would otherwise drag a terminal
     // or the west surface in. Nothing under test reaches them.
@@ -149,6 +160,53 @@ test("the support bundle labels a host-only verdict hostReady, never canLaunch",
   // And the embedded report must agree with the note it is labelled by.
   assert.equal(bundle.preflight.canLaunch, true);
   assert.equal(bundle.preflight.configurationGraded, "none");
+});
+
+// #376: the doctor half of the bundle is now `tan doctor`'s own envelope,
+// verbatim — no allowlist, no recomputed counts, an `unknown` status renders
+// as itself.
+test("the support bundle carries tan's doctor envelope verbatim, including an `unknown` status", async () => {
+  const data = {
+    checks: [
+      { name: "sdk", status: "pass", detail: "alp-sdk v0.6.0" },
+      {
+        name: "codeLLDBExtension",
+        status: "unknown",
+        detail:
+          "unknown — the standalone tan binary cannot see VS Code's installed extensions.",
+      },
+    ],
+    summary: { pass: 1, warn: 0, fail: 0 },
+  };
+  const bundle = await exportBundle({
+    runDebugDoctor: async () => ({ data, message: "ok" }),
+  });
+
+  assert.deepEqual(bundle.doctor, { kind: "envelope", data });
+});
+
+// #376 decision 5: a customer exports this bundle precisely when things are
+// broken — i.e. exactly when `tan` may be unresolvable — so the bundle must
+// still be WRITTEN, carrying the resolver's own failure verbatim rather than
+// a silently absent doctor section.
+test("the support bundle is still written when tan is unresolvable, and the doctor section says so verbatim", async () => {
+  const bundle = await exportBundle({
+    runDebugDoctor: async () => ({
+      data: null,
+      message:
+        "tan could not be resolved: no prebuilt tan CLI is available for this platform.",
+    }),
+  });
+
+  assert.deepEqual(bundle.doctor, {
+    kind: "unavailable",
+    error:
+      "tan could not be resolved: no prebuilt tan CLI is available for this platform.",
+  });
+  // The rest of the bundle — preflight + inspect — is unaffected by the
+  // doctor being unresolvable.
+  assert.equal(bundle.preflight.canLaunch, true);
+  assert.ok(bundle.inspect);
 });
 
 test("the support bundle reports the host NOT ready when it is not", async () => {

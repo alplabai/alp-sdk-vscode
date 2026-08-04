@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ProjectContext } from "../project/models";
+import type { DoctorEnvelopeData } from "../cli/doctorEnvelope";
 
 export type DebugTargetKind =
   | "zephyr-mcu"
@@ -142,6 +143,26 @@ export interface DoctorReport {
 }
 
 /**
+ * The doctor half of a debug report/bundle, sourced from a `tan doctor` spawn
+ * rather than a TypeScript re-implementation (#376 — `buildDoctorReport` and
+ * this file's own `DoctorReport`/`DoctorCheck`/`DoctorStatus`/`DoctorSummary`
+ * family are the thing this replaces).
+ *
+ * - `"envelope"` carries tan's own `checks[]`/`summary` VERBATIM
+ *   (`DoctorEnvelopeData`, `../cli/doctorEnvelope`) — no allowlist, no status
+ *   filter, no recomputed counts. An `unknown` status renders as `unknown`
+ *   and is excluded from `summary.pass/warn/fail` exactly the way tan's own
+ *   arithmetic excludes it; nothing here may recount.
+ * - `"unavailable"` is the ONE thing a consumer is still allowed to say on its
+ *   own — that `tan` itself could not be resolved or run — carrying the
+ *   resolver's own message verbatim rather than falling back to a second,
+ *   in-process doctor.
+ */
+export type DebugDoctorSection =
+  | { kind: "envelope"; data: DoctorEnvelopeData }
+  | { kind: "unavailable"; error: string };
+
+/**
  * WHICH configuration a preflight report's `canLaunch` graded (#339).
  *
  * - `"none"` — none was read, so `canLaunch` is host readiness alone.
@@ -193,7 +214,7 @@ export interface DebugSupportBundlePayload {
   inspect: DebugInspectReport;
   preflight?: DebugPreflightReport;
   trace?: DebugGenerationTraceReport;
-  doctor?: DoctorReport;
+  doctor?: DebugDoctorSection;
   notes: string[];
 }
 

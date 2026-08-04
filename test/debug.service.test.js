@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   DEBUG_TARGET_CHOICES,
+  buildDebugDoctorSection,
   buildDebugPreflightReport,
   buildDoctorReport,
   createDebugProfile,
@@ -741,6 +742,77 @@ test("serializeSupportBundlePayload returns stable JSON", () => {
   assert.equal(serialized.schemaVersion, "1");
   assert.equal(serialized.preflight.targetKind, "native-host");
   assert.deepEqual(serialized.notes, ["preflight"]);
+});
+
+// #376: `buildDoctorReport` is gone; the doctor half of a debug report/bundle
+// now comes from one `tan doctor` spawn's result, assembled by this pure
+// helper rather than re-derived in TypeScript.
+test("buildDebugDoctorSection wraps a tan envelope verbatim, including an `unknown` status", () => {
+  const data = {
+    checks: [
+      { name: "sdk", status: "pass", detail: "alp-sdk v0.6.0" },
+      {
+        name: "codeLLDBExtension",
+        status: "unknown",
+        detail:
+          "unknown — the standalone tan binary cannot see VS Code's installed extensions.",
+      },
+    ],
+    // tan's own arithmetic: `unknown` is excluded, exactly as it is on the
+    // wire — this helper must not recount it.
+    summary: { pass: 1, warn: 0, fail: 0 },
+  };
+
+  const section = buildDebugDoctorSection(data, "unused when data is present");
+
+  assert.deepEqual(section, { kind: "envelope", data });
+});
+
+test("buildDebugDoctorSection carries the resolver's failure verbatim when tan is unresolvable", () => {
+  const section = buildDebugDoctorSection(
+    null,
+    "tan could not be resolved: no prebuilt tan CLI is available for this platform.",
+  );
+
+  assert.deepEqual(section, {
+    kind: "unavailable",
+    error:
+      "tan could not be resolved: no prebuilt tan CLI is available for this platform.",
+  });
+});
+
+test("createSupportBundlePayload carries an envelope doctor section, deep-copied", () => {
+  const doctor = {
+    kind: "envelope",
+    data: {
+      checks: [{ name: "ninja", status: "fail", detail: "ninja not found" }],
+      summary: { pass: 0, warn: 0, fail: 1 },
+    },
+  };
+  const bundle = createSupportBundlePayload({
+    generatedAt: "2026-05-14T00:00:00.000Z",
+    inspect: createInspectReport(createDebugContext()),
+    doctor,
+    notes: [],
+  });
+
+  assert.deepEqual(bundle.doctor, doctor);
+  // A copy, not the same reference — mutating the input must not reach the
+  // bundle already built from it.
+  doctor.data.checks[0].status = "pass";
+  assert.equal(bundle.doctor.data.checks[0].status, "fail");
+});
+
+test("createSupportBundlePayload carries an unavailable doctor section unchanged", () => {
+  const doctor = { kind: "unavailable", error: "tan could not be resolved." };
+  const bundle = createSupportBundlePayload({
+    generatedAt: "2026-05-14T00:00:00.000Z",
+    inspect: createInspectReport(createDebugContext()),
+    doctor,
+    notes: [],
+  });
+
+  assert.deepEqual(bundle.doctor, doctor);
 });
 
 test("buildDoctorReport flags unsupported backends clearly", () => {

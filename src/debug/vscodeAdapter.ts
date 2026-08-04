@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { collectProjectContext } from "../project/vscodeAdapter";
+import { runDoctor } from "../alpCli/doctor";
 import {
   collectRuntimeCapabilitiesFromCommands,
   createDebugWorkspaceContext,
@@ -13,6 +14,7 @@ import {
   DebugRuntimeCapabilities,
   DebugWorkspaceContext,
 } from "@alp-sdk/core/debug/models";
+import type { DoctorEnvelopeData } from "@alp-sdk/core/cli/doctorEnvelope";
 
 export function collectWorkspaceDebugContext(): DebugWorkspaceContext {
   const project = collectProjectContext();
@@ -45,6 +47,30 @@ export function collectRuntimeCapabilities(): DebugRuntimeCapabilities {
 
 export function fileExists(filePath: string): boolean {
   return fs.existsSync(filePath);
+}
+
+/**
+ * Run plain `tan doctor` — target-agnostic, so it takes no `targetKind`/
+ * `server` (#376): "can this machine and project build and debug at all" is
+ * one question, not one per debug target. Per-target readiness stays
+ * `alp.debugPreflight`'s job (`buildDebugPreflightReport`, in-process).
+ *
+ * Delegates to the ONE shared doctor spawn (`../alpCli/doctor`) so this slice
+ * and the Dependencies panel (`src/deps/vscodeAdapter.ts`) never drift into
+ * two ways of running the same command.
+ */
+export async function runDebugDoctor(
+  context: vscode.ExtensionContext,
+  cwd: string,
+  options: { signal?: AbortSignal; interactive?: boolean } = {},
+): Promise<{ data: DoctorEnvelopeData | null; message: string }> {
+  return runDoctor(
+    context,
+    ["doctor"],
+    cwd,
+    options.signal,
+    options.interactive === true,
+  );
 }
 
 export function writeSupportBundle(
