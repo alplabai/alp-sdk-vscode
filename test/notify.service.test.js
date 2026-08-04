@@ -142,11 +142,35 @@ test("every non-statusBar plan carries at least one action", () => {
   }
 });
 
-test("planSuccess is always the status bar, and may be action-free", () => {
+test("planSuccess is the status bar when action-free", () => {
   const plan = planSuccess("Alp: wrote the Zephyr .conf");
   assert.equal(plan.channel, "statusBar");
   assert.equal(plan.severity, "info");
   assert.deepEqual(plan.actions, []);
+});
+
+// #331: a build-finish success with nothing to click stays the status bar
+// (unchanged above); one that DOES offer something worth a click — "Show
+// Result", revealing the Build Plan panel — must become a toast instead,
+// because the status-bar channel renders no buttons at all (the presenter's
+// `statusBar` branch calls `vscode.window.setStatusBarMessage`, which takes
+// no actions).
+test("planSuccess becomes an actionable toast when the caller passes actions, not a silent status-bar message", () => {
+  const withAction = planSuccess("Alp Build finished.", {
+    actions: [{ id: "showBuildResult" }],
+  });
+  assert.equal(
+    withAction.channel,
+    "toast",
+    "an action-bearing success needs the channel that can actually show it",
+  );
+  assert.equal(withAction.severity, "info");
+  assert.deepEqual(withAction.actions, [{ id: "showBuildResult" }]);
+
+  // No actions passed at all -- still exactly the bare-success shape.
+  const bare = planSuccess("Alp Build finished.");
+  assert.equal(bare.channel, "statusBar");
+  assert.deepEqual(bare.actions, []);
 });
 
 // ── 3. raw diagnostics never reach the message ─────────────────────────────

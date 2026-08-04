@@ -18,6 +18,22 @@ only Marketplace/Open VSX users opted into pre-release updates.
   naming `alpSdk.svdPath` rather than a session that silently has no
   peripheral view. See docs/DEBUG.md §10.7.
 
+- **The build-finish notification now offers "Show Result" (#331).** A
+  SUCCESSFUL `tan build` toast carries a one-click action that opens the Build
+  Plan panel, so the per-slice outcome is reachable from the exact
+  notification that just said the build finished, instead of a separate trip
+  through the Alp IDE panel. Gated to `tan build` specifically — the panel
+  reads `build/system-manifest.yaml`, and of everything this extension runs in
+  a terminal or channel (bootstrap, the Zephyr SDK install, native_sim Run,
+  `tan image`/`flash`/`clean`/`renode`) only `tan build` seeds/refreshes that
+  file; `tan clean` actively deletes it. It is also success-only, not shown on
+  a failed build: a prior green build's manifest can still be on disk when a
+  later build fails, the payload carries no timestamp, and the panel cannot
+  tell that result is stale — showing it from a failure toast risks presenting
+  yesterday's build as today's. The failure toast is unchanged (the terminal/
+  channel reveal plus Run Doctor); the panel stays reachable from the palette
+  and status bar either way.
+
 - **The managed `tan` download now unpacks an archive release, not just a raw
   binary (tan-cli#349).** tan-cli's onefile PyInstaller freeze re-extracted
   itself on every invocation — 14 MB, 13-19 s on macOS — which could outrun

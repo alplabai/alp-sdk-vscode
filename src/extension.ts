@@ -35,6 +35,7 @@ import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerAlpTaskProvider } from "./tasks/vscodeAdapter";
 import {
+  BUILD_RUN_NAME,
   disposeTaskTracking,
   log,
   onDidFinishTerminalCommand,
@@ -176,8 +177,33 @@ export function activate(context: vscode.ExtensionContext): void {
       // the old snapshot instead is what made a SUCCESSFUL bootstrap flip the
       // bar to "$(warning) Alp: setup" — a warning at the moment of success.
       refreshState();
+      // "Show Result" (#331) is SUCCESS-ONLY, and only for BUILD_RUN_NAME —
+      // two gates, not one:
+      //  - which run: the Build Plan panel renders `build/system-manifest.yaml`,
+      //    and only a `tan build` run refreshes that file (per the SDK's own
+      //    docs: "tan build seeds its own system-manifest.yaml … from --emit
+      //    system-manifest"). `tan flash`/`image`/`renode` never write it, and
+      //    `tan clean` DELETES it — offering the action there would reveal a
+      //    panel with nothing to do with the run that just finished.
+      //  - which outcome: even for a build, a FAILED run must not offer it.
+      //    Nothing in this codebase pins when `tan` (re)writes the manifest on
+      //    a failure — a prior GREEN run's `system-manifest.yaml` can still be
+      //    sitting there from yesterday, and `SYSTEM_MANIFEST_SHAPE`
+      //    (`@alp-sdk/core/tanPayloadShape`) carries no timestamp, so neither
+      //    the payload nor the panel can tell stale from fresh. A "Show
+      //    Result" on a failure toast could present yesterday's green build as
+      //    today's. The failure toast already carries what actually matters —
+      //    the terminal/channel reveal (the real error) and Run Doctor — and
+      //    the panel stays reachable from the palette and status bar either
+      //    way, so this is not a regression in reachability, only in the
+      //    one-click shortcut.
+      const showsBuildResult = code === 0 && name === BUILD_RUN_NAME;
       if (code === 0) {
-        notifyAsync(planSuccess(`${name} finished.`));
+        notifyAsync(
+          planSuccess(`${name} finished.`, {
+            actions: showsBuildResult ? [{ id: "showBuildResult" }] : [],
+          }),
+        );
       } else if (code !== undefined) {
         // A channel-mode run has no terminal to reveal — its whole log is in
         // the "Alp SDK" channel, which is the point of streaming it there. An
