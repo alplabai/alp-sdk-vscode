@@ -11,6 +11,8 @@ import {
   ChecksumSpec,
   CliOutcome,
   ReleaseAsset,
+  ReleaseAssetCandidate,
+  ResolvedAssetCandidate,
 } from "./models";
 import {
   CACHED_CLI_MISMATCH,
@@ -69,6 +71,24 @@ export interface ResolveDeps {
   fileExists: (path: string) => boolean;
   commandOnPath: (command: string) => boolean;
   ensureDir: (dir: string) => void;
+  /** #463: which of a `ReleaseAsset`'s two candidate names (raw / archive)
+   *  this PINNED release actually published, decided from that release's own
+   *  `checksums.txt` — never guessed from `SUPPORTED_CLI_VERSION`. Runs BEFORE
+   *  `download` below, and `downloadCli` hands its result (not
+   *  `asset.candidates[0]`) to `download` as both the URL and the verify spec.
+   *  A network step of its own (real impl: `resolveAssetSeam` in download.ts),
+   *  so it is injected the same way `download` is, for the same reason: a
+   *  pure `adapterCore.ts` must not reach the network directly.
+   *
+   *  Returns a `ResolvedAssetCandidate` — the candidate PLUS the digest that
+   *  same `checksums.txt` read already found for it (#465) — so `downloadCli`
+   *  can hand `download` a digest it already has instead of making it fetch
+   *  the manifest a second time to re-derive the same value. */
+  resolveAsset: (
+    candidates: readonly ReleaseAssetCandidate[],
+    checksumsUrl: string,
+    signal: AbortSignal | undefined,
+  ) => Promise<ResolvedAssetCandidate>;
   /** `verify` is REQUIRED, not optional: the managed binary is executed, so
    *  every fetch of it must be checked against the digest the release
    *  publishes.
@@ -88,13 +108,19 @@ export interface ResolveDeps {
     verify: ChecksumSpec,
   ) => Promise<void>;
   chmodExec: (path: string) => void;
-  /** Lowercase hex sha256 of a file, or null when it cannot be read. Injected
-   *  (rather than hashed here) so the tests can drive a mismatch without
-   *  writing 3 MB to disk, and so the real implementation can memoize — see
-   *  `sha256File` in `vscodeAdapter.ts` for the measured cost. */
-  sha256File: (path: string) => string | null;
-  /** The sha256 this extension recorded for the file now at
-   *  `cachedBinaryPath`, or undefined when there is none.
+  /** Lowercase hex sha256 over EVERY file under `dir` — not the launcher
+   *  alone — combined into one digest, or null when the tree cannot be read.
+   *  Injected (rather than walked+hashed here) so the tests can drive a
+   *  mismatch without writing megabytes to disk, and so the real
+   *  implementation can memoize per entry — see `sha256Tree` in
+   *  `vscodeAdapter.ts` for the measured cost and the reason this covers a
+   *  TREE (#464): a PyInstaller onedir install is not one file, and
+   *  `cacheDir` is what `installArchive` (download.ts) landed every one of
+   *  its entries into. */
+  sha256Tree: (dir: string) => string | null;
+  /** The sha256 this extension recorded for the installed TREE now at
+   *  `cacheDir` — the launcher plus every entry `installArchive` landed
+   *  beside it (#464) — or undefined when there is none.
    *
    *  Backed by `context.globalState`, NOT a sidecar file in `cacheDir`. Two
    *  reasons: it is already this extension's pattern for cross-activation state
@@ -105,12 +131,13 @@ export interface ResolveDeps {
    *
    *  WHAT THIS DOES AND DOES NOT BUY, stated plainly because the tempting word
    *  here is "tamper-proof" and that would be false: an attacker who already
-   *  has write access to this user account can rewrite the binary AND the
+   *  has write access to this user account can rewrite the tree AND the
    *  record, and nothing here stops them. What it does detect is corruption, a
-   *  partial or interrupted write, a half-restored backup, and replacement by
+   *  partial or interrupted write, a half-restored backup, and replacement of
+   *  ANY entry under `cacheDir` — the launcher or a `_internal/` sibling — by
    *  anything that does not know to update the record. */
   recordedCachedDigest: () => string | undefined;
-  /** Record the digest of the binary just installed at `cachedBinaryPath`.
+  /** Record the digest of the installed TREE now at `cacheDir` (#464).
    *  Async because the real implementation is `globalState.update`. */
   recordCachedDigest: (digest: string) => Promise<void>;
   /**
@@ -200,12 +227,21 @@ export function resolutionInputFromDeps(
  * offers, which is the same trust boundary as their terminal — and their reasons
  * must not be flattened into one, because they are not the same statement:
  *
- *   - `download` — verified at write time (#389): the bytes are checked against
- *     the release's own `checksums.txt` before anything lands at
- *     `cachedBinaryPath`. `downloadCli` below then RECORDS that digest.
- *   - `cached`   — verified here, on every resolution, against that record
- *     (#386). This is the arm that actually gets reached: the download happens
- *     once, the cache is read forever.
+ *   - `download` — verified at write time (#389): the bytes (raw binary, or
+ *     the archive that holds one — tan-cli#349) are checked against the
+ *     release's own `checksums.txt` before anything lands at `cacheDir`.
+ *     `downloadCli` below then RECORDS a digest over the whole INSTALLED
+ *     TREE (#464) — the launcher plus every entry `installArchive` landed
+ *     beside it, e.g. a PyInstaller onedir release's `_internal/` — not the
+ *     launcher alone: the checksum above vouches only for the transferred
+ *     bytes arriving intact, never for what a later rewrite does to a sibling
+ *     file the archive unpacked next to the launcher.
+ *   - `cached`   — verified here, on every resolution, against that SAME TREE
+ *     digest (#386, extended by #464 to cover the tree rather than one file).
+ *     This is the arm that actually gets reached: the download happens once,
+ *     the cache is read forever — and a `_internal/` entry modified, added,
+ *     or removed after install fails this exactly like a modified launcher
+ *     always did.
  *
  *   - `cliPath` / `localBuild` — the user pointed at this binary deliberately,
  *     or built it themselves. There is no reference digest for either anywhere,
@@ -301,18 +337,20 @@ export async function resolveAlpBinary(
           `no recorded digest for ${deps.cachedBinaryPath}`,
         );
       }
-      const actual = deps.sha256File(deps.cachedBinaryPath);
+      const actual = deps.sha256Tree(deps.cacheDir);
       if (actual !== recorded) {
         // REFUSES, and must stay a refusal rather than a warning: the next
         // thing that happens to this path is a spawn. A warning would mean
         // "we noticed this binary is not the one we verified, and ran it".
+        // #464: `actual` covers the WHOLE tree — a rewritten/added/removed
+        // `_internal/` entry lands here exactly like a rewritten launcher.
         throw new ChecksumError(
           "mismatch",
           CACHED_CLI_MISMATCH,
           // Both digests and the path are channel-only — `ChecksumError.detail`
           // is what `planFailure` logs and never renders.
-          `sha256 on disk is ${actual ?? "unreadable"}, recorded digest is ` +
-            `${recorded} (${deps.cachedBinaryPath})`,
+          `sha256 of the installed tree is ${actual ?? "unreadable"}, ` +
+            `recorded digest is ${recorded} (${deps.cacheDir})`,
         );
       }
       return { command: deps.cachedBinaryPath, source };
@@ -451,18 +489,39 @@ export async function downloadCli(
     cachedDigestRecorded: deps.recordedCachedDigest() !== undefined,
   });
   deps.ensureDir(deps.cacheDir);
-  // tan-cli ships a RAW binary per target (not an archive): download it straight
-  // to the cached binary path. `download` itself chmods +x before the rename
-  // that makes it appear at `cachedBinaryPath` (closes the race where a
-  // concurrent window resolves "cached" and spawns a not-yet-executable
-  // file); this call is now a harmless idempotent safety net.
+  // #463: `asset.candidates` names BOTH shapes this target might be published
+  // under (raw binary through v0.5.0-rc4, archive from tan-cli#349 on) —
+  // `resolveAsset` decides which one THIS pinned release actually used, from
+  // its own `checksums.txt`, before any transfer starts. `download` then
+  // fetches exactly that resolved name/URL and — whichever shape it turns out
+  // to hold — lands the launcher at `cachedBinaryPath` either way: a raw
+  // download renames straight there, an archive is unpacked around it with
+  // its `_internal/` siblings alongside (`installArchive` in download.ts).
+  // `download` itself chmods +x before the rename/unpack that makes the
+  // launcher appear at `cachedBinaryPath` (closes the race where a concurrent
+  // window resolves "cached" and spawns a not-yet-executable file); the
+  // `chmodExec` call below is a harmless idempotent safety net.
   //
-  // `asset` is passed as the verification spec as well as the source URL: it
-  // already carries `assetName` and `checksumsUrl` for the SAME release tag, so
-  // the digest can never be looked up against a different release than the
-  // bytes came from. Nothing lands at `cachedBinaryPath` unless it matches.
+  // The resolved candidate's `checksumsUrl` is `asset.checksumsUrl` — the
+  // SAME release's manifest `resolveAsset` just read — so the digest can
+  // never be looked up against a different release than the bytes came from.
+  // Nothing lands at `cachedBinaryPath` unless it matches. That is now a
+  // STRUCTURAL fact rather than an assumption resting on two fetches of the
+  // same URL returning identical bytes (#465): `resolved.digest` is the exact
+  // value `resolveAsset`'s read of `checksumsUrl` found for `resolved
+  // .assetName`, and `download` below is handed it directly rather than
+  // fetching `checksumsUrl` a second time to re-derive it.
   try {
-    await deps.download(asset.url, deps.cachedBinaryPath, signal, asset);
+    const resolved = await deps.resolveAsset(
+      asset.candidates,
+      asset.checksumsUrl,
+      signal,
+    );
+    await deps.download(resolved.url, deps.cachedBinaryPath, signal, {
+      assetName: resolved.assetName,
+      checksumsUrl: asset.checksumsUrl,
+      digest: resolved.digest,
+    });
   } catch (error) {
     throw (
       (migrating ? migrationRefusal(error, signal?.aborted === true) : null) ??
@@ -473,26 +532,31 @@ export async function downloadCli(
     deps.chmodExec(deps.cachedBinaryPath);
   }
   // Record what `resolveAlpBinary`'s `cached` arm will check on every later
-  // activation (#386). Hashed off the file that LANDED rather than plumbed out
-  // of the transfer: it costs one read of a file that was written moments ago,
-  // it needs no change to the `download` seam's contract, and it also catches
-  // the (unlikely) case of the rename itself producing something different from
-  // what was verified.
+  // activation (#386). Hashed off the TREE that LANDED — `cacheDir`, not just
+  // `cachedBinaryPath` (#464) — rather than plumbed out of the transfer: it
+  // costs one walk of a directory that was written moments ago, it needs no
+  // change to the `download` seam's contract, and it also catches the
+  // (unlikely) case of the rename/unpack itself producing something different
+  // from what was verified. Covering the tree rather than the launcher alone
+  // is the point for an archive install: `installArchive` (download.ts) lands
+  // a `_internal/` sibling beside the launcher that the archive's checksum
+  // never itself re-verifies after unpacking, and that sibling is executed
+  // (imported, dlopen'd) exactly as much as the launcher is.
   //
   // Written LAST, and a failure to write it is not swallowed. The download
-  // itself already succeeded, so this leaves a good binary on disk with no
+  // itself already succeeded, so this leaves a good tree on disk with no
   // record — which the next resolution treats as the migration case and
-  // re-acquires. Fail-closed: the alternative is a binary nothing will ever
+  // re-acquires. Fail-closed: the alternative is a tree nothing will ever
   // check again.
   //
   // ALL THREE download routes reach this, because they all call this function:
   // `resolveAlpBinary`'s `download` arm, `ensureTanCliProvisioned`, and
   // `updateAlpCli` (`test/alpCli.downloadSeamWiring.test.js` enumerates them
   // for the same reason).
-  const digest = deps.sha256File(deps.cachedBinaryPath);
+  const digest = deps.sha256Tree(deps.cacheDir);
   if (!digest) {
     throw new Error(
-      "The tan CLI download did not produce a binary that could be read back.",
+      "The tan CLI download did not produce an installed tree that could be read back.",
     );
   }
   await deps.recordCachedDigest(digest);

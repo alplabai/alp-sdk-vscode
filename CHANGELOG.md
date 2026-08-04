@@ -6,6 +6,83 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **The managed `tan` download now unpacks an archive release, not just a raw
+  binary (tan-cli#349).** tan-cli's onefile PyInstaller freeze re-extracted
+  itself on every invocation — 14 MB, 13-19 s on macOS — which could outrun
+  this extension's own `commandOnPath` probe and version checks well before a
+  user ever ran a build. A onedir freeze zipped/tarred into one archive per
+  target fixes that, at the cost of `download.ts` needing an unpack step it
+  never had.
+
+  `.zip` (win32) and `.tar.gz` (elsewhere) are both unpacked with the OS's own
+  `tar` — Windows has shipped a real `tar.exe` in `System32` since 10 1803
+  (bsdtar/libarchive, which reads `.zip` as readily as `.tar.gz`), and macOS
+  and Linux ship one too; Node's stdlib has no tar reader and nothing was
+  added to work around that. Windows resolves it by absolute path rather than
+  a PATH lookup, deliberately: Git for Windows ships its own `tar.exe` (GNU
+  tar) which cannot read `.zip` at all, and a bare `"tar"` risks finding that
+  one first on a great many developer machines.
+
+  Which of the two install paths runs (extract vs. rename-straight-in) is
+  decided by the downloaded bytes' own magic number — never by the pinned
+  version, which is what lets a pin naming any release through `v0.5.0-rc4`
+  (a raw binary) and a pin naming an archive release both keep installing
+  correctly through the exact same code, with nothing here to edit on
+  tan-cli's next release either way. The archive's checksum is still verified
+  before anything is unpacked, exactly as the raw binary always was;
+  unpacking it is checked again afterward, since a checksum on the archive
+  proves it arrived intact, not that what came out of it is a working
+  launcher.
+
+- **Fix: which ASSET NAME to even request was still guessed, not resolved
+  (#463).** The archive and raw shapes are published under *different* asset
+  names — `tan-<triple>[.exe]` vs `tan-<triple>.zip`/`.tar.gz` — not the same
+  name with different bytes, so the `tan-<triple>[.exe]` sentence two
+  paragraphs up was wrong the moment an archive release existed: requesting
+  the raw name against one 404s outright. `resolvePublishedAsset`
+  (`download.ts`) now reads the release's own `checksums.txt` once and takes
+  whichever candidate name has an entry, before a single asset byte is
+  fetched — never a per-version table, which is the same trap
+  `HOSTS_WITHOUT_RELEASE_ASSET` exists to avoid for a different question.
+
+- **Fix: the cached-binary integrity digest covered the launcher only, not
+  the installed tree (#464).** A PyInstaller onedir release is not one file:
+  libpython, every native extension module and the Python bytecode live in a
+  `_internal/` sibling `installArchive` moves in beside the launcher, and none
+  of that was ever hashed — a rewrite of a `_internal/` entry after install
+  matched the (launcher-only) recorded digest forever, and the extension
+  spawned it having reported the resolution as verified. `sha256Tree`
+  (`vscodeAdapter.ts`) now digests the whole installed tree, per-file
+  memoized so an unchanged resolution re-reads nothing and a real tamper pays
+  only for the entry that changed.
+
+- **Fix: candidate resolution preferred the raw shape over the archive when a
+  release listed both (#465).** `resolvePublishedAsset` searched `[raw,
+  archive]` in that array order and took the first match; a release kept for
+  a transition period would have resolved to raw every time, silently
+  resurrecting the 13.25-19.74s macOS onefile startup tan-cli#349 exists to
+  kill, with no error to catch it. It now prefers the archive whenever both
+  are listed.
+
+- **Fix: `checksums.txt` was fetched twice per managed download (#465) —
+  measured at three requests where tan-cli#176's design is two.**
+  `resolvePublishedAsset` already reads the manifest once to pick a
+  candidate and discarded the digest it found; `downloadFile` then fetched
+  the same file again to re-derive it. The digest is now threaded through
+  `resolveAsset`'s result (`ResolvedAssetCandidate`) to `download`, so it is
+  read once — which also makes "the digest came from the same manifest as
+  the candidate choice" a fact by construction rather than an assumption
+  resting on the URL returning identical bytes twice.
+
+- **Docs: the ADR 0021 citation for the consent dialog's no-network-before-
+  consent rule named a "Tier A requirement 4" that does not exist in the
+  ADR.** The ADR says "three tiers, one consent screen" naming
+  artifact/source/size/licence, and "install after one consent click" for
+  Tier A — not doing zero network activity before the click, which is this
+  extension's own tighter rule. Restated as this repo's own rule at both
+  citing sites (`service.ts`, `vscodeAdapter.ts`) instead of citing text the
+  ADR does not contain.
+
 - **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc4`, was `0.5.0-rc2`.** This
   extension release has not shipped yet, so rc3 never reached a user through
   it; the pin goes straight to rc4 rather than stacking two entries for what is

@@ -86,7 +86,13 @@ async function activate({ installed, globalState, source, preferGlobalCli }) {
       },
       downloadCli: async () => {},
     },
-    "./download": { downloadSeam: () => async () => {} },
+    // `downloadSeam`/`resolveAssetSeam` are FACTORIES `buildResolveDeps` calls
+    // unconditionally while assembling `ResolveDeps` — neither is actually
+    // invoked by `checkCliVersion`, but both stubs have to return a function.
+    "./download": {
+      downloadSeam: () => async () => {},
+      resolveAssetSeam: () => async (candidates) => candidates[0],
+    },
     "../notify/vscodeAdapter": {
       notify: async (plan) => {
         plans.push(plan);

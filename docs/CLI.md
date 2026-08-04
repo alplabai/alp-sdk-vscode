@@ -11,9 +11,14 @@ surface.
 > `alp` (`cli-rs`) binary and the TypeScript implementation (`packages/alp-cli`)
 > have been retired. `tan` is feature-complete — all commands below are
 > implemented. This document is the envelope contract this repo depends on.
-> `tan` is distributed as a raw per-target binary
-> (`tan-<triple>[.exe]`) published as a GitHub release asset (tag `v<version>`);
-> the extension downloads and shells it.
+> `tan` is published as a GitHub release asset for each target (tag
+> `v<version>`) under one of two NAMES, not one: `tan-<triple>[.exe]` through
+> v0.5.0-rc4, holding a raw binary, or `tan-<triple>.zip` (win32) /
+> `tan-<triple>.tar.gz` (elsewhere) from the archive freeze (tan-cli#349) on,
+> holding a onedir tree instead. The extension resolves which name a given
+> release actually published from that release's own `checksums.txt` — never
+> from the version — downloads it, unpacks an archive before running it, and
+> shells the resulting binary either way.
 
 The goal is not to mirror the VS Code extension command-for-command.
 The goal is to provide a stable, scriptable, headless interface over

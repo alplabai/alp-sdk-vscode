@@ -70,7 +70,31 @@ const { ChecksumError } = DOWNLOAD;
 
 const sha256 = (buffer) =>
   crypto.createHash("sha256").update(buffer).digest("hex");
-const sha256File = (file) => sha256(fs.readFileSync(file));
+
+/** #464: the real cached-digest record is now a digest over the whole
+ *  installed TREE (`sha256Tree` in vscodeAdapter.ts) — `rel\0fileDigest\n`
+ *  per entry, sorted, concatenated, hashed once more — not the launcher's
+ *  content alone. Mirrors that exact formula so a manually-seeded
+ *  `globalState` record (or an assertion against one the real code wrote)
+ *  matches what the shipped code actually computes. Every `writeCachedBinary`
+ *  in "half 2" below writes ONLY the launcher (no `_internal/`), so the tree
+ *  is always the single entry named `BINARY` (defined further down). */
+const treeDigest = (name, content) => sha256(`${name}\0${sha256(content)}\n`);
+
+/** The general form of `treeDigest`: `entries` is `[relPath, content][]`,
+ *  covering an archive install's `_internal/` siblings alongside the
+ *  launcher, not just the single-file case. */
+const treeDigestOfEntries = (entries) => {
+  const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const tree = crypto.createHash("sha256");
+  for (const [rel, content] of sorted) {
+    tree.update(rel);
+    tree.update("\0");
+    tree.update(sha256(content));
+    tree.update("\n");
+  }
+  return tree.digest("hex");
+};
 
 // ── half 1: the check, through injected deps ────────────────────────────────
 
@@ -98,13 +122,25 @@ function coreDeps(overrides = {}) {
       fileExists: (p) => existing.has(p),
       commandOnPath: () => false,
       ensureDir: () => {},
+      // #463: picks the raw candidate (candidates[0]) with no network — this
+      // half of the file is about the digest CHECK, not candidate selection,
+      // which has its own coverage in alpCli.service.test.js and
+      // alpCli.downloadArchive.test.js.
+      resolveAsset: async (candidates) => candidates[0],
       download: async (_url, destFile) => {
         calls.download++;
         existing.add(destFile);
         bytes.set(destFile, GOOD);
       },
       chmodExec: () => {},
-      sha256File: (p) => (bytes.has(p) ? sha256(bytes.get(p)) : null),
+      // #464: the real seam hashes the TREE at `cacheDir`; this half of the
+      // file is about the digest CHECK against a single registered file, so
+      // the mock ignores its `dir` argument and stays keyed on the one path
+      // every row here writes to (`cacheDir` + "/tan").
+      sha256Tree: (_dir) =>
+        bytes.has("/cache/cli/tan")
+          ? sha256(bytes.get("/cache/cli/tan"))
+          : null,
       recordedCachedDigest: () => recorded,
       recordCachedDigest: async (digest) => {
         recorded = digest;
@@ -151,7 +187,10 @@ test("cached arm: a binary REWRITTEN under a valid record REFUSES the spawn (#38
       assert.equal(error.name, "ChecksumError");
       assert.equal(error.message, SERVICE.CACHED_CLI_MISMATCH);
       // The digests and the path are channel-only, never in the sentence.
-      assert.match(error.detail, /sha256 on disk is [0-9a-f]{64}/);
+      assert.match(
+        error.detail,
+        /sha256 of the installed tree is [0-9a-f]{64}/,
+      );
       assert.match(error.detail, /recorded digest is [0-9a-f]{64}/);
       assert.doesNotMatch(error.message, /[0-9a-f]{64}/);
       assert.doesNotMatch(error.message, /\/cache\//);
@@ -162,7 +201,7 @@ test("cached arm: a binary REWRITTEN under a valid record REFUSES the spawn (#38
 });
 
 test("cached arm: an UNREADABLE cached binary refuses rather than passing", async () => {
-  // `sha256File` answers null for a file it cannot read (locked, replaced by a
+  // `sha256Tree` answers null for a tree it cannot read (locked, replaced by a
   // directory). `null !== recorded`, so this refuses — the alternative is that
   // an unreadable file reads as "nothing to compare, carry on".
   const { deps } = coreDeps({
@@ -362,6 +401,25 @@ test("download arm: a FIRST install records the digest and says nothing about a 
 
 const BINARY = process.platform === "win32" ? "tan.exe" : "tan";
 
+/** A `ReleaseAsset`-shaped fixture (#463: two candidates, not one flat
+ *  `assetName`/`url`) whose raw candidate is `BINARY` at `base` — every local
+ *  `checksums.txt` in this file lists only that one name, so the archive
+ *  candidate here is present (the type requires the pair) but never matched. */
+function testAsset(base, { target = "test-target", tag = "v0.0.0-test" } = {}) {
+  return {
+    target,
+    tag,
+    checksumsUrl: `${base}/checksums.txt`,
+    candidates: [
+      { assetName: BINARY, url: `${base}/${BINARY}` },
+      {
+        assetName: `${BINARY}.archive-unused`,
+        url: `${base}/${BINARY}.archive-unused`,
+      },
+    ],
+  };
+}
+
 /** A release server whose `checksums.txt` vouches for what it serves. */
 async function releaseServer(body) {
   const server = http.createServer((req, res) => {
@@ -376,13 +434,7 @@ async function releaseServer(body) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   return {
-    asset: {
-      target: "test-target",
-      assetName: BINARY,
-      tag: "v0.0.0-test",
-      url: `${base}/${BINARY}`,
-      checksumsUrl: `${base}/checksums.txt`,
-    },
+    asset: testAsset(base),
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -401,6 +453,15 @@ function extensionHome() {
       fs.mkdirSync(path.join(dir, "cli"), { recursive: true });
       fs.writeFileSync(this.cachedBinaryPath, body);
       return this.cachedBinaryPath;
+    },
+    /** #464: a `_internal/` (or any other) sibling `installArchive` would
+     *  land beside the launcher for an archive install. `relPath` is
+     *  forward-slashed, matching `sha256Tree`'s own relative-path convention. */
+    writeSupportFile(relPath, body) {
+      const abs = path.join(dir, "cli", ...relPath.split("/"));
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, body);
+      return abs;
     },
     context: {
       extensionPath: path.join(dir, "ext"),
@@ -515,7 +576,19 @@ function loadAdapter({
         }
       : {}),
     ...(transfer
-      ? { "./download": { ...DOWNLOAD, downloadSeam: () => transfer } }
+      ? {
+          "./download": {
+            ...DOWNLOAD,
+            downloadSeam: () => transfer,
+            // #463: this override exists to simulate a TRANSFER failure (a
+            // stalled link), not a checksums.txt fetch failure — bypassing
+            // candidate resolution's own network hop keeps the row reaching
+            // the stubbed `transfer` above instead of failing one step
+            // earlier at `resolveAsset`, on whatever refused/offline
+            // `releaseAsset.checksumsUrl` the row was given.
+            resolveAssetSeam: () => async (candidates) => candidates[0],
+          },
+        }
       : {}),
   };
 
@@ -545,7 +618,7 @@ test("wiring: a cached binary matching the recorded digest resolves and IS spawn
   const home = extensionHome();
   try {
     const file = home.writeCachedBinary(GOOD);
-    home.store.set("alp.tanCachedBinarySha256", sha256File(file));
+    home.store.set("alp.tanCachedBinarySha256", treeDigest(BINARY, GOOD));
     const { adapter, versionProbes } = loadAdapter();
 
     const binary = await adapter.resolveAlpBinaryForContext(home.context);
@@ -569,7 +642,7 @@ test("wiring: a cached binary CORRUPTED on disk is refused on every route that c
   const home = extensionHome();
   try {
     const file = home.writeCachedBinary(GOOD);
-    home.store.set("alp.tanCachedBinarySha256", sha256File(file));
+    home.store.set("alp.tanCachedBinarySha256", treeDigest(BINARY, GOOD));
     // The record stays; the file changes. This is #386's live case: something
     // rewrote the binary the extension spawns on every activation.
     fs.writeFileSync(file, TAMPERED);
@@ -631,6 +704,63 @@ test("wiring: a cached binary CORRUPTED on disk is refused on every route that c
   }
 });
 
+test("wiring: a _internal/ SIBLING rewritten or removed after an archive install REFUSES the cached arm (#464)", async () => {
+  // Before #464 this passed silently: the recorded digest covered ONLY
+  // `cachedBinaryPath` (the launcher), so a PyInstaller onedir install's
+  // `_internal/` tree — libpython, every native extension module, all the
+  // Python bytecode — was never hashed at all. Rewriting
+  // `_internal/tan/commands/build.pyc` matched the recorded digest forever,
+  // and the extension spawned the (untouched) launcher having reported the
+  // resolution as verified.
+  const home = extensionHome();
+  try {
+    const launcher = home.writeCachedBinary(GOOD);
+    const SUPPORT_REL = "_internal/tan/commands/build.pyc";
+    const SUPPORT_GOOD = "def build(): ...\n";
+    home.writeSupportFile(SUPPORT_REL, SUPPORT_GOOD);
+    home.store.set(
+      "alp.tanCachedBinarySha256",
+      treeDigestOfEntries([
+        [BINARY, GOOD],
+        [SUPPORT_REL, SUPPORT_GOOD],
+      ]),
+    );
+
+    // Proven first: the tree verifies as installed. Otherwise a refusal below
+    // could just as easily be this file's own digest formula disagreeing with
+    // the real one, not a real regression check.
+    const { adapter: intact } = loadAdapter();
+    assert.deepEqual(await intact.resolveAlpBinaryForContext(home.context), {
+      command: launcher,
+      source: "cached",
+    });
+
+    // #464's exact scenario: something with write access to the cache
+    // directory rewrites a `_internal/` entry. The LAUNCHER is untouched.
+    home.writeSupportFile(SUPPORT_REL, "def build(): return SUBVERTED\n");
+    const { adapter: rewritten } = loadAdapter();
+    await assert.rejects(
+      () => rewritten.resolveAlpBinaryForContext(home.context),
+      { name: "ChecksumError", message: SERVICE.CACHED_CLI_MISMATCH },
+    );
+
+    // A REMOVED entry refuses too — the acceptance bar is "modified OR
+    // missing", and a digest formula that only folds in bytes (not the SET of
+    // relative paths) would miss this half.
+    fs.rmSync(path.join(path.dirname(launcher), "_internal"), {
+      recursive: true,
+      force: true,
+    });
+    const { adapter: missing } = loadAdapter();
+    await assert.rejects(
+      () => missing.resolveAlpBinaryForContext(home.context),
+      { name: "ChecksumError", message: SERVICE.CACHED_CLI_MISMATCH },
+    );
+  } finally {
+    home.cleanup();
+  }
+});
+
 test("wiring: a cached binary with NO record is never spawned, and the probe still does not fetch", async () => {
   const home = extensionHome();
   try {
@@ -664,7 +794,7 @@ test("wiring: the hash memo does not mask a rewrite WITHIN one window", async ()
   const home = extensionHome();
   try {
     const file = home.writeCachedBinary(GOOD);
-    home.store.set("alp.tanCachedBinarySha256", sha256File(file));
+    home.store.set("alp.tanCachedBinarySha256", treeDigest(BINARY, GOOD));
     // ONE adapter instance throughout — so the module-level hash memo is live
     // and warm from the first resolution. `resetResolvedBinary` only clears the
     // resolution memo; if the hash memo were keyed on the path alone, the
@@ -705,13 +835,7 @@ test("wiring: an offline migration at ACTIVATION says it is a one-time migration
     // socket error, which is precisely the path that used to bypass the
     // migration wording.
     const { adapter, plans } = loadAdapter({
-      releaseAsset: {
-        target: "test-target",
-        assetName: BINARY,
-        tag: "v0.0.0-test",
-        url: `http://127.0.0.1:1/${BINARY}`,
-        checksumsUrl: "http://127.0.0.1:1/checksums.txt",
-      },
+      releaseAsset: testAsset("http://127.0.0.1:1"),
       // `onPath` is false (default), so this row IS a fresh-install-shaped
       // consent gate now (nothing is running — see
       // `isUnverifiableCacheInUse`), which is not what this row means to
@@ -806,7 +930,7 @@ test("wiring: download → record in globalState → verified on the next resolu
     assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
     assert.equal(
       home.store.get("alp.tanCachedBinarySha256"),
-      sha256(GOOD),
+      treeDigest(BINARY, GOOD),
       "the download did not record the digest it verified",
     );
 
@@ -844,13 +968,7 @@ test("wiring: a STALLED re-acquire on the per-command route refuses, and its toa
     // which the seam closes over module-internally, so stubbing that export is
     // a silent no-op and a false green.
     const { adapter, plans, terminals } = loadAdapter({
-      releaseAsset: {
-        target: "test-target",
-        assetName: BINARY,
-        tag: "v0.0.0-test",
-        url: `http://127.0.0.1:1/${BINARY}`,
-        checksumsUrl: "http://127.0.0.1:1/checksums.txt",
-      },
+      releaseAsset: testAsset("http://127.0.0.1:1"),
       transfer: async () => {
         throw timeout;
       },
@@ -896,7 +1014,7 @@ test("wiring: a ChecksumError is classified by its TYPE, not by the word 'checks
   const home = extensionHome();
   try {
     const file = home.writeCachedBinary(GOOD);
-    home.store.set("alp.tanCachedBinarySha256", sha256File(file));
+    home.store.set("alp.tanCachedBinarySha256", treeDigest(BINARY, GOOD));
     fs.writeFileSync(file, TAMPERED);
 
     // The same refusal, re-worded WITHOUT the word `classifyUnavailable`
@@ -947,14 +1065,8 @@ function migratingHome() {
   return home;
 }
 
-const OFFLINE_ASSET = {
-  target: "test-target",
-  assetName: BINARY,
-  tag: "v0.0.0-test",
-  // Port 1 on loopback: refused immediately. No network, no waiting.
-  url: `http://127.0.0.1:1/${BINARY}`,
-  checksumsUrl: "http://127.0.0.1:1/checksums.txt",
-};
+// Port 1 on loopback: refused immediately. No network, no waiting.
+const OFFLINE_ASSET = testAsset("http://127.0.0.1:1");
 
 test("#396 migrating + ONLINE: heals the stepped-over cache, and the effective source snaps back to it", async () => {
   const home = migratingHome();
@@ -974,7 +1086,7 @@ test("#396 migrating + ONLINE: heals the stepped-over cache, and the effective s
     assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
     assert.equal(
       home.store.get("alp.tanCachedBinarySha256"),
-      sha256(GOOD),
+      treeDigest(BINARY, GOOD),
       "the heal did not record the digest it verified",
     );
     assert.deepEqual(plans, [], "a successful heal must be silent");
@@ -1145,7 +1257,10 @@ test("#396 preferGlobalCli ON is left ENTIRELY alone: no toast, no fetch — and
       await off.ensureTanCliProvisioned(home.context);
       assert.deepEqual(offPlans, [], "a successful heal must be silent");
       assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
-      assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(GOOD));
+      assert.equal(
+        home.store.get("alp.tanCachedBinarySha256"),
+        treeDigest(BINARY, GOOD),
+      );
       assert.equal(
         (await off.resolveAlpBinaryForContext(home.context)).source,
         "cached",
@@ -1373,7 +1488,10 @@ test("#396 the notice's Retry lands on a DOWNLOAD, not back on alpSdk.cliPath", 
 
     // It DOWNLOADED, and nothing sent the customer to the unverified arm.
     assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
-    assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(GOOD));
+    assert.equal(
+      home.store.get("alp.tanCachedBinarySha256"),
+      treeDigest(BINARY, GOOD),
+    );
     for (const plan of retryPlans) {
       assert.deepEqual(
         plan.actions.filter((a) => a.id === "openSettings"),
@@ -1554,7 +1672,7 @@ test("wiring: `alp.updateCli` records the digest, so the remedy the mismatch nam
     assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
     assert.equal(
       home.store.get("alp.tanCachedBinarySha256"),
-      sha256(GOOD),
+      treeDigest(BINARY, GOOD),
       "the reinstall did not record the digest it verified",
     );
     // The point of the record: the NEXT resolution reaches a verified cache.

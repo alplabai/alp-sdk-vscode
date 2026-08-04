@@ -143,14 +143,22 @@ binary staged at `<extensionPath>/bin/tan[.exe]` — present only in a
 platform-specific VSIX built with `vsce package --target <triple>`; then a
 locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]` (source checkout);
 then a previously downloaded binary cached in `globalStorage`, but only when a
-sha256 was recorded for it and the file still hashes to that digest (#386 — see
-§7; with no record the ladder skips straight past it); then `tan` on
+sha256 was recorded for its installed TREE and that tree still hashes to that
+digest (#386, extended to the whole tree by #464 — see §7; with no record the
+ladder skips straight past it); then `tan` on
 PATH, but only once verified to be the native (clap) CLI — `commandOnPath`
 accepts a PATH `tan` only when `tan --version` prints the native version line
 (`tan X.Y.Z`), so a stale or non-native `tan` that could otherwise shadow the
 version the extension targets falls straight through; then a fresh download of
-the raw `tan-<triple>[.exe]` release asset from `alplabai/tan-cli` for the host
-target — gated on `alpSdk.tanCliDownloadConsent` (ADR 0021 Tier A: a one-time
+the release asset from `alplabai/tan-cli` for the host target — NAMED
+`tan-<triple>[.exe]`, a raw binary, through v0.5.0-rc4; named
+`tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz` (elsewhere), a onedir
+archive, from tan-cli#349 on. Which of the two a given release actually
+published is resolved from that release's own `checksums.txt`
+(`resolvePublishedAsset` in download.ts), never guessed from the pinned
+version; the downloaded bytes' own magic number is a SEPARATE, later decision
+— which extractor (if any) to unpack them with (`download.ts`'s
+`sniffArchiveKind`) — gated on `alpSdk.tanCliDownloadConsent` (ADR 0021 Tier A: a one-time
 consent dialog, or the setting's own `allow`/`deny`; see "Download consent"
 below) — and, only for a caller the customer just triggered directly, may show
 that dialog when unanswered. If all of those fail, surface a one-click "install
@@ -270,20 +278,49 @@ manifest could be missing the digest line and would read as "unlisted".
 The download happens once; the cache is read on every activation for the life of
 the install, so checking only at write time left every machine spawning an
 unverified binary indefinitely, and left anything that rewrote the cache file
-afterwards executing unchecked (#386). `downloadCli` now records the sha256 of
-the binary that landed in `context.globalState`
-(`alp.tanCachedBinarySha256`), and `resolveAlpBinary`'s `cached` arm hashes the
-file on disk and compares before returning a command. A mismatch **refuses the
-spawn** — not a warning, because the next thing that happens to that path is
-execution.
+afterwards executing unchecked (#386). `downloadCli` now records a sha256 in
+`context.globalState` (`alp.tanCachedBinarySha256`), and `resolveAlpBinary`'s
+`cached` arm recomputes the same digest and compares before returning a
+command. A mismatch **refuses the spawn** — not a warning, because the next
+thing that happens to that path is execution.
+
+**The digest covers the installed TREE, not the launcher alone (#464).** A
+PyInstaller onedir release (tan-cli#349) is not one file: `installArchive`
+lands libpython, every native extension module and the Python bytecode in a
+`_internal/` sibling beside the launcher, and all of that is executed
+(imported, dlopen'd) exactly as much as the launcher is. Digesting only
+`cachedBinaryPath` — this extension's behaviour before #464 — left every one
+of those siblings unverified: a rewrite of `_internal/tan/commands/build.pyc`
+after install matched the (launcher-only) recorded digest forever, and the
+`cached` arm reported the resolution as verified while spawning modified
+code. `sha256Tree` (`vscodeAdapter.ts`) walks `cacheDir` — the launcher plus
+every entry `installArchive` landed beside it, `.tmp`/`.old` transients
+excluded — and folds each entry's RELATIVE PATH as well as its content into
+one digest, so an entry added, removed, or modified anywhere under the
+installed tree fails verification.
+
+Recomputing the digest from the live filesystem on every resolution, rather
+than trusting a manifest of per-file digests written once at install time, was
+the deliberate choice: a manifest needs its own integrity check — a file an
+attacker can edit alongside the entry it describes vouches for nothing — which
+means either hashing the manifest itself (proving only that the LIST was not
+touched, not that the FILES still match it) or re-hashing the files against it
+anyway, at which point the manifest bought nothing a plain walk does not
+already give for free. The cost of walking the tree every time is bounded by a
+per-file memo (`memoizedFileDigest`, keyed on `size|mtime`, the same key
+`sha256File`'s single-entry memo already used): a resolution where nothing
+changed re-reads no file content at all, and a real tamper — one `_internal/`
+entry rewritten — pays for that entry's bytes only, not the whole tree. See
+the cost note further down for the measured numbers.
 
 The record lives in `globalState` rather than beside the binary so that dropping
 a file into the cache directory does not also grant control of the record, and
 because that is already this file's pattern for cross-activation state. Be clear
 about what it does and does not buy: it is **not** a defence against an attacker
 who already has write access to the user account — such an attacker can rewrite
-both. It detects corruption, partial writes, and replacement by anything that
-does not know to update the record.
+both. It detects corruption, partial writes, and replacement of ANY entry under
+`cacheDir` — the launcher or a `_internal/` sibling — by anything that does not
+know to update the record.
 
 A **missing** record is the one-time migration for binaries cached before this
 existed. It is treated as *not verifiable* and is **not** accepted-and-recorded
@@ -417,15 +454,22 @@ notice's only button answer "alpSdk.cliPath is set …" with an
 `openSettings → alpSdk.cliPath` button: two clicks from a verification refusal
 to the arm that is never verified.
 
-Cost, measured on a 3.2 MB binary (Windows, Node 26): 4.2 ms for the cold
-resolve including the hash. `resolveAlpBinaryForContext` memoizes per window,
-but `probeTanVersion` builds its own deps and runs on every state refresh
-(focus, save, settings edit, task start, terminal finish), so `sha256File`
-memoizes on `path|size|mtime`: 20 refreshes cost **0 additional reads and
-18.2 ms** with the memo versus **20 reads and 73.7 ms** without it. The memo's
-ceiling is stated where it lives — a rewrite preserving both size and mtime
-inside one window reuses the answer, which sits inside the limit the record
-already has.
+Cost, measured on a 3.2 MB single-file (raw-binary) install (Windows, Node 26):
+4.2 ms for the cold resolve including the hash. `resolveAlpBinaryForContext`
+memoizes per window, but `probeTanVersion` builds its own deps and runs on
+every state refresh (focus, save, settings edit, task start, terminal finish),
+so `sha256Tree` memoizes PER FILE on `size|mtime` (`memoizedFileDigest`, #464
+— the tree-covering successor to the single-entry `sha256File` memo this
+number was first measured against): 20 refreshes cost **0 additional reads
+and 18.2 ms** with the memo versus **20 reads and 73.7 ms** without it. For an
+archive install (onedir, `_internal/` populated) the walk itself
+(`readdirSync`/`statSync` per entry, no content read) adds a small, roughly
+linear-in-entry-count cost on TOP of that memoized figure; the content-hash
+cost stays the same 4.2 ms-per-3.2 MB shape and is paid per file only when
+that file's `size|mtime` actually changed, never for the whole tree on
+account of one entry. The memo's ceiling is stated where it lives — a rewrite
+preserving both size and mtime inside one window reuses the answer, which
+sits inside the limit the record already has.
 
 **TWO OF THE SIX ARMS ARE VERIFIED: `download` and `cached`** — the managed
 acquisition channel. The count is stated out loud because "the extension
@@ -603,9 +647,10 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   `adapterCore.ts` (injected fs/net/process seams): `resolveAlpBinary` (downloads
   into globalStorage on demand) + `runAlp` (spawns `tan … --format json`, parses,
   classifies; spawn-ENOENT → graceful error outcome). `vscodeAdapter.ts`: real
-  https-redirect download of the raw binary + `chmod +x` (Unix) + `spawnSync`,
-  session-memoized (tan-cli ships a raw per-target binary, so there is no archive
-  to unpack).
+  https-redirect download of the binary + `chmod +x` (Unix) + `spawnSync`,
+  session-memoized (tan-cli shipped only a raw per-target binary at the time, so
+  there was no archive to unpack — `download.ts` gained an unpack step later,
+  for tan-cli#349's archived releases; see §5).
   17 unit tests (service + adapterCore). Not yet wired into commands (that's B2/B3).
 - **B2 — rewire the terminal actions first. ✅ done.** New `runAlpInTerminal()`
   (resolves the binary, opens a terminal, runs `tan …`; surfaces a one-click
