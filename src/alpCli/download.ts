@@ -997,9 +997,27 @@ function sniffArchiveKind(file: string): "zip" | "gzip" | null {
  *
  *  Elsewhere a bare `"tar"` is unambiguous: macOS ships the same
  *  libarchive-based `bsdtar`, Linux ships GNU tar, and both read `.tar.gz` —
- *  the only format tan-cli ever asks either of them for — identically. */
-function tarExecutable(platform: NodeJS.Platform): string {
-  if (platform === "win32") {
+ *  the only format tan-cli ever asks either of them for — identically.
+ *
+ *  Keyed on the REAL host (`process.platform`), never on the caller's
+ *  simulated `platform`. The two are the same thing for every real caller —
+ *  the download and the unpack always run on one machine — but they diverge
+ *  in the tests, which pass `platform: "win32"` to exercise the win32 INSTALL
+ *  LAYOUT while running on macOS or Linux. Keyed on the simulated value this
+ *  returned a Windows absolute path on a POSIX runner and three archive tests
+ *  died with
+ *
+ *      Error: Failed to unpack the tan CLI archive:
+ *             spawn C:\Windows/System32/tar.exe ENOENT
+ *
+ *  — green on the windows leg, red on macos, for a difference that has
+ *  nothing to do with what those tests assert. Which tar binary EXISTS is a
+ *  fact about the host; which layout to install is the simulated platform's
+ *  business, and that is the only thing `platform` still decides. The test
+ *  file's own `systemTar()` had already drawn this line for fixture
+ *  CREATION; this is the same line for extraction. */
+function tarExecutable(): string {
+  if (process.platform === "win32") {
     return path.join(
       process.env.SystemRoot || "C:\\Windows",
       "System32",
@@ -1015,15 +1033,11 @@ function tarExecutable(platform: NodeJS.Platform): string {
  *  `timeout` bounds a corrupt archive that hangs the extractor rather than
  *  failing fast, so an unpack can never stall a download indefinitely the way
  *  the transfer itself is already bounded by `WALL_CLOCK_TIMEOUT_MS`. */
-function runTar(
-  archiveFile: string,
-  destDir: string,
-  platform: NodeJS.Platform,
-): Promise<void> {
+function runTar(archiveFile: string, destDir: string): Promise<void> {
   fs.mkdirSync(destDir, { recursive: true });
   return new Promise((resolve, reject) => {
     execFile(
-      tarExecutable(platform),
+      tarExecutable(),
       ["-xf", archiveFile, "-C", destDir],
       { windowsHide: true, timeout: 60_000 },
       (error, _stdout, stderr) => {
@@ -1108,7 +1122,7 @@ async function installArchive(
 ): Promise<void> {
   const cacheDir = path.dirname(destFile);
   const staging = `${destFile}.extract.${process.pid}.${Date.now()}.tmp`;
-  await runTar(archiveFile, staging, platform);
+  await runTar(archiveFile, staging);
   try {
     const topEntries = fs.readdirSync(staging);
     const payloadRoot =
