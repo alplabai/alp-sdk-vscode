@@ -564,6 +564,46 @@ customer has already copied the binary across, started `gdbserver` on the
 target and filled in the address, which is the setup that works. The label
 stays registered so the Tasks picker can still spell out the manual step.
 
+### 10.7 `alpSdk.svdPath`
+
+The SDK ships no `.svd` of its own (§9, alp-sdk#948, licence-blocked) — a
+customer who wants cortex-debug's Peripherals / register view has to supply
+one. `alpSdk.svdPath` is that setting: an empty-by-default path to a vendor
+`.svd` file, threaded into `debugConfigArgs` (`src/debug/service.ts`) as
+`--svd <value>`, the same conditional-push shape as `--core` and
+`--pre-launch-task`. tan-cli#214 is the producer; before it, `resolution.svd`
+had no source at all and the key was always dropped (§9, §12).
+
+**Read once, passed to both the preview and the real write** —
+`writeLaunchProfile` (`src/debug.ts`) reads it through `readSvdPath`
+(`src/project/vscodeAdapter.ts`, the same resource-scoped `alpSdk.*` reader
+`readProjectSettings` uses) a single time, so the preview stays a preview of
+the command that actually runs.
+
+**Relative paths anchor on the workspace root, not by this extension's
+doing.** `runDebugConfig` always spawns tan with `cwd = context.workspaceRoot`,
+and tan's own `--svd` resolution joins a relative argument against its process
+cwd — the two facts compose into "workspace-relative", with no path-joining
+logic added here. tan then applies the same `workspace_relative` rewrite it
+gives `executable`: a path that lands inside the project is emitted as
+`${workspaceFolder}/…` so a committed `launch.json` stays portable; one
+outside it (the normal case — a vendor SVD usually lives in the vendor SDK,
+not the project) stays absolute.
+
+**Not re-derived, and not defended against.** No `fs.existsSync` gates the
+value before it is sent — `debugConfigArgs` pushes it verbatim, per this
+repo's standing "tan owns the facts" rule (`packages/alp-core/src/deps/
+planner.ts`). The consequence is worth stating plainly because it is sharper
+than the usual "warn and drop" shape the rest of this file describes for SVD
+resolution failures: **a value that does not name a readable file makes `tan`
+refuse the WHOLE `debug-config` command and write no `launch.json` at all** —
+never a fallback to dropping just the SVD key. A typo here breaks Configure
+Debug Profile / F5 outright, not merely the peripheral view. `runDebugConfig`
+narrows the resulting failure toast to name `alpSdk.svdPath` (with an
+`openSettings` action) whenever `--svd` was actually on the argv, so the
+symptom does not read as "debug is broken" with nothing to point at
+(`test/debug.svdFailureHint.test.js`).
+
 ## 11. Product Commands to Support Debug
 
 The extension should eventually expose these commands:
@@ -664,8 +704,9 @@ Two consequences worth stating:
   and nothing else, so a missing SVD leaves that view empty while breakpoints,
   stepping and memory reads all work. It must never appear in a launch-blocking
   check or in the fields a customer is told to supply. (alp-sdk ships no `.svd`
-  and carries no path to one, alp-sdk#948; when it does, tan writes the key and
-  the fold is what would see an unresolved one.)
+  of its own, alp-sdk#948, licence-blocked; `alpSdk.svdPath` — §10.7 — is a
+  second, independent source that does not wait on it, and once tan resolves
+  either one the fold is what would see a still-unresolved SVD.)
 
 **Which configuration is graded.** The `launch.json` entry on disk, found by the
 `name` tan reports — not `data.configuration` from the envelope. tan MERGES its

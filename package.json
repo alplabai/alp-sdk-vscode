@@ -523,6 +523,12 @@
           "default": "ask",
           "scope": "machine-overridable",
           "markdownDescription": "Whether the extension may download the managed `tan` CLI binary the first time nothing else resolves it. Only governs that FIRST install: a stale-cache self-update and the one-time re-verification of a binary cached before this extension recorded checksums are never gated by this setting — both act on a `tan` you already have. `#alpSdk.cliPath#` and the **Install tan CLI (global)** / **Update tan CLI** commands are unaffected either way."
+        },
+        "alpSdk.svdPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Path to a vendor `.svd` file, handed to `tan debug-config --svd` to populate cortex-debug's Peripherals / register view during a debug session. A relative path is resolved against the workspace root. Leave empty to debug without the peripheral view — the SDK ships no SVD of its own. **A path that does not name a readable file makes `tan` fail the whole `debug-config` command and write no `launch.json` at all** — it never falls back to dropping just the SVD key, so a typo here breaks Configure Debug Profile / F5 outright, not only the peripheral view."
         }
       }
     }

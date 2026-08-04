@@ -543,10 +543,28 @@ export interface DebugConfigArgsSpec {
  * a preview of it. That ordering — preview first, and only then the real write
  * — is what keeps a version-skewed tan from touching the file at all, and it
  * still lives in `writeLaunchProfile`; this function cannot pin it.
+ *
+ * `options.svdPath` is the `alpSdk.svdPath` setting (#340), read by the
+ * caller — never here, `service.ts` is pure — and pushed, TRIMMED, as
+ * `--svd`. No existence check: tan owns that fact (`packages/alp-core/src/
+ * deps/planner.ts`'s "tan owns the facts" rule applies just as much to a path
+ * as to a tool), and a `fs.existsSync` here would be a second, possibly-stale
+ * opinion about a file `tan` is about to read for itself. tan-cli#214
+ * documents the consequence of a bad value: it fails the WHOLE command and
+ * writes no `launch.json` at all, never falling back to dropping the key — so
+ * an empty/unset value must stay OMITTED rather than sent as `--svd ""`,
+ * exactly like `--core`. The trim is a SECOND line of defence, not the only
+ * one — `readSvdPath` (`src/project/vscodeAdapter.ts`) already trims what it
+ * reads — but this function is pure, directly unit-tested, and must not rely
+ * on every caller having done that: measured against the pinned tan,
+ * `--svd "   "` exits 5 refusing an "empty path" and a trailing-space paste
+ * (`--svd "dummy.svd "`) exits 5 on the literal, unreadable padded filename —
+ * both HARD failures of the whole command, so a whitespace-only or
+ * whitespace-padded value must never reach `--svd` as-is.
  */
 export function debugConfigArgs(
   spec: DebugConfigArgsSpec,
-  options: { preview?: boolean } = {},
+  options: { preview?: boolean; svdPath?: string | null } = {},
 ): string[] {
   const args = [
     "debug-config",
@@ -567,6 +585,8 @@ export function debugConfigArgs(
   // labels have been registered since #387; nothing referenced them.
   const preLaunchTask = preLaunchTaskFor(spec.targetKind);
   if (preLaunchTask) args.push("--pre-launch-task", preLaunchTask);
+  const svdPath = options.svdPath?.trim();
+  if (svdPath) args.push("--svd", svdPath);
   if (options.preview) args.push("--preview");
   return args;
 }

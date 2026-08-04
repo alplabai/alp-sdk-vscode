@@ -222,6 +222,129 @@ test("an empty core id is omitted, not passed as an empty flag value", () => {
   }
 });
 
+test("--svd carries the alpSdk.svdPath value, positioned after --pre-launch-task and before --preview", () => {
+  // #340. Mirrors the --core / --pre-launch-task conditional-push pattern:
+  // pushed by VALUE, not merely present, and ordered with the rest of the
+  // spec-derived flags ahead of the call-time --preview tail.
+  assert.deepStrictEqual(
+    debugConfigArgs(
+      { targetKind: "zephyr-mcu", server: "jlink", coreId: "m55_hp" },
+      { svdPath: "vendor/E8.svd" },
+    ),
+    [
+      "debug-config",
+      "--target-kind",
+      "zephyr-mcu",
+      "--server",
+      "jlink",
+      "--core",
+      "m55_hp",
+      "--pre-launch-task",
+      "alp: build active target",
+      "--svd",
+      "vendor/E8.svd",
+    ],
+  );
+
+  assert.deepStrictEqual(
+    debugConfigArgs(
+      { targetKind: "zephyr-mcu", server: "jlink", coreId: "m55_hp" },
+      { svdPath: "vendor/E8.svd", preview: true },
+    ),
+    [
+      "debug-config",
+      "--target-kind",
+      "zephyr-mcu",
+      "--server",
+      "jlink",
+      "--core",
+      "m55_hp",
+      "--pre-launch-task",
+      "alp: build active target",
+      "--svd",
+      "vendor/E8.svd",
+      "--preview",
+    ],
+    "--preview must still be the tail with --svd present",
+  );
+});
+
+test("--svd is absent when alpSdk.svdPath is empty, undefined, or omitted entirely", () => {
+  // `--svd ""` is not the same command as no `--svd` — same reasoning as the
+  // empty-coreId case above: tan would take the empty string as an explicit
+  // (invalid) selection rather than skipping SVD resolution.
+  const base = { targetKind: "zephyr-mcu", server: "jlink", coreId: null };
+  const withoutSvd = [
+    "debug-config",
+    "--target-kind",
+    "zephyr-mcu",
+    "--server",
+    "jlink",
+    "--pre-launch-task",
+    "alp: build active target",
+  ];
+
+  assert.deepStrictEqual(
+    debugConfigArgs(base),
+    withoutSvd,
+    "no options at all",
+  );
+  assert.deepStrictEqual(
+    debugConfigArgs(base, {}),
+    withoutSvd,
+    "options with no svdPath key",
+  );
+  assert.deepStrictEqual(
+    debugConfigArgs(base, { svdPath: "" }),
+    withoutSvd,
+    "svdPath: empty string",
+  );
+  assert.deepStrictEqual(
+    debugConfigArgs(base, { svdPath: null }),
+    withoutSvd,
+    "svdPath: null",
+  );
+});
+
+test("--svd trims a whitespace-only value to nothing, and a padded one to its real path (#340 review)", () => {
+  // Measured against the pinned tan: `--svd "   "` exits 5 refusing an
+  // "empty path", and `--svd "dummy.svd "` (one trailing space) exits 5 on
+  // the literal, unreadable padded filename. Both are HARD failures of the
+  // whole command, so `debugConfigArgs` must not forward either shape as-is
+  // — this is its OWN trim, independent of whatever `readSvdPath` already did
+  // (`src/project/vscodeAdapter.ts`), since this function is the one directly
+  // under test here.
+  const base = { targetKind: "zephyr-mcu", server: "jlink", coreId: null };
+  const withoutSvd = [
+    "debug-config",
+    "--target-kind",
+    "zephyr-mcu",
+    "--server",
+    "jlink",
+    "--pre-launch-task",
+    "alp: build active target",
+  ];
+
+  for (const whitespace of ["   ", "\t\n"]) {
+    assert.deepStrictEqual(
+      debugConfigArgs(base, { svdPath: whitespace }),
+      withoutSvd,
+      `svdPath: ${JSON.stringify(whitespace)} must be omitted, not sent as --svd ""`,
+    );
+  }
+
+  assert.deepStrictEqual(
+    debugConfigArgs(base, { svdPath: "dummy.svd " }),
+    [...withoutSvd, "--svd", "dummy.svd"],
+    "a trailing-space paste is trimmed before being sent, not sent padded",
+  );
+  assert.deepStrictEqual(
+    debugConfigArgs(base, { svdPath: "  vendor/E8.svd" }),
+    [...withoutSvd, "--svd", "vendor/E8.svd"],
+    "a leading-space paste is trimmed too",
+  );
+});
+
 test("the subcommand is first, so the argv is a debug-config invocation at all", () => {
   const args = debugConfigArgs({
     targetKind: "native-host",

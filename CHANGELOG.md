@@ -6,6 +6,18 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **New setting: `alpSdk.svdPath`, populating cortex-debug's Peripherals
+  register view (#340).** The SDK ships no `.svd` of its own
+  (alp-sdk#948, licence-blocked), so this is the customer-supplied route —
+  unblocked by tan-cli#214 adding `tan debug-config --svd <PATH>`. Threaded
+  into `debugConfigArgs` (`src/debug/service.ts`) the same conditional-push
+  way as `--core`/`--pre-launch-task`, and sent verbatim, with no
+  `fs.existsSync` gate in this extension: tan owns the fact, and it fails
+  the whole `debug-config` command — no `launch.json` written at all — when
+  the path does not name a readable file, so a typo now surfaces as a toast
+  naming `alpSdk.svdPath` rather than a session that silently has no
+  peripheral view. See docs/DEBUG.md §10.7.
+
 - **The managed `tan` download now unpacks an archive release, not just a raw
   binary (tan-cli#349).** tan-cli's onefile PyInstaller freeze re-extracted
   itself on every invocation — 14 MB, 13-19 s on macOS — which could outrun
