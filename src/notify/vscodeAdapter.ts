@@ -143,6 +143,15 @@ const ACTIONS: Record<
       if (arg) revealRunInTerminal(arg);
     },
   },
+  showBuildResult: {
+    // Deliberately NOT "Show Build Plan" — the button reads from the toast's
+    // point of view (the build just finished; this shows its result), not the
+    // panel's own tab label ("Alp Build Plan", `buildPlanPanel.ts`'s
+    // `PANEL_TITLE`, predating the result sections #358/#360 added to it).
+    // Reconciling all the labels this panel now goes by is out of scope here.
+    title: "Show Result",
+    run: () => vscode.commands.executeCommand("alp.showBuildPlan"),
+  },
   // ── caller-handled: no `run`, so the id comes back from notify() ──
   retry: { title: "Retry" },
   startAnyway: { title: "Start Anyway" },

@@ -771,6 +771,27 @@ command. CLI surface:
   reads stdin (the extension passes `--non-interactive`), so nothing is lost by
   giving up the TTY — and the log plus verdict then survive the process, which
   in a terminal they did not. A short final envelope summary is optional.
+- A SUCCESSFUL `tan build`'s verdict toast carries a **"Show Result"** action
+  that opens the Build Plan panel (`alp.showBuildPlan`, #331), one click from
+  the notification that just told the customer the build finished. Two gates,
+  both narrow on purpose:
+  - **Which run.** `onDidFinishTerminalCommand` fires for every `runInTerminal`/
+    streamed run this extension dispatches, not only the build family —
+    bootstrap, the Zephyr SDK install, the native_sim Run, `tan image` /
+    `flash` / `clean` / `renode` all go through the same subscriber. "Show
+    Result" is gated to `BUILD_RUN_NAME` alone: the panel renders
+    `build/system-manifest.yaml`, and only `tan build` seeds/refreshes that
+    file — `tan image`/`flash`/`renode` never write it, and `tan clean`
+    actively **deletes** it. Offering the action on any of those would reveal
+    a panel with nothing to do with the run that just finished.
+  - **Which outcome.** Even for `tan build`, the action is SUCCESS-ONLY
+    (`code === 0`). A prior green build's `build/system-manifest.yaml` can
+    still be sitting there from an earlier run when a later one fails
+    mid-build, and the payload this panel reads carries no timestamp — so a
+    "Show Result" on a failure toast could present a stale, unrelated green
+    result as this run's outcome. The failure toast keeps its terminal/
+    channel reveal (the real error) and Run Doctor instead; the panel stays
+    reachable from the palette and status bar regardless.
 - **Prerequisites are platform-specific and beyond `bootstrap`.** `bootstrap`
   gets west + the Zephyr workspace + Zephyr Python reqs, but **not** the
   compiler toolchains above. So `tan build` runs a build-preflight (in `doctor`,
