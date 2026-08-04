@@ -63,7 +63,7 @@ function loadDebug(stubs) {
  * pre-first-build case: `resolveManifestSlice` finds no
  * `build/system-manifest.yaml`, so no `--core` is appended.
  */
-async function configureWith(outcome) {
+async function configureWith(outcome, { svdPath = "" } = {}) {
   const argv = [];
   const plans = [];
 
@@ -119,6 +119,12 @@ async function configureWith(outcome) {
         return undefined;
       },
     },
+    // `writeLaunchProfile` now reads `alpSdk.svdPath` directly via this
+    // adapter (#340) rather than through `./debug/vscodeAdapter`'s already
+    // fully-stubbed context, so it needs its own stub — the real module would
+    // otherwise call `vscode.workspace.getConfiguration`, which the minimal
+    // `vscode` stub above does not implement.
+    "./project/vscodeAdapter": { readSvdPath: () => svdPath },
   });
 
   const handlers = new Map(

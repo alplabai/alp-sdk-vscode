@@ -31,6 +31,7 @@ import {
   fileExists,
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
+import { readSvdPath } from "./project/vscodeAdapter";
 import {
   readLaunchJsonDocument,
   writeLaunchJsonDocument,
@@ -236,11 +237,16 @@ async function writeLaunchProfile(
   // wrong VALUE — `--core m55_hp` against `--core m55_he` — is a valid command
   // that debugs the wrong core and reports nothing.
   const spec = { targetKind, server, coreId: slice?.core_id ?? null };
+  // Read ONCE and passed to both calls below (#340) — `readSvdPath` is the
+  // one `alpSdk.svdPath` reader (`./project/vscodeAdapter`), reused rather
+  // than opened a second time, and the preview/write pair must see the same
+  // value or the preview stops previewing the command that actually runs.
+  const svdPath = readSvdPath();
 
   const preview = await runDebugConfig(
     extensionContext,
     context.workspaceRoot,
-    debugConfigArgs(spec, { preview: true }),
+    debugConfigArgs(spec, { preview: true, svdPath }),
   );
   if (!preview) return null;
 
@@ -248,7 +254,7 @@ async function writeLaunchProfile(
   const written = await runDebugConfig(
     extensionContext,
     context.workspaceRoot,
-    debugConfigArgs(spec),
+    debugConfigArgs(spec, { svdPath }),
   );
   if (!written) return null;
 
@@ -352,12 +358,41 @@ async function runDebugConfig(
       (args.includes("--core") || args.includes("--pre-launch-task"))
         ? ` This extension requires tan ${SUPPORTED_CLI_VERSION} or newer; run "Alp: Update CLI" and retry.`
         : "";
+    // `--svd` only ever appears when `alpSdk.svdPath` is actually set
+    // (`debugConfigArgs` omits it on an empty/whitespace value), so this fires
+    // only for someone who configured it. tan-cli#214: an `--svd` naming an
+    // unreadable path is a HARD failure of the whole command — no
+    // launch.json at all, not even one missing the SVD key — so without this
+    // hint the symptom is indistinguishable from "debug is broken" (#340).
+    //
+    // Narrowed to `outcome.kind === "internal"` (exit 5) — driven against the
+    // pinned tan (`internal_failure`/`ExitCode::InternalFailure` in
+    // `crates/tan-cli/src/commands/debug_config.rs`), BOTH `--svd` failure
+    // modes (empty-after-trim, unreadable file) land there, and it is
+    // structurally disjoint from `skew`'s `"validation"` check above — so the
+    // two hints can never both fire for the same failure. That disjointness
+    // is what makes the wide "any failure while --svd is on the argv" version
+    // wrong rather than merely imprecise: a customer on a stale tan with a
+    // perfectly good `alpSdk.svdPath` who presses F5 gets exit 2 (`--svd`
+    // unrecognised) — `skew` correctly fires ("update tan"), and the WIDE svd
+    // hint fired too, offering an Open Settings button for a setting that was
+    // never the problem, with the wrong remedy the more actionable-looking
+    // one. Narrowing to `internal` suppresses it on that path.
+    const svdHint =
+      outcome.kind === "internal" && args.includes("--svd")
+        ? " If alpSdk.svdPath is set, check that it names a file that exists and is readable — tan refuses to write launch.json at all otherwise."
+        : "";
     await notify(
       planFailure({
         operation: "Alp: generating the debug configuration",
-        cause: `Alp: the debug configuration could not be generated.${skew}`,
+        cause: `Alp: the debug configuration could not be generated.${skew}${svdHint}`,
         detail: outcome.message,
-        actions: [{ id: "showOutput" }],
+        actions: [
+          { id: "showOutput" },
+          ...(svdHint
+            ? [{ id: "openSettings" as const, arg: "alpSdk.svdPath" }]
+            : []),
+        ],
       }),
     );
     return null;
@@ -633,6 +668,13 @@ async function previewMaintainedConfigName(
   // the tested function and leave this one behind. `runDebugConfig` returns
   // null on the resulting exit 2, which here means the rescue silently loses
   // the maintained config name mid-repair.
+  //
+  // No `svdPath` here on purpose (#340). This preview exists only to learn
+  // WHICH prefix the pinned tan writes — an arbitrary target/server pair
+  // stands in for the customer's real one — so coupling it to
+  // `alpSdk.svdPath` would let an unrelated bad path fail the orphan-rescue
+  // offer too, on a run that was never about the customer's own debug
+  // session.
   const preview = await runDebugConfig(
     context,
     workspaceRoot,
