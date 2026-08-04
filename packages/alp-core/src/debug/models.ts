@@ -16,8 +16,6 @@ export type DebugServerKind =
   | "gdbserver"
   | "none";
 
-export type DoctorStatus = "pass" | "warn" | "fail";
-
 export type PreflightStatus = "pass" | "warn" | "fail";
 
 export interface DebugTargetChoice {
@@ -102,29 +100,11 @@ export interface DebugRuntimeCapabilities {
   hostPlatform?: string;
 }
 
-export interface DebugDoctorRequest {
-  targetKind: DebugTargetKind;
-  server: DebugServerKind;
-}
-
-export interface DoctorCheck {
-  name: string;
-  status: DoctorStatus;
-  detail: string;
-  fix?: string;
-}
-
 export interface PreflightCheck {
   name: string;
   status: PreflightStatus;
   detail: string;
   fix?: string;
-}
-
-export interface DoctorSummary {
-  pass: number;
-  warn: number;
-  fail: number;
 }
 
 export interface PreflightSummary {
@@ -133,20 +113,11 @@ export interface PreflightSummary {
   fail: number;
 }
 
-export interface DoctorReport {
-  generatedAt: string;
-  targetKind: DebugTargetKind;
-  server: DebugServerKind;
-  summary: DoctorSummary;
-  checks: DoctorCheck[];
-  nextSteps: string[];
-}
-
 /**
  * The doctor half of a debug report/bundle, sourced from a `tan doctor` spawn
- * rather than a TypeScript re-implementation (#376 — `buildDoctorReport` and
- * this file's own `DoctorReport`/`DoctorCheck`/`DoctorStatus`/`DoctorSummary`
- * family are the thing this replaces).
+ * rather than a TypeScript re-implementation (#376 deleted `buildDoctorReport`
+ * and its own `DoctorReport`/`DoctorCheck`/`DoctorStatus`/`DoctorSummary`
+ * family, which this replaces).
  *
  * - `"envelope"` carries tan's own `checks[]`/`summary` VERBATIM
  *   (`DoctorEnvelopeData`, `../cli/doctorEnvelope`) — no allowlist, no status

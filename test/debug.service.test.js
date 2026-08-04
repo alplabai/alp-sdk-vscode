@@ -5,7 +5,6 @@ const {
   DEBUG_TARGET_CHOICES,
   buildDebugDoctorSection,
   buildDebugPreflightReport,
-  buildDoctorReport,
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
@@ -383,17 +382,6 @@ test("native-host launches with no lldb on PATH", () => {
   assert.equal(serverTool.status, "pass");
   assert.equal(serverTool.fix, undefined);
 
-  // Doctor has to agree with preflight on the same fact, or the customer is
-  // told to install something preflight just said was unnecessary.
-  const doctor = buildDoctorReport(
-    createDebugContext(),
-    { targetKind: "native-host", server: "none" },
-    createRuntime({ lldbExecutable: null }),
-  );
-  assert.deepEqual(doctor.nextSteps, []);
-  assert.equal(doctor.summary.fail, 0);
-  assert.equal(doctor.summary.warn, 0);
-
   // "none" is the native-host "there is no debug server" marker, not a tool
   // name. Interpolated as one it rendered "No none executable was found on
   // PATH." and "Install none and make sure it is on PATH." straight into the
@@ -456,22 +444,6 @@ test("native-host preflight blocks on a win32 host and names the WSL way out", (
   }
 });
 
-test("native-host doctor blocks on a win32 host with the same sentence", () => {
-  const report = buildDoctorReport(
-    createDebugContext(),
-    { targetKind: "native-host", server: "none" },
-    createRuntime({ hostPlatform: "win32" }),
-  );
-
-  const check = report.checks.find((entry) => entry.name === "hostPlatform");
-  assert.ok(check, "no hostPlatform check on a win32 native-host doctor run");
-  assert.equal(check.status, "fail");
-  assert.equal(check.detail, NATIVE_HOST_WIN32_DETAIL);
-  assert.equal(check.fix, NATIVE_HOST_WIN32_FIX);
-  assert.equal(report.summary.fail, 1);
-  assert.ok(report.nextSteps.includes(NATIVE_HOST_WIN32_FIX));
-});
-
 test("native-host is unaffected on linux, darwin and an unreported host", () => {
   for (const hostPlatform of ["linux", "darwin", undefined]) {
     const where = `hostPlatform=${hostPlatform}`;
@@ -489,18 +461,6 @@ test("native-host is unaffected on linux, darwin and an unreported host", () => 
     );
     assert.equal(preflight.canLaunch, true, where);
     assert.deepEqual(preflight.nextSteps, [], where);
-
-    const doctor = buildDoctorReport(
-      createDebugContext(),
-      { targetKind: "native-host", server: "none" },
-      createRuntime({ hostPlatform }),
-    );
-    assert.equal(
-      doctor.checks.some((entry) => entry.name === "hostPlatform"),
-      false,
-      where,
-    );
-    assert.equal(doctor.summary.fail, 0, where);
   }
 });
 
@@ -522,22 +482,6 @@ test("no other debug target gains a host-OS check on win32", () => {
       );
       assert.equal(
         preflight.checks.some((entry) => entry.name === "hostPlatform"),
-        false,
-        where,
-      );
-
-      const doctor = buildDoctorReport(
-        createDebugContext(),
-        { targetKind, server },
-        createRuntime({ hostPlatform: "win32" }),
-      );
-      assert.equal(
-        doctor.checks.some((entry) => entry.name === "hostPlatform"),
-        false,
-        where,
-      );
-      assert.equal(
-        doctor.nextSteps.includes(NATIVE_HOST_WIN32_FIX),
         false,
         where,
       );
@@ -813,44 +757,4 @@ test("createSupportBundlePayload carries an unavailable doctor section unchanged
   });
 
   assert.deepEqual(bundle.doctor, doctor);
-});
-
-test("buildDoctorReport flags unsupported backends clearly", () => {
-  const report = buildDoctorReport(
-    createDebugContext(),
-    { targetKind: "native-host", server: "jlink" },
-    createRuntime(),
-  );
-
-  assert.equal(report.summary.fail, 1);
-  assert.equal(report.checks.at(-1).name, "serverCompatibility");
-  assert.match(report.checks.at(-1).detail, /not supported/);
-  assert.deepEqual(report.nextSteps, [
-    "Pick a supported backend for the selected target class.",
-  ]);
-});
-
-test("buildDoctorReport summarizes zephyr doctor state", () => {
-  const report = buildDoctorReport(
-    createDebugContext({
-      debuggerExtensions: {
-        cortexDebug: false,
-        cppTools: true,
-        codeLLDB: true,
-      },
-    }),
-    { targetKind: "zephyr-mcu", server: "openocd" },
-    createRuntime({ pythonAvailable: false, openOcdExecutable: null }),
-  );
-
-  assert.equal(report.targetKind, "zephyr-mcu");
-  assert.equal(report.server, "openocd");
-  assert.equal(report.summary.pass, 3);
-  assert.equal(report.summary.warn, 2);
-  assert.equal(report.summary.fail, 1);
-  assert.deepEqual(report.nextSteps, [
-    "Install the configured Python interpreter or update alpSdk.pythonPath.",
-    "Install marus25.cortex-debug.",
-    "Install openocd and make sure it is on PATH.",
-  ]);
 });
