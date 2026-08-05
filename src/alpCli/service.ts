@@ -55,7 +55,7 @@ import {
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
  *  test/tanContract.test.js tracks that, and moved with this pin. */
 
-export const SUPPORTED_CLI_VERSION = "0.5.0-rc4";
+export const SUPPORTED_CLI_VERSION = "0.5.1";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -153,6 +153,17 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * `tan-aarch64-apple-darwin` and `tan-x86_64-unknown-linux-gnu`, plus
  * `checksums.txt` and `envelope-contract.json` — six assets, the same four
  * binaries as rc1-rc3. `win32/arm64` and `linux/arm64` remain unbuilt.
+ *
+ * `"0.5.1"` is the first NON-prerelease pin this constant has named since the
+ * Python cutover, and the gap is unchanged again for the same reason as every
+ * entry above it: `release.yml`'s build matrix is still the same four runners
+ * (win32/x64, darwin/x64, darwin/arm64, linux/x64), so a PyInstaller freeze
+ * still has nothing to run on for the other two. Checked against the
+ * published tag: v0.5.1 carries `tan-x86_64-pc-windows-msvc.zip`,
+ * `tan-x86_64-apple-darwin.tar.gz`, `tan-aarch64-apple-darwin.tar.gz`,
+ * `tan-x86_64-unknown-linux-gnu.tar.gz`, plus `checksums.txt` and
+ * `envelope-contract.json` — six assets, the same four binaries as v0.5.0 and
+ * every rc before it, now archived rather than raw (tan-cli#349).
  */
 export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   Record<string, readonly string[]>
@@ -161,6 +172,7 @@ export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   "0.5.0-rc2": ["win32/arm64", "linux/arm64"],
   "0.5.0-rc3": ["win32/arm64", "linux/arm64"],
   "0.5.0-rc4": ["win32/arm64", "linux/arm64"],
+  "0.5.1": ["win32/arm64", "linux/arm64"],
 };
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */

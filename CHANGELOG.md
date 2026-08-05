@@ -131,29 +131,45 @@ only Marketplace/Open VSX users opted into pre-release updates.
   citing sites (`service.ts`, `vscodeAdapter.ts`) instead of citing text the
   ADR does not contain.
 
-- **`SUPPORTED_CLI_VERSION` moves to `0.5.0-rc4`, was `0.5.0-rc2`.** This
-  extension release has not shipped yet, so rc3 never reached a user through
-  it; the pin goes straight to rc4 rather than stacking two entries for what is
-  one bump from a user's point of view.
+- **`SUPPORTED_CLI_VERSION` moves to `0.5.1`, was `0.5.0-rc2`. Closes
+  tan-cli#268.** This extension release has not shipped yet, so rc3, rc4 and
+  v0.5.0 GA never reached a user through it; the pin goes straight to v0.5.1
+  rather than stacking four entries for what is one bump from a user's point
+  of view. v0.5.1 is the first NON-prerelease tan-cli tag this constant has
+  ever named since the Python cutover — tan-cli#268 tracked moving this
+  extension off the opt-in RC line and onto the release customers actually
+  get, and that is what v0.5.1 GA is.
 
-  Both RCs came from running the *published* binary end to end on real Windows,
-  macOS and Linux hosts rather than from testing the source. Four of their
-  fixes matter directly to this extension's users: the macOS asset shipped with
-  no CA trust anchors at all, so every HTTPS call failed
+  Every intermediate RC came from running the *published* binary end to end on
+  real Windows, macOS and Linux hosts rather than from testing the source.
+  Fixes that matter directly to this extension's users: the macOS asset shipped
+  with no CA trust anchors at all, so every HTTPS call failed
   `CERTIFICATE_VERIFY_FAILED` (tan-cli#304); `tan doctor` exited 4 on every
   fresh install because "west in the venv, absent from PATH" — the guaranteed
   state of a GUI-launched VS Code — was reported as a broken host
   (tan-cli#299); `tan init` and `tan generate` could follow a symlinked parent
-  and write outside the project while reporting success (tan-cli#325); and
+  and write outside the project while reporting success (tan-cli#325);
   `envelope.serialize-failed` printed `exitCode: 5` while the process exited
   `0`, breaking the `process exit code == stdout envelope.exitCode` invariant
-  this extension relies on to decide whether a run failed (tan-cli#327).
+  this extension relies on to decide whether a run failed (tan-cli#327); a
+  second project's bootstrap could silently repoint the machine-global default
+  SDK a first project already resolved against (tan-cli#464); `tan
+  debug-config` now infers a real hardware target instead of defaulting to
+  `native-host` and writing a `launch.json` pointing at a binary the build
+  never produces (tan-cli#456); and four `debug-config` preconditions that used
+  to exit 5 (`internal` in this extension's `CliExitKind` mapping — reported as
+  a tan crash) now exit 2 (`validation` — user-fixable input) (tan-cli#462).
 
   `HOSTS_WITHOUT_RELEASE_ASSET` carries the identical `win32/arm64` /
-  `linux/arm64` gap forward. Checked against the published rc4 tag rather than
-  carried on the assumption it would hold: rc4 ships the same four binaries as
-  rc1–rc3, and tan-cli's `release.yml` names that omission deliberate rather
-  than incidental.
+  `linux/arm64` gap forward. Checked against the published v0.5.1 tag rather
+  than carried on the assumption it would hold: v0.5.1 ships the same four
+  binaries as v0.5.0 and every rc before it — `tan-x86_64-pc-windows-msvc.zip`,
+  `tan-x86_64-apple-darwin.tar.gz`, `tan-aarch64-apple-darwin.tar.gz`,
+  `tan-x86_64-unknown-linux-gnu.tar.gz`, plus `checksums.txt` and
+  `envelope-contract.json` — now archived rather than raw (tan-cli#349), a
+  migration this extension already resolves by candidate name against the
+  release's own `checksums.txt` (#463-#465), so no code change was needed here
+  beyond the pin itself.
 
 ## 0.5.1
 
