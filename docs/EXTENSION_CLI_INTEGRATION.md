@@ -521,7 +521,7 @@ be flattened into one; they are different statements:
   binary — that it is what Alp Lab published, or that anything checked it — and
   a `package.json` description already had to be corrected for exactly that. The
   house compound **`verified-native`** is the one carve-out and stays (it is used
-  throughout this file, `service.ts`, `models.ts` and CLAUDE.md): it names the
+  throughout this file, `service.ts` and `models.ts`): it names the
   format probe's verdict, "this is the native clap CLI and not the retired
   `alp`", which is the only claim `commandOnPath` makes. Do not read the noun as
   the adjective.
