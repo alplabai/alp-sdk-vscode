@@ -63,11 +63,45 @@ test("the Bootstrap button posts a command the host allowlists", () => {
   assert.match(isBootstrap, /command === "alp\.installDependencies"/);
 });
 
+test("the button disappears once the environment exists, not once it was tried", () => {
+  // `westAvailable` is the honest signal. `lastBootstrapAt` records that
+  // bootstrap was TRIGGERED, so gating on it would hide the one button that
+  // repairs a run that failed half-way.
+  assert.match(
+    SDK_VIEW,
+    /\{\(!setup\?\.westAvailable \|\| setup\?\.bootstrapRunning\) && \(/,
+  );
+  // No `doesNotMatch(/lastBootstrapAt/)` here: the comment above the gate names
+  // that field on purpose, to say why it is the wrong signal. The positive
+  // assertion on the gate expression is what pins the behaviour.
+  // While the terminal run is in flight the button stays visible and spins:
+  // west appears on PATH partway through, and vanishing at that moment would
+  // read as "done" mid-fetch.
+  assert.match(SDK_VIEW, /loading=\{setup\?\.bootstrapRunning \?\? false\}/);
+});
+
+test("the post-install offer names the disk cost and never runs on its own", () => {
+  const MESSAGES = read("src", "ideHub", "sdkManagerMessages.ts");
+  // Minutes of network and gigabytes of disk: the click stays the customer's.
+  assert.match(MESSAGES, /const BOOTSTRAP_DISK_ESTIMATE = "about 3 GB";/);
+  assert.match(MESSAGES, /\$\{BOOTSTRAP_DISK_ESTIMATE\} of disk\./);
+  assert.match(MESSAGES, /\{ id: "custom", title: "Bootstrap now" \}/);
+  // The command only runs behind the picked action — no unconditional dispatch
+  // on the install path.
+  assert.match(
+    MESSAGES,
+    /if \(picked === "custom"\)\s*void vscode\.commands\.executeCommand\("alp\.installDependencies"\);/,
+  );
+});
+
 test("Bootstrap is disabled until an SDK is actually active", () => {
   // Bootstrap sets up the ACTIVE SDK's environment, so with none selected it
   // has nothing to act on. `activePath` is the host-decided pointer (#361) —
   // the same field the rest of this view reads, not a re-derivation.
-  assert.match(SDK_VIEW, /disabled=\{!sdk\.activePath\}/);
+  assert.match(
+    SDK_VIEW,
+    /disabled=\{!sdk\.activePath \|\| \(setup\?\.bootstrapRunning \?\? false\)\}/,
+  );
   assert.match(SDK_VIEW, /onClick=\{\(\) => bootstrap\(\)\}/);
   // Both titles exist, so the disabled state explains itself rather than
   // greying out silently.

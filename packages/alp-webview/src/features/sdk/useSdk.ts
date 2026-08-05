@@ -7,6 +7,11 @@ export function useSdk() {
 
   return {
     sdk: state?.sdk ?? null,
+    // The bootstrap half of this view reads `setup`, not `sdk`: whether the
+    // environment is built is a TOOL fact (`westAvailable`, and the
+    // `bootstrapRunning` flag that stays true for the whole terminal run), not
+    // a property of the SDK checkout.
+    setup: state?.setup ?? null,
     releases: sdkReleases,
     installLog: sdkInstallLog,
     installActive: sdkInstallActive,
