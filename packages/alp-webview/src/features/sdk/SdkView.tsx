@@ -242,6 +242,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     uninstall,
     deactivate,
     browseSdk,
+    bootstrap,
   } = useSdk();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -352,6 +353,26 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
             onClick={() => browseSdk()}
           >
             Browse…
+          </Button>
+          {/* An installed SDK is not a buildable one: `tan build` plans the
+              slices fine and then skips every one of them — "skipped: m55_hp
+              [zephyr] -- tool `west` not found" — because west lives in the
+              workspace venv `tan bootstrap` creates. Bootstrap belongs beside
+              Install for that reason, not in the palette only.
+              Gated on `activePath`: bootstrap builds the environment of the
+              SDK that is ACTIVE, so with none selected there is nothing for it
+              to act on, and the title says which of the two steps is missing. */}
+          <Button
+            appearance="secondary"
+            title={
+              sdk.activePath
+                ? "Set up this SDK's build environment (workspace venv, west, Python deps)"
+                : "Install and activate an SDK first — bootstrap sets up the ACTIVE SDK's environment"
+            }
+            disabled={!sdk.activePath}
+            onClick={() => bootstrap()}
+          >
+            Bootstrap…
           </Button>
         </div>
       </div>
