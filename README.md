@@ -97,7 +97,6 @@ VS Code Marketplace: search for "Alp SDK".  Or grab the latest
 ```text
 .
 ├── README.md                -- this file (the only doc in the root)
-├── CLAUDE.md                -- operating guide for AI agents (auto-loaded)
 ├── docs/                    -- all project docs (see "Documentation Map" below)
 ├── LICENSE                  -- Apache-2.0
 ├── package.json             -- VS Code extension manifest (workspace root)
