@@ -135,7 +135,7 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
 // critically for flash, the per-slice failure reasons — e.g. "backend
 // zephyr_west_flash needs west on PATH") scrolls away, leaving only a cryptic
 // "failed to launch". Channel mode keeps the full log + verdict. All three are
-// non-interactive (runAlpStreamed forces `--non-interactive`), so no TTY is
+// non-interactive because the streamed child gets no TTY at all, so no TTY is
 // lost. Renode streams too: `tan renode` boots Renode HEADLESS as a smoke test
 // and reads no stdin, and its most common outcome on a real project is a
 // PRE-BOOT refusal — e.g. "system-manifest.yaml has 2 zephyr slices (cores
