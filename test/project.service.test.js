@@ -25,6 +25,11 @@ test("resolveProjectContext resolves sdk, board yaml, west cwd, and python", () 
   assert.deepEqual(context, {
     workspaceRoot: "/workspace/app",
     sdkRoot: "/workspace/alp-sdk",
+    // The sibling SDK was GUESSED, not pinned — no alpSdk.path, no
+    // .alp/sdk-path. The SDK Manager renders this state as "Default
+    // (auto-detected)" with a Use button, never "Active" with a Deactivate that
+    // would have no pin to clear.
+    sdkRootSource: "discovery",
     boardYamlPath: "/workspace/app/configs/board.yaml",
     westCwd: "/workspace/app",
     pythonBinary: "python3",
@@ -56,6 +61,7 @@ test("resolveProjectContext forward-slashes every emitted path on win32", () => 
   assert.deepEqual(context, {
     workspaceRoot: "C:/workspace/app",
     sdkRoot: "C:/workspace/alp-sdk",
+    sdkRootSource: "discovery",
     boardYamlPath: "C:/workspace/app/configs/board.yaml",
     westCwd: "C:/workspace/app",
     pythonBinary: "python",

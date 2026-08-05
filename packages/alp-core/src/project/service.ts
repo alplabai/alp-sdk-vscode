@@ -3,7 +3,11 @@
 import * as path from "path";
 import { resolveActiveSdk } from "../sdk/service";
 import { toPosix } from "../paths";
-import { ProjectContext, ProjectResolutionInput } from "./models";
+import {
+  ProjectContext,
+  ProjectResolutionInput,
+  SdkRootSource,
+} from "./models";
 
 // All path joins/resolves are done through the path flavour of the DECLARED
 // target platform (`input.platform`), not the host's. In production the two are
@@ -36,7 +40,7 @@ export function resolveProjectContext(
     pathExists,
     p,
   );
-  const sdkRoot = resolveSdkRoot(
+  const { root: sdkRoot, source: sdkRootSource } = resolveSdkRoot(
     workspaceRoot,
     input.workspaceFolders,
     input.settings.sdkPath,
@@ -49,6 +53,7 @@ export function resolveProjectContext(
   return {
     workspaceRoot,
     sdkRoot: sdkRoot === null ? null : toPosix(sdkRoot),
+    sdkRootSource,
     boardYamlPath: resolveBoardYamlPath(
       workspaceRoot,
       input.settings.boardYamlPath,
@@ -78,6 +83,13 @@ function resolveWorkspaceRoot(
   return toPosix(folderWithBoardYaml ?? workspaceFolders[0]!);
 }
 
+/**
+ * Returns the root AND which branch produced it. The branch is not a debugging
+ * aid — the SDK Manager renders a different badge and a different button for a
+ * pinned root ("setting"/"pointer") than for a guessed one, because
+ * "Deactivate" on a guessed root clears a pin that was never written and leaves
+ * the UI unchanged.
+ */
 function resolveSdkRoot(
   workspaceRoot: string | null,
   workspaceFolders: readonly string[],
@@ -86,13 +98,13 @@ function resolveSdkRoot(
   pathExists: (candidatePath: string) => boolean,
   readFile: (candidatePath: string) => string,
   p: PathImpl,
-): string | null {
+): { root: string | null; source: SdkRootSource | null } {
   // Prefer explicit SDK path, but only if it contains the loader entrypoint.
   const trimmedConfiguredPath = configuredSdkPath.trim();
   if (trimmedConfiguredPath) {
     return containsLoaderScript(trimmedConfiguredPath, pathExists, p)
-      ? trimmedConfiguredPath
-      : null;
+      ? { root: trimmedConfiguredPath, source: "setting" }
+      : { root: null, source: null };
   }
 
   // Shared `.alp/sdk-path` pointer, written by `alp sdk switch` and the
@@ -102,18 +114,18 @@ function resolveSdkRoot(
   if (workspaceRoot) {
     const pointer = resolveActiveSdk(workspaceRoot, pathExists, readFile, p);
     if (pointer && containsLoaderScript(pointer, pathExists, p)) {
-      return pointer;
+      return { root: pointer, source: "pointer" };
     }
   }
 
   // Auto-discovery is valid only when exactly one SDK root is detected.
   const candidates = collectSdkCandidates(workspaceFolders, pathExists, p);
   if (candidates.length === 1) {
-    return candidates[0]!;
+    return { root: candidates[0]!, source: "discovery" };
   }
   // Multiple sibling SDKs is ambiguous — require an explicit alpSdk.path.
   if (candidates.length > 1) {
-    return null;
+    return { root: null, source: null };
   }
 
   // Lowest precedence: an SDK installed in the local cache (~/.alp/sdk/<version>).
@@ -122,11 +134,11 @@ function resolveSdkRoot(
   for (const installedRoot of installedSdkRoots) {
     const trimmed = installedRoot.trim();
     if (trimmed && containsLoaderScript(trimmed, pathExists, p)) {
-      return trimmed;
+      return { root: trimmed, source: "installed" };
     }
   }
 
-  return null;
+  return { root: null, source: null };
 }
 
 function collectSdkCandidates(

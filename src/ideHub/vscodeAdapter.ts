@@ -169,6 +169,12 @@ export async function queryAlpIdeState(
   // sends to the CLI.
   const projectContext = collectProjectContext();
   const sdkPath = projectContext.sdkRoot;
+  // "setting" (alpSdk.path) and "pointer" (.alp/sdk-path) are pins the user
+  // wrote; "discovery"/"installed" are the extension guessing. Only a pin can be
+  // cleared, so only a pin may be labelled Active and offered a Deactivate.
+  const activeSdkIsPinned =
+    projectContext.sdkRootSource === "setting" ||
+    projectContext.sdkRootSource === "pointer";
 
   let sdkReadiness: AlpIdeState["sdk"]["readiness"] = "unknown";
   let sdkVersion: string | null = null;
@@ -232,6 +238,12 @@ export async function queryAlpIdeState(
     active:
       projectContext.sdkRoot !== null &&
       sameUserPath(entry.path, projectContext.sdkRoot, process.platform),
+    // ...and WHY. `active` alone made the SDK Manager claim "Active" for an SDK
+    // nobody selected: with no `alpSdk.path` and a stale `.alp/sdk-path`,
+    // resolution falls through to the newest install, so the badge lit up and
+    // Deactivate — which clears a pin that was never written — did nothing
+    // visible. `activeSource` is what lets the badge say which of the two it is.
+    activeSource: activeSdkIsPinned ? ("pinned" as const) : ("auto" as const),
   }));
 
   const pyCmd = projectContext.pythonBinary;
