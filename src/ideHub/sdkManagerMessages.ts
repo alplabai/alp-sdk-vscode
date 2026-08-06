@@ -273,14 +273,25 @@ export function createSdkMessageHandler(
   }
 
   async function handleRequestSdkReleases(): Promise<void> {
-    // Delegate the GitHub releases fetch to `alp sdk list --format json`.
+    // Delegate the GitHub releases fetch to `tan sdk list --online --format json`.
+    //
+    // `--online` is REQUIRED, not a nicety. Since tan v0.5.0 the GitHub
+    // releases API query is gated behind it, and a plain `sdk list` answers
+    // from nothing at all: `ok: true`, `exitCode: 0`, `"releases": []`, plus a
+    // warning issue `sdk.network-required` whose message ends "Add --online to
+    // fetch them." A success-shaped empty answer is indistinguishable from
+    // "upstream has published no releases", so the panel rendered a
+    // permanently empty Install list with no error on any surface. This
+    // handler exists only to report what upstream published — the offline
+    // mode has no caller here.
+    //
     // `interactive: true`: reached only from the SDK Manager view's own mount
     // effect and its explicit Refresh button (`requestSdkReleases`), both
     // downstream of the user explicitly opening this panel — never a
     // background re-derive.
     const { outcome } = await runAlpCommand(
       context,
-      ["sdk", "list"],
+      ["sdk", "list", "--online"],
       undefined,
       {
         interactive: true,
@@ -304,6 +315,15 @@ export function createSdkMessageHandler(
       // state (Browse to a local SDK) instead of spinning forever.
       post({ type: "sdkReleasesLoaded", releases: [] });
       return;
+    }
+    // A successful envelope can still carry issues, and `sdk list` is the one
+    // command whose warnings are the only explanation for an EMPTY but
+    // successful result. Dropping them is what left the empty Install list
+    // with no recorded cause on any surface — the channel line is the record
+    // that survives the panel closing. Channel, not toast: this runs on every
+    // panel mount, and the list itself is the primary signal.
+    for (const issue of envelope.issues ?? []) {
+      logChannel(`[sdk-list] ${issue.severity}: ${issue.message}`);
     }
     const releases =
       (envelope.data as { releases?: SdkRelease[] }).releases ?? [];
