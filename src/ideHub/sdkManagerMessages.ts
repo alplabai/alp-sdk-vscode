@@ -37,6 +37,16 @@ import { log as logChannel } from "../util";
 import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
 import { sdkCacheRoot } from "./vscodeAdapter";
 
+/**
+ * How much disk `tan bootstrap` needs, for the sentence offered right after an
+ * install. Measured, not guessed: `du -sh ~/.alp/sdk` after a v0.15.0-rc1
+ * bootstrap on darwin-arm64 was 2.9G — 1.6G `modules`, 666M `.venv`, 577M
+ * `zephyr`, 53M the SDK checkout itself, 11M `bootloader`. Rounded UP, because
+ * a customer who frees exactly the number we print must not run out mid-fetch.
+ * Excludes a separately installed Zephyr SDK toolchain.
+ */
+const BOOTSTRAP_DISK_ESTIMATE = "about 3 GB";
+
 export interface SdkHandlerDeps {
   context: vscode.ExtensionContext;
   post: (msg: ExtToWebviewMessage) => void;
@@ -456,6 +466,30 @@ export function createSdkMessageHandler(
             true,
             true,
           );
+          // The install is only half the setup. Without `tan bootstrap` there
+          // is no west, and `tan build` plans every slice and then skips every
+          // one of them — "skipped: m55_hp [zephyr] -- tool `west` not found",
+          // "error: no slice was built -- every slice was skipped". Offering
+          // the next step here is what stops that being discovered from a
+          // failed build.
+          //
+          // OFFERED, never automatic, and the size is IN the sentence:
+          // bootstrap fetches the Zephyr workspace and builds a venv, which is
+          // minutes of network and `BOOTSTRAP_DISK_ESTIMATE` of disk. Spending
+          // that without asking is not this handler's call — especially on a
+          // laptop or a metered link — so the click stays the customer's.
+          void notify({
+            severity: "info",
+            channel: "toast",
+            message:
+              `Alp: SDK ${version} installed. Bootstrap sets up its build ` +
+              `environment (west, Zephyr modules, Python venv) and needs ` +
+              `${BOOTSTRAP_DISK_ESTIMATE} of disk.`,
+            actions: [{ id: "custom", title: "Bootstrap now" }],
+          }).then((picked) => {
+            if (picked === "custom")
+              void vscode.commands.executeCommand("alp.installDependencies");
+          });
           await refresh();
         } catch (err) {
           if (cancelled) {

@@ -101,6 +101,21 @@ test("resolves exactly once across the error/close race", () => {
   assert.match(streamed, /if \(settled\) return;/);
 });
 
+test("the streamed argv carries no flag tan defers (tan-cli#427)", () => {
+  // tan v0.5.0 deferred `--no-color` AND `--non-interactive`, and `tan build`
+  // REFUSES them rather than ignoring them: "error: `tan build --no-color` is
+  // deferred and not available in this build", exit 1, before a single slice
+  // runs. Appending them left build/image/flash/clean/renode and the Build
+  // Plan panel's two buttons all dead on arrival under the v0.5.1 pin.
+  //
+  // Asserted on the assignment, not on the whole slice: the comment above it
+  // quotes both flag names on purpose, so a bare
+  // `doesNotMatch(streamed, /--no-color/)` would fail on prose, not on code.
+  assert.match(streamed, /const finalArgs = withSdkRoot\(args\);/);
+  // Any array literal here is an appended-flag list coming back.
+  assert.doesNotMatch(streamed, /const finalArgs = \[/);
+});
+
 test("no dispatch site hard-codes a build or flash run name", () => {
   // Two names are two reservations, and two `tan build` processes over one
   // `build/` directory — or, for flash, two programmers writing one board.
