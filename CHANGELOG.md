@@ -1,5 +1,176 @@
 # Changelog
 
+## 0.5.2
+
+**Pre-release.** Continues `0.5`'s odd-minor pre-release channel —
+`release-vsix.yml` still publishes this build with `--pre-release`, reaching
+only Marketplace/Open VSX users opted into pre-release updates.
+
+- **New setting: `alpSdk.svdPath`, populating cortex-debug's Peripherals
+  register view (#340).** The SDK ships no `.svd` of its own
+  (alp-sdk#948, licence-blocked), so this is the customer-supplied route —
+  unblocked by tan-cli#214 adding `tan debug-config --svd <PATH>`. Threaded
+  into `debugConfigArgs` (`src/debug/service.ts`) the same conditional-push
+  way as `--core`/`--pre-launch-task`, and sent verbatim, with no
+  `fs.existsSync` gate in this extension: tan owns the fact, and it fails
+  the whole `debug-config` command — no `launch.json` written at all — when
+  the path does not name a readable file, so a typo now surfaces as a toast
+  naming `alpSdk.svdPath` rather than a session that silently has no
+  peripheral view. See docs/DEBUG.md §10.7.
+
+- **The build-finish notification now offers "Show Result" (#331).** A
+  SUCCESSFUL `tan build` toast carries a one-click action that opens the Build
+  Plan panel, so the per-slice outcome is reachable from the exact
+  notification that just said the build finished, instead of a separate trip
+  through the Alp IDE panel. Gated to `tan build` specifically — the panel
+  reads `build/system-manifest.yaml`, and of everything this extension runs in
+  a terminal or channel (bootstrap, the Zephyr SDK install, native_sim Run,
+  `tan image`/`flash`/`clean`/`renode`) only `tan build` seeds/refreshes that
+  file; `tan clean` actively deletes it. It is also success-only, not shown on
+  a failed build: a prior green build's manifest can still be on disk when a
+  later build fails, the payload carries no timestamp, and the panel cannot
+  tell that result is stale — showing it from a failure toast risks presenting
+  yesterday's build as today's. The failure toast is unchanged (the terminal/
+  channel reveal plus Run Doctor); the panel stays reachable from the palette
+  and status bar either way.
+
+- **`Alp: Debug doctor`, the troubleshooting panel and the support bundle now
+  render `tan doctor`'s own checks instead of a TypeScript re-implementation
+  (#376).** `buildDoctorReport` was a second, in-process doctor that judged
+  five of the same facts `alp.debugPreflight` already judges (workspace root,
+  `board.yaml`, extension presence, backend-on-PATH, host platform) and
+  reported zero of the build-environment facts plain `tan doctor` now covers
+  (Python floor, host prerequisites, Zephyr SDK host support, Windows long
+  paths, a crowded home path). It is deleted rather than migrated; the three
+  call sites spawn plain `tan doctor` through a spawn path shared with the
+  Dependencies panel (`src/alpCli/doctor.ts`) and render `checks[]`/`summary`
+  verbatim — no allowlist, no recomputed counts, an `unknown` status renders
+  as itself. `alp.debugDoctor` no longer prompts for a target/server pair
+  (plain `tan doctor` is target-agnostic); per-target F5 readiness — which
+  debugger extension is installed, is the build artefact present — is
+  unchanged and stays `alp.debugPreflight`'s, in-process, because only this
+  window can see its own installed extensions. A missing workspace or an
+  unresolvable `tan` collapse to one message where the doctor table was; the
+  support bundle is the exception and is still written either way, carrying
+  the resolver's own failure message when `tan` could not be reached.
+
+- **The managed `tan` download now unpacks an archive release, not just a raw
+  binary (tan-cli#349).** tan-cli's onefile PyInstaller freeze re-extracted
+  itself on every invocation — 14 MB, 13-19 s on macOS — which could outrun
+  this extension's own `commandOnPath` probe and version checks well before a
+  user ever ran a build. A onedir freeze zipped/tarred into one archive per
+  target fixes that, at the cost of `download.ts` needing an unpack step it
+  never had.
+
+  `.zip` (win32) and `.tar.gz` (elsewhere) are both unpacked with the OS's own
+  `tar` — Windows has shipped a real `tar.exe` in `System32` since 10 1803
+  (bsdtar/libarchive, which reads `.zip` as readily as `.tar.gz`), and macOS
+  and Linux ship one too; Node's stdlib has no tar reader and nothing was
+  added to work around that. Windows resolves it by absolute path rather than
+  a PATH lookup, deliberately: Git for Windows ships its own `tar.exe` (GNU
+  tar) which cannot read `.zip` at all, and a bare `"tar"` risks finding that
+  one first on a great many developer machines.
+
+  Which of the two install paths runs (extract vs. rename-straight-in) is
+  decided by the downloaded bytes' own magic number — never by the pinned
+  version, which is what lets a pin naming any release through `v0.5.0-rc4`
+  (a raw binary) and a pin naming an archive release both keep installing
+  correctly through the exact same code, with nothing here to edit on
+  tan-cli's next release either way. The archive's checksum is still verified
+  before anything is unpacked, exactly as the raw binary always was;
+  unpacking it is checked again afterward, since a checksum on the archive
+  proves it arrived intact, not that what came out of it is a working
+  launcher.
+
+- **Fix: which ASSET NAME to even request was still guessed, not resolved
+  (#463).** The archive and raw shapes are published under *different* asset
+  names — `tan-<triple>[.exe]` vs `tan-<triple>.zip`/`.tar.gz` — not the same
+  name with different bytes, so the `tan-<triple>[.exe]` sentence two
+  paragraphs up was wrong the moment an archive release existed: requesting
+  the raw name against one 404s outright. `resolvePublishedAsset`
+  (`download.ts`) now reads the release's own `checksums.txt` once and takes
+  whichever candidate name has an entry, before a single asset byte is
+  fetched — never a per-version table, which is the same trap
+  `HOSTS_WITHOUT_RELEASE_ASSET` exists to avoid for a different question.
+
+- **Fix: the cached-binary integrity digest covered the launcher only, not
+  the installed tree (#464).** A PyInstaller onedir release is not one file:
+  libpython, every native extension module and the Python bytecode live in a
+  `_internal/` sibling `installArchive` moves in beside the launcher, and none
+  of that was ever hashed — a rewrite of a `_internal/` entry after install
+  matched the (launcher-only) recorded digest forever, and the extension
+  spawned it having reported the resolution as verified. `sha256Tree`
+  (`vscodeAdapter.ts`) now digests the whole installed tree, per-file
+  memoized so an unchanged resolution re-reads nothing and a real tamper pays
+  only for the entry that changed.
+
+- **Fix: candidate resolution preferred the raw shape over the archive when a
+  release listed both (#465).** `resolvePublishedAsset` searched `[raw,
+  archive]` in that array order and took the first match; a release kept for
+  a transition period would have resolved to raw every time, silently
+  resurrecting the 13.25-19.74s macOS onefile startup tan-cli#349 exists to
+  kill, with no error to catch it. It now prefers the archive whenever both
+  are listed.
+
+- **Fix: `checksums.txt` was fetched twice per managed download (#465) —
+  measured at three requests where tan-cli#176's design is two.**
+  `resolvePublishedAsset` already reads the manifest once to pick a
+  candidate and discarded the digest it found; `downloadFile` then fetched
+  the same file again to re-derive it. The digest is now threaded through
+  `resolveAsset`'s result (`ResolvedAssetCandidate`) to `download`, so it is
+  read once — which also makes "the digest came from the same manifest as
+  the candidate choice" a fact by construction rather than an assumption
+  resting on the URL returning identical bytes twice.
+
+- **Docs: the ADR 0021 citation for the consent dialog's no-network-before-
+  consent rule named a "Tier A requirement 4" that does not exist in the
+  ADR.** The ADR says "three tiers, one consent screen" naming
+  artifact/source/size/licence, and "install after one consent click" for
+  Tier A — not doing zero network activity before the click, which is this
+  extension's own tighter rule. Restated as this repo's own rule at both
+  citing sites (`service.ts`, `vscodeAdapter.ts`) instead of citing text the
+  ADR does not contain.
+
+- **`SUPPORTED_CLI_VERSION` moves to `0.5.1`, was `0.5.0-rc2`. Closes
+  tan-cli#268.** This extension release has not shipped yet, so rc3, rc4 and
+  v0.5.0 GA never reached a user through it; the pin goes straight to v0.5.1
+  rather than stacking four entries for what is one bump from a user's point
+  of view. v0.5.1 is the first NON-prerelease tan-cli tag this constant has
+  ever named since the Python cutover — tan-cli#268 tracked moving this
+  extension off the opt-in RC line and onto the release customers actually
+  get, and that is what v0.5.1 GA is.
+
+  Every intermediate RC came from running the *published* binary end to end on
+  real Windows, macOS and Linux hosts rather than from testing the source.
+  Fixes that matter directly to this extension's users: the macOS asset shipped
+  with no CA trust anchors at all, so every HTTPS call failed
+  `CERTIFICATE_VERIFY_FAILED` (tan-cli#304); `tan doctor` exited 4 on every
+  fresh install because "west in the venv, absent from PATH" — the guaranteed
+  state of a GUI-launched VS Code — was reported as a broken host
+  (tan-cli#299); `tan init` and `tan generate` could follow a symlinked parent
+  and write outside the project while reporting success (tan-cli#325);
+  `envelope.serialize-failed` printed `exitCode: 5` while the process exited
+  `0`, breaking the `process exit code == stdout envelope.exitCode` invariant
+  this extension relies on to decide whether a run failed (tan-cli#327); a
+  second project's bootstrap could silently repoint the machine-global default
+  SDK a first project already resolved against (tan-cli#464); `tan
+  debug-config` now infers a real hardware target instead of defaulting to
+  `native-host` and writing a `launch.json` pointing at a binary the build
+  never produces (tan-cli#456); and four `debug-config` preconditions that used
+  to exit 5 (`internal` in this extension's `CliExitKind` mapping — reported as
+  a tan crash) now exit 2 (`validation` — user-fixable input) (tan-cli#462).
+
+  `HOSTS_WITHOUT_RELEASE_ASSET` carries the identical `win32/arm64` /
+  `linux/arm64` gap forward. Checked against the published v0.5.1 tag rather
+  than carried on the assumption it would hold: v0.5.1 ships the same four
+  binaries as v0.5.0 and every rc before it — `tan-x86_64-pc-windows-msvc.zip`,
+  `tan-x86_64-apple-darwin.tar.gz`, `tan-aarch64-apple-darwin.tar.gz`,
+  `tan-x86_64-unknown-linux-gnu.tar.gz`, plus `checksums.txt` and
+  `envelope-contract.json` — now archived rather than raw (tan-cli#349), a
+  migration this extension already resolves by candidate name against the
+  release's own `checksums.txt` (#463-#465), so no code change was needed here
+  beyond the pin itself.
+
 ## 0.5.1
 
 **Pre-release.** Continues `0.5`'s odd-minor pre-release channel —

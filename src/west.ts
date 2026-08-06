@@ -135,7 +135,7 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
 // critically for flash, the per-slice failure reasons — e.g. "backend
 // zephyr_west_flash needs west on PATH") scrolls away, leaving only a cryptic
 // "failed to launch". Channel mode keeps the full log + verdict. All three are
-// non-interactive (runAlpStreamed forces `--non-interactive`), so no TTY is
+// non-interactive because the streamed child gets no TTY at all, so no TTY is
 // lost. Renode streams too: `tan renode` boots Renode HEADLESS as a smoke test
 // and reads no stdin, and its most common outcome on a real project is a
 // PRE-BOOT refusal — e.g. "system-manifest.yaml has 2 zephyr slices (cores
@@ -198,8 +198,9 @@ const RENODE_CORE_CLI_VERSION = "0.3.2";
  *
  *  Only the `fs` read lives here; the selection is `zephyrCoreIds` in
  *  `@alp-sdk/core`. Reading and parsing this file had grown three hand-rolled
- *  copies, which CLAUDE.md's "no cross-slice copy-paste of domain rules"
- *  forbids — and a non-exported function doing its own IO in a surface file
+ *  copies, which docs/ARCHITECTURE_RULES.md §2 forbids as "cross-slice
+ *  copy-paste of domain rules" — and a non-exported function doing its own IO
+ *  in a surface file
  *  cannot be tested at all. */
 function zephyrCoresOf(cwd: string): string[] {
   const manifestPath = path.join(cwd, "build", "system-manifest.yaml");

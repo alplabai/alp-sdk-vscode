@@ -40,6 +40,12 @@ const UPDATED = "the freshly-pinned tan binary\n";
 const TAMPERED = "not what Alp Lab published\n";
 const sha256 = (buffer) =>
   crypto.createHash("sha256").update(buffer).digest("hex");
+/** #464: the recorded digest now covers the installed TREE (`sha256Tree` in
+ *  vscodeAdapter.ts), not the launcher's content alone — mirrors that exact
+ *  formula so a seeded/asserted `globalState` record matches what the
+ *  shipped code actually computes. Every row here writes ONLY the launcher
+ *  (no `_internal/`), so the tree is always the single entry `BINARY`. */
+const treeDigest = (content) => sha256(`${BINARY}\0${sha256(content)}\n`);
 
 /** globalState key the consent prompt persists its answer under. */
 const DOWNLOAD_CONSENT_KEY = "alp.tanCliDownloadConsentAnswer";
@@ -48,6 +54,23 @@ const [MAJOR, MINOR] = SERVICE.SUPPORTED_CLI_VERSION.split(".").map(Number);
 /** One MINOR behind the pin — same derivation alpCli.preferGlobalCliStaleLoop
  *  .test.js uses, so a pin bump keeps testing the same relationship. */
 const BEHIND = `${MAJOR}.${Math.max(MINOR - 1, 0)}.0`;
+
+/** A `ReleaseAsset`-shaped fixture (#463: two candidates, not one flat
+ *  `assetName`/`url`) whose raw candidate is `BINARY` at `base`. */
+function testAsset(base, { target = "test-target", tag = "v0.0.0-test" } = {}) {
+  return {
+    target,
+    tag,
+    checksumsUrl: `${base}/checksums.txt`,
+    candidates: [
+      { assetName: BINARY, url: `${base}/${BINARY}` },
+      {
+        assetName: `${BINARY}.archive-unused`,
+        url: `${base}/${BINARY}.archive-unused`,
+      },
+    ],
+  };
+}
 
 /** A release server whose `checksums.txt` vouches for what it serves. */
 async function releaseServer(body) {
@@ -63,13 +86,7 @@ async function releaseServer(body) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   return {
-    asset: {
-      target: "test-target",
-      assetName: BINARY,
-      tag: "v0.0.0-test",
-      url: `${base}/${BINARY}`,
-      checksumsUrl: `${base}/checksums.txt`,
-    },
+    asset: testAsset(base),
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -235,12 +252,36 @@ test("fresh install, no stored answer: prompts, and does NOT download until acce
     const [plan] = shown;
     assert.match(plan.message, /download the tan CLI/i);
     assert.match(plan.message, new RegExp(SERVICE.SUPPORTED_CLI_VERSION));
-    // ADR 0021 Tier A: artifact, source, size, licence — all four present.
+    // ADR 0021: artifact, source, size, licence — all four present (the ADR's
+    // own words are "three tiers, one consent screen" plus that field list,
+    // not a numbered requirement; the ADR's Tier A rule is "install after one
+    // consent click").
     assert.match(plan.modalDetail, /Artifact:.*tan/i);
+    // #465 finding 7: the Source line must name the EXACT release `asset` —
+    // the one `downloadCli` is about to resolve from, not a re-derived one —
+    // pinned structurally rather than merely trusting the code flows it
+    // through unchanged. This is the assertion `plan.modalDetail.includes(
+    // server.asset.url)` used to be before #463 replaced a single resolved
+    // URL with a candidate list; it was removed then with nothing replacing
+    // it, which is what this line restores.
     assert.ok(
-      plan.modalDetail.includes(server.asset.url),
-      "the dialog must name the ACTUAL asset url downloadCli is about to fetch",
+      plan.modalDetail.includes(
+        `Source: https://github.com/alplabai/tan-cli/releases/tag/${server.asset.tag}`,
+      ),
+      "the dialog's Source line must name the exact release tag downloadCli will resolve from",
     );
+    // #463: the dialog must not claim a single resolved asset name — which of
+    // `server.asset.candidates` this release actually published is decided
+    // from checksums.txt, and that lookup must not happen ahead of consent
+    // (this repo's own no-network-before-consent rule, not ADR 0021 text).
+    // It has to name every candidate it MIGHT resolve to instead.
+    for (const candidate of server.asset.candidates) {
+      assert.ok(
+        plan.modalDetail.includes(candidate.assetName),
+        `the dialog must name candidate ${candidate.assetName}`,
+      );
+    }
+
     assert.match(plan.modalDetail, /Size:/);
     assert.match(plan.modalDetail, /Licence:.*Apache/i);
 
@@ -266,7 +307,7 @@ test("fresh install, no stored answer: accepting proceeds with the download", as
     await adapter.ensureTanCliProvisioned(home.context);
 
     assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
-    assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(GOOD));
+    assert.equal(home.store.get("alp.tanCachedBinarySha256"), treeDigest(GOOD));
     assert.equal(
       home.store.get(DOWNLOAD_CONSENT_KEY),
       "accepted",
@@ -363,7 +404,7 @@ test("stored decline + explicit alp.installTanCli: proceeds anyway", () => {
 test("updatingStaleCache (behind-pin self-heal): no prompt, downloads", async () => {
   const home = extensionHome();
   const file = home.writeCachedBinary(GOOD);
-  home.store.set("alp.tanCachedBinarySha256", sha256(GOOD)); // digest-clean
+  home.store.set("alp.tanCachedBinarySha256", treeDigest(GOOD)); // digest-clean
   home.store.set(DOWNLOAD_CONSENT_KEY, "declined"); // must not matter
   const server = await releaseServer(UPDATED);
   try {
@@ -378,7 +419,10 @@ test("updatingStaleCache (behind-pin self-heal): no prompt, downloads", async ()
 
     assert.deepEqual(plans.filter(isConsentPlan), []);
     assert.equal(fs.readFileSync(file, "utf8"), UPDATED);
-    assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(UPDATED));
+    assert.equal(
+      home.store.get("alp.tanCachedBinarySha256"),
+      treeDigest(UPDATED),
+    );
   } finally {
     await server.close();
     home.cleanup();
@@ -409,7 +453,7 @@ test("reacquiringUnverifiedCache (#396 security heal), onPath TRUE: no prompt, d
 
     assert.deepEqual(plans.filter(isConsentPlan), []);
     assert.equal(fs.readFileSync(file, "utf8"), GOOD);
-    assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(GOOD));
+    assert.equal(home.store.get("alp.tanCachedBinarySha256"), treeDigest(GOOD));
   } finally {
     await server.close();
     home.cleanup();

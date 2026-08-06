@@ -2,6 +2,7 @@
 
 import {
   checkSdkReadiness,
+  clearActiveSdkPointer,
   switchActiveSdk,
   westManifestLogLine,
   westManifestWarning,
@@ -222,7 +223,30 @@ export async function clearActiveSdk(): Promise<void> {
   const inspected = cfg.inspect<string>("path");
   const hadWorkspace = inspected?.workspaceValue !== undefined;
   const hadGlobal = inspected?.globalValue !== undefined;
-  if (!hadWorkspace && !hadGlobal) {
+
+  // The `.alp/sdk-path` pointer is the OTHER half of a pin — `setActiveSdk`
+  // writes it, and `resolveSdkRoot` reads it ABOVE auto-discovery. Clearing the
+  // setting alone left the pointer standing, so resolution returned the same
+  // SDK, the badge never moved, and Deactivate read as a dead button. Cleared
+  // FIRST so a settings-write failure below cannot leave the pointer outliving
+  // a cleared setting.
+  const workspaceRoot = collectProjectContext().workspaceRoot;
+  let pointerCleared = false;
+  if (workspaceRoot) {
+    try {
+      pointerCleared = clearActiveSdkPointer(
+        workspaceRoot,
+        (p) => fs.existsSync(p),
+        (p) => fs.unlinkSync(p),
+      );
+    } catch (err) {
+      // Best-effort like the mirror write in setActiveSdk — but never silent,
+      // or the next Deactivate looks dead for exactly the same reason.
+      log(`[sdk] .alp/sdk-path pointer clear failed: ${String(err)}`);
+    }
+  }
+
+  if (!hadWorkspace && !hadGlobal && !pointerCleared) {
     // Nothing to act on and the status bar already reads "No SDK" — ack it
     // there rather than making the user dismiss a popup.
     notifyAsync(planSuccess("Alp: no active SDK to clear."));

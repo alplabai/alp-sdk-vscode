@@ -27,6 +27,12 @@ test/golden/tan-contract/
 # Local assistant instructions (keep private)
 .github/local-agent-instructions.md
 
+# Claude Code project instructions. Untracked on purpose: the alp-lab plugin
+# rewrites a managed block into this file on every session, so a tracked copy
+# shows up as an unstaged edit forever. Root-scoped (`/`) so a nested CLAUDE.md
+# in a package stays visible if one is ever added.
+/CLAUDE.md
+
 # Transient Claude Code runtime locks
 .claude/scheduled_tasks.lock
 

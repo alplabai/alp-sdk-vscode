@@ -51,19 +51,36 @@ const BINARY = process.platform === "win32" ? "tan.exe" : "tan";
 const GOOD = "the real tan binary\n";
 const sha256 = (buffer) =>
   crypto.createHash("sha256").update(buffer).digest("hex");
+/** #464: the recorded digest now covers the installed TREE (`sha256Tree` in
+ *  vscodeAdapter.ts), not the launcher's content alone — mirrors that exact
+ *  formula so a seeded/asserted `globalState` record matches what the
+ *  shipped code actually computes. Every row here writes ONLY the launcher
+ *  (no `_internal/`), so the tree is always the single entry `BINARY`. */
+const treeDigest = (content) => sha256(`${BINARY}\0${sha256(content)}\n`);
 
 /** globalState key the adapter marks once the notice has been shown. */
 const PATH_NOTICED_KEY = "alp.tanUnverifiedPathNoticed";
 
+/** A `ReleaseAsset`-shaped fixture (#463: two candidates, not one flat
+ *  `assetName`/`url`) whose raw candidate is `BINARY` at `base`. */
+function testAsset(base, { target = "test-target", tag = "v0.0.0-test" } = {}) {
+  return {
+    target,
+    tag,
+    checksumsUrl: `${base}/checksums.txt`,
+    candidates: [
+      { assetName: BINARY, url: `${base}/${BINARY}` },
+      {
+        assetName: `${BINARY}.archive-unused`,
+        url: `${base}/${BINARY}.archive-unused`,
+      },
+    ],
+  };
+}
+
 /** A release that publishes nothing reachable: port 1 on loopback is refused
  *  immediately, so a fetch is instant, offline, and LOUD (it raises a plan). */
-const OFFLINE_ASSET = {
-  target: "test-target",
-  assetName: BINARY,
-  tag: "v0.0.0-test",
-  url: `http://127.0.0.1:1/${BINARY}`,
-  checksumsUrl: "http://127.0.0.1:1/checksums.txt",
-};
+const OFFLINE_ASSET = testAsset("http://127.0.0.1:1");
 
 /** A release server whose `checksums.txt` vouches for what it serves. */
 async function releaseServer(body) {
@@ -79,13 +96,7 @@ async function releaseServer(body) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   return {
-    asset: {
-      target: "test-target",
-      assetName: BINARY,
-      tag: "v0.0.0-test",
-      url: `${base}/${BINARY}`,
-      checksumsUrl: `${base}/checksums.txt`,
-    },
+    asset: testAsset(base),
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -354,7 +365,7 @@ test("every other arm is silent: cliPath, localBuild, bundled, cached, download"
       return { onPath: true };
     },
     cached: (home) => {
-      home.store.set("alp.tanCachedBinarySha256", sha256(GOOD));
+      home.store.set("alp.tanCachedBinarySha256", treeDigest(GOOD));
       home.writeCachedBinary(GOOD);
       return { onPath: true };
     },
@@ -429,7 +440,7 @@ test("the migrating machine keeps #396's sentence, and is not told twice", async
 
     // The guard reds: heal it (record a digest for what is on disk) and the
     // cache outranks the fallback, so this machine leaves both populations.
-    home.store.set("alp.tanCachedBinarySha256", sha256(GOOD));
+    home.store.set("alp.tanCachedBinarySha256", treeDigest(GOOD));
     const { adapter: healed, plans: healedPlans } = loadAdapter({
       onPath: true,
       releaseAsset: OFFLINE_ASSET,
@@ -483,7 +494,7 @@ test("the notice's button ends the state it reports", async () => {
     });
     await pressed.updateAlpCli(home.context);
     assert.equal(fs.readFileSync(home.cachedBinaryPath, "utf8"), GOOD);
-    assert.equal(home.store.get("alp.tanCachedBinarySha256"), sha256(GOOD));
+    assert.equal(home.store.get("alp.tanCachedBinarySha256"), treeDigest(GOOD));
 
     // The next window runs the verified copy, and says nothing further.
     const { adapter: next, plans: nextPlans } = loadAdapter({

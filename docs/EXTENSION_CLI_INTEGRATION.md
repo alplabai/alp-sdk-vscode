@@ -64,7 +64,7 @@ the `tan` binary as the single implementation and render its output — collapsi
 |------|------|-----------|
 | **Envelope** | one-shot, data-producing commands | spawn `tan <cmd> --format json`, parse the envelope, map `exitCode`/`issues` to UX |
 | **Terminal** | long-running **and interactive** | open a VS Code integrated terminal (a Task) and run `tan <cmd>` (or the underlying tool) so the user can answer prompts (sudo, pip, `west update`) |
-| **Channel** | long-running, non-interactive, live-output | `runAlpStreamed` spawns `tan <cmd> --no-color --non-interactive` and streams stdout/stderr into the persistent "Alp SDK" output channel |
+| **Channel** | long-running, non-interactive, live-output | `runAlpStreamed` spawns `tan <cmd>` with no TTY — which is what keeps the output plain and the run non-interactive — and streams stdout/stderr into the persistent "Alp SDK" output channel. It does **not** pass `--no-color`/`--non-interactive`: tan v0.5.0 deferred both, and `tan build` refuses them (tan-cli#427) |
 
 Channel mode exists because a terminal dies with its process, taking the verdict
 with it — a failed flash showed only "failed to launch" while the real per-slice
@@ -106,32 +106,60 @@ Keep **in-process** (`@alp-sdk/core`, TS) — must be synchronous / per-edit:
 Delegate to the **`tan` binary** — user-triggered "actions":
 
 - `validate` (full, Python spawn), `generate`, `init`, `scaffold`, `diff`,
-  `presets`, `explain`, `inspect`, `trace`, `debug-config`, `support-bundle`,
-  `sdk *`, `bootstrap`, and (future) `build`.
+  `presets`, `explain`, `inspect`, `trace`, `debug-config`, `doctor`,
+  `support-bundle`, `sdk *`, `bootstrap`, and (future) `build`.
 
 Rule of thumb: **per-keystroke → in-process TS; per-click → CLI binary.**
 
-### 4a. Debug doctor / preflight stay in-process (host-state exception)
+### 4a. Debug preflight stays in-process; debug doctor delegates to `tan` (#376)
 
 There is a third class beyond per-keystroke vs per-click: **commands whose
-answer depends on VS Code host state the CLI cannot observe.** The debug-domain
-commands — `alp.debugDoctor`, `alp.debugPreflight` (and the debug parts of
-`inspect` / `support-bundle`) — probe **which debugger extensions are installed**
-via `vscode.extensions.getExtension(...)` (Cortex-Debug, CodeLLDB, C/C++). A
-separate `tan` process cannot see the host's installed extensions, so the Rust
-`tan doctor` deliberately *assumes* the marquee extensions are present
-(`resolveCliDebugContext` sets them all to `true`). That assumption is fine for a
-terminal/CI doctor, but in the extension it would turn a real "CodeLLDB is not
-installed" finding into a false "installed" — a correctness regression.
+answer depends on VS Code host state the CLI cannot observe.** A separate `tan`
+process cannot see this window's installed extensions
+(`vscode.extensions.getExtension(...)` — Cortex-Debug, CodeLLDB, C/C++), so
+anything that must answer "which debugger extension will actually resolve for
+*this* launch" has to stay in-process.
 
-**Decision:** the debug doctor/preflight readiness checks **stay in-process**
-(`@alp-sdk/core/debug` via `src/debug.ts` + `collectRuntimeCapabilities`), even
-though a same-named `tan doctor` envelope exists. They are part of the live/LSP
-side of this split, not delegated. The CLI `tan doctor` remains the surface for
-terminals and CI (where extension state is irrelevant). Only commands whose full
-result is reproducible from `board.yaml` + the SDK + PATH (validate, generate,
-sdk, …) are delegated. If a future need arises, the extension could pass its
-observed extension state to the CLI via flags — out of scope for now.
+**That question is `alp.debugPreflight`'s, not the doctor's, and the boundary
+is drawn by QUESTION, not by command name (issue #376's field-by-field map).**
+`buildDebugPreflightReport` (`@alp-sdk/core/debug` via `src/debug.ts` +
+`collectRuntimeCapabilities`) answers "will *this* F5, with *this*
+configuration, in *this* window, start" — it grades `adapterExtension`,
+`serverTool`, `buildArtifact` and the native-host `hostPlatform` gate, and
+stays in-process for exactly that reason. `alp.debugDoctor` answers a
+different, machine/project-scoped question — "can this machine and project
+build and debug at all" — which plain `tan doctor` already answers more
+completely than the former in-process `buildDoctorReport` ever did (SDK/board/
+Zephyr-workspace/west/Python-floor/host-prerequisite/toolchain checks with no
+TypeScript equivalent), so `alp.debugDoctor`, the debug parts of
+`support-bundle`, and the troubleshooting panel's doctor table now spawn
+`tan doctor` and render its `checks[]`/`summary` verbatim (`src/alpCli/doctor.ts`,
+shared with the Dependencies panel) rather than re-deriving a doctor report in
+TypeScript. **`tan doctor` is never the source of an "extension X is
+installed" claim in the IDE** — verified against the pinned tan
+(`SUPPORTED_CLI_VERSION`): a plain `tan doctor --format json` run against a
+real project emits no extension-presence check of any kind, so there is
+nothing here for the extension consumer to filter or distrust; if a future tan
+adds one, decision 4 of issue #376 is the rule that keeps it out of this path.
+`tan doctor` is target-agnostic, so `alp.debugDoctor` no longer prompts for a
+target/server pair either — that picker stays `alp.debugPreflight`'s.
+
+A missing workspace collapses to exactly ONE `planPrecondition` message. An
+unresolvable `tan` collapses to exactly ONE toast — never a second, in-process
+doctor rebuilt as a fallback — but that toast is `planCliOutcome(outcome, …)`
+(`src/notify/service.ts`), the same classifier every other CLI-backed command
+in this repo uses, NOT a bare sentence built off `outcome.message` alone: it
+is what splits "tan was never installed" (an Install action) from "tan is
+there but broken" (Settings/Doctor actions) and offers Retry, so the toast is
+never a buttonless dead end. It still never carries the raw errno/resolver
+text (`CliOutcome.unavailable.detail` is explicitly not for a toast — see
+`src/alpCli/models.ts`). The support bundle and the troubleshooting panel are
+where that restriction does NOT apply: a FILE and a channel-grade panel, not a
+toast, so both carry the resolver's curated message AND the raw detail behind
+it verbatim (`DebugSupportBundlePayload.doctor`, `DebugDoctorSection`'s
+`error`/`detail`) — the support bundle is exported precisely when things are
+broken, and a bundle with the curated sentence but not the diagnosis under it
+defeats the reason it exists.
 
 ## 5. Binary resolution (hybrid: bundled + universal)
 
@@ -143,14 +171,22 @@ binary staged at `<extensionPath>/bin/tan[.exe]` — present only in a
 platform-specific VSIX built with `vsce package --target <triple>`; then a
 locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]` (source checkout);
 then a previously downloaded binary cached in `globalStorage`, but only when a
-sha256 was recorded for it and the file still hashes to that digest (#386 — see
-§7; with no record the ladder skips straight past it); then `tan` on
+sha256 was recorded for its installed TREE and that tree still hashes to that
+digest (#386, extended to the whole tree by #464 — see §7; with no record the
+ladder skips straight past it); then `tan` on
 PATH, but only once verified to be the native (clap) CLI — `commandOnPath`
 accepts a PATH `tan` only when `tan --version` prints the native version line
 (`tan X.Y.Z`), so a stale or non-native `tan` that could otherwise shadow the
 version the extension targets falls straight through; then a fresh download of
-the raw `tan-<triple>[.exe]` release asset from `alplabai/tan-cli` for the host
-target — gated on `alpSdk.tanCliDownloadConsent` (ADR 0021 Tier A: a one-time
+the release asset from `alplabai/tan-cli` for the host target — NAMED
+`tan-<triple>[.exe]`, a raw binary, through v0.5.0-rc4; named
+`tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz` (elsewhere), a onedir
+archive, from tan-cli#349 on. Which of the two a given release actually
+published is resolved from that release's own `checksums.txt`
+(`resolvePublishedAsset` in download.ts), never guessed from the pinned
+version; the downloaded bytes' own magic number is a SEPARATE, later decision
+— which extractor (if any) to unpack them with (`download.ts`'s
+`sniffArchiveKind`) — gated on `alpSdk.tanCliDownloadConsent` (ADR 0021 Tier A: a one-time
 consent dialog, or the setting's own `allow`/`deny`; see "Download consent"
 below) — and, only for a caller the customer just triggered directly, may show
 that dialog when unanswered. If all of those fail, surface a one-click "install
@@ -270,20 +306,49 @@ manifest could be missing the digest line and would read as "unlisted".
 The download happens once; the cache is read on every activation for the life of
 the install, so checking only at write time left every machine spawning an
 unverified binary indefinitely, and left anything that rewrote the cache file
-afterwards executing unchecked (#386). `downloadCli` now records the sha256 of
-the binary that landed in `context.globalState`
-(`alp.tanCachedBinarySha256`), and `resolveAlpBinary`'s `cached` arm hashes the
-file on disk and compares before returning a command. A mismatch **refuses the
-spawn** — not a warning, because the next thing that happens to that path is
-execution.
+afterwards executing unchecked (#386). `downloadCli` now records a sha256 in
+`context.globalState` (`alp.tanCachedBinarySha256`), and `resolveAlpBinary`'s
+`cached` arm recomputes the same digest and compares before returning a
+command. A mismatch **refuses the spawn** — not a warning, because the next
+thing that happens to that path is execution.
+
+**The digest covers the installed TREE, not the launcher alone (#464).** A
+PyInstaller onedir release (tan-cli#349) is not one file: `installArchive`
+lands libpython, every native extension module and the Python bytecode in a
+`_internal/` sibling beside the launcher, and all of that is executed
+(imported, dlopen'd) exactly as much as the launcher is. Digesting only
+`cachedBinaryPath` — this extension's behaviour before #464 — left every one
+of those siblings unverified: a rewrite of `_internal/tan/commands/build.pyc`
+after install matched the (launcher-only) recorded digest forever, and the
+`cached` arm reported the resolution as verified while spawning modified
+code. `sha256Tree` (`vscodeAdapter.ts`) walks `cacheDir` — the launcher plus
+every entry `installArchive` landed beside it, `.tmp`/`.old` transients
+excluded — and folds each entry's RELATIVE PATH as well as its content into
+one digest, so an entry added, removed, or modified anywhere under the
+installed tree fails verification.
+
+Recomputing the digest from the live filesystem on every resolution, rather
+than trusting a manifest of per-file digests written once at install time, was
+the deliberate choice: a manifest needs its own integrity check — a file an
+attacker can edit alongside the entry it describes vouches for nothing — which
+means either hashing the manifest itself (proving only that the LIST was not
+touched, not that the FILES still match it) or re-hashing the files against it
+anyway, at which point the manifest bought nothing a plain walk does not
+already give for free. The cost of walking the tree every time is bounded by a
+per-file memo (`memoizedFileDigest`, keyed on `size|mtime`, the same key
+`sha256File`'s single-entry memo already used): a resolution where nothing
+changed re-reads no file content at all, and a real tamper — one `_internal/`
+entry rewritten — pays for that entry's bytes only, not the whole tree. See
+the cost note further down for the measured numbers.
 
 The record lives in `globalState` rather than beside the binary so that dropping
 a file into the cache directory does not also grant control of the record, and
 because that is already this file's pattern for cross-activation state. Be clear
 about what it does and does not buy: it is **not** a defence against an attacker
 who already has write access to the user account — such an attacker can rewrite
-both. It detects corruption, partial writes, and replacement by anything that
-does not know to update the record.
+both. It detects corruption, partial writes, and replacement of ANY entry under
+`cacheDir` — the launcher or a `_internal/` sibling — by anything that does not
+know to update the record.
 
 A **missing** record is the one-time migration for binaries cached before this
 existed. It is treated as *not verifiable* and is **not** accepted-and-recorded
@@ -417,15 +482,22 @@ notice's only button answer "alpSdk.cliPath is set …" with an
 `openSettings → alpSdk.cliPath` button: two clicks from a verification refusal
 to the arm that is never verified.
 
-Cost, measured on a 3.2 MB binary (Windows, Node 26): 4.2 ms for the cold
-resolve including the hash. `resolveAlpBinaryForContext` memoizes per window,
-but `probeTanVersion` builds its own deps and runs on every state refresh
-(focus, save, settings edit, task start, terminal finish), so `sha256File`
-memoizes on `path|size|mtime`: 20 refreshes cost **0 additional reads and
-18.2 ms** with the memo versus **20 reads and 73.7 ms** without it. The memo's
-ceiling is stated where it lives — a rewrite preserving both size and mtime
-inside one window reuses the answer, which sits inside the limit the record
-already has.
+Cost, measured on a 3.2 MB single-file (raw-binary) install (Windows, Node 26):
+4.2 ms for the cold resolve including the hash. `resolveAlpBinaryForContext`
+memoizes per window, but `probeTanVersion` builds its own deps and runs on
+every state refresh (focus, save, settings edit, task start, terminal finish),
+so `sha256Tree` memoizes PER FILE on `size|mtime` (`memoizedFileDigest`, #464
+— the tree-covering successor to the single-entry `sha256File` memo this
+number was first measured against): 20 refreshes cost **0 additional reads
+and 18.2 ms** with the memo versus **20 reads and 73.7 ms** without it. For an
+archive install (onedir, `_internal/` populated) the walk itself
+(`readdirSync`/`statSync` per entry, no content read) adds a small, roughly
+linear-in-entry-count cost on TOP of that memoized figure; the content-hash
+cost stays the same 4.2 ms-per-3.2 MB shape and is paid per file only when
+that file's `size|mtime` actually changed, never for the whole tree on
+account of one entry. The memo's ceiling is stated where it lives — a rewrite
+preserving both size and mtime inside one window reuses the answer, which
+sits inside the limit the record already has.
 
 **TWO OF THE SIX ARMS ARE VERIFIED: `download` and `cached`** — the managed
 acquisition channel. The count is stated out loud because "the extension
@@ -449,7 +521,7 @@ be flattened into one; they are different statements:
   binary — that it is what Alp Lab published, or that anything checked it — and
   a `package.json` description already had to be corrected for exactly that. The
   house compound **`verified-native`** is the one carve-out and stays (it is used
-  throughout this file, `service.ts`, `models.ts` and CLAUDE.md): it names the
+  throughout this file, `service.ts` and `models.ts`): it names the
   format probe's verdict, "this is the native clap CLI and not the retired
   `alp`", which is the only claim `commandOnPath` makes. Do not read the noun as
   the adjective.
@@ -603,9 +675,10 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   `adapterCore.ts` (injected fs/net/process seams): `resolveAlpBinary` (downloads
   into globalStorage on demand) + `runAlp` (spawns `tan … --format json`, parses,
   classifies; spawn-ENOENT → graceful error outcome). `vscodeAdapter.ts`: real
-  https-redirect download of the raw binary + `chmod +x` (Unix) + `spawnSync`,
-  session-memoized (tan-cli ships a raw per-target binary, so there is no archive
-  to unpack).
+  https-redirect download of the binary + `chmod +x` (Unix) + `spawnSync`,
+  session-memoized (tan-cli shipped only a raw per-target binary at the time, so
+  there was no archive to unpack — `download.ts` gained an unpack step later,
+  for tan-cli#349's archived releases; see §5).
   17 unit tests (service + adapterCore). Not yet wired into commands (that's B2/B3).
 - **B2 — rewire the terminal actions first. ✅ done.** New `runAlpInTerminal()`
   (resolves the binary, opens a terminal, runs `tan …`; surfaces a one-click
@@ -635,9 +708,20 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   `loader.ts`). **Scope finding:** the debug-domain commands (`debugDoctor`,
   `debugPreflight`, …) probe **VS Code-host-only state** —
   `vscode.extensions.getExtension(...)` for installed debuggers — which the CLI
-  can't see (it assumes the marquee extensions present). Migrating them would
-  regress accuracy, so they **stay in-process** (they belong to the live/LSP
-  side of §4, see §4a). **sdk list ✅** — both release-fetchers (the SDK Manager
+  can't see. Migrating them would regress accuracy, so they **stay in-process**
+  (they belong to the live/LSP side of §4, see §4a).
+  **Correction (#376): that scope finding was truer of `debugPreflight` than of
+  `debugDoctor`.** The field-by-field map in issue #376 found the two in-process
+  reports shared five judgements (`workspaceRoot`, `boardYaml`, extension
+  presence, backend-on-PATH, host platform) — so migrating the WHOLE debug
+  domain as one unit would have left `tan` judging those five for
+  `alp.debugDoctor` while TypeScript judged the identical five for F5, the same
+  fork relocated rather than closed. `buildDoctorReport` (the in-process
+  doctor) is deleted rather than migrated; `alp.debugDoctor` and the doctor
+  parts of the troubleshooting panel and support bundle now consume plain
+  `tan doctor` directly (§4a). `buildDebugPreflightReport` is untouched and
+  still stays in-process — extension presence never moved. **sdk list ✅** —
+  both release-fetchers (the SDK Manager
   panel and the IDE Hub sidebar provider) now call `tan sdk list --format json`
   and post `data.releases` to the webview, replacing two copies of an in-process
   `listRemoteSdkReleases` + hand-rolled `https.get`. **B3 effectively complete:**
@@ -726,6 +810,27 @@ command. CLI surface:
   reads stdin (the extension passes `--non-interactive`), so nothing is lost by
   giving up the TTY — and the log plus verdict then survive the process, which
   in a terminal they did not. A short final envelope summary is optional.
+- A SUCCESSFUL `tan build`'s verdict toast carries a **"Show Result"** action
+  that opens the Build Plan panel (`alp.showBuildPlan`, #331), one click from
+  the notification that just told the customer the build finished. Two gates,
+  both narrow on purpose:
+  - **Which run.** `onDidFinishTerminalCommand` fires for every `runInTerminal`/
+    streamed run this extension dispatches, not only the build family —
+    bootstrap, the Zephyr SDK install, the native_sim Run, `tan image` /
+    `flash` / `clean` / `renode` all go through the same subscriber. "Show
+    Result" is gated to `BUILD_RUN_NAME` alone: the panel renders
+    `build/system-manifest.yaml`, and only `tan build` seeds/refreshes that
+    file — `tan image`/`flash`/`renode` never write it, and `tan clean`
+    actively **deletes** it. Offering the action on any of those would reveal
+    a panel with nothing to do with the run that just finished.
+  - **Which outcome.** Even for `tan build`, the action is SUCCESS-ONLY
+    (`code === 0`). A prior green build's `build/system-manifest.yaml` can
+    still be sitting there from an earlier run when a later one fails
+    mid-build, and the payload this panel reads carries no timestamp — so a
+    "Show Result" on a failure toast could present a stale, unrelated green
+    result as this run's outcome. The failure toast keeps its terminal/
+    channel reveal (the real error) and Run Doctor instead; the panel stays
+    reachable from the palette and status bar regardless.
 - **Prerequisites are platform-specific and beyond `bootstrap`.** `bootstrap`
   gets west + the Zephyr workspace + Zephyr Python reqs, but **not** the
   compiler toolchains above. So `tan build` runs a build-preflight (in `doctor`,

@@ -50,6 +50,18 @@ export interface LocalSdkEntry {
    *  is a path-semantics rule that belongs with the other path rules — not
    *  re-derived with `===` by each of the four surfaces that render a badge. */
   active?: boolean;
+  /** Only meaningful when `active` is true: WHY this entry is the active one.
+   *
+   *  `"pinned"` — the user pinned it (`alpSdk.path`, or "Use" / `tan sdk switch`
+   *  writing `.alp/sdk-path`). Deactivate has a pin to clear.
+   *
+   *  `"auto"` — nothing was pinned and resolution fell through to a guess (the
+   *  one SDK next to the workspace, or the newest install in ~/.alp/sdk). There
+   *  is NO pin, so "Active" overstates it and Deactivate would clear nothing and
+   *  change nothing on screen — which is exactly how it read as a broken button.
+   *  Surfaces render this as "Default (auto-detected)" and offer "Use" (which
+   *  pins it) instead of "Deactivate". */
+  activeSource?: "pinned" | "auto";
 }
 
 // ---------------------------------------------------------------------------

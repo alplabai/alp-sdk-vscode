@@ -13,8 +13,8 @@ import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
 import { samePath } from "@alp-sdk/core/paths";
 import { createDebugTroubleshootingPanelHtml } from "@alp-sdk/core/debug/panelHtml";
 import {
+  buildDebugDoctorSection,
   buildDebugPreflightReport,
-  buildDoctorReport,
   createDebugProfile,
   createGenerationTraceReport,
   createInspectReport,
@@ -29,8 +29,10 @@ import {
   collectRuntimeCapabilities,
   collectWorkspaceDebugContext,
   fileExists,
+  runDebugDoctor,
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
+import { readSvdPath } from "./project/vscodeAdapter";
 import {
   readLaunchJsonDocument,
   writeLaunchJsonDocument,
@@ -53,6 +55,7 @@ import { log, showOutput } from "./util";
 import { NotifyAction } from "./notify/models";
 import {
   isCancellation,
+  planCliOutcome,
   planFailure,
   planPrecondition,
   planSuccess,
@@ -128,19 +131,53 @@ async function inspectProjectState(): Promise<void> {
   await showJsonDocument(snapshot);
 }
 
-async function debugDoctor(): Promise<void> {
-  const targetKind = await pickTargetKind();
-  if (!targetKind) return;
-  const server = await pickServer(targetKind);
+/**
+ * `tan doctor` — "can this machine and project build and debug at all",
+ * target-agnostic (#376). No target/server QuickPicks: those pickers exist
+ * for `alp.debugPreflight`'s per-target readiness, which this command no
+ * longer drafts (`buildDoctorReport` and its `serverCompatibility` check are
+ * gone — see docs/EXTENSION_CLI_INTEGRATION.md §4a).
+ *
+ * A missing workspace or an unresolvable `tan` both end in exactly ONE
+ * message where the table used to render — never a second, in-process
+ * doctor.
+ */
+async function debugDoctor(
+  extensionContext: vscode.ExtensionContext,
+): Promise<void> {
   const context = collectWorkspaceDebugContext();
-  const summary = buildDoctorReport(
-    context,
-    { targetKind, server },
-    collectRuntimeCapabilities(),
+  if (!context.workspaceRoot) {
+    await notify(
+      planPrecondition("noWorkspace", { operation: "run the debug doctor" }),
+    );
+    return;
+  }
+
+  const { data, outcome } = await runDebugDoctor(
+    extensionContext,
+    context.workspaceRoot,
+    { interactive: true },
   );
-  log(`alp.debugDoctor: ran doctor for ${targetKind}/${server}`);
-  await showJsonDocument(summary);
-  if (summary.summary.fail > 0 || summary.summary.warn > 0) {
+  if (!data) {
+    // `planCliOutcome`, like every other CLI consumer in this repo
+    // (src/loader.ts, ideHub/sdkManagerMessages.ts, ideHub/buildPlanPanel.ts)
+    // — never a bare sentence built off `outcome.message` alone. It is what
+    // splits "tan was never installed" (an Install action) from "tan is
+    // there but broken" (Settings/Doctor), and offers Retry; a plain
+    // `planFailure` here was a buttonless dead end.
+    if (
+      (await notify(
+        planCliOutcome(outcome, { operation: "Running the debug doctor" }),
+      )) === "retry"
+    ) {
+      await debugDoctor(extensionContext);
+    }
+    return;
+  }
+
+  log("alp.debugDoctor: ran tan doctor");
+  await showJsonDocument(data);
+  if (data.summary.fail > 0 || data.summary.warn > 0) {
     showOutput();
   }
 }
@@ -236,11 +273,16 @@ async function writeLaunchProfile(
   // wrong VALUE — `--core m55_hp` against `--core m55_he` — is a valid command
   // that debugs the wrong core and reports nothing.
   const spec = { targetKind, server, coreId: slice?.core_id ?? null };
+  // Read ONCE and passed to both calls below (#340) — `readSvdPath` is the
+  // one `alpSdk.svdPath` reader (`./project/vscodeAdapter`), reused rather
+  // than opened a second time, and the preview/write pair must see the same
+  // value or the preview stops previewing the command that actually runs.
+  const svdPath = readSvdPath();
 
   const preview = await runDebugConfig(
     extensionContext,
     context.workspaceRoot,
-    debugConfigArgs(spec, { preview: true }),
+    debugConfigArgs(spec, { preview: true, svdPath }),
   );
   if (!preview) return null;
 
@@ -248,7 +290,7 @@ async function writeLaunchProfile(
   const written = await runDebugConfig(
     extensionContext,
     context.workspaceRoot,
-    debugConfigArgs(spec),
+    debugConfigArgs(spec, { svdPath }),
   );
   if (!written) return null;
 
@@ -352,12 +394,41 @@ async function runDebugConfig(
       (args.includes("--core") || args.includes("--pre-launch-task"))
         ? ` This extension requires tan ${SUPPORTED_CLI_VERSION} or newer; run "Alp: Update CLI" and retry.`
         : "";
+    // `--svd` only ever appears when `alpSdk.svdPath` is actually set
+    // (`debugConfigArgs` omits it on an empty/whitespace value), so this fires
+    // only for someone who configured it. tan-cli#214: an `--svd` naming an
+    // unreadable path is a HARD failure of the whole command — no
+    // launch.json at all, not even one missing the SVD key — so without this
+    // hint the symptom is indistinguishable from "debug is broken" (#340).
+    //
+    // Narrowed to `outcome.kind === "internal"` (exit 5) — driven against the
+    // pinned tan (`internal_failure`/`ExitCode::InternalFailure` in
+    // `crates/tan-cli/src/commands/debug_config.rs`), BOTH `--svd` failure
+    // modes (empty-after-trim, unreadable file) land there, and it is
+    // structurally disjoint from `skew`'s `"validation"` check above — so the
+    // two hints can never both fire for the same failure. That disjointness
+    // is what makes the wide "any failure while --svd is on the argv" version
+    // wrong rather than merely imprecise: a customer on a stale tan with a
+    // perfectly good `alpSdk.svdPath` who presses F5 gets exit 2 (`--svd`
+    // unrecognised) — `skew` correctly fires ("update tan"), and the WIDE svd
+    // hint fired too, offering an Open Settings button for a setting that was
+    // never the problem, with the wrong remedy the more actionable-looking
+    // one. Narrowing to `internal` suppresses it on that path.
+    const svdHint =
+      outcome.kind === "internal" && args.includes("--svd")
+        ? " If alpSdk.svdPath is set, check that it names a file that exists and is readable — tan refuses to write launch.json at all otherwise."
+        : "";
     await notify(
       planFailure({
         operation: "Alp: generating the debug configuration",
-        cause: `Alp: the debug configuration could not be generated.${skew}`,
+        cause: `Alp: the debug configuration could not be generated.${skew}${svdHint}`,
         detail: outcome.message,
-        actions: [{ id: "showOutput" }],
+        actions: [
+          { id: "showOutput" },
+          ...(svdHint
+            ? [{ id: "openSettings" as const, arg: "alpSdk.svdPath" }]
+            : []),
+        ],
       }),
     );
     return null;
@@ -633,6 +704,13 @@ async function previewMaintainedConfigName(
   // the tested function and leave this one behind. `runDebugConfig` returns
   // null on the resulting exit 2, which here means the rescue silently loses
   // the maintained config name mid-repair.
+  //
+  // No `svdPath` here on purpose (#340). This preview exists only to learn
+  // WHICH prefix the pinned tan writes — an arbitrary target/server pair
+  // stands in for the customer's real one — so coupling it to
+  // `alpSdk.svdPath` would let an unrelated bad path fail the orphan-rescue
+  // offer too, on a run that was never about the customer's own debug
+  // session.
   const preview = await runDebugConfig(
     context,
     workspaceRoot,
@@ -766,7 +844,9 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
   }
 }
 
-async function exportSupportBundle(): Promise<void> {
+async function exportSupportBundle(
+  extensionContext: vscode.ExtensionContext,
+): Promise<void> {
   const targetKind = await pickTargetKind();
   if (!targetKind) return;
   const server = await pickServer(targetKind);
@@ -805,7 +885,25 @@ async function exportSupportBundle(): Promise<void> {
     },
   );
 
-  const doctor = buildDoctorReport(context, { targetKind, server }, runtime);
+  // A customer exports this precisely when things are broken, i.e. exactly
+  // when `tan` may be unresolvable — so the bundle is still WRITTEN either
+  // way. `buildDebugDoctorSection` carries the resolver's own failure verbatim
+  // — message AND the raw detail behind it — rather than leaving `doctor`
+  // silently absent or reduced to a generic sentence (#376). This is a FILE,
+  // not a toast, so the detail (errno / resolver text) belongs in it.
+  const {
+    data: doctorData,
+    message: doctorMessage,
+    detail: doctorDetail,
+  } = await runDebugDoctor(extensionContext, context.workspaceRoot, {
+    interactive: true,
+  });
+  const doctor = buildDebugDoctorSection(
+    doctorData,
+    doctorMessage,
+    doctorDetail,
+  );
+
   const inspect = createInspectReport(context);
   const bundle = createSupportBundlePayload({
     generatedAt,
@@ -841,18 +939,29 @@ async function exportSupportBundle(): Promise<void> {
 
   if (
     !preflight.canLaunch ||
-    doctor.summary.fail > 0 ||
-    doctor.summary.warn > 0
+    doctor.kind === "unavailable" ||
+    doctor.data.summary.fail > 0 ||
+    doctor.data.summary.warn > 0
   ) {
     showOutput();
   }
 }
 
-async function openDebugTroubleshootingPanel(): Promise<void> {
+async function openDebugTroubleshootingPanel(
+  extensionContext: vscode.ExtensionContext,
+): Promise<void> {
   const targetKind = await pickTargetKind();
   if (!targetKind) return;
   const server = await pickServer(targetKind);
   const context = collectWorkspaceDebugContext();
+  if (!context.workspaceRoot) {
+    await notify(
+      planPrecondition("noWorkspace", {
+        operation: "open the troubleshooting panel",
+      }),
+    );
+    return;
+  }
   const runtime = collectRuntimeCapabilities();
   const generatedAt = new Date().toISOString();
 
@@ -878,7 +987,20 @@ async function openDebugTroubleshootingPanel(): Promise<void> {
     },
   );
 
-  const doctor = buildDoctorReport(context, { targetKind, server }, runtime);
+  // Channel-grade text, not a toast — the detail behind `doctorMessage`
+  // belongs on this panel too (#376).
+  const {
+    data: doctorData,
+    message: doctorMessage,
+    detail: doctorDetail,
+  } = await runDebugDoctor(extensionContext, context.workspaceRoot, {
+    interactive: true,
+  });
+  const doctor = buildDebugDoctorSection(
+    doctorData,
+    doctorMessage,
+    doctorDetail,
+  );
   const inspect = createInspectReport(context);
   const trace = createGenerationTraceReport(
     generatedAt,
@@ -982,7 +1104,9 @@ export function registerDebugCommands(
     vscode.commands.registerCommand("alp.inspectProjectState", () =>
       inspectProjectState(),
     ),
-    vscode.commands.registerCommand("alp.debugDoctor", () => debugDoctor()),
+    vscode.commands.registerCommand("alp.debugDoctor", () =>
+      debugDoctor(context),
+    ),
     vscode.commands.registerCommand("alp.debugPreflight", () =>
       debugPreflight(),
     ),
@@ -991,10 +1115,10 @@ export function registerDebugCommands(
     ),
     vscode.commands.registerCommand("alp.debug", () => startDebugging(context)),
     vscode.commands.registerCommand("alp.exportSupportBundle", () =>
-      exportSupportBundle(),
+      exportSupportBundle(context),
     ),
     vscode.commands.registerCommand("alp.openDebugTroubleshootingPanel", () =>
-      openDebugTroubleshootingPanel(),
+      openDebugTroubleshootingPanel(context),
     ),
   ];
 }

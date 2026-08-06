@@ -27,6 +27,7 @@ import * as os from "os";
 import * as vscode from "vscode";
 
 import { cliSkew, SUPPORTED_CLI_VERSION } from "../alpCli/service";
+import { runDoctor } from "../alpCli/doctor";
 import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   venvWestInTopdir,
@@ -169,41 +170,6 @@ async function latestSdkTag(
     fetchedAt: Date.now(),
   } satisfies LatestSdkCache);
   return tag;
-}
-
-// ── The doctor envelope ──────────────────────────────────────────────────────
-
-/**
- * Boundary check on the untrusted `data` payload before the planner reads it.
- *
- * Deliberately does NOT look at `missingPrerequisites`: this narrows the value,
- * it never rebuilds it, so the key's ABSENCE survives into the planner — which
- * is what its feature detection turns on. The pinned tan v0.4.0 DOES emit the
- * key, so that detection now resolves to the real data on a default install;
- * the absent branch remains live for an older binary pointed at through
- * `alpSdk.cliPath`, which is why the key is still passed through untouched
- * rather than defaulted here.
- */
-function isDoctorEnvelopeData(value: unknown): value is DoctorEnvelopeData {
-  if (typeof value !== "object" || value === null) return false;
-  const data = value as Record<string, unknown>;
-  const summary = data.summary as Record<string, unknown> | undefined;
-  if (!Array.isArray(data.checks) || !summary) return false;
-  if (
-    typeof summary.pass !== "number" ||
-    typeof summary.warn !== "number" ||
-    typeof summary.fail !== "number"
-  ) {
-    return false;
-  }
-  return data.checks.every((check) => {
-    const entry = check as Record<string, unknown> | null;
-    return (
-      typeof entry?.name === "string" &&
-      typeof entry.status === "string" &&
-      typeof entry.detail === "string"
-    );
-  });
 }
 
 // ── Host-known cells ─────────────────────────────────────────────────────────
@@ -475,46 +441,23 @@ function mergePrerequisites(
   return [...byTool.values()];
 }
 
-/**
- * Run one doctor invocation and return its `data`, or `null` when it produced
- * nothing this planner can read. The failure is already in the channel
- * (`runAlpCommand` logs the exit code and stderr); `message` is the sentence the
- * panel shows when NOTHING usable came back at all.
- */
-async function runDoctor(
-  context: vscode.ExtensionContext,
-  args: string[],
-  cwd: string,
-  signal: AbortSignal | undefined,
-  // `false` for the panel's own re-derives (window focus, settings edit,
-  // bootstrap start/end — DependencyPanel's `onStateChange`) and for the
-  // initial `ready` open, so none of those pops ADR 0021's consent modal out
-  // of nowhere. `true` only for the explicit Refresh click
-  // (`refreshDependencies`, `deps/panel.ts`), which already carries this
-  // distinction as `refreshLatestSdk` — threaded through here under its own
-  // name so a Refresh click is not silently refused with consent unanswered.
-  // Note what this is NOT the remedy for: the `tan` row has no action
-  // (`action: null`, `packages/alp-core/src/deps/planner.ts`) — its own
-  // install/update path lives in `src/alpCli/`, not a row button, so a
-  // declined/unanswered consent here does not leave a dangling button. It
-  // leaves NO table at all: `build.data` is null, so `buildDependencyReport`
-  // returns `report: null` and the panel shows its inline error text instead.
-  interactive: boolean,
-): Promise<{ data: DoctorEnvelopeData | null; message: string }> {
-  const { outcome } = await runAlpCommand(context, args, cwd, {
-    signal,
-    interactive,
-  });
-  const data = outcome.envelope?.data;
-  if (!outcome.envelope || !isDoctorEnvelopeData(data)) {
-    log(
-      `[deps] \`tan ${args.join(" ")}\` produced no usable envelope: ` +
-        outcome.message,
-    );
-    return { data: null, message: outcome.message };
-  }
-  return { data, message: outcome.message };
-}
+// The shared `runDoctor` spawn (`../alpCli/doctor`, #376) takes `interactive`
+// as its last argument:
+//
+// `false` for the panel's own re-derives (window focus, settings edit,
+// bootstrap start/end — DependencyPanel's `onStateChange`) and for the
+// initial `ready` open, so none of those pops ADR 0021's consent modal out of
+// nowhere. `true` only for the explicit Refresh click (`refreshDependencies`,
+// `deps/panel.ts`), which already carries this distinction as
+// `refreshLatestSdk` — threaded through below under its own name so a Refresh
+// click is not silently refused with consent unanswered.
+//
+// Note what this is NOT the remedy for: the `tan` row has no action
+// (`action: null`, `packages/alp-core/src/deps/planner.ts`) — its own
+// install/update path lives in `src/alpCli/`, not a row button, so a
+// declined/unanswered consent here does not leave a dangling button. It
+// leaves NO table at all: `build.data` is null, so `buildDependencyReport`
+// returns `report: null` and the panel shows its inline error text instead.
 
 // ── The report ───────────────────────────────────────────────────────────────
 

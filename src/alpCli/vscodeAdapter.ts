@@ -29,6 +29,7 @@ import {
   ProxyConfig,
   ProxyError,
   downloadSeam,
+  resolveAssetSeam,
 } from "./download";
 import {
   BinaryResolutionInput,
@@ -48,6 +49,7 @@ import {
   classifyUnavailable,
   cliSkew,
   decideBinarySource,
+  describeReleaseAsset,
   isCliBehind,
   isNativeTanVersionOutput,
   isUnverifiableCache,
@@ -381,46 +383,151 @@ const PATH_NOTICED_KEY = "alp.tanUnverifiedPathNoticed";
  *  setting `alpSdk.tanCliDownloadConsent` to `allow`. */
 const DOWNLOAD_CONSENT_KEY = "alp.tanCliDownloadConsentAnswer";
 
-/** Last `sha256File` answer, keyed by path + size + mtime.
- *
- *  MEASURED, not guessed: hashing the 3.2 MB `tan` binary (readFileSync +
- *  sha256) takes ~2.5-3.2 ms on this machine, and `statSync` ~0.08 ms. Without
- *  the memo that cost is per STATE REFRESH, not per-window:
- *  `resolveAlpBinaryForContext` memoizes into `resolved`, but `probeTanVersion`
- *  builds its OWN deps and hands them to `readResolvedCliVersion`, which calls
- *  `resolveAlpBinary` directly — so that path never sees the `resolved` memo,
- *  and it runs on every state refresh: window focus, board.yaml save, BOOTSTRAP
- *  task start (`src/extension.ts` filters `onDidStartTask` on
- *  `def.run === BOOTSTRAP_RUN_NAME`, so a user's own tasks do not sweep),
- *  terminal finish, any `alpSdk` settings edit.
- *  That is a synchronous multi-millisecond hash on the extension-host main
- *  thread per focus event.
- *
- *  ponytail: size + mtime, so a rewrite that preserves BOTH within one window
- *  reuses the memo. That is a real ceiling and it is stated rather than papered
- *  over — though it is inside the limit the record itself already has (an
- *  attacker who can rewrite the binary and forge its mtime can equally rewrite
- *  the globalState record). Upgrade path if that changes: drop the memo and hash
- *  per resolution, or key it on the file handle. */
-let hashMemo: { key: string; digest: string } | undefined;
+/** Per-file content digest, keyed by absolute path + size + mtime — the same
+ *  memo key `sha256File`'s single-entry version used (see the cost note on
+ *  `sha256Tree` below for the measurement), now one entry PER FILE in the
+ *  installed tree rather than one entry for the whole extension. A file whose
+ *  size+mtime are unchanged since the last check is never re-read; one that
+ *  changed pays only for ITS OWN bytes, not the rest of the tree. */
+const fileDigestMemo = new Map<string, { key: string; digest: string }>();
 
-/** Lowercase hex sha256 of `filePath`, or null when it can't be read (missing,
- *  locked, a directory). Null is a REFUSAL at the caller, never a pass. */
-function sha256File(filePath: string): string | null {
+/** sha256 of `absPath`'s content, memoized on `absPath|size|mtime`. Null when
+ *  it can't be read (missing, locked, a directory). */
+function memoizedFileDigest(
+  absPath: string,
+  size: number,
+  mtimeMs: number,
+): string | null {
+  const key = `${size}|${mtimeMs}`;
+  const cached = fileDigestMemo.get(absPath);
+  if (cached?.key === key) {
+    return cached.digest;
+  }
+  let digest: string;
   try {
-    const stat = fs.statSync(filePath);
-    const key = `${filePath}|${stat.size}|${stat.mtimeMs}`;
-    if (hashMemo?.key === key) {
-      return hashMemo.digest;
-    }
-    const digest = createHash("sha256")
-      .update(fs.readFileSync(filePath))
+    digest = createHash("sha256")
+      .update(fs.readFileSync(absPath))
       .digest("hex");
-    hashMemo = { key, digest };
-    return digest;
   } catch {
     return null;
   }
+  fileDigestMemo.set(absPath, { key, digest });
+  return digest;
+}
+
+/** Every file under `dir`, as `{ rel, abs, size, mtimeMs }`, breadth-first.
+ *  `.tmp` / `.old` entries are skipped, but only at the TOP level of `dir` —
+ *  the exact scope `sweepLeftovers` (download.ts) already treats as
+ *  transient: a download racing a verification (the `.old` a `moveAside`
+ *  rename-aside leaves, or the `.tmp` staging dir an in-progress archive
+ *  extract uses) must not flip the tree digest on its own, and every one of
+ *  those markers is a TOP-LEVEL sibling of the launcher by construction —
+ *  never something legitimately named that way one level deeper, inside
+ *  `_internal/`. */
+function walkTree(
+  dir: string,
+): { rel: string; abs: string; size: number; mtimeMs: number }[] {
+  const out: { rel: string; abs: string; size: number; mtimeMs: number }[] = [];
+  const stack: string[] = [""];
+  while (stack.length > 0) {
+    const relDir = stack.pop() as string;
+    const absDir = path.join(dir, relDir);
+    for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+      if (
+        relDir === "" &&
+        (entry.name.endsWith(".tmp") || entry.name.endsWith(".old"))
+      ) {
+        continue;
+      }
+      const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
+      const abs = path.join(absDir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(rel);
+      } else if (entry.isFile()) {
+        const stat = fs.statSync(abs);
+        out.push({ rel, abs, size: stat.size, mtimeMs: stat.mtimeMs });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Lowercase hex sha256 over EVERY file under `dir`, combined into ONE digest
+ * that changes if any entry's bytes change or the SET of entries changes —
+ * an entry ADDED under `_internal/` (a shadowing DLL, an extra `.pth` file)
+ * fails verification exactly like a MODIFIED one, because each entry's
+ * relative PATH is folded into the digest, not only its content. Null when
+ * `dir` cannot be listed (missing, not a directory) or is empty.
+ *
+ * #464: a PyInstaller onedir install (tan-cli#349) is not one file. Before
+ * this, `resolveAlpBinary`'s "cached" arm hashed the LAUNCHER alone — the
+ * bootloader stub. libpython, every native extension module and all the
+ * Python bytecode land in a `_internal/` sibling `installArchive`
+ * (download.ts) moves in beside it, and none of that was ever hashed: a
+ * rewrite of `_internal/tan/commands/build.pyc` after install matched the
+ * recorded (launcher-only) digest forever, and the extension spawned it
+ * having reported the resolution as verified.
+ *
+ * `dir` is `cacheDir` itself — storage this extension owns exclusively (see
+ * `sweepLeftovers` in download.ts) — walked fresh on every call rather than
+ * checked against a persisted list of "what `installArchive` said it wrote".
+ * That is what makes this correct for BOTH install shapes (a raw install's
+ * tree is the one launcher; an archive install's tree is the launcher plus
+ * `_internal/`) with no second source of truth to keep in sync with
+ * `installArchive`'s unwrap logic, and it is also the answer to the
+ * question the manifest alternative raises:
+ *
+ * A MANIFEST OF PER-FILE DIGESTS, written once at install time and merely
+ * re-read on every resolution, was the other option and was rejected. That
+ * manifest needs its OWN integrity check — a file an attacker can edit
+ * alongside the entry it describes vouches for nothing — which means either
+ * hashing the manifest itself (proving only that the LIST was not touched,
+ * not that the FILES still match what it claims) or re-hashing the files
+ * against it anyway, at which point the manifest has bought nothing this
+ * walk does not already give for free. Recomputing the digest from the live
+ * filesystem has no second artifact whose own trust has to be argued for.
+ *
+ * COST, measured rather than assumed (see `EXTENSION_CLI_INTEGRATION.md`
+ * §5's cost note for the numbers): the expensive part — reading and hashing
+ * file CONTENT — is paid once per file, memoized by `memoizedFileDigest` on
+ * that file's own `size|mtime`, so a resolution where nothing on disk
+ * changed since the last check re-reads NOTHING; it pays only the cheap part
+ * (`walkTree`'s `readdirSync`/`statSync`, no content read). A real tamper —
+ * one `_internal/` entry rewritten — pays for THAT ENTRY's bytes only, not
+ * the whole ~15 MB tree, which is a real improvement over a single
+ * whole-tree memo keyed on one combined signature (the alternative this
+ * function does NOT use): that design would force a full re-hash on ANY
+ * change anywhere in the tree, where per-file memoization pays only for what
+ * actually moved.
+ */
+function sha256Tree(dir: string): string | null {
+  let entries: ReturnType<typeof walkTree>;
+  try {
+    entries = walkTree(dir);
+  } catch {
+    return null;
+  }
+  if (entries.length === 0) {
+    // Missing/empty verifies nothing — the same refusal shape the old
+    // single-file `sha256File` gave for "can't be read".
+    return null;
+  }
+  entries.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  const tree = createHash("sha256");
+  for (const entry of entries) {
+    const digest = memoizedFileDigest(entry.abs, entry.size, entry.mtimeMs);
+    if (digest === null) {
+      // Listed a moment ago, unreadable now (removed, locked mid-walk) —
+      // refuse rather than silently hash a tree that is not the one on disk.
+      return null;
+    }
+    tree.update(entry.rel);
+    tree.update("\0");
+    tree.update(digest);
+    tree.update("\n");
+  }
+  return tree.digest("hex");
 }
 
 /** Best-effort human-readable size of a just-downloaded file, for the transfer
@@ -857,9 +964,16 @@ function buildResolveDeps(
     // `Module._load` stub.) Settings are read at call time (see
     // `proxySettings`), so the seam's signature carries only what the caller
     // knows.
+    // #463: resolves WHICH of `asset.candidates` this pinned release actually
+    // published (from its own checksums.txt) before `download` ever fetches
+    // anything — see `ResolveDeps.resolveAsset`'s doc in adapterCore.ts. Same
+    // `proxySettings` reader as `download` below, for the identical reason:
+    // both are network calls this seam's caller must be able to route through
+    // a corporate proxy.
+    resolveAsset: resolveAssetSeam(proxySettings),
     download: downloadSeam(proxySettings),
     chmodExec: (p) => fs.chmodSync(p, 0o755),
-    sha256File,
+    sha256Tree,
     // `globalState`, not a sidecar in `cacheDir` — see
     // `ResolveDeps.recordedCachedDigest` for why the record deliberately does
     // not live next to the thing it vouches for.
@@ -1005,13 +1119,25 @@ async function ensureFreshInstallConsent(
   if (decision === "allow") return true;
   if (decision === "deny") return false;
 
-  // The itemised disclosure ADR 0021's Tier A rule requires: artifact,
-  // source, size, licence. `asset.url` is the SAME url `downloadCli` is about
-  // to fetch (this function is called with it, never a re-derived one), so the
-  // dialog can never name a different release than the one that runs. Size is
-  // genuinely unknown here — `ReleaseAsset` carries no content-length, and
-  // HEADing the URL to learn one would itself be network activity before the
-  // answer, which requirement 4 forbids — so it says so rather than invent a
+  // The itemised disclosure ADR 0021 states for a Tier A consent screen:
+  // artifact, source, size, licence (the ADR's own words are "three tiers,
+  // one consent screen" plus that field list — not a numbered requirement 4;
+  // "install after one consent click" is the ADR's Tier A rule, and doing
+  // NO network activity before the click is this repo's own reading of what
+  // "one click" has to mean, stated here rather than cited to text the ADR
+  // does not contain). `asset` is the SAME `ReleaseAsset` `downloadCli` is
+  // about to resolve from (this function is called with it, never a
+  // re-derived one), so the dialog can never name a different release than
+  // the one that runs — but it names EVERY candidate name rather than one
+  // resolved URL: #463's fix is that WHICH candidate this release actually
+  // published is only knowable by fetching checksums.txt, and this repo's own
+  // no-network-before-consent rule (above) forbids this dialog from doing
+  // that fetch itself ahead of the answer. `describeReleaseAsset` is exactly
+  // that — every possible name, resolved to one only once consent is granted
+  // and `downloadCli` runs.
+  // Size is genuinely unknown here too — `ReleaseAsset` carries no
+  // content-length, and HEADing the URL to learn one would be the same
+  // pre-consent network activity — so it says so rather than invent a
   // number. Licence is tan-cli's own (github.com/alplabai/tan-cli, Apache
   // License 2.0), not this extension's — the two repos could diverge and this
   // string must track the one actually being downloaded.
@@ -1022,7 +1148,9 @@ async function ensureFreshInstallConsent(
         message: `Alp: download the tan CLI (v${SUPPORTED_CLI_VERSION})?`,
         modalDetail:
           `Artifact: tan v${SUPPORTED_CLI_VERSION} (the build/validate command-line tool)\n` +
-          `Source: ${asset.url}\n` +
+          `Source: https://github.com/alplabai/tan-cli/releases/tag/${asset.tag} ` +
+          `(${describeReleaseAsset(asset)} — the exact asset resolved from ` +
+          "that release's checksums.txt at download time)\n" +
           "Size: not known before the download starts (this dialog fetches " +
           "nothing itself, so the size on the release page is the only " +
           "figure available in advance)\n" +
@@ -1277,7 +1405,7 @@ export async function ensureTanCliProvisioned(
           controller.abort();
         });
         try {
-          log(`[cli] downloading tan CLI: ${asset.url}`);
+          log(`[cli] downloading tan CLI: ${describeReleaseAsset(asset)}`);
           await downloadCli(deps, controller.signal);
           log(
             `[cli] tan CLI downloaded (${downloadedBytes(deps.cachedBinaryPath)}) to ${deps.cachedBinaryPath}`,
@@ -1939,7 +2067,7 @@ export async function updateAlpCli(
         try {
           const asset = releaseAssetForTarget(deps.platform, deps.arch);
           log(
-            `[cli] downloading tan CLI ${SUPPORTED_CLI_VERSION}: ${asset?.url ?? "unknown asset"}`,
+            `[cli] downloading tan CLI ${SUPPORTED_CLI_VERSION}: ${asset ? describeReleaseAsset(asset) : "unknown asset"}`,
           );
           await downloadCli(deps, controller.signal);
           log(
@@ -2359,9 +2487,11 @@ function loginShellInvocation(
  * Run a `tan` command with its output streamed live into the "Alp SDK" output
  * channel (channel mode). Unlike terminal mode the log PERSISTS after the
  * process exits — the channel does not die with the command, so the outcome and
- * full log stay visible. Forces `--no-color` (the channel renders plain text)
- * and `--non-interactive` (no TTY to answer prompts), so this is for the
- * orchestrator commands that don't need a live console: build/flash/image/clean.
+ * full log stay visible. The child gets no TTY, which is what keeps the output
+ * plain and the run non-interactive (it used to pass `--no-color` and
+ * `--non-interactive` for this; tan v0.5.0 deferred both — see `streamRun`), so
+ * this is for the orchestrator commands that don't need a live console:
+ * build/flash/image/clean.
  * Flash matters most here — its per-slice failure reasons (e.g. "backend
  * zephyr_west_flash needs west on PATH") used to vanish with the dying terminal,
  * leaving only "failed to launch". Renode streams for the same reason: its
@@ -2444,7 +2574,22 @@ async function streamRun(
     void surfaceResolutionError(error, options.name);
     return;
   }
-  const finalArgs = [...withSdkRoot(args), "--no-color", "--non-interactive"];
+  // No `--no-color` / `--non-interactive` appended. tan v0.5.0 deferred BOTH
+  // (tan-cli#427) and `tan build` refuses them outright — "error: `tan build
+  // --no-color` is deferred and not available in this build" on stderr, exit 1,
+  // before any slice runs. Since the v0.5.1 pin that made every streamed
+  // command dead on arrival: build, image, flash, clean, renode, and the Build
+  // Plan panel's two buttons.
+  //
+  // Neither flag is needed here. The child is spawned WITHOUT a TTY, and tan
+  // emits plain text on a pipe — measured on the pinned binary, `tan doctor`
+  // redirected to a file contains zero ESC bytes — so the channel gets the same
+  // output `--no-color` used to force. Interactivity is moot for the same
+  // reason: a build that could prompt has no terminal to prompt on, and this
+  // build's one prompt source (auto-bootstrap) is deferred as well
+  // (`--no-auto-bootstrap  Deferred, not implemented in this build`).
+  // `runAlpInTerminal` still owns anything that genuinely needs a TTY.
+  const finalArgs = withSdkRoot(args);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (channel: ${options.name})`,
   );

@@ -10,10 +10,17 @@ const {
 const { noPrebuiltMessage } = require("../out/alpCli/service.js");
 
 function baseDeps(overrides = {}) {
+  const cachedBinaryPath = overrides.cachedBinaryPath ?? "/cache/cli/tan";
   const existing = new Set(overrides.existing ?? []);
-  // What `sha256File` reports per path. A file with no entry hashes to a stable
-  // value derived from its path, so a download always yields SOMETHING to
-  // record; a test corrupts a file by overriding its entry (#386).
+  // What `sha256Tree` reports per path. A file with no entry hashes to a
+  // stable value derived from its path, so a download always yields
+  // SOMETHING to record; a test corrupts a file by overriding its entry
+  // (#386). Keyed by `cachedBinaryPath` and NOT by the `dir` argument
+  // `sha256Tree` is actually called with (#464 moved the real seam from
+  // "hash this file" to "hash this directory's tree") — these unit tests
+  // drive `resolveAlpBinary`/`downloadCli`'s LADDER and CHECKSUM logic, never
+  // a multi-entry tree, so the mock stays a single-file stand-in rather than
+  // a real (and here pointless) directory walk.
   const digests = new Map(Object.entries(overrides.digests ?? {}));
   const hashOf = (p) =>
     digests.get(p) ?? (existing.has(p) ? `sha256(${p})` : null);
@@ -32,7 +39,7 @@ function baseDeps(overrides = {}) {
     platform: "linux",
     arch: "x64",
     cacheDir: "/cache/cli",
-    cachedBinaryPath: "/cache/cli/tan",
+    cachedBinaryPath,
     bundledBinaryPath: "/ext/bin/tan",
     bundledExists: false,
     fileExists: (p) => existing.has(p),
@@ -40,6 +47,11 @@ function baseDeps(overrides = {}) {
     ensureDir: () => {
       calls.ensureDir++;
     },
+    // #463: picks the RAW candidate by default (candidates[0] — see
+    // `releaseAssetForTarget`), matching what every release through
+    // v0.5.0-rc4 actually publishes. A row that wants to drive the ARCHIVE
+    // candidate instead overrides this via `overrides`.
+    resolveAsset: async (candidates) => candidates[0],
     // tan-cli ships a RAW binary: a successful download writes it straight to
     // the cached binary path (no archive, no extract step).
     download: async (_url, destFile, _signal, verify) => {
@@ -50,7 +62,7 @@ function baseDeps(overrides = {}) {
     chmodExec: () => {
       calls.chmod++;
     },
-    sha256File: hashOf,
+    sha256Tree: (_dir) => hashOf(cachedBinaryPath),
     recordedCachedDigest: () => recorded,
     recordCachedDigest: async (digest) => {
       recorded = digest;
@@ -155,6 +167,30 @@ test("resolveAlpBinary: the download is handed the checksum spec for the SAME re
   assert.ok(calls.verify.checksumsUrl.includes(tag), calls.verify.checksumsUrl);
 });
 
+test("resolveAlpBinary: downloadCli downloads the candidate resolveAsset RETURNED, not candidates[0] (#465 finding 1)", async () => {
+  // Proven to fail against the pre-fix code: reverting downloadCli's
+  // `const resolved = await deps.resolveAsset(...)` back to
+  // `asset.candidates[0]` left the WHOLE suite green, because every OTHER row
+  // in this file (and in cachedVerification/aheadWarning/
+  // preferGlobalCliStaleLoop) stubs `resolveAsset` as `async (c) => c[0]` —
+  // so "downloadCli called resolveAsset and got candidates[0]" and
+  // "downloadCli never called it and used candidates[0] directly" are
+  // indistinguishable there. This row's stub returns the ARCHIVE candidate
+  // (`candidates[1]`), which `candidates[0]` never is, so a `downloadCli`
+  // that stopped awaiting `deps.resolveAsset` would still hand `download`
+  // the RAW name and this assertion would catch it.
+  const { deps, calls } = baseDeps({
+    resolveAsset: async (candidates) => candidates[1],
+  });
+  await resolveAlpBinary(deps);
+  assert.equal(calls.download, 1);
+  assert.equal(
+    calls.verify.assetName,
+    "tan-x86_64-unknown-linux-gnu.tar.gz",
+    "downloadCli downloaded candidates[0] instead of what resolveAsset resolved",
+  );
+});
+
 // ── consent gate (finding 1: a stale un-digested cache must not bypass it) ──
 
 test("resolveAlpBinary: an un-digested cache with nothing on PATH is STILL gated on consent (deny is honoured)", async () => {
@@ -227,7 +263,7 @@ test("resolveAlpBinary: throws when the download leaves nothing to hash", async 
   // (#386), so this refuses now rather than installing a dead end.
   await assert.rejects(
     () => resolveAlpBinary(deps),
-    /did not produce a binary that could be read back/,
+    /did not produce an installed tree that could be read back/,
   );
 });
 

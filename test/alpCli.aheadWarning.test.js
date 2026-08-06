@@ -105,10 +105,16 @@ async function activate({ installed, globalState, source = "cached" }) {
       },
       downloadCli: async () => {},
     },
-    // `downloadSeam` is a FACTORY: the adapter calls it once at
-    // `buildResolveDeps` time to build the `ResolveDeps.download` seam, so the
-    // stub has to return a function, not be one.
-    "./download": { downloadSeam: () => async () => {} },
+    // `downloadSeam`/`resolveAssetSeam` are FACTORIES: the adapter calls each
+    // once at `buildResolveDeps` time to build the `ResolveDeps.download` /
+    // `.resolveAsset` seams, so the stubs have to return a function, not be
+    // one. Neither is ever invoked by `checkCliVersion` (the thing under
+    // test here never downloads), but `buildResolveDeps` calls both
+    // factories unconditionally while assembling `ResolveDeps`.
+    "./download": {
+      downloadSeam: () => async () => {},
+      resolveAssetSeam: () => async (candidates) => candidates[0],
+    },
     "../notify/vscodeAdapter": {
       notify: async (plan) => {
         plans.push(plan);

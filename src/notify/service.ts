@@ -424,21 +424,41 @@ export function planPrecondition(
 }
 
 /**
- * Transient success. ALWAYS the status bar — a success the user must dismiss
- * is a cost with no information: the thing that succeeded is already on
- * screen (a document opened, a panel refreshed, a terminal still showing its
- * own output).
+ * Transient success. The status bar by default — a success the user must
+ * dismiss is a cost with no information: the thing that succeeded is already
+ * on screen (a document opened, a panel refreshed, a terminal still showing
+ * its own output).
+ *
+ * A caller that passes `actions` (site-specific extras, the same convention
+ * `planFailure`'s `actions` and `planPrecondition`'s `ctx.extraActions`
+ * already use) gets a toast instead: the presenter's `statusBar` branch calls
+ * `vscode.window.setStatusBarMessage`, which renders no buttons, so a plan
+ * that actually has something worth a click needs the channel that can show
+ * it. #331's "Show Result" (reveal the Build Plan panel from a build-finish
+ * success) is the first caller.
+ *
+ * `timeoutMs` and `actions` are independent options that MAY be passed
+ * together, but only one of them ever does anything on a given plan: the
+ * presenter reads `timeoutMs` only on its `statusBar` branch
+ * (`vscode.window.setStatusBarMessage(message, timeoutMs ?? 5000)`), which is
+ * exactly the branch a non-empty `actions` steers away from — so a caller
+ * combining both gets an actionable toast that never auto-dismisses, with
+ * `timeoutMs` silently unused. Not worth a union: no caller does this today,
+ * and the two options genuinely don't interact once the channel is fixed —
+ * this note exists so a future combined caller isn't left debugging why its
+ * timeout was ignored.
  */
 export function planSuccess(
   message: string,
-  options?: { timeoutMs?: number; detail?: string },
+  options?: { timeoutMs?: number; detail?: string; actions?: NotifyAction[] },
 ): NotificationPlan {
+  const actions = options?.actions ?? [];
   return finalize({
     severity: "info",
-    channel: "statusBar",
+    channel: actions.length > 0 ? "toast" : "statusBar",
     message,
     detail: options?.detail,
-    actions: [],
+    actions,
     timeoutMs: options?.timeoutMs,
   });
 }

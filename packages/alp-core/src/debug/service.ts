@@ -6,7 +6,7 @@ import { toPosix } from "../paths";
 import {
   DebugAdapterKind,
   DebugConfigurationGrade,
-  DebugDoctorRequest,
+  DebugDoctorSection,
   DebugGenerationTraceDecision,
   DebugGenerationTraceReport,
   DebugInspectReport,
@@ -20,11 +20,10 @@ import {
   DebugTargetChoice,
   DebugTargetKind,
   DebugWorkspaceContext,
-  DoctorCheck,
-  DoctorReport,
   PreflightCheck,
   PreflightStatus,
 } from "./models";
+import type { DoctorEnvelopeData } from "../cli/doctorEnvelope";
 import { ManifestSlice } from "../systemManifest/models";
 
 export interface DebugPreflightDependencies {
@@ -145,7 +144,7 @@ export function createSupportBundlePayload(input: {
   inspect: DebugInspectReport;
   preflight?: DebugPreflightReport;
   trace?: DebugGenerationTraceReport;
-  doctor?: DoctorReport;
+  doctor?: DebugDoctorSection;
   notes?: string[];
 }): DebugSupportBundlePayload {
   return {
@@ -172,16 +171,54 @@ export function createSupportBundlePayload(input: {
           decisions: input.trace.decisions.map((decision) => ({ ...decision })),
         }
       : undefined,
-    doctor: input.doctor
-      ? {
-          ...input.doctor,
-          summary: { ...input.doctor.summary },
-          checks: input.doctor.checks.map((check) => ({ ...check })),
-          nextSteps: [...input.doctor.nextSteps],
-        }
-      : undefined,
+    doctor: input.doctor ? copyDoctorSection(input.doctor) : undefined,
     notes: input.notes ? [...input.notes] : [],
   };
+}
+
+function copyDoctorSection(doctor: DebugDoctorSection): DebugDoctorSection {
+  if (doctor.kind === "unavailable") {
+    return { ...doctor };
+  }
+  return {
+    kind: "envelope",
+    data: {
+      ...doctor.data,
+      summary: { ...doctor.data.summary },
+      checks: doctor.data.checks.map((check) => ({ ...check })),
+    },
+  };
+}
+
+/**
+ * Assemble the doctor half of a debug report/bundle from one `tan doctor`
+ * spawn's result (#376) — `data` verbatim on success (see `DebugDoctorSection`
+ * for what "verbatim" protects), or the resolver's own message carried whole
+ * when tan could not be resolved or run.
+ *
+ * `unavailableDetail` is `CliOutcome.unavailable.detail` — the raw errno /
+ * resolver text behind `unavailableMessage`. Callers that write it to a FILE
+ * (the support bundle) or a PANEL (channel-grade text) pass it through; a
+ * caller that shows a TOAST (`alp.debugDoctor`'s degraded path) must not —
+ * see `DebugDoctorSection`'s own doc for why.
+ *
+ * Never a second in-process doctor: an unavailable run becomes ONE message
+ * (plus, where the caller allows it, the detail behind it) — not a rebuilt
+ * check list. See the callers in `src/debug.ts`.
+ */
+export function buildDebugDoctorSection(
+  data: DoctorEnvelopeData | null,
+  unavailableMessage: string,
+  unavailableDetail?: string,
+): DebugDoctorSection {
+  if (data) return { kind: "envelope", data };
+  return unavailableDetail
+    ? {
+        kind: "unavailable",
+        error: unavailableMessage,
+        detail: unavailableDetail,
+      }
+    : { kind: "unavailable", error: unavailableMessage };
 }
 
 export function serializeInspectReport(report: DebugInspectReport): string {
@@ -402,126 +439,6 @@ function placeholderFix(targetKind: DebugTargetKind, key: string): string {
   }
 }
 
-export function buildDoctorReport(
-  context: DebugWorkspaceContext,
-  request: DebugDoctorRequest,
-  runtime: DebugRuntimeCapabilities,
-): DoctorReport {
-  const checks: DoctorCheck[] = [
-    {
-      name: "workspaceRoot",
-      status: context.workspaceRoot ? "pass" : "fail",
-      detail: context.workspaceRoot ?? "No workspace folder is open.",
-      fix: context.workspaceRoot
-        ? undefined
-        : "Open a workspace containing an Alp project.",
-    },
-    {
-      name: "sdkRoot",
-      status: context.sdkRoot ? "pass" : "fail",
-      detail:
-        context.sdkRoot ??
-        "The extension could not resolve an alp-sdk checkout.",
-      fix: context.sdkRoot
-        ? undefined
-        : "Configure alpSdk.path or open a workspace near an alp-sdk checkout.",
-    },
-    {
-      name: "boardYaml",
-      status: context.boardYamlExists ? "pass" : "fail",
-      detail: context.boardYamlPath ?? "board.yaml path is unresolved.",
-      fix: context.boardYamlExists
-        ? undefined
-        : "Create board.yaml or configure alpSdk.boardYamlPath.",
-    },
-    {
-      name: "python",
-      status: runtime.pythonAvailable ? "pass" : "warn",
-      detail: `Interpreter probe: ${context.pythonBinary}`,
-      fix: runtime.pythonAvailable
-        ? undefined
-        : "Install the configured Python interpreter or update alpSdk.pythonPath.",
-    },
-  ];
-
-  if (!supportsServerForTarget(request.targetKind, request.server)) {
-    checks.push({
-      name: "serverCompatibility",
-      status: "fail",
-      detail: `${request.server} is not supported for ${request.targetKind}.`,
-      fix: "Pick a supported backend for the selected target class.",
-    });
-    return createDoctorReport(context.generatedAt, request, checks);
-  }
-
-  switch (request.targetKind) {
-    case "zephyr-mcu":
-    case "baremetal-mcu":
-      checks.push({
-        name: "cortexDebugExtension",
-        status: context.debuggerExtensions.cortexDebug ? "pass" : "fail",
-        detail: context.debuggerExtensions.cortexDebug
-          ? "marus25.cortex-debug is installed."
-          : "marus25.cortex-debug is not installed.",
-        fix: context.debuggerExtensions.cortexDebug
-          ? undefined
-          : "Install marus25.cortex-debug.",
-      });
-      checks.push(createBackendCheck(request.server, runtime));
-      break;
-    case "yocto-userspace":
-      checks.push({
-        name: "cppToolsExtension",
-        status: context.debuggerExtensions.cppTools ? "pass" : "fail",
-        detail: context.debuggerExtensions.cppTools
-          ? "ms-vscode.cpptools is installed."
-          : "ms-vscode.cpptools is not installed.",
-        fix: context.debuggerExtensions.cppTools
-          ? undefined
-          : "Install ms-vscode.cpptools.",
-      });
-      checks.push({
-        name: "gdb",
-        status: runtime.gdbExecutable ? "pass" : "warn",
-        detail:
-          runtime.gdbExecutable ?? "No local gdb executable was found on PATH.",
-        fix: runtime.gdbExecutable
-          ? undefined
-          : "Install gdb locally for symbolized remote debugging.",
-      });
-      break;
-    case "native-host":
-      checks.push({
-        name: "codeLLDBExtension",
-        status: context.debuggerExtensions.codeLLDB ? "pass" : "fail",
-        detail: context.debuggerExtensions.codeLLDB
-          ? "vadimcn.vscode-lldb is installed."
-          : "vadimcn.vscode-lldb is not installed.",
-        fix: context.debuggerExtensions.codeLLDB
-          ? undefined
-          : "Install vadimcn.vscode-lldb.",
-      });
-      // Doctor and preflight must agree on the host dead end, or doctor reports
-      // a healthy native-host setup on the very box where F5 cannot work (#374).
-      checks.push(...nativeHostPlatformChecks(request.targetKind, runtime));
-      // Informational, never a warn: CodeLLDB SHIPS its own LLDB (lldb/bin/ inside
-      // vadimcn.vscode-lldb v1.12.2) and never consults PATH, so an lldb on PATH
-      // is neither needed nor used. Warning about it put "Install LLDB or
-      // lldb-dap" into `nextSteps` on every stock Windows box and made doctor
-      // contradict `createServerToolCheck`, which now passes the same condition.
-      checks.push({
-        name: "lldb",
-        status: "pass",
-        detail:
-          runtime.lldbExecutable ??
-          "vadimcn.vscode-lldb ships its own LLDB, so none is needed on PATH.",
-      });
-      break;
-  }
-
-  return createDoctorReport(context.generatedAt, request, checks);
-}
-
 /** Per-slice executable path from the system manifest: prefer the built
  *  artefact (post-build), else the standard output under the slice's build_dir.
  *  Returns undefined when the slice carries no build_dir, so the caller falls
@@ -625,40 +542,6 @@ export function createDebugProfile(
   }
 }
 
-function createDoctorReport(
-  generatedAt: string,
-  request: DebugDoctorRequest,
-  checks: DoctorCheck[],
-): DoctorReport {
-  return {
-    generatedAt,
-    targetKind: request.targetKind,
-    server: request.server,
-    summary: {
-      pass: countChecks(checks, "pass"),
-      warn: countChecks(checks, "warn"),
-      fail: countChecks(checks, "fail"),
-    },
-    checks,
-    nextSteps: uniqueNextSteps(checks),
-  };
-}
-
-function createBackendCheck(
-  server: DebugServerKind,
-  runtime: DebugRuntimeCapabilities,
-): DoctorCheck {
-  const executable = resolveBackendExecutable(server, runtime);
-  return {
-    name: `${server}Backend`,
-    status: executable ? "pass" : "warn",
-    detail: executable ?? `No ${server} executable was found on PATH.`,
-    fix: executable
-      ? undefined
-      : `Install ${server} and make sure it is on PATH.`,
-  };
-}
-
 function resolveBackendExecutable(
   server: DebugServerKind,
   runtime: DebugRuntimeCapabilities,
@@ -742,27 +625,11 @@ function collectResolvedValues(
   ];
 }
 
-function countChecks(
-  checks: readonly DoctorCheck[],
-  status: DoctorCheck["status"],
-): number {
-  return checks.filter((check) => check.status === status).length;
-}
-
 function countPreflightChecks(
   checks: readonly PreflightCheck[],
   status: PreflightStatus,
 ): number {
   return checks.filter((check) => check.status === status).length;
-}
-
-function uniqueNextSteps(checks: readonly DoctorCheck[]): string[] {
-  const nextSteps = new Set<string>();
-  for (const check of checks) {
-    if (check.status === "pass" || !check.fix) continue;
-    nextSteps.add(check.fix);
-  }
-  return [...nextSteps];
 }
 
 function uniquePreflightNextSteps(checks: readonly PreflightCheck[]): string[] {
@@ -859,8 +726,9 @@ function createServerToolCheck(
  * It is deliberately the ONLY host-OS gate here: every other target class
  * debugs over a probe or a remote gdbserver and is perfectly launchable from
  * Windows, so this returns an empty list for them and on every non-Windows
- * host. Both `buildDebugPreflightReport` and `buildDoctorReport` call it, so
- * the two cannot disagree about whether this box can run the target.
+ * host. `buildDebugPreflightReport` is its only caller now — `buildDoctorReport`
+ * used to call it too (#374), before #376 deleted the in-process doctor
+ * entirely rather than migrating this gate a second time.
  *
  * Wording contract (see src/notify/models.ts): `fix` reaches the customer
  * through `nextSteps` and the toast detail, so it carries no errno, no path

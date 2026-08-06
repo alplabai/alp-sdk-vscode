@@ -54,6 +54,11 @@ export type ActionId =
   | "downloadGit"
   | "reloadWindow"
   | "showTerminal" // arg = the runInTerminal run name
+  // Reveals the Build Plan panel (`alp.showBuildPlan`) — the same command
+  // package.json binds the panel's own open action to. Call sites must gate
+  // this to a run whose result the panel actually shows (#331): it renders
+  // `build/system-manifest.yaml`, which only a `tan build` run refreshes.
+  | "showBuildResult"
   // caller-handled — no `run`, so `notify()` returns the id and the caller
   // decides what happens next:
   | "retry"

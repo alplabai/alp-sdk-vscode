@@ -110,9 +110,15 @@ Point the VS Code extension at a local build via the `alpSdk.cliPath` setting.
 
 ### Terminal / CI
 
-Download the pinned raw binary for your host target from the
+Download the pinned release asset for your host target from the
 [tan-cli releases](https://github.com/alplabai/tan-cli/releases) (tag
-`v<version>`), put it on `PATH`, and (on Unix) `chmod +x` it:
+`v<version>`), put it on `PATH`, and (on Unix) `chmod +x` it. Through
+v0.5.0-rc4 the asset is named `tan-<triple>[.exe]` and IS the binary; a
+release built with the archive freeze (tan-cli#349) publishes a DIFFERENT
+name instead — `tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz`
+(elsewhere) — holding a onedir tree that needs unpacking first, not the same
+name with different contents. Check the release's `checksums.txt` to see
+which name it actually published — the example below is the raw-binary case:
 
 ```yaml
 - name: Install tan CLI
@@ -127,15 +133,21 @@ Download the pinned raw binary for your host target from the
 
 ### Offline environments / air-gapped mirrors
 
-The release asset is a **raw** binary (no archive) — download it on an
-internet-connected machine and copy it to the air-gapped host's `PATH`; no
-unpack step:
+Through v0.5.0-rc4 the release asset is named `tan-<triple>[.exe]` and is a
+**raw** binary (no archive) — download it on an internet-connected machine
+and copy it to the air-gapped host's `PATH`; no unpack step. A release built
+with the archive freeze (tan-cli#349) instead publishes a DIFFERENT asset
+name — `tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz` (elsewhere) —
+holding a onedir tree; unpack it first and copy the `tan[.exe]` launcher plus
+its `_internal/` sibling it contains:
 
 ```bash
 # On the connected machine, grab the asset for the target platform from the
-# GitHub release (tag v<version>):
+# GitHub release (tag v<version>) — check that release's checksums.txt to see
+# which of the two names it actually published:
 #   https://github.com/alplabai/tan-cli/releases
-#   tan-<triple>[.exe]   (e.g. tan-x86_64-unknown-linux-gnu)
+#   tan-<triple>[.exe]              (raw binary, through v0.5.0-rc4)
+#   tan-<triple>.zip / .tar.gz      (archive, tan-cli#349 on)
 
 # On the air-gapped machine, put `tan` on PATH:
 install -m 0755 tan-x86_64-unknown-linux-gnu /usr/local/bin/tan

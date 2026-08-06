@@ -53,14 +53,24 @@ Extension releases are tagged and published to the VS Code Marketplace from this
 repo. The build CLI is released **separately** from
 [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli): a `v<version>` tag
 push there triggers its `release` workflow, which builds and publishes each
-target as a **raw** GitHub release asset (`tan-<triple>[.exe]`, no archive).
-Through v0.4.x (the Rust CLI) that is **eight** per-target binaries (Windows
-x64/arm64, macOS x64/arm64, Linux x64/arm64 gnu, Linux x64/arm64 musl). From
-v0.5.0 (the Python CLI, a PyInstaller freeze that cannot cross-compile) it is
-**four**: Windows x64, macOS x64/arm64, and Linux x64 as `-gnu` only — no
-Linux `-musl` (a PyInstaller musl freeze is musl-*dynamic* and would not start
-on Ubuntu/Debian/Fedora) and no arm64 Linux or Windows asset at all. The
-extension resolves the matching `v<version>` asset on activation and declares
+target as a GitHub release asset — named `tan-<triple>[.exe]` through
+v0.5.0-rc4, holding a **raw** binary, no archive; named `tan-<triple>.zip`
+(win32) / `tan-<triple>.tar.gz` (elsewhere) from a release built with the
+archive freeze (tan-cli#349, to fix a 13-19s macOS startup regression from
+re-extracting the freeze on every invocation) on, holding a onedir tree
+instead — a DIFFERENT name, not the same name with different contents.
+Through v0.4.x (the Rust CLI, always the raw name) there are **eight** of
+them (Windows x64/arm64, macOS x64/arm64, Linux x64/arm64 gnu, Linux x64/arm64
+musl). From v0.5.0 (the Python CLI, a PyInstaller freeze that cannot
+cross-compile) it is **four**: Windows x64, macOS x64/arm64, and Linux x64 as
+`-gnu` only — no Linux `-musl` (a PyInstaller musl freeze is musl-*dynamic*
+and would not start on Ubuntu/Debian/Fedora) and no arm64 Linux or Windows
+asset at all.
+The extension resolves which of the two names a given release actually
+published from that release's own `checksums.txt` — never from the version,
+and never from the downloaded bytes, which do not exist yet at that point;
+the bytes' own magic number is a separate, later decision (which extractor,
+if any, unpacks them once downloaded) — and declares
 the two hosts a Python release does not cover in `HOSTS_WITHOUT_RELEASE_ASSET`
 (`src/alpCli/service.ts`); the tag scheme and asset names are a stable
 contract (see the `tan-cli` release-asset contract).
