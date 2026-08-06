@@ -76,6 +76,10 @@ interface SdkRow {
   /** Path of the local install (for activate / remove). */
   localPath?: string;
   isActive: boolean;
+  /** Why it is active — see LocalSdkEntry.activeSource. Absent on rows that are
+   *  not active. A row that is active by fallback ("auto") is NOT pinned, so it
+   *  gets the honest badge and "Use" rather than "Active" and "Deactivate". */
+  activeSource?: "pinned" | "auto";
   source: SdkSource;
 }
 
@@ -103,6 +107,7 @@ function buildRows(
       installTag: local ? undefined : r.tag,
       localPath: local?.path,
       isActive: !!local?.active,
+      activeSource: local?.active ? (local.activeSource ?? "auto") : undefined,
       source,
     });
   }
@@ -115,6 +120,10 @@ function buildRows(
       label: e.version ?? pathTail(e.path),
       localPath: e.path,
       isActive: !!e.active,
+      // Absent `activeSource` falls back to "auto", not "pinned": host and
+      // webview ship in the same VSIX so the field is always there in practice,
+      // and if it ever isn't, under-claiming is the harmless direction.
+      activeSource: e.active ? (e.activeSource ?? "auto") : undefined,
       source: e.removable ? "installed" : "linked",
     });
   }
@@ -162,18 +171,37 @@ function SdkRowCard({
           )}
         </div>
         <div className={styles.releaseActions}>
-          {row.isActive && (
-            <span className={styles.activeBadge}>
-              <Icon name="check" size={12} /> Active
-            </span>
-          )}
+          {row.isActive &&
+            (row.activeSource === "pinned" ? (
+              <span
+                className={styles.activeBadge}
+                title="Pinned as the active SDK for this workspace"
+              >
+                <Icon name="check" size={12} /> Active
+              </span>
+            ) : (
+              // Nothing is pinned; this is what resolution fell back to. Saying
+              // "Active" here is what made Deactivate look broken — it cleared
+              // a pin that never existed, so the badge never moved.
+              <span
+                className={styles.activeBadge}
+                data-auto
+                title="No SDK is pinned — this is what Alp falls back to (the newest install / the SDK next to this project). Press Use to pin it."
+              >
+                Default (auto-detected)
+              </span>
+            ))}
           {row.source === "available" ? (
             <Button appearance="primary" onClick={onInstall}>
               Install
             </Button>
           ) : (
             <>
-              {row.isActive ? (
+              {/* Deactivate only where a pin exists to clear. On an
+                  auto-detected row it is a no-op button, so the row keeps
+                  offering "Use" — which writes the pin and makes the state
+                  explicit. */}
+              {row.activeSource === "pinned" ? (
                 <Button
                   appearance="secondary"
                   title="Clear the active SDK (keeps it installed)"
@@ -182,7 +210,15 @@ function SdkRowCard({
                   Deactivate
                 </Button>
               ) : (
-                <Button appearance="secondary" onClick={onUse}>
+                <Button
+                  appearance="secondary"
+                  title={
+                    row.isActive
+                      ? "Pin this SDK for the workspace (it is only the fallback right now)"
+                      : "Make this the active SDK for the workspace"
+                  }
+                  onClick={onUse}
+                >
                   Use
                 </Button>
               )}

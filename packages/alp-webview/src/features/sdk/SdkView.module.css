@@ -130,6 +130,14 @@
   color: var(--status-ok);
 }
 
+/* The fallback SDK: resolved, but nobody pinned it. Deliberately NOT the green
+   confirmation colour — green reads as "you chose this", which is the exact
+   claim the badge used to make wrongly. */
+.activeBadge[data-auto] {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .changelogToggle {
   display: flex;
   align-items: center;

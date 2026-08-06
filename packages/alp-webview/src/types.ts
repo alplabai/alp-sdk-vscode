@@ -22,6 +22,13 @@ export interface LocalSdkEntry {
   removable?: boolean;
   /** Decided host-side (#361) — do NOT re-derive with `path === activePath`. */
   active?: boolean;
+  /** Only meaningful when `active`: `"pinned"` = the user pinned it
+   *  (`alpSdk.path` / `.alp/sdk-path`), so Deactivate has something to clear.
+   *  `"auto"` = nothing was pinned and resolution guessed (single sibling SDK,
+   *  or newest install in ~/.alp/sdk) — render "Default (auto-detected)" and
+   *  offer "Use", never "Active" + "Deactivate". Mirrors LocalSdkEntry in
+   *  @alp-sdk/core/sdk/models. */
+  activeSource?: "pinned" | "auto";
 }
 
 export interface SdkRelease {
