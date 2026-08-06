@@ -2487,9 +2487,11 @@ function loginShellInvocation(
  * Run a `tan` command with its output streamed live into the "Alp SDK" output
  * channel (channel mode). Unlike terminal mode the log PERSISTS after the
  * process exits — the channel does not die with the command, so the outcome and
- * full log stay visible. Forces `--no-color` (the channel renders plain text)
- * and `--non-interactive` (no TTY to answer prompts), so this is for the
- * orchestrator commands that don't need a live console: build/flash/image/clean.
+ * full log stay visible. The child gets no TTY, which is what keeps the output
+ * plain and the run non-interactive (it used to pass `--no-color` and
+ * `--non-interactive` for this; tan v0.5.0 deferred both — see `streamRun`), so
+ * this is for the orchestrator commands that don't need a live console:
+ * build/flash/image/clean.
  * Flash matters most here — its per-slice failure reasons (e.g. "backend
  * zephyr_west_flash needs west on PATH") used to vanish with the dying terminal,
  * leaving only "failed to launch". Renode streams for the same reason: its
@@ -2572,7 +2574,22 @@ async function streamRun(
     void surfaceResolutionError(error, options.name);
     return;
   }
-  const finalArgs = [...withSdkRoot(args), "--no-color", "--non-interactive"];
+  // No `--no-color` / `--non-interactive` appended. tan v0.5.0 deferred BOTH
+  // (tan-cli#427) and `tan build` refuses them outright — "error: `tan build
+  // --no-color` is deferred and not available in this build" on stderr, exit 1,
+  // before any slice runs. Since the v0.5.1 pin that made every streamed
+  // command dead on arrival: build, image, flash, clean, renode, and the Build
+  // Plan panel's two buttons.
+  //
+  // Neither flag is needed here. The child is spawned WITHOUT a TTY, and tan
+  // emits plain text on a pipe — measured on the pinned binary, `tan doctor`
+  // redirected to a file contains zero ESC bytes — so the channel gets the same
+  // output `--no-color` used to force. Interactivity is moot for the same
+  // reason: a build that could prompt has no terminal to prompt on, and this
+  // build's one prompt source (auto-bootstrap) is deferred as well
+  // (`--no-auto-bootstrap  Deferred, not implemented in this build`).
+  // `runAlpInTerminal` still owns anything that genuinely needs a TTY.
+  const finalArgs = withSdkRoot(args);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (channel: ${options.name})`,
   );
