@@ -242,6 +242,8 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     uninstall,
     deactivate,
     browseSdk,
+    bootstrap,
+    setup,
   } = useSdk();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -353,6 +355,40 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
           >
             Browse…
           </Button>
+          {/* An installed SDK is not a buildable one: `tan build` plans the
+              slices fine and then skips every one of them — "skipped: m55_hp
+              [zephyr] -- tool `west` not found" — because west lives in the
+              workspace venv `tan bootstrap` creates. Bootstrap belongs beside
+              Install for that reason, not in the palette only.
+
+              It DISAPPEARS once the environment exists. `westAvailable` is the
+              honest signal for that and `lastBootstrapAt` is not: the stamp
+              records that bootstrap was TRIGGERED, so a run that failed
+              half-way would hide the one button that repairs it. While the run
+              is in flight `bootstrapRunning` keeps the button visible and
+              spinning — west appears on PATH partway through, and hiding it at
+              that moment would read as "done" mid-fetch.
+
+              Gated on `activePath`: bootstrap builds the environment of the
+              SDK that is ACTIVE, so with none selected there is nothing for it
+              to act on, and the title says which of the two steps is missing. */}
+          {(!setup?.westAvailable || setup?.bootstrapRunning) && (
+            <Button
+              appearance="secondary"
+              loading={setup?.bootstrapRunning ?? false}
+              title={
+                setup?.bootstrapRunning
+                  ? "Bootstrap is running in the terminal…"
+                  : sdk.activePath
+                    ? "Set up this SDK's build environment (workspace venv, west, Zephyr modules, Python deps) — about 3 GB on disk"
+                    : "Install and activate an SDK first — bootstrap sets up the ACTIVE SDK's environment"
+              }
+              disabled={!sdk.activePath || (setup?.bootstrapRunning ?? false)}
+              onClick={() => bootstrap()}
+            >
+              Bootstrap…
+            </Button>
+          )}
         </div>
       </div>
 
