@@ -19,6 +19,17 @@
 //     emits tan's `summary` verbatim and NO `ok`/`required` at all.
 //
 // Both were re-derivations of facts tan owns. The replacement reads tan.
+//
+// DELETED LATER, same reason (#468): the `ToolchainReport` type named above,
+// with `analyzeToolchain` (`@alp-sdk/core/toolchain/doctor`) and the probe
+// module that fed it (`src/toolchain/vscodeAdapter.ts` —
+// `collectToolchainInputs`, `probeTool`, `probeExtractor`, `probeSevenZip`,
+// `detectZephyrSdkDir`). Nothing had called that chain since the Toolchain
+// Doctor panel went; its `sevenZip` verdict now comes from tan's own check row,
+// read and never re-probed (`src/deps/vscodeAdapter.ts`), and its
+// `ZEPHYR_SDK_INSTALL_DIR` sniffing was the exact env-guessing ADR 0021 §5 sets
+// out to stop. Do not revive it to consume the plan's toolchain paths — that
+// consumer belongs where the build actually spawns.
 
 import {
   BootstrapHost,
