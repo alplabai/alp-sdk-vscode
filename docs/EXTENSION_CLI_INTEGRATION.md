@@ -64,7 +64,7 @@ the `tan` binary as the single implementation and render its output — collapsi
 |------|------|-----------|
 | **Envelope** | one-shot, data-producing commands | spawn `tan <cmd> --format json`, parse the envelope, map `exitCode`/`issues` to UX |
 | **Terminal** | long-running **and interactive** | open a VS Code integrated terminal (a Task) and run `tan <cmd>` (or the underlying tool) so the user can answer prompts (sudo, pip, `west update`) |
-| **Channel** | long-running, non-interactive, live-output | `runAlpStreamed` spawns `tan <cmd> --no-color --non-interactive` and streams stdout/stderr into the persistent "Alp SDK" output channel |
+| **Channel** | long-running, non-interactive, live-output | `runAlpStreamed` spawns `tan <cmd>` with no TTY — which is what keeps the output plain and the run non-interactive — and streams stdout/stderr into the persistent "Alp SDK" output channel. It does **not** pass `--no-color`/`--non-interactive`: tan v0.5.0 deferred both, and `tan build` refuses them (tan-cli#427) |
 
 Channel mode exists because a terminal dies with its process, taking the verdict
 with it — a failed flash showed only "failed to launch" while the real per-slice
