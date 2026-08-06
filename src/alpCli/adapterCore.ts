@@ -260,7 +260,7 @@ export function resolutionInputFromDeps(
  *     binary — that it is what Alp Lab published, or that anything checked it;
  *     a `package.json` description already had to be corrected for exactly that.
  *     The house compound `verified-native` (`service.ts`, `models.ts`, this
- *     file's callers, CLAUDE.md) is the one carve-out and stays: it names the
+ *     file's callers) is the one carve-out and stays: it names the
  *     format probe's verdict — this is the native clap CLI and not the retired
  *     `alp` — which is the only claim `commandOnPath` makes and the only one
  *     `input.onPath` carries. Do not read the noun as the adjective.
