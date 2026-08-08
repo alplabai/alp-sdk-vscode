@@ -16,6 +16,7 @@ import {
   BUILD_RUN_NAME,
   FLASH_RUN_NAME,
   isStreamedRunActive,
+  log,
   releaseStreamedRun,
   reserveStreamedRun,
 } from "../util";
@@ -23,6 +24,7 @@ import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import {
   BUILD_PLAN_SHAPE,
+  MATERIALISE_SHAPE,
   SIZE_REPORT_SHAPE,
   SYSTEM_MANIFEST_SHAPE,
   checkTanPayload,
@@ -306,7 +308,66 @@ export class BuildPlanPanel {
       );
       const envelope = outcome.envelope;
       if (envelope && envelope.ok) {
-        const written = (envelope.data as { written?: string[] }).written ?? [];
+        // Shape-check before reading, like the `--plan` / `--manifest` readers
+        // above. This path needs it MORE than they do, not less: they spell
+        // their access `plan.slices.filter`, which throws and blanks the panel
+        // when tan renames a field. This one spells it `written ?? []`, so the
+        // same drift reports "Materialised 0 file(s)" as a SUCCESS — indis-
+        // tinguishable from a legitimate no-op, and the user acts on it.
+        const shapeError = checkTanPayload(
+          envelope.data,
+          MATERIALISE_SHAPE,
+          "build --materialise",
+        );
+        if (shapeError) {
+          notifyAsync(
+            planFailure({
+              operation: "Materialising the build plan",
+              cause: shapeError,
+            }),
+          );
+          return;
+        }
+        const written = (envelope.data as { written: string[] }).written;
+
+        // An ok run that wrote NOTHING is not a success to report as one. Every
+        // project tan will plan for has at least one enabled slice, and each
+        // contributes at least its own `alp.conf` — a real materialise of the
+        // sample project writes five files. Zero means the run did not do its
+        // job, and the caller is about to build against whatever was already on
+        // disk. Related and NOT fixed here: tan-cli#505 item 3 — a PARTIAL loss
+        // (one slice demoted, its `configArtefacts` dropped) still arrives as
+        // `ok: true`, `issues: []`, exit 0, with no demotion signal anywhere in
+        // the envelope. This extension cannot detect that until tan reports it;
+        // listing the paths below is what lets a user see five become three.
+        if (written.length === 0) {
+          notifyAsync(
+            planFailure({
+              operation: "Materialising the build plan",
+              cause: "tan reported success but wrote no files.",
+              detail:
+                "The build tree was not updated, so a build now would use " +
+                "whatever is already on disk. Check the Alp SDK log, then " +
+                "re-run Materialise.",
+              actions: [{ id: "showOutput" }],
+            }),
+          );
+          return;
+        }
+
+        // The paths, not just the count: a silently dropped slice shows up here
+        // as a missing `build/<core>-<backend>/alp.conf` and nowhere else.
+        log(
+          `[buildPlan] materialised ${written.length} file(s): ` +
+            written.join(", "),
+        );
+        // Any issue tan reported on a SUCCESSFUL run — warnings are discarded
+        // by an `ok`-only branch, which is how #477's `sdk.network-required`
+        // went unseen.
+        for (const issue of envelope.issues ?? []) {
+          log(`[buildPlan] materialise ${issue.severity}: ${issue.message}`);
+        }
+
         // Status bar, not a toast: the very next line re-requests the plan, so
         // the panel the user is looking at already reports the new on-disk
         // state.
