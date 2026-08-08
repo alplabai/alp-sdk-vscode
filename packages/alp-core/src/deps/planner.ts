@@ -198,7 +198,14 @@ const LABELS: Readonly<Record<string, string>> = {
   // Plain `tan doctor`'s host-environment half (src/deps/vscodeAdapter.ts's
   // PLAIN_DOCTOR_HOST_CHECKS). `humanise` would render these "Zephyr sdk host"
   // and "Lldb"; the acronyms are the whole point of the row.
+  // Both spellings on purpose (#472). tan renamed this check
+  // `zephyrSdkHost` -> `zephyrSdkAvailableForHost` between v0.4.0 and 0.5.1, and
+  // on the current pin the row arrives through the `--build` envelope whether or
+  // not the allowlist names it — so with only the old key here, a row that IS on
+  // screen today renders as `humanise`'s "Zephyr sdk available for host". A
+  // stale LABELS key is free; a missing one is visible to the customer.
   zephyrSdkHost: "Zephyr SDK (host support)",
+  zephyrSdkAvailableForHost: "Zephyr SDK (host support)",
   hostPrerequisites: "Bootstrap prerequisites",
   longPaths: "Windows long paths",
   homePath: "Home directory",

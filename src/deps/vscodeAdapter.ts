@@ -250,16 +250,34 @@ function bareVersion(version: string | null): string | null {
  *                 and it surfaces as a CMake or compiler error about a file that
  *                 exists". That build death had no row here at all.
  * - `homePath`    a space in the home directory (`C:\Users\Jane Doe`).
- * - `zephyrSdkHost`  whether the Zephyr SDK publishes a build for this host at
- *                 all — the opposite question to `--build`'s `zephyrSdk`, which
- *                 asks whether one is installed.
+ * - `zephyrSdkAvailableForHost`  whether the Zephyr SDK publishes a build for
+ *                 this host at all — the opposite question to `--build`'s
+ *                 `zephyrSdk`, which asks whether one is installed.
  * - `hostPrerequisites`  bootstrap's own prerequisite gate, carrying the
  *                 `missingPrerequisites[]` commands.
  * - `lldb`        a PATH probe for the native-host debug flow.
  *
- * VERIFIED against the pinned tan v0.4.0 by running it on this machine, not
- * against tan's `dev`. Note the id is `zephyrSdkHost` — there is no
- * `zephyrSdkAvailableForHost` check in v0.4.0.
+ * RE-DERIVED against the pinned tan 0.5.1 (#472). What the measurement found,
+ * recorded so the next pin bump starts from facts rather than this prose:
+ *
+ *  - `zephyrSdkHost` is GONE and `zephyrSdkAvailableForHost` is emitted in its
+ *    place — a rename, and the one entry that was actively wrong. Under v0.4.0
+ *    this list named a check the binary no longer has, so the row it was meant
+ *    to admit was never admitted.
+ *  - `longPaths` and `lldb` were NOT observed. They are kept anyway, and that is
+ *    deliberate: the measurement ran on darwin against a project whose debug
+ *    target is not `NativeHost`, and `longPaths` reads as Windows-only. Dropping
+ *    a platform-conditional check because one host did not emit it is the exact
+ *    mistake that produced this issue. `plainDoctorAllowlistDrift` now reports
+ *    from real machines instead, including the Windows ones this cannot reach.
+ *  - On 0.5.1 plain `doctor` and `doctor --build` emit the IDENTICAL check set —
+ *    14 names with no project, 17 with one. Since the merge below only takes a
+ *    plain check when `--build` did not already carry that name, the loop adds
+ *    nothing at all on this pin. The second subprocess is currently pure cost.
+ *    It is kept because deleting a seam on one pin's behaviour is how this
+ *    allowlist rotted in the first place, and because the durable fix is the
+ *    upstream one named below — but if tan ships a host-vs-project scope, this
+ *    whole path should go rather than be re-derived a third time.
  *
  * An ALLOWLIST, unlike the planner's row derivation, and that is a real cost:
  * a host check tan adds to plain `doctor` tomorrow will NOT light up a row here
@@ -283,10 +301,59 @@ function bareVersion(version: string | null): string | null {
 const PLAIN_DOCTOR_HOST_CHECKS: ReadonlySet<string> = new Set([
   "hostPrerequisites",
   "zephyrSdkHost",
+  "zephyrSdkAvailableForHost",
   "longPaths",
   "homePath",
   "lldb",
 ]);
+
+/**
+ * Allowlist entries kept for an OLDER tan than the pin, and therefore not drift.
+ *
+ * `zephyrSdkHost` is the pre-0.5.x spelling of `zephyrSdkAvailableForHost`.
+ * Both are in the allowlist because an extra entry costs nothing — the merge
+ * only admits a name the envelope actually carries, and the `!seen` guard stops
+ * a duplicate — while a MISSING one silently drops a row, which is #472.
+ *
+ * Listed here so the drift report does not cry wolf about an entry we keep on
+ * purpose. Everything not in this set is a genuine "the pinned binary does not
+ * emit what this list names".
+ */
+const LEGACY_PLAIN_DOCTOR_CHECKS: ReadonlySet<string> = new Set([
+  "zephyrSdkHost",
+]);
+
+/**
+ * The allowlist entries the plain `doctor` envelope did NOT emit.
+ *
+ * This is the answer to #472's actual finding. The defect there was never the
+ * five strings — it was that a stale one vanishes in silence: an entry naming a
+ * check tan no longer has simply admits no row, and a missing row reads as "not
+ * a problem" rather than "not asked". `zephyrSdkHost` sat wrong across two pin
+ * bumps because nothing anywhere said so.
+ *
+ * A build-time gate is not available: the vendored contract corpus
+ * (`test/golden/tan-contract/`, tan 0.5.1) carries 17 envelopes and none of them
+ * is `doctor`, so CI has no captured envelope to assert against. This runs on
+ * the customer's actual pinned binary instead, which is strictly better for the
+ * two entries a developer machine cannot settle — `longPaths` (Windows) and
+ * `lldb` (native-host debug targets only).
+ *
+ * Returns names, not a verdict. Drift is not itself a failure: tan may
+ * legitimately stop emitting a check on a host or a target where it does not
+ * apply. The caller logs; nothing is failed on the customer's behalf.
+ *
+ * Pure — exported for the test.
+ */
+export function plainDoctorAllowlistDrift(
+  plain: DoctorEnvelopeData | null,
+): string[] {
+  if (!plain) return [];
+  const emitted = new Set(plain.checks.map((check) => check.name));
+  return [...PLAIN_DOCTOR_HOST_CHECKS].filter(
+    (name) => !emitted.has(name) && !LEGACY_PLAIN_DOCTOR_CHECKS.has(name),
+  );
+}
 
 /**
  * The `tan doctor --build` checks that genuinely READ THE PROJECT, and so must
@@ -521,6 +588,18 @@ export async function buildDependencyReport(
     // the table. Plain `doctor`'s five host rows do not stand in for that, and
     // a five-row table that looks complete would be the worse answer.
     return { report: null, error: build.message };
+  }
+  // #472: say it out loud when an allowlist entry names a check the pinned tan
+  // does not emit. Silence is the defect — a stale entry admits no row, and a
+  // row that is absent reads as "fine" rather than "never asked".
+  const drift = plainDoctorAllowlistDrift(plain.data);
+  if (drift.length > 0) {
+    log(
+      `[deps] plain doctor emitted no ${drift.join(", ")} — the ` +
+        `PLAIN_DOCTOR_HOST_CHECKS allowlist may need re-deriving against ` +
+        `tan ${SUPPORTED_CLI_VERSION} (see #472). Platform- or target-` +
+        `conditional checks legitimately appear here on some hosts.`,
+    );
   }
   const data = mergeDoctorEnvelopes(build.data, plain.data, hasProject);
 
