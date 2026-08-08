@@ -3,8 +3,14 @@
 // The two-writers guard for #468 / ADR 0021 §5: the extension must never be a
 // second writer of a variable the BUILD PLAN owns.
 //
-// alp-sdk#949 item 2 settled ownership — the build plan owns
-// `ZEPHYR_TOOLCHAIN_VARIANT`, and there is "no PATH mutation anywhere". If this
+// Ownership is settled by ADR-0020 — the `envAppendPath` "plan wins / CLI fills
+// gaps" rule and its Security consequence — and by ADR-0021's Ownership
+// paragraph: provisioning logic in tan, pins in alp-sdk metadata, no PATH
+// mutation anywhere. (This file first cited alp-sdk#949 item 2, following
+// #468's own wording. That citation is wrong and the maintainer corrected it on
+// alp-sdk#1286: #949 is bootstrap/toolchain provisioning —
+// `metadata/toolchains.json`, `prerequisites.install` — not the plan-owned
+// value rule. The substance was right, the reference was not.) If this
 // extension also writes one of those names onto the `tan` child's environment,
 // whichever writer lands last silently wins, and the failure shape is the worst
 // one available: it built with the wrong compiler and nothing said so. No error,
@@ -57,7 +63,7 @@ const REAL_ADAPTER_CORE = require(
  * names. They are NOT in the plan today — that is why #468's consumption slice
  * is blocked upstream — but they are listed here on purpose: they are the two
  * this extension is most likely to be tempted to write itself while waiting,
- * and that temptation is exactly what alp-sdk#949 item 2 forbids.
+ * and that temptation is exactly what ADR-0021's Ownership paragraph forbids.
  */
 const PLAN_OWNED = [
   "ALP_SDK_ROOT",
@@ -188,7 +194,7 @@ test("the spawned tan gets no plan-owned variable the extension invented", async
       options.env[name],
       undefined,
       `the extension wrote ${name} onto the tan child. The build plan owns ` +
-        `that variable (alp-sdk#949 item 2); a second writer means whichever ` +
+        `that variable (ADR-0020, ADR-0021); a second writer means whichever ` +
         `runs last wins and a build with the wrong toolchain reports success. ` +
         `Consume the plan's value instead — see #468`,
     );
