@@ -71,6 +71,29 @@ export const SIZE_REPORT_SHAPE: TanPayloadShape = {
   slices: "array",
 };
 
+/**
+ * `tan build --materialise` -> `{ schemaVersion, baseDir, written }`, read by
+ * `handleMaterialiseBuildPlan` (src/ideHub/buildPlanPanel.ts).
+ *
+ * Only `written` is read — the list of files the run put on disk. NOT read on
+ * this path, so not required: `schemaVersion`, `baseDir`.
+ *
+ * This one earns the check more than the others, because its reader spells the
+ * access `written ?? []`. A renamed or dropped field does not throw and does not
+ * blank a panel: it reports "Materialised 0 file(s)" as a SUCCESS, which is the
+ * one outcome indistinguishable from a run that legitimately wrote nothing.
+ * tan-cli#505 item 3 measured the matching hazard on tan's side — a demoted
+ * slice's `configArtefacts` drop out of `written` with `issues: []`, exit 0 and
+ * `ok: true`, so "a CI step that materialises then runs `west build` for that
+ * core gets default Kconfig instead of the project's, i.e. wrong firmware, with
+ * no signal on either side". This check cannot detect that (tan emits no
+ * demotion signal on this path), but it does stop the extension from adding a
+ * second silent path of its own.
+ */
+export const MATERIALISE_SHAPE: TanPayloadShape = {
+  written: "array",
+};
+
 function hasKind(value: unknown, kind: TanFieldKind): boolean {
   return kind === "array" ? Array.isArray(value) : typeof value === "string";
 }
