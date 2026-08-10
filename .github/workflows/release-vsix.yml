@@ -25,13 +25,26 @@
 # darwin-arm64-targeted VSIX with the `tan` CLI bundled at `bin/tan` (the
 # extension's `bundled` resolver source, src/alpCli — see
 # docs/EXTENSION_CLI_INTEGRATION.md §5, picks it up with no first-run
-# download). It downloads the prebuilt RAW `tan-aarch64-apple-darwin` binary
-# from the `alplabai/tan-cli` `v<SUPPORTED_CLI_VERSION>` release
-# (src/alpCli/service.ts is the source of truth for the version), reuses the
-# same VSCE_PAT secret and SHOULD_PUBLISH gate as the universal job, and always
-# publishes `--pre-release` (it's the first bundled-CLI VSIX, regardless of the
-# odd/even-minor convention above). The universal (binary-less) job stays
-# unchanged and independent.
+# download). It stages whichever asset the `alplabai/tan-cli`
+# `v<SUPPORTED_CLI_VERSION>` release actually published for darwin/arm64 —
+# through v0.5.0-rc4 that was a RAW `tan-aarch64-apple-darwin` binary; from the
+# archive freeze (tan-cli#349) on, it is a `tan-aarch64-apple-darwin.tar.gz`
+# onedir tree (the launcher plus its `_internal/` support files), because a
+# PyInstaller onefile freeze re-extracted itself on every invocation. Which
+# shape a given release published is resolved the same way the extension's own
+# `bundled`/`download` resolver does at activation — `releaseAssetForTarget` +
+# `resolvePublishedAsset` + `downloadFile` (src/alpCli/{service,download}.ts,
+# invoked via `scripts/stage-tan-cli-asset.mjs`) — never a hardcoded asset name
+# here, which is how the raw-name URL drifted stale once already: the archive
+# migration shipped in the extension (src/alpCli) and this job's own
+# hardcoded URL did not move with it. `bin/tan` therefore may have siblings on
+# disk (e.g. `bin/_internal/`) for an archive release; `vsce package` below is
+# passed
+# `--follow-symlinks` for exactly that reason — see that step's comment. It
+# reuses the same VSCE_PAT secret and SHOULD_PUBLISH gate as the universal job,
+# and always publishes `--pre-release` (it's the first bundled-CLI VSIX,
+# regardless of the odd/even-minor convention above). The universal
+# (binary-less) job stays unchanged and independent.
 
 name: release-vsix
 
@@ -239,10 +252,13 @@ jobs:
   # SIX platform/arch combos, so six is the ceiling for jobs to add, one
   # shipped, FIVE to go — but the release actually pinned, not the ceiling, is
   # what decides whether a job has an asset to bundle. A Python `tan` release
-  # (v0.5.0 on, a PyInstaller freeze that cannot cross-compile) publishes only
-  # FOUR raw target binaries (x86_64 × pc-windows-msvc/apple-darwin, aarch64 ×
-  # apple-darwin, and Linux x64 as unknown-linux-gnu only — no musl, no arm64
-  # Linux or Windows), declared in `HOSTS_WITHOUT_RELEASE_ASSET`. A job added
+  # (v0.5.0 on, a PyInstaller freeze that cannot cross-compile) publishes an
+  # asset for only FOUR targets (x86_64 × pc-windows-msvc/apple-darwin, aarch64
+  # × apple-darwin, and Linux x64 as unknown-linux-gnu only — no musl, no arm64
+  # Linux or Windows), declared in `HOSTS_WITHOUT_RELEASE_ASSET`. Whether that
+  # asset is a raw binary or a `.zip`/`.tar.gz` archive is a separate axis (see
+  # the header comment above) and does not change which FOUR hosts are covered.
+  # A job added
   # for one of those two undeclared hosts would have nothing to bundle against
   # the current pin. (Correcting the doc is a separate change — not this one.)
   #
@@ -338,47 +354,38 @@ jobs:
         # darwin-arm64 VSIX without bin/tan is the universal VSIX wearing a
         # platform label, and VS Code PREFERS a platform-specific VSIX over the
         # universal one — publishing an empty one is strictly worse than
-        # publishing none. So we keep it fatal and make the failure legible:
-        # `curl -f` alone exits 22 and says nothing about which pin, which URL,
-        # or which status. Dropping -f and reading %{http_code} separates "the
-        # tan tag isn't published" (404) from "the network/permissions broke"
-        # (000/403/5xx) — different problems, different fixes. Note -f is not
-        # what blocks %{http_code}: `curl -f -w '%{http_code}'` prints 404 quite
-        # happily (driven). -f is dropped so curl_exit means TRANSPORT only —
-        # http_status=404 curl_exit=0 reads "network fine, server said no",
-        # where -f collapses every HTTP error into exit 22. The price is that
-        # curl then WRITES the non-2xx body: on a 404 that is GitHub's 9-byte
-        # "Not Found" at bin/tan, which -f suppressed entirely. Hence
-        # `rm -f bin/tan` on every failure path — it cleans up after this step's
-        # own choice, not after some older bug.
+        # publishing none. No `|| true`, no exit-code special-casing: any
+        # non-zero exit from the script below fails this step, including its
+        # own "no asset published for this host" outcome (exit 2) — unlike
+        # ci.yml's smoke test, this job may NOT treat that as a loud skip.
+        #
+        # The resolution + download + checksum-verify + (if archived) unpack
+        # is NOT hand-rolled here — see scripts/stage-tan-cli-asset.mjs's own
+        # header for why: it calls the exact same
+        # `releaseAssetForTarget`/`resolvePublishedAsset`/`downloadFile`
+        # (src/alpCli/{service,download}.ts) the extension's own `bundled`/
+        # `download` resolver runs at activation, compiled by the `Compile`
+        # step above into out/alpCli/*.js. That is what keeps this job from
+        # ever again requesting an asset name `scripts/check-cli-pin.mjs`
+        # didn't already verify resolves for the pinned release.
         run: |
-          set -euo pipefail
-          VERSION="${{ steps.cli_version.outputs.version }}"
-          # tan-cli ships a RAW binary per target (not an archive) — download it
-          # straight to bin/tan (the extension's `bundled` resolver source).
-          URL="https://github.com/alplabai/tan-cli/releases/download/v${VERSION}/tan-aarch64-apple-darwin"
-          mkdir -p bin
-          CURL_RC=0
-          STATUS=$(curl -sSL -w '%{http_code}' -o bin/tan "$URL") || CURL_RC=$?
-          # bin/tan is absent when curl never connected — read the size only if
-          # it exists, or the failed input redirect prints its own noise.
-          BYTES=0
-          if [ -f bin/tan ]; then BYTES=$(wc -c < bin/tan); fi
-          if [ "$CURL_RC" -ne 0 ] || [ "$STATUS" != "200" ] || [ ! -s bin/tan ]; then
-            rm -f bin/tan
-            echo "::error::Could not stage the bundled tan CLI. pin=v${VERSION} (SUPPORTED_CLI_VERSION in src/alpCli/service.ts) url=${URL} http_status=${STATUS} curl_exit=${CURL_RC} bytes=${BYTES}"
-            if [ "$STATUS" = "404" ]; then
-              echo "::error::alplabai/tan-cli has no tan-aarch64-apple-darwin asset at tag v${VERSION}. The tan-cli release must be published BEFORE this extension is tagged — SUPPORTED_CLI_VERSION may only ever name an already-published tan tag. Fix: cut+publish tan-cli v${VERSION}, or repin src/alpCli/service.ts to a published version, then re-run."
-            else
-              echo "::error::Not a missing-tag failure (http_status=${STATUS}, curl_exit=${CURL_RC}) — treat as network, proxy, or permissions and re-run the job. http_status=000 would mean curl never completed the request; any other status is the server's answer, and a 200 here means the asset downloaded empty."
-            fi
-            exit 1
-          fi
-          chmod +x bin/tan
-          echo "::notice::Staged tan v${VERSION} aarch64-apple-darwin (${BYTES} bytes) at bin/tan from ${URL}"
+          node scripts/stage-tan-cli-asset.mjs \
+            --platform darwin --arch arm64 --dest bin \
+            --version "${{ steps.cli_version.outputs.version }}"
 
       - name: Package (.vsix, darwin-arm64, bundled CLI)
-        run: pnpm exec vsce package --no-dependencies --target darwin-arm64 --pre-release --out alp-sdk-darwin-arm64.vsix
+        # --follow-symlinks is REQUIRED, not a style preference, once bin/ can
+        # hold an archive-installed onedir tree: a PyInstaller macOS freeze's
+        # `_internal/` carries real symlinks (e.g.
+        # `Python.framework/Versions/Current -> 3.12`), and without this flag
+        # `vsce package`'s secret scan tries to `read()` a directory symlink as
+        # a file and dies with `EISDIR`, packaging NOTHING and producing no
+        # .vsix — measured locally against the real v0.5.1 darwin-arm64
+        # archive. `--follow-symlinks` makes vsce recurse into (and thereby
+        # materialise) those entries instead of choking on them; it has no
+        # effect when bin/ holds a single raw binary (no symlinks to find), so
+        # it is safe to pass unconditionally for either shape.
+        run: pnpm exec vsce package --no-dependencies --target darwin-arm64 --pre-release --follow-symlinks --out alp-sdk-darwin-arm64.vsix
 
       - name: Upload vsix artefact
         uses: actions/upload-artifact@v4

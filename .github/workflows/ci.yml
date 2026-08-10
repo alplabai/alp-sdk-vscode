@@ -158,12 +158,13 @@ jobs:
       # The second half of #416, and the reason the macOS leg is worth its
       # minutes beyond "one more POSIX host".
       #
-      # `release-vsix.yml`'s `package_darwin_arm64` job downloads
-      # `tan-aarch64-apple-darwin` into `bin/tan` and packages it — while
-      # `runs-on: ubuntu-latest` (release-vsix.yml:182). Nothing anywhere has
-      # ever EXECUTED that binary; an ubuntu x64 runner physically cannot. So
-      # "the bundled CLI runs" has been an untested claim on every release of
-      # the one VSIX variant that bundles a CLI at all.
+      # `release-vsix.yml`'s `package_darwin_arm64` job stages whichever
+      # darwin/arm64 asset the pinned tan-cli release publishes so the
+      # launcher lands at `bin/tan`, and packages it — while
+      # `runs-on: ubuntu-latest`. Nothing anywhere has ever EXECUTED that
+      # binary; an ubuntu x64 runner physically cannot. So "the bundled CLI
+      # runs" has been an untested claim on every release of the one VSIX
+      # variant that bundles a CLI at all.
       #
       # Scope, stated so this is not mistaken for more than it is: this does
       # NOT test the packaged VSIX. That artefact is only assembled at a
@@ -192,40 +193,51 @@ jobs:
 
       - name: The bundled darwin-arm64 tan binary runs on darwin-arm64
         if: matrix.os == 'macos-latest'
-        # Same URL shape and the same non-`-f` curl accounting as
-        # release-vsix.yml:246-268, so a 404 stays distinguishable from a
-        # network failure instead of collapsing into curl's exit 22.
+        # Stages via the SAME resolver + downloader release-vsix.yml's
+        # package_darwin_arm64 job uses (scripts/stage-tan-cli-asset.mjs —
+        # see its header) instead of a hand-rolled raw-name URL. That
+        # hardcoded URL is exactly how this step went stale before: tan-cli#349
+        # moved the darwin/arm64 asset to a `.tar.gz` archive, and this step
+        # kept requesting the old raw name, read every resulting 404 as "not
+        # published yet", and exited 0 — a SILENT skip of the one job that
+        # actually executes the bundled binary, for over a week, with nothing
+        # in a green run to say so. `scripts/check-cli-pin.mjs` above already
+        # confirms the pin publishes SOMETHING for this host; this step exists
+        # to run what it found.
         #
-        # Deliberately NOT fatal on a missing asset, and that is the one place
-        # it differs from the release job. There, no asset means the VSIX would
-        # ship broken, so it must stop the release. Here the pin can
-        # legitimately name a tag whose darwin asset is not published yet, and
-        # reddening every PR on that would only teach people to ignore this
-        # job. A published binary that does NOT run is a hard failure — that is
-        # the case worth having.
+        # Deliberately still NOT fatal on "genuinely no asset for this host",
+        # and that remains the one place this differs from the release job:
+        # the pin can legitimately name a tag whose darwin asset is not
+        # published yet (HOSTS_WITHOUT_RELEASE_ASSET, or a release still being
+        # cut), and reddening every PR on that would teach people to ignore
+        # this job. The distinction is now the script's own exit code, not a
+        # curl status this step re-derives: exit 2 is ONLY "nothing published
+        # for this host under this pin" (mirrors the old 404 case) and is a
+        # loud, named skip; any other non-zero exit — including a transient
+        # fetch failure — is now FATAL here too. That narrows the old
+        # tolerance (which also downgraded a plain network/proxy hiccup to a
+        # warning); consistent with release-vsix.yml, which already treats
+        # every non-"no asset" failure as fatal and expects a re-run, rather
+        # than adding a second, differently-tuned leniency rule for the same
+        # download.
         run: |
-          set -uo pipefail
-          VERSION="${{ steps.cli_version.outputs.version }}"
-          URL="https://github.com/alplabai/tan-cli/releases/download/v${VERSION}/tan-aarch64-apple-darwin"
-          mkdir -p /tmp/bundled
-          CURL_RC=0
-          STATUS=$(curl -sSL -w '%{http_code}' -o /tmp/bundled/tan "$URL") || CURL_RC=$?
-          BYTES=0
-          if [ -f /tmp/bundled/tan ]; then BYTES=$(wc -c < /tmp/bundled/tan); fi
-          if [ "$STATUS" = "404" ]; then
-            rm -f /tmp/bundled/tan
-            echo "::warning::No tan-aarch64-apple-darwin asset at tag v${VERSION} (SUPPORTED_CLI_VERSION, src/alpCli/service.ts). Nothing to execute — not a defect in this repo. url=${URL}"
-            exit 0
-          fi
-          if [ "$CURL_RC" -ne 0 ] || [ "$STATUS" != "200" ] || [ ! -s /tmp/bundled/tan ]; then
-            rm -f /tmp/bundled/tan
-            echo "::warning::Could not fetch the bundled tan binary — treat as network/proxy/outage, not a code defect. pin=v${VERSION} http_status=${STATUS} curl_exit=${CURL_RC} bytes=${BYTES} url=${URL}"
-            exit 0
-          fi
-          chmod +x /tmp/bundled/tan
-          # Published and downloaded, so from here a failure IS ours: an
-          # unrunnable bundled binary is exactly what reaches a Mac customer.
+          set +e
+          node scripts/stage-tan-cli-asset.mjs \
+            --platform darwin --arch arm64 --dest /tmp/bundled \
+            --version "${{ steps.cli_version.outputs.version }}"
+          RC=$?
           set -e
+          if [ "$RC" -eq 2 ]; then
+            exit 0
+          fi
+          if [ "$RC" -ne 0 ]; then
+            exit 1
+          fi
+
+          VERSION="${{ steps.cli_version.outputs.version }}"
+          # Published, downloaded, and checksum-verified, so from here a
+          # failure IS ours: an unrunnable bundled binary is exactly what
+          # reaches a Mac customer.
           file /tmp/bundled/tan
           OUT=$(/tmp/bundled/tan --version)
           echo "bundled tan on darwin-arm64: ${OUT}"
