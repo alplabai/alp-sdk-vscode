@@ -5,7 +5,9 @@ Last revised: 2026-07-20
 This document defines the intended contract for the ALP command-line
 surface.
 
-> **Implementation note.** The CLI is the standalone native Rust binary `tan`,
+> **Implementation note.** The CLI is the standalone `tan` binary — from
+> v0.5.0 a PyInstaller freeze of the Python port; earlier releases were a Rust
+> binary (tan-cli#269 removed `Cargo.toml`) —
 > developed and released from
 > [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli); the former in-repo
 > `alp` (`cli-rs`) binary and the TypeScript implementation (`packages/alp-cli`)
@@ -97,8 +99,8 @@ implementation:
 
 Where a CLI verb re-implements domain logic natively (e.g. `validate
 --offline`, `diff`, the loader/context readers) instead of shelling out, that
-Rust↔Python parity surface is `tan-cli`'s own concern to test — its stated
-gates are `cargo fmt`/`clippy`/`build`/`test`. This repo does not gate it;
+parity surface is `tan-cli`'s own concern to test, under its own gates. This
+repo does not gate it;
 what it depends on is the envelope contract in this document.
 
 ### 2.2 `tan run` — native_sim versus hardware

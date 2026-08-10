@@ -221,6 +221,7 @@ jobs:
         # than adding a second, differently-tuned leniency rule for the same
         # download.
         run: |
+          set -uo pipefail
           set +e
           node scripts/stage-tan-cli-asset.mjs \
             --platform darwin --arch arm64 --dest /tmp/bundled \
@@ -228,6 +229,16 @@ jobs:
           RC=$?
           set -e
           if [ "$RC" -eq 2 ]; then
+            # tan-cli#151 is the proof that an annotation alone is the weakest
+            # signal GitHub has: the script's ::warning:: leaves this reading as
+            # a fully green run in the checks list, which is a quieter version
+            # of the silence this job exists to remove. Pair it with a summary
+            # row, same as release-vsix.yml's skipped-publish notes.
+            {
+              echo "### Bundled darwin-arm64 smoke test: SKIPPED"
+              echo
+              echo "tan-cli \`${{ steps.cli_version.outputs.version }}\` publishes no darwin/arm64 asset, so there was nothing to download and run. Not a failure — see \`HOSTS_WITHOUT_RELEASE_ASSET\` in \`src/alpCli/service.ts\`."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [ "$RC" -ne 0 ]; then

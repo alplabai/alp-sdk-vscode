@@ -154,15 +154,27 @@ jobs:
         # so there is exactly one implementation of the rule, not two that can
         # silently drift apart.
         run: |
-          read -r CHANNEL MINOR <<< "$(node scripts/resolve-vsix-channel.mjs)"
+          # Assign FIRST, then read. `read -r ... <<< "$(cmd)"` returns 0 even
+          # when cmd failed (the here-string is merely empty), so `set -e` never
+          # fires, CHANNEL is empty, and the else-branch publishes a PRE-RELEASE
+          # build to the STABLE Marketplace channel. That is unrecoverable: the
+          # tag is spent and the version cannot be republished. A plain
+          # assignment carries the substitution's exit status, so the step dies
+          # on a bad package.json instead. The final `else` refuses anything
+          # that is not one of the two channels rather than picking one.
+          RESOLVED="$(node scripts/resolve-vsix-channel.mjs)"
+          read -r CHANNEL MAJOR MINOR <<< "$RESOLVED"
           if [ "$CHANNEL" = "pre-release" ]; then
             echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
             echo "IS_PRERELEASE=true" >> "$GITHUB_ENV"
-            echo "::notice::version 0.$MINOR.x → publishing as a PRE-RELEASE (odd minor)."
-          else
+            echo "::notice::version $MAJOR.$MINOR.x → publishing as a PRE-RELEASE (odd minor)."
+          elif [ "$CHANNEL" = "stable" ]; then
             echo "PRERELEASE_FLAG=" >> "$GITHUB_ENV"
             echo "IS_PRERELEASE=false" >> "$GITHUB_ENV"
-            echo "::notice::version 0.$MINOR.x → publishing as a STABLE release (even minor)."
+            echo "::notice::version $MAJOR.$MINOR.x → publishing as a STABLE release (even minor)."
+          else
+            echo "::error::resolve-vsix-channel.mjs produced no usable channel: '$RESOLVED'"
+            exit 1
           fi
 
       - name: Package (.vsix)
@@ -350,13 +362,22 @@ jobs:
         # no `IS_PRERELEASE`/`prerelease:` consumer -- only PRERELEASE_FLAG is
         # exported here.
         run: |
-          read -r CHANNEL MINOR <<< "$(node scripts/resolve-vsix-channel.mjs)"
+          # Assign FIRST, then read -- see package_and_publish's identically
+          # named step for why: `read <<< "$(cmd)"` swallows cmd's exit status,
+          # so a failing resolver would silently pick STABLE. Logic-identical to
+          # that step; it differs only in the ::notice:: wording and in not
+          # exporting IS_PRERELEASE (this job creates no GitHub Release).
+          RESOLVED="$(node scripts/resolve-vsix-channel.mjs)"
+          read -r CHANNEL MAJOR MINOR <<< "$RESOLVED"
           if [ "$CHANNEL" = "pre-release" ]; then
             echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
-            echo "::notice::version 0.$MINOR.x → bundling darwin-arm64 as a PRE-RELEASE (odd minor)."
-          else
+            echo "::notice::version $MAJOR.$MINOR.x → bundling darwin-arm64 as a PRE-RELEASE (odd minor)."
+          elif [ "$CHANNEL" = "stable" ]; then
             echo "PRERELEASE_FLAG=" >> "$GITHUB_ENV"
-            echo "::notice::version 0.$MINOR.x → bundling darwin-arm64 as a STABLE release (even minor)."
+            echo "::notice::version $MAJOR.$MINOR.x → bundling darwin-arm64 as a STABLE release (even minor)."
+          else
+            echo "::error::resolve-vsix-channel.mjs produced no usable channel: '$RESOLVED'"
+            exit 1
           fi
 
       - name: Resolve pinned CLI version (mirrors SUPPORTED_CLI_VERSION in src/alpCli/service.ts)
