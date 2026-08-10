@@ -500,7 +500,7 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a `tan` on PATH whose `--version` identifies it as a native build, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/target/release/tan`) to override."
+          "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a `tan` on PATH whose `--version` identifies it as a native build, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/python/dist/tan/tan`, where `cd python && bash scripts/build_binary.sh` puts its freeze) to override."
         },
         "alpSdk.preferGlobalCli": {
           "type": "boolean",

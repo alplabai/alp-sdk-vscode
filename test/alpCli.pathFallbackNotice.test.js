@@ -357,7 +357,7 @@ test("every other arm is silent: cliPath, localBuild, bundled, cached, download"
       onPath: true,
     }),
     localBuild: (home) => {
-      home.write(GOOD, "tan-cli", "target", "release", BINARY);
+      home.write(GOOD, "tan-cli", "python", "dist", "tan", BINARY);
       return { onPath: true };
     },
     bundled: (home) => {
