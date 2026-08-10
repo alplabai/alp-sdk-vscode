@@ -42,9 +42,12 @@
 # passed
 # `--follow-symlinks` for exactly that reason — see that step's comment. It
 # reuses the same VSCE_PAT secret and SHOULD_PUBLISH gate as the universal job,
-# and always publishes `--pre-release` (it's the first bundled-CLI VSIX,
-# regardless of the odd/even-minor convention above). The universal
-# (binary-less) job stays unchanged and independent.
+# and follows the SAME odd/even-minor parity rule as that job for its own
+# publish channel — both jobs resolve it via the identical
+# `scripts/resolve-vsix-channel.mjs` step, so the parity rule itself lives in
+# exactly one place instead of two independent copies. The universal job stays
+# independent (no `needs:` between the two jobs); its own resolve step now
+# calls that same script rather than carrying its own inline copy of the rule.
 
 name: release-vsix
 
@@ -146,9 +149,13 @@ jobs:
         run: node scripts/check-cli-pin.mjs
 
       - name: Resolve pre-release flag (VS Code convention — odd minor = pre-release)
+        # The odd/even parity rule itself lives in scripts/resolve-vsix-channel.mjs
+        # (also called by package_darwin_arm64's identically-named step below),
+        # so there is exactly one implementation of the rule, not two that can
+        # silently drift apart.
         run: |
-          MINOR=$(node -p "require('./package.json').version.split('.')[1]")
-          if [ "$((MINOR % 2))" -eq 1 ]; then
+          read -r CHANNEL MINOR <<< "$(node scripts/resolve-vsix-channel.mjs)"
+          if [ "$CHANNEL" = "pre-release" ]; then
             echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
             echo "IS_PRERELEASE=true" >> "$GITHUB_ENV"
             echo "::notice::version 0.$MINOR.x → publishing as a PRE-RELEASE (odd minor)."
@@ -287,9 +294,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # See package_and_publish's outputs: comment above -- same reasoning, this
-    # channel is declared "always" (always --pre-release) so its own step
-    # outcome is a safe, non-circular signal for release_gate (#432).
+    # See package_and_publish's outputs: comment above -- same mechanism, and
+    # the non-circularity argument does NOT depend on which channel this job
+    # resolves: marketplace_publish's own `if:` is gated on SHOULD_PUBLISH (and
+    # VSCE_PAT), never on pre-release-vs-stable, so steps.marketplace_publish.
+    # outcome is read from what the runner actually recorded for THIS run, not
+    # re-derived from the SHOULD_PUBLISH/channel declaration release_gate
+    # compares it against. That was true back when this job's channel was
+    # hardcoded to --pre-release and is equally true now that it follows the
+    # odd/even parity rule (scripts/resolve-vsix-channel.mjs) -- the channel
+    # choice and the publish-outcome signal are orthogonal facts.
     outputs:
       marketplace_outcome: ${{ steps.marketplace_publish.outcome }}
     env:
@@ -327,6 +341,23 @@ jobs:
 
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
+
+      - name: Resolve pre-release flag (VS Code convention — odd minor = pre-release)
+        # Same resolution as package_and_publish's identically-named step --
+        # both call scripts/resolve-vsix-channel.mjs so the odd/even parity
+        # rule is decided in exactly one place. This job never creates a
+        # GitHub Release (that only happens in package_and_publish), so it has
+        # no `IS_PRERELEASE`/`prerelease:` consumer -- only PRERELEASE_FLAG is
+        # exported here.
+        run: |
+          read -r CHANNEL MINOR <<< "$(node scripts/resolve-vsix-channel.mjs)"
+          if [ "$CHANNEL" = "pre-release" ]; then
+            echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
+            echo "::notice::version 0.$MINOR.x → bundling darwin-arm64 as a PRE-RELEASE (odd minor)."
+          else
+            echo "PRERELEASE_FLAG=" >> "$GITHUB_ENV"
+            echo "::notice::version 0.$MINOR.x → bundling darwin-arm64 as a STABLE release (even minor)."
+          fi
 
       - name: Resolve pinned CLI version (mirrors SUPPORTED_CLI_VERSION in src/alpCli/service.ts)
         id: cli_version
@@ -385,7 +416,7 @@ jobs:
         # materialise) those entries instead of choking on them; it has no
         # effect when bin/ holds a single raw binary (no symlinks to find), so
         # it is safe to pass unconditionally for either shape.
-        run: pnpm exec vsce package --no-dependencies --target darwin-arm64 --pre-release --follow-symlinks --out alp-sdk-darwin-arm64.vsix
+        run: pnpm exec vsce package --no-dependencies --target darwin-arm64 $PRERELEASE_FLAG --follow-symlinks --out alp-sdk-darwin-arm64.vsix
 
       - name: Upload vsix artefact
         uses: actions/upload-artifact@v4
@@ -406,7 +437,7 @@ jobs:
         # `vsce package --target darwin-arm64`; vsce rejects both together
         # ("Both options not supported simultaneously: 'packagePath' and
         # 'target'"). Publish the pre-built platform .vsix by path only.
-        run: pnpm exec vsce publish --no-dependencies --pre-release --packagePath alp-sdk-darwin-arm64.vsix
+        run: pnpm exec vsce publish --no-dependencies $PRERELEASE_FLAG --packagePath alp-sdk-darwin-arm64.vsix
         # VSCE_PAT is read from the environment by vsce.
 
       - name: Note when Marketplace publish was skipped
@@ -439,7 +470,7 @@ jobs:
   #   |                              | never creates one, by design)            |
   #   | Marketplace (universal)      | SHOULD_PUBLISH (push, or dispatch with   |
   #   |                              | publish=true)                            |
-  #   | Marketplace (darwin-arm64)   | same SHOULD_PUBLISH, always --pre-release|
+  #   | Marketplace (darwin-arm64)   | same SHOULD_PUBLISH, odd/even parity     |
   #   | Open VSX                     | optional -- only asserted at all when    |
   #   |                              | SHOULD_PUBLISH=true (OVSX_PAT documented |
   #   |                              | optional at the top of this file)        |
@@ -488,7 +519,7 @@ jobs:
           note "|---|---|---|"
           note "| GitHub Release | push-only, declared=${RELEASE_DECLARED} | \`${RELEASE_OUTCOME:-<empty>}\` |"
           note "| Marketplace (universal) | SHOULD_PUBLISH=${SHOULD_PUBLISH} | \`${MARKETPLACE_OUTCOME:-<empty>}\` |"
-          note "| Marketplace (darwin-arm64) | SHOULD_PUBLISH=${SHOULD_PUBLISH}, --pre-release | \`${DARWIN_MARKETPLACE_OUTCOME:-<empty>}\` |"
+          note "| Marketplace (darwin-arm64) | SHOULD_PUBLISH=${SHOULD_PUBLISH} | \`${DARWIN_MARKETPLACE_OUTCOME:-<empty>}\` |"
           note "| Open VSX | optional when SHOULD_PUBLISH=true | published=\`${OVSX_PUBLISHED:-<none>}\` |"
           note ""
 
