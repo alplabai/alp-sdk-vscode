@@ -151,9 +151,10 @@ export interface BinaryResolutionInput {
   /** Whether a `bin/tan[.exe]` staged in the extension install exists (only
    *  true in a platform-specific VSIX built with `vsce package --target`). */
   bundledExists: boolean;
-  /** Whether a locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]`
-   *  exists next to the extension path — true when running from a source
-   *  checkout with a built tan, so the CLI resolves without a network download. */
+  /** Whether a locally-built sibling `tan-cli/python/dist/tan/tan[.exe]` exists
+   *  next to the extension path — true when running from a source checkout
+   *  whose `python/scripts/build_binary.sh` freeze has been built, so the CLI
+   *  resolves without a network download. */
   localBuildExists: boolean;
   /** Whether a previously downloaded binary exists in global storage. */
   cachedExists: boolean;

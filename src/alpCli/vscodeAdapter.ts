@@ -918,15 +918,33 @@ function buildResolveDeps(
   // A locally-built tan from a SIBLING `tan-cli` checkout — present when running
   // from a source checkout with both repos cloned side by side (F5 / dev host /
   // `code --extensionDevelopmentPath`), where no `bin/` is staged and a network
-  // download may be unavailable. Prefer a release build over debug. In an
-  // installed VSIX `../tan-cli` does not exist, so this is null and resolution
-  // falls through to the cached/downloaded binary.
+  // download may be unavailable. In an installed VSIX `../tan-cli` does not
+  // exist, so this is null and resolution falls through to the cached/downloaded
+  // binary.
+  //
+  // `python/dist/tan/` is where tan-cli's own build lands: `python/scripts/
+  // build_binary.sh` freezes the CLI with PyInstaller `--onedir --name tan
+  // --distpath dist`, and both tan-cli workflows invoke it with
+  // `working-directory: python`. The launcher is pointed at IN PLACE and never
+  // copied out — a onedir freeze resolves its payload relative to itself, so
+  // `tan` only runs while it sits beside its `_internal/` sibling.
+  //
+  // This used to look for `target/{release,debug}` — cargo output. tan-cli has
+  // had no `Cargo.toml` since v0.5.0 (tan-cli#269), so those candidates could
+  // not match any checkout the current pin wants, and a developer's own build
+  // was silently skipped in favour of a download. The other local-dev route,
+  // `pip install ./python`, puts `tan` on PATH and is the `path` rung's job.
   const siblingTanCli = path.join(context.extensionPath, "..", "tan-cli");
-  const localBuildBinaryPath =
-    [
-      path.join(siblingTanCli, "target", "release", binaryName(platform)),
-      path.join(siblingTanCli, "target", "debug", binaryName(platform)),
-    ].find((candidate) => fs.existsSync(candidate)) ?? null;
+  const localBuildCandidate = path.join(
+    siblingTanCli,
+    "python",
+    "dist",
+    "tan",
+    binaryName(platform),
+  );
+  const localBuildBinaryPath = fs.existsSync(localBuildCandidate)
+    ? localBuildCandidate
+    : null;
   return {
     cliPathSetting: vscode.workspace
       .getConfiguration("alpSdk")

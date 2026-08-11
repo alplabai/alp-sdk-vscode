@@ -287,7 +287,7 @@ async function runChecks() {
   }
 
   // The `tan` CLI must actually RESOLVE — with a sibling `tan-cli` checkout
-  // built (target/release/tan) the CLI-backed buttons (New Project, generate,
+  // built (python/dist/tan/tan) the CLI-backed buttons (New Project, generate,
   // validate) work instead of failing "tan CLI unavailable". Resolve via the
   // real adapter against a fabricated context pointing at this checkout. When no
   // sibling build is present (fresh CI runner) resolution falls through to a
@@ -301,8 +301,9 @@ async function runChecks() {
     "../../..",
     "..",
     "tan-cli",
-    "target",
-    "release",
+    "python",
+    "dist",
+    "tan",
     process.platform === "win32" ? "tan.exe" : "tan",
   );
   if (fs.existsSync(siblingTan)) {

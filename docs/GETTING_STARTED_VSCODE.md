@@ -27,8 +27,9 @@ the binary in this order:
 1. the `alpSdk.cliPath` setting (point it at a local build to override),
 2. a `bin/tan[.exe]` **bundled** in the VSIX (present only in a platform-specific
    VSIX),
-3. a locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]` (source
-   checkout),
+3. a locally-built sibling `tan-cli/python/dist/tan/tan[.exe]` (source
+   checkout — where `cd python && bash scripts/build_binary.sh` puts its
+   PyInstaller freeze),
 4. a previously cached copy in the extension's global storage,
 5. a verified-native `tan` on your `PATH` (last resort — a `tan` that does not
    emit the native `tan X.Y.Z` version line is treated as not present and falls

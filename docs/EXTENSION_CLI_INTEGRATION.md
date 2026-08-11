@@ -166,10 +166,13 @@ defeats the reason it exists.
 **Decision: `alpSdk.cliPath` setting → bundled `bin/tan[.exe]` → local build →
 cached download → a verified-native `tan` on PATH (last resort BY DEFAULT) →
 download-on-demand.** `resolveAlpBinary()` resolves in that order: an explicit
-`alpSdk.cliPath` (also serves dev builds: `tan-cli/target/release/tan`); then a
+`alpSdk.cliPath` (also serves dev builds: `tan-cli/python/dist/tan/tan`); then a
 binary staged at `<extensionPath>/bin/tan[.exe]` — present only in a
 platform-specific VSIX built with `vsce package --target <triple>`; then a
-locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]` (source checkout);
+locally-built sibling `tan-cli/python/dist/tan/tan[.exe]` (source checkout —
+where `python/scripts/build_binary.sh`'s PyInstaller onedir freeze lands; the
+launcher is used in place because it resolves its payload relative to the
+`_internal/` directory beside it);
 then a previously downloaded binary cached in `globalStorage`, but only when a
 sha256 was recorded for its installed TREE and that tree still hashes to that
 digest (#386, extended to the whole tree by #464 — see §7; with no record the
@@ -774,7 +777,8 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
 
 Build is **not** "run `west build`". A single `board.yaml` declares multiple
 cores, and each core's runtime decides its backend. **`tan build` drives that
-per-core dispatch itself** (`crates/tan-cli/src/commands/build/mod.rs`) — no
+per-core dispatch itself** (`python/tan/commands/build/execute.py`'s
+`execute_slices`, reached through `build_cmd._dispatch`) — no
 `west alp-build` extension command is involved. The target design:
 
 - fan out one build slice per non-`off` core into `<app>/build/<core>-<os>/…`,

@@ -62,9 +62,10 @@ export interface ResolveDeps {
   /** Whether `bundledBinaryPath` exists on disk. */
   bundledExists: boolean;
   /** Absolute path of a locally-built sibling
-   *  `tan-cli/target/{release,debug}/tan[.exe]`, or null when none exists
-   *  (running from a source checkout with a built tan resolves the CLI here
-   *  instead of a network download). */
+   *  `tan-cli/python/dist/tan/tan[.exe]` — where `python/scripts/
+   *  build_binary.sh`'s PyInstaller onedir freeze lands — or null when none
+   *  exists (running from a source checkout with a built tan resolves the CLI
+   *  here instead of a network download). */
   localBuildBinaryPath: string | null;
   /** The `alpSdk.preferGlobalCli` setting value (see `models.ts`). */
   preferGlobalCli: boolean;
@@ -320,7 +321,19 @@ export async function resolveAlpBinary(
       return { command: deps.bundledBinaryPath, source };
     case "localBuild":
       if (deps.platform !== "win32") {
-        deps.chmodExec(deps.localBuildBinaryPath!);
+        // Safety net only: tan-cli's PyInstaller freeze already lands
+        // -rwxr-xr-x, so this is expected to be a no-op. Unlike `cached`,
+        // nothing chmodded this file for us first, and it is a DEVELOPER'S
+        // tree -- chmod(2) requires ownership even when the mode is already
+        // correct, so a read-only mount or a file owned by another uid throws.
+        // Refusing an already-executable binary over a failed no-op would be
+        // worse than proceeding: if it genuinely is not executable, the spawn
+        // below fails next, with an error that says so.
+        try {
+          deps.chmodExec(deps.localBuildBinaryPath!);
+        } catch {
+          /* see above — deliberately not fatal */
+        }
       }
       return { command: deps.localBuildBinaryPath!, source };
     case "cached": {

@@ -8,8 +8,8 @@
 #   Usage: test/e2e/cli-smoke.sh [<sdk-root>]
 #   <sdk-root> defaults to a sibling `../alp-sdk` checkout.
 #
-# Requires a `tan` binary — a sibling `../tan-cli/target/{release,debug}/tan[.exe]`
-# build, a `$TAN` override, or `tan` on PATH — plus Python 3.10+. Does NOT cover
+# Requires a `tan` binary — a sibling `../tan-cli/python/dist/tan/tan[.exe]`
+# freeze, a `$TAN` override, or `tan` on PATH — plus Python 3.10+. Does NOT cover
 # the west/Zephyr compile or on-hardware flash/debug (toolchain- and bench-gated);
 # those are constructed-and-driven by the in-host e2e, not run here.
 set -o pipefail
@@ -19,13 +19,16 @@ SDK="${1:-$repo/../alp-sdk}"
 
 ALP="${TAN:-}"
 if [ -z "$ALP" ]; then
-  for c in "$repo/../tan-cli/target/release/tan.exe" "$repo/../tan-cli/target/release/tan" \
-           "$repo/../tan-cli/target/debug/tan.exe" "$repo/../tan-cli/target/debug/tan"; do
+  # python/dist/tan/ is where python/scripts/build_binary.sh's PyInstaller
+  # onedir freeze lands. The launcher must stay beside its _internal/ sibling,
+  # so it is run in place. (This used to look under target/{release,debug} —
+  # cargo output; tan-cli has had no Cargo.toml since v0.5.0, tan-cli#269.)
+  for c in "$repo/../tan-cli/python/dist/tan/tan.exe" "$repo/../tan-cli/python/dist/tan/tan"; do
     [ -x "$c" ] && { ALP="$c"; break; }
   done
 fi
 [ -z "$ALP" ] && command -v tan >/dev/null 2>&1 && ALP="tan"
-[ -z "$ALP" ] && { echo "no tan CLI — build it in ../tan-cli (cargo build), set \$TAN, or put tan on PATH"; exit 2; }
+[ -z "$ALP" ] && { echo "no tan CLI — freeze it in ../tan-cli (cd python && bash scripts/build_binary.sh), set \$TAN, or put tan on PATH (pip install ./python)"; exit 2; }
 [ -d "$SDK" ] || { echo "SDK root not found: $SDK"; exit 2; }
 echo "tan: $("$ALP" --version 2>&1 | head -1)   sdk: $SDK"
 
