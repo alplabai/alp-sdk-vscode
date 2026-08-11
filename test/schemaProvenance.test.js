@@ -98,7 +98,10 @@ test("reports match when the SDK ships byte-identical schemas", () => {
 test("reports mismatch when the SDK's board schema differs", () => {
   // Arrange -- one byte of difference is enough; this is a byte comparison.
   const reads = sdkReadsMatchingVendored();
-  reads.board = { ok: true, text: vendoredText("board").replace("som", "som ") };
+  reads.board = {
+    ok: true,
+    text: vendoredText("board").replace("som", "som "),
+  };
 
   // Act
   const p = buildSchemaProvenance({

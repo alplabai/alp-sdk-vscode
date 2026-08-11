@@ -6,6 +6,16 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **The editor now says which board.yaml schema it is validating against.** The
+  bundled `schemas/*.json` are snapshots of one alp-sdk tag, contributed
+  unconditionally, while the extension pins no SDK version — so a customer on a
+  different tag can get a squiggle their own `tan build` does not produce, or
+  miss one it does. A `board.yaml` / `system-manifest.yaml` language-status item
+  now names the schema in force, and when the bundled copies differ from
+  `<sdkRoot>/metadata/schemas/`, warns once per distinct mismatch that the CLI
+  is the side to trust. What is validated does not change yet; dynamic
+  registration against the resolved SDK is the remaining half of #493.
+
 - **Both vendored SDK schemas re-vendored from alp-sdk v0.15.0 (was v0.14.0).**
   `board.schema.json` changes what the editor accepts in two ways. `som.sku`'s
   pattern widens from `^E1M-(AEN[3-8]01|V2N10[12]|V2M10[12]|NX9[0-9]{3})$` to

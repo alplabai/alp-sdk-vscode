@@ -95,11 +95,12 @@ export const SDK_SCHEMA_RELATIVE_PATHS: Readonly<
 };
 
 /** The sha256 the vendored copy of `id` must hash to. */
-export const VENDORED_SCHEMA_SHA256: Readonly<Record<VendoredSchemaId, string>> =
-  {
-    board: BOARD_SCHEMA_SHA256,
-    systemManifest: SYSTEM_MANIFEST_SCHEMA_SHA256,
-  };
+export const VENDORED_SCHEMA_SHA256: Readonly<
+  Record<VendoredSchemaId, string>
+> = {
+  board: BOARD_SCHEMA_SHA256,
+  systemManifest: SYSTEM_MANIFEST_SCHEMA_SHA256,
+};
 
 /** Human label for each schema, for status text the customer reads. */
 export const VENDORED_SCHEMA_LABEL: Readonly<Record<VendoredSchemaId, string>> =

@@ -234,15 +234,19 @@ TAG=v0.15.0   # the alp-sdk release you are assessing
 git -C alp-sdk-upstream fetch origin --tags
 git -C alp-sdk-upstream checkout --detach "$TAG"
 
-# 1. BOTH schemas, always together — test/vendored-sdk-tag.js pins one tag for
-#    the pair, so they can never green while disagreeing.
+# 1. BOTH schemas, always together — packages/alp-core/src/validation/
+#    vendoredSchemas.ts pins one tag for the pair, so they can never green
+#    while disagreeing. (test/vendored-sdk-tag.js re-exports it for the gates.)
 git -C alp-sdk-upstream show "$TAG:metadata/schemas/board.schema.json" \
   > schemas/board.schema.json
 git -C alp-sdk-upstream show "$TAG:metadata/schemas/system-manifest-v1.schema.json" \
   > schemas/system-manifest-v1.schema.json
 
 # 2. Recompute BOTH hashes (LF-normalised — portable, no `shasum` on Windows)
-#    and put them, with the tag, in test/vendored-sdk-tag.js.
+#    and put them, with the tag, in
+#    packages/alp-core/src/validation/vendoredSchemas.ts — NOT in test/. The
+#    extension reads them at runtime to tell the customer which schema is in
+#    force when their resolved SDK ships a different one (#493).
 node -e "const f=require('fs'),c=require('crypto');for(const p of ['schemas/board.schema.json','schemas/system-manifest-v1.schema.json'])console.log(p,c.createHash('sha256').update(f.readFileSync(p,'utf-8').replace(/\r\n/g,'\n'),'utf-8').digest('hex'))"
 
 # 3. Regenerate BOTH vendored Kconfig artefacts. The .txt fixture carries no

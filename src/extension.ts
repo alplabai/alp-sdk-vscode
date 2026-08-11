@@ -31,6 +31,7 @@ import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
 import { planFailure, planSuccess } from "./notify/service";
 import { notifyAsync, setExtensionId } from "./notify/vscodeAdapter";
+import { createSchemaProvenanceStatus } from "./schemaProvenance";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerAlpTaskProvider } from "./tasks/vscodeAdapter";
@@ -232,6 +233,10 @@ export function activate(context: vscode.ExtensionContext): void {
     // nothing to resolve those against and pre-launch aborts silently.
     registerAlpTaskProvider(context),
     createStatusBar(stateMgr),
+    // Names WHICH schema board.yaml is being validated against (#493). The
+    // vendored snapshot is asserted at every customer regardless of the SDK
+    // they resolved, so a squiggle can contradict their own `tan build`.
+    createSchemaProvenanceStatus(context, stateMgr),
     registerSelectSdkCommand(context),
     ...registerConfiguratorEditor(context),
     vscode.commands.registerCommand("alp.openDependencies", () =>
