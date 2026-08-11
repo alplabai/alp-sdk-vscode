@@ -53,4 +53,15 @@ export interface DoctorEnvelopeData {
    * `planDependencyReport`.
    */
   missingPrerequisites?: MissingPrerequisite[] | null;
+  /**
+   * The report-level follow-up list, PROSE from tan — same rule as a check's
+   * `fix`: shown verbatim, never parsed. Measured on the pinned tan 0.5.1, a
+   * real entry is "Run `JLinkExe -?` by hand and confirm the banner reports
+   * V9.46 or newer."
+   *
+   * Optional for the same reason `missingPrerequisites` is: an older binary
+   * reachable through `alpSdk.cliPath` may not emit it, so it is
+   * feature-detected and never assumed.
+   */
+  nextSteps?: string[] | null;
 }
