@@ -6,6 +6,38 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **Both vendored SDK schemas re-vendored from alp-sdk v0.15.0 (was v0.14.0).**
+  `board.schema.json` changes what the editor accepts in two ways. `som.sku`'s
+  pattern widens from `^E1M-(AEN[3-8]01|V2N10[12]|V2M10[12]|NX9[0-9]{3})$` to
+  `^E1M-(AEN[3-8][0-9]{2}|V2N[0-9]{3}|V2M[0-9]{3}|NX9[0-9]{3})$`, so the editor
+  no longer pre-rejects a SKU the PLM has allocated but the SDK has not yet
+  shipped a preset for — v0.15.0 carries the same 11 presets as v0.14.0, so
+  nothing in the catalogue moves. And `storage[].raw`, the legacy `fs: raw`
+  alias, is gone: storage items are `additionalProperties: false`, so a
+  `board.yaml` carrying `raw: true` is now rejected. That is upstream's stated
+  intent — v0.15.0's `scripts/alp_orchestrate/loader.py` deleted the
+  normalising branch and records that **zero** tracked `board.yaml` files used
+  it before removal. `system-manifest-v1.schema.json` moves for the first time
+  since v0.11.0, by description text only (the emitter is now named as the
+  `alp_orchestrate` package rather than `scripts/alp_orchestrate.py`).
+  Both vendored Kconfig artefacts regenerate:
+  `src/lsp/generated/kconfig-metadata.json` 221 → 222 symbols (the new one
+  being `CMSISSTREAM` from `metadata/libraries/cmsis-stream.yaml`), and
+  `test/fixtures/alp-kconfig-symbols.txt` 346 → 350. The fixture carries no
+  `submoduleRev` and its test asserts only curated ⊆ vendored, so a stale copy
+  of it stays green — the re-vendor procedure in `README.md` now spells that
+  out, along with the tag-not-`main` rule, both hashes, the
+  `tsc --build --force` the staleness gate demands, and the gitlink's
+  `skip-worktree` bit, which makes `git add alp-sdk-upstream` a silent no-op.
+  `StoragePartition.raw` is deleted from both type mirrors
+  (`packages/alp-core/src/board/models.ts`, `packages/alp-webview/src/types.ts`)
+  — nothing read it, and modelling it would type-bless a document the SDK now
+  refuses.
+  `docs/COMPATIBILITY_RULES.md` §5 gains the v0.15.0 assessment and, with it,
+  the two re-vendors (v0.13.0 in #328, v0.14.0 in #427) that shipped without
+  one — which is why that log still claimed the vendored schema tracked
+  v0.11.0 while `test/vendored-sdk-tag.js` said `v0.14.0`.
+
 - **The troubleshooting panel's doctor table now shows tan's remediation, not
   just its diagnosis (#474).** The table rendered `Check | Status | Detail` and
   dropped two fields the envelope carries and populates: each check's `fix`,
