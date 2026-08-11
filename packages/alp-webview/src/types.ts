@@ -170,7 +170,9 @@ export interface StoragePartition {
   mount?: string;
   flash_device?: string;
   offset_kib?: number;
-  raw?: boolean;
+  // No `raw?: boolean` — mirrors @alp-sdk/core's StoragePartition, where the
+  // reason is spelled out: alp-sdk v0.15.0 deleted the legacy `fs: raw` alias
+  // and storage items are `additionalProperties: false`.
 }
 
 export interface SecurityPsa {

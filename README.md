@@ -224,18 +224,52 @@ check.
 > Use the `alp-board-min` or `alp-board-hetero` snippet to get a
 > valid starting point.
 
-When alp-sdk bumps the schema:
+When alp-sdk cuts a release, re-vendor from its **TAG** — never from `main` or
+`dev`. `test/board.schema.vendored.test.js` calls re-vendoring from a moving
+branch "forward drift" and fails on it by design.
 
 ```bash
-cd alp-sdk-upstream
-git fetch && git checkout main
-cd ..
-cp alp-sdk-upstream/metadata/schemas/<board-schema>.json schemas/board.schema.json  # re-vendor
-git add alp-sdk-upstream schemas/board.schema.json
-git commit -m "deps(alp-sdk): bump submodule to <sha> + re-vendor schema"
-pnpm test         # re-runs the schema-snapshot tests
-pnpm run package  # builds the .vsix against the new schema
+TAG=v0.15.0   # the alp-sdk release you are assessing
+
+git -C alp-sdk-upstream fetch origin --tags
+git -C alp-sdk-upstream checkout --detach "$TAG"
+
+# 1. BOTH schemas, always together — test/vendored-sdk-tag.js pins one tag for
+#    the pair, so they can never green while disagreeing.
+git -C alp-sdk-upstream show "$TAG:metadata/schemas/board.schema.json" \
+  > schemas/board.schema.json
+git -C alp-sdk-upstream show "$TAG:metadata/schemas/system-manifest-v1.schema.json" \
+  > schemas/system-manifest-v1.schema.json
+
+# 2. Recompute BOTH hashes (LF-normalised — portable, no `shasum` on Windows)
+#    and put them, with the tag, in test/vendored-sdk-tag.js.
+node -e "const f=require('fs'),c=require('crypto');for(const p of ['schemas/board.schema.json','schemas/system-manifest-v1.schema.json'])console.log(p,c.createHash('sha256').update(f.readFileSync(p,'utf-8').replace(/\r\n/g,'\n'),'utf-8').digest('hex'))"
+
+# 3. Regenerate BOTH vendored Kconfig artefacts. The .txt fixture carries no
+#    submoduleRev and its test only asserts curated ⊆ vendored, so a stale copy
+#    stays GREEN — nothing will remind you.
+node scripts/vendor-kconfig-metadata.mjs
+node scripts/vendor-kconfig-symbols.mjs
+
+# 4. tsc --build is incremental and re-copies src/**/*.json only when a .ts
+#    changes, so out/ keeps the PREVIOUS harvest without this. The
+#    "compiled metadata copy is not stale" gate catches it if you forget.
+pnpm exec tsc --build --force
+
+# 5. The gitlink may carry skip-worktree locally (a per-clone index bit, not
+#    committed), in which case `git add alp-sdk-upstream` is a silent no-op and
+#    the pin stays behind while the schemas move. Check and clear it first.
+git ls-files -v alp-sdk-upstream          # a leading `S` means skip-worktree
+git update-index --no-skip-worktree alp-sdk-upstream
+
+git add -A
+pnpm run format:check && pnpm run typecheck && node --test test/*.test.js
+pnpm run package   # builds the .vsix against the new schema
 ```
+
+Then record the release in `docs/COMPATIBILITY_RULES.md` §5 — that log is the
+only thing tracking which upstream releases were assessed, and two re-vendors
+(v0.13.0, v0.14.0) shipped without an entry before this was written down.
 
 ## Build
 

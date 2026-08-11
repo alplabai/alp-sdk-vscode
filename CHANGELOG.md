@@ -20,8 +20,19 @@ only Marketplace/Open VSX users opted into pre-release updates.
   it before removal. `system-manifest-v1.schema.json` moves for the first time
   since v0.11.0, by description text only (the emitter is now named as the
   `alp_orchestrate` package rather than `scripts/alp_orchestrate.py`).
-  `src/lsp/generated/kconfig-metadata.json` regenerates 221 → 222 symbols, the
-  new one being `CMSISSTREAM` from `metadata/libraries/cmsis-stream.yaml`.
+  Both vendored Kconfig artefacts regenerate:
+  `src/lsp/generated/kconfig-metadata.json` 221 → 222 symbols (the new one
+  being `CMSISSTREAM` from `metadata/libraries/cmsis-stream.yaml`), and
+  `test/fixtures/alp-kconfig-symbols.txt` 346 → 350. The fixture carries no
+  `submoduleRev` and its test asserts only curated ⊆ vendored, so a stale copy
+  of it stays green — the re-vendor procedure in `README.md` now spells that
+  out, along with the tag-not-`main` rule, both hashes, the
+  `tsc --build --force` the staleness gate demands, and the gitlink's
+  `skip-worktree` bit, which makes `git add alp-sdk-upstream` a silent no-op.
+  `StoragePartition.raw` is deleted from both type mirrors
+  (`packages/alp-core/src/board/models.ts`, `packages/alp-webview/src/types.ts`)
+  — nothing read it, and modelling it would type-bless a document the SDK now
+  refuses.
   `docs/COMPATIBILITY_RULES.md` §5 gains the v0.15.0 assessment and, with it,
   the two re-vendors (v0.13.0 in #328, v0.14.0 in #427) that shipped without
   one — which is why that log still claimed the vendored schema tracked

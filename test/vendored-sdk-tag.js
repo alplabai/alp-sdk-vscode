@@ -29,10 +29,20 @@ module.exports = {
   //     files used it."
   BOARD_SCHEMA_SHA256:
     "f489eb9647776ed9dedc76be57323fa10715c15e2490cf161b1fd742b2f9193e",
-  // Moves for the first time since v0.11.0, and by DESCRIPTION TEXT only: the
-  // emitter is now named as the `alp_orchestrate` package (`python -m
-  // alp_orchestrate`) rather than `scripts/alp_orchestrate.py` -- the ADR 0020
-  // relocation reaching the contract's own prose. No property changed.
+  // Moves for the first time since the v0.13.0 re-vendor (#328), and by
+  // DESCRIPTION TEXT only: the emitter is now named as the `alp_orchestrate`
+  // package (`python -m alp_orchestrate`) rather than
+  // `scripts/alp_orchestrate.py` -- the ADR 0020 relocation reaching the
+  // contract's own prose. No property changed.
+  //
+  // The comment this replaced said "Unchanged from v0.11.0 -- byte-identical at
+  // v0.13.0 and v0.14.0". That was FALSE, and inverted: upstream's
+  // system-manifest schema moved at v0.12.0 (sha256 0a7ce139 -> ea7383b5), and
+  // it is board.schema.json that was byte-identical v0.11.0..v0.13.0
+  // (d9393ab0). So #328 moved this file for real and board.schema.json only by
+  // label; #427 (v0.14.0) was the other way round. Verified by hashing both
+  // schemas at all five tags -- do that before writing a claim like this, not
+  // after.
   SYSTEM_MANIFEST_SCHEMA_SHA256:
     "be48d9159638968eb2cf42b0284b3c7ba9fe92f46bec3a8fdab8561c4d6dd59e",
 };
