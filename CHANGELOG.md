@@ -6,6 +6,27 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **Both vendored SDK schemas re-vendored from alp-sdk v0.15.0 (was v0.14.0).**
+  `board.schema.json` changes what the editor accepts in two ways. `som.sku`'s
+  pattern widens from `^E1M-(AEN[3-8]01|V2N10[12]|V2M10[12]|NX9[0-9]{3})$` to
+  `^E1M-(AEN[3-8][0-9]{2}|V2N[0-9]{3}|V2M[0-9]{3}|NX9[0-9]{3})$`, so the editor
+  no longer pre-rejects a SKU the PLM has allocated but the SDK has not yet
+  shipped a preset for — v0.15.0 carries the same 11 presets as v0.14.0, so
+  nothing in the catalogue moves. And `storage[].raw`, the legacy `fs: raw`
+  alias, is gone: storage items are `additionalProperties: false`, so a
+  `board.yaml` carrying `raw: true` is now rejected. That is upstream's stated
+  intent — v0.15.0's `scripts/alp_orchestrate/loader.py` deleted the
+  normalising branch and records that **zero** tracked `board.yaml` files used
+  it before removal. `system-manifest-v1.schema.json` moves for the first time
+  since v0.11.0, by description text only (the emitter is now named as the
+  `alp_orchestrate` package rather than `scripts/alp_orchestrate.py`).
+  `src/lsp/generated/kconfig-metadata.json` regenerates 221 → 222 symbols, the
+  new one being `CMSISSTREAM` from `metadata/libraries/cmsis-stream.yaml`.
+  `docs/COMPATIBILITY_RULES.md` §5 gains the v0.15.0 assessment and, with it,
+  the two re-vendors (v0.13.0 in #328, v0.14.0 in #427) that shipped without
+  one — which is why that log still claimed the vendored schema tracked
+  v0.11.0 while `test/vendored-sdk-tag.js` said `v0.14.0`.
+
 - **The troubleshooting panel's doctor table now shows tan's remediation, not
   just its diagnosis (#474).** The table rendered `Check | Status | Detail` and
   dropped two fields the envelope carries and populates: each check's `fix`,

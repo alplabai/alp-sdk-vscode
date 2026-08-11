@@ -82,8 +82,58 @@ long as the consumed contracts hold. Record each assessed SDK release here.
     hardcodes (`Alp: Generate native_sim overlay`); it does not exist on v0.9.0
     or earlier, where argparse rejects it. This is the supported floor.
   - **v0.10.1** — patch release.
-  - **v0.11.0** — `metadata/schemas/board.schema.json` re-vendored (#117); the
-    vendored `schemas/board.schema.json` currently tracks this release.
+  - **v0.11.0** — `metadata/schemas/board.schema.json` re-vendored (#117).
   - Caveat: `metadata/sdk_version.yaml` can lag the tag on a dev checkout (it
     read `0.7.0` at one HEAD), so the readiness floor is advisory — an absent or
     unparseable version is treated as "unknown, not behind" and never mis-flagged.
+
+- **alp-sdk v0.11.1 → v0.14.0 — re-vendored twice, assessed neither time**
+  (recorded 2026-08-11, retroactively). Both bumps shipped as schema chores with
+  no §5 entry, which is why the line above read "currently tracks v0.11.0" while
+  `test/vendored-sdk-tag.js` said `v0.14.0`. What the pin file recorded at the
+  time is preserved here so it is not lost to the next re-vendor:
+  - **v0.11.1** (2026-07-17), **v0.12.0** (2026-07-23) — never vendored from;
+    the extension jumped v0.11.0 → v0.13.0 directly. Not assessed.
+  - **v0.13.0** (2026-07-24) — both schemas re-vendored (#328, `70691c0c`).
+  - **v0.14.0** (2026-07-29) — both schemas re-vendored (#427, `f46bcaa2`).
+    `board.schema.json` moved for real: the `peripherals` enum gained `dac` and
+    `i3c` (18 entries, was 16). `system-manifest-v1.schema.json` was
+    byte-identical to v0.11.0 at both v0.13.0 and v0.14.0, so those bumps moved
+    its label, not the file.
+
+- **alp-sdk v0.15.0 — compatible; both schemas re-vendored, no code change**
+  (assessed 2026-08-11). Tag `v0.15.0`, commit
+  `3769febe680e244386afaeb49305c6a8961f1a79`, released 2026-08-07. The vendored
+  `schemas/board.schema.json` and `schemas/system-manifest-v1.schema.json` now
+  track this release; `test/vendored-sdk-tag.js` is the single source for the tag
+  and both hashes.
+  - `board.schema.json` — two changes that alter what the editor accepts, both
+    detailed at the hash in `test/vendored-sdk-tag.js`: `som.sku`'s pattern
+    widens to permit any 2-digit AEN config tail and any 3-digit V2N/V2M tail,
+    and `storage[].raw` (the legacy `fs: raw` alias) is removed. Neither needs
+    product code: the SKU widening only stops the editor pre-rejecting a
+    PLM-allocated SKU with no shipped preset, and `raw: true` was measured
+    upstream as used by **zero** tracked `board.yaml` files before removal.
+  - `system-manifest-v1.schema.json` — description text only (the emitter is now
+    named as the `alp_orchestrate` package rather than
+    `scripts/alp_orchestrate.py`). No property changed, so the manifest reader is
+    unaffected.
+  - SoM catalogue — **unchanged at 11 SKUs** (`E1M-AEN301/401/501/601/701/801`,
+    `E1M-NX9101`, `E1M-V2M101/102`, `E1M-V2N101/102`). Every hand-maintained SKU
+    surface in this repo stays correct; the `ideHub.projectScaffold` gates
+    ("E1M_MODULES ids match the SDK's e1m_modules manifests exactly", "the
+    minimum-viable snippet offers every SKU the SDK ships") pass against the
+    v0.15.0 tree unchanged. `metadata/e1m_modules/*/hw-revisions.yaml` did move,
+    but nothing in this repo reads it.
+  - Kconfig catalogue — `src/lsp/generated/kconfig-metadata.json` regenerates
+    from 221 to 222 symbols: one new entry, `CMSISSTREAM`, harvested from
+    `metadata/libraries/cmsis-stream.yaml`.
+  - **Known limitation this release makes concrete, not a v0.15.0 regression:**
+    a single vendored schema is a snapshot serving every SDK version a customer
+    might have checked out, and the extension pins no SDK version (only the
+    advisory `MIN_SDK_VERSION` floor above). So re-vendoring forward moves the
+    `raw: true` disagreement onto customers still on v0.14.0, whose SDK accepts
+    it. The `yamlValidation` contribution (`package.json` →
+    `./schemas/board.schema.json`) would have to point at the ACTIVE SDK's own
+    schema to fix that properly — the same move `alp/updateSdkCatalog` already
+    makes for the SoM catalogue. Not done here.
