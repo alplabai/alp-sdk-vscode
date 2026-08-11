@@ -47,9 +47,10 @@ the binary in this order:
 > arm64). Windows on ARM and Linux arm64 get an explained "no build for this
 > platform" message instead of a download 404 (see the two rows below),
 > because the pinned `tan` is a PyInstaller freeze and PyInstaller cannot
-> cross-compile. To run a local build instead, `cargo build --release` (Rust
-> `tan`) or `pip install` (Python `tan`) in a `tan-cli` checkout and point
-> `alpSdk.cliPath` at the result (or put a `tan` on `PATH`).
+> cross-compile. To run a local build instead, `python3 -m pip install ./python`
+> in a `tan-cli` checkout and point `alpSdk.cliPath` at the resulting `tan` (or
+> put it on `PATH`). There is no `cargo` route any more — tan-cli#269 removed
+> `Cargo.toml`, so `cargo build --release` errors out.
 >
 > **That is not the same as "you can build firmware here."** Even a host
 > with a working `tan` binary may not be able to compile a Zephyr image. See
@@ -57,7 +58,7 @@ the binary in this order:
 > you pick a machine.
 
 > **The Linux asset is a glibc build, not musl.** The extension downloads
-> `tan-x86_64-unknown-linux-gnu`. A PyInstaller musl freeze is musl-*dynamic*,
+> `tan-x86_64-unknown-linux-gnu.tar.gz`. A PyInstaller musl freeze is musl-*dynamic*,
 > not static — it needs `/lib/ld-musl-x86_64.so.1` present and would not
 > start on Ubuntu/Debian/Fedora at all — so `-gnu` is the only usable Linux
 > asset the Python `tan` publishes. It is built inside `python:3.12-slim-bullseye`
@@ -81,14 +82,14 @@ Two different claims, and only the first one is about this extension:
 `linux-aarch64`, `linux-x86_64`, `macos-aarch64`, `windows-x86_64` — and no
 others.
 
-| Host (`process.platform`/`process.arch`) | `tan` binary                       | Zephyr SDK 1.0.1 host build | Firmware builds?               |
+| Host (`process.platform`/`process.arch`) | `tan` release asset                | Zephyr SDK 1.0.1 host build | Firmware builds?               |
 | ---------------------------------------- | ---------------------------------- | --------------------------- | ------------------------------ |
-| Windows x64 — `win32/x64`                 | `tan-x86_64-pc-windows-msvc.exe`   | `windows-x86_64`            | Yes                            |
-| Linux x64 — `linux/x64`                   | `tan-x86_64-unknown-linux-gnu`     | `linux-x86_64`              | Yes                            |
+| Windows x64 — `win32/x64`                 | `tan-x86_64-pc-windows-msvc.zip`  | `windows-x86_64`            | Yes                            |
+| Linux x64 — `linux/x64`                   | `tan-x86_64-unknown-linux-gnu.tar.gz` | `linux-x86_64`           | Yes                            |
 | Linux arm64 — `linux/arm64`               | none published for this pin        | `linux-aarch64`             | **No** — see below             |
-| macOS Apple silicon — `darwin/arm64`      | `tan-aarch64-apple-darwin`         | `macos-aarch64`             | Yes                            |
+| macOS Apple silicon — `darwin/arm64`      | `tan-aarch64-apple-darwin.tar.gz`  | `macos-aarch64`             | Yes                            |
 | Windows on ARM — `win32/arm64`            | none published for this pin        | never published             | **No** — see below             |
-| macOS Intel — `darwin/x64`                | `tan-x86_64-apple-darwin`          | dropped in SDK 1.0.0        | **No** — build on a Linux host |
+| macOS Intel — `darwin/x64`                | `tan-x86_64-apple-darwin.tar.gz`   | dropped in SDK 1.0.0        | **No** — build on a Linux host |
 | Linux armhf — `linux/arm`                 | none published                     | none published              | **No** — move to another host  |
 
 Running `tan doctor` yourself, with no flags, reports the same verdict as a
@@ -128,7 +129,7 @@ this host. A later `tan` release may add the missing binary; check
 
 #### macOS Intel — build on a Linux host
 
-`tan-x86_64-apple-darwin` exists and installs, so the extension provisions
+`tan-x86_64-apple-darwin.tar.gz` exists and installs, so the extension provisions
 cleanly and then the first build fails. The Zephyr SDK published `macos-x86_64`
 through **0.17.4** and dropped it in **1.0.0**; the pinned 1.0.1 serves
 `macos-aarch64` only.
@@ -148,7 +149,7 @@ extension maps six `platform/arch` keys and `linux/arm` is not one of them, so
 download-on-demand refuses with:
 
 ```text
-No prebuilt tan CLI for linux/arm. Set alpSdk.cliPath to a local build (tan-cli/target/release/tan).
+No prebuilt tan CLI for linux/arm — tan v0.5.1 publishes binaries for other platforms only, so this is a limit of that release rather than a broken install. Point alpSdk.cliPath at a tan you build locally or install with pip.
 ```
 
 **Building `tan` from source does not rescue this host.** The Zephyr SDK

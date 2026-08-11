@@ -217,13 +217,29 @@ function feedState() {
           build_dir: "build/m55_hp",
           output_artefact: "build/m55_hp/zephyr/zephyr.elf",
           flash_method: "jlink",
+          toolchain: "arm-zephyr-eabi",
         },
         {
+          // No `toolchain` — either an SDK predating the field, or a preset
+          // that declares none. Deliberately paired with the slice above that
+          // has one, so the harness covers both the reported and the "not
+          // reported" branch of the readout.
           core_id: "a32_cluster",
           os: "yocto",
           status: "skipped",
           reason: "bitbake not found",
           log_path: "build/a32_cluster/bitbake.log",
+        },
+        {
+          // `os: "off"` — this slice never builds. The real fixture
+          // (test/fixtures/system-manifest.aen801.yaml) carries exactly this
+          // shape: an off slice with a `toolchain` value still on it. The
+          // build-toolchain row must be gated on `active`, like the Flash
+          // button, so this value must NOT reach the screen (asserted below).
+          core_id: "a32_idle",
+          os: "off",
+          status: "pending",
+          toolchain: "poky-glibc",
         },
       ],
       ipc: [
@@ -464,10 +480,26 @@ async function main() {
         "16.6 kib / 256.0 kib (6.5%)", // ram, measured
         "in budget", // status verdict
         "not built", // a slice tan could not measure
+        // #314 readout half — the per-slice toolchain from THIS build's
+        // emitted manifest, and the explicit absence text for the slice that
+        // has none (never a blank cell, never the Hardware Explorer preset).
+        "arm-zephyr-eabi", // m55_hp: toolchain reported
+        "not reported", // a32_cluster: toolchain absent from the manifest
       ]) {
         if (!text.includes(needle)) {
           problems.push(
             `build-plan: system manifest detail missing "${needle}"`,
+          );
+        }
+      }
+      // The build-toolchain row is gated on `active` (`os !== "off"`), same as
+      // the Flash button — an `os: "off"` slice never builds, so its manifest
+      // toolchain value (a32_idle: "poky-glibc") must not render even though
+      // the manifest carries one.
+      for (const forbidden of ["poky-glibc"]) {
+        if (text.includes(forbidden)) {
+          problems.push(
+            `build-plan: system manifest rendered "${forbidden}" for an inactive (os: "off") slice`,
           );
         }
       }

@@ -46,19 +46,23 @@ no such caveat — removing one just deletes that cached version.
 
 ## The build CLI lives in its own repo
 
-The build CLI is the standalone native Rust binary `tan`, developed and released
-from [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli). This extension
+The build CLI is the standalone `tan` binary — from v0.5.0 on a PyInstaller
+freeze of `tan-cli`'s Python implementation (earlier releases were a Rust
+binary) — developed and released from
+[`alplabai/tan-cli`](https://github.com/alplabai/tan-cli). This extension
 **consumes** it — it downloads and shells `tan`, parsing its JSON envelope (see
 [CLI.md](CLI.md)) — but does **not** build or release it. The former in-repo
 `alp` (`cli-rs`) binary, its npm shim, and the TypeScript CLI (`packages/alp-cli`)
 are gone.
 
 To release a new `tan` version, follow the process in the `tan-cli` repo (bump
-`[workspace.package] version` in its `Cargo.toml`, push a `v<version>` tag —
-which must equal the crate version, or the `verify-version` job fails — and its
-`release` workflow builds the six per-target binaries and publishes each as a
-**raw** GitHub release asset, `tan-<triple>[.exe]`). See that repo's release-asset
-contract for the tag scheme and asset names.
+`TAN_VERSION` in `python/tan/version.py` — the single source of truth its
+`version_check.py` gate enforces against `pyproject.toml` and the npm shim;
+`Cargo.toml` no longer exists, tan-cli#269 — push a matching `v<version>` tag,
+and its `release` workflow builds the four per-target PyInstaller onedir
+archives and publishes each as a GitHub release asset, `tan-<triple>.tar.gz` /
+`tan-<triple>.zip`). See that repo's release-asset contract for the tag scheme
+and asset names.
 
 When adopting a new `tan` release here, bump the pinned version the extension
 targets — `SUPPORTED_CLI_VERSION` in `src/alpCli/service.ts` — in lockstep, and
@@ -102,30 +106,30 @@ No manual install — the extension provisions the managed `tan` on activation
 
 ```bash
 # in a tan-cli checkout:
-cargo build --release
-tan-cli/target/release/tan --help
+python3 -m pip install ./python
+tan --help
 ```
 
 Point the VS Code extension at a local build via the `alpSdk.cliPath` setting.
 
 ### Terminal / CI
 
-Download the pinned release asset for your host target from the
+Download the pinned release archive for your host target from the
 [tan-cli releases](https://github.com/alplabai/tan-cli/releases) (tag
-`v<version>`), put it on `PATH`, and (on Unix) `chmod +x` it. Through
-v0.5.0-rc4 the asset is named `tan-<triple>[.exe]` and IS the binary; a
-release built with the archive freeze (tan-cli#349) publishes a DIFFERENT
-name instead — `tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz`
-(elsewhere) — holding a onedir tree that needs unpacking first, not the same
-name with different contents. Check the release's `checksums.txt` to see
-which name it actually published — the example below is the raw-binary case:
+`v<version>`) — `tan-<triple>.tar.gz` (Linux/macOS) or `tan-<triple>.zip`
+(Windows); tan-cli retired raw per-target binaries at v0.5.0 in favour of
+these PyInstaller onedir archives (tan-cli#349). Unpack the archive into a
+directory and put that directory on `PATH` (or symlink the launcher) — the
+`tan`/`tan.exe` launcher inside already ships executable and needs its
+`_internal/` sibling next to it, so don't move or `chmod` it in isolation:
 
 ```yaml
 - name: Install tan CLI
   run: |
-    curl -L -o /usr/local/bin/tan \
-      https://github.com/alplabai/tan-cli/releases/download/v0.3.0/tan-x86_64-unknown-linux-gnu
-    chmod +x /usr/local/bin/tan
+    curl -fL --retry 3 -o tan.tar.gz \
+      https://github.com/alplabai/tan-cli/releases/download/v0.5.1/tan-x86_64-unknown-linux-gnu.tar.gz
+    tar -xzf tan.tar.gz -C /usr/local/lib   # -> /usr/local/lib/tan/{tan,_internal/}
+    ln -s /usr/local/lib/tan/tan /usr/local/bin/tan
 
 - name: Validate board config
   run: tan validate --format json board.yaml
@@ -133,23 +137,24 @@ which name it actually published — the example below is the raw-binary case:
 
 ### Offline environments / air-gapped mirrors
 
-Through v0.5.0-rc4 the release asset is named `tan-<triple>[.exe]` and is a
-**raw** binary (no archive) — download it on an internet-connected machine
-and copy it to the air-gapped host's `PATH`; no unpack step. A release built
-with the archive freeze (tan-cli#349) instead publishes a DIFFERENT asset
-name — `tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz` (elsewhere) —
-holding a onedir tree; unpack it first and copy the `tan[.exe]` launcher plus
-its `_internal/` sibling it contains:
+`tan-cli` publishes a **PyInstaller onedir archive** per target —
+`tan-<triple>.tar.gz` (Linux/macOS) or `tan-<triple>.zip` (Windows); no raw
+per-target binaries since v0.5.0 (tan-cli#349). Download the archive on an
+internet-connected machine and transfer it to the air-gapped host, unpacking
+there — `tan`/`tan.exe` needs its `_internal/` sibling next to it, so
+transfer and unpack the archive as a whole rather than copying the launcher
+alone:
 
 ```bash
-# On the connected machine, grab the asset for the target platform from the
-# GitHub release (tag v<version>) — check that release's checksums.txt to see
-# which of the two names it actually published:
+# On the connected machine, grab the archive for the target platform from the
+# GitHub release (tag v<version>):
 #   https://github.com/alplabai/tan-cli/releases
-#   tan-<triple>[.exe]              (raw binary, through v0.5.0-rc4)
-#   tan-<triple>.zip / .tar.gz      (archive, tan-cli#349 on)
+#   tan-<triple>.tar.gz (Linux/macOS) or tan-<triple>.zip (Windows)
+curl -fL --retry 3 -o tan.tar.gz \
+  https://github.com/alplabai/tan-cli/releases/download/v0.5.1/tan-x86_64-unknown-linux-gnu.tar.gz
 
-# On the air-gapped machine, put `tan` on PATH:
-install -m 0755 tan-x86_64-unknown-linux-gnu /usr/local/bin/tan
+# Transfer tan.tar.gz to the air-gapped machine, then there:
+tar -xzf tan.tar.gz -C /usr/local/lib   # -> /usr/local/lib/tan/{tan,_internal/}
+ln -s /usr/local/lib/tan/tan /usr/local/bin/tan
 tan --help
 ```

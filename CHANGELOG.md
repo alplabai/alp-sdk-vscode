@@ -6,6 +6,43 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **Build Plan panel: the system manifest section now shows each slice's
+  resolved toolchain (#314, readout half).** #314 asked for a GUI toolchain
+  picker; the picker half stays hard-blocked on alp-sdk#964 (`core_entry`'s
+  `additionalProperties: false` rejects a customer `toolchain` key today), so
+  this ships only what's data-complete: `slices[].toolchain`, already emitted
+  by `alp_orchestrate.py` into `build/system-manifest.yaml` and already
+  mirrored in `ManifestSlice`, was never rendered. It now reads as "build
+  toolchain `<value>`" per slice, and a slice whose manifest carries no
+  toolchain reads as an explicit "not reported" — never a blank cell, never a
+  fallback to a guess. (Omitting it is schema-legal: `som-preset-v1`'s
+  `topology_entry` declares `required: []` and `models.py` drops `None` keys —
+  though all 26 topology cores across the 11 shipped
+  `metadata/e1m_modules/*.yaml` presets declare one today.) This is read-only
+  and SDK/SoM-
+  derived, not a setting or an override path. It is labelled "build
+  toolchain", not bare "Toolchain", to distinguish it from Hardware
+  Explorer's "Toolchain" column — not because the two read from different
+  places, but because they don't: both resolve to the exact same
+  `topology.<core>.toolchain` field (Hardware Explorer:
+  `packages/alp-core/src/sdkCatalogue/parse.ts:137`; the manifest: alp-sdk
+  `scripts/alp_orchestrate/loader.py:201` sets
+  `toolchain=entry.get("toolchain")` from that same SoM-preset-topology entry
+  merged with `board.yaml`'s `cores`, and
+  `scripts/alp_orchestrate/buildplan.py:110` documents it outright as "the
+  same field `Slice.to_manifest_entry` already surfaces in
+  `system-manifest.yaml` -- never invented"). What differs is WHEN each is
+  read, and it only differs at all once a build has run: under the panel's
+  `projection` badge tan re-derived the value live from the current
+  `board.yaml`/preset (`build --manifest`), so it cannot be stale and agrees
+  with Hardware Explorer; under `post-build` it came off a
+  `build/system-manifest.yaml` on disk (`build --manifest-from`), which a
+  previous `som.sku` can have left behind — and that stale file then shows up
+  here instead of silently tracking the current preset. A genuine per-core
+  override, where the two values could actually diverge, is exactly the #314
+  picker half, and it stays blocked on alp-sdk#964 until `core_entry` accepts
+  a customer `toolchain` key.
+
 - **New setting: `alpSdk.svdPath`, populating cortex-debug's Peripherals
   register view (#340).** The SDK ships no `.svd` of its own
   (alp-sdk#948, licence-blocked), so this is the customer-supplied route —
