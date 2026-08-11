@@ -186,6 +186,45 @@ function SystemManifestSection({
                   )}
                 </span>
               )}
+              {/* This is THIS BUILD's resolved toolchain, read straight from the
+               *  emitted manifest (`slices[].toolchain`). It is NOT a second
+               *  opinion on Hardware Explorer's "Toolchain" column — both read
+               *  the exact same `topology.<core>.toolchain` field
+               *  (`sdkCatalogue/parse.ts:137` here; alp-sdk
+               *  `alp_orchestrate/loader.py` sets `toolchain=entry.get("toolchain")`
+               *  from that same SoM-topology-merged-with-board.yaml-cores entry,
+               *  and `alp_orchestrate/buildplan.py` says outright it is "never
+               *  invented"). What differs is WHEN it was read, and it only
+               *  differs at all once a build has run: under the `projection`
+               *  badge tan re-derived this live from the current
+               *  board.yaml/preset (`build --manifest`), so it cannot be stale
+               *  and will agree with Hardware Explorer; under `post-build` it
+               *  came off a `build/system-manifest.yaml` on disk
+               *  (`build --manifest-from`), which a previous `som.sku` can have
+               *  left behind. While alp-sdk#964 blocks a per-core override,
+               *  that stale file is the only way the two can disagree; the
+               *  override — the thing that would let them genuinely diverge —
+               *  is the #314 picker half. Gated on `active` like the Flash
+               *  button: an `os: "off"` slice never builds, so its manifest
+               *  toolchain value (if any) would mislead. Absence renders as an
+               *  explicit "not reported", never a blank cell or a guessed
+               *  fallback — a preset that declares no toolchain is schema-legal
+               *  (som-preset-v1's `topology_entry` has `required: []`), though
+               *  no shipped preset omits it today. */}
+              {active && (
+                <span className={styles.manifestDetail}>
+                  <span>
+                    build toolchain{" "}
+                    {s.toolchain ? (
+                      <code className={styles.manifestDetailPath}>
+                        {s.toolchain}
+                      </code>
+                    ) : (
+                      <em>not reported</em>
+                    )}
+                  </span>
+                </span>
+              )}
               <SliceFootprint size={sizeByCore.get(s.core_id)} />
             </li>
           );
