@@ -227,3 +227,65 @@ test("isDoctorEnvelopeData accepts a well-shaped payload and rejects a malformed
     "a check missing status/detail must not pass",
   );
 });
+
+// #474: `fix` and `nextSteps` are now RENDERED by the troubleshooting panel
+// (`escapeHtml(fix)`, `nextSteps.map`), so a payload that carries a different
+// shape for either would throw mid-render and leave an EMPTY webview open --
+// the panel is created before its html is assigned. The guard has to refuse
+// them here so `tanPayloadShape`'s explained message runs instead.
+test("isDoctorEnvelopeData refuses a check `fix` or a `nextSteps` that is not the shape the panel renders", () => {
+  const { isDoctorEnvelopeData } = loadDoctor({
+    vscode: {},
+    "./vscodeAdapter": {},
+    "../util": { log() {} },
+  });
+  const wellShaped = {
+    summary: { pass: 1, warn: 0, fail: 0 },
+    checks: [{ name: "sdk", status: "pass", detail: "ok" }],
+  };
+  const withCheck = (check) => ({ ...wellShaped, checks: [check] });
+
+  // The shapes tan actually emits, and the one it declares but does not.
+  assert.equal(isDoctorEnvelopeData(wellShaped), true);
+  assert.equal(
+    isDoctorEnvelopeData(
+      withCheck({
+        name: "sdk",
+        status: "fail",
+        detail: "d",
+        fix: "--sdk-root <path>",
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    isDoctorEnvelopeData(
+      withCheck({ name: "sdk", status: "fail", detail: "d", fix: null }),
+    ),
+    true,
+  );
+
+  // `fix` as anything else -- notably the `{command}` object #347 debated.
+  for (const fix of [42, { command: "brew install ninja" }, ["a"], true]) {
+    assert.equal(
+      isDoctorEnvelopeData(
+        withCheck({ name: "sdk", status: "fail", detail: "d", fix }),
+      ),
+      false,
+      `a check whose fix is ${JSON.stringify(fix)} must be refused`,
+    );
+  }
+
+  // `nextSteps` absent / null / string[] are the accepted shapes.
+  for (const nextSteps of [undefined, null, [], ["do a thing"]]) {
+    assert.equal(isDoctorEnvelopeData({ ...wellShaped, nextSteps }), true);
+  }
+  // Anything else -- a bare string is the one that reaches `.map` and throws.
+  for (const nextSteps of ["oops", 7, { 0: "a" }, [{ text: "a" }], [null]]) {
+    assert.equal(
+      isDoctorEnvelopeData({ ...wellShaped, nextSteps }),
+      false,
+      `nextSteps ${JSON.stringify(nextSteps)} must be refused`,
+    );
+  }
+});

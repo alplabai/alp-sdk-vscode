@@ -38,12 +38,32 @@ export function isDoctorEnvelopeData(
   ) {
     return false;
   }
+  // #474: `fix` and `nextSteps` are now RENDERED, not merely carried, so they
+  // have to be narrowed here too. Before that they were dead weight in the
+  // type and an unexpected shape cost nothing; now the troubleshooting panel
+  // calls `escapeHtml` on `fix` and `.map` on `nextSteps`, and a tan that
+  // restructured either one — `fix` as the `{command}` object #347 debated,
+  // say — would throw mid-render. `openDebugTroubleshootingPanel` creates the
+  // webview BEFORE assigning its html, so that throw leaves an EMPTY panel
+  // open behind a generic toast naming no field. Refusing the payload here
+  // turns it into `tanPayloadShape`'s explained message instead.
+  if (
+    data.nextSteps !== undefined &&
+    data.nextSteps !== null &&
+    (!Array.isArray(data.nextSteps) ||
+      !data.nextSteps.every((step) => typeof step === "string"))
+  ) {
+    return false;
+  }
   return data.checks.every((check) => {
     const entry = check as Record<string, unknown> | null;
     return (
       typeof entry?.name === "string" &&
       typeof entry.status === "string" &&
-      typeof entry.detail === "string"
+      typeof entry.detail === "string" &&
+      (entry.fix === undefined ||
+        entry.fix === null ||
+        typeof entry.fix === "string")
     );
   });
 }

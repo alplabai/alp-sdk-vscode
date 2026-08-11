@@ -6,6 +6,27 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **The troubleshooting panel's doctor table now shows tan's remediation, not
+  just its diagnosis (#474).** The table rendered `Check | Status | Detail` and
+  dropped two fields the envelope carries and populates: each check's `fix`,
+  and the report-level `data.nextSteps`. So the panel told a blocked customer
+  what was wrong and never what to do about it, with the answer sitting in the
+  payload it had just parsed. Measured on the pinned `tan 0.5.1`, 4 of 14
+  checks carry a `fix` (`"--sdk-root <path>"` for a missing SDK); 10 carry
+  none. Both fields are prose from tan, rendered verbatim and never parsed —
+  the rule commit `e359d37` (#347) set, because a mangled command reaching a
+  terminal is worse than no button at all. `data.missingPrerequisites` sits in
+  the same payload and is deliberately still not rendered here: it is the
+  structured per-tool route for a different surface. A check with no `fix`
+  renders an empty cell rather than the `-` the trace table above uses for an
+  absent path — this column is remediation text, and a filler glyph in it
+  reads as advice. `nextSteps` carries only what the Fix column does not
+  already show: on the pinned tan the two are byte-identical, so rendering
+  both would print every remediation twice, a 257-character paragraph
+  included. `isDoctorEnvelopeData` now narrows both fields, because a tan that
+  restructured either would otherwise throw mid-render and leave an empty
+  panel open behind a toast that names no field.
+
 - **Build Plan panel: the system manifest section now shows each slice's
   resolved toolchain (#314, readout half).** #314 asked for a GUI toolchain
   picker; the picker half stays hard-blocked on alp-sdk#964 (`core_entry`'s

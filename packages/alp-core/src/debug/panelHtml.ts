@@ -42,20 +42,69 @@ export function createDebugTroubleshootingPanelHtml(
     )
     .join("\n");
 
+  // #474: the envelope carries a per-check `fix` and a report-level
+  // `nextSteps`, and this table parsed both and then dropped them — so the
+  // panel told a blocked customer WHAT was wrong and never what to do about
+  // it, with the answer sitting in the payload it had just read.
+  //
+  // Both are PROSE from tan, rendered verbatim and never parsed — the rule
+  // commit e359d37 (#347) set. That is also why `data.missingPrerequisites`
+  // is deliberately NOT rendered here: it is the structured per-tool route
+  // for a different surface, and folding it into this column would blur the
+  // one boundary #347 exists to keep.
+  //
+  // An absent `fix` renders an EMPTY cell — not the `"-"` the trace table
+  // above uses for an absent path. This column is remediation text, so a
+  // filler glyph in it reads as advice. `fix` is optional AND nullable on the
+  // wire (4 of 14 checks carry one on the pinned tan 0.5.1), so both cases
+  // land here.
+  // Measured on the pinned tan 0.5.1: `data.nextSteps` is byte-identical to
+  // the ordered list of non-null `check.fix` values (4 and 4, identical). So
+  // rendering both verbatim prints every remediation TWICE — including a
+  // 257-character `pythonFloor` paragraph, in a table this panel gives no
+  // `<style>` block, where one such cell dominates the column widths.
+  //
+  // So the list carries only what the Fix column does not already show. On
+  // today's tan that filters to nothing and no heading renders at all; the
+  // section appears when tan emits a report-level step that is not also some
+  // check's fix, which the envelope permits and nothing guarantees against.
+  // Deduplicating is the point — a customer must see each remediation, once.
+  const doctorFixValues =
+    input.doctor.kind === "envelope"
+      ? new Set(
+          input.doctor.data.checks
+            .map((check) => check.fix)
+            .filter((fix): fix is string => typeof fix === "string"),
+        )
+      : new Set<string>();
+  const remainingNextSteps =
+    input.doctor.kind === "envelope"
+      ? (input.doctor.data.nextSteps ?? []).filter(
+          (step) => !doctorFixValues.has(step),
+        )
+      : [];
+  const doctorNextSteps = remainingNextSteps.length
+    ? `
+  <h3>Next steps</h3>
+  <ul>
+${remainingNextSteps.map((step) => `      <li>${escapeHtml(step)}</li>`).join("\n")}
+  </ul>`
+    : "";
+
   const doctorSection =
     input.doctor.kind === "envelope"
       ? `  <p>pass=${input.doctor.data.summary.pass} warn=${input.doctor.data.summary.warn} fail=${input.doctor.data.summary.fail}</p>
   <table>
-    <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+    <thead><tr><th>Check</th><th>Status</th><th>Detail</th><th>Fix</th></tr></thead>
     <tbody>
 ${input.doctor.data.checks
   .map(
     (check) =>
-      `<tr><td>${escapeHtml(check.name)}</td><td>${escapeHtml(check.status)}</td><td>${escapeHtml(check.detail)}</td></tr>`,
+      `<tr><td>${escapeHtml(check.name)}</td><td>${escapeHtml(check.status)}</td><td>${escapeHtml(check.detail)}</td><td>${escapeHtml(check.fix ?? "")}</td></tr>`,
   )
   .join("\n")}
     </tbody>
-  </table>`
+  </table>${doctorNextSteps}`
       : // Exactly ONE message where the table was (#376) — never a second,
         // in-process doctor rendered in its place. `detail`, when the
         // resolver had one, is the raw diagnosis behind `error` — safe here

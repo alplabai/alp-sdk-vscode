@@ -186,6 +186,12 @@ function copyDoctorSection(doctor: DebugDoctorSection): DebugDoctorSection {
       ...doctor.data,
       summary: { ...doctor.data.summary },
       checks: doctor.data.checks.map((check) => ({ ...check })),
+      // #474: `nextSteps` is now rendered, so it gets the same defensive copy
+      // the rest of this payload has always had -- riding the spread would
+      // hand every consumer of the bundle the SAME array the panel holds.
+      ...(doctor.data.nextSteps
+        ? { nextSteps: [...doctor.data.nextSteps] }
+        : {}),
     },
   };
 }
