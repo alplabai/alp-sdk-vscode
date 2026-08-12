@@ -42,6 +42,23 @@ const VENDORED = {
   ),
 };
 
+/**
+ * Resolve a stubbed read by NORMALISED tail, never by slicing off the root's
+ * length. The adapter builds these paths with `path.join`, so on Windows the
+ * separator is `\` while these keys (and the relative paths the production code
+ * declares) use `/`. Slicing produced `metadata\schemas\board.schema.json`,
+ * matched no key, and turned four mismatch cases into `unreadable` — green on
+ * macOS and Linux, red only on Windows. Exported-by-hoisting so the Windows
+ * shape can be asserted from a machine that is not Windows.
+ */
+function resolveStubbedRead(sdkFiles, p) {
+  const normalised = String(p).replace(/\\/g, "/");
+  const hit = Object.entries(sdkFiles ?? {}).find(([rel]) =>
+    normalised.endsWith(rel),
+  );
+  return hit ? hit[1] : null;
+}
+
 /** A fake language-status item that records what was painted onto it. */
 function statusItemRecorder() {
   const item = {
@@ -91,9 +108,8 @@ function harness(opts) {
     fs: {
       existsSync: () => true,
       readFileSync: (p) => {
-        const rel = String(p).slice(String(opts.sdkRoot ?? "").length + 1);
-        const hit = opts.sdkFiles?.[rel];
-        if (typeof hit === "string") return hit;
+        const hit = resolveStubbedRead(opts.sdkFiles, p);
+        if (hit !== null) return hit;
         throw new Error(`ENOENT: no such file or directory, open '${p}'`);
       },
     },
@@ -142,6 +158,35 @@ function harness(opts) {
 
 /** `await` one macrotask turn so the fire-and-forget notice has run. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("the read stub resolves a Windows-shaped path (the CI-only failure)", () => {
+  // Arrange -- what `path.join` actually produces on win32. This assertion is
+  // the whole reason the matcher is a named function: it fails on a Windows
+  // runner otherwise, and nowhere else.
+  const files = { "metadata/schemas/board.schema.json": "BODY" };
+
+  // Act / Assert
+  assert.equal(
+    resolveStubbedRead(
+      files,
+      "D:\\a\\alp-sdk-vscode\\sdk\\metadata\\schemas\\board.schema.json",
+    ),
+    "BODY",
+    "a backslash path must resolve, or every mismatch case reads as unreadable",
+  );
+  assert.equal(
+    resolveStubbedRead(
+      files,
+      "/opt/alp-sdk/metadata/schemas/board.schema.json",
+    ),
+    "BODY",
+  );
+  assert.equal(
+    resolveStubbedRead(files, "/opt/alp-sdk/metadata/schemas/other.json"),
+    null,
+    "an absent file must still read as absent",
+  );
+});
 
 test("no SDK resolved: paints the bundled tag and never notifies", async () => {
   // Arrange / Act
