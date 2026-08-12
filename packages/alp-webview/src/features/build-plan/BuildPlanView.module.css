@@ -359,12 +359,8 @@
   color: var(--status-ok);
 }
 .manifestStatus[data-status="failed"] {
-  background: color-mix(
-    in srgb,
-    var(--status-error, var(--status-warn)) 20%,
-    transparent
-  );
-  color: var(--status-error, var(--status-warn));
+  background: color-mix(in srgb, var(--status-err) 20%, transparent);
+  color: var(--status-err);
 }
 
 .manifestFlash {
@@ -429,7 +425,7 @@
   color: var(--status-warn);
 }
 .sizeStatus[data-size-status="over"] {
-  color: var(--status-error, var(--status-warn));
+  color: var(--status-err);
 }
 
 .sliceBtn {
@@ -471,10 +467,7 @@
   font-family: var(--font-family-mono, monospace);
   padding: 1px var(--space-2);
   border-radius: var(--radius-sm, 4px);
-  background: var(
-    --surface-raised,
-    color-mix(in srgb, var(--text-secondary) 8%, transparent)
-  );
+  background: color-mix(in srgb, var(--text-secondary) 8%, transparent);
 }
 .manifestChip em {
   font-style: normal;
