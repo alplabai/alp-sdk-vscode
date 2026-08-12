@@ -32,6 +32,7 @@ import { registerLspCommands } from "./lsp/commands";
 import { planFailure, planSuccess } from "./notify/service";
 import { notifyAsync, setExtensionId } from "./notify/vscodeAdapter";
 import { createSchemaProvenanceStatus } from "./schemaProvenance";
+import { createSdkSchemaContributor } from "./yamlSchemaContributor";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerAlpTaskProvider } from "./tasks/vscodeAdapter";
@@ -233,9 +234,10 @@ export function activate(context: vscode.ExtensionContext): void {
     // nothing to resolve those against and pre-launch aborts silently.
     registerAlpTaskProvider(context),
     createStatusBar(stateMgr),
-    // Names WHICH schema board.yaml is being validated against (#493). The
-    // vendored snapshot is asserted at every customer regardless of the SDK
-    // they resolved, so a squiggle can contradict their own `tan build`.
+    // Validate board.yaml against the RESOLVED SDK's schema, with the vendored
+    // snapshot demoted to the no-SDK fallback (#493) -- then name which of the
+    // two is in force, since a squiggle cannot say where it came from.
+    createSdkSchemaContributor(stateMgr),
     createSchemaProvenanceStatus(context, stateMgr),
     registerSelectSdkCommand(context),
     ...registerConfiguratorEditor(context),

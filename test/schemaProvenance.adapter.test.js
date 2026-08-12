@@ -212,16 +212,35 @@ test("an SDK shipping identical schemas notifies nothing", async () => {
   // Assert
   assert.deepEqual(h.notices, []);
   assert.equal(h.item.severity, 0);
-  assert.match(h.item.text, /matches SDK/);
+  assert.match(h.item.text, /alp-sdk v0\.15\.0/);
 });
 
-test("a mismatch notifies exactly once no matter how often state refreshes", async () => {
-  // Arrange -- window focus alone fires onStateChange; a toast per focus would
-  // be unusable.
+test("a plain mismatch is silent and Information — the SDK is being served", async () => {
+  // Arrange -- a customer on another tag whose schema we CAN serve. Before
+  // #493 this was the defect and got a Warning plus a toast; now it is the
+  // feature working, and nagging about it would train people to ignore the
+  // item that still matters.
   const h = harness({
     sdkRoot: "/opt/alp-sdk",
     sdkVersion: "0.14.0",
     sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "{}" },
+  });
+  await settle();
+
+  // Assert
+  assert.deepEqual(h.notices, []);
+  assert.equal(h.item.severity, 0);
+  assert.match(h.item.text, /alp-sdk v0\.14\.0/);
+});
+
+test("a rejected SDK schema notifies once no matter how often state refreshes", async () => {
+  // Arrange -- window focus alone fires onStateChange; a toast per focus would
+  // be unusable. `nope` is not JSON, so the editor falls back to the bundled
+  // copy and the customer is being asserted at again.
+  const h = harness({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "0.14.0",
+    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "nope" },
   });
   await settle();
 
@@ -233,30 +252,58 @@ test("a mismatch notifies exactly once no matter how often state refreshes", asy
 
   // Assert
   assert.equal(h.notices.length, 1);
-  assert.equal(h.item.severity, 1, "a mismatch is a Warning");
-  assert.match(h.item.text, /differs from SDK/);
+  assert.equal(
+    h.item.severity,
+    1,
+    "a fallback the customer can fix is a Warning",
+  );
+  assert.match(h.item.text, /SDK schema rejected/);
 });
 
-test("switching to a different SDK is a NEW mismatch and is said again", async () => {
+test("switching to a different SDK is a NEW notice and is said again", async () => {
   // Arrange
   const first = harness({
     sdkRoot: "/opt/alp-sdk-a",
     sdkVersion: "0.14.0",
-    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "{}" },
+    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "nope" },
   });
   await settle();
   assert.equal(first.notices.length, 1);
 
-  // Act -- a second resolution, different root, same shape of disagreement.
+  // Act -- a second resolution, different root, same shape of problem.
   const second = harness({
     sdkRoot: "/opt/alp-sdk-b",
     sdkVersion: "0.13.0",
-    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "{}" },
+    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "nope" },
   });
   await settle();
 
   // Assert -- the signature is keyed on the root, so this is not "already told".
   assert.equal(second.notices.length, 1);
+});
+
+test("a served SDK schema the configurator would truncate warns about the loss", async () => {
+  // Arrange -- validation is CORRECT here (the SDK's schema is served), but
+  // BOARD_KEY_ORDER does not model `telemetryBudget`, so saving through the
+  // visual configurator would delete it. Silent data loss outranks a tidy
+  // status bar, which is the only reason a `mismatch` ever warns.
+  const h = harness({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "0.16.0",
+    sdkFiles: {
+      ...VENDORED,
+      "metadata/schemas/board.schema.json": JSON.stringify({
+        properties: { som: {}, telemetryBudget: {} },
+      }),
+    },
+  });
+  await settle();
+
+  // Assert
+  assert.equal(h.item.severity, 1);
+  assert.equal(h.notices.length, 1);
+  assert.match(h.item.detail, /telemetryBudget/);
+  assert.match(h.item.detail, /DROPS those keys/);
 });
 
 test("an unreadable SDK schema is Information, not a Warning", async () => {
@@ -283,18 +330,18 @@ test("an unreadable SDK schema is Information, not a Warning", async () => {
   );
 });
 
-test("the mismatch notice carries no raw path in its toast text", async () => {
+test("the notice carries no raw path in its toast text", async () => {
   // Arrange / Act
   const h = harness({
     sdkRoot: "/opt/alp-sdk",
     sdkVersion: "0.14.0",
-    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "{}" },
+    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "nope" },
   });
   await settle();
 
   // Assert -- the seam's rule: interpolated detail belongs in the channel.
   const plan = h.notices[0];
-  assert.ok(plan, "a mismatch must notify");
+  assert.ok(plan, "a rejected SDK schema must notify");
   assert.ok(
     !String(plan.message).includes("/opt/alp-sdk"),
     "the toast must not leak the SDK path",
@@ -306,7 +353,7 @@ test("a Warning item is clickable and the detail reaches the log once", async ()
   const h = harness({
     sdkRoot: "/opt/alp-sdk",
     sdkVersion: "0.14.0",
-    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "{}" },
+    sdkFiles: { ...VENDORED, "metadata/schemas/board.schema.json": "nope" },
   });
   h.fire();
   h.fire();

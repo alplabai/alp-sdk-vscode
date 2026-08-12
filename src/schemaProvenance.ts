@@ -11,7 +11,10 @@ import {
   type SchemaProvenance,
   type SchemaRead,
 } from "@alp-sdk/core/validation/schemaProvenance";
-import { SDK_SCHEMA_RELATIVE_PATHS } from "@alp-sdk/core/validation/vendoredSchemas";
+import {
+  SDK_SCHEMA_RELATIVE_PATHS,
+  type VendoredSchemaId,
+} from "@alp-sdk/core/validation/vendoredSchemas";
 import { planFailure } from "./notify/service";
 import { notifyAsync } from "./notify/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
@@ -22,12 +25,12 @@ import type { StateManager } from "./views/stateManager";
  * Says WHICH schema `board.yaml` and `system-manifest.yaml` are being
  * validated against (#493).
  *
- * `package.json`'s `contributes.yamlValidation` hands `redhat.vscode-yaml` two
- * byte-pinned snapshots of one alp-sdk tag, unconditionally. A customer on a
- * different tag therefore gets diagnostics their own `tan` does not produce --
- * or misses ones it does. This surface does not change that; it stops it being
- * silent, so a squiggle that contradicts `tan build` is adjudicable instead of
- * mysterious.
+ * `package.json`'s `contributes.yamlValidation` still names two byte-pinned
+ * snapshots of one alp-sdk tag, but they are now the FALLBACK:
+ * `yamlSchemaContributor.ts` serves the resolved SDK's own copies ahead of
+ * them. Which of the two is in force is therefore no longer inferable from the
+ * manifest, and a red squiggle carries no hint of where it came from -- so this
+ * surface names it.
  *
  * Repainted from `StateManager.onStateChange`. What the answer actually depends
  * on is narrow -- the resolved `sdkRoot`, the bytes of that SDK's schemas, and
@@ -55,15 +58,27 @@ function readText(filePath: string): SchemaRead {
   }
 }
 
-/** Read the resolved SDK's copies and compare them to the bundled ones. */
-export function readSchemaProvenance(): SchemaProvenance {
+/** One read of the resolved SDK's schemas, and who they belong to. */
+export interface SdkSchemaSnapshot {
+  readonly sdkRoot: string | null;
+  readonly sdkVersion: string | null;
+  readonly sdkReads: Readonly<Partial<Record<VendoredSchemaId, SchemaRead>>>;
+}
+
+/**
+ * Locate the resolved SDK and read both of its schemas.
+ *
+ * Exported because `yamlSchemaContributor.ts` needs the same bytes to SERVE
+ * that this module needs to DESCRIBE, and a second copy of the locate-and-read
+ * logic is how the two surfaces would drift into disagreeing about which schema
+ * is in force. They still call it separately, on the same refresh -- two small
+ * `readFileSync` calls against a `tan` spawn in the same pass is not worth
+ * threading shared state through activation to avoid.
+ */
+export function readSdkSchemas(): SdkSchemaSnapshot {
   const sdkRoot = collectProjectContext().sdkRoot;
   if (sdkRoot === null) {
-    return buildSchemaProvenance({
-      sdkRoot: null,
-      sdkVersion: null,
-      sdkReads: {},
-    });
+    return { sdkRoot: null, sdkVersion: null, sdkReads: {} };
   }
 
   const readiness = checkSdkReadiness(sdkRoot, fs.existsSync, (p) => {
@@ -74,18 +89,19 @@ export function readSchemaProvenance(): SchemaProvenance {
     }
   });
 
-  const sdkReads: Record<string, SchemaRead> = {};
+  const sdkReads: Partial<Record<VendoredSchemaId, SchemaRead>> = {};
   for (const id of COMPARED_SCHEMA_IDS) {
     sdkReads[id] = readText(
       path.join(sdkRoot, SDK_SCHEMA_RELATIVE_PATHS[id].sdk),
     );
   }
 
-  return buildSchemaProvenance({
-    sdkRoot,
-    sdkVersion: readiness.version,
-    sdkReads,
-  });
+  return { sdkRoot, sdkVersion: readiness.version, sdkReads };
+}
+
+/** Read the resolved SDK's copies and compare them to the bundled ones. */
+export function readSchemaProvenance(): SchemaProvenance {
+  return buildSchemaProvenance(readSdkSchemas());
 }
 
 /**
@@ -96,15 +112,31 @@ export function readSchemaProvenance(): SchemaProvenance {
  */
 function mismatchSignature(p: SchemaProvenance): string {
   const parts = p.comparisons.map(
-    (c) => `${c.id}:${c.vendoredSha256}:${c.sdkSha256 ?? "none"}`,
+    (c) => `${c.id}:${c.vendoredSha256}:${c.sdkSha256 ?? "none"}:${c.served}`,
   );
-  return `${p.sdkRoot ?? ""}|${parts.join("|")}`;
+  return `${p.sdkRoot ?? ""}|${parts.join("|")}|${p.unknownBoardKeys.join(",")}`;
+}
+
+/**
+ * Which provenance answers are worth a yellow item and a one-time toast.
+ *
+ * `mismatch` is NOT one of them any more. Before the contributor shipped it was
+ * the whole defect; now it is the feature working -- the editor followed the
+ * customer's SDK -- and warning about it would train people to ignore the item.
+ * What survives is the two states where the editor could not follow the SDK,
+ * and the one where it did but the visual configurator would still eat a key
+ * (`unknownBoardKeys`), which is silent data loss and outranks tidiness.
+ */
+function isActionable(provenance: SchemaProvenance): boolean {
+  return (
+    provenance.state === "rejected" || provenance.unknownBoardKeys.length > 0
+  );
 }
 
 function severityFor(
-  state: SchemaProvenance["state"],
+  provenance: SchemaProvenance,
 ): vscode.LanguageStatusSeverity {
-  return state === "mismatch"
+  return isActionable(provenance)
     ? vscode.LanguageStatusSeverity.Warning
     : vscode.LanguageStatusSeverity.Information;
 }
@@ -124,7 +156,7 @@ async function maybeNotify(
   provenance: SchemaProvenance,
   detail: string,
 ): Promise<void> {
-  if (provenance.state !== "mismatch") return;
+  if (!isActionable(provenance)) return;
 
   const signature = mismatchSignature(provenance);
   if (context.globalState.get<string>(NOTICE_KEY) === signature) return;
@@ -139,8 +171,11 @@ async function maybeNotify(
     planFailure({
       operation: "Schema check",
       cause:
-        "The bundled board.yaml schema differs from your resolved SDK's. " +
-        "Where they disagree, trust the CLI over the editor.",
+        provenance.state === "rejected"
+          ? "Your SDK's board.yaml schema could not be used, so the editor " +
+            "fell back to the bundled one. Where they disagree, trust the CLI."
+          : "Your SDK's board.yaml schema has fields the visual configurator " +
+            "does not model, and saving there would drop them.",
       detail,
       severity: "warning",
       dedupeKey: "schema-provenance-mismatch",
@@ -186,11 +221,11 @@ export function createSchemaProvenanceStatus(
       const text = describeSchemaProvenance(provenance);
       item.text = text.short;
       item.detail = text.detail;
-      item.severity = severityFor(provenance.state);
+      item.severity = severityFor(provenance);
 
       if (provenance.state !== "match" && text.detail !== lastLogged) {
         lastLogged = text.detail;
-        log(text.detail, provenance.state === "mismatch" ? "warn" : "info");
+        log(text.detail, isActionable(provenance) ? "warn" : "info");
       }
 
       void maybeNotify(context, provenance, text.detail);
