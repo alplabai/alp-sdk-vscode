@@ -205,6 +205,68 @@ test("no-sdk text says the bundled schema is in force and why that is fine", () 
   assert.match(text.detail, /No SDK is resolved/);
 });
 
+test("match text names the SDK as a v-prefixed release, not a bare number", () => {
+  // Arrange -- VENDORED_SDK_TAG is a git tag ("v0.15.0") while
+  // metadata/sdk_version.yaml carries "version: 0.15.0". Rendered raw, the two
+  // sides of the same release read as different things.
+  const p = buildSchemaProvenance({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "0.15.0",
+    sdkReads: sdkReadsMatchingVendored(),
+  });
+
+  // Act
+  const text = describeSchemaProvenance(p);
+
+  // Assert
+  assert.equal(p.state, "match");
+  assert.match(text.short, /matches SDK/);
+  assert.match(text.detail, /alp-sdk v0\.15\.0/);
+  assert.ok(
+    !/ in 0\.15\.0/.test(text.detail),
+    "the SDK version must not render bare",
+  );
+});
+
+test("customer-facing text is a single paragraph (hovers do not honour \\n)", () => {
+  // Arrange -- every state, including the list-shaped unreadable one.
+  const reads = sdkReadsMatchingVendored();
+  reads.board = { ok: false, reason: "EACCES" };
+  reads.systemManifest = { ok: false, reason: "ENOENT" };
+  const states = [
+    buildSchemaProvenance({ sdkRoot: null, sdkVersion: null, sdkReads: {} }),
+    buildSchemaProvenance({
+      sdkRoot: "/opt/alp-sdk",
+      sdkVersion: "0.15.0",
+      sdkReads: sdkReadsMatchingVendored(),
+    }),
+    buildSchemaProvenance({
+      sdkRoot: "/opt/alp-sdk",
+      sdkVersion: "0.14.0",
+      sdkReads: {
+        ...sdkReadsMatchingVendored(),
+        board: { ok: true, text: "{}" },
+      },
+    }),
+    buildSchemaProvenance({
+      sdkRoot: "/opt/alp-sdk",
+      sdkVersion: "0.15.0",
+      sdkReads: reads,
+    }),
+  ];
+
+  // Act / Assert
+  for (const p of states) {
+    const text = describeSchemaProvenance(p);
+    assert.ok(!text.short.includes("\n"), `${p.state}: short must be one line`);
+    assert.ok(
+      !text.detail.includes("\n"),
+      `${p.state}: detail is rendered in a language-status hover, which shows ` +
+        "newlines as spaces — build one paragraph instead",
+    );
+  }
+});
+
 test("unreadable text names the path it failed to read", () => {
   // Arrange
   const reads = sdkReadsMatchingVendored();
@@ -225,6 +287,52 @@ test("unreadable text names the path it failed to read", () => {
     /metadata\/schemas\/system-manifest-v1\.schema\.json/,
   );
   assert.match(text.detail, /EACCES/);
+});
+
+test("the compiled pin constants are not stale (dist matches the TypeScript source)", () => {
+  // The drift gates now read these constants through `packages/alp-core/dist/`,
+  // which is a BUILD ARTEFACT -- editing the .ts and forgetting to recompile
+  // leaves both gates green against constants that no longer exist in source.
+  // Verified by producing it: zeroing BOARD_SCHEMA_SHA256 in the .ts without
+  // recompiling left `test/board.schema.vendored.test.js` at 4/4 pass. Same
+  // hazard, same shape of gate, as "the compiled metadata copy is not stale"
+  // in test/lsp.kconfig.test.js.
+  //
+  // Arrange -- read the SOURCE the developer actually edits.
+  const source = fs.readFileSync(
+    path.join(
+      REPO_ROOT,
+      "packages",
+      "alp-core",
+      "src",
+      "validation",
+      "vendoredSchemas.ts",
+    ),
+    "utf-8",
+  );
+  const literal = (name) => {
+    const match = source.match(
+      new RegExp(`export const ${name}\\s*=\\s*\\n?\\s*"([^"]+)"`),
+    );
+    assert.ok(match, `${name} must be a plain string literal in the source`);
+    return match[1];
+  };
+
+  // Act / Assert -- compare against what the gates actually loaded.
+  const compiled = {
+    VENDORED_SDK_TAG,
+    BOARD_SCHEMA_SHA256: VENDORED_SCHEMA_SHA256.board,
+    SYSTEM_MANIFEST_SCHEMA_SHA256: VENDORED_SCHEMA_SHA256.systemManifest,
+  };
+  for (const [name, loaded] of Object.entries(compiled)) {
+    assert.equal(
+      loaded,
+      literal(name),
+      `${name} in packages/alp-core/dist/ is stale — run \`pnpm exec tsc --build\`. ` +
+        "Until you do, the two vendored-schema drift gates are checking the " +
+        "PREVIOUS pin and will stay green against a schema you did not vendor.",
+    );
+  }
 });
 
 test("every schema package.json contributes is covered by the comparison (#156 recurrence gate)", () => {

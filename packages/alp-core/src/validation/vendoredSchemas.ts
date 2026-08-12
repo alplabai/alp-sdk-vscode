@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Single source of truth for the alp-sdk tag both vendored schemas are pinned
  * to, and for the sha256 each vendored copy must hash to.

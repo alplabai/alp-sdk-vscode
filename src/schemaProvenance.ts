@@ -29,9 +29,12 @@ import type { StateManager } from "./views/stateManager";
  * silent, so a squiggle that contradicts `tan build` is adjudicable instead of
  * mysterious.
  *
- * Repainted from `StateManager.onStateChange`, which already fires on an SDK
- * switch, a workspace change and a board.yaml change -- the three ways the
- * answer can go stale.
+ * Repainted from `StateManager.onStateChange`. What the answer actually depends
+ * on is narrow -- the resolved `sdkRoot`, the bytes of that SDK's schemas, and
+ * the bundled constants -- so the events that matter are an SDK switch and a
+ * workspace change. `onStateChange` also fires far more often than that
+ * (`refreshState()` runs on window focus, `src/extension.ts:147-149`), which is
+ * harmless: the read is two files against a `tan` spawn in the same refresh.
  */
 
 /** The document kinds whose validation this status describes. */
@@ -125,8 +128,13 @@ async function maybeNotify(
 
   const signature = mismatchSignature(provenance);
   if (context.globalState.get<string>(NOTICE_KEY) === signature) return;
-  await context.globalState.update(NOTICE_KEY, signature);
 
+  // Present BEFORE persisting. `notifyAsync` is fire-and-forget with an
+  // internal catch (src/notify/vscodeAdapter.ts), so a notice that dies on a
+  // shutdown cancellation is silent -- persisting first would mark it "told"
+  // and it would never be shown again, in this window or any future one. The
+  // language-status item is the durable surface either way; the toast is the
+  // once-per-mismatch nudge.
   notifyAsync(
     planFailure({
       operation: "Schema check",
@@ -138,13 +146,18 @@ async function maybeNotify(
       dedupeKey: "schema-provenance-mismatch",
     }),
   );
+
+  await context.globalState.update(NOTICE_KEY, signature);
 }
 
 /**
  * Create the language-status item and keep it current.
  *
- * Never throws: a status surface that can break activation is worse than one
- * that is occasionally absent.
+ * Every REPAINT is guarded: a failed read or comparison keeps the last painted
+ * answer rather than replacing a true one with a wrong one, because a status
+ * surface that goes wrong is worse than one that goes quiet. Creating the item
+ * itself is deliberately NOT guarded -- if `createLanguageStatusItem` fails,
+ * activation has bigger problems than this surface and should say so.
  */
 export function createSchemaProvenanceStatus(
   context: vscode.ExtensionContext,
@@ -155,6 +168,17 @@ export function createSchemaProvenanceStatus(
     SELECTOR,
   );
   item.name = "Alp schema";
+  // A Warning-severity item with nothing to click strands the customer: the
+  // hover names the disagreement, the log carries the paths and hashes.
+  item.command = {
+    command: "alp.showOutput",
+    title: "Show Alp log",
+  };
+
+  // Log on CHANGE, not on every repaint: `onStateChange` fires on window focus,
+  // and an unchanged answer repeated into the channel is noise that buries the
+  // one line that matters.
+  let lastLogged: string | null = null;
 
   const refresh = (): void => {
     try {
@@ -163,6 +187,12 @@ export function createSchemaProvenanceStatus(
       item.text = text.short;
       item.detail = text.detail;
       item.severity = severityFor(provenance.state);
+
+      if (provenance.state !== "match" && text.detail !== lastLogged) {
+        lastLogged = text.detail;
+        log(text.detail, provenance.state === "mismatch" ? "warn" : "info");
+      }
+
       void maybeNotify(context, provenance, text.detail);
     } catch (err) {
       // Keep whatever was last painted rather than replacing a true answer

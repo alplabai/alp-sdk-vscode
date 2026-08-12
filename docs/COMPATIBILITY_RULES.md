@@ -90,8 +90,8 @@ long as the consumed contracts hold. Record each assessed SDK release here.
 - **alp-sdk v0.11.1 → v0.14.0 — re-vendored twice, assessed neither time**
   (recorded 2026-08-11, retroactively). Both bumps shipped as schema chores with
   no §5 entry, which is why the line above read "currently tracks v0.11.0" while
-  `packages/alp-core/src/validation/vendoredSchemas.ts` said `v0.14.0`. What the pin file recorded at the
-  time is preserved here so it is not lost to the next re-vendor:
+  the pin file said `v0.14.0`. What that file recorded at the time is preserved
+  here so it is not lost to the next re-vendor:
   - **v0.11.1** (2026-07-17), **v0.12.0** (2026-07-23) — never vendored from;
     the extension jumped v0.11.0 → v0.13.0 directly. Not assessed.
   - **v0.13.0** (2026-07-24) — both schemas re-vendored (#328, `70691c0c`).
@@ -114,10 +114,10 @@ long as the consumed contracts hold. Record each assessed SDK release here.
   (assessed 2026-08-11). Tag `v0.15.0`, commit
   `3769febe680e244386afaeb49305c6a8961f1a79`, released 2026-08-07. The vendored
   `schemas/board.schema.json` and `schemas/system-manifest-v1.schema.json` now
-  track this release; `packages/alp-core/src/validation/vendoredSchemas.ts` is the single source for the tag
-  and both hashes.
+  track this release; `packages/alp-core/src/validation/vendoredSchemas.ts` is
+  the single source for the tag and both hashes.
   - `board.schema.json` — two changes that alter what the editor accepts, both
-    detailed at the hash in `packages/alp-core/src/validation/vendoredSchemas.ts`: `som.sku`'s pattern
+    detailed at the hash in that file: `som.sku`'s pattern
     widens to permit any 2-digit AEN config tail and any 3-digit V2N/V2M tail,
     and `storage[].raw` (the legacy `fs: raw` alias) is removed. Neither needs
     product code: the SKU widening only stops the editor pre-rejecting a

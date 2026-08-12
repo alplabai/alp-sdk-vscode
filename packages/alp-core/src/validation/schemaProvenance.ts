@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Which schema the editor is actually validating `board.yaml` and
  * `system-manifest.yaml` against, and whether that matches the SDK the
@@ -181,9 +183,17 @@ export function buildSchemaProvenance(
   };
 }
 
-/** How the SDK side is named in status text. */
+/**
+ * How the SDK side is named in status text.
+ *
+ * `VENDORED_SDK_TAG` is a git tag (`v0.15.0`) while `metadata/sdk_version.yaml`
+ * carries a bare version (`version: 0.15.0`), so the two sides must be
+ * normalised or the customer reads "byte-identical to the ones in 0.15.0" next
+ * to "alp-sdk v0.15.0" and cannot tell they are the same release.
+ */
 function sdkLabel(p: SchemaProvenance): string {
-  return p.sdkVersion ?? "your resolved SDK";
+  if (p.sdkVersion === null) return "your resolved SDK";
+  return `alp-sdk v${p.sdkVersion.replace(/^v/, "")}`;
 }
 
 /** Text for the language-status item and the one-time notice. */
@@ -224,16 +234,20 @@ export function describeSchemaProvenance(
   }
 
   if (p.state === "unreadable") {
+    // Single paragraph, no newlines: this string is rendered both in a
+    // language-status HOVER (which does not honour \n) and in the output
+    // channel. A list that reads as one run-on line in the hover is worse than
+    // separators that work in both.
     const missing = p.comparisons.filter((c) => c.sdkSha256 === null);
-    const lines = missing.map(
-      (c) => `  - ${c.sdkRelativePath}: ${c.unreadableReason}`,
-    );
+    const reasons = missing
+      .map((c) => `${c.sdkRelativePath} (${c.unreadableReason})`)
+      .join("; ");
     return {
       short: `Schema: bundled ${p.vendoredTag} (SDK schema unreadable)`,
       detail:
         `Validating against the schemas bundled with this extension ` +
         `(alp-sdk ${p.vendoredTag}) because ${sdkLabel(p)}'s own copies could ` +
-        `not be read:\n${lines.join("\n")}\nThe SDK install may be incomplete.`,
+        `not be read: ${reasons}. The SDK install may be incomplete.`,
     };
   }
 
@@ -247,7 +261,7 @@ export function describeSchemaProvenance(
       `The editor validates ${names} against the schema bundled with this ` +
       `extension (alp-sdk ${p.vendoredTag}), but ${sdkLabel(p)} ships a ` +
       `different one. Where the two disagree, the editor can flag a field your ` +
-      `own toolchain accepts -- or accept one it rejects.\n\n` +
+      `own toolchain accepts -- or accept one it rejects. ` +
       `Trust \`tan build\` over the squiggle. Tracked as #493.`,
   };
 }
