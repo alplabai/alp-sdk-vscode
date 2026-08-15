@@ -50,6 +50,39 @@ only Marketplace/Open VSX users opted into pre-release updates.
   the pin at or above the floor, so the managed binary can never be one this
   extension would then warn about.
 
+- **The webview's hand-mirrored payload models are gated, and the mirror is
+  now covered end to end (#497).** `packages/alp-webview/src/types.ts` is a
+  772-line hand copy of two different things, and only the message half was
+  gated (#495); the payload half — `SystemManifest`, `BoardConfig`, `Ota`, the
+  size report, the dependency rows, the Hardware Explorer models — was compared
+  against nothing. A survey of all 52 model pairs found **19** fields core
+  declares and the mirror does not, in six interfaces. The issue named four of
+  them; the other 15 (`BoardConfig.schemaVersion`, `.e1m_routes`, `.pins`,
+  `.features`, `.supported_boards`, `CoreEntry.extra_libraries`, `.memory`,
+  `.power`, and seven `SomPreset` fields) had not been noticed at all, which is
+  the point. The two directions get different rules because they are not
+  equally dangerous: a core-only field is an omission and is allowed only when
+  an allowlist names it WITH a reason, while a mirror-only field — the
+  direction that actually blanks a panel, since the view then reads
+  `undefined` — is forbidden outright, with no escape hatch, because the survey
+  found zero and a gate is only ever strict on the day it lands. The allowlist
+  is itself gated against rot: mirror the field or delete it from core and the
+  stale entry reds. Two further rules close what is left — the wire format's
+  own nested payload types (`BuildPlanData`, `SdkStatus`, …), which no union
+  names and #495 therefore never reached, must match field-for-field and may
+  allowlist nothing; and every `export interface` in the mirror must be either
+  a union member gated by #495 or a model listed here, so a new hand-mirrored
+  type cannot be born ungated. Also covered: the string-literal union aliases
+  (members are the contract, unlike field type text — one documented
+  divergence, `SdkReadinessState`), and the two functions `ConfiguratorView.tsx`
+  copies verbatim from `@alp-sdk/core/board/models`, which between them decide
+  what `board.yaml`'s `libraries[]` ends up holding. Every rule was verified by
+  a deliberately produced RED. Separately, that file's `coreSiliconClass`
+  claimed to be kept in sync with a Rust `infer_runtime_for_core_id` that no
+  longer exists — the named file is gone and the symbol returns no hit on any
+  alplabai default branch — so the comment now records that the heuristic is
+  unpaired and ungateable instead.
+
 - **The editor now says which board.yaml schema it is validating against.** The
   bundled `schemas/*.json` are snapshots of one alp-sdk tag, contributed
   unconditionally, while the extension pins no SDK version — so a customer on a

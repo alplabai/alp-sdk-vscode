@@ -41,13 +41,22 @@
 //   already includes `"unknown"`. Asserting the text would red on differences
 //   that are not drift, and a gate that cries wolf gets deleted.
 //
-//   NOT compared — the deep payload MODELS (`SystemManifest`, `Ota`,
+//   NOT compared HERE — the deep payload MODELS (`SystemManifest`, `Ota`,
 //   `BoardConfig`, …). Those mirror `@alp-sdk/core`, not the host protocol, and
 //   the relationship is deliberately loose: the mirror carries only what the
-//   webview renders. Three additive gaps exist today and are harmless for that
-//   reason (`ManifestHwInfo.eeprom`, `Ota.rollback`/`Ota.storage`,
-//   `ManifestSlice.recipe`). Gating them here would red on landing and teach
-//   the next reader to skip the file.
+//   webview renders, so gating them on THIS file's field-for-field rule would
+//   have red on landing and taught the next reader to skip the file.
+//
+//   They are no longer ungated. `test/webview.payloadMirror.test.js` (#497)
+//   covers them with the rule that looseness actually needs: a core-only field
+//   must be named in an allowlist WITH a reason, while a mirror-only field is
+//   forbidden outright. It also reaches what this file structurally cannot —
+//   the wire format's own nested payload types (`BuildPlanData`, `SdkStatus`,
+//   …), which no union names, and the string-literal union aliases.
+//
+//   The two files partition the mirror between them, and that partition is
+//   itself asserted over there: every `export interface` in the mirror must be
+//   either a union member gated here or a model listed there.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
