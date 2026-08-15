@@ -12,6 +12,8 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
+import { manifestFreshness } from "@alp-sdk/core/systemManifest/staleness";
+import { readLastBuild } from "../build/lastBuild";
 import {
   BUILD_RUN_NAME,
   FLASH_RUN_NAME,
@@ -29,6 +31,22 @@ import {
   SYSTEM_MANIFEST_SHAPE,
   checkTanPayload,
 } from "@alp-sdk/core/tanPayloadShape";
+
+/**
+ * The manifest file's mtime in epoch ms, or `null` when it cannot be read.
+ *
+ * `null` rather than a throw or a fallback: a stat that fails is "no claim",
+ * and `manifestFreshness` renders that as `unknown`. Substituting `Date.now()`
+ * here would make an unreadable file look freshly written, which is the exact
+ * shape of the bug #470 is about.
+ */
+function manifestWrittenAt(file: string): number | null {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
+}
 
 const PANEL_VIEW_TYPE = "alp-ide.buildPlan";
 const PANEL_TITLE = "Alp Build Plan";
@@ -194,6 +212,18 @@ export class BuildPlanPanel {
       ? ["build", "--manifest-from", built as string]
       : ["build", "--manifest"];
 
+    // #470: existence is not freshness. `postBuild` above says a manifest is
+    // on disk; this says whether it describes the LAST build. A projection
+    // (`--manifest`) has no file and therefore no provenance — it is not
+    // stale, it was computed just now.
+    const provenance = postBuild
+      ? manifestFreshness({
+          writtenAt: manifestWrittenAt(built as string),
+          lastBuild: readLastBuild(this.context),
+          now: Date.now(),
+        })
+      : null;
+
     // `interactive` — see `handleRequestBuildPlan`'s doc.
     const { outcome } = await runAlpCommand(this.context, args, cwd, {
       interactive,
@@ -213,16 +243,24 @@ export class BuildPlanPanel {
             type: "systemManifestData",
             manifest: null,
             postBuild,
+            provenance,
             error: shapeError,
           }
         : {
             type: "systemManifestData",
             manifest: envelope.data as SystemManifest,
             postBuild,
+            provenance,
           };
     } else {
       const error = envelope?.issues?.[0]?.message ?? outcome.message;
-      msg = { type: "systemManifestData", manifest: null, postBuild, error };
+      msg = {
+        type: "systemManifestData",
+        manifest: null,
+        postBuild,
+        provenance,
+        error,
+      };
     }
     void this.panel.webview.postMessage(msg);
   }

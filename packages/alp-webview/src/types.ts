@@ -596,10 +596,31 @@ export interface SystemManifest {
   boot_order: unknown[];
   storage?: unknown[];
 }
+/**
+ * Whether the rendered manifest still describes the last build (#470),
+ * mirrored from `@alp-sdk/core/systemManifest/staleness`.
+ *
+ * `stale` is a CLAIM with evidence behind it: a build finished after the file
+ * was written and did not update it. `unknown` is the honest rest — nothing
+ * observed since, or a clock that cannot be trusted. Render `unknown` as
+ * unknown; collapsing it into `fresh` is the original defect.
+ */
+export type ManifestFreshness = "fresh" | "stale" | "unknown";
+
+export interface ManifestProvenance {
+  /** The manifest file's mtime, ISO-8601, or null when it could not be read. */
+  writtenAt: string | null;
+  freshness: ManifestFreshness;
+  /** One sentence, present for every `stale` verdict. */
+  reason: string | null;
+}
+
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
   postBuild: boolean;
+  /** Null on the projection path, which has no file to be stale. */
+  provenance: ManifestProvenance | null;
   error?: string;
 }
 

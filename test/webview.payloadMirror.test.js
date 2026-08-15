@@ -73,6 +73,7 @@ const CONFIGURATOR_REL =
 
 const BOARD_REL = "packages/alp-core/src/board/models.ts";
 const MANIFEST_REL = "packages/alp-core/src/systemManifest/models.ts";
+const STALENESS_REL = "packages/alp-core/src/systemManifest/staleness.ts";
 const PLANNER_REL = "packages/alp-core/src/deps/planner.ts";
 const STATE_REL = "packages/alp-core/src/deps/state.ts";
 const CATALOGUE_REL = "packages/alp-core/src/sdkCatalogue/models.ts";
@@ -99,6 +100,7 @@ const MODELS = [
   { mirror: "SizeRegion", file: MANIFEST_REL },
   { mirror: "SliceSize", file: MANIFEST_REL },
   { mirror: "SizeReport", file: MANIFEST_REL },
+  { mirror: "ManifestProvenance", file: STALENESS_REL },
 
   // ── board.yaml ──
   { mirror: "BoardConfig", file: BOARD_REL },
@@ -260,6 +262,7 @@ const ALIASES = [
   { mirror: "LogLevelOrOff", file: BOARD_REL },
   { mirror: "LibraryEntry", file: BOARD_REL },
   { mirror: "SliceSizeStatus", file: MANIFEST_REL },
+  { mirror: "ManifestFreshness", file: STALENESS_REL },
   { mirror: "DependencyStatus", file: PLANNER_REL },
   { mirror: "DependencyActionEffect", file: PLANNER_REL },
   { mirror: "DependencyState", file: STATE_REL },

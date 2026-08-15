@@ -36,6 +36,7 @@ import { createSdkSchemaContributor } from "./yamlSchemaContributor";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerAlpTaskProvider } from "./tasks/vscodeAdapter";
+import { recordBuildFinish } from "./build/lastBuild";
 import {
   BUILD_RUN_NAME,
   disposeTaskTracking,
@@ -179,6 +180,16 @@ export function activate(context: vscode.ExtensionContext): void {
       // the old snapshot instead is what made a SUCCESSFUL bootstrap flip the
       // bar to "$(warning) Alp: setup" — a warning at the moment of success.
       refreshState();
+      // Record every build finish, whatever the verdict (#470). This is the
+      // ONE place that sees them all — panel, palette and status bar dispatch
+      // the same run name through the same event — and a FAILED build is the
+      // case that matters most: the Build Plan panel compares this against
+      // `build/system-manifest.yaml`'s mtime, and a build that finished after
+      // the file was written and did not update it is the only hard evidence
+      // that what the panel is about to render belongs to an earlier build.
+      if (name === BUILD_RUN_NAME) {
+        void recordBuildFinish(context, code, Date.now());
+      }
       // "Show Result" (#331) is SUCCESS-ONLY, and only for BUILD_RUN_NAME —
       // two gates, not one:
       //  - which run: the Build Plan panel renders `build/system-manifest.yaml`,
@@ -190,11 +201,15 @@ export function activate(context: vscode.ExtensionContext): void {
       //  - which outcome: even for a build, a FAILED run must not offer it.
       //    Nothing in this codebase pins when `tan` (re)writes the manifest on
       //    a failure — a prior GREEN run's `system-manifest.yaml` can still be
-      //    sitting there from yesterday, and `SYSTEM_MANIFEST_SHAPE`
-      //    (`@alp-sdk/core/tanPayloadShape`) carries no timestamp, so neither
-      //    the payload nor the panel can tell stale from fresh. A "Show
-      //    Result" on a failure toast could present yesterday's green build as
-      //    today's. The failure toast already carries what actually matters —
+      //    sitting there from yesterday. `SYSTEM_MANIFEST_SHAPE`
+      //    (`@alp-sdk/core/tanPayloadShape`) still carries no timestamp, but
+      //    the panel is no longer blind: #470 gave it the file's mtime and the
+      //    record written just above, so a manifest an already-finished build
+      //    did not update now renders with a `stale` badge and a sentence
+      //    saying so. That makes the panel SAFE to reach after a failure; it
+      //    does not make it USEFUL, which is why this gate stays. Offering
+      //    "Show Result" on a failure would still steer the reader at an
+      //    earlier build's numbers, now merely labelled. The failure toast already carries what actually matters —
       //    the terminal/channel reveal (the real error) and Run Doctor — and
       //    the panel stays reachable from the palette and status bar either
       //    way, so this is not a regression in reachability, only in the
