@@ -4,6 +4,7 @@ import type {
   DependencyActionEffect,
   DependencyReport,
   DependencyRow,
+  DependencyState,
 } from "../../types";
 import { onMessage, postMessage } from "../../vscode";
 import styles from "./DependenciesView.module.css";
@@ -79,6 +80,24 @@ const ACTION_LABELS: Record<DependencyActionEffect, string> = {
   install: "Install",
   "open-docs": "Open install guide",
   bootstrap: "Run bootstrap",
+};
+
+/**
+ * The wording for `row.state`, which the HOST decided (#466 §1). This map is
+ * the only place the words live — core exports the union and no label map, on
+ * purpose: a copy on each side of a boundary the webview cannot import across
+ * would be a value, and the mirror gate compares types, so nothing would catch
+ * the two drifting.
+ *
+ * "Unknown" is a real answer and reads as one. It covers tan's own `unknown`
+ * AND any status the host mapping does not recognise, so a status tan ships
+ * next year appears here rather than being labelled with confidence.
+ */
+const STATE_LABELS: Record<DependencyState, string> = {
+  ready: "Ready",
+  "will-install": "Will install",
+  "needs-you": "Needs you",
+  unknown: "Unknown",
 };
 
 function ActionCell({
@@ -209,11 +228,22 @@ export function DependenciesView() {
                       <LatestCell row={row} />
                     </td>
                     <td>
-                      {/* tan's word, verbatim. Not remapped onto a chip
-                          vocabulary that would have to guess at a status tan
-                          adds later — and not the shared StatusChip, whose
-                          "Update Needed" wording means something else at its
-                          other call sites. */}
+                      {/* The state word first — Ready / Will install / Needs
+                          you — because "do I have to do something?" is the
+                          question this panel gets opened with, and `pass` /
+                          `warn` / `fail` does not answer it. Computed
+                          HOST-side from the (status, action) pair (#466 §1);
+                          this view derives nothing. */}
+                      <span className={styles.state} data-state={row.state}>
+                        {STATE_LABELS[row.state]}
+                      </span>
+                      {/* tan's word, verbatim, kept underneath — the state
+                          above is a summary and must never be the only thing
+                          on screen. Not remapped onto a chip vocabulary that
+                          would have to guess at a status tan adds later, and
+                          not the shared StatusChip, whose "Update Needed"
+                          wording means something else at its other call
+                          sites. */}
                       <span className={styles.status} data-status={row.status}>
                         {row.status}
                       </span>

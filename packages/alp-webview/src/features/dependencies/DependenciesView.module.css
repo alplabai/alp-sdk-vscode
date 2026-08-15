@@ -186,6 +186,29 @@
   color: var(--status-err);
 }
 
+/* The state word leads; tan's own status sits under it in the muted detail
+   style, so the summary never replaces the fact it summarises (#466 §1). */
+.state {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.state[data-state="ready"] {
+  color: var(--status-ok);
+}
+
+.state[data-state="will-install"] {
+  color: var(--status-warn);
+}
+
+.state[data-state="needs-you"] {
+  color: var(--status-err);
+}
+
+/* `unknown` deliberately takes the default foreground: it is the absence of a
+   claim, and colouring it would make it look like one. */
+
 .action {
   text-align: right;
   white-space: nowrap;

@@ -21,6 +21,7 @@ import type {
   DoctorEnvelopeData,
   MissingPrerequisite,
 } from "../cli/doctorEnvelope";
+import { type DependencyState, dependencyState } from "./state";
 
 // ── The envelope slice this planner reads (see docs/CLI.md) ──────────────────
 //
@@ -118,6 +119,14 @@ export interface DependencyRow {
   label: string;
   /** VERBATIM `check.status`. Never recomputed, never inferred from a probe. */
   status: DependencyStatus;
+  /**
+   * The state WORD the panel leads with — Ready / Will install / Needs you —
+   * derived from the (`status`, `action.effect`) PAIR and nothing else (#466
+   * §1, `./state`). An extra field, never a replacement: `status` above stays
+   * tan's word, so a status this mapping does not recognise is still on screen
+   * verbatim while `state` says `unknown` rather than guessing.
+   */
+  state: DependencyState;
   detail: string;
   /**
    * tan's own `check.fix` PROSE, verbatim, or `null` when tan gave none.
@@ -361,20 +370,27 @@ export function planDependencyReport(
       : null;
   };
 
-  const rows: DependencyRow[] = data.checks.map((check) => ({
-    name: check.name,
-    label: LABELS[check.name] ?? humanise(check.name),
-    status: check.status,
-    detail: check.detail,
-    // tan's prose, carried whole. Displayed, never read.
-    hint: check.fix ?? null,
-    // tan reports no per-check version, and inventing one from `detail` would
-    // be a fabrication. Null renders as a dash until tan emits it.
-    installed: null,
-    latest: null,
-    updateAvailable: false,
-    action: actionFor(check),
-  }));
+  const rows: DependencyRow[] = data.checks.map((check) => {
+    // Resolved once and passed to BOTH the row and the state word: computing
+    // the action twice would let the two disagree, and a row labelled "Will
+    // install" with no button is worse than either answer alone.
+    const action = actionFor(check);
+    return {
+      name: check.name,
+      label: LABELS[check.name] ?? humanise(check.name),
+      status: check.status,
+      state: dependencyState(check.status, action?.effect ?? null),
+      detail: check.detail,
+      // tan's prose, carried whole. Displayed, never read.
+      hint: check.fix ?? null,
+      // tan reports no per-check version, and inventing one from `detail` would
+      // be a fabrication. Null renders as a dash until tan emits it.
+      installed: null,
+      latest: null,
+      updateAvailable: false,
+      action,
+    };
+  });
 
   // tan cannot check `tan`, so the host answers for it. Its status is a plain
   // statement of whether the binary resolved — not a readiness verdict — and it
@@ -383,6 +399,14 @@ export function planDependencyReport(
     name: TAN_ROW_NAME,
     label: "tan CLI",
     status: cli.installed === null ? "fail" : "pass",
+    // Same mapping as every other row, deliberately not special-cased. The row
+    // carries no action (the resolver owns this binary, not a button), so an
+    // unresolved tan lands on "Needs you" — which is correct: the resolver has
+    // already run by the time this panel paints, so a tan still missing means
+    // something outside it (offline, a proxy, a refused download) needs the
+    // user. Labelling it "Will install" would promise a fetch nobody is about
+    // to make.
+    state: dependencyState(cli.installed === null ? "fail" : "pass", null),
     detail:
       cli.installed === null
         ? "not resolved"

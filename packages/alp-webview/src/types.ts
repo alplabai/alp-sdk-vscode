@@ -402,12 +402,32 @@ export type DependencyAction =
       title: string;
     };
 
+/**
+ * The state word the panel leads with, mirrored from
+ * `@alp-sdk/core/deps/state` (#466 §1). Computed HOST-SIDE from the
+ * (`status`, `action.effect`) pair — the webview renders it and derives
+ * nothing, which is the only shape that does not re-derive tan's verdict.
+ *
+ * `unknown` is not just tan's own `unknown`: any status the host mapping does
+ * not recognise lands here rather than being coerced into one of the other
+ * three. Render it as unknown, never as a guess.
+ */
+export type DependencyState =
+  | "ready"
+  | "will-install"
+  | "needs-you"
+  | "unknown";
+
 export interface DependencyRow {
   /** tan's `check.name`, verbatim — the row's identity and what the webview
    *  posts back in `runDependencyAction`. */
   name: string;
   label: string;
   status: DependencyStatus;
+  /** Ready / Will install / Needs you / Unknown. An EXTRA field: `status`
+   *  above is still tan's word and is still rendered, so nothing this
+   *  summarises can be lost. */
+  state: DependencyState;
   detail: string;
   /** tan's own `check.fix` PROSE, verbatim, or `null` when tan gave none.
    *  DISPLAY ONLY — rendered under the detail, never parsed into a command

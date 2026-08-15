@@ -74,6 +74,7 @@ const CONFIGURATOR_REL =
 const BOARD_REL = "packages/alp-core/src/board/models.ts";
 const MANIFEST_REL = "packages/alp-core/src/systemManifest/models.ts";
 const PLANNER_REL = "packages/alp-core/src/deps/planner.ts";
+const STATE_REL = "packages/alp-core/src/deps/state.ts";
 const CATALOGUE_REL = "packages/alp-core/src/sdkCatalogue/models.ts";
 const SDK_REL = "packages/alp-core/src/sdk/models.ts";
 const VIEWMODEL_REL = "packages/alp-core/src/configurator/viewModel.ts";
@@ -261,6 +262,7 @@ const ALIASES = [
   { mirror: "SliceSizeStatus", file: MANIFEST_REL },
   { mirror: "DependencyStatus", file: PLANNER_REL },
   { mirror: "DependencyActionEffect", file: PLANNER_REL },
+  { mirror: "DependencyState", file: STATE_REL },
   { mirror: "ToolchainFixId", file: BOOTSTRAP_REL },
   {
     mirror: "SdkReadinessState",

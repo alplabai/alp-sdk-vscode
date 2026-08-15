@@ -8,6 +8,7 @@ import type {
   DependencyReport,
   DependencyRow,
 } from "@alp-sdk/core/deps/planner";
+import type { DependencyState } from "@alp-sdk/core/deps/state";
 import type {
   LocalSdkEntry,
   SdkReadinessState,
@@ -30,6 +31,10 @@ export type {
   DependencyActionEffect,
   DependencyReport,
   DependencyRow,
+  // Ready / Will install / Needs you — presentation over the (status, action)
+  // pair, never a re-derivation of tan's verdict (#466 §1). Mirrored in the
+  // webview types.
+  DependencyState,
   LocalSdkEntry,
   SdkRelease,
   SocCore,
