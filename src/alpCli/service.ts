@@ -53,9 +53,42 @@ import {
  *  It also freezes `bootstrap.python-not-runnable` and `bootstrap.python-too-old`:
  *  through v0.4.0 this extension matched two codes tan declared at no status, so
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
- *  test/tanContract.test.js tracks that, and moved with this pin. */
+ *  test/tanContract.test.js tracks that, and moved with this pin.
+ *
+ *  v0.6.0-rc1 is the pin, and it is deliberately a PRE-RELEASE (#502). Every
+ *  earlier pin was chosen from what was stable; this one is chosen from what can
+ *  build the hardware this extension offers. `v0.5.1` cannot configure ANY
+ *  Renesas SoM against the alp-sdk it ships beside: its vendored planner emits
+ *  `CONFIG_ALP_SDK_CHIP_NONE=y`, alp-sdk v0.15.0 no longer defines that symbol,
+ *  and Zephyr aborts the configure step with "attempt to assign the value 'y' to
+ *  the undefined symbol ALP_SDK_CHIP_NONE". That is four of the nine SKUs
+ *  `E1M_MODULES` offers in New Project — E1M-V2N101, E1M-V2N102, E1M-V2M101 and
+ *  E1M-V2M102 — broken by DEFAULT, on the path the GUI steers people down.
+ *
+ *  tan-cli#639 is the upstream bug and tan-cli#688 (`6901280`) the fix. Which
+ *  releases carry it was measured, not read off the notes — v0.6.0-rc1's own
+ *  "Fixed" list does not mention it. `6901280...v0.6.0-rc1` is 45 ahead / 0
+ *  behind (the fix IS in the tag); `6901280...v0.5.1` is diverged (it is not).
+ *  So no stable tan can build a Renesas SoM today, and holding at v0.5.1 to
+ *  avoid a pre-release would have meant knowingly keeping those four SKUs
+ *  broken. The rc window is short: the v0.6.0 milestone stands at 0 open / 206
+ *  closed, so this pin moves to `0.6.0` when that tag is cut.
+ *
+ *  Pinning a pre-release is precedented and supported, not a workaround — #443
+ *  taught every pin-resolution site to accept one and
+ *  `test/cliPin.prerelease.test.js` holds them to it; `0.5.0-rc1` through `rc4`
+ *  were each pinned in turn. `install.sh`/`install.ps1` resolve their OWN
+ *  `latest` to v0.5.1 and would not upgrade onto this, which is why every
+ *  managed invocation passes `--version`/`-Version` explicitly (see
+ *  `installTanCliGlobally`).
+ *
+ *  A pin is not the whole fix, because it only governs the MANAGED binary: a
+ *  customer resolving their own older tan through `alpSdk.cliPath` or PATH still
+ *  hits the identical Kconfig abort. `RENESAS_BUILD_CLI_VERSION` in
+ *  `src/alpCli/somCliFloor.ts` is the matching guard, and it compares against
+ *  the PROBED version for exactly the reason `RENODE_CORE_CLI_VERSION` does. */
 
-export const SUPPORTED_CLI_VERSION = "0.5.1";
+export const SUPPORTED_CLI_VERSION = "0.6.0-rc1";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -164,6 +197,16 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * `tan-x86_64-unknown-linux-gnu.tar.gz`, plus `checksums.txt` and
  * `envelope-contract.json` — six assets, the same four binaries as v0.5.0 and
  * every rc before it, now archived rather than raw (tan-cli#349).
+ *
+ * `"0.6.0-rc1"` carries the same two gaps, and this was read off the published
+ * tag rather than carried forward: it lists exactly
+ * `tan-aarch64-apple-darwin.tar.gz`, `tan-x86_64-apple-darwin.tar.gz`,
+ * `tan-x86_64-pc-windows-msvc.zip`, `tan-x86_64-unknown-linux-gnu.tar.gz`,
+ * `checksums.txt` and `envelope-contract.json` — six assets, byte-for-byte the
+ * same NAMES as v0.5.1. The reason is unchanged (PyInstaller cannot
+ * cross-compile and the matrix runs four runners), so `win32/arm64` and
+ * `linux/arm64` stay declared. Retiring the Rust oracle in this release changed
+ * what builds the payload, not which hosts it is built for.
  */
 export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   Record<string, readonly string[]>
@@ -173,6 +216,7 @@ export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   "0.5.0-rc3": ["win32/arm64", "linux/arm64"],
   "0.5.0-rc4": ["win32/arm64", "linux/arm64"],
   "0.5.1": ["win32/arm64", "linux/arm64"],
+  "0.6.0-rc1": ["win32/arm64", "linux/arm64"],
 };
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
