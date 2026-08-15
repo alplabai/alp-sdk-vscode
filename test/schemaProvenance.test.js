@@ -1,6 +1,12 @@
-// #493: the editor validates board.yaml against a vendored SNAPSHOT while the
-// customer's `tan` validates against their RESOLVED SDK. These gates cover the
-// comparison that makes the disagreement visible.
+// #493: the editor now validates board.yaml against the RESOLVED SDK's schema,
+// with the vendored snapshot as the no-SDK fallback. These gates cover the
+// decision of WHICH copy is in force, and the text that names it.
+//
+// The ordering changed with the fix and these tests changed with it: a
+// difference between the two copies used to BE the defect, and is now the
+// feature working. What is left to act on is the two states where the editor
+// could NOT follow the SDK, so those outrank a difference rather than the
+// other way round.
 //
 // Two of them are recurrence gates rather than unit tests, and are the reason
 // this file reads real repo files instead of only fixtures:
@@ -118,8 +124,9 @@ test("reports mismatch when the SDK's board schema differs", () => {
   assert.equal(board.unreadableReason, null);
 });
 
-test("a known difference outranks an unreadable sibling", () => {
-  // Arrange -- one schema differs, the other could not be read at all.
+test("a fallback outranks a difference (the ordering #493 inverted)", () => {
+  // Arrange -- one schema differs and is SERVED, the other could not be read
+  // at all and therefore falls back to the bundled copy.
   const reads = sdkReadsMatchingVendored();
   reads.board = { ok: true, text: "{}" };
   reads.systemManifest = { ok: false, reason: "ENOENT" };
@@ -131,8 +138,95 @@ test("a known difference outranks an unreadable sibling", () => {
     sdkReads: reads,
   });
 
-  // Assert -- mismatch is the actionable fact; unreadable would bury it.
-  assert.equal(p.state, "mismatch");
+  // Assert -- the difference is expected of a customer on another tag and the
+  // editor followed it; the unreadable sibling is the one still asserting a
+  // snapshot at them, so it is the fact worth surfacing.
+  assert.equal(p.state, "unreadable");
+  assert.equal(p.comparisons.find((c) => c.id === "board").served, "sdk");
+  assert.equal(
+    p.comparisons.find((c) => c.id === "systemManifest").served,
+    "bundled",
+  );
+});
+
+test("a REJECTED schema outranks an unreadable one and falls back", () => {
+  // Arrange -- present on disk but refused, plus a missing sibling. The
+  // customer can open the refused file; they cannot open the missing one.
+  const reads = sdkReadsMatchingVendored();
+  reads.board = { ok: true, text: "not json at all" };
+  reads.systemManifest = { ok: false, reason: "ENOENT" };
+
+  // Act
+  const p = buildSchemaProvenance({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "v0.14.0",
+    sdkReads: reads,
+  });
+
+  // Assert
+  assert.equal(p.state, "rejected");
+  const board = p.comparisons.find((c) => c.id === "board");
+  assert.equal(board.served, "bundled");
+  assert.match(board.rejectedReason, /not valid JSON/);
+  // It WAS read, so its hash is known even though it is not served -- that is
+  // what keeps the once-per-mismatch signature stable across refreshes.
+  assert.notEqual(board.sdkSha256, null);
+});
+
+test("an accepted SDK schema is served; a matching one is served too", () => {
+  // Arrange -- `served` must be decided by acceptance alone, never by "the
+  // bytes happen to equal the vendored copy", or the rule would go wrong the
+  // moment the vendored copy itself changed shape.
+  const p = buildSchemaProvenance({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "0.15.0",
+    sdkReads: sdkReadsMatchingVendored(),
+  });
+
+  // Assert
+  assert.equal(p.state, "match");
+  assert.ok(p.comparisons.every((c) => c.served === "sdk"));
+  assert.ok(p.comparisons.every((c) => c.rejectedReason === null));
+});
+
+test("a served SDK schema with an unmodelled top-level key is reported", () => {
+  // Arrange -- the residue #493 cannot remove. parse/serialize whitelist top
+  // level keys against BOARD_KEY_ORDER and SILENTLY DROP the rest, so an SDK
+  // newer than this extension can accept a key the visual configurator then
+  // deletes on save. Serving the SDK's schema removes the red squiggle that
+  // used to deter it, so the loss has to be named instead.
+  const reads = sdkReadsMatchingVendored();
+  reads.board = {
+    ok: true,
+    text: JSON.stringify({
+      properties: { som: {}, cores: {}, telemetryBudget: {} },
+    }),
+  };
+
+  // Act
+  const p = buildSchemaProvenance({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "0.16.0",
+    sdkReads: reads,
+  });
+
+  // Assert
+  assert.deepEqual(p.unknownBoardKeys, ["telemetryBudget"]);
+  assert.match(describeSchemaProvenance(p).detail, /DROPS those keys/);
+});
+
+test("keys the configurator already models are not reported as lost", () => {
+  // Arrange -- the vendored schema is by definition fully modelled, so a
+  // same-tag SDK must produce an EMPTY list. A gate that fired here would be
+  // indistinguishable from one that fires on everything.
+  const p = buildSchemaProvenance({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "0.15.0",
+    sdkReads: sdkReadsMatchingVendored(),
+  });
+
+  // Assert
+  assert.deepEqual(p.unknownBoardKeys, []);
 });
 
 test("reports unreadable when a schema is missing and none of the rest differ", () => {
@@ -174,8 +268,8 @@ test("an omitted read is treated as unreadable, never as agreement", () => {
   assert.match(sm.unreadableReason, /was not read/);
 });
 
-test("mismatch text names the differing file and which side to trust", () => {
-  // Arrange
+test("mismatch text names the SDK in force, and does NOT say distrust it", () => {
+  // Arrange -- a customer on v0.14.0 whose board schema differs from ours.
   const reads = sdkReadsMatchingVendored();
   reads.board = { ok: true, text: "{}" };
   const p = buildSchemaProvenance({
@@ -187,11 +281,50 @@ test("mismatch text names the differing file and which side to trust", () => {
   // Act
   const text = describeSchemaProvenance(p);
 
-  // Assert -- a squiggle the customer cannot adjudicate is worse than none.
-  assert.match(text.short, /differs from SDK/);
+  // Assert -- the squiggle now comes from their OWN SDK. Repeating the
+  // pre-#493 line here would teach them to ignore a correct diagnostic, which
+  // is why this asserts its ABSENCE rather than just not asserting it.
+  assert.match(text.short, /alp-sdk v0\.14\.0/);
   assert.match(text.detail, /board\.yaml/);
   assert.match(text.detail, /v0\.14\.0/);
-  assert.match(text.detail, /Trust `tan build`/);
+  assert.ok(
+    !/trust `tan build`/i.test(text.detail),
+    "the editor followed the SDK here — telling the customer to distrust the " +
+      "squiggle belongs to the fallback states only",
+  );
+});
+
+test("both fallback texts DO say which side to trust", () => {
+  // Arrange -- these are the states where the editor could not follow the SDK,
+  // so the pre-#493 rule is the correct one and must survive.
+  const unreadable = buildSchemaProvenance({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "0.14.0",
+    sdkReads: {
+      ...sdkReadsMatchingVendored(),
+      board: { ok: false, reason: "EACCES" },
+    },
+  });
+  const rejected = buildSchemaProvenance({
+    sdkRoot: "/opt/alp-sdk",
+    sdkVersion: "0.14.0",
+    sdkReads: {
+      ...sdkReadsMatchingVendored(),
+      board: { ok: true, text: "[]" },
+    },
+  });
+
+  // Act / Assert
+  for (const p of [unreadable, rejected]) {
+    const text = describeSchemaProvenance(p);
+    assert.match(text.short, /bundled/, `${p.state}: names the bundled copy`);
+    assert.match(text.detail, /trust `tan build`/i, `${p.state}`);
+  }
+  assert.match(
+    describeSchemaProvenance(rejected).detail,
+    /top level is not a JSON object/,
+    "a rejection must say WHY, or the customer cannot fix the file",
+  );
 });
 
 test("no-sdk text says the bundled schema is in force and why that is fine", () => {
@@ -220,7 +353,7 @@ test("match text names the SDK as a v-prefixed release, not a bare number", () =
 
   // Assert
   assert.equal(p.state, "match");
-  assert.match(text.short, /matches SDK/);
+  assert.match(text.short, /^Schema: alp-sdk v0\.15\.0$/);
   assert.match(text.detail, /alp-sdk v0\.15\.0/);
   assert.ok(
     !/ in 0\.15\.0/.test(text.detail),
@@ -253,7 +386,20 @@ test("customer-facing text is a single paragraph (hovers do not honour \\n)", ()
       sdkVersion: "0.15.0",
       sdkReads: reads,
     }),
+    buildSchemaProvenance({
+      sdkRoot: "/opt/alp-sdk",
+      sdkVersion: "0.14.0",
+      sdkReads: {
+        ...sdkReadsMatchingVendored(),
+        board: { ok: true, text: "nope" },
+      },
+    }),
   ];
+  assert.deepEqual(
+    states.map((p) => p.state),
+    ["no-sdk", "match", "mismatch", "unreadable", "rejected"],
+    "every state must be exercised, or a newline can hide in the one that is not",
+  );
 
   // Act / Assert
   for (const p of states) {

@@ -211,13 +211,25 @@ Marketplace; no functionality changed.
 
 ## Schema-sync
 
-The extension's schema-aware validation uses a **vendored** copy of the board
-schema at `schemas/board.schema.json` (so it ships inside the VSIX —
-`alp-sdk-upstream/**` is excluded from the package). It is derived from the
-alp-sdk submodule's board schema; `package.json::contributes.yamlValidation.url`
-points at the vendored path. Its presence + structure (`$id`, `required`) are
-enforced by `test/board.schema.vendored.test.js` and the CI "vendored schema"
-check.
+When an SDK is resolved, `board.yaml` and `system-manifest.yaml` are validated
+against **that SDK's own** schemas at `<sdkRoot>/metadata/schemas/`, so the
+editor and `tan` agree by construction (#493). The extension pins no SDK
+version, so this is the only way the two can agree; the language-status item on
+those files names which schema is in force.
+
+The **vendored** copies at `schemas/board.schema.json` and
+`schemas/system-manifest-v1.schema.json` are the fallback for a customer with no
+SDK yet — the common first-run state — and they are what
+`package.json::contributes.yamlValidation` points at. They ship inside the VSIX
+(`alp-sdk-upstream/**` is excluded from the package) and are derived from the
+alp-sdk submodule's schemas at a pinned TAG. Their presence + structure (`$id`,
+`required`) and their sha256 pins are enforced by
+`test/board.schema.vendored.test.js` and the CI "vendored schema" check.
+
+Keeping them current still matters: they are what every first-run user is
+validated against, and an SDK schema this extension refuses (oversized, not a
+JSON object, or carrying a remote `$ref` — see
+`packages/alp-core/src/validation/schemaSafety.ts`) falls back to them too.
 
 > **Schema v2 (requires alp-sdk v0.10.0+):** `board.yaml` now uses `schema_version: 2`
 > with a per-core `cores:` block replacing the top-level `os:` field.
