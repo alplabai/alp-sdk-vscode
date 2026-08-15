@@ -6,6 +6,50 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **`SUPPORTED_CLI_VERSION` moves to `0.6.0-rc1`, was `0.5.1` — and this pin is
+  a PRE-RELEASE on purpose (#502).** Every earlier pin was chosen from what was
+  stable; this one is chosen from what can build the hardware this extension
+  offers. tan `v0.5.1` cannot configure ANY Renesas SoM against the alp-sdk it
+  ships beside: its vendored planner emits `CONFIG_ALP_SDK_CHIP_NONE=y`,
+  alp-sdk v0.15.0 no longer defines that symbol, and Zephyr aborts the
+  configure step with `warning: attempt to assign the value 'y' to the
+  undefined symbol ALP_SDK_CHIP_NONE` / `error: Aborting due to Kconfig
+  warnings`. The board, toolchain and devicetree all resolve first, so the
+  failure reads as a project problem rather than a version one. That is four of
+  the nine SKUs New Project offers — `E1M-V2N101`, `E1M-V2N102`, `E1M-V2M101`,
+  `E1M-V2M102` — broken by default, on the path the GUI steers people down.
+  Which releases carry the fix was MEASURED, not read off the notes, which do
+  not mention it: tan-cli#688 (`6901280`) is the fix and `6901280...v0.6.0-rc1`
+  is 45 ahead / 0 behind, while `6901280...v0.5.1` is diverged. No stable tan
+  can build a Renesas SoM today, so holding at `v0.5.1` would have meant
+  knowingly keeping those four SKUs broken. The pin moves to `0.6.0` when that
+  tag is cut (its milestone stands at 0 open / 206 closed). Pinning a
+  prerelease is precedented and already supported — #443 taught every
+  pin-resolution site to accept one, and `0.5.0-rc1` through `rc4` were each
+  pinned in turn; `install.sh`/`install.ps1` resolve their own `latest` to
+  `v0.5.1` and will not upgrade onto this, which is why every managed
+  invocation passes `--version`/`-Version` explicitly. `v0.6.0-rc1` publishes
+  the same six assets as `v0.5.1`, so the two declared `win32/arm64` and
+  `linux/arm64` gaps move with the pin rather than being dropped.
+
+- **A tan too old to build your Renesas SoM now says so before the build,
+  instead of as a Kconfig error afterwards (#502).** The pin only governs the
+  MANAGED binary; a customer resolving their own tan through `alpSdk.cliPath`
+  or PATH keeps whatever they had and hits the identical abort, whose text
+  names neither the CLI nor the SoM. `alp.westBuild` now reads the project's
+  `som.sku` and, only for a Renesas module, compares the PROBED tan against
+  `RENESAS_BUILD_CLI_VERSION` — the same rule `RENODE_CORE_CLI_VERSION`
+  follows, because a feature gate must ask what is running, not what this build
+  would download. It warns and continues rather than refusing: the floor is a
+  claim about someone else's binary, and a wrong refusal is worse than a wrong
+  warning. Silent for every uncertain case — a non-Renesas or unknown SKU, an
+  unparseable `board.yaml`, or a CLI not yet downloaded.
+  `RENESAS_BUILD_CLI_VERSION` is deliberately a separate constant from the pin
+  even though the two are equal today: the pin moves at v0.6.0 GA, the floor
+  stays at `0.6.0-rc1`, which really is the oldest tan that works. A gate holds
+  the pin at or above the floor, so the managed binary can never be one this
+  extension would then warn about.
+
 - **The editor now says which board.yaml schema it is validating against.** The
   bundled `schemas/*.json` are snapshots of one alp-sdk tag, contributed
   unconditionally, while the extension pins no SDK version — so a customer on a
@@ -13,8 +57,21 @@ only Marketplace/Open VSX users opted into pre-release updates.
   miss one it does. A `board.yaml` / `system-manifest.yaml` language-status item
   now names the schema in force, and when the bundled copies differ from
   `<sdkRoot>/metadata/schemas/`, warns once per distinct mismatch that the CLI
-  is the side to trust. What is validated does not change yet; dynamic
-  registration against the resolved SDK is the remaining half of #493.
+  is the side to trust.
+
+- **`board.yaml` is now validated against the RESOLVED SDK's schema, not the
+  vendored snapshot (#493, closes the half #187 never shipped).** A
+  `redhat.vscode-yaml` contributor serves `<sdkRoot>/metadata/schemas/*.json`
+  ahead of the static `contributes.yamlValidation` entry, which keeps the
+  bundled copies as the genuine no-SDK fallback — so a first-run user is
+  unaffected and everyone else stops getting squiggles their own `tan build`
+  does not produce. The SDK's schema is treated as untrusted input: it is
+  refused if it is not a JSON object, exceeds a size cap, or carries a `$ref`
+  that is not a local `#` pointer, and a refusal falls back to the bundled copy
+  rather than failing open. Because the SDK's schema is now the one in force, a
+  plain bundled-vs-SDK difference is no longer a defect and no longer warns;
+  what does warn is a served schema carrying top-level keys the visual
+  configurator does not model, which it would silently drop on save.
 
 - **Both vendored SDK schemas re-vendored from alp-sdk v0.15.0 (was v0.14.0).**
   `board.schema.json` changes what the editor accepts in two ways. `som.sku`'s

@@ -111,3 +111,29 @@ it names. The real consequence of leaving it at `-gnu` against a Rust tag is
 the glibc floor `-musl` existed to avoid (see `src/alpCli/service.ts`), not a
 missing asset — revert it to `-musl` in lockstep to get that back, not to
 avoid a 404 that was never going to happen.
+
+**Second floor — hardware coverage (#502):** the pin also cannot go below
+`RENESAS_BUILD_CLI_VERSION` (`src/alpCli/somCliFloor.ts`, `0.6.0-rc1`). Below
+it, tan's vendored planner emits `CONFIG_ALP_SDK_CHIP_NONE=y` and every Renesas
+SKU New Project offers — `E1M-V2N101`, `E1M-V2N102`, `E1M-V2M101`,
+`E1M-V2M102` — dies in Zephyr's configure step, so a rollback for an unrelated
+defect would silently take four of nine supported modules with it.
+`test/alpCli.somCliFloor.test.js` fails if the pin drops below the floor; if a
+rollback genuinely requires it, drop the Renesas SKUs from `E1M_MODULES` in the
+same change rather than lowering the floor to silence the gate.
+
+This is also why the pin may legitimately name a PRE-RELEASE. "Never ahead of a
+published tag" above means published, not stable: a prerelease is a published
+tag with real assets, and `v0.6.0-rc1` is pinned precisely because no stable tan
+can build a Renesas SoM. `install.sh`/`install.ps1` resolve their own `latest`
+to the newest NON-prerelease and will not upgrade onto such a pin, which is why
+every managed invocation passes `--version`/`-Version` explicitly.
+
+**What this repo cannot gate.** No workflow here runs a real `tan build`, so
+nothing local proves the pinned tan can actually build each supported SoM
+family — the floor above is a version assertion, not a build. The real per-SoM
+build gate needs alp-sdk + Zephyr + a toolchain and lives in tan-cli's
+`release-combination.yml`, which today exercises the LATEST published tan
+rather than the version this extension pins. When those two versions diverge —
+as they do while this pin is a prerelease — the pinned pair is untested by
+anything, which is how #502 reached a release in the first place.

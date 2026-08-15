@@ -27,9 +27,11 @@ import {
   runAlpInTerminal,
   runAlpStreamed,
 } from "./alpCli/vscodeAdapter";
-import { isCliBehind } from "./alpCli/service";
-import { planPrecondition } from "./notify/service";
-import { notify } from "./notify/vscodeAdapter";
+import { isCliBehind, SUPPORTED_CLI_VERSION } from "./alpCli/service";
+import { isRenesasSku, somCliFloorWarning } from "./alpCli/somCliFloor";
+import { planFailure, planPrecondition } from "./notify/service";
+import { notify, notifyAsync } from "./notify/vscodeAdapter";
+import { parseBoardConfig } from "@alp-sdk/core/board/parse";
 import {
   collectWestWorkspaceContext,
   executeWestPlan,
@@ -105,12 +107,67 @@ async function resolveOrchestratorTarget(
 
 // ── CLI-backed orchestrator workflow (tan build/image/flash/clean/renode) ─────
 
+/** The SoM SKU declared by the `board.yaml` at `cwd`, or null when there is no
+ *  readable project there — no file, unparseable YAML, or a board that declares
+ *  no `som`. Every one of those means "say nothing", never "assume a SKU".
+ *
+ *  Same shape as `zephyrCoresOf` below, and for the same reason: the `fs` read
+ *  lives here while the parse is `@alp-sdk/core`'s, so this file holds no
+ *  second copy of the board-config rules. */
+function somSkuOf(cwd: string): string | null {
+  const boardYaml = path.join(cwd, "board.yaml");
+  if (!fs.existsSync(boardYaml)) return null;
+  try {
+    return (
+      parseBoardConfig(fs.readFileSync(boardYaml, "utf8")).som?.sku ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Say so BEFORE a build this tan cannot configure (#502).
+ *
+ * Scoped to `build` because that is where the abort was measured and where the
+ * customer is left with a Kconfig error naming neither their CLI nor their SoM.
+ *
+ * The probe is deliberately behind the SKU check: `probeTanVersion` spawns the
+ * CLI, and there is no reason to pay that on every Alif or NXP build to answer
+ * a question only Renesas can fail. Fire-and-forget (`notifyAsync`) — this is
+ * an explanation, not a gate, so the build the customer asked for still starts
+ * immediately.
+ */
+async function warnIfCliCannotBuildSom(
+  context: vscode.ExtensionContext,
+  cwd: string,
+): Promise<void> {
+  const sku = somSkuOf(cwd);
+  if (!sku || !isRenesasSku(sku)) return;
+
+  const warning = somCliFloorWarning(sku, await probeTanVersion(context));
+  if (!warning) return;
+
+  log(`[build] ${warning.detail}`);
+  notifyAsync(
+    planFailure({
+      operation: "Build",
+      cause: warning.cause,
+      detail: warning.detail,
+      severity: "warning",
+      actions: [{ id: "updateCli", title: `Use tan ${SUPPORTED_CLI_VERSION}` }],
+      dedupeKey: "som-cli-floor",
+    }),
+  );
+}
+
 async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
     "examples/peripheral-io/gpio-button-led",
     "build this project",
   );
   if (!target) return;
+  await warnIfCliCannotBuildSom(context, target.cwd);
   // `tan build` (cli.rs BuildArgs) has no positional app_path — project scope
   // resolves from `--project` (which defaults to the cwd). Active project: a
   // bare `build` from the project root. Fallback: point `--project` at the
