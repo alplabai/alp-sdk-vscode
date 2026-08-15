@@ -133,7 +133,20 @@ every managed invocation passes `--version`/`-Version` explicitly.
 nothing local proves the pinned tan can actually build each supported SoM
 family — the floor above is a version assertion, not a build. The real per-SoM
 build gate needs alp-sdk + Zephyr + a toolchain and lives in tan-cli's
-`release-combination.yml`, which today exercises the LATEST published tan
-rather than the version this extension pins. When those two versions diverge —
-as they do while this pin is a prerelease — the pinned pair is untested by
-anything, which is how #502 reached a release in the first place.
+`release-combination.yml`.
+
+That workflow's SCHEDULED run installs tan via `install.sh`'s own default,
+which resolves the newest NON-prerelease — so it exercises whatever `latest`
+means, not the version this extension pins. The two agree most of the time and
+the gate then covers us by coincidence; when they diverge, as they must
+whenever the pin is a prerelease, the pinned pair is tested by nothing. That is
+how #502 reached a release. The capability to test a specific version is
+already there (`release-combination.yml` takes a `tan_version`
+`workflow_dispatch` input, and `install.sh` honours an explicit prerelease —
+its `latest` redirect block runs only when no `--version` is passed); what is
+missing is anything driving it at our pin on a schedule. Filed as
+alplabai/tan-cli#767.
+
+Until that lands, treat a prerelease pin as UNVERIFIED against real hardware
+builds and dispatch `release-combination.yml` by hand with
+`tan_version: v<pin>` when moving the pin.
