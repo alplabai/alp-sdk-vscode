@@ -100,6 +100,52 @@ const STATE_LABELS: Record<DependencyState, string> = {
   unknown: "Unknown",
 };
 
+/**
+ * One button for every row the extension can actually install (#466 §2).
+ *
+ * The COUNT is the `will-install` set and nothing else. A row whose only
+ * action opens a web page installs nothing, so counting it would make the
+ * number a promise the run cannot keep — and those rows are named in the
+ * tooltip rather than silently left out, because "Fix all (2)" over a table
+ * showing five red rows reads as a bug unless the button says why.
+ *
+ * Hidden, not disabled, when there is nothing to install: a permanently greyed
+ * button on a healthy machine is furniture.
+ *
+ * No local "running" state. The host runs this in VS Code's own progress
+ * notification, which survives the panel being closed, and pushes a fresh
+ * report when it finishes — a spinner here would be a second, drifting answer
+ * to "is it still going?".
+ */
+function FixAllButton({ report }: { report: DependencyReport }) {
+  const installable = report.rows.filter((row) => row.state === "will-install");
+  if (installable.length === 0) return null;
+
+  const pointerOnly = report.rows.filter(
+    (row) => row.action?.effect === "open-docs",
+  );
+  const skipped =
+    pointerOnly.length === 0
+      ? ""
+      : ` Not included: ${pointerOnly
+          .map((row) => row.label)
+          .join(", ")} — those open an install page and install nothing.`;
+
+  return (
+    <Button
+      appearance="primary"
+      title={
+        `Runs ${installable.length} install${installable.length === 1 ? "" : "s"} one at a time, ` +
+        `waiting for each: ${installable.map((row) => row.label).join(", ")}.` +
+        skipped
+      }
+      onClick={() => postMessage({ type: "runFixAll" })}
+    >
+      Fix all ({installable.length})
+    </Button>
+  );
+}
+
 function ActionCell({
   row,
   onRun,
@@ -172,6 +218,7 @@ export function DependenciesView() {
                 {view.kind === "loading" ? "Running checks…" : view.message}
               </span>
             )}
+            {view.kind === "ready" && <FixAllButton report={view.report} />}
             <Button
               appearance="secondary"
               onClick={refresh}

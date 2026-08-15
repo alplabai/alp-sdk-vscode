@@ -747,6 +747,12 @@ export interface RunDependencyActionMessage {
   type: "runDependencyAction";
   name: string;
 }
+/** Run every installing row, one at a time (#466 §2). Carries NOTHING: the
+ *  host resolves the set from the report it last sent, so the webview can
+ *  neither name a different set than the one on screen nor post a command. */
+export interface RunFixAllMessage {
+  type: "runFixAll";
+}
 export interface ReloadHardwareExplorerMessage {
   type: "reloadHardwareExplorer";
 }
@@ -785,6 +791,7 @@ export type WebviewToExtMessage =
   | PreviewEffectiveConfigMessage
   | RefreshDependenciesMessage
   | RunDependencyActionMessage
+  | RunFixAllMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage

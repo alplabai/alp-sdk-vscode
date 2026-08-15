@@ -14,6 +14,7 @@ import {
   DependencyAction,
   DependencyLatest,
   DependencyReport,
+  DependencyRow,
   DependencyStatus,
   DoctorCheckEnvelope,
   DoctorEnvelopeData,
@@ -33,12 +34,12 @@ import {
   venvWestInTopdir,
   westWorkspaceTopdir,
 } from "../environment/vscodeAdapter";
-import type { AlpIdeState } from "../ideHub/messages";
+import { type AlpIdeState, BOOTSTRAP_RUN_NAME } from "../ideHub/messages";
 import { planFailure, planPrecondition } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { runToolchainFix } from "../toolchain";
-import { isRunActive, log, runInTerminal } from "../util";
+import { runToolchainFix, TOOLCHAIN_FIX_RUN_NAME } from "../toolchain";
+import { awaitRun, isRunActive, log, runInTerminal } from "../util";
 
 // ── The latest-SDK lookup (cached; must never block the panel) ───────────────
 
@@ -717,12 +718,148 @@ export function runDependencyAction(options: {
     runZephyrSdkInstall(action.command, sevenZipStatus);
     return;
   }
-  // A terminal, not `runInTerminal`: tan's `missingPrerequisites[].command` is
-  // a shell command line (`sudo apt-get install -y ninja-build`), and
-  // `runInTerminal` builds a `ProcessExecution` from an argv array — splitting
-  // the line on whitespace to fit that would mangle any quoted argument. This
-  // is the same dispatch `runToolchainFix` already uses for an install step.
+  // tan's `missingPrerequisites[].command` is a shell command LINE (`sudo
+  // apt-get install -y ninja-build`). This used to be a bare terminal because
+  // `runInTerminal` only spoke argv, and splitting the line on whitespace to
+  // fit that mangles any quoted argument. `runInTerminal` now takes a
+  // `command` too (a ShellExecution — see `RunExecutionSpec`), so the line
+  // still reaches a shell verbatim AND the run gets an exit code and a
+  // reservation, which is what a sequential "Fix all" waits on (#466 §2).
   runInNewTerminal(action.command, cwd);
+}
+
+/** The run name every plain dependency install claims — see
+ *  `ZEPHYR_SDK_RUN_NAME` for why that one keeps its own. */
+const INSTALL_RUN_NAME = "Alp: install dependency";
+
+/**
+ * The run name a given row's action will claim, or `null` when pressing it
+ * starts nothing to wait for (a pointer that only opens a page).
+ *
+ * A sequential "Fix all" needs this BEFORE dispatching: `awaitRun` has to be
+ * subscribed first, and `isRunActive` has to be checked first — a dispatch
+ * `runInTerminal` refuses reserves nothing and fires nothing, so awaiting it
+ * would hang forever.
+ */
+export function runNameFor(row: DependencyRow): string | null {
+  if (!row.action) return null;
+  if (row.action.effect === "open-docs") return null;
+  if (row.action.effect === "bootstrap") return BOOTSTRAP_RUN_NAME;
+  if (row.name === ZEPHYR_SDK_CHECK_NAME) return ZEPHYR_SDK_RUN_NAME;
+  return row.action.kind === "fix" ? TOOLCHAIN_FIX_RUN_NAME : INSTALL_RUN_NAME;
+}
+
+/**
+ * The rows a "Fix all" would actually run, in the planner's order.
+ *
+ * Exactly the `will-install` set (#466 §1): a row whose only action opens a
+ * web page installs NOTHING, so counting it would make the button's number a
+ * promise it cannot keep. What is left out is reported, never quietly dropped
+ * — see the button's tooltip and the summary toast.
+ */
+export function fixAllTargets(report: DependencyReport): DependencyRow[] {
+  return report.rows.filter((row) => row.state === "will-install");
+}
+
+/** What a "Fix all" run did, so the caller can say it rather than guess. */
+export interface FixAllOutcome {
+  installed: string[];
+  /** Rows whose run exited non-zero, each with the code. */
+  failed: { name: string; code: number | undefined }[];
+  /** Rows never started, because the user cancelled or a run was already
+   *  holding the slot. Reported, never silently dropped. */
+  skipped: { name: string; reason: string }[];
+}
+
+/**
+ * Run every installing row, ONE AT A TIME, waiting for each to finish (#466 §2).
+ *
+ * SEQUENTIAL is the whole design, not a simplification. Two installers racing
+ * is the failure `planDependencyReport` already suppresses every action to
+ * avoid — "a second installer racing it is how half-written workspaces
+ * happen" — and several of these fixes mutate the same venv, the same west
+ * workspace, or the same machine-wide package manager. Firing them together
+ * would also lose to the run reservations: `runInTerminal` REFUSES a name that
+ * is already active, so a parallel dispatch would silently drop rows and
+ * report success.
+ *
+ * Stops at the first failure. A toolchain is a chain: `west` failing to
+ * install makes the `west-workspace` step after it fail for a reason that has
+ * nothing to do with the workspace, and a wall of consequential errors is
+ * worse than one real one.
+ *
+ * Cancellation stops the sequence but never kills a run already in flight —
+ * the same rule as everywhere else in this extension, because a live run can
+ * be a flash and killing that mid-write can leave a board unbootable (#146).
+ * A cancel between steps is exactly what it says: no further steps.
+ */
+export async function runFixAll(options: {
+  report: DependencyReport;
+  cwd: string | undefined;
+  token: vscode.CancellationToken;
+  /** Called before each row starts, for a progress line naming what runs. */
+  onStep?: (row: DependencyRow, index: number, total: number) => void;
+}): Promise<FixAllOutcome> {
+  const { report, cwd, token, onStep } = options;
+  const targets = fixAllTargets(report);
+  const outcome: FixAllOutcome = { installed: [], failed: [], skipped: [] };
+  const sevenZip = report.rows.find((row) => row.name === "sevenZip");
+
+  for (const [index, row] of targets.entries()) {
+    if (token.isCancellationRequested) {
+      outcome.skipped.push({ name: row.name, reason: "cancelled" });
+      continue;
+    }
+    const runName = runNameFor(row);
+    if (runName === null) {
+      // `fixAllTargets` should have excluded these, so reaching here means the
+      // state mapping and the dispatch disagree. Say so rather than pressing on.
+      outcome.skipped.push({ name: row.name, reason: "nothing to wait for" });
+      continue;
+    }
+    if (isRunActive(runName)) {
+      // The dispatch would be REFUSED, reserving nothing and firing nothing,
+      // so awaiting it would hang forever. Skip it and say why.
+      outcome.skipped.push({
+        name: row.name,
+        reason: `"${runName}" is already running`,
+      });
+      continue;
+    }
+
+    onStep?.(row, index, targets.length);
+    log(`[fix-all] ${row.name}: starting "${runName}"`);
+    // Subscribed BEFORE the dispatch: a fast install can finish before a
+    // promise created afterwards ever attaches.
+    const finished = awaitRun(runName);
+    runDependencyAction({
+      // Narrowed by `fixAllTargets` — a `will-install` row always has one.
+      action: row.action as DependencyAction,
+      rowName: row.name,
+      cwd,
+      sevenZipStatus: sevenZip?.status,
+    });
+    const code = await finished;
+    log(`[fix-all] ${row.name}: exited (code=${code ?? "unknown"})`);
+
+    // `undefined` is "the task never started or the code is unknown", which is
+    // not a success — treating it as one is how a Fix-all reports green over a
+    // task type that was never contributed.
+    if (code === 0) {
+      outcome.installed.push(row.name);
+      continue;
+    }
+    outcome.failed.push({ name: row.name, code });
+    for (const rest of targets.slice(index + 1)) {
+      outcome.skipped.push({
+        name: rest.name,
+        reason: `stopped after ${row.name} failed`,
+      });
+    }
+    break;
+  }
+
+  return outcome;
 }
 
 /**
@@ -823,12 +960,7 @@ function runZephyrSdkInstall(
 }
 
 function runInNewTerminal(command: string, cwd: string | undefined): void {
-  const terminal = vscode.window.createTerminal({
-    name: "Alp: install dependency",
-    cwd,
-  });
-  terminal.show(true);
-  terminal.sendText(command);
+  runInTerminal({ name: INSTALL_RUN_NAME, command, cwd });
   offerReloadAfterInstall();
 }
 

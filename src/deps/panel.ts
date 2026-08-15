@@ -13,14 +13,17 @@ import type {
   WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
-import { isCancellation } from "../notify/service";
+import { isCancellation, planFailure, planSuccess } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { offerBootstrapFix } from "../toolchain";
 import { log } from "../util";
 import type { StateManager } from "../views/stateManager";
 import {
   buildDependencyReport,
+  fixAllTargets,
   runDependencyAction,
+  runFixAll,
   withLatestSdk,
 } from "./vscodeAdapter";
 
@@ -148,6 +151,9 @@ export class DependencyPanel {
         break;
       case "runDependencyAction":
         this.runRowAction(msg.name);
+        break;
+      case "runFixAll":
+        fireAndForget(this.runFixAll(), "the Fix all run");
         break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
@@ -295,6 +301,86 @@ export class DependencyPanel {
       cwd: collectProjectContext().workspaceRoot ?? undefined,
       sevenZipStatus: sevenZip?.status,
     });
+  }
+
+  /**
+   * Run every installing row, one at a time, against the report the webview is
+   * currently showing (#466 §2).
+   *
+   * The set is resolved HERE, from `this.lastReport` — the webview asked for
+   * "all", it did not name them. Same rule as `runRowAction`, one level up.
+   *
+   * Progress lives in VS Code's notification UI rather than in the panel: the
+   * user can close the panel mid-install, and a progress bar that went with it
+   * would leave a long install running with nothing on screen saying so.
+   * Cancellable, and cancelling stops the SEQUENCE — it never kills a run
+   * already in flight (#146).
+   *
+   * One refresh at the end, not one per row: each refresh is two `tan doctor`
+   * spawns, and re-running them between steps would triple the cost of a
+   * five-row fix to say something the final table says anyway.
+   */
+  private async runFixAll(): Promise<void> {
+    const report = this.lastReport;
+    if (!report) return;
+    const targets = fixAllTargets(report);
+    if (targets.length === 0) return;
+
+    const outcome = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Alp: installing dependencies",
+        cancellable: true,
+      },
+      (progress, token) =>
+        runFixAll({
+          report,
+          cwd: collectProjectContext().workspaceRoot ?? undefined,
+          token,
+          onStep: (row, index, total) =>
+            progress.report({
+              message: `${index + 1}/${total} — ${row.label}`,
+              increment: index === 0 ? 0 : 100 / total,
+            }),
+        }),
+    );
+
+    // The table is the real report; this line is only what a table cannot say,
+    // which is what happened while it was not on screen.
+    const parts = [`${outcome.installed.length} installed`];
+    if (outcome.failed.length > 0) {
+      parts.push(
+        `${outcome.failed.length} failed (${outcome.failed
+          .map((entry) => `${entry.name} exit ${entry.code ?? "unknown"}`)
+          .join(", ")})`,
+      );
+    }
+    if (outcome.skipped.length > 0) {
+      // Named, never a bare count: "3 skipped" with no reason is the silent
+      // truncation this whole panel exists to avoid.
+      parts.push(
+        `${outcome.skipped.length} not run (${outcome.skipped
+          .map((entry) => `${entry.name}: ${entry.reason}`)
+          .join("; ")})`,
+      );
+    }
+    log(`[fix-all] ${parts.join(" | ")}`);
+    notifyAsync(
+      outcome.failed.length === 0
+        ? planSuccess(
+            `Fix all: ${outcome.installed.length} of ${targets.length} installed`,
+            { detail: parts.join(" · ") },
+          )
+        : planFailure({
+            operation: "Fix all",
+            cause: `${outcome.failed.length} of ${targets.length} did not install.`,
+            detail: parts.join(" · "),
+            severity: "warning",
+            dedupeKey: "deps-fix-all",
+          }),
+    );
+
+    this.refresh();
   }
 
   private dispose(): void {

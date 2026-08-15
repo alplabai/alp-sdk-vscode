@@ -48,7 +48,7 @@ import { BOOTSTRAP_RUN_NAME } from "./ideHub/messages";
 import type { NotificationPlan } from "./notify/models";
 import { planFailure, planSuccess } from "./notify/service";
 import { notify, notifyAsync } from "./notify/vscodeAdapter";
-import { log } from "./util";
+import { log, runInTerminal } from "./util";
 
 function host(): BootstrapHost {
   return process.platform === "win32"
@@ -57,6 +57,18 @@ function host(): BootstrapHost {
       ? "darwin"
       : "linux";
 }
+
+/**
+ * The run name every toolchain-fix install claims, so a second press is
+ * refused by `isRunActive` rather than starting a racing installer, and so
+ * `awaitRun` has something to wait on (#466 §2).
+ *
+ * ONE name for all of them, deliberately: these installs mutate the same
+ * machine-wide toolchain, so two at once is the thing to prevent — not two of
+ * the same fix. It is distinct from `ZEPHYR_SDK_RUN_NAME`, whose own comment
+ * explains why that one keeps a separate name.
+ */
+export const TOOLCHAIN_FIX_RUN_NAME = "Alp: toolchain fix";
 
 export function runToolchainFix(fixId: ToolchainFixId): void {
   const result = fixCommand(fixId, host());
@@ -75,10 +87,27 @@ export function runToolchainFix(fixId: ToolchainFixId): void {
     void vscode.commands.executeCommand("alp.installDependencies");
     return;
   }
-  const term = vscode.window.createTerminal({ name: "Alp toolchain fix" });
-  term.show(true);
-  term.sendText(`# ${result.step.description}`);
-  term.sendText(result.step.command);
+  // A TASK, not a bare terminal (#466 §2). The line still reaches a shell
+  // verbatim — `runInTerminal`'s `command` form is a `ShellExecution`, so
+  // nothing is split on whitespace and no quoted argument is mangled, which was
+  // the only reason this was a `sendText` terminal. What a task adds is the
+  // pair a raw terminal cannot give: an exit code, so a sequential "Fix all"
+  // can wait for this step before starting the next, and a reservation under
+  // `TOOLCHAIN_FIX_RUN_NAME`, so a second press is refused with a message
+  // instead of starting a racing installer.
+  //
+  // `result.step.description` is dropped rather than echoed as a `#` line: a
+  // ShellExecution runs ONE command, and PowerShell — the default Windows
+  // profile — does not read `#` the way a POSIX shell does. It was never
+  // load-bearing; the same text is already the button's tooltip.
+  runInTerminal({
+    name: TOOLCHAIN_FIX_RUN_NAME,
+    command: result.step.command,
+    // A toolchain install is machine-wide, but a cwd still has to be stated:
+    // `undefined` inherits the extension host's own, which on Windows is the
+    // VS Code INSTALL DIRECTORY.
+    cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+  });
 }
 
 /**

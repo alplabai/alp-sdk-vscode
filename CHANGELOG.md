@@ -50,6 +50,55 @@ only Marketplace/Open VSX users opted into pre-release updates.
   the pin at or above the floor, so the managed binary can never be one this
   extension would then warn about.
 
+- **The dependency panel says whether it will fix a row or you must, and can
+  now fix them all in one press (#466).** Three changes, one panel.
+
+  *Ready / Will install / Needs you.* The table rendered tan's `pass` / `warn`
+  / `fail` verbatim, which does not answer the question the panel gets opened
+  with: do I have to do something? A `fail` the extension fixes with one press
+  and a `fail` that needs a vendor toolchain installed by hand read
+  identically. The state word is derived from the (`status`, `action.effect`)
+  PAIR and nothing else, which is what keeps it presentation rather than the
+  re-derivation `deps/planner.ts` forbids — "Will install" is not a status, it
+  is the presence of an action. `open-docs` is deliberately NOT "Will install":
+  its own contract says it opens a page and installs nothing. tan's raw status
+  stays on the row and on screen beneath the word, and any status the mapping
+  does not recognise — tan's own `unknown`, or one it ships next year — lands
+  on `Unknown` rather than being labelled with confidence.
+
+  *One "Fix all".* Runs every installing row SEQUENTIALLY, waiting for each
+  before starting the next. That is the design, not a simplification: several
+  of these fixes mutate the same venv, the same west workspace or the same
+  machine-wide package manager, and firing them together would also lose to the
+  run reservations, which refuse a second run under a name already active — a
+  parallel dispatch would drop rows and report success. It stops at the first
+  failure, because a `west` install failing makes the workspace step after it
+  fail for a reason that has nothing to do with the workspace. Progress and
+  cancellation live in VS Code's own notification, so they survive the panel
+  being closed; cancelling stops the sequence and never kills a run already in
+  flight. Everything not run is named with its reason, never counted silently.
+  To make any of it possible, the two dispatches that were bare
+  `createTerminal` + `sendText` are now tasks: a raw terminal reports no exit
+  code and holds no reservation, so nothing could wait for one. The shell line
+  still reaches the shell verbatim — `runInTerminal` gained a `ShellExecution`
+  form, so the argv-splitting that would mangle a quoted argument, the original
+  reason for the bare terminal, never happens.
+
+  *A conformance gate for the doctor envelope.* Nothing in this repo mentioned
+  `doctor`, `checks` or `missingPrerequisites`, so a producer-side rename landed
+  as an empty panel rather than a failing test. A golden fixture was ruled out —
+  doctor output is machine-dependent — and tan had already solved it: of the 18
+  entries in its published `envelope-contract.json`, `doctor` alone carries a
+  `dataKeys` schema instead of a recorded run. The gate compares that schema
+  against `cli/doctorEnvelope.ts`, so a key the extension reads and tan does not
+  declare is a hard red, while a key tan declares and the extension does not
+  model must be recorded with a reason — two are, `generatedAt` and
+  `checks[].scope`, the latter a required key the model never carried.
+  `docs/EXTENSION_CLI_INTEGRATION.md`'s "no golden fixtures" paragraph now names
+  the gate that replaced the idea, instead of reading as "no gate at all".
+
+  Nineteen mutations across the three parts, each producing a RED and reverted.
+
 - **The webview's hand-mirrored payload models are gated, and the mirror is
   now covered end to end (#497).** `packages/alp-webview/src/types.ts` is a
   772-line hand copy of two different things, and only the message half was

@@ -467,6 +467,23 @@ export interface RunDependencyActionMessage {
   name: string;
 }
 
+/**
+ * Run every installing row, one at a time (#466 §2).
+ *
+ * Carries NOTHING — not the row ids, not the commands. The host resolves the
+ * set from the report it last sent, the same rule `runDependencyAction`
+ * follows: a webview that named the rows could name a different set than the
+ * one on screen, and a webview that posted commands would be an injection seam.
+ *
+ * Progress, cancellation and the result live in VS Code's own notification UI
+ * rather than in this protocol. A run can outlive the panel — the user can
+ * close it mid-install — and a progress bar that vanished with the panel would
+ * leave a long install running with nothing on screen saying so.
+ */
+export interface RunFixAllMessage {
+  type: "runFixAll";
+}
+
 export interface ReloadHardwareExplorerMessage {
   type: "reloadHardwareExplorer";
 }
@@ -527,6 +544,7 @@ export type WebviewToExtMessage =
   | PreviewEffectiveConfigMessage
   | RefreshDependenciesMessage
   | RunDependencyActionMessage
+  | RunFixAllMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
