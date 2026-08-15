@@ -120,6 +120,17 @@ export interface ProjectTemplate {
   category: "starter" | "example" | "library";
   icon: string;
   sourceDir?: string;
+  /**
+   * The SDK category this example renders under (`aen`, `ai`, `multicore`, …),
+   * or absent when it has none (#482 §2).
+   *
+   * DISTINCT from `category` above, which is the KIND — starter / example /
+   * library. This is the heading WITHIN the examples, and only examples carry
+   * it. Derived host-side by `exampleCategory` (@alp-sdk/core/examples/category)
+   * from the leading segment of `sourceDir`, deferring to tan the day its
+   * envelope carries one outright.
+   */
+  group?: string;
 }
 
 export interface E1mModule {

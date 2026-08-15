@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { exampleCategory } from "@alp-sdk/core/examples/category";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   emptyAlpIdeState,
@@ -300,11 +301,21 @@ export class NewProjectFlowPanel {
                 sourceDir: string;
                 title?: string;
                 description?: string;
+                /** Not on the wire as of the pinned tan v0.6.0-rc1 (measured
+                 *  against its own published envelope-contract.json), so it is
+                 *  optional and `exampleCategory` falls back to `sourceDir`'s
+                 *  leading segment. Typed here so the day tan sends one, it
+                 *  wins with no further change (#482 §1). */
+                category?: string;
               }[];
             }
           | undefined
       )?.examples ?? [];
     for (const ex of examples) {
+      // `?? undefined` and not `?? ""`: an example with no category must leave
+      // the field ABSENT so the view groups it nowhere, rather than under a
+      // heading with an empty name.
+      const group = exampleCategory(ex) ?? undefined;
       templates.push({
         id: ex.id,
         title: ex.title || ex.id,
@@ -312,6 +323,7 @@ export class NewProjectFlowPanel {
         category: "example",
         icon: "🧪",
         sourceDir: ex.sourceDir,
+        group,
       });
     }
 
