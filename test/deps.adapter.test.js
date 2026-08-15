@@ -576,22 +576,16 @@ test("a `--build` that answers nothing is still an error state", async () => {
 // ── A-0g: a winget install leaves a stale PATH ───────────────────────────────
 
 test("a terminal install says what actually makes the row go green", async () => {
-  const sent = [];
-  const terminals = [];
+  // A TASK now, not a bare terminal (#466 §2): the same shell line, but the
+  // run reports an exit code and holds a reservation, which is what a
+  // sequential Fix all waits on. The assertions below are the same claims they
+  // always were — the line goes to the shell verbatim, the cwd is the
+  // caller's — read off `runInTerminal`'s options instead of a terminal's.
+  const runs = [];
   const plans = [];
   const { runDependencyAction } = loadDepsAdapter({
-    vscode: {
-      window: {
-        createTerminal: (opts) => {
-          terminals.push(opts);
-          return {
-            show() {},
-            sendText: (text) => sent.push(text),
-          };
-        },
-      },
-      Uri: {},
-    },
+    vscode: { window: {}, Uri: {} },
+    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
     "../notify/vscodeAdapter": {
       notifyAsync: (plan) => plans.push(plan),
     },
@@ -611,9 +605,20 @@ test("a terminal install says what actually makes the row go green", async () =>
     sevenZipStatus: undefined,
   });
 
-  assert.deepEqual(sent, ["winget install -e --id Ninja-build.Ninja"]);
+  assert.deepEqual(
+    runs.map((run) => run.command),
+    ["winget install -e --id Ninja-build.Ninja"],
+    "the shell LINE reaches the shell verbatim — a ShellExecution, never an " +
+      "argv split that would mangle a quoted argument",
+  );
   assert.equal(
-    terminals[0].cwd,
+    runs[0].argv,
+    undefined,
+    "argv and command are mutually exclusive; passing both is a bug the type " +
+      "forbids and this pins at runtime",
+  );
+  assert.equal(
+    runs[0].cwd,
     "/home/dev/proj",
     // `rowName` and `cwd` are both plain strings — an options object, not
     // positional parameters, is what makes a swap between them fail to
@@ -922,18 +927,10 @@ test("a topdir resolves but its venv has no west: refused, warning severity, Boo
 });
 
 test("a zephyrSdk command that cannot be retargeted falls back to the topdir, not the open project's cwd", () => {
-  const sent = [];
-  const terminals = [];
+  const runs = [];
   const { runDependencyAction } = loadDepsAdapter({
-    vscode: {
-      window: {
-        createTerminal: (opts) => {
-          terminals.push(opts);
-          return { show() {}, sendText: (text) => sent.push(text) };
-        },
-      },
-      Uri: {},
-    },
+    vscode: { window: {}, Uri: {} },
+    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {
       collectProjectContext: () => ({
@@ -962,9 +959,14 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
     sevenZipStatus: undefined,
   });
 
-  assert.deepEqual(sent, ['west sdk install --name "custom sdk"']);
+  assert.deepEqual(
+    runs.map((run) => run.command),
+    ['west sdk install --name "custom sdk"'],
+    "the quoted argument survives — the whole reason this path is a shell " +
+      "line and not an argv array",
+  );
   assert.equal(
-    terminals[0].cwd,
+    runs[0].cwd,
     "/home/dev/.alp",
     "still `west sdk install` — it still needs the west workspace topdir, " +
       "not the open project folder, even un-retargeted",
@@ -972,17 +974,10 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
 });
 
 test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
-  const sent = [];
+  const runs = [];
   const { runDependencyAction } = loadDepsAdapter({
-    vscode: {
-      window: {
-        createTerminal: () => ({
-          show() {},
-          sendText: (text) => sent.push(text),
-        }),
-      },
-      Uri: {},
-    },
+    vscode: { window: {}, Uri: {} },
+    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
     // No override for "../project/vscodeAdapter" or "../environment/
     // vscodeAdapter": if the zephyrSdk branch fired by mistake for this row,
     // `collectProjectContext` (stubbed to `{}` by default) would throw "is not
@@ -1005,9 +1000,9 @@ test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
   });
 
   assert.deepEqual(
-    sent,
+    runs.map((run) => run.command),
     ["west update"],
-    "the command reaches the plain terminal dispatch untouched",
+    "the command reaches the plain install dispatch untouched",
   );
 });
 

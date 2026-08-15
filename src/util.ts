@@ -47,6 +47,39 @@ const terminalFinished = new vscode.EventEmitter<{
 }>();
 export const onDidFinishTerminalCommand = terminalFinished.event;
 
+/**
+ * Resolve when the next run under `name` finishes, with its exit code
+ * (`undefined` when unknown). The await half of a sequential "Fix all" (#466
+ * §2): one row at a time, because two installers racing is how half-written
+ * workspaces happen — the same reason `planDependencyReport` suppresses every
+ * action while a bootstrap is in flight.
+ *
+ * SUBSCRIBE BEFORE DISPATCHING. A short run can finish before an `await` on a
+ * promise created afterwards ever attaches, so the intended shape is:
+ *
+ *     const finished = awaitRun(NAME);
+ *     runInTerminal({ name: NAME, … });
+ *     const code = await finished;
+ *
+ * It does NOT time out, on purpose: an install can legitimately take an hour
+ * (a Zephyr SDK archive), and a timeout that fires early would report a
+ * failure over a run that is still going. What guarantees it settles is the
+ * dispatch side — `runInTerminal` fires the finish signal from its watchdog
+ * when a task never starts, and from its rejection path when `executeTask`
+ * fails. The ONE way to hang it is to dispatch a run that `isRunActive`
+ * refuses, which reserves nothing and therefore fires nothing; callers must
+ * check `isRunActive` first rather than relying on this to notice.
+ */
+export function awaitRun(name: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const subscription = terminalFinished.event((event) => {
+      if (event.name !== name) return;
+      subscription.dispose();
+      resolve(event.code);
+    });
+  });
+}
+
 /** Fixed task identity for every `runInTerminal` run, so these never mix in
  *  with the user's own `tasks.json` entries in the Tasks UI. `run` (the
  *  `alpRun` task type's one contributed property — see package.json's
@@ -329,20 +362,41 @@ export function revealRunInTerminal(name: string): void {
  * the command forever (`isRunActive` would stay true with no event
  * ever coming to clear it).
  */
-export function runInTerminal(options: {
-  name: string;
-  argv: string[];
-  /** REQUIRED, though it may be `undefined` — the key must be written, so "no
-   *  working directory" is a decision a caller states and a reviewer can see,
-   *  never an omission. `undefined` reaches `ProcessExecution` as "inherit the
-   *  extension host's own cwd", which on Windows is the VS Code INSTALL
-   *  DIRECTORY; a command that writes where it runs (`tan bootstrap` —
-   *  creates a venv + west workspace) then bootstraps there. Two
-   *  `runAlpInTerminal` sites shipped with `cwd` simply left off, which is
-   *  why this is not optional. */
-  cwd: string | undefined;
-  env?: Record<string, string>;
-}): void {
+/**
+ * WHAT to run, as a discriminated union so a caller states one and only one.
+ *
+ * `argv` is a `ProcessExecution` — no shell, no quoting rules, and the form
+ * every caller before #466 used.
+ *
+ * `command` is a `ShellExecution` — one shell command LINE, run by the user's
+ * default shell. It exists because tan's `missingPrerequisites[].command` IS a
+ * shell line (`sudo apt-get install -y ninja-build`) and splitting it on
+ * whitespace to fit an argv array mangles any quoted argument. Those dispatches
+ * used to be a bare `createTerminal` + `sendText` for exactly that reason; the
+ * cost was that a raw terminal reports NO exit code and holds no reservation,
+ * so nothing could wait for one and nothing stopped two racing. Routing them
+ * through a task buys both, which is what makes a sequential "Fix all"
+ * possible at all (#466 §2).
+ */
+export type RunExecutionSpec =
+  | { argv: string[]; command?: never }
+  | { command: string; argv?: never };
+
+export function runInTerminal(
+  options: RunExecutionSpec & {
+    name: string;
+    /** REQUIRED, though it may be `undefined` — the key must be written, so "no
+     *  working directory" is a decision a caller states and a reviewer can see,
+     *  never an omission. `undefined` reaches `ProcessExecution` as "inherit the
+     *  extension host's own cwd", which on Windows is the VS Code INSTALL
+     *  DIRECTORY; a command that writes where it runs (`tan bootstrap` —
+     *  creates a venv + west workspace) then bootstraps there. Two
+     *  `runAlpInTerminal` sites shipped with `cwd` simply left off, which is
+     *  why this is not optional. */
+    cwd: string | undefined;
+    env?: Record<string, string>;
+  },
+): void {
   ensureTaskTracking();
   if (isRunActive(options.name)) {
     // Refuse rather than silently no-op or terminate a possibly-live run
@@ -395,11 +449,17 @@ export function runInTerminal(options: {
   clearTimeout(active.get(options.name)?.watchdog);
   active.set(options.name, reservation);
 
-  const execution = new vscode.ProcessExecution(
-    options.argv[0],
-    options.argv.slice(1),
-    { cwd: options.cwd, env: options.env },
-  );
+  const execution =
+    options.command !== undefined
+      ? // A shell command LINE, quoting intact — see `RunExecutionSpec`.
+        new vscode.ShellExecution(options.command, {
+          cwd: options.cwd,
+          env: options.env,
+        })
+      : new vscode.ProcessExecution(options.argv[0], options.argv.slice(1), {
+          cwd: options.cwd,
+          env: options.env,
+        });
   const task = new vscode.Task(
     { type: TASK_TYPE, run: options.name },
     vscode.TaskScope.Workspace,

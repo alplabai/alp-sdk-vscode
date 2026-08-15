@@ -208,6 +208,120 @@ function scanGatedCodes(roots) {
   return found;
 }
 
+// ---------------------------------------------------------------------------
+// The doctor envelope's key set (#466 §3)
+// ---------------------------------------------------------------------------
+//
+// The dependency panel renders `tan doctor --build`'s `data`, and until now
+// nothing here mentioned `doctor`, `checks` or `missingPrerequisites` at all: a
+// producer-side rename landed as an EMPTY PANEL, not a failing test. Same
+// fail-open as everything else in this file — rename `data.checks` and
+// `planDependencyReport` maps over `undefined`; rename `missingPrerequisites`
+// and `prerequisites ?? []` finds nothing, so every Fix button quietly
+// disappears while CI stays green on both sides.
+//
+// #466 ruled out a golden fixture, and `docs/EXTENSION_CLI_INTEGRATION.md` had
+// already ruled it out for this exact output: doctor output is
+// machine-dependent, so a recorded run reds on every host but the one that made
+// it. What it asked for instead is a key-set conformance gate.
+//
+// tan got there first. Of the entries in the artefact's `envelopes` block, 17
+// publish a golden `envelope`; `doctor` alone publishes `dataKeys` — a
+// declarative schema of required/optional keys and their kinds, carrying no
+// values at all. So this gate does not restate the shape in TypeScript. It
+// reads tan's own declaration and compares it against the extension's own
+// declaration (`packages/alp-core/src/cli/doctorEnvelope.ts`), which is the
+// same "tan owns the facts" rule `deps/planner.ts` is built on, applied to the
+// gate itself.
+//
+// The two directions get different rules, for the same reason
+// `test/webview.payloadMirror.test.js` splits them (#497):
+//
+//   * a key the EXTENSION declares that tan does not — a hard red, no
+//     allowlist. That is the direction that empties the panel.
+//   * a key TAN declares that the extension does not model — allowed only when
+//     `UNMODELLED_DOCTOR_KEYS` names it with a reason, and the entry must still
+//     describe a live omission or it reds as stale.
+
+const DOCTOR_ENVELOPE_MODELS = "packages/alp-core/src/cli/doctorEnvelope.ts";
+
+/**
+ * Keys tan's `dataKeys` declares that `doctorEnvelope.ts` deliberately does not
+ * model, with the reason. Both are additive keys nothing renders.
+ */
+const UNMODELLED_DOCTOR_KEYS = {
+  generatedAt:
+    "The run's timestamp. Nothing renders it — the panel shows the report it " +
+    "just fetched, so a stamp would only ever say 'now'. Modelling it would " +
+    "invite a surface to print a time that is not the one on screen after a " +
+    "refresh races.",
+  "checks[].scope":
+    "tan's own grouping of a check (host / project / build). The panel renders " +
+    "one flat table in tan's order and does not group, so reading it would " +
+    "mean inventing sections tan did not ask for. Model it the day the table " +
+    "grows sections — not before, or it is a field with no meaning here.",
+};
+
+/** Field names of `export interface <name>`, each keeping its `?`. Nested brace
+ *  groups are blanked first so a `;` inside an inline object type (the
+ *  `summary` field) cannot split a field in two. */
+function declaredFields(source, name) {
+  const header = new RegExp(`export interface ${name}\\b[^{]*\\{`, "m").exec(
+    source,
+  );
+  if (!header) return null;
+
+  let depth = 1;
+  let body = null;
+  const start = header.index + header[0].length;
+  for (let i = start; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    else if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        body = source.slice(start, i);
+        break;
+      }
+    }
+  }
+  if (body === null) return null;
+
+  let flat = "";
+  let nesting = 0;
+  for (const ch of body) {
+    if (ch === "{") {
+      nesting += 1;
+      flat += " ";
+    } else if (ch === "}") {
+      nesting -= 1;
+      flat += " ";
+    } else {
+      flat += nesting > 0 ? " " : ch;
+    }
+  }
+  return new Set(
+    flat
+      .split(";")
+      .map((entry) => /^\s*(\w+)(\?)?\s*:/.exec(entry))
+      .filter(Boolean)
+      .map((m) => `${m[1]}${m[2] ?? ""}`),
+  );
+}
+
+/** Strip comments so prose in a doc block cannot be read as a field. */
+function stripTsComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((line) => {
+      const at = line.indexOf("//");
+      if (at < 0) return line;
+      const quotes = (line.slice(0, at).match(/"/g) ?? []).length;
+      return quotes % 2 === 0 ? line.slice(0, at) : line;
+    })
+    .join("\n");
+}
+
 /**
  * Objects in the artefact that are MEANT to be envelopes, found by a predicate
  * deliberately WEAKER than the shape under test: a string `command` and a
@@ -595,6 +709,279 @@ test(
         `extension's \`AlpEnvelope.sdk\` still declares — or the goldens no longer cover a ` +
         `command that resolves an SDK, which leaves the key untested on the wire.`,
     );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// doctor envelope conformance (#466 §3)
+// ---------------------------------------------------------------------------
+
+const doctorEntry = present ? doc?.envelopes?.doctor : undefined;
+const doctorKeys = doctorEntry?.dataKeys;
+
+const models = present
+  ? stripTsComments(
+      fs.readFileSync(
+        path.join(__dirname, "..", DOCTOR_ENVELOPE_MODELS),
+        "utf8",
+      ),
+    )
+  : "";
+
+/** `pass` / `warn` / `fail` off `DoctorEnvelopeData`'s inline `summary` type —
+ *  `declaredFields` blanks nested braces, so those three need their own read. */
+function modelledSummaryKeys() {
+  const match = /summary:\s*\{([^}]*)\}/.exec(models);
+  if (!match) return null;
+  return new Set([...match[1].matchAll(/(\w+)\s*:/g)].map((m) => m[1]));
+}
+
+const bare = (field) => field.replace(/\?$/, "");
+
+test("doctor: tan still publishes a dataKeys schema for it", { skip }, () => {
+  // The whole gate below hangs off this. `doctor` is the one entry that carries
+  // a schema instead of a golden, precisely because its output is
+  // machine-dependent; if tan ever drops it or swaps it for a recorded run,
+  // every assertion after this would skip and the panel would be back to
+  // unverified — so the absence is a failure, not a skip.
+  assert.ok(
+    doctorEntry,
+    `${ASSET} for v${SUPPORTED_CLI_VERSION} publishes no \`envelopes.doctor\` ` +
+      `entry. The dependency panel renders that envelope and nothing else here ` +
+      `gates it — see ${ISSUE}.`,
+  );
+  assert.ok(
+    doctorKeys && typeof doctorKeys === "object",
+    `\`envelopes.doctor\` carries no \`dataKeys\` schema (keys: ` +
+      `${Object.keys(doctorEntry ?? {}).join(", ")}). A golden envelope cannot ` +
+      `replace it: doctor output is machine-dependent, which is why ` +
+      `docs/EXTENSION_CLI_INTEGRATION.md rules a fixture out for this command.`,
+  );
+  assert.deepEqual(
+    doctorEntry.args?.slice(0, 1),
+    ["doctor"],
+    `\`envelopes.doctor.args\` does not start with \`doctor\` — this entry ` +
+      `describes some other command`,
+  );
+  artefactChecks += 1;
+});
+
+test(
+  "doctor: every key the extension reads is one tan declares",
+  { skip },
+  (t) => {
+    if (!doctorKeys) {
+      t.skip("no dataKeys — reported by the test above");
+      return;
+    }
+    /** The extension's declaration vs tan's, per nesting level. */
+    const groups = [
+      {
+        interface: "DoctorEnvelopeData",
+        declared: () => new Set(Object.keys(doctorKeys)),
+        where: "data",
+      },
+      {
+        interface: "DoctorCheckEnvelope",
+        declared: () =>
+          new Set([
+            ...Object.keys(doctorKeys.checks?.requiredKeys ?? {}),
+            ...Object.keys(doctorKeys.checks?.optionalKeys ?? {}),
+          ]),
+        where: "data.checks[]",
+      },
+      {
+        interface: "MissingPrerequisite",
+        declared: () =>
+          new Set(Object.keys(doctorKeys.missingPrerequisites?.items ?? {})),
+        where: "data.missingPrerequisites[]",
+      },
+    ];
+
+    for (const group of groups) {
+      const modelled = declaredFields(models, group.interface);
+      assert.ok(
+        modelled,
+        `${DOCTOR_ENVELOPE_MODELS}: no \`export interface ${group.interface}\``,
+      );
+      const declared = group.declared();
+      assert.ok(
+        declared.size > 0,
+        `tan declares no keys at all for \`${group.where}\` — the schema is ` +
+          `present but empty, so this comparison would assert nothing`,
+      );
+
+      for (const field of modelled) {
+        assert.ok(
+          declared.has(bare(field)),
+          `\`${group.interface}.${field}\` reads \`${group.where}.${bare(field)}\`, ` +
+            `which tan v${SUPPORTED_CLI_VERSION} does not declare. Every read of ` +
+            `it FAILS OPEN — the panel renders an empty table or drops every Fix ` +
+            `button, with nothing on any surface saying why. There is no ` +
+            `allowlist for this direction.`,
+        );
+      }
+      artefactChecks += 1;
+    }
+
+    // `summary` is an inline object in the model, so it needs its own read.
+    const summary = modelledSummaryKeys();
+    assert.ok(summary, `${DOCTOR_ENVELOPE_MODELS}: no inline \`summary\` type`);
+    for (const key of summary) {
+      assert.ok(
+        key in (doctorKeys.summary ?? {}),
+        `\`DoctorEnvelopeData.summary.${key}\` is read but tan declares only ` +
+          `${Object.keys(doctorKeys.summary ?? {}).join(", ")}. \`counts\` is ` +
+          `forwarded to the panel verbatim, so a missing member renders as ` +
+          `\`undefined\` in the summary line.`,
+      );
+    }
+    artefactChecks += 1;
+  },
+);
+
+test(
+  "doctor: every key tan declares is modelled, or recorded as deliberately not",
+  { skip },
+  (t) => {
+    if (!doctorKeys) {
+      t.skip("no dataKeys — reported above");
+      return;
+    }
+    const unmodelled = [];
+    const check = (declared, modelled, prefix) => {
+      for (const key of declared) {
+        if (modelled.has(key) || modelled.has(`${key}?`)) continue;
+        unmodelled.push(`${prefix}${key}`);
+      }
+    };
+
+    check(
+      Object.keys(doctorKeys),
+      declaredFields(models, "DoctorEnvelopeData") ?? new Set(),
+      "",
+    );
+    check(
+      [
+        ...Object.keys(doctorKeys.checks?.requiredKeys ?? {}),
+        ...Object.keys(doctorKeys.checks?.optionalKeys ?? {}),
+      ],
+      declaredFields(models, "DoctorCheckEnvelope") ?? new Set(),
+      "checks[].",
+    );
+    check(
+      Object.keys(doctorKeys.missingPrerequisites?.items ?? {}),
+      declaredFields(models, "MissingPrerequisite") ?? new Set(),
+      "missingPrerequisites[].",
+    );
+
+    const unrecorded = unmodelled.filter(
+      (key) =>
+        !Object.prototype.hasOwnProperty.call(UNMODELLED_DOCTOR_KEYS, key),
+    );
+    assert.deepEqual(
+      unrecorded,
+      [],
+      `tan v${SUPPORTED_CLI_VERSION} declares ${unrecorded.join(", ")} in the ` +
+        `doctor envelope and ${DOCTOR_ENVELOPE_MODELS} does not model it.\n\n` +
+        `If a surface should render it, model it. If not, add it to ` +
+        `UNMODELLED_DOCTOR_KEYS in this file with the reason — a key nobody ` +
+        `decided about is how a producer-side addition sits unnoticed for a ` +
+        `release.`,
+    );
+    artefactChecks += 1;
+  },
+);
+
+test(
+  "doctor: every recorded omission is still a live omission",
+  { skip },
+  (t) => {
+    if (!doctorKeys) {
+      t.skip("no dataKeys — reported above");
+      return;
+    }
+    // Same rot rule as test/webview.payloadMirror.test.js: an allowlist nothing
+    // re-checks empties the gate one merge at a time.
+    const declaredEverywhere = new Set([
+      ...Object.keys(doctorKeys),
+      ...Object.keys(doctorKeys.checks?.requiredKeys ?? {}).map(
+        (k) => `checks[].${k}`,
+      ),
+      ...Object.keys(doctorKeys.checks?.optionalKeys ?? {}).map(
+        (k) => `checks[].${k}`,
+      ),
+      ...Object.keys(doctorKeys.missingPrerequisites?.items ?? {}).map(
+        (k) => `missingPrerequisites[].${k}`,
+      ),
+    ]);
+    const modelledEverywhere = new Set([
+      ...[...(declaredFields(models, "DoctorEnvelopeData") ?? [])].map(bare),
+      ...[...(declaredFields(models, "DoctorCheckEnvelope") ?? [])].map(
+        (f) => `checks[].${bare(f)}`,
+      ),
+      ...[...(declaredFields(models, "MissingPrerequisite") ?? [])].map(
+        (f) => `missingPrerequisites[].${bare(f)}`,
+      ),
+    ]);
+
+    for (const [key, reason] of Object.entries(UNMODELLED_DOCTOR_KEYS)) {
+      assert.ok(
+        typeof reason === "string" && reason.trim().length >= 40,
+        `UNMODELLED_DOCTOR_KEYS["${key}"] has no real reason`,
+      );
+      assert.ok(
+        declaredEverywhere.has(key),
+        `UNMODELLED_DOCTOR_KEYS["${key}"] is stale: tan v${SUPPORTED_CLI_VERSION} ` +
+          `no longer declares it. Delete the entry.`,
+      );
+      assert.ok(
+        !modelledEverywhere.has(key),
+        `UNMODELLED_DOCTOR_KEYS["${key}"] is stale: ${DOCTOR_ENVELOPE_MODELS} now ` +
+          `DOES model it. Delete the entry so the key is gated like every other ` +
+          `modelled one.`,
+      );
+    }
+    artefactChecks += 1;
+  },
+);
+
+test(
+  "doctor: a check key tan marks optional is optional in the model too",
+  { skip },
+  (t) => {
+    if (!doctorKeys?.checks) {
+      t.skip("no checks schema — reported above");
+      return;
+    }
+    // Only `checks` is compared for optionality, because it is the only place
+    // tan SPLITS required from optional. At the top level the model's `?` marks
+    // are a tolerant-reader decision about older binaries reachable through
+    // `alpSdk.cliPath` (`missingPrerequisites`, `nextSteps`), not a claim about
+    // today's contract — asserting them against tan would red on a difference
+    // that is deliberate.
+    const modelled = declaredFields(models, "DoctorCheckEnvelope") ?? new Set();
+    for (const key of Object.keys(doctorKeys.checks.requiredKeys ?? {})) {
+      if (!modelled.has(key) && !modelled.has(`${key}?`)) continue; // unmodelled: reported above
+      assert.ok(
+        modelled.has(key),
+        `tan declares \`checks[].${key}\` REQUIRED, but ` +
+          `${DOCTOR_ENVELOPE_MODELS} marks it optional. A reader that treats a ` +
+          `guaranteed field as absent writes a \`?? fallback\` branch that can ` +
+          `never be right.`,
+      );
+    }
+    for (const key of Object.keys(doctorKeys.checks.optionalKeys ?? {})) {
+      if (!modelled.has(key) && !modelled.has(`${key}?`)) continue; // unmodelled
+      assert.ok(
+        modelled.has(`${key}?`),
+        `tan declares \`checks[].${key}\` OPTIONAL, but ` +
+          `${DOCTOR_ENVELOPE_MODELS} marks it required. Every check tan emits ` +
+          `without it then reads as \`undefined\` through a type that promised ` +
+          `a value.`,
+      );
+    }
+    artefactChecks += 1;
   },
 );
 

@@ -664,7 +664,21 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   envelope with per-OS checks + installer next-steps. Vendor compilers/Yocto host
   pkgs stay pointer-only (decision 4). Advisory only. `tan-core/build_readiness.rs`
   (6 unit tests); the default `tan doctor` (no `--build`) is unchanged. No golden
-  fixtures — output is machine-dependent like the debug doctor.
+  fixtures — output is machine-dependent like the debug doctor, so a recorded
+  run would red on every host but the one that made it.
+  *(Amended 2026-08-15, #466 §3 — "no golden fixtures" had been read as "no gate
+  at all", which is not the same decision. A rename of `data.checks` or
+  `missingPrerequisites` landed as an empty dependency panel: no failing test,
+  CI green on both sides. What closed it is a KEY-SET conformance gate, not a
+  fixture. tan's `envelope-contract.json` publishes `envelopes.doctor.dataKeys`
+  — a declarative schema of required/optional keys and their kinds, carrying no
+  values, so it is host-independent by construction. `doctor` is the one entry
+  that publishes a schema; the other 17 publish a golden `envelope`.
+  `test/tanContract.test.js` compares that schema against
+  `packages/alp-core/src/cli/doctorEnvelope.ts`: a key the extension reads and
+  tan does not declare is a hard red, and a key tan declares that the extension
+  does not model must be recorded in `UNMODELLED_DOCTOR_KEYS` with a reason.
+  Two are, today — `generatedAt` and `checks[].scope`.)*
 
 **Wave B — extension consumes the CLI (after the first `tan-cli` `v<version>` release):**
 
