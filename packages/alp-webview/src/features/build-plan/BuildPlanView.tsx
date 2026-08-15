@@ -3,6 +3,7 @@ import { Button, Card, EmptyState, Icon, Skeleton } from "../../shared/ui";
 import type {
   BuildPlanGeneratedFile,
   BuildPlanSlice,
+  ManifestProvenance,
   SizeReport,
   SliceSize,
   SystemManifest,
@@ -78,9 +79,34 @@ function SliceFootprint({ size }: { size: SliceSize | undefined }) {
   );
 }
 
+/**
+ * How long ago the manifest was written, in words (#470).
+ *
+ * Relative, not an absolute stamp: "3 days ago" answers "can I trust this?"
+ * at a glance, where a timestamp makes the reader do the subtraction. Rounded
+ * DOWN at every step, so it can never overstate how fresh the file is.
+ */
+function writtenAgo(iso: string): string | null {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+  const seconds = Math.floor((Date.now() - at) / 1000);
+  // A negative age means the file is dated ahead of this clock; the host
+  // already renders that as `unknown` with its own sentence, so say nothing
+  // rather than print "in -2 minutes".
+  if (seconds < 0) return null;
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
 function SystemManifestSection({
   manifest,
   postBuild,
+  provenance,
   error,
   flashSlice,
   sizes,
@@ -88,6 +114,7 @@ function SystemManifestSection({
 }: {
   manifest: SystemManifest | null;
   postBuild: boolean;
+  provenance: ManifestProvenance | null;
   error: string | null;
   flashSlice: (coreId: string) => void;
   sizes: SizeReport | null;
@@ -101,6 +128,7 @@ function SystemManifestSection({
   // `tan size` failure left the footprint column simply absent, which reads as
   // "this build has no sizes" rather than "the measurement failed".
   const notes = [error, sizesError].filter((n): n is string => !!n);
+  const age = provenance?.writtenAt ? writtenAgo(provenance.writtenAt) : null;
   if (!manifest) {
     return notes.length > 0 ? (
       <section className={styles.section}>
@@ -123,10 +151,35 @@ function SystemManifestSection({
     <section className={styles.section}>
       <p className={styles.sectionTitle}>
         System manifest{" "}
-        <span className={styles.manifestBadge}>
-          {postBuild ? "post-build" : "projection"}
+        {/* The badge now carries the VERDICT, not just "a file exists".
+            `post-build` used to be asserted from `fs.existsSync` alone, so an
+            old build's slices and memory numbers rendered as current — #470. */}
+        <span
+          className={styles.manifestBadge}
+          data-freshness={provenance?.freshness ?? "none"}
+        >
+          {!postBuild
+            ? "projection"
+            : provenance?.freshness === "stale"
+              ? "stale"
+              : "post-build"}
         </span>
+        {/* The AGE is shown whatever the verdict, including `unknown`. It is
+            the fact this side can always support, and it lets the reader draw
+            the conclusion the host refuses to draw for them. */}
+        {age && <span className={styles.manifestAge}>{age}</span>}
       </p>
+      {/* Never only a badge: a warning nobody can act on is a puzzle. The host
+          words this — it is the side that knows the build finished after the
+          file was written, and with what exit code. */}
+      {provenance?.reason && (
+        <p
+          className={styles.manifestStaleNote}
+          role={provenance.freshness === "stale" ? "alert" : undefined}
+        >
+          {provenance.reason}
+        </p>
+      )}
       {sizesError && <p className={styles.manifestNote}>{sizesError}</p>}
       <ul className={styles.manifestSlices}>
         {manifest.slices.map((s) => {
@@ -300,6 +353,7 @@ export function BuildPlanView() {
     loading,
     manifest,
     manifestPostBuild,
+    manifestProvenance,
     manifestError,
     sizes,
     sizesError,
@@ -472,6 +526,7 @@ export function BuildPlanView() {
           <SystemManifestSection
             manifest={manifest}
             postBuild={manifestPostBuild}
+            provenance={manifestProvenance}
             error={manifestError}
             flashSlice={flashSlice}
             sizes={sizes}

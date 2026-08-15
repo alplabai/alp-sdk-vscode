@@ -325,6 +325,29 @@
   color: var(--text-secondary);
 }
 
+/* #470. `stale` is the only variant that recolours: it is a claim with
+   evidence behind it. `unknown` deliberately keeps the neutral badge — it is
+   the ABSENCE of a claim, and colouring it would make it look like one. */
+.manifestBadge[data-freshness="stale"] {
+  background: color-mix(in srgb, var(--status-warn) 18%, transparent);
+  color: var(--status-warn);
+}
+
+/* Always rendered when the file's mtime is readable, whatever the verdict:
+   the age is the fact this side can always support. */
+.manifestAge {
+  margin-left: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+/* Never only a badge — the sentence saying WHY, in the warning colour so it
+   is not read as one more muted note. */
+.manifestStaleNote {
+  font-size: var(--font-size-sm);
+  color: var(--status-warn);
+}
+
 .manifestNote {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);

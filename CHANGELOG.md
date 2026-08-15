@@ -50,6 +50,31 @@ only Marketplace/Open VSX users opted into pre-release updates.
   the pin at or above the floor, so the managed binary can never be one this
   extension would then warn about.
 
+- **The Build Plan panel stops calling yesterday's build "post-build" (#470).**
+  It decided a manifest described the last build from the mere EXISTENCE of
+  `build/system-manifest.yaml`, never from its age. So after any past
+  successful build the panel presented that build's per-slice status and its
+  FLASH/RAM figures as the current state — including right after a build that
+  had just failed, with nothing on screen saying so. Monday's green table, on
+  Tuesday, over a tree that no longer compiles. The producer cannot help yet:
+  `system-manifest-v1` carries no timestamp and no build id, which is why
+  `SYSTEM_MANIFEST_SHAPE` has nothing to key on. So the panel now reads the two
+  facts this side already has — the file's mtime, and the finish of the last
+  build the extension actually watched run, newly recorded per workspace. A
+  build that finished AFTER the file was written and did not update it is hard
+  evidence, and that case now renders a `stale` badge plus a sentence naming
+  the exit code. Everything else is `unknown`, deliberately: no build observed
+  since means the sources may have changed or nothing may have happened, and
+  this side cannot tell those apart — calling that `fresh` is the original
+  defect with a new word on it, and calling it `stale` would put a permanent
+  warning on every project that also builds from a terminal. What makes even
+  `unknown` an improvement is that the manifest's AGE is now always on screen
+  ("post-build · 3 days ago"), so the reader can draw the conclusion the
+  extension refuses to draw for them. A future-dated file is `unknown` too, and
+  says so: a clock that moved makes every real build look older than the file,
+  which is the direction that reads `fresh` forever. Eight mutations, each
+  producing a RED.
+
 - **The dependency panel says whether it will fix a row or you must, and can
   now fix them all in one press (#466).** Three changes, one panel.
 
