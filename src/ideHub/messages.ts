@@ -10,6 +10,10 @@ import type {
 } from "@alp-sdk/core/deps/planner";
 import type { DependencyState } from "@alp-sdk/core/deps/state";
 import type {
+  ManifestFreshness,
+  ManifestProvenance,
+} from "@alp-sdk/core/systemManifest/staleness";
+import type {
   LocalSdkEntry,
   SdkReadinessState,
   SdkRelease,
@@ -36,6 +40,10 @@ export type {
   // webview types.
   DependencyState,
   LocalSdkEntry,
+  // fresh / stale / unknown, and the file mtime behind it (#470). Mirrored in
+  // the webview types.
+  ManifestFreshness,
+  ManifestProvenance,
   SdkRelease,
   SocCore,
   SizeReport,
@@ -293,6 +301,17 @@ export interface SystemManifestDataMessage {
   /** True when `manifest` is the populated `build/system-manifest.yaml`;
    *  false when it's the SDK's pre-build projection (slices `status: pending`). */
   postBuild: boolean;
+  /**
+   * WHEN that file was written and whether it still describes the last build
+   * (#470). `null` on the projection path, which has no file — a projection is
+   * computed on the spot and cannot be stale.
+   *
+   * `postBuild` alone was the defect: it says a manifest EXISTS, and the panel
+   * read that as "this is what your last build did". After a failed build the
+   * previous green build's slices and memory figures rendered as current, with
+   * nothing on screen saying so.
+   */
+  provenance: ManifestProvenance | null;
   error?: string;
 }
 
