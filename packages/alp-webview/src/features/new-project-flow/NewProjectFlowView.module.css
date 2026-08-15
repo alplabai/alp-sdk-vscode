@@ -269,3 +269,15 @@
   color: var(--text-primary);
   text-align: right;
 }
+
+/* The per-category heading inside the Examples list (#482 §2). Lighter than
+   `.groupLabel`, which separates Starters from Examples — these sit one level
+   down and must not compete with it. */
+.exampleGroupLabel {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}

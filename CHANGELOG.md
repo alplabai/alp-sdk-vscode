@@ -50,6 +50,57 @@ only Marketplace/Open VSX users opted into pre-release updates.
   the pin at or above the floor, so the managed binary can never be one this
   extension would then warn about.
 
+- **New Project groups the 100 SDK examples under their categories (#482, part).**
+  The picker already had a search box and domain filter chips (#98, 2026-07-13),
+  so #482's "one flat block with no way to narrow them" was out of date the day
+  it was written — but "All" was still 100 undifferentiated cards. They now sit
+  under the SDK's own 12 headings (`aen`, `ai`, `audio`, `bringup`,
+  `camera-vision`, `connectivity`, `display`, `multicore`, `peripheral-io`,
+  `power-timing`, `testing`, `v2n`). The category is decided host-side and
+  DEFERS to tan: an explicit `category` in the envelope always wins, and the
+  leading segment of `sourceDir` stands in only because tan does not send one
+  yet — measured against the pinned v0.6.0-rc1's own published
+  `envelope-contract.json`, whose examples payload carries exactly `id`,
+  `sourceDir`, `title` and `description`. That derivation is not a guess about
+  the SDK's taxonomy: every one of the 100 entries in `metadata/catalog.json`
+  has `path === examples/<category>/<name>`, asserted in the tests against the
+  vendored catalogue. The view stopped keeping its own copy of the rule (it was
+  re-splitting `sourceDir` inline, a duplicate that could never defer to tan).
+  An example with no directory gets NO heading rather than an invented
+  "Other", which is also how this degrades on an older tan.
+
+  NOT shipped, and still blocked upstream: filter chips for core count, OS set
+  and SoM SKU, and defaulting the SoM filter to the SKU picked in the wizard
+  (#482 §3/§4). Those facets are absent from the envelope, and #482 measured
+  why they cannot be computed here — the raw `board.yaml` disagrees with the
+  resolved topology for almost every example (96 look single-core where 23
+  are), so a local filter would mislabel the list.
+
+- **The Build Plan panel stops calling yesterday's build "post-build" (#470).**
+  It decided a manifest described the last build from the mere EXISTENCE of
+  `build/system-manifest.yaml`, never from its age. So after any past
+  successful build the panel presented that build's per-slice status and its
+  FLASH/RAM figures as the current state — including right after a build that
+  had just failed, with nothing on screen saying so. Monday's green table, on
+  Tuesday, over a tree that no longer compiles. The producer cannot help yet:
+  `system-manifest-v1` carries no timestamp and no build id, which is why
+  `SYSTEM_MANIFEST_SHAPE` has nothing to key on. So the panel now reads the two
+  facts this side already has — the file's mtime, and the finish of the last
+  build the extension actually watched run, newly recorded per workspace. A
+  build that finished AFTER the file was written and did not update it is hard
+  evidence, and that case now renders a `stale` badge plus a sentence naming
+  the exit code. Everything else is `unknown`, deliberately: no build observed
+  since means the sources may have changed or nothing may have happened, and
+  this side cannot tell those apart — calling that `fresh` is the original
+  defect with a new word on it, and calling it `stale` would put a permanent
+  warning on every project that also builds from a terminal. What makes even
+  `unknown` an improvement is that the manifest's AGE is now always on screen
+  ("post-build · 3 days ago"), so the reader can draw the conclusion the
+  extension refuses to draw for them. A future-dated file is `unknown` too, and
+  says so: a clock that moved makes every real build look older than the file,
+  which is the direction that reads `fresh` forever. Eight mutations, each
+  producing a RED.
+
 - **The dependency panel says whether it will fix a row or you must, and can
   now fix them all in one press (#466).** Three changes, one panel.
 
