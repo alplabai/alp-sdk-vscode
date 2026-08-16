@@ -270,8 +270,10 @@ export function DependenciesView() {
                         <span className={styles.detail}>{row.hint}</span>
                       )}
                     </th>
-                    <td className={styles.mono}>{row.installed ?? DASH}</td>
-                    <td className={styles.mono}>
+                    <td className={styles.versionCell}>
+                      {row.installed ?? DASH}
+                    </td>
+                    <td className={styles.versionCell}>
                       <LatestCell row={row} />
                     </td>
                     <td>

@@ -64,6 +64,24 @@ only Marketplace/Open VSX users opted into pre-release updates.
   drop to two or one as it narrows. Left alone on purpose: the Configurator's
   section widths and the New Project name field, which are FORM measures — a
   text input stretched across a monitor is worse, not better.
+- **The Dependencies table's version columns stop borrowing your editor's
+  font.** `Installed` and `Latest` set
+  `font-family: var(--vscode-editor-font-family, monospace)` — the font from
+  `editor.fontFamily`, a setting about source code that has nothing to say
+  about a panel, and on most machines a distinctive coding face. The panel has
+  no other monospace content, so those two cells read as a second UI dropped
+  into every row. They now inherit the panel font like the rest of the table
+  and keep their column alignment with `font-variant-numeric: tabular-nums`,
+  which is the only thing the monospace was actually buying; `HardwareExplorer`
+  already treated its cells this way. The `pinned` / `update` badges lose the
+  `font-family` reset they only carried to escape that monospace. The same var
+  is also gone from `.alp-boot-error-detail`, the message `main.tsx` writes when
+  React never mounts: `--vscode-editor-font-family` resolves EMPTY in some
+  webview hosts, and a `var()` fallback covers a property that is unset, never
+  one set to nothing — so the stack trace would have dropped to the serif UA
+  default on exactly the hosts where something had already gone wrong.
+  `tokens.css` has said not to use that var since `--text-mono` was added;
+  these were the last two places still doing it.
 - **A failed SDK removal now says which failure it was, instead of blaming an
   open editor for everything.** The panel deleted the folder with a bare
   `fs.rmSync(target, { recursive: true, force: true })` and, on any error, told
