@@ -7,7 +7,7 @@
 // so the host handles its own `ready`/`runCommand`/`openUrl`/`closePanel`.
 //
 // The `handleUninstallSdk` path deletes a folder from disk (`removeSdkTree`,
-// which clears read-only attributes and retries — see that module) after a
+// which classifies the failure — see that module) after a
 // modal confirmation — the confirm, the Alp-managed-vs-external path check, and
 // the active-pointer clear are preserved exactly as they were in the panel.
 
@@ -162,12 +162,12 @@ export function createSdkMessageHandler(
     );
     if (confirm !== "deleteFromDisk") return;
 
-    // NOT a bare `fs.rmSync`. An SDK is installed with `git clone`, and on
-    // Windows git's object files carry the read-only attribute, which
-    // `force: true` does not clear — so the delete failed with EPERM every
-    // time, while the message told the user to close their editor. See
-    // `removeSdkTree`: it clears the attributes, retries, and only then calls
-    // the remaining failure a held handle.
+    // NOT a bare `fs.rmSync`, and not for the reason first written here — see
+    // `removeSdkTree`'s header, which records the measurement that corrected
+    // it. Node already chmods and retries on Windows; what this buys is a
+    // POSIX read-only DIRECTORY (which Node does not touch) and, mainly, a
+    // failure message that names the cause instead of telling every failure to
+    // close an editor.
     const removal = removeSdkTree(target);
     if (removal.ok) {
       if (removal.clearedAttributes) {

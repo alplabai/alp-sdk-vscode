@@ -1,23 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Deleting an installed SDK, and telling the two failures apart.
+// Deleting an installed SDK, and telling the failures apart.
 //
-// The bug: `fs.rmSync(target, { recursive: true, force: true })` fails on
-// Windows for an SDK installed with `git clone`, because git writes its pack
-// and object files with the read-only attribute and `force` only swallows
-// `ENOENT`. It failed EVERY time, deterministically — while the panel told the
-// user to "close anything using it", advice that cannot work for that cause.
+// WHAT IS UNDER TEST, precisely — the first version of this header got it
+// wrong and the correction is worth keeping. It claimed `fs.rmSync(target,
+// { recursive: true, force: true })` fails on Windows for a `git clone`d SDK
+// because git marks its objects read-only. Node already handles that: its
+// internal rimraf carries `fixWinEPERM` (Windows-only, chmod-and-retry), and
+// on the GitHub Windows runner a `0o444` file did not make `rmSync` refuse —
+// the arrangement below detects that and skips, printing the reason.
 //
-// These tests run on the developer's real filesystem rather than a mock,
-// because the bug IS filesystem behaviour and a mock would only assert the
-// shape of the fix. POSIX makes that possible: unlinking a file needs write
-// permission on its DIRECTORY, not on the file, so a directory at mode 0500
-// reproduces the same class of failure on macOS and Linux that a read-only
-// attribute produces on Windows — and is fixed by the same pass.
+// What IS covered:
 //
-// Skipped as root, who bypasses permission checks entirely and would make
-// every "this should fail first" arrangement silently succeed — a green run
-// that proved nothing.
+//   * a POSIX read-only DIRECTORY, which Node does NOT chmod for, and which
+//     defeats the delete of every child until this module clears it;
+//   * the guard that keeps the attribute pass from following a symlink OUT of
+//     the tree (measured: `fs.chmodSync` follows a link, and a link to a 0500
+//     directory chmod'ed to 0600 moves the TARGET to 0600);
+//   * the cause-specific messages, which are the user-visible fix — the panel
+//     used to tell every failure to close an editor.
+//
+// Real filesystem, not mocks: the behaviour under test IS filesystem
+// behaviour, and a mock would only assert the shape of the fix. Each
+// arrangement proves itself first and SKIPS loudly on a host that cannot
+// express it, so a green run never implies coverage it did not have. Skipped
+// as root, who bypasses mode bits entirely.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
