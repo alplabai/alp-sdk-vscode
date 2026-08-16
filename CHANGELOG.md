@@ -50,6 +50,20 @@ only Marketplace/Open VSX users opted into pre-release updates.
   the pin at or above the floor, so the managed binary can never be one this
   extension would then warn about.
 
+- **The webview panels use the window they are given.** Every view carried its
+  own hard cap — Hub 920px, New Project 720px, Dependencies 860px, Setup and
+  Open Project 640px — so a panel opened in a wide editor sat in a narrow
+  column with most of the window empty, while the grids inside it wrapped early
+  for want of room they actually had. The caps are now two tokens in
+  `styles/tokens.css` and nothing else decides it: `--content-max` for the page
+  shell, `--prose-max` for running text. Two tokens rather than one because
+  "use the width" and "stay readable" are different jobs — a card grid should
+  fill a monitor, a paragraph past about 90 characters should not. Hub's status
+  cards also stopped being a fixed `repeat(3, 1fr)`: they are
+  `repeat(auto-fit, minmax(260px, 1fr))`, so they stretch on a wide window and
+  drop to two or one as it narrows. Left alone on purpose: the Configurator's
+  section widths and the New Project name field, which are FORM measures — a
+  text input stretched across a monitor is worse, not better.
 - **A failed SDK removal now says which failure it was, instead of blaming an
   open editor for everything.** The panel deleted the folder with a bare
   `fs.rmSync(target, { recursive: true, force: true })` and, on any error, told
