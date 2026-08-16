@@ -41,6 +41,59 @@ function tmpTree() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "alp-sdk-remove-"));
 }
 
+const IS_WINDOWS = process.platform === "win32";
+
+/**
+ * Make `dir` and the file in it resist deletion, the way each platform can.
+ *
+ * The two platforms need OPPOSITE arrangements, and a first version of this
+ * file got it backwards — it used the POSIX one everywhere and all three tests
+ * that depend on it failed on Windows CI with "Missing expected exception":
+ *
+ *   * POSIX — unlinking a file needs the write bit on its DIRECTORY, so the
+ *     directory is what gets locked down. The file's own mode is irrelevant.
+ *   * WINDOWS — there is no directory-write permission to remove. Node maps
+ *     `chmod` onto the read-only ATTRIBUTE, which delete ignores on a
+ *     directory and honours on a FILE. So the file is what gets locked down —
+ *     which is also the real bug: `git` marks its pack and object files
+ *     read-only, and that is what `fs.rmSync` could not delete.
+ */
+function makeUndeletable(dir, file) {
+  if (IS_WINDOWS) fs.chmodSync(file, 0o444);
+  else fs.chmodSync(dir, 0o500);
+}
+
+function makeDeletableAgain(dir, file) {
+  try {
+    if (IS_WINDOWS) fs.chmodSync(file, 0o666);
+    else fs.chmodSync(dir, 0o700);
+  } catch {
+    // Already gone: the delete under test succeeded, which is the happy path.
+  }
+}
+
+/**
+ * Confirm the arrangement actually blocks a plain `rmSync` on THIS host, and
+ * skip loudly when it does not.
+ *
+ * A skip here is not a pass in disguise: it names the platform and says the
+ * condition could not be reproduced, so a run that verified nothing says so.
+ * Asserting instead would turn "this OS refuses to be set up that way" into a
+ * failure of the code under test, which is a different and false claim.
+ */
+function arrangementBlocks(t, root) {
+  try {
+    fs.rmSync(root, { recursive: true, force: true });
+  } catch {
+    return true;
+  }
+  t.skip(
+    `${process.platform} did not refuse the plain rmSync for this arrangement, ` +
+      `so the read-only path was NOT exercised on this host`,
+  );
+  return false;
+}
+
 /** An SDK as it actually lands on disk: a clone, so a `.git` tree with objects
  *  in it. On Windows those objects are read-only; here the DIRECTORY is made
  *  read-only, which blocks the unlink the same way. */
@@ -91,22 +144,19 @@ test("removing something already gone succeeds", () => {
 // ---------------------------------------------------------------------------
 
 test(
-  "a read-only directory in the tree no longer defeats the delete",
+  "a read-only entry in the tree no longer defeats the delete",
   skipAsRoot,
-  () => {
+  (t) => {
     // Arrange -- THE regression. This is git's `.git/objects/pack` as Windows
     // leaves it; here the write bit is off on the directory, which is what
     // unlinking the pack file actually needs.
     const { root, objects } = fakeSdkInstall();
-    fs.chmodSync(objects, 0o500);
+    makeUndeletable(objects, path.join(objects, "pack-abc123.pack"));
 
     // A bare rmSync is what shipped before, and it must be shown to fail —
-    // otherwise this test would pass on a platform where the arrangement is
-    // not actually blocking anything, and prove nothing at all.
-    assert.throws(
-      () => fs.rmSync(root, { recursive: true, force: true }),
-      "the arrangement is not reproducing the failure, so the fix is untested",
-    );
+    // otherwise this test would pass on a host where the arrangement is not
+    // actually blocking anything, and prove nothing at all.
+    if (!arrangementBlocks(t, root)) return;
 
     // Act
     const result = removeSdkTree(root);
@@ -125,14 +175,16 @@ test(
 test(
   "a read-only tree several levels deep is cleared all the way down",
   skipAsRoot,
-  () => {
-    // Arrange -- the walk has to be recursive. A single chmod on the root
-    // would clear the top and still trip on `.git/objects/pack`.
+  (t) => {
+    // Arrange -- the walk has to be recursive. Clearing only the root would
+    // still trip on `.git/objects/pack`.
     const { root, objects } = fakeSdkInstall();
-    fs.chmodSync(objects, 0o500);
-    fs.chmodSync(path.join(root, ".git", "objects"), 0o500);
-    fs.chmodSync(path.join(root, ".git"), 0o500);
-    fs.chmodSync(path.join(root, "metadata"), 0o500);
+    makeUndeletable(objects, path.join(objects, "pack-abc123.pack"));
+    makeUndeletable(
+      path.join(root, "metadata"),
+      path.join(root, "metadata", "catalog.json"),
+    );
+    if (!arrangementBlocks(t, root)) return;
 
     // Act
     const result = removeSdkTree(root);
@@ -143,7 +195,7 @@ test(
   },
 );
 
-test("a symlink inside the tree is not followed out of it", skipAsRoot, () => {
+test("a symlink inside the tree is not followed out of it", skipAsRoot, (t) => {
   // Arrange -- `fs.chmodSync` FOLLOWS a symlink (measured: a link to a 0500
   // directory, chmod'ed to 0600, moves the TARGET to 0600). So an attribute
   // pass without a guard silently rewrites the mode of a directory outside the
@@ -168,11 +220,22 @@ test("a symlink inside the tree is not followed out of it", skipAsRoot, () => {
   const locked = path.join(root, "locked");
   fs.mkdirSync(locked);
   fs.symlinkSync(outside, path.join(locked, "link-to-elsewhere"));
-  fs.chmodSync(locked, 0o500);
+  // Something in the tree has to block the FIRST rmSync, or the attribute pass
+  // never runs. A read-only file next to the link does that on both platforms
+  // without touching the link itself.
+  const ballast = path.join(locked, "ballast");
+  fs.writeFileSync(ballast, "x");
+  makeUndeletable(locked, ballast);
 
   // The link must still be there when the attribute pass runs, or this test
   // proves nothing about the guard.
-  assert.throws(() => fs.rmSync(root, { recursive: true, force: true }));
+  if (!arrangementBlocks(t, root)) {
+    makeDeletableAgain(locked, ballast);
+    fs.chmodSync(outside, 0o700);
+    fs.chmodSync(guarded, 0o700);
+    fs.rmSync(outside, { recursive: true, force: true });
+    return;
+  }
   assert.equal(
     fs.existsSync(path.join(locked, "link-to-elsewhere")),
     true,
@@ -218,7 +281,7 @@ test("a symlink inside the tree is not followed out of it", skipAsRoot, () => {
 test(
   "a failure this process cannot fix is reported, not silently swallowed",
   skipAsRoot,
-  () => {
+  (t) => {
     // Arrange -- the PARENT is read-only, so the tree itself can never be
     // unlinked no matter what is chmod'ed inside it. That models the residual
     // case: everything changeable was changed and it still failed.
@@ -226,6 +289,20 @@ test(
     const target = path.join(parent, "v0.15.0");
     fs.mkdirSync(target);
     fs.writeFileSync(path.join(target, "west.yml"), "manifest:\n");
+    // POSIX only: a read-only PARENT makes the tree unremovable no matter what
+    // is changed inside it. Windows has no equivalent — the read-only
+    // attribute on a directory does not stop a delete — so the residual case
+    // cannot be arranged there without holding a real file handle, which a
+    // portable test cannot do.
+    if (IS_WINDOWS) {
+      t.skip(
+        "no portable way to arrange an unfixable failure on Windows: the " +
+          "read-only attribute does not block deleting a directory, and " +
+          "holding a live handle is not something this test can do",
+      );
+      fs.rmSync(parent, { recursive: true, force: true });
+      return;
+    }
     fs.chmodSync(parent, 0o500);
 
     try {
