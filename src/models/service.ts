@@ -8,6 +8,7 @@
 import type { AlpIssue, CliOutcome } from "../alpCli/models";
 import type {
   ModelAbResultMessage,
+  ModelEnergyMeasurement,
   ModelFitDataMessage,
   ModelPrepResultMessage,
   ModelRunResultMessage,
@@ -15,6 +16,42 @@ import type {
   ZooAddResultMessage,
   ZooDataMessage,
 } from "../ideHub/messages";
+
+/**
+ * Structurally validate a raw `energy` value (from `tan model run`/`tan model
+ * ab`'s JSON) into a `ModelEnergyMeasurement`, or `undefined` if it isn't one.
+ * `energy` is `null` on the overwhelmingly common host-only run — that, a
+ * missing key, and a malformed/partial object (wrong field type, a dropped
+ * field) must all degrade to "no energy" here rather than throwing or
+ * handing the webview a half-populated object to render.
+ */
+function shapeEnergy(raw: unknown): ModelEnergyMeasurement | undefined {
+  if (raw === null || typeof raw !== "object") return undefined;
+  const e = raw as Record<string, unknown>;
+  if (
+    typeof e.source !== "string" ||
+    typeof e.scope !== "string" ||
+    typeof e.value_mj_per_inference !== "number" ||
+    !Array.isArray(e.rails) ||
+    !e.rails.every((r) => typeof r === "string") ||
+    typeof e.n_inferences !== "number" ||
+    typeof e.window_ms !== "number" ||
+    typeof e.sample_count !== "number" ||
+    !(e.spread_mj === null || typeof e.spread_mj === "number")
+  ) {
+    return undefined;
+  }
+  return {
+    source: e.source,
+    scope: e.scope,
+    value_mj_per_inference: e.value_mj_per_inference,
+    rails: e.rails as string[],
+    n_inferences: e.n_inferences,
+    window_ms: e.window_ms,
+    sample_count: e.sample_count,
+    spread_mj: e.spread_mj as number | null,
+  };
+}
 
 /**
  * Classify a `CliOutcome` into the message the user should see. A `null`
@@ -178,10 +215,12 @@ export function toModelRunResult(outcome: CliOutcome): ModelRunResultMessage {
     }
     return { type: "modelRunResult", ok: false, issues };
   }
+  const run = env.data as NonNullable<ModelRunResultMessage["run"]>;
+  const rawEnergy = (env.data as { energy?: unknown }).energy;
   return {
     type: "modelRunResult",
     ok: true,
-    run: env.data as ModelRunResultMessage["run"],
+    run: { ...run, energy: shapeEnergy(rawEnergy) },
     issues: env.issues,
   };
 }
@@ -204,10 +243,35 @@ export function toModelAbResult(outcome: CliOutcome): ModelAbResultMessage {
     }
     return { type: "modelAbResult", ok: false, issues };
   }
+  const ab = env.data as NonNullable<ModelAbResultMessage["ab"]>;
+  const rawA = (env.data as { a?: { energy?: unknown } }).a;
+  const rawB = (env.data as { b?: { energy?: unknown } }).b;
+  const rawDelta = (
+    env.data as {
+      comparison?: { energy_delta_mj_per_inference?: unknown };
+    }
+  ).comparison?.energy_delta_mj_per_inference;
+  const energyA = shapeEnergy(rawA?.energy);
+  const energyB = shapeEnergy(rawB?.energy);
   return {
     type: "modelAbResult",
     ok: true,
-    ab: env.data as ModelAbResultMessage["ab"],
+    ab: {
+      ...ab,
+      a: { ...ab.a, energy: energyA },
+      b: { ...ab.b, energy: energyB },
+      comparison: {
+        ...ab.comparison,
+        // Both sides must carry a real (validated) energy object — mirrors
+        // the CLI, which only computes this delta when neither side is None.
+        energy_delta_mj_per_inference:
+          energyA !== undefined &&
+          energyB !== undefined &&
+          typeof rawDelta === "number"
+            ? rawDelta
+            : undefined,
+      },
+    },
     issues: env.issues,
   };
 }

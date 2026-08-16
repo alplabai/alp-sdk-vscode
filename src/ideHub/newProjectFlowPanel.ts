@@ -14,6 +14,8 @@ import {
   type WebviewToExtMessage,
 } from "./messages";
 import { E1M_MODULES } from "./projectScaffold";
+import { buildProjectSettings } from "./projectSettings";
+import { resetSetupNudge } from "./setupOrchestrator";
 import { openProjectFolder, queryAlpIdeState } from "./vscodeAdapter";
 import { buildWebviewHtml, runWebviewCommand } from "./webviewHtml";
 import { log, reportError, showOutput } from "../util";
@@ -296,6 +298,7 @@ export class NewProjectFlowPanel {
           msg.projectName,
           msg.sdkPath,
           msg.destination,
+          msg.openInCurrentWindow ?? true,
         );
         break;
 
@@ -326,6 +329,7 @@ export class NewProjectFlowPanel {
     projectName: string,
     sdkPath?: string,
     destination?: string,
+    openInCurrentWindow: boolean = true,
   ): Promise<void> {
     // Prefer the location chosen in the wizard; fall back to a picker if absent.
     let parentDir = destination?.trim() ?? "";
@@ -459,27 +463,42 @@ export class NewProjectFlowPanel {
       }
       // Dismissed ⇒ don't open (safer than the old silent open).
     } else {
-      const open = "Open Project";
-      const choice = await vscode.window.showInformationMessage(
-        `Project "${projectName}" created at ${projectDir}`,
-        open,
+      // Pin OK ⇒ auto-open so the new project becomes the ACTIVE project: the
+      // extension's project context (board.yaml / build / flash) resolves from
+      // the open workspace folder, so a created-but-unopened project is never
+      // active. Opens in the CURRENT window (see openProjectFolder) — the user
+      // just built this to work on it. Fire-and-forget toast for feedback;
+      // opening no longer needs a click.
+      void vscode.window.showInformationMessage(
+        `Project "${projectName}" created — opening…`,
       );
-      shouldOpen = choice === open;
+      // Clear the setupOrchestrator's machine-wide "already shown" fingerprint
+      // so the freshly-created project's activation re-evaluates readiness and
+      // reliably shows the bootstrap nudge — a prior dismissal for the same
+      // issue set (e.g. from an earlier project) must not silently suppress it
+      // here. globalState is machine-wide, so this survives the window replace.
+      await resetSetupNudge(this.context);
+      shouldOpen = true;
     }
 
     if (shouldOpen) {
-      // Open in a new window when a workspace is already open, so we don't
-      // replace the user's current session.
-      await openProjectFolder(vscode.Uri.file(projectDir));
+      // Checkbox unchecked ⇒ open in a NEW window (keep the current workspace);
+      // checked (default) ⇒ replace the current window.
+      await openProjectFolder(
+        vscode.Uri.file(projectDir),
+        !openInCurrentWindow,
+      );
     }
 
     this.panel.dispose();
   }
 
-  /** Write `alpSdk.path` into the new project's .vscode/settings.json so it
-   *  opens with the SDK chosen in the wizard (merges if a file already exists).
-   *  Returns the outcome so the caller can surface a pin failure BEFORE offering
-   *  to open the project — never silently open an unpinned scaffold (F5). */
+  /** Write the new project's .vscode/settings.json (merging if it exists): pin
+   *  `alpSdk.path` to the SDK chosen in the wizard, and point the C/C++ extension
+   *  at the west build's compile DB so Zephyr + ALP headers resolve after the
+   *  first Build (see buildProjectSettings). Returns the outcome so the caller
+   *  can surface a failure BEFORE offering to open the project — never silently
+   *  open an unpinned scaffold (F5). */
   private pinProjectSdk(
     projectDir: string,
     sdkPath: string,
@@ -496,7 +515,7 @@ export class NewProjectFlowPanel {
           existing = {};
         }
       }
-      const settings = { ...existing, "alpSdk.path": sdkPath };
+      const settings = buildProjectSettings(existing, sdkPath);
       fs.writeFileSync(
         settingsPath,
         JSON.stringify(settings, null, 2) + "\n",

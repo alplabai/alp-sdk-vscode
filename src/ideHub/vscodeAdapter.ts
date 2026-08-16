@@ -4,6 +4,7 @@ import {
   checkSdkReadiness,
   listLocalSdkEntries,
 } from "@alp-sdk/core/sdk/service";
+import { sameUserPath, toPosix } from "@alp-sdk/core/paths";
 import * as cp from "child_process";
 import { promisify } from "util";
 import * as fs from "fs";
@@ -14,20 +15,26 @@ import { collectProjectContext } from "../project/vscodeAdapter";
 import { log } from "../util";
 import {
   resolveWestBinary,
+  venvWestExists,
   westWorkspaceInitialized,
 } from "../environment/vscodeAdapter";
 import { probeTanVersion } from "../alpCli/vscodeAdapter";
 import type { AlpIdeState } from "./messages";
 
 /**
- * Open a project folder without disrupting the user's current session: if a
- * workspace is already open, open in a NEW window; otherwise reuse the current
- * (empty) window. Used by the new- and existing-project flows.
+ * Open a project folder in the CURRENT window (replaces the open workspace).
+ * The extension's New Project / Open Project flows both mean "switch to this
+ * project now", so a new window would just leave the old one behind as clutter
+ * (the earlier new-window behavior was reported as bad UX). VS Code prompts to
+ * save any unsaved editors before replacing, so this is not a silent session
+ * loss. Used by the new- and existing-project flows.
  */
-export async function openProjectFolder(uri: vscode.Uri): Promise<void> {
-  const hasWorkspaceOpen = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+export async function openProjectFolder(
+  uri: vscode.Uri,
+  forceNewWindow = false,
+): Promise<void> {
   await vscode.commands.executeCommand("vscode.openFolder", uri, {
-    forceNewWindow: hasWorkspaceOpen,
+    forceNewWindow,
   });
 }
 
@@ -85,10 +92,11 @@ function loginShellPath(): Promise<string | undefined> {
 async function commandVersion(
   cmd: string,
   env: NodeJS.ProcessEnv,
+  timeout = 3000,
 ): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync(cmd, ["--version"], {
-      timeout: 3000,
+      timeout,
       env,
     });
     const firstLine = stdout.trim().split("\n")[0] ?? "";
@@ -168,13 +176,34 @@ export async function queryAlpIdeState(
   const cacheRootResolved = path.resolve(cacheRoot);
   const localEntries = discoveredEntries.map((entry) => ({
     ...entry,
+    // Normalize to forward-slash like `activePath` (sdkRoot is toPosix'd in
+    // resolveProjectContext). listLocalSdkEntries returns native path.resolve()
+    // output — backslash on Windows — so a raw `local.path === activePath`
+    // compare in the SDK Manager (buildRows) never matched, and the "Active"
+    // badge / Use→Deactivate flip never fired on Windows. removable keys off the
+    // pre-normalized native path (path.resolve re-normalizes posix input fine).
     removable: path
       .resolve(entry.path)
       .startsWith(cacheRootResolved + path.sep),
+    path: toPosix(entry.path),
+    // The single place "is this the active SDK" is decided (#361). `activePath`
+    // may originate in a hand-typed `alpSdk.path`, so a raw `===` misses on a
+    // case or trailing-separator difference and the badge never appears.
+    active:
+      projectContext.sdkRoot !== null &&
+      sameUserPath(entry.path, projectContext.sdkRoot, process.platform),
   }));
 
   const pyCmd = projectContext.pythonBinary;
   const westBin = resolveWestBinary(
+    projectContext.westCwd,
+    projectContext.sdkRoot,
+  );
+  // Deterministic availability: a bootstrap-venv west existing on disk means
+  // west IS available regardless of whether the `west --version` probe below
+  // wins its race — this is the fix for the card flip-flopping to "Missing"
+  // when the probe times out under load (Windows CPython cold-start).
+  const venvWest = venvWestExists(
     projectContext.westCwd,
     projectContext.sdkRoot,
   );
@@ -189,12 +218,14 @@ export async function queryAlpIdeState(
   const [pythonVersion, westVersion, cmakeVersion, ninjaVersion] =
     await Promise.all([
       commandVersion(pyCmd, probeEnv),
-      commandVersion(westBin, probeEnv),
+      commandVersion(westBin, probeEnv, 10000), // roomier: venv west cold-start
       commandVersion("cmake", probeEnv),
       commandVersion("ninja", probeEnv),
     ]);
   const pythonAvailable = pythonVersion !== null;
-  const westAvailable = westVersion !== null;
+  // Availability from the deterministic on-disk check OR a successful probe, so a
+  // timed-out version probe alone never downgrades an installed west to "Missing".
+  const westAvailable = venvWest || westVersion !== null;
   // Not part of the probeEnv batch above: it resolves its own binary via the
   // cliPath/bundled/localBuild/cached/PATH ladder and must never download.
   const tanVersion = context ? await probeTanVersion(context) : null;

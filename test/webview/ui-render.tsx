@@ -21,14 +21,33 @@ import { ModelsView } from "../../packages/alp-webview/src/features/models";
 
 const g = globalThis as any;
 const tick = () => new Promise((r) => setTimeout(r, 0));
-// React 19 schedules passive effects off the main task queue, so a bigger
-// component tree can still be un-mounted after a couple of ticks — the Models
-// panel measurably was, and its `feedState` payload arrived before its
-// `useEffect` had subscribed, leaving it rendering an empty state. Settle on a
-// budget rather than a fixed pair of ticks.
-const settle = async (n = 8) => {
-  for (let i = 0; i < n; i += 1) await tick();
+
+/**
+ * Drain enough macrotask turns for React to have committed and flushed passive
+ * effects, including for components mounted by an ancestor's state update.
+ *
+ * This used to be two bare `await tick()`s, which was silently too few. React
+ * 19 commits passive effects on its own scheduler turn, so a hook subscribing
+ * BELOW AppProvider — `useBuildPlan`, and every other feature hook — had not
+ * called `onMessage` yet when the harness dispatched its data. Instrumenting
+ * `onMessage` showed the nine AppProviders registering as listeners #1-#10 and
+ * receiving everything, while `useBuildPlan` registered as #11/#12 after the
+ * last dispatch and received nothing at all.
+ *
+ * The harness reported PASS regardless: it only looked for ERROR_MARKERS, and
+ * a view stuck in its loading/empty state contains none. So "9/9 views
+ * rendered" meant they rendered EMPTY. Any assertion about data-driven content
+ * depends on this settling, which is why the #331 checks below are the first
+ * thing that would have caught it.
+ */
+const settle = async (turns = 12): Promise<void> => {
+  for (let i = 0; i < turns; i++) await tick();
 };
+
+// Take and clear whatever jsdom-setup's window `error` / `unhandledrejection`
+// listeners collected since the last call. Draining (not just reading) keeps
+// one broken handler from being re-reported against every later button.
+const drainErrors = (): string[] => g.__ALP_ERRORS__.splice(0);
 
 // Error boundary that records the actual render error instead of letting React
 // swallow it — so a component that crashes shows up as a PROBLEM, not a pass.
@@ -130,14 +149,23 @@ function feedState() {
       warnings: [],
     },
   });
-  // Models panel: a `tan model list`/`doctor` merge, plus a REAL
-  // `tan model check --board board.yaml --format json` payload captured on
-  // E1M-AEN801 — the SKU resolves `ethos_u` only, so every row below is one
-  // tan really emits for it: a static screen against
-  // metadata/npu_ops/ethos_u/u85@vela-5.1.0.json, a real `--exact` vela 5.1.0
-  // compile, and an `undetermined` from a source format ethos_u does not
-  // ingest. All three vocabularies are exercised so a regression in the
-  // ADR-0028 mapping shows up as a rendered problem, not a silent relabel.
+  // Models panel: a `tan model list`/`doctor` merge, plus REAL
+  // `tan model check --board board.yaml [--exact] --format json` payloads
+  // captured on E1M-AEN801 (which resolves `ethos_u` only) against
+  // metadata/npu_ops/ethos_u/u85@vela-5.1.0.json, with `--exact` run through
+  // a real vela 5.1.0. Every backend block below is copied field-for-field
+  // and note-for-note from one of those runs — nothing here is a
+  // transcription of the vocabulary. Between them the four rows exercise all
+  // four badge branches, so a regression in the ADR-0028 mapping shows up as
+  // a rendered problem rather than a silent relabel:
+  //   tiny          static screen, `full-eligible`  -> eligibility, never green
+  //   tiny_compiled the SAME model under `--exact`, `fits` -> proven, green
+  //   f32fc         `--exact`, `cpu-only` at 0 % placed, yet its KEPT static
+  //                 `ops[0].status` still reads `npu-eligible` — the
+  //                 disagreement the op-derived lines are suppressed for
+  //   onnxmodel     `undetermined` from a format ethos_u does not ingest
+  // (`tiny_compiled` is `tiny`'s `--exact` result under a second name only so
+  // both bases can sit in one fixture message.)
   g.__ALP_POST_TO_WEBVIEW__({
     type: "modelsData",
     ok: true,
@@ -148,13 +176,18 @@ function feedState() {
         artifact: { exists: true, bytes: 712, stale: false },
       },
       {
-        name: "person_detect",
-        source: "person_detect_int8.tflite",
+        name: "tiny_compiled",
+        source: "tiny_int8.tflite",
+        artifact: { exists: true, bytes: 712, stale: false },
+      },
+      {
+        name: "f32fc",
+        source: "float32_fc.tflite",
         artifact: { exists: false },
       },
       {
-        name: "yolo",
-        source: "yolo11n.onnx",
+        name: "onnxmodel",
+        source: "v_npu_full.onnx",
         artifact: { exists: false },
       },
     ],
@@ -183,7 +216,7 @@ function feedState() {
             basis: "static-screen",
             confidence: "screening",
             notes: [
-              "static screen (screening): operator-name membership against u85@vela-5.1.0.json only.",
+              "static screen (screening): operator-name membership against u85@vela-5.1.0.json only. Eligible ops still carry unchecked quantization/shape/dtype constraints this check cannot verify -- the model will run either way, an unsupported op falls back to the CPU silently rather than failing. Only a real compile proves NPU execution.",
             ],
             ops: [
               {
@@ -197,8 +230,8 @@ function feedState() {
         ],
       },
       {
-        name: "person_detect",
-        source: "/ws/person_detect_int8.tflite",
+        name: "tiny_compiled",
+        source: "/ws/tiny_int8.tflite",
         backends: [
           {
             backend: "ethos_u",
@@ -211,15 +244,45 @@ function feedState() {
             basis: "compiled",
             confidence: "certain",
             notes: [
-              "vela compiled for ethos-u85-256: 44/44 operators placed on the NPU (100%); arena 74480 bytes, SRAM 73 KiB.",
+              "vela compiled for ethos-u85-256: 1/1 operators placed on the NPU (100%); arena 32 bytes, SRAM 1 KiB.",
+              "vela used its BUILT-IN default system-config Ethos_U85_SYS_DRAM_Mid for bandwidth/latency estimates -- no module-authored one is available -- so its scheduling is tuned for that system, not this module's. The arena/SRAM figures are unaffected: they follow --memory-mode Sram_Only, which came from this module's SoC metadata, whose const/arena/cache areas are all one AXI port every system config maps to SRAM.",
             ],
             ops: [],
           },
         ],
       },
       {
-        name: "yolo",
-        source: "/ws/yolo11n.onnx",
+        name: "f32fc",
+        source: "/ws/float32_fc.tflite",
+        backends: [
+          {
+            backend: "ethos_u",
+            variant: "u85",
+            table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+            npuCoverage: "cpu-only",
+            computeOnNpuPctMax: null,
+            npuPlacementPctReal: 0.0,
+            uncostedCpuOpCount: 0,
+            basis: "compiled",
+            confidence: "certain",
+            notes: [
+              "vela compiled for ethos-u85-256: 0/1 operators placed on the NPU (0%); arena 0 bytes, SRAM 0 KiB.",
+              "vela used its BUILT-IN default system-config Ethos_U85_SYS_DRAM_Mid for bandwidth/latency estimates -- no module-authored one is available -- so its scheduling is tuned for that system, not this module's. The arena/SRAM figures are unaffected: they follow --memory-mode Sram_Only, which came from this module's SoC metadata, whose const/arena/cache areas are all one AXI port every system config maps to SRAM.",
+            ],
+            ops: [
+              {
+                op: "FULLY_CONNECTED",
+                status: "npu-eligible",
+                reason: "constraint-unchecked",
+                macs: 8,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "onnxmodel",
+        source: "/ws/v_npu_full.onnx",
         backends: [
           {
             backend: "ethos_u",
@@ -247,10 +310,74 @@ function feedState() {
     entries: [],
     issues: [],
   });
+  // A real post-build manifest, not `null` — the System manifest section was
+  // never rendered by this harness at all, so nothing here covered it. The
+  // shape is the one #331 is about: one slice that succeeded and one that did
+  // not, the latter carrying the `reason` the UI used to drop.
   g.__ALP_POST_TO_WEBVIEW__({
     type: "systemManifestData",
-    manifest: null,
-    postBuild: false,
+    postBuild: true,
+    manifest: {
+      schema_version: 1,
+      generated_by: "tan",
+      hw_info: { sku: "E1M-AEN801" },
+      slices: [
+        {
+          core_id: "m55_hp",
+          os: "zephyr",
+          status: "ok",
+          build_dir: "build/m55_hp",
+          output_artefact: "build/m55_hp/zephyr/zephyr.elf",
+          flash_method: "jlink",
+        },
+        {
+          core_id: "a32_cluster",
+          os: "yocto",
+          status: "skipped",
+          reason: "bitbake not found",
+          log_path: "build/a32_cluster/bitbake.log",
+        },
+      ],
+      ipc: [
+        {
+          name: "rpmsg0",
+          kind: "rpmsg",
+          endpoints: ["m55_hp", "a32_cluster"],
+          status: "degraded",
+          reason: "peer slice skipped",
+        },
+      ],
+      helper_mcus: [],
+      boot_order: [],
+    },
+  });
+  // #359: per-slice footprint from `tan size`. Deliberately mixed — one slice
+  // in budget with real numbers, one that produced nothing — so the harness
+  // covers both the measured and the no-data branch.
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "sliceSizesData",
+    report: {
+      schema: "alp-size/1",
+      slices: [
+        {
+          core_id: "m55_hp",
+          os: "zephyr",
+          status: "ok",
+          flash: { used: 99452, total: 5767168, pct: 1.7 },
+          ram: { used: 16968, total: 262144, pct: 6.5 },
+          source: "size-tool",
+        },
+        {
+          core_id: "a32_cluster",
+          os: "yocto",
+          status: "not-built",
+          flash: { used: null, total: null, pct: null },
+          ram: { used: null, total: null, pct: null },
+          source: null,
+        },
+      ],
+      summary: { over_budget: [], unknown_budget: [] },
+    },
   });
   g.__ALP_POST_TO_WEBVIEW__({
     type: "hardwareExplorerData",
@@ -314,10 +441,14 @@ async function main() {
           React.createElement(AppProvider, null, React.createElement(View)),
         ),
       );
-      await settle(); // let every message subscription mount (useEffect)
-      feedState();
       await settle();
-      feedState(); // re-dispatch in case a subscription mounted late
+      feedState();
+      // AppProvider renders its children only once it HAS state, so a feature
+      // hook that subscribes below it (useBuildPlan, useModels, …) does not
+      // exist until this first feed has been processed and committed. Feed
+      // again once it does — see `settle` for why two ticks were never enough.
+      await settle();
+      feedState();
       await settle();
     } catch (err) {
       ok = false;
@@ -334,6 +465,12 @@ async function main() {
       renderErr = null;
       return true;
     };
+    // Drain before the first click so a report from mount/effects is blamed on
+    // the view, not on whichever button happens to be clicked first.
+    for (const err of drainErrors()) {
+      ok = false;
+      problems.push(`${mode}: error reported during render — ${err}`);
+    }
     if (noteCrash()) {
       console.log(`  FAIL  ${mode}: render error`);
       continue;
@@ -344,6 +481,29 @@ async function main() {
     for (const marker of ERROR_MARKERS) {
       if (text.includes(marker)) {
         problems.push(`${mode}: visible text contains "${marker}"`);
+      }
+    }
+    // #331: a slice that did not build must say WHY. The manifest already
+    // carried `reason`, `log_path` and `output_artefact`; the row rendered
+    // only the status chip, so "skipped" arrived with no explanation and the
+    // produced artefact and log were invisible. `text` is lowercased above.
+    if (mode === "build-plan") {
+      for (const needle of [
+        "bitbake not found", // slice reason
+        "build/a32_cluster/bitbake.log", // slice log_path
+        "build/m55_hp/zephyr/zephyr.elf", // slice output_artefact
+        "peer slice skipped", // ipc link reason
+        // #359 — footprint from `tan size`, and the no-data branch beside it.
+        "97.1 kib / 5.50 mib (1.7%)", // flash, measured
+        "16.6 kib / 256.0 kib (6.5%)", // ram, measured
+        "in budget", // status verdict
+        "not built", // a slice tan could not measure
+      ]) {
+        if (!text.includes(needle)) {
+          problems.push(
+            `build-plan: system manifest detail missing "${needle}"`,
+          );
+        }
       }
     }
     // The Hub Environment card surfaces the tan CLI next to python/west.
@@ -372,7 +532,11 @@ async function main() {
     // The Models panel must never render the retired `fits | cpu-fallback |
     // no-fit` vocabulary, and must never turn `undetermined` into a negative.
     if (mode === "models") {
-      for (const retired of ["cpu fallback", "no fit", ": fits"]) {
+      // Anchored on the old panel's `${backend}: ${FIT_LABEL[verdict]}` badge
+      // shape, NOT on the bare words: "certain CPU fallback" is tan's own
+      // current wording for the cpu-certain op list, so a bare "cpu fallback"
+      // needle would fire on correct output.
+      for (const retired of [": cpu fallback", ": no fit", ": fits"]) {
         if (text.includes(retired)) {
           problems.push(
             `models: retired verdict vocabulary rendered ("${retired}")`,
@@ -391,6 +555,14 @@ async function main() {
       }
       if (!text.includes("all ops on npu (proven)")) {
         problems.push("models: compiled result not rendered as proven");
+      }
+      // The compiled `cpu-only` row must report the compiler's own placement,
+      // never a figure recomputed from the STATIC per-op verdicts it keeps —
+      // those still read `npu-eligible` beside a real 0 % placement.
+      if (!text.includes("0% of operators placed on the npu")) {
+        problems.push(
+          "models: proven result not rendered as compiler-measured placement",
+        );
       }
       if (!text.includes("falls back to the cpu silently")) {
         problems.push("models: silent-CPU-fallback caveat missing from the UI");
@@ -414,9 +586,16 @@ async function main() {
         clickedHere += 1;
         totalClicked += 1;
       } catch (err) {
+        // Only a throw from click() ITSELF (a jsdom fault) reaches here — a
+        // handler's own throw is reported, not propagated. drainErrors() below
+        // is what actually catches a broken button.
         problems.push(
           `${mode}: button "${label}" threw on click — ${String(err)}`,
         );
+      }
+      for (const err of drainErrors()) {
+        ok = false;
+        problems.push(`${mode}: button "${label}" threw on click — ${err}`);
       }
       void before;
     }

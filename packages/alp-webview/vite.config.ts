@@ -7,6 +7,14 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Extract every stylesheet into ONE dist/main.css instead of letting Vite
+    // inline it into the JS bundle. `buildWebviewHtml` links that exact file by
+    // name (it cannot read a manifest), so with the default (`true`) the link
+    // 404s on every webview open — "Webview.loadLocalResource - Error using
+    // fileReader" — and the page depends on the bundle injecting a <style> at
+    // runtime, which needs `style-src 'unsafe-inline'` and flashes unstyled
+    // first. Extracting also keeps assetFileNames' .css branch below reachable.
+    cssCodeSplit: false,
     rollupOptions: {
       input: fileURLToPath(new URL("./index.html", import.meta.url)),
       output: {

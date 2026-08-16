@@ -48,19 +48,24 @@ function logIssues(
   }
 }
 
-type CliResult = Awaited<ReturnType<typeof runAlpCommand>>;
-const CANCELLED = Symbol("cancelled");
+export type CliResult = Awaited<ReturnType<typeof runAlpCommand>>;
+export const CANCELLED = Symbol("cancelled");
 
 /**
  * Run an envelope command inside a cancellable progress notification. The
  * CancellationToken is bridged to an AbortSignal so pressing Cancel kills the
- * `tan` child (and its Python validator/loader) instead of leaving it running.
- * Returns CANCELLED when the user cancels so the caller skips its error toast.
+ * `tan` child (and its Python validator/loader, or -- for `bootstrap.ts`'s
+ * win32 pre-flight -- the `tan bootstrap --no-pip --no-west` probe) instead
+ * of leaving it running. Returns CANCELLED when the user cancels so the
+ * caller skips its error toast. Exported: `bootstrap.ts` reuses this exact
+ * `withProgress` + CancellationToken->AbortController bridge for its win32
+ * pre-flight rather than duplicating it.
  */
-async function runAlpWithProgress(
+export async function runAlpWithProgress(
   context: vscode.ExtensionContext,
   args: string[],
   title: string,
+  cwd?: string,
 ): Promise<CliResult | typeof CANCELLED> {
   return vscode.window.withProgress(
     {
@@ -70,11 +75,15 @@ async function runAlpWithProgress(
     },
     async (_progress, token) => {
       const controller = new AbortController();
-      token.onCancellationRequested(() => controller.abort());
-      const result = await runAlpCommand(context, args, undefined, {
-        signal: controller.signal,
-      });
-      return token.isCancellationRequested ? CANCELLED : result;
+      const sub = token.onCancellationRequested(() => controller.abort());
+      try {
+        const result = await runAlpCommand(context, args, cwd, {
+          signal: controller.signal,
+        });
+        return token.isCancellationRequested ? CANCELLED : result;
+      } finally {
+        sub.dispose();
+      }
     },
   );
 }

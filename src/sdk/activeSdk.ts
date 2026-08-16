@@ -1,12 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { checkSdkReadiness, switchActiveSdk } from "@alp-sdk/core/sdk/service";
+import {
+  checkSdkReadiness,
+  switchActiveSdk,
+  westManifestLogLine,
+  westManifestWarning,
+} from "@alp-sdk/core/sdk/service";
 import * as fs from "fs";
 import * as vscode from "vscode";
+import { danglingWestManifest } from "../environment/vscodeAdapter";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import { log, reportError } from "../util";
+import { log, reportError, showOutput } from "../util";
 import { writeAlpSetting } from "./settingsWrite";
+
+/**
+ * Warn when the west workspace's own manifest pointer names a directory that no
+ * longer exists — the state issue #349 reported, in which `west` silently
+ * resolves an unrelated workspace (or none) no matter what the active-SDK
+ * pointer says. Returns true when it warned, so callers can suppress a bare
+ * "success" that would read as "nothing left to do".
+ *
+ * Reports only. The repair is `tan`'s: `tan bootstrap` reconciles the pointer,
+ * and `tan sdk switch` will too once this extension's pinned CLI carries it.
+ */
+export function warnIfWestManifestDangling(sdkRoot: string | null): boolean {
+  const status = danglingWestManifest(sdkRoot);
+  if (!status) return false;
+
+  // Both helpers are non-null for a `dangling` status, which is the only kind
+  // `danglingWestManifest` returns.
+  log(`[sdk] ${westManifestLogLine(status)}`, "warn");
+
+  void vscode.window
+    .showWarningMessage(
+      westManifestWarning(status) as string,
+      "Bootstrap now",
+      "Show Output",
+    )
+    .then((choice) => {
+      // `tan bootstrap`, NOT `tan doctor --build --fix`: the latter only
+      // bootstraps when its `workspace` check FAILS, and a workspace that
+      // exists but dangles passes that check — so it would repair nothing.
+      if (choice === "Bootstrap now") {
+        void vscode.commands.executeCommand("alp.installDependencies");
+      } else if (choice === "Show Output") {
+        showOutput();
+      }
+    });
+  return true;
+}
 
 /**
  * Set the active SDK via the `alpSdk.path` setting — the single source project
@@ -49,7 +92,8 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
   // (`alp sdk current`/`switch`) and the extension agree on the active SDK.
   // Best-effort: the setting write above is authoritative — a pointer-write
   // failure (read-only tree, no workspace) must not break activation.
-  const workspaceRoot = collectProjectContext().workspaceRoot;
+  const projectContext = collectProjectContext();
+  const workspaceRoot = projectContext.workspaceRoot;
   if (workspaceRoot) {
     try {
       switchActiveSdk(
@@ -70,6 +114,15 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
   log(
     `[sdk] active SDK set → ${sdkPath} (${hasWorkspace ? "workspace" : "global"})`,
   );
+
+  // #349: switching the active SDK does not touch `<topdir>/.west/config`, which
+  // west reads directly. If that pointer names a version that is gone, a bare
+  // "active SDK set" success reads as "nothing left to do" while every later
+  // build/flash resolves the wrong workspace. Warn instead — the workspace, not
+  // the pointer, is what still needs fixing. Pass the SDK just activated, not
+  // the context's (possibly stale) sdkRoot.
+  if (warnIfWestManifestDangling(sdkPath)) return;
+
   void vscode.window.showInformationMessage(
     hasWorkspace
       ? `Alp: active SDK for this project → ${sdkPath}`
@@ -148,8 +201,8 @@ async function selectSdk(): Promise<void> {
   const items: SdkPickItem[] = entries.map((entry) => {
     const label = entry.version ?? pathTail(entry.path);
     return {
-      label: entry.path === active ? `$(check) ${label}` : label,
-      description: entry.path === active ? "active" : "",
+      label: entry.active ? `$(check) ${label}` : label,
+      description: entry.active ? "active" : "",
       detail: entry.path,
       sdkPath: entry.path,
     };

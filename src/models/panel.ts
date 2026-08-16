@@ -12,7 +12,7 @@ import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "../ideHub/messages";
-import { buildWebviewHtml } from "../ideHub/webviewHtml";
+import { buildWebviewHtml, runWebviewCommand } from "../ideHub/webviewHtml";
 import { log as logChannel, reportError } from "../util";
 import {
   cliFailureMessage,
@@ -300,6 +300,12 @@ class ModelsPanel {
         break;
       case "addFromZoo":
         void this.addFromZoo(msg.id);
+        break;
+      // "Edit models in Configurator" (ModelsView.tsx) posts this. Without the
+      // case the message was dropped silently — no compile error, dead button.
+      // Every sibling panel handles it the same way (overviewPanel.ts:138).
+      case "runCommand":
+        runWebviewCommand(msg.command);
         break;
       case "closePanel":
         this.panel.dispose();

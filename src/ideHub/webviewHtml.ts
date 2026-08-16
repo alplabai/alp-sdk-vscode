@@ -34,8 +34,15 @@ export function buildWebviewHtml(
     ),
   );
 
-  // Per-render CSP nonce: only scripts carrying it may run, so 'unsafe-inline'
-  // stays out of script-src and injected inline handlers cannot execute.
+  // Per-render CSP nonce: only scripts and styles carrying it may run, so
+  // 'unsafe-inline' stays out of BOTH script-src and style-src — injected
+  // inline handlers cannot execute and injected style attributes are dropped.
+  //
+  // Nothing here needs `style-src 'unsafe-inline'`: the components' CSS ships as
+  // an external dist/main.css (covered by cspSource), React applies `style={{}}`
+  // props through the CSSOM (`style.setProperty` / `style[name] =`), which CSP
+  // does not govern, and the two rules the shell needs for itself live in the
+  // nonce'd <style> below rather than in style="" attributes.
   const nonce = randomBytes(16).toString("base64");
 
   return /* html */ `<!DOCTYPE html>
@@ -44,13 +51,24 @@ export function buildWebviewHtml(
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
+    content="default-src 'none'; style-src ${webview.cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:;"/>
   <title>Alp IDE</title>
   <link rel="stylesheet" href="${styleUri}"/>
+  <style nonce="${nonce}">
+    /* The shell's own two rules. Kept here rather than in dist/main.css so the
+       loading state still renders correctly if that stylesheet fails to load —
+       which is one of the failures this state exists to show. */
+    body { margin: 0; padding: 0; }
+    .alp-shell-loading {
+      padding: 8px;
+      color: var(--vscode-foreground, #fff);
+      background: var(--vscode-sideBar-background, transparent);
+    }
+  </style>
 </head>
-<body data-alp-mode="${mode}" style="margin:0;padding:0">
+<body data-alp-mode="${mode}">
   <div id="root">
-    <p style="padding:8px;color:var(--vscode-foreground,#fff);background:var(--vscode-sideBar-background,transparent)">
+    <p class="alp-shell-loading">
       ⏳ Loading Alp IDE…
     </p>
   </div>

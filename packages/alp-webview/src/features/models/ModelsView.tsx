@@ -16,6 +16,7 @@ import {
 } from "./coverage";
 import type {
   AbResultView,
+  EnergyView,
   ModelArtifact,
   ModelListEntry,
   ModelToolchain,
@@ -47,6 +48,25 @@ const ARTIFACT_LABEL: Record<ArtifactVariant, string> = {
 function formatBytes(bytes?: number): string | null {
   if (bytes === undefined) return null;
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+// Human descriptor per `EnergyMeasurement.scope` — the guard against
+// mislabelling a board-level carrier-rail delta as "NPU power"/"silicon
+// energy". An unrecognized scope falls back to its raw string rather than
+// assuming what it means.
+const ENERGY_SCOPE_LABEL: Record<string, string> = {
+  "carrier-rail-delta": "measured delta",
+};
+
+function energyLabel(e: EnergyView): string {
+  const descriptor = ENERGY_SCOPE_LABEL[e.scope] ?? e.scope;
+  const rail = e.rails.length === 1 ? "rail" : "rails";
+  const spread = e.spread_mj !== null ? `, ±${e.spread_mj.toFixed(4)}` : "";
+  return (
+    `Inference energy (${descriptor}, ${rail} ${e.rails.join("+")}): ` +
+    `${e.value_mj_per_inference.toFixed(4)} mJ/inference ` +
+    `(avg of ${e.n_inferences}${spread})`
+  );
 }
 
 function Badge({
@@ -168,6 +188,9 @@ function RunReport({
         power: {run.power_mj ?? "n/a"} mJ · peak SRAM:{" "}
         {run.peak_sram_kib ?? "n/a"} KiB
       </p>
+      {run.energy && (
+        <p className={styles.suggestion}>{energyLabel(run.energy)}</p>
+      )}
       {run.accuracy && (
         <Badge
           variant={run.accuracy.match ? "ok" : "err"}
@@ -211,9 +234,15 @@ function AbReport({
       <p className={styles.mono}>
         A: {ab.a.model} — {ab.a.backend} · {ab.a.latency_ms.toFixed(2)} ms
       </p>
+      {ab.a.energy && (
+        <p className={styles.suggestion}>{energyLabel(ab.a.energy)}</p>
+      )}
       <p className={styles.mono}>
         B: {ab.b.model} — {ab.b.backend} · {ab.b.latency_ms.toFixed(2)} ms
       </p>
+      {ab.b.energy && (
+        <p className={styles.suggestion}>{energyLabel(ab.b.energy)}</p>
+      )}
       <Badge
         variant="ok"
         label={`${ab.comparison.faster} faster (${ab.comparison.latency_ratio ?? "n/a"}x)`}
@@ -221,6 +250,12 @@ function AbReport({
       <p className={styles.suggestion}>
         size delta: {ab.comparison.size_delta_bytes ?? "n/a"} bytes
       </p>
+      {ab.comparison.energy_delta_mj_per_inference !== undefined && (
+        <p className={styles.suggestion}>
+          energy delta (B − A): {ab.comparison.energy_delta_mj_per_inference}{" "}
+          mJ/inference
+        </p>
+      )}
       <p className={styles.hint}>{ab.note}</p>
     </div>
   );

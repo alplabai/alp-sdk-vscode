@@ -47,12 +47,10 @@
   "main": "./out/extension.js",
   "icon": "media/icon.png",
   "extensionDependencies": [
-    "redhat.vscode-yaml"
+    "redhat.vscode-yaml",
+    "marus25.cortex-debug"
   ],
   "extensionPack": [
-    "marus25.cortex-debug",
-    "mcu-debug.peripheral-viewer",
-    "mcu-debug.memory-view",
     "ms-vscode.cpptools",
     "vadimcn.vscode-lldb"
   ],
@@ -164,7 +162,7 @@
       },
       {
         "command": "alp.installDependencies",
-        "title": "Alp: Bootstrap SDK environment (west + Zephyr deps)",
+        "title": "Alp: Bootstrap SDK environment (Zephyr + build deps)",
         "category": "Alp"
       },
       {
@@ -174,12 +172,12 @@
       },
       {
         "command": "alp.westFlash",
-        "title": "Alp: West flash",
+        "title": "Alp: Flash (single image)",
         "category": "Alp"
       },
       {
         "command": "alp.westUpdate",
-        "title": "Alp: West update (fetch and update modules)",
+        "title": "Alp: Update workspace",
         "category": "Alp"
       },
       {
@@ -356,7 +354,7 @@
       },
       {
         "command": "alp.removeWestInit",
-        "title": "Alp: Remove west initialization (.west/)",
+        "title": "Alp: Reset workspace (.west/)",
         "category": "Alp"
       },
       {
@@ -369,6 +367,19 @@
         "title": "Alp: Refresh sidebar views",
         "icon": "$(refresh)",
         "category": "Alp"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "alpRun",
+        "required": [
+          "run"
+        ],
+        "properties": {
+          "run": {
+            "type": "string"
+          }
+        }
       }
     ],
     "viewsContainers": {
@@ -489,7 +500,7 @@
     "compile:watch": "tsc --build --watch",
     "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
     "test": "pnpm run compile && node --test test/*.test.js",
-    "install:vscode": "bash ./scripts/install-vscode.sh",
+    "install:vscode": "node scripts/run-bash.mjs ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",
     "vscode:prepublish": "pnpm --filter ./packages/alp-webview run build && tsc --build && pnpm run bundle:ext",
     "package": "vsce package --no-dependencies",
@@ -498,7 +509,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js",
-    "test:e2e:cli": "bash test/e2e/cli-smoke.sh",
+    "test:e2e:cli": "node scripts/run-bash.mjs test/e2e/cli-smoke.sh",
     "test:e2e:webview": "node test/webview/run.mjs"
   },
   "pnpm": {
