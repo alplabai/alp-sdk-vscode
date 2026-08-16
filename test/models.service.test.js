@@ -137,7 +137,15 @@ test("cliFailureMessage: a real spawn/timeout outcome (exitCode -1) surfaces out
   );
 });
 
-test("toModelFitData: ok envelope -> models + sku passthrough", () => {
+// The `data` block below is a REAL `tan model check --board board.yaml
+// --format json` envelope, captured against a tiny int8 .tflite on
+// E1M-AEN801 with metadata table
+// metadata/npu_ops/ethos_u/u85@vela-5.1.0.json — not a hand-written
+// approximation. It is the ADR-0028 vocabulary the boundary must carry
+// through untouched: `npuCoverage`/`basis`/`confidence`/`computeOnNpuPctMax`
+// /`npuPlacementPctReal`/`uncostedCpuOpCount`/`notes`/`ops[]`, and none of
+// the retired `fits | cpu-fallback | no-fit` verdict field.
+test("toModelFitData: ok envelope -> models + sku passthrough (ADR-0028 shape)", () => {
   const outcome = {
     exitCode: 0,
     message: "",
@@ -147,14 +155,37 @@ test("toModelFitData: ok envelope -> models + sku passthrough", () => {
       exitCode: 0,
       project: {},
       data: {
-        board: "board.yaml",
+        schemaVersion: "1",
         sku: "E1M-AEN801",
+        exact: false,
         models: [
           {
             name: "tiny",
-            source: "m.tflite",
-            backends: [{ backend: "cpu", verdict: "fits" }],
-            suggestion: null,
+            source: "/w/tiny_int8.tflite",
+            backends: [
+              {
+                backend: "ethos_u",
+                variant: "u85",
+                table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+                npuCoverage: "full-eligible",
+                computeOnNpuPctMax: 100.0,
+                npuPlacementPctReal: null,
+                uncostedCpuOpCount: 0,
+                basis: "static-screen",
+                confidence: "screening",
+                notes: [
+                  "static screen (screening): operator-name membership against u85@vela-5.1.0.json only.",
+                ],
+                ops: [
+                  {
+                    op: "FULLY_CONNECTED",
+                    status: "npu-eligible",
+                    reason: "constraint-unchecked",
+                    macs: 8,
+                  },
+                ],
+              },
+            ],
           },
         ],
       },
@@ -167,6 +198,171 @@ test("toModelFitData: ok envelope -> models + sku passthrough", () => {
   assert.equal(msg.sku, "E1M-AEN801");
   assert.equal(msg.models.length, 1);
   assert.equal(msg.models[0].name, "tiny");
+  // The boundary is a passthrough: every field the webview's coverage.ts
+  // narrows must survive it, or the panel silently renders less than tan said.
+  const backend = msg.models[0].backends[0];
+  assert.equal(backend.npuCoverage, "full-eligible");
+  assert.equal(backend.basis, "static-screen");
+  assert.equal(backend.confidence, "screening");
+  assert.equal(backend.computeOnNpuPctMax, 100.0);
+  assert.equal(backend.npuPlacementPctReal, null);
+  assert.equal(backend.uncostedCpuOpCount, 0);
+  assert.equal(backend.ops[0].status, "npu-eligible");
+  assert.equal(backend.notes.length, 1);
+});
+
+// Semantics 1: `undetermined` is NOT `cpu-only`. Captured from a real run on
+// E1M-V2M101 — DEEPX DX-M1 is that SKU's headline NPU and ships no op table
+// BY DECISION, so it reports `undetermined` on every model. The boundary must
+// carry that word through verbatim; a consumer that collapsed it to a
+// negative would report a false "won't run" on the flagship part.
+test("toModelFitData: `undetermined` survives the boundary verbatim (E1M-V2M101 / DEEPX)", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        schemaVersion: "1",
+        sku: "E1M-V2M101",
+        exact: false,
+        models: [
+          {
+            name: "tiny",
+            source: "/w/tiny_int8.tflite",
+            backends: [
+              {
+                backend: "deepx_dxm1",
+                variant: null,
+                table: null,
+                npuCoverage: "undetermined",
+                computeOnNpuPctMax: null,
+                npuPlacementPctReal: null,
+                uncostedCpuOpCount: 0,
+                basis: "static-screen",
+                confidence: "screening",
+                notes: [
+                  "deepx_dxm1 does not ingest 'tflite' source models; no score computed. This is not a verdict on the model, only on the format/backend pairing.",
+                ],
+                ops: [
+                  {
+                    op: "FULLY_CONNECTED",
+                    status: "unknown",
+                    reason: "format-not-accepted",
+                    macs: 0,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelFitData(outcome);
+  assert.equal(msg.ok, true);
+  assert.equal(msg.sku, "E1M-V2M101");
+  const backend = msg.models[0].backends[0];
+  assert.equal(backend.npuCoverage, "undetermined");
+  assert.equal(backend.ops[0].status, "unknown");
+  assert.equal(backend.ops[0].reason, "format-not-accepted");
+});
+
+// Semantics 3: only `basis: "compiled"` (or `"bench"`) may present a result as
+// proven, and a compiled report is the ONLY place `npuCoverage: "fits"` can
+// still appear. Both entries below are from one real `--exact` run against
+// vela 5.1.0 on E1M-AEN801.
+//
+// The second entry is the trap: a real compile keeps the STATIC per-op
+// verdicts, so `ops[0].status` reads `npu-eligible` while the compiler
+// actually placed 0 % on the NPU. Any consumer that recomputes a coverage
+// figure from `ops` on a compiled report contradicts the measured placement
+// sitting next to it.
+test("toModelFitData: compiled basis carries the real placement, not an op-derived one", () => {
+  const outcome = {
+    exitCode: 0,
+    message: "",
+    envelope: {
+      command: "model",
+      ok: true,
+      exitCode: 0,
+      project: {},
+      data: {
+        schemaVersion: "1",
+        sku: "E1M-AEN801",
+        exact: true,
+        models: [
+          {
+            name: "person_detect",
+            source: "/w/person_detect_int8.tflite",
+            backends: [
+              {
+                backend: "ethos_u",
+                variant: "u85",
+                table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+                npuCoverage: "fits",
+                computeOnNpuPctMax: null,
+                npuPlacementPctReal: 100.0,
+                uncostedCpuOpCount: 0,
+                basis: "compiled",
+                confidence: "certain",
+                notes: [
+                  "vela compiled for ethos-u85-256: 44/44 operators placed on the NPU (100%); arena 74480 bytes, SRAM 73 KiB.",
+                ],
+                ops: [],
+              },
+            ],
+          },
+          {
+            name: "float_fc",
+            source: "/w/float32_fc.tflite",
+            backends: [
+              {
+                backend: "ethos_u",
+                variant: "u85",
+                table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+                npuCoverage: "cpu-only",
+                computeOnNpuPctMax: null,
+                npuPlacementPctReal: 0.0,
+                uncostedCpuOpCount: 0,
+                basis: "compiled",
+                confidence: "certain",
+                notes: [
+                  "vela compiled for ethos-u85-256: 0/1 operators placed on the NPU (0%); arena 0 bytes, SRAM 0 KiB.",
+                ],
+                ops: [
+                  {
+                    op: "FULLY_CONNECTED",
+                    status: "npu-eligible",
+                    reason: "constraint-unchecked",
+                    macs: 8,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      issues: [],
+    },
+  };
+  const msg = toModelFitData(outcome);
+  assert.equal(msg.models.length, 2);
+  const proven = msg.models[0].backends[0];
+  assert.equal(proven.basis, "compiled");
+  assert.equal(proven.confidence, "certain");
+  assert.equal(proven.npuCoverage, "fits");
+  assert.equal(proven.npuPlacementPctReal, 100.0);
+  assert.equal(proven.computeOnNpuPctMax, null);
+  const contradictory = msg.models[1].backends[0];
+  assert.equal(contradictory.basis, "compiled");
+  assert.equal(contradictory.npuCoverage, "cpu-only");
+  assert.equal(contradictory.npuPlacementPctReal, 0.0);
+  assert.equal(contradictory.ops[0].status, "npu-eligible");
 });
 
 test("toModelFitData: null envelope -> ok:false + real cause (not 'update tan')", () => {

@@ -4,11 +4,19 @@ import { Button, EmptyState, Icon, Spinner } from "../../shared/ui";
 import type { ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
 import styles from "./ModelsView.module.css";
+import type { BackendCoverage, ModelCoverage } from "./coverage";
+import {
+  STATIC_SCREEN_CAVEAT,
+  UNDETERMINED_CAVEAT,
+  backendLabel,
+  coverageBadge,
+  coverageDetail,
+  cpuCertainOps,
+  isProven,
+} from "./coverage";
 import type {
   AbResultView,
-  BackendFit,
   ModelArtifact,
-  ModelFit,
   ModelListEntry,
   ModelToolchain,
   PrepResult,
@@ -17,68 +25,41 @@ import type {
 } from "./useModels";
 import { useModels } from "./useModels";
 
-type BadgeVariant = "ok" | "warn" | "err";
+// `info`/`neutral` exist for NPU coverage (see ./coverage.ts): a static-screen
+// positive must not borrow the green of a proven compile, and "not determined"
+// must not borrow the red of a real negative.
+type BadgeVariant = "ok" | "info" | "warn" | "err" | "neutral";
 
-function artifactVariant(artifact?: ModelArtifact): BadgeVariant {
+/** The artifact badge's own narrower set, so its label map stays exhaustive. */
+type ArtifactVariant = "ok" | "warn" | "err";
+
+function artifactVariant(artifact?: ModelArtifact): ArtifactVariant {
   if (!artifact || !artifact.exists) return "err";
   return artifact.stale ? "warn" : "ok";
 }
 
-const ARTIFACT_LABEL: Record<BadgeVariant, string> = {
+const ARTIFACT_LABEL: Record<ArtifactVariant, string> = {
   ok: "built",
   warn: "stale",
   err: "missing",
 };
-
-const FIT_SEVERITY: Record<string, number> = {
-  fits: 0,
-  "cpu-fallback": 1,
-  "no-fit": 2,
-};
-const FIT_VARIANT: Record<number, BadgeVariant> = {
-  0: "ok",
-  1: "warn",
-  2: "err",
-};
-const FIT_LABEL: Record<string, string> = {
-  fits: "fits",
-  "cpu-fallback": "cpu fallback",
-  "no-fit": "no fit",
-};
-
-/** Unrecognized verdicts default to severity 1 ("warn") — fail-safe so an
- *  unknown string can't render as green "ok", and can't be masked by a real
- *  "fits" (severity 0) when `worstByBackend` collapses per-backend results. */
-function fitSeverity(verdict: string): number {
-  return FIT_SEVERITY[verdict] ?? 1;
-}
-
-/** Collapse a model's per-backend verdicts to one worst-case badge per backend
- *  (E8 resolves 3 ethos_u configs → show one ethos_u at its worst verdict). */
-function worstByBackend(
-  backends?: BackendFit[],
-): { backend: string; verdict: string }[] {
-  const worst = new Map<string, string>();
-  for (const b of backends ?? []) {
-    const prev = worst.get(b.backend);
-    if (prev === undefined || fitSeverity(b.verdict) > fitSeverity(prev)) {
-      worst.set(b.backend, b.verdict);
-    }
-  }
-  return [...worst.entries()].map(([backend, verdict]) => ({
-    backend,
-    verdict,
-  }));
-}
 
 function formatBytes(bytes?: number): string | null {
   if (bytes === undefined) return null;
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-function Badge({ variant, label }: { variant: BadgeVariant; label: string }) {
+function Badge({
+  variant,
+  label,
+  title,
+}: {
+  variant: BadgeVariant;
+  label: string;
+  title?: string;
+}) {
   return (
-    <span className={styles.badge} data-variant={variant}>
+    <span className={styles.badge} data-variant={variant} title={title}>
       {label}
     </span>
   );
@@ -245,14 +226,134 @@ function AbReport({
   );
 }
 
+/** One backend's coverage badge, e.g. `Ethos-U85: all ops NPU-eligible`.
+ *  Every entry tan sent is rendered — no per-backend collapse: `tan model
+ *  check` emits exactly one report per declared backend, and collapsing would
+ *  only be a way to hide one of them if that ever stopped being true. */
+function CoverageBadges({ backends }: { backends?: BackendCoverage[] }) {
+  if (!backends || backends.length === 0) {
+    return <span className={styles.hint}>—</span>;
+  }
+  return (
+    <>
+      {backends.map((b, i) => {
+        const badge = coverageBadge(b);
+        return (
+          <Badge
+            key={`${b.backend}-${i}`}
+            variant={badge.variant}
+            title={badge.title}
+            label={`${backendLabel(b.backend, b.variant)}: ${badge.label}`}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/** One backend's detail block. Mirrors `tan model check --format text`'s own
+ *  `render_backend_report`, including its two suppressions: on a proven
+ *  (`basis: compiled|bench`) report neither the op-derived percentage nor the
+ *  certain-CPU list is drawn, because tan keeps the STATIC per-op verdicts
+ *  alongside the real placement and the two can legitimately disagree. Notes
+ *  are tan's own words, rendered verbatim — they carry the caveats, the
+ *  refusals and the remediation commands. */
+function CoverageBackendBlock({
+  backend,
+  sku,
+}: {
+  backend: BackendCoverage;
+  sku?: string;
+}) {
+  const badge = coverageBadge(backend);
+  const detail = coverageDetail(backend);
+  const cpuOps = cpuCertainOps(backend);
+  return (
+    <div className={styles.coverageBackend}>
+      <p className={styles.coverageHead}>
+        <span className={styles.mono}>
+          {backendLabel(backend.backend, backend.variant)}
+          {sku ? ` (${sku})` : ""}
+        </span>
+        <Badge
+          variant={badge.variant}
+          label={badge.label}
+          title={badge.title}
+        />
+        <span className={styles.bytes}>
+          {isProven(backend.basis)
+            ? `proven — basis: ${backend.basis}, confidence: ${backend.confidence}`
+            : `eligibility screen — basis: ${backend.basis}, confidence: ${backend.confidence}`}
+        </span>
+      </p>
+      {detail && <p className={styles.suggestion}>{detail}</p>}
+      {cpuOps && <p className={styles.suggestion}>{cpuOps}</p>}
+      {(backend.notes ?? []).map((note, i) => (
+        <p key={i} className={styles.hint}>
+          {note}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** The detail behind the table's badges: what was screened, on what basis,
+ *  and every caveat tan attached — plus the two standing caveats the badges
+ *  alone cannot carry (a static positive is eligibility, not a promise; "not
+ *  determined" is absent data, not a negative verdict). */
+function CoverageReport({
+  models,
+  sku,
+}: {
+  models: ModelCoverage[];
+  sku?: string;
+}) {
+  if (models.length === 0) return null;
+  const backends = models.flatMap((m) => m.backends ?? []);
+  const anyScreened = backends.some((b) => !isProven(b.basis));
+  const anyUndetermined = backends.some(
+    (b) => b.npuCoverage === "undetermined",
+  );
+  return (
+    <section className={styles.section} aria-labelledby="coverage-title">
+      <h3 id="coverage-title" className={styles.sectionTitle}>
+        NPU coverage detail
+      </h3>
+      {anyScreened && <p className={styles.hint}>{STATIC_SCREEN_CAVEAT}</p>}
+      {anyUndetermined && <p className={styles.hint}>{UNDETERMINED_CAVEAT}</p>}
+      {models.map((m) => (
+        <div key={m.name} className={styles.coverageModel}>
+          <p className={styles.coverageModelHead}>
+            <span className={styles.mono}>{m.name}</span>
+            {m.source && <span className={styles.bytes}>{m.source}</span>}
+          </p>
+          {(m.backends ?? []).length === 0 ? (
+            <p className={styles.hint}>
+              No NPU backend was screened for this model.
+            </p>
+          ) : (
+            (m.backends ?? []).map((b, i) => (
+              <CoverageBackendBlock
+                key={`${b.backend}-${i}`}
+                backend={b}
+                sku={sku}
+              />
+            ))
+          )}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function ModelRow({
   model,
-  fit,
+  coverage,
   building,
   onBuild,
 }: {
   model: ModelListEntry;
-  fit?: ModelFit;
+  coverage?: ModelCoverage;
   building: boolean;
   onBuild: () => void;
 }) {
@@ -267,22 +368,7 @@ function ModelRow({
         {bytes && <span className={styles.bytes}>{bytes}</span>}
       </td>
       <td>
-        {fit?.error ? (
-          <span className={styles.badge} data-variant="err" title={fit.error}>
-            check error
-          </span>
-        ) : (
-          worstByBackend(fit?.backends).map(({ backend, verdict }) => (
-            <Badge
-              key={backend}
-              variant={FIT_VARIANT[fitSeverity(verdict)]}
-              label={`${backend}: ${FIT_LABEL[verdict] ?? verdict}`}
-            />
-          ))
-        )}
-        {fit?.suggestion && (
-          <p className={styles.suggestion}>{fit.suggestion}</p>
-        )}
+        <CoverageBadges backends={coverage?.backends} />
       </td>
       <td>
         <Button appearance="secondary" onClick={onBuild} disabled={building}>
@@ -355,11 +441,12 @@ export function ModelsView() {
     building,
     build,
     refresh,
-    fits,
-    fitOk,
-    fitIssues,
-    checkingFit,
-    checkFit,
+    coverage,
+    coverageSku,
+    coverageOk,
+    coverageIssues,
+    checkingCoverage,
+    checkCoverage,
     prep,
     prepping,
     prepModel,
@@ -399,8 +486,8 @@ export function ModelsView() {
             >
               Edit models in Configurator
             </button>
-            <Button onClick={checkFit} disabled={checkingFit}>
-              {checkingFit ? "Checking fit…" : "Check fit"}
+            <Button onClick={checkCoverage} disabled={checkingCoverage}>
+              {checkingCoverage ? "Checking…" : "Check NPU coverage"}
             </Button>
             <Button onClick={prepModel} disabled={prepping}>
               {prepping ? "Prepping…" : "Prep model"}
@@ -419,7 +506,7 @@ export function ModelsView() {
       </header>
 
       <IssuesBanner ok={ok} issues={issues} />
-      <IssuesBanner ok={fitOk} issues={fitIssues} />
+      <IssuesBanner ok={coverageOk} issues={coverageIssues} />
       {prep && <PrepReport prep={prep} />}
       {(runResult || !runOk) && (
         <RunReport ok={runOk} run={runResult} issues={runIssues} />
@@ -454,7 +541,7 @@ export function ModelsView() {
                 <th>Name</th>
                 <th>Source</th>
                 <th>Artifact</th>
-                <th>Fit</th>
+                <th>NPU coverage</th>
                 <th />
               </tr>
             </thead>
@@ -463,7 +550,7 @@ export function ModelsView() {
                 <ModelRow
                   key={m.name}
                   model={m}
-                  fit={fits.find((f) => f.name === m.name)}
+                  coverage={coverage.find((c) => c.name === m.name)}
                   building={building}
                   onBuild={() => build(m.name)}
                 />
@@ -472,6 +559,8 @@ export function ModelsView() {
           </table>
         )}
       </section>
+
+      <CoverageReport models={coverage} sku={coverageSku} />
 
       <section className={styles.section} aria-labelledby="zoo-title">
         <h3 id="zoo-title" className={styles.sectionTitle}>

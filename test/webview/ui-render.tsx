@@ -17,9 +17,18 @@ import { SdkView } from "../../packages/alp-webview/src/features/sdk";
 import { ToolchainDoctorView } from "../../packages/alp-webview/src/features/toolchain-doctor";
 import { HardwareExplorerView } from "../../packages/alp-webview/src/features/hardware-explorer";
 import { BuildPlanView } from "../../packages/alp-webview/src/features/build-plan";
+import { ModelsView } from "../../packages/alp-webview/src/features/models";
 
 const g = globalThis as any;
 const tick = () => new Promise((r) => setTimeout(r, 0));
+// React 19 schedules passive effects off the main task queue, so a bigger
+// component tree can still be un-mounted after a couple of ticks — the Models
+// panel measurably was, and its `feedState` payload arrived before its
+// `useEffect` had subscribed, leaving it rendering an empty state. Settle on a
+// budget rather than a fixed pair of ticks.
+const settle = async (n = 8) => {
+  for (let i = 0; i < n; i += 1) await tick();
+};
 
 // Error boundary that records the actual render error instead of letting React
 // swallow it — so a component that crashes shows up as a PROBLEM, not a pass.
@@ -121,6 +130,123 @@ function feedState() {
       warnings: [],
     },
   });
+  // Models panel: a `tan model list`/`doctor` merge, plus a REAL
+  // `tan model check --board board.yaml --format json` payload captured on
+  // E1M-AEN801 — the SKU resolves `ethos_u` only, so every row below is one
+  // tan really emits for it: a static screen against
+  // metadata/npu_ops/ethos_u/u85@vela-5.1.0.json, a real `--exact` vela 5.1.0
+  // compile, and an `undetermined` from a source format ethos_u does not
+  // ingest. All three vocabularies are exercised so a regression in the
+  // ADR-0028 mapping shows up as a rendered problem, not a silent relabel.
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "modelsData",
+    ok: true,
+    models: [
+      {
+        name: "tiny",
+        source: "tiny_int8.tflite",
+        artifact: { exists: true, bytes: 712, stale: false },
+      },
+      {
+        name: "person_detect",
+        source: "person_detect_int8.tflite",
+        artifact: { exists: false },
+      },
+      {
+        name: "yolo",
+        source: "yolo11n.onnx",
+        artifact: { exists: false },
+      },
+    ],
+    toolchains: [
+      { backend: "ethos_u", tool: "vela", available: true, version: "5.1.0" },
+    ],
+    issues: [],
+  });
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "modelFitData",
+    ok: true,
+    sku: "E1M-AEN801",
+    models: [
+      {
+        name: "tiny",
+        source: "/ws/tiny_int8.tflite",
+        backends: [
+          {
+            backend: "ethos_u",
+            variant: "u85",
+            table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+            npuCoverage: "full-eligible",
+            computeOnNpuPctMax: 100.0,
+            npuPlacementPctReal: null,
+            uncostedCpuOpCount: 0,
+            basis: "static-screen",
+            confidence: "screening",
+            notes: [
+              "static screen (screening): operator-name membership against u85@vela-5.1.0.json only.",
+            ],
+            ops: [
+              {
+                op: "FULLY_CONNECTED",
+                status: "npu-eligible",
+                reason: "constraint-unchecked",
+                macs: 8,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "person_detect",
+        source: "/ws/person_detect_int8.tflite",
+        backends: [
+          {
+            backend: "ethos_u",
+            variant: "u85",
+            table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+            npuCoverage: "fits",
+            computeOnNpuPctMax: null,
+            npuPlacementPctReal: 100.0,
+            uncostedCpuOpCount: 0,
+            basis: "compiled",
+            confidence: "certain",
+            notes: [
+              "vela compiled for ethos-u85-256: 44/44 operators placed on the NPU (100%); arena 74480 bytes, SRAM 73 KiB.",
+            ],
+            ops: [],
+          },
+        ],
+      },
+      {
+        name: "yolo",
+        source: "/ws/yolo11n.onnx",
+        backends: [
+          {
+            backend: "ethos_u",
+            variant: "u85",
+            table: null,
+            npuCoverage: "undetermined",
+            computeOnNpuPctMax: null,
+            npuPlacementPctReal: null,
+            uncostedCpuOpCount: 0,
+            basis: "static-screen",
+            confidence: "screening",
+            notes: [
+              "ethos_u does not ingest 'onnx' source models; no score computed. This is not a verdict on the model, only on the format/backend pairing.",
+            ],
+            ops: [],
+          },
+        ],
+      },
+    ],
+    issues: [],
+  });
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "zooData",
+    ok: true,
+    entries: [],
+    issues: [],
+  });
   g.__ALP_POST_TO_WEBVIEW__({
     type: "systemManifestData",
     manifest: null,
@@ -153,6 +279,7 @@ const VIEWS: Array<[string, React.FC]> = [
   ["toolchain-doctor", ToolchainDoctorView],
   ["hardware-explorer", HardwareExplorerView],
   ["build-plan", BuildPlanView],
+  ["models", ModelsView],
 ];
 
 // Text a broken/degraded UI shows — flagged so we SEE the problem, not skip it.
@@ -187,14 +314,11 @@ async function main() {
           React.createElement(AppProvider, null, React.createElement(View)),
         ),
       );
-      await tick();
-      await tick(); // let AppProvider's message subscription mount (useEffect)
+      await settle(); // let every message subscription mount (useEffect)
       feedState();
-      await tick();
-      await tick();
+      await settle();
       feedState(); // re-dispatch in case a subscription mounted late
-      await tick();
-      await tick();
+      await settle();
     } catch (err) {
       ok = false;
       problems.push(`${mode}: RENDER THREW — ${String(err)}`);
@@ -242,6 +366,34 @@ async function main() {
       }
       if (!text.includes("hub")) {
         problems.push("sidebar-hub: Hub link missing");
+      }
+    }
+
+    // The Models panel must never render the retired `fits | cpu-fallback |
+    // no-fit` vocabulary, and must never turn `undetermined` into a negative.
+    if (mode === "models") {
+      for (const retired of ["cpu fallback", "no fit", ": fits"]) {
+        if (text.includes(retired)) {
+          problems.push(
+            `models: retired verdict vocabulary rendered ("${retired}")`,
+          );
+        }
+      }
+      if (!text.includes("not determined")) {
+        problems.push(
+          "models: `undetermined` backend not rendered as 'not determined'",
+        );
+      }
+      if (!text.includes("all ops npu-eligible")) {
+        problems.push(
+          "models: static-screen positive not rendered as eligibility",
+        );
+      }
+      if (!text.includes("all ops on npu (proven)")) {
+        problems.push("models: compiled result not rendered as proven");
+      }
+      if (!text.includes("falls back to the cpu silently")) {
+        problems.push("models: silent-CPU-fallback caveat missing from the UI");
       }
     }
 

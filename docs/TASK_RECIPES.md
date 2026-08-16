@@ -72,21 +72,34 @@ tan completion --shell bash
 tan completion --shell zsh
 tan completion --shell fish
 
-## 8. Pre-flight Model Fit Check
+## 8. Pre-flight NPU Coverage Check
 
 VS Code:
 
-- Alp: Models panel — per-model fit badge (green/yellow/red = fits/cpu-fallback/no-fit, before build)
+- Alp: Models panel — "Check NPU coverage", then a per-model badge per SoM backend (before build)
 
 CLI:
 
-tan model check <model.tflite|.onnx> --sku <SKU>
-tan model check --board board.yaml [--model NAME] [--format human|json]
+tan model check --board board.yaml [--format text|json]
+tan model check --board board.yaml --exact          # real vela compile (Ethos-U only)
 
-Static PRE-FLIGHT fit/perf, OFFLINE, no toolchain. Per SoM-backend verdict
-(fits | cpu-fallback | no-fit) plus est SRAM (vs the SoC arena budget), est
-latency, op-coverage %, and unsupported ops. Labelled source:static (tier-1,
-biased CONSERVATIVE — never over-promises "fits"); verified on silicon later.
+Static NPU-eligibility screen, OFFLINE, no toolchain. Per SoM-backend
+npuCoverage of full-eligible | partial | cpu-only | undetermined, at
+basis: static-screen, plus a MAC-weighted UPPER bound (computeOnNpuPctMax)
+and the operators that are certain CPU fallback.
+
+Read it as eligibility, not a promise: an eligible operator still carries
+quantization/shape/dtype constraints the screen cannot check, and the model
+runs either way — an operator the NPU cannot take falls back to the CPU
+silently rather than failing.
+
+`undetermined` means NO DATA (no support table for that backend, or a source
+format it does not ingest). It is not a finding that the model will not run.
+
+`--exact` upgrades Ethos-U to basis: compiled by running the real `vela`
+(`pip install alp-tan[model-compile]`), which reports the measured operator
+placement (npuPlacementPctReal). Only basis: compiled or basis: bench may be
+read as proven.
 
 ## 9. Quantize a Model to INT8
 

@@ -166,14 +166,15 @@ is a host-side, pre-build check.
 
 | GUI action | Shells | What it shows |
 |------------|--------|---------------|
-| **Fit badge** (green / yellow / red) | `tan model check <model.tflite\|.onnx> --sku <SKU>` (or `--board board.yaml [--model NAME]`) `[--format human\|json]` | Static, offline pre-flight verdict per SoM backend — `fits` (green) / `cpu-fallback` (yellow) / `no-fit` (red) — with est. SRAM (vs the SoC arena budget), est. latency, op-coverage %, and unsupported ops. No toolchain needed. |
+| **NPU-coverage badge** | `tan model check --board board.yaml [--exact] [--format text\|json]` | Static, offline NPU-eligibility screen per SoM backend — `full-eligible` / `partial` / `cpu-only` / `undetermined` — with the basis it was decided on, a MAC-weighted upper bound on NPU-bound compute, the operators that are certain CPU fallback, and every caveat in tan's own words. No toolchain needed; `--exact` runs the real `vela` for Ethos-U and reports the measured operator placement instead. |
 | **Prep Model** | `tan model prep <model.onnx\|.tflite> --calibration <dir> [--out] [--per-channel] [--min-samples N]` | License-free INT8 quantize (onnxruntime QDQ) plus an fp32-vs-int8 accuracy report (top-1 agreement %, mean cosine, max-abs-err, `good`/`degraded` verdict + guidance). A `.tflite` input is converted to ONNX first (tf2onnx). |
 | **Run Model** | `tan model run <model.onnx> [--input FILE.npy] [--expected LABEL] [--runs N]` | Host reference run (backend `cpu-host`): functional result + host latency + accuracy. |
 | **A-B Compare** | `tan model ab <a.onnx> <b.onnx> [--input] [--runs]` | Runs two models on the same input (host reference): latency + size delta. |
 | **Model Zoo Gallery** | `tan model zoo [--sku <SKU> \| --board board.yaml] [--format]` | Browse curated model-zoo entries, each marked `runs_here` for your SoM. One-click **Add** shells `tan model add <zoo-id> [--board board.yaml] [--name NAME] [--models-dir DIR]` to append `{name, source}` to `board.yaml` `models:` (non-destructive — a duplicate name errors). |
 
 > **Honest caveats — read before trusting a number:**
-> - The **fit badge** is a *static, conservative estimate* (labelled `source:static`, biased to never over-promise `fits`). It is verified on real silicon later, not by this check.
+> - The **NPU-coverage badge** reports *eligibility*, not a guarantee, unless the row says **proven**: an eligible operator still carries quantization, shape and dtype constraints a static screen cannot check. The model runs either way — an operator the NPU cannot take falls back to the CPU silently rather than failing. Only `basis: compiled` (a real `--exact` compile) or `basis: bench` proves NPU execution.
+> - **`undetermined` is not `cpu-only`.** It means there is no data for that backend — a support table absent by decision (DEEPX DX-M1 ships none, and it is the headline NPU of E1M-V2M101 / E1M-V2M102), or a source format the backend does not ingest. It is never a finding that the model will not run.
 > - **Run Model** and **A-B Compare** are *host reference* runs (backend `cpu-host`) — **not** the target SoM's performance. `peak_sram_kib` / `power_mj` are `null` on the host; on-device power + measurement are hardware-gated (they need the EVK power-topology + Yocto NPU runtimes).
 > - Real curated zoo entries, PyTorch/Keras→ONNX conversion, and per-backend compile defaults are follow-ons.
 

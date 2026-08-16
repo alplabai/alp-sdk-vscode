@@ -154,9 +154,10 @@ class ModelsPanel {
     );
   }
 
-  /** Run the static fit check on every board.yaml model
-   *  (`tan model check --board board.yaml`) and post the per-model verdicts.
-   *  Thin: all fit logic lives in `tan`/alp-sdk; this only shells + shapes. */
+  /** Run the static NPU-eligibility screen on every board.yaml model
+   *  (`tan model check --board board.yaml`) and post the per-model coverage
+   *  reports. Thin: the screen, its vocabulary and every caveat live in
+   *  `tan`/alp-sdk; this only shells + shapes. */
   private async checkFit(): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const { outcome } = await runAlpCommand(
