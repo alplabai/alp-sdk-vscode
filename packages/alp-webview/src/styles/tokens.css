@@ -144,6 +144,26 @@
   --space-10: 32px;
 }
 
+/* ── Layout width ───────────────────────────────────────────────────────── */
+/*
+ * Every view used to hard-code its own cap — 640, 720, 860, 920 — so a panel
+ * opened in a wide editor sat in a narrow column with most of the window
+ * empty. These two are the single place that decides it now.
+ *
+ * TWO tokens, not one, because "use the width" and "stay readable" are
+ * different jobs. Card grids, tables and toolbars want the whole window and
+ * reflow to fill it. A PARAGRAPH does not: past roughly 90 characters the eye
+ * loses the line start on the way back, so prose keeps its own measure while
+ * the layout around it grows.
+ */
+:root {
+  /* The page shell. Wide enough to use a real monitor, capped so a 5K display
+     does not stretch a toolbar across a metre of glass. */
+  --content-max: 1600px;
+  /* Running text, in characters rather than pixels so it tracks the font. */
+  --prose-max: 90ch;
+}
+
 /* ── Border radius ──────────────────────────────────────────────────────── */
 :root {
   --radius-sm: 2px;

@@ -11,7 +11,9 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 720px;
+  /* Was a hard 720px — the wizard sat in a narrow column with the template
+     grid wrapping at four cards while the window had room for eight. */
+  max-width: var(--content-max);
   margin: 0 auto;
   min-height: 0;
 }
