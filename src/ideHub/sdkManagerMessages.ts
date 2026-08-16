@@ -6,7 +6,8 @@
 // it handles the SDK-specific message types and returns true, or returns false
 // so the host handles its own `ready`/`runCommand`/`openUrl`/`closePanel`.
 //
-// The `handleUninstallSdk` path deletes a folder from disk (fs.rmSync) after a
+// The `handleUninstallSdk` path deletes a folder from disk (`removeSdkTree`,
+// which clears read-only attributes and retries — see that module) after a
 // modal confirmation — the confirm, the Alp-managed-vs-external path check, and
 // the active-pointer clear are preserved exactly as they were in the panel.
 
@@ -32,6 +33,7 @@ import {
   setActiveSdk,
   warnIfWestManifestDangling,
 } from "../sdk/activeSdk";
+import { removalFailureMessage, removeSdkTree } from "../sdk/removeTree";
 import { writeAlpSetting } from "../sdk/settingsWrite";
 import { log as logChannel } from "../util";
 import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
@@ -160,16 +162,30 @@ export function createSdkMessageHandler(
     );
     if (confirm !== "deleteFromDisk") return;
 
-    try {
-      fs.rmSync(target, { recursive: true, force: true });
-    } catch (err) {
+    // NOT a bare `fs.rmSync`. An SDK is installed with `git clone`, and on
+    // Windows git's object files carry the read-only attribute, which
+    // `force: true` does not clear — so the delete failed with EPERM every
+    // time, while the message told the user to close their editor. See
+    // `removeSdkTree`: it clears the attributes, retries, and only then calls
+    // the remaining failure a held handle.
+    const removal = removeSdkTree(target);
+    if (removal.ok) {
+      if (removal.clearedAttributes) {
+        // Channel only. The user asked for a delete and got one; how many
+        // read-only bits it took is a fact for whoever reads a report later.
+        logChannel(
+          `[sdk] removed ${target} after clearing read-only attributes`,
+        );
+      }
+    } else {
       notifyAsync(
         planFailure({
           operation: "Removing the SDK",
-          cause:
-            "Alp: couldn't delete the SDK folder — close anything using it " +
-            "(an editor, a terminal, a running build), then try again.",
-          detail: `${target}: ${String(err)}`,
+          // The cause is DECIDED, not guessed: the advice differs per cause,
+          // and telling someone to close an editor over a permissions problem
+          // is a wrong instruction, not merely an unhelpful one.
+          cause: removalFailureMessage(removal.cause ?? "other"),
+          detail: `${target}: ${removal.error ?? "unknown error"}`,
         }),
       );
       return;

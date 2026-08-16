@@ -50,6 +50,28 @@ only Marketplace/Open VSX users opted into pre-release updates.
   the pin at or above the floor, so the managed binary can never be one this
   extension would then warn about.
 
+- **Removing a downloaded SDK no longer fails on Windows, and a failure that
+  remains says the right thing.** The panel deleted the folder with a bare
+  `fs.rmSync(target, { recursive: true, force: true })`. An SDK is installed
+  with `git clone`, nothing strips `.git`, and git on Windows writes its pack
+  and object files with the **read-only attribute** — which `force: true` does
+  not clear (it only swallows `ENOENT`). So the delete failed with `EPERM`
+  every single time, deterministically, while the message told the user to
+  "close anything using it" — advice that cannot work for that cause and sent
+  people looking in the wrong place. Removal now clears the attributes and
+  retries, which fixes the read-only case outright and, just as importantly,
+  makes the remaining failure diagnosable: if it still fails after everything
+  this process is allowed to change, something is genuinely holding a file
+  open, and only then does the message say to close it. A permissions failure
+  gets its own sentence instead of being blamed on an open editor. The walk
+  skips symlinks — `fs.chmodSync` follows them, so an unguarded pass would
+  rewrite the mode of a directory outside the tree being deleted. Covered by
+  real-filesystem tests rather than mocks, and six mutations each produced a
+  RED. This is our bug, not the CLI's: `tan sdk` has no remove verb at all
+  (`list`, `current`, `install`, `switch`, and the last two refuse in the
+  pinned v0.6.0-rc1), so every consumer deletes the tree itself — asked for
+  upstream as tan-cli#790.
+
 - **New Project groups the 100 SDK examples under their categories (#482, part).**
   The picker already had a search box and domain filter chips (#98, 2026-07-13),
   so #482's "one flat block with no way to narrow them" was out of date the day
