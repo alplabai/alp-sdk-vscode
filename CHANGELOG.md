@@ -64,6 +64,24 @@ only Marketplace/Open VSX users opted into pre-release updates.
   drop to two or one as it narrows. Left alone on purpose: the Configurator's
   section widths and the New Project name field, which are FORM measures — a
   text input stretched across a monitor is worse, not better.
+- **Hardware Explorer's raw-value columns are monospace again, which is what
+  they always claimed to be.** The class is called `.mono` and the note above
+  `.section` says the pad-route and I2C tables are wide because of "mono
+  addresses, pins" — but the declaration itself had drifted to
+  `var(--vscode-font-family, system-ui, sans-serif)`. So the one panel in the
+  extension whose content is almost entirely hex and identifiers — core and
+  toolchain IDs, app paths, `E1M_GPIO_IO11`-style signal names, dispatch
+  targets, bus and chip names, I2C addresses like `0x6a` — rendered all of it
+  proportionally at 0.82rem. Those columns are read character by character, and
+  `0x6a` against `0x68` is exactly the comparison a proportional face makes
+  harder. They now use `--text-mono`. The `Pin` column of the pad-route table
+  joins them: it holds a board value (`dispatch_pin: 2`) and sat between two
+  monospace columns in the UI font, the only raw column in the table left out.
+  Note this is not the reverse of the Dependencies change above — there, two
+  version cells were the sole monospace content in a panel of prose and became
+  an island; here monospace IS the panel. Both changes are the same underlying
+  rule: reach for `--text-mono` when a value should be read character by
+  character, and never for `--vscode-editor-font-family`.
 - **The Dependencies table's version columns stop borrowing your editor's
   font.** `Installed` and `Latest` set
   `font-family: var(--vscode-editor-font-family, monospace)` — the font from
