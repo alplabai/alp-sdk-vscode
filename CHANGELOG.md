@@ -50,6 +50,37 @@ only Marketplace/Open VSX users opted into pre-release updates.
   the pin at or above the floor, so the managed binary can never be one this
   extension would then warn about.
 
+- **A failed SDK removal now says which failure it was, instead of blaming an
+  open editor for everything.** The panel deleted the folder with a bare
+  `fs.rmSync(target, { recursive: true, force: true })` and, on any error, told
+  the user to "close anything using it (an editor, a terminal, a running
+  build)". For a permissions problem that is not merely unhelpful — it is a
+  wrong instruction that sends someone hunting a holder that does not exist.
+  Removal now clears read-only attributes, retries, and reports the cause it
+  actually ended on, with a sentence per cause. The attribute pass fixes a real
+  case on macOS and Linux: a read-only DIRECTORY defeats the delete of every
+  child there, and Node does nothing about it. The walk skips symlinks —
+  `fs.chmodSync` follows them, so an unguarded pass would rewrite the mode of a
+  directory outside the tree being deleted. Six mutations, each producing a RED.
+
+  **Correction to an earlier claim, recorded because it was measured.** This
+  was first written up as a Windows fix, on the theory that git marks its pack
+  and object files read-only and `force: true` does not clear them. Node
+  already handles that: its internal rimraf carries `fixWinEPERM`
+  (chmod-and-retry, Windows-only, 4 occurrences in the shipped v24 binary), and
+  on the Windows runner a `0o444` file did not make `rmSync` refuse at all —
+  the tests arranging one skip there and print the reason. **The reported
+  Windows permission error is therefore still unexplained.** After Node's own
+  retry the remaining candidates are a held file handle, the 260-character path
+  limit (a bootstrapped SDK is about 3 GB and deep), or a synced or junctioned
+  folder; telling them apart needs the raw error from the "Alp SDK" output
+  channel, which this change is what finally puts there in a usable form.
+
+  Not the CLI's bug either: `tan sdk` has no remove verb at all — `list`,
+  `current`, `install`, `switch`, and the last two refuse in the pinned
+  v0.6.0-rc1 — so every consumer deletes the tree itself. Asked for upstream as
+  tan-cli#790.
+
 - **New Project groups the 100 SDK examples under their categories (#482, part).**
   The picker already had a search box and domain filter chips (#98, 2026-07-13),
   so #482's "one flat block with no way to narrow them" was out of date the day
