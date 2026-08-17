@@ -114,9 +114,32 @@ test("undetermined never renders as a negative verdict", () => {
 });
 
 test("undetermined draws no percentage line at all", () => {
+  // The ops are DETERMINATE and the percentage is present on purpose. With
+  // the empty `ops: []` this used to carry, `coverageDetail`'s
+  // `determined.length === 0` guard returned null too, so deleting the
+  // `undetermined` guard left this test green — the two guards masked each
+  // other and neither was actually covered. Now only the `undetermined` guard
+  // can produce the null.
   assert.equal(
     coverageDetail(
-      backend({ npuCoverage: "undetermined", computeOnNpuPctMax: null }),
+      backend({
+        npuCoverage: "undetermined",
+        computeOnNpuPctMax: 75.0,
+        ops: [
+          {
+            op: "CONV_2D",
+            status: "npu-eligible",
+            reason: "constraint-unchecked",
+            macs: 30,
+          },
+          {
+            op: "CUSTOM",
+            status: "cpu-certain",
+            reason: "op-not-in-table",
+            macs: 10,
+          },
+        ],
+      }),
     ),
     null,
   );
@@ -127,9 +150,13 @@ test("ops whose status is `unknown` never become a 0/N eligibility figure", () =
   // verdict per input op so a consumer can see WHICH ops were skipped.
   // Counting those against `ops.length` reads as "0/2 ops are NPU-eligible" —
   // exactly the `cpu-only` misreading semantics 1 forbids.
+  //
+  // `npuCoverage` is `partial`, not `undetermined`: this test is about the
+  // `determined.length === 0` guard, and with `undetermined` the guard above
+  // fired first and answered for it.
   const line = coverageDetail(
     backend({
-      npuCoverage: "undetermined",
+      npuCoverage: "partial",
       computeOnNpuPctMax: null,
       ops: [
         {
@@ -316,6 +343,63 @@ test("a compiled report never recomputes coverage from the kept static ops", () 
   );
   assert.equal(cpuCertainOps(b), null);
   assert.equal(coverageBadge(b).label, "CPU only (proven)");
+  // The VARIANT, not only the label. `cpu-only` is a warning and never an
+  // error — the model still runs, the NPU just does not take any of it — and
+  // the only test that said so used the fixture's default `static-screen`
+  // basis, so it exercised `SCREENED_BADGE` and left `PROVEN_BADGE`'s copy of
+  // the same rule unguarded. This is the path a customer reaches with
+  // `--exact`.
+  assert.equal(coverageBadge(b).variant, "warn");
+  assert.notEqual(coverageBadge(b).variant, "err");
+});
+
+test("a compiled report reads the placement, never the MAC-weighted bound", () => {
+  // The two percentages are DIFFERENT UNITS: `computeOnNpuPctMax` is a
+  // MAC-weighted upper bound from the static screen, `npuPlacementPctReal` is
+  // a real operator-count placement from the compiler. Every other proven
+  // fixture leaves `computeOnNpuPctMax` null, so nothing discriminated which
+  // field the proven branch reads — swapping it to
+  // `(b.computeOnNpuPctMax ?? b.npuPlacementPctReal)` left the suite green.
+  // Both are set here, and they disagree.
+  const line = coverageDetail(
+    backend({
+      npuCoverage: "partial",
+      computeOnNpuPctMax: 88.0,
+      npuPlacementPctReal: 12.0,
+      basis: "compiled",
+      confidence: "certain",
+      ops: [],
+    }),
+  );
+  assert.equal(
+    line,
+    "12% of operators placed on the NPU — measured by the compiler",
+  );
+  assert.doesNotMatch(line, /88/);
+});
+
+test("a bench result says the placement figure was never reported", () => {
+  // `bench` is proven, so `coverageDetail` takes the proven branch — which
+  // reads `npuPlacementPctReal`, documented as compile-only. A bench run
+  // therefore rendered a "(proven)" badge and nothing under it, which reads as
+  // a withheld result. It is not withheld; it was never reported.
+  const b = backend({
+    npuCoverage: "partial",
+    computeOnNpuPctMax: 73.2,
+    npuPlacementPctReal: null,
+    basis: "bench",
+    confidence: "certain",
+    ops: [],
+  });
+  assert.equal(coverageBadge(b).label, "some ops on NPU (proven)");
+  assert.equal(
+    coverageDetail(b),
+    "no operator-placement figure reported at basis: bench",
+  );
+  // And it must NOT quietly reach for the static upper bound instead: 73.2 is
+  // a MAC-weighted screen figure, not a placement, and printing it under a
+  // "proven" badge would present a screen as a measurement.
+  assert.doesNotMatch(coverageDetail(b), /73/);
 });
 
 test("the certain-CPU list is drawn for a static screen only", () => {

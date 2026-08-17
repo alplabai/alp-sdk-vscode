@@ -286,6 +286,18 @@ export function coverageDetail(b: BackendCoverage): string | null {
   // feature of the E1M-V2M101 / E1M-V2M102 SKUs.
   if (b.npuCoverage === "undetermined") return null;
   if (isProven(b.basis)) {
+    // ABSENT is the `basis: "bench"` case, and it is a real one:
+    // `npuPlacementPctReal` is documented as compile-only, so a bench run
+    // reaches the proven branch and can never satisfy it. Saying nothing
+    // renders a "(proven)" badge with an empty space beneath it, which reads
+    // as a result withheld rather than one that was never reported.
+    if (b.npuPlacementPctReal === null || b.npuPlacementPctReal === undefined) {
+      return `no operator-placement figure reported at basis: ${reported(b.basis) ?? NOT_REPORTED}`;
+    }
+    // PRESENT but not a percentage is a different thing — tan is not supposed
+    // to emit it at all, and `usablePct` drops it rather than rendering
+    // "Infinity% of operators placed on the NPU". Nothing honest can be said
+    // about a number we refuse to believe, so nothing is.
     const placed = usablePct(b.npuPlacementPctReal);
     if (placed === null) return null;
     return `${formatPct(placed)} of operators placed on the NPU — measured by the compiler`;
