@@ -116,6 +116,19 @@ jobs:
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 
+      # `node --test "test/*.test.js"` above does NOT pick this up: the harness
+      # is `test/webview/run.mjs`, a directory deeper than the glob and not a
+      # `.test.js`. It renders every webview view under jsdom, clicks every
+      # button, and asserts on the rendered text — the only thing in the repo
+      # that checks what a panel actually SAYS. It had been running in no
+      # workflow at all, so its assertions were documentation: on the
+      # model-edge-ai line a models-panel block grew to 209 lines while nothing
+      # ever executed them outside a developer's terminal.
+      #
+      # It runs after Compile because it imports the built webview sources.
+      - name: Webview render harness (every view, every button)
+        run: pnpm run test:e2e:webview
+
       - name: Gate — extensionDependencies resolve on the Marketplace + Open VSX
         run: node scripts/check-extension-deps.mjs
 
