@@ -9,6 +9,7 @@ import {
   STATIC_SCREEN_CAVEAT,
   UNDETERMINED_CAVEAT,
   backendLabel,
+  basisSummary,
   coverageBadge,
   coverageDetail,
   cpuCertainOps,
@@ -315,11 +316,7 @@ function CoverageBackendBlock({
           label={badge.label}
           title={badge.title}
         />
-        <span className={styles.bytes}>
-          {isProven(backend.basis)
-            ? `proven — basis: ${backend.basis}, confidence: ${backend.confidence}`
-            : `eligibility screen — basis: ${backend.basis}, confidence: ${backend.confidence}`}
-        </span>
+        <span className={styles.bytes}>{basisSummary(backend)}</span>
       </p>
       {detail && <p className={styles.suggestion}>{detail}</p>}
       {cpuOps && <p className={styles.suggestion}>{cpuOps}</p>}

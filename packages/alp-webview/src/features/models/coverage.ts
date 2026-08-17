@@ -155,6 +155,31 @@ const UNDETERMINED_BADGE: { variant: CoverageVariant; label: string } = {
   label: "not determined",
 };
 
+/** Shown wherever tan sent no value at all, so a missing field reads as a
+ *  missing field instead of reaching the customer as the text `undefined`. */
+const NOT_REPORTED = "not reported";
+
+/** A field tan may simply not have sent. Every CLI before the ADR-0028
+ *  amendment omits `npuCoverage`, `basis` and `confidence` entirely — it sends
+ *  the retired `verdict` instead — and `SUPPORTED_CLI_VERSION` is still on that
+ *  side of the change, so this is the common shape, not a corner case. */
+function reported(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * `basis` + `confidence` as one line, and the strength of the claim in front
+ * of them. Lives here rather than in the view so the vocabulary has exactly
+ * one reader — a second `basis: ${b.basis}` template elsewhere is a second
+ * place for a missing field to surface as `undefined`.
+ */
+export function basisSummary(b: BackendCoverage): string {
+  const basis = reported(b.basis) ?? NOT_REPORTED;
+  const confidence = reported(b.confidence) ?? NOT_REPORTED;
+  const strength = isProven(b.basis) ? "proven" : "eligibility screen";
+  return `${strength} — basis: ${basis}, confidence: ${confidence}`;
+}
+
 /**
  * The one place a `npuCoverage` × `basis` pair becomes something a customer
  * reads. Unrecognised coverage values fall through to the neutral badge with
@@ -164,9 +189,11 @@ const UNDETERMINED_BADGE: { variant: CoverageVariant; label: string } = {
  */
 export function coverageBadge(b: BackendCoverage): CoverageBadge {
   const proven = isProven(b.basis);
+  const basis = reported(b.basis) ?? NOT_REPORTED;
+  const confidence = reported(b.confidence) ?? NOT_REPORTED;
   const title = proven
-    ? `basis: ${b.basis} (proven) · confidence: ${b.confidence}`
-    : `basis: ${b.basis} (eligibility only) · confidence: ${b.confidence}`;
+    ? `basis: ${basis} (proven) · confidence: ${confidence}`
+    : `basis: ${basis} (eligibility only) · confidence: ${confidence}`;
 
   if (b.npuCoverage === "undetermined") {
     return {
@@ -174,16 +201,59 @@ export function coverageBadge(b: BackendCoverage): CoverageBadge {
       title: `${title} · no data for this backend`,
     };
   }
+  // An ABSENT `npuCoverage` is a different thing from an unknown one, and the
+  // fail-safe below cannot carry it: it renders the raw value, so a missing
+  // field reaches the customer as the literal word `undefined` — as an empty
+  // badge where the label is used bare, and as "Ethos-U85: undefined" where it
+  // is interpolated. Every pre-amendment tan produces exactly this.
+  const coverage = reported(b.npuCoverage);
+  if (coverage === null) {
+    return {
+      variant: "neutral",
+      label: NOT_REPORTED,
+      title: `${title} · this CLI reported no NPU coverage for the backend`,
+    };
+  }
   const table = proven ? PROVEN_BADGE : SCREENED_BADGE;
-  const hit = table[b.npuCoverage];
+  const hit = table[coverage];
   if (!hit) {
-    return { variant: "neutral", label: b.npuCoverage, title };
+    return { variant: "neutral", label: coverage, title };
   }
   return {
     variant: hit.variant,
     label: proven ? `${hit.label} (proven)` : hit.label,
     title,
   };
+}
+
+/**
+ * A percentage tan reported, or `null` when it is not one.
+ *
+ * The module is careful with unknown vocabulary STRINGS and was not careful at
+ * all with numbers: `Infinity` rendered "up to Infinity% of compute" and `-5`
+ * rendered "up to -5% of compute". Out-of-range and non-finite values are
+ * DROPPED rather than clamped — a clamped figure is still a figure, and every
+ * caller has an honest no-figure form to fall back to.
+ */
+function usablePct(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  if (value < 0 || value > 100) return null;
+  return value;
+}
+
+/**
+ * A percentage that cannot contradict the badge printed beside it.
+ *
+ * `.toFixed(0)` turns 99.667 into "100%" under a badge that says "some ops on
+ * NPU", and 0.333 into "0%" under the same badge — 299/300 and 1/300 on an
+ * ordinary 300-operator network. Only an exact 0 or 100 may print as `0%` or
+ * `100%`; anything strictly between them keeps a boundary marker.
+ */
+function formatPct(value: number): string {
+  const rounded = Math.round(value);
+  if (rounded >= 100 && value < 100) return ">99%";
+  if (rounded <= 0 && value > 0) return "<1%";
+  return `${rounded}%`;
 }
 
 /**
@@ -205,13 +275,21 @@ export function coverageBadge(b: BackendCoverage): CoverageBadge {
  * `npuPlacementPctReal` is a real operator-count placement from the compiler.
  */
 export function coverageDetail(b: BackendCoverage): string | null {
-  if (isProven(b.basis)) {
-    if (b.npuPlacementPctReal === null || b.npuPlacementPctReal === undefined) {
-      return null;
-    }
-    return `${b.npuPlacementPctReal.toFixed(0)}% of operators placed on the NPU — measured by the compiler`;
-  }
+  // Semantics 1 OUTRANKS the basis, and this check has to come first for the
+  // badge and the line to agree. `coverageBadge` gates on `undetermined`
+  // before it looks at `basis`; when this function gated on `isProven` first,
+  // a `{basis: "compiled", npuCoverage: "undetermined", npuPlacementPctReal:
+  // 0.0}` report drew "0% of operators placed on the NPU — measured by the
+  // compiler" directly beneath a badge reading "not determined". That is the
+  // false negative this module exists to prevent, on `deepx_dxm1` — the
+  // backend that reports `undetermined` on every model, and the headline
+  // feature of the E1M-V2M101 / E1M-V2M102 SKUs.
   if (b.npuCoverage === "undetermined") return null;
+  if (isProven(b.basis)) {
+    const placed = usablePct(b.npuPlacementPctReal);
+    if (placed === null) return null;
+    return `${formatPct(placed)} of operators placed on the NPU — measured by the compiler`;
+  }
   const determined = (b.ops ?? []).filter(
     (o) => o.status === "npu-eligible" || o.status === "cpu-certain",
   );
@@ -222,9 +300,9 @@ export function coverageDetail(b: BackendCoverage): string | null {
     uncosted > 0
       ? ` (${uncosted} CPU op${uncosted === 1 ? "" : "s"} carry no MAC estimate and are excluded)`
       : "";
-  const pct = b.computeOnNpuPctMax;
-  if (pct !== null && pct !== undefined) {
-    return `up to ${pct.toFixed(0)}% of compute (${eligible}/${determined.length} ops) is NPU-eligible — upper bound, static screen${caveat}`;
+  const pct = usablePct(b.computeOnNpuPctMax);
+  if (pct !== null) {
+    return `up to ${formatPct(pct)} of compute (${eligible}/${determined.length} ops) is NPU-eligible — upper bound, static screen${caveat}`;
   }
   return `${eligible}/${determined.length} ops are NPU-eligible by name — no MAC-weighted figure${caveat}`;
 }
