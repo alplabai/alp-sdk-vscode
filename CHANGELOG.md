@@ -64,6 +64,60 @@ only Marketplace/Open VSX users opted into pre-release updates.
   drop to two or one as it narrows. Left alone on purpose: the Configurator's
   section widths and the New Project name field, which are FORM measures — a
   text input stretched across a monitor is worse, not better.
+- **A TLS-inspecting proxy no longer gets told to check the wrong setting.**
+  When the secure connection through a proxy is rejected, the download names
+  the remedy that actually applies — install the proxy's certificate, or turn
+  off `http.proxyStrictSSL`. It reached that sentence by testing `error.code`
+  against `/CERT|SSL|TLS/`, and Node spells **one** condition more than one
+  way. The alert a TLS-inspecting proxy sends surfaces as
+  `ERR_SSL_SSL/TLS_ALERT_HANDSHAKE_FAILURE` when it arrives as its own read,
+  but as `EPROTO` when it lands while the client's own ClientHello write is
+  still pending — same failure, and the OpenSSL text is then in `message`
+  where nothing was looking. Which one you get is a timing accident: whether
+  the alert shared a TCP segment with the proxy's `200 Connection
+  Established`. So the same customer, on the same proxy, intermittently got
+  `Couldn't reach the proxy <addr> — the connection to it failed. … check the
+  http.proxy setting` about a proxy that had just answered a CONNECT
+  perfectly, with the real remedy nowhere on screen.
+  `UNABLE_TO_VERIFY_LEAF_SIGNATURE` — an incomplete chain, the most ordinary
+  way a corporate proxy fails — contains no `CERT`, `SSL` or `TLS` substring
+  at all, so it took the wrong branch **every** time, not intermittently.
+  Classification now lives in two exported, unit-tested predicates that read
+  the code, a small allowlist, and — only when the code says nothing useful —
+  the OpenSSL text in the message. That last check is gated deliberately: the
+  branch it unlocks tells someone to loosen TLS verification, and doing that
+  on a loose text match when their proxy is merely down would be a worse
+  failure than a generic sentence. The allowlist grew past
+  `UNABLE_TO_VERIFY_LEAF_SIGNATURE` to the other verify verdicts a re-signing
+  appliance produces without a `CERT`, `SSL` or `TLS` substring to spot them
+  by — `INVALID_CA`, `INVALID_PURPOSE`, `PATH_LENGTH_EXCEEDED`,
+  `HOSTNAME_MISMATCH`, `UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY`, the CRL codes,
+  and `UNSPECIFIED`. That last one is not a corner case and was the reason to
+  stop hand-picking: a CA still signing with SHA-1, the most ordinary way a
+  corporate appliance is out of date, arrives as `UNSPECIFIED` with
+  `CA signature digest algorithm too weak` in the message, and an allowlist
+  chosen from the interesting-looking names missed it.
+- **A proxy that tunnels you to something that isn't TLS now says so, instead
+  of blaming a certificate.** `ERR_SSL_WRONG_VERSION_NUMBER` — what you get
+  when the tunnel opens onto a plain-http listener, or a filtering appliance
+  answers in the release host's place — contains `SSL`, so it was reported as
+  an untrusted certificate and the reader was told to install one or turn off
+  `http.proxyStrictSSL`. Neither does anything: `rejectUnauthorized: false`
+  cannot make a peer that is not speaking TLS speak it. And the cost of
+  following that advice is not zero — `http.proxyStrictSSL` is a GLOBAL VS
+  Code setting, so someone who flips it, fails again and leaves it off has
+  loosened every extension's traffic for a problem it never touched. This
+  class (`WRONG_VERSION_NUMBER`, `UNSUPPORTED_PROTOCOL`,
+  `PACKET_LENGTH_TOO_LONG`, `BAD_RECORD_MAC`, in either the code or the
+  OpenSSL message) now gets its own sentence, which names what happened and
+  says outright that the toggle will not help.
+  Separately, `armIdleTimeout` now stamps `ETIMEDOUT` on the error it
+  destroys the request with; it carried no code, matched no arm, and reported
+  a proxied download that timed out as "the connection to it failed" instead
+  of "it did not respond". This also closes #511: that flaky test was this
+  bug, reproducing about 0.2% of the time on its own and 10.85% under load —
+  0/6000 after the fix, and the split-segment shape it depended on is now a
+  test of its own rather than a coin flip inside another one.
 - **Hardware Explorer's raw-value columns are monospace again, which is what
   they always claimed to be.** The class is called `.mono` and the note above
   `.section` says the pad-route and I2C tables are wide because of "mono
