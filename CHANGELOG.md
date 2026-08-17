@@ -6,6 +6,33 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **The tan pin gate stops calling a published release missing off one probe
+  (#510).** `scripts/check-cli-pin.mjs` retried a `5xx` or a `429` and did not
+  retry a `404` — the 404 arm sat inside the retry loop but returned from the
+  first attempt. So one bad sample became a verdict, and on a CSS-only PR the
+  gate printed `MISSING v0.6.0-rc1 tan-x86_64-pc-windows-msvc.exe /
+  tan-x86_64-pc-windows-msvc.zip` and
+  `MISSING v0.6.0-rc1 tan-aarch64-apple-darwin / tan-aarch64-apple-darwin.tar.gz`
+  for two assets that existed, had not been touched since
+  `2026-08-14T20:14:02Z`, and answered `curl -I -L` with 200; re-running the
+  job with no change passed. That blocks every PR, and the failure text steers
+  the reader toward lowering `SUPPORTED_CLI_VERSION` or adding a
+  `HOSTS_WITHOUT_RELEASE_ASSET` entry — the second of which would silently stop
+  covering a host that IS published. A 404 is now retried like any other
+  non-2xx, and absence is claimed only when every attempt agrees; a mixed
+  answer, a 5xx or a network error reports `unknown`, which prints as `skipped`
+  and fails nothing. **Why the runner saw a 404 at all is still not
+  established** — a transient 404, a rate limit and a CDN edge glitch all fit
+  the evidence, and nothing here claims to know which. The gate also now prints
+  what it observed: a MISSING line carries the per-candidate status and the
+  attempt count (`tan-aarch64-apple-darwin.tar.gz: missing (404 on all 3
+  attempts)`) with the URLs on their own line, because the original message
+  stated absence without saying what it saw. The probe moved to
+  `scripts/lib/probe-asset.mjs` so it could be driven against a local
+  `node:http` server with a scripted status sequence — a real rate limit cannot
+  be ordered on demand, so `test/cliPin.probe.test.js` nails the behaviour
+  instead of the cause: 404-then-200 must read PRESENT, 404 on every attempt
+  must still read MISSING.
 - **`SUPPORTED_CLI_VERSION` moves to `0.6.0-rc1`, was `0.5.1` — and this pin is
   a PRE-RELEASE on purpose (#502).** Every earlier pin was chosen from what was
   stable; this one is chosen from what can build the hardware this extension
