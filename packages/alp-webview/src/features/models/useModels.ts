@@ -5,6 +5,10 @@ import type { ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
 import type { ModelCoverage } from "./coverage";
 import { narrowModelCoverage } from "./coverage";
+import {
+  findUnsupportedSubcommand,
+  withoutUnsupportedSubcommand,
+} from "./cliSurface";
 
 // `modelsData` keeps `models`/`toolchains` as `unknown[]` at the protocol
 // boundary (see types.ts) — these are the Plan-A shapes narrowed locally for
@@ -439,8 +443,40 @@ export function useModels() {
     postMessage({ type: "addFromZoo", id });
   }
 
+  // ONE capability gap, established once and stated once (#522). Every list is
+  // scanned because ANY of them can be the first call to reach a CLI that does
+  // not implement the surface — the panel fires `model list` and `model doctor`
+  // on open, but a customer who clicks straight through to the zoo gets the
+  // refusal there first.
+  const cliModelSurfaceMissing =
+    findUnsupportedSubcommand(state.issues) ??
+    findUnsupportedSubcommand(state.coverageIssues) ??
+    findUnsupportedSubcommand(state.runIssues) ??
+    findUnsupportedSubcommand(state.abIssues) ??
+    findUnsupportedSubcommand(state.zooIssues) ??
+    findUnsupportedSubcommand(state.addIssues) ??
+    findUnsupportedSubcommand(state.prep?.issues);
+
+  // The refusals are stripped from every per-section list so the gap is not
+  // re-announced once per section. Anything else survives untouched: a real
+  // `model.check-failed` is still a red banner, because hiding a genuine
+  // failure behind the capability notice would trade four honest alarms for
+  // none.
   return {
     ...state,
+    issues: withoutUnsupportedSubcommand(state.issues),
+    coverageIssues: withoutUnsupportedSubcommand(state.coverageIssues),
+    runIssues: withoutUnsupportedSubcommand(state.runIssues),
+    abIssues: withoutUnsupportedSubcommand(state.abIssues),
+    zooIssues: withoutUnsupportedSubcommand(state.zooIssues),
+    addIssues: withoutUnsupportedSubcommand(state.addIssues),
+    prep: state.prep
+      ? {
+          ...state.prep,
+          issues: withoutUnsupportedSubcommand(state.prep.issues),
+        }
+      : state.prep,
+    cliModelSurfaceMissing,
     build,
     refresh,
     checkCoverage,

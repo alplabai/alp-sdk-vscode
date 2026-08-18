@@ -803,6 +803,99 @@ async function main() {
     );
   }
 
+  // ── the CLI-capability gap is ONE notice, not four alarms (#522) ──
+  // The pinned tan (0.6.0-rc1) implements only `model build` and refuses the
+  // other eight subcommands the panel drives. Every refusal used to render on
+  // its own, so one fact reached the customer as FOUR red `Models unavailable`
+  // banners carrying tan's command-line text. Feed the real refusal envelope
+  // and assert the panel states it once, in the neutral style, with the actions
+  // it cannot drive switched off.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const refusal = (sub: string) => ({
+      code: "model.unknown-subcommand",
+      severity: "error",
+      message: `Unknown model subcommand: ${sub}. Available: build.`,
+    });
+    const root = createRoot(container);
+    root.render(
+      React.createElement(AppProvider, null, React.createElement(ModelsView)),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelsData",
+      ok: false,
+      models: [],
+      toolchains: [],
+      issues: [refusal("list"), refusal("doctor")],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelFitData",
+      ok: false,
+      sku: null,
+      models: [],
+      issues: [refusal("check")],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "zooData",
+      ok: false,
+      entries: [],
+      issues: [refusal("zoo")],
+    });
+    await settle();
+
+    const text = container.textContent ?? "";
+    const alarms = container.querySelectorAll('[data-ok="false"]').length;
+    if (alarms !== 0) {
+      problems.push(
+        `models-cli-gap: ${alarms} red alarm banner(s) still rendered for a capability gap`,
+      );
+    }
+    if (!text.includes("These model tools need a newer CLI.")) {
+      problems.push("models-cli-gap: the capability notice was not rendered");
+    }
+    // Stated ONCE. The whole defect was the same fact repeated per section.
+    const stated = text.split("These model tools need a newer CLI.").length - 1;
+    if (stated !== 1) {
+      problems.push(
+        `models-cli-gap: notice rendered ${stated} times, want exactly 1`,
+      );
+    }
+    const labels = [...container.querySelectorAll("button")].map((b) => ({
+      label: (b.textContent ?? "").trim(),
+      disabled: (b as HTMLButtonElement).disabled,
+    }));
+    for (const want of [
+      "Check NPU coverage",
+      "Prep model",
+      "Run model",
+      "A/B compare",
+    ]) {
+      const hit = labels.find((l) => l.label === want);
+      if (!hit) {
+        problems.push(`models-cli-gap: no "${want}" button to check`);
+      } else if (!hit.disabled) {
+        problems.push(
+          `models-cli-gap: "${want}" is clickable against a CLI that cannot run it`,
+        );
+      }
+    }
+    // `model build` IS implemented — switching Refresh off would be a second
+    // wrong answer, hiding the one action that still works.
+    const refreshBtn = labels.find((l) => l.label === "Refresh");
+    if (refreshBtn && refreshBtn.disabled) {
+      problems.push("models-cli-gap: Refresh was disabled, but it still works");
+    }
+    console.log(
+      `  ${problems.length === 0 ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+    );
+  }
+
   // ── the real ErrorBoundary, not the harness's own (#517) ──
   // Every view above is wrapped by `ErrorBoundary` in App.tsx. Without it a
   // throwing render unmounts the whole tree and leaves an EMPTY panel, which
