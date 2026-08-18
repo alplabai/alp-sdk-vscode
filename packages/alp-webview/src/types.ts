@@ -534,9 +534,15 @@ export interface ModelBuildProgressMessage {
   success?: boolean;
 }
 
-/** Per-model fit verdicts from `tan model check --board`. `models` stays
- *  `unknown[]` at the boundary — the board-mode payload
- *  ([{name,source,backends?,suggestion?,error?}]) is narrowed in the webview. */
+/** Per-model NPU-coverage reports from `tan model check --board`. `models`
+ *  stays `unknown[]` at the boundary — the payload
+ *  ([{name,source,backends:[{backend,variant,table,npuCoverage,
+ *  computeOnNpuPctMax,npuPlacementPctReal,uncostedCpuOpCount,basis,
+ *  confidence,notes,ops}]}]) is narrowed in the webview's
+ *  features/models/coverage.ts, which owns the ADR-0028 vocabulary. There is
+ *  no per-model `error` field: tan reports a per-model failure as an envelope
+ *  issue coded `model.check-failed`. The message TYPE keeps its name — it is
+ *  the webview↔extension protocol, not the tan vocabulary. */
 export interface ModelFitDataMessage {
   type: "modelFitData";
   /** Envelope `ok` (false → show issues, e.g. the alp stderr via `model.failed`). */

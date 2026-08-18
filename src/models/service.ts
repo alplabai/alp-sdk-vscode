@@ -135,7 +135,8 @@ export function toModelsData(
 }
 
 /**
- * Shape a `tan model check --board` outcome into the webview's fit payload.
+ * Shape a `tan model check --board` outcome into the webview's NPU-coverage
+ * payload.
  * A `null` envelope (command never produced one) or `!ok` (validation/runtime
  * failure) surfaces as `ok:false` with an empty model list; the real cause is
  * `cliFailureMessage(outcome)` (a `null` envelope with a real exit code =

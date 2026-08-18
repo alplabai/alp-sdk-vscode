@@ -72,8 +72,9 @@ The extension shells thirteen of these: `bootstrap`, `build`, `image`, `flash`,
 `clean`, `renode`, `run`, `sdk`, `doctor`, `validate`, `generate`, and
 `presets` (`src/west.ts`, `src/bootstrap.ts`, `src/ideHub/buildPlanPanel.ts`),
 plus the `model` family — the Models panel is a thin GUI shelling `tan model …`:
-a per-model FIT BADGE (green/yellow/red = `fits`/`cpu-fallback`/`no-fit`, before
-build), PREP MODEL (pick model + calibration folder → quantize → accuracy
+a per-model NPU-COVERAGE BADGE per SoM backend (`full-eligible` / `partial` /
+`cpu-only` / `undetermined`, before build — eligibility unless a real compile
+proves placement), PREP MODEL (pick model + calibration folder → quantize → accuracy
 report), RUN MODEL / A-B COMPARE (host reference run), and a MODEL ZOO GALLERY
 (browse "runs on your SoM" + one-click Add). Honest caveat: the panel's Run /
 A-B is a host reference, not target-SoM performance.
@@ -128,13 +129,17 @@ data, issues}`. Subcommands:
 
 - `build` / `list` / `info` / `doctor` (pre-existing) — compile `board.yaml`
   `models:` → `.alpmodel`; list; decode; report toolchains.
-- `check <model.tflite|.onnx> --sku <SKU>` (or `--board board.yaml
-  [--model NAME]`) `[--format human|json]` — static PRE-FLIGHT fit/perf,
-  OFFLINE, no toolchain. Per SoM-backend verdict `fits` | `cpu-fallback` |
-  `no-fit`, plus est SRAM (vs the SoC arena budget), est latency, op-coverage %,
-  and unsupported ops. Labelled `source:static` (tier-1, biased CONSERVATIVE —
-  never over-promises "fits"). Answers "will it fit my SoM's NPU + how fast,
-  before I compile"; the estimate is verified on silicon later.
+- `check --board board.yaml [--exact] [--format text|json]` — static
+  NPU-eligibility screen, OFFLINE, no toolchain. Per SoM-backend `npuCoverage`
+  of `full-eligible` | `partial` | `cpu-only` | `undetermined` at
+  `basis: "static-screen"`, plus a MAC-weighted upper bound
+  (`computeOnNpuPctMax`), `uncostedCpuOpCount`, per-op verdicts, and caveats as
+  prose in `notes`. A static positive is ELIGIBILITY, not a guarantee — the
+  model runs either way, an unsupported operator falls back to the CPU
+  silently. `undetermined` is absent data, never "will not run". `--exact`
+  runs the real `vela` for Ethos-U and upgrades the report to
+  `basis: "compiled"` with the measured placement (`npuPlacementPctReal`);
+  only `basis: "compiled"` or `basis: "bench"` may be read as proven.
 - `zoo [--sku <SKU> | --board board.yaml] [--format]` — browse curated
   model-zoo entries (`metadata/model_zoo/<id>.yaml`), each marked `runs_here`
   for the SoM (via `validated_soms`). Link + fetch + layer, no weight
@@ -427,25 +432,31 @@ under `data`, warnings/errors under `issues`.
 
 Purpose:
 
-- static, OFFLINE pre-flight of a model's fit + performance against a SoM's NPU
+- static, OFFLINE screen of how much of a model can target a SoM's NPU
   backends, before any compile (no toolchain required)
 
 Required behavior:
 
-- accept `<model.tflite|.onnx>` with `--sku <SKU>`, or `--board board.yaml
-  [--model NAME]`
-- emit, per SoM backend, a verdict of `fits` | `cpu-fallback` | `no-fit`, plus
-  est SRAM (vs the SoC arena budget), est latency, op-coverage %, and unsupported
-  ops
-- label results `source:static` (tier-1, biased CONSERVATIVE — never
-  over-promises "fits"); the estimate is verified on silicon later
+- screen every model declared in `board.yaml`'s `models:` against the backends
+  the board's `som.sku` actually declares
+- emit, per SoM backend, an `npuCoverage` of `full-eligible` | `partial` |
+  `cpu-only` | `undetermined`, a `basis` of `static-screen` | `compiled` |
+  `bench`, a `confidence` of `screening` | `certain`, the MAC-weighted upper
+  bound `computeOnNpuPctMax`, `uncostedCpuOpCount`, per-op
+  `{op,status,reason,macs}` verdicts, and `notes`
+- keep positives at ELIGIBILITY on a static basis — the model runs either way,
+  an operator the NPU cannot take falls back to the CPU silently rather than
+  failing
+- report absent data as `undetermined`, never as a negative verdict
+- present a result as proven only at `basis: "compiled"` or `basis: "bench"`;
+  `npuCoverage: "fits"` is reserved for those and carries the measured
+  `npuPlacementPctReal`
 
 Flags:
 
-- `--sku <SKU>`
 - `--board board.yaml`
-- `--model NAME`
-- `--format human|json`
+- `--exact`
+- `--format text|json`
 
 #### `tan model zoo`
 

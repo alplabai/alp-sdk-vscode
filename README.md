@@ -16,8 +16,9 @@ First-class IDE support for projects built against the
   launch-profile planning, and support-bundle surfaces are available
   without embedding debugger implementation into the extension.
 * **Models / edge-AI panel.** A thin GUI over the `tan model` CLI:
-  a per-model **fit badge** (green / yellow / red = `fits` /
-  `cpu-fallback` / `no-fit`, before you build) from `tan model check`;
+  a per-model **NPU-coverage badge** (`full-eligible` / `partial` /
+  `cpu-only` / `undetermined`, before you build) from `tan model check`,
+  reported as eligibility unless a real compile proves placement;
   **Prep Model** to INT8-quantize against a calibration folder with an
   fp32-vs-int8 accuracy report (`tan model prep`); **Run Model** and
   **A-B Compare** host-reference runs (`tan model run` / `tan model ab`);

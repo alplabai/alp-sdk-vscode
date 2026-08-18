@@ -215,16 +215,29 @@ wrapper (`{command,ok,exitCode,project,data,issues}`). Alongside the pre-existin
 Static pre-flight fit/perf check — **offline, conservative**:
 
 ```bash
-tan model check <model.tflite|.onnx> --sku <SKU>
-tan model check <model.tflite|.onnx> --board board.yaml --model NAME --format json
+tan model check --board board.yaml
+tan model check --board board.yaml --format json
+tan model check --board board.yaml --exact          # real vela compile (Ethos-U only)
 ```
 
-Runs OFFLINE with no toolchain. Per SoM-backend verdict — `fits` |
-`cpu-fallback` | `no-fit` — plus estimated SRAM (vs the SoC arena budget),
-estimated latency, op-coverage %, and unsupported ops. Labelled `source:static`
-and biased CONSERVATIVE, so it never over-promises "fits". Answers "will it fit
-my SoM's NPU + how fast, before I compile" — a conservative estimate, verified on
-silicon later.
+Runs OFFLINE with no toolchain. Per SoM-backend it reports an `npuCoverage` of
+`full-eligible` | `partial` | `cpu-only` | `undetermined` at
+`basis: "static-screen"`, a MAC-weighted UPPER bound
+(`computeOnNpuPctMax`), the operators that are certain CPU fallback, and every
+caveat as prose in `notes`.
+
+Read a static screen as ELIGIBILITY, never a guarantee: an eligible operator
+still carries quantization, shape and dtype constraints the screen cannot
+check, and the model runs either way — an operator the NPU cannot take falls
+back to the CPU silently rather than failing.
+
+`undetermined` means NO DATA for that backend (no support table, or a source
+format it does not ingest), not a finding that the model will not run.
+
+`--exact` runs the real `vela` for Ethos-U (`pip install
+alp-tan[model-compile]`) and upgrades the report to `basis: "compiled"` with
+the measured operator placement (`npuPlacementPctReal`). Only `basis:
+"compiled"` or `basis: "bench"` may be read as proven.
 
 Browse the curated model zoo (each entry marked whether it runs on your SoM):
 

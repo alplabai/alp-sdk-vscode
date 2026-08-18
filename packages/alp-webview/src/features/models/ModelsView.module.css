@@ -168,6 +168,12 @@
   background: var(--status-ok);
 }
 
+/* A static-screen positive is ELIGIBILITY, not a guarantee — it must never
+   borrow the green of a proven compile. */
+.badge[data-variant="info"] {
+  background: var(--status-info);
+}
+
 .badge[data-variant="warn"] {
   background: var(--status-warn);
 }
@@ -176,10 +182,45 @@
   background: var(--status-err);
 }
 
+/* "not determined" = no data. Deliberately the plain badge surface: red here
+   would read as "won't run", which is a false negative — a backend that ships
+   no support table by decision (DEEPX DX-M1, the headline feature of the
+   E1M-V2M101 / E1M-V2M102 SKUs) reports this on every model. */
+.badge[data-variant="neutral"] {
+  background: var(--surface-badge);
+}
+
 .suggestion {
   margin: var(--space-2) 0 0;
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
+}
+
+/* ── NPU coverage detail ── */
+.coverageModel {
+  margin-top: var(--space-4);
+}
+
+.coverageModelHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0;
+  font-weight: 600;
+}
+
+.coverageBackend {
+  margin: var(--space-3) 0 0 var(--space-4);
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--border-default);
+}
+
+.coverageHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
 }
 
 /* ── Model zoo ── */

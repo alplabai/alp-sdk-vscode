@@ -2177,6 +2177,28 @@ there.
   first tan-cli release carrying tan-cli #74. Note that `tan bootstrap` skips
   the reconcile when it reuses an existing `$ZEPHYR_BASE` workspace, so the
   logged line also carries the manual fix.
+- Models panel: migrate to the ADR-0028 NPU-coverage vocabulary. `tan model
+  check` no longer emits the `fits | cpu-fallback | no-fit` verdict the panel
+  hard-coded; it reports `npuCoverage` (`full-eligible` / `partial` /
+  `cpu-only` / `undetermined`) together with `basis`
+  (`static-screen` / `compiled` / `bench`), `confidence`,
+  `computeOnNpuPctMax` (a MAC-weighted upper bound), `npuPlacementPctReal`
+  (a real op-count placement from a compile), `uncostedCpuOpCount`, per-op
+  verdicts and `notes`. The panel's "Fit" column becomes "NPU coverage", and a
+  new "NPU coverage detail" section renders the basis, the correctly-united
+  percentage, the certain-CPU operators, and tan's own caveats verbatim.
+- The panel now states, in words, that a `basis: static-screen` result is
+  eligibility rather than a guarantee — the model runs either way, an operator
+  the NPU cannot take falls back to the CPU silently rather than failing — and
+  that `undetermined` means absent data, not "will not run". `undetermined`
+  gets its own neutral badge instead of borrowing a negative one: DEEPX DX-M1
+  ships no operator table by decision and is the headline NPU of E1M-V2M101 /
+  E1M-V2M102, so a red badge there would be a false negative on the flagship
+  part. Only `basis: compiled` or `basis: bench` is labelled "proven".
+- Requires a `tan` release that ships `tan model check`'s ADR-0028 payload. No
+  tagged tan-cli release carries it yet, so `SUPPORTED_CLI_VERSION` is
+  unchanged at `0.3.0` and must be bumped in the same change that first ships
+  this panel to users.
 
 ## 0.3.7
 

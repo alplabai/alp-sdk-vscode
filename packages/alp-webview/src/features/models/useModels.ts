@@ -3,6 +3,7 @@
 import { useEffect, useReducer } from "react";
 import type { ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
+import type { ModelCoverage } from "./coverage";
 
 // `modelsData` keeps `models`/`toolchains` as `unknown[]` at the protocol
 // boundary (see types.ts) — these are the Plan-A shapes narrowed locally for
@@ -26,25 +27,10 @@ export interface ModelToolchain {
 }
 
 // `modelFitData` payload shapes (board-mode `tan model check --board`
-// results), narrowed here for the view only — see BackendFit/ModelFit above
-// the fields they mirror in messages.ts's ModelFitDataMessage doc comment.
-export interface BackendFit {
-  backend: string;
-  verdict: "fits" | "cpu-fallback" | "no-fit" | string;
-  est_sram_kib?: number;
-  budget_sram_kib?: number | null;
-  est_latency_ms?: number | null;
-  op_coverage_pct?: number;
-  unsupported_ops?: string[];
-  source?: string;
-}
-export interface ModelFit {
-  name: string;
-  source?: string;
-  backends?: BackendFit[];
-  suggestion?: string | null;
-  error?: string;
-}
+// results) live in ./coverage.ts: the ADR-0028 NPU-coverage vocabulary is a
+// lockstep contract with tan, so it is declared in exactly ONE file together
+// with the mapping that turns it into something a customer reads.
+export type { BackendCoverage, ModelCoverage, OpVerdictView } from "./coverage";
 
 // `modelPrepResult` payload shapes (`tan model prep`'s accuracy report),
 // narrowed here for the view only — mirrors ModelPrepResultMessage in types.ts.
@@ -134,10 +120,12 @@ interface State {
   issues: ModelsDataMessage["issues"];
   buildLog: string[];
   building: boolean;
-  fits: ModelFit[];
-  fitOk: boolean;
-  fitIssues: ModelsDataMessage["issues"];
-  checkingFit: boolean;
+  coverage: ModelCoverage[];
+  /** `data.sku` — the SoM the screen ran against; `undefined` before a run. */
+  coverageSku?: string;
+  coverageOk: boolean;
+  coverageIssues: ModelsDataMessage["issues"];
+  checkingCoverage: boolean;
   prepping: boolean;
   prep: PrepResult | null;
   measuring: boolean;
@@ -165,11 +153,12 @@ type Action =
     }
   | { type: "buildStart" }
   | { type: "progress"; log: string; done: boolean }
-  | { type: "fitStart" }
+  | { type: "coverageStart" }
   | {
-      type: "fitData";
+      type: "coverageData";
       ok: boolean;
-      models: ModelFit[];
+      sku?: string;
+      models: ModelCoverage[];
       issues: ModelsDataMessage["issues"];
     }
   | { type: "prepStart" }
@@ -218,15 +207,16 @@ function reduce(state: State, action: Action): State {
         building: !action.done,
         buildLog: [...state.buildLog, action.log],
       };
-    case "fitStart":
-      return { ...state, checkingFit: true };
-    case "fitData":
+    case "coverageStart":
+      return { ...state, checkingCoverage: true };
+    case "coverageData":
       return {
         ...state,
-        checkingFit: false,
-        fitOk: action.ok,
-        fits: action.models,
-        fitIssues: action.issues,
+        checkingCoverage: false,
+        coverageOk: action.ok,
+        coverageSku: action.sku,
+        coverage: action.models,
+        coverageIssues: action.issues,
       };
     case "prepStart":
       return { ...state, prepping: true };
@@ -276,10 +266,11 @@ const init: State = {
   issues: [],
   buildLog: [],
   building: false,
-  fits: [],
-  fitOk: true,
-  fitIssues: [],
-  checkingFit: false,
+  coverage: [],
+  coverageSku: undefined,
+  coverageOk: true,
+  coverageIssues: [],
+  checkingCoverage: false,
   prepping: false,
   prep: null,
   measuring: false,
@@ -318,11 +309,15 @@ export function useModels() {
         if (msg.done) {
           postMessage({ type: "requestModels" });
         }
+        // `modelFitData`/`checkModelFit` keep their names: they are the
+        // webview↔extension protocol, not the tan vocabulary, and holding the
+        // message contract byte-stable keeps this change to the semantics.
       } else if (msg?.type === "modelFitData") {
         dispatch({
-          type: "fitData",
+          type: "coverageData",
           ok: msg.ok,
-          models: (msg.models as ModelFit[]) ?? [],
+          sku: msg.sku,
+          models: (msg.models as ModelCoverage[]) ?? [],
           issues: msg.issues,
         });
       } else if (msg?.type === "modelPrepStarted") {
@@ -384,8 +379,8 @@ export function useModels() {
     postMessage({ type: "requestModels" });
   }
 
-  function checkFit() {
-    dispatch({ type: "fitStart" });
+  function checkCoverage() {
+    dispatch({ type: "coverageStart" });
     postMessage({ type: "checkModelFit" });
   }
 
@@ -419,7 +414,7 @@ export function useModels() {
     ...state,
     build,
     refresh,
-    checkFit,
+    checkCoverage,
     prepModel,
     runModel,
     abModels,

@@ -883,13 +883,26 @@ to `.alpmodel`, does need a toolchain and is not part of this panel.)
 
 Commands the panel shells:
 
-- `tan model check <model.tflite|.onnx> --sku <SKU>` (or `--board board.yaml
-  [--model NAME]`) `[--format human|json]` — static **pre-flight** fit/perf,
-  offline. Per SoM-backend verdict `fits | cpu-fallback | no-fit`, plus est
-  SRAM (vs the SoC arena budget), est latency, op-coverage %, and unsupported
-  ops. Labelled `source:static` — biased **conservative**, never over-promises
-  "fits". Drives the panel's per-model **fit badge** (green/yellow/red =
-  fits/cpu-fallback/no-fit, shown before any build).
+- `tan model check --board board.yaml [--exact] [--format text|json]` —
+  static **NPU-eligibility screen**, offline. Per SoM-backend `npuCoverage`
+  of `full-eligible | partial | cpu-only | undetermined`, with `basis`
+  (`static-screen | compiled | bench`), `confidence`
+  (`screening | certain`), the MAC-weighted upper bound
+  `computeOnNpuPctMax`, `uncostedCpuOpCount`, per-op
+  `{op,status,reason,macs}` verdicts, and caveats as prose in `notes`.
+  Drives the panel's per-model **NPU-coverage badge** (shown before any
+  build) and the "NPU coverage detail" section. The vocabulary and its
+  mapping to badges live in
+  `packages/alp-webview/src/features/models/coverage.ts` — a lockstep
+  contract with tan's `tan/model/analyze.py` + `tan/model/check.py`.
+  Three rules the UI must not break: a `basis: static-screen` positive is
+  ELIGIBILITY and never a guarantee (the model runs either way — an
+  unsupported operator falls back to the CPU silently); `undetermined` is
+  ABSENT DATA and never "will not run"; and only `basis: compiled` or
+  `basis: bench` may be presented as proven. The retired
+  `fits | cpu-fallback | no-fit` verdict vocabulary is gone — `fits`
+  survives only as an `npuCoverage` value at `basis: compiled`, and is
+  never rendered as that word.
 - `tan model zoo [--sku <SKU> | --board board.yaml] [--format]` — browse
   curated model-zoo entries (`metadata/model_zoo/<id>.yaml`), each marked
   `runs_here` for the SoM. Backs the **model-zoo gallery** ("runs on your SoM").

@@ -219,14 +219,25 @@ family — it shells `tan` and renders the JSON envelope, it does not re-impleme
 any model logic. Use it to check, prepare, and try models against your SoM
 before you build.
 
-- **Fit badge (before build).** Each model in board.yaml `models:` gets a
-  green/yellow/red badge — fits / cpu-fallback / no-fit — from a static
-  pre-flight check (`tan model check <model.tflite|.onnx> --sku <SKU>` or
-  `--board board.yaml [--model NAME]` `[--format human|json]`). Offline, no
-  toolchain: per SoM-backend it reports the verdict plus estimated SRAM (vs the
-  SoC arena budget), estimated latency, op-coverage %, and unsupported ops. The
-  estimate is conservative (labelled `source:static`, biased so it never
-  over-promises a "fits") and is verified on silicon later.
+- **NPU-coverage badge (before build).** Each model in board.yaml `models:`
+  gets one badge per SoM NPU backend from a static eligibility screen
+  (`tan model check --board board.yaml [--format text|json]`). Offline, no
+  toolchain. The coverage reads `full-eligible`, `partial`, `cpu-only` or
+  `undetermined`, alongside the basis it was decided on.
+
+  Read a `basis: static-screen` result as ELIGIBILITY, never a guarantee: an
+  eligible operator still carries quantization, shape and dtype constraints the
+  screen cannot check, and the model runs either way — an operator the NPU
+  cannot take falls back to the CPU silently rather than failing. The
+  percentage the panel shows is labelled an upper bound for the same reason.
+
+  `undetermined` means there is NO DATA for that backend — a support table
+  that is absent by decision, or a source format the backend does not ingest.
+  It is not a finding that the model will not run.
+
+  Add `--exact` to upgrade Ethos-U to a real `vela` compile
+  (`pip install alp-tan[model-compile]`); only a `basis: compiled` or
+  `basis: bench` result is marked "proven" in the panel.
 - **Prep Model.** Pick a model and a calibration folder to run a license-free
   INT8 quantize (`tan model prep <model.onnx|.tflite> --calibration <dir>
   [--out] [--per-channel] [--min-samples N]`, onnxruntime QDQ) and get an
