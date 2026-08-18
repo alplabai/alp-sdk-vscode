@@ -340,14 +340,9 @@ export function SidebarHubView() {
         />
       </Section>
 
-      <Section title="Models">
-        <ActionRow
-          icon="layers"
-          label="Models"
-          desc="Manage, build and inspect on-device AI models"
-          command="alp.openModelsPanel"
-        />
-      </Section>
+      {/* The Models section is deliberately absent — see the note in
+          OverviewView.tsx and #524. The panel still opens via
+          `alp.openModelsPanel`; it is undiscoverable, not removed. */}
 
       <Section title="SDK Manager">
         <ActionRow
