@@ -10,7 +10,7 @@ import { SdkView } from "./features/sdk";
 import { SidebarHubView } from "./features/sidebar-hub";
 import { SetupFlowView } from "./features/setup-flow";
 import { AppProvider, useAppContext } from "./shared/AppContext";
-import { Button } from "./shared/ui";
+import { Button, ErrorBoundary } from "./shared/ui";
 import layout from "./shared/ui/layout.module.css";
 import { postMessage } from "./vscode";
 
@@ -83,9 +83,14 @@ function Router() {
 }
 
 export function App() {
+  // The boundary sits INSIDE the provider so a throwing view still has context
+  // torn down cleanly, and OUTSIDE the router so it covers every mode rather
+  // than a list of views someone has to remember to extend (#517).
   return (
     <AppProvider>
-      <Router />
+      <ErrorBoundary>
+        <Router />
+      </ErrorBoundary>
     </AppProvider>
   );
 }

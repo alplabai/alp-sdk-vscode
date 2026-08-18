@@ -8,6 +8,7 @@ import "./jsdom-setup.js";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
+import { ErrorBoundary } from "../../packages/alp-webview/src/shared/ui";
 import { OverviewView } from "../../packages/alp-webview/src/features/overview";
 import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
@@ -799,6 +800,49 @@ async function main() {
     noteCrash(); // catch a crash triggered by a click or a late re-render
     console.log(
       `  ${ok ? "PASS" : "FAIL"}  ${mode}: rendered, ${buttons.length} button(s), clicked ${clickedHere}`,
+    );
+  }
+
+  // ── the real ErrorBoundary, not the harness's own (#517) ──
+  // Every view above is wrapped by `ErrorBoundary` in App.tsx. Without it a
+  // throwing render unmounts the whole tree and leaves an EMPTY panel, which
+  // reads to a customer as "nothing to report" rather than "this broke". Assert
+  // the boundary turns that into words, and that the words name the failure —
+  // a boundary rendering a bare "something went wrong" swaps a blank panel for
+  // an uninformative one and no bug report survives it.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    function Throws(): React.ReactElement {
+      throw new Error("harness-induced render failure");
+    }
+    let threw = false;
+    try {
+      const root = createRoot(container);
+      root.render(
+        React.createElement(ErrorBoundary, null, React.createElement(Throws)),
+      );
+      await settle();
+    } catch (err) {
+      threw = true;
+      problems.push(`error-boundary: escaped the boundary — ${String(err)}`);
+    }
+    const text = (container.textContent ?? "").toLowerCase();
+    if (!threw && text.length === 0) {
+      problems.push(
+        "error-boundary: rendered nothing — a blank panel is the failure it exists to prevent",
+      );
+    }
+    if (!threw && !text.includes("this view failed to render")) {
+      problems.push("error-boundary: did not say the view failed to render");
+    }
+    if (!threw && !text.includes("harness-induced render failure")) {
+      problems.push(
+        "error-boundary: swallowed the error message, leaving nothing to report a bug with",
+      );
+    }
+    console.log(
+      `  ${problems.length === 0 ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
     );
   }
 

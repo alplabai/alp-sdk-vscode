@@ -4,6 +4,7 @@ import { useEffect, useReducer } from "react";
 import type { ModelsDataMessage } from "../../types";
 import { postMessage } from "../../vscode";
 import type { ModelCoverage } from "./coverage";
+import { narrowModelCoverage } from "./coverage";
 
 // `modelsData` keeps `models`/`toolchains` as `unknown[]` at the protocol
 // boundary (see types.ts) — these are the Plan-A shapes narrowed locally for
@@ -31,6 +32,25 @@ export interface ModelToolchain {
 // lockstep contract with tan, so it is declared in exactly ONE file together
 // with the mapping that turns it into something a customer reads.
 export type { BackendCoverage, ModelCoverage, OpVerdictView } from "./coverage";
+
+/** The one message a dropped coverage result gets. Rendered by the existing
+ *  `IssuesBanner`, which is where the panel already reports "we could not read
+ *  part of the answer" — a new surface would be a second place to miss. */
+function unreadableCoverageIssue(dropped: number): {
+  code: string;
+  severity: string;
+  message: string;
+} {
+  const plural = dropped === 1 ? "" : "s";
+  return {
+    code: "models.unreadable-coverage",
+    severity: "warning",
+    message:
+      `${dropped} model coverage result${plural} could not be read and ` +
+      `${dropped === 1 ? "was" : "were"} skipped. Everything else on this ` +
+      `panel is unaffected.`,
+  };
+}
 
 // `modelPrepResult` payload shapes (`tan model prep`'s accuracy report),
 // narrowed here for the view only — mirrors ModelPrepResultMessage in types.ts.
@@ -313,12 +333,21 @@ export function useModels() {
         // webview↔extension protocol, not the tan vocabulary, and holding the
         // message contract byte-stable keeps this change to the semantics.
       } else if (msg?.type === "modelFitData") {
+        // NARROWED, not cast. `models` crosses as `unknown[]` by design, and a
+        // cast let one malformed element throw during render — React unmounted
+        // the tree and the customer saw an empty panel, which reads as "no
+        // models declared". A dropped model is reported rather than hidden:
+        // silence here would be the same wrong answer in a quieter voice.
+        const narrowed = narrowModelCoverage(msg.models);
         dispatch({
           type: "coverageData",
           ok: msg.ok,
           sku: msg.sku,
-          models: (msg.models as ModelCoverage[]) ?? [],
-          issues: msg.issues,
+          models: narrowed.models,
+          issues:
+            narrowed.dropped > 0
+              ? [...msg.issues, unreadableCoverageIssue(narrowed.dropped)]
+              : msg.issues,
         });
       } else if (msg?.type === "modelPrepStarted") {
         dispatch({ type: "prepStart" });
