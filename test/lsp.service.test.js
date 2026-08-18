@@ -146,6 +146,15 @@ test("createBoardYamlHoverInfo returns docs for nested fields", () => {
   assert.match(hover?.description ?? "", /log verbosity/i);
 });
 
+test("createBoardYamlHoverInfo returns docs for the models field", () => {
+  const documentText = ["models:", "  - name: keyword_spotter"].join("\n");
+  const hover = createBoardYamlHoverInfo(documentText, 0, 1);
+
+  assert.equal(hover?.title, "models");
+  assert.match(hover?.description ?? "", /\.alpmodel/i);
+  assert.match(hover?.description ?? "", /som\.sku/i);
+});
+
 test("createBoardYamlDocumentSymbols builds nested symbol tree", () => {
   const documentText = [
     "schema_version: 1",

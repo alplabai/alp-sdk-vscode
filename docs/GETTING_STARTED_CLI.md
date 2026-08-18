@@ -205,7 +205,79 @@ tan completion --shell zsh
 tan completion --shell fish
 ```
 
-## 9. Exit Codes
+## 9. Model Workflows: Check, Zoo, Add, Prep, Run, A/B
+
+`tan model <cmd>` mirrors the alp-sdk `alp model` surface as a thin envelope
+wrapper (`{command,ok,exitCode,project,data,issues}`). Alongside the pre-existing
+`build` / `list` / `info` / `doctor` subcommands (compile `board.yaml` `models:`
+→ `.alpmodel`, list, decode, toolchains), the model lifecycle commands are below.
+
+Static pre-flight fit/perf check — **offline, conservative**:
+
+```bash
+tan model check --board board.yaml
+tan model check --board board.yaml --format json
+tan model check --board board.yaml --exact          # real vela compile (Ethos-U only)
+```
+
+Runs OFFLINE with no toolchain. Per SoM-backend it reports an `npuCoverage` of
+`full-eligible` | `partial` | `cpu-only` | `undetermined` at
+`basis: "static-screen"`, a MAC-weighted UPPER bound
+(`computeOnNpuPctMax`), the operators that are certain CPU fallback, and every
+caveat as prose in `notes`.
+
+Read a static screen as ELIGIBILITY, never a guarantee: an eligible operator
+still carries quantization, shape and dtype constraints the screen cannot
+check, and the model runs either way — an operator the NPU cannot take falls
+back to the CPU silently rather than failing.
+
+`undetermined` means NO DATA for that backend (no support table, or a source
+format it does not ingest), not a finding that the model will not run.
+
+`--exact` runs the real `vela` for Ethos-U (`pip install
+alp-tan[model-compile]`) and upgrades the report to `basis: "compiled"` with
+the measured operator placement (`npuPlacementPctReal`). Only `basis:
+"compiled"` or `basis: "bench"` may be read as proven.
+
+Browse the curated model zoo (each entry marked whether it runs on your SoM):
+
+```bash
+tan model zoo --sku <SKU>
+tan model zoo --board board.yaml --format json
+```
+
+Add a zoo entry to your `board.yaml` `models:`:
+
+```bash
+tan model add <zoo-id> --board board.yaml --name NAME --models-dir DIR
+```
+
+Fetches the source (URL sha256-verified, or bundled) and appends `{name, source}`
+to `board.yaml` `models:`. Non-destructive — a duplicate name errors.
+
+License-free INT8 quantize + fp32-vs-int8 accuracy report:
+
+```bash
+tan model prep <model.onnx|.tflite> --calibration <dir> --out OUT --per-channel --min-samples N
+```
+
+Produces an INT8 (onnxruntime QDQ) model plus an accuracy report (top1 agreement
+%, mean cosine, max-abs-err, verdict `good` | `degraded` + guidance). A `.tflite`
+input is converted to ONNX first via tf2onnx.
+
+Host reference run / A-B compare — **NOT target-SoM performance**:
+
+```bash
+tan model run <model.onnx> --input FILE.npy --expected LABEL --runs N
+tan model ab <a.onnx> <b.onnx> --input FILE.npy --runs N
+```
+
+`run` executes on the HOST (backend `cpu-host`): functional + host-latency +
+accuracy. `ab` compares two models on the same input for latency + size delta.
+Both are host REFERENCE runs, not the target SoM's performance —
+`peak_sram_kib` / `power_mj` are null on host (on-device values are HW-gated).
+
+## 10. Exit Codes
 
 - 0: success
 - 1: runtime/command failure
@@ -214,6 +286,6 @@ tan completion --shell fish
 - 4: doctor/preflight failure
 - 5: internal failure
 
-## 10. CI Pipeline Examples
+## 11. CI Pipeline Examples
 
 For complete GitHub Actions and GitLab CI examples, see CI_EXAMPLES.md.

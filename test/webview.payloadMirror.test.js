@@ -166,6 +166,13 @@ const MODELS = [
   { mirror: "BuildPlanSlice", file: HOST_REL, strict: true },
   { mirror: "BuildPlanWarning", file: HOST_REL, strict: true },
   { mirror: "BuildPlanData", file: HOST_REL, strict: true },
+
+  // ── models panel: `tan model ab|run|zoo` nested payloads ──
+  // Both are declared in HOST_REL, so they are strict by the rule above: they
+  // are wire-format payload types, unreachable from #495's union walk only
+  // because no union names them directly (they are nested inside one).
+  { mirror: "ModelEnergyMeasurement", file: HOST_REL, strict: true },
+  { mirror: "ZooEntry", file: HOST_REL, strict: true },
 ];
 
 /**

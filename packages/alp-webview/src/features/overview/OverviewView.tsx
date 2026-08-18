@@ -227,6 +227,12 @@ const PANELS: PanelCardProps[] = [
     desc: "Every build tool tan checks, with its status and version.",
     command: "alp.openDependencies",
   },
+  {
+    icon: "layers",
+    title: "Models",
+    desc: "Manage, build and inspect on-device AI models.",
+    command: "alp.openModelsPanel",
+  },
 ];
 
 const ACTIONS: ActionItem[] = [
