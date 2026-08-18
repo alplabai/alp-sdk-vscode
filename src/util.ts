@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as vscode from "vscode";
+import { isCancellation } from "./notify/service";
 
 const OUTPUT = vscode.window.createOutputChannel("Alp SDK");
 
@@ -18,6 +19,13 @@ export function showOutput(): void {
   OUTPUT.show(true);
 }
 
+/** Append raw text (no timestamp/level prefix) to the "Alp SDK" channel — for
+ *  streaming a subprocess's live stdout/stderr into the persistent log, so a
+ *  build's output survives the terminal that would otherwise die with it. */
+export function appendOutput(text: string): void {
+  OUTPUT.append(text);
+}
+
 /** Fires when a `runInTerminal` run finishes (its process exits, or the task
  *  ends without ever starting one), carrying the run's `name` and its exit
  *  `code` (undefined if unknown). It is the real "an Alp command that ran in
@@ -29,8 +37,48 @@ export function showOutput(): void {
 const terminalFinished = new vscode.EventEmitter<{
   name: string;
   code: number | undefined;
+  /** Which surface holds this run's output — a dedicated task terminal
+   *  (`"terminal"`, the default and the only value before channel mode) or the
+   *  "Alp SDK" output channel (`"channel"`, fired by
+   *  `signalStreamedFinished`). The verdict subscriber needs it to offer a
+   *  reveal action that exists: "Show Terminal" opens nothing for a run that
+   *  never had one. */
+  mode?: "terminal" | "channel";
 }>();
 export const onDidFinishTerminalCommand = terminalFinished.event;
+
+/**
+ * Resolve when the next run under `name` finishes, with its exit code
+ * (`undefined` when unknown). The await half of a sequential "Fix all" (#466
+ * §2): one row at a time, because two installers racing is how half-written
+ * workspaces happen — the same reason `planDependencyReport` suppresses every
+ * action while a bootstrap is in flight.
+ *
+ * SUBSCRIBE BEFORE DISPATCHING. A short run can finish before an `await` on a
+ * promise created afterwards ever attaches, so the intended shape is:
+ *
+ *     const finished = awaitRun(NAME);
+ *     runInTerminal({ name: NAME, … });
+ *     const code = await finished;
+ *
+ * It does NOT time out, on purpose: an install can legitimately take an hour
+ * (a Zephyr SDK archive), and a timeout that fires early would report a
+ * failure over a run that is still going. What guarantees it settles is the
+ * dispatch side — `runInTerminal` fires the finish signal from its watchdog
+ * when a task never starts, and from its rejection path when `executeTask`
+ * fails. The ONE way to hang it is to dispatch a run that `isRunActive`
+ * refuses, which reserves nothing and therefore fires nothing; callers must
+ * check `isRunActive` first rather than relying on this to notice.
+ */
+export function awaitRun(name: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const subscription = terminalFinished.event((event) => {
+      if (event.name !== name) return;
+      subscription.dispose();
+      resolve(event.code);
+    });
+  });
+}
 
 /** Fixed task identity for every `runInTerminal` run, so these never mix in
  *  with the user's own `tasks.json` entries in the Tasks UI. `run` (the
@@ -69,7 +117,7 @@ interface RunReservation {
 
 /**
  * Reservations for still-running (or not-yet-confirmed-started) `runInTerminal`
- * runs, keyed by `name`. Backs `isRunInTerminalActive`/`revealRunInTerminal`
+ * runs, keyed by `name`. Backs `isRunActive`/`revealRunInTerminal`
  * (the "already running, don't kill it" guard `west/vscodeAdapter.ts` needs)
  * and lets a same-named re-run terminate the stale one first.
  *
@@ -83,7 +131,7 @@ interface RunReservation {
  * before `executeTask` is even called, keyed by a monotonic `generation`
  * rather than the (not-yet-known) `TaskExecution` object -- and consults this
  * same map itself before dispatching (see `runInTerminal`), so the guard
- * holds even for callers that never check `isRunInTerminalActive` first.
+ * holds even for callers that never check `isRunActive` first.
  */
 const active = new Map<string, RunReservation>();
 /** Maps a known `TaskExecution` (from `onDidStartTask` or the `executeTask`
@@ -123,24 +171,17 @@ function ensureTaskTracking(): void {
     }
     active.delete(name);
     log(`[terminal] "${name}" exited (code=${code ?? "unknown"})`);
-    terminalFinished.fire({ name, code });
-    // Glanceable verdict (#332). Its original premise -- "the terminal dies
-    // when its process exits, so the outcome scrolls away" -- no longer holds
-    // now that these run as Tasks whose terminal stays open, but the toast is
-    // still the only signal a user gets without watching the panel or opening
-    // the channel. A 0 exit shows an info toast; a defined non-zero shows an
-    // error toast + "Show Output".
+    // The glanceable verdict (#332) is NOT raised here any more: it is planned
+    // and presented by the `onDidFinishTerminalCommand` subscriber in
+    // `src/extension.ts`, so a failed `west flash` gets a plan with real
+    // actions ("Show Terminal", "Run Doctor") and keeps the exit code out of
+    // the toast text. This file must not import the presenter — the presenter
+    // imports log/showOutput/revealRunInTerminal from here.
     //
-    // An undefined code stays SILENT, and the reason changed with the port:
-    // it used to mean "the user closed the terminal mid-run", and now means
-    // the task ended without its process ever starting (the onDidEndTask
-    // backstop) -- i.e. we have no verdict to report. Claiming either outcome
-    // there would be a guess, so #332's silence rule is kept for a new reason.
-    if (code === 0) {
-      void vscode.window.showInformationMessage(`${name} finished`);
-    } else if (code !== undefined) {
-      void reportError(`${name} failed (exit ${code})`);
-    }
+    // The event's own rule is unchanged: an undefined `code` means the task
+    // ended without its process ever starting (the onDidEndTask backstop), so
+    // there is no verdict to report and the subscriber stays silent.
+    terminalFinished.fire({ name, code });
   };
 
   // The real "did it actually start" signal (see RUN_START_TIMEOUT_MS):
@@ -150,7 +191,7 @@ function ensureTaskTracking(): void {
   // is CURRENT for `name`, not necessarily the one that dispatched it -- a
   // second runInTerminal() for the same name landing before the first's
   // start confirms could misattribute. Callers that must serialize a name
-  // guard with isRunInTerminalActive() before calling (west/vscodeAdapter.ts
+  // guard with isRunActive() before calling (west/vscodeAdapter.ts
   // already does, for the #146 case this module exists to fix); upgrade path
   // if a second caller needs it: a per-dispatch nonce in the task definition.
   taskTrackingDisposables.push(
@@ -208,10 +249,58 @@ function runNameOf(execution: vscode.TaskExecution): string | undefined {
     : undefined;
 }
 
-/** True when a `runInTerminal` run under `name` is still executing (or its
- *  start is still pending confirmation). */
-export function isRunInTerminalActive(name: string): boolean {
-  return active.has(name);
+/** Names held by a STREAMED run (`runAlpStreamed`, output-channel mode).
+ *
+ *  Deliberately in this module, beside `active`, so both dispatch paths answer
+ *  ONE question: "is anything running under this name?". Two registries was
+ *  not an academic split — `runInTerminal` refuses a same-named re-run (#146:
+ *  "two concurrent bootstraps, or a flash killed mid-write") while the channel
+ *  path could neither see that reservation nor be seen by it, so a debug
+ *  `preLaunchTask` build and a Build click raced the same `build/` directory
+ *  with neither guard firing. */
+const streamedActive = new Set<string>();
+
+/** The one run name every `tan build` dispatch uses — the Build button and the
+ *  Build Plan panel today, the debug `preLaunchTask` once #342 lands (it still
+ *  declares its own `"alp build"` literal, which must adopt this on rebase). A
+ *  single name is what makes the #146/#341 guard mean anything: two names in
+ *  one registry are two reservations, and two `tan build` processes over one
+ *  `build/` directory. */
+export const BUILD_RUN_NAME = "Alp Build";
+
+/** The one run name every FLASH dispatch uses, `tan flash` and the legacy
+ *  `west flash` alike, whole-project and per-core. Sharper than the build case:
+ *  two builds corrupt a directory, two flashes drive one programmer into one
+ *  board mid-write. The per-core flash deliberately does NOT get its own name —
+ *  a second core is a second write to the same target (the core it flashes is
+ *  in the logged command line). */
+export const FLASH_RUN_NAME = "Alp Flash";
+
+/** True when a run under `name` is still executing (or its start is still
+ *  pending confirmation) — a terminal task OR a streamed channel run. */
+export function isRunActive(name: string): boolean {
+  return active.has(name) || streamedActive.has(name);
+}
+
+/** True when the live run under `name` is a streamed one — its output is in
+ *  the "Alp SDK" channel and there is no terminal to reveal. */
+export function isStreamedRunActive(name: string): boolean {
+  return streamedActive.has(name);
+}
+
+/** Claim `name` for a streamed run. False when a run — terminal or streamed —
+ *  already holds it, in which case the caller must REFUSE the dispatch and
+ *  never terminate the live one: a streamed run can be a flash, and killing
+ *  that mid-write can leave a board unbootable (#146). Pair every true with a
+ *  `releaseStreamedRun` on every exit path. */
+export function reserveStreamedRun(name: string): boolean {
+  if (isRunActive(name)) return false;
+  streamedActive.add(name);
+  return true;
+}
+
+export function releaseStreamedRun(name: string): void {
+  streamedActive.delete(name);
 }
 
 /**
@@ -255,7 +344,7 @@ export function revealRunInTerminal(name: string): void {
  * (issue #146) or racing a second dispatch into starting a concurrent
  * `tan bootstrap` against the same venv. This guard lives HERE, not only in
  * callers, so every caller gets it — `executeWestPlan` already checks
- * `isRunInTerminalActive` itself for a caller-specific message and returns
+ * `isRunActive` itself for a caller-specific message and returns
  * before ever reaching this function, so its check and this one never both
  * fire for the same dispatch.
  *
@@ -270,27 +359,62 @@ export function revealRunInTerminal(name: string): void {
  * `executeTask` is even called) and released if `vscode.tasks.onDidStartTask`
  * never confirms a real start within `RUN_START_TIMEOUT_MS` -- guaranteeing a
  * task that never starts (e.g. its type was never contributed) can't brick
- * the command forever (`isRunInTerminalActive` would stay true with no event
+ * the command forever (`isRunActive` would stay true with no event
  * ever coming to clear it).
  */
-export function runInTerminal(options: {
-  name: string;
-  argv: string[];
-  cwd?: string;
-  env?: Record<string, string>;
-}): void {
+/**
+ * WHAT to run, as a discriminated union so a caller states one and only one.
+ *
+ * `argv` is a `ProcessExecution` — no shell, no quoting rules, and the form
+ * every caller before #466 used.
+ *
+ * `command` is a `ShellExecution` — one shell command LINE, run by the user's
+ * default shell. It exists because tan's `missingPrerequisites[].command` IS a
+ * shell line (`sudo apt-get install -y ninja-build`) and splitting it on
+ * whitespace to fit an argv array mangles any quoted argument. Those dispatches
+ * used to be a bare `createTerminal` + `sendText` for exactly that reason; the
+ * cost was that a raw terminal reports NO exit code and holds no reservation,
+ * so nothing could wait for one and nothing stopped two racing. Routing them
+ * through a task buys both, which is what makes a sequential "Fix all"
+ * possible at all (#466 §2).
+ */
+export type RunExecutionSpec =
+  | { argv: string[]; command?: never }
+  | { command: string; argv?: never };
+
+export function runInTerminal(
+  options: RunExecutionSpec & {
+    name: string;
+    /** REQUIRED, though it may be `undefined` — the key must be written, so "no
+     *  working directory" is a decision a caller states and a reviewer can see,
+     *  never an omission. `undefined` reaches `ProcessExecution` as "inherit the
+     *  extension host's own cwd", which on Windows is the VS Code INSTALL
+     *  DIRECTORY; a command that writes where it runs (`tan bootstrap` —
+     *  creates a venv + west workspace) then bootstraps there. Two
+     *  `runAlpInTerminal` sites shipped with `cwd` simply left off, which is
+     *  why this is not optional. */
+    cwd: string | undefined;
+    env?: Record<string, string>;
+  },
+): void {
   ensureTaskTracking();
-  if (active.has(options.name)) {
+  if (isRunActive(options.name)) {
     // Refuse rather than silently no-op or terminate a possibly-live run
     // (issue #146 in both directions: two concurrent bootstraps, or a flash
-    // killed mid-write) -- tell the user why the click did nothing.
+    // killed mid-write) -- tell the user why the click did nothing. A STREAMED
+    // run under the same name counts, and its output is in the channel, so
+    // offer the surface that actually holds it.
+    const streamed = isStreamedRunActive(options.name);
+    const reveal = streamed ? "Show Output" : "Show Terminal";
     void vscode.window
       .showWarningMessage(
         `"${options.name}" is still running — wait for it to finish before starting it again.`,
-        "Show Terminal",
+        reveal,
       )
       .then((choice) => {
-        if (choice === "Show Terminal") revealRunInTerminal(options.name);
+        if (choice !== reveal) return;
+        if (streamed) showOutput();
+        else revealRunInTerminal(options.name);
       });
     return;
   }
@@ -325,11 +449,17 @@ export function runInTerminal(options: {
   clearTimeout(active.get(options.name)?.watchdog);
   active.set(options.name, reservation);
 
-  const execution = new vscode.ProcessExecution(
-    options.argv[0],
-    options.argv.slice(1),
-    { cwd: options.cwd, env: options.env },
-  );
+  const execution =
+    options.command !== undefined
+      ? // A shell command LINE, quoting intact — see `RunExecutionSpec`.
+        new vscode.ShellExecution(options.command, {
+          cwd: options.cwd,
+          env: options.env,
+        })
+      : new vscode.ProcessExecution(options.argv[0], options.argv.slice(1), {
+          cwd: options.cwd,
+          env: options.env,
+        });
   const task = new vscode.Task(
     { type: TASK_TYPE, run: options.name },
     vscode.TaskScope.Workspace,
@@ -349,9 +479,16 @@ export function runInTerminal(options: {
       executionGeneration.set(taskExecution, generation);
     },
     (error) => {
+      // `executeTask` is a main-thread RPC, so at window teardown it rejects
+      // with a CancellationError for every run still in flight. The task was
+      // abandoned with the window — it did not fail to start — and an "error"
+      // line saying so is the closed-window-vs-broken confusion. Still release
+      // the slot below: the reservation is per-window state either way.
       log(
-        `[terminal] "${options.name}" failed to start: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
+        isCancellation(error)
+          ? `[terminal] "${options.name}" abandoned, window closing`
+          : `[terminal] "${options.name}" failed to start: ${error instanceof Error ? error.message : String(error)}`,
+        isCancellation(error) ? "info" : "error",
       );
       // executeTask's Thenable can also resolve on a failed start (VS Code
       // internals), so this rejection path is a bonus, not the only guard --
@@ -365,30 +502,26 @@ export function runInTerminal(options: {
   );
 }
 
-const SHOW_OUTPUT = "Show Output";
+// `reportError` used to live here. It moved to `src/notify/vscodeAdapter.ts`
+// (same signature) so that ALL notification rendering sits behind one seam:
+// leaving a second toast-raising helper here is exactly what let call sites
+// hand-roll their own `showErrorMessage` variants. It cannot be re-exported
+// from this file either — the presenter imports `log` / `showOutput` /
+// `revealRunInTerminal` from here, so an import back would be a cycle.
 
-/** Report a diagnosable failure: log the full detail to the "Alp SDK" channel
- *  AND show an error toast that always offers "Show Output" (plus any caller
- *  actions). Picking "Show Output" reveals the channel and returns undefined;
- *  otherwise the picked caller action is returned. The house pattern for every
- *  error toast tied to a failure the channel can explain.
+/** Report a STREAMED (channel-mode) run's result: log it, then fire the same
+ *  finish signal a terminal run fires, tagged `mode: "channel"`.
  *
- *  Do not pass a caller action literally titled "Show Output" — that title is
- *  reserved for the appended house action and would be indistinguishable. */
-export async function reportError(
-  message: string,
-  detail?: string,
-  ...actions: string[]
-): Promise<string | undefined> {
-  log(detail ? `${message} — ${detail}` : message, "error");
-  const pick = await vscode.window.showErrorMessage(
-    message,
-    ...actions,
-    SHOW_OUTPUT,
-  );
-  if (pick === SHOW_OUTPUT) {
-    showOutput();
-    return undefined;
-  }
-  return pick;
+ *  It raises no toast, for the same reason the terminal `finish()` above
+ *  stopped raising one (#368): the verdict is planned and presented by the
+ *  `onDidFinishTerminalCommand` subscriber in `src/extension.ts`. The `mode`
+ *  tag is what lets that one subscriber offer "Show Output" for a channel run
+ *  — whose log is in the channel and which has no terminal to reveal —
+ *  instead of a "Show Terminal" that would open nothing. */
+export function signalStreamedFinished(
+  name: string,
+  code: number | undefined,
+): void {
+  log(`[channel] "${name}" exited (code=${code ?? "unknown"})`);
+  terminalFinished.fire({ name, code, mode: "channel" });
 }

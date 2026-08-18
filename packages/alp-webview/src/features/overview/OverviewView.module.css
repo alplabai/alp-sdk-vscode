@@ -54,13 +54,18 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-  max-width: 920px;
+  /* Fluid, capped once in tokens.css — was a hard 920px, which left most of a
+     wide editor empty. */
+  max-width: var(--content-max);
 }
 
 .lead {
   font-size: var(--font-size-base);
   color: var(--text-secondary);
   margin: 0;
+  /* The one block that must NOT grow with the window: a sentence stretched
+     across a wide monitor is harder to read, not easier. */
+  max-width: var(--prose-max);
 }
 
 /* ── Section heading ────────────────────────────────────────────────────── */
@@ -76,7 +81,11 @@
 /* ── Status card grid ───────────────────────────────────────────────────── */
 .cardGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* auto-fit, not a fixed 3: the status cards stretch to fill a wide window
+     and drop to two or one as it narrows, instead of staying three squeezed
+     columns. `auto-fit` (not `auto-fill`) is what makes the last row expand
+     rather than leaving phantom empty tracks. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--space-4);
 }
 

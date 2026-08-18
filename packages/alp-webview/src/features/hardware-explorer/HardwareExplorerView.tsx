@@ -176,7 +176,10 @@ export function HardwareExplorerView() {
                 <tr key={`${r.e1m}-${i}`}>
                   <td className={styles.mono}>{r.e1m}</td>
                   <td className={styles.mono}>{r.dispatch}</td>
-                  <td>{r.dispatchPin ?? "—"}</td>
+                  {/* The pin belongs with the two board values beside it, not
+                      with the prose in `Doc`. It was the one raw column in this
+                      table left in the UI font. */}
+                  <td className={styles.mono}>{r.dispatchPin ?? "—"}</td>
                   <td>{r.doc ?? ""}</td>
                 </tr>
               ))}

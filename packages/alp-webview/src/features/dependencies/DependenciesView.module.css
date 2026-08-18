@@ -1,0 +1,238 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+.shell {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  min-height: 0;
+}
+
+.header {
+  flex-shrink: 0;
+  padding: var(--space-7) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-4);
+}
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.counts {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+}
+
+.count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.countValue {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+}
+
+.count[data-status="pass"] .countValue {
+  color: var(--status-ok);
+}
+
+.count[data-status="warn"] .countValue {
+  color: var(--status-warn);
+}
+
+.count[data-status="fail"] .countValue {
+  color: var(--status-err);
+}
+
+.countLabel {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.note {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: var(--space-3) 0 0;
+  line-height: 1.5;
+}
+
+.summaryRow .note {
+  margin: 0;
+}
+
+.body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-6) var(--space-7);
+}
+
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-base);
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table thead th {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.name {
+  font-weight: 400;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.detail {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+/* The two version columns stay in the panel's own font.
+ *
+ * They used to set `--vscode-editor-font-family`, which is the user's EDITOR
+ * font — a setting with nothing to do with this panel, and commonly a
+ * distinctive coding face. This table has no other monospace content, so that
+ * lone code face read as a second UI dropped into one row of cells. Worse, the
+ * var resolves EMPTY in some webview hosts and the `, monospace` fallback does
+ * not cover that: a var() fallback applies only when the property is unset,
+ * never when it is set to nothing — see the note on `--text-mono` in
+ * tokens.css.
+ *
+ * `tabular-nums` keeps the digits column-aligned down the table, which was the
+ * only thing the monospace was actually buying here. */
+.versionCell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.version {
+  color: var(--text-primary);
+}
+
+/* A pin is not an upgrade path — label it so nobody reads the version column
+   as "you are behind". */
+/* No `font-family` reset here any more: these badges used to have to escape the
+   cell's monospace, and the cell no longer sets one. */
+.pin,
+.update {
+  margin-left: var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  color: var(--text-secondary);
+}
+
+.update {
+  border-color: var(--status-warn);
+  color: var(--status-warn);
+}
+
+/* Statuses are whatever tan says. The three it emits today are coloured; any
+   word it adds tomorrow still renders, just in the default foreground. */
+.status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status[data-status="pass"] {
+  color: var(--status-ok);
+}
+
+.status[data-status="warn"] {
+  color: var(--status-warn);
+}
+
+.status[data-status="fail"] {
+  color: var(--status-err);
+}
+
+/* The state word leads; tan's own status sits under it in the muted detail
+   style, so the summary never replaces the fact it summarises (#466 §1). */
+.state {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.state[data-state="ready"] {
+  color: var(--status-ok);
+}
+
+.state[data-state="will-install"] {
+  color: var(--status-warn);
+}
+
+.state[data-state="needs-you"] {
+  color: var(--status-err);
+}
+
+/* `unknown` deliberately takes the default foreground: it is the absence of a
+   claim, and colouring it would make it look like one. */
+
+.action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

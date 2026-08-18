@@ -18,8 +18,20 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# tan's published envelope contract, fetched by scripts/fetch-tan-contract.mjs.
+# Deliberately NOT tracked: a corpus hand-copied into this repo drifts in exactly
+# the way the drift gate that reads it exists to catch. Refresh with
+# `pnpm run contract:fetch`.
+test/golden/tan-contract/
+
 # Local assistant instructions (keep private)
 .github/local-agent-instructions.md
+
+# Claude Code project instructions. Untracked on purpose: the alp-lab plugin
+# rewrites a managed block into this file on every session, so a tracked copy
+# shows up as an unstaged edit forever. Root-scoped (`/`) so a nested CLAUDE.md
+# in a package stays visible if one is ever added.
+/CLAUDE.md
 
 # Transient Claude Code runtime locks
 .claude/scheduled_tasks.lock

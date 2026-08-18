@@ -2,13 +2,9 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as vscode from "vscode";
+import { proxyEnvAdditions } from "../alpCli/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
-import {
-  isRunInTerminalActive,
-  revealRunInTerminal,
-  runInTerminal,
-} from "../util";
+import { runInTerminal } from "../util";
 import {
   WestCommandPlan,
   WestWorkspaceContext,
@@ -53,21 +49,11 @@ function findWorkspaceVenvWest(
 }
 
 export function executeWestPlan(plan: WestCommandPlan): void {
-  // A previous run under this terminal name is still executing (tracked by
-  // util.ts's Task-execution bookkeeping) -- runInTerminal would terminate it
-  // to start a fresh one, killing a live command mid-run (interrupting a
-  // flash — issue #146). Warn and reveal it instead of interrupting it.
-  if (isRunInTerminalActive(plan.terminalName)) {
-    void vscode.window
-      .showWarningMessage(
-        `"${plan.terminalName}" is still running — wait for it to finish before starting it again.`,
-        "Show Terminal",
-      )
-      .then((choice) => {
-        if (choice === "Show Terminal") revealRunInTerminal(plan.terminalName);
-      });
-    return;
-  }
+  // No "still running" pre-check here on purpose. `runInTerminal` refuses a
+  // live run under the same terminal name itself (issue #146: never terminate
+  // a flash mid-write to start a fresh one) with the byte-identical warning
+  // and the same "Show Terminal" action, so a second copy of that toast in
+  // this file only ever meant two places to keep in sync.
 
   // Prefer the workspace venv's west over PATH (hermetic; see findWorkspaceVenvWest).
   const venvWest = findWorkspaceVenvWest(plan.westCwd);
@@ -79,6 +65,10 @@ export function executeWestPlan(plan: WestCommandPlan): void {
     name: plan.terminalName,
     argv,
     cwd: plan.westCwd ?? undefined,
-    env: plan.env,
+    // `west update` clones and fetches from GitHub, so it is as proxy-dependent
+    // as `tan` is and this task inherits the extension host's environment, not
+    // a login shell's. The plan's own vars win on a key clash: the proxy
+    // additions never write EXTRA_ZEPHYR_MODULES, so today there is none.
+    env: { ...proxyEnvAdditions(), ...plan.env },
   });
 }

@@ -1,0 +1,179 @@
+{
+  "command": "doctor",
+  "ok": false,
+  "exitCode": 4,
+  "project": {
+    "root": "C:/tmp/no-project",
+    "boardYaml": "C:/tmp/no-project/board.yaml"
+  },
+  "data": {
+    "schemaVersion": "1",
+    "generatedAt": "2026-07-29T10:19:33.581Z",
+    "osSet": ["zephyr", "yocto", "baremetal"],
+    "summary": { "pass": 3, "warn": 7, "fail": 4 },
+    "checks": [
+      {
+        "name": "sdk",
+        "status": "fail",
+        "detail": "no SDK selected — run `tan sdk switch <path>` or `tan sdk install <ver>`",
+        "fix": "tan sdk switch <path>"
+      },
+      {
+        "name": "boardYaml",
+        "status": "fail",
+        "detail": "board.yaml not found — run `tan init` or pass `--board-yaml <path>`",
+        "fix": "tan init"
+      },
+      {
+        "name": "workspace",
+        "status": "fail",
+        "detail": "no Zephyr workspace — run `tan bootstrap` (reuses a compatible Zephyr, else bootstraps one)",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "westResolved",
+        "status": "warn",
+        "detail": "west not found — run `tan bootstrap` to create the workspace venv",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "git",
+        "status": "pass",
+        "detail": "git is available.",
+        "version": "2.38.1"
+      },
+      {
+        "name": "python",
+        "status": "pass",
+        "detail": "python 3.11 available.",
+        "version": "3.11"
+      },
+      {
+        "name": "west",
+        "status": "warn",
+        "detail": "west not found on PATH — needed for Zephyr builds.",
+        "fix": "Install west via `tan bootstrap`."
+      },
+      {
+        "name": "cmake",
+        "status": "pass",
+        "detail": "cmake is available.",
+        "version": "3.25.0"
+      },
+      {
+        "name": "ninja",
+        "status": "fail",
+        "detail": "ninja not found on PATH — needed for Zephyr builds.",
+        "fix": "Install Ninja. `winget install -e --id Ninja-build.Ninja`"
+      },
+      {
+        "name": "dtc",
+        "status": "warn",
+        "detail": "dtc not found on PATH — needed for Zephyr builds.",
+        "fix": "Install the devicetree compiler (dtc)."
+      },
+      {
+        "name": "gperf",
+        "status": "warn",
+        "detail": "gperf not found on PATH — needed for Zephyr builds.",
+        "fix": "Install gperf."
+      },
+      {
+        "name": "zephyrSdk",
+        "status": "warn",
+        "detail": "Zephyr SDK toolchain not detected (ZEPHYR_SDK_INSTALL_DIR unset).",
+        "fix": "Install the Zephyr SDK: https://docs.zephyrproject.org/latest/develop/toolchains/zephyr_sdk.html"
+      },
+      {
+        "name": "yoctoHost",
+        "status": "warn",
+        "detail": "Yocto builds are Linux-only; use WSL2 or a Linux host/container.",
+        "fix": "Run Yocto builds on Linux (WSL2 / Docker)."
+      },
+      {
+        "name": "vendorToolchain",
+        "status": "warn",
+        "detail": "Baremetal needs a vendor toolchain (Alif/Renesas/NXP), per SoC family.",
+        "fix": "Install the vendor toolchain for your SoC (see docs/getting-started.md §8)."
+      }
+    ],
+    "nextSteps": [
+      "tan sdk switch <path>",
+      "tan init",
+      "tan bootstrap",
+      "Install west via `tan bootstrap`.",
+      "Install Ninja. `winget install -e --id Ninja-build.Ninja`",
+      "Install the devicetree compiler (dtc).",
+      "Install gperf.",
+      "Install the Zephyr SDK: https://docs.zephyrproject.org/latest/develop/toolchains/zephyr_sdk.html",
+      "Run Yocto builds on Linux (WSL2 / Docker).",
+      "Install the vendor toolchain for your SoC (see docs/getting-started.md §8)."
+    ],
+    "missingPrerequisites": [
+      { "tool": "west", "command": null },
+      {
+        "tool": "ninja",
+        "command": "winget install -e --id Ninja-build.Ninja"
+      },
+      { "tool": "dtc", "command": null },
+      { "tool": "gperf", "command": null }
+    ]
+  },
+  "issues": [
+    {
+      "code": "doctor.sdk",
+      "severity": "error",
+      "message": "no SDK selected — run `tan sdk switch <path>` or `tan sdk install <ver>`"
+    },
+    {
+      "code": "doctor.boardYaml",
+      "severity": "error",
+      "message": "board.yaml not found — run `tan init` or pass `--board-yaml <path>`"
+    },
+    {
+      "code": "doctor.workspace",
+      "severity": "error",
+      "message": "no Zephyr workspace — run `tan bootstrap` (reuses a compatible Zephyr, else bootstraps one)"
+    },
+    {
+      "code": "doctor.westResolved",
+      "severity": "warning",
+      "message": "west not found — run `tan bootstrap` to create the workspace venv"
+    },
+    {
+      "code": "doctor.west",
+      "severity": "warning",
+      "message": "west not found on PATH — needed for Zephyr builds."
+    },
+    {
+      "code": "doctor.ninja",
+      "severity": "error",
+      "message": "ninja not found on PATH — needed for Zephyr builds."
+    },
+    {
+      "code": "doctor.dtc",
+      "severity": "warning",
+      "message": "dtc not found on PATH — needed for Zephyr builds."
+    },
+    {
+      "code": "doctor.gperf",
+      "severity": "warning",
+      "message": "gperf not found on PATH — needed for Zephyr builds."
+    },
+    {
+      "code": "doctor.zephyrSdk",
+      "severity": "warning",
+      "message": "Zephyr SDK toolchain not detected (ZEPHYR_SDK_INSTALL_DIR unset)."
+    },
+    {
+      "code": "doctor.yoctoHost",
+      "severity": "warning",
+      "message": "Yocto builds are Linux-only; use WSL2 or a Linux host/container."
+    },
+    {
+      "code": "doctor.vendorToolchain",
+      "severity": "warning",
+      "message": "Baremetal needs a vendor toolchain (Alif/Renesas/NXP), per SoC family."
+    }
+  ]
+}

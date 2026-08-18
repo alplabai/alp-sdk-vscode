@@ -3,7 +3,7 @@
   "displayName": "Alp IDE",
   "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for Alp SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
-  "version": "0.3.7",
+  "version": "0.5.2",
   "publisher": "AlpLabAI",
   "license": "Apache-2.0",
   "repository": {
@@ -41,11 +41,18 @@
     "onCommand:alp.newProjectWizard",
     "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
+    "onTaskType:alp",
     "workspaceContains:**/board.yaml",
     "workspaceContains:**/prj*.conf"
   ],
   "main": "./out/extension.js",
   "icon": "media/icon.png",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Alp IDE executes programs against the files in your workspace: it spawns the `tan` CLI, `west`, and your cross-toolchain, driven by workspace-controlled inputs (board.yaml, CMakeLists, west manifests, .vscode/settings.json). Opening a folder you do not trust could therefore run code you did not write. Trust this folder to enable Alp IDE."
+    }
+  },
   "extensionDependencies": [
     "redhat.vscode-yaml",
     "marus25.cortex-debug"
@@ -71,39 +78,25 @@
       {
         "id": "alpGettingStarted",
         "title": "Get started with Alp IDE",
-        "description": "Install the SDK, bootstrap your toolchain, open a project, and build — all from here.",
-        "featuredFor": [
-          "**/board.yaml"
-        ],
+        "description": "Install the SDK, open a project, bootstrap your toolchain, and build — all from here.",
         "steps": [
           {
             "id": "alp.walkthrough.installSdk",
             "title": "Install the Alp SDK",
-            "description": "Pick a tagged SDK release (or point at one on disk). The active SDK supplies the board schemas, presets, and build-plan emitter.\n[Open SDK Manager](command:alp.openSdkManager)",
+            "description": "Pick a tagged SDK release, or point at one you already have on disk. Installing is not activating: then click **Use** on the installed release to make it active. The active SDK supplies the board schemas, presets, and build-plan emitter.\n[Open SDK Manager](command:alp.openSdkManager)\n[Select an SDK on disk](command:alp.selectSdk)",
             "media": {
               "markdown": "media/walkthroughs/01-install-sdk.md"
             },
             "completionEvents": [
-              "onCommand:alp.openSdkManager"
-            ]
-          },
-          {
-            "id": "alp.walkthrough.bootstrap",
-            "title": "Bootstrap your toolchain",
-            "description": "Create the Zephyr workspace and install west + Zephyr Python deps into a workspace venv. Run Alp: Toolchain doctor to check host prerequisites (Python, CMake, Ninja).\n[Bootstrap toolchain](command:alp.installDependencies)",
-            "media": {
-              "markdown": "media/walkthroughs/02-bootstrap.md"
-            },
-            "completionEvents": [
-              "onCommand:alp.installDependencies"
+              "onSettingChanged:alpSdk.path"
             ]
           },
           {
             "id": "alp.walkthrough.project",
             "title": "Open or create a project",
-            "description": "Scaffold a real project from a template (and target your SoM), or open an existing folder.\n[New project](command:alp.newProjectWizard)\n[Open existing](command:alp.openExistingProject)",
+            "description": "Scaffold a real project from a template (and target your SoM), or open an existing folder. Do this before bootstrapping — bootstrap needs an open project folder to work from.\n[New project](command:alp.newProjectWizard)\n[Open existing](command:alp.openExistingProject)",
             "media": {
-              "markdown": "media/walkthroughs/03-project.md"
+              "markdown": "media/walkthroughs/02-project.md"
             },
             "completionEvents": [
               "onCommand:alp.newProjectWizard",
@@ -111,9 +104,20 @@
             ]
           },
           {
+            "id": "alp.walkthrough.bootstrap",
+            "title": "Bootstrap your toolchain",
+            "description": "With your project folder open, create the Zephyr workspace and install west + Zephyr Python deps into a workspace venv. Dependencies lists every host tool tan checks (CMake, Ninja, the Zephyr SDK, …) with the status tan reported for each.\n[Bootstrap toolchain](command:alp.installDependencies)\n[Open Dependencies](command:alp.openDependencies)",
+            "media": {
+              "markdown": "media/walkthroughs/03-bootstrap.md"
+            },
+            "completionEvents": [
+              "onCommand:alp.installDependencies"
+            ]
+          },
+          {
             "id": "alp.walkthrough.build",
             "title": "Build & flash",
-            "description": "Preview the build plan, then build and flash — from the status bar or the Build & Flash view.\n[Preview build plan](command:alp.showBuildPlan)\n[Build](command:alp.westBuild)",
+            "description": "Preview the build plan, then build and flash — also available from the status bar and the Build & Flash section of the Alp IDE panel.\n[Preview build plan](command:alp.showBuildPlan)\n[Build](command:alp.westBuild)\n[Flash](command:alp.westAlpFlash)",
             "media": {
               "markdown": "media/walkthroughs/04-build.md"
             },
@@ -212,8 +216,14 @@
         "icon": "$(circuit-board)"
       },
       {
+        "command": "alp.openDependencies",
+        "title": "Alp: Dependencies",
+        "category": "Alp",
+        "icon": "$(checklist)"
+      },
+      {
         "command": "alp.toolchainDoctor",
-        "title": "Alp: Toolchain doctor",
+        "title": "Alp: Toolchain doctor (opens Dependencies)",
         "category": "Alp"
       },
       {
@@ -256,7 +266,7 @@
       },
       {
         "command": "alp.updateCli",
-        "title": "Alp: Update the tan CLI",
+        "title": "Alp: Reinstall the pinned tan CLI",
         "category": "Alp",
         "icon": "$(cloud-download)"
       },
@@ -380,6 +390,17 @@
             "type": "string"
           }
         }
+      },
+      {
+        "type": "alp",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
       }
     ],
     "viewsContainers": {
@@ -401,6 +422,12 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "alp.toolchainDoctor",
+          "when": "false"
+        }
+      ],
       "editor/title": [
         {
           "command": "alp.openConfigurator",
@@ -483,13 +510,35 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a verified `tan` on PATH, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/target/release/tan`) to override."
+          "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a `tan` on PATH whose `--version` identifies it as a native build, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/python/dist/tan/tan`, where `cd python && bash scripts/build_binary.sh` puts its freeze) to override."
         },
         "alpSdk.preferGlobalCli": {
           "type": "boolean",
           "default": false,
           "scope": "machine-overridable",
           "markdownDescription": "Prefer a globally-installed native `tan` on your PATH over the extension's own managed copy. Use this if you installed tan with **Install tan CLI (global)** and want the extension to run the same binary as your terminal. An explicit `#alpSdk.cliPath#` still takes precedence. Default (off): the extension uses its private, version-pinned managed copy."
+        },
+        "alpSdk.tanCliDownloadConsent": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "allow",
+            "deny"
+          ],
+          "enumDescriptions": [
+            "Show a one-time consent dialog (artifact, source, size, licence) the first time nothing else resolves a tan CLI. Your answer is remembered, so this asks only once.",
+            "Skip the dialog and allow the download. For a managed/CI image that already vetted it.",
+            "Skip the dialog and refuse a first-time download; tan stays unresolved until you set alpSdk.cliPath, or run \"Install tan CLI (global)\" / \"Update tan CLI\", which proceed regardless of this setting. Does NOT stop a stale-cache self-update or the one-time re-verification of a binary cached before checksums were recorded — both act on a tan you already have and are never gated by this setting."
+          ],
+          "default": "ask",
+          "scope": "machine-overridable",
+          "markdownDescription": "Whether the extension may download the managed `tan` CLI binary the first time nothing else resolves it. Only governs that FIRST install: a stale-cache self-update and the one-time re-verification of a binary cached before this extension recorded checksums are never gated by this setting — both act on a `tan` you already have. `#alpSdk.cliPath#` and the **Install tan CLI (global)** / **Update tan CLI** commands are unaffected either way."
+        },
+        "alpSdk.svdPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Path to a vendor `.svd` file, handed to `tan debug-config --svd` to populate cortex-debug's Peripherals / register view during a debug session. A relative path is resolved against the workspace root. Leave empty to debug without the peripheral view — the SDK ships no SVD of its own. **A path that does not name a readable file makes `tan` fail the whole `debug-config` command and write no `launch.json` at all** — it never falls back to dropping just the SVD key, so a typo here breaks Configure Debug Profile / F5 outright, not only the peripheral view."
         }
       }
     }
@@ -497,8 +546,10 @@
   "scripts": {
     "compile": "tsc --build && pnpm --filter ./packages/alp-webview run build",
     "vendor:kconfig-metadata": "node scripts/vendor-kconfig-metadata.mjs",
+    "contract:fetch": "node scripts/fetch-tan-contract.mjs",
     "compile:watch": "tsc --build --watch",
-    "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap",
+    "typecheck": "tsc --noEmit -p packages/alp-core --tsBuildInfoFile node_modules/.cache/alp-core.typecheck.tsbuildinfo && tsc --noEmit -p tsconfig.json && pnpm --filter ./packages/alp-webview run typecheck",
+    "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap && node -e \"require('fs').rmSync('tsconfig.tsbuildinfo',{force:true})\"",
     "test": "pnpm run compile && node --test test/*.test.js",
     "install:vscode": "node scripts/run-bash.mjs ./scripts/install-vscode.sh",
     "watch": "tsc --build --watch",

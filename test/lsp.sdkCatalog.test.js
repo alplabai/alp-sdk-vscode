@@ -362,12 +362,33 @@ test("som.sku value completion uses the pushed SDK catalog when present", () => 
   assert.ok(labels.includes("E1M-AEN401"));
 });
 
-test("som.sku value completion falls back to the built-in list without a catalog", () => {
+test("som.sku value completion falls back to every shipped SoM without a catalog", () => {
   const doc = ["som:", "  sku: "].join("\n");
   const labels = createBoardYamlCompletionSuggestions(doc, 1, 7).map(
     (s) => s.label,
   );
-  assert.deepEqual(labels, ["E1M-AEN801"]);
+  // No catalog = the first-run path, before any SDK resolves. This fallback is
+  // then the only SKU list a customer editing board.yaml sees, so it has to
+  // cover the whole shipped range: it used to hold one hardcoded SKU, which
+  // left an E7 owner unable to pick their own module at all.
+  assert.ok(
+    labels.includes("E1M-AEN701"),
+    "a released module must be offered before an SDK resolves",
+  );
+  assert.ok(
+    labels.includes("E1M-AEN801"),
+    "the previously-only SKU must still be offered",
+  );
+  // Literal count on purpose — deriving it from E1M_MODULES would compare that
+  // list to itself and pass even if the list were wrong. What keeps the list
+  // honest is test/ideHub.projectScaffold.test.js, which pins it against the
+  // alp-sdk-upstream manifests; this only pins that the fallback offers ALL of
+  // them. Bump it when the SDK ships a new SoM.
+  assert.equal(
+    labels.length,
+    11,
+    "the fallback must offer every SKU the SDK ships, not a subset",
+  );
 });
 
 test("libraries[] value completion uses the pushed SDK catalog when present", () => {

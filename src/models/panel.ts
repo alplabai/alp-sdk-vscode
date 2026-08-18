@@ -13,7 +13,8 @@ import {
   type WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml, runWebviewCommand } from "../ideHub/webviewHtml";
-import { log as logChannel, reportError } from "../util";
+import { reportError } from "../notify/vscodeAdapter";
+import { log as logChannel } from "../util";
 import {
   cliFailureMessage,
   toModelAbResult,

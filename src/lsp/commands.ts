@@ -2,6 +2,8 @@
 
 import * as fs from "fs";
 import * as vscode from "vscode";
+import { planFailure } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log } from "../util";
 import { isBoardYamlPath } from "@alp-sdk/core/validation/service";
@@ -29,23 +31,60 @@ function resolveBoardYamlUri(): vscode.Uri | null {
   return vscode.Uri.file(project.boardYamlPath);
 }
 
+const OPERATION = "Previewing the effective config";
+
 async function previewEffectiveConfig(): Promise<void> {
   const boardYamlUri = resolveBoardYamlUri();
   if (!boardYamlUri) {
-    void vscode.window.showWarningMessage(
-      "Alp: board.yaml path is unresolved. Open board.yaml or configure alpSdk.boardYamlPath.",
+    notifyAsync(
+      planFailure({
+        operation: OPERATION,
+        cause:
+          "Alp: board.yaml path is unresolved. Open board.yaml or configure alpSdk.boardYamlPath.",
+        severity: "warning",
+        actions: [{ id: "openSettings", arg: "alpSdk.boardYamlPath" }],
+      }),
     );
     return;
   }
 
   if (!fs.existsSync(boardYamlUri.fsPath)) {
-    void vscode.window.showWarningMessage(
-      `Alp: board.yaml not found at ${boardYamlUri.fsPath}`,
+    notifyAsync(
+      planFailure({
+        operation: OPERATION,
+        cause: "Alp: board.yaml not found.",
+        // The path is diagnostic, not a sentence — the channel gets it.
+        detail: boardYamlUri.fsPath,
+        severity: "warning",
+        actions: [
+          { id: "openSettings", arg: "alpSdk.boardYamlPath" },
+          { id: "newProject" },
+        ],
+      }),
     );
     return;
   }
 
-  const preview = await requestEffectiveConfigPreview(boardYamlUri);
+  // `requestEffectiveConfigPreview` throws when the language server isn't
+  // started (client.ts), and this command — plus the configurator's button,
+  // which routes through it — is the only caller. Uncaught, VS Code shows its
+  // own unbranded "command failed" popup with the raw error, no channel entry
+  // and no action; catch it once here where every caller passes.
+  // @callers 1 requestEffectiveConfigPreview
+  let preview: unknown;
+  try {
+    preview = await requestEffectiveConfigPreview(boardYamlUri);
+  } catch (err) {
+    notifyAsync(
+      planFailure({
+        operation: OPERATION,
+        cause: "Alp: couldn't render the effective config.",
+        detail: err instanceof Error ? err.message : String(err),
+        actions: [{ id: "reloadWindow" }],
+      }),
+    );
+    return;
+  }
   await showJsonDocument(preview);
   log(
     `alp.previewEffectiveConfig: rendered effective config for ${boardYamlUri.fsPath}`,

@@ -103,6 +103,10 @@ code {
 .alp-boot-error-detail {
   padding: 12px;
   color: #f88;
-  font-family: var(--vscode-editor-font-family, monospace);
+  /* `--text-mono`, not `--vscode-editor-font-family`: that var resolves EMPTY
+     in some webview hosts and a var() fallback does not cover a property that
+     is set-to-nothing, so the stack trace would drop to the serif UA default
+     on exactly the hosts where React already failed to mount. See tokens.css. */
+  font-family: var(--text-mono, monospace);
   font-size: 12px;
 }

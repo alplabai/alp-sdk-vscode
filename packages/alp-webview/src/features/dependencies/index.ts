@@ -1,0 +1,1 @@
+export { DependenciesView } from "./DependenciesView";

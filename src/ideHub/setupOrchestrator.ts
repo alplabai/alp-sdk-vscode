@@ -12,9 +12,24 @@
 // Drift detection: after every successful state query the tool version
 // fingerprint is persisted in workspaceState.  On the next activation, if any
 // version string has changed the user is notified and prompted to recheck.
+// Its "already shown" gate lives in workspaceState too — the same scope as the
+// thing it gates, so a drift shown in one workspace can't silence a different
+// workspace whose customer never saw it.
+//
+// The fingerprint is SELF-DESCRIBING: it carries its own format tag, so a
+// stored value written in an older format is recognised as incomparable from
+// the value itself.  This used to be approximated with "was the extension
+// upgraded since the last activation?", which is both wider and narrower than
+// the real risk: VS Code auto-updates extensions on startup, so a genuine
+// python/cmake/ninja move landing in that same activation was swallowed
+// permanently (the fingerprint is re-recorded either way), while a format
+// change shipped without a version bump was not caught at all.
 
 import * as vscode from "vscode";
 import type { ToolVersions } from "./messages";
+import type { NotificationPlan, NotifyAction } from "../notify/models";
+import { isCancellation } from "../notify/service";
+import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { log } from "../util";
 import { queryAlpIdeState } from "./vscodeAdapter";
 
@@ -41,14 +56,125 @@ function issueFingerprint(issues: string[]): string {
   return issues.slice().sort().join("|");
 }
 
+/**
+ * The fingerprint's own format tag. BUMP IT whenever the entry list or an
+ * entry's shape below changes — that is what tells the next activation the
+ * value it has stored is not comparable with the one it just computed.
+ */
+const FINGERPRINT_FORMAT = "v1";
+
 /** Serialize tool versions to a stable string for comparison. */
 function versionFingerprint(versions: ToolVersions): string {
   return [
+    FINGERPRINT_FORMAT,
     `py:${versions.python ?? ""}`,
     `west:${versions.west ?? ""}`,
     `cmake:${versions.cmake ?? ""}`,
     `ninja:${versions.ninja ?? ""}`,
   ].join("|");
+}
+
+/** The format tag a fingerprint was written in ("" for a pre-tag value). */
+function fingerprintFormat(fingerprint: string): string {
+  return fingerprint.split("|")[0] ?? "";
+}
+
+/** Display names for the fingerprint's tool keys. */
+const TOOL_LABELS: Record<string, string> = {
+  py: "Python",
+  west: "west",
+  cmake: "cmake",
+  ninja: "ninja",
+};
+
+/** `"west:1.2.0"` -> `["west", "1.2.0"]`. */
+function splitFingerprintEntry(entry: string): [string, string] {
+  const at = entry.indexOf(":");
+  return at < 0 ? [entry, ""] : [entry.slice(0, at), entry.slice(at + 1)];
+}
+
+/**
+ * Name the tools whose version actually moved, as `west 1.2.0 → 1.3.0`. Both
+ * arguments come from `versionFingerprint`, so the entries line up by index.
+ *
+ * This is what turns "something changed, go re-verify" into a sentence the user
+ * can act on: a deliberate west upgrade and a toolchain that silently broke read
+ * identically without it, and both fingerprints were already in hand. Empty when
+ * the two strings differ only in shape (a fingerprint written by an older
+ * extension), which the caller falls back on.
+ */
+function describeVersionDrift(previous: string, current: string): string {
+  const before = previous.split("|");
+  return current
+    .split("|")
+    .flatMap((entry, index) => {
+      const was = before[index] ?? "";
+      if (entry === was) return [];
+      const [tool, now] = splitFingerprintEntry(entry);
+      return [
+        `${TOOL_LABELS[tool] ?? tool} ${splitFingerprintEntry(was)[1] || "not found"} → ${now || "not found"}`,
+      ];
+    })
+    .join(", ");
+}
+
+/**
+ * Decide whether this activation should raise the "build tools changed" toast.
+ *
+ * PURE — no `vscode`, no I/O — so `test/setupOrchestrator.service.test.js` can
+ * drive every branch without a VS Code host. Returns the plan to present, or
+ * null for "say nothing". The caller re-records `current` either way.
+ */
+export function planToolDrift(input: {
+  /** Fingerprint persisted by the previous activation; "" when there is none. */
+  stored: string;
+  /** Fingerprint computed this activation. */
+  current: string;
+  /** Fingerprint the drift toast was last shown for; "" when never. */
+  lastShown: string;
+}): NotificationPlan | null {
+  const { stored, current, lastShown } = input;
+  // First ever run in this workspace: nothing to compare against, and "your
+  // tools changed" is false — they were merely observed for the first time.
+  if (!stored || stored === current) return null;
+  // A stored value written in a DIFFERENT format is not comparable: entries no
+  // longer line up, so the diff would name versions that never moved. Same
+  // answer as a first run — say nothing, and let the caller re-record. This
+  // deliberately keys off the value itself and NOT off "the extension was
+  // upgraded": VS Code auto-updates extensions on startup, so gating on the
+  // upgrade would swallow a real tool move that happened to land in the same
+  // activation — permanently, since the fingerprint is re-recorded regardless.
+  if (fingerprintFormat(stored) !== fingerprintFormat(current)) return null;
+  if (lastShown === current) return null;
+  const drift = describeVersionDrift(stored, current);
+  // Info, not warning: nothing failed — a tool moved. Doctor is the thing
+  // that actually re-verifies the environment (the old "Open Alp IDE"
+  // focused a panel that re-verifies nothing). "info" never gets the
+  // presenter's automatic channel link, so it is named here.
+  return {
+    severity: "info",
+    channel: "toast",
+    message: drift
+      ? `Alp IDE: build tools changed since last session — ${drift}. Run Doctor to re-verify the environment.`
+      : "Alp IDE: build tool versions have changed since last session. Run Doctor to re-verify the environment.",
+    actions: [{ id: "runDoctor" }, { id: "showOutput" }],
+  };
+}
+
+/**
+ * Persist one piece of bookkeeping WITHOUT letting it gate the remedy.
+ *
+ * A `Memento.update` is a main-thread RPC and can reject — at window teardown
+ * it always does. Awaited inline it takes the whole readiness check down with
+ * it, and the one customer-facing sentence this file exists to deliver is
+ * never shown. Fire-and-forget, with its own handler so the rejection is never
+ * an unhandled one: the write is idempotent and the next activation redoes it.
+ */
+function record(memento: vscode.Memento, key: string, value: string): void {
+  void Promise.resolve(memento.update(key, value)).then(undefined, (err) => {
+    if (isCancellation(err)) return;
+    log(`[setup] could not record ${key}: ${String(err)}`, "warn");
+  });
 }
 
 /**
@@ -65,29 +191,19 @@ export async function maybeOfferSetupPanel(
 
     // --- drift detection ---------------------------------------------------
     const currentVersionFp = versionFingerprint(state.setup.toolVersions);
-    const lastVersionFp = context.workspaceState.get<string>(
-      DRIFT_VERSION_KEY,
-      "",
-    );
-    if (lastVersionFp && lastVersionFp !== currentVersionFp) {
-      // Versions changed since last run — inform once (globalState gates repeat)
-      const driftKey = `${ORCHESTRATOR_KEY}.drift`;
-      const lastDriftShown = context.globalState.get<string>(driftKey, "");
-      if (lastDriftShown !== currentVersionFp) {
-        await context.globalState.update(driftKey, currentVersionFp);
-        void vscode.window
-          .showWarningMessage(
-            "Alp IDE: build tool versions have changed since last session. Re-verify your build environment.",
-            "Open Alp IDE",
-          )
-          .then((action) => {
-            if (action === "Open Alp IDE") {
-              void vscode.commands.executeCommand("alp.ideHub.focus");
-            }
-          });
-      }
+    // Both the fingerprint and its "already shown" gate are workspaceState:
+    // the gate must not outlive the scope of the value it gates.
+    const driftKey = `${ORCHESTRATOR_KEY}.drift`;
+    const plan = planToolDrift({
+      stored: context.workspaceState.get<string>(DRIFT_VERSION_KEY, ""),
+      current: currentVersionFp,
+      lastShown: context.workspaceState.get<string>(driftKey, ""),
+    });
+    if (plan) {
+      record(context.workspaceState, driftKey, currentVersionFp);
+      notifyAsync(plan);
     }
-    await context.workspaceState.update(DRIFT_VERSION_KEY, currentVersionFp);
+    record(context.workspaceState, DRIFT_VERSION_KEY, currentVersionFp);
 
     // --- missing prerequisites notification --------------------------------
     const issues: string[] = [];
@@ -116,33 +232,61 @@ export async function maybeOfferSetupPanel(
     // instead of leaving the user to decode "west not found". SDK-not-ready is a
     // separate fix (SDK Manager), and no-workspace means "open a folder" first —
     // neither is a bootstrap, so don't offer it for those.
+    const noWorkspace = issues.includes("no-workspace");
     const canBootstrap =
-      !issues.includes("no-workspace") &&
-      (issues.includes("west") || issues.includes("python"));
+      !noWorkspace && (issues.includes("west") || issues.includes("python"));
 
-    const RUN_BOOTSTRAP = "Run Bootstrap";
-    const OPEN_HUB = "Open Alp IDE";
-    const message = canBootstrap
-      ? `Alp: build environment not set up (${summary}). Run Bootstrap to install west + Zephyr build tools.`
-      : `Alp IDE: environment not ready — ${summary}.`;
-    const actions = canBootstrap
-      ? [RUN_BOOTSTRAP, OPEN_HUB, "Don't show again"]
-      : [OPEN_HUB, "Don't show again"];
+    // One control per state, instead of one panel-focus button for all four:
+    // the toast used to collapse "no folder open", "SDK not installed" and
+    // "build tools missing" into a comma summary whose only button opened a
+    // panel — so neither opening a folder nor installing the SDK had a control
+    // that did it.
+    const actions: NotifyAction[] = [];
+    if (noWorkspace) actions.push({ id: "openFolder" });
+    if (canBootstrap) actions.push({ id: "bootstrap" });
+    if (issues.includes("sdk")) actions.push({ id: "openSdkManager" });
+    // The presenter's ad-hoc button: it carries no `run`, so this pick — and
+    // only this pick — comes back and records the fingerprint.
+    actions.push({ id: "custom", title: "Don't show again" });
 
-    const action = await vscode.window.showWarningMessage(message, ...actions);
+    const message = noWorkspace
+      ? "Alp: open a project folder to finish setting up the build environment."
+      : canBootstrap
+        ? `Alp: build environment not set up (${summary}). Run Bootstrap to install west + Zephyr build tools.`
+        : "Alp: no Alp SDK is ready yet — install or activate one from the SDK Manager.";
 
-    // Only record the fingerprint once the user actually responded; an
-    // auto-dismissed toast returns undefined and is left unrecorded so it is
-    // retried on the next activation rather than lost for the install lifetime.
-    if (action !== undefined) {
-      await context.globalState.update(ORCHESTRATOR_KEY, fingerprint);
-    }
-    if (action === RUN_BOOTSTRAP) {
-      await vscode.commands.executeCommand("alp.installDependencies");
-    } else if (action === OPEN_HUB) {
-      await vscode.commands.executeCommand("alp.ideHub.focus");
+    const picked = await notify({
+      severity: "warning",
+      channel: "toast",
+      message,
+      // The full issue set reaches the channel even when the sentence names
+      // only the first thing to fix.
+      detail: summary,
+      actions,
+    });
+
+    // "Don't show again" is now the ONLY response that records the fingerprint.
+    // An auto-dismissed toast returns undefined and stays unrecorded so it is
+    // retried on the next activation rather than lost for the install lifetime;
+    // a remedy click no longer silences a state that is still broken — if the
+    // remedy worked the issue set is empty next time and nothing is shown, and
+    // if it didn't, the nudge is still the correct thing to show.
+    if (picked === "custom") {
+      record(context.globalState, ORCHESTRATOR_KEY, fingerprint);
     }
   } catch (err) {
+    // The window going away is NOT a readiness failure. At teardown (reload,
+    // close, or a folder-open replacing this workspace) the extension host
+    // rejects every pending main-thread reply with a CancellationError — and
+    // the unanswered toast above is exactly such a pending reply. The check
+    // never reached a verdict, so there is nothing to warn about, and a
+    // "readiness check failed" line in the customer-visible channel next to a
+    // surface whose whole job is "is my machine ready" reads as the machine
+    // being broken.
+    if (isCancellation(err)) {
+      log("[setup] readiness check abandoned, window closing", "info");
+      return;
+    }
     // Never block activation — but record why the readiness check failed
     // instead of dropping it silently.
     log(`[setup] readiness check failed: ${String(err)}`, "warn");
