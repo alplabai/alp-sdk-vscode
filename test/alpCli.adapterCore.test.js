@@ -7,16 +7,39 @@ const {
   runAlp,
   runAlpAsync,
 } = require("../out/alpCli/adapterCore.js");
+const { noPrebuiltMessage } = require("../out/alpCli/service.js");
 
 function baseDeps(overrides = {}) {
+  const cachedBinaryPath = overrides.cachedBinaryPath ?? "/cache/cli/tan";
   const existing = new Set(overrides.existing ?? []);
-  const calls = { ensureDir: 0, download: 0, chmod: 0 };
+  // What `sha256Tree` reports per path. A file with no entry hashes to a
+  // stable value derived from its path, so a download always yields
+  // SOMETHING to record; a test corrupts a file by overriding its entry
+  // (#386). Keyed by `cachedBinaryPath` and NOT by the `dir` argument
+  // `sha256Tree` is actually called with (#464 moved the real seam from
+  // "hash this file" to "hash this directory's tree") — these unit tests
+  // drive `resolveAlpBinary`/`downloadCli`'s LADDER and CHECKSUM logic, never
+  // a multi-entry tree, so the mock stays a single-file stand-in rather than
+  // a real (and here pointless) directory walk.
+  const digests = new Map(Object.entries(overrides.digests ?? {}));
+  const hashOf = (p) =>
+    digests.get(p) ?? (existing.has(p) ? `sha256(${p})` : null);
+  // undefined = no digest was ever recorded for the cached binary, i.e. every
+  // machine that cached one before verification existed.
+  let recorded = overrides.recordedDigest;
+  const calls = {
+    ensureDir: 0,
+    download: 0,
+    chmod: 0,
+    verify: undefined,
+    recorded: [],
+  };
   const deps = {
     cliPathSetting: "",
     platform: "linux",
     arch: "x64",
     cacheDir: "/cache/cli",
-    cachedBinaryPath: "/cache/cli/tan",
+    cachedBinaryPath,
     bundledBinaryPath: "/ext/bin/tan",
     bundledExists: false,
     fileExists: (p) => existing.has(p),
@@ -24,18 +47,45 @@ function baseDeps(overrides = {}) {
     ensureDir: () => {
       calls.ensureDir++;
     },
+    // #463: picks the RAW candidate by default (candidates[0] — see
+    // `releaseAssetForTarget`), matching what every release through
+    // v0.5.0-rc4 actually publishes. A row that wants to drive the ARCHIVE
+    // candidate instead overrides this via `overrides`.
+    resolveAsset: async (candidates) => candidates[0],
     // tan-cli ships a RAW binary: a successful download writes it straight to
     // the cached binary path (no archive, no extract step).
-    download: async (_url, destFile) => {
+    download: async (_url, destFile, _signal, verify) => {
       calls.download++;
+      calls.verify = verify;
       existing.add(destFile);
     },
     chmodExec: () => {
       calls.chmod++;
     },
+    sha256Tree: (_dir) => hashOf(cachedBinaryPath),
+    recordedCachedDigest: () => recorded,
+    recordCachedDigest: async (digest) => {
+      recorded = digest;
+      calls.recorded.push(digest);
+    },
+    // Consent already granted by default — these rows are about the
+    // resolution LADDER, not ADR 0021's consent gate (its own file:
+    // test/alpCli.downloadConsent.test.js). A row that wants to drive a
+    // refusal overrides this via `overrides`.
+    ensureFreshDownloadConsent: async () => true,
     ...overrides,
   };
-  return { deps, existing, calls };
+  return { deps, existing, calls, digests };
+}
+
+/** Deps for a cached binary this extension DID record a digest for — the state
+ *  every machine reaches after one verified download. */
+function cachedAndRecorded(overrides = {}) {
+  return baseDeps({
+    existing: ["/cache/cli/tan"],
+    recordedDigest: "sha256(/cache/cli/tan)",
+    ...overrides,
+  });
 }
 
 test("resolveAlpBinary: explicit cliPath wins, no download", async () => {
@@ -56,9 +106,8 @@ test("resolveAlpBinary: PATH when cliPath unset", async () => {
 });
 
 test("resolveAlpBinary: bundled binary when not on PATH (platform-specific VSIX)", async () => {
-  const { deps, calls } = baseDeps({
-    bundledExists: true,
-    existing: ["/cache/cli/tan"], // cached also exists — bundled must still win
+  const { deps, calls } = cachedAndRecorded({
+    bundledExists: true, // a verified cached copy also exists — bundled wins
   });
   const r = await resolveAlpBinary(deps);
   assert.deepEqual(r, { command: "/ext/bin/tan", source: "bundled" });
@@ -78,15 +127,14 @@ test("resolveAlpBinary: windows bundled binary skips chmod", async () => {
 });
 
 test("resolveAlpBinary: cached binary when not on PATH", async () => {
-  const { deps, calls } = baseDeps({ existing: ["/cache/cli/tan"] });
+  const { deps, calls } = cachedAndRecorded();
   const r = await resolveAlpBinary(deps);
   assert.deepEqual(r, { command: "/cache/cli/tan", source: "cached" });
   assert.equal(calls.download, 0);
 });
 
 test("resolveAlpBinary: a cached binary wins over a verified-native PATH tan (managed binary preferred; PATH is a last resort)", async () => {
-  const { deps, calls } = baseDeps({
-    existing: ["/cache/cli/tan"],
+  const { deps, calls } = cachedAndRecorded({
     commandOnPath: () => true,
   });
   const r = await resolveAlpBinary(deps);
@@ -104,14 +152,126 @@ test("resolveAlpBinary: downloads the raw binary when nothing else resolves", as
   assert.equal(calls.chmod, 1); // non-windows → chmod +x
 });
 
-test("resolveAlpBinary: throws on unsupported host (no prebuilt asset)", async () => {
-  // linux/arm (32-bit) is not in TARGETS, so it has no download asset.
-  const { deps } = baseDeps({ platform: "linux", arch: "arm" });
-  await assert.rejects(() => resolveAlpBinary(deps), /No prebuilt tan CLI/);
+test("resolveAlpBinary: the download is handed the checksum spec for the SAME release", async () => {
+  const { deps, calls } = baseDeps();
+  await resolveAlpBinary(deps);
+  assert.equal(calls.download, 1);
+  // Without this the binary is fetched and executed having verified nothing —
+  // and a dropped 4th argument is a silent, invisible regression at runtime.
+  assert.ok(calls.verify, "downloadCli must pass a checksum spec");
+  assert.equal(calls.verify.assetName, "tan-x86_64-unknown-linux-gnu");
+  assert.ok(calls.verify.checksumsUrl.endsWith("/checksums.txt"));
+  // Same release tag as the binary URL: a digest from another release proves
+  // nothing about these bytes.
+  const tag = `/download/v${require("../out/alpCli/service.js").SUPPORTED_CLI_VERSION}/`;
+  assert.ok(calls.verify.checksumsUrl.includes(tag), calls.verify.checksumsUrl);
 });
 
-test("resolveAlpBinary: throws when download yields no binary", async () => {
+test("resolveAlpBinary: downloadCli downloads the candidate resolveAsset RETURNED, not candidates[0] (#465 finding 1)", async () => {
+  // Proven to fail against the pre-fix code: reverting downloadCli's
+  // `const resolved = await deps.resolveAsset(...)` back to
+  // `asset.candidates[0]` left the WHOLE suite green, because every OTHER row
+  // in this file (and in cachedVerification/aheadWarning/
+  // preferGlobalCliStaleLoop) stubs `resolveAsset` as `async (c) => c[0]` —
+  // so "downloadCli called resolveAsset and got candidates[0]" and
+  // "downloadCli never called it and used candidates[0] directly" are
+  // indistinguishable there. This row's stub returns the ARCHIVE candidate
+  // (`candidates[1]`), which `candidates[0]` never is, so a `downloadCli`
+  // that stopped awaiting `deps.resolveAsset` would still hand `download`
+  // the RAW name and this assertion would catch it.
+  const { deps, calls } = baseDeps({
+    resolveAsset: async (candidates) => candidates[1],
+  });
+  await resolveAlpBinary(deps);
+  assert.equal(calls.download, 1);
+  assert.equal(
+    calls.verify.assetName,
+    "tan-x86_64-unknown-linux-gnu.tar.gz",
+    "downloadCli downloaded candidates[0] instead of what resolveAsset resolved",
+  );
+});
+
+// ── consent gate (finding 1: a stale un-digested cache must not bypass it) ──
+
+test("resolveAlpBinary: an un-digested cache with nothing on PATH is STILL gated on consent (deny is honoured)", async () => {
+  // The exact state a review found: a leftover un-digested cache file (#386
+  // migration population) plus nothing on PATH. `decideBinarySource` skips the
+  // un-digested cache (no record) and, with `onPath` false, falls all the way
+  // to `download` — so NOTHING is currently running, and there is no one to
+  // strand by asking. Before the fix, `isUnverifiableCache(input)` alone
+  // excluded this state from the gate, so a `deny` here downloaded anyway.
+  const { deps, calls } = baseDeps({
+    existing: ["/cache/cli/tan"], // present, but recordedDigest is undefined
+    commandOnPath: () => false,
+    ensureFreshDownloadConsent: async () => false, // simulates `deny`
+  });
+  await assert.rejects(
+    () => resolveAlpBinary(deps),
+    new RegExp(
+      require("../out/alpCli/service.js").TAN_CLI_DOWNLOAD_CONSENT_NEEDED,
+    ),
+  );
+  assert.equal(calls.download, 0, "a denied consent must not download");
+});
+
+test("resolveAlpBinary: an un-digested cache with nothing on PATH still asks (consent granted proceeds)", async () => {
+  let asked = 0;
+  const { deps, calls } = baseDeps({
+    existing: ["/cache/cli/tan"],
+    commandOnPath: () => false,
+    ensureFreshDownloadConsent: async () => {
+      asked++;
+      return true;
+    },
+  });
+  const r = await resolveAlpBinary(deps);
+  assert.equal(
+    asked,
+    1,
+    "the download arm must always ask, un-digested cache or not",
+  );
+  assert.equal(r.source, "download");
+  assert.equal(calls.download, 1);
+});
+
+test("resolveAlpBinary: throws on unsupported host (no prebuilt asset)", async () => {
+  // linux/arm (32-bit) is not in TARGETS, so it has no download asset.
+  const { deps, calls } = baseDeps({ platform: "linux", arch: "arm" });
+  await assert.rejects(() => resolveAlpBinary(deps), /No prebuilt tan CLI/);
+
+  // #445: the throw carries the EXPLAINED sentence, not a bare refusal — the
+  // host and the release are in it, and nothing was fetched to find that out.
+  // Both shapes of "no asset" (an unmapped host, and a mapped one the pinned
+  // release publishes nothing for) come through this one throw.
+  const error = await resolveAlpBinary(deps).catch((e) => e);
+  assert.equal(error.message, noPrebuiltMessage("linux", "arm"));
+  assert.equal(
+    calls.download,
+    0,
+    "a host with no asset must never reach the network to find out",
+  );
+});
+
+test("resolveAlpBinary: throws when the download leaves nothing to hash", async () => {
   const { deps } = baseDeps({
+    download: async () => {
+      /* download produced nothing */
+    },
+  });
+  // Nothing on disk to hash, so there is nothing to RECORD either — and a
+  // binary with no record would be refused on every later resolution anyway
+  // (#386), so this refuses now rather than installing a dead end.
+  await assert.rejects(
+    () => resolveAlpBinary(deps),
+    /did not produce an installed tree that could be read back/,
+  );
+});
+
+test("resolveAlpBinary: throws when the download produces no binary at the cached path", async () => {
+  const { deps } = baseDeps({
+    // Hashable but absent: isolates the `fileExists` guard from the hash guard
+    // above, so neither can be deleted while the other keeps the suite green.
+    digests: { "/cache/cli/tan": "d".repeat(64) },
     download: async () => {
       /* download produced nothing */
     },
@@ -127,10 +287,6 @@ test("resolveAlpBinary: windows skips chmod", async () => {
     platform: "win32",
     arch: "x64",
     cachedBinaryPath: "/cache/cli/tan.exe",
-    download: async (_url, destFile) => {
-      calls.download++;
-      deps.fileExists = (p) => p === destFile;
-    },
     existing: [],
   });
   const r = await resolveAlpBinary(deps);

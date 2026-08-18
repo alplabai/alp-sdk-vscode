@@ -52,16 +52,39 @@ Version format: `MAJOR.MINOR.PATCH` following semantic versioning.
 Extension releases are tagged and published to the VS Code Marketplace from this
 repo. The build CLI is released **separately** from
 [`alplabai/tan-cli`](https://github.com/alplabai/tan-cli): a `v<version>` tag
-push there triggers its `release` workflow, which builds the eight per-target
-binaries (Windows x64/arm64, macOS x64/arm64, Linux x64/arm64 gnu, Linux
-x64/arm64 musl — musl published from v0.3.0 on; the extension downloads musl)
-and publishes each as a **raw** GitHub release asset
-(`tan-<triple>[.exe]`, no archive). The extension resolves the matching
-`v<version>` asset on activation; the tag scheme and asset names are a stable
+push there triggers its `release` workflow, which builds and publishes each
+target as a GitHub release asset — named `tan-<triple>[.exe]` through
+v0.5.0-rc4, holding a **raw** binary, no archive; named `tan-<triple>.zip`
+(win32) / `tan-<triple>.tar.gz` (elsewhere) from a release built with the
+archive freeze (tan-cli#349, to fix a 13-19s macOS startup regression from
+re-extracting the freeze on every invocation) on, holding a onedir tree
+instead — a DIFFERENT name, not the same name with different contents.
+Through v0.4.x (the Rust CLI, always the raw name) there are **eight** of
+them (Windows x64/arm64, macOS x64/arm64, Linux x64/arm64 gnu, Linux x64/arm64
+musl). From v0.5.0 (the Python CLI, a PyInstaller freeze that cannot
+cross-compile) it is **four**: Windows x64, macOS x64/arm64, and Linux x64 as
+`-gnu` only — no Linux `-musl` (a PyInstaller musl freeze is musl-*dynamic*
+and would not start on Ubuntu/Debian/Fedora) and no arm64 Linux or Windows
+asset at all.
+The extension resolves which of the two names a given release actually
+published from that release's own `checksums.txt` — never from the version,
+and never from the downloaded bytes, which do not exist yet at that point;
+the bytes' own magic number is a separate, later decision (which extractor,
+if any, unpacks them once downloaded) — and declares
+the two hosts a Python release does not cover in `HOSTS_WITHOUT_RELEASE_ASSET`
+(`src/alpCli/service.ts`); the tag scheme and asset names are a stable
 contract (see the `tan-cli` release-asset contract).
 
 The extension pins the `tan` version it targets (`SUPPORTED_CLI_VERSION` in
-`src/alpCli/service.ts`) — bump it in lockstep when adopting a new `tan` release.
+`src/alpCli/service.ts`) — bump it in lockstep when adopting a new `tan` release,
+and **never ahead of a published tag**. The pin is a download target, not an
+aspiration: `shouldFetchManagedCli` re-fetches for a `download` source and for a
+`cached` binary behind the pin, so an unreleased pin makes every activation retry
+a 404 that nothing self-corrects. A feature needing an unreleased `tan` gets its
+own gate against the probed version instead (e.g. `RENODE_CORE_CLI_VERSION` in
+`src/west.ts`, which degrades to "don't offer the picker"). CI enforces this:
+`scripts/check-cli-pin.mjs` HEADs every per-target asset for `v<pin>` and fails
+on a 404 (a network error is skipped, not failed).
 
 Before bumping `MAJOR`:
 - all breaking CLI flag or JSON envelope changes must be documented in `COMPATIBILITY_RULES.md`.
@@ -78,7 +101,52 @@ If a published **`tan` CLI** release is defective, the rollback lives in the
 corrected `v<version>` and update its release notes). Because the extension pins
 `SUPPORTED_CLI_VERSION`, hold or advance that pin to keep the extension on a
 known-good `tan` binary, and add an incident note to `COMPATIBILITY_RULES.md`.
-**Floor:** the pin cannot go below `v0.3.0` — the extension downloads the
-Linux musl asset (see `TARGETS` in `src/alpCli/service.ts`), and musl assets
-don't exist on any earlier tag; holding/rolling back below `v0.3.0` 404s the
-Linux download.
+**Floor:** while the pin targets a Python `tan` (from `v0.5.0-rc1` on), it
+cannot go below that tag — `win32/arm64` and `linux/arm64` have no asset at
+any Python release and must stay declared in `HOSTS_WITHOUT_RELEASE_ASSET`
+for whichever Python tag is pinned. Rolling back past `v0.5.0-rc1` to a Rust
+tag does NOT 404 the Linux download either way: Rust tags publish both `-gnu`
+and `-musl`, so `TARGETS`' `linux/x64` entry resolves regardless of which one
+it names. The real consequence of leaving it at `-gnu` against a Rust tag is
+the glibc floor `-musl` existed to avoid (see `src/alpCli/service.ts`), not a
+missing asset — revert it to `-musl` in lockstep to get that back, not to
+avoid a 404 that was never going to happen.
+
+**Second floor — hardware coverage (#502):** the pin also cannot go below
+`RENESAS_BUILD_CLI_VERSION` (`src/alpCli/somCliFloor.ts`, `0.6.0-rc1`). Below
+it, tan's vendored planner emits `CONFIG_ALP_SDK_CHIP_NONE=y` and every Renesas
+SKU New Project offers — `E1M-V2N101`, `E1M-V2N102`, `E1M-V2M101`,
+`E1M-V2M102` — dies in Zephyr's configure step, so a rollback for an unrelated
+defect would silently take four of nine supported modules with it.
+`test/alpCli.somCliFloor.test.js` fails if the pin drops below the floor; if a
+rollback genuinely requires it, drop the Renesas SKUs from `E1M_MODULES` in the
+same change rather than lowering the floor to silence the gate.
+
+This is also why the pin may legitimately name a PRE-RELEASE. "Never ahead of a
+published tag" above means published, not stable: a prerelease is a published
+tag with real assets, and `v0.6.0-rc1` is pinned precisely because no stable tan
+can build a Renesas SoM. `install.sh`/`install.ps1` resolve their own `latest`
+to the newest NON-prerelease and will not upgrade onto such a pin, which is why
+every managed invocation passes `--version`/`-Version` explicitly.
+
+**What this repo cannot gate.** No workflow here runs a real `tan build`, so
+nothing local proves the pinned tan can actually build each supported SoM
+family — the floor above is a version assertion, not a build. The real per-SoM
+build gate needs alp-sdk + Zephyr + a toolchain and lives in tan-cli's
+`release-combination.yml`.
+
+That workflow's SCHEDULED run installs tan via `install.sh`'s own default,
+which resolves the newest NON-prerelease — so it exercises whatever `latest`
+means, not the version this extension pins. The two agree most of the time and
+the gate then covers us by coincidence; when they diverge, as they must
+whenever the pin is a prerelease, the pinned pair is tested by nothing. That is
+how #502 reached a release. The capability to test a specific version is
+already there (`release-combination.yml` takes a `tan_version`
+`workflow_dispatch` input, and `install.sh` honours an explicit prerelease —
+its `latest` redirect block runs only when no `--version` is passed); what is
+missing is anything driving it at our pin on a schedule. Filed as
+alplabai/tan-cli#767.
+
+Until that lands, treat a prerelease pin as UNVERIFIED against real hardware
+builds and dispatch `release-combination.yml` by hand with
+`tan_version: v<pin>` when moving the pin.

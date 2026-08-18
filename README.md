@@ -33,7 +33,7 @@ First-class IDE support for projects built against the
 
 ![ALP IDE Hub overview dashboard](media/screenshots/01-ide-hub-overview.png)
 
-_Workspace readiness at a glance — environment, west workspace and Alp SDK status, board-configurator / hardware-explorer / toolchain-doctor panels, and quick actions._
+_Workspace readiness at a glance — environment, west workspace and Alp SDK status, board-configurator / hardware-explorer / dependencies panels, and quick actions._
 
 ### Create a new project
 
@@ -108,7 +108,6 @@ VS Code Marketplace: search for "Alp SDK".  Or grab the latest
 ```text
 .
 ├── README.md                -- this file (the only doc in the root)
-├── CLAUDE.md                -- operating guide for AI agents (auto-loaded)
 ├── docs/                    -- all project docs (see "Documentation Map" below)
 ├── LICENSE                  -- Apache-2.0
 ├── package.json             -- VS Code extension manifest (workspace root)
@@ -223,31 +222,81 @@ Marketplace; no functionality changed.
 
 ## Schema-sync
 
-The extension's schema-aware validation uses a **vendored** copy of the board
-schema at `schemas/board.schema.json` (so it ships inside the VSIX —
-`alp-sdk-upstream/**` is excluded from the package). It is derived from the
-alp-sdk submodule's board schema; `package.json::contributes.yamlValidation.url`
-points at the vendored path. Its presence + structure (`$id`, `required`) are
-enforced by `test/board.schema.vendored.test.js` and the CI "vendored schema"
-check.
+When an SDK is resolved, `board.yaml` and `system-manifest.yaml` are validated
+against **that SDK's own** schemas at `<sdkRoot>/metadata/schemas/`, so the
+editor and `tan` agree by construction (#493). The extension pins no SDK
+version, so this is the only way the two can agree; the language-status item on
+those files names which schema is in force.
+
+The **vendored** copies at `schemas/board.schema.json` and
+`schemas/system-manifest-v1.schema.json` are the fallback for a customer with no
+SDK yet — the common first-run state — and they are what
+`package.json::contributes.yamlValidation` points at. They ship inside the VSIX
+(`alp-sdk-upstream/**` is excluded from the package) and are derived from the
+alp-sdk submodule's schemas at a pinned TAG. Their presence + structure (`$id`,
+`required`) and their sha256 pins are enforced by
+`test/board.schema.vendored.test.js` and the CI "vendored schema" check.
+
+Keeping them current still matters: they are what every first-run user is
+validated against, and an SDK schema this extension refuses (oversized, not a
+JSON object, or carrying a remote `$ref` — see
+`packages/alp-core/src/validation/schemaSafety.ts`) falls back to them too.
 
 > **Schema v2 (requires alp-sdk v0.10.0+):** `board.yaml` now uses `schema_version: 2`
 > with a per-core `cores:` block replacing the top-level `os:` field.
 > Use the `alp-board-min` or `alp-board-hetero` snippet to get a
 > valid starting point.
 
-When alp-sdk bumps the schema:
+When alp-sdk cuts a release, re-vendor from its **TAG** — never from `main` or
+`dev`. `test/board.schema.vendored.test.js` calls re-vendoring from a moving
+branch "forward drift" and fails on it by design.
 
 ```bash
-cd alp-sdk-upstream
-git fetch && git checkout main
-cd ..
-cp alp-sdk-upstream/metadata/schemas/<board-schema>.json schemas/board.schema.json  # re-vendor
-git add alp-sdk-upstream schemas/board.schema.json
-git commit -m "deps(alp-sdk): bump submodule to <sha> + re-vendor schema"
-pnpm test         # re-runs the schema-snapshot tests
-pnpm run package  # builds the .vsix against the new schema
+TAG=v0.15.0   # the alp-sdk release you are assessing
+
+git -C alp-sdk-upstream fetch origin --tags
+git -C alp-sdk-upstream checkout --detach "$TAG"
+
+# 1. BOTH schemas, always together — packages/alp-core/src/validation/
+#    vendoredSchemas.ts pins one tag for the pair, so they can never green
+#    while disagreeing. (test/vendored-sdk-tag.js re-exports it for the gates.)
+git -C alp-sdk-upstream show "$TAG:metadata/schemas/board.schema.json" \
+  > schemas/board.schema.json
+git -C alp-sdk-upstream show "$TAG:metadata/schemas/system-manifest-v1.schema.json" \
+  > schemas/system-manifest-v1.schema.json
+
+# 2. Recompute BOTH hashes (LF-normalised — portable, no `shasum` on Windows)
+#    and put them, with the tag, in
+#    packages/alp-core/src/validation/vendoredSchemas.ts — NOT in test/. The
+#    extension reads them at runtime to tell the customer which schema is in
+#    force when their resolved SDK ships a different one (#493).
+node -e "const f=require('fs'),c=require('crypto');for(const p of ['schemas/board.schema.json','schemas/system-manifest-v1.schema.json'])console.log(p,c.createHash('sha256').update(f.readFileSync(p,'utf-8').replace(/\r\n/g,'\n'),'utf-8').digest('hex'))"
+
+# 3. Regenerate BOTH vendored Kconfig artefacts. The .txt fixture carries no
+#    submoduleRev and its test only asserts curated ⊆ vendored, so a stale copy
+#    stays GREEN — nothing will remind you.
+node scripts/vendor-kconfig-metadata.mjs
+node scripts/vendor-kconfig-symbols.mjs
+
+# 4. tsc --build is incremental and re-copies src/**/*.json only when a .ts
+#    changes, so out/ keeps the PREVIOUS harvest without this. The
+#    "compiled metadata copy is not stale" gate catches it if you forget.
+pnpm exec tsc --build --force
+
+# 5. The gitlink may carry skip-worktree locally (a per-clone index bit, not
+#    committed), in which case `git add alp-sdk-upstream` is a silent no-op and
+#    the pin stays behind while the schemas move. Check and clear it first.
+git ls-files -v alp-sdk-upstream          # a leading `S` means skip-worktree
+git update-index --no-skip-worktree alp-sdk-upstream
+
+git add -A
+pnpm run format:check && pnpm run typecheck && node --test test/*.test.js
+pnpm run package   # builds the .vsix against the new schema
 ```
+
+Then record the release in `docs/COMPATIBILITY_RULES.md` §5 — that log is the
+only thing tracking which upstream releases were assessed, and two re-vendors
+(v0.13.0, v0.14.0) shipped without an entry before this was written down.
 
 ## Build
 
@@ -265,7 +314,11 @@ Load the local build via `Extensions: Install from VSIX`.
 ## Development
 
 Use `pnpm test` as the default verification step while changing the
-extension.
+extension. Run `pnpm run contract:fetch` once first: it downloads tan's
+published `envelope-contract.json` into the gitignored
+`test/golden/tan-contract/`, and `pnpm test` FAILS without it rather than
+skipping the contract gate. Offline, `TAN_CONTRACT_OFFLINE=1 pnpm test`
+downgrades that failure to a loud skip (ignored when `CI` is set).
 
 The current test setup is intentionally lightweight:
 

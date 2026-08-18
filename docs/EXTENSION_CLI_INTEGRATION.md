@@ -58,18 +58,38 @@ the `tan` binary as the single implementation and render its output — collapsi
   synchronous, per-keystroke calls that cannot afford a subprocess.
 - **`packages/alp-cli` (TS CLI) is retired** at the Rust cutover (Phase 7).
 
-## 3. Two invocation modes
+## 3. Three invocation modes
 
 | Mode | When | Mechanism |
 |------|------|-----------|
 | **Envelope** | one-shot, data-producing commands | spawn `tan <cmd> --format json`, parse the envelope, map `exitCode`/`issues` to UX |
-| **Terminal** | long-running / interactive / live-output | open a VS Code integrated terminal and run `tan <cmd>` (or the underlying tool) so the user sees progress and can answer prompts (sudo, pip, `west update`) |
+| **Terminal** | long-running **and interactive** | open a VS Code integrated terminal (a Task) and run `tan <cmd>` (or the underlying tool) so the user can answer prompts (sudo, pip, `west update`) |
+| **Channel** | long-running, non-interactive, live-output | `runAlpStreamed` spawns `tan <cmd>` with no TTY — which is what keeps the output plain and the run non-interactive — and streams stdout/stderr into the persistent "Alp SDK" output channel. It does **not** pass `--no-color`/`--non-interactive`: tan v0.5.0 deferred both, and `tan build` refuses them (tan-cli#427) |
+
+Channel mode exists because a terminal dies with its process, taking the verdict
+with it — a failed flash showed only "failed to launch" while the real per-slice
+reason (e.g. "backend zephyr_west_flash needs west on PATH") scrolled away. The
+channel outlives the command. On POSIX the child runs under the user's login
+shell (`$SHELL -lc`, `cd <cwd> && exec …`), so a venv `west` that
+`tan bootstrap` activated is still on PATH; on Windows the binary is spawned
+directly, the extension host already having the login environment.
+
+**One run per name, across both run modes.** Terminal and channel dispatches
+share a single reservation registry (`src/util.ts`: `isRunActive`,
+`reserveStreamedRun`). A second dispatch under a live name is REFUSED with a
+warning, never allowed to terminate the first — killing a flash mid-write can
+leave a board unbootable (#146). Every build dispatch uses `BUILD_RUN_NAME` and
+every flash dispatch `FLASH_RUN_NAME`, whole-project or per-core, `tan` or
+legacy `west`: two names would be two reservations over one build tree, or two
+programmers over one board.
 
 Envelope commands: `validate`, `generate`, `inspect`, `presets`, `explain`,
 `diff`, `trace`, `debug-config --preview`, `support-bundle`, `doctor`,
 `sdk list/current`, and the Models-panel surface `model
 check/zoo/add/prep/run/ab` (offline pre-flight / prep / host-reference — no
 toolchain; §6b).
+
+Channel commands: `build`, `image`, `flash`, `clean`, `renode`.
 
 Terminal commands: `bootstrap`, `sdk install` (git clone), and the build/flash
 workflow. The extension **already** runs west builds in a terminal
@@ -88,49 +108,127 @@ Keep **in-process** (`@alp-sdk/core`, TS) — must be synchronous / per-edit:
 Delegate to the **`tan` binary** — user-triggered "actions":
 
 - `validate` (full, Python spawn), `generate`, `init`, `scaffold`, `diff`,
-  `presets`, `explain`, `inspect`, `trace`, `debug-config`, `support-bundle`,
-  `sdk *`, `bootstrap`, and (future) `build`.
+  `presets`, `explain`, `inspect`, `trace`, `debug-config`, `doctor`,
+  `support-bundle`, `sdk *`, `bootstrap`, and (future) `build`.
 
 Rule of thumb: **per-keystroke → in-process TS; per-click → CLI binary.**
 
-### 4a. Debug doctor / preflight stay in-process (host-state exception)
+### 4a. Debug preflight stays in-process; debug doctor delegates to `tan` (#376)
 
 There is a third class beyond per-keystroke vs per-click: **commands whose
-answer depends on VS Code host state the CLI cannot observe.** The debug-domain
-commands — `alp.debugDoctor`, `alp.debugPreflight` (and the debug parts of
-`inspect` / `support-bundle`) — probe **which debugger extensions are installed**
-via `vscode.extensions.getExtension(...)` (Cortex-Debug, CodeLLDB, C/C++). A
-separate `tan` process cannot see the host's installed extensions, so the Rust
-`tan doctor` deliberately *assumes* the marquee extensions are present
-(`resolveCliDebugContext` sets them all to `true`). That assumption is fine for a
-terminal/CI doctor, but in the extension it would turn a real "CodeLLDB is not
-installed" finding into a false "installed" — a correctness regression.
+answer depends on VS Code host state the CLI cannot observe.** A separate `tan`
+process cannot see this window's installed extensions
+(`vscode.extensions.getExtension(...)` — Cortex-Debug, CodeLLDB, C/C++), so
+anything that must answer "which debugger extension will actually resolve for
+*this* launch" has to stay in-process.
 
-**Decision:** the debug doctor/preflight readiness checks **stay in-process**
-(`@alp-sdk/core/debug` via `src/debug.ts` + `collectRuntimeCapabilities`), even
-though a same-named `tan doctor` envelope exists. They are part of the live/LSP
-side of this split, not delegated. The CLI `tan doctor` remains the surface for
-terminals and CI (where extension state is irrelevant). Only commands whose full
-result is reproducible from `board.yaml` + the SDK + PATH (validate, generate,
-sdk, …) are delegated. If a future need arises, the extension could pass its
-observed extension state to the CLI via flags — out of scope for now.
+**That question is `alp.debugPreflight`'s, not the doctor's, and the boundary
+is drawn by QUESTION, not by command name (issue #376's field-by-field map).**
+`buildDebugPreflightReport` (`@alp-sdk/core/debug` via `src/debug.ts` +
+`collectRuntimeCapabilities`) answers "will *this* F5, with *this*
+configuration, in *this* window, start" — it grades `adapterExtension`,
+`serverTool`, `buildArtifact` and the native-host `hostPlatform` gate, and
+stays in-process for exactly that reason. `alp.debugDoctor` answers a
+different, machine/project-scoped question — "can this machine and project
+build and debug at all" — which plain `tan doctor` already answers more
+completely than the former in-process `buildDoctorReport` ever did (SDK/board/
+Zephyr-workspace/west/Python-floor/host-prerequisite/toolchain checks with no
+TypeScript equivalent), so `alp.debugDoctor`, the debug parts of
+`support-bundle`, and the troubleshooting panel's doctor table now spawn
+`tan doctor` and render its `checks[]`/`summary` verbatim (`src/alpCli/doctor.ts`,
+shared with the Dependencies panel) rather than re-deriving a doctor report in
+TypeScript. **`tan doctor` is never the source of an "extension X is
+installed" claim in the IDE** — verified against the pinned tan
+(`SUPPORTED_CLI_VERSION`): a plain `tan doctor --format json` run against a
+real project emits no extension-presence check of any kind, so there is
+nothing here for the extension consumer to filter or distrust; if a future tan
+adds one, decision 4 of issue #376 is the rule that keeps it out of this path.
+`tan doctor` is target-agnostic, so `alp.debugDoctor` no longer prompts for a
+target/server pair either — that picker stays `alp.debugPreflight`'s.
+
+A missing workspace collapses to exactly ONE `planPrecondition` message. An
+unresolvable `tan` collapses to exactly ONE toast — never a second, in-process
+doctor rebuilt as a fallback — but that toast is `planCliOutcome(outcome, …)`
+(`src/notify/service.ts`), the same classifier every other CLI-backed command
+in this repo uses, NOT a bare sentence built off `outcome.message` alone: it
+is what splits "tan was never installed" (an Install action) from "tan is
+there but broken" (Settings/Doctor actions) and offers Retry, so the toast is
+never a buttonless dead end. It still never carries the raw errno/resolver
+text (`CliOutcome.unavailable.detail` is explicitly not for a toast — see
+`src/alpCli/models.ts`). The support bundle and the troubleshooting panel are
+where that restriction does NOT apply: a FILE and a channel-grade panel, not a
+toast, so both carry the resolver's curated message AND the raw detail behind
+it verbatim (`DebugSupportBundlePayload.doctor`, `DebugDoctorSection`'s
+`error`/`detail`) — the support bundle is exported precisely when things are
+broken, and a bundle with the curated sentence but not the diagnosis under it
+defeats the reason it exists.
 
 ## 5. Binary resolution (hybrid: bundled + universal)
 
 **Decision: `alpSdk.cliPath` setting → bundled `bin/tan[.exe]` → local build →
 cached download → a verified-native `tan` on PATH (last resort BY DEFAULT) →
 download-on-demand.** `resolveAlpBinary()` resolves in that order: an explicit
-`alpSdk.cliPath` (also serves dev builds: `tan-cli/target/release/tan`); then a
+`alpSdk.cliPath` (also serves dev builds: `tan-cli/python/dist/tan/tan`); then a
 binary staged at `<extensionPath>/bin/tan[.exe]` — present only in a
 platform-specific VSIX built with `vsce package --target <triple>`; then a
-locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]` (source checkout);
-then a previously downloaded binary cached in `globalStorage`; then `tan` on
+locally-built sibling `tan-cli/python/dist/tan/tan[.exe]` (source checkout —
+where `python/scripts/build_binary.sh`'s PyInstaller onedir freeze lands; the
+launcher is used in place because it resolves its payload relative to the
+`_internal/` directory beside it);
+then a previously downloaded binary cached in `globalStorage`, but only when a
+sha256 was recorded for its installed TREE and that tree still hashes to that
+digest (#386, extended to the whole tree by #464 — see §7; with no record the
+ladder skips straight past it); then `tan` on
 PATH, but only once verified to be the native (clap) CLI — `commandOnPath`
 accepts a PATH `tan` only when `tan --version` prints the native version line
 (`tan X.Y.Z`), so a stale or non-native `tan` that could otherwise shadow the
 version the extension targets falls straight through; then a fresh download of
-the raw `tan-<triple>[.exe]` release asset from `alplabai/tan-cli` for the host
-target. If all of those fail, surface a one-click "install the tan CLI" action.
+the release asset from `alplabai/tan-cli` for the host target — NAMED
+`tan-<triple>[.exe]`, a raw binary, through v0.5.0-rc4; named
+`tan-<triple>.zip` (win32) / `tan-<triple>.tar.gz` (elsewhere), a onedir
+archive, from tan-cli#349 on. Which of the two a given release actually
+published is resolved from that release's own `checksums.txt`
+(`resolvePublishedAsset` in download.ts), never guessed from the pinned
+version; the downloaded bytes' own magic number is a SEPARATE, later decision
+— which extractor (if any) to unpack them with (`download.ts`'s
+`sniffArchiveKind`) — gated on `alpSdk.tanCliDownloadConsent` (ADR 0021 Tier A: a one-time
+consent dialog, or the setting's own `allow`/`deny`; see "Download consent"
+below) — and, only for a caller the customer just triggered directly, may show
+that dialog when unanswered. If all of those fail, surface a one-click "install
+the tan CLI" action.
+
+**Download consent (`alpSdk.tanCliDownloadConsent`, ADR 0021 Tier A).** The
+FIRST time nothing else resolves a `tan` (ladder rung "download-on-demand"
+above), the extension asks once — artifact, source, size, licence — before
+fetching it, and remembers the answer (`ask`, the default) or skips the dialog
+entirely (`allow`/`deny`, for a managed/CI image). The gate is UNCONDITIONAL on
+that rung: `decideBinarySource` can only reach `download` when `onPath` is
+false, so nothing is ever actually running a `tan` there, un-digested leftover
+cache file or not — there is no state on this rung where a customer could be
+"stranded" by asking, which is why the gate no longer special-cases one. Two
+LATER self-heals of a `tan` a customer already has are never gated by this
+setting: a stale-cache version update (`updatingStaleCache`), and the one-time
+re-verification of a binary cached before this extension recorded checksums
+(`reacquiringUnverifiedCache`, #396, below) — but only when that re-verification
+is replacing a binary the customer is ACTUALLY RUNNING right now via the PATH
+fallback (`onPath` true); the same un-digested cache with nothing on PATH is a
+plain fresh install and IS gated. Running **Install tan CLI (global)** /
+**Update tan CLI** from the command palette always proceeds regardless of a
+stored decline, and clears it — invoking either command IS consent.
+
+This dialog may appear ONLY for a resolution the customer just directly
+triggered (`runAlpCommand`/`runAlpInTerminal`/`runAlpStreamed` each take an
+`interactive` option, default **false**) — a build/validate/generate/
+debug-config/sdk-switch/materialise command, the Dependencies panel's explicit
+Refresh click, or opening the Build Plan panel. A resolution that runs on its
+own — the language server's completion-catalog refresh, the Dependencies
+panel's focus/settings-edit/bootstrap-boundary re-derives, the Build Plan
+panel's board.yaml/system-manifest.yaml file-watcher refresh, the
+activation-time version check — never shows it and simply refuses (silently,
+from the customer's point of view) when nothing is on record yet. Concurrent
+resolutions in the same window share ONE in-flight resolution rather than each
+running the ladder (and, for an interactive fresh install, each opening its
+own dialog).
 
 **Opt-in: `alpSdk.preferGlobalCli` (default off).** When set, `decideBinarySource`
 promotes a verified-native `tan` on PATH to outrank the extension's own managed
@@ -158,6 +256,335 @@ progress notification instead of stalling on the first build/validate command
 (a no-op when a binary already resolves), and a version check then warns if the
 resolved `tan` is older than the version this build targets.
 
+**Every managed download is checked against the release's `checksums.txt`.**
+The extension does not merely store this binary, it executes it, so a completed
+transfer is not sufficient — `releaseAssetForTarget` resolves `checksumsUrl`
+from the same release tag as the asset, `downloadFile` fetches it through the
+same proxy settings as the binary, and the transferred bytes' sha256 must equal
+the digest published for that exact asset name before anything is renamed into
+the cache. Verification happens while the download is still a temp file, so a
+rejected binary never appears at `cachedBinaryPath` (where the `cached`
+resolution source would spawn it unasked) and an already-installed good binary
+is left in place.
+
+Three outcomes all REFUSE, with three distinct messages: a digest **mismatch**,
+a `checksums.txt` that **could not be fetched**, and a `checksums.txt` with **no
+line for this asset**. (A fourth, `unrecorded`, comes from the cached arm below.)
+The middle two are refusals rather than warnings on
+purpose — every tagged tan release publishes the file, and the binary itself
+just arrived over the same connection, so failing to obtain the digest means the
+release is malformed or something is intercepting; neither justifies executing
+an unverified binary. See `ChecksumError` in `src/alpCli/download.ts`.
+
+A refusal reaches the customer through **two** surfaces, and both keep the three
+messages distinct. Activation-time provisioning goes through
+`checksumFailurePlan`. But `resolveAlpBinary` has a live `case "download"` and
+`extension.ts` fires provisioning un-awaited, so a command issued before or
+instead of it downloads INLINE and the refusal arrives as a resolution failure —
+`CliUnavailableReason` therefore carries a dedicated `checksumRefused`
+(`classifyUnavailable` matches it ahead of `corrupt`), and `unavailablePlan`
+renders the `ChecksumError` sentence verbatim. Neither surface offers
+**`alpSdk.cliPath`**: that resolution source is never checksum-verified, so
+offering it during an active tamper would be a one-click route to permanently
+executing the very binary that was just refused. Both offer Retry, which is safe
+because it re-verifies.
+
+A download refused for **lack of consent** (`consentDeclined` — see "Download
+consent" above), a fourth `CliUnavailableReason` alongside `checksumRefused`,
+reaches the customer through the same shape of two surfaces, with the same
+gap closed the same way: `planCliOutcome`'s dedicated `consentDeclined` case
+(`src/notify/service.ts`) composes an operation-specific sentence naming
+`alpSdk.tanCliDownloadConsent`, but a reader that shows `CliOutcome.message`
+directly rather than going through `planCliOutcome` — the Dependencies panel's
+inline error text is the one that exists today — used to see only the generic
+"tan CLI unavailable.". `unavailableOutcome` (`src/alpCli/vscodeAdapter.ts`)
+now carries a real, setting-naming sentence on `message` for this reason too,
+the same way it already does for a `ChecksumError`.
+
+The `checksums.txt` body is read into memory rather than streamed to disk (it is
+849 bytes at tan v0.4.0) and is therefore **capped** at 64 KiB — a hostile origin
+is this check's threat model, and without the cap the read is bounded only by
+the 120 s wall clock. Overrunning it refuses rather than truncates: a truncated
+manifest could be missing the digest line and would read as "unlisted".
+
+**The CACHED binary is re-checked on every resolution, not only at download.**
+The download happens once; the cache is read on every activation for the life of
+the install, so checking only at write time left every machine spawning an
+unverified binary indefinitely, and left anything that rewrote the cache file
+afterwards executing unchecked (#386). `downloadCli` now records a sha256 in
+`context.globalState` (`alp.tanCachedBinarySha256`), and `resolveAlpBinary`'s
+`cached` arm recomputes the same digest and compares before returning a
+command. A mismatch **refuses the spawn** — not a warning, because the next
+thing that happens to that path is execution.
+
+**The digest covers the installed TREE, not the launcher alone (#464).** A
+PyInstaller onedir release (tan-cli#349) is not one file: `installArchive`
+lands libpython, every native extension module and the Python bytecode in a
+`_internal/` sibling beside the launcher, and all of that is executed
+(imported, dlopen'd) exactly as much as the launcher is. Digesting only
+`cachedBinaryPath` — this extension's behaviour before #464 — left every one
+of those siblings unverified: a rewrite of `_internal/tan/commands/build.pyc`
+after install matched the (launcher-only) recorded digest forever, and the
+`cached` arm reported the resolution as verified while spawning modified
+code. `sha256Tree` (`vscodeAdapter.ts`) walks `cacheDir` — the launcher plus
+every entry `installArchive` landed beside it, `.tmp`/`.old` transients
+excluded — and folds each entry's RELATIVE PATH as well as its content into
+one digest, so an entry added, removed, or modified anywhere under the
+installed tree fails verification.
+
+Recomputing the digest from the live filesystem on every resolution, rather
+than trusting a manifest of per-file digests written once at install time, was
+the deliberate choice: a manifest needs its own integrity check — a file an
+attacker can edit alongside the entry it describes vouches for nothing — which
+means either hashing the manifest itself (proving only that the LIST was not
+touched, not that the FILES still match it) or re-hashing the files against it
+anyway, at which point the manifest bought nothing a plain walk does not
+already give for free. The cost of walking the tree every time is bounded by a
+per-file memo (`memoizedFileDigest`, keyed on `size|mtime`, the same key
+`sha256File`'s single-entry memo already used): a resolution where nothing
+changed re-reads no file content at all, and a real tamper — one `_internal/`
+entry rewritten — pays for that entry's bytes only, not the whole tree. See
+the cost note further down for the measured numbers.
+
+The record lives in `globalState` rather than beside the binary so that dropping
+a file into the cache directory does not also grant control of the record, and
+because that is already this file's pattern for cross-activation state. Be clear
+about what it does and does not buy: it is **not** a defence against an attacker
+who already has write access to the user account — such an attacker can rewrite
+both. It detects corruption, partial writes, and replacement of ANY entry under
+`cacheDir` — the launcher or a `_internal/` sibling — by anything that does not
+know to update the record.
+
+A **missing** record is the one-time migration for binaries cached before this
+existed. It is treated as *not verifiable* and is **not** accepted-and-recorded
+— recording whatever is already on disk would launder an unverified binary into
+a "verified" one and reproduce the defect with extra steps. `decideBinarySource`
+therefore skips a cache with no record, so the ladder re-acquires it through the
+verified `download` arm. That decision is in the pure function rather than
+downstream on purpose: `probeTanVersion` must never fetch, and it branches on
+this answer. Offline, the re-acquire fails and says so in its own words
+(`CACHED_CLI_UNVERIFIED`) rather than as a generic download failure — a
+`mismatch` during the re-acquire keeps its own sentence, and `alpSdk.cliPath` is
+withheld here for the same reason as above.
+
+**An un-digested cache the ladder STEPS OVER onto PATH is re-acquired at
+ACTIVATION (#396).** Skipping a cache is only half a fix: the ladder continues,
+and on a machine that also has a global `tan` the next rung is `path`, so the
+population the migration was written for moved silently from `cached` onto a
+binary nothing verified. A refusal must never fall through onto an unverified
+arm — a silent fall-through is the zero-click form of the one-click bypass
+removed above. `shouldFetchManagedCli` therefore takes the whole
+`BinaryResolutionInput`, not a `BinarySource`. It has **three independent
+triggers**, one per resolved source that can want a fetch, and only one of them
+looks at the cache:
+
+| resolved source | fetches when |
+| --- | --- |
+| `download` | **always** — nothing resolves yet, a fresh install that would download on first use anyway |
+| `path` | `isUnverifiableCache(input)` **and** `!preferGlobalCli` — the #396 trigger |
+| `cached` | `isCliBehind(cachedVersion)` — the pre-existing stale-pin self-heal |
+
+Read as one condition ("fires on `isUnverifiableCache` when the source is `path`
+or `download`") it says a fresh install does not fetch, which is backwards.
+Keying the middle row on `source === "cached"` is why it could not fire for
+these machines at all: the source is never `cached` when the copy is skipped.
+
+**The trigger stops there deliberately.** A `cliPath` user, a `localBuild`
+developer and a platform-VSIX `bundled` install are NOT told anything and NOT
+made to download: firing on whatever resolved gave each of them one "this
+extension's copy … will not be run" plan on every activation — and, online, a
+~3 MB fetch they never asked for — while their commands ran fine on a binary
+they chose, the offline `cliPath` user being precisely who the first-install
+failure tells to point `cliPath` at a local build. Nothing is lost by leaving
+them alone: the heal fires when the un-digested cache would otherwise be
+silently stepped over, so if such a user ever clears `cliPath` or removes the
+local build, the ladder reaches the `path` fallback or `download` and the heal
+fires then.
+
+**`alpSdk.preferGlobalCli` (ladder rung 2) is in that same list**, which is what
+the `!preferGlobalCli` in the table's middle row does. It is a user-owned source
+by the rule above, and healing under it changes nothing about what runs —
+resolution still answers `path` afterwards — so online it is a ~3 MB fetch of
+dead weight and offline it is a per-activation error toast about a copy that
+user opted out of running. Their cache heals the moment they clear the flag,
+exactly like the other three. That flag is also the only thing separating the
+two `path` rungs, since both resolve to the same `BinarySource`.
+
+Nothing about the ladder changed. This replaces the extension's OWN storage, so
+it overrides no user choice, and precedence then does the rest by itself: once
+the digest is recorded, `cached` outranks the `path` **fallback** again and the
+effective source snaps back with no reordering ever made.
+
+Three behaviours worth stating because getting any of them wrong re-opens the
+hole:
+
+- **The residual offline window gets a notice, once.** A migrating machine that
+  cannot reach the network genuinely does run the PATH binary, so the failed
+  heal says which binary that is (`CACHED_CLI_UNVERIFIED_ON_PATH`) instead of
+  only "it will not be run". It offers the same Retry (`alp.updateCli`) and no
+  route onto an unverified binary. Online machines heal before this can matter,
+  so it is never load-bearing. Once per activation by construction —
+  `extension.ts` calls `ensureTanCliProvisioned` exactly once. And the Retry
+  lands on the same sentence if it is pressed while still offline:
+  `updateAlpCli` builds the wording from the same rule activation does, so one
+  click does not revert to "downloading it once more settles this for good".
+- **A host with no published prebuilt gets its OWN sentence rather than
+  nothing — and never "reconnect and retry".** `releaseAssetForTarget` returns
+  null there, so the heal cannot even start. A fresh install still skips
+  silently (a command surfaces the "set `alpSdk.cliPath`" guidance), but a
+  re-acquire may not — the cache is already being stepped over, so silence would
+  be the same zero-click fall-through, just without a network failure to report.
+  The two sentences above both end in "reconnect and retry", and on this host
+  that instruction is not merely unhelpful but false: there is nothing to fetch,
+  ever, so reconnecting settles nothing and the toast returns every activation
+  for good. `CACHED_CLI_UNVERIFIED_NO_PREBUILT[_ON_PATH]` say so instead, carry
+  **no Retry** (it would re-enter `downloadCli` and throw on the same missing
+  asset), and name `alpSdk.cliPath` — in the sentence and as the one button.
+
+  That last part is a deliberate exception to the rule two paragraphs up.
+  `cliPath` is withheld from a checksum refusal because it lets the user escape
+  onto an unverified binary when a verified one is a download away; on a host
+  with no published binary no verified binary is obtainable at all, so it is not
+  an escape from verification, it is the only way to have a `tan` — and it is
+  already what `downloadCli` names when it throws for this same missing asset.
+  Withholding it would leave a permanent notice with no remedy in it. The host
+  string stays in the channel either way: the presenter writes `detail` there
+  whether or not a button opens it.
+
+  Four sentences, two axes (is the ladder on PATH right now; can a heal ever
+  run), and one rule that picks between them — `unverifiedCacheCause` in
+  `service.ts`. Chosen per call site by hand, the fourth combination is what
+  goes wrong, and did.
+- **This heal does NOT take the stale-version give-up latch.** `HEAL_GAVE_UP_KEY`
+  bounds a futile re-download for a mis-tagged pin; adopting it here would let a
+  single offline activation disable the heal until the pin moved, stranding the
+  machine on the unverified PATH binary — the defect with a marker written on
+  top. The one failure that would justify giving up (a transfer that completes
+  and still cannot record a digest) is unlatchable anyway: the record and the
+  marker are both `globalState` writes, so whatever stopped one stops the other.
+
+**What #396 does NOT close, and must not be read as closing.** It heals ONE
+state: a binary in the cache with no digest recorded for it. Two other routes to
+a silent `path` are pre-existing, unchanged, and out of its scope:
+
+- a **fresh install on a machine with a global `tan`** — no managed copy was
+  ever fetched, so `cachedExists` is false, nothing is re-acquired, and the
+  extension runs the PATH binary indefinitely;
+- a **cache deleted or quarantined with the digest record left behind** (an
+  antivirus, a cleaner, a partial profile restore) — `cachedExists` is false
+  again while `cachedDigestRecorded` still holds, so a machine that WAS running a
+  verified managed binary silently downgrades to the PATH one, permanently.
+
+Both resolve `path` with an empty cache, neither is the migration population, and
+neither is a regression. Closing them means a different trigger (cache ABSENT
+rather than un-digested) with its own noise question to answer first.
+
+Also: `alp.updateCli` refuses only when `alpSdk.cliPath` points at a file that
+EXISTS — the same question `decideBinarySource` asks. A setting left over from a
+moved checkout or arriving via settings sync does not resolve, so a download
+does win and the command must run it. Refusing on the bare string made the #396
+notice's only button answer "alpSdk.cliPath is set …" with an
+`openSettings → alpSdk.cliPath` button: two clicks from a verification refusal
+to the arm that is never verified.
+
+Cost, measured on a 3.2 MB single-file (raw-binary) install (Windows, Node 26):
+4.2 ms for the cold resolve including the hash. `resolveAlpBinaryForContext`
+memoizes per window, but `probeTanVersion` builds its own deps and runs on
+every state refresh (focus, save, settings edit, task start, terminal finish),
+so `sha256Tree` memoizes PER FILE on `size|mtime` (`memoizedFileDigest`, #464
+— the tree-covering successor to the single-entry `sha256File` memo this
+number was first measured against): 20 refreshes cost **0 additional reads
+and 18.2 ms** with the memo versus **20 reads and 73.7 ms** without it. For an
+archive install (onedir, `_internal/` populated) the walk itself
+(`readdirSync`/`statSync` per entry, no content read) adds a small, roughly
+linear-in-entry-count cost on TOP of that memoized figure; the content-hash
+cost stays the same 4.2 ms-per-3.2 MB shape and is paid per file only when
+that file's `size|mtime` actually changed, never for the whole tree on
+account of one entry. The memo's ceiling is stated where it lives — a rewrite
+preserving both size and mtime inside one window reuses the answer, which
+sits inside the limit the record already has.
+
+**TWO OF THE SIX ARMS ARE VERIFIED: `download` and `cached`** — the managed
+acquisition channel. The count is stated out loud because "the extension
+verifies tan" is how this section gets read otherwise, and that reading is false
+on four arms out of six. Those four execute what the user's environment offers,
+which is the same trust boundary as their terminal, and their reasons must not
+be flattened into one; they are different statements:
+
+- `cliPath`, `localBuild` — the user pointed at this binary deliberately, or
+  built it themselves. No reference digest exists for either, and manufacturing
+  one would be theatre: it would check a binary against itself and dress up "the
+  user chose this" as an integrity guarantee.
+- `bundled` — staged inside the VSIX by `vsce package --target`, so it is
+  covered by the signature on the extension package. Checked upstream, not here.
+- `path`, **both rungs** (the `preferGlobalCli` opt-in above the managed copies,
+  and the unchosen fallback below them) — nothing about this is verified.
+  `commandOnPath`'s `isNativeTanVersionOutput` is a **format probe** on the
+  stdout of a binary we are about to run: attacker-controllable text matched by
+  a regex. It answers "does this look like the native clap CLI", never "is this
+  what Alp Lab published". No wording anywhere may claim INTEGRITY for a PATH
+  binary — that it is what Alp Lab published, or that anything checked it — and
+  a `package.json` description already had to be corrected for exactly that. The
+  house compound **`verified-native`** is the one carve-out and stays (it is used
+  throughout this file, `service.ts` and `models.ts`): it names the
+  format probe's verdict, "this is the native clap CLI and not the retired
+  `alp`", which is the only claim `commandOnPath` makes. Do not read the noun as
+  the adjective.
+
+**The FALLBACK rung now says so, once per install (#393).** A machine with a
+global `tan` and no managed copy never acquires a verified binary — not a
+migration, the steady state for anyone with `tan` on PATH — so
+`shouldNoticeUnverifiedPath` raises one **informational** notice
+(`UNVERIFIED_PATH_IN_USE`, severity `info`, action "Use the managed copy"), and
+the record lives in `globalState` so it is once per install rather than per
+window. It is **not** a demotion and **not** a refusal: demoting would break an
+offline machine whose only `tan` is the global one and displace a deliberate
+global install, and verify-to-refuse cannot work at all, since a self-built or
+distro `tan` legitimately will not match the pinned digest — a check that can
+never act on its own result is theatre. **Rung 2 gets nothing**: no toast, no log
+line, no fetch. That is the same constraint #396 got wrong one rung earlier, and
+it is why the notice is excluded for an un-digested cache too — that machine is
+#396's, and `CACHED_CLI_UNVERIFIED_ON_PATH` already says this and more.
+
+Worth knowing while reading this section: the extension's own **"Install tan CLI
+(global)"** button runs `media/tan-install/install.{sh,ps1}`, vendored copies of
+tan's own installer, which download a release asset and install it with **no
+checksum step at all** — so the extension itself creates the unverified-PATH
+state it now reports. Filed upstream as `alplabai/tan-cli#176`; patching the
+vendored copies here would diverge them from the installer they mirror. The
+invocation passes `--version`/`-Version` pinned to `SUPPORTED_CLI_VERSION`
+(#408) rather than letting the scripts fall back to GitHub's `latest` release,
+which can lag the tag this extension targets.
+
+After resolution both `path` rungs collapse to the same `BinarySource` value
+`"path"`, so a consumer needing the opt-in/fallback distinction re-derives it
+from the flag. #393 would have been the FIFTH site to re-type that expression —
+the point at which this note said to split the resolved label — so it was given
+a NAME instead: `isUnverifiedPathFallback` (`service.ts`), which both
+`unverifiedCacheCause` and `shouldNoticeUnverifiedPath` call. Four sites still
+ask: those two through the shared rule, plus `cliFixAction` and
+`aheadPathFixAction` (post-resolution, holding a `BinarySource` and a flag rather
+than an input, so they cannot call it) and `shouldFetchManagedCli` (already
+inside a `source === "path"` branch). Split the label if a consumer appears that
+the shared rule cannot serve.
+
+**Out of scope: GitHub build-provenance attestation.**
+`gh attestation verify <file> --repo alplabai/tan-cli` does work, and does fail
+on a tampered copy, but it needs the `gh` CLI installed and authenticated —
+which a customer machine cannot be assumed to have. It stays a maintainer/CI
+check; the extension never shells out to `gh`. (When running it by hand: in gh
+2.89.0 a successful verify prints nothing, so exit 0 is the only signal and
+empty output is not a failure.) Note also what the checksum does and does not
+buy: `checksums.txt` shares its ORIGIN with the binary — the same GitHub release,
+over the same TLS connection — so this defends against truncation, corruption,
+a substituted asset and cache tampering, **not** against a compromised release.
+TLS remains what authenticates the channel. tan-cli publishes SLSA build
+provenance for its releases and nothing in this extension verifies it; doing so
+is a separate decision, out of scope here for the same reason as `gh attestation
+verify` above (it needs tooling a customer machine cannot be assumed to have).
+Only signature verification against a producer key held by the extension would
+make the transport itself untrusted.
+
 **Compat note (PATH order reorder, 2026-07):** before this reorder, `tan` on
 PATH was tried right after `alpSdk.cliPath` — ahead of anything the extension
 itself manages. Now PATH is a last resort, tried only once nothing
@@ -172,9 +599,20 @@ extension to use it regardless of what's cached/bundled.
 Two VSIX shapes ship side by side:
 
 - **Platform-specific VSIXes** (`--target darwin-arm64`, and eventually the
-  other five targets `tan-cli` publishes) embed `bin/tan[.exe]` for that host.
-  First run needs no network call, no GitHub reachability, no proxy config —
-  the `bundled` resolver source picks the binary up directly.
+  other five `TARGETS` entries this extension resolves) embed `bin/tan[.exe]`
+  for that host. Note the counts, and that they now depend on which `tan` is
+  pinned: `TARGETS` always maps **six** `platform/arch` triples, but a Rust
+  `tan` release (through v0.4.x) publishes **eight** raw assets (gnu AND musl
+  per Linux arch) covering all six, while a Python `tan` release (v0.5.0 on,
+  a PyInstaller freeze) publishes **four** — Windows x64, both macOS arches,
+  and Linux x64 as `-gnu` only, never `-musl` (a PyInstaller musl freeze is
+  musl-*dynamic* and would not start on Ubuntu/Debian/Fedora, so `-gnu` is not
+  a downgrade here). The two triples a Python release does not cover
+  (`win32/arm64`, `linux/arm64`) are declared in `HOSTS_WITHOUT_RELEASE_ASSET`
+  (`src/alpCli/service.ts`), so the extension explains the gap instead of
+  attempting a download that 404s. First run needs no network call, no GitHub
+  reachability, no proxy config — the `bundled` resolver source picks the
+  binary up directly.
 - **The universal (binary-less) VSIX** keeps download-on-demand as the
   fallback. It is also the sideload / air-gapped artifact: a single package
   that works with any host once `alpSdk.cliPath` is pointed at a local build,
@@ -212,7 +650,8 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   facts come from `<sdkRoot>/metadata/bootstrap.json`. Native Windows is
   first-class: no `bash`, no pointer, no WSL. This is what closed #316.)*
 - **A2 — `tan build` + `image`/`flash`/`clean`/`renode`. ✅ done.** Five
-  terminal-mode commands that drive the build/image/flash/clean/renode
+  channel-mode commands (terminal-mode when this was written) that drive the
+  build/image/flash/clean/renode
   dispatch themselves (§6a — no `west alp-*` driver involved), run in the west
   cwd, and hide `west`. west-not-found → `tan
   bootstrap` hint. Arg-forwarding unit-tested + stub-west smoke; no golden
@@ -227,7 +666,21 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   envelope with per-OS checks + installer next-steps. Vendor compilers/Yocto host
   pkgs stay pointer-only (decision 4). Advisory only. `tan-core/build_readiness.rs`
   (6 unit tests); the default `tan doctor` (no `--build`) is unchanged. No golden
-  fixtures — output is machine-dependent like the debug doctor.
+  fixtures — output is machine-dependent like the debug doctor, so a recorded
+  run would red on every host but the one that made it.
+  *(Amended 2026-08-15, #466 §3 — "no golden fixtures" had been read as "no gate
+  at all", which is not the same decision. A rename of `data.checks` or
+  `missingPrerequisites` landed as an empty dependency panel: no failing test,
+  CI green on both sides. What closed it is a KEY-SET conformance gate, not a
+  fixture. tan's `envelope-contract.json` publishes `envelopes.doctor.dataKeys`
+  — a declarative schema of required/optional keys and their kinds, carrying no
+  values, so it is host-independent by construction. `doctor` is the one entry
+  that publishes a schema; the other 17 publish a golden `envelope`.
+  `test/tanContract.test.js` compares that schema against
+  `packages/alp-core/src/cli/doctorEnvelope.ts`: a key the extension reads and
+  tan does not declare is a hard red, and a key tan declares that the extension
+  does not model must be recorded in `UNMODELLED_DOCTOR_KEYS` with a reason.
+  Two are, today — `generatedAt` and `checks[].scope`.)*
 
 **Wave B — extension consumes the CLI (after the first `tan-cli` `v<version>` release):**
 
@@ -241,9 +694,10 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   `adapterCore.ts` (injected fs/net/process seams): `resolveAlpBinary` (downloads
   into globalStorage on demand) + `runAlp` (spawns `tan … --format json`, parses,
   classifies; spawn-ENOENT → graceful error outcome). `vscodeAdapter.ts`: real
-  https-redirect download of the raw binary + `chmod +x` (Unix) + `spawnSync`,
-  session-memoized (tan-cli ships a raw per-target binary, so there is no archive
-  to unpack).
+  https-redirect download of the binary + `chmod +x` (Unix) + `spawnSync`,
+  session-memoized (tan-cli shipped only a raw per-target binary at the time, so
+  there was no archive to unpack — `download.ts` gained an unpack step later,
+  for tan-cli#349's archived releases; see §5).
   17 unit tests (service + adapterCore). Not yet wired into commands (that's B2/B3).
 - **B2 — rewire the terminal actions first. ✅ done.** New `runAlpInTerminal()`
   (resolves the binary, opens a terminal, runs `tan …`; surfaces a one-click
@@ -273,9 +727,20 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   `loader.ts`). **Scope finding:** the debug-domain commands (`debugDoctor`,
   `debugPreflight`, …) probe **VS Code-host-only state** —
   `vscode.extensions.getExtension(...)` for installed debuggers — which the CLI
-  can't see (it assumes the marquee extensions present). Migrating them would
-  regress accuracy, so they **stay in-process** (they belong to the live/LSP
-  side of §4, see §4a). **sdk list ✅** — both release-fetchers (the SDK Manager
+  can't see. Migrating them would regress accuracy, so they **stay in-process**
+  (they belong to the live/LSP side of §4, see §4a).
+  **Correction (#376): that scope finding was truer of `debugPreflight` than of
+  `debugDoctor`.** The field-by-field map in issue #376 found the two in-process
+  reports shared five judgements (`workspaceRoot`, `boardYaml`, extension
+  presence, backend-on-PATH, host platform) — so migrating the WHOLE debug
+  domain as one unit would have left `tan` judging those five for
+  `alp.debugDoctor` while TypeScript judged the identical five for F5, the same
+  fork relocated rather than closed. `buildDoctorReport` (the in-process
+  doctor) is deleted rather than migrated; `alp.debugDoctor` and the doctor
+  parts of the troubleshooting panel and support bundle now consume plain
+  `tan doctor` directly (§4a). `buildDebugPreflightReport` is untouched and
+  still stays in-process — extension presence never moved. **sdk list ✅** —
+  both release-fetchers (the SDK Manager
   panel and the IDE Hub sidebar provider) now call `tan sdk list --format json`
   and post `data.releases` to the webview, replacing two copies of an in-process
   `listRemoteSdkReleases` + hand-rolled `https.get`. **B3 effectively complete:**
@@ -297,11 +762,19 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   writer with an independently-evolving guard is how the two diverge on a file
   `west` depends on. The extension only **detects** it (`inspectWestManifest`,
   read-only, `packages/alp-core/src/sdk/service.ts`) and points at Bootstrap.
-  Delegating the switch itself is queued behind a `SUPPORTED_CLI_VERSION` bump
-  to the first tan-cli release carrying #74 — the pin bump and the
-  `tan sdk switch` call must land in the **same** PR, using the **absolute**
-  SDK path (a bare version resolves against `~/.alp/sdk-cache`, not the
-  extension's `~/.alp/sdk`) and an explicit `cwd` of the workspace root.
+  **Done (#364).** The pin reached `0.4.0` (#385) and `setActiveSdk` now shells
+  `tan sdk switch <absolute path>` with an explicit `cwd` of the workspace root,
+  skipped entirely when no folder is open — there is no `<topdir>/.west/config`
+  to reconcile without one, and an undefined `cwd` would aim the switch at
+  whatever directory the extension host happens to sit in. The absolute path is
+  required because a bare version resolves against `~/.alp/sdk-cache`, not the
+  `~/.alp/sdk` this extension installs into (tan-cli#88).
+  Still not a second writer: the extension shells the repair and then re-probes
+  the STATE (`warnIfWestManifestDangling`). It deliberately does not match
+  tan's `sdk.west-config-reconciled` / `sdk.west-config-not-reconciled` issue
+  codes, because neither is in tan's frozen `contract/issue-codes.json` — an
+  exact-string match on an unfrozen code reads as success forever the day it is
+  renamed (tan-cli#106). A state probe cannot be renamed.
 - **B4 — retire the TS CLI. ✅ done (retire); core shrink = n/a.** Inventory found
   the extension (`src/`) imports **nearly all** of `@alp-sdk/core` (board,
   boardSummary, configurator, the whole debug domain [in-process per §4a], loader,
@@ -320,7 +793,8 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
 
 Build is **not** "run `west build`". A single `board.yaml` declares multiple
 cores, and each core's runtime decides its backend. **`tan build` drives that
-per-core dispatch itself** (`crates/tan-cli/src/commands/build/mod.rs`) — no
+per-core dispatch itself** (`python/tan/commands/build/execute.py`'s
+`execute_slices`, reached through `build_cmd._dispatch`) — no
 `west alp-build` extension command is involved. The target design:
 
 - fan out one build slice per non-`off` core into `<app>/build/<core>-<os>/…`,
@@ -348,12 +822,35 @@ plain `west build` — never through the SDK's `west alp-build` extension
 command. CLI surface:
 
 - `tan build [app] [--core <id>] [--board <b>] [--sequential]` → drives the
-  per-core build in a **terminal** (live, long-running). Sibling commands
-  `tan image` / `tan flash` / `tan clean` / `tan renode` follow the same
-  natively-driven pattern. These already exist as extension commands
-  (`alp.westAlp*`); the extension invokes the CLI for all five.
-- Mode is **terminal**, not envelope (Yocto rebuilds + flashing want live output
-  and device interaction). A short final envelope summary is optional.
+  per-core build with live output. Sibling commands `tan image` / `tan flash` /
+  `tan clean` / `tan renode` follow the same natively-driven pattern. These
+  already exist as extension commands (`alp.westAlp*`); the extension invokes
+  the CLI for all five.
+- Mode is **channel**, not envelope: these want live output, and none of them
+  reads stdin (the extension passes `--non-interactive`), so nothing is lost by
+  giving up the TTY — and the log plus verdict then survive the process, which
+  in a terminal they did not. A short final envelope summary is optional.
+- A SUCCESSFUL `tan build`'s verdict toast carries a **"Show Result"** action
+  that opens the Build Plan panel (`alp.showBuildPlan`, #331), one click from
+  the notification that just told the customer the build finished. Two gates,
+  both narrow on purpose:
+  - **Which run.** `onDidFinishTerminalCommand` fires for every `runInTerminal`/
+    streamed run this extension dispatches, not only the build family —
+    bootstrap, the Zephyr SDK install, the native_sim Run, `tan image` /
+    `flash` / `clean` / `renode` all go through the same subscriber. "Show
+    Result" is gated to `BUILD_RUN_NAME` alone: the panel renders
+    `build/system-manifest.yaml`, and only `tan build` seeds/refreshes that
+    file — `tan image`/`flash`/`renode` never write it, and `tan clean`
+    actively **deletes** it. Offering the action on any of those would reveal
+    a panel with nothing to do with the run that just finished.
+  - **Which outcome.** Even for `tan build`, the action is SUCCESS-ONLY
+    (`code === 0`). A prior green build's `build/system-manifest.yaml` can
+    still be sitting there from an earlier run when a later one fails
+    mid-build, and the payload this panel reads carries no timestamp — so a
+    "Show Result" on a failure toast could present a stale, unrelated green
+    result as this run's outcome. The failure toast keeps its terminal/
+    channel reveal (the real error) and Run Doctor instead; the panel stays
+    reachable from the palette and status bar regardless.
 - **Prerequisites are platform-specific and beyond `bootstrap`.** `bootstrap`
   gets west + the Zephyr workspace + Zephyr Python reqs, but **not** the
   compiler toolchains above. So `tan build` runs a build-preflight (in `doctor`,

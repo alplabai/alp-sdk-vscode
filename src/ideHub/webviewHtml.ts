@@ -3,6 +3,9 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 
+import { planFailure } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
+
 /**
  * Build the HTML shell for any Alp IDE webview (sidebar or panel).
  *
@@ -102,6 +105,7 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.installDependencies",
   "alp.newProjectWizard",
   "alp.openConfigurator",
+  "alp.openDependencies",
   "alp.openExistingProject",
   "alp.openHardwareExplorer",
   "alp.openHub",
@@ -112,7 +116,12 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.openSetupFlow",
   "alp.previewEffectiveConfig",
   "alp.showBuildPlan",
-  "alp.toolchainDoctor",
+  // `alp.toolchainDoctor` is deliberately NOT here. The id still exists (the
+  // notify seam's `runDoctor` action and shipped keybindings execute it, and it
+  // opens the dependency panel), but no webview posts it any more — the Hub
+  // tile and the Environment card both dispatch `alp.openDependencies`. A stale
+  // bundle that still posts the old id gets the "reload the window" notice,
+  // which is exactly the situation it describes.
   "alp.validateBoardYaml",
   "alp.westAlpClean",
   "alp.westAlpFlash",
@@ -143,8 +152,17 @@ export function isBootstrapCommand(command: string): boolean {
  */
 export function runWebviewCommand(command: string): void {
   if (!ALLOWED_WEBVIEW_COMMANDS.has(command)) {
-    void vscode.window.showErrorMessage(
-      `Alp IDE refused to run an unexpected command: ${command}`,
+    // The real cause is a stale webview bundle or an allowlist gap, so the
+    // remedy is a reload; the VS Code command id is an internal identifier and
+    // goes to the channel, not into the sentence.
+    notifyAsync(
+      planFailure({
+        operation: "Running an Alp IDE action",
+        cause: "This Alp IDE action isn't available in this version.",
+        detail: `refused webview command: ${command}`,
+        actions: [{ id: "reloadWindow" }],
+        dedupeKey: "webview-command-refused",
+      }),
     );
     return;
   }

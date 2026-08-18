@@ -11,7 +11,9 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 720px;
+  /* Was a hard 720px — the wizard sat in a narrow column with the template
+     grid wrapping at four cards while the window had room for eight. */
+  max-width: var(--content-max);
   margin: 0 auto;
   min-height: 0;
 }
@@ -149,7 +151,7 @@
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--border-widget, var(--border-default));
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-full);
   cursor: pointer;
   transition:
     background var(--duration-base) var(--ease-out),
@@ -268,4 +270,16 @@
   font-weight: 600;
   color: var(--text-primary);
   text-align: right;
+}
+
+/* The per-category heading inside the Examples list (#482 §2). Lighter than
+   `.groupLabel`, which separates Starters from Examples — these sit one level
+   down and must not compete with it. */
+.exampleGroupLabel {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
 }

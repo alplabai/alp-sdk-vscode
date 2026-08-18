@@ -72,7 +72,11 @@ export interface StoragePartition {
   mount?: string;
   flash_device?: string;
   offset_kib?: number;
-  raw?: boolean;
+  // No `raw?: boolean`. It was board.yaml's legacy alias for `fs: raw`, and
+  // alp-sdk v0.15.0 removed it: `board.schema.json` no longer declares the
+  // property and storage items are `additionalProperties: false`, so a
+  // board.yaml carrying it is now REJECTED at validation. Modelling it here
+  // would type-bless a document the SDK refuses.
 }
 
 export interface SecurityPsa {

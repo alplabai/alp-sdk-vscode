@@ -5,7 +5,13 @@
 import type { E1mModule } from "./messages";
 
 // ---------------------------------------------------------------------------
-// Static catalog (mirrors alp-sdk-upstream/metadata/e1m_modules/*.yaml)
+// Static catalog (mirrors alp-sdk-upstream/metadata/e1m_modules/*.yaml).
+// `test/ideHub.projectScaffold.test.js` asserts SET-EQUALITY of ids + per-entry
+// `family` against those YAMLs — a SKU dropped here is a wrong-silicon scaffold
+// on the first-run path (no SDK resolved), so keep them in lockstep.
+// PURE DATA: no runtime imports. `src/lsp/service.ts` (bundled into the LSP
+// server) imports this list, so adding a `vscode`/`fs` import here breaks that
+// bundle.
 // ---------------------------------------------------------------------------
 
 export const E1M_MODULES: E1mModule[] = [
@@ -35,6 +41,11 @@ export const E1M_MODULES: E1mModule[] = [
     family: "alif-ensemble",
   },
   {
+    id: "E1M-AEN701",
+    displayName: "E1M-AEN701 (Alif Ensemble E7)",
+    family: "alif-ensemble",
+  },
+  {
     id: "E1M-V2N101",
     displayName: "E1M-V2N101 (Renesas RZ/V2N)",
     family: "renesas-rzv2n",
@@ -47,12 +58,12 @@ export const E1M_MODULES: E1mModule[] = [
   {
     id: "E1M-V2M101",
     displayName: "E1M-V2M101 (Renesas RZ/V2N + DEEPX DX-M1)",
-    family: "renesas-rzv2n",
+    family: "renesas-rzv2n-deepx",
   },
   {
     id: "E1M-V2M102",
     displayName: "E1M-V2M102 (Renesas RZ/V2N + DEEPX DX-M1, larger memory)",
-    family: "renesas-rzv2n",
+    family: "renesas-rzv2n-deepx",
   },
   {
     id: "E1M-NX9101",
