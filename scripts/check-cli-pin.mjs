@@ -34,6 +34,8 @@
 
 import { createRequire } from "node:module";
 
+import { probeAsset } from "./lib/probe-asset.mjs";
+
 const require = createRequire(import.meta.url);
 const {
   HOSTS_WITHOUT_RELEASE_ASSET,
@@ -42,45 +44,9 @@ const {
   TARGETS,
 } = require("../out/alpCli/service.js");
 
-const TIMEOUT_MS = 15_000;
-const ATTEMPTS = 3;
-const RETRY_DELAY_MS = 1_000;
-
 /** Derived from `TARGETS`, never hand-listed: a platform added there must be
  *  probed here automatically, or the gate silently stops covering it. */
 const HOSTS = Object.keys(TARGETS).map((key) => key.split("/"));
-
-/** Run `attempt` up to ATTEMPTS times, pausing between tries so a 429 or a slow
- *  503 gets a chance to recover instead of failing three times instantly. */
-async function withRetry(attempt) {
-  let lastError = "";
-  for (let i = 1; i <= ATTEMPTS; i += 1) {
-    if (i > 1) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-    try {
-      const outcome = await attempt();
-      if (outcome) return outcome;
-      lastError = "empty response";
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-  }
-  return { state: "unknown", detail: lastError };
-}
-
-/** GitHub redirects release downloads to a CDN, so follow redirects on the
- *  HEAD; a missing TAG and a missing ASSET both surface as 404. */
-async function probeAsset(url) {
-  return withRetry(async () => {
-    const response = await fetch(url, {
-      method: "HEAD",
-      redirect: "follow",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (response.status === 404) return { state: "missing" };
-    if (response.ok) return { state: "present" };
-    return null; // 5xx / 429 — retry, then report as unknown
-  });
-}
 
 /** The hosts the pin DECLARES it publishes nothing for. */
 const declaredGaps = HOSTS_WITHOUT_RELEASE_ASSET[SUPPORTED_CLI_VERSION] ?? [];
@@ -162,8 +128,18 @@ for (const { host, label, state, expected, detail, url } of results) {
     published = true;
     console.error(`  PUBLISHED  ${label} -> ${url}`);
   } else {
+    // The detail is the difference between "this release is broken" and a
+    // reader who can check the claim. #510 printed the verdict and nothing
+    // else, so the log said no more than the headline did — and the headline
+    // was wrong. `detail` carries the observed status per candidate and the
+    // attempt count behind it.
     missing = true;
-    console.error(`  MISSING  ${label} -> ${url ?? "n/a"}`);
+    // Two lines on purpose. The verdict and the evidence for it belong
+    // together and the URL list is long enough to push them off the end of a
+    // log pane — which is how #510 got read as fact: the reader saw a headline
+    // and no observation to check it against.
+    console.error(`  MISSING  ${label} — ${detail}`);
+    console.error(`           ${url ?? "n/a"}`);
   }
 }
 
