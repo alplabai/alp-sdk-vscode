@@ -339,6 +339,124 @@ export function cpuCertainOps(b: BackendCoverage): string | null {
   return null;
 }
 
+/**
+ * What `narrowModelCoverage` could read, and how much it could not.
+ *
+ * `dropped` counts TOP-LEVEL models only — the ones that lost their row. An
+ * unreadable field inside a readable model (a `backends` that is not an array)
+ * costs that model its backends, not its row, and is not counted here: the
+ * customer still sees the model, so reporting it as skipped would be a lie in
+ * the other direction.
+ */
+export interface NarrowedCoverage {
+  models: ModelCoverage[];
+  dropped: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Copy `key` from `from` to `to` only when it is present AND of the wanted
+ *  type — presence is preserved so a well-formed payload survives byte-equal,
+ *  and an absent field is never invented. `null` passes for the nullable
+ *  fields tan really does send as `null` (`variant`, `table`, both pcts). */
+function keep(
+  to: Record<string, unknown>,
+  from: Record<string, unknown>,
+  key: string,
+  type: "string" | "number",
+  nullable = false,
+): void {
+  if (!(key in from)) return;
+  const value = from[key];
+  if (nullable && value === null) {
+    to[key] = null;
+    return;
+  }
+  if (typeof value === type) to[key] = value;
+}
+
+/** One `ops[]` entry, or `null` when there is nothing renderable in it. */
+function narrowOp(raw: unknown): OpVerdictView | null {
+  if (!isRecord(raw) || typeof raw.op !== "string") return null;
+  const out: Record<string, unknown> = { op: raw.op };
+  keep(out, raw, "status", "string");
+  keep(out, raw, "reason", "string");
+  keep(out, raw, "macs", "number");
+  return out as unknown as OpVerdictView;
+}
+
+/** One `backends[]` entry, or `null`. A backend with no readable `backend`
+ *  name cannot be labelled, so there is no honest badge to draw for it. */
+function narrowBackend(raw: unknown): BackendCoverage | null {
+  if (!isRecord(raw) || typeof raw.backend !== "string") return null;
+  const out: Record<string, unknown> = { backend: raw.backend };
+  keep(out, raw, "variant", "string", true);
+  keep(out, raw, "table", "string", true);
+  keep(out, raw, "npuCoverage", "string");
+  keep(out, raw, "basis", "string");
+  keep(out, raw, "confidence", "string");
+  keep(out, raw, "computeOnNpuPctMax", "number", true);
+  keep(out, raw, "npuPlacementPctReal", "number", true);
+  keep(out, raw, "uncostedCpuOpCount", "number");
+  if ("notes" in raw) {
+    out.notes = Array.isArray(raw.notes)
+      ? raw.notes.filter((n): n is string => typeof n === "string")
+      : [];
+  }
+  if ("ops" in raw) {
+    out.ops = Array.isArray(raw.ops)
+      ? raw.ops.map(narrowOp).filter((o): o is OpVerdictView => o !== null)
+      : [];
+  }
+  return out as unknown as BackendCoverage;
+}
+
+/**
+ * `modelFitData.models` — which crosses the wire as `unknown[]` on purpose —
+ * turned into something the view can render without throwing.
+ *
+ * The panel used to CAST this. One malformed element then threw during render,
+ * React unmounted the whole tree, and the customer got an EMPTY Models panel:
+ * indistinguishable from "no models declared", so the failure was not a missing
+ * answer but a WRONG one, silently. Four shapes did it — `models[i] === null`,
+ * a non-array `backends` (a string has a `.length`, so it passed the emptiness
+ * guard and died at `.map`), `backends[i] === null`, and a non-array `ops`
+ * (`(b.ops ?? [])` does not help: `{}` is neither `null` nor `undefined`).
+ *
+ * DROP, never coerce. A model we cannot read is reported through `dropped` so
+ * the panel can say so; it is never rendered as a row with invented fields,
+ * because a fabricated row is the same lie as a blank panel wearing a hat.
+ *
+ * This narrows only what the view dereferences. Unknown vocabulary VALUES are
+ * deliberately untouched — `coverageBadge` already routes them to a neutral
+ * badge, and rejecting them here would turn a forward-compatible tan into a
+ * dropped model.
+ */
+export function narrowModelCoverage(raw: unknown): NarrowedCoverage {
+  if (!Array.isArray(raw)) return { models: [], dropped: 0 };
+  const models: ModelCoverage[] = [];
+  let dropped = 0;
+  for (const entry of raw) {
+    if (!isRecord(entry) || typeof entry.name !== "string") {
+      dropped += 1;
+      continue;
+    }
+    const out: Record<string, unknown> = { name: entry.name };
+    keep(out, entry, "source", "string");
+    if ("backends" in entry) {
+      out.backends = Array.isArray(entry.backends)
+        ? entry.backends
+            .map(narrowBackend)
+            .filter((b): b is BackendCoverage => b !== null)
+        : [];
+    }
+    models.push(out as unknown as ModelCoverage);
+  }
+  return { models, dropped };
+}
+
 /** Semantics 2, in words — the standing caveat under any static-screen result. */
 export const STATIC_SCREEN_CAVEAT =
   "A static screen reports ELIGIBILITY, not a guarantee: an eligible operator still carries " +

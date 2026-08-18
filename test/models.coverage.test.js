@@ -49,6 +49,7 @@ const {
   coverageDetail,
   cpuCertainOps,
   isProven,
+  narrowModelCoverage,
 } = require(out);
 
 /** A `BackendCoverage` with the ADR-0028 defaults, overridden per case. */
@@ -649,6 +650,212 @@ test("a non-finite or out-of-range percentage is dropped, never printed", () => 
       ),
       null,
       `npuPlacementPctReal ${String(bad)} must not reach the rendered line`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// narrowModelCoverage — the protocol boundary (#517)
+//
+// `modelFitData.models` crosses the wire as `unknown[]` on purpose: the message
+// contract does not encode the tan vocabulary. The webview used to CAST it, so
+// one malformed element threw during render and React unmounted the whole tree
+// — the customer saw an EMPTY panel, which is indistinguishable from "no models
+// declared". That is not a missing answer, it is a wrong one.
+//
+// Every shape below was observed to throw against the real transpiled module in
+// #517, driving the same call order the view uses. The rule here is DROP, never
+// coerce: a model we cannot read is reported as dropped, not rendered as a row
+// with invented fields.
+// ---------------------------------------------------------------------------
+
+/** A minimal readable model, overridden per case. */
+function model(over) {
+  return {
+    name: "tiny",
+    source: "/ws/tiny_int8.tflite",
+    backends: [],
+    ...over,
+  };
+}
+
+test("narrowModelCoverage returns no models when the payload is not an array", () => {
+  for (const notAnArray of [undefined, null, "nope", 42, {}]) {
+    const got = narrowModelCoverage(notAnArray);
+    assert.deepEqual(
+      got.models,
+      [],
+      `${JSON.stringify(notAnArray)} must not become a model list`,
+    );
+    assert.equal(got.dropped, 0, "a non-array payload drops no ELEMENTS");
+  }
+});
+
+test("narrowModelCoverage drops an unreadable element and keeps its siblings", () => {
+  // `models[0] === null` threw at `coverage.find((c) => c.name === m.name)`.
+  const got = narrowModelCoverage([null, model({ name: "kept" })]);
+  assert.deepEqual(
+    got.models.map((m) => m.name),
+    ["kept"],
+    "a null element must not survive, and must not take its siblings with it",
+  );
+  assert.equal(
+    got.dropped,
+    1,
+    "the dropped element must be COUNTED, not hidden",
+  );
+});
+
+test("narrowModelCoverage drops an element whose name is not a string", () => {
+  // `name` keys the table row and the coverage lookup; without it there is
+  // nothing to render the row against.
+  for (const bad of [undefined, null, 42, {}, []]) {
+    const got = narrowModelCoverage([{ name: bad, backends: [] }]);
+    assert.deepEqual(
+      got.models,
+      [],
+      `name ${JSON.stringify(bad)} is not renderable`,
+    );
+    assert.equal(got.dropped, 1);
+  }
+});
+
+test("narrowModelCoverage empties a non-array backends instead of dropping the model", () => {
+  // `backends: "nope"` passed `!backends || backends.length === 0` (a string
+  // HAS a length) and then threw at `backends.map`. The model itself is still
+  // readable, so it keeps its row and simply reports no backends.
+  const got = narrowModelCoverage([model({ name: "tiny", backends: "nope" })]);
+  assert.equal(
+    got.models.length,
+    1,
+    "the model is readable; only its backends are not",
+  );
+  assert.deepEqual(got.models[0].backends, []);
+  assert.equal(got.dropped, 0, "an unreadable FIELD is not a dropped model");
+});
+
+test("narrowModelCoverage drops an unreadable backend and keeps its siblings", () => {
+  // `backends[0] === null` threw at `isProven(b.basis)`.
+  const got = narrowModelCoverage([
+    model({
+      backends: [null, { backend: "ethos_u", basis: "static-screen" }],
+    }),
+  ]);
+  assert.deepEqual(
+    got.models[0].backends.map((b) => b.backend),
+    ["ethos_u"],
+    "a null backend must not survive, and must not blank the model",
+  );
+});
+
+test("narrowModelCoverage empties a non-array ops", () => {
+  // `(b.ops ?? []).filter` does NOT help: `{}` is neither null nor undefined.
+  for (const bad of [{}, "nope", 42]) {
+    const got = narrowModelCoverage([
+      model({
+        backends: [{ backend: "ethos_u", basis: "static-screen", ops: bad }],
+      }),
+    ]);
+    assert.deepEqual(
+      got.models[0].backends[0].ops,
+      [],
+      `ops ${JSON.stringify(bad)} must not reach .filter`,
+    );
+  }
+});
+
+test("narrowModelCoverage drops an unreadable op entry", () => {
+  const got = narrowModelCoverage([
+    model({
+      backends: [
+        {
+          backend: "ethos_u",
+          basis: "static-screen",
+          ops: [null, { op: "FULLY_CONNECTED", status: "npu-eligible" }],
+        },
+      ],
+    }),
+  ]);
+  assert.deepEqual(
+    got.models[0].backends[0].ops.map((o) => o.op),
+    ["FULLY_CONNECTED"],
+  );
+});
+
+test("narrowModelCoverage passes a well-formed payload through unchanged", () => {
+  // The gate must not be satisfiable by returning [] for everything.
+  const real = [
+    {
+      name: "tiny",
+      source: "/ws/tiny_int8.tflite",
+      backends: [
+        {
+          backend: "ethos_u",
+          variant: "u85",
+          table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+          npuCoverage: "full-eligible",
+          computeOnNpuPctMax: 100.0,
+          npuPlacementPctReal: null,
+          uncostedCpuOpCount: 0,
+          basis: "static-screen",
+          confidence: "screening",
+          notes: ["a note tan sent"],
+          ops: [
+            {
+              op: "FULLY_CONNECTED",
+              status: "npu-eligible",
+              reason: "",
+              macs: 4,
+            },
+          ],
+        },
+      ],
+    },
+  ];
+  const got = narrowModelCoverage(real);
+  assert.equal(got.dropped, 0);
+  assert.deepEqual(got.models, real, "a readable payload must survive intact");
+});
+
+test("every shape #517 recorded as throwing now renders without throwing", () => {
+  // The point of the narrowing is not the shape of its return value — it is
+  // that the render call order stops throwing. Drive the same calls the view
+  // makes, for each recorded shape, through the narrowed output.
+  const shapes = [
+    [null],
+    [{ name: "x", backends: "nope" }],
+    [{ name: "x", backends: [null] }],
+    [
+      {
+        name: "x",
+        backends: [{ backend: "ethos_u", basis: "static-screen", ops: {} }],
+      },
+    ],
+    [
+      {
+        name: "x",
+        backends: [
+          { backend: "ethos_u", basis: "compiled", npuPlacementPctReal: "100" },
+        ],
+      },
+    ],
+  ];
+  for (const shape of shapes) {
+    const { models } = narrowModelCoverage(shape);
+    assert.doesNotThrow(
+      () => {
+        for (const m of models) {
+          String(m.name);
+          for (const b of m.backends ?? []) {
+            coverageBadge(b);
+            coverageDetail(b);
+            cpuCertainOps(b);
+            basisSummary(b);
+            backendLabel(b.backend, b.variant);
+          }
+        }
+      },
+      `render call order threw on ${JSON.stringify(shape)}`,
     );
   }
 });
