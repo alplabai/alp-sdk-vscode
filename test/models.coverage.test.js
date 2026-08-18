@@ -44,6 +44,7 @@ const {
   STATIC_SCREEN_CAVEAT,
   UNDETERMINED_CAVEAT,
   backendLabel,
+  basisSummary,
   coverageBadge,
   coverageDetail,
   cpuCertainOps,
@@ -113,9 +114,32 @@ test("undetermined never renders as a negative verdict", () => {
 });
 
 test("undetermined draws no percentage line at all", () => {
+  // The ops are DETERMINATE and the percentage is present on purpose. With
+  // the empty `ops: []` this used to carry, `coverageDetail`'s
+  // `determined.length === 0` guard returned null too, so deleting the
+  // `undetermined` guard left this test green — the two guards masked each
+  // other and neither was actually covered. Now only the `undetermined` guard
+  // can produce the null.
   assert.equal(
     coverageDetail(
-      backend({ npuCoverage: "undetermined", computeOnNpuPctMax: null }),
+      backend({
+        npuCoverage: "undetermined",
+        computeOnNpuPctMax: 75.0,
+        ops: [
+          {
+            op: "CONV_2D",
+            status: "npu-eligible",
+            reason: "constraint-unchecked",
+            macs: 30,
+          },
+          {
+            op: "CUSTOM",
+            status: "cpu-certain",
+            reason: "op-not-in-table",
+            macs: 10,
+          },
+        ],
+      }),
     ),
     null,
   );
@@ -126,9 +150,13 @@ test("ops whose status is `unknown` never become a 0/N eligibility figure", () =
   // verdict per input op so a consumer can see WHICH ops were skipped.
   // Counting those against `ops.length` reads as "0/2 ops are NPU-eligible" —
   // exactly the `cpu-only` misreading semantics 1 forbids.
+  //
+  // `npuCoverage` is `partial`, not `undetermined`: this test is about the
+  // `determined.length === 0` guard, and with `undetermined` the guard above
+  // fired first and answered for it.
   const line = coverageDetail(
     backend({
-      npuCoverage: "undetermined",
+      npuCoverage: "partial",
       computeOnNpuPctMax: null,
       ops: [
         {
@@ -315,6 +343,63 @@ test("a compiled report never recomputes coverage from the kept static ops", () 
   );
   assert.equal(cpuCertainOps(b), null);
   assert.equal(coverageBadge(b).label, "CPU only (proven)");
+  // The VARIANT, not only the label. `cpu-only` is a warning and never an
+  // error — the model still runs, the NPU just does not take any of it — and
+  // the only test that said so used the fixture's default `static-screen`
+  // basis, so it exercised `SCREENED_BADGE` and left `PROVEN_BADGE`'s copy of
+  // the same rule unguarded. This is the path a customer reaches with
+  // `--exact`.
+  assert.equal(coverageBadge(b).variant, "warn");
+  assert.notEqual(coverageBadge(b).variant, "err");
+});
+
+test("a compiled report reads the placement, never the MAC-weighted bound", () => {
+  // The two percentages are DIFFERENT UNITS: `computeOnNpuPctMax` is a
+  // MAC-weighted upper bound from the static screen, `npuPlacementPctReal` is
+  // a real operator-count placement from the compiler. Every other proven
+  // fixture leaves `computeOnNpuPctMax` null, so nothing discriminated which
+  // field the proven branch reads — swapping it to
+  // `(b.computeOnNpuPctMax ?? b.npuPlacementPctReal)` left the suite green.
+  // Both are set here, and they disagree.
+  const line = coverageDetail(
+    backend({
+      npuCoverage: "partial",
+      computeOnNpuPctMax: 88.0,
+      npuPlacementPctReal: 12.0,
+      basis: "compiled",
+      confidence: "certain",
+      ops: [],
+    }),
+  );
+  assert.equal(
+    line,
+    "12% of operators placed on the NPU — measured by the compiler",
+  );
+  assert.doesNotMatch(line, /88/);
+});
+
+test("a bench result says the placement figure was never reported", () => {
+  // `bench` is proven, so `coverageDetail` takes the proven branch — which
+  // reads `npuPlacementPctReal`, documented as compile-only. A bench run
+  // therefore rendered a "(proven)" badge and nothing under it, which reads as
+  // a withheld result. It is not withheld; it was never reported.
+  const b = backend({
+    npuCoverage: "partial",
+    computeOnNpuPctMax: 73.2,
+    npuPlacementPctReal: null,
+    basis: "bench",
+    confidence: "certain",
+    ops: [],
+  });
+  assert.equal(coverageBadge(b).label, "some ops on NPU (proven)");
+  assert.equal(
+    coverageDetail(b),
+    "no operator-placement figure reported at basis: bench",
+  );
+  // And it must NOT quietly reach for the static upper bound instead: 73.2 is
+  // a MAC-weighted screen figure, not a placement, and printing it under a
+  // "proven" badge would present a screen as a measurement.
+  assert.doesNotMatch(coverageDetail(b), /73/);
 });
 
 test("the certain-CPU list is drawn for a static screen only", () => {
@@ -364,5 +449,206 @@ test("the retired vocabulary produces no label of its own", () => {
     const badge = coverageBadge(backend({ npuCoverage: retired }));
     assert.equal(badge.variant, "neutral");
     assert.equal(badge.label, retired);
+  }
+});
+
+// ── The shape a pre-ADR-0028 tan actually sends ────────────────────────────
+//
+// The test above puts a retired WORD in the NEW field. No tan build has ever
+// sent that: a CLI predating the amendment sends `verdict` and no
+// `npuCoverage`, `basis` or `confidence` at all. `SUPPORTED_CLI_VERSION` on
+// this branch is "0.3.1", so a MISSING field — not an unknown value — is the
+// shape every currently supported CLI produces, and the fail-safe branch was
+// written for the other one.
+
+/** A `backends[]` entry exactly as the retired vocabulary spelled it. */
+function retiredBackend(over) {
+  return {
+    backend: "ethos_u",
+    variant: "u85",
+    verdict: "fits",
+    est_sram_kib: 512,
+    op_coverage_pct: 100,
+    unsupported_ops: [],
+    ...over,
+  };
+}
+
+test("a report with no npuCoverage never renders the text `undefined`", () => {
+  for (const verdict of ["fits", "cpu-fallback", "no-fit"]) {
+    const badge = coverageBadge(retiredBackend({ verdict }));
+    assert.equal(badge.variant, "neutral");
+    assert.equal(
+      typeof badge.label,
+      "string",
+      `label must be a string, got ${badge.label}`,
+    );
+    assert.ok(
+      badge.label.length > 0,
+      "an empty label renders an empty badge with no text at all",
+    );
+    // The rendered cell is `${backendLabel(...)}: ${badge.label}` — a missing
+    // label reaches the customer as "Ethos-U85: undefined".
+    assert.doesNotMatch(badge.label, /undefined/);
+    assert.doesNotMatch(badge.title, /undefined/);
+  }
+});
+
+test("a report with no basis states so, rather than claiming an eligibility screen", () => {
+  const b = retiredBackend();
+  assert.doesNotMatch(basisSummary(b), /undefined/);
+  assert.equal(coverageDetail(b), null);
+  assert.equal(cpuCertainOps(b), null);
+});
+
+// ── Semantics 1 outranks the basis ─────────────────────────────────────────
+
+test("undetermined draws no percentage line even at a proven basis", () => {
+  // A compile that produced no data must not draw a hard "0% placed on the
+  // NPU" under a badge that says "not determined". `coverageBadge` gates on
+  // `undetermined` FIRST; `coverageDetail` gated on `isProven` first, so the
+  // two disagreed. `deepx_dxm1` — the headline backend of E1M-V2M101 /
+  // E1M-V2M102 — is exactly the one that reports `undetermined`.
+  const b = backend({
+    backend: "deepx_dxm1",
+    variant: null,
+    table: null,
+    npuCoverage: "undetermined",
+    computeOnNpuPctMax: null,
+    npuPlacementPctReal: 0.0,
+    basis: "compiled",
+    confidence: "certain",
+    ops: [],
+  });
+  assert.equal(coverageBadge(b).label, "not determined");
+  assert.equal(coverageDetail(b), null);
+});
+
+// ── Rounding must not contradict the badge beside it ───────────────────────
+
+test("a proven placement short of 100 % never prints as 100 %", () => {
+  // 299/300 operators placed. `.toFixed(0)` reads "100% of operators placed on
+  // the NPU" directly under a "some ops on NPU (proven)" badge. A
+  // 300-operator network is ordinary.
+  const line = coverageDetail(
+    backend({
+      npuCoverage: "partial",
+      computeOnNpuPctMax: null,
+      npuPlacementPctReal: 99.66666666666667,
+      basis: "compiled",
+      confidence: "certain",
+      ops: [],
+    }),
+  );
+  assert.doesNotMatch(line, /\b100%/);
+  assert.match(line, /of operators placed on the NPU/);
+});
+
+test("a nonzero proven placement never prints as 0 %", () => {
+  // The mirror: 1/300 placed reads "0% of operators placed on the NPU" beside
+  // a badge that says some of them were.
+  const line = coverageDetail(
+    backend({
+      npuCoverage: "partial",
+      computeOnNpuPctMax: null,
+      npuPlacementPctReal: 0.3333333333333333,
+      basis: "compiled",
+      confidence: "certain",
+      ops: [],
+    }),
+  );
+  assert.doesNotMatch(line, /\b0% of operators/);
+});
+
+test("an exact 0 % and an exact 100 % still print as themselves", () => {
+  // The guard above must not blur a real all-or-nothing result into "<1%" or
+  // ">99%" — the captured float32_fc.tflite case is a true 0.0.
+  const proven = (pct) =>
+    coverageDetail(
+      backend({
+        npuCoverage: "partial",
+        computeOnNpuPctMax: null,
+        npuPlacementPctReal: pct,
+        basis: "compiled",
+        confidence: "certain",
+        ops: [],
+      }),
+    );
+  assert.match(proven(0.0), /^0% of operators/);
+  assert.match(proven(100.0), /^100% of operators/);
+});
+
+test("a static upper bound short of 100 % never prints as 100 %", () => {
+  const line = coverageDetail(
+    backend({
+      npuCoverage: "partial",
+      computeOnNpuPctMax: 99.6,
+      ops: [
+        {
+          op: "CONV_2D",
+          status: "npu-eligible",
+          reason: "constraint-unchecked",
+          macs: 996,
+        },
+        {
+          op: "CUSTOM",
+          status: "cpu-certain",
+          reason: "op-not-in-table",
+          macs: 4,
+        },
+      ],
+    }),
+  );
+  assert.doesNotMatch(line, /up to 100%/);
+  assert.match(line, /\(1\/2 ops\)/);
+});
+
+// ── A number that is not a percentage is not rendered as one ───────────────
+
+test("a non-finite or out-of-range percentage is dropped, never printed", () => {
+  // The module is defensive about unknown vocabulary STRINGS and was not
+  // defensive at all about numbers: Infinity rendered "up to Infinity% of
+  // compute", -5 rendered "up to -5% of compute". Dropped rather than clamped
+  // — a clamped figure is still a figure, and a wrong figure is the thing this
+  // module exists to avoid.
+  const ops = [
+    {
+      op: "CONV_2D",
+      status: "npu-eligible",
+      reason: "constraint-unchecked",
+      macs: 70,
+    },
+    {
+      op: "CUSTOM",
+      status: "cpu-certain",
+      reason: "op-not-in-table",
+      macs: 10,
+    },
+  ];
+  for (const bad of [Infinity, -Infinity, NaN, -5, 1e9, "100"]) {
+    const line = coverageDetail(
+      backend({ npuCoverage: "partial", computeOnNpuPctMax: bad, ops }),
+    );
+    assert.equal(
+      line,
+      "1/2 ops are NPU-eligible by name — no MAC-weighted figure",
+      `computeOnNpuPctMax ${String(bad)} must not reach the rendered line`,
+    );
+  }
+  for (const bad of [Infinity, NaN, -5, 1e9, "100"]) {
+    assert.equal(
+      coverageDetail(
+        backend({
+          npuCoverage: "partial",
+          computeOnNpuPctMax: null,
+          npuPlacementPctReal: bad,
+          basis: "compiled",
+          confidence: "certain",
+          ops: [],
+        }),
+      ),
+      null,
+      `npuPlacementPctReal ${String(bad)} must not reach the rendered line`,
+    );
   }
 });

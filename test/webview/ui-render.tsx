@@ -733,7 +733,13 @@ async function main() {
           );
         }
       }
-      if (!text.includes("not determined")) {
+      // Anchored on the BADGE, not the bare words. `UNDETERMINED_CAVEAT`
+      // contains the string "not determined" and renders under the same
+      // `anyUndetermined` condition as the badge itself, so a bare needle was
+      // satisfied by the caveat and could never fail: renaming the badge to
+      // "ZZZ", or flipping its variant to `err`, both left this green. The
+      // `onnxmodel` fixture's undetermined backend is `ethos_u`/`u85`.
+      if (!text.includes("ethos-u85: not determined")) {
         problems.push(
           "models: `undetermined` backend not rendered as 'not determined'",
         );

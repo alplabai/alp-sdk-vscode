@@ -1,5 +1,24 @@
 # Models Panel — Pre-flight Fit Badge (Slice 1c) Implementation Plan
 
+> **SUPERSEDED — do not implement from this document.** It specifies the
+> `fits | cpu-fallback | no-fit` verdict vocabulary end to end, and tan retired
+> that vocabulary in the alp-sdk **ADR-0028** amendment. `tan model check` now
+> reports `npuCoverage` (`full-eligible | partial | cpu-only | undetermined`)
+> together with a `basis` (`static-screen | compiled | bench`) and a
+> `confidence`, and `fits` survives only at a proven basis. Two of the rules
+> below are now the exact opposite of what ships: `no-fit`→red does not exist,
+> and the "dedup backends to the WORST verdict" collapse was removed — every
+> backend tan reports is rendered.
+>
+> The vocabulary that IS in force lives in
+> `packages/alp-webview/src/features/models/coverage.ts`, and its semantics are
+> stated in that file's header comment. Changes: #512 (adopt the vocabulary),
+> #516 (make its rendering honest). Refs alplabai/alp-sdk#1470,
+> alplabai/tan-cli#789.
+>
+> The rest of this file is kept as the record of what Slice 1c planned at the
+> time. It is history, not specification.
+
 > **For agentic workers:** Use superpowers:subagent-driven-development or executing-plans. Steps use `- [ ]` checkboxes.
 
 **Goal:** Add a per-model **fit badge** to the Models panel — the extension shells `tan model check --board board.yaml`, parses the envelope, and shows each board model's fit verdict (`fits`/`cpu-fallback`/`no-fit`) per SoM backend, before any build.
