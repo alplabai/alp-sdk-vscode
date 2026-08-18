@@ -1,5 +1,6 @@
 import { BuildPlanView } from "./features/build-plan";
 import { ConfiguratorView } from "./features/configurator";
+import { DependenciesView } from "./features/dependencies";
 import { ExistingProjectFlowView } from "./features/existing-project-flow";
 import { HardwareExplorerView } from "./features/hardware-explorer";
 import { ModelsView } from "./features/models";
@@ -8,7 +9,6 @@ import { OverviewView } from "./features/overview";
 import { SdkView } from "./features/sdk";
 import { SidebarHubView } from "./features/sidebar-hub";
 import { SetupFlowView } from "./features/setup-flow";
-import { ToolchainDoctorView } from "./features/toolchain-doctor";
 import { AppProvider, useAppContext } from "./shared/AppContext";
 import { Button } from "./shared/ui";
 import layout from "./shared/ui/layout.module.css";
@@ -64,8 +64,12 @@ function Router() {
       return <SdkView />;
     case "configurator":
       return <ConfiguratorView />;
-    case "toolchain-doctor":
-      return <ToolchainDoctorView />;
+    // Replaces the Toolchain Doctor: its "one-click fixes" promise was dead on
+    // every machine where tan resolved (the CLI path set no `fixId`, and the
+    // Fix button was gated on exactly that), and its "recommended" badge
+    // labelled hard build blockers as optional.
+    case "dependencies":
+      return <DependenciesView />;
     case "hardware-explorer":
       return <HardwareExplorerView />;
     case "build-plan":

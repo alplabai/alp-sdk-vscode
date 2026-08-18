@@ -20,9 +20,19 @@ test("runAlpCommand accepts a per-call timeoutMs override, threaded to spawnAlpA
     path.join(root, "src", "alpCli", "vscodeAdapter.ts"),
     "utf-8",
   );
+  // Read the options block out FIRST, then assert membership inside it. The
+  // original form pinned `timeoutMs` as the last member before `}`, so merely
+  // adding a sibling option (e.g. `interactive`) reddened a correct signature.
+  // What this gate owes the reader is that `timeoutMs` IS an option — not the
+  // order the members happen to be written in.
+  const optionsBlock =
+    /export async function runAlpCommand\([\s\S]*?options\?:\s*\{([\s\S]*?)\}/.exec(
+      src,
+    );
+  assert.ok(optionsBlock, "runAlpCommand must take an options object");
   assert.match(
-    src,
-    /options\?:\s*\{\s*signal\?:\s*AbortSignal;\s*timeoutMs\?:\s*number\s*\}/,
+    optionsBlock[1],
+    /timeoutMs\?:\s*number/,
     "runAlpCommand's options must accept an optional timeoutMs override",
   );
   assert.match(

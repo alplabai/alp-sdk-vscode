@@ -18,8 +18,46 @@ concurrency:
 
 jobs:
   build:
-    name: build · extension + vsix
-    runs-on: ubuntu-latest
+    # The matrix entries carry an explicit `name` because the ubuntu context
+    # name is load-bearing: `dev` and `main` require the check
+    # "build · extension + vsix" verbatim, with enforce_admins=true. A bare
+    # matrix renames it to "build (ubuntu-latest)"; the required context would
+    # then never report and every PR would block with no admin override. So the
+    # ubuntu entry keeps its name byte-for-byte and Windows arrives as a new,
+    # separate context.
+    #
+    # One step list, two OSes: the Windows job cannot drift into skipping the
+    # checks it exists to run, because there is only one copy of them.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # A Windows or macOS failure must not cancel ubuntu: ubuntu is the
+      # required check, the other two are advisory until they have a track
+      # record. Nor may either cancel the other — they routinely surface the
+      # same defect from different angles.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: build · extension + vsix
+          - os: windows-latest
+            name: build · windows
+          # `macos-latest` is arm64, and that is the point: it is the host the
+          # darwin-arm64 bundled-CLI VSIX targets. `macos-13` would be x64 and
+          # would test nothing we actually ship (#416).
+          - os: macos-latest
+            name: build · macos
+
+    defaults:
+      run:
+        # On Windows `shell: bash` is Git Bash, so both OSes run identical step
+        # bodies — including check-vsix-allowlist.sh and the `test -f` block
+        # below, which are shell and would not parse under the pwsh default.
+        # Checkout is LF on both: .gitattributes pins `eol=lf`, overriding the
+        # Windows runner's core.autocrlf=true. Versus ubuntu's previous default
+        # this only adds `pipefail`; no step body here contains a pipe.
+        shell: bash
 
     steps:
       - name: Checkout (with submodule)
@@ -45,11 +83,58 @@ jobs:
       - name: Compile (extension + CLI bundle + webview)
         run: pnpm run compile
 
+      - name: Typecheck (extension + core + webview)
+        # Must follow Compile: `@alp-sdk/core/*` resolves through
+        # packages/alp-core/dist, which `tsc --build` produces. Its own job here
+        # is packages/alp-webview — `vite build` strips types without checking
+        # them, so the webview is otherwise never type-checked at all.
+        run: pnpm run typecheck
+
+      - name: Gate — fetch tan's published envelope contract for the pinned version
+        # Must run BEFORE the tests, not beside the other network-touching gate
+        # below: test/tanContract.test.js is pure and reads whatever this leaves
+        # in test/golden/tan-contract/.
+        #
+        # The asset EXISTS now: every tan tag from v0.4.0-rc1 on publishes
+        # `envelope-contract.json`, and `SUPPORTED_CLI_VERSION` pins v0.4.0,
+        # so this step fetches and the contract tests actually assert against a
+        # real artefact. This comment previously said "no tan release has been
+        # tagged since, so nothing publishes it yet" — true when written, false
+        # from v0.4.0 onward.
+        #
+        # ONE skip path survives, and it is a list, not a judgement call: a pin
+        # in `RELEASES_PREDATING_CONTRACT_ASSET` (src/alpCli/service.ts) exits 0
+        # with a `::warning::` and makes no request, because nothing is
+        # published for those tags. For any other pin — every release from
+        # v0.4.0 on — a 404, a rate-limit, an outage and a dead network all exit
+        # 1. They keep different messages because they are different
+        # facts, but they share one outcome: the contract was not verified, and
+        # a green run that verified nothing is what this gate exists to stop.
+        # The test then fails too, independently, if the artefact is not on disk.
+        run: node scripts/fetch-tan-contract.mjs
+
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 
+      # `node --test "test/*.test.js"` above does NOT pick this up: the harness
+      # is `test/webview/run.mjs`, a directory deeper than the glob and not a
+      # `.test.js`. It renders every webview view under jsdom, clicks every
+      # button, and asserts on the rendered text — the only thing in the repo
+      # that checks what a panel actually SAYS. It had been running in no
+      # workflow at all, so its assertions were documentation: on the
+      # model-edge-ai line a models-panel block grew to 209 lines while nothing
+      # ever executed them outside a developer's terminal.
+      #
+      # It runs after Compile because it imports the built webview sources.
+      - name: Webview render harness (every view, every button)
+        run: pnpm run test:e2e:webview
+
       - name: Gate — extensionDependencies resolve on the Marketplace + Open VSX
         run: node scripts/check-extension-deps.mjs
+
+      # Runs after compile: it reads the pin from the built out/alpCli/service.js.
+      - name: Gate — SUPPORTED_CLI_VERSION is a published tan-cli release
+        run: node scripts/check-cli-pin.mjs
 
       - name: Package (.vsix)
         # --no-dependencies: workspace:* protocol is not resolvable by vsce;
@@ -58,6 +143,10 @@ jobs:
         run: pnpm exec vsce package --no-dependencies --out alp-sdk.vsix
 
       - name: Upload vsix artefact
+        # ubuntu only: upload-artifact@v4 rejects a duplicate artifact name, and
+        # the shipped package is the ubuntu one. Windows still runs `vsce
+        # package` and the allowlist gate below — it just keeps the .vsix local.
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: alp-sdk-vsix
@@ -76,3 +165,110 @@ jobs:
           test -f schemas/board.schema.json
           node -e "JSON.parse(require('fs').readFileSync('schemas/board.schema.json','utf8'))"
           echo "vendored board schema present + valid JSON"
+
+      # ---- macOS only ----------------------------------------------------
+      #
+      # The second half of #416, and the reason the macOS leg is worth its
+      # minutes beyond "one more POSIX host".
+      #
+      # `release-vsix.yml`'s `package_darwin_arm64` job stages whichever
+      # darwin/arm64 asset the pinned tan-cli release publishes so the
+      # launcher lands at `bin/tan`, and packages it — while
+      # `runs-on: ubuntu-latest`. Nothing anywhere has ever EXECUTED that
+      # binary; an ubuntu x64 runner physically cannot. So "the bundled CLI
+      # runs" has been an untested claim on every release of the one VSIX
+      # variant that bundles a CLI at all.
+      #
+      # Scope, stated so this is not mistaken for more than it is: this does
+      # NOT test the packaged VSIX. That artefact is only assembled at a
+      # release tag, so asserting on the package stays a release-time
+      # property. This tests the thing inside it — the pinned darwin-arm64
+      # binary, executed on darwin-arm64.
+      - name: Resolve the pinned tan version
+        if: matrix.os == 'macos-latest'
+        id: cli_version
+        # The `(-[0-9A-Za-z.-]+)?` suffix is not decoration: without it a
+        # PRERELEASE pin (tan publishes them — `v0.4.0-rc1` exists) resolves to
+        # the empty string and this step errors out (#443). BOTH greps carry it,
+        # and that is the part worth reading twice — widening only the first
+        # leaves the second extracting `0.5.0` out of `0.5.0-rc1`, which is a
+        # silently WRONG version rather than a loud failure. Whether the pattern
+        # still resolves a prerelease is asserted by
+        # test/cliPin.prerelease.test.js, which reads this line out of this file.
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not resolve SUPPORTED_CLI_VERSION from src/alpCli/service.ts"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: The bundled darwin-arm64 tan binary runs on darwin-arm64
+        if: matrix.os == 'macos-latest'
+        # Stages via the SAME resolver + downloader release-vsix.yml's
+        # package_darwin_arm64 job uses (scripts/stage-tan-cli-asset.mjs —
+        # see its header) instead of a hand-rolled raw-name URL. That
+        # hardcoded URL is exactly how this step went stale before: tan-cli#349
+        # moved the darwin/arm64 asset to a `.tar.gz` archive, and this step
+        # kept requesting the old raw name, read every resulting 404 as "not
+        # published yet", and exited 0 — a SILENT skip of the one job that
+        # actually executes the bundled binary, for over a week, with nothing
+        # in a green run to say so. `scripts/check-cli-pin.mjs` above already
+        # confirms the pin publishes SOMETHING for this host; this step exists
+        # to run what it found.
+        #
+        # Deliberately still NOT fatal on "genuinely no asset for this host",
+        # and that remains the one place this differs from the release job:
+        # the pin can legitimately name a tag whose darwin asset is not
+        # published yet (HOSTS_WITHOUT_RELEASE_ASSET, or a release still being
+        # cut), and reddening every PR on that would teach people to ignore
+        # this job. The distinction is now the script's own exit code, not a
+        # curl status this step re-derives: exit 2 is ONLY "nothing published
+        # for this host under this pin" (mirrors the old 404 case) and is a
+        # loud, named skip; any other non-zero exit — including a transient
+        # fetch failure — is now FATAL here too. That narrows the old
+        # tolerance (which also downgraded a plain network/proxy hiccup to a
+        # warning); consistent with release-vsix.yml, which already treats
+        # every non-"no asset" failure as fatal and expects a re-run, rather
+        # than adding a second, differently-tuned leniency rule for the same
+        # download.
+        run: |
+          set -uo pipefail
+          set +e
+          node scripts/stage-tan-cli-asset.mjs \
+            --platform darwin --arch arm64 --dest /tmp/bundled \
+            --version "${{ steps.cli_version.outputs.version }}"
+          RC=$?
+          set -e
+          if [ "$RC" -eq 2 ]; then
+            # tan-cli#151 is the proof that an annotation alone is the weakest
+            # signal GitHub has: the script's ::warning:: leaves this reading as
+            # a fully green run in the checks list, which is a quieter version
+            # of the silence this job exists to remove. Pair it with a summary
+            # row, same as release-vsix.yml's skipped-publish notes.
+            {
+              echo "### Bundled darwin-arm64 smoke test: SKIPPED"
+              echo
+              echo "tan-cli \`${{ steps.cli_version.outputs.version }}\` publishes no darwin/arm64 asset, so there was nothing to download and run. Not a failure — see \`HOSTS_WITHOUT_RELEASE_ASSET\` in \`src/alpCli/service.ts\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$RC" -ne 0 ]; then
+            exit 1
+          fi
+
+          VERSION="${{ steps.cli_version.outputs.version }}"
+          # Published, downloaded, and checksum-verified, so from here a
+          # failure IS ours: an unrunnable bundled binary is exactly what
+          # reaches a Mac customer.
+          file /tmp/bundled/tan
+          OUT=$(/tmp/bundled/tan --version)
+          echo "bundled tan on darwin-arm64: ${OUT}"
+          case "$OUT" in
+            *"$VERSION"*) ;;
+            *)
+              echo "::error::The bundled darwin-arm64 binary runs but reports '${OUT}', which does not contain the pinned version ${VERSION}. The VSIX would ship a CLI that disagrees with SUPPORTED_CLI_VERSION."
+              exit 1
+              ;;
+          esac

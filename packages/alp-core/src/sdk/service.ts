@@ -262,6 +262,31 @@ export function switchActiveSdk(
   writeFile(pointerPath, JSON.stringify(pointer, null, 2) + "\n");
 }
 
+/**
+ * Remove the active SDK pointer for `workspaceRoot`. Returns true when a
+ * pointer existed and was removed.
+ *
+ * `switchActiveSdk` never had a counterpart, and that asymmetry was the bug:
+ * "Deactivate" cleared the `alpSdk.path` SETTING only, so the pointer written
+ * on activation survived — and the pointer sits ABOVE auto-discovery in
+ * `resolveSdkRoot`. Resolution kept returning the same SDK, the badge never
+ * moved, and the button read as dead.
+ *
+ * @param workspaceRoot - absolute path to the project workspace
+ * @param pathExists    - injectable existence probe
+ * @param removeFile    - injectable unlink adapter
+ */
+export function clearActiveSdkPointer(
+  workspaceRoot: string,
+  pathExists: PathExists,
+  removeFile: (target: string) => void,
+): boolean {
+  const pointerPath = path.join(workspaceRoot, ACTIVE_SDK_POINTER_RELATIVE);
+  if (!pathExists(pointerPath)) return false;
+  removeFile(pointerPath);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // West workspace manifest pointer (read-only)
 // ---------------------------------------------------------------------------

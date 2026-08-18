@@ -6,6 +6,9 @@ import {
 } from "@alp-sdk/core/configurator/service";
 import { ProjectContext, ProjectSettings } from "@alp-sdk/core/project/models";
 import boardSchema from "../../schemas/board.schema.json";
+// Pure data (no runtime imports of its own) — shared so the SKU list has ONE
+// hand-maintained home instead of a second literal that silently drifts.
+import { E1M_MODULES } from "../ideHub/projectScaffold";
 import type { SdkCompletionCatalog } from "./sdkCatalog";
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
@@ -103,7 +106,9 @@ const CHILD_KEYS: Readonly<Record<string, readonly string[]>> = {
 
 const VALUE_CHOICES: Readonly<Record<string, readonly string[]>> = {
   os: ["zephyr", "yocto", "baremetal"],
-  "som.sku": ["E1M-AEN801"],
+  // Fallback only: used before an SDK resolves, after which the live catalog
+  // supersedes it. Sourced from E1M_MODULES so it can't offer 1-of-11 again.
+  "som.sku": E1M_MODULES.map((m) => m.id),
   "diagnostics.log_level": ["error", "warn", "info", "debug", "trace"],
   "diagnostics.last_error": ["true", "false"],
   "iot.wifi": ["true", "false"],

@@ -417,11 +417,19 @@ type CoreClass = "cortex-m" | "cortex-a" | "unknown";
 
 /** Best-effort silicon class from the core ID (stopgap until the CLI emits the
  *  SoM topology's per-core class): m33/m55/… → Cortex-M, a55/a32/… → Cortex-A.
- *  KEEP IN SYNC with Rust `infer_runtime_for_core_id`
- *  (`cli-rs/crates/alp-core/src/wizard/service.rs`): same `a<digit>`/`m<digit>`
- *  word-start heuristic. Difference by design: there an unknown id defaults to
- *  `zephyr` (it must pick a runtime); here it returns "unknown" so the UI offers
- *  all OS options. */
+ *
+ *  This used to carry a "KEEP IN SYNC with Rust `infer_runtime_for_core_id`
+ *  (`cli-rs/crates/alp-core/src/wizard/service.rs`)" note. That counterpart is
+ *  gone: `cli-rs/` is down to six files with no `wizard/`, and the symbol
+ *  returns no hit anywhere on an alplabai default branch — the Rust wizard did
+ *  not survive the cli-rs → tan-cli move. So this heuristic is UNPAIRED, and
+ *  nothing here or in CI can gate it. If tan grows a per-core class in its
+ *  topology output, delete this function rather than re-pairing it.
+ *
+ *  The old note also recorded a deliberate divergence worth keeping if a
+ *  counterpart ever reappears: a runtime picker must resolve an unknown id to
+ *  something (it chose `zephyr`), whereas this returns "unknown" on purpose so
+ *  the UI offers every OS option instead of pre-committing the user. */
 function coreSiliconClass(id: string): CoreClass {
   const s = id.toLowerCase();
   if (/(^|[_-])m\d/.test(s)) return "cortex-m";
@@ -482,12 +490,14 @@ const PERIPHERAL_CHOICES = [
   "adc",
   "can",
   "counter",
+  "dac",
   "emmc",
   "ethernet",
   "flash",
   "gpio",
   "i2c",
   "i2s",
+  "i3c",
   "pwm",
   "rtc",
   "sensor",

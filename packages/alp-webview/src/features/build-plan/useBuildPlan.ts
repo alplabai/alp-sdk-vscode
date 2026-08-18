@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { BuildPlanData, SizeReport, SystemManifest } from "../../types";
+import type {
+  BuildPlanData,
+  ManifestProvenance,
+  SizeReport,
+  SystemManifest,
+} from "../../types";
 import { onMessage, postMessage } from "../../vscode";
 
 export interface UseBuildPlan {
@@ -10,6 +15,9 @@ export interface UseBuildPlan {
   manifest: SystemManifest | null;
   /** True when `manifest` is the populated build output, false = SDK projection. */
   manifestPostBuild: boolean;
+  /** #470: when the manifest was written, and whether it still describes the
+   *  last build. Null on the projection path, which has no file. */
+  manifestProvenance: ManifestProvenance | null;
   manifestError: string | null;
   /** Per-slice footprint vs the SoM budget (`tan size`). Null before a build
    *  or when the measurement failed — never rendered as zero. */
@@ -34,6 +42,11 @@ export function useBuildPlan(): UseBuildPlan {
   const [loading, setLoading] = useState(true);
   const [manifest, setManifest] = useState<SystemManifest | null>(null);
   const [manifestPostBuild, setManifestPostBuild] = useState(false);
+  /** #470: WHEN the manifest was written and whether it still describes the
+   *  last build. Null until the first push, and null forever on the
+   *  projection path, which has no file to be stale. */
+  const [manifestProvenance, setManifestProvenance] =
+    useState<ManifestProvenance | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
   const [sizes, setSizes] = useState<SizeReport | null>(null);
   const [sizesError, setSizesError] = useState<string | null>(null);
@@ -47,6 +60,7 @@ export function useBuildPlan(): UseBuildPlan {
       } else if (msg.type === "systemManifestData") {
         setManifest(msg.manifest);
         setManifestPostBuild(msg.postBuild);
+        setManifestProvenance(msg.provenance ?? null);
         setManifestError(msg.error ?? null);
       } else if (msg.type === "sliceSizesData") {
         setSizes(msg.report);
@@ -64,6 +78,7 @@ export function useBuildPlan(): UseBuildPlan {
       loading,
       manifest,
       manifestPostBuild,
+      manifestProvenance,
       manifestError,
       sizes,
       sizesError,
@@ -72,6 +87,7 @@ export function useBuildPlan(): UseBuildPlan {
         setPlan(null);
         setError(null);
         setManifest(null);
+        setManifestProvenance(null);
         setManifestError(null);
         setSizes(null);
         setSizesError(null);
@@ -93,6 +109,7 @@ export function useBuildPlan(): UseBuildPlan {
       loading,
       manifest,
       manifestPostBuild,
+      manifestProvenance,
       manifestError,
       sizes,
       sizesError,

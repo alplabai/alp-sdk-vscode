@@ -1,0 +1,132 @@
+{
+  "command": "doctor",
+  "ok": false,
+  "exitCode": 4,
+  "project": {
+    "root": "C:/tmp/no-project",
+    "boardYaml": "C:/tmp/no-project/board.yaml"
+  },
+  "data": {
+    "generatedAt": "2026-07-29T10:19:33.427Z",
+    "targetKind": "native-host",
+    "server": "none",
+    "summary": { "pass": 4, "warn": 3, "fail": 4 },
+    "checks": [
+      {
+        "name": "sdk",
+        "status": "fail",
+        "detail": "no SDK selected — run `tan sdk switch <path>` or `tan sdk install <ver>`",
+        "fix": "tan sdk switch <path>"
+      },
+      {
+        "name": "workspace",
+        "status": "fail",
+        "detail": "no Zephyr workspace — run `tan bootstrap` (reuses a compatible Zephyr, else bootstraps one)",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "westResolved",
+        "status": "warn",
+        "detail": "west not found — run `tan bootstrap` to create the workspace venv",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "workspaceRoot",
+        "status": "pass",
+        "detail": "C:/tmp/no-project"
+      },
+      {
+        "name": "sdkRoot",
+        "status": "fail",
+        "detail": "No alp-sdk checkout resolved.",
+        "fix": "Run `tan sdk switch <path>` or pass `--sdk-root <path>`."
+      },
+      {
+        "name": "boardYaml",
+        "status": "warn",
+        "detail": "no project selected — no board.yaml at C:/tmp/no-project/board.yaml",
+        "fix": "Select a project with `--project <dir>` (or `--board-yaml <path>`) to check one."
+      },
+      {
+        "name": "codeLLDBExtension",
+        "status": "unknown",
+        "detail": "vadimcn.vscode-lldb: unknown — the standalone tan binary cannot see VS Code's installed extensions."
+      },
+      {
+        "name": "lldb",
+        "status": "warn",
+        "detail": "No local LLDB executable was found on PATH.",
+        "fix": "Install LLDB or lldb-dap for native-host debug flows."
+      },
+      {
+        "name": "hostPrerequisites",
+        "status": "fail",
+        "detail": "Missing required tools:   ninja  ->  winget install -e --id Ninja-build.Ninja Install the tools above (then reopen PowerShell) and re-run. (facts from tan's built-in fallback list)",
+        "fix": "Install the missing prerequisites, then run `tan bootstrap`."
+      },
+      {
+        "name": "zephyrSdkHost",
+        "status": "pass",
+        "detail": "The Zephyr SDK publishes a host build for windows-x86_64."
+      },
+      {
+        "name": "longPaths",
+        "status": "pass",
+        "detail": "Windows long paths are enabled (HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem\\LongPathsEnabled = 1)."
+      },
+      {
+        "name": "homePath",
+        "status": "pass",
+        "detail": "Home directory has no spaces: C:\\Users\\dev"
+      }
+    ],
+    "nextSteps": [
+      "tan sdk switch <path>",
+      "tan bootstrap",
+      "Run `tan sdk switch <path>` or pass `--sdk-root <path>`.",
+      "Select a project with `--project <dir>` (or `--board-yaml <path>`) to check one.",
+      "Install LLDB or lldb-dap for native-host debug flows.",
+      "Install the missing prerequisites, then run `tan bootstrap`."
+    ],
+    "missingPrerequisites": [
+      { "tool": "ninja", "command": "winget install -e --id Ninja-build.Ninja" }
+    ]
+  },
+  "issues": [
+    {
+      "code": "doctor.sdk",
+      "severity": "error",
+      "message": "no SDK selected — run `tan sdk switch <path>` or `tan sdk install <ver>`"
+    },
+    {
+      "code": "doctor.workspace",
+      "severity": "error",
+      "message": "no Zephyr workspace — run `tan bootstrap` (reuses a compatible Zephyr, else bootstraps one)"
+    },
+    {
+      "code": "doctor.westResolved",
+      "severity": "warning",
+      "message": "west not found — run `tan bootstrap` to create the workspace venv"
+    },
+    {
+      "code": "doctor.sdkRoot",
+      "severity": "error",
+      "message": "No alp-sdk checkout resolved."
+    },
+    {
+      "code": "doctor.boardYaml",
+      "severity": "warning",
+      "message": "no project selected — no board.yaml at C:/tmp/no-project/board.yaml"
+    },
+    {
+      "code": "doctor.lldb",
+      "severity": "warning",
+      "message": "No local LLDB executable was found on PATH."
+    },
+    {
+      "code": "doctor.hostPrerequisites",
+      "severity": "error",
+      "message": "Missing required tools:   ninja  ->  winget install -e --id Ninja-build.Ninja Install the tools above (then reopen PowerShell) and re-run. (facts from tan's built-in fallback list)"
+    }
+  ]
+}

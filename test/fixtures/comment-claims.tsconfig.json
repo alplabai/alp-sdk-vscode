@@ -1,0 +1,21 @@
+{
+  // Program for test/fixtures/comment-claims.ts ONLY, compiled on demand by
+  // test/comment-claims.guard.test.js. Nothing references this config, so the
+  // fixture stays out of `pnpm run compile` and `pnpm run typecheck`.
+  //
+  // It EXTENDS the repo's tsconfig so the error codes the guard asserts are
+  // the codes the real build emits. Three deltas, all mechanical: `rootDir` is
+  // widened because the fixture lives outside `src/`; `noEmit`/`outDir` stop
+  // any output being produced; and `types` is stated explicitly because a
+  // config outside the package root does not pick up `node_modules/@types` on
+  // its own (without it every `src/` file errors on `Buffer`/`AbortSignal`,
+  // which the guard's stray-diagnostic check reports rather than swallows).
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "outDir": null,
+    "types": ["node"]
+  },
+  "include": ["comment-claims.ts"]
+}

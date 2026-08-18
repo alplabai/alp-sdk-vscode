@@ -2,7 +2,7 @@
 // The webview is a separate build; we do not share source with the extension.
 
 /** Must match PROTOCOL_VERSION in src/ideHub/messages.ts. */
-export const PROTOCOL_VERSION = 2 as const;
+export const PROTOCOL_VERSION = 3 as const;
 
 export type SdkReadinessState = "ready" | "partial" | "missing" | "unknown";
 
@@ -22,6 +22,13 @@ export interface LocalSdkEntry {
   removable?: boolean;
   /** Decided host-side (#361) — do NOT re-derive with `path === activePath`. */
   active?: boolean;
+  /** Only meaningful when `active`: `"pinned"` = the user pinned it
+   *  (`alpSdk.path` / `.alp/sdk-path`), so Deactivate has something to clear.
+   *  `"auto"` = nothing was pinned and resolution guessed (single sibling SDK,
+   *  or newest install in ~/.alp/sdk) — render "Default (auto-detected)" and
+   *  offer "Use", never "Active" + "Deactivate". Mirrors LocalSdkEntry in
+   *  @alp-sdk/core/sdk/models. */
+  activeSource?: "pinned" | "auto";
 }
 
 export interface SdkRelease {
@@ -50,6 +57,15 @@ export interface ToolVersions {
 export interface SetupStatus {
   pythonAvailable: boolean;
   westAvailable: boolean;
+  /**
+   * True while a `tan bootstrap` run is still executing in a terminal.
+   * `workspace.westInitialized` goes true at the START of that run (the first
+   * write of `.west/config`), so any readiness a surface renders from it alone
+   * is wrong for the whole run — the workspace is still being fetched. Every
+   * surface that renders "ready" or enables Build/Flash must AND in
+   * `!bootstrapRunning`, or it will disagree with the status bar.
+   */
+  bootstrapRunning: boolean;
   /** ISO timestamp of the last time the user triggered bootstrap. Null if never. */
   lastBootstrapAt: string | null;
   /** Raw version strings for each build tool, null when not found. */
@@ -104,6 +120,17 @@ export interface ProjectTemplate {
   category: "starter" | "example" | "library";
   icon: string;
   sourceDir?: string;
+  /**
+   * The SDK category this example renders under (`aen`, `ai`, `multicore`, …),
+   * or absent when it has none (#482 §2).
+   *
+   * DISTINCT from `category` above, which is the KIND — starter / example /
+   * library. This is the heading WITHIN the examples, and only examples carry
+   * it. Derived host-side by `exampleCategory` (@alp-sdk/core/examples/category)
+   * from the leading segment of `sourceDir`, deferring to tan the day its
+   * envelope carries one outright.
+   */
+  group?: string;
 }
 
 export interface E1mModule {
@@ -154,7 +181,9 @@ export interface StoragePartition {
   mount?: string;
   flash_device?: string;
   offset_kib?: number;
-  raw?: boolean;
+  // No `raw?: boolean` — mirrors @alp-sdk/core's StoragePartition, where the
+  // reason is spelled out: alp-sdk v0.15.0 deleted the legacy `fs: raw` alias
+  // and storage items are `additionalProperties: false`.
 }
 
 export interface SecurityPsa {
@@ -322,34 +351,125 @@ export interface ConfiguratorSavedMessage {
   boardPath: string;
 }
 
-// ── Toolchain Doctor — mirrored from @alp-sdk/core/toolchain/doctor +
-//    bootstrapPlan. Kept in sync manually (separate webview build). ──
+// ── Dependencies panel — mirrored from @alp-sdk/core/deps/planner and
+//    @alp-sdk/core/toolchain/bootstrapPlan. Kept in sync manually (separate
+//    webview build). Only the REPORT half of the planner crosses the wire; its
+//    envelope inputs stay host-side. ──
+
+/**
+ * Mirrors `ToolchainFixId` in packages/alp-core/src/toolchain/bootstrapPlan.ts.
+ * Every member core can emit must be listed — this union silently lost "gdb"
+ * once, which `test/deps.protocol.test.js` now guards in both directions.
+ */
 export type ToolchainFixId =
   | "python-deps"
   | "west"
+  | "west-workspace"
   | "build-tools"
-  | "zephyr-sdk";
+  | "zephyr-sdk"
+  | "gdb";
 
-export type DoctorCheckStatus = "ok" | "missing" | "warn";
+/**
+ * A row's status, VERBATIM from tan. Deliberately `string`, not a union: the
+ * view prints it as-is, so a status tan adds later shows up rather than being
+ * coerced into today's vocabulary.
+ */
+export type DependencyStatus = string;
 
-export interface DoctorCheck {
-  id: string;
+/** `"pin"` = the extension requires exactly this version, so it is never an
+ *  update to offer; `"release"` = the row chases latest. */
+export interface DependencyLatest {
+  version: string;
+  kind: "release" | "pin";
+}
+
+/**
+ * What pressing the button ACTUALLY does, so the label can say it. Mirrors
+ * `DependencyActionEffect` in packages/alp-core/src/deps/planner.ts.
+ *
+ * `"open-docs"` opens a web page and installs NOTHING (the `build-tools` and
+ * `zephyr-sdk` fixes are exactly that), and `"bootstrap"` starts a whole
+ * `tan bootstrap` run — neither may be labelled "Install".
+ */
+export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
+
+/**
+ * What a row's button does. `null` (no action) is a first-class outcome.
+ *
+ * `effect` picks the label and `title` is the tooltip: both are on every kind,
+ * so the view never has to guess a verb or leave a button unexplained.
+ */
+export type DependencyAction =
+  | {
+      kind: "command";
+      command: string;
+      effect: "install";
+      title: string;
+    }
+  | {
+      kind: "fix";
+      fixId: ToolchainFixId;
+      effect: DependencyActionEffect;
+      title: string;
+    };
+
+/**
+ * The state word the panel leads with, mirrored from
+ * `@alp-sdk/core/deps/state` (#466 §1). Computed HOST-SIDE from the
+ * (`status`, `action.effect`) pair — the webview renders it and derives
+ * nothing, which is the only shape that does not re-derive tan's verdict.
+ *
+ * `unknown` is not just tan's own `unknown`: any status the host mapping does
+ * not recognise lands here rather than being coerced into one of the other
+ * three. Render it as unknown, never as a guess.
+ */
+export type DependencyState =
+  | "ready"
+  | "will-install"
+  | "needs-you"
+  | "unknown";
+
+export interface DependencyRow {
+  /** tan's `check.name`, verbatim — the row's identity and what the webview
+   *  posts back in `runDependencyAction`. */
+  name: string;
   label: string;
-  status: DoctorCheckStatus;
+  status: DependencyStatus;
+  /** Ready / Will install / Needs you / Unknown. An EXTRA field: `status`
+   *  above is still tan's word and is still rendered, so nothing this
+   *  summarises can be lost. */
+  state: DependencyState;
   detail: string;
-  required: boolean;
-  fixId?: ToolchainFixId;
+  /** tan's own `check.fix` PROSE, verbatim, or `null` when tan gave none.
+   *  DISPLAY ONLY — rendered under the detail, never parsed into a command
+   *  (#347). On a row with no button it is the only remedy the user gets. */
+  hint: string | null;
+  /** `null` whenever tan reports no version — render an em dash, never a
+   *  fabricated version and never the word "unknown". */
+  installed: string | null;
+  latest: DependencyLatest | null;
+  updateAvailable: boolean;
+  action: DependencyAction | null;
 }
 
-export interface ToolchainReport {
-  checks: DoctorCheck[];
-  ok: boolean;
-  missingRequired: number;
+export interface DependencyReport {
+  rows: DependencyRow[];
+  /** tan's `data.summary` verbatim. There is deliberately no `ok` boolean: an
+   *  older tan caps an absent PATH tool at `warn`, so any `fail === 0` verdict
+   *  would print "all good" while Ninja is missing. The pinned v0.4.0 rates it
+   *  `fail` (tan-cli#103), but a binary set through `alpSdk.cliPath` may not.
+   *  The view must not invent one. */
+  counts: { pass: number; warn: number; fail: number };
+  /** True when this tan emitted no `missingPrerequisites` at all — v0.3.1 and
+   *  earlier, not the pinned v0.4.0. The panel says so in one line instead of
+   *  implying tan looked and found nothing. */
+  prerequisiteDataUnavailable: boolean;
 }
 
-export interface ToolchainReportMessage {
-  type: "toolchainReport";
-  report: ToolchainReport;
+export interface DependencyReportMessage {
+  type: "dependencyReport";
+  report: DependencyReport | null;
+  error?: string;
 }
 
 // ── Hardware Explorer model — mirrored from @alp-sdk/core/sdkCatalogue/models ──
@@ -658,10 +778,31 @@ export interface SystemManifest {
   boot_order: unknown[];
   storage?: unknown[];
 }
+/**
+ * Whether the rendered manifest still describes the last build (#470),
+ * mirrored from `@alp-sdk/core/systemManifest/staleness`.
+ *
+ * `stale` is a CLAIM with evidence behind it: a build finished after the file
+ * was written and did not update it. `unknown` is the honest rest — nothing
+ * observed since, or a clock that cannot be trusted. Render `unknown` as
+ * unknown; collapsing it into `fresh` is the original defect.
+ */
+export type ManifestFreshness = "fresh" | "stale" | "unknown";
+
+export interface ManifestProvenance {
+  /** The manifest file's mtime, ISO-8601, or null when it could not be read. */
+  writtenAt: string | null;
+  freshness: ManifestFreshness;
+  /** One sentence, present for every `stale` verdict. */
+  reason: string | null;
+}
+
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
   postBuild: boolean;
+  /** Null on the projection path, which has no file to be stale. */
+  provenance: ManifestProvenance | null;
   error?: string;
 }
 
@@ -716,7 +857,7 @@ export type ExtToWebviewMessage =
   | FocusSectionMessage
   | ConfiguratorRenderMessage
   | ConfiguratorSavedMessage
-  | ToolchainReportMessage
+  | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
   | BuildPlanDataMessage
@@ -836,12 +977,21 @@ export interface ReloadConfiguratorMessage {
 export interface PreviewEffectiveConfigMessage {
   type: "previewEffectiveConfig";
 }
-export interface RunToolchainFixMessage {
-  type: "runToolchainFix";
-  fixId: ToolchainFixId;
+export interface RefreshDependenciesMessage {
+  type: "refreshDependencies";
 }
-export interface ReloadToolchainMessage {
-  type: "reloadToolchain";
+/** Run one row's action. Carries the ROW ID only — the host resolves it
+ *  against the report it last sent, so what runs is always something the host
+ *  produced. Posting a command string to execute would be an injection seam. */
+export interface RunDependencyActionMessage {
+  type: "runDependencyAction";
+  name: string;
+}
+/** Run every installing row, one at a time (#466 §2). Carries NOTHING: the
+ *  host resolves the set from the report it last sent, so the webview can
+ *  neither name a different set than the one on screen nor post a command. */
+export interface RunFixAllMessage {
+  type: "runFixAll";
 }
 export interface ReloadHardwareExplorerMessage {
   type: "reloadHardwareExplorer";
@@ -879,8 +1029,9 @@ export type WebviewToExtMessage =
   | ConfiguratorUpdateMessage
   | ReloadConfiguratorMessage
   | PreviewEffectiveConfigMessage
-  | RunToolchainFixMessage
-  | ReloadToolchainMessage
+  | RefreshDependenciesMessage
+  | RunDependencyActionMessage
+  | RunFixAllMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage

@@ -1,16 +1,25 @@
-// Single source of truth for the alp-sdk tag both vendored schemas are pinned to.
-// The board and system-manifest schema copies MUST be vendored from the SAME tag;
-// the two *.vendored.test.js drift gates import their sha256 (and the tag) from
-// here, so the two copies can never green while disagreeing on tag. Bumping =
-// re-vendor BOTH schemas from the new tag, then update VENDORED_SDK_TAG and both
-// hashes below in this one place.
+// Single source of truth for the alp-sdk tag both vendored schemas are pinned
+// to. The constants themselves now live in
+// `packages/alp-core/src/validation/vendoredSchemas.ts`, together with the
+// long-form notes on what each bump changed -- read them there.
+//
+// They moved out of this file because the EXTENSION needs them at runtime: a
+// customer's resolved SDK ships its own copies at `<sdkRoot>/metadata/schemas/`,
+// and the editor has to be able to say which schema it is actually validating
+// against (#493). This module stays as the drift gates' import point so both
+// `*.vendored.test.js` gates keep reading one source and the two vendored
+// copies can never green while disagreeing on tag.
+//
+// To bump: re-vendor BOTH schemas from the new tag, then edit
+// `vendoredSchemas.ts` -- not this file. `README.md` carries the procedure.
+const {
+  VENDORED_SDK_TAG,
+  BOARD_SCHEMA_SHA256,
+  SYSTEM_MANIFEST_SCHEMA_SHA256,
+} = require("@alp-sdk/core/validation/vendoredSchemas");
+
 module.exports = {
-  VENDORED_SDK_TAG: "v0.13.0",
-  // Unchanged from v0.11.0 -- board.schema.json is byte-identical at both tags,
-  // so this bump moves the label, not the file. (It moves for real at the next
-  // SDK release: alp-sdk#919 adds a `dac` peripheral class on dev.)
-  BOARD_SCHEMA_SHA256:
-    "d9393ab0d1c3df5550a84acc30639eddabb90ce35a080d7a6ec122cac999b3b8",
-  SYSTEM_MANIFEST_SCHEMA_SHA256:
-    "ea7383b56c69faa94679e311a6b8be5e99513a462ffaaafa778d281b1967aba6",
+  VENDORED_SDK_TAG,
+  BOARD_SCHEMA_SHA256,
+  SYSTEM_MANIFEST_SCHEMA_SHA256,
 };

@@ -49,21 +49,21 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
   const [query, setQuery] = useState("");
   const [domain, setDomain] = useState(""); // "" = all domains
 
-  // Domains are the first segment of each example's sourceDir (audio, ai, …).
+  // The domain is `t.group`, decided HOST-side (#482 §1/§2). It used to be
+  // re-split out of `sourceDir` here, which was a second copy of a rule the
+  // host also applies — and the copy could not defer to tan. `exampleCategory`
+  // (@alp-sdk/core/examples/category) prefers tan's own `category` the day its
+  // envelope carries one; this view just renders what it is given.
   const domains = useMemo(() => {
     const set = new Set<string>();
-    for (const t of examples) {
-      const d = t.sourceDir?.split("/")[0];
-      if (d) set.add(d);
-    }
+    for (const t of examples) if (t.group) set.add(t.group);
     return Array.from(set).sort();
   }, [examples]);
 
   const filteredExamples = useMemo(() => {
     const q = query.trim().toLowerCase();
     return examples.filter((t) => {
-      const d = t.sourceDir?.split("/")[0] ?? "";
-      if (domain && d !== domain) return false;
+      if (domain && t.group !== domain) return false;
       if (!q) return true;
       return [t.title, t.description, t.sourceDir ?? "", t.id]
         .join("\n")
@@ -71,6 +71,38 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
         .includes(q);
     });
   }, [examples, query, domain]);
+
+  /**
+   * The filtered examples under their headings, in the order the chips use
+   * (#482 §2). Filtering alone left "All" as 100 undifferentiated cards, which
+   * is the state #482 was filed about; the chips narrow, the headings make the
+   * unnarrowed list readable.
+   *
+   * An example with NO group goes in a trailing unnamed bucket rather than
+   * under an invented "Other" — a heading naming something the SDK does not
+   * have is worse than no heading. That bucket is also the whole list on an
+   * older tan whose examples carry no directory, which is how this degrades.
+   */
+  const groupedExamples = useMemo(() => {
+    const byGroup = new Map<string, ProjectTemplate[]>();
+    const ungrouped: ProjectTemplate[] = [];
+    for (const t of filteredExamples) {
+      if (!t.group) {
+        ungrouped.push(t);
+        continue;
+      }
+      const bucket = byGroup.get(t.group);
+      if (bucket) bucket.push(t);
+      else byGroup.set(t.group, [t]);
+    }
+    const sections: { name: string | null; items: ProjectTemplate[] }[] = [
+      ...byGroup.entries(),
+    ]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, items]) => ({ name, items }));
+    if (ungrouped.length > 0) sections.push({ name: null, items: ungrouped });
+    return sections;
+  }, [filteredExamples]);
 
   return (
     <>
@@ -133,16 +165,26 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
             </div>
           )}
           {filteredExamples.length > 0 ? (
-            <div className={styles.templateGrid}>
-              {filteredExamples.map((t) => (
-                <TemplateCard
-                  key={t.id}
-                  template={t}
-                  selected={selected === t.id}
-                  onSelect={onSelect}
-                />
-              ))}
-            </div>
+            groupedExamples.map((section) => (
+              <div key={section.name ?? "\u0000ungrouped"}>
+                {/* One heading is no heading: with a chip selected there is a
+                    single section, and repeating its name under the pressed
+                    chip is noise. */}
+                {section.name && groupedExamples.length > 1 && (
+                  <p className={styles.exampleGroupLabel}>{section.name}</p>
+                )}
+                <div className={styles.templateGrid}>
+                  {section.items.map((t) => (
+                    <TemplateCard
+                      key={t.id}
+                      template={t}
+                      selected={selected === t.id}
+                      onSelect={onSelect}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
           ) : (
             <EmptyState
               title="No examples match"
@@ -197,6 +239,7 @@ function HardwareStep({ modules, selected, onSelect }: HardwareStepProps) {
   const families: Record<string, string> = {
     "alif-ensemble": "Alif Ensemble",
     "renesas-rzv2n": "Renesas RZ/V2N",
+    "renesas-rzv2n-deepx": "Renesas RZ/V2N + DEEPX",
     "nxp-imx9": "NXP i.MX 9",
   };
 

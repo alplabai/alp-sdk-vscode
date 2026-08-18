@@ -193,14 +193,19 @@ function sdkValue(sdk: AlpIdeState["sdk"]): string {
 const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
   [
     { icon: "play", label: "Build", command: "alp.westBuild" },
-    { icon: "bolt", label: "Flash", command: "alp.westFlash" },
+    // ONE Flash button. It routes to the orchestrator (`tan flash`, every
+    // slice in boot order): plain `west flash` (alp.westFlash) can't find
+    // `west` — it lives in the bootstrap venv, not on the PATH the extension
+    // host inherited — and dies before it can say why. There used to be a
+    // second "Flash all cores" button dispatching this SAME command, which
+    // told the user the two did different things.
+    { icon: "bolt", label: "Flash", command: "alp.westAlpFlash" },
     {
       icon: "monitor",
       label: "Run (native_sim)",
       command: "alp.westRunNativeSim",
     },
     { icon: "package", label: "Image", command: "alp.westAlpImage" },
-    { icon: "rocket", label: "Flash all cores", command: "alp.westAlpFlash" },
     { icon: "bug", label: "Debug", command: "alp.debug" },
     { icon: "cpu", label: "Renode", command: "alp.westAlpRenode" },
     // "Update" lives in the Workspace section (module maintenance, not a

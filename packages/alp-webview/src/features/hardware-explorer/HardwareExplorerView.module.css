@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 .container {
-  padding: var(--spacing-md, 16px);
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg, 24px);
+  gap: var(--space-8);
   color: var(--text-primary);
 }
 
@@ -12,7 +12,7 @@
 .header {
   display: flex;
   align-items: baseline;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--space-4);
 }
 
 .sku {
@@ -33,7 +33,7 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs, 6px);
+  gap: var(--space-3);
   /* Pad-route / I2C tables get wide (mono addresses, pins). Scroll them inside
      the section instead of stretching the panel past the viewport. */
   min-width: 0;
@@ -113,8 +113,22 @@
   border-color: var(--border-focus, var(--vscode-focusBorder, #007acc));
 }
 
+/* The columns holding raw board values: core and toolchain IDs, app paths, E1M
+ * signal names, dispatch targets and pins, bus and chip names, I2C addresses.
+ *
+ * This class is named `mono` and the note on `.section` above calls out "mono
+ * addresses, pins", but the declaration had drifted to the UI font — so the one
+ * panel in the extension whose content is almost entirely hex and identifiers
+ * was rendering it proportionally. `0x6a` against `0x68`, `E1M_GPIO_IO11`
+ * against `E1M_GPIO_IO1`: these are read character by character, and a
+ * proportional face at 0.82rem is the wrong tool for that.
+ *
+ * `--text-mono`, never `var(--vscode-editor-font-family, …)`. That var is the
+ * user's `editor.fontFamily` and, worse, resolves EMPTY in some webview hosts —
+ * where the `, monospace` fallback does not save it, because a var() fallback
+ * covers a property that is unset, never one set to nothing. See tokens.css. */
 .mono {
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-family: var(--text-mono);
   font-size: 0.82rem;
 }
 

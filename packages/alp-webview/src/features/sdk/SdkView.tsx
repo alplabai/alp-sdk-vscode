@@ -14,7 +14,6 @@ import type {
   SdkRelease,
   SdkStatus,
 } from "../../types";
-import { postMessage } from "../../vscode";
 import styles from "./SdkView.module.css";
 import { useSdk } from "./useSdk";
 
@@ -77,6 +76,10 @@ interface SdkRow {
   /** Path of the local install (for activate / remove). */
   localPath?: string;
   isActive: boolean;
+  /** Why it is active — see LocalSdkEntry.activeSource. Absent on rows that are
+   *  not active. A row that is active by fallback ("auto") is NOT pinned, so it
+   *  gets the honest badge and "Use" rather than "Active" and "Deactivate". */
+  activeSource?: "pinned" | "auto";
   source: SdkSource;
 }
 
@@ -84,7 +87,6 @@ interface SdkRow {
 function buildRows(
   releases: SdkRelease[] | null,
   locals: LocalSdkEntry[],
-  activePath: string | null,
 ): SdkRow[] {
   const rows: SdkRow[] = [];
   const usedPaths = new Set<string>();
@@ -105,6 +107,7 @@ function buildRows(
       installTag: local ? undefined : r.tag,
       localPath: local?.path,
       isActive: !!local?.active,
+      activeSource: local?.active ? (local.activeSource ?? "auto") : undefined,
       source,
     });
   }
@@ -117,6 +120,10 @@ function buildRows(
       label: e.version ?? pathTail(e.path),
       localPath: e.path,
       isActive: !!e.active,
+      // Absent `activeSource` falls back to "auto", not "pinned": host and
+      // webview ship in the same VSIX so the field is always there in practice,
+      // and if it ever isn't, under-claiming is the harmless direction.
+      activeSource: e.active ? (e.activeSource ?? "auto") : undefined,
       source: e.removable ? "installed" : "linked",
     });
   }
@@ -164,18 +171,37 @@ function SdkRowCard({
           )}
         </div>
         <div className={styles.releaseActions}>
-          {row.isActive && (
-            <span className={styles.activeBadge}>
-              <Icon name="check" size={12} /> Active
-            </span>
-          )}
+          {row.isActive &&
+            (row.activeSource === "pinned" ? (
+              <span
+                className={styles.activeBadge}
+                title="Pinned as the active SDK for this workspace"
+              >
+                <Icon name="check" size={12} /> Active
+              </span>
+            ) : (
+              // Nothing is pinned; this is what resolution fell back to. Saying
+              // "Active" here is what made Deactivate look broken — it cleared
+              // a pin that never existed, so the badge never moved.
+              <span
+                className={styles.activeBadge}
+                data-auto
+                title="No SDK is pinned — this is what Alp falls back to (the newest install / the SDK next to this project). Press Use to pin it."
+              >
+                Default (auto-detected)
+              </span>
+            ))}
           {row.source === "available" ? (
             <Button appearance="primary" onClick={onInstall}>
               Install
             </Button>
           ) : (
             <>
-              {row.isActive ? (
+              {/* Deactivate only where a pin exists to clear. On an
+                  auto-detected row it is a no-op button, so the row keeps
+                  offering "Use" — which writes the pin and makes the state
+                  explicit. */}
+              {row.activeSource === "pinned" ? (
                 <Button
                   appearance="secondary"
                   title="Clear the active SDK (keeps it installed)"
@@ -184,7 +210,15 @@ function SdkRowCard({
                   Deactivate
                 </Button>
               ) : (
-                <Button appearance="secondary" onClick={onUse}>
+                <Button
+                  appearance="secondary"
+                  title={
+                    row.isActive
+                      ? "Pin this SDK for the workspace (it is only the fallback right now)"
+                      : "Make this the active SDK for the workspace"
+                  }
+                  onClick={onUse}
+                >
                   Use
                 </Button>
               )}
@@ -244,6 +278,8 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     uninstall,
     deactivate,
     browseSdk,
+    bootstrap,
+    setup,
   } = useSdk();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -325,7 +361,7 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
     );
   }
 
-  const rows = buildRows(releases, sdk.localEntries, sdk.activePath);
+  const rows = buildRows(releases, sdk.localEntries);
   // Keep the list short: show the two newest releases (plus the active one, so
   // it's never hidden), collapse the rest behind a toggle.
   const VISIBLE_RELEASES = 2;
@@ -355,6 +391,40 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
           >
             Browse…
           </Button>
+          {/* An installed SDK is not a buildable one: `tan build` plans the
+              slices fine and then skips every one of them — "skipped: m55_hp
+              [zephyr] -- tool `west` not found" — because west lives in the
+              workspace venv `tan bootstrap` creates. Bootstrap belongs beside
+              Install for that reason, not in the palette only.
+
+              It DISAPPEARS once the environment exists. `westAvailable` is the
+              honest signal for that and `lastBootstrapAt` is not: the stamp
+              records that bootstrap was TRIGGERED, so a run that failed
+              half-way would hide the one button that repairs it. While the run
+              is in flight `bootstrapRunning` keeps the button visible and
+              spinning — west appears on PATH partway through, and hiding it at
+              that moment would read as "done" mid-fetch.
+
+              Gated on `activePath`: bootstrap builds the environment of the
+              SDK that is ACTIVE, so with none selected there is nothing for it
+              to act on, and the title says which of the two steps is missing. */}
+          {(!setup?.westAvailable || setup?.bootstrapRunning) && (
+            <Button
+              appearance="secondary"
+              loading={setup?.bootstrapRunning ?? false}
+              title={
+                setup?.bootstrapRunning
+                  ? "Bootstrap is running in the terminal…"
+                  : sdk.activePath
+                    ? "Set up this SDK's build environment (workspace venv, west, Zephyr modules, Python deps) — about 3 GB on disk"
+                    : "Install and activate an SDK first — bootstrap sets up the ACTIVE SDK's environment"
+              }
+              disabled={!sdk.activePath || (setup?.bootstrapRunning ?? false)}
+              onClick={() => bootstrap()}
+            >
+              Bootstrap…
+            </Button>
+          )}
         </div>
       </div>
 

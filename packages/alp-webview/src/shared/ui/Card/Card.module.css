@@ -1,5 +1,5 @@
 .card {
-  background: var(--surface-sidebar, var(--surface-bg));
+  background: var(--surface-bg);
   border: 1px solid var(--border-default, transparent);
   border-radius: var(--radius-md);
   overflow: hidden;
