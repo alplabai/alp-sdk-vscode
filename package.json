@@ -426,6 +426,14 @@
         {
           "command": "alp.toolchainDoctor",
           "when": "false"
+        },
+        {
+          "command": "alp.openModelsPanel",
+          "when": "false"
+        },
+        {
+          "command": "alp.buildModel",
+          "when": "false"
         }
       ],
       "editor/title": [

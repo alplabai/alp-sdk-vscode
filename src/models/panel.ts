@@ -377,9 +377,14 @@ export function showModelsPanel(context: vscode.ExtensionContext): void {
   ModelsPanel.show(context);
 }
 
-/** Open the Models panel, then immediately kick off a build-all — the
- *  `alp.buildModel` command palette entry (per-model builds happen from the
- *  panel's own build button, which posts `buildModel` with a `name`). */
+/** Open the Models panel, then immediately kick off a build-all — what
+ *  `alp.buildModel` does (per-model builds happen from the panel's own build
+ *  button, which posts `buildModel` with a `name`).
+ *
+ *  The command is still registered but no longer reaches the command palette:
+ *  it carries `"when": "false"` there while the Models surface is hidden, so
+ *  calling it a "palette entry" would be a claim the manifest contradicts.
+ *  See #524. */
 export function triggerModelBuild(context: vscode.ExtensionContext): void {
   const panel = ModelsPanel.show(context);
   void panel.buildModel();

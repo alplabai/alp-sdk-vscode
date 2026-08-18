@@ -204,6 +204,10 @@ function ActionButton({ icon, label, command }: ActionItem) {
 // Main view
 // ---------------------------------------------------------------------------
 
+// The Models card is deliberately absent: the panel exists and still opens
+// via `alp.openModelsPanel`, but the pinned tan implements only `model build`
+// (#522), so it is not advertised until the CLI surface matures. Restore it
+// with the sidebar-hub section and the two commandPalette guards — #524.
 const PANELS: PanelCardProps[] = [
   {
     icon: "sliders",
@@ -226,12 +230,6 @@ const PANELS: PanelCardProps[] = [
     title: "Dependencies",
     desc: "Every build tool tan checks, with its status and version.",
     command: "alp.openDependencies",
-  },
-  {
-    icon: "layers",
-    title: "Models",
-    desc: "Manage, build and inspect on-device AI models.",
-    command: "alp.openModelsPanel",
   },
 ];
 
