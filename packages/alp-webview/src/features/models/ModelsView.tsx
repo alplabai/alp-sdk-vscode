@@ -498,7 +498,13 @@ export function ModelsView() {
     addOk,
     addIssues,
     addFromZoo,
+    cliModelSurfaceMissing,
   } = useModels();
+
+  // A capability gap, not a failure: the actions below cannot work against
+  // this CLI at all, so offering them as clickable is an invitation to a
+  // refusal the customer did not ask for.
+  const cliUnsupported = Boolean(cliModelSurfaceMissing);
 
   return (
     <div className={styles.container}>
@@ -518,16 +524,19 @@ export function ModelsView() {
             >
               Edit models in Configurator
             </button>
-            <Button onClick={checkCoverage} disabled={checkingCoverage}>
+            <Button
+              onClick={checkCoverage}
+              disabled={checkingCoverage || cliUnsupported}
+            >
               {checkingCoverage ? "Checking…" : "Check NPU coverage"}
             </Button>
-            <Button onClick={prepModel} disabled={prepping}>
+            <Button onClick={prepModel} disabled={prepping || cliUnsupported}>
               {prepping ? "Prepping…" : "Prep model"}
             </Button>
-            <Button onClick={runModel} disabled={measuring}>
+            <Button onClick={runModel} disabled={measuring || cliUnsupported}>
               {measuring ? "Measuring…" : "Run model"}
             </Button>
-            <Button onClick={abModels} disabled={measuring}>
+            <Button onClick={abModels} disabled={measuring || cliUnsupported}>
               A/B compare
             </Button>
             <Button appearance="secondary" onClick={refresh}>
@@ -537,13 +546,26 @@ export function ModelsView() {
         </div>
       </header>
 
+      {cliModelSurfaceMissing && (
+        <div className={styles.issues} data-ok="true">
+          <p>
+            <strong>These model tools need a newer CLI.</strong> The installed
+            tan implements only <code>model build</code>. NPU coverage, prep,
+            run, A/B compare and the model zoo are unavailable until it provides
+            them — building models still works.
+          </p>
+          <ul className={styles.issuesList}>
+            <li data-severity="info">{cliModelSurfaceMissing.message}</li>
+          </ul>
+        </div>
+      )}
       <IssuesBanner ok={ok} issues={issues} />
       <IssuesBanner ok={coverageOk} issues={coverageIssues} />
-      {prep && <PrepReport prep={prep} />}
-      {(runResult || !runOk) && (
+      {prep && !cliUnsupported && <PrepReport prep={prep} />}
+      {(runResult || !runOk) && !cliUnsupported && (
         <RunReport ok={runOk} run={runResult} issues={runIssues} />
       )}
-      {(abResult || !abOk) && (
+      {(abResult || !abOk) && !cliUnsupported && (
         <AbReport ok={abOk} ab={abResult} issues={abIssues} />
       )}
 
@@ -598,7 +620,7 @@ export function ModelsView() {
         <h3 id="zoo-title" className={styles.sectionTitle}>
           Model zoo
         </h3>
-        {!addOk && (
+        {!addOk && !cliUnsupported && (
           <IssuesBanner
             ok={false}
             issues={
@@ -614,7 +636,7 @@ export function ModelsView() {
             }
           />
         )}
-        {!zooOk ? (
+        {!zooOk && !cliUnsupported ? (
           <IssuesBanner
             ok={false}
             issues={
