@@ -803,6 +803,131 @@ async function main() {
     );
   }
 
+  // ── the example filter degrades to nothing when there is nothing to filter (#482 §5) ──
+  // #507 landed the domain chips and the grouped headings. The degrade posture
+  // -- "when the fields are absent, hide the filter row rather than showing
+  // empty controls" -- was implemented with it but never gated: the derivation
+  // (`exampleCategory`) has nine tests, the RENDER had none. `domains.length >
+  // 1` is one character away from `>= 1`, and an older tan that sends no
+  // category is exactly the case nobody re-runs by hand.
+  {
+    const CHIP_ROW = '[aria-label="Filter examples by domain"]';
+    const example = (id: string, group?: string) => ({
+      id,
+      title: id,
+      description: `${id} demo`,
+      category: "example",
+      icon: "circuit-board",
+      sourceDir: `dir/${id}`,
+      ...(group ? { group } : {}),
+    });
+
+    const cases: Array<{
+      name: string;
+      templates: unknown[];
+      wantRow: boolean;
+    }> = [
+      // An older tan sends no category at all; nothing is derivable.
+      {
+        name: "no group on any example",
+        templates: [example("a"), example("b")],
+        wantRow: false,
+      },
+      // One chip is a control with nothing to choose -- still hidden.
+      {
+        name: "exactly one group",
+        templates: [example("a", "ai"), example("b", "ai")],
+        wantRow: false,
+      },
+      // Two domains is the first state where filtering means anything.
+      {
+        name: "two groups",
+        templates: [example("a", "ai"), example("b", "peripheral-io")],
+        wantRow: true,
+      },
+    ];
+
+    for (const c of cases) {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      root.render(
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(NewProjectFlowView),
+        ),
+      );
+      await settle();
+      feedState();
+      await settle();
+      g.__ALP_POST_TO_WEBVIEW__({
+        type: "projectTemplatesData",
+        templates: c.templates,
+      });
+      await settle();
+
+      const row = container.querySelector(CHIP_ROW);
+      if (c.wantRow && !row) {
+        problems.push(
+          `example-filter-degrade: ${c.name} -- the filter row is missing, so two domains cannot be narrowed`,
+        );
+      }
+      if (!c.wantRow && row) {
+        problems.push(
+          `example-filter-degrade: ${c.name} -- an empty filter row rendered, which is the control #482 §5 says to hide`,
+        );
+      }
+      // Whatever the row does, the examples themselves must still be reachable:
+      // hiding the control must never hide the content it filters.
+      const text = container.textContent ?? "";
+      for (const id of ["a", "b"]) {
+        if (!text.includes(`${id} demo`)) {
+          problems.push(
+            `example-filter-degrade: ${c.name} -- example "${id}" did not render`,
+          );
+        }
+      }
+    }
+
+    // An ungrouped example alongside grouped ones goes in a trailing bucket,
+    // never under a heading with an empty name.
+    {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      root.render(
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(NewProjectFlowView),
+        ),
+      );
+      await settle();
+      feedState();
+      await settle();
+      g.__ALP_POST_TO_WEBVIEW__({
+        type: "projectTemplatesData",
+        templates: [
+          example("a", "ai"),
+          example("b", "peripheral-io"),
+          example("c"),
+        ],
+      });
+      await settle();
+      const text = container.textContent ?? "";
+      if (!text.includes("c demo")) {
+        problems.push(
+          "example-filter-degrade: an ungrouped example vanished when its siblings had groups",
+        );
+      }
+    }
+
+    console.log(
+      `  ${problems.length === 0 ? "PASS" : "FAIL"}  example-filter-degrade: the filter row appears only when it can narrow`,
+    );
+  }
+
   // ── the CLI-capability gap is ONE notice, not four alarms (#522) ──
   // The pinned tan (0.6.0-rc1) implements only `model build` and refuses the
   // other eight subcommands the panel drives. Every refusal used to render on
