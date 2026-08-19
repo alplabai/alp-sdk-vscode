@@ -508,7 +508,7 @@ function SdkStep({ entries, activePath, selected, onSelect }: SdkStepProps) {
 
 export function NewProjectFlowView() {
   const { state, projectTemplates, e1mModules } = useAppContext();
-  const { state: stepper, goNext, goBack } = useStepper(STEPS);
+  const { state: stepper, goNext, goBack, goTo } = useStepper(STEPS);
 
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [selectedModule, setSelectedModule] = useState("");
@@ -523,8 +523,18 @@ export function NewProjectFlowView() {
   useEffect(() => {
     return onMessage((msg) => {
       if (msg.type === "projectLocationPicked") setDestination(msg.path);
+      // The host asks for a step by ID, never by index (#530): a pair the
+      // customer picked cannot be scaffolded, and pressing the notification's
+      // button has to land them back on the picker rather than leave them on a
+      // Confirm step whose Create will fail again. An unknown id is ignored —
+      // a host that names a step this build does not have must not reset the
+      // wizard to some other screen.
+      if (msg.type === "newProjectFlowGoToStep") {
+        const index = STEPS.findIndex((step) => step.id === msg.stepId);
+        if (index >= 0) goTo(index);
+      }
     });
-  }, []);
+  }, [goTo]);
 
   const templates = projectTemplates ?? [];
   const modules = e1mModules ?? [];

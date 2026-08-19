@@ -855,6 +855,11 @@ export interface ProjectLocationPickedMessage {
   path: string;
 }
 
+export interface NewProjectFlowGoToStepMessage {
+  type: "newProjectFlowGoToStep";
+  stepId: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -866,6 +871,7 @@ export type ExtToWebviewMessage =
   | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
+  | NewProjectFlowGoToStepMessage
   | BuildPlanDataMessage
   | SystemManifestDataMessage
   | ModelsDataMessage

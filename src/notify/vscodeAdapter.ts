@@ -55,6 +55,9 @@ const ACTIONS: Record<
   // Handled inside `present` (it needs the plan's issues), so no `run` here —
   // it must never be returned to a caller as an unhandled pick either.
   showIssues: { title: "Show All Issues" },
+  // No `run`: the New Project panel owns the webview this navigates, so the
+  // pick goes back to it (#530).
+  chooseProjectType: { title: "Choose Another Project Type" },
   runDoctor: {
     title: "Run Doctor",
     run: () => vscode.commands.executeCommand("alp.toolchainDoctor"),
