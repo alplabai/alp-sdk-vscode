@@ -6,6 +6,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { exampleCategory } from "@alp-sdk/core/examples/category";
 import { planInitCores } from "@alp-sdk/core/project/initCores";
+import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   emptyAlpIdeState,
@@ -493,6 +494,47 @@ export class NewProjectFlowPanel {
       // Severity comes from the outcome, never from here: `alp init --som` with
       // a bad SKU exits 2 (validation ⇒ warning) and must not read like the
       // spawn failure that exits 1.
+      // Two refusals get guidance instead of a bare report (#530): this
+      // wizard lets any template be paired with any SoM, and 12 of the 44
+      // pairs cannot be scaffolded — `iot-starter` alone is refused on 10 of
+      // the 11 SoMs. tan is right to refuse (rendering an Alif tree under an
+      // NXP SKU would write another vendor's content into the project), but a
+      // raw refusal leaves the customer on a Confirm step whose Create button
+      // will fail again, with nothing saying where to go.
+      //
+      // Classified on the CODE (`@alp-sdk/core/project/initRefusal`), and the
+      // two kinds get different sentences on purpose: `init.invalid-som` is
+      // fixable by changing the SoM and tan's own message names the SKU that
+      // works, while `init.som-unsupported` is not — no SoM change helps when
+      // the template ships no tree for that family, so the way out is another
+      // template or an example. Examples carry their own board.yaml and
+      // scaffold onto any SoM (verified for E1M-NX9101 on the pinned tan).
+      const refusal = classifyInitRefusal(outcome.envelope?.issues);
+      if (refusal) {
+        const advice =
+          refusal.kind === "template-pinned-to-som"
+            ? "Choose the SoM it names, or go back and pick another project type."
+            : "No SoM change helps here — go back and pick another project type, or start from an example, which brings its own board.yaml and scaffolds onto any SoM.";
+        const picked = await notify(
+          planFailure({
+            operation: "Creating the project",
+            cause: `${refusal.message ?? "This project type cannot be scaffolded for this SoM."} ${advice}`,
+            // The code is an internal identifier, so it travels as channel
+            // detail rather than in the sentence.
+            detail: `${refusal.code}: ${templateId} + ${moduleId}`,
+            severity: "warning",
+            actions: [{ id: "chooseProjectType" }],
+          }),
+        );
+        if (picked === "chooseProjectType") {
+          const msg: ExtToWebviewMessage = {
+            type: "newProjectFlowGoToStep",
+            stepId: "template",
+          };
+          void this.panel.webview.postMessage(msg);
+        }
+        return;
+      }
       notifyAsync(
         planCliOutcome(outcome, { operation: "Creating the project" }),
       );

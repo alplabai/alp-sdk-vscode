@@ -67,6 +67,9 @@ export type ActionId =
   | "openAnyway"
   | "deleteFromDisk"
   | "downloadTanCli"
+  // Sends the New Project wizard back to its first step (#530). Caller-handled
+  // because only the panel that owns the webview can post to it.
+  | "chooseProjectType"
   // presenter-only: an ad-hoc button whose title comes from `NotifyAction.title`.
   // Exists solely for `reportError`'s legacy `...actions: string[]` parameter;
   // the pure planner never emits it.

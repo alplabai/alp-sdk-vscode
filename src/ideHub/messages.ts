@@ -514,6 +514,18 @@ export interface ProjectLocationPickedMessage {
   path: string;
 }
 
+/**
+ * Send the New Project wizard back to one of its steps (#530).
+ *
+ * `stepId`, not an index: the step order is the webview's own (`STEPS` in
+ * `NewProjectFlowView.tsx`), and an index sent from the host would silently
+ * point at a different screen the first time a step is inserted.
+ */
+export interface NewProjectFlowGoToStepMessage {
+  type: "newProjectFlowGoToStep";
+  stepId: string;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -525,6 +537,7 @@ export type ExtToWebviewMessage =
   | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
+  | NewProjectFlowGoToStepMessage
   | BuildPlanDataMessage
   | SystemManifestDataMessage
   | ModelsDataMessage

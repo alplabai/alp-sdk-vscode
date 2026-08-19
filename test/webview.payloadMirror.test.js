@@ -160,6 +160,10 @@ const MODELS = [
   { mirror: "WorkspaceStatus", file: HOST_REL, strict: true },
   { mirror: "AlpIdeState", file: HOST_REL, strict: true },
   { mirror: "ProjectTemplate", file: HOST_REL, strict: true },
+  // #530's step-jump message. Registered because the webview reads `stepId`
+  // and silently ignores an id it does not know, so a rename that drifted only
+  // on one side would degrade to "the button does nothing" with no red gate.
+  { mirror: "NewProjectFlowGoToStepMessage", file: HOST_REL, strict: true },
   { mirror: "E1mModule", file: HOST_REL, strict: true },
   { mirror: "BuildPlanToolStep", file: HOST_REL, strict: true },
   { mirror: "BuildPlanGeneratedFile", file: HOST_REL, strict: true },
