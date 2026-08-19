@@ -85,7 +85,15 @@ function load(opts = {}) {
   const active = new Set(opts.active ?? []);
 
   const mod = loadWithStubs("deps/vscodeAdapter.js", {
-    vscode: { window: {}, Uri: {} },
+    vscode: {
+      // Consent GRANTED for every row: `runFixAll` now runs ADR 0021 §3's
+      // consent screen before its first dispatch (#467), so a harness with no
+      // picker never reaches the ordering this file is about. The screen's own
+      // behaviour — one dialog for the set, declining, unchecking a row — is
+      // `test/deps.installConsent.test.js`.
+      window: { showQuickPick: async (items) => items },
+      Uri: {},
+    },
     "../alpCli/vscodeAdapter": {},
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
@@ -421,7 +429,8 @@ test(
     const pending = new Map();
     const dispatched = [];
     const { runFixAll } = loadWithStubs("deps/vscodeAdapter.js", {
-      vscode: { window: {}, Uri: {} },
+      // Consent granted, same as `load()` above (#467).
+      vscode: { window: { showQuickPick: async (items) => items }, Uri: {} },
       "../alpCli/vscodeAdapter": {},
       "../alpCli/doctor": {},
       "../notify/vscodeAdapter": { notifyAsync() {} },

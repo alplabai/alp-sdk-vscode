@@ -33,6 +33,7 @@
 
 import {
   BootstrapHost,
+  bootstrapHost,
   fixCommand,
   InstallGuide,
   ToolchainFixId,
@@ -50,14 +51,6 @@ import { planFailure, planSuccess } from "./notify/service";
 import { notify, notifyAsync } from "./notify/vscodeAdapter";
 import { log, runInTerminal } from "./util";
 
-function host(): BootstrapHost {
-  return process.platform === "win32"
-    ? "win32"
-    : process.platform === "darwin"
-      ? "darwin"
-      : "linux";
-}
-
 /**
  * The run name every toolchain-fix install claims, so a second press is
  * refused by `isRunActive` rather than starting a racing installer, and so
@@ -71,7 +64,7 @@ function host(): BootstrapHost {
 export const TOOLCHAIN_FIX_RUN_NAME = "Alp: toolchain fix";
 
 export function runToolchainFix(fixId: ToolchainFixId): void {
-  const result = fixCommand(fixId, host());
+  const result = fixCommand(fixId, bootstrapHost());
   if (result.kind === "pointer") {
     void vscode.env.openExternal(vscode.Uri.parse(result.pointer.url));
     return;
@@ -116,7 +109,7 @@ export function runToolchainFix(fixId: ToolchainFixId): void {
  * and a docs entry links the relevant guide.
  */
 async function showInstallGuide(guide: InstallGuide): Promise<void> {
-  const current = host();
+  const current = bootstrapHost();
   type GuideItem = vscode.QuickPickItem & {
     command?: string;
     os?: BootstrapHost;

@@ -21,6 +21,7 @@ import { log } from "../util";
 import type { StateManager } from "../views/stateManager";
 import {
   buildDependencyReport,
+  confirmDependencyInstalls,
   fixAllTargets,
   runDependencyAction,
   runFixAll,
@@ -150,7 +151,10 @@ export class DependencyPanel {
         this.refresh({ refreshLatestSdk: true });
         break;
       case "runDependencyAction":
-        this.runRowAction(msg.name);
+        // Awaits a consent screen (#467), so it gets the same handler the Fix
+        // all run does — an unanswered dialog is the likeliest main-thread call
+        // still pending when the window goes away.
+        fireAndForget(this.runRowAction(msg.name), "the dependency install");
         break;
       case "runFixAll":
         fireAndForget(this.runFixAll(), "the Fix all run");
@@ -284,11 +288,26 @@ export class DependencyPanel {
    * run whatever action THAT row carries. The webview names a row; it never
    * hands over a command to execute.
    */
-  private runRowAction(name: string): void {
+  private async runRowAction(name: string): Promise<void> {
     const row = this.lastReport?.rows.find(
       (candidate) => candidate.name === name,
     );
     if (!row?.action) return;
+    // ADR 0021 §3 (#467): one consent screen before anything installs on this
+    // machine — the same gate `runFixAll` runs, over a set of one, so pressing
+    // a single row's button and pressing "Fix all" disclose the same four facts
+    // rather than one path being the quiet way in.
+    //
+    // NOT for `open-docs`: that opens a web page and installs nothing, so
+    // asking consent to install would be asking about something that is not
+    // happening.
+    if (row.action.effect !== "open-docs") {
+      const consented = await confirmDependencyInstalls([row]);
+      if (consented === null || consented.length === 0) {
+        log(`[deps] ${row.name}: consent not given, nothing dispatched`);
+        return;
+      }
+    }
     // tan's own `sevenZip` row status (`this.lastReport` already holds it) —
     // the Zephyr SDK dispatch reads it for its post-install notice and must
     // not re-probe the host for it.
@@ -329,11 +348,18 @@ export class DependencyPanel {
     const outcome = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: "Alp: installing dependencies",
+        // NOT "installing dependencies": this notification is up while the
+        // consent screen is still being answered (#467), and a spinner claiming
+        // an install that has not been agreed to yet is a false statement with
+        // an animation on it. The title covers both phases; the message below
+        // says which one is running.
+        title: "Alp: dependencies",
         cancellable: true,
       },
-      (progress, token) =>
-        runFixAll({
+      (progress, token) => {
+        // Replaced by the first `onStep` the moment a row actually starts.
+        progress.report({ message: "waiting for your consent…" });
+        return runFixAll({
           report,
           cwd: collectProjectContext().workspaceRoot ?? undefined,
           token,
@@ -342,7 +368,8 @@ export class DependencyPanel {
               message: `${index + 1}/${total} — ${row.label}`,
               increment: index === 0 ? 0 : 100 / total,
             }),
-        }),
+        });
+      },
     );
 
     // The table is the real report; this line is only what a table cannot say,

@@ -22,7 +22,15 @@ import {
   planDependencyReport,
   TAN_ROW_NAME,
 } from "@alp-sdk/core/deps/planner";
+import {
+  type ConsentItem,
+  planInstallConsent,
+} from "@alp-sdk/core/deps/consent";
 import { retargetWestCommand } from "@alp-sdk/core/deps/westCommand";
+import {
+  type BootstrapHost,
+  bootstrapHost,
+} from "@alp-sdk/core/toolchain/bootstrapPlan";
 import type { SdkRelease } from "@alp-sdk/core/sdk/models";
 import * as os from "os";
 import * as vscode from "vscode";
@@ -772,6 +780,86 @@ export interface FixAllOutcome {
 }
 
 /**
+ * A consent line, plus the row it consents to. The row is the OBJECT the loop
+ * will dispatch, not a name to look up again — that identity is what makes it
+ * impossible for this screen to name a different artifact than the one that
+ * runs, the same structural guarantee the tan-binary dialog has
+ * (`test/alpCli.downloadConsent.test.js:268` / `:280`).
+ */
+interface ConsentPick extends vscode.QuickPickItem {
+  name: string;
+  row: DependencyRow;
+}
+
+/** What a cell says when no producer reports it (alp-sdk#1574). */
+const NOT_REPORTED = "not reported";
+
+/** One consent line: artifact on the label, the four ADR 0021 §3 facts under it. */
+function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
+  return {
+    name: item.name,
+    row,
+    label: item.artifact,
+    // The elevation note goes HERE, beside the label, because it is the one
+    // fact that changes what a customer is agreeing to rather than merely
+    // describing it. Derived from the command text tan emitted, never from the
+    // tool's name — see `@alp-sdk/core/deps/consent`.
+    description: item.needsElevation ? "requires elevation" : "",
+    detail:
+      `Runs: ${item.source ?? NOT_REPORTED} · ` +
+      `Size: ${item.size ?? NOT_REPORTED} · ` +
+      `Licence: ${item.licence ?? NOT_REPORTED}`,
+    picked: true,
+  };
+}
+
+/**
+ * ADR 0021 §3's ONE consent screen, over a whole install set (#467).
+ *
+ * Until this landed, pressing "Fix all" dispatched the first installer
+ * immediately and asked nothing — while the far smaller act of downloading the
+ * `tan` binary has needed a consent click since #434. This closes that
+ * asymmetry.
+ *
+ * ONE screen, never one per row: #467 names N modal dialogs during a Fix-all as
+ * the failure mode, which is also why this is a multi-select QuickPick rather
+ * than a modal. A modal has buttons, so per-item skipping would have to become
+ * per-item modals — the very thing being avoided. Every line starts CHECKED, so
+ * the default answer is the one the customer already asked for by pressing the
+ * button, and skipping is an opt-out.
+ *
+ * Returns the consented rows (a subset of `rows`, same objects, same order), or
+ * `null` when the screen was dismissed. `null` and `[]` are deliberately
+ * different: dismissed means "no answer", empty means "answered, none of them",
+ * and the caller reports them with different words.
+ *
+ * NO TIERS. ADR 0021 §3 asks for three, and no producer can express one today —
+ * measured, and filed as alp-sdk#1574. The alternative #467 explicitly rules
+ * out is a local table keyed on tool name, so what ships is the screen without
+ * the tiering rather than a tiering this extension invented.
+ */
+export async function confirmDependencyInstalls(
+  rows: DependencyRow[],
+  host: BootstrapHost = bootstrapHost(),
+): Promise<DependencyRow[] | null> {
+  if (rows.length === 0) return [];
+  const picks = planInstallConsent(rows, host).map((item, index) =>
+    consentPick(item, rows[index]),
+  );
+  const picked = await vscode.window.showQuickPick(picks, {
+    canPickMany: true,
+    title: "Alp: install dependencies",
+    placeHolder:
+      "These will be installed on this machine. Uncheck anything you do not want.",
+    // A long install list plus a click on another editor must not silently
+    // answer this for the customer.
+    ignoreFocusOut: true,
+  });
+  if (picked === undefined) return null;
+  return picked.map((pick) => pick.row);
+}
+
+/**
  * Run every installing row, ONE AT A TIME, waiting for each to finish (#466 §2).
  *
  * SEQUENTIAL is the whole design, not a simplification. Two installers racing
@@ -803,9 +891,36 @@ export async function runFixAll(options: {
   const { report, cwd, token, onStep } = options;
   const targets = fixAllTargets(report);
   const outcome: FixAllOutcome = { installed: [], failed: [], skipped: [] };
+  // Nothing to install asks nothing: a consent screen whose only honest answer
+  // is "install nothing" is a dialog with no question in it.
+  if (targets.length === 0) return outcome;
+
+  // ADR 0021 §3 (#467). BEFORE the first dispatch, and over the whole set —
+  // this is the one place that decides, so no caller can reach the loop with
+  // the gate skipped. Built from `targets` itself, so the set offered and the
+  // set run are the same row objects.
+  const consented = await confirmDependencyInstalls(targets);
+  if (consented === null) {
+    for (const target of targets) {
+      outcome.skipped.push({ name: target.name, reason: "consent not given" });
+    }
+    log(`[fix-all] consent declined for ${targets.length} row(s)`);
+    return outcome;
+  }
+  const allowed = new Set(consented);
+
   const sevenZip = report.rows.find((row) => row.name === "sevenZip");
 
   for (const [index, row] of targets.entries()) {
+    if (!allowed.has(row)) {
+      // Named with its reason, like every other non-run: "3 skipped" with no
+      // reason is the silent truncation this panel exists to avoid.
+      outcome.skipped.push({
+        name: row.name,
+        reason: "left unchecked on the consent screen",
+      });
+      continue;
+    }
     if (token.isCancellationRequested) {
       outcome.skipped.push({ name: row.name, reason: "cancelled" });
       continue;
