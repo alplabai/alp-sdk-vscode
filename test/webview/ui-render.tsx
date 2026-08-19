@@ -9,6 +9,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
 import { ErrorBoundary } from "../../packages/alp-webview/src/shared/ui";
+import { TextInput } from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
 import { OverviewView } from "../../packages/alp-webview/src/features/overview";
 import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
@@ -1018,6 +1019,98 @@ async function main() {
     }
     console.log(
       `  ${problems.length === 0 ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+    );
+  }
+
+  // ── the configurator's inputs must be typeable (#532) ──
+  // The `value` prop is the HOST's view model, which lags every keystroke by a
+  // full round-trip: the mutation is debounced 200 ms, written to the document,
+  // re-parsed, and posted back as `configuratorRender`. Bound straight to that,
+  // React re-rendered each keystroke with the stale value and WIPED the
+  // character just typed — "./peer" came out as nothing, or as one letter.
+  //
+  // Reproduced exactly that way here: type, then re-render with the OLD prop,
+  // which is what the lagging echo does. The field must still hold what the
+  // customer typed. Then blur and push a new prop — a field nobody is typing in
+  // must still follow the document, or an external YAML edit would never show.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const typed: string[] = [];
+    const root = createRoot(container);
+
+    root.render(
+      React.createElement(TextInput, {
+        label: "App directory",
+        value: "",
+        placeholder: "./src",
+        onChange: (v: string) => typed.push(v),
+      }),
+    );
+    await settle();
+
+    const input = container.querySelector(
+      'input[aria-label="App directory"]',
+    ) as HTMLInputElement | null;
+    if (!input) {
+      problems.push(
+        "configurator-typing: the App directory input did not render",
+      );
+    } else {
+      // jsdom + React: set through the native setter so React's own value
+      // tracker does not swallow the event as a no-op.
+      const setValue = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      input.focus();
+      for (const text of ["./p", "./pe", "./pee", "./peer"]) {
+        setValue?.call(input, text);
+        input.dispatchEvent(new window.Event("input", { bubbles: true }));
+        // The stale echo: the host has not caught up, so it re-renders with the
+        // value it still believes in.
+        root.render(
+          React.createElement(TextInput, {
+            label: "App directory",
+            value: "",
+            placeholder: "./src",
+            onChange: (v: string) => typed.push(v),
+          }),
+        );
+        await settle();
+      }
+
+      if (input.value !== "./peer") {
+        problems.push(
+          `configurator-typing: a stale host echo overwrote the field — expected "./peer", got "${input.value}"`,
+        );
+      }
+      if (typed[typed.length - 1] !== "./peer") {
+        problems.push(
+          `configurator-typing: the last keystroke never reached onChange — got "${typed[typed.length - 1] ?? "nothing"}"`,
+        );
+      }
+
+      // Blurred, the field must accept the document again.
+      input.blur();
+      root.render(
+        React.createElement(TextInput, {
+          label: "App directory",
+          value: "./from-disk",
+          placeholder: "./src",
+          onChange: (v: string) => typed.push(v),
+        }),
+      );
+      await settle();
+      if (input.value !== "./from-disk") {
+        problems.push(
+          `configurator-typing: a blurred field ignored an external edit — expected "./from-disk", got "${input.value}"`,
+        );
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-typing: a stale echo cannot eat a keystroke`,
     );
   }
 

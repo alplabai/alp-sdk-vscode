@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Icon } from "../../shared/ui";
 import type {
   BoardConfig,
@@ -75,7 +75,26 @@ function Select({
   );
 }
 
-function TextInput({
+/**
+ * A text field that can actually be typed in.
+ *
+ * The `value` prop is the HOST's view model (`CorePanel.app` and friends),
+ * which lags every keystroke by a full round-trip: the mutation is debounced
+ * 200 ms, then written to the document, re-parsed and posted back as
+ * `configuratorRender`. Bound straight to `value`, React re-rendered each
+ * keystroke with the stale host value and wiped the character the customer had
+ * just typed — every letter vanished and reappeared a fifth of a second later,
+ * and typing at speed lost most of them.
+ *
+ * So the field keeps a DRAFT while it has focus, and accepts the incoming
+ * `value` only when it does not — a blurred field must still follow the
+ * document (an external edit in a side-by-side YAML editor, or a reload), which
+ * is why the draft is not simply local state forever.
+ *
+ * Exported for `test/webview/ui-render.tsx`, which drives it with a
+ * deliberately stale prop — the exact condition that produced the bug.
+ */
+export function TextInput({
   value,
   placeholder,
   onChange,
@@ -86,19 +105,36 @@ function TextInput({
   onChange: (v: string) => void;
   label: string;
 }) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(value);
+  }, [value]);
   return (
     <input
       className={styles.control}
       type="text"
-      value={value}
+      value={draft}
       placeholder={placeholder}
       aria-label={label}
-      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onBlur={() => {
+        focused.current = false;
+      }}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onChange(e.target.value);
+      }}
     />
   );
 }
 
-function NumberInput({
+/** Same draft-while-focused rule as `TextInput` — see its comment. A number
+ *  field is worse without it: the host drops a partial value like "12" on the
+ *  way through `parseInt`, so the round-trip could snap the caret back mid-entry. */
+export function NumberInput({
   value,
   placeholder,
   onChange,
@@ -109,14 +145,28 @@ function NumberInput({
   onChange: (v: string) => void;
   label: string;
 }) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(value);
+  }, [value]);
   return (
     <input
       className={styles.control}
       type="number"
-      value={value}
+      value={draft}
       placeholder={placeholder}
       aria-label={label}
-      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onBlur={() => {
+        focused.current = false;
+      }}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onChange(e.target.value);
+      }}
     />
   );
 }
