@@ -5,6 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { exampleCategory } from "@alp-sdk/core/examples/category";
+import { planInitCores } from "@alp-sdk/core/project/initCores";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   emptyAlpIdeState,
@@ -447,14 +448,28 @@ export class NewProjectFlowPanel {
           moduleId,
           "--non-interactive",
         ];
-    // Heterogeneous SoMs (≥2 cores) scaffold every core + a default IPC channel
-    // via `alp init --cores` (requires the CLI's --cores support; see
+    // Heterogeneous SoMs scaffold their companion cores + a default IPC channel
+    // via `tan init --cores` (requires the CLI's --cores support; see
     // SUPPORTED_CLI_VERSION). Single-core SoMs keep the plain --som path.
+    //
+    // FILTERED, not verbatim (#528). This used to send the SoM's entire
+    // declared topology, straight from `tan presets`, and every SoM declaring
+    // two Zephyr cores then failed with exit 2 / `init.invalid-cores` — six of
+    // eleven SoMs, the whole Alif Ensemble line. `--cores` splices companions
+    // in APP-LESS, and an app-less `os: zephyr` slice is refused. See
+    // `planInitCores` for the contract and for why no core is named as the app
+    // core here.
+    let unscaffolded: string[] = [];
     if (!sourceDir) {
       const cores = this.somModules.find((m) => m.id === moduleId)?.cores ?? [];
-      if (cores.length >= 2) {
-        initArgs.push("--cores", cores.map((c) => `${c.id}:${c.os}`).join(","));
+      const coresPlan = planInitCores(cores);
+      if (coresPlan.arg) {
+        initArgs.push("--cores", coresPlan.arg);
       }
+      // One of them is the app core and gets the scaffolded app; anything past
+      // the first is left out of the generated board.yaml entirely, and that is
+      // said out loud below rather than downgraded in silence.
+      unscaffolded = coresPlan.zephyrCores;
     }
     // Examples copy their own board.yaml verbatim; when the user picks a SoM,
     // retarget the copied board.yaml to it (alp init --from-example --som), so an
@@ -482,6 +497,35 @@ export class NewProjectFlowPanel {
         planCliOutcome(outcome, { operation: "Creating the project" }),
       );
       return;
+    }
+
+    // The one thing the scaffold cannot say for itself (#528): this SoM
+    // declares more than one Zephyr core, and `tan init --cores` can only
+    // splice companions in APP-LESS, so exactly one of them — the SoM's app
+    // core, which tan picks — got the app and the rest are absent from the
+    // generated board.yaml. Silently handing a dual-M55 customer a
+    // single-core project is the failure this notice exists to prevent.
+    //
+    // A TOAST, not the default statusBar: `planSuccess` with no actions is a
+    // transient status-bar line and `detail` is channel-only, so the fact
+    // would never reach the screen. The example named is the shipped one that
+    // DOES give a second Zephyr core its own `app:` — something no
+    // `--template` + `--cores` combination can express.
+    if (unscaffolded.length > 1) {
+      notifyAsync(
+        planSuccess(
+          `Project "${projectName}" created with one Zephyr core configured. ` +
+            `${moduleId} has ${unscaffolded.length} (${unscaffolded.join(", ")}) — ` +
+            "to start from a project that uses both, create it from the " +
+            "multicore/mproc-mailbox example instead.",
+          { actions: [{ id: "showOutput" }] },
+        ),
+      );
+      log(
+        `[new-project] ${moduleId}: ${unscaffolded.length} zephyr cores ` +
+          `(${unscaffolded.join(", ")}), only the SoM's app core is scaffolded ` +
+          "— tan init --cores splices companions app-less",
+      );
     }
 
     // Pin the chosen SDK for the new project so it opens with the right one
