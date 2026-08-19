@@ -13,6 +13,7 @@
 
 import {
   type BootstrapHost,
+  bootstrapHost,
   fixCommand,
   type ToolchainFixId,
 } from "../toolchain/bootstrapPlan";
@@ -265,12 +266,7 @@ const FIX_IDS: Readonly<Record<string, ToolchainFixId>> = {
 export const TAN_ROW_NAME = "tan";
 
 /** This process's platform, narrowed to what `fixCommand` answers for. */
-const DEFAULT_HOST: BootstrapHost =
-  process.platform === "win32"
-    ? "win32"
-    : process.platform === "darwin"
-      ? "darwin"
-      : "linux";
+const DEFAULT_HOST: BootstrapHost = bootstrapHost();
 
 /**
  * The verb and the tooltip for a fix, taken from `fixCommand` ITSELF — the same
