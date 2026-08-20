@@ -14,6 +14,10 @@ import { OverviewView } from "../../packages/alp-webview/src/features/overview";
 import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
 import { NewProjectFlowView } from "../../packages/alp-webview/src/features/new-project-flow";
+import {
+  CoresStep,
+  defaultCoreChoices,
+} from "../../packages/alp-webview/src/features/new-project-flow/NewProjectFlowView";
 import { ExistingProjectFlowView } from "../../packages/alp-webview/src/features/existing-project-flow";
 import { SdkView } from "../../packages/alp-webview/src/features/sdk";
 import { DependenciesView } from "../../packages/alp-webview/src/features/dependencies";
@@ -1019,6 +1023,107 @@ async function main() {
     }
     console.log(
       `  ${problems.length === 0 ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+    );
+  }
+
+  // ── the wizard's Cores step (#534) ──
+  // `tan init --cores` splices companions APP-LESS, so before this step a
+  // dual-M55 SoM — the Alif Ensemble line's defining topology — scaffolded as a
+  // single-core project with the second M55 absent from board.yaml entirely.
+  // Two things are pinned: the DEFAULT layout (the first Zephyr core must land
+  // on `./src`, because that is where `tan init` puts the template's real
+  // source — anything else orphans it), and that a core built from a Yocto
+  // image offers no app directory to type into.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+
+    // Verbatim from `tan presets` at alp-sdk v0.16.0-rc1.
+    const AEN801 = [
+      { id: "a32_cluster", os: "yocto" },
+      { id: "m55_hp", os: "zephyr" },
+      { id: "m55_he", os: "zephyr" },
+    ];
+    const defaults = defaultCoreChoices(AEN801);
+    const byId = Object.fromEntries(defaults.map((c) => [c.id, c]));
+
+    if (byId.m55_hp?.app !== "./src") {
+      problems.push(
+        `cores-step: the first Zephyr core must default to ./src (tan's own directory) — got "${byId.m55_hp?.app}"`,
+      );
+    }
+    if (byId.m55_he?.app !== "./m55_he") {
+      problems.push(
+        `cores-step: the second Zephyr core must get its own directory — got "${byId.m55_he?.app}"`,
+      );
+    }
+    if (byId.a32_cluster?.app !== "") {
+      problems.push(
+        `cores-step: a yocto core must get no app directory — got "${byId.a32_cluster?.app}"`,
+      );
+    }
+    if (byId.m55_hp?.app === byId.m55_he?.app) {
+      problems.push(
+        "cores-step: two cores defaulted to the same directory — tan build would build one source twice",
+      );
+    }
+
+    const root = createRoot(container);
+    root.render(
+      React.createElement(CoresStep, {
+        choices: defaults,
+        onChange: () => {},
+        isExample: false,
+      }),
+    );
+    await settle();
+
+    const rows = container.querySelectorAll("select");
+    if (rows.length !== 3) {
+      problems.push(
+        `cores-step: expected one runtime picker per declared core, got ${rows.length}`,
+      );
+    }
+    const yoctoInput = container.querySelector(
+      'input[aria-label="App directory for a32_cluster"]',
+    ) as HTMLInputElement | null;
+    if (!yoctoInput) {
+      problems.push(
+        "cores-step: the yocto core had no app-directory field at all",
+      );
+    } else if (!yoctoInput.disabled) {
+      problems.push(
+        "cores-step: a yocto core's app directory must be inert — its image comes from a recipe, not this project",
+      );
+    }
+    const hpInput = container.querySelector(
+      'input[aria-label="App directory for m55_hp"]',
+    ) as HTMLInputElement | null;
+    if (hpInput?.disabled) {
+      problems.push(
+        "cores-step: a Zephyr core's app directory must be editable",
+      );
+    }
+
+    // An example brings its own board.yaml; the step must not offer edits that
+    // would be overwritten.
+    root.render(
+      React.createElement(CoresStep, {
+        choices: defaults,
+        onChange: () => {},
+        isExample: true,
+      }),
+    );
+    await settle();
+    if (container.querySelectorAll("select").length !== 0) {
+      problems.push(
+        "cores-step: an example's cores must not be offered for editing — its board.yaml already assigns them",
+      );
+    }
+
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  cores-step: every declared core is assignable`,
     );
   }
 

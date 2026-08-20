@@ -283,3 +283,53 @@
   letter-spacing: 0.04em;
   color: var(--text-secondary);
 }
+
+/* ── Cores step (#534) ── */
+
+.coreRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-3);
+}
+
+/* Fixed width so the runtime pickers line up down the column — a core id is
+   short (`m55_hp`) and the rows read as a table when they share a gutter. */
+.coreRowId {
+  flex: 0 0 8rem;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+.coreRowSelect {
+  flex: 0 0 12rem;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+}
+
+.coreRowInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-family-mono);
+}
+
+/* A disabled directory is not a broken control — the core either runs no app
+   (off) or is built from a Yocto image, so it reads as inert rather than
+   greyed-out-and-mysterious. */
+.coreRowInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
