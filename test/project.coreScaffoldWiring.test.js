@@ -84,3 +84,21 @@ test("the single-core toast is silenced when the wizard configured the cores", (
     "the toast must not contradict the project that was just written",
   );
 });
+
+test("an unrecognised os value is reported before anything is written", () => {
+  // Arrange -- core DROPS it (never coerces, the #517 rule). A drop with no
+  // word leaves a project missing a core the customer configured.
+  const report = SOURCE.indexOf("unknownCoreOs(assignments)");
+  const write = SOURCE.indexOf("fs.writeFileSync(boardPath");
+
+  assert.notEqual(
+    report,
+    -1,
+    "the panel must ask which os values were refused",
+  );
+  assert.ok(
+    report < write,
+    "the customer must be told before the file is written",
+  );
+  assert.match(SOURCE, /does not recognise, so those cores were/);
+});

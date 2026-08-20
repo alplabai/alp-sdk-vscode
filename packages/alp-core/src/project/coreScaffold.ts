@@ -43,6 +43,41 @@ export interface CoreAssignment {
 }
 
 /**
+ * The os vocabulary `board.schema.json` knows, and the only values this module
+ * will write.
+ *
+ * NARROWED, NEVER CAST. The wizard's os string comes from a picker fed by
+ * `tan presets`, and `assignment.os as CoreOs` used to write it verbatim — so a
+ * value the schema does not know landed in `board.yaml` and died much later at
+ * `validate.py`'s enum check, with nothing naming the wizard as its source.
+ * That is the cast #517 removed from the models panel, in a new place.
+ *
+ * Pinned as a literal on purpose: a value added upstream fails this module's
+ * tests rather than silently dropping a core in front of a customer.
+ */
+const CORE_OS_VALUES = ["zephyr", "yocto", "baremetal", "off"] as const;
+
+function narrowCoreOs(os: string): CoreOs | null {
+  return (CORE_OS_VALUES as readonly string[]).includes(os)
+    ? (os as CoreOs)
+    : null;
+}
+
+/**
+ * The assignments whose os this module refuses to write.
+ *
+ * Dropping a core with no word is how a project quietly comes out missing the
+ * core the customer configured, so the caller gets the list and says so.
+ */
+export function unknownCoreOs(
+  assignments: readonly CoreAssignment[],
+): { id: string; os: string }[] {
+  return assignments
+    .filter((assignment) => narrowCoreOs(assignment.os) === null)
+    .map((assignment) => ({ id: assignment.id, os: assignment.os }));
+}
+
+/**
  * Runtimes this wizard scaffolds an application directory for. ZEPHYR ONLY, and
  * the two exclusions are for different reasons.
  *
@@ -153,8 +188,12 @@ export function applyCoreAssignments(
   if (assignments.length === 0) return board;
   const cores: Record<string, CoreEntry> = { ...(board.cores ?? {}) };
   for (const assignment of assignments) {
+    const os = narrowCoreOs(assignment.os);
+    // Dropped rather than coerced — see `CORE_OS_VALUES`. `unknownCoreOs` is
+    // what the caller reports it with.
+    if (os === null) continue;
     const existing = cores[assignment.id] ?? {};
-    const next: CoreEntry = { ...existing, os: assignment.os as CoreOs };
+    const next: CoreEntry = { ...existing, os };
     if (!takesApp(assignment.os)) {
       delete next.app;
     } else if (existing.app) {

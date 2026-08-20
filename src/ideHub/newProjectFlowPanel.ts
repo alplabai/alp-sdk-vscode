@@ -14,6 +14,7 @@ import {
   companionMainC,
   companionPrjConf,
   isSafeAppDir,
+  unknownCoreOs,
 } from "@alp-sdk/core/project/coreScaffold";
 import type { BoardConfig } from "@alp-sdk/core/board/models";
 import { parseBoardConfig } from "@alp-sdk/core/board/parse";
@@ -407,6 +408,32 @@ export class NewProjectFlowPanel {
     projectName: string,
     assignments: { id: string; os: string; app?: string }[],
   ): void {
+    // An os this extension cannot validate is DROPPED by `applyCoreAssignments`
+    // rather than written into board.yaml to die later at the SDK's enum check.
+    // Dropping it silently would leave a project missing a core the customer
+    // configured, so it is said here, before anything is written.
+    const unknown = unknownCoreOs(assignments);
+    if (unknown.length > 0) {
+      log(
+        `[new-project] unknown os value(s): ${unknown
+          .map((entry) => `${entry.id}=${entry.os}`)
+          .join(", ")}`,
+      );
+      notifyAsync(
+        planFailure({
+          operation: "Writing the project's core layout",
+          cause:
+            unknown
+              .map((entry) => `${entry.id} asked for "${entry.os}"`)
+              .join(", ") +
+            ", which this version does not recognise, so those cores were " +
+            "left out of board.yaml. Add them from the Board Configurator, or " +
+            "update the extension.",
+          severity: "warning",
+        }),
+      );
+    }
+
     const boardPath = path.join(projectDir, "board.yaml");
     let merged: BoardConfig | undefined;
     let overrides: { id: string; requested: string; kept: string }[] = [];

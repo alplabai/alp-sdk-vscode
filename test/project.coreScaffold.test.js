@@ -28,6 +28,7 @@ const {
   companionMainC,
   isSafeAppDir,
   normaliseAppDir,
+  unknownCoreOs,
 } = require("../packages/alp-core/dist/project/coreScaffold.js");
 
 /** What `tan init --template zephyr-app --som E1M-AEN801 --cores a32_cluster:yocto`
@@ -307,4 +308,45 @@ test("two spellings of one directory are one directory", () => {
   assert.equal(normaliseAppDir("./src"), normaliseAppDir("src"));
   assert.equal(normaliseAppDir("./a/../src"), normaliseAppDir("./src"));
   assert.notEqual(normaliseAppDir("./src"), normaliseAppDir("./peer"));
+});
+
+// ---------------------------------------------------------------------------
+// The os vocabulary: narrowed, never cast (#538 follow-up)
+// ---------------------------------------------------------------------------
+
+test("an os value outside the schema's vocabulary is NOT written", () => {
+  // Arrange -- `assignment.os as CoreOs` wrote the wizard's string verbatim, so
+  // a value the board schema does not know landed in board.yaml and died much
+  // later, at `validate.py`'s enum check, with nothing naming the wizard as the
+  // source. This is the same cast pattern #517 removed from the models panel:
+  // DROP what cannot be validated, never coerce it.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_he", os: "rtos-of-the-future", app: "./m55_he" },
+  ]);
+
+  assert.equal(next.cores.m55_he, undefined);
+});
+
+test("a bad os value is reported, not silently skipped", () => {
+  // Arrange -- dropping a core with no word is how a project quietly comes out
+  // missing the core the customer configured. The caller gets the list.
+  assert.deepEqual(
+    unknownCoreOs([
+      { id: "m55_hp", os: "zephyr", app: "./src" },
+      { id: "m55_he", os: "rtos-of-the-future", app: "./m55_he" },
+      { id: "a32_cluster", os: "yocto" },
+    ]),
+    [{ id: "m55_he", os: "rtos-of-the-future" }],
+  );
+});
+
+test("every value the board schema knows is accepted", () => {
+  // Arrange -- the vocabulary is the schema's, and pinning it here means a
+  // future value added upstream fails THIS test rather than silently dropping
+  // a core in front of a customer.
+  for (const os of ["zephyr", "yocto", "baremetal", "off"]) {
+    const next = applyCoreAssignments(SCAFFOLDED, [{ id: "m55_he", os }]);
+    assert.equal(next.cores.m55_he.os, os, `${os} must be accepted`);
+  }
+  assert.deepEqual(unknownCoreOs([{ id: "m55_he", os: "off" }]), []);
 });
