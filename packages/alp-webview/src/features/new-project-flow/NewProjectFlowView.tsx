@@ -3,6 +3,7 @@ import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
 import { runtimeOptions } from "../../shared/coreRuntime";
+import { isSafeAppDir, normaliseAppDir } from "../../shared/appDir";
 import {
   Button,
   Card,
@@ -302,13 +303,25 @@ export function defaultCoreChoices(
 ): CoreChoice[] {
   let appCoreTaken = false;
   return cores.map((core) => {
-    if (core.os !== "zephyr" && core.os !== "baremetal") {
+    // ZEPHYR ONLY. A yocto core builds from a recipe, and a bare-metal core's
+    // shape is `cmake-args`, not a Zephyr application — scaffolding one for it
+    // produces a project that cannot configure (#538).
+    if (core.os !== "zephyr") {
       return { id: core.id, os: core.os, app: "" };
     }
     const app = appCoreTaken ? `./${core.id}` : "./src";
     appCoreTaken = true;
     return { id: core.id, os: core.os, app };
   });
+}
+
+/** Why a core has no app directory to type into. Said out loud rather than
+ *  leaving an inert box: a disabled control with no reason reads as broken. */
+function appDirPlaceholder(os: string): string {
+  if (os === "yocto") return "built from a Yocto image";
+  if (os === "baremetal") return "bare-metal: create the app yourself";
+  if (os === "off") return "core is off";
+  return "./src";
 }
 
 interface CoresStepProps {
@@ -385,11 +398,9 @@ export function CoresStep({ choices, onChange, isExample }: CoresStepProps) {
             className={styles.coreRowInput}
             type="text"
             aria-label={`App directory for ${choice.id}`}
-            placeholder={
-              choice.os === "yocto" ? "built from a Yocto image" : "./src"
-            }
-            value={choice.app}
-            disabled={choice.os === "off" || choice.os === "yocto"}
+            placeholder={appDirPlaceholder(choice.os)}
+            value={choice.os === "zephyr" ? choice.app : ""}
+            disabled={choice.os !== "zephyr"}
             onChange={(e) => update(choice.id, { app: e.target.value })}
           />
         </div>
@@ -687,11 +698,16 @@ export function NewProjectFlowView() {
   );
 
   const coresValid = useMemo(() => {
+    // Only a Zephyr core carries a directory (#538), and each one must be a
+    // real place inside the project. Compared NORMALISED: `./src`, `src` and
+    // `./a/../src` are one directory, and two cores sharing a tree would have
+    // `tan build` build the same source under two slice configs.
     const dirs = coreChoices
-      .filter((choice) => choice.os !== "off" && choice.os !== "yocto")
-      .map((choice) => choice.app.trim());
-    if (dirs.some((dir) => dir === "")) return false;
-    return new Set(dirs).size === dirs.length;
+      .filter((choice) => choice.os === "zephyr")
+      .map((choice) => choice.app);
+    if (!dirs.every((dir) => isSafeAppDir(dir))) return false;
+    const normalised = dirs.map((dir) => normaliseAppDir(dir));
+    return new Set(normalised).size === normalised.length;
   }, [coreChoices]);
 
   const canAdvance = useMemo(() => {
@@ -757,7 +773,7 @@ export function NewProjectFlowView() {
           : coreChoices.map((choice) => ({
               id: choice.id,
               os: choice.os,
-              app: choice.app.trim() || undefined,
+              app: choice.os === "zephyr" ? choice.app.trim() : undefined,
             })),
       });
     } else {

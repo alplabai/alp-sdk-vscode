@@ -22,9 +22,13 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  appDirOverrides,
   applyCoreAssignments,
   companionCmakeLists,
   companionMainC,
+  isSafeAppDir,
+  normaliseAppDir,
+  unknownCoreOs,
 } = require("../packages/alp-core/dist/project/coreScaffold.js");
 
 /** What `tan init --template zephyr-app --som E1M-AEN801 --cores a32_cluster:yocto`
@@ -206,4 +210,143 @@ test("the companion main.c pulls in no IPC header", () => {
     /^(?!\s*\*).*ALP_IPC_/m,
     "no IPC macro may be used outside a comment",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Defects found by adversarial review after #535 landed (#538)
+// ---------------------------------------------------------------------------
+
+test("only a zephyr core gets an app directory", () => {
+  // Arrange -- the wizard offers Bare-metal for every Cortex-M core, and #535
+  // wrote `app:` for it and then generated a ZEPHYR application there. That
+  // cannot configure: `alp_project.py`'s `_EMIT_OS_CLASSES` maps
+  // `"zephyr-conf": ("zephyr",)` and an explicit `--core` whose os is not in
+  // that tuple prints to stderr and returns 1, which the generated
+  // CMakeLists turns into a FATAL_ERROR. The SDK's baremetal shape is
+  // `cmake-args`, not a Zephyr app, so this wizard does not claim to scaffold
+  // one at all rather than claiming it badly.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_he", os: "baremetal", app: "./m55_he" },
+  ]);
+
+  assert.equal(next.cores.m55_he.os, "baremetal");
+  assert.equal(next.cores.m55_he.app, undefined);
+});
+
+test("a yocto core still gets no app directory", () => {
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "a32_cluster", os: "yocto", app: "./linux" },
+  ]);
+
+  assert.equal(next.cores.a32_cluster.app, undefined);
+});
+
+test("an app directory tan already chose is REPORTED as overridden, not silently kept", () => {
+  // Arrange -- tan's directory wins (it holds the template's real source), but
+  // #535 discarded the user's choice without a word AND then scaffolded a
+  // decoy at the discarded path, containing a comment claiming board.yaml
+  // pointed at it. Whoever keeps the rule owes the user the sentence.
+  const overrides = appDirOverrides(SCAFFOLDED, [
+    { id: "m55_hp", os: "zephyr", app: "./application" },
+    { id: "m55_he", os: "zephyr", app: "./m55_he" },
+  ]);
+
+  assert.deepEqual(overrides, [
+    { id: "m55_hp", requested: "./application", kept: "./src" },
+  ]);
+});
+
+test("no override is reported when the request matches what tan chose", () => {
+  assert.deepEqual(
+    appDirOverrides(SCAFFOLDED, [{ id: "m55_hp", os: "zephyr", app: "./src" }]),
+    [],
+  );
+});
+
+test("no override is reported for a core tan gave no app", () => {
+  // The companion case: nothing was overridden, the wizard's choice stands.
+  assert.deepEqual(
+    appDirOverrides(SCAFFOLDED, [
+      { id: "m55_he", os: "zephyr", app: "./m55_he" },
+    ]),
+    [],
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Where a core's app directory may live
+// ---------------------------------------------------------------------------
+
+test("an app directory that escapes the project is refused", () => {
+  // Arrange -- the field is free text and reached the host as
+  // `path.resolve(projectDir, app)`, which happily lands anywhere: `../..`
+  // walks out of the project and an absolute path ignores it entirely. Three
+  // files were then written there.
+  assert.equal(isSafeAppDir("../../../etc"), false);
+  assert.equal(isSafeAppDir("/etc/alp"), false);
+  assert.equal(isSafeAppDir("./src/../../escape"), false);
+  assert.equal(isSafeAppDir("C:\\Windows\\Temp"), false);
+});
+
+test("ordinary project-relative directories are allowed", () => {
+  assert.equal(isSafeAppDir("./src"), true);
+  assert.equal(isSafeAppDir("src"), true);
+  assert.equal(isSafeAppDir("./cores/m55_he"), true);
+  assert.equal(isSafeAppDir("./src/../peer"), true);
+});
+
+test("an empty directory is not a directory", () => {
+  assert.equal(isSafeAppDir(""), false);
+  assert.equal(isSafeAppDir("   "), false);
+});
+
+test("two spellings of one directory are one directory", () => {
+  // Arrange -- the wizard's uniqueness check was raw-string, so `./src`,
+  // `src` and `./a/../src` passed as three distinct choices and then resolved
+  // to one tree. `tan build` would build the same source under two slice
+  // configs.
+  assert.equal(normaliseAppDir("./src"), normaliseAppDir("src"));
+  assert.equal(normaliseAppDir("./a/../src"), normaliseAppDir("./src"));
+  assert.notEqual(normaliseAppDir("./src"), normaliseAppDir("./peer"));
+});
+
+// ---------------------------------------------------------------------------
+// The os vocabulary: narrowed, never cast (#538 follow-up)
+// ---------------------------------------------------------------------------
+
+test("an os value outside the schema's vocabulary is NOT written", () => {
+  // Arrange -- `assignment.os as CoreOs` wrote the wizard's string verbatim, so
+  // a value the board schema does not know landed in board.yaml and died much
+  // later, at `validate.py`'s enum check, with nothing naming the wizard as the
+  // source. This is the same cast pattern #517 removed from the models panel:
+  // DROP what cannot be validated, never coerce it.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_he", os: "rtos-of-the-future", app: "./m55_he" },
+  ]);
+
+  assert.equal(next.cores.m55_he, undefined);
+});
+
+test("a bad os value is reported, not silently skipped", () => {
+  // Arrange -- dropping a core with no word is how a project quietly comes out
+  // missing the core the customer configured. The caller gets the list.
+  assert.deepEqual(
+    unknownCoreOs([
+      { id: "m55_hp", os: "zephyr", app: "./src" },
+      { id: "m55_he", os: "rtos-of-the-future", app: "./m55_he" },
+      { id: "a32_cluster", os: "yocto" },
+    ]),
+    [{ id: "m55_he", os: "rtos-of-the-future" }],
+  );
+});
+
+test("every value the board schema knows is accepted", () => {
+  // Arrange -- the vocabulary is the schema's, and pinning it here means a
+  // future value added upstream fails THIS test rather than silently dropping
+  // a core in front of a customer.
+  for (const os of ["zephyr", "yocto", "baremetal", "off"]) {
+    const next = applyCoreAssignments(SCAFFOLDED, [{ id: "m55_he", os }]);
+    assert.equal(next.cores.m55_he.os, os, `${os} must be accepted`);
+  }
+  assert.deepEqual(unknownCoreOs([{ id: "m55_he", os: "off" }]), []);
 });

@@ -58,11 +58,132 @@ export interface CoreAssignment {
   app?: string;
 }
 
-/** Runtimes that take an application directory. Anything else — `off` today —
- *  gets no `app:`, because a slice that claims an app it will never build is
- *  worse than an honest empty one. */
+/**
+ * The os vocabulary `board.schema.json` knows, and the only values this module
+ * will write.
+ *
+ * NARROWED, NEVER CAST. The wizard's os string comes from a picker fed by
+ * `tan presets`, and `assignment.os as CoreOs` used to write it verbatim — so a
+ * value the schema does not know landed in `board.yaml` and died much later at
+ * `validate.py`'s enum check, with nothing naming the wizard as its source.
+ * That is the cast #517 removed from the models panel, in a new place.
+ *
+ * Pinned as a literal on purpose: a value added upstream fails this module's
+ * tests rather than silently dropping a core in front of a customer.
+ */
+const CORE_OS_VALUES = ["zephyr", "yocto", "baremetal", "off"] as const;
+
+function narrowCoreOs(os: string): CoreOs | null {
+  return (CORE_OS_VALUES as readonly string[]).includes(os)
+    ? (os as CoreOs)
+    : null;
+}
+
+/**
+ * The assignments whose os this module refuses to write.
+ *
+ * Dropping a core with no word is how a project quietly comes out missing the
+ * core the customer configured, so the caller gets the list and says so.
+ */
+export function unknownCoreOs(
+  assignments: readonly CoreAssignment[],
+): { id: string; os: string }[] {
+  return assignments
+    .filter((assignment) => narrowCoreOs(assignment.os) === null)
+    .map((assignment) => ({ id: assignment.id, os: assignment.os }));
+}
+
+/**
+ * Runtimes this wizard scaffolds an application directory for. ZEPHYR ONLY, and
+ * the two exclusions are for different reasons.
+ *
+ * `yocto` builds its image from a recipe, not from a directory in this project.
+ *
+ * `baremetal` is the one that used to be wrong. The runtime picker offers
+ * Bare-metal for every Cortex-M core, and writing `app:` for it produced a
+ * ZEPHYR application in that directory — which cannot configure:
+ * `alp_project.py`'s `_EMIT_OS_CLASSES` maps `"zephyr-conf": ("zephyr",)`, and
+ * an explicit `--core` whose os is not in that tuple prints to stderr and
+ * returns 1, which the generated `CMakeLists.txt` turns into a `FATAL_ERROR`.
+ * The SDK's baremetal shape is `cmake-args`, a different thing entirely. So
+ * this wizard does not claim to scaffold a bare-metal core rather than claiming
+ * it badly; the core is still declared, just without an app.
+ */
 function takesApp(os: string): boolean {
-  return os !== "off";
+  return os === "zephyr";
+}
+
+/**
+ * Where a core's application may live: inside the project, and nowhere else.
+ *
+ * The wizard's field is free text and the host resolves it against the project
+ * directory, so `../../..` walks out and an absolute path ignores the project
+ * entirely — and three files get written wherever it lands. Checked here, in
+ * the pure layer, so both the webview's own validation and the host's final
+ * guard ask the same question.
+ *
+ * A Windows absolute path is rejected explicitly: on a POSIX host
+ * `path.isAbsolute("C:\\x")` is false and the string would sail through as a
+ * relative directory with backslashes in its name.
+ */
+export function isSafeAppDir(app: string): boolean {
+  const trimmed = app.trim();
+  if (trimmed === "") return false;
+  if (trimmed.startsWith("/") || trimmed.startsWith("\\")) return false;
+  if (/^[A-Za-z]:[\\/]/.test(trimmed)) return false;
+  const normalised = normaliseAppDir(trimmed);
+  return normalised !== ".." && !normalised.startsWith("../");
+}
+
+/**
+ * One spelling per directory, so two cores cannot claim the same tree under
+ * different names — `./src`, `src` and `./a/../src` are one place, and `tan
+ * build` would build that source twice under two slice configs.
+ *
+ * Deliberately string arithmetic rather than `path.posix.normalize`: this
+ * module is pure and must not import node's `path` (the webview mirrors this
+ * logic and has no node).
+ */
+export function normaliseAppDir(app: string): string {
+  const parts = app.trim().replace(/\\/g, "/").split("/");
+  const out: string[] = [];
+  for (const part of parts) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (out.length > 0 && out[out.length - 1] !== "..") out.pop();
+      else out.push("..");
+      continue;
+    }
+    out.push(part);
+  }
+  return out.join("/");
+}
+
+/**
+ * The cores whose requested app directory was NOT used, because tan had already
+ * chosen one.
+ *
+ * Keeping tan's directory is the safety rule (`applyCoreAssignments`), but
+ * keeping it SILENTLY is how a customer renames a directory, is ignored, and
+ * finds a scaffolded decoy at the name they picked. Whoever enforces the rule
+ * owes them the sentence.
+ */
+export function appDirOverrides(
+  board: BoardConfig,
+  assignments: readonly CoreAssignment[],
+): { id: string; requested: string; kept: string }[] {
+  const overrides: { id: string; requested: string; kept: string }[] = [];
+  for (const assignment of assignments) {
+    const existing = board.cores?.[assignment.id]?.app;
+    if (!existing || !assignment.app || !takesApp(assignment.os)) continue;
+    if (normaliseAppDir(existing) === normaliseAppDir(assignment.app)) continue;
+    overrides.push({
+      id: assignment.id,
+      requested: assignment.app,
+      kept: existing,
+    });
+  }
+  return overrides;
 }
 
 /**
@@ -83,8 +204,12 @@ export function applyCoreAssignments(
   if (assignments.length === 0) return board;
   const cores: Record<string, CoreEntry> = { ...(board.cores ?? {}) };
   for (const assignment of assignments) {
+    const os = narrowCoreOs(assignment.os);
+    // Dropped rather than coerced — see `CORE_OS_VALUES`. `unknownCoreOs` is
+    // what the caller reports it with.
+    if (os === null) continue;
     const existing = cores[assignment.id] ?? {};
-    const next: CoreEntry = { ...existing, os: assignment.os as CoreOs };
+    const next: CoreEntry = { ...existing, os };
     if (!takesApp(assignment.os)) {
       delete next.app;
     } else if (existing.app) {
