@@ -21,6 +21,22 @@
 // `supported_boards:` in this extension, and those are the SDK's knowledge.
 // Reading tan's own output and adding to it needs no such re-derivation.
 //
+// INTERIM — DELETE `companionCmakeLists` / `companionMainC` / `companionPrjConf`
+// WHEN `alplabai/tan-cli#869` LANDS (tracked here as #536). Generating another
+// program's build files in TypeScript is re-deriving knowledge tan owns: the
+// `CMakeLists.txt` below was copied from tan's own scaffold output, and tan
+// already writes the app core's with the core baked in, while the SDK ships
+// `multicore/mproc-mailbox` with the same file parametrised for a second core.
+//
+// Read the risk before touching this file: NO GATE IN THIS REPO CAN CATCH IT
+// DRIFTING. Nothing here builds a generated project — that needs a toolchain,
+// and past native_sim, silicon. If `alp_project.py`'s invocation, the
+// `EXTRA_CONF_FILE` mechanism or a move to sysbuild changes upstream, this
+// keeps emitting projects that no longer build and every test stays green.
+//
+// `applyCoreAssignments` is NOT interim: writing `cores.<id>.app` into
+// board.yaml is the same edit the Configurator already makes, and stays here.
+//
 // A NOTE ON `ipc:`: nothing here emits one. IPC is genuinely opt-in — the SDK's
 // own board.yaml template ships the `ipc:` stanza commented out, and
 // `resolve_carve_outs()` returns `[]` for an empty list — and an always-on
