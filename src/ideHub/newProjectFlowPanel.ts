@@ -8,11 +8,14 @@ import { exampleCategory } from "@alp-sdk/core/examples/category";
 import { planInitCores } from "@alp-sdk/core/project/initCores";
 import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
 import {
+  appDirOverrides,
   applyCoreAssignments,
   companionCmakeLists,
   companionMainC,
   companionPrjConf,
+  isSafeAppDir,
 } from "@alp-sdk/core/project/coreScaffold";
+import type { BoardConfig } from "@alp-sdk/core/board/models";
 import { parseBoardConfig } from "@alp-sdk/core/board/parse";
 import { serializeBoardConfig } from "@alp-sdk/core/board/serialize";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
@@ -405,12 +408,17 @@ export class NewProjectFlowPanel {
     assignments: { id: string; os: string; app?: string }[],
   ): void {
     const boardPath = path.join(projectDir, "board.yaml");
+    let merged: BoardConfig | undefined;
+    let overrides: { id: string; requested: string; kept: string }[] = [];
     try {
       const original = fs.readFileSync(boardPath, "utf8");
-      const next = applyCoreAssignments(
-        parseBoardConfig(original),
-        assignments,
-      );
+      const before = parseBoardConfig(original);
+      // Collected BEFORE the merge overwrites the evidence: tan's directory
+      // wins (it holds the template's real source), but a customer who renamed
+      // it and was silently ignored would find nothing on screen saying so.
+      overrides = appDirOverrides(before, assignments);
+      const next = applyCoreAssignments(before, assignments);
+      merged = next;
       fs.writeFileSync(boardPath, serializeBoardConfig(next, original), "utf8");
       log(`[new-project] wrote ${assignments.length} core(s) into board.yaml`);
     } catch (err) {
@@ -429,9 +437,48 @@ export class NewProjectFlowPanel {
       return;
     }
 
+    if (overrides.length > 0) {
+      notifyAsync(
+        planFailure({
+          operation: "Assigning the project's core directories",
+          cause: overrides
+            .map(
+              (o) =>
+                `${o.id} keeps "${o.kept}" rather than "${o.requested}": the ` +
+                "project template's source was scaffolded there. Move the " +
+                "files and change board.yaml if you want it elsewhere.",
+            )
+            .join(" "),
+          severity: "info",
+        }),
+      );
+    }
+
+    // KEYED ON THE MERGED BOARD, never on the wizard's raw request. The two
+    // disagree wherever tan had already chosen a directory, and scaffolding the
+    // requested one would create a directory `board.yaml` does not point at —
+    // holding a generated comment that claims it does.
     for (const assignment of assignments) {
-      if (!assignment.app || assignment.os === "off") continue;
-      const dir = path.resolve(projectDir, assignment.app);
+      const app = merged?.cores?.[assignment.id]?.app;
+      if (!app) continue;
+      // Refused, not resolved: `../..` walks out of the project and an absolute
+      // path ignores it entirely, and three files land wherever that points.
+      // The webview validates too; this is the boundary that counts.
+      if (!isSafeAppDir(app)) {
+        log(`[new-project] refused app directory outside the project: ${app}`);
+        notifyAsync(
+          planFailure({
+            operation: "Scaffolding a core's application",
+            cause:
+              `${assignment.id}'s app directory "${app}" is not inside the ` +
+              "project, so nothing was written for it. Point it at a path " +
+              "under the project root in board.yaml.",
+            severity: "warning",
+          }),
+        );
+        continue;
+      }
+      const dir = path.resolve(projectDir, app);
       // Already scaffolded (the app core's ./src) — leave every file alone.
       if (fs.existsSync(dir) && fs.readdirSync(dir).length > 0) continue;
       try {
@@ -458,7 +505,7 @@ export class NewProjectFlowPanel {
           planFailure({
             operation: "Scaffolding a core's application",
             cause:
-              `board.yaml declares ${assignment.id} at "${assignment.app}", ` +
+              `board.yaml declares ${assignment.id} at "${app}", ` +
               "but that directory could not be created. Create it with a " +
               "CMakeLists.txt and main.c, or set the core to off.",
             detail: `${dir}: ${String(err)}`,
@@ -647,7 +694,10 @@ export class NewProjectFlowPanel {
     // would never reach the screen. The example named is the shipped one that
     // DOES give a second Zephyr core its own `app:` — something no
     // `--template` + `--cores` combination can express.
-    if (unscaffolded.length > 1) {
+    // Only when the second pass did NOT run (#538): with a core layout the
+    // wizard configures every core it names, so this toast would contradict the
+    // project sitting on disk.
+    if (unscaffolded.length > 1 && !coreAssignments?.length) {
       notifyAsync(
         planSuccess(
           `Project "${projectName}" created with one Zephyr core configured. ` +
