@@ -7,8 +7,17 @@ import * as vscode from "vscode";
 import { exampleCategory } from "@alp-sdk/core/examples/category";
 import { planInitCores } from "@alp-sdk/core/project/initCores";
 import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
+import {
+  applyCoreAssignments,
+  companionCmakeLists,
+  companionMainC,
+  companionPrjConf,
+} from "@alp-sdk/core/project/coreScaffold";
+import { parseBoardConfig } from "@alp-sdk/core/board/parse";
+import { serializeBoardConfig } from "@alp-sdk/core/board/serialize";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
+  type CreateNewProjectMessage,
   emptyAlpIdeState,
   PROTOCOL_VERSION,
   type E1mModule,
@@ -346,14 +355,7 @@ export class NewProjectFlowPanel {
         break;
 
       case "createNewProject":
-        await this.createProject(
-          msg.templateId,
-          msg.moduleId,
-          msg.projectName,
-          msg.sdkPath,
-          msg.destination,
-          msg.openInCurrentWindow ?? true,
-        );
+        await this.createProject(msg);
         break;
 
       case "reloadProjectTemplates":
@@ -377,14 +379,106 @@ export class NewProjectFlowPanel {
     }
   }
 
-  private async createProject(
-    templateId: string,
-    moduleId: string,
+  /**
+   * Write the wizard's core layout into the scaffolded project (#534).
+   *
+   * TWO WRITES, both additive:
+   *
+   *  1. `board.yaml` gains each assigned core's runtime and `app:`, applied to
+   *     the document tan just wrote and serialised back through the SAME
+   *     writer the Configurator uses, so comments and key order survive.
+   *  2. Every companion app directory that does not already exist is created
+   *     with its own `CMakeLists.txt`, `main.c` and `prj.conf` — a Zephyr
+   *     application is one CMake project per core, and the root CMakeLists tan
+   *     generated is hardcoded to the app core.
+   *
+   * NEVER OVERWRITES. A directory that already has files is left alone: the app
+   * core's `./src` is full of the template's real source, and clobbering it
+   * would delete the very thing the customer asked to be scaffolded.
+   *
+   * Failures are reported, never swallowed — a project that silently came out
+   * single-core is the bug this whole feature exists to fix.
+   */
+  private applyCoreLayout(
+    projectDir: string,
     projectName: string,
-    sdkPath?: string,
-    destination?: string,
-    openInCurrentWindow: boolean = true,
-  ): Promise<void> {
+    assignments: { id: string; os: string; app?: string }[],
+  ): void {
+    const boardPath = path.join(projectDir, "board.yaml");
+    try {
+      const original = fs.readFileSync(boardPath, "utf8");
+      const next = applyCoreAssignments(
+        parseBoardConfig(original),
+        assignments,
+      );
+      fs.writeFileSync(boardPath, serializeBoardConfig(next, original), "utf8");
+      log(`[new-project] wrote ${assignments.length} core(s) into board.yaml`);
+    } catch (err) {
+      log(`[new-project] core layout FAILED for ${boardPath}: ${String(err)}`);
+      notifyAsync(
+        planFailure({
+          operation: "Writing the project's core layout",
+          cause:
+            `Project "${projectName}" was created, but the extra cores could ` +
+            "not be written to board.yaml. It has one core configured; add " +
+            "the others from the Board Configurator.",
+          detail: `${boardPath}: ${String(err)}`,
+          severity: "warning",
+        }),
+      );
+      return;
+    }
+
+    for (const assignment of assignments) {
+      if (!assignment.app || assignment.os === "off") continue;
+      const dir = path.resolve(projectDir, assignment.app);
+      // Already scaffolded (the app core's ./src) — leave every file alone.
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length > 0) continue;
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(
+          path.join(dir, "CMakeLists.txt"),
+          companionCmakeLists({ coreId: assignment.id, projectName }),
+          "utf8",
+        );
+        fs.writeFileSync(
+          path.join(dir, "main.c"),
+          companionMainC({ coreId: assignment.id }),
+          "utf8",
+        );
+        fs.writeFileSync(
+          path.join(dir, "prj.conf"),
+          companionPrjConf(assignment.id),
+          "utf8",
+        );
+        log(`[new-project] scaffolded ${assignment.id} into ${dir}`);
+      } catch (err) {
+        log(`[new-project] scaffold FAILED for ${dir}: ${String(err)}`);
+        notifyAsync(
+          planFailure({
+            operation: "Scaffolding a core's application",
+            cause:
+              `board.yaml declares ${assignment.id} at "${assignment.app}", ` +
+              "but that directory could not be created. Create it with a " +
+              "CMakeLists.txt and main.c, or set the core to off.",
+            detail: `${dir}: ${String(err)}`,
+            severity: "warning",
+          }),
+        );
+      }
+    }
+  }
+
+  private async createProject(msg: CreateNewProjectMessage): Promise<void> {
+    const {
+      templateId,
+      moduleId,
+      projectName,
+      sdkPath,
+      destination,
+      cores: coreAssignments,
+    } = msg;
+    const openInCurrentWindow = msg.openInCurrentWindow ?? true;
     // Prefer the location chosen in the wizard; fall back to a picker if absent.
     let parentDir = destination?.trim() ?? "";
     if (!parentDir || !fs.existsSync(parentDir)) {
@@ -568,6 +662,17 @@ export class NewProjectFlowPanel {
           `(${unscaffolded.join(", ")}), only the SoM's app core is scaffolded ` +
           "— tan init --cores splices companions app-less",
       );
+    }
+
+    // SECOND PASS (#534): give every core the wizard assigned its own app.
+    //
+    // `tan init --cores` splices companions in APP-LESS, so the scaffold above
+    // can only ever have one core with an `app:`. Everything the customer chose
+    // beyond that is written here, on top of what tan produced — never instead
+    // of it: tan owns `preset:`, `supported_boards:` and the SoM's topology,
+    // and this pass re-derives none of them.
+    if (coreAssignments && coreAssignments.length > 0) {
+      this.applyCoreLayout(projectDir, projectName, coreAssignments);
     }
 
     // Pin the chosen SDK for the new project so it opens with the right one

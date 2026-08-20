@@ -962,6 +962,7 @@ export interface CreateNewProjectMessage {
   /** Open the created project in the CURRENT window (replace the workspace) vs a
    *  new window. Omitted = true (the wizard checkbox defaults to on). */
   openInCurrentWindow?: boolean;
+  cores?: { id: string; os: string; app?: string }[];
 }
 export interface PickProjectLocationMessage {
   type: "pickProjectLocation";

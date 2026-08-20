@@ -697,6 +697,17 @@ export interface CreateNewProjectMessage {
   /** Open the created project in the CURRENT window (replace the workspace) vs a
    *  new window. Omitted = true (the wizard checkbox defaults to on). */
   openInCurrentWindow?: boolean;
+  /**
+   * What the wizard's Cores step decided, one entry per core the SoM declares
+   * (#534). Omitted by an older webview, and by a single-core SoM, in which
+   * case the scaffold is whatever `tan init` produced on its own.
+   *
+   * `app` is the directory that core's application lives in, relative to the
+   * project root. `tan init --cores` cannot express an app for anything but the
+   * plan's own app core, so the host writes the rest into `board.yaml` after
+   * the scaffold and creates each directory.
+   */
+  cores?: { id: string; os: string; app?: string }[];
 }
 
 export interface OpenExistingProjectMessage {

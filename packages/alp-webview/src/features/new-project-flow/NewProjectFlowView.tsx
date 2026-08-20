@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
+import { runtimeOptions } from "../../shared/coreRuntime";
 import {
   Button,
   Card,
@@ -20,6 +21,7 @@ import styles from "./NewProjectFlowView.module.css";
 const STEPS: StepDef[] = [
   { id: "template", title: "Template" },
   { id: "hardware", title: "Hardware" },
+  { id: "cores", title: "Cores" },
   { id: "sdk", title: "SDK" },
   { id: "name", title: "Name" },
   { id: "confirm", title: "Confirm" },
@@ -279,6 +281,125 @@ function HardwareStep({ modules, selected, onSelect }: HardwareStepProps) {
 
 // ---------------------------------------------------------------------------
 
+/** One core's assignment, as the Cores step holds it. */
+export interface CoreChoice {
+  id: string;
+  os: string;
+  app: string;
+}
+
+/**
+ * The default layout for a SoM's declared topology.
+ *
+ * The FIRST core that declares `zephyr` gets `./src`, because that is the
+ * directory `tan init` puts the template's real source in. Every other core
+ * that takes an app gets `./<core-id>` — a name that cannot collide and says
+ * what it is. A `yocto` core keeps `yocto` and gets no app: its image is built
+ * from a Yocto recipe, not from a directory in this project.
+ */
+export function defaultCoreChoices(
+  cores: { id: string; os: string }[],
+): CoreChoice[] {
+  let appCoreTaken = false;
+  return cores.map((core) => {
+    if (core.os !== "zephyr" && core.os !== "baremetal") {
+      return { id: core.id, os: core.os, app: "" };
+    }
+    const app = appCoreTaken ? `./${core.id}` : "./src";
+    appCoreTaken = true;
+    return { id: core.id, os: core.os, app };
+  });
+}
+
+interface CoresStepProps {
+  choices: CoreChoice[];
+  onChange: (next: CoreChoice[]) => void;
+  isExample: boolean;
+}
+
+/**
+ * Assign every core the SoM declares (#534).
+ *
+ * Until this existed the wizard had no core step at all: `tan init --cores`
+ * splices companions in APP-LESS, so a dual-M55 SoM — the Alif Ensemble line's
+ * defining topology — came out as a single-core project with the second M55
+ * absent from `board.yaml` entirely.
+ *
+ * An EXAMPLE brings its own `board.yaml`, complete with the core layout its
+ * source tree matches, so the step says so and changes nothing rather than
+ * offering edits that would be overwritten.
+ */
+export function CoresStep({ choices, onChange, isExample }: CoresStepProps) {
+  if (isExample) {
+    return (
+      <>
+        <p className={styles.stepHeading}>Cores</p>
+        <p className={styles.stepDesc}>
+          This example ships its own board.yaml and source layout, so its cores
+          are already assigned.
+        </p>
+      </>
+    );
+  }
+  if (choices.length === 0) {
+    return (
+      <>
+        <p className={styles.stepHeading}>Cores</p>
+        <p className={styles.stepDesc}>
+          Select a module first — its cores appear here.
+        </p>
+      </>
+    );
+  }
+
+  const update = (id: string, patch: Partial<CoreChoice>) =>
+    onChange(
+      choices.map((choice) =>
+        choice.id === id ? { ...choice, ...patch } : choice,
+      ),
+    );
+
+  return (
+    <>
+      <p className={styles.stepHeading}>Assign the cores</p>
+      <p className={styles.stepDesc}>
+        Each core that runs an application gets its own directory, built as its
+        own image. Set a core to Off to leave it out.
+      </p>
+      {choices.map((choice) => (
+        <div key={choice.id} className={styles.coreRow}>
+          <span className={styles.coreRowId}>{choice.id}</span>
+          <select
+            className={styles.coreRowSelect}
+            aria-label={`Runtime for ${choice.id}`}
+            value={choice.os}
+            onChange={(e) => update(choice.id, { os: e.target.value })}
+          >
+            {runtimeOptions(choice.id).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <input
+            className={styles.coreRowInput}
+            type="text"
+            aria-label={`App directory for ${choice.id}`}
+            placeholder={
+              choice.os === "yocto" ? "built from a Yocto image" : "./src"
+            }
+            value={choice.app}
+            disabled={choice.os === "off" || choice.os === "yocto"}
+            onChange={(e) => update(choice.id, { app: e.target.value })}
+          />
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 interface NameStepProps {
   value: string;
   onChange: (v: string) => void;
@@ -513,6 +634,7 @@ export function NewProjectFlowView() {
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [selectedModule, setSelectedModule] = useState("");
   const [selectedSdk, setSelectedSdk] = useState(""); // "" = default SDK
+  const [coreChoices, setCoreChoices] = useState<CoreChoice[]>([]);
   const [projectName, setProjectName] = useState("");
   const [nameError, setNameError] = useState("");
   const [destination, setDestination] = useState("");
@@ -536,6 +658,14 @@ export function NewProjectFlowView() {
     });
   }, [goTo]);
 
+  // The chosen module's topology drives the Cores step. Recomputed whenever the
+  // module changes: a layout carried over from another SoM would name cores
+  // this one does not have.
+  useEffect(() => {
+    const mod = (e1mModules ?? []).find((m) => m.id === selectedModule);
+    setCoreChoices(defaultCoreChoices(mod?.cores ?? []));
+  }, [selectedModule, e1mModules]);
+
   const templates = projectTemplates ?? [];
   const modules = e1mModules ?? [];
   const sdkEntries = state?.sdk.localEntries ?? [];
@@ -556,10 +686,22 @@ export function NewProjectFlowView() {
     [templates, selectedTemplate],
   );
 
+  const coresValid = useMemo(() => {
+    const dirs = coreChoices
+      .filter((choice) => choice.os !== "off" && choice.os !== "yocto")
+      .map((choice) => choice.app.trim());
+    if (dirs.some((dir) => dir === "")) return false;
+    return new Set(dirs).size === dirs.length;
+  }, [coreChoices]);
+
   const canAdvance = useMemo(() => {
     return [
       selectedTemplate !== "",
       selectedModule !== "" || selectedIsExample,
+      // Cores step: every core that runs an app needs a directory, and two
+      // cores may not share one — `tan build` would build the same source
+      // twice under two different slice configs.
+      coresValid,
       true, // SDK step — default is always valid
       projectName !== "" && nameValid,
       true,
@@ -568,6 +710,7 @@ export function NewProjectFlowView() {
     selectedTemplate,
     selectedModule,
     selectedIsExample,
+    coresValid,
     projectName,
     nameValid,
   ]);
@@ -607,6 +750,15 @@ export function NewProjectFlowView() {
         sdkPath: selectedSdk || undefined,
         destination: destination || undefined,
         openInCurrentWindow: openInThisWindow,
+        // Omitted for an example: it ships its own board.yaml, and a layout
+        // written over it would contradict the source tree it arrived with.
+        cores: selectedIsExample
+          ? undefined
+          : coreChoices.map((choice) => ({
+              id: choice.id,
+              os: choice.os,
+              app: choice.app.trim() || undefined,
+            })),
       });
     } else {
       goNext();
@@ -650,6 +802,13 @@ export function NewProjectFlowView() {
                 />
               )}
               {stepper.currentIndex === 2 && (
+                <CoresStep
+                  choices={coreChoices}
+                  onChange={setCoreChoices}
+                  isExample={selectedIsExample}
+                />
+              )}
+              {stepper.currentIndex === 3 && (
                 <SdkStep
                   entries={sdkEntries}
                   activePath={activeSdkPath}
@@ -657,7 +816,7 @@ export function NewProjectFlowView() {
                   onSelect={handleSelectSdk}
                 />
               )}
-              {stepper.currentIndex === 3 && (
+              {stepper.currentIndex === 4 && (
                 <NameStep
                   value={projectName}
                   onChange={handleNameChange}
@@ -666,7 +825,7 @@ export function NewProjectFlowView() {
                   onBrowse={browseLocation}
                 />
               )}
-              {stepper.currentIndex === 4 && (
+              {stepper.currentIndex === 5 && (
                 <ConfirmStep
                   templateId={selectedTemplate}
                   moduleId={selectedModule}
