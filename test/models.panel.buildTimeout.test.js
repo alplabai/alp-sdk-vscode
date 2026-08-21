@@ -58,9 +58,29 @@ test("model build passes a timeout well past the 60s envelope default", () => {
     timeoutMs > 60_000,
     `MODEL_BUILD_TIMEOUT_MS (${timeoutMs}ms) must exceed the 60s envelope default`,
   );
+  // Matched on the LITERAL argv, not on an `args` variable. `buildModel` used
+  // to build its argv with a ternary — `["model", "build", "--model", name]`
+  // or `["model", "build"]` — and `--model` does not exist on `tan model` at
+  // all, so the one model subcommand this pin implements died at click exit 2
+  // with no envelope (#543). The literal is what keeps that call inside
+  // test/tan.surfaceContract.test.js's reach.
   assert.match(
     src,
-    /runAlpCommand\(this\.context,\s*args,\s*cwd,\s*\{\s*timeoutMs:\s*MODEL_BUILD_TIMEOUT_MS,?\s*\}\)/,
-    "buildModel's runAlpCommand call must pass { timeoutMs: MODEL_BUILD_TIMEOUT_MS }",
+    /runAlpCommand\(\s*this\.context,\s*\["model",\s*"build"\],\s*cwd,\s*\{\s*timeoutMs:\s*MODEL_BUILD_TIMEOUT_MS,?\s*\},?\s*\)/,
+    'buildModel must spawn the literal `["model", "build"]` with ' +
+      "{ timeoutMs: MODEL_BUILD_TIMEOUT_MS }",
+  );
+  // Comments stripped first: the paragraph on `buildModel` NAMES the retired
+  // argv on purpose, and a scan that could not tell prose from code would
+  // force the explanation out of the file to stay green.
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(
+    code,
+    /"--model"/,
+    "`tan model` has no `--model` option at this pin (its options are " +
+      "--board/--board-yaml --out --metadata-root --project --sdk-root " +
+      "--format), so sending one is a usage error with no envelope behind it",
   );
 });

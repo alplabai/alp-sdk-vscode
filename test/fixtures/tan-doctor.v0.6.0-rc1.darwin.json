@@ -1,0 +1,129 @@
+{
+  "command": "doctor",
+  "ok": false,
+  "exitCode": 4,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": "/home/dev/proj/board.yaml"
+  },
+  "data": {
+    "generatedAt": "2026-08-21T11:24:30Z",
+    "summary": {
+      "pass": 10,
+      "warn": 2,
+      "fail": 1
+    },
+    "checks": [
+      {
+        "name": "sdk",
+        "status": "fail",
+        "scope": "project",
+        "detail": "no SDK selected -- get an alp-sdk checkout (`git clone https://github.com/alplabai/alp-sdk`), then point tan at it with `--sdk-root <path>`",
+        "fix": "--sdk-root <path>"
+      },
+      {
+        "name": "boardYaml",
+        "status": "pass",
+        "scope": "project",
+        "detail": "board.yaml found"
+      },
+      {
+        "name": "workspace",
+        "status": "pass",
+        "scope": "project",
+        "detail": "Zephyr workspace at /home/dev/zephyrproject"
+      },
+      {
+        "name": "westResolved",
+        "status": "pass",
+        "scope": "project",
+        "detail": "west 1.5 resolved: /home/dev/zephyrproject/.venv/bin/west."
+      },
+      {
+        "name": "zephyrWorkspace",
+        "status": "pass",
+        "scope": "project",
+        "detail": "Zephyr 4.4.1 at `/home/dev/zephyrproject`."
+      },
+      {
+        "name": "zephyrSdkAvailableForHost",
+        "status": "pass",
+        "scope": "host",
+        "detail": "The Zephyr SDK publishes a host build for macos-aarch64."
+      },
+      {
+        "name": "homePath",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Home directory has no spaces: /home/dev"
+      },
+      {
+        "name": "hostPython",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Python 3.14 (`python3`) meets the effective floor 3.12 (/home/dev/zephyrproject/zephyr/cmake/modules/python.cmake)."
+      },
+      {
+        "name": "pythonFloor",
+        "status": "warn",
+        "scope": "project",
+        "detail": "no alp-sdk metadata/bootstrap.json was read (no SDK checkout resolved, or this SDK predates it), so tan's own built-in floor 3.10 is standing in, but the build's effective floor is 3.12 (from /home/dev/zephyrproject/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure.",
+        "fix": "Resolve an alp-sdk checkout: get an alp-sdk checkout (`git clone https://github.com/alplabai/alp-sdk`), then point tan at it with `--sdk-root <path>`. That checkout's own metadata/bootstrap.json pythonMinVersion is then read instead of tan's built-in floor."
+      },
+      {
+        "name": "hostPrerequisites",
+        "status": "pass",
+        "scope": "host",
+        "detail": "git, cmake, python3, ninja present (tan's built-in fallback list (no alp-sdk checkout resolved))."
+      },
+      {
+        "name": "west",
+        "status": "pass",
+        "scope": "host",
+        "detail": "`west` is not on bare PATH, but resolves through the workspace venv: /home/dev/zephyrproject/.venv/bin/west -- the same binary `westResolved` above reports, and the one a real build actually spawns. This is the default state right after `tan bootstrap`, which deliberately does not put `west` on PATH; activating the venv (its `bin`/`Scripts` directory holds the `west` launcher) would additionally put it on bare PATH, for tools that spawn it directly rather than through tan."
+      },
+      {
+        "name": "zephyrSdk",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Zephyr SDK toolchain detected."
+      },
+      {
+        "name": "setools",
+        "status": "unknown",
+        "scope": "host",
+        "detail": "AEN MRAM flashing over the SE-UART is Linux-only in this tree: scripts/west_commands/runners/alif_flash.py hard-codes `app-release-exec-linux`, so its bundle is `app-release-exec-linux-SE_FW_x.y.z`. Nothing to check on this host for THAT path -- run it from WSL2/Linux (Windows hosts pass the SE-UART through with usbipd). Flow D below is a different matter: it signs on Windows with the WINDOWS SETOOLS build, which is a different bundle from the `-linux` one named above -- point `--setools-dir` at it (measured: `app-gen-toc.exe` under a Windows `app-release-exec`, SETOOLS_version_SE_FW_1.110.00_DEV, signed an ATOC the part booted from)."
+      },
+      {
+        "name": "jlink",
+        "status": "warn",
+        "scope": "host",
+        "detail": "J-Link V9.26 (/usr/local/bin/JLinkExe) predates V9.46, which is where Alif's MRAM flash loader became built in -- Flow D has nothing to program MRAM with on this DLL. Flow D needs the `AE822FA0E5597LS0_M55_HE` part-number device profile (NOT the generic `Cortex-M55`, which has no MRAM loader) and a J-Link DLL V9.46+. Device profile resolved from: tan's built-in fallback AE822FA0E5597LS0_M55_HE -- no alp-sdk checkout resolved to read metadata/socs/alif/ensemble/e8.json variants[].debug.jlink_flash_device from.",
+        "fix": "Upgrade the SEGGER J-Link pack to V9.46+."
+      }
+    ],
+    "nextSteps": [
+      "--sdk-root <path>",
+      "Resolve an alp-sdk checkout: get an alp-sdk checkout (`git clone https://github.com/alplabai/alp-sdk`), then point tan at it with `--sdk-root <path>`. That checkout's own metadata/bootstrap.json pythonMinVersion is then read instead of tan's built-in floor.",
+      "Upgrade the SEGGER J-Link pack to V9.46+."
+    ],
+    "missingPrerequisites": null
+  },
+  "issues": [
+    {
+      "code": "doctor.sdk",
+      "severity": "error",
+      "message": "no SDK selected -- get an alp-sdk checkout (`git clone https://github.com/alplabai/alp-sdk`), then point tan at it with `--sdk-root <path>`"
+    },
+    {
+      "code": "doctor.python-floor",
+      "severity": "warning",
+      "message": "no alp-sdk metadata/bootstrap.json was read (no SDK checkout resolved, or this SDK predates it), so tan's own built-in floor 3.10 is standing in, but the build's effective floor is 3.12 (from /home/dev/zephyrproject/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure."
+    },
+    {
+      "code": "doctor.jlink",
+      "severity": "warning",
+      "message": "J-Link V9.26 (/usr/local/bin/JLinkExe) predates V9.46, which is where Alif's MRAM flash loader became built in -- Flow D has nothing to program MRAM with on this DLL. Flow D needs the `AE822FA0E5597LS0_M55_HE` part-number device profile (NOT the generic `Cortex-M55`, which has no MRAM loader) and a J-Link DLL V9.46+. Device profile resolved from: tan's built-in fallback AE822FA0E5597LS0_M55_HE -- no alp-sdk checkout resolved to read metadata/socs/alif/ensemble/e8.json variants[].debug.jlink_flash_device from."
+    }
+  ]
+}

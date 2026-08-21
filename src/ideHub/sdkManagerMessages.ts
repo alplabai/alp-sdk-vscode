@@ -106,7 +106,7 @@ export function createSdkMessageHandler(
 
   async function handleSwitchSdk(sdkPath: string): Promise<void> {
     try {
-      await setActiveSdk(context, sdkPath);
+      await setActiveSdk(sdkPath);
     } catch (err) {
       // `setActiveSdk` awaits a toast and `alp.views.refresh` — both
       // main-thread RPCs — so at window teardown it rejects with a

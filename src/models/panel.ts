@@ -1,12 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Models panel — full-tab preview of `tan model list` + `tan model doctor`,
-// with a build action (`tan model build [--model <name>]`). Mirrors
-// hardwareExplorer/panel.ts's singleton webview-panel shape. Every model op
-// here is a runAlpCommand(["model", ...]) shell — no model/build logic lives
-// in this file, only envelope shaping + progress plumbing.
+// Models panel — full-tab preview of the model surface, with a build action
+// (`tan model build`). Mirrors hardwareExplorer/panel.ts's singleton
+// webview-panel shape. No model/build logic lives in this file, only envelope
+// shaping + progress plumbing.
+//
+// ONE of the nine subcommands this panel presents is implemented by the pinned
+// tan, and it is `build`. The other eight — list, doctor, check, zoo, add,
+// prep, run, ab — are tan-cli#857, and this panel USED TO ESTABLISH THAT BY
+// SPAWNING THEM (#543): nine `runAlpCommand(["model", …])` calls whose only
+// possible answer was a refusal.
+//
+// It no longer spawns them, and it still reports the gap. `unsupportedModel-
+// Subcommand` (../alpCli/pinnedSurface) synthesises the refusal tan would have
+// returned, carrying tan's own `model.unknown-subcommand` code, so it flows
+// through the same `./service` shapers into the same one banner the webview
+// already renders (`cliSurface.ts` → `useModels`'s `cliModelSurfaceMissing`).
+// THE ALARM IS NOW DERIVED FROM THE PIN RATHER THAN PROBED FROM THE BINARY —
+// same message path, same banner, no subprocess. Two of the old probes could
+// not even be classified: `model add <id> --board …` and `model ab <a> <b>`
+// send more positionals than `tan model` takes, so click exited 2 with no
+// envelope at all and the webview got a bare failure instead of a capability
+// notice.
+//
+// WHEN tan-cli#857 LANDS: `test/tan.pinnedSurface.test.js` goes red, and each
+// handler below gets its `runAlpCommand(["model", <verb>, …])` back. Restoring
+// the surface in the IDE is #524.
+//
+// Until someone does that rewiring, these calls DO NOT go on claiming the
+// capability is missing. `unsupportedModelSubcommand` consults
+// `MODEL_SUBCOMMANDS` itself, so the moment a verb joins the pin it starts
+// reporting the truth — "this tan can, this panel does not call it (#524)",
+// under an extension-owned code rather than tan's `model.unknown-subcommand`,
+// so the webview stops raising a capability banner over a capable CLI. The
+// eight verb strings below stay hardcoded because the verb IS the call site's
+// identity; what is no longer hardcoded is the verdict about it.
 
 import * as vscode from "vscode";
+import { unsupportedModelSubcommand } from "../alpCli/pinnedSurface";
+import { SUPPORTED_CLI_VERSION } from "../alpCli/service";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
   type ExtToWebviewMessage,
@@ -33,10 +65,6 @@ const PANEL_TITLE = "Alp Models";
 // envelope timeout (spawnAlpAsync's ALP_SPAWN_TIMEOUT_MS) — killing it there
 // would falsely report "Build failed" and orphan the in-progress compile.
 const MODEL_BUILD_TIMEOUT_MS = 30 * 60 * 1000;
-
-// Host reference measurement (`tan model run|ab`) is a plain CPU inference —
-// quick, but timeouts are cheap insurance against a hung process.
-const MEASURE_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Pure envelope shaping (`toModelsData`) lives in ./service.ts — no `vscode`
 // there, so it's unit-testable directly (test/models.service.test.js) without
@@ -98,181 +126,74 @@ class ModelsPanel {
     void this.panel.webview.postMessage(msg);
   }
 
+  /** The model list + toolchain doctor. Both subcommands are tan-cli#857, so
+   *  the pair is answered from the pin instead of from two spawns — the same
+   *  `modelsData` message, `ok: false`, carrying the refusal that raises the
+   *  capability banner. `checkFit`/`refreshZoo` still run: they post their own
+   *  sections, and the banner is derived once from whichever arrives first. */
   private async refresh(): Promise<void> {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const [list, doctor] = await Promise.all([
-      runAlpCommand(this.context, ["model", "list"], cwd),
-      runAlpCommand(this.context, ["model", "doctor"], cwd),
-    ]);
-    this.post(toModelsData(list.outcome, doctor.outcome));
+    this.post(
+      toModelsData(
+        unsupportedModelSubcommand("list"),
+        unsupportedModelSubcommand("doctor"),
+      ),
+    );
     void this.checkFit();
     void this.refreshZoo();
   }
 
-  /** Fetch the curated zoo gallery (`tan model zoo --board`), badged with
-   *  whether each entry runs on the board's `som.sku`. Thin: zoo logic lives
-   *  in tan/alp-sdk; this only shells + shapes. */
+  /** The curated zoo gallery. `tan model zoo` is tan-cli#857, so the section
+   *  reports the gap from the pin rather than spawning for it. Zoo logic lives
+   *  in tan/alp-sdk; nothing about it is re-derived here. */
   private async refreshZoo(): Promise<void> {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const { outcome } = await runAlpCommand(
-      this.context,
-      ["model", "zoo", "--board", "board.yaml"],
-      cwd,
-    );
-    this.post(toZooData(outcome));
+    this.post(toZooData(unsupportedModelSubcommand("zoo")));
   }
 
-  /** Add a curated zoo entry to board.yaml (`tan model add <id> --board`),
-   *  then refresh (the new model appears in the list; `refresh()` re-runs
-   *  `refreshZoo()` too, so idempotence shows up there). On failure, report
-   *  the error — a duplicate-name add otherwise fails with no user-visible
-   *  signal. Thin: fetch/add logic lives in tan/alp-sdk. */
+  /** Add a curated zoo entry to board.yaml. `tan model add` is tan-cli#857.
+   *
+   *  NO `zooAddStarted` and NO progress notification: both announce work that
+   *  is not starting, and a spinner that resolves into "not implemented" is a
+   *  worse answer than the answer itself. The refusal is posted straight to
+   *  the section, and `reportError` still fires so a click is never silent —
+   *  which is what the spawned version bought for a subprocess that exited 2
+   *  with `Got unexpected extra argument(s)` and no envelope for the webview
+   *  to classify. */
   private async addFromZoo(id: string): Promise<void> {
-    this.post({ type: "zooAddStarted" });
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Alp: Adding ${id} from zoo`,
-        cancellable: false,
-      },
-      async () => {
-        const { outcome } = await runAlpCommand(
-          this.context,
-          ["model", "add", id, "--board", "board.yaml"],
-          cwd,
-          { timeoutMs: MODEL_BUILD_TIMEOUT_MS },
-        );
-        this.post(toZooAddResult(outcome));
-        if (outcome.envelope && outcome.envelope.ok) {
-          await this.refresh(); // the new model list refresh also re-runs refreshZoo()
-        } else {
-          void reportError(
-            `Alp: add from zoo failed — ${cliFailureMessage(outcome)}`,
-          );
-        }
-      },
+    const outcome = unsupportedModelSubcommand("add");
+    this.post(toZooAddResult(outcome));
+    void reportError(
+      `Alp: cannot add ${id} from the zoo — ${cliFailureMessage(outcome)}`,
     );
   }
 
-  /** Run the static NPU-eligibility screen on every board.yaml model
-   *  (`tan model check --board board.yaml`) and post the per-model coverage
-   *  reports. Thin: the screen, its vocabulary and every caveat live in
-   *  `tan`/alp-sdk; this only shells + shapes. */
+  /** The static NPU-eligibility screen over every board.yaml model.
+   *  `tan model check` is tan-cli#857, so the coverage section reports the gap
+   *  from the pin. The screen, its vocabulary and every caveat live in
+   *  `tan`/alp-sdk and none of it is re-derived here — an eligibility verdict
+   *  invented locally would be exactly the wrong thing to invent. */
   private async checkFit(): Promise<void> {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const { outcome } = await runAlpCommand(
-      this.context,
-      ["model", "check", "--board", "board.yaml"],
-      cwd,
-    );
-    this.post(toModelFitData(outcome));
+    this.post(toModelFitData(unsupportedModelSubcommand("check")));
   }
 
-  /** Prompt for a raw .onnx + a calibration folder, shell `tan model prep`,
-   *  and post the accuracy report. Thin: prep logic lives in tan/alp-sdk. */
+  /** Prep a raw .onnx (quantize + accuracy). `tan model prep` is tan-cli#857.
+   *
+   *  NO file dialogs and NO `modelPrepStarted`: asking a customer to pick a
+   *  model and a calibration folder before telling them the CLI cannot prep
+   *  anything spends their time to reach the same refusal. */
   private async prepModel(): Promise<void> {
-    const modelPick = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      filters: { "ONNX model": ["onnx"] },
-      openLabel: "Select model to prep",
-    });
-    if (!modelPick || modelPick.length === 0) return;
-    const calPick = await vscode.window.showOpenDialog({
-      canSelectFiles: false,
-      canSelectFolders: true,
-      canSelectMany: false,
-      openLabel: "Select calibration folder (.npy samples)",
-    });
-    if (!calPick || calPick.length === 0) return;
-
-    this.post({ type: "modelPrepStarted" });
-
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const args = [
-      "model",
-      "prep",
-      modelPick[0].fsPath,
-      "--calibration",
-      calPick[0].fsPath,
-    ];
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Alp: Prepping model (quantize + accuracy)",
-        cancellable: false,
-      },
-      async () => {
-        const { outcome } = await runAlpCommand(this.context, args, cwd, {
-          timeoutMs: MODEL_BUILD_TIMEOUT_MS,
-        });
-        this.post(toModelPrepResult(outcome));
-      },
-    );
+    this.post(toModelPrepResult(unsupportedModelSubcommand("prep")));
   }
 
-  /** Prompt for a model, shell `tan model run`, and post the host reference
-   *  latency/accuracy measurement. Thin: measurement logic lives in tan/alp-sdk. */
+  /** Host reference latency/accuracy for one model. `tan model run` is
+   *  tan-cli#857 — see `prepModel` for why no dialog opens first. */
   private async runModel(): Promise<void> {
-    const pick = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      filters: { "ONNX model": ["onnx"] },
-      openLabel: "Select model to run",
-    });
-    if (!pick || pick.length === 0) return;
-    this.post({ type: "modelMeasureStarted" });
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Alp: Running model (host reference)",
-        cancellable: false,
-      },
-      async () => {
-        const { outcome } = await runAlpCommand(
-          this.context,
-          ["model", "run", pick[0].fsPath],
-          cwd,
-          { timeoutMs: MEASURE_TIMEOUT_MS },
-        );
-        this.post(toModelRunResult(outcome));
-      },
-    );
+    this.post(toModelRunResult(unsupportedModelSubcommand("run")));
   }
 
-  /** Prompt for two models, shell `tan model ab`, and post the head-to-head
-   *  comparison. Thin: comparison logic lives in tan/alp-sdk. */
+  /** Head-to-head comparison of two models. `tan model ab` is tan-cli#857 —
+   *  see `prepModel` for why no dialog opens first. */
   private async abModels(): Promise<void> {
-    const pick = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: true,
-      filters: { "ONNX model": ["onnx"] },
-      openLabel: "Select TWO models to A/B",
-    });
-    if (!pick || pick.length < 2) return;
-    this.post({ type: "modelMeasureStarted" });
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Alp: A/B comparing models (host reference)",
-        cancellable: false,
-      },
-      async () => {
-        const { outcome } = await runAlpCommand(
-          this.context,
-          ["model", "ab", pick[0].fsPath, pick[1].fsPath],
-          cwd,
-          { timeoutMs: MEASURE_TIMEOUT_MS },
-        );
-        this.post(toModelAbResult(outcome));
-      },
-    );
+    this.post(toModelAbResult(unsupportedModelSubcommand("ab")));
   }
 
   private onMessage(msg: WebviewToExtMessage): void {
@@ -319,14 +240,51 @@ class ModelsPanel {
     }
   }
 
-  /** Build one model, or all models when `name` is omitted. Streams progress
-   *  (mirrors sdkManagerMessages.ts's install-progress tee) then re-refreshes
-   *  so the list/doctor state reflects the just-built artifact. */
+  /** Build the models board.yaml declares. Streams progress (mirrors
+   *  sdkManagerMessages.ts's install-progress tee) then re-refreshes so the
+   *  list/doctor state reflects the just-built artifact.
+   *
+   *  `name` NARROWS NOTHING AT THIS PIN, and the run says so rather than
+   *  quietly doing something else. `tan model` has no `--model` option at all
+   *  (its options are --board/--board-yaml --out --metadata-root --project
+   *  --sdk-root --format), so the old `["model", "build", "--model", name]`
+   *  died at click exit 2 with `No such option` and no envelope — the ONE
+   *  subcommand this pin implements, broken by a flag borrowed from a surface
+   *  we do not ship (#543).
+   *
+   *  Per-model selection is not expressible here, so the choice was between
+   *  refusing the click and building everything. It builds everything: `tan
+   *  model build` compiles every model board.yaml declares, which is a
+   *  SUPERSET of what was asked, so the requested artifact does get built. The
+   *  cost — other models compiling too, and an NPU compile is not quick — is
+   *  stated in the first progress line and in the notification title, because
+   *  a build that silently does more than the button said is worse than one
+   *  that says so.
+   *
+   *  THE DISCLOSURE IS POST-DISPATCH, AND THAT QUESTION IS NOT SETTLED. The
+   *  first `sendProgress` runs AFTER this method was called; there is no
+   *  consent prompt in front of it, so a customer who pressed "Build" on ONE
+   *  model learns that every other model is compiling too by reading it happen
+   *  — the shape #467 put a QuickPick in front of for dependency installs.
+   *
+   *  It is not a live defect at the moment, and the reason is worth writing
+   *  down rather than rediscovering: `name` can only arrive from `ModelRow`'s
+   *  per-model Build button (`ModelsView.tsx`), those rows render only inside
+   *  `models.map(...)`, and `models` is ALWAYS `[]` here — `refresh()` posts
+   *  `toModelsData(unsupportedModelSubcommand("list"), …)`, whose `!ok` arm
+   *  returns an empty list. "Build all" is `disabled={building ||
+   *  models.length === 0}` for the same reason, and the whole surface is
+   *  hidden anyway (#525: both commands carry `"when": "false"` in the
+   *  palette, and the Overview card and sidebar section are gone).
+   *
+   *  So THREE separate things are currently standing between a customer and
+   *  an undisclosed build-everything, and #524 removes at least one of them by
+   *  design. Settle the pre-dispatch-consent question BEFORE that lands —
+   *  either a confirmation in front of this call, or `tan model` growing the
+   *  per-model selection that removes the surprise entirely (tan-cli#857) —
+   *  rather than after the panel is visible again. */
   async buildModel(name?: string): Promise<void> {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const args = name
-      ? ["model", "build", "--model", name]
-      : ["model", "build"];
 
     const sendProgress = (
       log: string,
@@ -338,20 +296,29 @@ class ModelsPanel {
     };
 
     sendProgress(
-      name ? `Building model ${name}…` : "Building all models…",
+      name
+        ? `Building ALL models — tan ${SUPPORTED_CLI_VERSION} has no ` +
+            `per-model selection, so ${name} is built along with every other ` +
+            "model in board.yaml (tan-cli#857)…"
+        : "Building all models…",
       false,
     );
 
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: name ? `Alp: Building model ${name}` : "Alp: Building models",
+        title: name
+          ? `Alp: Building all models (including ${name})`
+          : "Alp: Building models",
         cancellable: false,
       },
       async () => {
-        const { outcome } = await runAlpCommand(this.context, args, cwd, {
-          timeoutMs: MODEL_BUILD_TIMEOUT_MS,
-        });
+        const { outcome } = await runAlpCommand(
+          this.context,
+          ["model", "build"],
+          cwd,
+          { timeoutMs: MODEL_BUILD_TIMEOUT_MS },
+        );
         const envelope = outcome.envelope;
         if (envelope && envelope.ok) {
           sendProgress("Build complete.", true, true);

@@ -1,10 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Host wiring for the dependency table. TWO doctor runs per report — plain `tan
-// doctor` and `tan doctor --build` — merged into one check list, fed to the pure
-// planner (`@alp-sdk/core/deps/planner`), plus only the facts tan structurally
-// cannot report: the `tan` binary this extension resolved, the versions the
-// extension already probed for its own state, and the newest published SDK tag.
+// Host wiring for the dependency table. ONE `tan doctor` run per report, fed to
+// the pure planner (`@alp-sdk/core/deps/planner`), plus only the facts tan
+// structurally cannot report: the `tan` binary this extension resolved, the
+// versions the extension already probed for its own state, and the newest
+// published SDK tag.
+//
+// IT USED TO BE TWO RUNS (#544). Plain `tan doctor` AND `tan doctor --build`,
+// concurrently, merged through an allowlist — because on tan v0.4.0 the two
+// genuinely returned different check sets and `--build` was structurally blind
+// to five host checks. That stopped being true two pins ago. At
+// SUPPORTED_CLI_VERSION the flag is a no-op whose own help says so — "Accepted
+// for compatibility (tan-cli#290): zephyrWorkspace, the check this used to
+// gate, now runs unconditionally, so this flag no longer changes the check
+// list" — and the two envelopes are IDENTICAL: same 14 checks, same verdicts,
+// byte-for-byte equal apart from `generatedAt`. The second spawn bought
+// nothing, and the allowlist that split the merged rows was splitting them on
+// a distinction the binary no longer draws.
+//
+// THAT IS TRUE OF THE PIN AND ONLY OF THE PIN. `alpSdk.cliPath` still reaches
+// a pre-0.5 binary where the two envelopes differ completely, and dropping the
+// `--build` arm on one of those is dropping every PATH probe in the table. The
+// old two-spawn code guarded that with "no `--build` data, no report"; the
+// single-envelope form of the same guard is `carriesToolchainProbes` below,
+// which refuses rather than rendering a gutted table that looks complete.
 //
 // Nothing here re-derives a fact tan owns. Where tan is silent the cell is
 // `null` (the table renders a dash) and the fix is an issue against tan-cli,
@@ -18,7 +37,6 @@ import {
   DependencyStatus,
   DoctorCheckEnvelope,
   DoctorEnvelopeData,
-  MissingPrerequisite,
   planDependencyReport,
   TAN_ROW_NAME,
 } from "@alp-sdk/core/deps/planner";
@@ -35,7 +53,7 @@ import type { SdkRelease } from "@alp-sdk/core/sdk/models";
 import * as os from "os";
 import * as vscode from "vscode";
 
-import { cliSkew, SUPPORTED_CLI_VERSION } from "../alpCli/service";
+import { cliSkew, isCliBehind, SUPPORTED_CLI_VERSION } from "../alpCli/service";
 import { runDoctor } from "../alpCli/doctor";
 import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
@@ -240,152 +258,96 @@ function bareVersion(version: string | null): string | null {
   return version === null ? null : version.replace(/^v/, "");
 }
 
-// ── Two doctor runs, one check list ──────────────────────────────────────────
+// ── One doctor run, one check list ───────────────────────────────────────────
+//
+// WHAT WAS HERE, AND WHY IT IS NOT ANY MORE (#472 → #544).
+//
+// `PLAIN_DOCTOR_HOST_CHECKS`: an allowlist of five check names the merge was
+// permitted to take from the plain-`doctor` envelope, because on tan v0.4.0
+// `--build` was structurally blind to them (`doctor.rs`'s
+// `append_host_environment` — "`--build` deliberately does NOT get them") while
+// plain `doctor` ALSO re-reported project facts the `--build` block already
+// carried, and taking those would have rendered one fact twice under one row
+// key. It was re-derived once, under #472, when `zephyrSdkHost` turned out to
+// have been renamed upstream two pins earlier and the row it was meant to admit
+// had never been admitted. `plainDoctorAllowlistDrift` was that issue's remedy:
+// it logged when the pinned binary emitted nothing for an entry, because a
+// stale entry admits no row and an ABSENT row reads as "fine" rather than
+// "never asked".
+//
+// ALL OF IT IS GONE, and #472's defect class goes with it. There is one
+// envelope now, so there is nothing to merge, no duplicate row keys to avoid,
+// and no allowlist: EVERY check tan reports becomes a row, which is the rule
+// this slice states at the top of `deps/planner.ts` and had one exception to.
+// An allowlist entry can no longer rot, because there are no entries. That is a
+// stronger fix than re-deriving the list a third time would have been, and it
+// is the one the #472 comment itself pointed at ("if tan ships a host-vs-
+// project scope, this whole path should go rather than be re-derived").
+//
+// tan shipped exactly that scope, which is what the block below reads.
+
+/** tan's own word for a check that reads the project rather than the host.
+ *  Measured on the pinned binary: every check in a `tan doctor` envelope
+ *  carries `"scope": "project"` or `"scope": "host"`. */
+const PROJECT_SCOPE = "project";
 
 /**
- * The checks PLAIN `tan doctor` owns that `--build` never emits, and that hold
- * without a project.
+ * The checks to treat as project-scoped when the envelope carries NO `scope`
+ * at all — i.e. a pre-0.5 tan reached through `alpSdk.cliPath`.
  *
- * tan puts these on plain `doctor` deliberately and says so:
- * `tan-cli/crates/tan-cli/src/commands/doctor.rs` (v0.4.0) — "these need no
- * `board.yaml`, no workspace and no SDK … `--build` deliberately does NOT get
- * them" (`append_host_environment`), and the same for `append_host_prerequisites`.
- * So `--build` alone is structurally blind to them, and the Dependencies panel —
- * the surface the walkthrough tells a customer to open — had no row for any:
- *
- * - `longPaths`   Windows-only. `LongPathsEnabled = 0` is the STOCK WINDOWS
- *                 DEFAULT, and tan's own wording is that a Zephyr `build/` tree
- *                 "nests deep enough to cross the 260-character MAX_PATH limit,
- *                 and it surfaces as a CMake or compiler error about a file that
- *                 exists". That build death had no row here at all.
- * - `homePath`    a space in the home directory (`C:\Users\Jane Doe`).
- * - `zephyrSdkAvailableForHost`  whether the Zephyr SDK publishes a build for
- *                 this host at all — the opposite question to `--build`'s
- *                 `zephyrSdk`, which asks whether one is installed.
- * - `hostPrerequisites`  bootstrap's own prerequisite gate, carrying the
- *                 `missingPrerequisites[]` commands.
- * - `lldb`        a PATH probe for the native-host debug flow.
- *
- * RE-DERIVED against the pinned tan 0.5.1 (#472). What the measurement found,
- * recorded so the next pin bump starts from facts rather than this prose:
- *
- *  - `zephyrSdkHost` is GONE and `zephyrSdkAvailableForHost` is emitted in its
- *    place — a rename, and the one entry that was actively wrong. Under v0.4.0
- *    this list named a check the binary no longer has, so the row it was meant
- *    to admit was never admitted.
- *  - `longPaths` and `lldb` were NOT observed. They are kept anyway, and that is
- *    deliberate: the measurement ran on darwin against a project whose debug
- *    target is not `NativeHost`, and `longPaths` reads as Windows-only. Dropping
- *    a platform-conditional check because one host did not emit it is the exact
- *    mistake that produced this issue. `plainDoctorAllowlistDrift` now reports
- *    from real machines instead, including the Windows ones this cannot reach.
- *  - On 0.5.1 plain `doctor` and `doctor --build` emit the IDENTICAL check set —
- *    14 names with no project, 17 with one. Since the merge below only takes a
- *    plain check when `--build` did not already carry that name, the loop adds
- *    nothing at all on this pin. The second subprocess is currently pure cost.
- *    It is kept because deleting a seam on one pin's behaviour is how this
- *    allowlist rotted in the first place, and because the durable fix is the
- *    upstream one named below — but if tan ships a host-vs-project scope, this
- *    whole path should go rather than be re-derived a third time.
- *
- * An ALLOWLIST, unlike the planner's row derivation, and that is a real cost:
- * a host check tan adds to plain `doctor` tomorrow will NOT light up a row here
- * until this set names it. It is an allowlist because plain `doctor` also
- * re-reports `sdk` / `workspace` / `westResolved` (which `--build` already
- * carries, so taking them would render one fact twice under one id and collide
- * the view's row keys) and `workspaceRoot` / `sdkRoot` / `sdkProvenance` /
- * `codeLLDBExtension` (project facts, plus one tan itself can only ever answer
- * "unknown" from a standalone binary). The durable fix is tan-side: a
- * host-versus-project scope on the check envelope, or these checks on `--build`
- * too. Until then this list is the seam.
- *
- * FOUR of the five are unconditional host facts. `lldb` is NOT: tan emits it
- * only for a `DebugTargetKind::NativeHost` target (tan-core's debug doctor), so
- * a project whose target is Yocto userspace gets `gdb` + `cppToolsExtension`
- * instead — and this allowlist takes neither, so that row simply does not
- * appear. Read from the pinned v0.4.0 source; only the native-host branch was
- * driven here, because resolving a target that reaches the other one needs an
- * SDK this machine does not have.
- */
-const PLAIN_DOCTOR_HOST_CHECKS: ReadonlySet<string> = new Set([
-  "hostPrerequisites",
-  "zephyrSdkHost",
-  "zephyrSdkAvailableForHost",
-  "longPaths",
-  "homePath",
-  "lldb",
-]);
-
-/**
- * Allowlist entries kept for an OLDER tan than the pin, and therefore not drift.
- *
- * `zephyrSdkHost` is the pre-0.5.x spelling of `zephyrSdkAvailableForHost`.
- * Both are in the allowlist because an extra entry costs nothing — the merge
- * only admits a name the envelope actually carries, and the `!seen` guard stops
- * a duplicate — while a MISSING one silently drops a row, which is #472.
- *
- * Listed here so the drift report does not cry wolf about an entry we keep on
- * purpose. Everything not in this set is a genuine "the pinned binary does not
- * emit what this list names".
- */
-const LEGACY_PLAIN_DOCTOR_CHECKS: ReadonlySet<string> = new Set([
-  "zephyrSdkHost",
-]);
-
-/**
- * The allowlist entries the plain `doctor` envelope did NOT emit.
- *
- * This is the answer to #472's actual finding. The defect there was never the
- * five strings — it was that a stale one vanishes in silence: an entry naming a
- * check tan no longer has simply admits no row, and a missing row reads as "not
- * a problem" rather than "not asked". `zephyrSdkHost` sat wrong across two pin
- * bumps because nothing anywhere said so.
- *
- * A build-time gate is not available: the vendored contract corpus
- * (`test/golden/tan-contract/`, tan 0.5.1) carries 17 envelopes and none of them
- * is `doctor`, so CI has no captured envelope to assert against. This runs on
- * the customer's actual pinned binary instead, which is strictly better for the
- * two entries a developer machine cannot settle — `longPaths` (Windows) and
- * `lldb` (native-host debug targets only).
- *
- * Returns names, not a verdict. Drift is not itself a failure: tan may
- * legitimately stop emitting a check on a host or a target where it does not
- * apply. The caller logs; nothing is failed on the customer's behalf.
- *
- * Pure — exported for the test.
- */
-export function plainDoctorAllowlistDrift(
-  plain: DoctorEnvelopeData | null,
-): string[] {
-  if (!plain) return [];
-  const emitted = new Set(plain.checks.map((check) => check.name));
-  return [...PLAIN_DOCTOR_HOST_CHECKS].filter(
-    (name) => !emitted.has(name) && !LEGACY_PLAIN_DOCTOR_CHECKS.has(name),
-  );
-}
-
-/**
- * The `tan doctor --build` checks that genuinely READ THE PROJECT, and so must
- * not be reported when there is no project.
+ * A FALLBACK, and only a fallback. The question this answers — "does this
+ * check read the project, so must it be withheld when no folder is open?" —
+ * is one TAN ANSWERS ITSELF now, and `isProjectCheck` asks tan first. This
+ * list is what is left when tan is too old to be asked.
  *
  * Verified against tan v0.4.0 run on this machine: with no project every one of
- * them answers about whatever directory tan was launched in — `sdk` "no SDK
- * selected", `boardYaml` "board.yaml not found", `workspace` "no Zephyr
- * workspace", `westResolved` "west not found". Every OTHER `--build` check
+ * these four answers about whatever directory tan was launched in — `sdk` "no
+ * SDK selected", `boardYaml` "board.yaml not found", `workspace` "no Zephyr
+ * workspace", `westResolved` "west not found". Every other v0.4.0 check
  * (`git`, `python`, `west`, `cmake`, `ninja`, `dtc`, `gperf`, `zephyrSdk`,
  * `yoctoHost`, `vendorToolchain`) is a PATH or host probe whose answer does not
- * depend on the working directory at all — those are the host facts the panel
- * may always show.
+ * depend on the working directory at all.
  *
  * `westResolved` is here and `west` is not, deliberately: `westResolved` asks
  * whether west resolves inside the WORKSPACE venv, `west` is a plain PATH probe.
+ *
+ * IT IS INCOMPLETE FOR THE PIN, and that is exactly why it is not the primary
+ * source: the pinned tan scopes `zephyrWorkspace` and `pythonFloor` as
+ * `project` too, and neither is named here. A hand list of check names rots the
+ * moment tan adds one — that is #472 — so the hand list is now only ever
+ * consulted for binaries that predate the field.
  */
-const BUILD_PROJECT_CHECKS: ReadonlySet<string> = new Set([
+const LEGACY_PROJECT_CHECKS: ReadonlySet<string> = new Set([
   "sdk",
   "boardYaml",
   "workspace",
   "westResolved",
 ]);
+
+/**
+ * Whether a check reads the project, so must be withheld with no folder open.
+ *
+ * tan's `scope` first, ALWAYS — it is the producer's own answer and it cannot
+ * go stale here. The fallback runs only when the field is absent entirely.
+ *
+ * An UNRECOGNISED scope (a third word tan adds later) reads as NOT project:
+ * withholding a row on a scope nobody has interpreted would hide a host fact
+ * behind a guess, and the failure mode of the other direction — showing a row
+ * tan scoped some new way — is that the customer sees one extra true verdict.
+ *
+ * Pure — exported for the test.
+ */
+export function isProjectCheck(check: DoctorCheckEnvelope): boolean {
+  // Widened on purpose. `scope` is REQUIRED by tan's frozen contract, so the
+  // type promises a string — but `isDoctorEnvelopeData` accepts an envelope
+  // without it (see its own doc: refusing one would blank the table that
+  // reports the skew), so at RUNTIME a pre-0.5 binary can still get here with
+  // nothing in this field. The annotation is what makes the fallback below
+  // reachable code rather than a branch the compiler has already ruled out.
+  const scope: string | undefined = check.scope;
+  if (typeof scope === "string") return scope === PROJECT_SCOPE;
+  return LEGACY_PROJECT_CHECKS.has(check.name);
+}
 
 /**
  * The status a withheld row carries. Not one of tan's verdicts, on purpose: it
@@ -405,11 +367,13 @@ const WITHHELD_DETAIL =
 /**
  * tan's own arithmetic, re-run over exactly the checks this table shows.
  *
- * Needed because the rows now come from TWO envelopes, so neither envelope's
- * `summary` describes the table any more — and a header reading "0 fail" over a
- * red `longPaths` row is worse than no header. It counts tan's verdict words and
- * derives nothing else; `test/deps.adapter.test.js` pins it against the real
- * v0.4.0 summaries so it stays tan's arithmetic and not a second opinion.
+ * Still needed with ONE envelope: `withheldProjectChecks` replaces every
+ * project row with `not checked` when no folder is open, so tan's own
+ * `summary` describes a table that is not on screen — a header reading "3
+ * fail" over three rows that say "not checked" is worse than no header. It
+ * counts tan's verdict words and derives nothing else;
+ * `test/deps.adapter.test.js` pins it against real captured summaries so it
+ * stays tan's arithmetic and not a second opinion.
  */
 export function tallyChecks(
   checks: readonly { status: string }[],
@@ -428,93 +392,268 @@ export function tallyChecks(
 }
 
 /**
- * Fold the two doctor envelopes into the one the planner reads.
+ * The envelope the planner reads, with project checks withheld when there is
+ * no project.
  *
- * Order is `--build`'s, verbatim, with plain `doctor`'s host checks appended —
- * so the block a row came from is visible in the table rather than interleaved
- * away, and `--build`'s rows sit exactly where they sat before.
+ * `hasProject === false` replaces each project-scoped check IN PLACE with a
+ * `not checked` row that says why. In place, not dropped: the shape of the
+ * table stays tan's, and a row that vanishes teaches a customer nothing.
  *
- * `hasProject === false` replaces each project check IN PLACE with a
- * `not checked` row that says why. In place, not dropped: the shape of the table
- * stays tan's, and a row that vanishes teaches a customer nothing.
+ * NOTHING IS FILTERED, ADDED OR REORDERED. Every check tan reported is a row,
+ * in tan's order — the rule `deps/planner.ts` states and the allowlist this
+ * replaced was the one exception to.
  *
- * Pure — exported for the test, which drives it on the real captured envelopes.
+ * Pure — exported for the test, which drives it on real captured envelopes.
  */
-export function mergeDoctorEnvelopes(
-  build: DoctorEnvelopeData,
-  plain: DoctorEnvelopeData | null,
+export function withheldProjectChecks(
+  data: DoctorEnvelopeData,
   hasProject: boolean,
 ): DoctorEnvelopeData {
-  const checks: DoctorCheckEnvelope[] = build.checks.map((check) =>
-    hasProject || !BUILD_PROJECT_CHECKS.has(check.name)
+  if (hasProject) return data;
+  const checks: DoctorCheckEnvelope[] = data.checks.map((check) =>
+    !isProjectCheck(check)
       ? check
       : {
           name: check.name,
           status: NOT_CHECKED,
+          scope: check.scope,
           detail: WITHHELD_DETAIL,
           // tan's remedy prose is for the verdict it did not reach. Carrying it
           // onto a row nobody checked would offer a fix for a finding.
           fix: null,
         },
   );
-  const seen = new Set(checks.map((check) => check.name));
-  for (const check of plain?.checks ?? []) {
-    // The guard is not decoration: two rows with one name collide the view's
-    // `key={row.name}` and make `runDependencyAction`'s row lookup ambiguous.
-    if (PLAIN_DOCTOR_HOST_CHECKS.has(check.name) && !seen.has(check.name)) {
-      checks.push(check);
-      seen.add(check.name);
-    }
+  return { ...data, checks, summary: tallyChecks(checks) };
+}
+
+// ── Is this envelope one the table can be built from at all? ─────────────────
+//
+// dev held a guard here and #544 deleted it with the second spawn:
+//
+//     if (!build.data) {
+//       // `--build` carries every PATH probe in the table, so losing it is
+//       // losing the table. Plain `doctor`'s five host rows do not stand in
+//       // for that, and a five-row table that looks complete would be the
+//       // worse answer.
+//       return { report: null, error: build.message };
+//     }
+//
+// The SPAWN it guarded is correctly gone — `--build` is a documented no-op at
+// the pin (tan-cli#290) and restoring it reds the surface gate's inert-flag
+// assertion. THE INTENT IS NOT. `alpSdk.cliPath` still reaches a pre-0.5
+// binary, and on tan v0.4.0 the two envelopes were never identical: plain
+// `doctor` carries NONE of the PATH probes. Measured on the two captured
+// fixtures — with a folder open, a v0.4.0 plain envelope produces 12 rows plus
+// `tan` and NO row at all for git, python, cmake, ninja, dtc, gperf,
+// zephyrSdk, yoctoHost or vendorToolchain, and tan's own fix command for the
+// one tool it did name (`missingPrerequisites: [{tool: "ninja", command:
+// "winget install -e --id Ninja-build.Ninja"}]`) attaches to no row, so
+// `hostPrerequisites` renders `fail` with `action: null`. With NO folder open
+// the same envelope additionally renders `workspaceRoot pass C:/tmp/no-project`
+// and `sdkRoot fail No alp-sdk checkout resolved.` un-withheld — verdicts about
+// `os.tmpdir()` beside six rows saying "No project folder is open", and a red
+// row that can contradict the extension's own host-known SDK state.
+//
+// So the guard comes back, re-expressed against the ONE envelope: not "did the
+// second run fail" but "does this envelope contain the probes the table is
+// built from". Same conclusion in both cases — refuse, and SAY why.
+
+/**
+ * The per-tool PATH probes the Dependencies table exists to report.
+ *
+ * MEASURED, never guessed. `west`, `zephyrSdk` and `hostPython` are read off
+ * the pinned binary (`test/fixtures/tan-doctor.v0.6.0-rc1.darwin.json`);
+ * `git`, `python`, `cmake`, `ninja`, `dtc`, `gperf`, `yoctoHost` and
+ * `vendorToolchain` off tan v0.4.0's `--build` envelope
+ * (`test/fixtures/tan-doctor-build.v0.4.0.windows.json`). Two generations of
+ * vocabulary, so the predicate below is not pinned to one release's spelling.
+ *
+ * THREE NAMES ARE DELIBERATELY ABSENT, and each omission is what lets the
+ * predicate fire at all — every one of them IS emitted by the gutted envelope:
+ *
+ *  - `hostPrerequisites` is an AGGREGATE ("git, cmake, python3, ninja
+ *    present"), not a per-tool row. It is exactly the row that renders `fail`
+ *    with no button on the gutted envelope, so treating it as proof the probes
+ *    arrived would green-light the defect this guard is for.
+ *  - `westResolved` asks whether west resolves inside the WORKSPACE VENV —
+ *    the same PATH-vs-venv distinction `LEGACY_PROJECT_CHECKS` draws and the
+ *    version cell already refuses to blur.
+ *  - `zephyrSdkHost` / `zephyrSdkAvailableForHost` asks whether the Zephyr SDK
+ *    PUBLISHES a build for this host. That is a fact about upstream, not about
+ *    anything installed on this machine.
+ */
+const TOOLCHAIN_PROBE_CHECKS: ReadonlySet<string> = new Set([
+  "cmake",
+  "dtc",
+  "git",
+  "gperf",
+  "hostPython",
+  "ninja",
+  "python",
+  "vendorToolchain",
+  "west",
+  "yoctoHost",
+  "zephyrSdk",
+]);
+
+/**
+ * Whether this envelope carries ANY of the per-tool probes above.
+ *
+ * ANY — not all of them, and not a count. tan renames checks (`zephyrSdkHost`
+ * → `zephyrSdkAvailableForHost` between v0.4.0 and 0.5.1) and adds them, so
+ * demanding a particular set would refuse a perfectly good future envelope,
+ * and a table blanked by a false refusal is the same damage as a table gutted
+ * by a false pass. What is detected is the one measured shape: an envelope
+ * with NO per-tool probe whatsoever.
+ *
+ * DETECTED FROM CONTENT, NOT FROM A VERSION STRING. `alpSdk.cliPath` points
+ * anywhere, `--version` can fail to parse or be a fork's own numbering, and a
+ * modern tan that regressed its check list is just as unusable here as an old
+ * one. A version ALSO cannot be the second half of an AND (a mislabelled
+ * binary would pass) or of an OR (a good envelope from an odd version string
+ * would be refused). It is used below for exactly one thing: making the
+ * refusal SENTENCE concrete, where being wrong costs a less specific
+ * explanation and nothing else.
+ *
+ * Pure — exported for the test.
+ */
+export function carriesToolchainProbes(data: DoctorEnvelopeData): boolean {
+  return data.checks.some((check) => TOOLCHAIN_PROBE_CHECKS.has(check.name));
+}
+
+/**
+ * The refusal sentence, naming the cause and the way out.
+ *
+ * `installedTan` is the version the extension already probed for its own state
+ * — passed in, never re-probed, and NEVER consulted to decide. It only sharpens
+ * the sentence: a binary behind the pin is the expected cause, and one that is
+ * NOT behind is a stranger fact worth stating rather than hiding.
+ *
+ * Pure — exported for the test.
+ */
+export function toolchainProbesMissingError(
+  installedTan: string | null,
+): string {
+  const observed =
+    installedTan === null
+      ? ""
+      : isCliBehind(installedTan)
+        ? ` The resolved binary reports ${installedTan}, which is behind that pin.`
+        : ` The resolved binary reports ${installedTan}, which is NOT behind ` +
+          "that pin — so it is claiming a version whose doctor envelope it " +
+          "does not produce.";
+  return (
+    "This tan reported no host tool checks at all — no row for git, Python, " +
+    "CMake, Ninja, west or the Zephyr SDK — so the dependency table would " +
+    "show only the project rows and read as if every tool on this machine " +
+    "were fine. Nothing is shown rather than that. Alp SDK pins tan " +
+    `${SUPPORTED_CLI_VERSION}, which reports those checks in every ` +
+    "`tan doctor` run; tan v0.4.0 reported them only under " +
+    "`tan doctor --build`, a flag that does nothing at the pin " +
+    `(tan-cli#290) and is not sent.${observed} Run "Alp: Reinstall the ` +
+    'pinned tan CLI" from the command palette, or clear the ' +
+    "`alpSdk.cliPath` setting so the managed copy is used."
+  );
+}
+
+// ── Drift in tan's `scope` vocabulary ────────────────────────────────────────
+
+/**
+ * What `isProjectCheck` found in this envelope's `scope` field that it does not
+ * interpret, and what it interprets that the envelope never used.
+ *
+ * BOTH DIRECTIONS, because the retired `test/deps.allowlistDrift.test.js`'s
+ * core property was that an entry the binary does not emit is REPORTED rather
+ * than silently doing nothing — and that property has an exact analogue in the
+ * new vocabulary. `isProjectCheck` maps an unrecognised scope to "host", which
+ * is the right default (see its own doc) and is also completely silent: rename
+ * `project` upstream and every project row is answered against `os.tmpdir()`
+ * with no log and no failing test. That is #472's silence, one field over.
+ *
+ * `unknown` is at VALUE granularity, not a boolean: which word arrived is the
+ * whole content of the report, and a `true` says nothing anyone can act on.
+ */
+export interface ScopeVocabularyDrift {
+  /** Scope values this envelope carries that `isProjectCheck` does not
+   *  interpret, each with the checks that carried it. Sorted by value. */
+  unknown: readonly { scope: string; checks: readonly string[] }[];
+  /** Words `isProjectCheck` interprets that NO check in this envelope used. */
+  unused: readonly string[];
+  /** True when not one check carried a `scope` string — a pre-0.5 binary,
+   *  where there is no vocabulary to compare and the two lists above are
+   *  meaningless rather than empty. */
+  unscoped: boolean;
+}
+
+/** The vocabulary `isProjectCheck` interprets, in full. */
+const SCOPE_VOCABULARY: readonly string[] = [PROJECT_SCOPE, "host"];
+
+/** Pure — exported for the test. */
+export function scopeVocabularyDrift(
+  data: DoctorEnvelopeData,
+): ScopeVocabularyDrift {
+  const byScope = new Map<string, string[]>();
+  for (const check of data.checks) {
+    const scope: string | undefined = check.scope;
+    if (typeof scope !== "string") continue;
+    const seen = byScope.get(scope);
+    if (seen) seen.push(check.name);
+    else byScope.set(scope, [check.name]);
   }
-  if (!plain) {
-    // The host-environment half is missing and the table must say so rather
-    // than quietly render as if it had been checked. One row, not five: the
-    // reason is one failed run.
-    checks.push({
-      name: "hostEnvironment",
-      status: NOT_CHECKED,
-      detail:
-        "`tan doctor` did not answer, so the host checks it alone reports " +
-        "(Windows long paths, home path, Zephyr SDK host support, bootstrap " +
-        "prerequisites) are missing from this table. See the Alp SDK output " +
-        "channel.",
-      fix: null,
-    });
-  }
+  if (byScope.size === 0) return { unknown: [], unused: [], unscoped: true };
   return {
-    checks,
-    summary: tallyChecks(checks),
-    missingPrerequisites: mergePrerequisites(build, plain),
+    unknown: [...byScope.keys()]
+      .filter((scope) => !SCOPE_VOCABULARY.includes(scope))
+      .sort()
+      .map((scope) => ({ scope, checks: byScope.get(scope) ?? [] })),
+    unused: SCOPE_VOCABULARY.filter((scope) => !byScope.has(scope)),
+    unscoped: false,
   };
 }
 
 /**
- * The two `missingPrerequisites[]` arrays, `--build`'s first.
+ * The log lines `drift` calls for — one per condition, none when there is
+ * nothing to say.
  *
- * `undefined` — the planner's "this tan is too old to say" tri-state — survives
- * only when NEITHER envelope carried the key; one that did is an answer.
- * First-write-wins per tool so `--build`'s entry, whose row is the one on
- * screen, is the one its button runs.
+ * Returned rather than logged so the test can read them; the caller logs them.
+ * Pure — exported for the test.
  */
-function mergePrerequisites(
-  build: DoctorEnvelopeData,
-  plain: DoctorEnvelopeData | null,
-): MissingPrerequisite[] | null | undefined {
-  if (build.missingPrerequisites === undefined && !plain) return undefined;
-  if (
-    build.missingPrerequisites === undefined &&
-    plain?.missingPrerequisites === undefined
-  ) {
-    return undefined;
+export function scopeDriftLogLines(
+  drift: ScopeVocabularyDrift,
+): readonly string[] {
+  if (drift.unscoped) {
+    // #472's successor. The allowlist that could go stale is gone, but the
+    // withholding decision still has a fallback path for a tan too old to
+    // report `scope`, and a silent fallback is how the allowlist rotted.
+    return [
+      "[deps] this tan reports no `scope` on any doctor check, so whether a " +
+        "row reads the project is decided by LEGACY_PROJECT_CHECKS, a hand " +
+        "list derived against v0.4.0. Expected for a binary older than the " +
+        `pin (${SUPPORTED_CLI_VERSION}); if this appears on the pinned tan, ` +
+        "the field was renamed and the list is now the only thing deciding " +
+        "— see #472.",
+    ];
   }
-  const byTool = new Map<string, MissingPrerequisite>();
-  for (const entry of [
-    ...(build.missingPrerequisites ?? []),
-    ...(plain?.missingPrerequisites ?? []),
-  ]) {
-    if (!byTool.has(entry.tool)) byTool.set(entry.tool, entry);
+  const lines: string[] = [];
+  for (const { scope, checks } of drift.unknown) {
+    lines.push(
+      `[deps] tan scoped ${checks.length} doctor check(s) ` +
+        `"${scope}", a word this extension does not interpret: ` +
+        `${checks.join(", ")}. They are treated as HOST checks, so they are ` +
+        "shown with no folder open — if any of them actually reads the " +
+        "project, its verdict is about a temp directory. See #472.",
+    );
   }
-  return [...byTool.values()];
+  for (const scope of drift.unused) {
+    lines.push(
+      `[deps] no doctor check in this envelope is scoped "${scope}", a word ` +
+        "`isProjectCheck` still branches on. Either this run genuinely had " +
+        "no such check, or the word was renamed upstream and the branch is " +
+        "now dead — the withholding decision is being made on a vocabulary " +
+        `the binary no longer uses. Pin: ${SUPPORTED_CLI_VERSION}.`,
+    );
+  }
+  return lines;
 }
 
 // The shared `runDoctor` spawn (`../alpCli/doctor`, #376) takes `interactive`
@@ -532,13 +671,13 @@ function mergePrerequisites(
 // (`action: null`, `packages/alp-core/src/deps/planner.ts`) — its own
 // install/update path lives in `src/alpCli/`, not a row button, so a
 // declined/unanswered consent here does not leave a dangling button. It
-// leaves NO table at all: `build.data` is null, so `buildDependencyReport`
+// leaves NO table at all: `doctor.data` is null, so `buildDependencyReport`
 // returns `report: null` and the panel shows its inline error text instead.
 
 // ── The report ───────────────────────────────────────────────────────────────
 
 export interface DependencyReportResult {
-  /** `null` when `tan doctor --build` produced no usable envelope. */
+  /** `null` when `tan doctor` produced no usable envelope. */
   report: DependencyReport | null;
   /** Customer-facing sentence for that empty state, shown INLINE by the panel.
    *  The raw stderr / exit code was already logged by `runAlpCommand`. */
@@ -546,25 +685,27 @@ export interface DependencyReportResult {
 }
 
 /**
- * Build the dependency report: `tan doctor --build` AND plain `tan doctor`,
- * merged into one check list, fed to the pure planner, plus the host-known
- * cells.
+ * Build the dependency report: ONE `tan doctor` run, fed to the pure planner,
+ * plus the host-known cells.
  *
- * TWO SPAWNS, not one — and that is a deliberate, stated cost. They run
- * CONCURRENTLY, so opening the panel takes about as long as the slower of the
- * two rather than their sum, but it is twice the process work per refresh. It
- * buys the four checks tan puts on plain `doctor` only; `longPaths` alone is a
- * build that dies in CMake on a stock Windows install with no row anywhere in
- * the IDE to explain it.
+ * ONE SPAWN. It was two (#544) — plain `doctor` and `doctor --build`, run
+ * concurrently — because on tan v0.4.0 the flag genuinely changed the check
+ * list and `--build` alone had no row for `longPaths`, which is a build that
+ * dies in CMake on a stock Windows install. At SUPPORTED_CLI_VERSION `--build`
+ * is a documented no-op (tan-cli#290) and the two envelopes are identical, so
+ * the second run was a subprocess per refresh for a byte-for-byte duplicate.
  *
- * NO FOLDER OPEN is no longer a refusal. The old refusal closed a cycle a
- * customer following the published walkthrough could not break: the prerequisite
- * table needed a folder, the folder needed the SDK, the SDK needed git, and git
- * was installed from the prerequisite table. Host-tool checks are host facts, so
- * they now run with no folder; the four checks that read the project are
- * withheld and SAY they were withheld (`mergeDoctorEnvelopes`), because a
- * project check answered against no project — "board.yaml not found" about a
- * directory the customer never chose — is worse than the refusal was.
+ * `["doctor"]` is the one kept, not `["doctor", "--build"]`: passing a flag
+ * that does nothing invites the reader to believe it does something.
+ *
+ * NO FOLDER OPEN is not a refusal. The old refusal closed a cycle a customer
+ * following the published walkthrough could not break: the prerequisite table
+ * needed a folder, the folder needed the SDK, the SDK needed git, and git was
+ * installed from the prerequisite table. Host-tool checks are host facts, so
+ * they run with no folder; the checks that read the project are withheld and
+ * SAY they were withheld (`withheldProjectChecks`), because a project check
+ * answered against no project — "board.yaml not found" about a directory the
+ * customer never chose — is worse than the refusal was.
  *
  * `state` is the shared `AlpIdeState` the panel already subscribes to — passed
  * in rather than re-probed, so this adds no readiness query of its own.
@@ -588,29 +729,31 @@ export async function buildDependencyReport(
   const hasProject = project.workspaceRoot !== null;
   const cwd = project.workspaceRoot ?? os.tmpdir();
   const interactive = options.interactive === true;
-  const [build, plain] = await Promise.all([
-    runDoctor(context, ["doctor", "--build"], cwd, options.signal, interactive),
-    runDoctor(context, ["doctor"], cwd, options.signal, interactive),
-  ]);
-  if (!build.data) {
-    // `--build` carries every PATH probe in the table, so losing it is losing
-    // the table. Plain `doctor`'s five host rows do not stand in for that, and
-    // a five-row table that looks complete would be the worse answer.
-    return { report: null, error: build.message };
+  const doctor = await runDoctor(
+    context,
+    ["doctor"],
+    cwd,
+    options.signal,
+    interactive,
+  );
+  if (!doctor.data) {
+    // The whole table came from this one run, so losing it is losing the
+    // table. A partial table that looked complete would be the worse answer.
+    return { report: null, error: doctor.message };
   }
-  // #472: say it out loud when an allowlist entry names a check the pinned tan
-  // does not emit. Silence is the defect — a stale entry admits no row, and a
-  // row that is absent reads as "fine" rather than "never asked".
-  const drift = plainDoctorAllowlistDrift(plain.data);
-  if (drift.length > 0) {
-    log(
-      `[deps] plain doctor emitted no ${drift.join(", ")} — the ` +
-        `PLAIN_DOCTOR_HOST_CHECKS allowlist may need re-deriving against ` +
-        `tan ${SUPPORTED_CLI_VERSION} (see #472). Platform- or target-` +
-        `conditional checks legitimately appear here on some hosts.`,
-    );
+  // An envelope with no per-tool probe in it is the same loss by a different
+  // route: every row the table exists for is simply absent, and what is left
+  // looks like a complete, mostly-passing report. Refuse it, and say why —
+  // see `carriesToolchainProbes` for what is detected and why not on version.
+  if (!carriesToolchainProbes(doctor.data)) {
+    const error = toolchainProbesMissingError(state.setup.toolVersions.tan);
+    log(`[deps] ${error}`);
+    return { report: null, error };
   }
-  const data = mergeDoctorEnvelopes(build.data, plain.data, hasProject);
+  for (const line of scopeDriftLogLines(scopeVocabularyDrift(doctor.data))) {
+    log(line);
+  }
+  const data = withheldProjectChecks(doctor.data, hasProject);
 
   const planned = planDependencyReport({
     data,

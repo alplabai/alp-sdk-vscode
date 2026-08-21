@@ -57,14 +57,33 @@ export function taskLabel(spec: TaskSpec): string {
  * The four tasks this extension contributes. THREE are referenced by label
  * from a generated launch.json profile; the fourth is picker-only.
  *
- * `tan build` has NO per-target selector (crates/tan-cli/src/cli.rs
- * `BuildArgs`: only --plan/--plan-from/--materialise/--native/--manifest/
- * --manifest-from/--no-auto-bootstrap) — it builds every slice board.yaml
- * declares. So the three "build …" names below all run the identical `tan
- * build`; three labels exist because three debug-target kinds (zephyr-mcu,
- * baremetal-mcu, native-host) reference them under different names, not
- * because the command differs. Do not invent a --target/--core flag to
- * "properly" distinguish them — none exists on the tan side.
+ * `tan build` has NO WORKING per-target selector, so the three "build …"
+ * names below all run the identical `tan build` — it builds every slice
+ * board.yaml declares. Three labels exist because three debug-target kinds
+ * (zephyr-mcu, baremetal-mcu, native-host) reference them under different
+ * names, not because the command differs.
+ *
+ * THE FLAG LIST THIS PARAGRAPH USED TO CARRY WAS READ OFF THE WRONG BINARY.
+ * It enumerated `BuildArgs` from `crates/tan-cli/src/cli.rs` — the RETIRED
+ * Rust CLI — as "--plan/--plan-from/--materialise/--native/--manifest/
+ * --manifest-from/--no-auto-bootstrap". We ship the Python port, and its
+ * surface is neither a superset nor a subset of that: `tan build` at
+ * SUPPORTED_CLI_VERSION accepts twenty-two options, of which TWELVE are inert
+ * ("Accepted by other commands; not implemented for `build` yet",
+ * tan-cli#427) — `--plan`, `--manifest` and `--manifest-from` among them
+ * (#541). Reading a shipped surface off the oracle is the root cause of #541,
+ * so the enumeration is deleted rather than corrected: the recording in
+ * `test/golden/tan-surface/surface.json` is the one place that answers "what
+ * does the pinned tan accept", it is regenerated when the pin moves, and
+ * `test/tan.surfaceContract.test.js` checks every argv this tree sends
+ * against it.
+ *
+ * What survives as a CLAIM, because it is what these three labels rest on:
+ * there is no per-target build selector. `--target` IS accepted by `tan
+ * build` at this pin and is recorded INERT, and `--core` exists on
+ * `flash`/`run` but not on `build` at all. Do not reach for either to
+ * "properly" distinguish the three labels — one does nothing and the other
+ * does not exist.
  *
  * "deploy and start gdbserver" has no tan equivalent at all: the extension
  * has no deploy story, and the yocto-userspace debug profile ships

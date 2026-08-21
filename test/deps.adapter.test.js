@@ -63,21 +63,65 @@ function loadDepsAdapter(overrides = {}) {
 }
 
 /**
- * The two doctor envelopes a REAL `tan 0.4.0` printed on a Windows 11 host,
- * captured with `tan doctor --format json` and `tan doctor --build --format
- * json` and committed verbatim except for two redactions: the home directory's
- * account name and the temp directory the no-project run was launched in.
+ * A REAL `tan doctor` envelope from the PINNED binary, captured with
+ * `COLUMNS=200 tan --format json doctor` inside a project and committed
+ * verbatim except for one redaction: every absolute path is rewritten onto
+ * `/home/dev`.
  *
- * They are here because the split this file asserts is a claim about tan, not
- * about a stub: that four host checks — `longPaths`, `homePath`,
- * `zephyrSdkHost`, `hostPrerequisites` — exist ONLY on plain `doctor`, and that
- * `--build` alone can therefore never report them. tan says so in
- * `doctor.rs`'s `append_host_environment` ("`--build` deliberately does NOT get
- * them"); these files are that sentence, measured.
+ * It is here because the split this file asserts is a claim about tan, not
+ * about a stub. tan SCOPES each check itself — `"scope": "project"` or
+ * `"scope": "host"` on all fourteen — and that field is what decides which
+ * rows are withheld with no folder open. Six are project-scoped
+ * (`sdk`, `boardYaml`, `workspace`, `westResolved`, `zephyrWorkspace`,
+ * `pythonFloor`) and eight are host-scoped; note that TWO of the six are ones
+ * the retired hand list never named, which is the whole argument for reading
+ * tan's answer instead of maintaining our own.
  */
-const REAL_PLAIN = require("./fixtures/tan-doctor.v0.4.0.windows.json").data;
-const REAL_BUILD =
+const REAL_PINNED =
+  require("./fixtures/tan-doctor.v0.6.0-rc1.darwin.json").data;
+
+/**
+ * A REAL `tan 0.4.0` plain-`doctor` envelope from a Windows 11 host, same
+ * redaction rules, kept for ONE thing: it has no `scope` on any check, so it
+ * is the only way to exercise `LEGACY_PROJECT_CHECKS` — the fallback that runs
+ * when `alpSdk.cliPath` points at a binary older than the contract. Its
+ * `longPaths` row is also the concrete #472 customer: `LongPathsEnabled = 0`
+ * is the stock Windows default and the build then dies in CMake complaining
+ * about a file that exists.
+ *
+ * IT NO LONGER REACHES A TABLE, and that is the point of it now: it carries no
+ * per-tool PATH probe at all, so `buildDependencyReport` refuses it outright
+ * (`carriesToolchainProbes`) rather than rendering the twelve rows that are
+ * there and none of the nine that are not. See "a tan whose doctor reports no
+ * host tool at all is refused" below. What it is still driven through directly
+ * is the PURE planner, which is where the no-allowlist rule actually lives.
+ */
+const REAL_LEGACY = require("./fixtures/tan-doctor.v0.4.0.windows.json").data;
+
+/**
+ * The `--build` half of that same v0.4.0 capture, back in this file for a
+ * DIFFERENT reason than the one it was removed for.
+ *
+ * It was here to prove that four host checks reached the table only through a
+ * second spawn; there is no second spawn any more (#544). It is here now
+ * because it is the only real envelope that is BOTH pre-contract (no `scope`
+ * on any check, so `LEGACY_PROJECT_CHECKS` is exercised) and carrying the
+ * per-tool probes the table is built from (`git`, `python`, `cmake`, `ninja`,
+ * `dtc`, `gperf`, `zephyrSdk`, `yoctoHost`, `vendorToolchain`) — i.e. an
+ * envelope the toolchain-probe guard admits. The two properties are genuinely
+ * independent, and this fixture is the proof: an old binary is not
+ * automatically a refused one.
+ */
+const REAL_LEGACY_BUILD =
   require("./fixtures/tan-doctor-build.v0.4.0.windows.json").data;
+
+/** The PURE planner, loaded for real. Two tests below drive it directly on an
+ *  envelope `buildDependencyReport` now refuses, because the rule they assert
+ *  ("every check tan reported is a row") is the planner's and holds regardless
+ *  of whether the adapter is willing to render that particular envelope. */
+const {
+  planDependencyReport,
+} = require("../packages/alp-core/dist/deps/planner.js");
 
 const { pickLatestSdkTag, latestSdkCacheStale } = loadDepsAdapter();
 
@@ -179,21 +223,12 @@ const STATE = {
   },
 };
 
-/** The plain-`doctor` half, minimal, for the tests that only care about `--build`
- *  cells. The real captured one is `REAL_PLAIN`. */
-const PLAIN_DATA = {
-  checks: [
-    { name: "longPaths", status: "pass", detail: "long paths are enabled" },
-  ],
-  summary: { pass: 1, warn: 0, fail: 0 },
-};
-
 /** Build a report against a fake CLI, collecting every argv (and cwd) it was
  *  asked to spawn. `workspaceRoot: null` is the no-folder-open machine; a `null`
  *  envelope stands for a run that produced nothing usable. */
 async function report(
   workspaceRoot = "/home/dev/proj",
-  { build = DOCTOR_DATA, plain = PLAIN_DATA } = {},
+  { doctor = DOCTOR_DATA } = {},
   reportOptions = {},
 ) {
   const spawns = [];
@@ -201,8 +236,7 @@ async function report(
     "../alpCli/doctor": {
       runDoctor: async (_context, args, cwd, _signal, interactive) => {
         spawns.push({ args, cwd, options: { interactive } });
-        const data = args.includes("--build") ? build : plain;
-        return { data, message: "tan produced no usable envelope" };
+        return { data: doctor, message: "tan produced no usable envelope" };
       },
     },
     "../project/vscodeAdapter": {
@@ -243,10 +277,15 @@ test("the table does not wait on the latest-SDK lookup", async () => {
 
   assert.deepEqual(
     spawns.map((spawn) => spawn.args),
-    [["doctor", "--build"], ["doctor"]],
-    "the two doctor runs, and NOTHING else — the live GitHub call that fills " +
-      "the sdk row's 'latest' cell must not be awaited before the rows already " +
-      "in hand are posted",
+    [["doctor"]],
+    "ONE doctor run, and NOTHING else. Two things at once: the live GitHub " +
+      "call that fills the sdk row's 'latest' cell must not be awaited before " +
+      "the rows already in hand are posted; and `--build` must not come back " +
+      '(#544). It used to be `[["doctor", "--build"], ["doctor"]]`, ' +
+      "pinned here BY VALUE — the flag is a documented no-op at the pin " +
+      "(tan-cli#290) and the two envelopes were byte-identical apart from " +
+      "`generatedAt`, so the second spawn was a subprocess per refresh for a " +
+      "duplicate payload",
   );
   assert.equal(
     built.rows.find((row) => row.name === "sdk").latest,
@@ -339,92 +378,92 @@ test("withLatestSdk: the explicit Refresh click DOES ask tan CLI download consen
   }
 });
 
-// ── A-0f: the four checks that live on PLAIN `tan doctor` only ───────────────
+// ── A-0f: every check tan reports reaches the table ──────────────────────────
 
-test("the host checks tan puts on plain `doctor` reach the table", async () => {
-  // Measured on a real tan 0.4.0 (the pin) on Windows 11, not asserted from a
-  // stub: `--build` emits 14 checks and NOT ONE of these four is among them.
-  const buildOnly = new Set(REAL_BUILD.checks.map((check) => check.name));
-  for (const name of [
-    "longPaths",
-    "homePath",
-    "zephyrSdkHost",
-    "hostPrerequisites",
-  ]) {
-    assert.equal(
-      buildOnly.has(name),
-      false,
-      `${name} is absent from \`tan doctor --build\` — running only --build is ` +
-        "structurally blind to it, which is why the panel had no row for it",
-    );
-  }
-
+test("no allowlist stands between a check tan reported and a row", async () => {
+  // A-0f was "four host checks reached no row because only `--build` ran".
+  // Its fix was a SECOND spawn plus an allowlist of names the merge could take
+  // from it, and #472 was that allowlist going stale in silence. Both are gone
+  // (#544): one envelope, no merge, no allowlist, so the defect class cannot
+  // come back — not because the list is right, but because there is no list.
+  //
+  // Through the ADAPTER, on a real pre-contract envelope it accepts: the
+  // v0.4.0 `--build` capture. (The plain-`doctor` half of that same capture no
+  // longer reaches a table at all — it carries no PATH probe, so the guard
+  // refuses it; the second half of this test drives the planner on it
+  // directly, which is where the no-allowlist rule lives.)
   const { report: built, spawns } = await report("/home/dev/proj", {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
+    doctor: REAL_LEGACY_BUILD,
   });
-  const row = (name) => built.rows.find((candidate) => candidate.name === name);
 
-  assert.ok(
-    spawns.some(
-      (spawn) => spawn.args.length === 1 && spawn.args[0] === "doctor",
-    ),
-    "plain `tan doctor` must actually be run — before this it never was, " +
-      "anywhere in the extension",
+  assert.deepEqual(
+    spawns.map((spawn) => spawn.args),
+    [["doctor"]],
+    "plain `tan doctor` is the run, and the only one",
   );
+
+  const names = built.rows.map((r) => r.name);
+  assert.deepEqual(
+    names.slice(0, REAL_LEGACY_BUILD.checks.length),
+    REAL_LEGACY_BUILD.checks.map((check) => check.name),
+    "every check tan reported is a row, in tan's own order — the rule " +
+      "`deps/planner.ts` states and the allowlist was the one exception to",
+  );
+  assert.deepEqual(
+    names.slice(REAL_LEGACY_BUILD.checks.length),
+    ["tan"],
+    "and the ONLY row not derived from a check is the planner's own `tan` " +
+      "row, which is about the binary rather than about anything it reported",
+  );
+
+  // And the PLANNER, on the plain-`doctor` envelope, because the three checks
+  // the retired allowlist deliberately excluded live only there. The adapter
+  // refuses this envelope now — that refusal is asserted in its own test — but
+  // the rule under assertion here is the planner's, and it still holds against
+  // the exact payload the allowlist would have filtered.
+  const planned = planDependencyReport({
+    data: REAL_LEGACY,
+    bootstrapRunning: false,
+    cli: { installed: "0.4.0", latest: { version: "0.6.0-rc1", kind: "pin" } },
+    compareVersions: () => "behind",
+  });
+  const row = (name) => planned.rows.find((c) => c.name === name);
+
+  assert.deepEqual(
+    planned.rows.map((r) => r.name).slice(0, REAL_LEGACY.checks.length),
+    REAL_LEGACY.checks.map((check) => check.name),
+    "same rule, same order, on the envelope the allowlist was written for",
+  );
+
   // The concrete customer: LongPathsEnabled = 0 is the stock Windows default,
   // and the build then dies in CMake complaining about a file that exists.
-  assert.ok(row("longPaths"), "the long-paths row exists");
   assert.equal(
     row("longPaths").status,
     "pass",
-    "and carries tan's verdict verbatim — this host has it enabled",
+    "the long-paths row carries tan's verdict verbatim — this host has it " +
+      "enabled",
   );
   assert.match(
     row("longPaths").detail,
     /LongPathsEnabled = 1/,
     "with tan's own detail, registry value and all",
   );
-  assert.ok(row("homePath"), "the home-directory row exists");
-  assert.ok(row("zephyrSdkHost"), "the Zephyr-SDK-host-support row exists");
   assert.equal(
     row("hostPrerequisites").status,
     "fail",
     "the bootstrap prerequisite gate is reported as tan rated it",
   );
-});
 
-test("the two runs' rows are not merged into each other", async () => {
-  const { report: built } = await report("/home/dev/proj", {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
-  });
-  const names = built.rows.map((row) => row.name);
-
-  assert.equal(
-    new Set(names).size,
-    names.length,
-    "no duplicate row ids: plain `doctor` re-reports sdk / workspace / " +
-      "westResolved, and taking them alongside --build's would render one fact " +
-      "twice under one name and collide the view's `key={row.name}`",
-  );
-  assert.deepEqual(
-    names.slice(0, REAL_BUILD.checks.length),
-    REAL_BUILD.checks.map((check) => check.name),
-    "--build's block comes first, in tan's own order and unchanged",
-  );
-  assert.deepEqual(
-    names.slice(REAL_BUILD.checks.length, -1),
-    ["lldb", "hostPrerequisites", "zephyrSdkHost", "longPaths", "homePath"],
-    "then plain `doctor`'s host block, also in tan's order — so which run a " +
-      "row came from is readable off the table",
-  );
+  // The three the allowlist deliberately EXCLUDED, now present. Two were
+  // excluded to avoid a duplicate row key across two envelopes — a problem
+  // that does not exist with one — and `codeLLDBExtension` was excluded as a
+  // fact tan answers `unknown`. `unknown` is an answer, and dropping the row
+  // said "not a problem" about a question nobody could see was asked.
   for (const name of ["workspaceRoot", "sdkRoot", "codeLLDBExtension"]) {
-    assert.equal(
-      names.includes(name),
-      false,
-      `${name} is a project fact (or, for codeLLDBExtension, one tan itself ` +
-        "answers `unknown` from a standalone binary) and is not this table's",
+    assert.ok(
+      row(name),
+      `${name} is a check tan reported, so it is a row — the allowlist that ` +
+        "silently withheld it is gone",
     );
   }
 });
@@ -432,27 +471,18 @@ test("the two runs' rows are not merged into each other", async () => {
 test("the summary counts exactly the rows on screen, using tan's arithmetic", async () => {
   const { tallyChecks } = loadDepsAdapter();
 
-  // First: the tally IS tan's own. Re-run over each real envelope's checks it
+  // First: the tally IS tan's own. Re-run over a real envelope's checks it
   // reproduces that envelope's own summary byte for byte — including tan's rule
-  // that a status outside pass/warn/fail (`codeLLDBExtension: unknown`) counts
-  // toward nothing.
-  assert.deepEqual(tallyChecks(REAL_BUILD.checks), REAL_BUILD.summary);
-  assert.deepEqual(tallyChecks(REAL_PLAIN.checks), REAL_PLAIN.summary);
+  // that a status outside pass/warn/fail counts toward nothing
+  // (`codeLLDBExtension: unknown` on 0.4.0, `setools: unknown` at the pin).
+  assert.deepEqual(tallyChecks(REAL_LEGACY.checks), REAL_LEGACY.summary);
+  assert.deepEqual(tallyChecks(REAL_PINNED.checks), REAL_PINNED.summary);
 
   const { report: built } = await report("/home/dev/proj", {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
+    doctor: REAL_PINNED,
   });
-  // The header must describe the table under it. With rows from two envelopes,
-  // neither envelope's own summary does — `--build` alone would report 0 of the
-  // five host rows, so a failing `hostPrerequisites` sat under "4 fail".
-  // The five host rows this host produced: zephyrSdkHost / longPaths / homePath
-  // pass, lldb warns, hostPrerequisites fails.
-  assert.deepEqual(built.counts, {
-    pass: REAL_BUILD.summary.pass + 3,
-    warn: REAL_BUILD.summary.warn + 1,
-    fail: REAL_BUILD.summary.fail + 1,
-  });
+  // With a folder open nothing is withheld, so the header IS tan's summary.
+  assert.deepEqual(built.counts, REAL_PINNED.summary);
 });
 
 // ── 0b: the panel with no project folder open ────────────────────────────────
@@ -467,10 +497,7 @@ test("with no folder open the host checks still run", async () => {
     report: built,
     error,
     spawns,
-  } = await report(null, {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
-  });
+  } = await report(null, { doctor: REAL_PINNED });
   const row = (name) => built.rows.find((candidate) => candidate.name === name);
 
   assert.equal(error, undefined, "no refusal — this is a table, not a wall");
@@ -484,93 +511,240 @@ test("with no folder open the host checks still run", async () => {
     );
   }
 
-  // The host facts, which is the whole point: none of these reads a project.
-  for (const name of ["git", "python", "cmake", "ninja", "longPaths"]) {
+  // The host facts, which is the whole point: none of these reads a project,
+  // and tan says so itself on every one of them.
+  for (const check of REAL_PINNED.checks.filter((c) => c.scope === "host")) {
     assert.equal(
-      row(name).status,
-      REAL_BUILD.checks.concat(REAL_PLAIN.checks).find((c) => c.name === name)
-        .status,
-      `${name} is a host probe and carries tan's real verdict with no folder open`,
+      row(check.name).status,
+      check.status,
+      `${check.name} is scoped \`host\` by tan and carries its real verdict ` +
+        "with no folder open",
     );
   }
-  assert.equal(
-    row("ninja").action.command,
-    "winget install -e --id Ninja-build.Ninja",
-    "and the missing prerequisite is still one click away — that button is " +
-      "the exit from the deadlock",
-  );
 });
 
 test("with no folder open a project check is withheld, and says so", async () => {
-  const { report: built } = await report(null, {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
-  });
+  const { report: built } = await report(null, { doctor: REAL_PINNED });
   const row = (name) => built.rows.find((candidate) => candidate.name === name);
 
-  for (const name of ["sdk", "boardYaml", "workspace", "westResolved"]) {
+  const projectChecks = REAL_PINNED.checks.filter(
+    (check) => check.scope === "project",
+  );
+  assert.ok(
+    projectChecks.length >= 5,
+    "the fixture must actually carry project-scoped checks, or this test " +
+      "asserts nothing",
+  );
+  for (const check of projectChecks) {
     // Reporting these would be worse than the old refusal: tan answers them
     // about whatever directory it was launched in, so a customer with no folder
     // open would read "board.yaml not found" about a temp directory.
     assert.ok(
-      row(name),
-      `${name} is still a row — a vanished row teaches nothing`,
+      row(check.name),
+      `${check.name} is still a row — a vanished row teaches nothing`,
     );
     assert.equal(
-      row(name).status,
+      row(check.name).status,
       "not checked",
-      `${name} must not carry a verdict about a project that is not open`,
+      `${check.name} must not carry a verdict about a project that is not open`,
     );
     assert.match(
-      row(name).detail,
+      row(check.name).detail,
       /no project folder is open/i,
       "and the row itself says why",
     );
     assert.equal(
-      row(name).hint,
+      row(check.name).hint,
       null,
       "tan's remedy prose belongs to the verdict it never reached",
     );
   }
-  assert.equal(
-    built.counts.fail,
-    REAL_BUILD.summary.fail - 3 + 1,
-    "a withheld row counts as nothing — `sdk`, `boardYaml` and `workspace` " +
-      "each rated `fail` about nowhere, and counting them would put three red " +
-      "marks in the header for checks that never ran",
+
+  // Two of these six — `zephyrWorkspace` and `pythonFloor` — were NOT in the
+  // hand list this replaced. Reading tan's own `scope` is what admits them, and
+  // it is why the list is a fallback rather than the source (#472).
+  for (const name of ["zephyrWorkspace", "pythonFloor"]) {
+    assert.equal(
+      row(name).status,
+      "not checked",
+      `${name} is scoped \`project\` by tan and was absent from the retired ` +
+        "hand list — a hand list of check names rots the moment tan adds one",
+    );
+  }
+
+  const withheldVerdicts = projectChecks.filter((check) =>
+    ["pass", "warn", "fail"].includes(check.status),
+  ).length;
+  assert.deepEqual(
+    built.counts,
+    {
+      pass: REAL_PINNED.summary.pass - 4,
+      warn: REAL_PINNED.summary.warn - 1,
+      fail: REAL_PINNED.summary.fail - 1,
+    },
+    `a withheld row counts as nothing — ${withheldVerdicts} project checks ` +
+      "carried a verdict about nowhere, and counting them would put marks in " +
+      "the header for checks that never ran",
   );
 });
 
-test("a plain `doctor` that answers nothing leaves a row saying so", async () => {
-  const { report: built } = await report("/home/dev/proj", {
-    build: REAL_BUILD,
-    plain: null,
-  });
-  const row = built.rows.find(
-    (candidate) => candidate.name === "hostEnvironment",
-  );
-
+test("a tan too old to report `scope` still withholds the project rows", async () => {
+  // `alpSdk.cliPath` can point at a pre-contract binary. `isDoctorEnvelope-
+  // Data` accepts its envelope on purpose — refusing it would blank the one
+  // table whose `tan` row reports the skew — so the withholding decision has
+  // to survive a check with no `scope` at all. `LEGACY_PROJECT_CHECKS` is that
+  // fallback, and this is the only thing that exercises it.
   assert.ok(
-    row,
-    "silently dropping the host half is the A-0f defect coming back invisibly",
+    REAL_LEGACY_BUILD.checks.every((check) => check.scope === undefined),
+    "the legacy fixture must carry no `scope`, or this asserts nothing",
   );
-  assert.equal(row.status, "not checked");
-  assert.match(row.detail, /long paths/i);
+  const { report: built } = await report(null, { doctor: REAL_LEGACY_BUILD });
+  const row = (name) => built.rows.find((candidate) => candidate.name === name);
+
+  for (const name of ["sdk", "boardYaml", "workspace", "westResolved"]) {
+    assert.equal(
+      row(name).status,
+      "not checked",
+      `${name} reads the project on v0.4.0 too, and the fallback knows it`,
+    );
+  }
+  for (const [name, status] of [
+    ["git", "pass"],
+    ["cmake", "pass"],
+    ["ninja", "fail"],
+  ]) {
+    assert.equal(
+      row(name).status,
+      status,
+      `${name} is a PATH probe and is NOT withheld by the fallback — a list ` +
+        "that withheld everything would pass the arm above and hide the " +
+        "whole table",
+    );
+  }
 });
 
-test("a `--build` that answers nothing is still an error state", async () => {
+test("a doctor that answers nothing is an error state, not an empty table", async () => {
   const { report: built, error } = await report("/home/dev/proj", {
-    build: null,
-    plain: REAL_PLAIN,
+    doctor: null,
   });
 
   assert.equal(
     built,
     null,
-    "--build carries every PATH probe in the table, so losing it is losing " +
-      "the table — five host rows that looked complete would be the worse answer",
+    "the one run carries every row in the table, so losing it is losing the " +
+      "table — a partial table that looked complete would be the worse answer",
   );
   assert.match(error, /no usable envelope/);
+});
+
+// ── A tan whose doctor envelope cannot build this table ──────────────────────
+//
+// The #544 regression this guards. dev refused when the `--build` run produced
+// nothing, because "`--build` carries every PATH probe in the table, so losing
+// it is losing the table". Dropping that arm dropped the refusal with it, and
+// on a pre-0.5 binary reached through `alpSdk.cliPath` the plain envelope has
+// NONE of those probes — so the panel rendered a confident, mostly-passing
+// table with no row for the nine tools it exists to report.
+//
+// Both states below are real. They are the two the review ran to prove the
+// defect, and neither was covered before.
+
+test("a tan whose doctor reports no host tool at all is refused, with a folder open", async () => {
+  const { report: built, error } = await report("/home/dev/proj", {
+    doctor: REAL_LEGACY,
+  });
+
+  // What the un-guarded code produced: 12 rows + `tan`, and not one of these.
+  const missing = [
+    "git",
+    "python",
+    "cmake",
+    "ninja",
+    "dtc",
+    "gperf",
+    "zephyrSdk",
+    "yoctoHost",
+    "vendorToolchain",
+  ];
+  assert.deepEqual(
+    REAL_LEGACY.checks.filter((check) => missing.includes(check.name)),
+    [],
+    "the fixture must genuinely carry none of the nine, or this test is " +
+      "asserting against an envelope that was never the problem",
+  );
+
+  assert.equal(
+    built,
+    null,
+    "nine tool rows silently absent from a table whose whole subject is " +
+      "those tools reads as `all fine`, not as `not asked` — the same " +
+      "judgement dev's deleted `--build` guard made, on the one envelope " +
+      "there is now",
+  );
+  assert.match(
+    error,
+    /no host tool checks at all/,
+    "the refusal must name the CAUSE, not just decline",
+  );
+  assert.match(
+    error,
+    /Reinstall the pinned tan CLI/,
+    "and the way out, by the name it carries in the command palette",
+  );
+  assert.match(
+    error,
+    /alpSdk\.cliPath/,
+    "including the setting that is how a binary this old gets resolved in " +
+      "the first place",
+  );
+  assert.match(
+    error,
+    /0\.3\.1/,
+    "the version the extension already probed sharpens the sentence — it is " +
+      "not what DECIDES (see `carriesToolchainProbes`), but withholding it " +
+      "would leave the reader guessing which binary is meant",
+  );
+});
+
+test("the same tan with NO folder open is refused too, rather than reporting on os.tmpdir()", async () => {
+  const { report: built, error } = await report(null, { doctor: REAL_LEGACY });
+
+  // The extra damage in this state, on top of the nine missing rows: tan was
+  // launched in `os.tmpdir()`, and these two carry no `scope`, so the legacy
+  // hand list — which never named them — lets them through un-withheld.
+  for (const name of ["workspaceRoot", "sdkRoot"]) {
+    assert.ok(
+      REAL_LEGACY.checks.some((check) => check.name === name),
+      `${name} must be in the fixture, or this test asserts nothing`,
+    );
+  }
+  assert.equal(
+    built,
+    null,
+    "`workspaceRoot pass C:/tmp/no-project` and `sdkRoot fail No alp-sdk " +
+      "checkout resolved.` are verdicts about a temp directory, rendered " +
+      "live beside six rows that say `No project folder is open` — and the " +
+      "red one can contradict the extension's own host-known SDK state",
+  );
+  assert.match(error, /no host tool checks at all/);
+});
+
+test("the guard does not fire on an envelope that DOES carry the probes", async () => {
+  // A false refusal blanks the table, which is the same damage in the other
+  // direction. Both directions, on real captured envelopes.
+  for (const [label, doctor] of [
+    ["the pinned binary", REAL_PINNED],
+    ["a v0.4.0 `--build` envelope", REAL_LEGACY_BUILD],
+  ]) {
+    for (const root of ["/home/dev/proj", null]) {
+      const { report: built, error } = await report(root, { doctor });
+      assert.ok(
+        built,
+        `${label} carries per-tool probes, so it must render — refusing it ` +
+          `would be the guard firing on the wrong thing (${error})`,
+      );
+    }
+  }
 });
 
 // ── A-0g: a winget install leaves a stale PATH ───────────────────────────────

@@ -61,6 +61,14 @@ export function isDoctorEnvelopeData(
       typeof entry?.name === "string" &&
       typeof entry.status === "string" &&
       typeof entry.detail === "string" &&
+      // `scope` is REQUIRED by tan's frozen contract, and this still accepts
+      // an envelope without it. Not an oversight: `alpSdk.cliPath` can point
+      // at a pre-0.5 binary that never emitted the field, and refusing that
+      // envelope would blank the Dependencies table — the one surface whose
+      // `tan` row tells the customer their binary is behind the pin. What is
+      // refused is a `scope` of the WRONG SHAPE, which no tan emits and which
+      // would reach `isProjectCheck` as a truthy non-string.
+      (entry.scope === undefined || typeof entry.scope === "string") &&
       (entry.fix === undefined ||
         entry.fix === null ||
         typeof entry.fix === "string")
