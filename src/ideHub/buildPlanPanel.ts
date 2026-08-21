@@ -5,10 +5,8 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { runAlpCommand, runAlpStreamed } from "../alpCli/vscodeAdapter";
 import {
-  type BuildPlanData,
   type ExtToWebviewMessage,
   type SizeReport,
-  type SystemManifest,
   type WebviewToExtMessage,
 } from "./messages";
 import { buildWebviewHtml } from "./webviewHtml";
@@ -24,11 +22,10 @@ import {
 } from "../util";
 import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
+import { deferredBuildOptionMessage } from "../alpCli/pinnedSurface";
 import {
-  BUILD_PLAN_SHAPE,
   MATERIALISE_SHAPE,
   SIZE_REPORT_SHAPE,
-  SYSTEM_MANIFEST_SHAPE,
   checkTanPayload,
 } from "@alp-sdk/core/tanPayloadShape";
 
@@ -52,11 +49,19 @@ const PANEL_VIEW_TYPE = "alp-ide.buildPlan";
 const PANEL_TITLE = "Alp Build Plan";
 
 /**
- * Full-tab preview of the SDK-emitted build plan (`alp build --plan`, ADR 0014).
+ * Full-tab preview of the SDK-emitted build plan (`tan build --plan`, ADR 0014).
  *
  * A webview is justified here — the plan is a genuinely visual surface (per-core
  * slices, generated config artefacts, warnings). It is the live home for the
  * build-plan view; the actions (materialise / build) are delegated to the CLI.
+ *
+ * THREE OF THE FLAGS THIS PANEL WAS BUILT ON ARE DEFERRED AT THE PIN (#541).
+ * `--plan`, `--manifest` and `--manifest-from` are all accepted by `tan build`
+ * and all do nothing: their shared help wording is "Accepted by other
+ * commands; not implemented for `build` yet (tan-cli#427)". So the plan and
+ * the system manifest cannot be fetched here at all, and this panel no longer
+ * spawns for either — see `postBuildPlanUnavailable`. What it still runs is
+ * `build --materialise`, `build` and `size`, all of which are live.
  */
 export class BuildPlanPanel {
   private static instance?: BuildPlanPanel;
@@ -97,12 +102,27 @@ export class BuildPlanPanel {
 
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
 
-    // Re-request the plan + manifest when board.yaml or the emitted manifest
-    // changes under the active workspace (a build refreshes the manifest).
-    // `interactive: false` — a file save, not a direct user ask.
+    // Re-derive when board.yaml or the emitted manifest changes under the
+    // active workspace (a build refreshes the manifest). `interactive: false`
+    // — a file save, not a direct user ask.
+    //
+    // NOTHING HERE SPAWNS A DEFERRED FLAG ANY MORE (#541). This used to call
+    // `handleRequestBuildPlan(false)` and `handleRequestSystemManifest(false)`,
+    // so every board.yaml save fired two `tan build` runs whose flags this pin
+    // defers — two processes per keystroke-to-disk that could not answer the
+    // question they were asked.
+    //
+    // The two survivors are here for different reasons, and the difference is
+    // what decides membership: a watcher exists to re-derive something that
+    // CHANGED. `tan size` measures the ELFs, and a build moves them.
+    // `postSystemManifestUnavailable` spawns nothing, but it reports whether
+    // `build/system-manifest.yaml` exists and whether the last build wrote it
+    // (#470) — both read off the file this watcher is watching. The build-plan
+    // message is the one that is genuinely FIXED text, so re-posting it on a
+    // save would be churn with no new fact in it; the panel said it when it
+    // opened and the answer cannot have moved.
     const refresh = () => {
-      void this.handleRequestBuildPlan(false);
-      void this.handleRequestSystemManifest(false);
+      this.postSystemManifestUnavailable();
       void this.handleRequestSliceSizes(false);
     };
     for (const glob of ["**/board.yaml", "**/system-manifest.yaml"]) {
@@ -133,8 +153,10 @@ export class BuildPlanPanel {
       case "requestBuildPlan":
         // The view posts this on mount, i.e. the user's explicit "Alp: Build
         // Plan" open — `interactive: true`, unlike the file-watcher `refresh`.
-        void this.handleRequestBuildPlan(true);
-        void this.handleRequestSystemManifest(true);
+        // Only `handleRequestSliceSizes` spawns anything, so it is the only
+        // one that carries the flag.
+        this.postBuildPlanUnavailable();
+        this.postSystemManifestUnavailable();
         void this.handleRequestSliceSizes(true);
         break;
       case "materialiseBuildPlan":
@@ -157,65 +179,60 @@ export class BuildPlanPanel {
     }
   }
 
-  private async handleRequestBuildPlan(interactive: boolean): Promise<void> {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    // Consume the SDK build plan via the CLI envelope (`alp build --plan`).
-    // `interactive` comes from the caller: `true` for the webview's own
-    // `requestBuildPlan` (posted on mount — the user opened this panel),
-    // `false` for the constructor's file watcher (a board.yaml save is not a
-    // direct ask, and an interactive resolution there would pop ADR 0021's
-    // consent modal out of a file save).
-    const { outcome } = await runAlpCommand(
-      this.context,
-      ["build", "--plan"],
-      cwd,
-      { interactive },
-    );
-    const envelope = outcome.envelope;
-    let msg: ExtToWebviewMessage;
-    if (envelope && envelope.ok) {
-      // `data` crossed a process boundary, so the cast below proves nothing on
-      // its own. Without this check a renamed `slices` reaches the view as
-      // `undefined` and `plan.slices.filter` throws mid-render — measured in
-      // test/webview/run.mjs as "Cannot read properties of undefined (reading
-      // 'filter')", which blanks the panel and names neither tan nor a field.
-      const shapeError = checkTanPayload(
-        envelope.data,
-        BUILD_PLAN_SHAPE,
-        "build --plan",
-      );
-      msg = shapeError
-        ? { type: "buildPlanData", plan: null, error: shapeError }
-        : { type: "buildPlanData", plan: envelope.data as BuildPlanData };
-    } else {
-      // Surface the first issue (e.g. "no SDK / awaiting a tagged release")
-      // or the runtime message so the view can explain the empty state.
-      const error = envelope?.issues?.[0]?.message ?? outcome.message;
-      msg = { type: "buildPlanData", plan: null, error };
-    }
-    void this.panel.webview.postMessage(msg);
+  /**
+   * Say that this tan cannot produce a build plan, and say why.
+   *
+   * NO SPAWN. `tan build --plan` is accepted by click and deferred by the
+   * implementation (tan-cli#427), so the old call could only ever come back as
+   * a failure the panel then had to classify — a process per panel open and
+   * per board.yaml save, for an answer the pin already determines.
+   *
+   * The customer is told at least as much as before. The CLI's own refusal
+   * read "`tan build --plan` is deferred and not available in this build (see
+   * https://github.com/alplabai/tan-cli/issues/427)."; `deferredBuildOption-
+   * Message` carries the flag, the pinned version, that same issue and its
+   * URL, plus the one thing the CLI could not say — that nothing ran, so there
+   * is no failed subprocess to go looking for in the log.
+   *
+   * It reaches the view through the SAME `buildPlanData` message with the same
+   * `plan: null` + `error` shape the `envelope.ok === false` branch used, so
+   * the view's empty state is unchanged.
+   *
+   * `deferredBuildOptionMessage` checks `--plan` against
+   * `DEFERRED_BUILD_OPTIONS` rather than taking this call site's word for it,
+   * so the day tan-cli#427 lands this stops saying "deferred" about a flag
+   * that works and starts saying the panel does not send it — which by then
+   * is the only true half.
+   */
+  private postBuildPlanUnavailable(): void {
+    void this.panel.webview.postMessage({
+      type: "buildPlanData",
+      plan: null,
+      error: deferredBuildOptionMessage("--plan"),
+    } satisfies ExtToWebviewMessage);
   }
 
-  /** Fetch the system manifest — the post-build IDE/tool contract. Prefers the
-   *  populated `build/system-manifest.yaml` (`--manifest-from`) when a build has
-   *  written one; otherwise asks the SDK for the pre-build projection
-   *  (`--manifest`). Posts a `systemManifestData` message either way. */
-  private async handleRequestSystemManifest(
-    interactive: boolean,
-  ): Promise<void> {
+  /**
+   * The system manifest's half of the same gap — `--manifest` (the pre-build
+   * projection) and `--manifest-from` (the populated post-build file) are both
+   * deferred under tan-cli#427, so neither can be read here.
+   *
+   * `postBuild` and `provenance` are STILL COMPUTED AND STILL POSTED. They are
+   * facts about the file on disk — whether `build/system-manifest.yaml` exists
+   * and whether the last build wrote it (#470) — and they do not depend on the
+   * CLI being able to parse it. Dropping them would lose the one thing this
+   * panel can still say about the manifest while the parse is unavailable.
+   */
+  private postSystemManifestUnavailable(): void {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const built = cwd
       ? path.join(cwd, "build", "system-manifest.yaml")
       : undefined;
     const postBuild = Boolean(built && fs.existsSync(built));
-    const args = postBuild
-      ? ["build", "--manifest-from", built as string]
-      : ["build", "--manifest"];
 
     // #470: existence is not freshness. `postBuild` above says a manifest is
-    // on disk; this says whether it describes the LAST build. A projection
-    // (`--manifest`) has no file and therefore no provenance — it is not
-    // stale, it was computed just now.
+    // on disk; this says whether it describes the LAST build. With no file
+    // there is no provenance to report — there is nothing on disk to date.
     const provenance = postBuild
       ? manifestFreshness({
           writtenAt: manifestWrittenAt(built as string),
@@ -224,45 +241,15 @@ export class BuildPlanPanel {
         })
       : null;
 
-    // `interactive` — see `handleRequestBuildPlan`'s doc.
-    const { outcome } = await runAlpCommand(this.context, args, cwd, {
-      interactive,
-    });
-    const envelope = outcome.envelope;
-    let msg: ExtToWebviewMessage;
-    if (envelope && envelope.ok) {
-      // Named without the manifest path: the message is customer-facing and
-      // the argument is an absolute path on their machine.
-      const shapeError = checkTanPayload(
-        envelope.data,
-        SYSTEM_MANIFEST_SHAPE,
-        postBuild ? "build --manifest-from" : "build --manifest",
-      );
-      msg = shapeError
-        ? {
-            type: "systemManifestData",
-            manifest: null,
-            postBuild,
-            provenance,
-            error: shapeError,
-          }
-        : {
-            type: "systemManifestData",
-            manifest: envelope.data as SystemManifest,
-            postBuild,
-            provenance,
-          };
-    } else {
-      const error = envelope?.issues?.[0]?.message ?? outcome.message;
-      msg = {
-        type: "systemManifestData",
-        manifest: null,
-        postBuild,
-        provenance,
-        error,
-      };
-    }
-    void this.panel.webview.postMessage(msg);
+    void this.panel.webview.postMessage({
+      type: "systemManifestData",
+      manifest: null,
+      postBuild,
+      provenance,
+      error: deferredBuildOptionMessage(
+        postBuild ? "--manifest-from" : "--manifest",
+      ),
+    } satisfies ExtToWebviewMessage);
   }
 
   /** Fetch per-slice firmware footprint vs the SoM memory budget from
@@ -290,7 +277,12 @@ export class BuildPlanPanel {
       return;
     }
 
-    // `interactive` — see `handleRequestBuildPlan`'s doc.
+    // `interactive` comes from the caller: `true` for the webview's own
+    // `requestBuildPlan` (posted on mount — the user opened this panel),
+    // `false` for the constructor's file watcher (a board.yaml save is not a
+    // direct ask, and an interactive resolution there would pop ADR 0021's
+    // consent modal out of a file save). This is now the ONLY handler here
+    // that spawns, so it is the only one the distinction still applies to.
     const { outcome } = await runAlpCommand(this.context, ["size"], cwd, {
       interactive,
     });
@@ -335,9 +327,8 @@ export class BuildPlanPanel {
     try {
       // `interactive: true`: reached only from the "Materialise" button click
       // (`materialiseBuildPlan`), never from the file-watcher `refresh()` in
-      // the constructor — unlike `handleRequestBuildPlan`/
-      // `handleRequestSystemManifest`/`handleRequestSliceSizes` below, which
-      // that same watcher calls and must stay non-interactive.
+      // the constructor — unlike `handleRequestSliceSizes` below, which that
+      // same watcher calls and must stay non-interactive.
       const { outcome } = await runAlpCommand(
         this.context,
         ["build", "--materialise"],
@@ -346,12 +337,12 @@ export class BuildPlanPanel {
       );
       const envelope = outcome.envelope;
       if (envelope && envelope.ok) {
-        // Shape-check before reading, like the `--plan` / `--manifest` readers
-        // above. This path needs it MORE than they do, not less: they spell
-        // their access `plan.slices.filter`, which throws and blanks the panel
-        // when tan renames a field. This one spells it `written ?? []`, so the
-        // same drift reports "Materialised 0 file(s)" as a SUCCESS — indis-
-        // tinguishable from a legitimate no-op, and the user acts on it.
+        // Shape-check before reading, like the `size` reader below. This path
+        // needs it MORE, not less: `size` spells its access
+        // `report.slices.map`, which throws and blanks a section when tan
+        // renames a field. This one spells it `written ?? []`, so the same
+        // drift reports "Materialised 0 file(s)" as a SUCCESS — indistinguish-
+        // able from a legitimate no-op, and the user acts on it.
         const shapeError = checkTanPayload(
           envelope.data,
           MATERIALISE_SHAPE,
@@ -414,10 +405,13 @@ export class BuildPlanPanel {
             `Materialised ${written.length} file(s) under the build tree.`,
           ),
         );
-        // The plan view reflects on-disk state — re-request so it isn't stale.
+        // The plan view reflects on-disk state, so a materialise would
+        // normally re-request it. There is nothing to re-request at this pin —
+        // `build --plan` is deferred (tan-cli#427) — and the sizes DO move,
+        // because materialising rewrites the build tree the ELFs sit in.
         // `interactive: true`: the direct follow-through of the "Materialise"
         // click just above, not a background re-derive.
-        await this.handleRequestBuildPlan(true);
+        await this.handleRequestSliceSizes(true);
       } else {
         // Severity comes from the outcome: the most common materialise failure
         // is a board.yaml validation error (exit 2 ⇒ warning), which must not

@@ -1,0 +1,18 @@
+{
+  // Program for test/fixtures/tan-surface/const-scope.ts ONLY, used by
+  // test/tan.surfaceContract.test.js via `extract.mjs --include`. Nothing
+  // references this config from the build, so the fixture stays out of
+  // `pnpm run compile` and `pnpm run typecheck`.
+  //
+  // It EXTENDS the repo's tsconfig so the fixture is bound under the same
+  // module/target settings as `src/`. `rootDir` is widened because the fixture
+  // lives outside `src/`, and `noEmit`/`outDir` stop any output being produced.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "outDir": null,
+    "types": ["node"]
+  },
+  "include": ["const-scope.ts"]
+}

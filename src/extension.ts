@@ -255,7 +255,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // two is in force, since a squiggle cannot say where it came from.
     createSdkSchemaContributor(stateMgr),
     createSchemaProvenanceStatus(context, stateMgr),
-    registerSelectSdkCommand(context),
+    registerSelectSdkCommand(),
     ...registerConfiguratorEditor(context),
     vscode.commands.registerCommand("alp.openDependencies", () =>
       DependencyPanel.open(context, stateMgr),

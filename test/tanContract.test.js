@@ -133,6 +133,44 @@ const GATED_CODES = {
   // extension's hope.
   "bootstrap.python-not-runnable": "frozen",
   "bootstrap.python-too-old": "frozen",
+
+  // RESERVED — and this repo is now on BOTH ends of it, which is why it is
+  // here at all.
+  //
+  // tan: python/tan/commands/model_cmd.py, registered by tan-cli#224. The
+  // artefact declares it `"status": "reserved", "consumer": "none"`, with the
+  // standing note "Promote to `frozen` (filling in consumer/consumerEffect for
+  // real) the moment a consumer binds to it".
+  //
+  // A CONSUMER HAS BOUND TO IT, twice. #522 made
+  // `packages/alp-webview/src/features/models/cliSurface.ts` classify on this
+  // exact code — that whole module exists to match it and nothing else — and
+  // #544 added a PRODUCER, `src/alpCli/pinnedSurface.ts`, which synthesises
+  // the refusal rather than spawning nine subcommands to hear it. So the
+  // extension both emits and matches a spelling tan reserves the right to
+  // rename, and until now nothing on either side of the seam watched it: this
+  // gate did not list it, and the two in-repo spellings were pinned equal to
+  // EACH OTHER, which is circular — rename both and every test stays green.
+  //
+  // The status stays `reserved` here because that is what tan declares TODAY,
+  // and this file asserts tan's declaration rather than the one we would
+  // prefer. Promoting it to `frozen` is an upstream ask against tan-cli, not
+  // an edit to the vendored corpus; the day tan promotes it, the status
+  // assertion below reds and this entry is updated to match.
+  "model.unknown-subcommand": "reserved",
+
+  // UNDECLARED, and never going to be: this extension MANUFACTURES it
+  // (`src/alpCli/pinnedSurface.ts`) for "the pinned tan can do this and this
+  // panel does not call it" — a statement about this repo's wiring that no CLI
+  // could make. It is in the `models.` family for that reason, next to
+  // `models.cli-error` and `models.tan-outdated` (`src/models/service.ts`),
+  // and deliberately NOT in tan's `model.` one.
+  //
+  // Pinned at `null` rather than left out because the entry is cheap and the
+  // day tan declares a `models.panel-not-wired` of its own is the day two
+  // different verdicts share one spelling on the same wire. The assertion
+  // above turns that collision into a red instead of a silent overlap.
+  "models.panel-not-wired": null,
 };
 
 /**
@@ -152,8 +190,15 @@ const GATED_CODES = {
 const ISSUE_CODE_SHAPE = /^[a-z][a-z0-9-]*\.[a-z0-9-]+$/;
 
 /**
- * Every issue code this extension MATCHES ON, found in source, by the two
- * idioms it uses to match one — not by family.
+ * Every issue code this extension BINDS TO, found in source, by the idioms it
+ * uses to bind one — not by family.
+ *
+ * "Binds to" and not "matches on", since idiom 4 below: a one-code constant is
+ * a binding whether it is compared against or emitted through, and both
+ * deserve a decision. A code this repo MANUFACTURES is classified `null`
+ * ("tan declares this nowhere"), which is not a formality — it is what turns
+ * a future collision, tan shipping the same spelling for a different verdict,
+ * into a red rather than a silent overlap on one wire.
  *
  * The family alternation (idiom 3) was the whole scan, and it recognised only
  * `bootstrap.*` and `presets.*`. A new `===` against any other family — the
@@ -201,6 +246,19 @@ function scanGatedCodes(roots) {
       // 3. The original family alternation, kept so this scan can only ever
       //    see MORE than it used to.
       for (const m of text.matchAll(/"((?:bootstrap|presets)\.[a-z0-9-]+)"/g)) {
+        add(m[1]);
+      }
+      // 4. A SINGLE declared code — `const FOO_CODE = "…"` — membership-tested
+      //    through the constant (`issue.code === UNKNOWN_SUBCOMMAND_CODE`) or
+      //    emitted through it. Idiom 2 requires an ARRAY, idiom 1 requires a
+      //    LITERAL at the comparison, and a one-code constant is neither: it
+      //    was invisible to this scan at both of its sites (the webview
+      //    classifier that matches it and `pinnedSurface.ts` that produces
+      //    it), so `model.unknown-subcommand` could be renamed on both sides
+      //    at once with nothing going red.
+      for (const m of text.matchAll(
+        /\b[A-Z][A-Z0-9_]*CODE\b[^=\n]*=\s*"([^"]*)"/g,
+      )) {
         add(m[1]);
       }
     }
@@ -255,11 +313,6 @@ const UNMODELLED_DOCTOR_KEYS = {
     "just fetched, so a stamp would only ever say 'now'. Modelling it would " +
     "invite a surface to print a time that is not the one on screen after a " +
     "refresh races.",
-  "checks[].scope":
-    "tan's own grouping of a check (host / project / build). The panel renders " +
-    "one flat table in tan's order and does not group, so reading it would " +
-    "mean inventing sections tan did not ask for. Model it the day the table " +
-    "grows sections — not before, or it is a field with no meaning here.",
 };
 
 /** Field names of `export interface <name>`, each keeping its `?`. Nested brace
@@ -521,6 +574,12 @@ test("gated issue codes: every code matched in src/ is classified exactly once",
   const scanned = scanGatedCodes([
     path.join(__dirname, "..", "src"),
     path.join(__dirname, "..", "packages", "alp-core", "src"),
+    // The webview is a separate package and was outside this scan entirely.
+    // It is not a lesser consumer: `features/models/cliSurface.ts` is the ONLY
+    // thing in this repo that classifies a tan issue code into a different
+    // banner, and it shipped in #522 with nothing watching the spelling it
+    // binds to.
+    path.join(__dirname, "..", "packages", "alp-webview", "src"),
   ]);
   assert.deepEqual(
     [...scanned].sort(),

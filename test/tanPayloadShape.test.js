@@ -1,22 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// The three tan payloads the build-plan panel reads through an `as` cast, and
-// the runtime check that stands between a renamed tan field and a panel that
-// either crashes mid-render or drops a column without saying so.
+// The tan payloads the build-plan panel reads through an `as` cast, and the
+// runtime check that stands between a renamed tan field and a panel that either
+// crashes mid-render or drops a column without saying so.
 //
-// The predicate is pure and tested directly; the three CALL SITES are tested
-// through the compiled panel with `vscode` and the CLI adapter stubbed, because
-// a pure test cannot notice a call site that was never wired (or was later
-// deleted). Delete any one `checkTanPayload(...)` from
-// `src/ideHub/buildPlanPanel.ts` and the matching "names the command" test
-// below goes red.
+// The predicate is pure and tested directly; the CALL SITE is tested through
+// the compiled panel with `vscode` and the CLI adapter stubbed, because a pure
+// test cannot notice a call site that was never wired (or was later deleted).
+// Delete `checkTanPayload(...)` from `src/ideHub/buildPlanPanel.ts` and the
+// "names the command" test below goes red.
 //
-// WHAT IS NOT ASSERTED: that these field names are the ones tan v0.4.0 actually
-// emits. Nothing in this repo can know that — `build --plan`, `build
-// --manifest*` and `size` are in NEITHER list of tan's frozen `data` fields
-// (tan-cli `contract/README.md`): not in the frozen table, and not in the two
-// rows that file names as deliberately uncovered. Filed as alplabai/tan-cli#200.
-// This file pins what the extension DEPENDS on; the day tan freezes those rows,
+// ONE CALL SITE, NOT THREE, SINCE #541 — and the loss is real, so it is stated
+// rather than quietly absorbed. `build --plan` and `build --manifest*` are
+// DEFERRED at the pin (tan-cli#427): they parse, they do nothing, and the panel
+// no longer spawns them, so no payload of either shape can arrive and there is
+// nothing left for a call-site test to drive. `BUILD_PLAN_SHAPE` and
+// `SYSTEM_MANIFEST_SHAPE` are still defined, still exported and still tested
+// PURELY below — what is gone is the end-to-end proof that the panel routes a
+// bad payload of those two shapes into an error rather than a crash. That proof
+// comes back with the spawns, when tan implements the flags. `size` is live and
+// keeps its call-site test; `build --materialise` is live and keeps its own in
+// test/ideHub.materialiseGuard.test.js.
+//
+// WHAT IS NOT ASSERTED: that these field names are the ones tan actually emits.
+// Nothing in this repo can know that — `build --plan`, `build --manifest*` and
+// `size` are in NEITHER list of tan's frozen `data` fields (tan-cli
+// `contract/README.md`): not in the frozen table, and not in the two rows that
+// file names as deliberately uncovered. Filed as alplabai/tan-cli#200. This
+// file pins what the extension DEPENDS on; the day tan freezes those rows,
 // test/tanContract.test.js is where the two get compared.
 
 const test = require("node:test");
@@ -187,9 +198,9 @@ function loadPanel(stubs) {
  * Open the panel with `runAlpCommand` answering from `envelopeFor(args)`, send
  * one `requestBuildPlan`, and return every message posted to the webview.
  *
- * `fs.existsSync` is forced true so BOTH post-build paths run: the manifest
- * request takes `--manifest-from`, and `size` is requested at all (it returns
- * early with `report: null` when there is no `build/system-manifest.yaml`).
+ * `fs.existsSync` is forced true so the post-build path runs at all: `size` is
+ * requested only when `build/system-manifest.yaml` exists, and returns early
+ * with `report: null` otherwise.
  */
 async function drivePanel(envelopeFor) {
   const posted = [];
@@ -268,46 +279,13 @@ async function drivePanel(envelopeFor) {
   return posted;
 }
 
-/** `build --manifest-from`'s third argv token is an absolute path built with
- *  `path.join`, so it is separator-dependent — the argv is labelled by its
- *  first two tokens rather than matched whole. */
-const label = (args) => (args[0] === "size" ? "size" : `build ${args[1]}`);
-
-/** Every payload complete, except `command`'s, which loses `field`. */
+/** The one live payload shape the panel still fetches. `command` names which
+ *  argv loses `field`; anything else comes back complete. */
 const withDropped = (command, field) => (args) => {
-  const which = label(args);
-  const payload =
-    which === "build --plan"
-      ? { ...PLAN }
-      : which === "size"
-        ? { ...SIZES }
-        : { ...MANIFEST };
-  if (which === command) delete payload[field];
+  const payload = args[0] === "size" ? { ...SIZES } : { ...MANIFEST };
+  if (args[0] === command) delete payload[field];
   return payload;
 };
-
-test("call site: a `build --plan` payload with no `slices` reaches the panel as an error, not a plan the view throws on", async () => {
-  const posted = await drivePanel(withDropped("build --plan", "slices"));
-  const msg = posted.find((m) => m.type === "buildPlanData");
-  assert.ok(msg, "the panel posted no buildPlanData at all");
-  assert.equal(msg.plan, null, "a plan the view cannot render was handed over");
-  assert.match(msg.error, /tan build --plan/);
-  assert.match(msg.error, /`slices`/);
-});
-
-test("call site: a `build --manifest-from` payload with no `ipc` reaches the panel as an error", async () => {
-  const posted = await drivePanel(withDropped("build --manifest-from", "ipc"));
-  const msg = posted.find((m) => m.type === "systemManifestData");
-  assert.ok(msg, "the panel posted no systemManifestData at all");
-  assert.equal(msg.manifest, null);
-  assert.match(msg.error, /tan build --manifest-from/);
-  assert.match(msg.error, /`ipc`/);
-  assert.doesNotMatch(
-    msg.error,
-    /\.yaml/,
-    "the customer-facing message must not carry the absolute manifest path",
-  );
-});
 
 test("call site: a `size` payload with no `slices` reaches the panel as an error, not a missing column", async () => {
   const posted = await drivePanel(withDropped("size", "slices"));
@@ -318,15 +296,47 @@ test("call site: a `size` payload with no `slices` reaches the panel as an error
   assert.match(msg.error, /`slices`/);
 });
 
-test("call site: three good payloads pass through untouched", async () => {
+test("call site: the deferred flags reach no shape check because they reach no spawn", async () => {
+  // The replacement for the two call-site tests #541 removed, and it asserts
+  // the thing that actually protects the view now: those two messages carry a
+  // named capability gap, not a payload the view might choke on.
+  const spawned = [];
+  const posted = await drivePanel((args) => {
+    spawned.push(args);
+    return args[0] === "size" ? { ...SIZES } : { ...MANIFEST };
+  });
+
+  assert.deepEqual(
+    spawned.filter((args) =>
+      args.some((token) =>
+        ["--plan", "--manifest", "--manifest-from"].includes(token),
+      ),
+    ),
+    [],
+    "a deferred flag reaching the CLI is #541 coming back",
+  );
+  for (const type of ["buildPlanData", "systemManifestData"]) {
+    const msg = posted.find((m) => m.type === type);
+    assert.ok(msg, `the panel posted no ${type} at all`);
+    assert.match(
+      msg.error,
+      /tan-cli#427/,
+      "the empty state must name the upstream issue, exactly as tan's own " +
+        "refusal did",
+    );
+    assert.doesNotMatch(
+      msg.error,
+      /\.yaml/,
+      "the customer-facing message must not carry the absolute manifest path",
+    );
+  }
+});
+
+test("call site: a good `size` payload passes through untouched", async () => {
+  // The control. Without it a `checkTanPayload` that refused EVERYTHING would
+  // pass the error test above and blank the section on every correct payload.
   const posted = await drivePanel(withDropped("nothing", "nothing"));
-  const plan = posted.find((m) => m.type === "buildPlanData");
-  const manifest = posted.find((m) => m.type === "systemManifestData");
   const sizes = posted.find((m) => m.type === "sliceSizesData");
-  assert.deepEqual(plan.plan, PLAN);
-  assert.equal(plan.error, undefined);
-  assert.deepEqual(manifest.manifest, MANIFEST);
-  assert.equal(manifest.error, undefined);
   assert.deepEqual(sizes.report, SIZES);
   assert.equal(sizes.error, undefined);
 });

@@ -441,15 +441,25 @@ test("a projection carries NO provenance — it was computed just now", async ()
   assert.equal(msg.provenance, null);
 });
 
-test("an unreadable mtime still posts a manifest, with an unknown verdict", async () => {
-  // Arrange -- the badge must never cost the table. A stat that throws is "no
-  // claim", not "no manifest".
+test("an unreadable mtime still posts the message, with an unknown verdict", async () => {
+  // Arrange -- the badge must never cost the message. A stat that throws is "no
+  // claim", not "nothing to post".
+  //
+  // This used to assert `msg.manifest` was populated -- "the badge must never
+  // cost the TABLE". It cannot any more, and not because of anything here:
+  // `build --manifest*` is deferred at the pin (tan-cli#427), so the panel
+  // fetches no manifest at all and `manifest` is null on EVERY path (#541).
+  // What #470 is actually about survives intact -- the provenance verdict is
+  // still computed from the file on disk and still reaches the view, because
+  // whether a manifest exists and when it was written does not depend on tan
+  // being able to parse it.
   const [msg] = await drivePanel({
     statThrows: true,
     lastBuild: { finishedAt: WRITTEN, exitCode: 0 },
   });
 
-  assert.ok(msg.manifest, "the manifest must still reach the view");
+  assert.ok(msg, "the panel posted no systemManifestData at all");
+  assert.equal(msg.postBuild, true, "the on-disk fact still reaches the view");
   assert.equal(msg.provenance?.freshness, "unknown");
   assert.equal(msg.provenance.writtenAt, null);
 });
