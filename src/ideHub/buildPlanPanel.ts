@@ -450,6 +450,12 @@ export class BuildPlanPanel {
     // FLASH_RUN_NAME, not a per-core name: a second core is a second write to
     // the same board, so per-core names would be two reservations and two
     // programmers at once. The core is in the logged command line.
+    //
+    // `--confirm` is deliberately absent: `runAlpStreamed` adds it only after
+    // `armFlashDispatch` (`src/flash/gate.ts`) has obtained consent, and that
+    // dialog is the one place a customer learns what `--core` costs them —
+    // tan's own help for it is "skips every other slice AND all helpers", so
+    // this button leaves the rest of the board on its old images.
     void runAlpStreamed(this.context, ["flash", "--core", coreId], {
       name: FLASH_RUN_NAME,
       cwd,

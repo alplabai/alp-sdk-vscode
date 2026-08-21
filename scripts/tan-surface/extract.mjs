@@ -498,6 +498,7 @@ function reduceTokens(tokens, metavars) {
   let opaque = false;
   let endOfOptions = false;
   let positionalsAnchored = Infinity;
+  let commandTokenIndex = -1;
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
@@ -582,7 +583,10 @@ function reduceTokens(tokens, metavars) {
     // Positional slot.
     if (token.kind === TOKEN_OPAQUE) opaque = true;
     if (command === null) {
-      if (token.kind === TOKEN_LITERAL) command = token.value;
+      if (token.kind === TOKEN_LITERAL) {
+        command = token.value;
+        commandTokenIndex = i;
+      }
       // An opaque token in the command slot leaves `command` null: naming a
       // command we cannot read would be a fabricated fact.
       continue;
@@ -608,8 +612,25 @@ function reduceTokens(tokens, metavars) {
     resolution = RESOLUTION_NONE;
   }
 
+  // Everything to the LEFT of the command, verbatim, with an unreadable token
+  // recorded as `null` rather than dropped. The command is not always argv[0]
+  // -- `["--project", dir, "build"]` is argv this repo already builds -- so a
+  // consumer that has to reproduce this walk needs to see the prefix the walk
+  // consumed, not just the command it landed on. `test/flash.dispatch.test.js`
+  // reads it to prove the flash consent gate's own command reader
+  // (`isFlashArgv`) recognises every site this extractor calls a flash: two
+  // readers with two different ideas of where the command sits is how a flash
+  // dispatch slips past a gate that is technically present.
+  const commandPrefix =
+    commandTokenIndex < 0
+      ? null
+      : tokens
+          .slice(0, commandTokenIndex)
+          .map((t) => (t.kind === TOKEN_LITERAL ? t.value : null));
+
   return {
     command,
+    commandPrefix,
     flags,
     positionalCount: positionalValues.length,
     positionalValues,
@@ -787,6 +808,7 @@ function extract({ snapshotPath, allowMissingSnapshot, includePaths = [] }) {
           line,
           runner,
           command: null,
+          commandPrefix: null,
           flags: [],
           positionalCount: 0,
           positionalValues: [],
@@ -822,6 +844,7 @@ function extract({ snapshotPath, allowMissingSnapshot, includePaths = [] }) {
           line,
           runner,
           command: reduced.command,
+          commandPrefix: reduced.commandPrefix,
           flags: reduced.flags,
           positionalCount: reduced.positionalCount,
           positionalValues: reduced.positionalValues,

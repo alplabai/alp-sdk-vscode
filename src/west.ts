@@ -217,6 +217,12 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
     "flash this device",
   );
   if (!target) return;
+  // No confirm flag here on purpose. `tan flash` writes nothing without
+  // `--confirm` (tan-cli#719), and `runAlpStreamed` adds it — but ONLY after
+  // `armFlashDispatch` (`src/flash/gate.ts`) has shown the customer what the
+  // manifest says is about to be programmed and they have accepted. Writing it
+  // at this call site would arm an irreversible write with nobody asked, and
+  // `test/flash.dispatch.test.js` fails the build if anyone does.
   await runAlpStreamed(context, ["flash", ...target.appArg], {
     name: FLASH_RUN_NAME,
     cwd: target.cwd,
