@@ -178,15 +178,36 @@ async function latestSdkTag(
   // the direct-ask signal ADR 0021 needs: ask consent on an explicit Refresh
   // click, never on the window-focus/settings-edit/bootstrap-boundary
   // re-derives that pass `false` here.
-  const { outcome } = await runAlpCommand(context, ["sdk", "list"], undefined, {
-    signal,
-    interactive: force,
-  });
+  // `--online` is what lets `list` query the GitHub releases API at all. The
+  // sibling reader (`src/ideHub/sdkManagerMessages.ts`) has always passed it;
+  // this one did not, and that omission is half of #542.
+  const { outcome } = await runAlpCommand(
+    context,
+    ["sdk", "list", "--online"],
+    undefined,
+    {
+      signal,
+      interactive: force,
+    },
+  );
   const envelope = outcome.envelope;
   if (!envelope || !envelope.ok) {
     log(`[deps] latest-SDK lookup unavailable: ${outcome.message}`);
     // The last known answer beats a dash, and it is stamped — a stale tag stays
     // stale, so the next open retries. Null only when nothing was ever cached.
+    return cache?.tag ?? null;
+  }
+  // The other half: `ok: true` is not "I have the data". tan answers a lookup
+  // it could not perform with `ok: true, exitCode: 0, releases: []` and the
+  // real answer in a WARNING — "I did not look", not "nothing is published".
+  // Caching that writes a FRESH stamp over an absent answer, which suppresses
+  // the retry that would fix it, so the dash persists for the whole staleness
+  // window. The failure sustains itself.
+  const unanswered = unansweredSdkListCodes(envelope);
+  if (unanswered.length > 0) {
+    log(
+      `[deps] latest-SDK lookup did not reach the registry (${unanswered.join(", ")}) — keeping the last known answer, retrying on the next open`,
+    );
     return cache?.tag ?? null;
   }
   const releases =
@@ -197,6 +218,31 @@ async function latestSdkTag(
     fetchedAt: Date.now(),
   } satisfies LatestSdkCache);
   return tag;
+}
+
+/**
+ * Issue codes on which tan reports "I could not look" while still returning
+ * `ok: true`. Matched on the CODE, never on the prose — the rule
+ * `packages/alp-webview/src/features/models/cliSurface.ts` already follows,
+ * and for the same reason: a message is free to be reworded between pins, a
+ * code is the contract.
+ *
+ * Measured against pinned tan 0.6.0-rc1 — `tan --format json sdk list` with no
+ * `--online` returns `{"ok":true,"exitCode":0,"data":{"subcommand":"list",
+ * "releases":[]},"issues":[{"code":"sdk.network-required","severity":
+ * "warning", ...}]}`.
+ */
+export const UNANSWERED_SDK_LIST_CODES: readonly string[] = [
+  "sdk.network-required",
+];
+
+/** The codes above that this envelope actually carries. */
+export function unansweredSdkListCodes(envelope: {
+  issues?: readonly { code?: string }[];
+}): string[] {
+  return (envelope.issues ?? [])
+    .map((issue) => issue.code ?? "")
+    .filter((code) => UNANSWERED_SDK_LIST_CODES.includes(code));
 }
 
 // ── Host-known cells ─────────────────────────────────────────────────────────

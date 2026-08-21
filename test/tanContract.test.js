@@ -159,6 +159,14 @@ const GATED_CODES = {
   // assertion below reds and this entry is updated to match.
   "model.unknown-subcommand": "reserved",
 
+  // Same shape, same upstream ask (#542). tan's own note on this code names
+  // the trap it creates: "fires when `sdk list` is run without `--online` --
+  // now a `warning` on a SUCCESS envelope (exit 0, `ok: true`), not an `error`
+  // on a failure" (tan-cli#351). `src/deps/vscodeAdapter.ts` binds to it to
+  // refuse caching an answer tan never looked up, which makes this the second
+  // reserved code whose `consumer: "none"` is no longer true.
+  "sdk.network-required": "reserved",
+
   // UNDECLARED, and never going to be: this extension MANUFACTURES it
   // (`src/alpCli/pinnedSurface.ts`) for "the pinned tan can do this and this
   // panel does not call it" — a statement about this repo's wiring that no CLI
