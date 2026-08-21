@@ -378,6 +378,125 @@ test("withLatestSdk: the explicit Refresh click DOES ask tan CLI download consen
   }
 });
 
+// ── #542: `ok: true` is not "I have the data" ────────────────────────────────
+
+/** The key `latestSdkTag` stamps. Duplicated deliberately: it is a storage
+ *  contract, and a test that discovered it from the code under test could not
+ *  notice the code changing it. */
+const LATEST_SDK_CACHE_KEY = "alp.deps.latestSdkTag";
+
+/** Drive the REAL `withLatestSdk` against a scripted `sdk list` envelope.
+ *  Returns the argv of every `sdk list` spawn, plus every globalState write —
+ *  what is NOT written is the whole point of these tests. */
+async function sdkListLookup({ envelope, cached }) {
+  const spawns = [];
+  const writes = [];
+  const { withLatestSdk } = loadDepsAdapter({
+    "../alpCli/vscodeAdapter": {
+      runAlpCommand: async (_context, args, _cwd, options) => {
+        spawns.push({ args, options });
+        return { outcome: { ok: true, envelope, message: "" } };
+      },
+    },
+  });
+  const store = new Map();
+  if (cached) store.set(LATEST_SDK_CACHE_KEY, cached);
+  const context = {
+    globalState: {
+      get: (key, fallback) => (store.has(key) ? store.get(key) : fallback),
+      update: async (key, value) => {
+        writes.push({ key, value });
+        store.set(key, value);
+      },
+    },
+  };
+  const report = await withLatestSdk(
+    context,
+    { rows: [{ name: "sdk", installed: null }] },
+    { refreshLatestSdk: true },
+  );
+  return {
+    argv: spawns.filter((s) => s.args.includes("list")).map((s) => s.args),
+    writes,
+    latest: report?.rows?.find((r) => r.name === "sdk")?.latest ?? null,
+  };
+}
+
+/** Measured against pinned tan 0.6.0-rc1: `tan --format json sdk list` with no
+ *  `--online`. `ok: true`, exit 0, empty list, real answer in a WARNING. */
+const NOT_LOOKED_UP = {
+  command: "sdk",
+  ok: true,
+  exitCode: 0,
+  data: { subcommand: "list", releases: [] },
+  issues: [
+    {
+      code: "sdk.network-required",
+      severity: "warning",
+      message:
+        "`sdk list` reports the Alp SDK releases published upstream on GitHub -- there is no local/offline copy to answer from. Add --online to fetch them.",
+    },
+  ],
+};
+
+test("`sdk list` is asked to go online — without it tan cannot answer at all", async () => {
+  const { argv } = await sdkListLookup({
+    envelope: {
+      ok: true,
+      data: { releases: [{ tag: "v0.16.0" }] },
+      issues: [],
+    },
+  });
+  assert.ok(argv.length > 0, "the lookup must reach a spawn");
+  for (const args of argv) {
+    assert.ok(
+      args.includes("--online"),
+      "`--online` is what lets `list` query the GitHub releases API. Without " +
+        "it tan returns an empty list plus `sdk.network-required` and every " +
+        "caller reads the empty list as an answer (#542). The sibling reader " +
+        "in src/ideHub/sdkManagerMessages.ts has always passed it: " +
+        JSON.stringify(args),
+    );
+  }
+});
+
+test("a `sdk.network-required` warning is never cached as an answer", async () => {
+  const { writes, latest } = await sdkListLookup({
+    envelope: NOT_LOOKED_UP,
+    cached: { tag: "v0.15.0", fetchedAt: 1 },
+  });
+
+  assert.deepEqual(
+    writes,
+    [],
+    "tan said it did not look. Caching that writes a FRESH stamp over an " +
+      "absent answer, which suppresses the retry that would fix it — so the " +
+      "dash persists for the whole staleness window and the failure sustains " +
+      "itself. `ok: true` is not `I have the data`.",
+  );
+  assert.equal(
+    latest?.version,
+    "v0.15.0",
+    "the last known answer must survive a lookup that never happened",
+  );
+});
+
+test("a real empty list IS cached — absence of releases is an answer", async () => {
+  const { writes } = await sdkListLookup({
+    envelope: { ok: true, data: { releases: [] }, issues: [] },
+  });
+
+  assert.equal(writes.length, 1, "a lookup that reached the registry answers");
+  assert.equal(writes[0].key, LATEST_SDK_CACHE_KEY);
+  assert.equal(
+    writes[0].value.tag,
+    null,
+    "no stable tag published is a real null, not a withheld one — this is " +
+      "the direction that proves the guard reads the CODE and not merely the " +
+      "empty list, which both cases share",
+  );
+});
+
 // ── A-0f: every check tan reports reaches the table ──────────────────────────
 
 test("no allowlist stands between a check tan reported and a row", async () => {
