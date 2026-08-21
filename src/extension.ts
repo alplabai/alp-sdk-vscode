@@ -41,6 +41,7 @@ import { recordBuildFinish } from "./build/lastBuild";
 import {
   BUILD_RUN_NAME,
   disposeTaskTracking,
+  FLASH_RUN_NAME,
   log,
   onDidFinishTerminalCommand,
   showOutput,
@@ -227,10 +228,24 @@ export function activate(context: vscode.ExtensionContext): void {
         // the "Alp SDK" channel, which is the point of streaming it there. An
         // action that opens nothing is worse than no action, so the reveal is
         // picked from the mode the run actually used.
+        // A flash does NOT get "failed." (#540). A non-zero exit from `tan
+        // flash` is not evidence that a write was attempted and lost: at the
+        // 0.6.0-rc1 pin an UNARMED confirm gate exits non-zero for a run that
+        // deliberately did nothing, a missing backend tool exits before any
+        // slice is touched, and a multi-slice run can exit non-zero having
+        // already programmed the slices ahead of the one that failed.
+        // Nothing here can tell those apart — the exit status is one number —
+        // so this sentence says what is known and stops at it. Inventing a
+        // classification is what put "flash failed" on screen for a preview
+        // that wrote nothing; the log, not the toast, carries the reason.
         notifyAsync(
           planFailure({
             operation: name,
-            cause: `${name} failed.`,
+            cause:
+              name === FLASH_RUN_NAME
+                ? `${name} did not complete. That does not say whether any ` +
+                  "slice was written — read the log before re-flashing."
+                : `${name} failed.`,
             detail: `exit ${code}`,
             actions: [
               mode === "channel"

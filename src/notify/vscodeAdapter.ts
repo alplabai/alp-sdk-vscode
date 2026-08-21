@@ -162,6 +162,14 @@ const ACTIONS: Record<
   openAnyway: { title: "Open Anyway" },
   deleteFromDisk: { title: "Delete from disk" },
   downloadTanCli: { title: "Download" },
+  // Names the consequence, not the command: "Flash" alone reads like the
+  // button that was already clicked, and this dialog is the last point at
+  // which an irreversible write to real silicon can still be stopped.
+  flashDevice: { title: "Write to Device" },
+  // Likewise the consequence, not the verb: "Stop" would read as stopping a
+  // build. What is being stopped is a write already under way, and the thing
+  // the reader has to weigh is what a half-written device is.
+  stopFlash: { title: "Stop Writing" },
   custom: { title: "" }, // title always overridden by NotifyAction.title
 };
 

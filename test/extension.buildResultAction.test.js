@@ -247,3 +247,35 @@ test("an undefined exit code (task never started) raises no plan at all, build o
   subscriber({ name: "Alp Build", code: undefined });
   assert.deepEqual(plans, []);
 });
+
+// ── #540: a non-zero flash exit is not evidence that a flash failed ────────
+//
+// At the 0.6.0-rc1 pin an UNARMED confirm gate exits non-zero for a run that
+// deliberately previewed and wrote nothing; a missing backend tool exits
+// before a slice is touched; a multi-slice run can exit non-zero having
+// already programmed the slices ahead of the one that stopped it. One exit
+// number cannot tell those apart, so the toast must not pick one.
+test("a failed Alp Flash finish never claims the flash failed", () => {
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({ name: "Alp Flash", code: 1, mode: "channel" });
+
+  const plan = plans.at(-1);
+  assert.doesNotMatch(
+    plan.message,
+    /fail/i,
+    "the exit status does not say a write was attempted and lost",
+  );
+  assert.match(plan.message, /did not complete/);
+  // And it warns before a re-flash, because a partially programmed board is
+  // one of the outcomes this exit code covers.
+  assert.match(plan.message, /whether any slice was written/);
+  assert.match(plan.message, /read the log before re-flashing/);
+  // The number itself stays channel-only, as the seam's contract requires.
+  assert.equal(plan.detail, "exit 1");
+});
+
+test("every other run still gets the plain failure sentence", () => {
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({ name: "Alp Build", code: 2, mode: "channel" });
+  assert.equal(plans.at(-1).message, "Alp Build failed.");
+});
