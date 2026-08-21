@@ -22,7 +22,7 @@
 // Reading tan's own output and adding to it needs no such re-derivation.
 //
 // INTERIM — DELETE `companionCmakeLists` / `companionMainC` / `companionPrjConf`
-// WHEN `alplabai/tan-cli#869` LANDS (tracked here as #536). Generating another
+// WHEN `alplabai/tan-cli#864` LANDS (tracked here as #536). Generating another
 // program's build files in TypeScript is re-deriving knowledge tan owns: the
 // `CMakeLists.txt` below was copied from tan's own scaffold output, and tan
 // already writes the app core's with the core baked in, while the SDK ships
