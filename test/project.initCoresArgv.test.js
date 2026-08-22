@@ -9,9 +9,24 @@
 // without this file the filter could sit in core, fully green, while the panel
 // went on building the argument by hand.
 //
-// SOURCE-LEVEL on purpose: the argument is assembled inside a private method of
-// `NewProjectFlowPanel`, whose constructor builds a live webview. Instantiating
-// it would test the webview harness rather than the argv.
+// SPLIT, and the split is the point.
+//
+// The argv used to be assembled inside a private method of
+// `NewProjectFlowPanel`, whose constructor builds a live webview, so this file
+// could only reach it with REGEXES OVER THE SOURCE TEXT. A regex gate checks
+// the spelling of one branch; it cannot check what the other branches produce,
+// and it goes green the moment the code is reformatted around it.
+//
+// The assembly now lives in `packages/alp-core/src/project/initArgv.ts` as a
+// pure function, so the BEHAVIOUR is checked by calling it —
+// `test/wizard.initArgv.test.js` enumerates every branch against the pinned
+// tan's recorded surface, and the three argv assertions that used to be regexes
+// here are gone with it.
+//
+// What is left here is genuinely source-level and stays that way: the WIRING
+// (the panel must call the shared planner, not re-derive one) and the NOTICE
+// (a toast, not a status-bar line), both of which live in that un-instantiable
+// panel.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -23,46 +38,39 @@ const SOURCE = fs.readFileSync(
   "utf8",
 );
 
-test("the cores argument comes from planInitCores", () => {
+test("the panel builds its init argv with the shared planner", () => {
   // Arrange / Act / Assert
   assert.match(
     SOURCE,
-    /import \{ planInitCores \} from "@alp-sdk\/core\/project\/initCores"/,
-    "the panel must use the shared filter, not a local one",
+    /import \{ planInitArgv \} from "@alp-sdk\/core\/project\/initArgv"/,
+    "the panel must use the shared planner, not assemble argv locally",
   );
   assert.match(
     SOURCE,
-    /planInitCores\(cores\)/,
-    "planInitCores must be called with the SoM's declared cores",
+    /planInitArgv\(\{/,
+    "planInitArgv must actually be called",
   );
+  // The SoM's declared cores must REACH it. `planInitArgv` filters them through
+  // `planInitCores` itself; a panel that stopped passing them would send no
+  // `--cores` at all, which scaffolds a heterogeneous SoM as if it were
+  // single-core and is exactly as wrong as sending the wrong value.
   assert.match(
     SOURCE,
-    /initArgs\.push\("--cores", coresPlan\.arg\)/,
-    "the filtered value is what reaches tan",
+    /cores: this\.somModules\.find\(\(m\) => m\.id === moduleId\)\?\.cores \?\? \[\]/,
+    "the SoM's declared cores must be handed to the planner",
   );
 });
 
-test("the SoM's declared topology is never mapped into --cores verbatim", () => {
-  // Arrange -- the exact shape of the bug: `cores.map((c) => `${c.id}:${c.os}`)`
-  // sends `m55_he:zephyr`, which `tan init` refuses because `--cores` splices
-  // companions in APP-LESS and an app-less `os: zephyr` slice cannot exist.
-  // Written as a search for the DEFECT rather than for its absence in one
-  // spelling, so a re-introduction anywhere in this file trips it.
+test("the panel never assembles init argv of its own", () => {
+  // The failure this exists for: someone appends one more flag at the call site
+  // instead of in the planner. A flag pushed onto the argv here is a flag
+  // `test/wizard.initArgv.test.js` cannot enumerate and the static gate cannot
+  // read — it is unchecked by construction, which is the state this whole
+  // change removed.
   assert.doesNotMatch(
     SOURCE,
-    /\$\{\s*\w+\.id\s*\}\s*:\s*\$\{\s*\w+\.os\s*\}/,
-    "a core's declared os must never be interpolated straight into --cores",
-  );
-});
-
-test("the flag is omitted entirely when there is nothing to send", () => {
-  // Arrange -- `planInitCores` answers `null` for a SoM with no companion
-  // (E1M-AEN301 is two Zephyr cores and nothing else). Pushing an empty
-  // `--cores` would be a different refusal, not a fix.
-  assert.match(
-    SOURCE,
-    /if \(coresPlan\.arg\) \{\s*initArgs\.push\("--cores", coresPlan\.arg\);/,
-    "--cores must be pushed only when the filter produced a value",
+    /initArgs\.push\(/,
+    "add the flag to planInitArgv in core, where the gate can enumerate it",
   );
 });
 

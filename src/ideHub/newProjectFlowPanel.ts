@@ -5,7 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { exampleCategory } from "@alp-sdk/core/examples/category";
-import { planInitCores } from "@alp-sdk/core/project/initCores";
+import { planInitArgv } from "@alp-sdk/core/project/initArgv";
 import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
 import {
   appDirOverrides,
@@ -183,14 +183,31 @@ export class NewProjectFlowPanel {
    *  actual modules). Falls back to the built-in list when no SDK is resolved
    *  (presets returns an empty `soms`) so New Project works pre-SDK. */
   private async fetchSomModules(sdkPath?: string): Promise<E1mModule[]> {
-    const args = sdkPath ? ["--sdk-root", sdkPath, "presets"] : ["presets"];
+    // COMMAND FIRST, `--sdk-root` at the tail — the shape, not a style choice.
+    // `test/tan.surfaceContract.test.js` can only check an argv whose command
+    // is a LEADING string literal; an argv assembled into a variable, or one
+    // opening with a conditional spread, reduces to `resolution: "none"` and
+    // every assertion in that gate skips it. All five of this panel's tan
+    // calls used to sit in that state, which is how `init.invalid-cores`
+    // (#528) and the 12 refused template x SoM pairs (#530) both shipped
+    // unnoticed by any gate.
+    //
+    // Verified byte-identical on the pinned tan 0.6.0-rc1 for `presets`,
+    // `explain`, `explain --template <id>` and `examples`: `--sdk-root` is a
+    // declared option of each of those commands, not merely a root-position
+    // global, and `withSdkRoot` tests `args.includes("--sdk-root")` — which is
+    // position-independent — so it still declines to inject a second one.
+    const root = sdkPath ? ["--sdk-root", sdkPath] : [];
     // `interactive: true`: only reached from `sendState`/`reloadCatalog`,
     // themselves only called on the wizard's own `ready`/`reloadProjectTemplates`
     // messages — i.e. the user opened or is actively driving this wizard, never
     // a background re-derive.
-    const { outcome } = await runAlpCommand(this.context, args, undefined, {
-      interactive: true,
-    });
+    const { outcome } = await runAlpCommand(
+      this.context,
+      ["presets", ...root],
+      undefined,
+      { interactive: true },
+    );
     const soms =
       (
         outcome.envelope?.data as
@@ -246,11 +263,13 @@ export class NewProjectFlowPanel {
   /** Build the template picker from the CLI's real templates (single source of
    *  truth): `alp explain` lists ids, then per-id explain gives title/blurb. */
   private async fetchTemplates(sdkPath?: string): Promise<ProjectTemplate[]> {
+    // Command first, `--sdk-root` at the tail — see `fetchSomModules` for why
+    // the shape is load-bearing and for the pinned-tan equivalence check.
     const root = sdkPath ? ["--sdk-root", sdkPath] : [];
     // `interactive: true` on all three calls below — see `fetchSomModules`.
     const overview = await runAlpCommand(
       this.context,
-      [...root, "explain"],
+      ["explain", ...root],
       undefined,
       { interactive: true },
     );
@@ -282,7 +301,7 @@ export class NewProjectFlowPanel {
     for (const id of ids) {
       const detail = await runAlpCommand(
         this.context,
-        [...root, "explain", "--template", id],
+        ["explain", "--template", id, ...root],
         undefined,
         { interactive: true },
       );
@@ -303,7 +322,7 @@ export class NewProjectFlowPanel {
     // Empty when no SDK resolves — the picker simply shows no Examples section.
     const examplesRes = await runAlpCommand(
       this.context,
-      [...root, "examples"],
+      ["examples", ...root],
       undefined,
       { interactive: true },
     );
@@ -594,65 +613,28 @@ export class NewProjectFlowPanel {
     const sourceDir = this.templates.find(
       (t) => t.id === templateId,
     )?.sourceDir;
-    const initArgs = sourceDir
-      ? [
-          "init",
-          "--from-example",
-          sourceDir,
-          "--name",
-          projectName,
-          "--destination",
-          parentDir,
-          "--non-interactive",
-        ]
-      : [
-          "init",
-          "--template",
-          templateId,
-          "--name",
-          projectName,
-          "--destination",
-          parentDir,
-          "--som",
-          moduleId,
-          "--non-interactive",
-        ];
-    // Heterogeneous SoMs scaffold their companion cores + a default IPC channel
-    // via `tan init --cores` (requires the CLI's --cores support; see
-    // SUPPORTED_CLI_VERSION). Single-core SoMs keep the plain --som path.
     //
-    // FILTERED, not verbatim (#528). This used to send the SoM's entire
-    // declared topology, straight from `tan presets`, and every SoM declaring
-    // two Zephyr cores then failed with exit 2 / `init.invalid-cores` — six of
-    // eleven SoMs, the whole Alif Ensemble line. `--cores` splices companions
-    // in APP-LESS, and an app-less `os: zephyr` slice is refused. See
-    // `planInitCores` for the contract and for why no core is named as the app
-    // core here.
-    let unscaffolded: string[] = [];
-    if (!sourceDir) {
-      const cores = this.somModules.find((m) => m.id === moduleId)?.cores ?? [];
-      const coresPlan = planInitCores(cores);
-      if (coresPlan.arg) {
-        initArgs.push("--cores", coresPlan.arg);
-      }
-      // One of them is the app core and gets the scaffolded app; anything past
-      // the first is left out of the generated board.yaml entirely, and that is
-      // said out loud below rather than downgraded in silence.
-      unscaffolded = coresPlan.zephyrCores;
-    }
-    // Examples copy their own board.yaml verbatim; when the user picks a SoM,
-    // retarget the copied board.yaml to it (alp init --from-example --som), so an
-    // example can be scaffolded onto the user's SoM instead of its default.
-    if (sourceDir && moduleId) {
-      initArgs.push("--som", moduleId);
-    }
-    // Source the scaffold from the SDK the user picked in the wizard (the same one
-    // pinned below), overriding runAlpCommand's active-SDK injection — so an
-    // example is copied from, and validated against, the selected SDK rather than
-    // whatever SDK happens to be globally active.
-    if (sdkPath) {
-      initArgs.push("--sdk-root", sdkPath);
-    }
+    // The argv itself is `planInitArgv`, in core, and it is there so a GATE can
+    // read it: assembled inline here it reduced to `resolution: "none"` in
+    // `scripts/tan-surface/extract.mjs` and no assertion in
+    // `test/tan.surfaceContract.test.js` ever ran on it — which is how #528 and
+    // #530 both reached customers. `test/wizard.initArgv.test.js` now enumerates
+    // every branch of it against the pinned tan's recorded surface. Keep the
+    // assembly there; a flag pushed back onto `initArgs` here is a flag no gate
+    // checks again.
+    //
+    // Heterogeneous SoMs scaffold their companion cores + a default IPC channel
+    // via `tan init --cores`, FILTERED through `planInitCores` (#528) — see that
+    // module for the contract and for why no core is named as the app core.
+    const { argv: initArgs, zephyrCores: unscaffolded } = planInitArgv({
+      templateId,
+      sourceDir,
+      projectName,
+      parentDir,
+      moduleId,
+      cores: this.somModules.find((m) => m.id === moduleId)?.cores ?? [],
+      sdkPath,
+    });
     // `interactive: true`: reached only from the wizard's "Create" button
     // (`createNewProject`) — a direct, explicit user action.
     const { outcome } = await runAlpCommand(this.context, initArgs, undefined, {

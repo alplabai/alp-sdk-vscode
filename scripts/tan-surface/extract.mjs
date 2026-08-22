@@ -892,6 +892,31 @@ src/ and packages/*/src.
   --compact          one-line JSON instead of indented
 `;
 
+/**
+ * Reduce an argv that is entirely string literals — a RUNTIME argv, produced by
+ * a planner and handed here whole, rather than one read off a call site.
+ *
+ * Exported so `test/wizard.initArgv.test.js` can check the New Project
+ * wizard's `tan init` argv against the same snapshot, with the same rules, as
+ * every statically-read site. That argv is assembled conditionally
+ * (`packages/alp-core/src/project/initArgv.ts`), so the AST walk above will
+ * never see it as an array literal no matter how the call site is written —
+ * enumerating the planner is the only way it gets checked at all.
+ *
+ * The metavar arity table is why this is shared rather than re-implemented:
+ * without it `["init", "--som", "E1M-AEN801"]` counts the SKU as a stray
+ * positional (#543), and a second copy of that rule is a second place for it
+ * to drift from the snapshot.
+ */
+export function reduceLiteralArgv(argv, metavars) {
+  return reduceTokens(
+    argv.map((value) => ({ kind: TOKEN_LITERAL, value })),
+    metavars,
+  );
+}
+
+export { loadMetavars };
+
 function main() {
   let options;
   try {
@@ -940,4 +965,33 @@ function main() {
   );
 }
 
-main();
+// Guarded because this file now has importers. Unguarded, `import`ing it to
+// reach `reduceLiteralArgv` would run the whole AST walk and write the record
+// set to the importer's stdout — which, in a `node --test` run, is the TAP
+// stream. Invoked as a script (`node scripts/tan-surface/extract.mjs`, and the
+// `spawnSync` in `test/tan.surfaceContract.test.js`) this is unchanged.
+//
+// REALPATHS, not a URL string compare: `process.argv[1]` is whatever the caller
+// typed — relative here, absolute from the test's `spawnSync`, and a symlink
+// under a pnpm bin shim — while `import.meta.url` is always the resolved file.
+// A mismatch would leave `main()` unrun, and the extractor would then exit 0
+// having printed nothing. That failure IS loud (the gate's JSON.parse throws
+// with the first 400 bytes of an empty stdout), but "loud in the one gate that
+// consumes it" is a thinner guarantee than getting the comparison right.
+function invokedAsScript() {
+  if (!process.argv[1]) return false;
+  const real = (target) => {
+    try {
+      return fs.realpathSync(target);
+    } catch {
+      return path.resolve(target);
+    }
+  };
+  return (
+    real(path.resolve(process.argv[1])) === real(fileURLToPath(import.meta.url))
+  );
+}
+
+if (invokedAsScript()) {
+  main();
+}

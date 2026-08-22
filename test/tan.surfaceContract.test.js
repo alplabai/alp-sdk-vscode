@@ -706,25 +706,43 @@ test("positional arguments match what the command declares", () => {
  * started being reported. All four have since been fixed and are gone from the
  * tree; the four west.ts sites are what is left.
  *
- * The three `[...root, …]` sites stay here on purpose: `root` is
- * `sdkPath ? ["--sdk-root", sdkPath] : []` — a CONDITIONAL, not an array
- * literal — so the leading-spread rule declines to resolve it rather than
- * guessing which branch runs.
+ * The four `newProjectFlowPanel.ts` sites that used to be here have LEFT this
+ * list for `EXPECTED_PARTIAL`. `root` is still `sdkPath ? ["--sdk-root",
+ * sdkPath] : []` — a CONDITIONAL, so the leading-spread rule still declines to
+ * resolve it — but the spread moved to the TAIL (`["explain", ...root]`), which
+ * leaves the command a leading literal and puts the command, the flags and the
+ * inertness back under assertions 2, 3, 4 and 4b. `--sdk-root` itself stays
+ * unchecked, which is limit (c) and is the same state it is in at every site
+ * where `withSdkRoot` prepends it (limit (a)).
  */
 const EXPECTED_UNRESOLVABLE = [
   "src/alpCli/doctor.ts  args",
   "src/alpCli/vscodeAdapter.ts  args",
   "src/alpCli/vscodeAdapter.ts  finalArgs",
   "src/debug.ts  args",
-  'src/ideHub/newProjectFlowPanel.ts  [...root, "examples"]',
-  'src/ideHub/newProjectFlowPanel.ts  [...root, "explain", "--template", id]',
-  'src/ideHub/newProjectFlowPanel.ts  [...root, "explain"]',
-  "src/ideHub/newProjectFlowPanel.ts  args",
   "src/ideHub/newProjectFlowPanel.ts  initArgs",
   "src/loader.ts  args",
   "src/lsp/client.ts  args",
   "src/west.ts  args",
 ];
+
+/**
+ * The `initArgs` entry above is the wizard's `tan init`, and it is the one
+ * unresolvable site in that list that IS checked — just not here.
+ *
+ * Its argv is genuinely conditional (a template or an example, `--cores` or
+ * not, an SDK or not), so no call-site shape makes it a literal array. It moved
+ * into `packages/alp-core/src/project/initArgv.ts` as a pure function, and
+ * `test/wizard.initArgv.test.js` enumerates every branch through
+ * `reduceLiteralArgv` — the extractor's own reducer, against this same
+ * snapshot. The other four wizard sites went the other way and are now
+ * literal-first (`["explain", ...root]` rather than `[...root, "explain"]`), so
+ * they appear in `EXPECTED_PARTIAL` below.
+ *
+ * Written down because the entry alone reads as "unchecked", and for this one
+ * site that is no longer true. Delete this note with the entry if the argv ever
+ * becomes static; do not delete the note while the entry stands.
+ */
 
 /**
  * Half-readable sites, pinned for the same reason as the list above.
@@ -741,6 +759,10 @@ const EXPECTED_UNRESOLVABLE = [
  * its flags, its inertness and its subcommand's refusal.
  */
 const EXPECTED_PARTIAL = [
+  'src/ideHub/newProjectFlowPanel.ts  ["examples", ...root]',
+  'src/ideHub/newProjectFlowPanel.ts  ["explain", "--template", id, ...root]',
+  'src/ideHub/newProjectFlowPanel.ts  ["explain", ...root]',
+  'src/ideHub/newProjectFlowPanel.ts  ["presets", ...root]',
   'src/west.ts  ["clean", ...target.appArg]',
   'src/west.ts  ["flash", ...target.appArg]',
   'src/west.ts  ["image", ...target.appArg]',
