@@ -172,7 +172,7 @@ tan scaffold --template sensor-driver --name sensor_mod --destination . --previe
 tan explain --format json
 tan presets --project . --sdk-root ../alp-sdk --format json
 tan diff --project . --format json
-tan doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json
+tan doctor --project . --sdk-root ../alp-sdk --format json
 ```
 
 ## 7. Debug Workflows: Inspect, Trace, Support Bundle

@@ -50,7 +50,7 @@ done
 okj "inspect"             "$ALP" inspect --project "$PROJ" --sdk-root "$SDK" --format json
 okj "diff"                "$ALP" diff --project "$PROJ" --sdk-root "$SDK" --format json
 okj "trace"               "$ALP" trace --project "$PROJ" --sdk-root "$SDK" --format json
-okj "doctor native-host"  "$ALP" doctor --project "$PROJ" --sdk-root "$SDK" --target-kind native-host --server none --format json
+okj "doctor json"         "$ALP" doctor --project "$PROJ" --sdk-root "$SDK" --format json
 okj "support-bundle"      "$ALP" support-bundle --project "$PROJ" --sdk-root "$SDK" --format json
 ok  "presets"             "$ALP" presets --sdk-root "$SDK"
 ok  "examples"            "$ALP" examples --sdk-root "$SDK"

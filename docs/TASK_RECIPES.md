@@ -62,7 +62,7 @@ VS Code:
 
 CLI:
 
-tan doctor --project . --sdk-root ../alp-sdk --target-kind native-host --server none --format json
+tan doctor --project . --sdk-root ../alp-sdk --format json
 
 ## 7. Setup Shell Completion
 

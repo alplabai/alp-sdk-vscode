@@ -238,12 +238,30 @@ export async function offerBootstrapFix(
     await vscode.commands.executeCommand("alp.installDependencies");
     return;
   }
-  // The remaining case — no Zephyr workspace at all — is exactly the case
-  // `--fix` used to handle, and exactly what `tan bootstrap` creates. The
-  // Python `tan` (the pinned `SUPPORTED_CLI_VERSION`) has no `--fix` option at
-  // all — it exits 2 with `No such option: --fix` and a `cli`-usage envelope,
-  // not a doctor one (tan-cli#295) — so this calls `tan bootstrap` directly
-  // instead of a flag that no longer exists.
+  // The remaining case — no Zephyr workspace at all — is exactly what `tan
+  // bootstrap` creates, and NOT something `doctor --fix` can do. `--fix` DOES
+  // still exist at the pinned `SUPPORTED_CLI_VERSION`: tan 0.6.0-rc1's
+  // `tan doctor --help` lists `--project --sdk-root --board-yaml --build
+  // --fix --format --non-interactive --ci --no-color --help`. The claim that
+  // stood here — that the Python `tan` has no `--fix` at all and exits 2 with
+  // `No such option: --fix` and a `cli`-usage envelope — was simply false.
+  // Two MEASURED reasons `--fix` still cannot serve this call site:
+  //   1. Scope. Its own help text: "Run the manifest's own install command
+  //      (ADR 0021) for any hostPrerequisites tool this host is missing, when
+  //      it needs no elevation." That installs missing host TOOLS; it never
+  //      creates a west/Zephyr workspace, which is `tan bootstrap`'s job.
+  //   2. Mode. Same help text: "Only in an interactive, non-CI, text-mode run
+  //      (--non-interactive/--ci/--format json all disable it)". Every doctor
+  //      spawn in this extension goes through `runAlpCommand`, which appends
+  //      `--format json` (`src/alpCli/adapterCore.ts`), so a `--fix` sent from
+  //      here is refused before it repairs anything. Measured: `tan doctor
+  //      --project <tmp> --fix --format json` → exit 4, a real doctor
+  //      envelope, plus the warning issue `doctor.fix-suppressed`: "`--fix`
+  //      was requested but not run: `--format json` (no terminal to prompt
+  //      on). Re-run `tan doctor --fix` from a real, interactive terminal,
+  //      without --ci/--non-interactive/--format json, to allow it."
+  // So this calls `tan bootstrap` directly — the verb that actually creates
+  // the workspace, in a terminal the user can watch.
   await runAlpInTerminal(context, ["bootstrap"], {
     // Same run name as `tan bootstrap` (src/bootstrap.ts) on purpose: this
     // fix bootstraps too, so it must take the same reservation and light the
