@@ -29,7 +29,7 @@ tar -xzf tan.tar.gz -C /usr/local/lib   # -> /usr/local/lib/tan/{tan,_internal/}
 ln -s /usr/local/lib/tan/tan /usr/local/bin/tan
 tan validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
 tan generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
-tan doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
+tan doctor --project . --sdk-root "$ALP_SDK_ROOT" --format json > doctor-report.json
 ```
 
 ## 2. GitHub Actions Example
@@ -81,8 +81,6 @@ jobs:
           tan doctor \
             --project . \
             --sdk-root "$ALP_SDK_ROOT" \
-            --target-kind native-host \
-            --server none \
             --format json > doctor-report.json
 
       - name: Upload reports
@@ -116,7 +114,7 @@ tan_cli_verify:
     - ln -s /usr/local/lib/tan/tan /usr/local/bin/tan
     - tan validate --project . --sdk-root "$ALP_SDK_ROOT" --format json > validate-report.json
     - tan generate --project . --sdk-root "$ALP_SDK_ROOT" --all --format json > generate-report.json
-    - tan doctor --project . --sdk-root "$ALP_SDK_ROOT" --target-kind native-host --server none --format json > doctor-report.json
+    - tan doctor --project . --sdk-root "$ALP_SDK_ROOT" --format json > doctor-report.json
   artifacts:
     when: always
     paths:

@@ -13,7 +13,10 @@ import * as path from "path";
 import * as vscode from "vscode";
 
 import { EmitMode } from "@alp-sdk/core/loader/models";
-import { getGenerationTargetSupport } from "@alp-sdk/core/loader/service";
+import {
+  describeGenerationFailure,
+  getGenerationTargetSupport,
+} from "@alp-sdk/core/loader/service";
 import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import {
   boardYamlExists,
@@ -239,19 +242,25 @@ async function runLoaderAll(context: vscode.ExtensionContext): Promise<void> {
   }
 
   showOutput();
-  const failedDisplayNames = data.failed.map(
-    (emit) => getGenerationTargetSupport(emit as EmitMode).displayName,
-  );
   await notify(
     planFailure({
       operation,
       // The per-target counts are the best customer text this command has, so
       // they stay in `message`; only the severity moves — an exit-3 write
       // failure is an error, not the yellow toast this site used to hardcode.
-      cause:
-        failedDisplayNames.length > 0
-          ? `Regenerated ${data.written.length} of ${data.targets.length} formats — ${failedDisplayNames.join(", ")} failed.`
-          : "Regenerating all formats failed.",
+      //
+      // `describeGenerationFailure`, NOT a `getGenerationTargetSupport` lookup.
+      // This site used to read `getGenerationTargetSupport(emit as EmitMode)`,
+      // which THROWS on an id the catalog does not hold — and `generate --all`
+      // on the pinned tan runs nine targets against this extension's six.
+      // `west-libraries`, `hw-info-h` and `os-topology` are the three of those
+      // nine it cannot name (`zephyr-board`, which tan reports it can generate
+      // but `--all` does not run, is a fourth). Any board-model-level error
+      // fails eight of the nine at once, so the throw was the rule rather than
+      // the exception, and it took out the toast that carries these two
+      // actions. The cast is what let a `string` back into a six-member union;
+      // `data.failed` was always `string[]` and now stays it.
+      cause: describeGenerationFailure(data),
       severity: envelope.ok ? "warning" : outcome.severity,
       actions: [{ id: "openBoardYaml" }, { id: "runDoctor" }],
     }),

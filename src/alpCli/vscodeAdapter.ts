@@ -126,11 +126,20 @@ function clip(text: string, max = 4000): string {
  * TypeScript copy of tan's walk-up would drift from it). Reporting the SDK
  * root tan actually used is a tan-side envelope ask.
  *
- * Exported for the `alp` task provider (`src/tasks/vscodeAdapter.ts`), which
- * spawns `tan build` itself rather than through `runAlpCommand`/
- * `runAlpInTerminal` and must not re-derive this rule — a second copy is how a
- * task-driven build silently starts using a different SDK than every other
- * command in the window.
+ * NOT exported, and that is the point: every `tan` spawn in this extension goes
+ * through one of the runners below, so this rule has exactly one caller-facing
+ * surface and no second copy to drift from. The `alp` task provider is the case
+ * that looks like an exception and is not — `src/tasks/vscodeAdapter.ts` states
+ * it itself: its three build tasks "do NOT spawn `tan` themselves — they
+ * delegate to `runAlpInTerminal`", precisely so that binary resolution,
+ * `--sdk-root` augmentation and the `runInTerminal` concurrency reservation
+ * stay "in the ONE place that already owns them".
+ *
+ * (This paragraph used to say the opposite — that the function was "Exported
+ * for the `alp` task provider ... which spawns `tan build` itself". Neither
+ * half was true: `withSdkRoot` has never carried an `export`, and the task
+ * provider has never spawned `tan`. A maintainer reading it went looking for a
+ * second copy of the SDK rule that does not exist.)
  */
 function withSdkRoot(args: string[]): string[] {
   if (args.includes("--sdk-root")) return args;
