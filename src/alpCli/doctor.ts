@@ -129,6 +129,18 @@ export async function runDoctor(
   const { outcome } = await runAlpCommand(context, args, cwd, {
     signal,
     interactive,
+    // Doctor's entire job is reporting on the environment, so it has to look at
+    // the SAME one the build runs in. Builds go through `runAlpStreamed`, which
+    // spawns under the user's LOGIN shell; this path did not, and saw only the
+    // PATH a GUI-launched VS Code inherited. That is how the Dependencies panel
+    // came to advise installing a tool the build had just found — measured on
+    // the streamed path as `spawn west ENOENT` before the login shell and
+    // `West version: v1.5.0` after.
+    //
+    // The shell startup is real cost, and doctor runs on state refresh, but a
+    // fast wrong answer about the toolchain is worse than a slow right one.
+    // No-op on Windows, where the host already has the login environment.
+    loginShell: true,
   });
   const data = outcome.envelope?.data;
   if (!outcome.envelope || !isDoctorEnvelopeData(data)) {

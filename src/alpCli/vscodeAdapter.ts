@@ -2354,6 +2354,22 @@ export async function runAlpCommand(
     signal?: AbortSignal;
     timeoutMs?: number;
     interactive?: boolean;
+    /**
+     * Run under the user's LOGIN shell on POSIX, the way `runAlpStreamed`
+     * already does (`loginShellInvocation`).
+     *
+     * Opt-in, not the default. It costs a shell startup per call, and most
+     * envelope commands (`presets`, `examples`, `explain`) only read metadata
+     * — they do not care what else is on PATH. It matters for the commands
+     * that REPORT ON THE ENVIRONMENT, because otherwise they answer about a
+     * different one than the build runs in: builds go through
+     * `runAlpStreamed`, under the profile's PATH, while this path sees only
+     * whatever a GUI-launched VS Code inherited.
+     *
+     * No-op on Windows, where the extension host already has the login
+     * environment.
+     */
+    loginShell?: boolean;
   },
 ): Promise<{
   outcome: CliOutcome;
@@ -2389,14 +2405,22 @@ export async function runAlpCommand(
   const result = await runAlpAsync(
     binary.command,
     finalArgs,
-    (command, spawnArgs, spawnCwd) =>
-      spawnAlpAsync(
-        command,
-        spawnArgs,
+    (command, spawnArgs, spawnCwd) => {
+      // `loginShellInvocation` returns null on Windows and whenever the caller
+      // did not ask, which is the ordinary direct spawn. `cwd` is passed in
+      // BOTH branches, matching `runAlpStreamed` — the shell command cds
+      // itself, and the spawn cwd stays the same either way.
+      const shellRun = options?.loginShell
+        ? loginShellInvocation(command, spawnArgs, spawnCwd)
+        : null;
+      return spawnAlpAsync(
+        shellRun?.file ?? command,
+        shellRun?.argv ?? spawnArgs,
         spawnCwd,
         options?.signal,
         options?.timeoutMs,
-      ),
+      );
+    },
     cwd,
   );
   const { outcome, raw } = result;
