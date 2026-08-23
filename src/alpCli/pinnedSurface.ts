@@ -155,6 +155,91 @@ export function unsupportedModelSubcommand(subcommand: string): CliOutcome {
   };
 }
 
+// ── inert options, and WHY each one is inert ─────────────────────────────────
+
+/**
+ * The four situations `surface.json`'s `inert: true` collapses into one
+ * boolean. Only `deferred` will ever start doing something.
+ */
+export type InertKind =
+  | "deferred"
+  | "compatibility"
+  | "parity"
+  | "not-applicable";
+
+/**
+ * Every option the pinned recording marks inert, keyed `"<command> <flag>"`,
+ * with the kind of inertness it is.
+ *
+ * DECLARED, NOT DERIVED, and that is the point. The recording carries the
+ * reason only in `marker` prose — "Accepted by other commands; not implemented
+ * for `build` yet (tan-cli#427)", "(unused: faultdecode is HW-free)" — beside a
+ * `ref` that is null for four of the six markers. Sniffing the kind out of that
+ * text at runtime is the mistake that shipped in the proxy classifier (#511): a
+ * condition pinned to one spelling, blind to every other, with no code to fall
+ * back on. So the kind is written down here and `test/tan.pinnedSurface.test.js`
+ * holds this table to the recording in BOTH directions — every entry still
+ * inert, and every inert option in the recording present here. The second
+ * direction is what stops a new inert flag arriving unclassified.
+ *
+ * Unlike `DEFERRED_BUILD_OPTIONS` below, this covers every command, not just
+ * the flags one panel sends: a table nothing keeps true is a list, and the
+ * two-direction gate is what makes keeping it true automatic rather than
+ * remembered.
+ */
+export const INERT_OPTIONS: Readonly<Record<string, InertKind>> = {
+  // DEFERRED — click accepts it, `build` has not implemented it yet, and
+  // tan-cli#427 tracks its arrival. The only kind that will ever start doing
+  // something, and therefore the only one a "not yet" sentence is true of.
+  "build --all": "deferred",
+  "build --ci": "deferred",
+  "build --manifest": "deferred",
+  "build --manifest-from": "deferred",
+  "build --no-auto-bootstrap": "deferred",
+  "build --no-color": "deferred",
+  "build --non-interactive": "deferred",
+  "build --plan": "deferred",
+  "build --pristine": "deferred",
+  "build --quiet": "deferred",
+  "build --target": "deferred",
+  "build --verbose": "deferred",
+
+  // COMPATIBILITY — accepted so a caller written against an older tan does not
+  // break. Never going to act; there is nothing to wait for.
+  "doctor --build": "compatibility",
+
+  // PARITY — accepted so this command's flag surface matches its siblings'.
+  // Same permanence as compatibility, different reason, and the distinction is
+  // worth keeping: a customer told "for parity" can stop looking for an effect.
+  "renode --board-yaml": "parity",
+  "renode --image-bundle": "parity",
+
+  // NOT APPLICABLE — the recording's words are "(unused: faultdecode is
+  // HW-free)". The flag is meaningless for this command by nature, not
+  // unimplemented.
+  "faultdecode --project": "not-applicable",
+  "faultdecode --sdk-root": "not-applicable",
+};
+
+/** How each permanent kind is explained to a customer. `deferred` is absent on
+ *  purpose: it gets the upstream issue and its URL instead, because it is the
+ *  one kind with something to point at. */
+const INERT_KIND_REASON: Readonly<
+  Record<Exclude<InertKind, "deferred">, string>
+> = {
+  compatibility:
+    "it is kept so callers written against an older tan keep working",
+  parity: "it is there so this command's flags match every other command's",
+  "not-applicable": "it does not apply to this command",
+};
+
+/** Which kind of inert `tan <command> <flag>` is at this pin, or null when the
+ *  flag is live (or is not an option at all — an unknown flag is not inert,
+ *  it is unknown). */
+export function inertKindOf(command: string, flag: string): InertKind | null {
+  return INERT_OPTIONS[`${command} ${flag}`] ?? null;
+}
+
 // ── `tan build`'s deferred flags ─────────────────────────────────────────────
 
 /** The upstream issue tracking every deferred `tan build` flag. It is the ref
@@ -182,9 +267,19 @@ export const DEFERRED_BUILD_OPTIONS: readonly string[] = [
   "--manifest-from",
 ];
 
-/** Whether the pinned tan defers `tan build <flag>`. */
+/**
+ * Whether the pinned tan defers `tan build <flag>`.
+ *
+ * Reads `INERT_OPTIONS`, not `DEFERRED_BUILD_OPTIONS`. The two answer different
+ * questions and only one of them is about the binary: the list below is the
+ * three flags THIS PANEL would send, so consulting it made
+ * `deferredBuildOptionMessage` describe the other nine deferred build flags —
+ * `--all`, `--ci`, `--target`, `--verbose`, `--quiet`, `--pristine`,
+ * `--no-color`, `--non-interactive`, `--no-auto-bootstrap` — as flags that "do
+ * something", which the recording says they do not.
+ */
 export function isBuildOptionDeferred(flag: string): boolean {
-  return DEFERRED_BUILD_OPTIONS.includes(flag);
+  return inertKindOf("build", flag) === "deferred";
 }
 
 /** This repo's half of tan-cli#427 — restoring the Build Plan panel's spawns
@@ -212,18 +307,34 @@ export const BUILD_DEFERRED_RESTORE_REF = "#541";
  * that nothing ran, so a reader does not go looking for a failed subprocess in
  * the log.
  */
-export function deferredBuildOptionMessage(flag: string): string {
-  if (!isBuildOptionDeferred(flag)) {
+export function deferredBuildOptionMessage(
+  flag: string,
+  command = "build",
+): string {
+  const kind = inertKindOf(command, flag);
+  if (kind === null) {
     return (
-      `\`tan build ${flag}\` is NOT deferred in tan ` +
+      `\`tan ${command} ${flag}\` is NOT deferred in tan ` +
       `${SUPPORTED_CLI_VERSION} — it does something, and this panel does not ` +
       `send it (${BUILD_DEFERRED_RESTORE_REF}). Nothing was run. Calling it ` +
       "deferred would blame the CLI for a gap that is this panel's."
     );
   }
+  if (kind !== "deferred") {
+    // No upstream issue, and deliberately no "yet": naming tan-cli#427 here
+    // would promise an arrival that is not coming, which is the more expensive
+    // half of the same confusion — a customer who waits for a flag to start
+    // working waits forever.
+    return (
+      `\`tan ${command} ${flag}\` is accepted by tan ` +
+      `${SUPPORTED_CLI_VERSION} and ignored — ${INERT_KIND_REASON[kind]}, not ` +
+      "a capability on its way, so there is nothing to wait for. Nothing " +
+      "was run."
+    );
+  }
   return (
-    `\`tan build ${flag}\` is deferred in tan ${SUPPORTED_CLI_VERSION} and ` +
-    `does nothing (${BUILD_DEFERRED_REF}: ` +
+    `\`tan ${command} ${flag}\` is deferred in tan ` +
+    `${SUPPORTED_CLI_VERSION} and does nothing (${BUILD_DEFERRED_REF}: ` +
     `https://github.com/alplabai/tan-cli/issues/427). Nothing was run — this ` +
     "panel does not spawn a call the pinned CLI cannot answer."
   );
