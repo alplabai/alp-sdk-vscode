@@ -717,12 +717,22 @@ test("positional arguments match what the command declares", () => {
  */
 const EXPECTED_UNRESOLVABLE = [
   "src/alpCli/doctor.ts  args",
+  // Was `src/lsp/client.ts  args` until the envelope runner was extracted so
+  // the Configurator could share it. Same single pass-through site, new home.
+  //
+  // Measured, so that nobody reads this entry as narrower than it is: the
+  // extractor does NOT follow a pass-through into its callers. It records one
+  // site here with `command: null, resolution: "none"`, which means the argv
+  // its callers actually pass — `["presets"]`, `["kconfig", "--core", <id>]`,
+  // and now the Configurator's own `["presets"]` — is unverified against the
+  // pinned CLI's surface. That was equally true while the function lived in
+  // client.ts; extracting it moved the blind spot without widening it.
+  "src/alpCli/envelope.ts  args",
   "src/alpCli/vscodeAdapter.ts  args",
   "src/alpCli/vscodeAdapter.ts  finalArgs",
   "src/debug.ts  args",
   "src/ideHub/newProjectFlowPanel.ts  initArgs",
   "src/loader.ts  args",
-  "src/lsp/client.ts  args",
   "src/west.ts  args",
 ];
 

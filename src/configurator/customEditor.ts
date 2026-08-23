@@ -7,6 +7,11 @@ import { parseBoardConfig } from "@alp-sdk/core/board/parse";
 import { serializeBoardConfig } from "@alp-sdk/core/board/serialize";
 import { buildConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
 import {
+  boardLibrariesFromPresets,
+  withPresetLibraries,
+} from "@alp-sdk/core/sdkCatalogue/derive";
+import { fetchEnvelopeData } from "../alpCli/envelope";
+import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "../ideHub/messages";
@@ -76,10 +81,18 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       }
     };
 
+    // The library vocabulary `tan presets` owns (`data.boardLibraries`), once
+    // the CLI has answered. Empty until then, and empty forever if the CLI
+    // cannot be resolved — `withPresetLibraries` treats that as "no answer" and
+    // leaves the filesystem scan standing, so the picker is never blanked by a
+    // CLI that is missing, old, or pointed at an unresolved SDK.
+    let presetLibraryIds: readonly unknown[] = [];
+
     const postRender = (board: BoardConfig): void => {
       const project = collectProjectContext();
-      const catalogue = loadSdkCatalogue(project.sdkRoot ?? null, (m) =>
-        log(m),
+      const catalogue = withPresetLibraries(
+        loadSdkCatalogue(project.sdkRoot ?? null, (m) => log(m)),
+        presetLibraryIds,
       );
       const message: ExtToWebviewMessage = {
         type: "configuratorRender",
@@ -131,6 +144,17 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       switch (msg.type) {
         case "ready":
           postRender(parse());
+          // Then ask tan for the library vocabulary it owns and re-render once
+          // it answers. It runs ONCE per editor rather than inside postRender,
+          // which fires on every keystroke that reaches the document — spawning
+          // a CLI per edit is not an option. Failures are silent by design:
+          // `fetchEnvelopeData` resolves `undefined` and the scan stays.
+          void fetchEnvelopeData(this.context, ["presets"]).then((data) => {
+            const ids = boardLibrariesFromPresets(data);
+            if (ids.length === 0) return;
+            presetLibraryIds = ids;
+            postRender(parse());
+          });
           break;
         case "configuratorUpdate":
           void writeBoard(msg.board).then(() => {

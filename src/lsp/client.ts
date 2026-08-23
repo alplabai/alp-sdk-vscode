@@ -8,7 +8,7 @@ import {
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
-import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { fetchEnvelopeData } from "../alpCli/envelope";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { reportError } from "../notify/vscodeAdapter";
 import { resolveSlice } from "./buildConfig";
@@ -163,26 +163,6 @@ async function fetchOpenPrjConfKconfig(
     }),
   );
   return Object.fromEntries(entries);
-}
-
-/** Run a CLI envelope command and return its `data`, or `undefined` on any
- *  failure (unresolvable binary, unknown subcommand, non-zero exit, …). */
-async function fetchEnvelopeData(
-  context: vscode.ExtensionContext,
-  args: string[],
-  cwd?: string,
-): Promise<unknown> {
-  try {
-    // Deliberately NOT `{ interactive: true }`: `pushSdkCatalog` (its only
-    // caller) fires on LSP start, on every `alpSdk` settings edit, and on
-    // opening any prj.conf — none of those is the customer asking to
-    // download a tan CLI, so an interactive resolution here would pop ADR
-    // 0021's consent modal out of opening an editor tab.
-    const { outcome } = await runAlpCommand(context, args, cwd);
-    return outcome.envelope?.data;
-  } catch {
-    return undefined;
-  }
 }
 
 export async function stopLanguageServer(): Promise<void> {
