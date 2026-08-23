@@ -282,9 +282,19 @@ export function isBuildOptionDeferred(flag: string): boolean {
   return inertKindOf("build", flag) === "deferred";
 }
 
-/** This repo's half of tan-cli#427 — restoring the Build Plan panel's spawns
- *  once the flags do something. */
-export const BUILD_DEFERRED_RESTORE_REF = "#541";
+/**
+ * This repo's half of tan-cli#427 — restoring the Build Plan panel's spawns
+ * once the flags do something.
+ *
+ * #580, not #541. #541 is the issue that took the spawns OUT, and it is closed
+ * as completed; this ref is printed by the branch of
+ * `deferredBuildOptionMessage` that fires once a flag is NOT deferred — that
+ * is, on the day tan-cli#427 lands. Pointing the reader at a closed issue at
+ * exactly the moment something is supposed to happen is the failure this
+ * constant exists to prevent. `MODEL_SURFACE_RESTORE_REF` has the same shape
+ * and its ticket (#524) is open, which is what makes it work.
+ */
+export const BUILD_DEFERRED_RESTORE_REF = "#580";
 
 /**
  * Customer-facing sentence for a `tan build` flag this pin defers — or, for a

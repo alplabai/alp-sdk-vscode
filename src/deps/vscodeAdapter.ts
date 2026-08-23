@@ -138,8 +138,11 @@ export function latestSdkCacheStale(
  *
  * DELETABLE HEURISTIC: the moment `tan sdk list` carries GitHub's own
  * `prerelease` flag this becomes `releases.find((r) => !r.prerelease)` and tan
- * owns the fact again. That flag is the tan-cli-side ask; this reads a tag
- * because today there is nothing else to read.
+ * owns the fact again. That flag is the tan-cli-side ask — filed as
+ * tan-cli#887, which asks for `draft` too: a draft release is invisible to an
+ * unauthenticated fetch, so a consumer that starts seeing one has a different
+ * problem than one seeing a prerelease and cannot tell them apart from the tag
+ * either. This reads a tag because today there is nothing else to read.
  */
 export function pickLatestSdkTag(
   releases: readonly { tag: string }[],
