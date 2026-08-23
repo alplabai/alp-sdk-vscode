@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-radius",
+        "value": "3px)",
+        "createdAt": "2026-08-23T06:15:21.565Z",
+        "reason": "False positive verified 2026-08-23: the captured value is a var() fallback tail, not a bare radius. The site is NewProjectFlowView.module.css:106 border-radius: var(--radius-md, 3px), and 3px IS rounded.md in DESIGN.md. Proof the rule is not comparing against the scale: the line read 6px (genuinely off-scale) before #557 corrected it, and the finding survived the correction. Narrow by construction — a real bare 'border-radius: 3px;' captures as '3px' with no paren and still reds. Root cause tracked in #560."
+      }
+    ]
+  }
+}

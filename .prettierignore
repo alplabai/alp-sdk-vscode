@@ -33,3 +33,7 @@ examples/
 
 # Plugin runtime state (Remember) — not source
 .remember/
+# Plugin runtime state (Impeccable design hook) — session-keyed, holds
+# machine-absolute paths, rewritten on every edit. config.json and
+# design.json in the same directory ARE source and stay formatted.
+.impeccable/hook.cache.json
