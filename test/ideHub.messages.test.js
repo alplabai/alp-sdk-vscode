@@ -125,7 +125,6 @@ test("projectTemplatesData message shape matches contract", () => {
         title: "Blank Application",
         description: "Minimal starter",
         category: "starter",
-        icon: "📄",
       },
     ],
     modules: [
@@ -173,7 +172,6 @@ test("ProjectTemplate category must be starter, example or library", () => {
     title: "Blank",
     description: "x",
     category: "starter",
-    icon: "📄",
   };
   assert.ok(valid.includes(t.category));
 });

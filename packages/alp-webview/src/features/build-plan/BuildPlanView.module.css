@@ -132,7 +132,7 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 2px var(--space-2);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-full, 9999px);
   background: var(--surface-badge, var(--surface-hover));
   color: var(--text-secondary);
 }
@@ -158,7 +158,7 @@
   line-height: 1.5;
   word-break: break-all;
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm, 2px);
   background: var(--surface-input, var(--surface-hover));
   border: 1px solid var(--border-default);
 }
@@ -270,7 +270,7 @@
   font-size: var(--font-size-sm);
   line-height: 1.45;
   white-space: pre;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm, 2px);
   background: var(--surface-input, var(--surface-hover));
   border: 1px solid var(--border-default);
   color: var(--text-mono, var(--text-primary));
@@ -320,7 +320,7 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 1px var(--space-2);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-full, 9999px);
   background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
   color: var(--text-secondary);
 }
@@ -373,7 +373,7 @@
   font-size: var(--font-size-xs);
   font-weight: 600;
   padding: 1px var(--space-2);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-full, 9999px);
   background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
   color: var(--text-secondary);
 }
@@ -460,7 +460,7 @@
       --border-widget,
       color-mix(in srgb, var(--text-secondary) 30%, transparent)
     );
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm, 2px);
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
@@ -489,7 +489,7 @@
   font-size: var(--font-size-xs);
   font-family: var(--font-family-mono, monospace);
   padding: 1px var(--space-2);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm, 2px);
   background: color-mix(in srgb, var(--text-secondary) 8%, transparent);
 }
 .manifestChip em {

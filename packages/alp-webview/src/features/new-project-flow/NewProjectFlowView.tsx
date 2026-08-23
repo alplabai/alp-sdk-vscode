@@ -15,6 +15,7 @@ import {
   Stepper,
   StepperNav,
 } from "../../shared/ui";
+import type { IconName } from "../../shared/ui";
 import type { E1mModule, LocalSdkEntry, ProjectTemplate } from "../../types";
 import { onMessage, postMessage } from "../../vscode";
 import styles from "./NewProjectFlowView.module.css";
@@ -41,9 +42,16 @@ interface TemplateStepProps {
   templates: ProjectTemplate[];
   selected: string;
   onSelect: (id: string) => void;
+  /** tan's own words for why there are no examples, when it gave a reason. */
+  examplesUnavailableReason: string | null;
 }
 
-function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
+function TemplateStep({
+  templates,
+  selected,
+  onSelect,
+  examplesUnavailableReason,
+}: TemplateStepProps) {
   const starters = templates.filter((t) => t.category === "starter");
   const examples = templates.filter((t) => t.category === "example");
 
@@ -127,6 +135,20 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
         </>
       )}
 
+      {/* An empty catalogue used to render as no Examples section at all, which
+          is indistinguishable from "this SDK ships none". tan reports an
+          unresolved SDK as a SUCCESS with an empty list, so when it gave a
+          reason, say it here rather than silently dropping the section. */}
+      {examples.length === 0 && examplesUnavailableReason && (
+        <>
+          <p className={styles.groupLabel}>Examples</p>
+          <EmptyState
+            title="No examples available"
+            description={examplesUnavailableReason}
+          />
+        </>
+      )}
+
       {examples.length > 0 && (
         <>
           <p className={styles.groupLabel}>Examples</p>
@@ -207,6 +229,24 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
   );
 }
 
+/**
+ * Which icon a template card shows, derived from its KIND.
+ *
+ * The host used to send the glyph itself, as an untyped `string` that was an
+ * emoji — banned by DESIGN.md's No-Emoji Rule — and that fixtures had already
+ * drifted to codicon names the webview's icon set does not contain. Deriving
+ * here makes the value typed (`IconName`), so an unknown name is a compile
+ * error rather than literal text rendered into the card.
+ *
+ * `package` is deliberately NOT used for a template: in this product it already
+ * means the SDK (statusBar, activeSdk), and reusing it would collide.
+ */
+const TEMPLATE_ICON: Record<ProjectTemplate["category"], IconName> = {
+  starter: "filePlus",
+  example: "book",
+  library: "layers",
+};
+
 interface TemplateCardProps {
   template: ProjectTemplate;
   selected: boolean;
@@ -221,8 +261,8 @@ function TemplateCard({ template, selected, onSelect }: TemplateCardProps) {
       onClick={() => onSelect(template.id)}
       aria-pressed={selected}
     >
-      <span className={styles.templateIcon} aria-hidden="true">
-        {template.icon}
+      <span className={styles.templateIcon}>
+        <Icon name={TEMPLATE_ICON[template.category]} size={20} />
       </span>
       <span className={styles.templateTitle}>{template.title}</span>
       <span className={styles.templateDesc}>{template.description}</span>
@@ -508,7 +548,7 @@ function ConfirmStep({
   const isExample = !!tpl?.sourceDir;
 
   const rows = [
-    { label: "Template", value: tpl ? `${tpl.icon} ${tpl.title}` : templateId },
+    { label: "Template", value: tpl ? tpl.title : templateId },
     ...(isExample
       ? []
       : [
@@ -553,13 +593,15 @@ function ConfirmStep({
           appearance={openInThisWindow ? "accent" : "secondary"}
           onClick={() => onToggleOpenInThisWindow(true)}
         >
-          {openInThisWindow ? "✓ " : ""}Open in this window
+          {openInThisWindow && <Icon name="check" size={14} />}Open in this
+          window
         </Button>
         <Button
           appearance={!openInThisWindow ? "accent" : "secondary"}
           onClick={() => onToggleOpenInThisWindow(false)}
         >
-          {!openInThisWindow ? "✓ " : ""}Open in new window
+          {!openInThisWindow && <Icon name="check" size={14} />}Open in new
+          window
         </Button>
       </div>
       <p className={styles.stepDesc}>
@@ -639,7 +681,8 @@ function SdkStep({ entries, activePath, selected, onSelect }: SdkStepProps) {
 // ---------------------------------------------------------------------------
 
 export function NewProjectFlowView() {
-  const { state, projectTemplates, e1mModules } = useAppContext();
+  const { state, projectTemplates, e1mModules, examplesUnavailableReason } =
+    useAppContext();
   const { state: stepper, goNext, goBack, goTo } = useStepper(STEPS);
 
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -808,6 +851,7 @@ export function NewProjectFlowView() {
                   templates={templates}
                   selected={selectedTemplate}
                   onSelect={setSelectedTemplate}
+                  examplesUnavailableReason={examplesUnavailableReason}
                 />
               )}
               {stepper.currentIndex === 1 && (

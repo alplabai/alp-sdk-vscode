@@ -107,14 +107,22 @@ export function loadSdkCatalogue(
     logError,
   );
 
-  const libDir = path.join(meta, "library-profiles");
-  const libraries: LibraryProfile[] = fs.existsSync(libDir)
-    ? fs
-        .readdirSync(libDir, { withFileTypes: true })
-        .filter((e) => e.isDirectory())
-        .map((e) => ({ id: e.name }))
-        .sort((a, b) => a.id.localeCompare(b.id))
-    : [];
+  // board.schema.json's `libraries[]` takes a "Canonical manifest name
+  // (metadata/libraries/<name>.yaml)" matching `^[a-z][a-z0-9-]*$` — the
+  // manifests ARE the vocabulary. This used to list `metadata/library-profiles/`
+  // directories instead, a different concept whose names are underscored:
+  // `cmsis_dsp` and `nlohmann_json` fail that pattern outright, so picking
+  // either wrote a board.yaml the SDK's own validator rejects, while 29 of the
+  // 36 real manifests were never offered at all. `tan presets` reports this
+  // same set as `data.boardLibraries`, and the LSP completion for the field
+  // already reads it from there (`lsp/sdkCatalog.ts:catalogFromPresets`); this
+  // scan is the no-CLI fallback onto identical names.
+  const libraries: LibraryProfile[] = listFiles(
+    path.join(meta, "libraries"),
+    (name) => name.endsWith(".yaml"),
+  )
+    .map((file) => ({ id: path.basename(file, ".yaml") }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 
   let sdkVersion: string | undefined;
   const versionFile = path.join(meta, "sdk_version.yaml");

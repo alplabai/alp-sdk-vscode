@@ -23,6 +23,9 @@ export interface AppContextValue {
   protocolMismatch: boolean;
   projectTemplates: ProjectTemplate[] | null;
   e1mModules: E1mModule[] | null;
+  /** tan's own words for why the example catalogue is empty, or null when it is
+   *  legitimately empty. See ProjectTemplatesDataMessage. */
+  examplesUnavailableReason: string | null;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -37,6 +40,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ProjectTemplate[] | null
   >(null);
   const [e1mModules, setE1mModules] = useState<E1mModule[] | null>(null);
+  const [examplesUnavailableReason, setExamplesUnavailableReason] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     const unsubscribe = onMessage((msg) => {
@@ -61,6 +67,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else if (msg.type === "projectTemplatesData") {
         setProjectTemplates(msg.templates);
         setE1mModules(msg.modules);
+        setExamplesUnavailableReason(msg.examplesUnavailableReason ?? null);
       } else if (msg.type === "focusSection") {
         // Best-effort scroll to a named Hub section (e.g. opening the SDK
         // Manager, now a Hub section). The element only exists on the Hub, so
@@ -87,6 +94,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       protocolMismatch,
       projectTemplates,
       e1mModules,
+      examplesUnavailableReason,
     }),
     [
       state,
@@ -96,6 +104,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       protocolMismatch,
       projectTemplates,
       e1mModules,
+      examplesUnavailableReason,
     ],
   );
 

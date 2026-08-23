@@ -1069,6 +1069,78 @@ export function classifyExitCode(code: number): CliExitKind {
   return EXIT_KINDS[code] ?? "unknown";
 }
 
+/**
+ * tan's own words for "the SDK did not resolve", when that is what an
+ * otherwise-successful envelope is reporting — otherwise null.
+ *
+ * Several verbs report an unresolved SDK as a SUCCESS rather than a failure.
+ * Measured against the pinned 0.6.0-rc1, `tan examples` with no resolvable SDK
+ * returns exit 0 with `ok: true` and an empty `data.examples`, and says what
+ * happened only through `issues[].code == examples.sdk-root-unresolved`.
+ * `presets` does the same under `presets.sdk-root-unresolved`. So a caller that
+ * trusts the exit code, or simply reads the empty list, shows an empty
+ * catalogue and never mentions that the SDK is the reason.
+ *
+ * The confusable case has to stay distinguishable: `--category <typo>` also
+ * returns exit 0 with an empty list, but carries NO issue at all.
+ * Empty-because-unresolved and empty-because-nothing-matched are different
+ * situations, and only the first has a fix to offer.
+ *
+ * The code is a parameter rather than a constant because each verb spells its
+ * own, and the message comes back verbatim rather than reworded: it already
+ * names the flag that fixes it.
+ */
+export function unresolvedSdkReason(
+  envelope: unknown,
+  code: string,
+): string | null {
+  if (typeof envelope !== "object" || envelope === null) return null;
+  const issues = (envelope as Record<string, unknown>).issues;
+  if (!Array.isArray(issues)) return null;
+
+  for (const issue of issues) {
+    if (typeof issue !== "object" || issue === null) continue;
+    const record = issue as Record<string, unknown>;
+    if (record.code !== code) continue;
+    if (typeof record.message !== "string" || record.message.length === 0) {
+      continue;
+    }
+    return record.message;
+  }
+  return null;
+}
+
+/**
+ * tan's code for "the argv this extension sent is not a command I accept".
+ *
+ * Measured against the pinned 0.6.0-rc1: `tan presets --nosuchflag` and
+ * `tan bogusverb` both exit 2 with a WELL-FORMED envelope whose `command` is
+ * `"cli"` and whose single issue is
+ * `{ code: "cli.parse-error", severity: "error", message: <click usage dump> }`.
+ *
+ * Two consequences make it worth naming rather than leaving to the exit code.
+ * Exit 2 is `"validation"`, so without this a rejected argv is graded the same
+ * `warning` as a board.yaml the customer can fix — but the project is fine
+ * here, the extension and the CLI simply disagree about the command surface.
+ * And the message is a click/rich usage dump complete with box-drawing
+ * characters, which is channel material, not a sentence.
+ */
+export const CLI_PARSE_ERROR_CODE = "cli.parse-error";
+
+/**
+ * The usage dump behind a `cli.parse-error`, or null when this envelope is not
+ * one. Returned verbatim: it is bound for the output channel, where the
+ * `No such option: --x` line is exactly what identifies the offending argv.
+ */
+export function cliUsageErrorDump(envelope: AlpEnvelope | null): string | null {
+  for (const issue of envelope?.issues ?? []) {
+    if (issue.code === CLI_PARSE_ERROR_CODE && issue.message) {
+      return issue.message;
+    }
+  }
+  return null;
+}
+
 /** Parse the envelope from a command's stdout. Returns null when stdout is
  *  empty or not a well-formed envelope (so callers can fall back gracefully). */
 export function parseEnvelope(stdout: string): AlpEnvelope | null {
@@ -1113,11 +1185,20 @@ export function classifyOutcome(
 ): CliOutcome {
   const kind = classifyExitCode(exitCode);
   const ok = exitCode === 0;
+  // A rejected argv exits 2 like a genuine validation failure, so the exit code
+  // alone cannot separate them — `cliUsageErrorDump` reads the issue code that
+  // can. `kind` stays "validation" on purpose: `src/debug.ts` keys its "run
+  // Alp: Update CLI" skew hint on that kind together with `--core` /
+  // `--pre-launch-task` on the argv, and an unrecognised flag on a stale tan is
+  // precisely this envelope — retyping the kind would silently kill the hint.
+  const isUsageError = !ok && cliUsageErrorDump(envelope) !== null;
   const severity: CliOutcome["severity"] = ok
     ? "info"
-    : kind === "validation" || kind === "doctor"
-      ? "warning"
-      : "error";
+    : isUsageError
+      ? "error"
+      : kind === "validation" || kind === "doctor"
+        ? "warning"
+        : "error";
   return {
     exitCode,
     kind,

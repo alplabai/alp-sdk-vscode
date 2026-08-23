@@ -160,14 +160,12 @@ function feedState() {
         title: "Minimal app",
         description: "A minimal app",
         category: "starter",
-        icon: "rocket",
       },
       {
         id: "gpio-button-led",
         title: "gpio-button-led",
         description: "GPIO demo",
         category: "example",
-        icon: "circuit-board",
         sourceDir: "peripheral-io/gpio-button-led",
       },
     ],
@@ -822,7 +820,6 @@ async function main() {
       title: id,
       description: `${id} demo`,
       category: "example",
-      icon: "circuit-board",
       sourceDir: `dir/${id}`,
       ...(group ? { group } : {}),
     });

@@ -2354,6 +2354,22 @@ export async function runAlpCommand(
     signal?: AbortSignal;
     timeoutMs?: number;
     interactive?: boolean;
+    /**
+     * Run under the user's LOGIN shell on POSIX, the way `runAlpStreamed`
+     * already does (`loginShellInvocation`).
+     *
+     * Opt-in, not the default. It costs a shell startup per call, and most
+     * envelope commands (`presets`, `examples`, `explain`) only read metadata
+     * — they do not care what else is on PATH. It matters for the commands
+     * that REPORT ON THE ENVIRONMENT, because otherwise they answer about a
+     * different one than the build runs in: builds go through
+     * `runAlpStreamed`, under the profile's PATH, while this path sees only
+     * whatever a GUI-launched VS Code inherited.
+     *
+     * No-op on Windows, where the extension host already has the login
+     * environment.
+     */
+    loginShell?: boolean;
   },
 ): Promise<{
   outcome: CliOutcome;
@@ -2369,7 +2385,7 @@ export async function runAlpCommand(
     // Never throw: a resolution failure becomes an error outcome so callers
     // can present it uniformly (the message already points at alpSdk.cliPath).
     const message = error instanceof Error ? error.message : String(error);
-    log(`[cli] ✗ CLI unavailable: ${message}`);
+    log(`[cli] [fail] CLI unavailable: ${message}`);
     return {
       outcome: unavailableOutcome(error),
       raw: {
@@ -2389,14 +2405,22 @@ export async function runAlpCommand(
   const result = await runAlpAsync(
     binary.command,
     finalArgs,
-    (command, spawnArgs, spawnCwd) =>
-      spawnAlpAsync(
-        command,
-        spawnArgs,
+    (command, spawnArgs, spawnCwd) => {
+      // `loginShellInvocation` returns null on Windows and whenever the caller
+      // did not ask, which is the ordinary direct spawn. `cwd` is passed in
+      // BOTH branches, matching `runAlpStreamed` — the shell command cds
+      // itself, and the spawn cwd stays the same either way.
+      const shellRun = options?.loginShell
+        ? loginShellInvocation(command, spawnArgs, spawnCwd)
+        : null;
+      return spawnAlpAsync(
+        shellRun?.file ?? command,
+        shellRun?.argv ?? spawnArgs,
         spawnCwd,
         options?.signal,
         options?.timeoutMs,
-      ),
+      );
+    },
     cwd,
   );
   const { outcome, raw } = result;
@@ -2449,7 +2473,7 @@ export async function runAlpInTerminal(
     binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     log(
-      `[cli] ✗ CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
+      `[cli] [fail] CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
     );
     // "Retry" is caller-handled by the seam's contract, so it has to be
     // honoured here or the button is a dead end: resolution threw, so nothing
@@ -2602,7 +2626,7 @@ async function streamRun(
     binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     log(
-      `[cli] ✗ CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
+      `[cli] [fail] CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
     );
     // NOT awaited: an error notification with a button does not auto-dismiss,
     // so awaiting it would hold this run's reservation for as long as the toast
@@ -2712,12 +2736,35 @@ async function streamRun(
         // must be freed there; late output still reaches the channel because
         // the `data` handlers stay attached.
         child.on("exit", (code, signal) => {
-          // A kill (the Cancel button) is not a failure to report as one.
+          // A kill (the Cancel button) is not a failure to report as one. It IS
+          // a finish, though, and the event is not only how a verdict reaches a
+          // toast — it is also how `BuildDelegatePty`
+          // (`src/tasks/vscodeAdapter.ts`) learns that the build it is WAITING
+          // on has ended, how `refreshState()` runs after a dispatch, and how
+          // `recordBuildFinish` records that a build ended at all (#470).
+          //
+          // Skipping it on a signal death made this the ONE dispatch path that
+          // can end without saying so: cancelling a streamed `tan build` that
+          // an F5 was queued behind left that pty open, and the debug session
+          // waited until the window was reloaded. The terminal path never had
+          // the gap — `util.ts`'s `finish` fires unconditionally — so this is
+          // symmetry, not a new convention.
           if (signal) {
             log(`[channel] "${options.name}" stopped (signal=${signal})`);
-          } else {
-            signalStreamedFinished(options.name, code ?? undefined);
           }
+          // NO exit code on a signal death. Node sets exactly one of the two,
+          // but the ternary states the intent rather than leaning on that: an
+          // exit code here would be a verdict, and there is none — the run was
+          // stopped, not judged. `undefined` is the value both consumers are
+          // already written for. The subscriber in `src/extension.ts` branches
+          // `code === 0` / `else if (code !== undefined)` and so stays silent,
+          // which is the "not a failure to report as one" part; and
+          // `BuildDelegatePty` does `event.code ?? 1`, so a killed build fails
+          // its `preLaunchTask` instead of waving the debugger through.
+          signalStreamedFinished(
+            options.name,
+            signal ? undefined : (code ?? undefined),
+          );
           finish();
         });
         // Backstop for the one case `exit` cannot cover: a spawn that fails

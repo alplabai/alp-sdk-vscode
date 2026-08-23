@@ -105,6 +105,10 @@ export interface ProjectTemplatesDataMessage {
   type: "projectTemplatesData";
   templates: ProjectTemplate[];
   modules: E1mModule[];
+  /** Why the example catalogue is empty, in tan's own words — set only when it
+   *  gave a reason (`examples.sdk-root-unresolved`), absent when the list is
+   *  legitimately empty. */
+  examplesUnavailableReason?: string;
 }
 /** Scroll a named Hub section into view (e.g. the SDK Manager section). */
 export interface FocusSectionMessage {
@@ -118,7 +122,7 @@ export interface ProjectTemplate {
   title: string;
   description: string;
   category: "starter" | "example" | "library";
-  icon: string;
+  /** No `icon` on the wire by design — see the host-side note in messages.ts. */
   sourceDir?: string;
   /**
    * The SDK category this example renders under (`aen`, `ai`, `multicore`, …),

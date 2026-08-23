@@ -49,6 +49,9 @@ const {
   DEFERRED_BUILD_OPTIONS,
   BUILD_DEFERRED_REF,
   MODEL_SUBCOMMAND_UNWIRED_CODE,
+  BUILD_DEFERRED_RESTORE_REF,
+  INERT_OPTIONS,
+  inertKindOf,
   isBuildOptionDeferred,
   isModelSubcommandImplemented,
   unsupportedModelSubcommand,
@@ -362,13 +365,106 @@ test("a `build` flag this pin does NOT defer is not described as deferred", () =
   );
   assert.match(
     message,
-    /#541/,
+    /#\d+/,
     "and it names the gap that IS real — the panel does not send it",
+  );
+  // NOT pinned to the literal the message happens to carry: that spelling and
+  // BUILD_DEFERRED_RESTORE_REF would then be pinned to EACH OTHER, and a
+  // retarget of both stays green while pointing anywhere. What is pinned is
+  // the one fact this file can check offline — the restore ref is not the
+  // issue that REMOVED the spawns. #541 is closed as completed, and this
+  // sentence fires on the day tan-cli#427 lands, so naming it would send the
+  // reader to a closed issue at the exact moment there is work to do.
+  assert.notEqual(
+    BUILD_DEFERRED_RESTORE_REF,
+    "#541",
+    "#541 took the spawns out and is closed; the restore ref must name the " +
+      "OPEN ticket that puts them back (#580), the way MODEL_SURFACE_RESTORE_" +
+      "REF names the open #524",
+  );
+  assert.ok(
+    message.includes(BUILD_DEFERRED_RESTORE_REF),
+    "the sentence must carry whatever the constant says, so the two cannot " +
+      `drift apart — ${message}`,
   );
 });
 
 test("a `build` flag this pin DOES defer still reads as deferred", () => {
   for (const flag of DEFERRED_BUILD_OPTIONS) {
     assert.match(deferredBuildOptionMessage(flag), /is deferred in tan/, flag);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// inert options, and the kind of inertness each one is
+// ---------------------------------------------------------------------------
+
+/** Every `"<command> <flag>"` the recording marks inert. */
+function recordedInertOptions() {
+  const found = [];
+  for (const [command, spec] of Object.entries(SNAPSHOT.commands ?? {})) {
+    for (const [flag, option] of Object.entries(spec.options ?? {})) {
+      if (option?.inert === true) found.push(`${command} ${flag}`);
+    }
+  }
+  return found.sort();
+}
+
+test("every inert option in the recording is classified, and nothing else is", () => {
+  // BOTH directions, and the second one is the point. `INERT_OPTIONS` is read
+  // by the shipped extension, so an entry that stops being inert makes the
+  // product describe a working flag as dead — and an inert option MISSING from
+  // the table gets `inertKindOf() === null`, which every consumer reads as
+  // "live". That direction fails open and silently, which is how nine deferred
+  // `build` flags came to be described to the customer as flags that work.
+  assert.deepEqual(
+    Object.keys(INERT_OPTIONS).sort(),
+    recordedInertOptions(),
+    "src/alpCli/pinnedSurface.ts's INERT_OPTIONS and the recording disagree " +
+      "about which options are inert.\n\n" +
+      "An option that became LIVE: drop its entry, and check whether a panel " +
+      "should now spawn the call it has been refusing.\n" +
+      "An option that became INERT: add it with its kind — `deferred` ONLY if " +
+      "the recording's `ref` names an upstream issue tracking its arrival. " +
+      "`compatibility`, `parity` and `not-applicable` are permanent, and a " +
+      '"not yet" sentence about them promises an arrival that is not coming.',
+  );
+});
+
+test("a `deferred` classification is backed by the recording's own upstream ref", () => {
+  // The kinds are declared, not derived — but `deferred` is the one kind that
+  // makes a promise, so it is the one the recording can still check. Every
+  // other kind is permanent and has no ref to check against.
+  for (const [key, kind] of Object.entries(INERT_OPTIONS)) {
+    if (kind !== "deferred") continue;
+    const [command, flag] = key.split(" ");
+    assert.equal(
+      SNAPSHOT.commands?.[command]?.options?.[flag]?.ref,
+      BUILD_DEFERRED_REF,
+      `\`tan ${key}\` is classified deferred, but the recording does not put ` +
+        `it under ${BUILD_DEFERRED_REF} — the message names an issue that is ` +
+        "not the one tracking its arrival",
+    );
+  }
+});
+
+test("the classification is not vacuous: all four kinds are present", () => {
+  const kinds = new Set(Object.values(INERT_OPTIONS));
+  assert.deepEqual(
+    [...kinds].sort(),
+    ["compatibility", "deferred", "not-applicable", "parity"],
+    "a table that had collapsed to one kind would pass every assertion above " +
+      "while telling the customer the same thing about all 17 options",
+  );
+});
+
+test("the three flags the Build Plan panel sends are deferred, not merely inert", () => {
+  // DEFERRED_BUILD_OPTIONS is the panel's list; INERT_OPTIONS is the binary's.
+  // This is where the two must agree, and where a `--plan` reclassified as
+  // `compatibility` (never arriving) would have to change #541's plan rather
+  // than pass quietly.
+  for (const flag of DEFERRED_BUILD_OPTIONS) {
+    assert.equal(inertKindOf("build", flag), "deferred", flag);
+    assert.equal(isBuildOptionDeferred(flag), true, flag);
   }
 });

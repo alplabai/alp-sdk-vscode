@@ -197,6 +197,20 @@ export interface ProjectTemplatesDataMessage {
   type: "projectTemplatesData";
   templates: ProjectTemplate[];
   modules: E1mModule[];
+  /**
+   * Why the example catalogue came back empty, when tan said why — verbatim.
+   *
+   * `tan examples` reports an unresolved SDK as a SUCCESS: exit 0, `ok: true`,
+   * an empty `data.examples`, and the reason only in
+   * `issues[].code == examples.sdk-root-unresolved`. Without this the wizard
+   * simply rendered no Examples section, so a user whose SDK is not resolved
+   * lost all of them with nothing on screen saying why.
+   *
+   * Absent when the catalogue is legitimately empty — a `--category` that
+   * matched nothing returns the same empty list with NO issue attached, and
+   * that is not a problem to report.
+   */
+  examplesUnavailableReason?: string;
 }
 
 /** Ask the Hub webview to scroll a named section into view (e.g. opening the
@@ -562,7 +576,14 @@ export interface ProjectTemplate {
   title: string;
   description: string;
   category: "starter" | "example" | "library";
-  icon: string;
+  /**
+   * NOTE: there is deliberately no `icon` on this wire. The host used to ship
+   * one and it was an emoji, which DESIGN.md's No-Emoji Rule now forbids; the
+   * field was also untyped `string`, so fixtures had drifted to codicon names
+   * (`circuit-board`) that the webview's own icon set does not contain and
+   * that rendered as literal text. The view derives its icon from `category`
+   * instead — one mapping, in the module that owns rendering.
+   */
   /** Relative path inside examples/ directory, if based on an example. */
   sourceDir?: string;
   /**

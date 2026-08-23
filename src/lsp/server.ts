@@ -34,6 +34,10 @@ import {
   createValidatorPlan,
   isBoardYamlPath,
 } from "@alp-sdk/core/validation/service";
+import {
+  createTanValidateArgs,
+  parseDiagnosticV1,
+} from "@alp-sdk/core/validation/diagnosticV1";
 import { checkE1mCompliance } from "@alp-sdk/core/board/e1mCompliance";
 import { parseBoardConfig } from "@alp-sdk/core/board/parse";
 import { loadPinmuxTable } from "../pinmux/loader";
@@ -48,10 +52,10 @@ import {
   createBoardYamlQuickFixes,
   createDiagnosticMessageWithContext,
   createEffectiveConfigPreviewPayload,
-  createIssueRange,
   detectV2StructuralIssues,
   findTokenRange,
   normalizeProjectSettings,
+  rangeForIssue,
 } from "./service";
 import {
   completePrjConf,
@@ -126,6 +130,17 @@ connection.onNotification(
     sdkCatalog = catalog ?? EMPTY_SDK_CATALOG;
   },
 );
+
+// The resolved `tan` binary, pushed by the client. The server cannot resolve it
+// itself: resolution lives in `alpCli/vscodeAdapter.ts`, which imports `vscode`,
+// and this process has no such module. Null until the first push, and null
+// again whenever resolution fails — `runValidator` then shells the SDK's Python
+// validator, exactly as it did before.
+let cliPath: string | null = null;
+
+connection.onNotification("alp/updateCliPath", (path: unknown) => {
+  cliPath = typeof path === "string" && path.length > 0 ? path : null;
+});
 
 /**
  * The live Kconfig symbols the client fetched for `filePath`'s resolved core
@@ -540,22 +555,14 @@ async function validateDocument(
     context.sdkRoot,
   );
 
-  const plan = createValidatorPlan(context, filePath);
   const controller = new AbortController();
   token?.onAbort(() => controller.abort());
-  const execution = await executeValidatorPlanAsync(
-    context,
-    plan,
-    (command, args) => spawnValidatorAsync(command, args, controller.signal),
-  );
+  const validation = await runValidator(context, filePath, controller.signal);
   // A newer save superseded this run while the validator was in flight — drop
   // the stale result so it can't overwrite the newer run's diagnostics.
   if (token?.aborted) {
     return;
   }
-  connection.console.log(`$ ${plan.commandLine} (rv=${execution.status})`);
-
-  const validation = analyzeValidationResult(execution);
   const v2Issues = detectV2StructuralIssues(documentText);
 
   if (validation.outcome === "clean" && v2Issues.length === 0) {
@@ -571,18 +578,74 @@ async function validateDocument(
   connection.sendDiagnostics({ uri, diagnostics });
 }
 
+/**
+ * Validate `filePath`, preferring `tan validate` over shelling the SDK's Python
+ * validator directly.
+ *
+ * tan wraps the SAME script — its reported `data.commandLine` is verbatim
+ * `<sdk>/.venv/bin/python <sdk>/scripts/validate_board_yaml.py --input <path>`
+ * — but runs it out of a MANAGED venv. Shelling it ourselves runs it under
+ * `alpSdk.pythonPath`, or, when that is unset, whatever bare `python3` is on
+ * PATH (`resolvePythonBinary`); validation then depends on that interpreter
+ * happening to carry the validator's dependencies.
+ *
+ * Python stays the fallback rather than being deleted, because the CLI path is
+ * only as available as the CLI: no resolved binary (the client never pushed
+ * one, the download was declined) must not mean no validation. A `status` of
+ * null is tan failing to RUN, which is not a verdict — that falls through too,
+ * unless the run was aborted, where the caller discards the result anyway.
+ */
+async function runValidator(
+  context: ReturnType<typeof resolveProjectContext>,
+  filePath: string,
+  signal: AbortSignal,
+) {
+  if (cliPath) {
+    const args = createTanValidateArgs(context.sdkRoot, filePath);
+    const execution = await spawnValidatorAsync(cliPath, args, signal);
+    connection.console.log(
+      `$ ${cliPath} ${args.join(" ")} (rv=${execution.status})`,
+    );
+    if (execution.status !== null) {
+      return parseDiagnosticV1(execution.stdout, execution.status);
+    }
+    if (signal.aborted) {
+      return { outcome: "failed" as const, issues: [] };
+    }
+  }
+
+  const plan = createValidatorPlan(context, filePath);
+  const execution = await executeValidatorPlanAsync(
+    context,
+    plan,
+    (cmd, args) => spawnValidatorAsync(cmd, args, signal),
+  );
+  connection.console.log(`$ ${plan.commandLine} (rv=${execution.status})`);
+  return analyzeValidationResult(execution);
+}
+
+// The rich validator pinpoints an issue (`--> board.yaml:LINE:COL`) and names
+// it (`error[ALP-B005]`), and `parseValidationIssues` parses both. This used to
+// pass only `issue.message` on to a prose-keyword scan, discarding the exact
+// location and the diagnostic code with it — `rangeForIssue` prefers the
+// reported location and falls back to that scan only for issues that carry
+// none.
 function createDiagnostics(
   documentText: string,
   issues: ReadonlyArray<{
     message: string;
     severity: "warning" | "error" | "suggestion";
+    code?: string;
+    line?: number;
+    col?: number;
   }>,
 ): Diagnostic[] {
   return issues.map((issue) => ({
-    range: createIssueRange(documentText, issue.message),
+    range: rangeForIssue(documentText, issue),
     message: createDiagnosticMessageWithContext(issue.message, documentText),
     severity: mapDiagnosticSeverity(issue.severity),
     source: "alp-sdk",
+    ...(issue.code ? { code: issue.code } : {}),
   }));
 }
 

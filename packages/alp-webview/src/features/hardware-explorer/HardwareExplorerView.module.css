@@ -85,7 +85,7 @@
 .chip {
   background: var(--vscode-badge-background, #4d4d4d);
   color: var(--vscode-badge-foreground, #fff);
-  border-radius: 4px;
+  border-radius: var(--radius-md, 3px);
   padding: 2px 8px;
   font-size: 0.8rem;
   font-family: var(--vscode-font-family, system-ui, sans-serif);
@@ -103,7 +103,7 @@
   background: var(--vscode-input-background, #3c3c3c);
   color: var(--vscode-input-foreground, #d4d4d4);
   border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 2px;
+  border-radius: var(--radius-sm, 2px);
   padding: 4px 8px;
   font-size: 0.85rem;
   outline: none;
@@ -136,7 +136,7 @@
   display: inline-block;
   background: var(--vscode-badge-background, #4d4d4d);
   color: var(--vscode-badge-foreground, #fff);
-  border-radius: 10px;
+  border-radius: var(--radius-xl, 10px);
   padding: 1px 6px;
   font-size: 0.75rem;
 }
