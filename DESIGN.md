@@ -234,10 +234,25 @@ in both directions, without a single override.
 **The Borrowed Palette Rule.** No literal color ships. A hex, `rgb()`, or
 `hsl()` value may appear only as the second argument of a `var()` fallback —
 never as the value itself. `test/webview.cssTokens.test.js` fails the build on
-any token used but not declared; the no-literal half is the rule this file
-carries. The single sanctioned exception is `.alp-boot-error` in `styles.css`,
-which paints `#f88` because it only renders when React failed to mount and
-legibility outranks theming.
+any token used but not declared, and — since #559 — on any literal written as
+the value itself. Three declarations are sanctioned and allowlisted there:
+`.alp-boot-error` and `.alp-boot-error-detail` in `styles.css`, which paint
+`#f88` because they only render when React failed to mount and legibility
+outranks theming, and the Popover Lift, the system's only shadow.
+
+**The Wash-With-Foreground Rule.** To differentiate a surface from what is
+behind it — a chrome bar, a card header — mix `{colors.text-primary}` into
+`transparent` at a low percentage. Never mix in `#000`. The foreground token
+is near-white on a dark theme and near-black on a light one, so the wash moves
+away from its background by about the same amount either way; black only ever
+goes darker. The configurator carried three `color-mix(…, #000 N%)` surfaces
+until #559: the heaviest separated from its card by a contrast ratio of 1.065
+on Dark Modern but 2.099 on Light Modern — twice the weight on the theme it
+was never tuned for. Measured across Dark Modern, Light Modern, Dark+ and
+Light+, the replacements hold a narrow band per surface: 1.056–1.088 for the
+two 4% chrome bars, 1.111–1.202 for the 8% card header. The percentage is the whole design decision:
+4% for a chrome bar (the Overview header and the configurator's `.topbar` and
+`.footer` both use it), 8% one level deeper for a card header (`.advHead`).
 
 **The Selected-Not-Suggested Rule.** `{colors.accent}` marks what is currently
 selected — an active toggle, a chosen segment. It never marks what to do next.
@@ -348,12 +363,23 @@ that a border and a tonal shift should have solved.
 ## Shapes
 
 The corner language is deliberately tight. `--radius-sm` (2px) is the workhorse
-for controls — buttons, inputs, links, inline code, skeleton lines — 18 uses.
+for controls — buttons, inputs, links, inline code, skeleton lines — 23 uses.
 `--radius-md` (3px) belongs to containers and icon buttons — cards, dropdown
-panels, section icon buttons — 15 uses. `--radius-lg` (8px) appears three
-times, all in the configurator's larger composite blocks. `--radius-xl` (10px)
-is the pill for status badges. `--radius-full` (9999px) is reserved for actual
-circles: stepper dots, spinners, the loading ring inside a button.
+panels, section icon buttons — 22 uses. `--radius-lg` (8px) appears five times,
+on the larger composite blocks: the configurator's `.card`, `.core` and
+`.advCard`, and the Overview's `.statusCard` and `.panelCard`. `--radius-xl`
+(10px) is the badge pill — all three of its uses are a `.badge`.
+`--radius-full` (9999px) is the fully-rounded end, 14 uses: three are actual
+circles (the stepper dot, the spinner, the loading ring inside a button); the
+other eleven are pills, chips and the scrollbar thumb, whose height decides the
+corner.
+
+Counts are measured from `packages/alp-webview/src/**/*.css`, not remembered.
+They moved once already: seven `border-radius` declarations wrote a raw pixel
+value instead of a token, four of them off the scale entirely, and snapping
+them to their nearest token (#558) changed four of the five numbers above.
+`test/webview.cssTokens.test.js` now fails the build on a bare `border-radius`
+literal, so the next drift is caught rather than counted later.
 
 Borders are always exactly 1px, except the stepper's dot and connector, which
 use 1.5px so a 22px circle does not read as hairline-thin at 100% zoom.
