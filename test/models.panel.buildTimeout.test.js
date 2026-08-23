@@ -35,9 +35,16 @@ test("runAlpCommand accepts a per-call timeoutMs override, threaded to spawnAlpA
     /timeoutMs\?:\s*number/,
     "runAlpCommand's options must accept an optional timeoutMs override",
   );
+  // Same lesson as the options block above, one assertion later: pin what this
+  // gate OWES the reader — that `timeoutMs` reaches the spawn — not the
+  // spelling of the arguments before it. The original form pinned the literal
+  // `command, spawnArgs, spawnCwd`, so wrapping the first two to route a run
+  // through the user's login shell (the `loginShell` option, for `tan doctor`)
+  // reddened a call that still forwards the timeout unchanged. `[^;]` keeps the
+  // match inside the one call rather than letting it run across statements.
   assert.match(
     src,
-    /spawnAlpAsync\(\s*command,\s*spawnArgs,\s*spawnCwd,\s*options\?\.signal,\s*options\?\.timeoutMs,?\s*\)/,
+    /spawnAlpAsync\([^;]*?options\?\.signal,\s*options\?\.timeoutMs,?\s*\)/,
     "runAlpCommand must forward options.timeoutMs to spawnAlpAsync",
   );
 });
