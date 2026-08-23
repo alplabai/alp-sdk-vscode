@@ -11,6 +11,7 @@
 // like a crash — `planCliOutcome` reads `outcome.severity` and nothing else.
 
 import { CliOutcome } from "../alpCli/models";
+import { cliUsageErrorDump } from "../alpCli/service";
 import {
   ActionId,
   NotificationPlan,
@@ -70,9 +71,25 @@ const STACK = /\n\s*at\s|\bat\s[\w$.]+\s\(/;
 const ABSOLUTE_PATH =
   /[A-Za-z]:[\\/]|(?:^|[\s"'(])\/(?:home|Users|usr|var|tmp|opt|mnt|etc|private)\//;
 
-/** True when `text` carries an errno, an exit code, or a stack frame. */
+// A command-line usage dump: the `Usage: ...` banner click prints when it
+// rejects an argv, and the box-drawing characters rich draws its error frame
+// with (U+256D/U+2570/U+2502/U+2500 — NOT the em dash this repo's own prose
+// uses). Multi-line terminal output is channel material at any width; without
+// this, a dump carrying no errno, no exit code and no stack frame passed every
+// other rule here and was interpolated whole into a toast.
+const USAGE_DUMP = /^Usage:\s/m;
+const BOX_DRAWING = /[\u256d\u2570\u2502\u2500]/;
+
+/** True when `text` carries an errno, an exit code, a stack frame or a raw
+ *  command-line usage dump. */
 function looksRaw(text: string): boolean {
-  return ERRNO.test(text) || EXIT_CODE.test(text) || STACK.test(text);
+  return (
+    ERRNO.test(text) ||
+    EXIT_CODE.test(text) ||
+    STACK.test(text) ||
+    USAGE_DUMP.test(text) ||
+    BOX_DRAWING.test(text)
+  );
 }
 
 function joinDetail(...parts: (string | undefined)[]): string | undefined {
@@ -269,6 +286,24 @@ export function planCliOutcome(
       detail: joinDetail(outcome.message, `exit ${outcome.exitCode}`),
       actions: [{ id: "updateCli" }, { id: "runDoctor" }, ...extras],
       dedupeKey: ctx.dedupeKey,
+    });
+  }
+
+  // B2. It ran and produced a real envelope, but the envelope says tan did not
+  //     accept the ARGV THIS EXTENSION SENT (`cli.parse-error`). Nothing is
+  //     wrong with the customer's project, so this must not read as their
+  //     mistake, and the click usage dump behind it is channel material.
+  //     Same remedy as B: the extension and the binary disagree about the
+  //     command surface, which a CLI update is what fixes.
+  const usageDump = cliUsageErrorDump(outcome.envelope);
+  if (usageDump) {
+    return finalize({
+      severity: outcome.severity,
+      channel: toastOrSilent,
+      message: `${ctx.operation} failed \u2014 this build of the tan CLI doesn't accept the command the extension sent.`,
+      detail: joinDetail(usageDump, `exit ${outcome.exitCode}`),
+      actions: [{ id: "updateCli" }, { id: "runDoctor" }, ...extras],
+      dedupeKey: ctx.dedupeKey ?? "cli-parse-error",
     });
   }
 

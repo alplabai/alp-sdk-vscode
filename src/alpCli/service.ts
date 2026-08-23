@@ -1110,6 +1110,37 @@ export function unresolvedSdkReason(
   return null;
 }
 
+/**
+ * tan's code for "the argv this extension sent is not a command I accept".
+ *
+ * Measured against the pinned 0.6.0-rc1: `tan presets --nosuchflag` and
+ * `tan bogusverb` both exit 2 with a WELL-FORMED envelope whose `command` is
+ * `"cli"` and whose single issue is
+ * `{ code: "cli.parse-error", severity: "error", message: <click usage dump> }`.
+ *
+ * Two consequences make it worth naming rather than leaving to the exit code.
+ * Exit 2 is `"validation"`, so without this a rejected argv is graded the same
+ * `warning` as a board.yaml the customer can fix — but the project is fine
+ * here, the extension and the CLI simply disagree about the command surface.
+ * And the message is a click/rich usage dump complete with box-drawing
+ * characters, which is channel material, not a sentence.
+ */
+export const CLI_PARSE_ERROR_CODE = "cli.parse-error";
+
+/**
+ * The usage dump behind a `cli.parse-error`, or null when this envelope is not
+ * one. Returned verbatim: it is bound for the output channel, where the
+ * `No such option: --x` line is exactly what identifies the offending argv.
+ */
+export function cliUsageErrorDump(envelope: AlpEnvelope | null): string | null {
+  for (const issue of envelope?.issues ?? []) {
+    if (issue.code === CLI_PARSE_ERROR_CODE && issue.message) {
+      return issue.message;
+    }
+  }
+  return null;
+}
+
 /** Parse the envelope from a command's stdout. Returns null when stdout is
  *  empty or not a well-formed envelope (so callers can fall back gracefully). */
 export function parseEnvelope(stdout: string): AlpEnvelope | null {
@@ -1154,11 +1185,20 @@ export function classifyOutcome(
 ): CliOutcome {
   const kind = classifyExitCode(exitCode);
   const ok = exitCode === 0;
+  // A rejected argv exits 2 like a genuine validation failure, so the exit code
+  // alone cannot separate them — `cliUsageErrorDump` reads the issue code that
+  // can. `kind` stays "validation" on purpose: `src/debug.ts` keys its "run
+  // Alp: Update CLI" skew hint on that kind together with `--core` /
+  // `--pre-launch-task` on the argv, and an unrecognised flag on a stale tan is
+  // precisely this envelope — retyping the kind would silently kill the hint.
+  const isUsageError = !ok && cliUsageErrorDump(envelope) !== null;
   const severity: CliOutcome["severity"] = ok
     ? "info"
-    : kind === "validation" || kind === "doctor"
-      ? "warning"
-      : "error";
+    : isUsageError
+      ? "error"
+      : kind === "validation" || kind === "doctor"
+        ? "warning"
+        : "error";
   return {
     exitCode,
     kind,
