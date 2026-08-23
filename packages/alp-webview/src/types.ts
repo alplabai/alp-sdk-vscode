@@ -118,7 +118,7 @@ export interface ProjectTemplate {
   title: string;
   description: string;
   category: "starter" | "example" | "library";
-  icon: string;
+  /** No `icon` on the wire by design — see the host-side note in messages.ts. */
   sourceDir?: string;
   /**
    * The SDK category this example renders under (`aen`, `ai`, `multicore`, …),

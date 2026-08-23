@@ -2369,7 +2369,7 @@ export async function runAlpCommand(
     // Never throw: a resolution failure becomes an error outcome so callers
     // can present it uniformly (the message already points at alpSdk.cliPath).
     const message = error instanceof Error ? error.message : String(error);
-    log(`[cli] ✗ CLI unavailable: ${message}`);
+    log(`[cli] [fail] CLI unavailable: ${message}`);
     return {
       outcome: unavailableOutcome(error),
       raw: {
@@ -2449,7 +2449,7 @@ export async function runAlpInTerminal(
     binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     log(
-      `[cli] ✗ CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
+      `[cli] [fail] CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
     );
     // "Retry" is caller-handled by the seam's contract, so it has to be
     // honoured here or the button is a dead end: resolution threw, so nothing
@@ -2602,7 +2602,7 @@ async function streamRun(
     binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     log(
-      `[cli] ✗ CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
+      `[cli] [fail] CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
     );
     // NOT awaited: an error notification with a button does not auto-dismiss,
     // so awaiting it would hold this run's reservation for as long as the toast

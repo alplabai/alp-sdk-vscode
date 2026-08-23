@@ -72,7 +72,7 @@ export function buildWebviewHtml(
 <body data-alp-mode="${mode}">
   <div id="root">
     <p class="alp-shell-loading">
-      ⏳ Loading Alp IDE…
+      Loading Alp IDE…
     </p>
   </div>
   <script nonce="${nonce}">

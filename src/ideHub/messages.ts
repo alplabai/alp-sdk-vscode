@@ -562,7 +562,14 @@ export interface ProjectTemplate {
   title: string;
   description: string;
   category: "starter" | "example" | "library";
-  icon: string;
+  /**
+   * NOTE: there is deliberately no `icon` on this wire. The host used to ship
+   * one and it was an emoji, which DESIGN.md's No-Emoji Rule now forbids; the
+   * field was also untyped `string`, so fixtures had drifted to codicon names
+   * (`circuit-board`) that the webview's own icon set does not contain and
+   * that rendered as literal text. The view derives its icon from `category`
+   * instead — one mapping, in the module that owns rendering.
+   */
   /** Relative path inside examples/ directory, if based on an example. */
   sourceDir?: string;
   /**
