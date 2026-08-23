@@ -9,6 +9,7 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { fetchEnvelopeData } from "../alpCli/envelope";
+import { resolveAlpBinaryForContext } from "../alpCli/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { reportError } from "../notify/vscodeAdapter";
 import { resolveSlice } from "./buildConfig";
@@ -122,6 +123,38 @@ async function pushSdkCatalog(context: vscode.ExtensionContext): Promise<void> {
     await client.sendNotification("alp/updateSdkCatalog", catalog);
   } catch {
     // Best-effort — the server keeps its current catalog.
+  }
+  await pushCliPath(context);
+}
+
+/**
+ * Tell the server which `tan` to validate board.yaml with.
+ *
+ * The server cannot work this out for itself: resolution lives in
+ * `alpCli/vscodeAdapter.ts`, which imports `vscode`, and the server runs in its
+ * own process with no such module. Pushed alongside the catalog so the same
+ * events refresh it — LSP start, an `alpSdk` settings edit, a prj.conf opening.
+ *
+ * Non-interactive for the same reason `fetchEnvelopeData` is: none of those
+ * events is the customer asking to download a CLI, and an interactive
+ * resolution would pop ADR 0021's consent modal out of opening an editor tab.
+ * When nothing resolves, `null` is pushed and the server shells the SDK's
+ * Python validator exactly as it did before.
+ */
+async function pushCliPath(context: vscode.ExtensionContext): Promise<void> {
+  if (!client) {
+    return;
+  }
+  let command: string | null = null;
+  try {
+    command = (await resolveAlpBinaryForContext(context)).command;
+  } catch {
+    command = null;
+  }
+  try {
+    await client.sendNotification("alp/updateCliPath", command);
+  } catch {
+    // Best-effort — the server keeps whatever it last knew.
   }
 }
 
