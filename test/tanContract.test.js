@@ -167,6 +167,32 @@ const GATED_CODES = {
   // reserved code whose `consumer: "none"` is no longer true.
   "sdk.network-required": "reserved",
 
+  // RESERVED, and this pin is the day a consumer bound to it — the third of
+  // these, after the two above.
+  //
+  // tan: crates/tan-cli/src/main.rs, `literal: 'code: "cli.parse-error"'`. The
+  // artefact declares it `"status": "reserved", "consumer": "none"` with the
+  // standing note "nothing in alp-sdk-vscode matches this code, so renaming or
+  // dropping it is not a breaking wire change. Promote to `frozen` … the
+  // moment a consumer binds to it". `cliUsageErrorDump`
+  // (`src/alpCli/service.ts`) is now that consumer, and `planCliOutcome` routes
+  // the whole toast on it, so the note's premise no longer holds.
+  //
+  // The status stays `reserved` because that is what tan declares TODAY and
+  // this file asserts tan's declaration, not the one we would prefer.
+  // Promoting it is an upstream ask against tan-cli, not an edit to the
+  // vendored corpus.
+  //
+  // Worth knowing when reading the consumer: this code is OVERLOADED on tan
+  // releases older than tan-cli#399. The artefact's own notes record that
+  // `new-som` refusals and `faultdecode`'s reached consumers "as
+  // `cli.parse-error` on a `command: "cli"` envelope" before that change, and
+  // that an interrupted run "fell into the `cli.parse-error` fallback" before
+  // `cli.interrupted` existed. Against the PINNED 0.6.0-rc1 all three have
+  // their own codes, so the branch means what it says; on an older binary
+  // reached through `alpSdk.cliPath` it can over-report "wrong command line".
+  "cli.parse-error": "reserved",
+
   // UNDECLARED, and never going to be: this extension MANUFACTURES it
   // (`src/alpCli/pinnedSurface.ts`) for "the pinned tan can do this and this
   // panel does not call it" — a statement about this repo's wiring that no CLI
