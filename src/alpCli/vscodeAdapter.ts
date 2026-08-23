@@ -2736,12 +2736,35 @@ async function streamRun(
         // must be freed there; late output still reaches the channel because
         // the `data` handlers stay attached.
         child.on("exit", (code, signal) => {
-          // A kill (the Cancel button) is not a failure to report as one.
+          // A kill (the Cancel button) is not a failure to report as one. It IS
+          // a finish, though, and the event is not only how a verdict reaches a
+          // toast — it is also how `BuildDelegatePty`
+          // (`src/tasks/vscodeAdapter.ts`) learns that the build it is WAITING
+          // on has ended, how `refreshState()` runs after a dispatch, and how
+          // `recordBuildFinish` records that a build ended at all (#470).
+          //
+          // Skipping it on a signal death made this the ONE dispatch path that
+          // can end without saying so: cancelling a streamed `tan build` that
+          // an F5 was queued behind left that pty open, and the debug session
+          // waited until the window was reloaded. The terminal path never had
+          // the gap — `util.ts`'s `finish` fires unconditionally — so this is
+          // symmetry, not a new convention.
           if (signal) {
             log(`[channel] "${options.name}" stopped (signal=${signal})`);
-          } else {
-            signalStreamedFinished(options.name, code ?? undefined);
           }
+          // NO exit code on a signal death. Node sets exactly one of the two,
+          // but the ternary states the intent rather than leaning on that: an
+          // exit code here would be a verdict, and there is none — the run was
+          // stopped, not judged. `undefined` is the value both consumers are
+          // already written for. The subscriber in `src/extension.ts` branches
+          // `code === 0` / `else if (code !== undefined)` and so stays silent,
+          // which is the "not a failure to report as one" part; and
+          // `BuildDelegatePty` does `event.code ?? 1`, so a killed build fails
+          // its `preLaunchTask` instead of waving the debugger through.
+          signalStreamedFinished(
+            options.name,
+            signal ? undefined : (code ?? undefined),
+          );
           finish();
         });
         // Backstop for the one case `exit` cannot cover: a spawn that fails
