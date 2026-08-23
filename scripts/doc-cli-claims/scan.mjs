@@ -61,6 +61,30 @@
 // (c) CAPABILITY CLAIMS IN PROSE. `docs/CLI.md`'s "tan is feature-complete" is
 //     false at this pin and no argv check reaches it.
 //
+// (d) AN INVOCATION `looksLikeProse` CANNOT TELL FROM A SENTENCE. The rule
+//     below reads a line beginning `tan ` as English when it carries no flag
+//     and runs past four words — so `tan bogusverb one two three four five` is
+//     documented, runnable, wrong, and green. Proved by injection, not
+//     supposed: appended to `docs/TASK_RECIPES.md` it passes, while
+//     `tan bogusverb` on its own is caught.
+//
+//     It is a LIMIT rather than a bug to fix, because the two cases are
+//     structurally identical. `tan does not declare is a hard red, and …` —
+//     the real prose line this corpus contains — has an unknown second token
+//     and more than four words, exactly like the bad command above.
+//     Separating them needs English parsing, which is the thing this file
+//     refuses to do anywhere else. Two ways out were considered and rejected:
+//     a word list (the rot this rule exists to avoid, and it would pass the
+//     first sentence it had not seen), and letting the scanner ask
+//     `surface.json` whether the second token is a real command (it would
+//     still not separate them — `bogusverb` and `does` are both unknown — and
+//     it would cost this script the property stated just below).
+//
+//     What bounds the damage: the line must ALSO begin at column zero after
+//     the prompt and list-marker strip, carry no flag at all, and name a verb
+//     the reader would have to have invented. Every real recipe in this corpus
+//     that is longer than four words carries a flag and is checked.
+//
 // Records are emitted, never judged: this script knows nothing about
 // `surface.json`. `test/docs.cliClaims.test.js` is where a claim meets the pin,
 // exactly as `scripts/tan-surface/extract.mjs` feeds `tan.surfaceContract`.
