@@ -149,14 +149,18 @@ extension maps six `platform/arch` keys and `linux/arm` is not one of them, so
 download-on-demand refuses with:
 
 ```text
-No prebuilt tan CLI for linux/arm — tan v0.5.1 publishes binaries for other platforms only, so this is a limit of that release rather than a broken install. Point alpSdk.cliPath at a tan you build locally or install with pip.
+No prebuilt tan CLI for linux/arm — tan v0.6.0-rc1 publishes binaries for other platforms only, so this is a limit of that release rather than a broken install. Point alpSdk.cliPath at a tan you build locally or install with pip.
 ```
 
 **Building `tan` from source does not rescue this host.** The Zephyr SDK
 publishes no 32-bit-ARM Linux host build either, so a self-built `tan` would
 resolve, run, and then have no toolchain to hand `west` — the same wall, one
-step later. Use a `linux-x86_64` or `linux-aarch64` machine (64-bit arm64 Linux
-on the same board, where available, is served).
+step later. Use a `linux-x86_64` machine.
+
+64-bit arm64 Linux is a different case, and this page says so twice above:
+there is no prebuilt `tan` for `linux/arm64` at this pin either, but the Zephyr
+SDK does publish `linux-aarch64` — so there, unlike here, a `tan` you build or
+`pip install` locally does have a toolchain to hand `west`.
 
 ## 2. Install and Open
 
@@ -214,15 +218,33 @@ Use:
 
 ## 7. Models Panel
 
-The Models panel (Activity Bar) is a thin GUI over the `tan model …` command
+**Not reachable in this build, and the CLI behind it is one subcommand.**
+`package.json` contributes exactly one view to the `alp-ide` Activity Bar
+container — `alp-ide.hub`, "Alp IDE" — so there is no Models entry there, and
+both palette commands (`alp.openModelsPanel`, "Alp: Models", and
+`alp.buildModel`, "Alp: Build Model") carry `"when": "false"` in
+`contributes.menus.commandPalette`. The commands are still registered; only the
+surface is hidden. Restoring it is #524.
+
+The design is unchanged: the panel is a thin GUI over the `tan model …` command
 family — it shells `tan` and renders the JSON envelope, it does not re-implement
-any model logic. Use it to check, prepare, and try models against your SoM
-before you build.
+any model logic. What is missing is the family. tan 0.6.0-rc1 implements exactly
+ONE `model` subcommand, `build`, whose own options are `--board`,
+`--board-yaml`, `--format`, `--help`, `--metadata-root`, `--out`, `--project`
+and `--sdk-root`. The eight subcommands the panel drives — `list`, `doctor`,
+`check`, `zoo`, `add`, `prep`, `run` and `ab` — are not in this binary, and
+neither are the flags that belong to them (`--exact`, `--calibration`,
+`--per-channel`, `--min-samples`, `--input`, `--expected`, `--runs`, `--sku`,
+`--name`, `--models-dir`). Landing them is upstream, `tan-cli#674`. Against the
+pinned binary today, `tan model build --help` is the whole surface.
+
+The rest of this section is INTENT — what the panel shows once `tan-cli#674`
+lands the subcommands and #524 restores the surface. None of it renders at this
+pin, which is why no `tan model` recipe is printed with it.
 
 - **NPU-coverage badge (before build).** Each model in board.yaml `models:`
-  gets one badge per SoM NPU backend from a static eligibility screen
-  (`tan model check --board board.yaml [--format text|json]`). Offline, no
-  toolchain. The coverage reads `full-eligible`, `partial`, `cpu-only` or
+  gets one badge per SoM NPU backend from a static eligibility screen. Offline,
+  no toolchain. The coverage reads `full-eligible`, `partial`, `cpu-only` or
   `undetermined`, alongside the basis it was decided on.
 
   Read a `basis: static-screen` result as ELIGIBILITY, never a guarantee: an
@@ -235,27 +257,21 @@ before you build.
   that is absent by decision, or a source format the backend does not ingest.
   It is not a finding that the model will not run.
 
-  Add `--exact` to upgrade Ethos-U to a real `vela` compile
+  An exact-compile upgrade turns Ethos-U into a real `vela` compile
   (`pip install alp-tan[model-compile]`); only a `basis: compiled` or
   `basis: bench` result is marked "proven" in the panel.
 - **Prep Model.** Pick a model and a calibration folder to run a license-free
-  INT8 quantize (`tan model prep <model.onnx|.tflite> --calibration <dir>
-  [--out] [--per-channel] [--min-samples N]`, onnxruntime QDQ) and get an
-  fp32-vs-int8 accuracy report (top1 agreement %, mean cosine, max-abs-err,
-  verdict good|degraded + guidance). A `.tflite` input is converted to ONNX
-  first via tf2onnx. (Prep runs Python — the `model-prep` extra; `.tflite`
-  conversion needs `model-convert`.)
-- **Run Model / A-B Compare.** Run a model as a host reference
-  (`tan model run <model.onnx> [--input FILE.npy] [--expected LABEL] [--runs N]`)
-  or compare two on the same input (`tan model ab <a.onnx> <b.onnx> [--input]
-  [--runs]`) for latency + size delta. Honest caveat: this is a `cpu-host`
-  reference run — functional + host latency + accuracy — **not** the target
-  SoM's performance; `peak_sram_kib` / `power_mj` come back null on host
+  INT8 quantize (onnxruntime QDQ) and get an fp32-vs-int8 accuracy report (top1
+  agreement %, mean cosine, max-abs-err, verdict good|degraded + guidance). A
+  `.tflite` input is converted to ONNX first via tf2onnx. (Prep runs Python —
+  the `model-prep` extra; `.tflite` conversion needs `model-convert`.)
+- **Run Model / A-B Compare.** Run a model as a host reference, or compare two
+  on the same input, for latency + size delta. Honest caveat: this is a
+  `cpu-host` reference run — functional + host latency + accuracy — **not** the
+  target SoM's performance; `peak_sram_kib` / `power_mj` come back null on host
   (on-device values are hardware-gated).
 - **Model Zoo gallery + Add.** Browse curated zoo entries, each marked whether
-  it runs on your SoM (`tan model zoo [--sku <SKU> | --board board.yaml]
-  [--format]`), and add one with a click (`tan model add <zoo-id> [--board
-  board.yaml] [--name NAME] [--models-dir DIR]`), which fetches the
+  it runs on your SoM, and add one with a click, which fetches the
   sha256-verified source and appends `{name, source}` to board.yaml `models:`.
   Add is non-destructive — a duplicate name errors.
 

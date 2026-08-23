@@ -184,9 +184,7 @@ test("every tan release the docs install is the pinned one", () => {
     // part of the version.
     const tag = claim.tag.startsWith("v") ? claim.tag : `v${claim.tag}`;
     if (tag === expected) continue;
-    offenders.push(
-      `${at(claim)}\n      installs ${tag}, pin is ${expected}`,
-    );
+    offenders.push(`${at(claim)}\n      installs ${tag}, pin is ${expected}`);
   }
   assert.deepEqual(
     offenders,

@@ -135,8 +135,12 @@ export function scan() {
 
       // A release tag is a claim wherever it appears — inside a URL, an env
       // assignment, or prose — because a reader copies the whole line.
+      // The optional quote is load-bearing: `TAN_VERSION: "v0.5.1"` is a real
+      // form in this corpus and an unquoted pattern walked straight past it,
+      // leaving one of three pinned tags in docs/CI_EXAMPLES.md unreported
+      // while the gate went green on the other two.
       for (const match of raw.matchAll(
-        /(?:TAN_VERSION\s*[=:]\s*|tan-cli\/releases\/download\/)(v?[0-9][0-9A-Za-z.\-+]*)/g,
+        /(?:TAN_VERSION\s*[=:]\s*|tan-cli\/releases\/download\/)["']?(v?[0-9][0-9A-Za-z.\-+]*)/g,
       )) {
         records.push({
           kind: "releaseTag",
