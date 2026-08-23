@@ -59,6 +59,88 @@ function cssFiles(dir, base = dir) {
 
 const FILES = cssFiles(CSS_ROOT);
 
+/* ── Shared CSS lexing helpers ──────────────────────────────────────────────
+ * Used by every arm below. They live here, above the arms, because each arm
+ * has to answer the same two questions first: is this text actually code,
+ * and is this literal inside a var() fallback or standing on its own.
+ */
+/** Blank out `/* … *\/` comments while preserving byte offsets, so a literal
+ * quoted in prose is not mistaken for a declaration and line numbers stay
+ * true. The radius arm above does not need this only because its pattern
+ * requires a `:` and a `;`, which prose does not supply. */
+function withoutComments(text) {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    // A quoted string: copy it whole. `content: "/* not a comment */"` is a
+    // string value, and a naive stripper would blank the rest of the file
+    // from there to the next real `*/`.
+    if (c === '"' || c === "'") {
+      const end = text.indexOf(c, i + 1);
+      const stop = end === -1 ? text.length : end + 1;
+      out += text.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    // An unquoted url() token: `/*` is legal inside a URL.
+    if (/^url\(/i.test(text.slice(i, i + 4))) {
+      const end = text.indexOf(")", i);
+      const stop = end === -1 ? text.length : end + 1;
+      out += text.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      const stop = end === -1 ? text.length : end + 2;
+      // Blank it but keep the newlines, so reported line numbers stay true.
+      out += text.slice(i, stop).replace(/[^\n]/g, " ");
+      i = stop;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/**
+ * Remove every `var(...)` call, counting parens so nested calls and
+ * function-valued fallbacks (`var(--a, var(--b, rgba(0,0,0,.1)))`) come out
+ * whole. A regex cannot do this: `/var\([^()]*\)/` stops at the first inner
+ * `(` and leaves the fallback's literal behind, which would report the exact
+ * sites the rule permits.
+ */
+function stripVarCalls(value) {
+  let out = "";
+  let i = 0;
+  while (i < value.length) {
+    // CSS keywords are case-insensitive, so `VAR(--x, #fff)` is the rule being
+    // FOLLOWED and must not survive the strip and read as a bare literal.
+    const at = value.toLowerCase().indexOf("var(", i);
+    if (at === -1) {
+      out += value.slice(i);
+      break;
+    }
+    out += value.slice(i, at);
+    let depth = 0;
+    let j = at + 3;
+    for (; j < value.length; j++) {
+      if (value[j] === "(") depth++;
+      else if (value[j] === ")") {
+        depth--;
+        if (depth === 0) {
+          j++;
+          break;
+        }
+      }
+    }
+    i = j;
+  }
+  return out;
+}
+
 /**
  * Custom properties DECLARED anywhere in the package. Package-wide rather than
  * per-file on purpose: `tokens.css` is the intended home, but a module
@@ -381,3 +463,201 @@ test("@media redefinitions are stripped, base declarations are not", () => {
   assert.equal(parsed["--probe"], "250ms", "the @media override won");
   assert.equal(parsed["--keep"], "4px", "a base declaration was lost");
 });
+
+// ---------------------------------------------------------------------------
+// Bare border-radius literals (#558)
+// ---------------------------------------------------------------------------
+//
+// The two arms above check a token once a `var()` reference exists. They say
+// nothing about a `border-radius` that skips `var()` altogether and writes a
+// raw pixel value — a second, undeclared corner language running alongside
+// the documented scale. Seven such sites were live in this package when this
+// arm was written, across three files; four of them (`4px` x3, `5px` x1) were
+// not just untokenised but off-scale — a value the documented scale
+// (`--radius-sm` 2px / `--radius-md` 3px / `--radius-lg` 8px / `--radius-xl`
+// 10px / `--radius-full` 9999px — DESIGN.md, "Shapes", The Two-Pixel Rule)
+// does not contain at all. Those four snap to `--radius-md`, the nearest
+// token; adding a new scale step between 3px and 8px was considered and
+// rejected, since it would weaken The Two-Pixel Rule.
+//
+// `50%` is allowed: several circles in this package are written that way and
+// a percentage radius is not a scale value to tokenise. A bare `0` / `0px`
+// is allowed on the same reasoning (no visible corner to name) — but no site
+// in this package currently writes one, so that branch is exercised only by
+// the inline probe below, not by a real file.
+
+/**
+ * `border-radius` declarations, with the full value and 1-based line number.
+ * Same line-counting technique as the fallback-agreement arm above: count
+ * newlines up to the match. `border-radius` values in this package never
+ * wrap, so a single-line scan is enough (contrast `usedIn` above, which has
+ * to handle a wrapped `var(`).
+ */
+function borderRadiusDeclarationsIn(text) {
+  const out = [];
+  // Comments are blanked first: a commented-out `border-radius: 4px;` supplies
+  // both the colon and the semicolon this pattern looks for, and reading it as
+  // live code is how a gate starts failing on correct files.
+  const code = withoutComments(text);
+  // All five spellings, and a declaration may be terminated by `}` instead of
+  // `;` when it is the last one in its block. Property names are matched
+  // case-insensitively because CSS is.
+  const pattern =
+    /border(?:-top-left|-top-right|-bottom-right|-bottom-left)?-radius\s*:\s*([^;{}]+)(?=[;}])/gi;
+  for (const m of code.matchAll(pattern)) {
+    out.push({
+      property: m[0].slice(0, m[0].indexOf(":")).trim().toLowerCase(),
+      value: m[1].replace(/\s+/g, " ").trim(),
+      line: code.slice(0, m.index).split("\n").length,
+    });
+  }
+  return out;
+}
+
+/** True once every token left is a zero radius — i.e. nothing that could be
+ * a scale value remains. */
+function isBareZero(remainder) {
+  return remainder
+    .split(/\s+/)
+    .filter(Boolean)
+    .every(
+      (token) =>
+        token === "0" ||
+        token === "0px" ||
+        // Any percentage radius: `50%` for a circle, `50% 50% 0 0` for a
+        // half-circle, `100%`. A percentage is relative to the box, so it is
+        // not a value the pixel scale could name.
+        /^[0-9.]+%$/.test(token),
+    );
+}
+
+/**
+ * A `border-radius` value is an offender if, once every `var(...)` call is
+ * stripped out, something is still left that isn't `50%` or a bare zero.
+ * That "something" is a raw pixel/number literal bypassing the token scale —
+ * whether the whole value is one (`4px`) or it's mixed into a shorthand
+ * alongside `var()` calls (`4px 4px 0 0`, `var(--radius-md, 3px) 0 0`).
+ */
+function isBareRadiusLiteral(value) {
+  // A `var()` reference only counts as tokenised if it names a radius token.
+  // `border-radius: var(--space-4, 16px)` references a token and would sail
+  // through a bare is-there-a-var check, while shipping a 16px corner the
+  // scale does not contain — the exact drift this arm exists to stop.
+  for (const ref of value.matchAll(/var\(\s*(--[a-z0-9-]+)/gi)) {
+    if (!/^--radius-/i.test(ref[1])) return true;
+  }
+  // `stripVarCalls` counts parens, so a nested fallback comes out whole; the
+  // regex this used to use stopped at the first inner `(`.
+  const remainder = stripVarCalls(value)
+    .replace(/!\s*important/gi, " ")
+    // The elliptical form `<horizontal> / <vertical>` — the slash is syntax,
+    // not a value to tokenise.
+    .replace(/\//g, " ")
+    .trim();
+  if (remainder === "") return false; // entirely var() calls
+  return !isBareZero(remainder);
+}
+
+test("no border-radius bypasses the token scale with a bare literal", () => {
+  const offenders = [];
+  for (const file of FILES) {
+    for (const decl of borderRadiusDeclarationsIn(file.text)) {
+      if (!isBareRadiusLiteral(decl.value)) continue;
+      offenders.push(
+        `  ${file.rel}:${decl.line}  ${decl.property}: ${decl.value};`,
+      );
+    }
+  }
+
+  assert.deepEqual(
+    offenders.sort(),
+    [],
+    "these border-radius declarations write a raw literal instead of a " +
+      "--radius-* token (or a var() fallback naming one). The documented " +
+      "scale is --radius-sm 2px / --radius-md 3px / --radius-lg 8px / " +
+      '--radius-xl 10px / --radius-full 9999px (DESIGN.md, "Shapes", The ' +
+      "Two-Pixel Rule); an off-scale value snaps to the nearest token rather " +
+      "than adding a new scale step. `50%` is allowed (circles).",
+  );
+});
+
+// Same reasoning as the scan self-checks above: pin every way this arm could
+// go quiet.
+test("the border-radius scan actually reads the package", () => {
+  const decls = FILES.flatMap((f) => borderRadiusDeclarationsIn(f.text));
+  assert.ok(
+    decls.length >= 20,
+    `found only ${decls.length} border-radius declarations — the scan is broken`,
+  );
+  assert.ok(
+    decls.some((d) => d.value.includes("var(")),
+    "no tokenised border-radius was seen at all — the scan pattern is broken",
+  );
+  assert.ok(
+    decls.some((d) => d.value === "50%"),
+    "no `50%` border-radius was seen — the allowed-value exemption has " +
+      "nothing real to exempt, so it could be wrong and this would not catch it",
+  );
+});
+
+test("bare literal / var() / 50% / zero are told apart correctly", () => {
+  assert.equal(
+    isBareRadiusLiteral("4px"),
+    true,
+    "a bare pixel value is an offender",
+  );
+  assert.equal(
+    isBareRadiusLiteral("4px 4px 0 0"),
+    true,
+    "a shorthand with a bare literal in it is still an offender",
+  );
+  assert.equal(
+    isBareRadiusLiteral("var(--radius-md, 3px)"),
+    false,
+    "a var() reference is allowed, including the literal inside its fallback",
+  );
+  assert.equal(
+    isBareRadiusLiteral("var(--radius-md, 3px) var(--radius-md, 3px) 0 0"),
+    false,
+    "a shorthand built entirely from var() calls plus a bare zero is allowed",
+  );
+  assert.equal(isBareRadiusLiteral("50%"), false, "a circle's 50% is allowed");
+  assert.equal(
+    isBareRadiusLiteral("50% 50% 0 0"),
+    false,
+    "a half-circle shorthand is percentages and zeros — still allowed",
+  );
+  assert.equal(
+    isBareRadiusLiteral("var(--radius-md, 3px) !important"),
+    false,
+    "!important is syntax, not an untokenised value",
+  );
+  assert.equal(
+    isBareRadiusLiteral("var(--radius-md, 3px) / var(--radius-sm, 2px)"),
+    false,
+    "the elliptical `/` form is syntax, not an untokenised value",
+  );
+  assert.equal(
+    isBareRadiusLiteral("VAR(--radius-md, 3px)"),
+    false,
+    "CSS keywords are case-insensitive, so an uppercase VAR( is still a " +
+      "token reference and must not read as a bare literal",
+  );
+  assert.equal(
+    isBareRadiusLiteral("var(--space-4, 16px)"),
+    true,
+    "a var() that names a NON-radius token is not tokenisation — it ships " +
+      "a corner the scale does not contain, wearing a token's clothes",
+  );
+  assert.equal(
+    isBareRadiusLiteral("0"),
+    false,
+    "a bare zero radius is allowed",
+  );
+  assert.equal(
+    isBareRadiusLiteral("0px"),
+    false,
+    "a bare 0px radius is allowed",
+  );
+});
+

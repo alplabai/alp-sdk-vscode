@@ -348,12 +348,23 @@ that a border and a tonal shift should have solved.
 ## Shapes
 
 The corner language is deliberately tight. `--radius-sm` (2px) is the workhorse
-for controls — buttons, inputs, links, inline code, skeleton lines — 18 uses.
+for controls — buttons, inputs, links, inline code, skeleton lines — 23 uses.
 `--radius-md` (3px) belongs to containers and icon buttons — cards, dropdown
-panels, section icon buttons — 15 uses. `--radius-lg` (8px) appears three
-times, all in the configurator's larger composite blocks. `--radius-xl` (10px)
-is the pill for status badges. `--radius-full` (9999px) is reserved for actual
-circles: stepper dots, spinners, the loading ring inside a button.
+panels, section icon buttons — 22 uses. `--radius-lg` (8px) appears five times,
+on the larger composite blocks: the configurator's `.card`, `.core` and
+`.advCard`, and the Overview's `.statusCard` and `.panelCard`. `--radius-xl`
+(10px) is the badge pill — all three of its uses are a `.badge`.
+`--radius-full` (9999px) is the fully-rounded end, 14 uses: three are actual
+circles (the stepper dot, the spinner, the loading ring inside a button); the
+other eleven are pills, chips and the scrollbar thumb, whose height decides the
+corner.
+
+Counts are measured from `packages/alp-webview/src/**/*.css`, not remembered.
+They moved once already: seven `border-radius` declarations wrote a raw pixel
+value instead of a token, four of them off the scale entirely, and snapping
+them to their nearest token (#558) changed four of the five numbers above.
+`test/webview.cssTokens.test.js` now fails the build on a bare `border-radius`
+literal, so the next drift is caught rather than counted later.
 
 Borders are always exactly 1px, except the stepper's dot and connector, which
 use 1.5px so a 22px circle does not read as hairline-thin at 100% zoom.
