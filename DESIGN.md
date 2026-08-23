@@ -234,10 +234,25 @@ in both directions, without a single override.
 **The Borrowed Palette Rule.** No literal color ships. A hex, `rgb()`, or
 `hsl()` value may appear only as the second argument of a `var()` fallback —
 never as the value itself. `test/webview.cssTokens.test.js` fails the build on
-any token used but not declared; the no-literal half is the rule this file
-carries. The single sanctioned exception is `.alp-boot-error` in `styles.css`,
-which paints `#f88` because it only renders when React failed to mount and
-legibility outranks theming.
+any token used but not declared, and — since #559 — on any literal written as
+the value itself. Three declarations are sanctioned and allowlisted there:
+`.alp-boot-error` and `.alp-boot-error-detail` in `styles.css`, which paint
+`#f88` because they only render when React failed to mount and legibility
+outranks theming, and the Popover Lift, the system's only shadow.
+
+**The Wash-With-Foreground Rule.** To differentiate a surface from what is
+behind it — a chrome bar, a card header — mix `{colors.text-primary}` into
+`transparent` at a low percentage. Never mix in `#000`. The foreground token
+is near-white on a dark theme and near-black on a light one, so the wash moves
+away from its background by about the same amount either way; black only ever
+goes darker. The configurator carried three `color-mix(…, #000 N%)` surfaces
+until #559: the heaviest separated from its card by a contrast ratio of 1.065
+on Dark Modern but 2.099 on Light Modern — twice the weight on the theme it
+was never tuned for. Measured across Dark Modern, Light Modern, Dark+ and
+Light+, the replacements hold a narrow band per surface: 1.056–1.088 for the
+two 4% chrome bars, 1.111–1.202 for the 8% card header. The percentage is the whole design decision:
+4% for a chrome bar (the Overview header and the configurator's `.topbar` and
+`.footer` both use it), 8% one level deeper for a card header (`.advHead`).
 
 **The Selected-Not-Suggested Rule.** `{colors.accent}` marks what is currently
 selected — an active toggle, a chosen segment. It never marks what to do next.

@@ -661,3 +661,374 @@ test("bare literal / var() / 50% / zero are told apart correctly", () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// Literal colours outside a var() fallback (#559, #560)
+// ---------------------------------------------------------------------------
+//
+// DESIGN.md, "Colors", The Borrowed Palette Rule: a hex, `rgb()` or `hsl()`
+// value may appear only as the second argument of a `var()` fallback, never as
+// the value itself. Until this arm, nothing enforced the second half of that
+// sentence, and three sites in `ConfiguratorView.module.css` were darkening
+// chrome with `color-mix(in srgb, var(--vscode-editor-background) 86%, #000
+// 14%)`. Mixing black moves one way only: subtle on a dark theme, a grey slab
+// on a light one. They now wash in `var(--text-primary)`, which inverts with
+// the theme (#559).
+//
+// This arm exists in the repo, rather than being left to the Impeccable design
+// detector, because that detector cannot make the distinction the rule is about:
+// its literal matcher has no var()-fallback exclusion, so it reports
+// `var(--vscode-charts-green, #89d185)` — the rule being FOLLOWED — as a
+// violation. Measured across this package: 53 literals sit inside a fallback
+// and 3 do not. A detector that fires on 53 correct sites to reach 3 stops
+// being read. `design-system-color` is therefore suppressed in
+// `.impeccable/config.json`, and this arm carries the rule instead (#560).
+//
+// The three surviving bare literals are the ones DESIGN.md itself sanctions,
+// and are allowlisted below by file plus exact declaration — never by line
+// number, which drifts on the next edit above them.
+
+/**
+ * Every CSS named colour that is an actual paint. `transparent` and
+ * `currentColor` are deliberately absent: neither pins a colour, and both are
+ * how this package writes "take it from context".
+ */
+const NAMED_COLOURS = [
+  "aliceblue",
+  "antiquewhite",
+  "aqua",
+  "aquamarine",
+  "azure",
+  "beige",
+  "bisque",
+  "black",
+  "blanchedalmond",
+  "blue",
+  "blueviolet",
+  "brown",
+  "burlywood",
+  "cadetblue",
+  "chartreuse",
+  "chocolate",
+  "coral",
+  "cornflowerblue",
+  "cornsilk",
+  "crimson",
+  "cyan",
+  "darkblue",
+  "darkcyan",
+  "darkgoldenrod",
+  "darkgray",
+  "darkgreen",
+  "darkgrey",
+  "darkkhaki",
+  "darkmagenta",
+  "darkolivegreen",
+  "darkorange",
+  "darkorchid",
+  "darkred",
+  "darksalmon",
+  "darkseagreen",
+  "darkslateblue",
+  "darkslategray",
+  "darkslategrey",
+  "darkturquoise",
+  "darkviolet",
+  "deeppink",
+  "deepskyblue",
+  "dimgray",
+  "dimgrey",
+  "dodgerblue",
+  "firebrick",
+  "floralwhite",
+  "forestgreen",
+  "fuchsia",
+  "gainsboro",
+  "ghostwhite",
+  "gold",
+  "goldenrod",
+  "gray",
+  "green",
+  "greenyellow",
+  "grey",
+  "honeydew",
+  "hotpink",
+  "indianred",
+  "indigo",
+  "ivory",
+  "khaki",
+  "lavender",
+  "lavenderblush",
+  "lawngreen",
+  "lemonchiffon",
+  "lightblue",
+  "lightcoral",
+  "lightcyan",
+  "lightgoldenrodyellow",
+  "lightgray",
+  "lightgreen",
+  "lightgrey",
+  "lightpink",
+  "lightsalmon",
+  "lightseagreen",
+  "lightskyblue",
+  "lightslategray",
+  "lightslategrey",
+  "lightsteelblue",
+  "lightyellow",
+  "lime",
+  "limegreen",
+  "linen",
+  "magenta",
+  "maroon",
+  "mediumaquamarine",
+  "mediumblue",
+  "mediumorchid",
+  "mediumpurple",
+  "mediumseagreen",
+  "mediumslateblue",
+  "mediumspringgreen",
+  "mediumturquoise",
+  "mediumvioletred",
+  "midnightblue",
+  "mintcream",
+  "mistyrose",
+  "moccasin",
+  "navajowhite",
+  "navy",
+  "oldlace",
+  "olive",
+  "olivedrab",
+  "orange",
+  "orangered",
+  "orchid",
+  "palegoldenrod",
+  "palegreen",
+  "paleturquoise",
+  "palevioletred",
+  "papayawhip",
+  "peachpuff",
+  "peru",
+  "pink",
+  "plum",
+  "powderblue",
+  "purple",
+  "rebeccapurple",
+  "red",
+  "rosybrown",
+  "royalblue",
+  "saddlebrown",
+  "salmon",
+  "sandybrown",
+  "seagreen",
+  "seashell",
+  "sienna",
+  "silver",
+  "skyblue",
+  "slateblue",
+  "slategray",
+  "slategrey",
+  "snow",
+  "springgreen",
+  "steelblue",
+  "tan",
+  "teal",
+  "thistle",
+  "tomato",
+  "turquoise",
+  "violet",
+  "wheat",
+  "white",
+  "whitesmoke",
+  "yellow",
+  "yellowgreen",
+];
+
+/**
+ * A colour written as a value: a hex, a colour function, or a named colour.
+ * `oklch`/`oklab`/`lab`/`lch` are here because they are the spellings a modern
+ * stylesheet drifts to next, and a gate that only knows `rgb`/`hsl` would wave
+ * them through. Case-insensitive, because `RGBA(0, 0, 0, .5)` is legal CSS.
+ */
+const COLOUR_LITERAL = new RegExp(
+  "#[0-9a-f]{3,8}\\b" +
+    "|\\b(?:rgba?|hsla?|hwb|oklch|oklab|lab|lch)\\s*\\(" +
+    "|\\b(?:" +
+    NAMED_COLOURS.join("|") +
+    ")\\b",
+  "i",
+);
+/** Same pattern, global — for counting rather than testing. */
+const COLOUR_LITERAL_ALL = new RegExp(COLOUR_LITERAL.source, "gi");
+
+/**
+ * The literal colours DESIGN.md names as sanctioned, keyed by file and by the
+ * whitespace-normalised declaration itself.
+ *   - the Popover Lift, the design system's only shadow;
+ *   - `.alp-boot-error`, which paints `#f88` because it renders only when
+ *     React never mounted, and legibility outranks theming there.
+ */
+const SANCTIONED_LITERALS = new Map([
+  [
+    path.join("features", "configurator", "ConfiguratorView.module.css"),
+    ["box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3)"],
+  ],
+  ["styles.css", ["color: #f88"]],
+]);
+
+function isSanctioned(rel, declaration) {
+  return (SANCTIONED_LITERALS.get(rel) || []).includes(declaration);
+}
+
+/** Declarations whose value still contains a colour literal once every
+ * `var()` call is stripped away. */
+function bareColourDeclarationsIn(text) {
+  const out = [];
+  const code = withoutComments(text);
+  // A declaration may end at `}` instead of `;` when it is the last one in
+  // its block, and `border-radius: 4px }` is legal CSS.
+  for (const m of code.matchAll(/([-a-zA-Z]+)\s*:\s*([^;{}]+)(?=[;}])/g)) {
+    if (!COLOUR_LITERAL.test(stripVarCalls(m[2]))) continue;
+    out.push({
+      declaration: `${m[1]}: ${m[2].replace(/\s+/g, " ").trim()}`,
+      line: code.slice(0, m.index).split("\n").length,
+    });
+  }
+  return out;
+}
+
+test("no literal colour ships outside a var() fallback", () => {
+  const offenders = [];
+  for (const file of FILES) {
+    for (const decl of bareColourDeclarationsIn(file.text)) {
+      if (isSanctioned(file.rel, decl.declaration)) continue;
+      offenders.push(`  ${file.rel}:${decl.line}  ${decl.declaration};`);
+    }
+  }
+
+  assert.deepEqual(
+    offenders.sort(),
+    [],
+    "these declarations write a colour literal as the value itself. " +
+      'DESIGN.md, "Colors", The Borrowed Palette Rule allows one only as the ' +
+      "second argument of a var() fallback. To differentiate a surface, wash " +
+      "in var(--text-primary) at a low percentage — it inverts with the " +
+      "theme, where mixing #000 only ever goes darker and lays a grey slab " +
+      "over light themes.",
+  );
+});
+
+// Same reasoning as the scan self-checks above: pin every way this arm could
+// go quiet.
+test("the colour scan actually reads the package, fallbacks and all", () => {
+  // Count by subtraction rather than by a second pattern: every literal in
+  // the file, minus the ones left standing once var() calls are stripped, is
+  // exactly the set this arm has to forgive. Counting fallbacks with their own
+  // regex would just be the balanced-paren bug again, in the self-check.
+  const countLiterals = (text) => (text.match(COLOUR_LITERAL_ALL) || []).length;
+  const inFallbacks = FILES.reduce((n, f) => {
+    const code = withoutComments(f.text);
+    return n + countLiterals(code) - countLiterals(stripVarCalls(code));
+  }, 0);
+  assert.ok(
+    inFallbacks >= 45,
+    `only ${inFallbacks} colour literals were seen inside var() fallbacks — ` +
+      "the scan is broken, or the package stopped using fallbacks and this " +
+      "arm is no longer proving it can tell them apart",
+  );
+
+  const sanctioned = FILES.flatMap((f) =>
+    bareColourDeclarationsIn(f.text).filter((d) =>
+      isSanctioned(f.rel, d.declaration),
+    ),
+  );
+  assert.equal(
+    sanctioned.length,
+    3,
+    `expected the 3 DESIGN.md-sanctioned literals to still be found by the ` +
+      `scan, saw ${sanctioned.length} — if a sanctioned site was edited or ` +
+      "removed, update SANCTIONED_LITERALS rather than leaving a dead entry " +
+      "that could mask a real one",
+  );
+});
+
+test("a fallback literal, a bare literal and a nested fallback are told apart", () => {
+  const bare = (css) => bareColourDeclarationsIn(css).map((d) => d.declaration);
+
+  assert.deepEqual(
+    bare("a { color: var(--vscode-charts-green, #89d185); }"),
+    [],
+    "a literal inside a var() fallback is the rule being followed",
+  );
+  assert.deepEqual(
+    bare("a { color: var(--a, var(--b, rgba(0, 0, 0, 0.1))); }"),
+    [],
+    "a nested fallback must come out whole — this is what a non-balanced " +
+      "regex strip gets wrong",
+  );
+  assert.deepEqual(
+    bare("a { background: color-mix(in srgb, var(--x) 86%, #000 14%); }"),
+    ["background: color-mix(in srgb, var(--x) 86%, #000 14%)"],
+    "a literal mixed in alongside a var() call is still a bare literal",
+  );
+  assert.deepEqual(
+    bare("a { color: #f88; }"),
+    ["color: #f88"],
+    "a plain literal value is an offender",
+  );
+  assert.deepEqual(
+    bare("a { background: RGBA(0, 0, 0, 0.5); }"),
+    ["background: RGBA(0, 0, 0, 0.5)"],
+    "an uppercase colour function is legal CSS and still an offender",
+  );
+  assert.deepEqual(
+    bare("a { background: oklch(0.2 0 0); }"),
+    ["background: oklch(0.2 0 0)"],
+    "a modern colour function is the spelling a stylesheet drifts to next",
+  );
+  assert.deepEqual(
+    bare("a { border: 1px solid black; }"),
+    ["border: 1px solid black"],
+    "a named colour is a literal too",
+  );
+  assert.deepEqual(
+    bare("a { background: transparent; color: currentColor; }"),
+    [],
+    "transparent and currentColor pin no colour and are how this package " +
+      "writes take-it-from-context",
+  );
+  assert.deepEqual(
+    bare("a { color: #f88 }"),
+    ["color: #f88"],
+    "a last declaration in a block may end at `}` with no semicolon",
+  );
+  assert.deepEqual(
+    bare('a { background: url("/* not a comment */x.png"); color: #f88; }'),
+    ["color: #f88"],
+    "a `/*` inside a quoted url must not blank the rest of the file and " +
+      "hide the real violation after it",
+  );
+  assert.deepEqual(
+    bare("a { color: VAR(--x, #fff); }"),
+    [],
+    "an uppercase VAR( fallback is the rule being followed",
+  );
+  assert.deepEqual(
+    bare("/* the old #000 30% wash */\na { color: var(--text-primary); }"),
+    [],
+    "a literal quoted in a comment is prose, not a declaration",
+  );
+  assert.deepEqual(
+    bare("/* border-radius: 4px; from before #558 */\na { color: var(--x); }"),
+    [],
+    "commented-out code supplies both a colon and a semicolon — the most " +
+      "common comment content, and the case a naive stripper gets wrong",
+  );
+  assert.deepEqual(
+    bare(
+      "a { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }",
+    ),
+    [],
+    "the theme-correct wash this rule steers toward must not itself red",
+  );
+});
+

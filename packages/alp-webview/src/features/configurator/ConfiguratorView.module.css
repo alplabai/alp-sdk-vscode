@@ -17,7 +17,20 @@
   height: 44px;
   padding: 0 var(--space-5);
   border-bottom: 1px solid var(--border-widget);
-  background: color-mix(in srgb, var(--vscode-editor-background) 86%, #000 14%);
+  /* Differentiate the chrome bar by washing in the theme FOREGROUND, never a
+   * literal #000. --text-primary is near-white on a dark theme and near-black
+   * on a light one, so the wash moves AWAY from whatever is behind it by about
+   * the same amount in either direction. Mixing black moved one way only, which
+   * is subtle on a dark theme and a grey slab on a light one: the old
+   * `#000 30%` on .advHead separated from its card by a contrast ratio of 1.065
+   * on Dark Modern but 2.099 on Light Modern — twice as heavy on the theme it
+   * was never tuned for. Across Dark Modern, Light Modern, Dark+ and Light+
+   * the foreground wash holds a narrow band per surface: 1.056–1.088 at the
+   * 4% used here, 1.111–1.202 at the 8% .advHead takes.
+   * 4% here is the same value the Overview header uses
+   * (OverviewView.module.css) — one value for one job; .advHead takes 8%
+   * because it is a card header and sits one level deeper. */
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   flex-shrink: 0;
 }
 .brand {
@@ -451,7 +464,7 @@
   text-transform: uppercase;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-widget);
-  background: color-mix(in srgb, var(--vscode-editor-background) 70%, #000 30%);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 .advBody {
   padding: var(--space-4);
@@ -553,7 +566,7 @@
   height: 44px;
   padding: 0 var(--space-5);
   border-top: 1px solid var(--border-widget);
-  background: color-mix(in srgb, var(--vscode-editor-background) 86%, #000 14%);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   flex-shrink: 0;
 }
 .valid {
