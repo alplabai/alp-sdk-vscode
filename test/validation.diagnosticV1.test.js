@@ -65,7 +65,9 @@ test("createTanValidateArgs never passes --offline", () => {
   assert.ok(
     !createTanValidateArgs("/sdk", "/w/board.yaml").includes("--offline"),
   );
-  assert.ok(!createTanValidateArgs(null, "/w/board.yaml").includes("--offline"));
+  assert.ok(
+    !createTanValidateArgs(null, "/w/board.yaml").includes("--offline"),
+  );
 });
 
 const SDK_BACKED = JSON.stringify({
@@ -202,7 +204,11 @@ test("severities map onto the validation vocabulary", () => {
 
 test("unparseable output is an infrastructure failure, never a clean file", () => {
   // A crashed or non-JSON run must not read as "board.yaml is fine".
-  for (const output of ["", "Traceback (most recent call last):", "{not json"]) {
+  for (const output of [
+    "",
+    "Traceback (most recent call last):",
+    "{not json",
+  ]) {
     const result = parseDiagnosticV1(output, 2);
     assert.equal(result.outcome, "failed", `for ${JSON.stringify(output)}`);
   }
