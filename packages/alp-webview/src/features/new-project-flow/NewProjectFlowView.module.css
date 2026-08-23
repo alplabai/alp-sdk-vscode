@@ -103,7 +103,7 @@
   padding: var(--space-5);
   background: var(--surface-bg);
   border: 1px solid var(--border-widget, var(--border-default));
-  border-radius: var(--radius-md, 6px);
+  border-radius: var(--radius-md, 3px);
   cursor: pointer;
   text-align: left;
   transition:

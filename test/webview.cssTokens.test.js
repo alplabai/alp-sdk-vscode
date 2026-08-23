@@ -175,3 +175,209 @@ test("a `var(` whose token wraps onto the next line is still seen", () => {
       "chain in tokens.css would go unchecked",
   );
 });
+
+// ---------------------------------------------------------------------------
+// Fallback agreement (#557)
+// ---------------------------------------------------------------------------
+//
+// The gate above asserts a token is DECLARED. It says nothing about the value
+// written beside it, so `var(--radius-md, 6px)` sails through while the token
+// is really `3px` — a declaration that is off by 2x and renders correctly,
+// because the token exists and the fallback never fires.
+//
+// That makes these dormant, not live. They wake up the moment `tokens.css`
+// fails to load, and until then they misinform every reader about what the
+// design system says. Fourteen were live in this package when this arm was
+// written, across `--radius-md`, `--radius-sm`, `--radius-full`, `--space-3`
+// and `--space-4`.
+//
+// ── Scope: NUMERIC tokens only, and that boundary is load-bearing ───────────
+//
+// Ten `var()` fallbacks in this package disagree with their token ON PURPOSE
+// and are not defects:
+//
+//   * `var(--border-default, transparent)` — no border when the theme has none;
+//   * `var(--ease-out, ease-out)` / `var(--ease-in-out, ease-in-out)` — the CSS
+//     keyword as a deliberate coarse stand-in for a cubic-bezier;
+//   * `var(--text-mono, monospace)` / `var(--font-family-mono, monospace)` —
+//     the generic family as the right degraded answer for a concrete stack.
+//
+// Gating those would red on correct code, and a gate that reds on correct code
+// is a gate someone deletes — after which the numeric drift comes back. So the
+// rule keys off the DECLARED value: if the token declares a bare number with a
+// unit, the fallback must match it exactly; anything else is a judgement call
+// and stays out.
+
+/**
+ * Base-block declarations only.
+ *
+ * `tokens.css` declares `--duration-fast`, `--duration-base` and
+ * `--duration-slow` TWICE: the real value in `:root`, then `0ms` inside
+ * `@media (prefers-reduced-motion: reduce)`. A "last declaration wins" parse
+ * therefore reports the correct `var(--duration-slow, 250ms)` in
+ * `shared/ui/Button/Button.module.css` as a mismatch against `0ms`. It is not a
+ * mismatch — it matches the base value, which is the one a missing stylesheet
+ * would have to stand in for. So every `@media` block is stripped first.
+ */
+function stripAtMediaBlocks(text) {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const at = text.indexOf("@media", i);
+    if (at === -1) {
+      out += text.slice(i);
+      break;
+    }
+    out += text.slice(i, at);
+    const open = text.indexOf("{", at);
+    if (open === -1) break;
+    let depth = 1;
+    let j = open + 1;
+    while (j < text.length && depth > 0) {
+      if (text[j] === "{") depth += 1;
+      else if (text[j] === "}") depth -= 1;
+      j += 1;
+    }
+    i = j;
+  }
+  return out;
+}
+
+/** A bare number with an optional unit — the only shape this arm gates. */
+const NUMERIC = /^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|ms|s|ch|vh|vw|%)?$/;
+
+/** `{ "--token": "3px" }` for every base declaration whose value is numeric. */
+function numericDeclarations(files) {
+  const out = {};
+  for (const file of files) {
+    for (const m of stripAtMediaBlocks(file.text).matchAll(
+      /(--[A-Za-z0-9-]+)\s*:\s*([^;{}]+);/g,
+    )) {
+      const value = m[2].replace(/\s+/g, " ").trim();
+      if (NUMERIC.test(value)) out[m[1]] = value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Every `var(--token, <fallback>)` whose fallback contains no parentheses.
+ *
+ * The paren exclusion is not a limitation worth fixing: a fallback that
+ * contains `(` is a nested `var()`, an `rgba()`, or a `cubic-bezier()` — never
+ * the bare number this arm gates.
+ */
+function fallbacksIn(text) {
+  const out = [];
+  for (const m of text.matchAll(
+    /var\(\s*(--[A-Za-z0-9-]+)\s*,\s*([^()]*?)\s*\)/g,
+  )) {
+    out.push({
+      name: m[1],
+      fallback: m[2].replace(/\s+/g, " ").trim(),
+      line: text.slice(0, m.index).split("\n").length,
+    });
+  }
+  return out;
+}
+
+const NUMERIC_TOKENS = numericDeclarations(FILES);
+
+test("a numeric token's fallback names the value the token declares", () => {
+  const offenders = [];
+  for (const file of FILES) {
+    for (const use of fallbacksIn(file.text)) {
+      const declaredValue = NUMERIC_TOKENS[use.name];
+      if (declaredValue === undefined) continue; // non-numeric: out of scope
+      if (use.fallback === declaredValue) continue;
+      offenders.push(
+        `  ${file.rel}:${use.line}  var(${use.name}, ${use.fallback})  ` +
+          `— declared ${declaredValue}`,
+      );
+    }
+  }
+
+  assert.deepEqual(
+    offenders.sort(),
+    [],
+    "these fallbacks name a value the token does not have. Nothing renders " +
+      "wrong today — the token exists, so the fallback never fires — but the " +
+      "declaration is false, and it becomes the rendered value the moment " +
+      "styles/tokens.css fails to load. Correct the fallback to the declared " +
+      "value; do not change the token to match the fallback.",
+  );
+});
+
+// Same reasoning as the scan self-check above: pin every way THIS arm could go
+// quiet, and pin the boundary that keeps it shippable.
+test("the fallback-agreement arm reads the package and keeps its boundary", () => {
+  assert.ok(
+    Object.keys(NUMERIC_TOKENS).length >= 10,
+    `parsed only ${Object.keys(NUMERIC_TOKENS).length} numeric tokens — the ` +
+      "declaration pattern or the @media strip is broken",
+  );
+  for (const [token, value] of [
+    ["--radius-sm", "2px"],
+    ["--radius-md", "3px"],
+    ["--radius-full", "9999px"],
+    ["--space-3", "6px"],
+    ["--space-4", "8px"],
+  ]) {
+    assert.equal(
+      NUMERIC_TOKENS[token],
+      value,
+      `${token} should parse as ${value}`,
+    );
+  }
+
+  // The @media trap: the base value must win over the reduced-motion override.
+  assert.equal(
+    NUMERIC_TOKENS["--duration-slow"],
+    "250ms",
+    "--duration-slow parsed as its prefers-reduced-motion override instead of " +
+      "its base value — every duration fallback would be reported as wrong",
+  );
+
+  // The boundary. These tokens are non-numeric on purpose and MUST stay
+  // ungated; gating them reds on correct code and the gate gets deleted.
+  for (const token of [
+    "--border-default",
+    "--ease-out",
+    "--ease-in-out",
+    "--text-mono",
+    "--font-family-mono",
+  ]) {
+    assert.ok(
+      !(token in NUMERIC_TOKENS),
+      `${token} was treated as numeric — its deliberate fallback ` +
+        "(transparent / a keyword / a generic family) would be reported as a " +
+        "defect",
+    );
+  }
+
+  const seen = FILES.flatMap((f) => fallbacksIn(f.text));
+  assert.ok(
+    seen.length >= 20,
+    `the var(--token, fallback) pattern found only ${seen.length} uses`,
+  );
+  assert.ok(
+    seen.some((u) => u.name in NUMERIC_TOKENS),
+    "no fallback for a numeric token was seen at all — this arm would pass " +
+      "no matter what",
+  );
+});
+
+test("@media redefinitions are stripped, base declarations are not", () => {
+  const parsed = numericDeclarations([
+    {
+      rel: "probe.css",
+      text:
+        ":root { --probe: 250ms; --keep: 4px; }\n" +
+        "@media (prefers-reduced-motion: reduce) {\n" +
+        "  :root { --probe: 0ms; }\n" +
+        "}\n",
+    },
+  ]);
+  assert.equal(parsed["--probe"], "250ms", "the @media override won");
+  assert.equal(parsed["--keep"], "4px", "a base declaration was lost");
+});
