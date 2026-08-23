@@ -89,7 +89,7 @@ export function useConfigurator(): UseConfigurator {
         }
       } else if (msg.type === "configuratorSaved") {
         setBaseline(fingerprint(boardRef.current));
-        setStatus("Saved ✓");
+        setStatus("Saved");
       }
     });
     postMessage({ type: "ready" });

@@ -103,7 +103,7 @@
   padding: var(--space-5);
   background: var(--surface-bg);
   border: 1px solid var(--border-widget, var(--border-default));
-  border-radius: var(--radius-md, 6px);
+  border-radius: var(--radius-md, 3px);
   cursor: pointer;
   text-align: left;
   transition:
@@ -120,9 +120,14 @@
   background: color-mix(in srgb, var(--border-focus) 10%, transparent);
 }
 
+/* The child is a fixed-size SVG now, not a glyph, so `font-size` no longer
+   sizes anything here — the flex box is what keeps the icon on the card's
+   optical centre line. */
 .templateIcon {
-  font-size: var(--font-size-xl);
+  display: flex;
+  align-items: center;
   line-height: 1;
+  color: var(--text-secondary);
 }
 
 .templateTitle {

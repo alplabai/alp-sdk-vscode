@@ -313,7 +313,6 @@ export class NewProjectFlowPanel {
         title: data?.summary ?? id,
         description: data?.details?.[0] ?? "",
         category: "starter",
-        icon: "📦",
       });
     }
 
@@ -355,7 +354,6 @@ export class NewProjectFlowPanel {
         title: ex.title || ex.id,
         description: ex.description ?? "",
         category: "example",
-        icon: "🧪",
         sourceDir: ex.sourceDir,
         group,
       });

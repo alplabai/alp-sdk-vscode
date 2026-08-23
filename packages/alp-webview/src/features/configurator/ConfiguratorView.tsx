@@ -1725,11 +1725,25 @@ export function ConfiguratorView() {
   } = cfg;
 
   const validClass = validation.errors.length ? styles.vErr : styles.vOk;
-  const validText = validation.errors.length
-    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""}`
-    : validation.warnings.length
-      ? `⚠ ${validation.warnings.length} warning${validation.warnings.length > 1 ? "s" : ""}`
-      : "✓ Valid — ready to save";
+  // A node, not a string: the status marker is an <Icon>, matching the two
+  // badges this same file already renders in the validation summary rather
+  // than the dingbats that used to stand in for them (DESIGN.md, The
+  // No-Emoji Rule).
+  const validBadge = validation.errors.length ? (
+    <>
+      <Icon name="x" size={14} /> {validation.errors.length} error
+      {validation.errors.length > 1 ? "s" : ""}
+    </>
+  ) : validation.warnings.length ? (
+    <>
+      <Icon name="warning" size={14} /> {validation.warnings.length} warning
+      {validation.warnings.length > 1 ? "s" : ""}
+    </>
+  ) : (
+    <>
+      <Icon name="check" size={14} /> Valid — ready to save
+    </>
+  );
 
   function renderSection() {
     if (!cfg.loaded) {
@@ -1815,7 +1829,7 @@ export function ConfiguratorView() {
 
       <footer className={styles.footer}>
         <span className={`${styles.valid} ${validClass}`} role="status">
-          {validText}
+          {validBadge}
         </span>
         {status ? (
           <span className={styles.statusMsg} role="status" aria-live="polite">

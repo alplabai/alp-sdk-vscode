@@ -41,7 +41,7 @@ copy_pkg() {
   if [ -d "$SRC/$name" ]; then
     rm -rf "$DEST/$name"
     cp -rL "$SRC/$name" "$DEST/$name"
-    echo "✓ $name"
+    echo "[ok] $name"
   else
     # Try pnpm virtual store
     local dir
@@ -52,9 +52,9 @@ copy_pkg() {
     if [ -n "$dir" ]; then
       rm -rf "$DEST/$name"
       cp -rL "$dir" "$DEST/$name"
-      echo "✓ $name (pnpm store)"
+      echo "[ok] $name (pnpm store)"
     else
-      echo "✗ NOT FOUND: $name" >&2
+      echo "[fail] NOT FOUND: $name" >&2
     fi
   fi
 }
@@ -77,7 +77,7 @@ if [ -d "$PNPM/vscode-languageserver-protocol@3.17.5/node_modules/vscode-languag
   for dep in vscode-languageserver-protocol vscode-languageserver-types vscode-jsonrpc; do
     rm -rf "$DEST/$dep"
     cp -rL "$PNPM/vscode-languageserver-protocol@3.17.5/node_modules/$dep" "$DEST/$dep"
-    echo "✓ $dep (protocol bundle)"
+    echo "[ok] $dep (protocol bundle)"
   done
 fi
 
@@ -89,19 +89,19 @@ fi
 SEMVER_DIR=$(ls "$PNPM" 2>/dev/null | grep "^semver@7" | head -1 || true)
 if [ -n "$SEMVER_DIR" ] && [ ! -d "$DEST/semver" ]; then
   cp -rL "$PNPM/$SEMVER_DIR/node_modules/semver" "$DEST/semver"
-  echo "✓ semver (pnpm)"
+  echo "[ok] semver (pnpm)"
 fi
 
 MINIMATCH_DIR=$(ls "$PNPM" 2>/dev/null | grep "^minimatch@5" | head -1 || true)
 if [ -n "$MINIMATCH_DIR" ] && [ ! -d "$DEST/minimatch" ]; then
   cp -rL "$PNPM/$MINIMATCH_DIR/node_modules/minimatch" "$DEST/minimatch"
-  echo "✓ minimatch (pnpm)"
+  echo "[ok] minimatch (pnpm)"
 fi
 
 BRACE_DIR=$(ls "$PNPM" 2>/dev/null | grep "^brace-expansion" | head -1 || true)
 if [ -n "$BRACE_DIR" ] && [ ! -d "$DEST/brace-expansion" ]; then
   cp -rL "$PNPM/$BRACE_DIR/node_modules/brace-expansion" "$DEST/brace-expansion"
-  echo "✓ brace-expansion (pnpm)"
+  echo "[ok] brace-expansion (pnpm)"
 fi
 
 echo ""

@@ -54,3 +54,7 @@ test/golden/tan-contract/
 # Retired in-repo Rust CLI (superseded by the standalone tan-cli repo) —
 # read-only local reference only, never tracked here.
 cli-rs/
+
+# Impeccable design-hook session cache — runtime state, not source.
+# .impeccable/config.json and design.json are tracked on purpose.
+.impeccable/hook.cache.json

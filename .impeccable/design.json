@@ -1,0 +1,382 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-22T18:42:36Z",
+  "title": "Design System: Alp IDE",
+  "notes": "Every color in this system resolves through a --vscode-* variable injected by the VS Code extension host. Those variables do not exist in a plain browser, so each component snippet below supplies a var() fallback approximating VS Code's Dark Modern theme. Those hex values are RENDER FALLBACKS ONLY and are not project tokens: the product itself ships no literal color outside var() fallbacks. For the same reason, colorMeta entries carry no tonalRamp — a theme-derived color has no fixed hue to ramp, and synthesizing one would invent a source of truth the system deliberately refuses to own.",
+  "extensions": {
+    "colorMeta": {
+      "button-bg": {
+        "role": "primary",
+        "displayName": "Workbench Action",
+        "canonical": "var(--vscode-button-background)"
+      },
+      "button-fg": {
+        "role": "primary",
+        "displayName": "Workbench Action Text",
+        "canonical": "var(--vscode-button-foreground)"
+      },
+      "button-hover-bg": {
+        "role": "primary",
+        "displayName": "Workbench Action Hover",
+        "canonical": "var(--vscode-button-hoverBackground)"
+      },
+      "accent": {
+        "role": "secondary",
+        "displayName": "Focus Accent",
+        "canonical": "var(--vscode-focusBorder)"
+      },
+      "accent-fg": {
+        "role": "secondary",
+        "displayName": "Focus Accent Text",
+        "canonical": "var(--vscode-button-foreground)"
+      },
+      "status-ok": {
+        "role": "tertiary",
+        "displayName": "Pass Green",
+        "canonical": "var(--vscode-testing-iconPassed)"
+      },
+      "status-warn": {
+        "role": "tertiary",
+        "displayName": "Attention Amber",
+        "canonical": "var(--vscode-editorWarning-foreground)"
+      },
+      "status-err": {
+        "role": "tertiary",
+        "displayName": "Failure Red",
+        "canonical": "var(--vscode-editorError-foreground)"
+      },
+      "status-info": {
+        "role": "tertiary",
+        "displayName": "Advisory Blue",
+        "canonical": "var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground))"
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Primary Text",
+        "canonical": "var(--vscode-foreground)"
+      },
+      "text-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Text",
+        "canonical": "var(--vscode-descriptionForeground)"
+      },
+      "text-link": {
+        "role": "neutral",
+        "displayName": "Link",
+        "canonical": "var(--vscode-textLink-foreground)"
+      },
+      "text-link-active": {
+        "role": "neutral",
+        "displayName": "Link Active",
+        "canonical": "var(--vscode-textLink-activeForeground)"
+      },
+      "surface-bg": {
+        "role": "neutral",
+        "displayName": "Panel Ground",
+        "canonical": "var(--vscode-sideBar-background, var(--vscode-editor-background))"
+      },
+      "surface-hover": {
+        "role": "neutral",
+        "displayName": "Hover Wash",
+        "canonical": "var(--vscode-toolbar-hoverBackground)"
+      },
+      "surface-input": {
+        "role": "neutral",
+        "displayName": "Input Ground",
+        "canonical": "var(--vscode-input-background)"
+      },
+      "surface-dropdown": {
+        "role": "neutral",
+        "displayName": "Dropdown Ground",
+        "canonical": "var(--vscode-dropdown-background, var(--vscode-input-background))"
+      },
+      "surface-btn-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Fill",
+        "canonical": "var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.1))"
+      },
+      "surface-btn-secondary-hover": {
+        "role": "neutral",
+        "displayName": "Secondary Fill Hover",
+        "canonical": "var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.2))"
+      },
+      "surface-badge": {
+        "role": "neutral",
+        "displayName": "Badge Ground",
+        "canonical": "var(--vscode-badge-background)"
+      },
+      "badge-fg": {
+        "role": "neutral",
+        "displayName": "Badge Text",
+        "canonical": "var(--vscode-badge-foreground)"
+      },
+      "border-default": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "var(--vscode-panel-border)"
+      },
+      "border-widget": {
+        "role": "neutral",
+        "displayName": "Widget Hairline",
+        "canonical": "var(--vscode-widget-border)"
+      },
+      "border-focus": {
+        "role": "neutral",
+        "displayName": "Focus Ring",
+        "canonical": "var(--vscode-focusBorder)"
+      },
+      "border-input": {
+        "role": "neutral",
+        "displayName": "Input Hairline",
+        "canonical": "var(--vscode-input-border)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Panel titles only, one per view. 20px at the 13px workbench default."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings, Markdown h1, and large counted values in status readouts."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Step headings and sub-panel titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "All running text, labels, descriptions, control text. Prose capped at 90ch."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase section labels and captions; also the size for monospace paths and hints."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Values read character by character — registers, paths, versions, diagnostic codes. Deliberately not var(--vscode-editor-font-family), which resolves EMPTY in some webview hosts."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover-lift",
+        "value": "0 4px 12px rgba(0, 0, 0, 0.3)",
+        "purpose": "The only box-shadow in the system. Permitted solely on a layer that leaves the document flow and covers content it does not own — today, the configurator's dropdown menu."
+      }
+    ],
+    "motion": [
+      {
+        "name": "duration-fast",
+        "value": "100ms",
+        "purpose": "Hover and icon-button colour/background shifts, transform nudges."
+      },
+      {
+        "name": "duration-base",
+        "value": "150ms",
+        "purpose": "Default state transition — border-colour, stepper dot and connector fills."
+      },
+      {
+        "name": "duration-slow",
+        "value": "250ms",
+        "purpose": "Entrance fades and the spinner rotation period."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Entrances and state changes; fast start, long settle."
+      },
+      {
+        "name": "ease-in-out",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Continuous loops — the skeleton shimmer."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "all three durations redefined to 0ms",
+        "purpose": "prefers-reduced-motion: reduce switches the whole system off at the token layer rather than rule by rule."
+      }
+    ],
+    "breakpoints": [
+      { "name": "content-max", "value": "1600px" },
+      { "name": "prose-max", "value": "90ch" }
+    ],
+    "breakpointNote": "These are content caps, not breakpoints. The system ships ZERO width-based media queries; its only four @media blocks are prefers-reduced-motion. Reflow comes from repeat(auto-fit, minmax(260px, 1fr)) grids and flex-wrap."
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one fill the user is asked to press — Build, Flash, Create Project, Install.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Build &amp; Flash</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 12px; border: none; border-radius: 2px; font-family: var(--vscode-font-family, system-ui, sans-serif); font-size: var(--vscode-font-size, 13px); line-height: 1.4; white-space: nowrap; cursor: pointer; transition: background 100ms, opacity 100ms; } .ds-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); outline-offset: 2px; } .ds-btn-primary { background: var(--vscode-button-background, #0078d4); color: var(--vscode-button-foreground, #ffffff); } .ds-btn-primary:hover { background: var(--vscode-button-hoverBackground, #026ec1); }"
+    },
+    {
+      "name": "Accent Button",
+      "kind": "button",
+      "refersTo": "button-accent",
+      "description": "Marks the currently SELECTED option in a toggle or segmented control. Never a call to action.",
+      "html": "<button class=\"ds-btn-accent\">Zephyr</button>",
+      "css": ".ds-btn-accent { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border: none; border-radius: 2px; font-family: var(--vscode-font-family, system-ui, sans-serif); font-size: var(--vscode-font-size, 13px); line-height: 1.4; cursor: pointer; background: var(--vscode-focusBorder, #0078d4); color: var(--vscode-button-foreground, #ffffff); transition: filter 100ms; } .ds-btn-accent:hover { filter: brightness(1.08); } .ds-btn-accent:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Transparent with a hairline. The default for secondary actions in dense rows.",
+      "html": "<button class=\"ds-btn-ghost\">Preview Build Plan</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 2px; font-family: var(--vscode-font-family, system-ui, sans-serif); font-size: var(--vscode-font-size, 13px); line-height: 1.4; cursor: pointer; background: transparent; color: var(--vscode-foreground, #cccccc); border: 1px solid var(--vscode-panel-border, #2b2b2b); transition: background 100ms; } .ds-btn-ghost:hover { background: var(--vscode-toolbar-hoverBackground, #2a2d2e); } .ds-btn-ghost:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); outline-offset: 2px; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive actions are outlined, never filled — a filled red button invites the click it is warning about.",
+      "html": "<button class=\"ds-btn-danger\">Remove SDK</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 2px; font-family: var(--vscode-font-family, system-ui, sans-serif); font-size: var(--vscode-font-size, 13px); line-height: 1.4; cursor: pointer; background: transparent; color: var(--vscode-errorForeground, #f14c4c); border: 1px solid var(--vscode-errorForeground, #f14c4c); transition: background 100ms; } .ds-btn-danger:hover { background: var(--vscode-inputValidation-errorBackground, rgba(241, 76, 76, 0.12)); } .ds-btn-danger:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); outline-offset: 2px; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The container primitive. Flat, 3px corners, 1px hairline; only border-colour animates.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-label\">TOOLCHAIN</div><div class=\"ds-card-value\">Ready</div><div class=\"ds-card-meta\">tan 0.6.0-rc1 · SDK v0.15.0</div></div>",
+      "css": ".ds-card { background: var(--vscode-sideBar-background, #181818); color: var(--vscode-foreground, #cccccc); border: 1px solid var(--vscode-panel-border, #2b2b2b); border-radius: 3px; padding: 16px; overflow: hidden; font-family: var(--vscode-font-family, system-ui, sans-serif); transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); max-width: 260px; } .ds-card:hover { border-color: var(--vscode-focusBorder, #0078d4); } .ds-card-label { font-size: calc(var(--vscode-font-size, 13px) - 1px); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--vscode-descriptionForeground, #9d9d9d); margin-bottom: 8px; } .ds-card-value { font-size: calc(var(--vscode-font-size, 13px) + 3px); font-weight: 600; line-height: 1.3; } .ds-card-meta { margin-top: 4px; font-size: calc(var(--vscode-font-size, 13px) - 1px); color: var(--vscode-descriptionForeground, #9d9d9d); }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Label, input, hint stacked at a 4px gap. Focus draws the ring INSIDE the control (outline-offset: -1px) so nothing shifts.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ds-proj\">Project name</label><input class=\"ds-field-input\" id=\"ds-proj\" value=\"aen801-dual-m55\" /><span class=\"ds-field-hint\">Will be created at ~/projects/aen801-dual-m55</span></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 4px; font-family: var(--vscode-font-family, system-ui, sans-serif); max-width: 320px; } .ds-field-label { font-size: var(--vscode-font-size, 13px); font-weight: 600; color: var(--vscode-foreground, #cccccc); } .ds-field-input { padding: 4px 8px; font-family: inherit; font-size: var(--vscode-font-size, 13px); color: var(--vscode-input-foreground, #cccccc); background: var(--vscode-input-background, #313131); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 2px; outline: none; width: 100%; box-sizing: border-box; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-field-input:focus { border-color: var(--vscode-focusBorder, #0078d4); outline: 1px solid var(--vscode-focusBorder, #0078d4); outline-offset: -1px; } .ds-field-hint { font-size: calc(var(--vscode-font-size, 13px) - 1px); color: var(--vscode-descriptionForeground, #9d9d9d); }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Four fixed states with fixed labels. Foreground never changes; only the background carries the meaning.",
+      "html": "<span class=\"ds-chip ds-chip-ready\">Ready</span> <span class=\"ds-chip ds-chip-warn\">Action Required</span> <span class=\"ds-chip ds-chip-err\">Missing</span>",
+      "css": ".ds-chip { display: inline-block; padding: 1px 6px; border-radius: 10px; font-family: var(--vscode-font-family, system-ui, sans-serif); font-size: calc(var(--vscode-font-size, 13px) - 1px); font-weight: 600; color: var(--vscode-badge-foreground, #f8f8f8); } .ds-chip-ready { background: var(--vscode-testing-iconPassed, #73c991); } .ds-chip-warn { background: var(--vscode-editorWarning-foreground, #cca700); } .ds-chip-err { background: var(--vscode-editorError-foreground, #f14c4c); }"
+    },
+    {
+      "name": "Stepper",
+      "kind": "nav",
+      "refersTo": "stepper-dot",
+      "description": "Navigation in this system is progress, not a menu. 22px dots at 1.5px stroke, connectors that fill pass-green behind the user.",
+      "html": "<div class=\"ds-stepper\"><div class=\"ds-step\"><span class=\"ds-dot ds-dot-done\">✓</span><span class=\"ds-step-title\">Template</span></div><span class=\"ds-conn ds-conn-done\"></span><div class=\"ds-step\"><span class=\"ds-dot ds-dot-active\">2</span><span class=\"ds-step-title ds-step-title-active\">Hardware</span></div><span class=\"ds-conn\"></span><div class=\"ds-step\"><span class=\"ds-dot\">3</span><span class=\"ds-step-title\">Review</span></div></div>",
+      "css": ".ds-stepper { display: flex; align-items: flex-start; padding: 12px 16px; font-family: var(--vscode-font-family, system-ui, sans-serif); } .ds-step { display: flex; flex-direction: column; align-items: center; flex: 1 0 0; gap: 4px; min-width: 0; } .ds-dot { width: 22px; height: 22px; flex-shrink: 0; border-radius: 9999px; border: 1.5px solid var(--vscode-panel-border, #2b2b2b); background: var(--vscode-sideBar-background, #181818); color: var(--vscode-descriptionForeground, #9d9d9d); display: flex; align-items: center; justify-content: center; font-size: calc(var(--vscode-font-size, 13px) - 1px); font-weight: 600; box-sizing: border-box; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-dot-active { background: var(--vscode-button-background, #0078d4); color: var(--vscode-button-foreground, #ffffff); border-color: var(--vscode-button-background, #0078d4); } .ds-dot-done { background: var(--vscode-testing-iconPassed, #73c991); color: var(--vscode-button-foreground, #ffffff); border-color: var(--vscode-testing-iconPassed, #73c991); } .ds-step-title { font-size: calc(var(--vscode-font-size, 13px) - 1px); color: var(--vscode-descriptionForeground, #9d9d9d); text-align: center; line-height: 1.3; white-space: nowrap; } .ds-step-title-active { color: var(--vscode-foreground, #cccccc); font-weight: 500; } .ds-conn { flex: 1 0 12px; height: 1.5px; background: var(--vscode-panel-border, #2b2b2b); margin-top: 10px; } .ds-conn-done { background: var(--vscode-testing-iconPassed, #73c991); }"
+    },
+    {
+      "name": "Icon",
+      "kind": "custom",
+      "refersTo": "icon",
+      "description": "One of 27 hand-drawn icons. 24×24 viewBox, fill none, stroke currentColor at 1.6, round caps and joins — so it inherits whatever the surrounding text is doing, error colour included.",
+      "html": "<span class=\"ds-icon-row\"><svg class=\"ds-icon\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M13 2 3 14h9l-1 8 10-12h-9l1-8Z\"/></svg><span>Build &amp; Flash</span></span>",
+      "css": ".ds-icon-row { display: inline-flex; align-items: center; gap: 4px; font-family: var(--vscode-font-family, system-ui, sans-serif); font-size: var(--vscode-font-size, 13px); color: var(--vscode-foreground, #cccccc); } .ds-icon { flex-shrink: 0; }"
+    },
+    {
+      "name": "Skeleton",
+      "kind": "custom",
+      "refersTo": "skeleton",
+      "description": "The only continuous animation in the system: a 1.5s theme-derived gradient sweep at 200% background-size. Stops entirely under prefers-reduced-motion.",
+      "html": "<div class=\"ds-skel-block\"><span class=\"ds-skel-line ds-skel-w70\"></span><span class=\"ds-skel-line ds-skel-w90\"></span><span class=\"ds-skel-line ds-skel-w50\"></span></div>",
+      "css": "@keyframes dsShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } } .ds-skel-block { display: flex; flex-direction: column; max-width: 260px; } .ds-skel-line { height: 14px; margin-bottom: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--vscode-editor-background, #1f1f1f) 0%, var(--vscode-toolbar-hoverBackground, #2a2d2e) 50%, var(--vscode-editor-background, #1f1f1f) 100%); background-size: 200% 100%; animation: dsShimmer 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; } .ds-skel-w70 { width: 70%; } .ds-skel-w90 { width: 90%; } .ds-skel-w50 { width: 50%; } @media (prefers-reduced-motion: reduce) { .ds-skel-line { animation: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Native Guest",
+    "overview": "Alp IDE is a guest in someone else's house, and it behaves like one. The panels render inside VS Code, next to the user's editor, in the theme the user chose years ago and has not thought about since — and the correct reaction to an Alp panel is no reaction at all. It should read as workbench chrome. The system therefore owns no palette: every color in 3,821 lines of CSS resolves through var(--vscode-*), and the only literal color values in the product are second arguments inside var() fallbacks and one boot-failure message that renders when React never mounted. The brand is not a color. It is the masked ALP LAB wordmark that takes on the theme's own foreground, and the precision of everything around it.\n\nThe tone is precise, quiet, and instrument-grade. Nothing here exists to be noticed. Confidence comes from consistency and correctness, not from decoration — which is the visual translation of the product's own rule that an estimate is called an estimate and a host run is called a reference. Surfaces are flat, separated by single-pixel borders. Depth is a tonal shift, not a shadow. Color appears almost nowhere except where something is reporting its state, and that scarcity is what makes a red border mean something.\n\nDensity is workbench density, not marketing density. Type sizes are calc() offsets from --vscode-font-size, so a user who runs a 15px editor gets a 15px panel; nothing is pinned to a designer's 16px. Layout is intrinsic — the system ships zero width-based breakpoints and reflows through auto-fit grids instead. What this system rejects is equally definite: it is not a branded SaaS dashboard with a palette of its own, it is not Material or Fluent wearing a VS Code costume, and it is not marketing-toned onboarding.",
+    "keyCharacteristics": [
+      "No palette of its own — every color is var(--vscode-*), gated by a test",
+      "Flat by default; exactly one box-shadow in the entire system",
+      "Tiny radii (2–3px) — controls and containers, not cards in a feed",
+      "Type anchored to the workbench font size, never hardcoded px",
+      "Zero width breakpoints; reflow comes from auto-fit grids and flex-wrap",
+      "Variants are data-* attributes, never class-name soup",
+      "27 hand-drawn 24×24 stroke icons in currentColor, no icon font, no package"
+    ],
+    "rules": [
+      {
+        "name": "The Borrowed Palette Rule",
+        "body": "No literal color ships. A hex, rgb(), or hsl() value may appear only as the second argument of a var() fallback — never as the value itself. test/webview.cssTokens.test.js fails the build on any token used but not declared; the no-literal half is the rule this file carries. The single sanctioned exception is .alp-boot-error in styles.css, which paints #f88 because it only renders when React failed to mount and legibility outranks theming.",
+        "section": "colors"
+      },
+      {
+        "name": "The Selected-Not-Suggested Rule",
+        "body": "--accent marks what is currently selected — an active toggle, a chosen segment. It never marks what to do next. The primary action stays on --vscode-button-background. Two saturated fills competing on one screen is how a panel stops reading as chrome.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status-Only Color Rule",
+        "body": "Green, amber, red, and blue appear only where something is reporting state. A surface that is not reporting anything has no color of its own — it is text on ground, separated by a hairline.",
+        "section": "colors"
+      },
+      {
+        "name": "The Workbench Anchor Rule",
+        "body": "Every type size is a calc() offset from --vscode-font-size. No hardcoded px in type, ever. A user who raises their editor font size raises ours — that is the whole point of being a guest.",
+        "section": "typography"
+      },
+      {
+        "name": "The Uppercase Label Rule",
+        "body": "Uppercase plus letter-spacing is reserved for section labels (0.04em in shared layout, 0.7px in the Overview). Buttons, headings, and body text are never uppercased; VS Code does not shout, so neither do we.",
+        "section": "typography"
+      },
+      {
+        "name": "The Path Font Rule",
+        "body": "File paths in lists and chrome use the sans UI font, not monospace — VS Code renders paths in the workbench font, and matching it is what keeps a truncated path from looking pasted in.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Breakpoint Rule",
+        "body": "The system ships zero width-based media queries. The only four @media blocks in the entire codebase are prefers-reduced-motion: reduce. A panel can be 300px wide docked in the sidebar or 2000px wide as a full tab, and the same grid handles both. Adding a breakpoint means the intrinsic layout was wrong first.",
+        "section": "layout"
+      },
+      {
+        "name": "The Two-Measure Rule",
+        "body": "Card grids, tables, and toolbars take --content-max (1600px) and use the whole window. A paragraph takes --prose-max (90ch) and does not. These are different jobs and must not share one cap.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Surfaces are flat at rest and flat on hover. box-shadow is permitted only on a layer that leaves the document flow and covers content it does not own — today, exactly one dropdown. A card, a row, a button, or a panel that reaches for a shadow is solving a hierarchy problem that a border and a tonal shift should have solved.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Two-Pixel Rule",
+        "body": "Controls get 2px, containers get 3px. If a new surface wants 12px or 16px, it has drifted out of the workbench and into a product someone would call \"an app.\"",
+        "section": "shapes"
+      },
+      {
+        "name": "The No-Emoji Rule",
+        "body": "No emoji ships. That means every pictograph (U+1F000-U+1FAFF), every Miscellaneous Symbol and Dingbat (U+2600-U+27BF) — including ✓, ✗, and ⚠ used as status markers — the emoji-presentation selector U+FE0F, the zero-width joiner U+200D, the regional-indicator flags (U+1F1E6-U+1F1FF), and the emoji-by-default slices at U+23E9-U+23FA (⏳ ⏰ ⏱) and U+2196-U+21AA. In the webview the replacement is the line-icon set — <Icon name=\"check\" />, <Icon name=\"x\" />, <Icon name=\"warning\" /> — never a character. In the extension host it is a ThemeIcon or a $(codicon) string, and only on the four surfaces that render one: QuickPick, StatusBarItem, TreeItem, MarkdownString. Notifications and output channels render neither, so there the replacement is words, or a bracketed ASCII tag matching the channel's existing [cli] shape — [ok], [fail].",
+        "section": "components"
+      },
+      {
+        "name": "The Typography-Is-Not-Emoji Rule",
+        "body": "The ban stops at pictographs. → ⇒ ⇔ ↔ × · § ⊆ — … ° ± ≤ ≥ and the Box Drawing set (└ ├ ─ │) are legal everywhere, in UI copy and in comments. This boundary is load-bearing, not a detail: roughly 150 → live in this repo's comments and test names, and a rule that reds on `a → b` is a rule someone deletes. Widening a range — U+2300-U+23FF instead of U+23E9-U+23FA, or the whole Arrows block instead of U+2196-U+21AA — breaks correct code on the first run.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do resolve every color through a semantic alias in tokens.css. If the alias you need does not exist, add it there — one --vscode-* mapping in one file — rather than reaching for --vscode-* in a feature stylesheet.",
+      "Do size type as a calc() offset from --vscode-font-size, and space it on the --space-* scale.",
+      "Do express variants as data-* attributes on one base class.",
+      "Do reach for repeat(auto-fit, minmax(<min>, 1fr)) when a grid must survive a 300px sidebar and a 2000px tab.",
+      "Do use the 27-icon stroke set for iconography; it inherits currentColor and matches VS Code's own line-icon language.",
+      "Do keep → ⇒ ↔ × · § — … and Box Drawing characters — they are typography, not emoji, and banning them is how a no-emoji gate gets deleted.",
+      "Do outline destructive actions in --status-err rather than filling them.",
+      "Do give a var() a fallback whenever the variable can resolve empty — --vscode-editor-font-family does, and a var() fallback cannot rescue a property that was set to nothing."
+    ],
+    "donts": [
+      "Don't ship an emoji — not in JSX text, not in a QuickPick or notification string, not in a tree-item label, not in a contributed command title, not in an icon: field on the wire. 📦 🧪 📄 ⏳ ✓ ✗ ⚠ are all out; an <Icon> or a $(codicon) takes their place. See The No-Emoji Rule.",
+      "Don't write a literal #hex, rgb(), or hsl() as a property value. Fallback arguments inside var() are the only place a literal belongs.",
+      "Don't add a width-based @media query. Fix the intrinsic layout instead.",
+      "Don't add a box-shadow to anything that stays in the document flow.",
+      "Don't use --accent for a call to action; it means \"this one is selected,\" and a second saturated fill on screen destroys that meaning.",
+      "Don't hardcode a px font size, a px gap outside the --space-* scale, or a radius above 3px on a control or container.",
+      "Don't import a UI framework, an icon package, an icon font, or a webfont. The panels have no network access under the shell's CSP, and everything the system needs is already inherited from the host.",
+      "Don't dress a panel as a branded product surface — a palette of its own, Material or Fluent elevation and ripple, a hero image, a gradient, or a celebratory animation. Every one of those breaks the guest relationship the whole system is built on."
+    ]
+  }
+}

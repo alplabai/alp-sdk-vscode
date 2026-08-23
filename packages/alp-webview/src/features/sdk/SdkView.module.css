@@ -28,7 +28,7 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 0 var(--space-2);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-full, 9999px);
   background: color-mix(in srgb, var(--status-ok) 16%, transparent);
   color: var(--status-ok);
 }
