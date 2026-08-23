@@ -1032,3 +1032,190 @@ test("a fallback literal, a bare literal and a nested fallback are told apart", 
   );
 });
 
+// ---------------------------------------------------------------------------
+// The same two rules, where the styling is not in a .css file (#560)
+// ---------------------------------------------------------------------------
+//
+// Suppressing `design-system-color` and `design-system-radius` in
+// `.impeccable/config.json` only holds if what replaces them covers what they
+// covered. The detector scanned every SOURCE file, not every `.css` file: it
+// reads `borderRadius: "…"` out of JS (`BORDER_RADIUS_JS_RE`) and colour-valued
+// JS style keys too. The arms above walk `*.css` under `packages/alp-webview/src`
+// and would have waved through `style={{ borderRadius: "4px" }}` in a `.tsx`,
+// and the shell's `<style>` block in `src/ideHub/webviewHtml.ts` — which is real
+// CSS, on the first surface the user ever sees, outside that root entirely.
+//
+// Both are clean today. This arm is what keeps them that way now that the
+// detector is no longer looking.
+
+const IDE_HUB_HTML = path.join(
+  __dirname,
+  "..",
+  "src",
+  "ideHub",
+  "webviewHtml.ts",
+);
+
+function sourceFiles(dir, base = dir, ext = /\.tsx?$/) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...sourceFiles(full, base, ext));
+    else if (entry.isFile() && ext.test(entry.name))
+      out.push({
+        rel: path.relative(base, full),
+        text: fs.readFileSync(full, "utf8"),
+      });
+  }
+  return out;
+}
+
+const JS_FILES = [
+  ...sourceFiles(CSS_ROOT),
+  {
+    rel: path.relative(path.join(__dirname, ".."), IDE_HUB_HTML),
+    text: fs.readFileSync(IDE_HUB_HTML, "utf8"),
+  },
+];
+
+/** `//` line comments as well as `/* … *\/` — commented-out code in a source
+ * file is not a shipped style. Newlines preserved so line numbers stay true. */
+function withoutJsComments(text) {
+  return withoutComments(text).replace(/\/\/[^\n]*/g, (c) =>
+    c.replace(/[^\n]/g, " "),
+  );
+}
+
+/** The contents of every `<style>…</style>` block, with the line each starts
+ * on, so a violation inside one reports where it actually is. */
+function styleBlocksIn(text) {
+  const out = [];
+  for (const m of text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+    out.push({
+      css: m[1],
+      startLine: text.slice(0, m.index).split("\n").length,
+    });
+  }
+  return out;
+}
+
+/** JS style-object keys whose value is a colour. Kept explicit rather than
+ * "any key": `label: "Red"` is a word, not a paint, and a gate that reds on it
+ * is a gate someone deletes. */
+const COLOUR_STYLE_KEYS =
+  /\b(?:background|backgroundColor|color|borderColor|borderTopColor|borderRightColor|borderBottomColor|borderLeftColor|outlineColor|boxShadow|fill|stroke|caretColor|textDecorationColor|columnRuleColor)\s*:\s*(["'`])([^"'`]*)\1/g;
+
+const RADIUS_STYLE_KEY = /\bborderRadius\s*:\s*(["'`])([^"'`]*)\1/g;
+
+test("styling written in .ts/.tsx obeys the same two rules", () => {
+  const offenders = [];
+  for (const file of JS_FILES) {
+    const code = withoutJsComments(file.text);
+    const lineOf = (index) => code.slice(0, index).split("\n").length;
+
+    for (const m of code.matchAll(RADIUS_STYLE_KEY)) {
+      if (!isBareRadiusLiteral(m[2].replace(/\s+/g, " ").trim())) continue;
+      offenders.push(`  ${file.rel}:${lineOf(m.index)}  borderRadius: ${m[2]}`);
+    }
+    for (const m of code.matchAll(COLOUR_STYLE_KEYS)) {
+      if (!COLOUR_LITERAL.test(stripVarCalls(m[2]))) continue;
+      offenders.push(
+        `  ${file.rel}:${lineOf(m.index)}  ${m[0].split(":")[0]}: ${m[2]}`,
+      );
+    }
+    // A `<style>` block is CSS, so it gets the CSS scanners verbatim.
+    for (const block of styleBlocksIn(code)) {
+      for (const decl of borderRadiusDeclarationsIn(block.css)) {
+        if (!isBareRadiusLiteral(decl.value)) continue;
+        offenders.push(
+          `  ${file.rel}:${block.startLine + decl.line - 1}  ${decl.property}: ${decl.value};`,
+        );
+      }
+      for (const decl of bareColourDeclarationsIn(block.css)) {
+        offenders.push(
+          `  ${file.rel}:${block.startLine + decl.line - 1}  ${decl.declaration};`,
+        );
+      }
+    }
+  }
+
+  assert.deepEqual(
+    offenders.sort(),
+    [],
+    "styling outside a .css file must obey the same rules: no bare " +
+      "border-radius literal, and no colour literal except as a var() " +
+      "fallback. These are the sites the Impeccable detector used to hold " +
+      "and .impeccable/config.json no longer asks it to (#560).",
+  );
+});
+
+test("the .ts/.tsx scan actually reads something, blocks included", () => {
+  assert.ok(
+    JS_FILES.length >= 20,
+    `only ${JS_FILES.length} source files were seen — the walker is broken`,
+  );
+  const blocks = JS_FILES.flatMap((f) =>
+    styleBlocksIn(withoutJsComments(f.text)),
+  );
+  assert.ok(
+    blocks.length >= 1,
+    "no <style> block was found in any scanned source file — either the " +
+      "shell stopped inlining its own CSS, or the block matcher is broken " +
+      "and this arm is checking nothing",
+  );
+  assert.ok(
+    blocks.some((b) => /var\(--vscode-/.test(b.css)),
+    "the <style> block that was found contains no var() at all — it is " +
+      "probably not the shell's CSS, so this arm may be pointed at the " +
+      "wrong thing",
+  );
+});
+
+test("JS style keys, style blocks and prose are told apart", () => {
+  const scan = (src) => {
+    const code = withoutJsComments(src);
+    const hits = [];
+    for (const m of code.matchAll(RADIUS_STYLE_KEY))
+      if (isBareRadiusLiteral(m[2])) hits.push("radius:" + m[2]);
+    for (const m of code.matchAll(COLOUR_STYLE_KEYS))
+      if (COLOUR_LITERAL.test(stripVarCalls(m[2]))) hits.push("colour:" + m[2]);
+    return hits;
+  };
+
+  assert.deepEqual(
+    scan('<div style={{ borderRadius: "4px" }} />'),
+    ["radius:4px"],
+    "a bare radius in a JS style object is an offender",
+  );
+  assert.deepEqual(
+    scan('<div style={{ borderRadius: "var(--radius-md, 3px)" }} />'),
+    [],
+    "a tokenised radius in a JS style object is allowed",
+  );
+  assert.deepEqual(
+    scan("<div style={{ borderRadius: radius }} />"),
+    [],
+    "a variable carries no literal to grade — the .css file governs",
+  );
+  assert.deepEqual(
+    scan('const s = { color: "#f88" };'),
+    ["colour:#f88"],
+    "a bare colour on a style key is an offender",
+  );
+  assert.deepEqual(
+    scan('const s = { color: "var(--vscode-foreground, #fff)" };'),
+    [],
+    "a var() fallback on a style key is the rule being followed",
+  );
+  assert.deepEqual(
+    scan('const label = { title: "Red" };'),
+    [],
+    "a word that happens to name a colour, on a key that is not a style " +
+      "property, is not a paint",
+  );
+  assert.deepEqual(
+    scan('// style={{ borderRadius: "4px" }}\nconst x = 1;'),
+    [],
+    "commented-out code is not a shipped style",
+  );
+});
