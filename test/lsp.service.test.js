@@ -13,6 +13,7 @@ const {
   detectV2StructuralIssues,
   findTokenRange,
   normalizeProjectSettings,
+  rangeForIssue,
   V2_LEGACY_OS_FIELD_MSG,
 } = require("../out/lsp/service.js");
 
@@ -350,4 +351,69 @@ test("findTokenRange falls back to document start when the token is absent", () 
   };
   assert.deepEqual(findTokenRange("som:\n", "E1M_PWM9"), fallback);
   assert.deepEqual(findTokenRange("anything", ""), fallback);
+});
+
+// ── rangeForIssue: use the location the validator already gave us ──────────
+//
+// The rich validator emits an ALP-B* block whose `--> board.yaml:LINE:COL`
+// arrow pinpoints the offending token, and `parseValidationIssues`
+// (alp-core/validation/service.ts) already parses that arrow into
+// `issue.line` / `issue.col` (both 1-based). The diagnostic builder used to
+// throw both away and re-derive a range by scanning the document for a key
+// guessed out of the message prose — so an exact location was replaced with a
+// heuristic that silently lands on line 0 whenever the guess misses.
+
+test("rangeForIssue uses the validator's own line/col, not a prose guess", () => {
+  const text = ["schema_version: 1", "som:", "  sku: E1M-NX9999", ""].join(
+    "\n",
+  );
+
+  const range = rangeForIssue(text, {
+    message: "SoM SKU 'E1M-NX9999' does not resolve",
+    line: 3,
+    col: 8,
+  });
+
+  assert.equal(range.start.line, 2, "1-based line 3 is 0-based line 2");
+  assert.equal(range.start.character, 7, "1-based col 8 is 0-based char 7");
+  assert.equal(range.end.line, 2);
+});
+
+test("rangeForIssue falls back to the prose scan when there is no location", () => {
+  const text = ["schema_version: 1", "som:", "  sku: E1M-NX9999", ""].join(
+    "\n",
+  );
+  const issue = { message: "som preset: no preset for E1M-NX9999" };
+
+  assert.deepEqual(
+    rangeForIssue(text, issue),
+    createIssueRange(text, issue.message),
+  );
+});
+
+test("rangeForIssue falls back when the validator's line is past the document", () => {
+  // The document can be edited while a validator run is in flight, so a
+  // reported line may no longer exist. An out-of-range position makes the
+  // editor drop the diagnostic entirely — degrade to the scan instead.
+  const text = ["schema_version: 1", "som:", ""].join("\n");
+
+  const range = rangeForIssue(text, { message: "som: bad", line: 99, col: 3 });
+
+  assert.ok(
+    range.start.line < text.split("\n").length,
+    "range must stay inside the document",
+  );
+});
+
+test("rangeForIssue tolerates a column past the end of its line", () => {
+  const text = ["schema_version: 1", "som:", ""].join("\n");
+
+  const range = rangeForIssue(text, { message: "som: bad", line: 2, col: 99 });
+
+  assert.equal(range.start.line, 1);
+  assert.ok(
+    range.start.character <= "som:".length,
+    "column is clamped to the line it points at",
+  );
+  assert.ok(range.end.character >= range.start.character);
 });

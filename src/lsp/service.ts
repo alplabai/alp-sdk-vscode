@@ -297,6 +297,53 @@ export function createIssueRange(
   return createLineZeroRange(firstLine.length);
 }
 
+/** A validator issue, carrying the location the validator itself reported. */
+export interface LocatedValidationIssue {
+  message: string;
+  /** 1-based line the validator pinpointed, when it pinpointed one. */
+  line?: number;
+  /** 1-based column the validator pinpointed, when it pinpointed one. */
+  col?: number;
+}
+
+/**
+ * Range for a validator issue, preferring the location the validator gave us.
+ *
+ * The rich validator emits an ALP-B* block whose `--> board.yaml:LINE:COL`
+ * arrow points straight at the offending token, and `parseValidationIssues`
+ * (alp-core/validation/service.ts) already parses that arrow into `line`/`col`.
+ * Re-deriving a range by scanning the document for a key guessed out of the
+ * message prose throws away an exact answer and replaces it with a heuristic
+ * that lands on line 0 whenever the guess misses — so use the reported
+ * location, and keep `createIssueRange` for the issues that carry none (the
+ * legacy `FAIL`/`WARN` lines, and tan's `--offline` structural checks, whose
+ * diagnostic-v1 range is a `0,0 -> 0,0` stub).
+ *
+ * A reported line can still be stale: the document may have been edited while
+ * the validator ran. An out-of-range position makes the editor drop the
+ * diagnostic outright, so a line past the end degrades to the scan rather than
+ * being clamped to an arbitrary neighbour.
+ */
+export function rangeForIssue(
+  documentText: string,
+  issue: LocatedValidationIssue,
+): LineZeroRange {
+  const lines = documentText.split(/\r?\n/);
+  const lineIndex = (issue.line ?? 0) - 1;
+
+  if (lineIndex >= 0 && lineIndex < lines.length) {
+    const lineText = lines[lineIndex] ?? "";
+    const column = Math.max(0, (issue.col ?? 1) - 1);
+    const start = Math.min(column, lineText.length);
+    return {
+      start: { line: lineIndex, character: start },
+      end: { line: lineIndex, character: Math.max(start, lineText.length) },
+    };
+  }
+
+  return createIssueRange(documentText, issue.message);
+}
+
 export function createBoardYamlCompletionSuggestions(
   documentText: string,
   line: number,

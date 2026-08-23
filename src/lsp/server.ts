@@ -48,10 +48,10 @@ import {
   createBoardYamlQuickFixes,
   createDiagnosticMessageWithContext,
   createEffectiveConfigPreviewPayload,
-  createIssueRange,
   detectV2StructuralIssues,
   findTokenRange,
   normalizeProjectSettings,
+  rangeForIssue,
 } from "./service";
 import {
   completePrjConf,
@@ -571,18 +571,28 @@ async function validateDocument(
   connection.sendDiagnostics({ uri, diagnostics });
 }
 
+// The rich validator pinpoints an issue (`--> board.yaml:LINE:COL`) and names
+// it (`error[ALP-B005]`), and `parseValidationIssues` parses both. This used to
+// pass only `issue.message` on to a prose-keyword scan, discarding the exact
+// location and the diagnostic code with it — `rangeForIssue` prefers the
+// reported location and falls back to that scan only for issues that carry
+// none.
 function createDiagnostics(
   documentText: string,
   issues: ReadonlyArray<{
     message: string;
     severity: "warning" | "error" | "suggestion";
+    code?: string;
+    line?: number;
+    col?: number;
   }>,
 ): Diagnostic[] {
   return issues.map((issue) => ({
-    range: createIssueRange(documentText, issue.message),
+    range: rangeForIssue(documentText, issue),
     message: createDiagnosticMessageWithContext(issue.message, documentText),
     severity: mapDiagnosticSeverity(issue.severity),
     source: "alp-sdk",
+    ...(issue.code ? { code: issue.code } : {}),
   }));
 }
 

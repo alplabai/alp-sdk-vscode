@@ -192,3 +192,30 @@ test("LSP server answers completion/hover and publishes diagnostics after didOpe
     }
   }
 });
+
+// ── The diagnostic builder must forward the issue, not just its message ────
+//
+// `parseValidationIssues` already carries the rich validator's own
+// `--> board.yaml:LINE:COL` location and its `ALP-B*` code on every issue. The
+// builder used to call `createIssueRange(documentText, issue.message)`, which
+// discards both and re-guesses the line by scanning for a key inferred from the
+// prose. A unit test on `rangeForIssue` cannot catch a revert of that call site
+// — the pure function stays correct while nothing passes it the location — so
+// this asserts the wiring in the source itself.
+test("createDiagnostics passes the whole issue to rangeForIssue", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "src", "lsp", "server.ts"),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /range:\s*rangeForIssue\(documentText,\s*issue\)/,
+    "the diagnostic builder must hand rangeForIssue the whole issue, so the validator's own line/col is used",
+  );
+  assert.doesNotMatch(
+    source,
+    /range:\s*createIssueRange\(documentText,\s*issue\.message\)/,
+    "passing only issue.message throws away the location the validator reported",
+  );
+});
