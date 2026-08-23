@@ -1,6 +1,6 @@
 # Task Recipes (GUI and CLI)
 
-Last revised: 2026-07-25
+Last revised: 2026-08-23
 
 This guide maps common tasks to both VS Code and CLI workflows.
 
@@ -72,84 +72,49 @@ tan completion --shell bash
 tan completion --shell zsh
 tan completion --shell fish
 
-## 8. Pre-flight NPU Coverage Check
+## 8. Compile board.yaml Models
 
 VS Code:
 
-- Alp: Models panel — "Check NPU coverage", then a per-model badge per SoM backend (before build)
+- Not available at this pin. `Alp: Models` and `Alp: Build Model` are still
+  registered commands, but both carry `"when": "false"` in
+  `contributes.menus.commandPalette` (#525), and the `alp-ide` Activity Bar
+  container contributes exactly one view (`alp-ide.hub`, "Alp IDE"), so there is
+  no Models panel to open. Restoring the surface is tracked by #524.
 
 CLI:
 
-tan model check --board board.yaml [--format text|json]
-tan model check --board board.yaml --exact          # real vela compile (Ethos-U only)
+tan model build --board board.yaml --sdk-root ../alp-sdk
 
-Static NPU-eligibility screen, OFFLINE, no toolchain. Per SoM-backend
-npuCoverage of full-eligible | partial | cpu-only | undetermined, at
-basis: static-screen, plus a MAC-weighted UPPER bound (computeOnNpuPctMax)
-and the operators that are certain CPU fallback.
+`build` is the only subcommand `tan model` accepts in tan 0.6.0-rc1: it compiles
+and packages the `models:` entries of board.yaml into `.alpmodel` packages. Its
+whole option set is `--board`/`--board-yaml`, `--out` (default `build/models`),
+`--metadata-root`, `--project`, `--sdk-root`, `--format` (`text|json`) and
+`--help`.
 
-Read it as eligibility, not a promise: an eligible operator still carries
-quantization/shape/dtype constraints the screen cannot check, and the model
-runs either way — an operator the NPU cannot take falls back to the CPU
-silently rather than failing.
+## 9. Model Tooling That Does Not Exist at This Pin
 
-`undetermined` means NO DATA (no support table for that backend, or a source
-format it does not ingest). It is not a finding that the model will not run.
+The pinned tan 0.6.0-rc1 implements no `tan model` subcommand other than
+`build`, so the four capabilities below have no command line to type today.
+They are recorded here as intent: the CLI half of all four is tracked upstream
+as tan-cli#674, and the VS Code half needs the Models panel back, which is #524.
 
-`--exact` upgrades Ethos-U to basis: compiled by running the real `vela`
-(`pip install alp-tan[model-compile]`), which reports the measured operator
-placement (npuPlacementPctReal). Only basis: compiled or basis: bench may be
-read as proven.
+- Pre-flight NPU coverage check — an offline, static per SoM-backend
+  eligibility screen (`npuCoverage` of `full-eligible`, `partial`, `cpu-only`
+  or `undetermined`), with an exact mode that runs the real `vela` compiler for
+  Ethos-U backends.
+- Quantize a model to INT8 — license-free ONNX QDQ quantization plus an
+  fp32-vs-int8 accuracy report (top1 agreement, mean cosine, max-abs-err, and a
+  `good` or `degraded` verdict).
+- Browse and add model-zoo entries. What follows is the INTENT, not anything
+  present in a shipped component — the vendored alp-sdk has no
+  `metadata/model_zoo/` at all: curated `<id>.yaml` entries marked `runs_here`
+  for the SoM, fetched sha256-verified and appended
+  to board.yaml `models:` without redistributing weights.
+- Host reference run and A/B compare — a host-backend (`cpu-host`) functional,
+  latency and accuracy run and a two-model A/B on one input, which is a host
+  reference and never the target SoM's performance.
 
-## 9. Quantize a Model to INT8
-
-VS Code:
-
-- Alp: Models panel — Prep Model (pick model + calibration folder -> quantize -> accuracy report)
-
-CLI:
-
-tan model prep <model.onnx|.tflite> --calibration <dir> [--out] [--per-channel] [--min-samples N]
-
-LICENSE-FREE INT8 quantize (onnxruntime QDQ) plus an fp32-vs-int8 ACCURACY report
-(top1 agreement %, mean cosine, max-abs-err, verdict good|degraded + guidance).
-.tflite is converted to ONNX first via tf2onnx. Toolchain extras: model-prep
-(onnxruntime/onnx/numpy/sympy); model-convert (tf2onnx/tensorflow-cpu) for
-.tflite input.
-
-## 10. Browse and Add Model-Zoo Entries
-
-VS Code:
-
-- Alp: Models panel — Model Zoo gallery (browse "runs on your SoM" + one-click Add)
-
-CLI:
-
-tan model zoo [--sku <SKU> | --board board.yaml] [--format]
-tan model add <zoo-id> [--board board.yaml] [--name NAME] [--models-dir DIR]
-
-zoo browses curated model-zoo entries (metadata/model_zoo/<id>.yaml), each marked
-runs_here for the SoM (via validated_soms) — link+fetch+layer, no weight
-redistribution. add fetches the source (URL sha256-verified, or bundled) and
-appends {name,source} to board.yaml models:. Non-destructive (duplicate name
-errors).
-
-## 11. Host Reference Run and A/B Compare
-
-VS Code:
-
-- Alp: Models panel — Run Model / A-B Compare (host reference run)
-
-CLI:
-
-tan model run <model.onnx> [--input FILE.npy] [--expected LABEL] [--runs N]
-tan model ab <a.onnx> <b.onnx> [--input] [--runs]
-
-run is a HOST reference run (backend "cpu-host"): functional + host-latency +
-accuracy. ab runs A/B two models on the same input (host reference): latency +
-size delta. This is a reference, NOT the target SoM's performance —
-peak_sram_kib/power_mj are null on host (on-device values are HW-gated).
-
-## 12. CI Integration
+## 10. CI Integration
 
 See CI_EXAMPLES.md for full GitHub Actions and GitLab recipes.

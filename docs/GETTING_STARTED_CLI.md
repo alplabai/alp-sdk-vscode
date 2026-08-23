@@ -1,6 +1,6 @@
 # Getting Started (CLI)
 
-Last revised: 2026-08-10
+Last revised: 2026-08-23
 
 This guide covers the terminal-first `tan` CLI workflow. Two usage modes are
 supported: **standalone install** (download the prebuilt binary, recommended for
@@ -37,7 +37,7 @@ needs the `_internal/` directory that ships next to it:
 #   Linux arm64, Windows arm64
 mkdir -p ~/tan-cli && cd ~/tan-cli
 curl -fL --retry 3 -o tan.tar.gz \
-  https://github.com/alplabai/tan-cli/releases/download/v0.5.1/tan-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/alplabai/tan-cli/releases/download/v0.6.0-rc1/tan-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf tan.tar.gz   # extracts to ./tan/ (launcher + _internal/, already executable)
 export PATH="$HOME/tan-cli/tan:$PATH"   # add to your shell profile to persist
 tan --help
@@ -54,6 +54,15 @@ For CI environments, pin to an exact release tag (`v<version>`) to ensure
 reproducibility. The VS Code extension provisions the same release asset
 automatically (see [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md));
 this guide is for terminal/CI use where you manage `tan` yourself.
+
+The tag above, `v0.6.0-rc1`, is the release this extension pins
+(`SUPPORTED_CLI_VERSION` in `src/alpCli/service.ts`); install that one for
+terminal use too, so the binary you type at is the binary every gate in this
+repo measures. It is deliberately a PRE-RELEASE (#502): below `0.6.0-rc1` tan's
+vendored planner emits `CONFIG_ALP_SDK_CHIP_NONE=y` and the four Renesas SKUs —
+`E1M-V2N101`, `E1M-V2N102`, `E1M-V2M101`, `E1M-V2M102` — die in Zephyr's
+configure step, so a stable-only download policy does not get you a `tan` that
+can build those modules.
 
 ### Host support: `tan` runs vs. firmware builds
 
@@ -205,77 +214,64 @@ tan completion --shell zsh
 tan completion --shell fish
 ```
 
-## 9. Model Workflows: Check, Zoo, Add, Prep, Run, A/B
+## 9. Model Packaging: `tan model build`
 
-`tan model <cmd>` mirrors the alp-sdk `alp model` surface as a thin envelope
-wrapper (`{command,ok,exitCode,project,data,issues}`). Alongside the pre-existing
-`build` / `list` / `info` / `doctor` subcommands (compile `board.yaml` `models:`
-→ `.alpmodel`, list, decode, toolchains), the model lifecycle commands are below.
+`tan model` compiles and packages the models a project declares under
+`board.yaml` `models:` into `.alpmodel` packages, and prints an envelope (see
+[`CLI.md`](CLI.md)): `{command,ok,exitCode,project,data,issues}`, plus an `sdk`
+block on a run that resolved one, with the packages it wrote in `data.built`.
 
-Static pre-flight fit/perf check — **offline, conservative**:
-
-```bash
-tan model check --board board.yaml
-tan model check --board board.yaml --format json
-tan model check --board board.yaml --exact          # real vela compile (Ethos-U only)
-```
-
-Runs OFFLINE with no toolchain. Per SoM-backend it reports an `npuCoverage` of
-`full-eligible` | `partial` | `cpu-only` | `undetermined` at
-`basis: "static-screen"`, a MAC-weighted UPPER bound
-(`computeOnNpuPctMax`), the operators that are certain CPU fallback, and every
-caveat as prose in `notes`.
-
-Read a static screen as ELIGIBILITY, never a guarantee: an eligible operator
-still carries quantization, shape and dtype constraints the screen cannot
-check, and the model runs either way — an operator the NPU cannot take falls
-back to the CPU silently rather than failing.
-
-`undetermined` means NO DATA for that backend (no support table, or a source
-format it does not ingest), not a finding that the model will not run.
-
-`--exact` runs the real `vela` for Ethos-U (`pip install
-alp-tan[model-compile]`) and upgrades the report to `basis: "compiled"` with
-the measured operator placement (`npuPlacementPctReal`). Only `basis:
-"compiled"` or `basis: "bench"` may be read as proven.
-
-Browse the curated model zoo (each entry marked whether it runs on your SoM):
+At the pinned tan (0.6.0-rc1) it takes exactly ONE subcommand, `build`.
+`tan model --help` prints the whole list: `SUBCOMMAND      <str>  build.`
 
 ```bash
-tan model zoo --sku <SKU>
-tan model zoo --board board.yaml --format json
+tan model build --board board.yaml
+tan model build --board board.yaml --format json
+tan model build --project . --sdk-root ../alp-sdk --out build/models --format json
 ```
 
-Add a zoo entry to your `board.yaml` `models:`:
+Its own options are `--board` / `--board-yaml` (path to `board.yaml`,
+default `board.yaml`), `--out` (output directory, default `build/models`),
+`--metadata-root` (path to the `metadata/` root, default
+`<sdk-root>/metadata`), `--project` (project root, default `.`), `--sdk-root`
+(alp-sdk checkout root), `--format` (`text` or `json`, default `text`) and
+`--help`. tan's global options are accepted on top of those, so
+`--non-interactive`, `--no-color` and the rest work here too.
 
-```bash
-tan model add <zoo-id> --board board.yaml --name NAME --models-dir DIR
-```
+`tan model build` needs a resolved SDK before it does anything else. Where none
+resolves it exits 2 with `{"code":"model.sdk-root-unresolved"}`; the runs below
+assume the sibling `../alp-sdk` layout this guide uses throughout, or an
+explicit `--sdk-root`.
 
-Fetches the source (URL sha256-verified, or bundled) and appends `{name, source}`
-to `board.yaml` `models:`. Non-destructive — a duplicate name errors.
+With one resolved, a board that declares no models is not a failure: the run
+exits 0, prints
+``model: no `models:` declared in board.yaml; nothing to build.`` in text
+format, and reports `"built": []` under `--format json`.
 
-License-free INT8 quantize + fp32-vs-int8 accuracy report:
+Any other subcommand is refused by name rather than by a usage error.
+`tan model check`, for example, exits 1 and prints a `model` envelope whose
+`issues` carry
+`{"code":"model.unknown-subcommand","severity":"error","message":"Unknown model subcommand: check. Available: build."}`.
 
-```bash
-tan model prep <model.onnx|.tflite> --calibration <dir> --out OUT --per-channel --min-samples N
-```
+### The rest of the model lifecycle is not in this binary (tan-cli#674)
 
-Produces an INT8 (onnxruntime QDQ) model plus an accuracy report (top1 agreement
-%, mean cosine, max-abs-err, verdict `good` | `degraded` + guidance). A `.tflite`
-input is converted to ONNX first via tf2onnx.
+A wider model lifecycle is intended: a static, offline NPU-coverage screen; a
+curated model zoo; adding a zoo entry to `board.yaml` `models:`; license-free
+INT8 preparation with an fp32-vs-int8 accuracy report; and host reference and
+A-B runs (host figures, never target-SoM performance). None of those subcommands exists at this
+pin, so this guide prints no command line for them. Nor does `tan model` accept
+the flags they were specified with: `--exact`, `--calibration`, `--per-channel`,
+`--min-samples`, `--input`, `--expected`, `--runs` and `--models-dir` are
+options of nothing it has. (`--name` and `--sku` are a different case — both are
+real, on `tan init`, where `--sku` is an alias of `--som`. They are absent from
+`tan model`, not from tan.) — landing them is upstream, `tan-cli#674`.
 
-Host reference run / A-B compare — **NOT target-SoM performance**:
-
-```bash
-tan model run <model.onnx> --input FILE.npy --expected LABEL --runs N
-tan model ab <a.onnx> <b.onnx> --input FILE.npy --runs N
-```
-
-`run` executes on the HOST (backend `cpu-host`): functional + host-latency +
-accuracy. `ab` compares two models on the same input for latency + size delta.
-Both are host REFERENCE runs, not the target SoM's performance —
-`peak_sram_kib` / `power_mj` are null on host (on-device values are HW-gated).
+The VS Code extension's Models panel is a GUI over that same family, and it is
+hidden for the same reason (restoring it is #524). The hiding is not
+pin-conditional: both commands carry `"when": "false"` in the extension's
+palette contribution, so a newer tan does not reveal them on its own. See
+[GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md) for what it shows once
+both land.
 
 ## 10. Exit Codes
 

@@ -16,7 +16,6 @@ The ALP IDE extension provides five entry-point surfaces:
 | **New Project Wizard** | `Alp: New Project Wizard` | Create a new ALP project from a template |
 | **Open Existing Project** | `Alp: Open Existing ALP Project` | Open and activate an existing ALP project |
 | **IDE Overview** | `Alp: Open ALP IDE overview` | Full-window summary of workspace state |
-| **Models Panel** | Activity Bar → ALP icon → Models | Pre-flight fit badge, INT8 prep, host run/A-B, model-zoo browse |
 
 ---
 
@@ -159,24 +158,30 @@ All actions update the sidebar status chips in real time.
 
 ## 6. Models Panel
 
-The **Models Panel** is a thin GUI over the `tan model` command family — it collects
-input, shells `tan model …`, and renders the JSON envelope. Reach it from the
-Activity Bar (**ALP icon → Models**). Nothing here compiles or flashes; every action
-is a host-side, pre-build check.
+**There is no Models surface to open in this release.** The Activity Bar
+contributes exactly one view — **Alp IDE** (`alp-ide.hub`) — and both Models
+commands (`Alp: Models` and `Alp: Build Model`) are hidden from the Command
+Palette (`"when": "false"`, #525). The commands are still registered, but nothing
+in the GUI reaches them, so there is no step here to follow on a first run.
+Restoring the surface is tracked as #524.
 
-| GUI action | Shells | What it shows |
-|------------|--------|---------------|
-| **NPU-coverage badge** | `tan model check --board board.yaml [--exact] [--format text\|json]` | Static, offline NPU-eligibility screen per SoM backend — `full-eligible` / `partial` / `cpu-only` / `undetermined` — with the basis it was decided on, a MAC-weighted upper bound on NPU-bound compute, the operators that are certain CPU fallback, and every caveat in tan's own words. No toolchain needed; `--exact` runs the real `vela` for Ethos-U and reports the measured operator placement instead. |
-| **Prep Model** | `tan model prep <model.onnx\|.tflite> --calibration <dir> [--out] [--per-channel] [--min-samples N]` | License-free INT8 quantize (onnxruntime QDQ) plus an fp32-vs-int8 accuracy report (top-1 agreement %, mean cosine, max-abs-err, `good`/`degraded` verdict + guidance). A `.tflite` input is converted to ONNX first (tf2onnx). |
-| **Run Model** | `tan model run <model.onnx> [--input FILE.npy] [--expected LABEL] [--runs N]` | Host reference run (backend `cpu-host`): functional result + host latency + accuracy. |
-| **A-B Compare** | `tan model ab <a.onnx> <b.onnx> [--input] [--runs]` | Runs two models on the same input (host reference): latency + size delta. |
-| **Model Zoo Gallery** | `tan model zoo [--sku <SKU> \| --board board.yaml] [--format]` | Browse curated model-zoo entries, each marked `runs_here` for your SoM. One-click **Add** shells `tan model add <zoo-id> [--board board.yaml] [--name NAME] [--models-dir DIR]` to append `{name, source}` to `board.yaml` `models:` (non-destructive — a duplicate name errors). |
+The panel is also ahead of the CLI it shells. The pinned `tan` (0.6.0-rc1)
+implements exactly one `model` subcommand — `build`, which compiles and packages
+the `models:` entries of `board.yaml` into `.alpmodel` packages (default output
+directory `build/models`). The pre-flight NPU-coverage badge, INT8 prep with an
+fp32-vs-int8 accuracy report, host reference run, A-B compare and the model-zoo
+gallery are all intended, and each of them needs a `model` subcommand this `tan`
+does not have (`check`, `prep`, `run`, `ab`, `zoo`, `add`) — that gap is
+tan-cli#674, and keeping this documentation in step with it is #551.
 
-> **Honest caveats — read before trusting a number:**
-> - The **NPU-coverage badge** reports *eligibility*, not a guarantee, unless the row says **proven**: an eligible operator still carries quantization, shape and dtype constraints a static screen cannot check. The model runs either way — an operator the NPU cannot take falls back to the CPU silently rather than failing. Only `basis: compiled` (a real `--exact` compile) or `basis: bench` proves NPU execution.
-> - **`undetermined` is not `cpu-only`.** It means there is no data for that backend — a support table absent by decision (DEEPX DX-M1 ships none, and it is the headline NPU of E1M-V2M101 / E1M-V2M102), or a source format the backend does not ingest. It is never a finding that the model will not run.
-> - **Run Model** and **A-B Compare** are *host reference* runs (backend `cpu-host`) — **not** the target SoM's performance. `peak_sram_kib` / `power_mj` are `null` on the host; on-device power + measurement are hardware-gated (they need the EVK power-topology + Yocto NPU runtimes).
-> - Real curated zoo entries, PyTorch/Keras→ONNX conversion, and per-backend compile defaults are follow-ons.
+> **When the surface returns, two of its numbers still need reading carefully:**
+>
+> - NPU coverage is an _eligibility_ screen, not proof of NPU execution. An
+>   operator the NPU cannot take falls back to the CPU silently rather than
+>   failing, and `undetermined` means "no data for that backend" — never "the
+>   model will not run".
+> - **Run Model** and **A-B Compare** are _host reference_ runs (backend
+>   `cpu-host`) — they measure the host, **not** the target SoM.
 
 ---
 
