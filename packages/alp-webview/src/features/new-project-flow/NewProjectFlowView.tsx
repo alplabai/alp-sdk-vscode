@@ -42,9 +42,16 @@ interface TemplateStepProps {
   templates: ProjectTemplate[];
   selected: string;
   onSelect: (id: string) => void;
+  /** tan's own words for why there are no examples, when it gave a reason. */
+  examplesUnavailableReason: string | null;
 }
 
-function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
+function TemplateStep({
+  templates,
+  selected,
+  onSelect,
+  examplesUnavailableReason,
+}: TemplateStepProps) {
   const starters = templates.filter((t) => t.category === "starter");
   const examples = templates.filter((t) => t.category === "example");
 
@@ -125,6 +132,20 @@ function TemplateStep({ templates, selected, onSelect }: TemplateStepProps) {
               />
             ))}
           </div>
+        </>
+      )}
+
+      {/* An empty catalogue used to render as no Examples section at all, which
+          is indistinguishable from "this SDK ships none". tan reports an
+          unresolved SDK as a SUCCESS with an empty list, so when it gave a
+          reason, say it here rather than silently dropping the section. */}
+      {examples.length === 0 && examplesUnavailableReason && (
+        <>
+          <p className={styles.groupLabel}>Examples</p>
+          <EmptyState
+            title="No examples available"
+            description={examplesUnavailableReason}
+          />
         </>
       )}
 
@@ -660,7 +681,8 @@ function SdkStep({ entries, activePath, selected, onSelect }: SdkStepProps) {
 // ---------------------------------------------------------------------------
 
 export function NewProjectFlowView() {
-  const { state, projectTemplates, e1mModules } = useAppContext();
+  const { state, projectTemplates, e1mModules, examplesUnavailableReason } =
+    useAppContext();
   const { state: stepper, goNext, goBack, goTo } = useStepper(STEPS);
 
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -829,6 +851,7 @@ export function NewProjectFlowView() {
                   templates={templates}
                   selected={selectedTemplate}
                   onSelect={setSelectedTemplate}
+                  examplesUnavailableReason={examplesUnavailableReason}
                 />
               )}
               {stepper.currentIndex === 1 && (
