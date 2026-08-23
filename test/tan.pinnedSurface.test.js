@@ -49,6 +49,7 @@ const {
   DEFERRED_BUILD_OPTIONS,
   BUILD_DEFERRED_REF,
   MODEL_SUBCOMMAND_UNWIRED_CODE,
+  BUILD_DEFERRED_RESTORE_REF,
   INERT_OPTIONS,
   inertKindOf,
   isBuildOptionDeferred,
@@ -364,8 +365,27 @@ test("a `build` flag this pin does NOT defer is not described as deferred", () =
   );
   assert.match(
     message,
-    /#541/,
+    /#\d+/,
     "and it names the gap that IS real — the panel does not send it",
+  );
+  // NOT pinned to the literal the message happens to carry: that spelling and
+  // BUILD_DEFERRED_RESTORE_REF would then be pinned to EACH OTHER, and a
+  // retarget of both stays green while pointing anywhere. What is pinned is
+  // the one fact this file can check offline — the restore ref is not the
+  // issue that REMOVED the spawns. #541 is closed as completed, and this
+  // sentence fires on the day tan-cli#427 lands, so naming it would send the
+  // reader to a closed issue at the exact moment there is work to do.
+  assert.notEqual(
+    BUILD_DEFERRED_RESTORE_REF,
+    "#541",
+    "#541 took the spawns out and is closed; the restore ref must name the " +
+      "OPEN ticket that puts them back (#580), the way MODEL_SURFACE_RESTORE_" +
+      "REF names the open #524",
+  );
+  assert.ok(
+    message.includes(BUILD_DEFERRED_RESTORE_REF),
+    "the sentence must carry whatever the constant says, so the two cannot " +
+      `drift apart — ${message}`,
   );
 });
 
