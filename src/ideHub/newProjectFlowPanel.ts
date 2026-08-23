@@ -20,6 +20,7 @@ import type { BoardConfig } from "@alp-sdk/core/board/models";
 import { parseBoardConfig } from "@alp-sdk/core/board/parse";
 import { serializeBoardConfig } from "@alp-sdk/core/board/serialize";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { unresolvedSdkReason } from "../alpCli/service";
 import {
   type CreateNewProjectMessage,
   emptyAlpIdeState,
@@ -38,6 +39,7 @@ import {
   isCancellation,
   planCliOutcome,
   planFailure,
+  planPrecondition,
   planSuccess,
 } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
@@ -46,11 +48,22 @@ import { log } from "../util";
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
 const PANEL_TITLE = "Alp IDE — New Project";
 
+/** tan's code for "I returned an empty example catalogue because no SDK
+ *  resolved" — exit 0 and `ok: true` carry no hint of it. */
+const EXAMPLES_SDK_ROOT_UNRESOLVED = "examples.sdk-root-unresolved";
+
 export class NewProjectFlowPanel {
   private static instance?: NewProjectFlowPanel;
 
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
+
+  /** tan's verbatim reason for an empty example catalogue, or null when the
+   *  catalogue is legitimately empty. Set by `fetchTemplates`. */
+  private examplesUnavailableReason: string | null = null;
+  /** The toast is once per panel, not per catalog reload: the wizard re-fetches
+   *  whenever the SDK selection changes. */
+  private warnedAboutExamples = false;
 
   private constructor(private readonly context: vscode.ExtensionContext) {
     this.panel = vscode.window.createWebviewPanel(
@@ -138,12 +151,43 @@ export class NewProjectFlowPanel {
    *  `examples/`). Without this the lists come from the ambient SDK and
    *  `alp init --from-example` fails with "was not found" on a divergent pick. */
   private async reloadCatalog(sdkPath?: string): Promise<void> {
+    const templates = await this.fetchTemplates(sdkPath);
     const catalogMsg: ExtToWebviewMessage = {
       type: "projectTemplatesData",
-      templates: await this.fetchTemplates(sdkPath),
+      templates,
       modules: await this.fetchSomModules(sdkPath),
+      ...(this.examplesUnavailableReason
+        ? { examplesUnavailableReason: this.examplesUnavailableReason }
+        : {}),
     };
     void this.panel.webview.postMessage(catalogMsg);
+    this.warnOnceAboutMissingExamples();
+  }
+
+  /**
+   * Say once, out loud, that the example catalogue is empty because the SDK did
+   * not resolve.
+   *
+   * The wizard also renders the reason where the Examples section would be, but
+   * a user who never scrolls to that step would still not know they are picking
+   * from a truncated list. Once per panel, not per catalog reload — the wizard
+   * re-fetches whenever the SDK selection changes, and a toast per keystroke is
+   * its own defect.
+   */
+  private warnOnceAboutMissingExamples(): void {
+    if (!this.examplesUnavailableReason || this.warnedAboutExamples) return;
+    this.warnedAboutExamples = true;
+    // `planPrecondition` rather than a failure: an unresolved SDK on first run
+    // is a state, not a fault, and this kind carries the action that fixes it
+    // (Open SDK Manager) — the GUI equivalent of the `--sdk-root` flag tan's
+    // own message names. That verbatim message is rendered in the wizard, next
+    // to where the examples would have been.
+    void notifyAsync(
+      planPrecondition("noSdk", {
+        operation: "list the SDK's example projects",
+        dedupeKey: "newProject.examplesSdkRootUnresolved",
+      }),
+    );
   }
 
   /** Push a chosen/default parent directory to the wizard's Location field. */
@@ -318,12 +362,21 @@ export class NewProjectFlowPanel {
 
     // Append the SDK's ready-made example projects (`alp examples` → category
     // "example"), so users can scaffold from a real example, not just a starter.
-    // Empty when no SDK resolves — the picker simply shows no Examples section.
     const examplesRes = await runAlpCommand(
       this.context,
       ["examples", ...root],
       undefined,
       { interactive: true },
+    );
+    // An unresolved SDK is not a failure here: tan returns exit 0 with
+    // `ok: true` and an EMPTY catalogue, naming the reason only in
+    // `issues[].code`. That used to render as "no Examples section", so a user
+    // whose SDK is unresolved lost every example with nothing saying why. A
+    // legitimately empty list (a `--category` that matched nothing) carries no
+    // issue and correctly leaves this null.
+    this.examplesUnavailableReason = unresolvedSdkReason(
+      examplesRes.outcome.envelope,
+      EXAMPLES_SDK_ROOT_UNRESOLVED,
     );
     const examples =
       (

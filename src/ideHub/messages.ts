@@ -197,6 +197,20 @@ export interface ProjectTemplatesDataMessage {
   type: "projectTemplatesData";
   templates: ProjectTemplate[];
   modules: E1mModule[];
+  /**
+   * Why the example catalogue came back empty, when tan said why — verbatim.
+   *
+   * `tan examples` reports an unresolved SDK as a SUCCESS: exit 0, `ok: true`,
+   * an empty `data.examples`, and the reason only in
+   * `issues[].code == examples.sdk-root-unresolved`. Without this the wizard
+   * simply rendered no Examples section, so a user whose SDK is not resolved
+   * lost all of them with nothing on screen saying why.
+   *
+   * Absent when the catalogue is legitimately empty — a `--category` that
+   * matched nothing returns the same empty list with NO issue attached, and
+   * that is not a problem to report.
+   */
+  examplesUnavailableReason?: string;
 }
 
 /** Ask the Hub webview to scroll a named section into view (e.g. opening the

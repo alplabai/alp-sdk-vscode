@@ -1069,6 +1069,47 @@ export function classifyExitCode(code: number): CliExitKind {
   return EXIT_KINDS[code] ?? "unknown";
 }
 
+/**
+ * tan's own words for "the SDK did not resolve", when that is what an
+ * otherwise-successful envelope is reporting — otherwise null.
+ *
+ * Several verbs report an unresolved SDK as a SUCCESS rather than a failure.
+ * Measured against the pinned 0.6.0-rc1, `tan examples` with no resolvable SDK
+ * returns exit 0 with `ok: true` and an empty `data.examples`, and says what
+ * happened only through `issues[].code == examples.sdk-root-unresolved`.
+ * `presets` does the same under `presets.sdk-root-unresolved`. So a caller that
+ * trusts the exit code, or simply reads the empty list, shows an empty
+ * catalogue and never mentions that the SDK is the reason.
+ *
+ * The confusable case has to stay distinguishable: `--category <typo>` also
+ * returns exit 0 with an empty list, but carries NO issue at all.
+ * Empty-because-unresolved and empty-because-nothing-matched are different
+ * situations, and only the first has a fix to offer.
+ *
+ * The code is a parameter rather than a constant because each verb spells its
+ * own, and the message comes back verbatim rather than reworded: it already
+ * names the flag that fixes it.
+ */
+export function unresolvedSdkReason(
+  envelope: unknown,
+  code: string,
+): string | null {
+  if (typeof envelope !== "object" || envelope === null) return null;
+  const issues = (envelope as Record<string, unknown>).issues;
+  if (!Array.isArray(issues)) return null;
+
+  for (const issue of issues) {
+    if (typeof issue !== "object" || issue === null) continue;
+    const record = issue as Record<string, unknown>;
+    if (record.code !== code) continue;
+    if (typeof record.message !== "string" || record.message.length === 0) {
+      continue;
+    }
+    return record.message;
+  }
+  return null;
+}
+
 /** Parse the envelope from a command's stdout. Returns null when stdout is
  *  empty or not a well-formed envelope (so callers can fall back gracefully). */
 export function parseEnvelope(stdout: string): AlpEnvelope | null {
