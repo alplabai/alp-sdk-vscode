@@ -78,8 +78,75 @@ function syncInto(
     // the sequence node and drop them).
     const current = YAML.isNode(existing) ? existing.toJSON() : existing;
     if (JSON.stringify(current) === JSON.stringify(value)) return;
-    doc.setIn(path, value);
+    doc.setIn(path, yaml11Safe(doc, value));
   }
+}
+
+/**
+ * Would a YAML 1.1 reader see something other than this string?
+ *
+ * THE DOCUMENT AND ITS READER DISAGREE ON A VERSION. The `yaml` package writes
+ * YAML 1.2, where `off` is the three-letter string and needs no quotes. Every
+ * consumer of board.yaml is Python — `tan validate` shells out to
+ * `scripts/validate_board_yaml.py` — and PyYAML reads YAML 1.1, where a bare
+ * `off` is the BOOLEAN false. So the one value the New Project wizard writes
+ * for a core the customer set to "Off (skip core)" changed type in transit,
+ * measured on the pinned tan 0.6.0-rc1 against a scaffold that had just
+ * validated clean:
+ *
+ *   validate.schema-violation | ALP-B004: False is not of type 'string'
+ *   validate.schema-violation | ALP-B003: False is not one of ['zephyr', 'yocto', 'baremetal', 'off']
+ *
+ * Quoting that scalar and touching nothing else returned the project to
+ * `ok: true`, exit 0.
+ *
+ * ASKED, NOT LISTED. A hand-maintained table of 1.1 keywords is a table that
+ * goes stale — it would have to carry `y`/`n`/`yes`/`no`/`on`/`off` in every
+ * casing, sexagesimals (`1:30` is 90), `0777` (511), `~`, and the empty string.
+ * Re-reading the rendered scalar under 1.1 asks the question directly and
+ * cannot drift.
+ *
+ * DELIBERATELY A SUPERSET of the real consumer, verified token by token against
+ * PyYAML: this says yes for `y`, `n` and `.`, which PyYAML reads as strings.
+ * Over-quoting writes the same string; under-quoting writes a boolean. Only one
+ * of those directions can corrupt a project, so the check errs into the safe
+ * one. (`.` is why the whole document is NOT parsed as 1.1 instead: under 1.1
+ * the `yaml` package resolves tan's own `app: .` to NaN and re-emits it as
+ * `.nan`, silently repointing the application directory of every project.)
+ */
+function misreadUnderYaml11(text: string): boolean {
+  try {
+    const probe = YAML.parse(`x: ${text}`, { version: "1.1" }) as {
+      x?: unknown;
+    };
+    return probe?.x !== text;
+  } catch {
+    // Not renderable as a plain scalar at all — quoting is right anyway.
+    return true;
+  }
+}
+
+/**
+ * Build the node for `value`, forcing quotes on every string inside it that a
+ * YAML 1.1 reader would misread.
+ *
+ * Recursive because `setIn` also replaces whole arrays and maps (`ipc:`,
+ * `pins:`): a trap string nested three levels down is the same defect as one at
+ * the top, and `board.yaml` carries free-form strings in several places.
+ */
+function yaml11Safe(doc: YAML.Document, value: unknown): unknown {
+  const node = doc.createNode(value);
+  YAML.visit(node, {
+    Scalar(_key, scalar) {
+      if (
+        typeof scalar.value === "string" &&
+        misreadUnderYaml11(scalar.value)
+      ) {
+        scalar.type = YAML.Scalar.QUOTE_DOUBLE;
+      }
+    },
+  });
+  return node;
 }
 
 function freshDump(cfg: BoardConfig): string {
