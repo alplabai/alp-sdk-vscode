@@ -52,8 +52,24 @@ export interface InitArgvInput {
   parentDir: string;
   /** The chosen SoM SKU, e.g. `E1M-AEN801`. */
   moduleId: string;
-  /** The SoM's declared cores, verbatim from `tan presets`. */
+  /** The SoM's declared cores, verbatim from `tan presets`. The authority on
+   *  which cores exist. */
   cores?: readonly PresetCore[];
+  /**
+   * The customer's answers from the wizard's Cores step (#582).
+   *
+   * Passed ALONGSIDE `cores`, never instead of it. The two answer different
+   * questions — `tan presets` reports which cores the part HAS, the Cores step
+   * records which the customer WANTS — and `planInitCores` needs both: the
+   * declared os decides what may legally be emitted, the answer decides how far
+   * down it is turned. Replacing one with the other is what made the naive fix
+   * refuse 276 of 368 combinations.
+   *
+   * Omitted or empty means "no answers", not "everything off": an older webview
+   * and the example flow both send none, and the topology argv is then the only
+   * thing there is to go on.
+   */
+  coreAssignments?: readonly PresetCore[];
   /**
    * The SDK chosen in the wizard. Omitted ⇒ no `--sdk-root`, and
    * `runAlpCommand`'s `withSdkRoot` injects the window's active SDK instead.
@@ -73,6 +89,17 @@ export interface InitArgvPlan {
    * `board.yaml` and takes no `--cores`.
    */
   zephyrCores: string[];
+  /**
+   * The answers `--cores` could not express, which the second pass must carry
+   * (#582). Empty for an example, which takes no `--cores` and brings its own
+   * board.yaml.
+   */
+  deferredCores: { id: string; requested: string }[];
+  /**
+   * Answers naming a core the SoM does not declare. Dropped rather than
+   * written, and surfaced so the drop is not silent.
+   */
+  unknownCores: string[];
 }
 
 /**
@@ -85,8 +112,10 @@ export interface InitArgvPlan {
  * the pinned tan).
  *
  * A STARTER template is expanded via `--template` + `--som`, and heterogeneous
- * SoMs additionally get `--cores` — FILTERED through `planInitCores`, never
- * the SoM's declared topology verbatim (#528).
+ * SoMs additionally get `--cores` — FILTERED through `planInitCores`, never the
+ * SoM's declared topology verbatim (#528) and never the customer's answers
+ * verbatim either (#582). Whatever that filter cannot express comes back in
+ * `deferredCores` for the second pass to carry.
  */
 export function planInitArgv(input: InitArgvInput): InitArgvPlan {
   const { templateId, sourceDir, projectName, parentDir, moduleId, sdkPath } =
@@ -117,14 +146,18 @@ export function planInitArgv(input: InitArgvInput): InitArgvPlan {
       ];
 
   let zephyrCores: string[] = [];
+  let deferredCores: { id: string; requested: string }[] = [];
+  let unknownCores: string[] = [];
   if (!sourceDir) {
-    const coresPlan = planInitCores(input.cores ?? []);
+    const coresPlan = planInitCores(input.cores ?? [], input.coreAssignments);
     // Omitted entirely when the filter produced nothing: an empty `--cores` is
     // a different refusal, not a smaller one.
     if (coresPlan.arg) {
       argv.push("--cores", coresPlan.arg);
     }
     zephyrCores = coresPlan.zephyrCores;
+    deferredCores = coresPlan.deferred;
+    unknownCores = coresPlan.unknown;
   }
 
   // Examples copy their own board.yaml verbatim; when the user picks a SoM,
@@ -142,5 +175,5 @@ export function planInitArgv(input: InitArgvInput): InitArgvPlan {
     argv.push("--sdk-root", sdkPath);
   }
 
-  return { argv, zephyrCores };
+  return { argv, zephyrCores, deferredCores, unknownCores };
 }

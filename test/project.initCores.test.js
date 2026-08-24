@@ -124,7 +124,15 @@ test("companion order follows the SoM's declared order", () => {
 });
 
 test("no cores at all is no flag", () => {
-  assert.deepEqual(planInitCores([]), { arg: null, zephyrCores: [] });
+  // Deep-equal on the WHOLE plan on purpose: a new field added without a
+  // decision about what it means for an empty topology fails here rather than
+  // reaching a caller. `deferred` and `unknown` arrived with #582.
+  assert.deepEqual(planInitCores([]), {
+    arg: null,
+    zephyrCores: [],
+    deferred: [],
+    unknown: [],
+  });
 });
 
 test("a Cortex-A core declaring zephyr is still omitted, not kept as yocto", () => {
