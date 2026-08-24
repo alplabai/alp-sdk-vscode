@@ -76,9 +76,33 @@ test("the code travels as channel detail, never in the sentence", () => {
 test("pressing the button posts a step jump the webview understands", () => {
   // Arrange -- an awaited pick, then a message. Without the post, the button
   // is a dead end with a friendlier label.
-  assert.match(PANEL, /actions: \[\{ id: "chooseProjectType" \}\]/);
-  assert.match(PANEL, /picked === "chooseProjectType"/);
-  assert.match(PANEL, /type: "newProjectFlowGoToStep",\s*stepId: "template"/);
+  //
+  // Matched on the ACTION IDS and the STEP IDS rather than on one literal
+  // `actions: [{ id: "chooseProjectType" }]`. That literal pinned the shape of
+  // the argument, so adding the second route a refused core layout needs
+  // (#582 — the Cores step, since the template picker cannot fix a core
+  // layout) reddened a panel that still does everything this gate owes the
+  // reader. What it owes is that every route offers a button AND acts on it.
+  for (const action of ["chooseProjectType", "chooseCoreLayout"]) {
+    assert.match(
+      PANEL,
+      new RegExp(`id: [^\\n]*"${action}"`),
+      `${action} must be offered as a notification action`,
+    );
+    assert.match(
+      PANEL,
+      new RegExp(`picked === "${action}"`),
+      `${action} must be acted on, not just offered`,
+    );
+  }
+  assert.match(PANEL, /type: "newProjectFlowGoToStep",\s*stepId:/);
+  for (const step of ["template", "cores"]) {
+    assert.match(
+      PANEL,
+      new RegExp(`"${step}"`),
+      `the panel must be able to route back to the ${step} step`,
+    );
+  }
 
   // ...and the webview acts on it.
   assert.match(VIEW, /msg\.type === "newProjectFlowGoToStep"/);
@@ -89,8 +113,11 @@ test("pressing the button posts a step jump the webview understands", () => {
   assert.match(VIEW, /if \(index >= 0\) goTo\(index\)/);
 });
 
-test('the step is named by id, and "template" is a step that exists', () => {
+test("every step the host can name is a step that exists", () => {
   // Arrange -- the host sends an ID precisely so an inserted step cannot
-  // silently repoint it, which only holds while the id is real.
+  // silently repoint it, which only holds while the id is real. Both routes are
+  // checked: a `stepId` the webview does not have is ignored outright, so a
+  // typo here is a button that does nothing.
   assert.match(VIEW, /\{ id: "template", title: "Template" \}/);
+  assert.match(VIEW, /\{ id: "cores", title: "Cores" \}/);
 });

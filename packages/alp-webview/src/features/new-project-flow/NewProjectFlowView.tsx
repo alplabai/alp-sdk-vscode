@@ -322,38 +322,18 @@ function HardwareStep({ modules, selected, onSelect }: HardwareStepProps) {
 
 // ---------------------------------------------------------------------------
 
-/** One core's assignment, as the Cores step holds it. */
-export interface CoreChoice {
-  id: string;
-  os: string;
-  app: string;
-}
-
-/**
- * The default layout for a SoM's declared topology.
- *
- * The FIRST core that declares `zephyr` gets `./src`, because that is the
- * directory `tan init` puts the template's real source in. Every other core
- * that takes an app gets `./<core-id>` — a name that cannot collide and says
- * what it is. A `yocto` core keeps `yocto` and gets no app: its image is built
- * from a Yocto recipe, not from a directory in this project.
- */
-export function defaultCoreChoices(
-  cores: { id: string; os: string }[],
-): CoreChoice[] {
-  let appCoreTaken = false;
-  return cores.map((core) => {
-    // ZEPHYR ONLY. A yocto core builds from a recipe, and a bare-metal core's
-    // shape is `cmake-args`, not a Zephyr application — scaffolding one for it
-    // produces a project that cannot configure (#538).
-    if (core.os !== "zephyr") {
-      return { id: core.id, os: core.os, app: "" };
-    }
-    const app = appCoreTaken ? `./${core.id}` : "./src";
-    appCoreTaken = true;
-    return { id: core.id, os: core.os, app };
-  });
-}
+// `CoreChoice` and its two helpers live in `shared/coreChoices.ts`, which has
+// no JSX and no imports, so they can be exercised as data rather than through a
+// render. Re-exported here because this module is their public face.
+export {
+  defaultCoreChoices,
+  reconcileCoreChoices,
+  type CoreChoice,
+} from "../../shared/coreChoices";
+import {
+  reconcileCoreChoices,
+  type CoreChoice,
+} from "../../shared/coreChoices";
 
 /** Why a core has no app directory to type into. Said out loud rather than
  *  leaving an inert box: a disabled control with no reason reads as broken. */
@@ -525,6 +505,10 @@ interface ConfirmStepProps {
   modules: E1mModule[];
   openInThisWindow: boolean;
   onToggleOpenInThisWindow: (v: boolean) => void;
+  /** The customer's OWN answers from the Cores step — never `modules`'
+   *  topology. A summary that shows what the PART has rather than what was
+   *  ASKED FOR cannot be checked against anything (#582). */
+  coreChoices: CoreChoice[];
 }
 
 function ConfirmStep({
@@ -537,6 +521,7 @@ function ConfirmStep({
   modules,
   openInThisWindow,
   onToggleOpenInThisWindow,
+  coreChoices,
 }: ConfirmStepProps) {
   const tpl = templates.find((t) => t.id === templateId);
   const mod = modules.find((m) => m.id === moduleId);
@@ -553,11 +538,35 @@ function ConfirmStep({
       ? []
       : [
           { label: "Module", value: mod?.displayName ?? moduleId },
-          ...(mod?.cores && mod.cores.length >= 2
+          // THE CUSTOMER'S ANSWERS, not the SoM's topology (#582). This row
+          // used to render `mod.cores` — what `tan presets` says the part HAS —
+          // so a core set to "Off (skip core)" was listed here as enabled, on
+          // the one screen whose whole job is to be checked before Create.
+          //
+          // Runtimes are named with the SAME labels the Cores step offered
+          // (`runtimeOptions`), so the confirmation reads back what was picked
+          // rather than the wire value.
+          //
+          // NO APP DIRECTORY IS SHOWN, deliberately. tan chooses the app core's
+          // directory itself and its choice wins (`applyCoreAssignments`);
+          // measured on the pinned 0.6.0-rc1, `minimal-app` scaffolds `app: .`
+          // while this wizard's default for that core is `./src`. A directory
+          // printed here would therefore be wrong on essentially every project
+          // — a promise broken at Create, which is the failure this row exists
+          // to prevent. The directories are editable on the Cores step, and the
+          // one tan overrode is reported by name afterwards.
+          ...(coreChoices.length >= 2
             ? [
                 {
                   label: "Cores",
-                  value: mod.cores.map((c) => `${c.id} (${c.os})`).join(", "),
+                  value: coreChoices
+                    .map((choice) => {
+                      const label = runtimeOptions(choice.id).find(
+                        ([value]) => value === choice.os,
+                      )?.[1];
+                      return `${choice.id} (${label ?? choice.os})`;
+                    })
+                    .join(", "),
                 },
               ]
             : []),
@@ -712,12 +721,23 @@ export function NewProjectFlowView() {
     });
   }, [goTo]);
 
-  // The chosen module's topology drives the Cores step. Recomputed whenever the
-  // module changes: a layout carried over from another SoM would name cores
-  // this one does not have.
+  // The chosen module's topology drives the Cores step. A layout carried over
+  // from another SoM would name cores this one does not have — but a layout the
+  // CUSTOMER has edited must survive anything that is not that.
+  //
+  // This effect also runs whenever the catalog ARRAY changes identity, and the
+  // SDK step (which comes AFTER Cores) makes that happen: picking any SDK posts
+  // `reloadProjectTemplates` and the host answers with a fresh list. Rebuilding
+  // the defaults unconditionally therefore threw away every answer the customer
+  // had just given, on the way to the screen that asks them to confirm those
+  // answers (#582). `reconcileCoreChoices` replaces them only when the core IDS
+  // differ, and returns the previous array by reference otherwise so React
+  // bails out.
   useEffect(() => {
     const mod = (e1mModules ?? []).find((m) => m.id === selectedModule);
-    setCoreChoices(defaultCoreChoices(mod?.cores ?? []));
+    setCoreChoices((previous) =>
+      reconcileCoreChoices(previous, mod?.cores ?? []),
+    );
   }, [selectedModule, e1mModules]);
 
   const templates = projectTemplates ?? [];
@@ -896,6 +916,7 @@ export function NewProjectFlowView() {
                   modules={modules}
                   openInThisWindow={openInThisWindow}
                   onToggleOpenInThisWindow={setOpenInThisWindow}
+                  coreChoices={coreChoices}
                 />
               )}
             </>

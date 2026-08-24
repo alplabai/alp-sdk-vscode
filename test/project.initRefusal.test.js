@@ -61,14 +61,36 @@ test("a template pinned to one SKU is a DIFFERENT kind", () => {
 });
 
 test("any other refusal is left alone", () => {
-  // `init.invalid-cores` is #528's code and has its own fix; swallowing it into
-  // this guidance would send the customer to the wrong screen.
+  // A code this build has no guidance for keeps tan's own reporting rather than
+  // being wrapped in a wrong sentence — the reason `InitRefusalKind` is a narrow
+  // union and an unrecognised code is `null`, not a third kind.
+  //
+  // This used to use `init.invalid-cores` as the example. It is now classified
+  // (#582, routed to the Cores step rather than to the template picker), so the
+  // example had to move to a code that really is unknown. The invariant is the
+  // same one; only the specimen changed.
   assert.equal(
     classifyInitRefusal([
-      { code: "init.invalid-cores", severity: "error", message: "..." },
+      { code: "init.destination-exists", severity: "error", message: "..." },
     ]),
     null,
   );
+});
+
+test("a refused core layout is its own kind, not the template guidance", () => {
+  // Swallowing it into either of the other two would send the customer to the
+  // template picker, which cannot fix a core layout.
+  const refusal = classifyInitRefusal([
+    {
+      code: "init.invalid-cores",
+      severity: "error",
+      message: "m55_hp cannot be spliced in as :off",
+    },
+  ]);
+
+  assert.equal(refusal.kind, "core-layout-refused");
+  assert.equal(refusal.code, "init.invalid-cores");
+  assert.equal(refusal.message, "m55_hp cannot be spliced in as :off");
 });
 
 test("prose alone never classifies", () => {

@@ -756,8 +756,13 @@ export class NewProjectFlowPanel {
       // scaffold onto any SoM (verified for E1M-NX9101 on the pinned tan).
       const refusal = classifyInitRefusal(outcome.envelope?.issues);
       if (refusal) {
-        const advice =
-          refusal.kind === "template-pinned-to-som"
+        // The core layout is refused on a different screen from the other two,
+        // so it gets its own route back (#582). tan's message names the core it
+        // would not accept, which no table here could.
+        const isCoreLayout = refusal.kind === "core-layout-refused";
+        const advice = isCoreLayout
+          ? "Go back to Cores and leave that core on its default runtime."
+          : refusal.kind === "template-pinned-to-som"
             ? "Choose the SoM it names, or go back and pick another project type."
             : "No SoM change helps here — go back and pick another project type, or start from an example, which brings its own board.yaml and scaffolds onto any SoM.";
         const picked = await notify(
@@ -768,13 +773,15 @@ export class NewProjectFlowPanel {
             // detail rather than in the sentence.
             detail: `${refusal.code}: ${templateId} + ${moduleId}`,
             severity: "warning",
-            actions: [{ id: "chooseProjectType" }],
+            actions: [
+              { id: isCoreLayout ? "chooseCoreLayout" : "chooseProjectType" },
+            ],
           }),
         );
-        if (picked === "chooseProjectType") {
+        if (picked === "chooseProjectType" || picked === "chooseCoreLayout") {
           const msg: ExtToWebviewMessage = {
             type: "newProjectFlowGoToStep",
-            stepId: "template",
+            stepId: isCoreLayout ? "cores" : "template",
           };
           void this.panel.webview.postMessage(msg);
         }
