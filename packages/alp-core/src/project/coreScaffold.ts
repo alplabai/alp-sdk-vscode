@@ -212,6 +212,13 @@ export function orphanedAppDirs(
 ): { id: string; app: string; os: string }[] {
   const orphans: { id: string; app: string; os: string }[] = [];
   for (const assignment of assignments) {
+    // An os `applyCoreAssignments` will not write cannot orphan anything: it
+    // DROPS the assignment (`narrowCoreOs` is null, the loop continues) and
+    // leaves tan's entry untouched, so the core is still running its
+    // application. Asking `takesApp` alone answered false for any unknown
+    // string and told the customer to delete a directory their core builds —
+    // while `unknownCoreOs` reported the opposite for the same input.
+    if (narrowCoreOs(assignment.os) === null) continue;
     const app = board.cores?.[assignment.id]?.app;
     if (!app || takesApp(assignment.os)) continue;
     orphans.push({ id: assignment.id, app, os: assignment.os });

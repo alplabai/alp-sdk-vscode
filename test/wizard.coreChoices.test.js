@@ -31,18 +31,31 @@ const esbuild = require("esbuild");
 const REL = "packages/alp-webview/src/shared/coreChoices.ts";
 const SRC = path.join(__dirname, "..", REL);
 
-function loadCoreChoices() {
-  const { code } = esbuild.transformSync(fs.readFileSync(SRC, "utf8"), {
+function loadTs(file) {
+  const { code } = esbuild.transformSync(fs.readFileSync(file, "utf8"), {
     loader: "ts",
     format: "cjs",
   });
-  const mod = new Module(SRC, null);
-  mod.filename = SRC;
-  mod._compile(code, SRC);
+  const mod = new Module(file, null);
+  mod.filename = file;
+  mod._compile(code, file);
   return mod.exports;
 }
 
+const loadCoreChoices = () => loadTs(SRC);
+
 const { defaultCoreChoices, reconcileCoreChoices } = loadCoreChoices();
+const { coresSummary } = loadTs(
+  path.join(__dirname, "..", "packages/alp-webview/src/shared/coreRuntime.ts"),
+);
+const VIEW = fs.readFileSync(
+  path.join(
+    __dirname,
+    "..",
+    "packages/alp-webview/src/features/new-project-flow/NewProjectFlowView.tsx",
+  ),
+  "utf8",
+);
 
 /** E1M-AEN801, verbatim from `tan presets`. */
 const AEN801 = [
@@ -144,4 +157,92 @@ test("the os values are NOT compared, and that is on purpose", () => {
   ];
 
   assert.equal(reconcileCoreChoices(edited, AEN801), edited);
+});
+
+// -- the CALL SITE, not just the helper -------------------------------------
+
+test("the Cores effect reconciles rather than resetting", () => {
+  // A helper nobody calls fixes nothing. Every behavioural assertion above
+  // passes with `shared/coreChoices.ts` byte-identical and the EFFECT reverted
+  // to `setCoreChoices(defaultCoreChoices(mod?.cores ?? []))` — measured: the
+  // full suite and the webview render harness both return their baseline
+  // numbers on that mutant. So the wiring is pinned here, at source level,
+  // because the effect cannot be reached from node:test.
+  assert.match(
+    VIEW,
+    /setCoreChoices\(\s*\(previous\)\s*=>\s*\n?\s*reconcileCoreChoices\(previous,/,
+    "the Cores effect must pass the PREVIOUS choices through " +
+      "reconcileCoreChoices — a plain setCoreChoices(...) discards them",
+  );
+  const code = VIEW.replace(/\/\*[\s\S]*?\*\//g, "").replace(
+    /^\s*\/\/.*$/gm,
+    "",
+  );
+  assert.doesNotMatch(
+    code,
+    /setCoreChoices\(defaultCoreChoices\(/,
+    "resetting the step straight from the defaults is the defect (#582): the " +
+      "SDK step changes the catalog array and would wipe every answer",
+  );
+});
+
+// -- the Confirm row --------------------------------------------------------
+
+test("the Confirm summary reads back the customer's answers", () => {
+  // The row is a pure function precisely so this can be asserted as data.
+  // Rendering the wizard as far as Confirm is what no gate in this repo did,
+  // which is how the row went unwatched: a mutant restoring `mod.cores` there
+  // passed both the full suite and the render harness unchanged.
+  assert.equal(
+    coresSummary([
+      { id: "a32_cluster", os: "off" },
+      { id: "m55_hp", os: "zephyr" },
+      { id: "m55_he", os: "baremetal" },
+    ]),
+    "a32_cluster (Off (skip core)), m55_hp (Zephyr (default)), m55_he (Bare-metal)",
+  );
+});
+
+test("the Confirm summary names runtimes the way the Cores step offered them", () => {
+  // Same labels, or the confirmation reads back a wire value the customer never
+  // saw. Compared against `runtimeOptions` itself rather than a second copy of
+  // the strings.
+  const { runtimeOptions } = loadTs(
+    path.join(
+      __dirname,
+      "..",
+      "packages/alp-webview/src/shared/coreRuntime.ts",
+    ),
+  );
+  for (const id of ["m55_hp", "a32_cluster", "dsp0"]) {
+    for (const [value, label] of runtimeOptions(id)) {
+      assert.equal(coresSummary([{ id, os: value }]), `${id} (${label})`);
+    }
+  }
+});
+
+test("an os with no label falls back to the raw value rather than blank", () => {
+  // A future preset value the picker does not offer must still be legible.
+  assert.equal(
+    coresSummary([{ id: "a32_cluster", os: "hypervisor" }]),
+    "a32_cluster (hypervisor)",
+  );
+});
+
+test("the Confirm row is rendered from coresSummary, not rebuilt inline", () => {
+  assert.match(
+    VIEW,
+    /label: "Cores", value: coresSummary\(coreChoices\)/,
+    "ConfirmStep must render the shared summary — an inline map here is a " +
+      "second implementation no test can see",
+  );
+  const code = VIEW.replace(/\/\*[\s\S]*?\*\//g, "").replace(
+    /^\s*\/\/.*$/gm,
+    "",
+  );
+  assert.doesNotMatch(
+    code,
+    /value: mod\??\.\.?cores/,
+    "the row must never be built from the SoM's declared topology (#582)",
+  );
 });

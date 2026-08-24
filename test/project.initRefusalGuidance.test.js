@@ -95,14 +95,30 @@ test("pressing the button posts a step jump the webview understands", () => {
       `${action} must be acted on, not just offered`,
     );
   }
-  assert.match(PANEL, /type: "newProjectFlowGoToStep",\s*stepId:/);
-  for (const step of ["template", "cores"]) {
-    assert.match(
-      PANEL,
-      new RegExp(`"${step}"`),
-      `the panel must be able to route back to the ${step} step`,
-    );
-  }
+  // THE MAPPING, not merely the presence of both names. Checking that "cores"
+  // and "template" each appear somewhere in the file is satisfied by swapping
+  // them, and a swap sends a refused core layout to the template picker — which
+  // cannot fix a core layout — while a template refusal lands on Cores, which
+  // cannot fix that either. Measured: the inverted ternary passes the full
+  // suite, `pnpm run typecheck` (messages.ts declares `stepId: string`, so the
+  // swap is type-legal) and the render harness, which never sees a host-side
+  // ternary.
+  assert.match(
+    PANEL,
+    /stepId: isCoreLayout \? "cores" : "template"/,
+    "a refused core layout must route to the Cores step and every other " +
+      "refusal to the template picker — inverted, both buttons are dead ends",
+  );
+  assert.match(
+    PANEL,
+    /id: isCoreLayout \? "chooseCoreLayout" : "chooseProjectType"/,
+    "and the button must be labelled for the step it actually goes to",
+  );
+  assert.match(
+    PANEL,
+    /const isCoreLayout = refusal\.kind === "core-layout-refused"/,
+    "the branch must key on the classified kind, never on tan's prose",
+  );
 
   // ...and the webview acts on it.
   assert.match(VIEW, /msg\.type === "newProjectFlowGoToStep"/);

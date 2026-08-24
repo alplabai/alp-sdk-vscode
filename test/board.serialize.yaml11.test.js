@@ -154,3 +154,125 @@ test("the rule is not special-cased to `off`", () => {
     );
   }
 });
+
+// -- the quote style already on disk ----------------------------------------
+
+/** A character built by code point, so this file holds no literal control
+ *  bytes -- they are invisible in a diff and get mangled by tooling. */
+const CH = (n) => String.fromCharCode(n);
+
+/** The style the emitted scalar at `path` carries: "PLAIN" when it has none. */
+function styleAt(text, path) {
+  const node = YAML.parseDocument(text).getIn(path, true);
+  return node && node.type ? node.type : "PLAIN";
+}
+
+test("a scalar that was quoted on disk stays quoted when its value changes", () => {
+  // THE REGRESSION THE FIRST DRAFT OF THIS FIX INTRODUCED, and it was worse
+  // than the bug being fixed. Overwriting a scalar with
+  // `doc.setIn(path, "string")` reuses the node already there and keeps its
+  // style; building a fresh one with `doc.createNode(value)` does not -- the
+  // new Scalar has `type: undefined`, so a value the customer had
+  // double-quoted comes back PLAIN.
+  //
+  // Measured against the pinned tan 0.6.0-rc1, editing a Description holding a
+  // TAB inside a double-quoted scalar (legal YAML, and `tan validate` clean):
+  //
+  //   before   description: "release\tcandidate"      ok, exit 0
+  //   after    description: release<TAB>candidate v2  ALP-B000: YAML parse
+  //                                                   error, exit 2
+  //
+  // ALP-B003/ALP-B004 rejected one FIELD; this makes the document unparseable.
+  const prior =
+    "som:\n  sku: E1M-AEN801\ncores:\n  a32_cluster:\n    os: yocto\n" +
+    '    image: "alp-image\\tedge"\n';
+  const board = parseBoardConfig(prior);
+  const edited = "alp-image" + CH(0x09) + "edge v2";
+  const next = {
+    ...board,
+    cores: {
+      ...board.cores,
+      a32_cluster: { ...board.cores.a32_cluster, image: edited },
+    },
+  };
+
+  const text = serializeBoardConfig(next, prior);
+
+  assert.notEqual(
+    styleAt(text, ["cores", "a32_cluster", "image"]),
+    "PLAIN",
+    "the double quotes that made this document legal must not be removed",
+  );
+  assert.equal(YAML.parse(text).cores.a32_cluster.image, edited);
+});
+
+test("an unquoted scalar is not gratuitously quoted", () => {
+  // The control. A fix that quoted EVERYTHING would satisfy the assertion
+  // above and rewrite half of tan's file on every edit.
+  const prior = "som:\n  sku: E1M-AEN801\ncores:\n  m55_hp:\n    os: zephyr\n";
+  const board = parseBoardConfig(prior);
+  const next = {
+    ...board,
+    cores: { ...board.cores, m55_hp: { ...board.cores.m55_hp, app: "./src" } },
+  };
+
+  const text = serializeBoardConfig(next, prior);
+  assert.equal(styleAt(text, ["cores", "m55_hp", "app"]), "PLAIN");
+});
+
+// -- the characters the 1.1 probe cannot see --------------------------------
+
+test("a character PyYAML refuses in a plain scalar is always quoted", () => {
+  // The probe asks `YAML.parse(rendered, { version: "1.1" })`, and npm yaml's
+  // version switch changes the TAG SCHEMA ONLY -- never the lexer or the
+  // character set. So it is a superset of PyYAML for `off`/`1:30`/`0777` and a
+  // strict SUBSET for anything the two tokenisers disagree about. Measured
+  // against PyYAML 6.0.3, each of these is a hard parse failure the probe
+  // reports as "not misread":
+  //
+  //   TAB U+0009   ScannerError      LS U+2028   ScannerError
+  //   NEL U+0085   ScannerError      PS U+2029   ScannerError
+  //   DEL U+007F   ReaderError
+  //
+  // Forcing double quotes rescues every one of them -- verified by reading
+  // each value back with PyYAML unchanged -- so the rule is by CHARACTER, not
+  // by round trip.
+  const HAZARDS = [
+    ["TAB U+0009", 0x09],
+    ["LF U+000A", 0x0a],
+    ["CR U+000D", 0x0d],
+    ["SOH U+0001", 0x01],
+    ["DEL U+007F", 0x7f],
+    ["NEL U+0085", 0x85],
+    ["LS U+2028", 0x2028],
+    ["PS U+2029", 0x2029],
+  ];
+  const prior =
+    "som:\n  sku: E1M-AEN801\ncores:\n  a32_cluster:\n    os: yocto\n" +
+    "    image: alp-image-edge\n";
+  const board = parseBoardConfig(prior);
+
+  for (const [name, code] of HAZARDS) {
+    const value = "a" + CH(code) + "b";
+    const next = {
+      ...board,
+      cores: {
+        ...board.cores,
+        a32_cluster: { ...board.cores.a32_cluster, image: value },
+      },
+    };
+    const text = serializeBoardConfig(next, prior);
+    assert.notEqual(
+      styleAt(text, ["cores", "a32_cluster", "image"]),
+      "PLAIN",
+      name +
+        " must not be emitted in a plain scalar -- PyYAML then cannot read " +
+        "the document at all, which is ALP-B000 rather than a rejected field",
+    );
+    assert.equal(
+      YAML.parse(text).cores.a32_cluster.image,
+      value,
+      name + " must survive the round trip unchanged",
+    );
+  }
+});

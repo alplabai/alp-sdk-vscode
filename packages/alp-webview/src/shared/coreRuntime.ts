@@ -54,3 +54,39 @@ export function runtimeOptions(id: string): Array<[string, string]> {
     ["off", "Off (skip core)"],
   ];
 }
+
+/**
+ * The Cores row of the New Project wizard's Confirm step.
+ *
+ * THE CUSTOMER'S ANSWERS, never the SoM's declared topology. The row used to
+ * render `modules[].cores` -- what `tan presets` says the part HAS -- so a core
+ * set to "Off (skip core)" was listed as enabled on the one screen whose whole
+ * job is to be checked before Create (#582).
+ *
+ * Named with the SAME labels the Cores step offered, so the confirmation reads
+ * back what was picked rather than the wire value.
+ *
+ * NO APP DIRECTORY APPEARS HERE, deliberately. tan chooses the app core's
+ * directory itself and its choice wins (`applyCoreAssignments`); measured on
+ * the pinned tan 0.6.0-rc1, `minimal-app` scaffolds `app: .` while this
+ * wizard's default for that core is `./src`. A directory printed here would be
+ * wrong on essentially every project -- a promise broken at Create, which is
+ * the failure this row exists to prevent. The directories are editable on the
+ * Cores step, and the one tan overrode is reported by name afterwards.
+ *
+ * A function rather than JSX so it can be tested as data: rendering the wizard
+ * far enough to reach Confirm is exactly the thing no gate in this repo did,
+ * which is how the row went unwatched.
+ */
+export function coresSummary(
+  choices: ReadonlyArray<{ id: string; os: string }>,
+): string {
+  return choices
+    .map((choice) => {
+      const label = runtimeOptions(choice.id).find(
+        ([value]) => value === choice.os,
+      )?.[1];
+      return `${choice.id} (${label ?? choice.os})`;
+    })
+    .join(", ");
+}

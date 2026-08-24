@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
-import { runtimeOptions } from "../../shared/coreRuntime";
+import { coresSummary, runtimeOptions } from "../../shared/coreRuntime";
 import { isSafeAppDir, normaliseAppDir } from "../../shared/appDir";
 import {
   Button,
@@ -556,19 +556,7 @@ function ConfirmStep({
           // to prevent. The directories are editable on the Cores step, and the
           // one tan overrode is reported by name afterwards.
           ...(coreChoices.length >= 2
-            ? [
-                {
-                  label: "Cores",
-                  value: coreChoices
-                    .map((choice) => {
-                      const label = runtimeOptions(choice.id).find(
-                        ([value]) => value === choice.os,
-                      )?.[1];
-                      return `${choice.id} (${label ?? choice.os})`;
-                    })
-                    .join(", "),
-                },
-              ]
+            ? [{ label: "Cores", value: coresSummary(coreChoices) }]
             : []),
         ]),
     { label: "SDK", value: sdkLabel },

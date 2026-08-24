@@ -178,3 +178,28 @@ test("a core that keeps running Zephyr orphans nothing", () => {
     "the A-core never had an `app:` to orphan, and m55_hp still has one",
   );
 });
+
+test("an os this build cannot write is not reported as an orphan either", () => {
+  // The two functions have to agree about the SAME assignment.
+  // `applyCoreAssignments` DROPS an unrecognised os (`narrowCoreOs` returns
+  // null, the loop continues) and leaves tan's entry exactly as it was — so the
+  // core is still running its application. `orphanedAppDirs` asked only
+  // `takesApp(os)`, which is false for any string it does not know, and
+  // therefore told the customer to delete a directory their core still builds.
+  //
+  // `unknownCoreOs` is what reports this case, and it says the core was left
+  // out — the opposite advice. Only one of the two can be right.
+  const board = scaffolded();
+
+  assert.deepEqual(
+    orphanedAppDirs(board, [{ id: "m55_hp", os: "hypervisor" }]),
+    [],
+    "an assignment applyCoreAssignments will not write cannot orphan anything",
+  );
+  // And the board really is untouched, which is what makes the report wrong.
+  const next = applyCoreAssignments(board, [
+    { id: "m55_hp", os: "hypervisor" },
+  ]);
+  assert.equal(next.cores.m55_hp.os, "zephyr");
+  assert.equal(next.cores.m55_hp.app, ".");
+});
