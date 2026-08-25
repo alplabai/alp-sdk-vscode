@@ -112,6 +112,9 @@ import { log } from "../util";
  *  change exists to stop making. */
 const MANIFEST_FILE = "system-manifest.yaml";
 
+/** `tan run --flash` — a device write that is not the `flash` command. */
+const RUN_FLASH_FLAG = "--flash";
+
 /**
  * Where `tan flash` reads its manifest from.
  *
@@ -193,6 +196,25 @@ export async function gateFlashDispatch(
       return refuse(
         "Alp could not tell which tan command this would run, and it mentions " +
           "flash — so nothing was run. Report this with the Alp SDK log.",
+        args.join(" "),
+      );
+    }
+    // `tan run --flash` writes a device WITHOUT being the `flash` command, so
+    // neither `isFlashArgv` nor the `FLASH_COMMAND` token test above sees it.
+    // Its help on the pinned CLI: "Program the board after building (hardware
+    // targets only)."
+    //
+    // No call site builds it today — `src/west.ts` sends a bare `["run"]`,
+    // which never flashes — and `test/flash.dispatch.test.js` filters the
+    // extractor on `site.command === "flash"`, so a future `run --flash` site
+    // would stay green while writing a board unasked. Refused rather than
+    // gated: this repo has no manifest-shaped consent for a run that also
+    // builds, and refusing costs a command nobody has written yet.
+    if (args.includes(RUN_FLASH_FLAG)) {
+      return refuse(
+        "Alp does not flash from `tan run`. `--flash` programs the board as a " +
+          "side effect of a run, which is not something this extension asks " +
+          "about — use Flash, which shows what is about to be written.",
         args.join(" "),
       );
     }

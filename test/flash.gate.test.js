@@ -453,3 +453,42 @@ test("the gate never reaches for ALP_FLASH_FORCE or flash_args.confirm", () => {
   assert.doesNotMatch(code, /flash_args/);
   assert.doesNotMatch(code, /"--recover"|'--recover'/);
 });
+
+test("`tan run --flash` is refused: a device write that is not the flash command", () => {
+  // The gate keys on the COMMAND, and `--flash` is a flag on `run`. Measured
+  // against the shipped predicate:
+  //
+  //   isFlashArgv(["run", "--flash"]) === false
+  //
+  // and the `FLASH_COMMAND` backstop tests the token `flash`, which `--flash`
+  // is not. Its help on the pinned CLI: "Program the board after building
+  // (hardware targets only)."
+  //
+  // No call site builds it today, and `test/flash.dispatch.test.js` filters
+  // the extractor on `site.command === "flash"` — so a future `run --flash`
+  // site would stay green while programming a board unasked. That is the gap
+  // this closes.
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate("flashDevice");
+  return mod.gateFlashDispatch(["run", "--flash"], dir).then((out) => {
+    assert.equal(out, null, "a run that flashes must not reach the spawn");
+    assert.match(plans.at(-1).message, /does not flash from `tan run`/);
+    assert.equal(
+      plans.filter((p) => p.channel === "modal").length,
+      0,
+      "refused, not asked about — there is no manifest-shaped consent for a " +
+        "run that also builds",
+    );
+  });
+});
+
+test("a bare `tan run` is untouched — it never flashes", () => {
+  // The control. `src/west.ts` sends exactly this, and gating it would put a
+  // write dialog on a command that writes nothing.
+  const dir = projectWithManifest();
+  const { mod, plans } = loadGate("flashDevice");
+  return mod.gateFlashDispatch(["run"], dir).then((out) => {
+    assert.deepEqual(out, ["run"]);
+    assert.deepEqual(plans, [], "no dialog for a command that does not write");
+  });
+});
