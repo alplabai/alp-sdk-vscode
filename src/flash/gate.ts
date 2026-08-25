@@ -4,7 +4,7 @@
 //
 // ── WHY IT LIVES INSIDE THE RUNNER AND NOT AT THE CALL SITES ───────────────
 //
-// `runAlpStreamed` calls `armFlashDispatch` unconditionally, on every argv,
+// `runAlpStreamed` calls `gateFlashDispatch` unconditionally, on every argv,
 // before it spawns anything. That placement is #467's lesson applied a second
 // time: putting the dependency-install consent INSIDE `runFixAll` rather than
 // behind an injected callback is what made it un-bypassable, and it reddened 8
@@ -44,9 +44,41 @@
 //      the file. There is nothing to consent to, and a bare `tan flash` sent
 //      anyway would be a blind write.
 //   7. Otherwise: the manifest is parsed, `planFlashConsent` says what is in
-//      scope and what the scope skips, and a BLOCKING modal asks. Only its
-//      accept adds `--confirm` — and only after the manifest is re-read and
-//      proved BYTE-IDENTICAL to the one the dialog described.
+//      scope and what the scope skips, and a BLOCKING modal asks. Its accept
+//      re-reads the manifest and proves it BYTE-IDENTICAL to the one the
+//      dialog described; only then is the argv released to the spawn.
+//
+// ── WHY THIS GATE DOES NOT ADD `--confirm` ────────────────────────────────
+//
+// Because the write it is protecting against does not need `--confirm` to
+// happen. The first draft of this gate armed the flag on accept, reasoning
+// from tan's own `--help`: "every slice is previewed, nothing is written, and
+// the run exits non-zero". That help text is unqualified and wrong for half
+// the backends, which is `tan-cli#796` — closed COMPLETED, docs-only.
+//
+// Measured in tan v0.6.0 (GA), unchanged from the pinned rc1:
+//
+//   flash_plan.py:1232   planning_only: bool = False        (dataclass default)
+//   flash_plan.py:2206   plan_yocto_wic          sets it
+//   flash_plan.py:2334   plan_xspi_flashwriter   sets it
+//   flash_plan.py:2848   plan_alif_mram_jlink    sets it
+//
+// `plan_swd_probe` (:1502), `plan_zephyr_west_flash` (:2081) and
+// `plan_baremetal_cmake_flash` (:2110) never set it, and `flash_cmd.py:2892`
+// skips the spawn only on `plan.planning_only or ctx.dry_run`. tan's own
+// comment at `flash_cmd.py:2951` states the consequence outright: "a real run
+// always reaches this line unconfirmed". So on a Zephyr slice the board is
+// programmed by a bare `tan flash`, with no `--confirm` anywhere.
+//
+// That inverts what the flag is for here. Adding it cannot close the
+// unconfirmed-write hole — those three backends do not read it — and adding it
+// WOULD turn the other three from a preview into a real write, which is a
+// change no gate in this repo can verify: nothing here builds a project, let
+// alone programs silicon. Arming is therefore split off and bench-gated
+// (#540); this gate ships the half that can only ever PREVENT a write.
+//
+// `armFlashArgv` stays in core, tested and unused by this file, because that
+// is the half the bench pass turns on.
 //
 // `ALP_FLASH_FORCE=1` and `flash_args.confirm: true` are the two other ways to
 // arm tan's gate. NEITHER is used, here or anywhere: the first would put the
@@ -58,7 +90,6 @@ import * as fs from "fs";
 import * as path from "path";
 
 import {
-  armFlashArgv,
   FLASH_COMMAND,
   isFlashArgv,
   readFlashArgv,
@@ -101,7 +132,7 @@ const MANIFEST_FILE = "system-manifest.yaml";
  * `<project>`, this function derives from APP_PATH, and nothing in the repo
  * settles which wins when the two differ. A truthful-looking dialog about
  * `cwd`'s manifest while tan acts on another project is precisely the
- * dialog-names-one-thing-spawn-writes-another failure, so `armFlashDispatch`
+ * dialog-names-one-thing-spawn-writes-another failure, so `gateFlashDispatch`
  * REFUSES a `--project` flash outright instead of guessing (tan-cli question,
  * not a shape this repo can resolve). No call site builds one today.
  */
@@ -147,7 +178,7 @@ function digestOf(text: string): string {
  * argv (`isFlashArgv`), which is what lets the caller apply this to every
  * streamed run rather than remembering which ones write hardware.
  */
-export async function armFlashDispatch(
+export async function gateFlashDispatch(
   args: readonly string[],
   cwd: string | undefined,
 ): Promise<string[] | null> {
@@ -331,7 +362,10 @@ export async function armFlashDispatch(
   }
 
   log(
-    `[flash] consent granted for ${plan.targets.length} target(s) in ${manifestPath} — arming --confirm`,
+    `[flash] consent granted for ${plan.targets.length} target(s) in ${manifestPath}`,
   );
-  return armFlashArgv(args);
+  // Returned UNCHANGED. See the header: `--confirm` is not what makes the
+  // write happen on three of the six backends, and adding it here would make
+  // the other three write for the first time — a bench-gated change (#540).
+  return [...args];
 }

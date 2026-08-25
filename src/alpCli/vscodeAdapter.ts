@@ -14,7 +14,7 @@ import * as path from "path";
 import { promisify } from "util";
 import * as vscode from "vscode";
 
-import { isFlashArgv, readFlashArgv } from "@alp-sdk/core/flash/argv";
+import { isFlashArgv } from "@alp-sdk/core/flash/argv";
 
 import {
   ResolveDeps,
@@ -69,7 +69,7 @@ import {
   TanCliDownloadConsentSetting,
   unverifiedCacheCause,
 } from "./service";
-import { armFlashDispatch } from "../flash/gate";
+import { gateFlashDispatch } from "../flash/gate";
 import { ActionId, NotificationPlan, NotifyAction } from "../notify/models";
 import {
   isCancellation,
@@ -2588,8 +2588,8 @@ export async function runAlpStreamed(
   // both pass while the binary is still being resolved.
   //
   // The progress notification's Cancel button IS a termination, and it is the
-  // one exception — bounded rather than removed: for an ARMED flash it asks
-  // first (`confirmStopOfArmedFlash`), so the kill exists for a hung run but
+  // one exception — bounded rather than removed: for a FLASH it asks
+  // first (`confirmStopOfFlash`), so the kill exists for a hung run but
   // cannot be taken by a single mis-click into a live write.
   if (!reserveStreamedRun(options.name)) {
     log(
@@ -2614,10 +2614,14 @@ export async function runAlpStreamed(
   }
   try {
     // The hardware-consent gate (#540), INSIDE the runner rather than at the
-    // call sites. `tan flash` writes nothing without `--confirm` and both
-    // flash call sites omitted it; a gate wired per call site is a gate the
-    // next call site forgets the same way. Every other argv is returned
-    // unchanged, so this covers a dispatch site that does not exist yet.
+    // call sites. A gate wired per call site is a gate the next call site
+    // forgets the same way — which is exactly how both flash sites came to
+    // omit the same flag. Every other argv is returned unchanged, so this
+    // covers a dispatch site that does not exist yet.
+    //
+    // It does NOT arm `--confirm`; see `src/flash/gate.ts`'s header. Three of
+    // tan's six flash backends program the board on a bare `tan flash`, so the
+    // dialog — not the flag — is what stands between a click and a write.
     //
     // It finds the command the way `scripts/tan-surface/extract.mjs` does —
     // skipping root-position flags with their values — so a future
@@ -2630,17 +2634,19 @@ export async function runAlpStreamed(
     // second dialog into a second programmer on the same board. `isRunActive`
     // already documents that state as "or its start is still pending
     // confirmation", and the `finally` below releases it on every answer.
-    const armed = await armFlashDispatch(args, options.cwd);
+    const gated = await gateFlashDispatch(args, options.cwd);
     // Refused or cancelled: the gate has already said so on its own terms —
     // "cancelled", never a failure — and NOTHING is spawned here.
-    if (armed === null) return;
-    // Whether THIS spawn is a live write, asked of the argv that is actually
-    // going out rather than of the one that came in — only the gate's accept
-    // puts `--confirm` on it. `streamRun` needs the answer for the two places
-    // a write and a build must not behave alike: the Cancel button, and a
-    // death by signal.
-    const armedFlash = isFlashArgv(armed) && readFlashArgv(armed).isArmed;
-    await streamRun(context, armed, { ...options, armedFlash });
+    if (gated === null) return;
+    // Whether THIS spawn writes a device. Asked of the argv actually going out,
+    // and keyed on it being a FLASH rather than on `--confirm` being present:
+    // `plan_zephyr_west_flash`, `plan_baremetal_cmake_flash` and
+    // `plan_swd_probe` write without it (tan-cli#796), so an armed-only test
+    // would answer "not a write" on the backends that write unasked.
+    // `streamRun` needs this for the two places a write and a build must not
+    // behave alike: the Cancel button, and a death by signal.
+    const isFlash = isFlashArgv(gated);
+    await streamRun(context, gated, { ...options, isFlash });
   } finally {
     releaseStreamedRun(options.name);
   }
@@ -2654,10 +2660,15 @@ export async function runAlpStreamed(
  *
  * `runAlpStreamed`'s own header says the reservation refuses a same-named
  * re-run and NEVER terminates one, "killing a flash mid-write can leave a
- * board unbootable". The progress notification's Cancel button was the one
- * exception, and on `dev` it was harmless: without `--confirm` tan previewed
- * and wrote nothing, so the kill only ever hit a preview. Arming the gate aims
- * that same SIGTERM — and the SIGKILL ten seconds behind it — at real MRAM.
+ * board unbootable". The progress notification's Cancel button is the one
+ * exception, and it is aimed at a live write TODAY — this is not a hazard the
+ * gate introduces. An earlier draft of this paragraph said the opposite:
+ * "on `dev` it was harmless: without `--confirm` tan previewed and wrote
+ * nothing". Measured against tan v0.6.0, that is false for three of the six
+ * backends — `plan_zephyr_west_flash`, `plan_baremetal_cmake_flash` and
+ * `plan_swd_probe` never set `planning_only`, so a bare `tan flash` on a
+ * Zephyr slice is a real write and Cancel already sends SIGTERM, then SIGKILL
+ * ten seconds behind it, into it.
  *
  * Making the progress non-cancellable would trade one hazard for another. The
  * kill is load-bearing: the run name is released only when this promise
@@ -2673,7 +2684,7 @@ export async function runAlpStreamed(
  * recovery for a board bricked mid-write is a bench and a debug probe. The
  * dialog says so, so the choice is made with that in view.
  */
-async function confirmStopOfArmedFlash(name: string): Promise<boolean> {
+async function confirmStopOfFlash(name: string): Promise<boolean> {
   const picked = await notify(
     planConfirm({
       message: `${name} is writing to the device. Stop it now?`,
@@ -2695,7 +2706,7 @@ async function confirmStopOfArmedFlash(name: string): Promise<boolean> {
 }
 
 /**
- * Report an ARMED flash that died on a signal.
+ * Report a flash that died on a signal.
  *
  * This is the quietest outcome in the runner and the most dangerous one: the
  * `exit` handler deliberately raises nothing for a signal death ("a kill is
@@ -2727,14 +2738,14 @@ function warnInterruptedFlash(name: string, signal: NodeJS.Signals): void {
 /** The body of `runAlpStreamed`, split out so its every exit path — including
  *  a failed binary resolution — releases the reservation via one `finally`.
  *
- *  `armedFlash` says this particular spawn carries `--confirm` and will
- *  therefore WRITE non-volatile memory. It changes exactly two behaviours —
- *  `confirmStopOfArmedFlash` and `warnInterruptedFlash` — and nothing else;
- *  everything a build does, an armed flash still does. */
+ *  `isFlash` says this particular spawn is a flash and may therefore WRITE
+ *  non-volatile memory. It changes exactly two behaviours —
+ *  `confirmStopOfFlash` and `warnInterruptedFlash` — and nothing else;
+ *  everything a build does, a flash still does. */
 async function streamRun(
   context: vscode.ExtensionContext,
   args: string[],
-  options: { name: string; cwd?: string; armedFlash?: boolean },
+  options: { name: string; cwd?: string; isFlash?: boolean },
 ): Promise<void> {
   let binary: ResolvedBinary;
   try {
@@ -2837,14 +2848,15 @@ async function streamRun(
           }, CANCEL_GRACE_MS);
         };
         token.onCancellationRequested(() => {
-          // A build, an image, a clean, a renode: stop it, no questions. Only
-          // an ARMED flash is asked about, because only an armed flash is
-          // mid-write — see `confirmStopOfArmedFlash` for the whole argument.
-          if (!options.armedFlash) {
+          // A build, an image, a clean, a renode: stop it, no questions. A
+          // FLASH is asked about, because a flash is mid-write — see
+          // `confirmStopOfFlash` for the whole argument. Keyed on flash-ness,
+          // not on `--confirm`: three backends write without it.
+          if (!options.isFlash) {
             stop();
             return;
           }
-          void confirmStopOfArmedFlash(options.name).then((stopIt) => {
+          void confirmStopOfFlash(options.name).then((stopIt) => {
             // It may have finished on its own while the dialog sat open. There
             // is then nothing to signal, and `child.kill()` on a reaped pid is
             // at best a no-op and at worst somebody else's process.

@@ -68,7 +68,7 @@ export type ActionId =
   | "deleteFromDisk"
   | "downloadTanCli"
   // The one act that programs hardware (#540). Caller-handled on purpose: the
-  // pick must come back so `armFlashDispatch` can gate the spawn on it — an
+  // pick must come back so `gateFlashDispatch` can gate the spawn on it — an
   // action the presenter ran itself would leave the gate with nothing to read.
   | "flashDevice"
   // Terminating a flash that is ALREADY writing (#540). Caller-handled for the

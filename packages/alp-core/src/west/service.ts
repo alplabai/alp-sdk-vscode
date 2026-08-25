@@ -45,6 +45,26 @@ export function createWestBuildPreparation(
   };
 }
 
+/**
+ * Does this plan program a device?
+ *
+ * `alp.westFlash` runs `west flash` in a TERMINAL, so it never passes through
+ * `runAlpStreamed` and the tan-side consent gate (`src/flash/gate.ts`) cannot
+ * see it (#549). It is a real write all the same — `west flash` programs the
+ * attached board the moment it starts — so the terminal dispatcher asks first,
+ * and this is what it asks about.
+ *
+ * ERRS TOWARD ASKING. Any argument that is exactly `flash` counts, not only
+ * `args[1]`: this runs before an irreversible write, and the cost of a wrong
+ * yes is a dialog nobody needed, while the cost of a wrong no is a board
+ * programmed without being asked. `west` has no other subcommand spelled
+ * `flash`, and a path element equal to the bare word is not a shape this repo
+ * builds.
+ */
+export function isWestFlashPlan(args: readonly string[]): boolean {
+  return args.includes("flash");
+}
+
 export function createWestFlashPlan(
   context: WestWorkspaceContext,
 ): WestCommandPlan {

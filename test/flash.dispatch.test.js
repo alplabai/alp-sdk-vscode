@@ -52,15 +52,15 @@ const ENTRY = ADAPTER.slice(
 // 1. The runner asks, and obeys the answer
 // ---------------------------------------------------------------------------
 
-test("runAlpStreamed gates every dispatch through armFlashDispatch", () => {
+test("runAlpStreamed gates every dispatch through gateFlashDispatch", () => {
   assert.match(
     ADAPTER,
-    /import \{ armFlashDispatch \} from "\.\.\/flash\/gate";/,
+    /import \{ gateFlashDispatch \} from "\.\.\/flash\/gate";/,
     "the adapter no longer imports the consent gate",
   );
   assert.match(
     ENTRY,
-    /const armed = await armFlashDispatch\(args, options\.cwd\);/,
+    /const gated = await gateFlashDispatch\(args, options\.cwd\);/,
     "runAlpStreamed must run the consent gate itself — a gate the call sites " +
       "opt into is a gate a new call site forgets, which IS defect #540",
   );
@@ -69,15 +69,17 @@ test("runAlpStreamed gates every dispatch through armFlashDispatch", () => {
 test("a refused or cancelled gate spawns nothing at all", () => {
   assert.match(
     ENTRY,
-    /if \(armed === null\) return;/,
+    /if \(gated === null\) return;/,
     "a null answer means refused or cancelled and MUST short-circuit — " +
       "falling through would spawn the unarmed flash the gate just declined",
   );
-  // The spawn takes the GATE's argv, never the caller's: passing `args` here
-  // would drop `--confirm` again and re-open #540 with the dialog still up.
+  // The spawn takes the GATE's argv, never the caller's. Today the two are
+  // equal for an accepted flash (the gate does not arm — `flash.gate.test.js`
+  // pins that), but passing `args` here would make the accept path stop
+  // depending on the gate's answer at all, which is the seam Part B arms.
   assert.match(
     ENTRY,
-    /await streamRun\(context, armed, \{ \.\.\.options, armedFlash \}\);/,
+    /await streamRun\(context, gated, \{ \.\.\.options, isFlash \}\);/,
   );
   assert.doesNotMatch(ENTRY, /await streamRun\(context, args\b/);
 });
@@ -89,14 +91,14 @@ test("a refused or cancelled gate spawns nothing at all", () => {
 test("the runner knows whether the argv it is about to spawn is armed", () => {
   assert.match(
     ENTRY,
-    /const armedFlash = isFlashArgv\(armed\) && readFlashArgv\(armed\)\.isArmed;/,
+    /const isFlash = isFlashArgv\(gated\);/,
     "runAlpStreamed must classify the OUTGOING argv — reading `args` instead " +
       "would always be false, since the call sites never write --confirm",
   );
 });
 
 test("the gate runs before the spawn, not after it", () => {
-  const gate = ENTRY.indexOf("armFlashDispatch(");
+  const gate = ENTRY.indexOf("gateFlashDispatch(");
   const spawn = ENTRY.indexOf("streamRun(context");
   assert.ok(gate > 0 && spawn > 0);
   assert.ok(
@@ -146,7 +148,7 @@ test("every tan flash dispatch goes through the gated runner", () => {
     offenders,
     [],
     "these sites spawn `tan flash` through a runner that does NOT carry the " +
-      "consent gate. `armFlashDispatch` lives inside `runAlpStreamed`; a " +
+      "consent gate. `gateFlashDispatch` lives inside `runAlpStreamed`; a " +
       "flash dispatched through `runAlpCommand`/`runAlpAsync`/" +
       "`runAlpInTerminal` writes a device with no dialog and no `--confirm`.",
   );
@@ -213,12 +215,12 @@ const STREAM = ADAPTER.slice(
 test("cancelling an ARMED flash asks before it signals anything", () => {
   assert.match(
     STREAM,
-    /if \(!options\.armedFlash\) \{\s*\n\s*stop\(\);/,
+    /if \(!options\.isFlash\) \{\s*\n\s*stop\(\);/,
     "only a non-armed run may be stopped without asking",
   );
   assert.match(
     STREAM,
-    /confirmStopOfArmedFlash\(options\.name\)/,
+    /confirmStopOfFlash\(options\.name\)/,
     "a Cancel click on a live write must raise a second confirm — an " +
       "un-asked kill mid-write is the unbootable-board hazard the runner's " +
       "own header was written about",
@@ -240,7 +242,7 @@ test("cancelling an ARMED flash asks before it signals anything", () => {
 
 test("the second confirm names the unbootable-board risk in words", () => {
   const body = ADAPTER.slice(
-    ADAPTER.indexOf("async function confirmStopOfArmedFlash("),
+    ADAPTER.indexOf("async function confirmStopOfFlash("),
     ADAPTER.indexOf("function warnInterruptedFlash("),
   );
   assert.match(body, /unbootable/);
@@ -259,7 +261,7 @@ test("the second confirm names the unbootable-board risk in words", () => {
 test("a signal death of an armed flash surfaces the partial-write warning", () => {
   assert.match(
     STREAM,
-    /if \(options\.armedFlash\) warnInterruptedFlash\(options\.name, signal\);/,
+    /if \(options\.isFlash\) warnInterruptedFlash\(options\.name, signal\);/,
     "a flash killed by a signal must say so — silence here is a board left " +
       "in an unknown state with nothing on screen",
   );
