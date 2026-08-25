@@ -9,6 +9,7 @@ import { planInitArgv } from "@alp-sdk/core/project/initArgv";
 import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
 import {
   appDirOverrides,
+  orphanedAppDirs,
   applyCoreAssignments,
   companionCmakeLists,
   companionMainC,
@@ -507,6 +508,7 @@ export class NewProjectFlowPanel {
     const boardPath = path.join(projectDir, "board.yaml");
     let merged: BoardConfig | undefined;
     let overrides: { id: string; requested: string; kept: string }[] = [];
+    let orphans: { id: string; app: string; os: string }[] = [];
     try {
       const original = fs.readFileSync(boardPath, "utf8");
       const before = parseBoardConfig(original);
@@ -514,6 +516,7 @@ export class NewProjectFlowPanel {
       // wins (it holds the template's real source), but a customer who renamed
       // it and was silently ignored would find nothing on screen saying so.
       overrides = appDirOverrides(before, assignments);
+      orphans = orphanedAppDirs(before, assignments);
       const next = applyCoreAssignments(before, assignments);
       merged = next;
       fs.writeFileSync(boardPath, serializeBoardConfig(next, original), "utf8");
@@ -532,6 +535,32 @@ export class NewProjectFlowPanel {
         }),
       );
       return;
+    }
+
+    // A directory tan filled with the template's real source, whose core the
+    // customer then took the application away from (#582). Honoured, not
+    // prevented — but said out loud, because the code is still on disk and
+    // nothing builds it now.
+    if (orphans.length > 0) {
+      log(
+        `[new-project] orphaned app dir(s): ${orphans
+          .map((o) => `${o.id} -> ${o.app}`)
+          .join(", ")}`,
+      );
+      notifyAsync(
+        planFailure({
+          operation: "Assigning the project's core directories",
+          cause: orphans
+            .map(
+              (o) =>
+                `${o.id} is set to "${o.os}", so the project template's ` +
+                `source in "${o.app}" is not built by any core. Point a ` +
+                "Zephyr core at that directory, or delete it.",
+            )
+            .join(" "),
+          severity: "warning",
+        }),
+      );
     }
 
     if (overrides.length > 0) {
@@ -677,13 +706,28 @@ export class NewProjectFlowPanel {
     // Heterogeneous SoMs scaffold their companion cores + a default IPC channel
     // via `tan init --cores`, FILTERED through `planInitCores` (#528) — see that
     // module for the contract and for why no core is named as the app core.
-    const { argv: initArgs, zephyrCores: unscaffolded } = planInitArgv({
+    //
+    // BOTH the topology AND the customer's answers (#582). They answer
+    // different questions — `tan presets` reports which cores the part HAS,
+    // the Cores step records which the customer WANTS — and sending only the
+    // first meant a core set to "Off (skip core)" still reached `--cores` as an
+    // enabled runtime, dragging in, for a Cortex-A companion, a whole `ipc:`
+    // stanza nobody asked for. Sending only the second is measurably worse:
+    // 276 of 368 answer combinations are then refused with exit 2 /
+    // `init.invalid-cores`, against 0 today. `planInitCores` needs both.
+    const {
+      argv: initArgs,
+      zephyrCores: unscaffolded,
+      deferredCores,
+      unknownCores,
+    } = planInitArgv({
       templateId,
       sourceDir,
       projectName,
       parentDir,
       moduleId,
       cores: this.somModules.find((m) => m.id === moduleId)?.cores ?? [],
+      coreAssignments,
       sdkPath,
     });
     // `interactive: true`: reached only from the wizard's "Create" button
@@ -712,8 +756,13 @@ export class NewProjectFlowPanel {
       // scaffold onto any SoM (verified for E1M-NX9101 on the pinned tan).
       const refusal = classifyInitRefusal(outcome.envelope?.issues);
       if (refusal) {
-        const advice =
-          refusal.kind === "template-pinned-to-som"
+        // The core layout is refused on a different screen from the other two,
+        // so it gets its own route back (#582). tan's message names the core it
+        // would not accept, which no table here could.
+        const isCoreLayout = refusal.kind === "core-layout-refused";
+        const advice = isCoreLayout
+          ? "Go back to Cores and leave that core on its default runtime."
+          : refusal.kind === "template-pinned-to-som"
             ? "Choose the SoM it names, or go back and pick another project type."
             : "No SoM change helps here — go back and pick another project type, or start from an example, which brings its own board.yaml and scaffolds onto any SoM.";
         const picked = await notify(
@@ -724,13 +773,15 @@ export class NewProjectFlowPanel {
             // detail rather than in the sentence.
             detail: `${refusal.code}: ${templateId} + ${moduleId}`,
             severity: "warning",
-            actions: [{ id: "chooseProjectType" }],
+            actions: [
+              { id: isCoreLayout ? "chooseCoreLayout" : "chooseProjectType" },
+            ],
           }),
         );
-        if (picked === "chooseProjectType") {
+        if (picked === "chooseProjectType" || picked === "chooseCoreLayout") {
           const msg: ExtToWebviewMessage = {
             type: "newProjectFlowGoToStep",
-            stepId: "template",
+            stepId: isCoreLayout ? "cores" : "template",
           };
           void this.panel.webview.postMessage(msg);
         }
@@ -781,8 +832,50 @@ export class NewProjectFlowPanel {
     // beyond that is written here, on top of what tan produced — never instead
     // of it: tan owns `preset:`, `supported_boards:` and the SoM's topology,
     // and this pass re-derives none of them.
-    if (coreAssignments && coreAssignments.length > 0) {
-      this.applyCoreLayout(projectDir, projectName, coreAssignments);
+    //
+    // An answer naming a core this SoM does not declare is DROPPED here, at the
+    // boundary (#582). The assignments arrive in a webview message and the
+    // declared topology is the authority on which cores exist; writing one the
+    // part does not have would produce a board.yaml no SoM can build.
+    // `planInitCores` already refused to send it to tan — the second pass has
+    // no topology of its own, so the filter belongs here.
+    const declaredIds = new Set(
+      (this.somModules.find((m) => m.id === moduleId)?.cores ?? []).map(
+        (core) => core.id,
+      ),
+    );
+    if (unknownCores.length > 0) {
+      log(`[new-project] dropped unknown core(s): ${unknownCores.join(", ")}`);
+      notifyAsync(
+        planFailure({
+          operation: "Writing the project's core layout",
+          cause:
+            `${moduleId} does not have ${unknownCores.join(", ")}, so ` +
+            (unknownCores.length === 1 ? "that core was" : "those cores were") +
+            " left out of board.yaml. Pick the hardware again if this is the " +
+            "wrong module.",
+          severity: "warning",
+        }),
+      );
+    }
+    // Channel-only: every one of these IS carried by the second pass below, and
+    // the ones that need a sentence get their own (an unrecognised os through
+    // `unknownCoreOs`, an orphaned directory through `orphanedAppDirs`). What
+    // the log buys is the ability to see, after the fact, which answers
+    // `--cores` could not express for a given SoM.
+    if (deferredCores.length > 0) {
+      log(
+        "[new-project] deferred to the second pass: " +
+          deferredCores
+            .map((core) => `${core.id}=${core.requested}`)
+            .join(", "),
+      );
+    }
+    const applicable = (coreAssignments ?? []).filter((core) =>
+      declaredIds.has(core.id),
+    );
+    if (applicable.length > 0) {
+      this.applyCoreLayout(projectDir, projectName, applicable);
     }
 
     // Pin the chosen SDK for the new project so it opens with the right one

@@ -58,6 +58,7 @@ const ACTIONS: Record<
   // No `run`: the New Project panel owns the webview this navigates, so the
   // pick goes back to it (#530).
   chooseProjectType: { title: "Choose Another Project Type" },
+  chooseCoreLayout: { title: "Change Core Layout" },
   runDoctor: {
     title: "Run Doctor",
     run: () => vscode.commands.executeCommand("alp.toolchainDoctor"),

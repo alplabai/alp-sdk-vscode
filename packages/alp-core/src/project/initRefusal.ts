@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// The two ways `tan init` refuses a (template, SoM) pair (#530).
+// The ways `tan init` refuses what the wizard sends it (#530, #582).
 //
 // The New Project flow offers every template with every SoM, and 12 of the 44
 // pairs cannot be scaffolded. Measured against the pinned tan 0.6.0-rc1 with
@@ -35,7 +35,10 @@
  * `null`, not a third kind, so a refusal this extension has no guidance for
  * keeps tan's own reporting rather than being wrapped in a wrong sentence.
  */
-export type InitRefusalKind = "no-scaffold-for-som" | "template-pinned-to-som";
+export type InitRefusalKind =
+  | "no-scaffold-for-som"
+  | "template-pinned-to-som"
+  | "core-layout-refused";
 
 export interface InitRefusal {
   kind: InitRefusalKind;
@@ -52,6 +55,18 @@ export interface InitRefusal {
 const KINDS: Readonly<Record<string, InitRefusalKind>> = {
   "init.som-unsupported": "no-scaffold-for-som",
   "init.invalid-som": "template-pinned-to-som",
+  // `--cores` named something tan will not accept — in practice, the core it
+  // resolves as the plan's app core, spliced in as `:off`. `planInitCores` is
+  // built so no answer can produce that (#582): it never emits a
+  // declared-zephyr core at all, and the measured refusal count over four
+  // answers for every core of all eleven SoMs is 0 of 368.
+  //
+  // Classified anyway, because that 0 is a MEASUREMENT of one catalog against
+  // one pinned CLI, not a contract. A SoM whose app core is declared something
+  // other than `zephyr` would put the case back, and nothing in this repo would
+  // catch it — an unclassified refusal leaves the customer on a Confirm step
+  // whose Create button will fail again, with nothing saying where to go.
+  "init.invalid-cores": "core-layout-refused",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

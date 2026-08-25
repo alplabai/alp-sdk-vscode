@@ -76,9 +76,49 @@ test("the code travels as channel detail, never in the sentence", () => {
 test("pressing the button posts a step jump the webview understands", () => {
   // Arrange -- an awaited pick, then a message. Without the post, the button
   // is a dead end with a friendlier label.
-  assert.match(PANEL, /actions: \[\{ id: "chooseProjectType" \}\]/);
-  assert.match(PANEL, /picked === "chooseProjectType"/);
-  assert.match(PANEL, /type: "newProjectFlowGoToStep",\s*stepId: "template"/);
+  //
+  // Matched on the ACTION IDS and the STEP IDS rather than on one literal
+  // `actions: [{ id: "chooseProjectType" }]`. That literal pinned the shape of
+  // the argument, so adding the second route a refused core layout needs
+  // (#582 — the Cores step, since the template picker cannot fix a core
+  // layout) reddened a panel that still does everything this gate owes the
+  // reader. What it owes is that every route offers a button AND acts on it.
+  for (const action of ["chooseProjectType", "chooseCoreLayout"]) {
+    assert.match(
+      PANEL,
+      new RegExp(`id: [^\\n]*"${action}"`),
+      `${action} must be offered as a notification action`,
+    );
+    assert.match(
+      PANEL,
+      new RegExp(`picked === "${action}"`),
+      `${action} must be acted on, not just offered`,
+    );
+  }
+  // THE MAPPING, not merely the presence of both names. Checking that "cores"
+  // and "template" each appear somewhere in the file is satisfied by swapping
+  // them, and a swap sends a refused core layout to the template picker — which
+  // cannot fix a core layout — while a template refusal lands on Cores, which
+  // cannot fix that either. Measured: the inverted ternary passes the full
+  // suite, `pnpm run typecheck` (messages.ts declares `stepId: string`, so the
+  // swap is type-legal) and the render harness, which never sees a host-side
+  // ternary.
+  assert.match(
+    PANEL,
+    /stepId: isCoreLayout \? "cores" : "template"/,
+    "a refused core layout must route to the Cores step and every other " +
+      "refusal to the template picker — inverted, both buttons are dead ends",
+  );
+  assert.match(
+    PANEL,
+    /id: isCoreLayout \? "chooseCoreLayout" : "chooseProjectType"/,
+    "and the button must be labelled for the step it actually goes to",
+  );
+  assert.match(
+    PANEL,
+    /const isCoreLayout = refusal\.kind === "core-layout-refused"/,
+    "the branch must key on the classified kind, never on tan's prose",
+  );
 
   // ...and the webview acts on it.
   assert.match(VIEW, /msg\.type === "newProjectFlowGoToStep"/);
@@ -89,8 +129,11 @@ test("pressing the button posts a step jump the webview understands", () => {
   assert.match(VIEW, /if \(index >= 0\) goTo\(index\)/);
 });
 
-test('the step is named by id, and "template" is a step that exists', () => {
+test("every step the host can name is a step that exists", () => {
   // Arrange -- the host sends an ID precisely so an inserted step cannot
-  // silently repoint it, which only holds while the id is real.
+  // silently repoint it, which only holds while the id is real. Both routes are
+  // checked: a `stepId` the webview does not have is ignored outright, so a
+  // typo here is a button that does nothing.
   assert.match(VIEW, /\{ id: "template", title: "Template" \}/);
+  assert.match(VIEW, /\{ id: "cores", title: "Cores" \}/);
 });

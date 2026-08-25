@@ -187,6 +187,46 @@ export function appDirOverrides(
 }
 
 /**
+ * The cores tan had already given an application directory, which the customer
+ * then took the application away from.
+ *
+ * tan puts the template's REAL SOURCE in the app core's directory — `app: .`
+ * for `minimal-app`, measured on the pinned 0.6.0-rc1. Answering that core
+ * `off`, `yocto` or `baremetal` is a legitimate thing to want, and this pass
+ * honours it: the core stops being a Zephyr application and `app:` is dropped.
+ * What is left behind is a directory full of code that nothing builds.
+ *
+ * Reported rather than prevented, and rather than deleted. The customer may
+ * well mean it — a second Zephyr core can be pointed at that same directory —
+ * and deleting a freshly scaffolded source tree on their behalf is not a
+ * repair. But finding it by accident, weeks later, is the silent-divergence
+ * failure this whole area keeps producing.
+ *
+ * WHICH core tan gave the app to is read off tan's own board.yaml rather than
+ * guessed: `tan presets` does not report the app core (`soms[].cores[]` is
+ * `{id, os}`), so the generated file is the only place the answer exists.
+ */
+export function orphanedAppDirs(
+  board: BoardConfig,
+  assignments: readonly CoreAssignment[],
+): { id: string; app: string; os: string }[] {
+  const orphans: { id: string; app: string; os: string }[] = [];
+  for (const assignment of assignments) {
+    // An os `applyCoreAssignments` will not write cannot orphan anything: it
+    // DROPS the assignment (`narrowCoreOs` is null, the loop continues) and
+    // leaves tan's entry untouched, so the core is still running its
+    // application. Asking `takesApp` alone answered false for any unknown
+    // string and told the customer to delete a directory their core builds —
+    // while `unknownCoreOs` reported the opposite for the same input.
+    if (narrowCoreOs(assignment.os) === null) continue;
+    const app = board.cores?.[assignment.id]?.app;
+    if (!app || takesApp(assignment.os)) continue;
+    orphans.push({ id: assignment.id, app, os: assignment.os });
+  }
+  return orphans;
+}
+
+/**
  * Add the chosen cores' runtime and app directory to the board tan generated.
  *
  * IMMUTABLE: returns a new document and never touches the input. That is not
@@ -203,6 +243,9 @@ export function applyCoreAssignments(
 ): BoardConfig {
   if (assignments.length === 0) return board;
   const cores: Record<string, CoreEntry> = { ...(board.cores ?? {}) };
+  // The cores THIS call disables, so the `ipc:` prune below can be limited to
+  // them. See the prune for why the final state is the wrong key.
+  const switchedOff = new Set<string>();
   for (const assignment of assignments) {
     const os = narrowCoreOs(assignment.os);
     // Dropped rather than coerced — see `CORE_OS_VALUES`. `unknownCoreOs` is
@@ -223,9 +266,47 @@ export function applyCoreAssignments(
     } else if (assignment.app) {
       next.app = assignment.app;
     }
+    if (os === "off" && cores[assignment.id]?.os !== "off") {
+      switchedOff.add(assignment.id);
+    }
     cores[assignment.id] = next;
   }
-  return { ...board, cores };
+
+  // An `ipc:` entry whose endpoint was just turned off is not stale, it is
+  // FATAL. Measured on the pinned tan 0.6.0-rc1, on a project it had just
+  // created and validated clean:
+  //
+  //   validate.schema-violation | consistency: ipc entry 'alp_default_rpmsg'
+  //   references core 'm55_hp' which is os: off
+  //
+  // exit 2. tan writes that stanza itself whenever `--cores` names a Cortex-A
+  // companion, and the reachable path is ordinary: keep the companion (`yocto`,
+  // so the channel is written) and answer the app core `off`. Dropping the core
+  // without dropping its channels turns a green project into one that cannot
+  // build — a different failure, not a smaller one.
+  //
+  // KEYED ON WHAT THIS CALL DISABLED, never on the final state. A board that
+  // ARRIVED with a disabled endpoint is broken by something this call did not
+  // do, and quietly deleting the entry would remove the only record of it —
+  // while the customer's way out may well be turning that core back ON.
+  // `tan validate` names the entry; this function must not make it vanish
+  // first. Today there is exactly one production caller (the New Project
+  // wizard's second pass) and tan never hands it a board in that state, so the
+  // two keyings agree in practice; the contract is written for the next caller.
+  //
+  // Only entries that REFERENCE a just-disabled core go. A channel between
+  // cores that stay enabled is untouched, and a board with no `ipc:` key never
+  // gains one.
+  if (switchedOff.size === 0 || board.ipc === undefined) {
+    return { ...board, cores };
+  }
+  return {
+    ...board,
+    cores,
+    ipc: board.ipc.filter(
+      (entry) => !(entry.endpoints ?? []).some((id) => switchedOff.has(id)),
+    ),
+  };
 }
 
 /** CMake project names are C identifiers; the wizard's project name is
