@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// New Project has to stay the lead action on both surfaces, and stay reachable.
+// New Project has to lead Quick Actions on the Overview, and stay reachable in
+// the sidebar no matter what is collapsed or open.
 //
 // Two failures this closes, both of which shipped:
 //
-//  1. The command was listed TWICE in the Overview — once in `ACTIONS` and
-//     again in the ready-state array built inside the component — so the same
-//     action could drift apart, or appear on screen twice once a CTA existed.
-//     "Exactly once per surface" is the invariant; a second copy is not a
-//     styling question, it is two buttons that can disagree.
+//  1. On the Overview it was the SECOND button of the THIRD section. The
+//     Overview builds two different action lists — one for a workspace that is
+//     still being set up, one for a ready workspace — so "first" has to hold in
+//     both; ordering the list you happen to be looking at is how the other one
+//     drifts. A brief attempt to lift it out into a full-width CTA under the
+//     brand was reverted: at the Hub's real width the button read as a slab,
+//     which is why the invariant below is about ORDER inside Quick Actions and
+//     not about a hero element.
 //
 //  2. In the sidebar it was rendered only when no `board.yaml` existed, inside
 //     the "Project" section — and that section is `defaultOpen={boardYamlExists}`,
@@ -17,8 +21,8 @@
 //     what makes it un-collapsible; a test that only counted occurrences would
 //     have passed the whole time it was hidden.
 //
-// Source-level on purpose: what is being asserted is where the JSX sits
-// relative to other JSX, which is a structural property of the file, not
+// Source-level on purpose: what is being asserted is where a literal sits
+// relative to other literals, which is a structural property of the file, not
 // something a rendered snapshot states plainly.
 
 const test = require("node:test");
@@ -44,39 +48,58 @@ function occurrences(src) {
   return out;
 }
 
-test("New Project is wired exactly once per surface", () => {
-  for (const rel of [OVERVIEW_REL, SIDEBAR_REL]) {
-    const hits = occurrences(read(rel));
+/** The command id of the first entry of the action-list literal that starts at
+ *  `anchor`, so "is it first?" is asked of the list rather than of the file. */
+function firstCommandAfter(src, anchor) {
+  const at = src.indexOf(anchor);
+  assert.ok(at !== -1, `the action list anchored on \`${anchor}\` is gone`);
+  const match = /command:\s*"([^"]+)"/.exec(src.slice(at));
+  assert.ok(match, `no command found after \`${anchor}\``);
+  return match[1];
+}
+
+test("New Project leads Quick Actions in BOTH workspace states", () => {
+  const src = read(OVERVIEW_REL);
+  // The setup-state list, and the ready-state list built inside the component.
+  for (const anchor of [
+    "const ACTIONS: ActionItem[] = [",
+    "const actions: ActionItem[] = allReady",
+  ]) {
     assert.equal(
-      hits.length,
-      1,
-      `${rel} references ${COMMAND} ${hits.length} times. It must be wired ` +
-        "once: a second copy is a button that can drift from the first, and " +
-        "it is how the same action ended up in two places on the Overview.",
+      firstCommandAfter(src, anchor),
+      COMMAND,
+      `the list at \`${anchor}\` does not lead with New Project. Both lists ` +
+        `have to lead with it: whichever one you are not looking at is the ` +
+        `one that drifts.`,
     );
   }
 });
 
-test("the Overview wires it above the lead paragraph, not in Quick Actions", () => {
+test("the Overview offers it only through Quick Actions", () => {
   const src = read(OVERVIEW_REL);
-  const at = occurrences(src)[0];
-  const lead = src.indexOf("styles.lead");
-  assert.ok(lead !== -1, "styles.lead is gone — this arm's landmark moved");
-  assert.ok(
-    at < lead,
-    "New Project is wired after the lead paragraph, so it is no longer the " +
-      "page's first action. It belongs in the CTA above the prose; putting " +
-      "it back in a section is what buried it before.",
+  const hits = occurrences(src);
+  assert.equal(
+    hits.length,
+    2,
+    `the Overview references ${COMMAND} ${hits.length} times; it should be ` +
+      "exactly twice — once per state list. A third is a second button on " +
+      "screen at the same time, and a first-and-only means one state lost it.",
   );
   assert.ok(
-    !/label:\s*"New Project"/.test(src),
-    "New Project is back in an action-list literal. It renders as the CTA " +
-      "now; listing it as well puts the same command on screen twice.",
+    !/styles\.cta/.test(src),
+    "the full-width CTA is back. It was reverted on purpose: at the Hub's " +
+      "real width it renders as a slab across the panel.",
   );
 });
 
-test("the sidebar pins it above every collapsible section", () => {
+test("the sidebar wires it exactly once, pinned above every section", () => {
   const src = read(SIDEBAR_REL);
+  assert.equal(
+    occurrences(src).length,
+    1,
+    "the sidebar references New Project more than once — a second copy is a " +
+      "row that can drift from the pinned one.",
+  );
   const at = occurrences(src)[0];
   const firstSection = src.indexOf("<Section");
   assert.ok(
