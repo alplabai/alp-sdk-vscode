@@ -11,17 +11,24 @@
 //                       `build` yet (tan-cli#427)" — the capability is coming.
 //   compatibility    1  doctor --build, "Accepted for compatibility
 //                       (tan-cli#290)" — kept so old callers do not break.
-//   parity           2  renode --board-yaml/--image-bundle, "Accepted for
-//                       parity with every other command's global flag".
+//   parity           0  NO INSTANCE at tan 0.6.0. Its two were
+//                       `renode --board-yaml/--image-bundle`, "Accepted for
+//                       parity with every other command's global flag", and
+//                       v0.6.0 removed the `renode` verb (tan-cli#848, #584).
+//                       The kind stays in the union: it names a wording tan
+//                       uses, not a flag that happens to exist, and the next
+//                       command to say "accepted for parity" is classified on
+//                       the day it lands rather than falling through as
+//                       unknown.
 //   not-applicable   2  faultdecode --project/--sdk-root, "(unused:
 //                       faultdecode is HW-free)".
 //
 // Only the first will ever start doing something. Telling a customer that
 // `doctor --build` is "deferred, see tan-cli#427" would promise an arrival that
-// is not coming, and calling `renode --board-yaml` live would claim an effect
+// is not coming, and calling `faultdecode --project` live would claim an effect
 // it does not have. `inert` alone cannot separate them: it is a boolean, and
-// the reason lives in `marker` prose with a `ref` that is null for four of the
-// six markers.
+// the reason lives in `marker` prose with a `ref` that is null for two of the
+// four markers.
 //
 // So the kind is DECLARED in `src/` and held to the recording by a gate, the
 // way MODEL_SUBCOMMANDS and DEFERRED_BUILD_OPTIONS already are — not sniffed
@@ -36,13 +43,21 @@ const assert = require("node:assert/strict");
 const {
   inertKindOf,
   deferredBuildOptionMessage,
+  INERT_OPTIONS,
 } = require("../out/alpCli/pinnedSurface.js");
 
 test("each recorded kind of inertness is told apart", () => {
   assert.equal(inertKindOf("build", "--plan"), "deferred");
   assert.equal(inertKindOf("doctor", "--build"), "compatibility");
-  assert.equal(inertKindOf("renode", "--board-yaml"), "parity");
   assert.equal(inertKindOf("faultdecode", "--project"), "not-applicable");
+  // `parity` has NO instance to assert at this pin — see the header. Pinned as
+  // an absence rather than left unmentioned, so the day a `parity` flag lands
+  // this line fails and somebody adds the positive case.
+  assert.equal(
+    Object.values(INERT_OPTIONS).includes("parity"),
+    false,
+    "a `parity` flag exists again — add it to the three assertions above",
+  );
 });
 
 test("a live option has no kind at all", () => {
@@ -103,15 +118,18 @@ test("an inert flag that is NOT deferred is not promised an arrival", () => {
   // Reachable the moment a call site passes one, and the sentence must not
   // name tan-cli#427: `doctor --build` is kept for compatibility and is never
   // going to start working.
-  const message = deferredBuildOptionMessage("--board-yaml", "renode");
+  // `faultdecode --project`, not `renode --board-yaml`: the parity example
+  // this test used went with the verb tan v0.6.0 removed (#584). Same point,
+  // a kind that still has an instance.
+  const message = deferredBuildOptionMessage("--project", "faultdecode");
   assert.doesNotMatch(
     message,
     /tan-cli#427/,
-    `parity inertness is not the deferred kind — ${message}`,
+    `not-applicable inertness is not the deferred kind — ${message}`,
   );
   assert.doesNotMatch(
     message,
     /it does something/,
-    `\`tan renode --board-yaml\` is accepted and ignored — ${message}`,
+    `\`tan faultdecode --project\` is accepted and ignored — ${message}`,
   );
 });

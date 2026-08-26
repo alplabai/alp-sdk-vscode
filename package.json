@@ -205,11 +205,6 @@
         "category": "Alp"
       },
       {
-        "command": "alp.westAlpRenode",
-        "title": "Alp: Run in Renode (simulate)",
-        "category": "Alp"
-      },
-      {
         "command": "alp.openConfigurator",
         "title": "Alp: Open board configurator (GUI)",
         "category": "Alp",

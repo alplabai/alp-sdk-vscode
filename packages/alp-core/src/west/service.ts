@@ -110,17 +110,6 @@ export function createWestAlpCleanPlan(
   ]);
 }
 
-export function createWestAlpRenodePlan(
-  context: WestWorkspaceContext,
-  appPath: string,
-): WestCommandPlan {
-  return createWestCommandPlan(context, "Alp · Renode", [
-    "west",
-    "alp-renode",
-    appPath,
-  ]);
-}
-
 function createWestCommandPlan(
   context: WestWorkspaceContext,
   terminalName: string,

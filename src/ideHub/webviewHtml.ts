@@ -126,7 +126,6 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.westAlpClean",
   "alp.westAlpFlash",
   "alp.westAlpImage",
-  "alp.westAlpRenode",
   "alp.westBuild",
   "alp.westFlash",
   "alp.westRunNativeSim",

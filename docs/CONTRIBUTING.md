@@ -127,7 +127,7 @@ directory and put that directory on `PATH` (or symlink the launcher) — the
 - name: Install tan CLI
   run: |
     curl -fL --retry 3 -o tan.tar.gz \
-      https://github.com/alplabai/tan-cli/releases/download/v0.6.0-rc1/tan-x86_64-unknown-linux-gnu.tar.gz
+      https://github.com/alplabai/tan-cli/releases/download/v0.6.0/tan-x86_64-unknown-linux-gnu.tar.gz
     tar -xzf tan.tar.gz -C /usr/local/lib   # -> /usr/local/lib/tan/{tan,_internal/}
     ln -s /usr/local/lib/tan/tan /usr/local/bin/tan
 
@@ -151,7 +151,7 @@ alone:
 #   https://github.com/alplabai/tan-cli/releases
 #   tan-<triple>.tar.gz (Linux/macOS) or tan-<triple>.zip (Windows)
 curl -fL --retry 3 -o tan.tar.gz \
-  https://github.com/alplabai/tan-cli/releases/download/v0.6.0-rc1/tan-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/alplabai/tan-cli/releases/download/v0.6.0/tan-x86_64-unknown-linux-gnu.tar.gz
 
 # Transfer tan.tar.gz to the air-gapped machine, then there:
 tar -xzf tan.tar.gz -C /usr/local/lib   # -> /usr/local/lib/tan/{tan,_internal/}

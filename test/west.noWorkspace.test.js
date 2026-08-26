@@ -151,12 +151,6 @@ const COMMANDS = [
     argv: ["clean", "examples/multicore/rpmsg-v2n"],
   },
   {
-    id: "alp.westAlpRenode",
-    message: "Open a folder to run this project in Renode.",
-    terminal: "Alp Renode",
-    argv: ["renode", "examples/multicore/rpmsg-v2n"],
-  },
-  {
     id: "alp.westRunNativeSim",
     message: "Open a folder to run this project.",
     terminal: "Alp Run (native_sim)",

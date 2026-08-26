@@ -88,7 +88,7 @@ import {
  *  `src/alpCli/somCliFloor.ts` is the matching guard, and it compares against
  *  the PROBED version for exactly the reason `RENODE_CORE_CLI_VERSION` does. */
 
-export const SUPPORTED_CLI_VERSION = "0.6.0-rc1";
+export const SUPPORTED_CLI_VERSION = "0.6.0";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -217,6 +217,13 @@ export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   "0.5.0-rc4": ["win32/arm64", "linux/arm64"],
   "0.5.1": ["win32/arm64", "linux/arm64"],
   "0.6.0-rc1": ["win32/arm64", "linux/arm64"],
+  // MEASURED against the GA release, not assumed from the RC: `gh release view
+  // v0.6.0 --repo alplabai/tan-cli` lists the same four archives as v0.6.0-rc1
+  // — `tan-{aarch64,x86_64}-apple-darwin.tar.gz`,
+  // `tan-x86_64-pc-windows-msvc.zip`, `tan-x86_64-unknown-linux-gnu.tar.gz`.
+  // No `aarch64-pc-windows-msvc`, no `aarch64-unknown-linux-gnu`. Without this
+  // row the pin bump would promise those two hosts an asset and 404 them.
+  "0.6.0": ["win32/arm64", "linux/arm64"],
 };
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */

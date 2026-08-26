@@ -1,8 +1,8 @@
 {
-  "version": "0.6.0-rc1",
-  "capturedAt": "2026-08-21",
-  "sourceDigest": "6f5a85543cc915ec321c2e05e059911ac920126037819016bc344af14705b186",
-  "contentDigest": "7509672c22ee4e2db676205b6773a89cdef7b25870a33baa2c2e5803654d774f",
+  "version": "0.6.0",
+  "capturedAt": "2026-08-26",
+  "sourceDigest": "28112bfd9d9a28d1d0300e9701de8ce79e538bc1e318df222075919a997197ec",
+  "contentDigest": "78f6701b6d6107c13d1332a9eaf5bb4ab6153aafc4bf51a0e8b287cf75d93587",
   "globalOptions": [
     "--project",
     "--board-yaml",
@@ -1938,104 +1938,6 @@
         }
       }
     },
-    "renode": {
-      "maxPositionals": 1,
-      "subcommandValues": [],
-      "refusingSubcommands": {},
-      "options": {
-        "--board": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "SKU",
-          "valueOptional": false
-        },
-        "--board-yaml": {
-          "inert": true,
-          "ref": null,
-          "marker": "Accepted for parity with every other command's global flag;",
-          "metavar": "PATH",
-          "valueOptional": false
-        },
-        "--build-root": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "DIR",
-          "valueOptional": false
-        },
-        "--core": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "CORE_ID",
-          "valueOptional": false
-        },
-        "--expect": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "STR",
-          "valueOptional": false
-        },
-        "--format": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "<text|json>",
-          "valueOptional": false
-        },
-        "--help": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": null,
-          "valueOptional": false
-        },
-        "--image-bundle": {
-          "inert": true,
-          "ref": null,
-          "marker": "Accepted for parity with the dual-OS flow;",
-          "metavar": "DIR",
-          "valueOptional": false
-        },
-        "--log": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "FILE",
-          "valueOptional": false
-        },
-        "--project": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "PATH",
-          "valueOptional": false
-        },
-        "--sdk-root": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "PATH",
-          "valueOptional": false
-        },
-        "--sim-mode": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": null,
-          "valueOptional": false
-        },
-        "--timeout": {
-          "inert": false,
-          "ref": null,
-          "marker": null,
-          "metavar": "SECS",
-          "valueOptional": false
-        }
-      }
-    },
     "run": {
       "maxPositionals": 0,
       "subcommandValues": [],
@@ -2046,6 +1948,13 @@
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--confirm": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
           "valueOptional": false
         },
         "--core": {
