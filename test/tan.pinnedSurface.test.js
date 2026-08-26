@@ -448,13 +448,32 @@ test("a `deferred` classification is backed by the recording's own upstream ref"
   }
 });
 
-test("the classification is not vacuous: all four kinds are present", () => {
+test("the classification is not vacuous: three kinds are present, and parity is not", () => {
+  // A table that had collapsed to one kind would pass every assertion above
+  // while telling the customer the same thing about all 15 options.
+  //
+  // It was FOUR kinds over 17 options until #584. tan v0.6.0 removed the
+  // `renode` verb (tan-cli#848), and `renode --board-yaml` and
+  // `renode --image-bundle` were the only two `parity` flags in the recording,
+  // so that kind now has no instance at this pin.
+  //
+  // `"parity"` stays in the `InertKind` union deliberately: it names a WORDING
+  // tan uses ("Accepted for parity with every other command's global flag"),
+  // not a flag that happens to exist, so the next command to say it is
+  // classified on the day it lands instead of falling through as unknown.
+  // Asserted as an ABSENCE rather than dropped, so that day is not silent.
   const kinds = new Set(Object.values(INERT_OPTIONS));
   assert.deepEqual(
     [...kinds].sort(),
-    ["compatibility", "deferred", "not-applicable", "parity"],
-    "a table that had collapsed to one kind would pass every assertion above " +
-      "while telling the customer the same thing about all 17 options",
+    ["compatibility", "deferred", "not-applicable"],
+    "the kinds present in the table changed — if a `parity` flag is back, say " +
+      "so here and in test/tan.inertKind.test.js rather than widening this list",
+  );
+  assert.equal(
+    Object.keys(INERT_OPTIONS).length,
+    15,
+    "the recording carries 15 inert options at tan 0.6.0 (17 at 0.6.0-rc1, " +
+      "less the two renode flags); every one of them must be classified",
   );
 });
 

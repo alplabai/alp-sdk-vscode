@@ -1,0 +1,146 @@
+{
+  "command": "doctor",
+  "ok": false,
+  "exitCode": 4,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": "/home/dev/proj/board.yaml"
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "projectPin"
+  },
+  "data": {
+    "generatedAt": "2026-08-26T11:48:55Z",
+    "summary": {
+      "pass": 8,
+      "warn": 3,
+      "fail": 2
+    },
+    "checks": [
+      {
+        "name": "sdk",
+        "status": "pass",
+        "scope": "project",
+        "detail": "alp-sdk at /home/dev/alp-sdk (projectPin)"
+      },
+      {
+        "name": "boardYaml",
+        "status": "pass",
+        "scope": "project",
+        "detail": "board.yaml found"
+      },
+      {
+        "name": "workspace",
+        "status": "fail",
+        "scope": "project",
+        "detail": "no Zephyr workspace -- run `tan bootstrap` (reuses a compatible Zephyr, else bootstraps one)",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "westResolved",
+        "status": "fail",
+        "scope": "project",
+        "detail": "west resolved neither through the workspace venv nor PATH -- no build slice can be executed. Run `tan bootstrap` to create the workspace venv.",
+        "fix": "tan bootstrap"
+      },
+      {
+        "name": "zephyrSdkAvailableForHost",
+        "status": "pass",
+        "scope": "host",
+        "detail": "The Zephyr SDK publishes a host build for macos-aarch64."
+      },
+      {
+        "name": "homePath",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Home directory has no spaces: /home/dev"
+      },
+      {
+        "name": "hostPython",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Python 3.14 (`python3`) meets the effective floor 3.12 (/home/dev)."
+      },
+      {
+        "name": "pythonFloor",
+        "status": "warn",
+        "scope": "project",
+        "detail": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure.",
+        "fix": "Known, Zephyr-scoped skew (alp-sdk#1078) -- raising `prerequisites.pythonMinVersion` to 3.12 was tried and reverted, because that key also gates Yocto-only and metadata-only projects, which do not need it. Building for Zephyr on a host below 3.12 needs a newer interpreter -- see the `hostPython` check above."
+      },
+      {
+        "name": "hostPrerequisites",
+        "status": "pass",
+        "scope": "host",
+        "detail": "git, cmake, python3, ninja present (facts from alp-sdk /home/dev/alp-sdk/metadata/bootstrap.json)."
+      },
+      {
+        "name": "west",
+        "status": "warn",
+        "scope": "host",
+        "detail": "`west` is not on bare PATH. `westResolved` above is the check that answers whether a build slice can run -- it reports the binary one would actually execute. PATH absence on its own is the normal state before the workspace venv is activated in this shell.",
+        "fix": "If `westResolved` above also could not resolve one, run `tan bootstrap`; otherwise activate the workspace venv (its `bin`/`Scripts` directory holds the `west` launcher) so tools invoked directly find it too."
+      },
+      {
+        "name": "zephyrSdk",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Zephyr SDK toolchain detected."
+      },
+      {
+        "name": "setools",
+        "status": "unknown",
+        "scope": "host",
+        "detail": "AEN MRAM flashing over the SE-UART is Linux-only in this tree: scripts/west_commands/runners/alif_flash.py hard-codes `app-release-exec-linux`, so its bundle is `app-release-exec-linux-SE_FW_x.y.z`. Nothing to check on this host for THAT path -- run it from WSL2/Linux (Windows hosts pass the SE-UART through with usbipd). Flow D below is a different matter: it signs on Windows with the WINDOWS SETOOLS build, which is a different bundle from the `-linux` one named above -- point `--setools-dir` at it (measured: `app-gen-toc.exe` under a Windows `app-release-exec`, SETOOLS_version_SE_FW_1.110.00_DEV, signed an ATOC the part booted from)."
+      },
+      {
+        "name": "jlink",
+        "status": "warn",
+        "scope": "host",
+        "detail": "J-Link V9.26 (/usr/local/bin/JLinkExe) predates V9.46, which is where Alif's MRAM flash loader became built in -- Flow D has nothing to program MRAM with on this DLL. Flow D needs the `AE822FA0E5597LS0_M55_HE` part-number device profile (NOT the generic `Cortex-M55`, which has no MRAM loader) and a J-Link DLL V9.46+. Device profile resolved from: /home/dev/alp-sdk/metadata/socs/alif/ensemble/e8.json.",
+        "fix": "Upgrade the SEGGER J-Link pack to V9.46+."
+      },
+      {
+        "name": "sdkProvenance",
+        "status": "pass",
+        "scope": "project",
+        "detail": "alp-sdk 0.15.0 @ 3769febe"
+      }
+    ],
+    "nextSteps": [
+      "tan bootstrap",
+      "Known, Zephyr-scoped skew (alp-sdk#1078) -- raising `prerequisites.pythonMinVersion` to 3.12 was tried and reverted, because that key also gates Yocto-only and metadata-only projects, which do not need it. Building for Zephyr on a host below 3.12 needs a newer interpreter -- see the `hostPython` check above.",
+      "If `westResolved` above also could not resolve one, run `tan bootstrap`; otherwise activate the workspace venv (its `bin`/`Scripts` directory holds the `west` launcher) so tools invoked directly find it too.",
+      "Upgrade the SEGGER J-Link pack to V9.46+."
+    ],
+    "missingPrerequisites": null
+  },
+  "issues": [
+    {
+      "code": "doctor.workspace",
+      "severity": "error",
+      "message": "no Zephyr workspace -- run `tan bootstrap` (reuses a compatible Zephyr, else bootstraps one)"
+    },
+    {
+      "code": "doctor.west-resolved",
+      "severity": "error",
+      "message": "west resolved neither through the workspace venv nor PATH -- no build slice can be executed. Run `tan bootstrap` to create the workspace venv."
+    },
+    {
+      "code": "doctor.python-floor",
+      "severity": "warning",
+      "message": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure."
+    },
+    {
+      "code": "doctor.west",
+      "severity": "warning",
+      "message": "`west` is not on bare PATH. `westResolved` above is the check that answers whether a build slice can run -- it reports the binary one would actually execute. PATH absence on its own is the normal state before the workspace venv is activated in this shell."
+    },
+    {
+      "code": "doctor.jlink",
+      "severity": "warning",
+      "message": "J-Link V9.26 (/usr/local/bin/JLinkExe) predates V9.46, which is where Alif's MRAM flash loader became built in -- Flow D has nothing to program MRAM with on this DLL. Flow D needs the `AE822FA0E5597LS0_M55_HE` part-number device profile (NOT the generic `Cortex-M55`, which has no MRAM loader) and a J-Link DLL V9.46+. Device profile resolved from: /home/dev/alp-sdk/metadata/socs/alif/ensemble/e8.json."
+    }
+  ]
+}

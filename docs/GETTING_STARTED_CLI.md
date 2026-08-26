@@ -37,7 +37,7 @@ needs the `_internal/` directory that ships next to it:
 #   Linux arm64, Windows arm64
 mkdir -p ~/tan-cli && cd ~/tan-cli
 curl -fL --retry 3 -o tan.tar.gz \
-  https://github.com/alplabai/tan-cli/releases/download/v0.6.0-rc1/tan-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/alplabai/tan-cli/releases/download/v0.6.0/tan-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf tan.tar.gz   # extracts to ./tan/ (launcher + _internal/, already executable)
 export PATH="$HOME/tan-cli/tan:$PATH"   # add to your shell profile to persist
 tan --help
@@ -55,7 +55,7 @@ reproducibility. The VS Code extension provisions the same release asset
 automatically (see [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md));
 this guide is for terminal/CI use where you manage `tan` yourself.
 
-The tag above, `v0.6.0-rc1`, is the release this extension pins
+The tag above, `v0.6.0`, is the release this extension pins
 (`SUPPORTED_CLI_VERSION` in `src/alpCli/service.ts`); install that one for
 terminal use too, so the binary you type at is the binary every gate in this
 repo measures. It is deliberately a PRE-RELEASE (#502): below `0.6.0-rc1` tan's
