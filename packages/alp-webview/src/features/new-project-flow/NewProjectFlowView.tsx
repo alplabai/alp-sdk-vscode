@@ -729,8 +729,13 @@ function SdkStep({ entries, activePath, selected, onSelect }: SdkStepProps) {
 // ---------------------------------------------------------------------------
 
 export function NewProjectFlowView() {
-  const { state, projectTemplates, e1mModules, examplesUnavailableReason } =
-    useAppContext();
+  const {
+    state,
+    projectTemplates,
+    e1mModules,
+    examplesUnavailableReason,
+    beginTemplateReload,
+  } = useAppContext();
   const { state: stepper, goNext, goBack, goTo } = useStepper(STEPS);
 
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -855,6 +860,12 @@ export function NewProjectFlowView() {
   // divergent pick — issue #144).
   function handleSelectSdk(path: string) {
     setSelectedSdk(path);
+    // Put the catalogue back to "not arrived" BEFORE asking for the new one.
+    // Otherwise the previous SDK's templates keep rendering as final for the
+    // whole of a slow serial re-fetch, and stepping Back offers cards this SDK
+    // does not ship — `alp init --from-example` then fails with "was not
+    // found". The skeleton is what makes the wait legible instead.
+    beginTemplateReload();
     postMessage({ type: "reloadProjectTemplates", sdkPath: path || undefined });
   }
 

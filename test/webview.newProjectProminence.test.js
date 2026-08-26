@@ -48,47 +48,116 @@ function occurrences(src) {
   return out;
 }
 
-/** The command id of the first entry of the action-list literal that starts at
- *  `anchor`, so "is it first?" is asked of the list rather than of the file. */
-function firstCommandAfter(src, anchor) {
+/** The text of the array literal that starts at the first `[` after `anchor`,
+ *  brackets counted so a nested object does not end it early. */
+function arrayLiteralAfter(src, anchor) {
   const at = src.indexOf(anchor);
   assert.ok(at !== -1, `the action list anchored on \`${anchor}\` is gone`);
-  const match = /command:\s*"([^"]+)"/.exec(src.slice(at));
-  assert.ok(match, `no command found after \`${anchor}\``);
-  return match[1];
+  // From AFTER the anchor: the anchors contain `ActionItem[]`, whose own `[`
+  // would otherwise be read as the array and yield an empty list.
+  const open = src.indexOf("[", at + anchor.length);
+  assert.ok(open !== -1, `no array literal follows \`${anchor}\``);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "[") depth++;
+    else if (src[i] === "]") {
+      depth--;
+      if (depth === 0) return src.slice(open + 1, i);
+    }
+  }
+  assert.fail(`unterminated array literal after \`${anchor}\``);
+}
+
+/** The first element of an array literal's body, braces counted. */
+function firstElementOf(body) {
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === "{" || c === "[" || c === "(") depth++;
+    else if (c === "}" || c === "]" || c === ")") depth--;
+    else if (c === "," && depth === 0) return body.slice(0, i).trim();
+  }
+  return body.trim();
+}
+
+/**
+ * True when `element` is New Project — whether it is written inline or is an
+ * identifier pointing at a shared const.
+ *
+ * The identifier arm matters: hoisting the entry both lists duplicate into one
+ * `const` is the obvious correct refactor here, and an earlier version of this
+ * arm failed it — it scanned for the next `command:` string after the anchor,
+ * which skipped the identifier and matched the NEXT entry's literal instead. A
+ * gate that punishes de-duplicating the duplication it mandates gets deleted,
+ * and rightly.
+ */
+function elementIsNewProject(src, element) {
+  if (element.includes(COMMAND)) return true;
+  const identifier = /^[A-Za-z_$][\w$]*$/.exec(element);
+  if (!identifier) return false;
+  const at = src.indexOf(`const ${element}`);
+  if (at === -1) return false;
+  const semi = src.indexOf(";", at);
+  return src.slice(at, semi === -1 ? undefined : semi).includes(COMMAND);
 }
 
 test("New Project leads Quick Actions in BOTH workspace states", () => {
   const src = read(OVERVIEW_REL);
-  // The setup-state list, and the ready-state list built inside the component.
   for (const anchor of [
-    "const ACTIONS: ActionItem[] = [",
+    "const ACTIONS: ActionItem[] = ",
     "const actions: ActionItem[] = allReady",
   ]) {
-    assert.equal(
-      firstCommandAfter(src, anchor),
-      COMMAND,
-      `the list at \`${anchor}\` does not lead with New Project. Both lists ` +
-        `have to lead with it: whichever one you are not looking at is the ` +
-        `one that drifts.`,
+    const first = firstElementOf(arrayLiteralAfter(src, anchor));
+    assert.ok(
+      elementIsNewProject(src, first),
+      `the list at \`${anchor}\` leads with \`${first}\`, not New Project. ` +
+        `Both lists have to lead with it: whichever one you are not looking ` +
+        `at is the one that drifts.`,
     );
   }
 });
 
+test("nothing re-orders the actions between the list and the screen", () => {
+  const src = read(OVERVIEW_REL);
+  // Leading the source array means nothing if the render flips it back. This
+  // is the hole the ordering arm above cannot see on its own.
+  assert.ok(
+    !/actions[^;]*\.(reverse|sort)\s*\(/.test(src),
+    "the actions array is reversed or sorted before rendering, so leading " +
+      "the literal no longer decides what the user sees first.",
+  );
+  const css = read("features/overview/OverviewView.module.css");
+  const grid = css.slice(
+    css.indexOf(".actionGrid"),
+    css.indexOf("}", css.indexOf(".actionGrid")),
+  );
+  assert.ok(
+    !/row-reverse|column-reverse|\border\b\s*:/.test(grid),
+    "the action grid reverses or re-orders its items in CSS, which moves New " +
+      "Project away from first without touching the array at all.",
+  );
+});
+
 test("the Overview offers it only through Quick Actions", () => {
   const src = read(OVERVIEW_REL);
-  const hits = occurrences(src);
-  assert.equal(
-    hits.length,
-    2,
-    `the Overview references ${COMMAND} ${hits.length} times; it should be ` +
-      "exactly twice — once per state list. A third is a second button on " +
-      "screen at the same time, and a first-and-only means one state lost it.",
-  );
   assert.ok(
     !/styles\.cta/.test(src),
     "the full-width CTA is back. It was reverted on purpose: at the Hub's " +
       "real width it renders as a slab across the panel.",
+  );
+  // Deliberately NOT an occurrence count. Two inline copies and one shared
+  // const are both correct shapes, and pinning the number outlaws the second.
+  const inLists = [
+    "const ACTIONS: ActionItem[] = ",
+    "const actions: ActionItem[] = allReady",
+  ].every(
+    (anchor) =>
+      arrayLiteralAfter(src, anchor).includes(COMMAND) ||
+      elementIsNewProject(src, firstElementOf(arrayLiteralAfter(src, anchor))),
+  );
+  assert.ok(
+    inLists,
+    "New Project is no longer reachable from both action lists.",
   );
 });
 
@@ -125,12 +194,18 @@ test("the sidebar no longer hides it once a project is open", () => {
       "vanished the moment a project existed; the pinned wrapper is what " +
       "holds it in both states.",
   );
+  // The region starts at the header, NOT at the wrapper: a guard that re-hides
+  // the row is written AROUND it, so a scan beginning at the wrapper reads the
+  // guard as being outside itself and passes the exact regression it names.
+  const header = src.indexOf("</header>");
+  assert.ok(header !== -1, "the panel header is gone — landmark is stale");
   const firstSection = src.indexOf("<Section");
-  const region = src.slice(pinned, firstSection);
+  const region = src.slice(header, firstSection);
   assert.ok(
     region.includes(COMMAND),
-    "the pinned wrapper no longer contains New Project — the row moved out " +
-      "of the one place that cannot be collapsed or conditioned away.",
+    "New Project is no longer wired between the header and the first " +
+      "<Section> — it moved out of the one place that cannot be collapsed " +
+      "or conditioned away.",
   );
   assert.ok(
     !/boardYamlExists|wsName/.test(region),

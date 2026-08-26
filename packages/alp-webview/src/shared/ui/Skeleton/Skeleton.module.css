@@ -32,6 +32,14 @@
 .block {
   display: flex;
   flex-direction: column;
+  /* Its children are EMPTY divs sized in percentages, so they contribute no
+     intrinsic width. In a parent that stretches its items this never showed;
+     in one that does not (`align-items: flex-start`, as the template cards
+     use) the block shrink-to-fits to 0px and the lines take vertical space
+     while painting nothing. Measured in a browser: block 0px wide, both lines
+     0px, 36px tall. Filling the parent costs the stretch case nothing — 300px
+     with and without this rule. */
+  width: 100%;
 }
 
 /* The shimmer is the system's only continuous animation, so it is also the

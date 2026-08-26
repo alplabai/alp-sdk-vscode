@@ -143,10 +143,12 @@ interface SdkRowCardProps {
 
 /** A single SDK row: version + date + state badges, state-aware actions, and an
  *  expandable changelog. Models the VS Code Extensions-view item. */
-/** How many placeholder rows the loading list draws. Not a guess at the real
- *  count — enough to show that a LIST is coming, and short enough that the
- *  arriving rows do not shrink the section. */
-const SKELETON_ROW_COUNT = 3;
+/** How many placeholder rows the loading list draws. Matched to
+ *  `VISIBLE_RELEASES` below, which is what the arrived list actually shows
+ *  before the "Show N older releases" toggle: three placeholders against a
+ *  two-row list shrank the section on arrival, which is the jump these exist
+ *  to remove, just in the other direction. */
+const SKELETON_ROW_COUNT = 2;
 
 /** A release row's shape, without the release. Reuses `.releaseCard` and its
  *  head so the real rows land on the same geometry: the previous loading state

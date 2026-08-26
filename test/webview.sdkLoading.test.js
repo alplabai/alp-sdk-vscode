@@ -27,14 +27,14 @@ const src = fs.readFileSync(path.join(SRC, SDK_REL), "utf8");
 
 /** The JSX of the branch taken while the release list has not arrived. */
 function pendingBranch() {
-  const at = src.indexOf("{releases === null ? (");
-  assert.ok(at !== -1, "the `releases === null` branch is gone");
-  const end = src.indexOf(") : rows.length === 0 ?", at);
-  assert.ok(
-    end !== -1,
-    "the branch's empty-list arm moved — landmark is stale",
-  );
-  return src.slice(at, end);
+  // Whitespace-tolerant: byte-exact landmarks fail on a Prettier re-wrap of
+  // perfectly correct code, and a gate that reds on formatting gets disabled.
+  const open = /\{\s*releases\s*===\s*null\s*\?/.exec(src);
+  assert.ok(open, "the `releases === null` branch is gone");
+  const rest = src.slice(open.index);
+  const close = /\)\s*:\s*rows\.length\s*===\s*0\s*\?/.exec(rest);
+  assert.ok(close, "the branch's empty-list arm moved — landmark is stale");
+  return rest.slice(0, close.index);
 }
 
 test("a pending release list draws row placeholders, not a spinner", () => {
@@ -45,7 +45,7 @@ test("a pending release list draws row placeholders, not a spinner", () => {
       "reserve the shape it will occupy.",
   );
   assert.ok(
-    !/<Spinner/.test(branch),
+    !/Spinner/.test(branch),
     "the pending branch is back to a spinner. One spinning row standing in " +
       "for a list of cards is what made the section jump on arrival.",
   );
@@ -94,5 +94,21 @@ test("an install in flight still shows a spinner, not a skeleton", () => {
     "the install-progress block was turned into a skeleton. That claims an " +
       "install has a known shape and no progress to report; it has the " +
       "opposite of both.",
+  );
+});
+
+test("the placeholder count matches what the arrived list actually shows", () => {
+  const number = (name) => {
+    const m = new RegExp(`${name}\\s*=\\s*(\\d+)`).exec(src);
+    assert.ok(m, `${name} is gone`);
+    return Number(m[1]);
+  };
+  assert.equal(
+    number("SKELETON_ROW_COUNT"),
+    number("VISIBLE_RELEASES"),
+    "the placeholder count no longer matches VISIBLE_RELEASES, which is what " +
+      'the arrived list shows before the "Show N older releases" toggle. ' +
+      "Three placeholders against a two-row list shrink the section on " +
+      "arrival — the same jump these exist to remove, in the other direction.",
   );
 });

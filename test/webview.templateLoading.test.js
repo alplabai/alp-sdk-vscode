@@ -82,7 +82,10 @@ test("placeholder cards reuse the real card's geometry", () => {
 });
 
 test("the shimmer stops under prefers-reduced-motion", () => {
-  const css = read(SKELETON_CSS_REL);
+  // Comments stripped first: the previous version of this arm asked only
+  // whether ".line" appeared inside the media block, which a comment saying
+  // "/* .line left shimmering */" satisfies while .line keeps animating.
+  const css = read(SKELETON_CSS_REL).replace(/\/\*[\s\S]*?\*\//g, " ");
   const at = css.indexOf("@media (prefers-reduced-motion: reduce)");
   assert.ok(
     at !== -1,
@@ -91,16 +94,73 @@ test("the shimmer stops under prefers-reduced-motion", () => {
       "tokens.css does NOT reach it, and DESIGN.md's claim that this stops " +
       "entirely becomes false again.",
   );
-  const block = css.slice(at, css.indexOf("}", css.indexOf("}", at) + 1) + 1);
-  assert.ok(
-    /animation:\s*none/.test(block),
-    "the reduced-motion block does not stop the animation",
-  );
+  // Every `selectors { body }` rule inside the media block.
+  const body = css.slice(css.indexOf("{", at) + 1);
+  const stopped = new Set();
+  for (const rule of body.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!/animation:\s*none/.test(rule[2])) continue;
+    for (const sel of rule[1].split(",")) stopped.add(sel.trim());
+  }
   for (const selector of [".skeleton", ".line"]) {
     assert.ok(
-      block.includes(selector),
-      `${selector} keeps shimmering under reduced motion — the block covers ` +
-        "only part of the component, which is worse than not claiming to.",
+      stopped.has(selector),
+      `${selector} is not in the selector list of a rule that sets ` +
+        "`animation: none` under reduced motion. `.line` is the multi-line " +
+        "variant — most placeholders on screen — so covering only part of " +
+        "the component is worse than not claiming to cover it.",
     );
   }
+});
+
+test("a lines placeholder fills its parent instead of collapsing to nothing", () => {
+  const css = read(SKELETON_CSS_REL).replace(/\/\*[\s\S]*?\*\//g, " ");
+  const at = css.indexOf(".block");
+  assert.ok(at !== -1, ".block is gone");
+  const rule = css.slice(at, css.indexOf("}", at));
+  assert.ok(
+    /width:\s*100%/.test(rule),
+    "`.block` no longer fills its parent. Its children are EMPTY divs sized " +
+      "in percentages, so they contribute no intrinsic width: in a parent " +
+      "that does not stretch its items (`align-items: flex-start`, which the " +
+      "template cards use) the block shrink-to-fits to 0px and the lines take " +
+      "vertical space while painting nothing. Measured in a browser before " +
+      "this rule existed: block 0px, both lines 0px, 36px tall.",
+  );
+});
+
+test("an explicit Skeleton height is not floored by the min-height", () => {
+  const tsx = read("shared/ui/Skeleton/Skeleton.tsx");
+  assert.ok(
+    /minHeight:\s*height/.test(tsx),
+    "`.skeleton` carries `min-height: 16px` for the no-height case, so an " +
+      "explicit smaller height is silently raised to 16px — a caller asking " +
+      "for 12px to match real content gets geometry it did not ask for, and " +
+      "the placeholder stops matching what replaces it.",
+  );
+});
+
+test("the template catalogue goes back to pending before it is re-fetched", () => {
+  const flow = read(FLOW_REL);
+  const post = flow.indexOf('type: "reloadProjectTemplates"');
+  assert.ok(post !== -1, "the catalogue re-fetch is gone");
+  const before = flow.slice(0, post);
+  assert.ok(
+    /beginTemplateReload\(\)/.test(
+      before.slice(before.lastIndexOf("function handleSelectSdk")),
+    ),
+    "the SDK change re-fetches the catalogue without putting it back to " +
+      "pending first. `projectTemplates === null` is then true exactly ONCE " +
+      "per panel, so every later fetch renders the PREVIOUS SDK's templates " +
+      "as final and selectable — and stepping Back offers cards this SDK does " +
+      'not ship, which fails as `alp init --from-example` "was not found".',
+  );
+  const ctx = read("shared/AppContext.tsx");
+  assert.ok(
+    !/beginTemplateReload[\s\S]{0,120}setE1mModules\(null\)/.test(ctx),
+    "clearing the catalogue now also clears the module list. Those arrive in " +
+      "the same message, and the Cores step rebuilds its defaults whenever " +
+      "the module list changes identity — clearing it hands " +
+      "reconcileCoreChoices an empty core list and wipes answers the customer " +
+      "already gave (#582).",
+  );
 });
