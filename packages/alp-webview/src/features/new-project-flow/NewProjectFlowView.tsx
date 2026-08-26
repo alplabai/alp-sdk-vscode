@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppContext } from "../../shared/AppContext";
 import type { StepDef } from "../../shared/hooks/useStepper";
 import { useStepper } from "../../shared/hooks/useStepper";
 import { coresSummary, runtimeOptions } from "../../shared/coreRuntime";
 import { isSafeAppDir, normaliseAppDir } from "../../shared/appDir";
+import { reconcileTemplateSelection } from "../../shared/templateSelection";
 import {
   Button,
   Card,
@@ -29,6 +30,11 @@ const STEPS: StepDef[] = [
   { id: "confirm", title: "Confirm" },
 ];
 
+/** Where to send someone whose template stopped existing. Derived from STEPS by
+ *  id rather than hardcoded: the host already addresses steps by id and never by
+ *  index, for the same reason (#530). */
+const TEMPLATE_STEP_INDEX = STEPS.findIndex((step) => step.id === "template");
+
 /** Last path segment (cross-platform); the cache dir is named after the tag. */
 function pathTail(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
@@ -37,6 +43,20 @@ function pathTail(p: string): string {
 // ---------------------------------------------------------------------------
 // Step components
 // ---------------------------------------------------------------------------
+
+/** Says why a choice the customer already made is no longer on screen.
+ *  `role="status"` rather than `alert`: nothing is broken and nothing is
+ *  blocked — the wizard has already put them back on the step that fixes it. */
+function TemplateNotice({ text }: { text: string }) {
+  return (
+    <p className={styles.templateNotice} role="status">
+      <span className={styles.templateNoticeIcon} aria-hidden="true">
+        <Icon name="warning" size={14} />
+      </span>
+      {text}
+    </p>
+  );
+}
 
 /** How many placeholder cards a loading group draws. Not a guess at the real
  *  count — it is about one grid row at a typical panel width, enough to say
@@ -82,6 +102,9 @@ interface TemplateStepProps {
    *  Starters and examples travel in ONE `projectTemplatesData` message, so
    *  until it lands the whole step is blank, not just the Examples half. */
   loading: boolean;
+  /** Why the previous selection is gone, when a catalogue reload dropped it.
+   *  Null the rest of the time. */
+  notice: string | null;
 }
 
 function TemplateStep({
@@ -90,6 +113,7 @@ function TemplateStep({
   onSelect,
   examplesUnavailableReason,
   loading,
+  notice,
 }: TemplateStepProps) {
   const starters = templates.filter((t) => t.category === "starter");
   const examples = templates.filter((t) => t.category === "example");
@@ -160,6 +184,7 @@ function TemplateStep({
     return (
       <>
         <p className={styles.stepHeading}>Choose a project type</p>
+        {notice && <TemplateNotice text={notice} />}
         <TemplateSkeletonGroup label="Starters" />
         <TemplateSkeletonGroup label="Examples" />
       </>
@@ -169,6 +194,7 @@ function TemplateStep({
   return (
     <>
       <p className={styles.stepHeading}>Choose a project type</p>
+      {notice && <TemplateNotice text={notice} />}
 
       {starters.length > 0 && (
         <>
@@ -739,6 +765,12 @@ export function NewProjectFlowView() {
   const { state: stepper, goNext, goBack, goTo } = useStepper(STEPS);
 
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  /** The dropped template's TITLE, when a reload removed it — kept so the
+   *  notice can name what the customer picked rather than echo a raw id. */
+  const [droppedTemplate, setDroppedTemplate] = useState<string | null>(null);
+  /** The title of whatever is selected right now. Read at drop time, when the
+   *  template is already gone from the catalogue and cannot be looked up. */
+  const selectedTitleRef = useRef("");
   const [selectedModule, setSelectedModule] = useState("");
   const [selectedSdk, setSelectedSdk] = useState(""); // "" = default SDK
   const [coreChoices, setCoreChoices] = useState<CoreChoice[]>([]);
@@ -783,6 +815,24 @@ export function NewProjectFlowView() {
       reconcileCoreChoices(previous, mod?.cores ?? []),
     );
   }, [selectedModule, e1mModules]);
+
+  // Reconcile the template selection against an arriving catalogue, the same
+  // rule `reconcileCoreChoices` uses for cores (#582): KEEP the customer's
+  // answer when the id still exists — most SDK switches ship the same template
+  // and losing the answer for nothing is its own defect — and drop it only when
+  // the id is genuinely gone.
+  //
+  // Without this the selection survived a catalogue it is not in: `canAdvance`
+  // only checks the id is non-empty, ConfirmStep's `templates.find` misses and
+  // renders the RAW ID, and Create posts it anyway — `alp init --from-example`
+  // then fails with "was not found" (#591).
+  useEffect(() => {
+    const kept = reconcileTemplateSelection(selectedTemplate, projectTemplates);
+    if (kept === selectedTemplate) return;
+    setDroppedTemplate(selectedTitleRef.current || selectedTemplate);
+    setSelectedTemplate(kept);
+    goTo(TEMPLATE_STEP_INDEX);
+  }, [projectTemplates, selectedTemplate, goTo]);
 
   const templates = projectTemplates ?? [];
   const modules = e1mModules ?? [];
@@ -858,6 +908,14 @@ export function NewProjectFlowView() {
   // Examples list the wizard shows matches the SDK the project is scaffolded
   // from (else `alp init --from-example` fails with "was not found" on a
   // divergent pick — issue #144).
+  function handleSelectTemplate(id: string) {
+    setSelectedTemplate(id);
+    selectedTitleRef.current = templates.find((t) => t.id === id)?.title ?? id;
+    // Picking again answers the notice; leaving it up would keep explaining a
+    // choice the customer has now replaced.
+    setDroppedTemplate(null);
+  }
+
   function handleSelectSdk(path: string) {
     setSelectedSdk(path);
     // Put the catalogue back to "not arrived" BEFORE asking for the new one.
@@ -921,7 +979,11 @@ export function NewProjectFlowView() {
                   templates={templates}
                   loading={projectTemplates === null}
                   selected={selectedTemplate}
-                  onSelect={setSelectedTemplate}
+                  onSelect={handleSelectTemplate}
+                  notice={
+                    droppedTemplate &&
+                    `SDK ${sdkLabel} does not ship "${droppedTemplate}". Pick another project type.`
+                  }
                   examplesUnavailableReason={examplesUnavailableReason}
                 />
               )}
