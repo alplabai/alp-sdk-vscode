@@ -217,6 +217,16 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
     "flash this device",
   );
   if (!target) return;
+  // No confirm flag here on purpose, and the reason is not the one tan's
+  // `--help` gives. `tan flash --help` says a bare run "previews, writes
+  // nothing, exits non-zero"; measured against tan v0.6.0 that holds for only
+  // three of the six backends (tan-cli#796), and a Zephyr slice is programmed
+  // by this argv exactly as written. What stands between this line and the
+  // write is `gateFlashDispatch` (`src/flash/gate.ts`), which shows the
+  // customer what the manifest says is about to be programmed and spawns
+  // nothing until they accept. `--confirm` here would additionally arm the
+  // three backends that DO honour it — an irreversible write nobody asked for
+  // — and `test/flash.dispatch.test.js` fails the build if anyone writes it.
   await runAlpStreamed(context, ["flash", ...target.appArg], {
     name: FLASH_RUN_NAME,
     cwd: target.cwd,
@@ -348,11 +358,11 @@ function westFlash(): void {
   // Run it under the SHARED flash name, not the plan's own "Alp · Flash": this
   // programs the same board as `tan flash`, and two names are two reservations
   // — i.e. two programmers writing at once. The plan is rebuilt, not mutated.
-  executeWestPlan({ ...plan, terminalName: FLASH_RUN_NAME });
+  void executeWestPlan({ ...plan, terminalName: FLASH_RUN_NAME });
 }
 
 function westUpdate(): void {
-  executeWestPlan(createWestUpdatePlan(collectWestWorkspaceContext()));
+  void executeWestPlan(createWestUpdatePlan(collectWestWorkspaceContext()));
 }
 
 async function westRunNativeSim(

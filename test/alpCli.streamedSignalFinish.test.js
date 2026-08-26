@@ -174,9 +174,14 @@ test("a run killed by a signal still signals that it finished", async () => {
 });
 
 test("a signal death carries no exit code, so it cannot read as success", async () => {
+  // `["build"]`, not `["flash"]`. This is about the EXIT CODE of a signal
+  // death, which has nothing to do with flashing — and a `flash` argv now goes
+  // through `gateFlashDispatch`, which refuses a project with no
+  // `build/system-manifest.yaml` and spawns nothing, so the assertion below
+  // would read an empty array rather than a killed run (#540).
   const { adapter, finished, context } = loadAdapter({ signal: "SIGKILL" });
 
-  await adapter.runAlpStreamed(context, ["flash"], { name: "Alp Flash" });
+  await adapter.runAlpStreamed(context, ["build"], { name: "Alp Build" });
 
   assert.equal(
     finished[0].code,
