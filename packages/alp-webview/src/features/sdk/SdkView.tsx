@@ -8,14 +8,11 @@ import {
   StatusChip,
 } from "../../shared/ui";
 import layout from "../../shared/ui/layout.module.css";
-import type {
-  ChipState,
-  LocalSdkEntry,
-  SdkRelease,
-  SdkStatus,
-} from "../../types";
+import type { ChipState, SdkStatus } from "../../types";
 import styles from "./SdkView.module.css";
 import { useSdk } from "./useSdk";
+import type { SdkRow } from "../../shared/sdkRows";
+import { buildRows } from "../../shared/sdkRows";
 
 function sdkChip(readiness: SdkStatus["readiness"]): ChipState {
   switch (readiness) {
@@ -44,91 +41,6 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
-}
-
-/** Last path segment (cross-platform) — the install dir is named after the tag. */
-function pathTail(p: string): string {
-  return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
-}
-
-/** The local installation matching a release tag, if any (side-by-side cache). */
-function installedFor(
-  tag: string,
-  entries: LocalSdkEntry[],
-): LocalSdkEntry | undefined {
-  return entries.find(
-    (e) =>
-      pathTail(e.path) === tag ||
-      (e.version !== null && e.version === tag.replace(/^v/, "")),
-  );
-}
-
-type SdkSource = "available" | "installed" | "linked";
-
-/** One unified row in the SDK list — a release and/or a local install. */
-interface SdkRow {
-  id: string;
-  label: string;
-  date?: string;
-  changelog?: string;
-  /** Release tag to install (only for not-yet-installed releases). */
-  installTag?: string;
-  /** Path of the local install (for activate / remove). */
-  localPath?: string;
-  isActive: boolean;
-  /** Why it is active — see LocalSdkEntry.activeSource. Absent on rows that are
-   *  not active. A row that is active by fallback ("auto") is NOT pinned, so it
-   *  gets the honest badge and "Use" rather than "Active" and "Deactivate". */
-  activeSource?: "pinned" | "auto";
-  source: SdkSource;
-}
-
-/** Merge the remote release list with local installs into one keyed list. */
-function buildRows(
-  releases: SdkRelease[] | null,
-  locals: LocalSdkEntry[],
-): SdkRow[] {
-  const rows: SdkRow[] = [];
-  const usedPaths = new Set<string>();
-
-  for (const r of releases ?? []) {
-    const local = installedFor(r.tag, locals);
-    if (local) usedPaths.add(local.path);
-    const source: SdkSource = !local
-      ? "available"
-      : local.removable
-        ? "installed"
-        : "linked";
-    rows.push({
-      id: r.tag,
-      label: r.tag,
-      date: r.publishedAt || undefined,
-      changelog: r.releaseNotes || r.releaseNotesSummary || undefined,
-      installTag: local ? undefined : r.tag,
-      localPath: local?.path,
-      isActive: !!local?.active,
-      activeSource: local?.active ? (local.activeSource ?? "auto") : undefined,
-      source,
-    });
-  }
-
-  // Local installs with no matching release (linked checkouts, manual caches).
-  for (const e of locals) {
-    if (usedPaths.has(e.path)) continue;
-    rows.push({
-      id: e.path,
-      label: e.version ?? pathTail(e.path),
-      localPath: e.path,
-      isActive: !!e.active,
-      // Absent `activeSource` falls back to "auto", not "pinned": host and
-      // webview ship in the same VSIX so the field is always there in practice,
-      // and if it ever isn't, under-claiming is the harmless direction.
-      activeSource: e.active ? (e.activeSource ?? "auto") : undefined,
-      source: e.removable ? "installed" : "linked",
-    });
-  }
-
-  return rows;
 }
 
 interface SdkRowCardProps {
