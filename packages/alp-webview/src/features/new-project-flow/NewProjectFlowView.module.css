@@ -89,6 +89,32 @@
 
 /* ── Template grid ── */
 
+/* Says why a choice the customer already made is gone. Sits directly under the
+   step heading, above the cards, so it is read before the thing it is about is
+   picked again. Warning colour, not error: nothing is broken and nothing is
+   blocked — the wizard has already returned to the step that fixes it. */
+.templateNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2, 4px);
+  margin: 0 0 var(--space-4, 8px);
+  color: var(--status-warn);
+  /* Bare, like the package's other 48 uses: the token is
+     `calc(var(--vscode-font-size, 13px) - 1px)`, so any literal fallback is
+     only true at the default font size. */
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  max-width: var(--prose-max);
+}
+
+.templateNoticeIcon {
+  display: flex;
+  /* Optical alignment with the first text line rather than the flex baseline,
+     which a 14px icon would sit below. */
+  padding-top: 1px;
+  flex-shrink: 0;
+}
+
 .templateGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
