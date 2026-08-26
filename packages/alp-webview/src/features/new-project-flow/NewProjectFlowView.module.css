@@ -111,7 +111,16 @@
     border-color var(--duration-base) var(--ease-out);
 }
 
-.templateCard:hover {
+/* Placeholder cards borrow .templateCard for its geometry only, so the real
+   cards land on the same grid with no jump. They are <div>s, not buttons —
+   strip the affordances so nothing invites a click on a card that is not
+   there yet. */
+.templateCard[data-skeleton] {
+  cursor: default;
+  pointer-events: none;
+}
+
+.templateCard:hover:not([data-skeleton]) {
   background: var(--surface-hover);
 }
 

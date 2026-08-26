@@ -33,3 +33,18 @@
   display: flex;
   flex-direction: column;
 }
+
+/* The shimmer is the system's only continuous animation, so it is also the
+   only one that keeps moving for someone who asked the OS for less of it.
+   The duration above is a literal 1.5s, not a token, so the blanket
+   `--duration-*: 0ms` override in tokens.css never reached it — the claim in
+   DESIGN.md that this "stops entirely under prefers-reduced-motion" was not
+   true until this rule existed. A flat surface still reads as a placeholder;
+   it just does not loop. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .line {
+    animation: none;
+    background: var(--surface-hover);
+  }
+}
