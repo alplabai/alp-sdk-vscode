@@ -211,8 +211,6 @@ export const INERT_OPTIONS: Readonly<Record<string, InertKind>> = {
   // PARITY — accepted so this command's flag surface matches its siblings'.
   // Same permanence as compatibility, different reason, and the distinction is
   // worth keeping: a customer told "for parity" can stop looking for an effect.
-  "renode --board-yaml": "parity",
-  "renode --image-bundle": "parity",
 
   // NOT APPLICABLE — the recording's words are "(unused: faultdecode is
   // HW-free)". The flag is meaningless for this command by nature, not

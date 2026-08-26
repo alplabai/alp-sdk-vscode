@@ -49,8 +49,9 @@ Good news: the extension **already follows native-first** for its core shell.
 - **`registerTreeViews`** — the Activity-Bar container **ALP IDE** with five
   native `TreeDataProvider`s: **Setup**, **West Workspaces**, **Projects**, **SDK
   Manager**, and **Build & Flash**. The Build & Flash tree already lists West
-  Build / Flash / Run (native_sim) / ALP Image / ALP Flash / Renode / West
-  Update / Clean as clickable items.
+  Build / Flash / Run (native_sim) / ALP Image / ALP Flash / West Update /
+  Clean as clickable items. (Renode was in that list until tan v0.6.0 removed
+  the verb — #584.)
 
 Webview **panels** (full-tab `WebviewPanel`s opened by commands) cover the
 genuinely visual / flow surfaces: `openConfigurator`, `toolchainDoctor`,

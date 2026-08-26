@@ -89,7 +89,9 @@ Envelope commands: `validate`, `generate`, `inspect`, `presets`, `explain`,
 check/zoo/add/prep/run/ab` (offline pre-flight / prep / host-reference — no
 toolchain; §6b).
 
-Channel commands: `build`, `image`, `flash`, `clean`, `renode`.
+Channel commands: `build`, `image`, `flash`, `clean`. (`renode` was a fifth
+until tan v0.6.0 removed the verb — tan-cli#848, #584. Sections below that
+describe it in the past tense are kept as the record of what shipped when.)
 
 Terminal commands: `bootstrap`, `sdk install` (git clone), and the build/flash
 workflow. The extension **already** runs west builds in a terminal

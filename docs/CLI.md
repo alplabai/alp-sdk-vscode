@@ -81,7 +81,6 @@ The CLI should expose these top-level command families:
 - `tan image`
 - `tan flash`
 - `tan clean`
-- `tan renode`
 - `tan run`
 - `tan sdk`
 - `tan diff`
@@ -89,12 +88,16 @@ The CLI should expose these top-level command families:
 - `tan explain`
 - `tan size`
 - `tan model` (subcommands: `build`, `list`, `info`, `doctor`, `check`, `zoo`,
-  `add`, `prep`, `run`, `ab` — see §2.3; at 0.6.0-rc1 only `build` is
+  `add`, `prep`, `run`, `ab` — see §2.3; at 0.6.0 only `build` is
   implemented, tan-cli#674)
 
-The extension shells eighteen of these: `bootstrap`, `build`, `clean`,
+`tan renode` was on this list until tan v0.6.0, which removed the verb, its
+modules and all 27 published `renode.*` issue codes (tan-cli#848). The
+extension's Renode command went with it (#584).
+
+The extension shells seventeen of these: `bootstrap`, `build`, `clean`,
 `debug-config`, `doctor`, `examples`, `explain`, `flash`, `generate`, `image`,
-`init`, `model`, `presets`, `renode`, `run`, `sdk`, `size`, and `validate` —
+`init`, `model`, `presets`, `run`, `sdk`, `size`, and `validate` —
 from call sites spread across `src/` (`src/west.ts`, `src/bootstrap.ts`,
 `src/loader.ts`, `src/ideHub/buildPlanPanel.ts`,
 `src/ideHub/newProjectFlowPanel.ts`, `src/debug/service.ts`,
@@ -136,7 +139,7 @@ The name parity with this CLI is deliberate and is NOT a competing
 implementation:
 
 - **`tan X` is the portable counterpart of `west alp-X`.** For the overlapping
-  verbs (`build`/`image`/`flash`/`clean`/`renode`) `tan` drives the per-core
+  verbs (`build`/`image`/`flash`/`clean`) `tan` drives the per-core
   dispatch itself rather than shelling out to `west alp-X` verbatim (see §6a
   of `EXTENSION_CLI_INTEGRATION.md`) — orchestration logic still has one
   source of truth, the SDK's `alp_orchestrate` package, which `tan` consumes

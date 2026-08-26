@@ -71,22 +71,22 @@
 //     limit (a), which is about flags the runner adds. This one is about flags
 //     written at the call site in a shape the extractor cannot reduce.
 //
-//     `src/west.ts:338` really does send `tan renode --core <id>`:
+//     THE WORKED EXAMPLE IS GONE, THE LIMIT IS NOT. Until #584 this paragraph
+//     cited `src/west.ts`'s Renode call:
 //
 //         const coreArg = core === null ? [] : ["--core", core];
 //         await runAlpStreamed(context, ["renode", ...target.appArg, ...coreArg], …)
 //
 //     `coreArg` is a `const`, but its initializer is a TERNARY, not an array
-//     literal, so the spread resolves to nothing and the record for that site
-//     reads `flags: []`. The site is still emitted, and it is pinned in
-//     `EXPECTED_PARTIAL` — so the SITE cannot vanish quietly. Its `--core`
-//     can, and does: assertions 3 and 4 never see the flag at all.
+//     literal, so the spread resolved to nothing and the record for that site
+//     read `flags: []`: the SITE was pinned in `EXPECTED_PARTIAL` and could not
+//     vanish quietly, but its `--core` was never checked against the pinned
+//     CLI at all. tan v0.6.0 removed the `renode` verb (tan-cli#848) and that
+//     call site went with it, so no site in the tree has this shape today.
 //
-//     Nothing is broken by this today. `--core` exists on `tan renode` at
-//     0.6.0-rc1 and is live, so the call is correct — it is correct
-//     UNVERIFIED, which is the distinction worth writing down. If `--core`
-//     were renamed upstream, this gate would stay green while the Renode
-//     button broke.
+//     Kept written down because the limit is a property of the EXTRACTOR, not
+//     of that one call: the next conditional spread anywhere in the tree gets
+//     the same silent treatment, and it will look green.
 //
 //     NOT FIXED HERE, deliberately. Resolving a ternary means picking a branch
 //     or reporting both, and the extractor's whole discipline is that it
@@ -447,10 +447,12 @@ test("every flag this extension sends is accepted by the command it is sent to",
  *
  * When `ref` is null the old message read "(no issue named in the help text)"
  * and stopped — which is indistinguishable from a flag nobody has looked at,
- * and it discards what the CLI itself said. Two of the four inert wordings
- * cite no issue at this pin (`renode --board-yaml`, `renode --image-bundle`,
- * `faultdecode --project`, `faultdecode --sdk-root`), so this is not a corner:
- * it is four of seventeen. `marker` carries that wording verbatim, and quoting
+ * and it discards what the CLI itself said. Two inert wordings cite no issue
+ * at this pin (`faultdecode --project`, `faultdecode --sdk-root`), so this is
+ * not a corner: it is two of fifteen. It was four of seventeen until tan
+ * v0.6.0 removed the `renode` verb, which took `renode --board-yaml` and
+ * `renode --image-bundle` with it (#584). `marker` carries that wording
+ * verbatim, and quoting
  * it restores the whole point of `ref` — the reader can tell "this CLI's own
  * help declares the flag dead" from "somebody may have typed it wrong".
  */
@@ -776,7 +778,6 @@ const EXPECTED_PARTIAL = [
   'src/west.ts  ["clean", ...target.appArg]',
   'src/west.ts  ["flash", ...target.appArg]',
   'src/west.ts  ["image", ...target.appArg]',
-  'src/west.ts  ["renode", ...target.appArg, ...coreArg]',
 ];
 
 /** One pinned-list check, run twice. A multiset diff, not a set diff: two
@@ -986,12 +987,15 @@ test("the vendored surface is a faithful recording, not an edited file", async (
       option("doctor", "--build")?.inert,
       true,
     ],
-    [
-      '`renode --board-yaml` is inert ("Accepted for parity …") — src/west.ts ' +
-        "already spawns `tan renode`",
-      option("renode", "--board-yaml")?.inert,
-      true,
-    ],
+    // RETIRED with the verb, deliberately (#584). This anchor named
+    // `renode --board-yaml` as inert while `src/west.ts` spawned `tan renode`
+    // anyway. tan v0.6.0 removed the verb entirely (tan-cli#848) along with
+    // all 27 `renode.*` issue codes, so there is no flag left to be inert and
+    // no call site left to care: the recording drops from 32 commands to 31
+    // and from 17 inert options to 15. Retired here rather than left to fail,
+    // because this gate's own message says a moved pin that resolves an anchor
+    // upstream is good news and the anchor should go in the commit that says
+    // so.
     [
       '`faultdecode --project` is inert ("(unused: faultdecode is HW-free)")',
       option("faultdecode", "--project")?.inert,
