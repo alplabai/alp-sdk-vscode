@@ -143,6 +143,31 @@ interface SdkRowCardProps {
 
 /** A single SDK row: version + date + state badges, state-aware actions, and an
  *  expandable changelog. Models the VS Code Extensions-view item. */
+/** How many placeholder rows the loading list draws. Matched to
+ *  `VISIBLE_RELEASES` below, which is what the arrived list actually shows
+ *  before the "Show N older releases" toggle: three placeholders against a
+ *  two-row list shrank the section on arrival, which is the jump these exist
+ *  to remove, just in the other direction. */
+const SKELETON_ROW_COUNT = 2;
+
+/** A release row's shape, without the release. Reuses `.releaseCard` and its
+ *  head so the real rows land on the same geometry: the previous loading state
+ *  was a single spinner line, and the section jumped every time the list
+ *  arrived. */
+function SdkRowSkeleton() {
+  return (
+    <div className={styles.releaseCard} aria-hidden="true">
+      <div className={styles.releaseCardHead}>
+        <div className={styles.releaseTagBlock}>
+          <Skeleton width={96} height={14} />
+          <Skeleton width={64} height={12} />
+        </div>
+        <Skeleton width={72} height={22} />
+      </div>
+    </div>
+  );
+}
+
 function SdkRowCard({
   row,
   expanded,
@@ -444,9 +469,14 @@ export function SdkView({ compact = false }: { compact?: boolean }) {
       )}
 
       {releases === null ? (
-        <div className={layout.loadingRow}>
-          <Spinner />
-          <span className={layout.setupRowDesc}>Loading SDK list…</span>
+        <div
+          className={styles.releaseList}
+          role="status"
+          aria-label="Loading the SDK list"
+        >
+          {Array.from({ length: SKELETON_ROW_COUNT }).map((_, index) => (
+            <SdkRowSkeleton key={index} />
+          ))}
         </div>
       ) : rows.length === 0 ? (
         <p className={`${layout.setupRowDesc} ${styles.emptyState}`}>

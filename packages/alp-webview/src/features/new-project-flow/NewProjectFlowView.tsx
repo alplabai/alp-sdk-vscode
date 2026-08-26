@@ -38,12 +38,50 @@ function pathTail(p: string): string {
 // Step components
 // ---------------------------------------------------------------------------
 
+/** How many placeholder cards a loading group draws. Not a guess at the real
+ *  count — it is about one grid row at a typical panel width, enough to say
+ *  "cards are coming, here" without pretending to know how many. */
+const SKELETON_CARD_COUNT = 3;
+
+/** A heading plus a row of card-shaped placeholders. They reuse `.templateCard`
+ *  so the real cards land on exactly the same geometry and the layout does not
+ *  jump when the catalogue arrives. */
+function TemplateSkeletonGroup({ label }: { label: string }) {
+  return (
+    <>
+      <p className={styles.groupLabel}>{label}</p>
+      <div
+        className={styles.templateGrid}
+        role="status"
+        aria-label={`Loading ${label.toLowerCase()}`}
+      >
+        {Array.from({ length: SKELETON_CARD_COUNT }).map((_, index) => (
+          <div
+            key={index}
+            className={styles.templateCard}
+            data-skeleton=""
+            aria-hidden="true"
+          >
+            <Skeleton width={20} height={20} />
+            <Skeleton width="60%" />
+            <Skeleton lines={2} />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 interface TemplateStepProps {
   templates: ProjectTemplate[];
   selected: string;
   onSelect: (id: string) => void;
   /** tan's own words for why there are no examples, when it gave a reason. */
   examplesUnavailableReason: string | null;
+  /** The catalogue has not arrived yet — distinct from "it arrived empty".
+   *  Starters and examples travel in ONE `projectTemplatesData` message, so
+   *  until it lands the whole step is blank, not just the Examples half. */
+  loading: boolean;
 }
 
 function TemplateStep({
@@ -51,6 +89,7 @@ function TemplateStep({
   selected,
   onSelect,
   examplesUnavailableReason,
+  loading,
 }: TemplateStepProps) {
   const starters = templates.filter((t) => t.category === "starter");
   const examples = templates.filter((t) => t.category === "example");
@@ -114,6 +153,18 @@ function TemplateStep({
     if (ungrouped.length > 0) sections.push({ name: null, items: ungrouped });
     return sections;
   }, [filteredExamples]);
+
+  // Both groups are placeholdered, not just Examples: they arrive together, so
+  // an empty Starters row during the wait would claim this SDK ships none.
+  if (loading) {
+    return (
+      <>
+        <p className={styles.stepHeading}>Choose a project type</p>
+        <TemplateSkeletonGroup label="Starters" />
+        <TemplateSkeletonGroup label="Examples" />
+      </>
+    );
+  }
 
   return (
     <>
@@ -678,8 +729,13 @@ function SdkStep({ entries, activePath, selected, onSelect }: SdkStepProps) {
 // ---------------------------------------------------------------------------
 
 export function NewProjectFlowView() {
-  const { state, projectTemplates, e1mModules, examplesUnavailableReason } =
-    useAppContext();
+  const {
+    state,
+    projectTemplates,
+    e1mModules,
+    examplesUnavailableReason,
+    beginTemplateReload,
+  } = useAppContext();
   const { state: stepper, goNext, goBack, goTo } = useStepper(STEPS);
 
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -804,6 +860,12 @@ export function NewProjectFlowView() {
   // divergent pick — issue #144).
   function handleSelectSdk(path: string) {
     setSelectedSdk(path);
+    // Put the catalogue back to "not arrived" BEFORE asking for the new one.
+    // Otherwise the previous SDK's templates keep rendering as final for the
+    // whole of a slow serial re-fetch, and stepping Back offers cards this SDK
+    // does not ship — `alp init --from-example` then fails with "was not
+    // found". The skeleton is what makes the wait legible instead.
+    beginTemplateReload();
     postMessage({ type: "reloadProjectTemplates", sdkPath: path || undefined });
   }
 
@@ -857,6 +919,7 @@ export function NewProjectFlowView() {
               {stepper.currentIndex === 0 && (
                 <TemplateStep
                   templates={templates}
+                  loading={projectTemplates === null}
                   selected={selectedTemplate}
                   onSelect={setSelectedTemplate}
                   examplesUnavailableReason={examplesUnavailableReason}

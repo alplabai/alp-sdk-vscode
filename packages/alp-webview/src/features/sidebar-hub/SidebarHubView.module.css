@@ -50,6 +50,23 @@
 }
 
 /* ── Section ──────────────────────────────────────────────────────────── */
+/* The pinned New Project row. Deliberately NOT restyled: it is the same
+   ActionRow the rest of the panel uses, so it reads as part of the panel
+   rather than an ad in it. All this rule does is separate it from the
+   collapsible sections below.
+   The separator carries `--border-default` behind `--border-widget`, the
+   spelling 20 other rules in this package use. All six stock VS Code themes
+   DO define `widget.border` (Dark Modern #313131, Light Modern #E5E5E5,
+   Dark+/Dark VS #303031, Light+/Light VS #d4d4d4), so this is not a fix for a
+   blank stock theme — it is for a third-party theme that omits it, where an
+   unpainted separator would let this row read as the Setup section's first
+   item, which is the one thing pinning it was meant to prevent. */
+.pinnedAction {
+  padding-bottom: var(--space-2, 4px);
+  margin-bottom: var(--space-1, 2px);
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+}
+
 .section {
   display: flex;
   flex-direction: column;

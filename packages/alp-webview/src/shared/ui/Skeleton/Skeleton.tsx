@@ -27,7 +27,10 @@ export function Skeleton({ width, height, radius, lines }: SkeletonProps) {
       className={styles.skeleton}
       role="status"
       aria-label="Loading…"
-      style={{ width, height, borderRadius: radius }}
+      // `.skeleton` carries `min-height: 16px` for the no-height case, which
+      // would otherwise silently floor an explicit smaller height — a caller
+      // asking for 12px got 16px and quietly lost the geometry it was matching.
+      style={{ width, height, minHeight: height, borderRadius: radius }}
     />
   );
 }

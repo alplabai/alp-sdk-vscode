@@ -1,10 +1,11 @@
 import {
   createContext,
+  type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
 import {
   PROTOCOL_VERSION,
@@ -26,6 +27,25 @@ export interface AppContextValue {
   /** tan's own words for why the example catalogue is empty, or null when it is
    *  legitimately empty. See ProjectTemplatesDataMessage. */
   examplesUnavailableReason: string | null;
+  /**
+   * Put the catalogue back to "not arrived" before asking the host to re-fetch
+   * it, so `projectTemplates === null` keeps meaning what it says.
+   *
+   * Without this the null is true exactly ONCE per panel: the only other
+   * setter is the `projectTemplatesData` arm, so after the first message the
+   * flag can never go back. A wizard that re-fetches on every SDK change would
+   * then render the PREVIOUS SDK's catalogue as final and selectable while the
+   * new one is still being fetched — and that fetch is slow (the host runs
+   * `explain`, then one `explain --template <id>` per template, then
+   * `examples`, serially).
+   *
+   * It deliberately does NOT clear `e1mModules`, which arrives in the same
+   * message: the Cores step rebuilds its defaults whenever the module list
+   * changes identity, and clearing it would hand `reconcileCoreChoices` an
+   * empty core list and wipe answers the customer already gave — the data loss
+   * #582 exists to prevent.
+   */
+  beginTemplateReload: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -85,6 +105,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
+  const beginTemplateReload = useCallback(() => setProjectTemplates(null), []);
+
   const value = useMemo(
     () => ({
       state,
@@ -95,6 +117,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       projectTemplates,
       e1mModules,
       examplesUnavailableReason,
+      beginTemplateReload,
     }),
     [
       state,
@@ -105,6 +128,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       projectTemplates,
       e1mModules,
       examplesUnavailableReason,
+      beginTemplateReload,
     ],
   );
 

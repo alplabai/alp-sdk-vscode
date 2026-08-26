@@ -233,9 +233,12 @@ const PANELS: PanelCardProps[] = [
   },
 ];
 
+// New Project leads both lists. It is the action someone opening this panel
+// most often came for, and it stays first in either state — a configured
+// workspace is not a reason to bury the way to start another project.
 const ACTIONS: ActionItem[] = [
-  { icon: "wrench", label: "Setup Wizard", command: "alp.openSetupFlow" },
   { icon: "filePlus", label: "New Project", command: "alp.newProjectWizard" },
+  { icon: "wrench", label: "Setup Wizard", command: "alp.openSetupFlow" },
   {
     icon: "refresh",
     label: "Run Bootstrap",
@@ -263,12 +266,12 @@ export function OverviewView() {
   // Build instead. Before that, keep the setup-oriented actions.
   const actions: ActionItem[] = allReady
     ? [
-        { icon: "play", label: "Build", command: "alp.westBuild" },
         {
           icon: "filePlus",
           label: "New Project",
           command: "alp.newProjectWizard",
         },
+        { icon: "play", label: "Build", command: "alp.westBuild" },
         { icon: "settings", label: "Settings", command: "alp.openSettings" },
       ]
     : ACTIONS;
