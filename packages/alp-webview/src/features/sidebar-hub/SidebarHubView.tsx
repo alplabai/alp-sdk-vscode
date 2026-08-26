@@ -255,6 +255,22 @@ export function SidebarHubView() {
           aria-label="Alp Lab"
         />
       </header>
+
+      {/* Pinned outside every Section on purpose. This row used to live inside
+          "Project", rendered only when no board.yaml existed — and that section
+          defaults to collapsed in exactly that case, so the one moment the
+          action was offered was the one moment it started hidden. Out here it
+          cannot be collapsed away, and it no longer disappears once a project
+          is open: starting a second project is a normal thing to do. */}
+      <div className={styles.pinnedAction}>
+        <ActionRow
+          icon="filePlus"
+          label="New Project"
+          desc="Create or open an Alp project"
+          command="alp.newProjectWizard"
+        />
+      </div>
+
       <Section title="Setup">
         <ActionRow
           icon="book"
@@ -302,20 +318,13 @@ export function SidebarHubView() {
       </Section>
 
       <Section title="Project" defaultOpen={workspace.boardYamlExists}>
-        {workspace.boardYamlExists && wsName ? (
+        {workspace.boardYamlExists && wsName && (
           <StatusRow
             icon="sliders"
             label={wsName}
             value="Active project"
             health="ok"
             command="alp.openConfigurator"
-          />
-        ) : (
-          <ActionRow
-            icon="filePlus"
-            label="New Project"
-            desc="Create or open an Alp project"
-            command="alp.newProjectWizard"
           />
         )}
         <ActionRow

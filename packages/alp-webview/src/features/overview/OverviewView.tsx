@@ -7,7 +7,7 @@
 import alplabLogo from "../../assets/alplab-logo-white.svg?inline";
 import { useAppContext } from "../../shared/AppContext";
 import type { IconName } from "../../shared/ui";
-import { Icon, Skeleton, StatusChip } from "../../shared/ui";
+import { Button, Icon, Skeleton, StatusChip } from "../../shared/ui";
 import { SdkView } from "../sdk";
 import type { AlpIdeState, ChipState } from "../../types";
 import { postMessage } from "../../vscode";
@@ -233,9 +233,11 @@ const PANELS: PanelCardProps[] = [
   },
 ];
 
+// New Project is deliberately absent here and from the ready-state list below:
+// it is the page's lead action and renders once, as the CTA under the brand.
+// Listing it in Quick Actions too would put the same command on screen twice.
 const ACTIONS: ActionItem[] = [
   { icon: "wrench", label: "Setup Wizard", command: "alp.openSetupFlow" },
-  { icon: "filePlus", label: "New Project", command: "alp.newProjectWizard" },
   {
     icon: "refresh",
     label: "Run Bootstrap",
@@ -264,11 +266,6 @@ export function OverviewView() {
   const actions: ActionItem[] = allReady
     ? [
         { icon: "play", label: "Build", command: "alp.westBuild" },
-        {
-          icon: "filePlus",
-          label: "New Project",
-          command: "alp.newProjectWizard",
-        },
         { icon: "settings", label: "Settings", command: "alp.openSettings" },
       ]
     : ACTIONS;
@@ -278,6 +275,21 @@ export function OverviewView() {
       <Brand subtitle="Alp IDE" />
 
       <div className={styles.body}>
+        {/* The page's lead action, above the prose that describes the state.
+            Starting a project is what someone opening this panel most often
+            came to do, and it was previously the second button of the third
+            section. Rendered in both states — a configured workspace is not a
+            reason to hide the way to start another one. */}
+        <div className={styles.cta}>
+          <Button
+            appearance="primary"
+            onClick={() => run("alp.newProjectWizard")}
+          >
+            <Icon name="filePlus" size={16} />
+            New Project
+          </Button>
+        </div>
+
         <p className={styles.lead}>
           {allReady
             ? "Workspace is configured and ready for development."

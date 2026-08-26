@@ -50,6 +50,17 @@
 }
 
 /* ── Section ──────────────────────────────────────────────────────────── */
+/* The pinned New Project row. Deliberately NOT restyled: it is the same
+   ActionRow the rest of the panel uses, so it reads as part of the panel
+   rather than an ad in it. All this rule does is separate it from the
+   collapsible sections below, with the same 1px rule the panel uses
+   elsewhere. */
+.pinnedAction {
+  padding-bottom: var(--space-2, 4px);
+  margin-bottom: var(--space-1, 2px);
+  border-bottom: 1px solid var(--border-widget);
+}
+
 .section {
   display: flex;
   flex-direction: column;

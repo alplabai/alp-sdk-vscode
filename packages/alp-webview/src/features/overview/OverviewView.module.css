@@ -59,6 +59,17 @@
   max-width: var(--content-max);
 }
 
+/* The lead action, above the prose. `display: grid` is what stretches the
+   single Button child to the row's width — Button is inline-flex and takes no
+   className, so the width lives here rather than in the component.
+   Capped at the same measure as .lead so the two read as one column: on a
+   narrow Hub panel that is the full width, and on a wide editor it stops
+   before the button becomes a 1600px slab. */
+.cta {
+  display: grid;
+  max-width: var(--prose-max);
+}
+
 .lead {
   font-size: var(--font-size-base);
   color: var(--text-secondary);
