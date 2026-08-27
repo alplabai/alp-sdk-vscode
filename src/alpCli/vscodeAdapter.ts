@@ -2466,6 +2466,20 @@ export async function runAlpInTerminal(
   args: string[],
   options: { name: string; cwd: string | undefined },
 ): Promise<void> {
+  // #596: this is the SECOND spawn channel, and it had no gate at all.
+  // `gateFlashDispatch` lived in `runAlpStreamed` alone, whose header calls
+  // it "unconditional, on every argv" — true of that function, not of this
+  // extension. No caller builds a flashing argv today (["bootstrap"],
+  // ["build"], ["run"]), but `tan run` accepts `--flash` and
+  // `westRunNativeSim` already routes ["run"] through here. A gate a channel
+  // opts into is a gate the next channel forgets, which IS defect #540.
+  //
+  // BEFORE resolving the binary, so a refusal never costs a CLI download.
+  // The retry path below re-enters this function and therefore re-asks: one
+  // consent authorises one dispatch, and re-asking is the safe direction.
+  const gated = await gateFlashDispatch(args, options.cwd);
+  if (gated === null) return;
+
   let binary: ResolvedBinary;
   try {
     // Every caller runs a terminal command the user just triggered (a build/
@@ -2487,7 +2501,10 @@ export async function runAlpInTerminal(
     }
     return;
   }
-  const finalArgs = withSdkRoot(args);
+  // The GATED argv, not the raw one: an approved flash is armed with tan's
+  // `--confirm` by the gate, and spawning `args` here would drop it and
+  // preview instead of write.
+  const finalArgs = withSdkRoot(gated);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (terminal: ${options.name})`,
   );

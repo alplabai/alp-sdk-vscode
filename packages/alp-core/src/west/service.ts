@@ -46,6 +46,19 @@ export function createWestBuildPreparation(
 }
 
 /**
+ * The west subcommands that program a board. TWO spellings, both built in
+ * this file: `createWestFlashPlan` emits `["west", "flash"]` and
+ * `createWestAlpFlashPlan` emits `["west", "alp-flash", appPath]`, twenty-odd
+ * lines apart — and `"alp-flash" !== "flash"`, so a single-token test saw the
+ * first and missed the second entirely (#596). No call site builds the
+ * alp-flash plan today; the gate must not depend on that staying true.
+ */
+const WEST_WRITE_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  "flash",
+  "alp-flash",
+]);
+
+/**
  * Does this plan program a device?
  *
  * `alp.westFlash` runs `west flash` in a TERMINAL, so it never passes through
@@ -54,15 +67,14 @@ export function createWestBuildPreparation(
  * attached board the moment it starts — so the terminal dispatcher asks first,
  * and this is what it asks about.
  *
- * ERRS TOWARD ASKING. Any argument that is exactly `flash` counts, not only
- * `args[1]`: this runs before an irreversible write, and the cost of a wrong
- * yes is a dialog nobody needed, while the cost of a wrong no is a board
- * programmed without being asked. `west` has no other subcommand spelled
- * `flash`, and a path element equal to the bare word is not a shape this repo
- * builds.
+ * ERRS TOWARD ASKING. Any argument that is exactly one of the write
+ * subcommands counts, not only `args[1]`: this runs before an irreversible
+ * write, and the cost of a wrong yes is a dialog nobody needed, while the
+ * cost of a wrong no is a board programmed without being asked. Whole tokens
+ * only — a path element that merely ENDS in one of them is not a command.
  */
 export function isWestFlashPlan(args: readonly string[]): boolean {
-  return args.includes("flash");
+  return args.some((arg) => WEST_WRITE_SUBCOMMANDS.has(arg));
 }
 
 export function createWestFlashPlan(
