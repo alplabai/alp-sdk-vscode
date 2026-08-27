@@ -179,6 +179,30 @@ function resolveBoardYamlPath(
   );
 }
 
+/**
+ * The board.yaml a single workspace FOLDER would use — the same rule
+ * `resolveProjectContext` applies, exposed for callers that hold one folder
+ * rather than a whole window.
+ *
+ * The debug device-write gate (#586) needs exactly this: VS Code hands a
+ * `DebugConfigurationProvider` the folder its launch belongs to, and asking a
+ * window-wide probe instead answers for whichever folder the active editor
+ * happens to sit in. Re-joining the path at the call site got the ABSOLUTE
+ * `alpSdk.boardYamlPath` case wrong (`path.join` concatenates rather than
+ * resets), which is why the rule is shared rather than copied.
+ */
+export function boardYamlPathForFolder(
+  folderPath: string,
+  configuredBoardYamlPath: string,
+  platform: NodeJS.Platform,
+): string | null {
+  return resolveBoardYamlPath(
+    folderPath,
+    configuredBoardYamlPath,
+    pathFor(platform),
+  );
+}
+
 function resolveWestCwd(
   workspaceRoot: string | null,
   configuredWestCwd: string,

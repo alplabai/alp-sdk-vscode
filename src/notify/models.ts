@@ -71,6 +71,10 @@ export type ActionId =
   // pick must come back so `gateFlashDispatch` can gate the spawn on it — an
   // action the presenter ran itself would leave the gate with nothing to read.
   | "flashDevice"
+  // The same act reached through a debug session (#586). A cortex-debug
+  // `launch` programs the target before it runs, so the pick has to come back
+  // to the gate that decides whether the session starts at all.
+  | "programDevice"
   // Terminating a flash that is ALREADY writing (#540). Caller-handled for the
   // same reason as `flashDevice`: the runner has to read the pick to decide
   // whether to signal the child, and a half-programmed board is the cost of

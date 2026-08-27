@@ -42,6 +42,7 @@
     "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
     "onTaskType:alp",
+    "onDebugResolve:cortex-debug",
     "workspaceContains:**/board.yaml",
     "workspaceContains:**/prj*.conf"
   ],

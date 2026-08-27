@@ -14,6 +14,7 @@ import {
   maybeRescueOrphanedLaunchConfig,
   registerDebugCommands,
 } from "./debug";
+import { registerDebugDeviceWriteGate } from "./debug/deviceWriteGate";
 import { DependencyPanel } from "./deps/panel";
 import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
@@ -292,6 +293,12 @@ export function activate(context: vscode.ExtensionContext): void {
     registerProjectWizardCommand(),
     ...registerLspCommands(),
     ...registerDebugCommands(context),
+    // #586: the consent gate in front of a debug session that programs the
+    // board. Registered here, not inside a command, because VS Code calls a
+    // DebugConfigurationProvider for EVERY launch of the type — including the
+    // F5 and Run-and-Debug launches of the launch.json this extension wrote,
+    // which no command of ours ever sees.
+    ...registerDebugDeviceWriteGate(),
     ...registerTreeViews(context, stateMgr),
     ...registerWorkspaceCommands(),
     vscode.commands.registerCommand("alp.openSetupFlow", () =>
