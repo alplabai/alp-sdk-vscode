@@ -102,17 +102,23 @@ const PRE_MARKER_STATE_KEYS = [
  * already prints `status` and `reason` correctly and is unit-tested; it is
  * simply never given a manifest, so it cannot be the surface that closes this.
  *
- * The first workspace folder, matching what the panel itself resolves — the
- * toast's reader and the panel they may open next must be talking about the
- * same project.
+ * The RUN'S OWN cwd, carried on the finish event, never the workspace root.
+ * `alpBuild` sends `["--project", <example>, "build"]` when the active project
+ * is not the target, and tan then writes that project's manifest — reading the
+ * root's would name an IPC link from a project this build never compiled, on a
+ * notice whose whole purpose is to say something true about what just
+ * finished.
  *
- * Any read failure is silence, not a second toast. No manifest means no build
- * artefact to describe; a malformed one is the build's problem to report, and
- * an extra "could not read the manifest" on a green build would be noise about
- * a file the customer never asked this code to open.
+ * Absent cwd is silence. Terminal-mode runs do not carry one (see the event's
+ * own doc in `src/util.ts`), and saying nothing is the safe direction where
+ * guessing a directory is not.
+ *
+ * Any read failure is silence too. No manifest means no build artefact to
+ * describe; a malformed one is the build's problem to report, and an extra
+ * "could not read the manifest" on a green build would be noise about a file
+ * the customer never asked this code to open.
  */
-function reportUnhealthyIpc(): void {
-  const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+function reportUnhealthyIpc(cwd: string | undefined): void {
   if (cwd === undefined) return;
   let links;
   try {
@@ -236,7 +242,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const def = e.execution.task.definition as { run?: unknown };
       if (def.run === BOOTSTRAP_RUN_NAME) refreshState();
     }),
-    onDidFinishTerminalCommand(({ name, code, mode }) => {
+    onDidFinishTerminalCommand(({ name, code, mode, cwd }) => {
       // Re-derive the shared state FIRST, whatever the verdict: a finished
       // bootstrap changed the workspace on disk and released the run's
       // reservation, and this event is the only signal of either. Repainting
@@ -296,7 +302,7 @@ export function activate(context: vscode.ExtensionContext): void {
         // as a verdict on the run. Gated on `showsBuildResult` because that is
         // already "a build, and it passed" — `tan flash`/`image`/`renode`
         // never write the manifest and `tan clean` deletes it.
-        if (showsBuildResult) reportUnhealthyIpc();
+        if (showsBuildResult) reportUnhealthyIpc(cwd);
       } else if (code !== undefined) {
         // A channel-mode run has no terminal to reveal — its whole log is in
         // the "Alp SDK" channel, which is the point of streaming it there. An

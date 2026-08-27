@@ -2947,9 +2947,15 @@ async function streamRun(
           // which is the "not a failure to report as one" part; and
           // `BuildDelegatePty` does `event.code ?? 1`, so a killed build fails
           // its `preLaunchTask` instead of waving the debugger through.
+          // The run's own cwd rides along (#553). It is the project tan acted
+          // on, which is not always the workspace root — `alpBuild` sends
+          // `["--project", <example>, "build"]` when the active project is not
+          // the target — so a subscriber reading `build/system-manifest.yaml`
+          // reads the one THIS run wrote rather than whatever sits at the root.
           signalStreamedFinished(
             options.name,
             signal ? undefined : (code ?? undefined),
+            options.cwd,
           );
           finish();
         });

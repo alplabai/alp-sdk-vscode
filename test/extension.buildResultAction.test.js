@@ -67,7 +67,7 @@ function fakeEvent() {
  *    the test can fire synthetic finish events directly, and
  *  - every plan handed to `notifyAsync`, so the actions it carries are
  *    directly assertable with no real toast rendering involved. */
-function activateAndCapture(workspaceFolders = undefined) {
+function activateAndCapture() {
   const plans = [];
   let subscriber;
 
@@ -100,10 +100,10 @@ function activateAndCapture(workspaceFolders = undefined) {
         dispose: noop,
       }),
       getConfiguration: () => ({ get: () => undefined, update: noop }),
-      // Undefined by default — the build-finish subscriber's #553 manifest
-      // read resolves the first folder, and with none it says nothing, which
-      // is what every test above this line relies on.
-      workspaceFolders,
+      // Never read by the subscriber under test: its #553 manifest read takes
+      // the RUN's cwd off the finish event, not the workspace root, because
+      // `alpBuild` does not always build the root.
+      workspaceFolders: undefined,
     },
     languages: { registerCodeActionsProvider: () => disposable },
     tasks: {
@@ -295,8 +295,11 @@ test("every other run still gets the plain failure sentence", () => {
 // anything LOOKS at all, which is the whole defect.
 // ---------------------------------------------------------------------------
 
-/** A throwaway workspace folder holding `build/system-manifest.yaml`. */
-function workspaceWithManifest(yaml) {
+/** A throwaway project directory holding `build/system-manifest.yaml`, as the
+ *  run's own cwd — which is what the finish event carries and what the
+ *  subscriber must read, since `alpBuild` does not always build the workspace
+ *  root. */
+function projectWithManifest(yaml) {
   const fs = require("node:fs");
   const os = require("node:os");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alp-ipc-notice-"));
@@ -304,7 +307,7 @@ function workspaceWithManifest(yaml) {
     fs.mkdirSync(path.join(dir, "build"), { recursive: true });
     fs.writeFileSync(path.join(dir, "build", "system-manifest.yaml"), yaml);
   }
-  return [{ uri: { fsPath: dir } }];
+  return dir;
 }
 
 /** The shape a dual-M55 AEN project ships, verbatim from a generated file. */
@@ -323,10 +326,13 @@ ipc:
 `;
 
 test("a green build with a blocked IPC link says so, after saying it finished", () => {
-  const { subscriber, plans } = activateAndCapture(
-    workspaceWithManifest(BLOCKED_MANIFEST),
-  );
-  subscriber({ name: "Alp Build", code: 0, mode: "channel" });
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST),
+  });
 
   // The success toast is still first and still unqualified — the build DID
   // succeed, and this must not turn a green run red.
@@ -347,11 +353,39 @@ test("a green build with a blocked IPC link says so, after saying it finished", 
   );
 });
 
+test("the manifest read follows the RUN's cwd, not the workspace root", () => {
+  // The defect this guards: `alpBuild` sends `["--project", <example>,
+  // "build"]` when the active project is not the target, and tan writes THAT
+  // project's manifest. Reading the root's would name an IPC link from a
+  // project the build never compiled. `workspaceFolders` is undefined in this
+  // harness, so a subscriber reaching for the root finds nothing and this
+  // assertion fails.
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST),
+  });
+  assert.match(plans.at(-1).message, /alp_default_rpmsg/);
+});
+
+test("a finish event with no cwd says nothing", () => {
+  // Terminal-mode runs do not carry one. Silence is the safe direction;
+  // guessing a directory is how a notice ends up describing another project.
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({ name: "Alp Build", code: 0, mode: "terminal" });
+  assert.equal(plans.length, 1);
+});
+
 test("a manifest whose links are all ok says nothing extra", () => {
-  const { subscriber, plans } = activateAndCapture(
-    workspaceWithManifest(BLOCKED_MANIFEST.replace("blocked", "ok")),
-  );
-  subscriber({ name: "Alp Build", code: 0, mode: "channel" });
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST.replace("blocked", "ok")),
+  });
   assert.equal(plans.length, 1, "a healthy link must not raise a toast");
 });
 
@@ -359,18 +393,26 @@ test("no manifest is silence, not a second toast", () => {
   // A green build with nothing on disk to describe. An extra "could not read
   // the manifest" would be noise about a file the customer never asked this
   // code to open.
-  const { subscriber, plans } = activateAndCapture(workspaceWithManifest());
-  subscriber({ name: "Alp Build", code: 0, mode: "channel" });
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(),
+  });
   assert.equal(plans.length, 1);
 });
 
 test("a FAILED build raises no IPC notice", () => {
-  // The manifest on disk may be yesterday's. The failure toast carries what
-  // matters; adding a link's status to it would describe an earlier build.
-  const { subscriber, plans } = activateAndCapture(
-    workspaceWithManifest(BLOCKED_MANIFEST),
-  );
-  subscriber({ name: "Alp Build", code: 1, mode: "channel" });
+  // The manifest on disk may be an earlier build's. The failure toast carries
+  // what matters; adding a link's status would describe that earlier build.
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 1,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST),
+  });
   assert.equal(plans.length, 1);
   assert.match(plans[0].message, /failed/);
 });
@@ -378,9 +420,12 @@ test("a FAILED build raises no IPC notice", () => {
 test("a flash never raises an IPC notice, even with a blocked manifest", () => {
   // Only `tan build` writes this file — `tan flash`/`image`/`renode` never do
   // and `tan clean` deletes it.
-  const { subscriber, plans } = activateAndCapture(
-    workspaceWithManifest(BLOCKED_MANIFEST),
-  );
-  subscriber({ name: "Alp Flash", code: 0, mode: "channel" });
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Flash",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST),
+  });
   assert.equal(plans.length, 1);
 });

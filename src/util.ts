@@ -44,6 +44,19 @@ const terminalFinished = new vscode.EventEmitter<{
    *  reveal action that exists: "Show Terminal" opens nothing for a run that
    *  never had one. */
   mode?: "terminal" | "channel";
+  /** The directory the run was dispatched in — the project it actually acted
+   *  on, which is NOT always the workspace root: `alpBuild` sends
+   *  `["--project", <example>, "build"]` when the active project is not the
+   *  target, and tan then writes THAT project's `build/system-manifest.yaml`.
+   *  A subscriber reading a build artefact has to read the one this run wrote
+   *  (#553).
+   *
+   *  Channel runs carry it; TERMINAL runs do not. `ensureTaskTracking`'s
+   *  `finish` is a window-wide task→name tracker with no per-run directory in
+   *  scope, and inventing one there would be guessing. A subscriber that needs
+   *  it must treat absence as "say nothing": silence is the safe direction,
+   *  naming the wrong project is not. */
+  cwd?: string;
 }>();
 export const onDidFinishTerminalCommand = terminalFinished.event;
 
@@ -521,7 +534,8 @@ export function runInTerminal(
 export function signalStreamedFinished(
   name: string,
   code: number | undefined,
+  cwd?: string,
 ): void {
   log(`[channel] "${name}" exited (code=${code ?? "unknown"})`);
-  terminalFinished.fire({ name, code, mode: "channel" });
+  terminalFinished.fire({ name, code, mode: "channel", cwd });
 }
