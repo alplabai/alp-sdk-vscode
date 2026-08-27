@@ -77,8 +77,16 @@
 // alone programs silicon. Arming is therefore split off and bench-gated
 // (#540); this gate ships the half that can only ever PREVENT a write.
 //
-// `armFlashArgv` stays in core, tested and unused by this file, because that
-// is the half the bench pass turns on.
+// `armFlashArgv` is that half, and this file now calls it (#540). Arming is on
+// for every accepted path and ONLY for an accepted one, which is what
+// `test/flash.gate.test.js` pins.
+//
+// THIS CHANGE IS BENCH-GATED AND MUST NOT MERGE WITHOUT ONE. Nothing here can
+// verify it: no gate in this repo builds a project, let alone programs
+// silicon. What the bench has to show, in order, is that an unarmed run
+// previews and exits non-zero on the reserved board, then that an armed one
+// programs it and it boots, then that Cancel mid-write raises the second
+// confirm and the partial-write warning rather than a silent SIGKILL.
 //
 // `ALP_FLASH_FORCE=1` and `flash_args.confirm: true` are the two other ways to
 // arm tan's gate. NEITHER is used, here or anywhere: the first would put the
@@ -90,6 +98,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import {
+  armFlashArgv,
   FLASH_COMMAND,
   isFlashArgv,
   readFlashArgv,
@@ -386,8 +395,15 @@ export async function gateFlashDispatch(
   log(
     `[flash] consent granted for ${plan.targets.length} target(s) in ${manifestPath}`,
   );
-  // Returned UNCHANGED. See the header: `--confirm` is not what makes the
-  // write happen on three of the six backends, and adding it here would make
-  // the other three write for the first time — a bench-gated change (#540).
-  return [...args];
+  // ARMED. This is the last line before a real write, and it is reached only
+  // after consent was given for THIS manifest, re-checked byte-for-byte since
+  // the dialog opened. `--confirm` goes in after the command, never at the end
+  // — a trailing flag lands in APP_PATH position on an argv that has one.
+  //
+  // The three backends that set `planning_only` (`plan_yocto_wic`,
+  // `plan_xspi_flashwriter`, `plan_alif_mram_jlink`) previewed and exited
+  // non-zero without it, which is #540: Flash could not program a board. The
+  // other three never read the flag and wrote on a bare run either way, so
+  // this does not widen them.
+  return armFlashArgv(args);
 }

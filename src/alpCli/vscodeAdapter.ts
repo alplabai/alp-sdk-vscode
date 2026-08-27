@@ -2636,9 +2636,11 @@ export async function runAlpStreamed(
     // omit the same flag. Every other argv is returned unchanged, so this
     // covers a dispatch site that does not exist yet.
     //
-    // It does NOT arm `--confirm`; see `src/flash/gate.ts`'s header. Three of
-    // tan's six flash backends program the board on a bare `tan flash`, so the
-    // dialog — not the flag — is what stands between a click and a write.
+    // It ARMS `--confirm` on an accepted path (#540) — but the flag is not
+    // what stands between a click and a write. Three of tan's six flash
+    // backends program the board on a bare `tan flash` and never read it, so
+    // the dialog is the only gate for those; arming makes the other three able
+    // to program at all. See `src/flash/gate.ts`'s header.
     //
     // It finds the command the way `scripts/tan-surface/extract.mjs` does —
     // skipping root-position flags with their values — so a future

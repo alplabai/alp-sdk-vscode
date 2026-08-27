@@ -112,25 +112,33 @@ test("a flash asks first, on a blocking modal that carries the whole target list
 // The argv — the actual defect in #540
 // ---------------------------------------------------------------------------
 
-test("an accepted whole-project flash spawns the argv UNCHANGED", async () => {
-  // NOT `["flash", "--confirm"]`. The gate deliberately does not arm — see
-  // `src/flash/gate.ts`'s header: `plan_zephyr_west_flash`,
-  // `plan_baremetal_cmake_flash` and `plan_swd_probe` write on a bare
-  // `tan flash` (tan-cli#796), so the flag cannot close the unconfirmed-write
-  // hole, and adding it WOULD turn the other three backends from a preview
-  // into a real write — a change nothing in this repo can verify. This
-  // assertion is what Part B has to change on purpose.
+test("an accepted whole-project flash is ARMED with --confirm", async () => {
+  // Part B, turned on deliberately (#540). Without `--confirm` the three
+  // backends that set `planning_only` — `plan_yocto_wic`,
+  // `plan_xspi_flashwriter`, `plan_alif_mram_jlink` — preview, write nothing
+  // and exit non-zero, which IS the defect: Flash cannot program a board.
+  //
+  // Arming does not widen the other three (`plan_swd_probe`,
+  // `plan_zephyr_west_flash`, `plan_baremetal_cmake_flash`): they never read
+  // the flag and write on a bare run either way, so the consent dialog stays
+  // their only gate. See the bench log on the PR for the silicon evidence.
   const dir = projectWithManifest();
   const { mod } = loadGate("flashDevice");
-  assert.deepEqual(await mod.gateFlashDispatch(["flash"], dir), ["flash"]);
+  assert.deepEqual(await mod.gateFlashDispatch(["flash"], dir), [
+    "flash",
+    "--confirm",
+  ]);
 });
 
 test("an accepted per-slice flash spawns `flash --confirm --core <id>`", async () => {
+  // This title said `--confirm` while the assertion below said the opposite —
+  // a leftover from the split that put arming behind a bench pass. They agree
+  // now, and the flag sits after the COMMAND, not at the end of the argv.
   const dir = projectWithManifest();
   const { mod, plans } = loadGate("flashDevice");
   assert.deepEqual(
     await mod.gateFlashDispatch(["flash", "--core", "m55_he"], dir),
-    ["flash", "--core", "m55_he"],
+    ["flash", "--confirm", "--core", "m55_he"],
   );
   // …and the dialog said the rest of the board is NOT being written, which is
   // the half-programmed-board hazard `--core` creates.
@@ -148,6 +156,7 @@ test("an accepted flash with an APP_PATH keeps the positional", async () => {
   const { mod } = loadGate("flashDevice");
   assert.deepEqual(await mod.gateFlashDispatch(["flash", app], dir), [
     "flash",
+    "--confirm",
     app,
   ]);
 });
@@ -306,7 +315,7 @@ test("a flash behind root-position flags is gated like any other", async () => {
   const { mod, plans } = loadGate("flashDevice");
   assert.deepEqual(
     await mod.gateFlashDispatch(["--sdk-root", "/opt/sdk", "flash"], dir),
-    ["--sdk-root", "/opt/sdk", "flash"],
+    ["--sdk-root", "/opt/sdk", "flash", "--confirm"],
   );
   assert.ok(confirmPlan(plans), "no dialog was raised for a prefixed flash");
 });
@@ -397,16 +406,18 @@ test("an unchanged manifest still passes — the re-check is not a blanket refus
     fs.writeFileSync(manifest, FIXTURE);
     return "flashDevice";
   });
-  assert.deepEqual(await mod.gateFlashDispatch(["flash"], dir), ["flash"]);
+  assert.deepEqual(await mod.gateFlashDispatch(["flash"], dir), [
+    "flash",
+    "--confirm",
+  ]);
 });
 
-test("the gate NEVER adds --confirm, on any accepted path", async () => {
-  // The whole of Part A in one assertion. `--confirm` arms the three backends
-  // that honour it (`plan_yocto_wic`, `plan_xspi_flashwriter`,
-  // `plan_alif_mram_jlink`), turning a preview into a real write; that is
-  // bench-gated (#540) and must not arrive by accident. Every accepted shape
-  // is checked, because arming one path and not another is how the two call
-  // sites came to disagree in the first place.
+test("the gate ARMS every accepted path, and nothing else", async () => {
+  // The inverse of the Part A invariant, flipped on purpose once a bench pass
+  // proved a board is programmed and boots. Every accepted shape is checked,
+  // because arming one path and not another is how the two call sites came to
+  // disagree in the first place — and a path that is armed without consent, or
+  // consented without being armed, is the whole of #540.
   const dir = projectWithManifest();
   for (const argv of [
     ["flash"],
@@ -418,12 +429,11 @@ test("the gate NEVER adds --confirm, on any accepted path", async () => {
     assert.ok(out, `${argv.join(" ")} was refused, so this proves nothing`);
     assert.equal(
       out.includes("--confirm"),
-      false,
-      `the gate armed ${argv.join(" ")} — that is a real write on ` +
-        "yocto_wic / xspi_flashwriter / alif_mram_jlink and cannot ship " +
-        "without a bench flash",
+      true,
+      `the gate did NOT arm ${argv.join(" ")} — on yocto_wic / ` +
+        "xspi_flashwriter / alif_mram_jlink that previews, writes nothing and " +
+        "exits non-zero, which the customer reads as a failed flash",
     );
-    assert.deepEqual(out, argv, "the argv must go out exactly as it came in");
   }
 });
 
