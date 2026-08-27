@@ -167,6 +167,10 @@ const ACTIONS: Record<
   // button that was already clicked, and this dialog is the last point at
   // which an irreversible write to real silicon can still be stopped.
   flashDevice: { title: "Write to Device" },
+  // Same consequence, reached through Debug (#586). "Debug" alone would read
+  // as the button already clicked and hide the write entirely; the title has
+  // to carry the programming step, which is what the customer cannot undo.
+  programDevice: { title: "Program and Debug" },
   // Likewise the consequence, not the verb: "Stop" would read as stopping a
   // build. What is being stopped is a write already under way, and the thing
   // the reader has to weigh is what a half-written device is.

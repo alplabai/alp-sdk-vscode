@@ -33,6 +33,7 @@ import {
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { readSvdPath } from "./project/vscodeAdapter";
+import { consumeDebugConsentDeclined } from "./debug/consentDecline";
 import {
   readLaunchJsonDocument,
   writeLaunchJsonDocument,
@@ -831,7 +832,10 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
     samePath(candidate.uri.fsPath, result.workspaceRoot),
   );
   const started = await vscode.debug.startDebugging(folder, result.configName);
-  if (!started) {
+  // A launch the customer refused at the device-write gate (#586) also comes
+  // back false. That is not a failure and must not be reported as one — the
+  // gate has already said what happened, on its own terms.
+  if (!started && !consumeDebugConsentDeclined(result.configName)) {
     // The presenter logs this and appends "Show Output"; the message itself
     // points at the Debug Console / launch.json, so don't also force-open the
     // Alp SDK channel here.
