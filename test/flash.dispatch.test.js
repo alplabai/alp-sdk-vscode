@@ -373,3 +373,57 @@ test("--confirm is a live, non-inert option of `tan flash` at the pin", () => {
   // `armFlashArgv` supplies none.
   assert.equal(confirm.metavar, null);
 });
+
+// ---------------------------------------------------------------------------
+// 5. The OTHER spawn channel (#596)
+//
+// `gateFlashDispatch` lived in `runAlpStreamed` alone, and the gate's own
+// header calls that "unconditionally, on every argv". True of that function,
+// not of the extension: `runAlpInTerminal` is a second spawn channel with no
+// gate at all. Its callers are harmless today — ["bootstrap"], ["build"],
+// ["run"] — but `tan run` accepts `--flash` (surface.json: the `run` command
+// carries it), and `westRunNativeSim` already routes ["run"] through here.
+// ---------------------------------------------------------------------------
+
+/** The body of `runAlpInTerminal` itself. Its closing brace is the first one
+ *  at column zero after the declaration. */
+const TERMINAL_START = ADAPTER.indexOf(
+  "export async function runAlpInTerminal(",
+);
+const TERMINAL = ADAPTER.slice(
+  TERMINAL_START,
+  ADAPTER.indexOf("\n}\n", TERMINAL_START) + 3,
+);
+
+test("runAlpInTerminal gates every dispatch through gateFlashDispatch", () => {
+  assert.ok(TERMINAL_START > 0, "runAlpInTerminal must still exist");
+  assert.match(
+    TERMINAL,
+    /await gateFlashDispatch\(args, options\.cwd\)/,
+    "a second spawn channel without the gate is the same defect #540 was — " +
+      "the gate must not be something a channel opts into",
+  );
+});
+
+test("a refused gate opens no terminal", () => {
+  const gate = TERMINAL.indexOf("gateFlashDispatch(");
+  const spawn = TERMINAL.indexOf("runInTerminal({");
+  assert.ok(gate > 0 && spawn > 0, "both the gate and the spawn must be here");
+  assert.ok(gate < spawn, "the gate must run before the terminal is opened");
+  assert.match(
+    TERMINAL,
+    /if \(gated === null\) return;/,
+    "a null answer means refused or cancelled and MUST short-circuit",
+  );
+});
+
+test("the terminal channel spawns what the gate returned, not the raw argv", () => {
+  // The gate ARMS an approved flash by appending tan's `--confirm`. Spawning
+  // `args` after gating `args` would drop that and preview instead of write —
+  // or, worse, spawn an argv the gate rewrote for a different reason.
+  assert.match(
+    TERMINAL,
+    /withSdkRoot\(gated\)/,
+    "the gated argv is the one that must reach the terminal",
+  );
+});

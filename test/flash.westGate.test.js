@@ -119,3 +119,24 @@ test("no other west command is gated by accident", () => {
     "the gate must fire on a flash and nothing else",
   );
 });
+
+// ── the OTHER spelling (#596) ───────────────────────────────────────────────
+
+test("the alp-flash spelling is a write too", () => {
+  // `createWestAlpFlashPlan` builds ["west", "alp-flash", appPath] — 27 lines
+  // below the predicate, in the SAME file — and "alp-flash" !== "flash", so an
+  // `args.includes("flash")` test never fired for it. No call site builds that
+  // plan today; the gate must not depend on that staying true.
+  assert.equal(isWestFlashPlan(["west", "alp-flash", "/w/app"]), true);
+  assert.equal(
+    isWestFlashPlan(["/w/.venv/bin/west", "alp-flash", "/w/app"]),
+    true,
+    "the venv substitution must not smuggle this spelling past either",
+  );
+});
+
+test("a path that merely ends in flash is still not a command", () => {
+  // The predicate matches whole tokens, not substrings: a project directory
+  // called `my-flash` is not a request to program a board.
+  assert.equal(isWestFlashPlan(["west", "build", "/w/my-flash"]), false);
+});
