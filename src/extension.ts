@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import {
   checkCliVersion,
@@ -33,6 +35,11 @@ import { registerLspCommands } from "./lsp/commands";
 import { showModelsPanel, triggerModelBuild } from "./models/panel";
 import { planFailure, planSuccess } from "./notify/service";
 import { notifyAsync, setExtensionId } from "./notify/vscodeAdapter";
+import {
+  describeUnhealthyIpc,
+  unhealthyIpcLinks,
+} from "@alp-sdk/core/systemManifest/ipcHealth";
+import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
 import { createSchemaProvenanceStatus } from "./schemaProvenance";
 import { createSdkSchemaContributor } from "./yamlSchemaContributor";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
@@ -84,6 +91,59 @@ const PRE_MARKER_STATE_KEYS = [
   "alp.setupOrchestrator.lastShownFingerprint",
   "alp.lastBootstrapAt",
 ] as const;
+
+/**
+ * Say so when a build that PASSED left an IPC link that did not resolve (#553).
+ *
+ * The manifest is read straight off disk, the way `src/debug.ts` and
+ * `src/flash/gate.ts` already read this same file — `tan build` wrote it, and
+ * nothing about reading it depends on the deferred `--manifest` flags the
+ * Build Plan panel is waiting on (tan-cli#427 / #580). That panel's renderer
+ * already prints `status` and `reason` correctly and is unit-tested; it is
+ * simply never given a manifest, so it cannot be the surface that closes this.
+ *
+ * The first workspace folder, matching what the panel itself resolves — the
+ * toast's reader and the panel they may open next must be talking about the
+ * same project.
+ *
+ * Any read failure is silence, not a second toast. No manifest means no build
+ * artefact to describe; a malformed one is the build's problem to report, and
+ * an extra "could not read the manifest" on a green build would be noise about
+ * a file the customer never asked this code to open.
+ */
+function reportUnhealthyIpc(): void {
+  const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (cwd === undefined) return;
+  let links;
+  try {
+    links = unhealthyIpcLinks(
+      parseSystemManifest(
+        fs.readFileSync(
+          path.join(cwd, "build", "system-manifest.yaml"),
+          "utf-8",
+        ),
+      ),
+    );
+  } catch {
+    return;
+  }
+  if (links.length === 0) return;
+
+  const { message, detail } = describeUnhealthyIpc(links);
+  // A WARNING, not a failure: the run succeeded and the toast must not read as
+  // if it had not. `detail` is channel-only by this repo's convention, so the
+  // reason — the one actionable half — rides `showOutput` and is one click
+  // away rather than buried.
+  notifyAsync(
+    planFailure({
+      operation: BUILD_RUN_NAME,
+      cause: message,
+      detail,
+      severity: "warning",
+      actions: [{ id: "showOutput" }],
+    }),
+  );
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   // The presenter has no `context` of its own but needs this extension's id for
@@ -224,6 +284,19 @@ export function activate(context: vscode.ExtensionContext): void {
             actions: showsBuildResult ? [{ id: "showBuildResult" }] : [],
           }),
         );
+        // #553: a green build can still ship a dead IPC channel. `tan init
+        // --cores` scaffolds a default `ipc:` entry whenever a companion core
+        // is named, and on a SoM that has not been HW-mapped it resolves
+        // `status: blocked` with a concrete reason — while the build succeeds
+        // and exits 0. Nothing said so, and the customer found out by opening
+        // the manifest.
+        //
+        // AFTER the success toast, deliberately: the build DID succeed, and
+        // this has to read as a second, quieter sentence about it rather than
+        // as a verdict on the run. Gated on `showsBuildResult` because that is
+        // already "a build, and it passed" — `tan flash`/`image`/`renode`
+        // never write the manifest and `tan clean` deletes it.
+        if (showsBuildResult) reportUnhealthyIpc();
       } else if (code !== undefined) {
         // A channel-mode run has no terminal to reveal — its whole log is in
         // the "Alp SDK" channel, which is the point of streaming it there. An
