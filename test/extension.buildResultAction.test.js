@@ -100,6 +100,9 @@ function activateAndCapture() {
         dispose: noop,
       }),
       getConfiguration: () => ({ get: () => undefined, update: noop }),
+      // Never read by the subscriber under test: its #553 manifest read takes
+      // the RUN's cwd off the finish event, not the workspace root, because
+      // `alpBuild` does not always build the root.
       workspaceFolders: undefined,
     },
     languages: { registerCodeActionsProvider: () => disposable },
@@ -278,4 +281,151 @@ test("every other run still gets the plain failure sentence", () => {
   const { subscriber, plans } = activateAndCapture();
   subscriber({ name: "Alp Build", code: 2, mode: "channel" });
   assert.equal(plans.at(-1).message, "Alp Build failed.");
+});
+
+// ---------------------------------------------------------------------------
+// #553: a green build must not hide a blocked IPC link
+//
+// `tan init --cores` scaffolds a default `ipc:` entry whenever a companion
+// core is named. On a SoM that has not been HW-mapped it resolves
+// `status: blocked` with a concrete reason, the build succeeds and exits 0,
+// and nothing said so. These drive the REAL subscriber against a REAL manifest
+// on disk — the pure rule and the wording are pinned separately in
+// `test/systemManifest.ipcHealth.test.js`; what is pinned here is that
+// anything LOOKS at all, which is the whole defect.
+// ---------------------------------------------------------------------------
+
+/** A throwaway project directory holding `build/system-manifest.yaml`, as the
+ *  run's own cwd — which is what the finish event carries and what the
+ *  subscriber must read, since `alpBuild` does not always build the workspace
+ *  root. */
+function projectWithManifest(yaml) {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alp-ipc-notice-"));
+  if (yaml !== undefined) {
+    fs.mkdirSync(path.join(dir, "build"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "build", "system-manifest.yaml"), yaml);
+  }
+  return dir;
+}
+
+/** The shape a dual-M55 AEN project ships, verbatim from a generated file. */
+const BLOCKED_MANIFEST = `schema_version: 1
+hw_info: {}
+slices: []
+helper_mcus: []
+ipc:
+- name: alp_default_rpmsg
+  kind: rpmsg
+  endpoints:
+  - m55_hp
+  - a32_cluster
+  status: blocked
+  reason: memory_map.base is TBD for region 'mram_main' in SoM E1M-AEN801
+`;
+
+test("a green build with a blocked IPC link says so, after saying it finished", () => {
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST),
+  });
+
+  // The success toast is still first and still unqualified — the build DID
+  // succeed, and this must not turn a green run red.
+  assert.equal(plans[0].message, "Alp Build finished.");
+  const notice = plans.at(-1);
+  assert.notEqual(notice, plans[0], "nothing was said about the ipc link");
+  assert.equal(notice.severity, "warning");
+  assert.match(notice.message, /succeeded/);
+  assert.match(notice.message, /alp_default_rpmsg/);
+  assert.match(notice.message, /blocked/);
+  // The reason is the only actionable half, and it must survive verbatim.
+  assert.match(notice.detail, /memory_map\.base is TBD for region 'mram_main'/);
+  // …and be one click away rather than buried, since `detail` is
+  // channel-only by this repo's convention.
+  assert.deepEqual(
+    notice.actions.map((a) => a.id),
+    ["showOutput"],
+  );
+});
+
+test("the manifest read follows the RUN's cwd, not the workspace root", () => {
+  // The defect this guards: `alpBuild` sends `["--project", <example>,
+  // "build"]` when the active project is not the target, and tan writes THAT
+  // project's manifest. Reading the root's would name an IPC link from a
+  // project the build never compiled. `workspaceFolders` is undefined in this
+  // harness, so a subscriber reaching for the root finds nothing and this
+  // assertion fails.
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST),
+  });
+  assert.match(plans.at(-1).message, /alp_default_rpmsg/);
+});
+
+test("a finish event with no cwd says nothing", () => {
+  // Terminal-mode runs do not carry one. Silence is the safe direction;
+  // guessing a directory is how a notice ends up describing another project.
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({ name: "Alp Build", code: 0, mode: "terminal" });
+  assert.equal(plans.length, 1);
+});
+
+test("a manifest whose links are all ok says nothing extra", () => {
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST.replace("blocked", "ok")),
+  });
+  assert.equal(plans.length, 1, "a healthy link must not raise a toast");
+});
+
+test("no manifest is silence, not a second toast", () => {
+  // A green build with nothing on disk to describe. An extra "could not read
+  // the manifest" would be noise about a file the customer never asked this
+  // code to open.
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(),
+  });
+  assert.equal(plans.length, 1);
+});
+
+test("a FAILED build raises no IPC notice", () => {
+  // The manifest on disk may be an earlier build's. The failure toast carries
+  // what matters; adding a link's status would describe that earlier build.
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Build",
+    code: 1,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST),
+  });
+  assert.equal(plans.length, 1);
+  assert.match(plans[0].message, /failed/);
+});
+
+test("a flash never raises an IPC notice, even with a blocked manifest", () => {
+  // Only `tan build` writes this file — `tan flash`/`image`/`renode` never do
+  // and `tan clean` deletes it.
+  const { subscriber, plans } = activateAndCapture();
+  subscriber({
+    name: "Alp Flash",
+    code: 0,
+    mode: "channel",
+    cwd: projectWithManifest(BLOCKED_MANIFEST),
+  });
+  assert.equal(plans.length, 1);
 });
