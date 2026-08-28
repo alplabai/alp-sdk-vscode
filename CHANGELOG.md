@@ -6,6 +6,28 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **A bad `alpSdk.svdPath` no longer tells you to update your CLI.** The hint
+  naming the setting was gated on tan exiting 5, measured against an
+  implementation that has since been replaced. The pinned tan `0.6.0` returns
+  exit 2 with `debug-config.invalid-argument` for an unreadable `--svd`, so the
+  hint never fired and its "Open Settings" button went with it; the
+  version-skew hint fired instead, sending you to update a CLI that was already
+  current. Both hints now read the issue code, which is what separates "this
+  flag is unknown" from "this flag's value is wrong". A genuinely old tan still
+  gets the skew hint.
+- **The Dependencies panel's install buttons work again.** tan `0.6.0` reports a
+  missing build tool through one `hostPrerequisites` check rather than the
+  per-tool `cmake`/`ninja` checks it used to emit, while still naming the tools
+  and their install commands separately. The panel matched them by check name,
+  so nothing matched: you saw a red "Bootstrap prerequisites" row with no
+  button while tan had already worked out `brew install cmake`. The row now
+  offers tan's own commands.
+- **Build Plan panel buttons no longer run in the wrong directory.** With no
+  folder open the panel still opened, and Materialise / Build / Flash passed no
+  working directory to tan — so the child inherited the editor's own directory
+  (on Windows, the VS Code install directory) and `build --materialise` wrote
+  its generated files there. All three now stop and say a folder is needed,
+  matching what Build and Bootstrap already did.
 - **The Windows bootstrap pre-flight no longer moves your alp-sdk checkout.**
   On Windows, "Initialize Workspace" first ran `tan bootstrap --no-pip
   --no-west` as a probe, documented in this repo as side-effect-free. It was

@@ -20,7 +20,12 @@ import {
   releaseStreamedRun,
   reserveStreamedRun,
 } from "../util";
-import { planCliOutcome, planFailure, planSuccess } from "../notify/service";
+import {
+  planCliOutcome,
+  planFailure,
+  planPrecondition,
+  planSuccess,
+} from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { deferredBuildOptionMessage } from "../alpCli/pinnedSurface";
 import {
@@ -303,8 +308,28 @@ export class BuildPlanPanel {
     void this.panel.webview.postMessage(msg);
   }
 
-  private async handleMaterialiseBuildPlan(): Promise<void> {
+  /** The workspace root every spawning handler must have, or `undefined` after
+   *  telling the customer why nothing ran.
+   *
+   *  `cwd` is optional all the way down to `child_process.spawn`, and no layer
+   *  substitutes a default — so an unguarded handler with no folder open runs
+   *  tan against the EXTENSION HOST's working directory (on Windows, the VS
+   *  Code install directory), and `build --materialise` writes the plan's
+   *  generated files there. `alp.showBuildPlan` has no `when`/`enablement`, so
+   *  the panel really does open with no folder. `src/west.ts` refuses the same
+   *  shape with the same precondition. */
+  private requireWorkspace(operation: string): string | undefined {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd) {
+      notifyAsync(planPrecondition("noWorkspace", { operation }));
+      return undefined;
+    }
+    return cwd;
+  }
+
+  private async handleMaterialiseBuildPlan(): Promise<void> {
+    const cwd = this.requireWorkspace("materialise the build plan");
+    if (!cwd) return;
     // Envelope mode, but it WRITES into the build tree, so it takes the build
     // reservation like a build does — materialising underneath a running build
     // rewrites the very files that build is consuming.
@@ -428,7 +453,8 @@ export class BuildPlanPanel {
   }
 
   private async handleRunBuild(): Promise<void> {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const cwd = this.requireWorkspace("build");
+    if (!cwd) return;
     // Stream to the "Alp SDK" channel (persistent), not a terminal that dies on
     // exit — same reason as the Build/Flash orchestrator commands (util.ts).
     await runAlpStreamed(this.context, ["build"], {
@@ -446,7 +472,8 @@ export class BuildPlanPanel {
    *  option (only `flash`/`run` do), so the Build button only runs the whole
    *  plan (`runBuild`). */
   private handleSliceCommand(coreId: string): void {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const cwd = this.requireWorkspace("flash this slice");
+    if (!cwd) return;
     // FLASH_RUN_NAME, not a per-core name: a second core is a second write to
     // the same board, so per-core names would be two reservations and two
     // programmers at once. The core is in the logged command line.
