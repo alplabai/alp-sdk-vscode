@@ -1151,7 +1151,8 @@ export function cliUsageErrorDump(envelope: AlpEnvelope | null): string | null {
 /** tan's code for "the flag was recognised, its VALUE is wrong" on
  *  `debug-config` -- e.g. an `--svd` naming a path it cannot read. Distinct
  *  from `cli.parse-error`, which means the flag itself was not recognised. */
-export const DEBUG_CONFIG_INVALID_ARGUMENT = "debug-config.invalid-argument";
+export const DEBUG_CONFIG_INVALID_ARGUMENT_CODE =
+  "debug-config.invalid-argument";
 
 /** Whether `envelope` carries an issue with exactly this code.
  *

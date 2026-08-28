@@ -15,19 +15,14 @@ only Marketplace/Open VSX users opted into pre-release updates.
   current. Both hints now read the issue code, which is what separates "this
   flag is unknown" from "this flag's value is wrong". A genuinely old tan still
   gets the skew hint.
-- **The Dependencies panel's install buttons work again.** tan `0.6.0` reports a
-  missing build tool through one `hostPrerequisites` check rather than the
-  per-tool `cmake`/`ninja` checks it used to emit, while still naming the tools
-  and their install commands separately. The panel matched them by check name,
-  so nothing matched: you saw a red "Bootstrap prerequisites" row with no
-  button while tan had already worked out `brew install cmake`. The row now
-  offers tan's own commands.
-- **Build Plan panel buttons no longer run in the wrong directory.** With no
+- **Build Plan panel buttons no longer run in the wrong project.** With no
   folder open the panel still opened, and Materialise / Build / Flash passed no
-  working directory to tan — so the child inherited the editor's own directory
-  (on Windows, the VS Code install directory) and `build --materialise` wrote
-  its generated files there. All three now stop and say a folder is needed,
-  matching what Build and Bootstrap already did.
+  working directory to tan, so the child inherited the editor's own directory
+  (on Windows, the VS Code install directory). All three now stop and say a
+  folder is needed, matching what Build and Bootstrap already did. They also
+  resolve the project the same way every other command does, so on a
+  multi-root workspace the panel's Build button and the palette's Build no
+  longer disagree about which folder they are building.
 - **The Windows bootstrap pre-flight no longer moves your alp-sdk checkout.**
   On Windows, "Initialize Workspace" first ran `tan bootstrap --no-pip
   --no-west` as a probe, documented in this repo as side-effect-free. It was

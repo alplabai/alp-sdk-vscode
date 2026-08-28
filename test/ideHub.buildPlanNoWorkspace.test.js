@@ -74,6 +74,9 @@ async function driveWithNoWorkspace(message) {
         }),
       },
       workspace: {
+        // Left undefined too, so a handler that regresses to reading
+        // `workspaceFolders[0]` directly still finds nothing and this file
+        // cannot go green on the forbidden resolver.
         workspaceFolders: undefined,
         createFileSystemWatcher: () => watcher,
       },
@@ -105,6 +108,13 @@ async function driveWithNoWorkspace(message) {
       reserveStreamedRun: () => true,
       releaseStreamedRun() {},
       log() {},
+    },
+    // The resolver seam the guard actually reads. `docs/ARCHITECTURE_RULES.md`
+    // §3 forbids re-deriving the root from `workspaceFolders[0]`, so the guard
+    // asks this, and so must the test -- on a multi-root workspace the two
+    // answers differ.
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({ workspaceRoot: undefined }),
     },
     "./webviewHtml": { buildWebviewHtml: () => "<html></html>" },
     "../notify/vscodeAdapter": {

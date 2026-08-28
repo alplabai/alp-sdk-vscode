@@ -27,6 +27,7 @@ import {
   planSuccess,
 } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
+import { collectProjectContext } from "../project/vscodeAdapter";
 import { deferredBuildOptionMessage } from "../alpCli/pinnedSurface";
 import {
   MATERIALISE_SHAPE,
@@ -317,9 +318,18 @@ export class BuildPlanPanel {
    *  Code install directory), and `build --materialise` writes the plan's
    *  generated files there. `alp.showBuildPlan` has no `when`/`enablement`, so
    *  the panel really does open with no folder. `src/west.ts` refuses the same
-   *  shape with the same precondition. */
+   *  shape with the same precondition.
+   *
+   *  Resolution goes through `collectProjectContext`, NOT
+   *  `workspaceFolders[0]` — `docs/ARCHITECTURE_RULES.md` §3 forbids
+   *  reimplementing root resolution per slice, and the two disagree on a
+   *  multi-root workspace: folder[0] can be a docs folder while the board.yaml
+   *  project is folder[1]. Reading folder[0] here would leave the panel's
+   *  Build button and the palette Build running in different directories, and
+   *  if folder[0] carries its own `board.yaml` the panel would materialise
+   *  into the wrong project while passing this very guard. */
   private requireWorkspace(operation: string): string | undefined {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const cwd = collectProjectContext().workspaceRoot;
     if (!cwd) {
       notifyAsync(planPrecondition("noWorkspace", { operation }));
       return undefined;

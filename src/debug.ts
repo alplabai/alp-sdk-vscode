@@ -47,7 +47,7 @@ import {
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import {
-  DEBUG_CONFIG_INVALID_ARGUMENT,
+  DEBUG_CONFIG_INVALID_ARGUMENT_CODE,
   DebugConfigData,
   SUPPORTED_CLI_VERSION,
   hasIssueCode,
@@ -399,13 +399,16 @@ async function runDebugConfig(
     // exactly this -- `ok:false, exitCode:2` (so `kind` is `"validation"`)
     // carrying `debug-config.invalid-argument`. Without this suppression the
     // customer is told to update a CLI that is already current, and the real
-    // remedy below never shows. A tan too old to know the flag at all emits
-    // no such code (often no envelope at all), so the skew hint still fires
-    // there -- that case is pinned by the stale-tan test in
-    // test/debug.svdFailureHint.test.js.
+    // remedy below never shows. A tan too old to know the flag at all sends
+    // `cli.parse-error` instead -- a DIFFERENT code on an envelope of the same
+    // shape and the same exit 2 -- so the skew hint still fires there, which is
+    // the right remedy for an unrecognised flag. Both stale-tan shapes are
+    // pinned in test/debug.svdFailureHint.test.js: the no-envelope one and the
+    // `cli.parse-error` one. The second is the load-bearing case -- a guard
+    // reading "any issue at all" passes every other test in that file.
     const namedBadArgument = hasIssueCode(
       outcome.envelope,
-      DEBUG_CONFIG_INVALID_ARGUMENT,
+      DEBUG_CONFIG_INVALID_ARGUMENT_CODE,
     );
     const skew =
       outcome.kind === "validation" &&

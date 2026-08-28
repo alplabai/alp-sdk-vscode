@@ -193,6 +193,23 @@ const GATED_CODES = {
   // reached through `alpSdk.cliPath` it can over-report "wrong command line".
   "cli.parse-error": "reserved",
 
+  // RESERVED in the artefact ("consumer: none -- no consumer matches this code
+  // yet"), and this extension now DOES match it: `src/debug.ts` uses it to tell
+  // "tan rejected this flag's VALUE" from "tan does not know this flag", which
+  // is what decides between the `alpSdk.svdPath` hint and the version-skew
+  // hint. Registered here the same day that consumer landed, for the same
+  // reason `cli.parse-error`, `model.unknown-subcommand` and
+  // `sdk.network-required` were: tan explicitly reserves the right to rename or
+  // split a code NOTHING binds to, and without this row the rename lands green
+  // in both repos while the svd hint silently stops firing again.
+  //
+  // Note it is ONE code for five causes -- the artefact lists `--target-kind`,
+  // `--server`, an unsupported target+server pairing, `--svd` and
+  // `--gdbserver-address` -- so a consumer must not read it as "the SVD path is
+  // bad". `src/debug.ts` only widens a hint it already gated on `--svd` being
+  // on the argv.
+  "debug-config.invalid-argument": "reserved",
+
   // UNDECLARED, and never going to be: this extension MANUFACTURES it
   // (`src/alpCli/pinnedSurface.ts`) for "the pinned tan can do this and this
   // panel does not call it" — a statement about this repo's wiring that no CLI

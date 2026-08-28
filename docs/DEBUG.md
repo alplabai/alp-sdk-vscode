@@ -600,8 +600,13 @@ refuse the WHOLE `debug-config` command and write no `launch.json` at all** —
 never a fallback to dropping just the SVD key. A typo here breaks Configure
 Debug Profile / F5 outright, not merely the peripheral view. `runDebugConfig`
 narrows the resulting failure toast to name `alpSdk.svdPath` (with an
-`openSettings` action) whenever `--svd` was actually on the argv, so the
-symptom does not read as "debug is broken" with nothing to point at
+`openSettings` action) when `--svd` was on the argv **and tan blamed the
+argument** — the `debug-config.invalid-argument` issue code, which is what the
+pinned tan `0.6.0` returns at exit 2 for an unreadable path (an older binary
+signalled the same thing with exit 5, and that arm is still accepted). It is
+deliberately NOT "any failure while `--svd` is on the argv": a tan too old to
+know the flag answers `cli.parse-error`, and that is version skew, so the toast
+says to update the CLI instead of blaming a setting that was never the problem
 (`test/debug.svdFailureHint.test.js`).
 
 ## 11. Product Commands to Support Debug
