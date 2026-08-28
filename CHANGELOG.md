@@ -6,6 +6,23 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **The Windows bootstrap pre-flight no longer moves your alp-sdk checkout.**
+  On Windows, "Initialize Workspace" first ran `tan bootstrap --no-pip
+  --no-west` as a probe, documented in this repo as side-effect-free. It was
+  not. `--no-pip`/`--no-west` skip only the pip and west phases; against the
+  pinned tan `0.6.0` the workspace relocation (tan-cli#185) and the default-SDK
+  pointer write both run *before* those phases and are ungated by either flag.
+  So the probe moved the alp-sdk checkout to `<parent>/alp-workspace/alp-sdk`
+  and repointed the machine-global `~/.alp/sdk-default` — while returning
+  `ok:true, exitCode:0`, so every verdict the extension parses stayed silent
+  and nothing reached the log. If `alpSdk.path` named the pre-move directory it
+  then pointed at nothing, and the progress toast's Cancel button could
+  interrupt the move part-way. The probe now passes `--dry-run`, which resolves
+  everything and writes nothing. Both verdicts it exists to read were measured
+  to survive unchanged: `bootstrap.prerequisites-missing` with its populated
+  `missingPrerequisites[]`, and the host-level `bootstrap.yocto-host` refusal
+  on a Yocto-only SoM. `test/bootstrap.noWorkspace.test.js` now pins the argv,
+  which nothing did before.
 - **The tan pin gate stops calling a published release missing off one probe
   (#510).** `scripts/check-cli-pin.mjs` retried a `5xx` or a `429` and did not
   retry a `404` — the 404 arm sat inside the retry loop but returned from the

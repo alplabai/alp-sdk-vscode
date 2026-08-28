@@ -16,10 +16,34 @@
 // `board.yaml` alone does NOT carry that (a per-core `os:` there is only an
 // override, mostly used as `os: "off"`), so parsing board.yaml here would
 // miss every real Yocto-only project and let a doomed terminal spawn anyway.
-// So: run `tan bootstrap --no-pip --no-west --format json` first — the SAME
-// gate a real run hits, made side-effect-free by those two flags (tan-cli's
-// `bootstrap/mod.rs` never creates the venv when both are set) — and act on
-// tan's own verdict. Two DISTINCT, EXPLICITLY-PARSED verdicts stop the real
+// So: run `tan bootstrap --no-pip --no-west --dry-run --format json` first —
+// the SAME gate a real run hits, made read-only by `--dry-run` ("Resolve
+// everything and report the commands each step would run, without installing,
+// cloning or writing anything") — and act on tan's own verdict.
+//
+// `--dry-run` is LOAD-BEARING, not belt-and-braces. `--no-pip`/`--no-west`
+// skip only the pip and west PHASES; measured against the pinned tan 0.6.0,
+// the tan-cli#185 workspace relocation and the `~/.alp/sdk-default` write both
+// run BEFORE those phases and are ungated by either flag. Without `--dry-run`
+// this "probe" moves the customer's alp-sdk checkout to
+// `<parent>/alp-workspace/alp-sdk` and repoints their machine-global default
+// SDK — at `ok:true, exitCode:0`, so both verdicts below stay silent and
+// nothing is logged. `test/bootstrap.noWorkspace.test.js` pins the argv.
+// (The earlier claim that those two flags alone made this side-effect-free
+// cited `bootstrap/mod.rs` — the RETIRED Rust oracle; 0.6.0 is Python. It also
+// only ever reasoned about the venv, never about relocation.)
+//
+// `--dry-run` preserves BOTH verdicts this call site parses, each measured
+// against the pinned binary rather than assumed. Prerequisites: with a PATH
+// missing cmake/ninja it still returns `ok:false`, `exitCode 1`,
+// `bootstrap.prerequisites-missing` and a populated `missingPrerequisites[]`.
+// Host-level: on a Yocto-only `E1M-V2N101` (its `m33_sm` set to `os: "off"`,
+// leaving only the Yocto `a55_cluster`) the dry and un-dry forms return an
+// IDENTICAL `ok:false, exitCode:2, bootstrap.yocto-host` at severity `error`
+// — so `--dry-run` does NOT short-circuit before tan resolves the SoM
+// topology, and the Yocto refusal this whole branch exists for still fires.
+//
+// Two DISTINCT, EXPLICITLY-PARSED verdicts stop the real
 // terminal spawn, checked in this order (a host-level dead end outranks a
 // fixable tool gap): a host-level refusal (`bootstrapHostVerdict`,
 // service.ts — Yocto-only / an old tan) gets a legible warning + the
@@ -104,13 +128,18 @@ export function registerBootstrapCommand(
       return;
     }
     if (process.platform === "win32") {
-      // Side-effect-free and ~440ms warm, but with no CLI cached yet it
-      // triggers a full download-on-demand first, which needs both a
-      // visible "something is happening" signal and a way out -- hence the
-      // shared cancellable-progress wrapper (see loader.ts).
+      // Read-only (see `--dry-run` above) and fast warm -- ~230ms measured on
+      // darwin, indistinguishable from the un-dry-run form (5 runs each), but
+      // never measured on win32, which is the only host that reaches this
+      // branch. With no CLI cached yet it triggers a full
+      // download-on-demand first, which needs
+      // both a visible "something is happening" signal and a way out -- hence
+      // the shared cancellable-progress wrapper (see loader.ts). Cancelling
+      // SIGTERMs the child, which is only safe BECAUSE this probe writes
+      // nothing: interrupting the un-dry-run form could kill it mid-relocation.
       const preflight = await runAlpWithProgress(
         context,
-        ["bootstrap", "--no-pip", "--no-west"],
+        ["bootstrap", "--no-pip", "--no-west", "--dry-run"],
         "Alp: checking whether this project can bootstrap on Windows…",
         workspaceRoot,
       );

@@ -88,8 +88,10 @@ export const CANCELLED = Symbol("cancelled");
  * Run an envelope command inside a cancellable progress notification. The
  * CancellationToken is bridged to an AbortSignal so pressing Cancel kills the
  * `tan` child (and its Python validator/loader, or -- for `bootstrap.ts`'s
- * win32 pre-flight -- the `tan bootstrap --no-pip --no-west` probe) instead
- * of leaving it running. Returns CANCELLED when the user cancels so the
+ * win32 pre-flight -- the `tan bootstrap --no-pip --no-west --dry-run` probe)
+ * instead of leaving it running. Killing that probe is safe precisely BECAUSE
+ * of its `--dry-run`: without it the same SIGTERM could land mid-relocation of
+ * the customer's alp-sdk checkout. Returns CANCELLED when the user cancels so the
  * caller skips its error toast. Exported: `bootstrap.ts` reuses this exact
  * `withProgress` + CancellationToken->AbortController bridge for its win32
  * pre-flight rather than duplicating it.

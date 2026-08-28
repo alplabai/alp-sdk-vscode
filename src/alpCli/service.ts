@@ -1530,22 +1530,29 @@ export function proxyEnvOverrides(
 }
 
 /**
- * Verdict from a `tan bootstrap --no-pip --no-west --format json` pre-flight
- * call: whether `src/bootstrap.ts` must refuse to spawn the real bootstrap
- * terminal on this host, and the reason to show the user.
+ * Verdict from a `tan bootstrap --no-pip --no-west --dry-run --format json`
+ * pre-flight call: whether `src/bootstrap.ts` must refuse to spawn the real
+ * bootstrap terminal on this host, and the reason to show the user.
  *
  * tan resolves each core's runtime from the SoM topology in the SDK metadata
  * (`som.sku` -> `<sdkRoot>/metadata/e1m_modules/<sku>.yaml` `topology:`) —
  * `board.yaml` alone does not carry that (a per-core `os:` there is only an
  * OVERRIDE, mostly used as `os: "off"`), so re-deriving this verdict from a
  * parsed `board.yaml` here would miss every real Yocto-only project. This
- * reads tan's own answer instead of re-guessing it (`crates/tan-core/src/
- * bootstrap/runtime.rs`'s `yocto_gate`, single-sourced in tan-cli).
+ * reads tan's own answer instead of re-guessing it — single-sourced in
+ * tan-cli, whose yocto gate is Python at the pinned 0.6.0 (the old citation
+ * here named a `crates/tan-core/src/bootstrap/runtime.rs`, from the RETIRED
+ * Rust oracle).
  *
- * `--no-pip --no-west` makes the call side-effect-free while running the
- * IDENTICAL gate a real `tan bootstrap` invocation would hit: tan-cli's
- * `bootstrap/mod.rs` never creates the venv when both flags are set, and the
- * gate itself runs (and can return before) any prerequisite check.
+ * `--dry-run` is what makes the call read-only, NOT `--no-pip --no-west`.
+ * Those two skip only the pip and west PHASES; the tan-cli#185 workspace
+ * relocation and the `~/.alp/sdk-default` write both run BEFORE them and are
+ * ungated by either, so the un-dry-run form MOVES the customer's alp-sdk
+ * checkout at `ok:true, exitCode:0` (see `src/bootstrap.ts`, which owns the
+ * argv). The gate this function reads is unaffected by the change: measured
+ * on a Yocto-only `E1M-V2N101`, both forms return an identical
+ * `ok:false, exitCode:2, bootstrap.yocto-host/error`, so `--dry-run` does not
+ * short-circuit before topology resolution.
  *
  * Two DISTINCT refusal shapes, both from real tan-cli releases:
  *
