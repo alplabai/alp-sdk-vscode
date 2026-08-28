@@ -1148,6 +1148,24 @@ export function cliUsageErrorDump(envelope: AlpEnvelope | null): string | null {
   return null;
 }
 
+/** tan's code for "the flag was recognised, its VALUE is wrong" on
+ *  `debug-config` -- e.g. an `--svd` naming a path it cannot read. Distinct
+ *  from `cli.parse-error`, which means the flag itself was not recognised. */
+export const DEBUG_CONFIG_INVALID_ARGUMENT = "debug-config.invalid-argument";
+
+/** Whether `envelope` carries an issue with exactly this code.
+ *
+ *  Classify on the CODE, never on the message prose: tan's wording is not a
+ *  contract and has changed under us before, while a code rename is a visible
+ *  envelope-contract break. A null envelope answers false -- "tan said
+ *  nothing" is not "tan said this". */
+export function hasIssueCode(
+  envelope: AlpEnvelope | null | undefined,
+  code: string,
+): boolean {
+  return (envelope?.issues ?? []).some((issue) => issue.code === code);
+}
+
 /** Parse the envelope from a command's stdout. Returns null when stdout is
  *  empty or not a well-formed envelope (so callers can fall back gracefully). */
 export function parseEnvelope(stdout: string): AlpEnvelope | null {

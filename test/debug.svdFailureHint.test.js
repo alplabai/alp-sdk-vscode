@@ -212,3 +212,78 @@ test("a stale tan that does not recognise --svd is named as CLI skew, never blam
     "the svd hint must not fire alongside the skew hint",
   );
 });
+
+// ---------------------------------------------------------------------------
+// The shape the PINNED tan 0.6.0 actually returns.
+//
+// The two tests above fabricate `kind: "internal"` (exit 5). Measured against
+// the pinned binary, an unreadable `--svd` is exit 2 -- `kind: "validation"` --
+// carrying `debug-config.invalid-argument`:
+//
+//   {"ok":false,"exitCode":2,"issues":[{"code":"debug-config.invalid-argument",
+//    "message":"Alp: --svd path cannot be read: /nonexistent/nope.svd ([Errno 2]
+//    No such file or directory...). Pass the path to the vendor's own .svd file;
+//    the SDK ships none (alp-sdk#948)."}]}
+//
+// So an `internal`-only guard never fires on the shipping CLI, and the skew
+// hint -- keyed on `validation` plus a `--pre-launch-task` that is on the argv
+// for three of the four target kinds -- fires instead, telling a customer with
+// a bad path to update a CLI that is already current. Both hints classify on
+// the ISSUE CODE now, which is what actually separates the two failures.
+
+/** The measured 0.6.0 failure for an unreadable `--svd`. */
+const INVALID_ARGUMENT_OUTCOME = {
+  ok: false,
+  kind: "validation",
+  message:
+    "Alp: --svd path cannot be read: /home/dev/nope.svd ([Errno 2] No such " +
+    "file or directory). Pass the path to the vendor's own .svd file; the " +
+    "SDK ships none (alp-sdk#948).",
+  envelope: {
+    command: "debug-config",
+    ok: false,
+    exitCode: 2,
+    issues: [
+      {
+        code: "debug-config.invalid-argument",
+        severity: "error",
+        message: "Alp: --svd path cannot be read: /home/dev/nope.svd",
+      },
+    ],
+  },
+};
+
+test("an unreadable --svd at the pinned tan still names the setting", async () => {
+  const { argv, plans } = await configureWith(INVALID_ARGUMENT_OUTCOME, {
+    svdPath: "vendor/nope.svd",
+  });
+
+  assert.ok(argv[0].includes("--svd"), "the argv under test must carry --svd");
+  assert.equal(plans.length, 1);
+  assert.match(
+    plans[0].message,
+    /alpSdk\.svdPath/,
+    "exit 2 + debug-config.invalid-argument is the SHIPPING shape of this " +
+      "failure; a guard that only fires on exit 5 never fires at all",
+  );
+  assert.ok(
+    plans[0].actions.some(
+      (action) =>
+        action.id === "openSettings" && action.arg === "alpSdk.svdPath",
+    ),
+    `expected an openSettings->alpSdk.svdPath action, got ${JSON.stringify(plans[0].actions)}`,
+  );
+});
+
+test("an unreadable --svd is NOT reported as a stale CLI", async () => {
+  const { plans } = await configureWith(INVALID_ARGUMENT_OUTCOME, {
+    svdPath: "vendor/nope.svd",
+  });
+
+  assert.doesNotMatch(
+    plans[0].message,
+    new RegExp(`requires tan ${SUPPORTED_CLI_VERSION.replace(/\./g, "\\.")}`),
+    "the customer's CLI is current -- the bad path is theirs to fix, and " +
+      "'run Alp: Update CLI' is the wrong remedy shown as the actionable one",
+  );
+});

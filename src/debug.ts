@@ -47,8 +47,10 @@ import {
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import {
+  DEBUG_CONFIG_INVALID_ARGUMENT,
   DebugConfigData,
   SUPPORTED_CLI_VERSION,
+  hasIssueCode,
   isDebugConfigData,
 } from "./alpCli/service";
 import { ensureNativeSimOverlay } from "./west";
@@ -390,8 +392,24 @@ async function runDebugConfig(
     // `--pre-launch-task` is present and `--core` may not be, because
     // `resolveManifestSlice` finds no slice before the first build — reporting
     // tan's raw complaint with no hint that the CLI is what needs updating.
+    // ...UNLESS tan named the offending argument itself. A
+    // `debug-config.invalid-argument` issue is tan saying "this VALUE is
+    // wrong", which is definitionally not version skew: the flag WAS
+    // recognised. Measured on the pinned 0.6.0, an unreadable `--svd` is
+    // exactly this -- `ok:false, exitCode:2` (so `kind` is `"validation"`)
+    // carrying `debug-config.invalid-argument`. Without this suppression the
+    // customer is told to update a CLI that is already current, and the real
+    // remedy below never shows. A tan too old to know the flag at all emits
+    // no such code (often no envelope at all), so the skew hint still fires
+    // there -- that case is pinned by the stale-tan test in
+    // test/debug.svdFailureHint.test.js.
+    const namedBadArgument = hasIssueCode(
+      outcome.envelope,
+      DEBUG_CONFIG_INVALID_ARGUMENT,
+    );
     const skew =
       outcome.kind === "validation" &&
+      !namedBadArgument &&
       (args.includes("--core") || args.includes("--pre-launch-task"))
         ? ` This extension requires tan ${SUPPORTED_CLI_VERSION} or newer; run "Alp: Update CLI" and retry.`
         : "";
@@ -402,21 +420,26 @@ async function runDebugConfig(
     // launch.json at all, not even one missing the SVD key — so without this
     // hint the symptom is indistinguishable from "debug is broken" (#340).
     //
-    // Narrowed to `outcome.kind === "internal"` (exit 5) — driven against the
-    // pinned tan (`internal_failure`/`ExitCode::InternalFailure` in
-    // `crates/tan-cli/src/commands/debug_config.rs`), BOTH `--svd` failure
-    // modes (empty-after-trim, unreadable file) land there, and it is
-    // structurally disjoint from `skew`'s `"validation"` check above — so the
-    // two hints can never both fire for the same failure. That disjointness
-    // is what makes the wide "any failure while --svd is on the argv" version
-    // wrong rather than merely imprecise: a customer on a stale tan with a
-    // perfectly good `alpSdk.svdPath` who presses F5 gets exit 2 (`--svd`
-    // unrecognised) — `skew` correctly fires ("update tan"), and the WIDE svd
-    // hint fired too, offering an Open Settings button for a setting that was
-    // never the problem, with the wrong remedy the more actionable-looking
-    // one. Narrowing to `internal` suppresses it on that path.
+    // Two accepted shapes, and NOT "any failure while --svd is on the argv".
+    // The wide version double-fires on a stale tan that does not recognise
+    // `--svd` at all: `skew` correctly says "update tan", and an Open Settings
+    // button for a setting that was never the problem shows next to it as the
+    // more actionable-looking remedy.
+    //
+    // - `debug-config.invalid-argument` is what the PINNED tan 0.6.0 returns,
+    //   at exit 2. This is the shape that actually ships.
+    // - `outcome.kind === "internal"` (exit 5) is kept for the older tan that
+    //   landed both `--svd` failure modes (empty-after-trim, unreadable file)
+    //   there. That arm was measured against `ExitCode::InternalFailure` in
+    //   the RETIRED Rust oracle; 0.6.0 is Python and no longer uses it, so on
+    //   the pinned CLI it is legacy cover, not the live path -- which is why
+    //   an `internal`-only guard silently stopped firing at all.
+    //
+    // Still disjoint from `skew`: the invalid-argument code suppresses it
+    // above, and exit 5 was never a `"validation"` kind.
     const svdHint =
-      outcome.kind === "internal" && args.includes("--svd")
+      (outcome.kind === "internal" || namedBadArgument) &&
+      args.includes("--svd")
         ? " If alpSdk.svdPath is set, check that it names a file that exists and is readable — tan refuses to write launch.json at all otherwise."
         : "";
     await notify(
