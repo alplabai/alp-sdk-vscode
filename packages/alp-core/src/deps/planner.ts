@@ -257,10 +257,19 @@ const FIX_IDS: Readonly<Record<string, ToolchainFixId>> = {
   // `src/deps/vscodeAdapter.ts` already refuses to render in the version cell.
   // tan's own prose for this check is "tan bootstrap", on every host.
   westResolved: "west-workspace",
+  // DORMANT at the pinned tan 0.6.0, kept for the older shape: these are keyed
+  // by CHECK name, and 0.6.0 emits no `cmake`/`ninja` check — it rolls both
+  // into `hostPrerequisites`, which `actionFor` answers from tan's own
+  // `missingPrerequisites` commands instead. v0.3.1 does emit them.
   cmake: "build-tools",
   ninja: "build-tools",
   zephyrSdk: "zephyr-sdk",
 };
+
+/** tan's rollup check for "a host build tool is missing from PATH". Since
+ *  0.6.0 this replaces the per-tool `cmake`/`ninja` checks, while
+ *  `missingPrerequisites` stays keyed by tool. */
+const HOST_PREREQUISITES_CHECK = "hostPrerequisites";
 
 /** The host-owned row id for the `tan` CLI itself. */
 export const TAN_ROW_NAME = "tan";
@@ -357,6 +366,27 @@ export function planDependencyReport(
             title: entry.command,
           }
         : null;
+    }
+    // No check is NAMED for the tool at this pin. tan 0.6.0 stopped emitting a
+    // check per tool and reports one `hostPrerequisites` ROLLUP instead, while
+    // `missingPrerequisites` stays keyed by TOOL — so `p.tool === check.name`
+    // matches nothing and this row rendered `fail` with no button, even though
+    // tan had already handed over `brew install cmake`. (v0.3.1 DID emit
+    // `cmake`/`ninja` checks; that shape still takes the branch above, which is
+    // why it kept passing while the shipping shape offered nothing.)
+    //
+    // The commands are tan's own, run verbatim and joined in tan's order —
+    // still never parsed out of `check.fix`, which is prose. A tool tan named
+    // with `command: null` contributes nothing: "tan knows no command" is an
+    // answer, not a gap to fill.
+    if (check.name === HOST_PREREQUISITES_CHECK && check.status !== "pass") {
+      const commands = (prerequisites ?? [])
+        .map((entry) => entry.command)
+        .filter((command): command is string => command !== null);
+      if (commands.length > 0) {
+        const command = commands.join(" && ");
+        return { kind: "command", command, effect: "install", title: command };
+      }
     }
     // tan named no prerequisite for this check. Fall back to what this
     // extension knows how to remedy — never to parsing `check.fix`, prose.
