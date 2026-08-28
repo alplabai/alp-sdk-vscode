@@ -147,3 +147,49 @@ test("alp.installDependencies with a folder open runs tan in that folder", async
   assert.equal(options.name, "Alp Bootstrap");
   assert.deepEqual(plans, [], "nothing to tell the customer on the happy path");
 });
+
+// ---------------------------------------------------------------------------
+// The SECOND disk-protecting guard: the win32 pre-flight's own argv.
+//
+// The pre-flight was written as a read-only probe -- "the SAME gate a real run
+// hits, made side-effect-free by those two flags". It is not. Measured against
+// the pinned tan 0.6.0, `bootstrap --no-pip --no-west` MOVES the customer's
+// alp-sdk checkout (tan-cli#185) and writes the machine-global default-SDK
+// pointer `~/.alp/sdk-default`, both BEFORE the pip and west phases those two
+// flags skip. It returns `ok:true, exitCode:0`, so every verdict this call site
+// parses stays silent and the extension logs nothing.
+//
+// `--dry-run` is what actually makes it read-only: "Resolve everything and
+// report the commands each step would run, without installing, cloning or
+// writing anything." Measured to still produce the two verdicts this call site
+// reads (`bootstrap.prerequisites-missing` + `missingPrerequisites[]`).
+//
+// The platform check is a runtime `process.platform` read inside the handler,
+// so the override has to wrap the CALL, not the require.
+
+/** Run `fn` with `process.platform` reporting `value`, then restore it. */
+async function withPlatform(value, fn) {
+  const original = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value, configurable: true });
+  try {
+    return await fn();
+  } finally {
+    Object.defineProperty(process, "platform", original);
+  }
+}
+
+test("the win32 pre-flight probes with --dry-run and writes nothing", async () => {
+  const { handlers, preflights } = register("/w");
+
+  await withPlatform("win32", () => handlers.get("alp.installDependencies")());
+
+  assert.equal(preflights.length, 1, "the win32 pre-flight must still run");
+  const [, argv] = preflights[0];
+  assert.ok(
+    argv.includes("--dry-run"),
+    "without --dry-run this probe MOVES the customer's alp-sdk checkout and " +
+      "repoints their global default SDK, at ok:true with nothing logged " +
+      `(argv was ${JSON.stringify(argv)})`,
+  );
+  assert.deepEqual(argv, ["bootstrap", "--no-pip", "--no-west", "--dry-run"]);
+});
