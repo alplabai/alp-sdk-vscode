@@ -26,9 +26,22 @@ const Module = require("node:module");
 const root = path.join(__dirname, "..");
 const { SUPPORTED_CLI_VERSION } = require("../out/alpCli/service.js");
 
+// `warnIfCliCannotBuildSom` (#606) lives in `src/build/somCliFloorGuard.ts`,
+// a SEPARATE compiled module `west.js` requires. It captures `probeTanVersion`
+// / `notifyAsync` at LOAD time, and only `modPath` below is cache-busted per
+// call — left cached, the second `register()` in a test file would keep
+// calling the FIRST call's closures (which push into that first call's own
+// `probes`/`plans` arrays), so its own `h.plans` would stay empty no matter
+// what it stubbed. Same trap and same fix as
+// test/proxyEnv.nonTanChildren.test.js's `ALP_ADAPTER`.
+const SOM_FLOOR_GUARD = require.resolve(
+  path.join(root, "out", "build", "somCliFloorGuard.js"),
+);
+
 function loadWest(stubs) {
   const modPath = require.resolve(path.join(root, "out", "west.js"));
   delete require.cache[modPath];
+  delete require.cache[SOM_FLOOR_GUARD];
   const originalLoad = Module._load;
   Module._load = function (request, ...rest) {
     return Object.prototype.hasOwnProperty.call(stubs, request)
@@ -40,6 +53,7 @@ function loadWest(stubs) {
   } finally {
     Module._load = originalLoad;
     delete require.cache[modPath];
+    delete require.cache[SOM_FLOOR_GUARD];
   }
 }
 
@@ -79,16 +93,29 @@ function register(opts) {
     "./alpCli/vscodeAdapter": {
       runAlpInTerminal: async (...args) => void spawns.push(args),
       runAlpStreamed: async (...args) => void spawns.push(args),
-      probeTanVersion: async () => {
-        probes += 1;
-        return opts.probed ?? null;
-      },
       runAlpCommand: async () => ({
         outcome: { ok: true },
         raw: {},
         source: "test",
       }),
     },
+    // `warnIfCliCannotBuildSom` (#606) now lives in `src/build/
+    // somCliFloorGuard.ts`, one directory deeper than `west.ts` — its OWN
+    // `require("../alpCli/vscodeAdapter")` / `require("../notify/
+    // vscodeAdapter")` / `require("../util")` are DIFFERENT request strings
+    // than west.ts's `"./..."` ones above, so `Module._load`'s exact-string
+    // match needs both spellings stubbed or these fall through to the real,
+    // vscode-heavy modules and crash on `vscode.window.createOutputChannel`.
+    "../alpCli/vscodeAdapter": {
+      probeTanVersion: async () => {
+        probes += 1;
+        return opts.probed ?? null;
+      },
+    },
+    "../notify/vscodeAdapter": {
+      notifyAsync: (plan) => void plans.push(plan),
+    },
+    "../util": { log() {} },
     "./west/vscodeAdapter": {
       collectWestWorkspaceContext: () => ({
         workspaceRoot: PROJECT,

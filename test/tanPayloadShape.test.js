@@ -270,6 +270,14 @@ async function drivePanel(envelopeFor) {
     },
     "./webviewHtml": { buildWebviewHtml: () => "<html></html>" },
     "../notify/vscodeAdapter": { notifyAsync() {} },
+    // #607: the panel's readers now resolve `cwd` through
+    // `collectProjectContext()`, not `workspaceFolders[0]` directly. The real
+    // resolver needs `vscode.workspace.getConfiguration`, absent from this
+    // file's `vscode` stub, so it is stubbed here with the same
+    // "/home/dev/proj" root the old direct read used.
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({ workspaceRoot: "/home/dev/proj" }),
+    },
   });
 
   BuildPlanPanel.open({ extensionUri: "/ext" });

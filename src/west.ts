@@ -22,16 +22,13 @@ import * as path from "path";
 import * as vscode from "vscode";
 
 import {
-  probeTanVersion,
   runAlpCommand,
   runAlpInTerminal,
   runAlpStreamed,
 } from "./alpCli/vscodeAdapter";
-import { SUPPORTED_CLI_VERSION } from "./alpCli/service";
-import { isRenesasSku, somCliFloorWarning } from "./alpCli/somCliFloor";
-import { planFailure, planPrecondition } from "./notify/service";
-import { notify, notifyAsync } from "./notify/vscodeAdapter";
-import { parseBoardConfig } from "@alp-sdk/core/board/parse";
+import { warnIfCliCannotBuildSom } from "./build/somCliFloorGuard";
+import { planPrecondition } from "./notify/service";
+import { notify } from "./notify/vscodeAdapter";
 import {
   collectWestWorkspaceContext,
   executeWestPlan,
@@ -102,59 +99,6 @@ async function resolveOrchestratorTarget(
 }
 
 // ── CLI-backed orchestrator workflow (tan build/image/flash/clean) ───────────
-
-/** The SoM SKU declared by the `board.yaml` at `cwd`, or null when there is no
- *  readable project there — no file, unparseable YAML, or a board that declares
- *  no `som`. Every one of those means "say nothing", never "assume a SKU".
- *
- *  The `fs` read lives here while the parse is `@alp-sdk/core`'s, so this file
- *  holds no second copy of the board-config rules. */
-function somSkuOf(cwd: string): string | null {
-  const boardYaml = path.join(cwd, "board.yaml");
-  if (!fs.existsSync(boardYaml)) return null;
-  try {
-    return (
-      parseBoardConfig(fs.readFileSync(boardYaml, "utf8")).som?.sku ?? null
-    );
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Say so BEFORE a build this tan cannot configure (#502).
- *
- * Scoped to `build` because that is where the abort was measured and where the
- * customer is left with a Kconfig error naming neither their CLI nor their SoM.
- *
- * The probe is deliberately behind the SKU check: `probeTanVersion` spawns the
- * CLI, and there is no reason to pay that on every Alif or NXP build to answer
- * a question only Renesas can fail. Fire-and-forget (`notifyAsync`) — this is
- * an explanation, not a gate, so the build the customer asked for still starts
- * immediately.
- */
-async function warnIfCliCannotBuildSom(
-  context: vscode.ExtensionContext,
-  cwd: string,
-): Promise<void> {
-  const sku = somSkuOf(cwd);
-  if (!sku || !isRenesasSku(sku)) return;
-
-  const warning = somCliFloorWarning(sku, await probeTanVersion(context));
-  if (!warning) return;
-
-  log(`[build] ${warning.detail}`);
-  notifyAsync(
-    planFailure({
-      operation: "Build",
-      cause: warning.cause,
-      detail: warning.detail,
-      severity: "warning",
-      actions: [{ id: "updateCli", title: `Use tan ${SUPPORTED_CLI_VERSION}` }],
-      dedupeKey: "som-cli-floor",
-    }),
-  );
-}
 
 async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   const target = await resolveOrchestratorTarget(
@@ -301,10 +245,22 @@ export async function ensureNativeSimOverlay(
 
   // `interactive: true`: both callers (`westRunNativeSim`'s "Alp: Run" and
   // `startDebugging`'s "Alp: Debug", `debug.ts`) are explicit user actions.
+  //
+  // `root`, not `undefined` — this WRITES `boards/native_sim_native_64.
+  // overlay` (#605's class of defect, found on a later review pass). An
+  // omitted cwd reached `child_process.spawn` unset and the child inherited
+  // the extension host's own directory, so the overlay landed there instead
+  // of under the project `root` this same function already resolved two
+  // lines up for the `nativeSimOverlayExists(root)` check just above — and
+  // since `outcome.ok` still comes back true (`tan generate` genuinely wrote
+  // A file, just not where this function later looks for one),
+  // `nativeSimOverlayExists(root)` stays false and this regenerated on every
+  // single native_sim run, silently, with the app never picking up the
+  // overlay it wrote.
   const { outcome } = await runAlpCommand(
     context,
     ["generate", "--target", "native-sim-overlay"],
-    undefined,
+    root,
     { interactive: true },
   );
   if (!outcome.ok) {

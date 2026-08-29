@@ -50,9 +50,12 @@ function loadWithStubs(relPath, stubs) {
   }
 }
 
-/** One Refresh click. `envelope` is what the stubbed `tan` answers with. */
-async function driveRefresh(envelope) {
+/** One Refresh click. `envelope` is what the stubbed `tan` answers with.
+ *  `readOnlyProjectCwd` is overridable per-test — #605's own test wants a
+ *  DISTINCT value to prove it reaches the spawn, not just any string. */
+async function driveRefresh(envelope, projectCwd = "/proj") {
   const argvs = [];
+  const cwds = [];
   const channel = [];
   const posted = [];
 
@@ -66,8 +69,9 @@ async function driveRefresh(envelope) {
     },
     "../alpCli/vscodeAdapter": {
       proxyEnvAdditions: () => ({}),
-      runAlpCommand: async (_context, args) => {
+      runAlpCommand: async (_context, args, cwd) => {
         argvs.push(args);
+        cwds.push(cwd);
         return { outcome: { envelope } };
       },
     },
@@ -75,6 +79,9 @@ async function driveRefresh(envelope) {
       notify: async () => undefined,
       notifyAsync: () => {},
     },
+    // #605: this handler used to pass `undefined` as the `sdk list` cwd; it
+    // now resolves through `readOnlyProjectCwd()`.
+    "../project/vscodeAdapter": { readOnlyProjectCwd: () => projectCwd },
     "../sdk/activeSdk": {
       clearActiveSdk: async () => {},
       setActiveSdk: async () => {},
@@ -97,7 +104,7 @@ async function driveRefresh(envelope) {
   for (let i = 0; i < 200 && posted.length === 0; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  return { argvs, channel, posted };
+  return { argvs, cwds, channel, posted };
 }
 
 const RELEASE = {
@@ -151,4 +158,29 @@ test("a successful-but-empty answer records its own reason", async () => {
   assert.deepEqual(channel, [
     "[sdk-list] warning: `sdk list` reports the Alp SDK releases published upstream on GitHub -- there is no local/offline copy to answer from. Add --online to fetch them.",
   ]);
+});
+
+test("`sdk list` runs with an explicit, resolved cwd — never undefined (#605)", async () => {
+  const { cwds } = await driveRefresh(
+    {
+      command: "sdk",
+      ok: true,
+      exitCode: 0,
+      project: { root: null, boardYaml: null },
+      data: { subcommand: "list", releases: [RELEASE] },
+      issues: [],
+    },
+    "/work/renesas-control",
+  );
+
+  assert.ok(cwds.length > 0, "the lookup must still run");
+  for (const cwd of cwds) {
+    assert.equal(
+      cwd,
+      "/work/renesas-control",
+      "an omitted cwd reaches child_process.spawn unset and the child " +
+        "inherits the extension host's own directory instead of the " +
+        "customer's project — `sdk` resolves a project and an SDK from cwd",
+    );
+  }
 });

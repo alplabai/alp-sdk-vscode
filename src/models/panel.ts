@@ -45,7 +45,9 @@ import {
   type WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml, runWebviewCommand } from "../ideHub/webviewHtml";
-import { reportError } from "../notify/vscodeAdapter";
+import { planPrecondition } from "../notify/service";
+import { notifyAsync, reportError } from "../notify/vscodeAdapter";
+import { collectProjectContext } from "../project/vscodeAdapter";
 import { log as logChannel } from "../util";
 import {
   cliFailureMessage,
@@ -284,8 +286,14 @@ class ModelsPanel {
    *  per-model selection that removes the surprise entirely (tan-cli#857) —
    *  rather than after the panel is visible again. */
   async buildModel(name?: string): Promise<void> {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-
+    // Defined BEFORE the workspace guard below, and the guard's own refusal
+    // calls it: the webview's `build()` (useModels.ts) dispatches `buildStart`
+    // — `building: true` — before it even posts the click, and only a
+    // `modelBuildProgress` with `done: true` clears it (both Build buttons
+    // are `disabled={building}`). Every OTHER exit from this method reaches
+    // that through `sendProgress`; an early `return` that skips it leaves the
+    // button disabled until the panel is closed and reopened, which is worse
+    // than the spawn this guard exists to prevent.
     const sendProgress = (
       log: string,
       done: boolean,
@@ -294,6 +302,21 @@ class ModelsPanel {
       logChannel(`[model-build] ${log}`);
       this.post({ type: "modelBuildProgress", log, done, success });
     };
+
+    // #605: this used to read `workspaceFolders[0]` and pass it straight to a
+    // spawn unchecked — with no folder open, `tan model build` would run
+    // against the extension host's own cwd (on Windows, the VS Code install
+    // directory) and compile there. Resolved through `collectProjectContext`,
+    // not `workspaceFolders[0]`, per `docs/ARCHITECTURE_RULES.md` §3 — the
+    // same rule `requireWorkspace` (ideHub/buildPlanPanel.ts) follows.
+    const cwd = collectProjectContext().workspaceRoot;
+    if (!cwd) {
+      notifyAsync(
+        planPrecondition("noWorkspace", { operation: "build models" }),
+      );
+      sendProgress("Open a folder to build models.", true, false);
+      return;
+    }
 
     sendProgress(
       name
