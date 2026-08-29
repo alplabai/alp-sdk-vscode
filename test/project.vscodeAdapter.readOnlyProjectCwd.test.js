@@ -69,7 +69,18 @@ test("with a folder open, it is the resolved workspace root", () => {
   );
   const cwd = readOnlyProjectCwdWith([{ uri: { fsPath: folder } }]);
 
-  assert.equal(cwd, folder);
+  // POSIX-separated, NOT `fsPath` verbatim: `resolveWorkspaceRoot`
+  // (packages/alp-core/src/project/service.ts) ends in `toPosix(...)`, so on
+  // win32 the resolved root uses `/` while the `path.join` above produced
+  // `\`. Comparing against the native spelling passes on macOS and fails on
+  // Windows only — which is exactly how this first shipped.
+  const expected = folder.split(path.sep).join("/");
+  assert.equal(cwd, expected);
+  assert.ok(
+    !cwd.includes("\\"),
+    "the resolved root must stay POSIX-separated; a native-separator answer " +
+      "here would diverge from every other consumer of collectProjectContext",
+  );
   assert.notEqual(
     cwd,
     os.tmpdir(),

@@ -28,6 +28,16 @@ const Module = require("node:module");
 
 const root = path.join(__dirname, "..");
 
+// The resolved root is POSIX-separated in production — `resolveWorkspaceRoot`
+// (packages/alp-core/src/project/service.ts) ends in `toPosix(...)` — while
+// the panel then builds the manifest path with `path.join`, which is NATIVE.
+// So on win32 the panel produces `\root\project-b\build\...` from this
+// same POSIX root, and a hardcoded POSIX expectation fails there and only
+// there. Derive both the stub's answer and the expectation the way the panel
+// does, or this file is green on macOS and red on Windows.
+const PROJECT_B = "/root/project-b";
+const MANIFEST_B = path.join(PROJECT_B, "build", "system-manifest.yaml");
+
 /** Load `out/ideHub/buildPlanPanel.js` with the host modules stubbed, send
  *  one `requestBuildPlan`, and return every message posted to the webview.
  *
@@ -138,8 +148,8 @@ async function drivePanel(opts) {
 
 test("a manifest under the resolved project root — NOT workspaceFolders[0] — is found", async () => {
   const { posted } = await drivePanel({
-    workspaceRoot: "/root/project-b",
-    manifestAt: "/root/project-b/build/system-manifest.yaml",
+    workspaceRoot: PROJECT_B,
+    manifestAt: MANIFEST_B,
   });
 
   const sizes = posted.find((m) => m.type === "sliceSizesData");
@@ -164,7 +174,7 @@ test("a manifest under the resolved project root — NOT workspaceFolders[0] —
 
 test("no manifest yet under the resolved root says so, not a silent blank", async () => {
   const { posted } = await drivePanel({
-    workspaceRoot: "/root/project-b",
+    workspaceRoot: PROJECT_B,
     manifestAt: null,
   });
 
@@ -173,7 +183,7 @@ test("no manifest yet under the resolved root says so, not a silent blank", asyn
   assert.equal(sizes.report, null);
   assert.equal(
     sizes.error,
-    "No system manifest at /root/project-b/build/system-manifest.yaml.",
+    `No system manifest at ${MANIFEST_B}.`,
     "'no build output' would be a claim about the whole build; only ONE " +
       "file was checked, the same one the sibling systemManifestData " +
       "reader calls merely deferred, not absent",
