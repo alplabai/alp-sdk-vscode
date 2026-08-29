@@ -6,6 +6,23 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **A bad `alpSdk.svdPath` no longer tells you to update your CLI.** The hint
+  naming the setting was gated on tan exiting 5, measured against an
+  implementation that has since been replaced. The pinned tan `0.6.0` returns
+  exit 2 with `debug-config.invalid-argument` for an unreadable `--svd`, so the
+  hint never fired and its "Open Settings" button went with it; the
+  version-skew hint fired instead, sending you to update a CLI that was already
+  current. Both hints now read the issue code, which is what separates "this
+  flag is unknown" from "this flag's value is wrong". A genuinely old tan still
+  gets the skew hint.
+- **Build Plan panel buttons no longer run in the wrong project.** With no
+  folder open the panel still opened, and Materialise / Build / Flash passed no
+  working directory to tan, so the child inherited the editor's own directory
+  (on Windows, the VS Code install directory). All three now stop and say a
+  folder is needed, matching what Build and Bootstrap already did. They also
+  resolve the project the same way every other command does, so on a
+  multi-root workspace the panel's Build button and the palette's Build no
+  longer disagree about which folder they are building.
 - **The Windows bootstrap pre-flight no longer moves your alp-sdk checkout.**
   On Windows, "Initialize Workspace" first ran `tan bootstrap --no-pip
   --no-west` as a probe, documented in this repo as side-effect-free. It was

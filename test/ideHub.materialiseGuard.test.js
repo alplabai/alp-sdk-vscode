@@ -124,6 +124,13 @@ async function driveMaterialise(materialiseEnvelope) {
       releaseStreamedRun() {},
       log: (line) => logs.push(line),
     },
+    // The seam the panel's workspace guard reads. It resolves the root through
+    // `collectProjectContext`, not `workspaceFolders[0]`
+    // (`docs/ARCHITECTURE_RULES.md` §3), so this has to answer or every handler
+    // below stops at the guard before it reaches an envelope.
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({ workspaceRoot: "/home/dev/proj" }),
+    },
     "./webviewHtml": { buildWebviewHtml: () => "<html></html>" },
     "../notify/vscodeAdapter": {
       notifyAsync: (plan) => notified.push(plan),
