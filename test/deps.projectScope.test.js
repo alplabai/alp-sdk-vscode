@@ -432,6 +432,7 @@ async function loggedLines(doctorData) {
         workspaceRoot: "/home/dev/proj",
         sdkRoot: null,
       }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
     },
   });
   const result = await buildDependencyReport(

@@ -50,7 +50,6 @@ import {
   bootstrapHost,
 } from "@alp-sdk/core/toolchain/bootstrapPlan";
 import type { SdkRelease } from "@alp-sdk/core/sdk/models";
-import * as os from "os";
 import * as vscode from "vscode";
 
 import { cliSkew, isCliBehind, SUPPORTED_CLI_VERSION } from "../alpCli/service";
@@ -63,7 +62,10 @@ import {
 import { type AlpIdeState, BOOTSTRAP_RUN_NAME } from "../ideHub/messages";
 import { planFailure, planPrecondition } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
-import { collectProjectContext } from "../project/vscodeAdapter";
+import {
+  collectProjectContext,
+  readOnlyProjectCwd,
+} from "../project/vscodeAdapter";
 import { runToolchainFix, TOOLCHAIN_FIX_RUN_NAME } from "../toolchain";
 import { awaitRun, isRunActive, log, runInTerminal } from "../util";
 
@@ -184,10 +186,23 @@ async function latestSdkTag(
   // `--online` is what lets `list` query the GitHub releases API at all. The
   // sibling reader (`src/ideHub/sdkManagerMessages.ts`) has always passed it;
   // this one did not, and that omission is half of #542.
+  //
+  // `readOnlyProjectCwd()`, not `undefined` (#605): `sdk` resolves a project
+  // and an SDK from cwd, so an omitted one answers about the extension
+  // host's own directory instead of the customer's project — the same
+  // hazard `buildDependencyReport` documents for `doctor` below. The two
+  // issue codes this could surface, `sdk.project-pin-unresolved` and
+  // `sdk.discovery-divergent`, are `"status": "reserved"` / `"consumer":
+  // "none"` in `test/golden/tan-contract/envelope-contract.json` — which
+  // means no consumer in THIS extension binds them, not that tan does not
+  // emit them; the registry names an `emittedBy` for each. See
+  // `readOnlyProjectCwd`'s own doc for why neither this site nor
+  // its sibling in `src/ideHub/sdkManagerMessages.ts` withholds a
+  // project-scoped issue the way `withheldProjectChecks` does for `doctor`.
   const { outcome } = await runAlpCommand(
     context,
     ["sdk", "list", "--online"],
-    undefined,
+    readOnlyProjectCwd(),
     {
       signal,
       interactive: force,
@@ -775,8 +790,14 @@ export async function buildDependencyReport(
   // With no folder open the temp directory is the honest stand-in: it exists on
   // every host, it is nobody's project, and every check whose answer would
   // depend on it is withheld below rather than reported.
+  //
+  // `readOnlyProjectCwd()` for the VALUE — the one place that fallback is
+  // spelled, shared with the two `sdk list` sites (#605) — but `hasProject`
+  // still needs `project.workspaceRoot` itself: the helper only returns the
+  // resolved directory, not whether it had to fall back to get there, and
+  // `withheldProjectChecks` below needs that boolean, not the path.
   const hasProject = project.workspaceRoot !== null;
-  const cwd = project.workspaceRoot ?? os.tmpdir();
+  const cwd = readOnlyProjectCwd();
   const interactive = options.interactive === true;
   const doctor = await runDoctor(
     context,

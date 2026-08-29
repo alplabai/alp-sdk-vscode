@@ -6,6 +6,59 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **Four `tan` spawns in this diff run with an explicit cwd instead of an
+  unchecked or omitted one (#605) — more of the same class remain and are
+  tracked separately, not claimed fixed here.** `src/models/panel.ts`'s
+  `buildModel` read `workspaceFolders[0]` and passed it straight to a spawn —
+  the same defect class #600 fixed for the Build Plan panel — so with no
+  folder open `tan model build` compiled into the extension host's own
+  directory. It now refuses the same way, through `collectProjectContext().
+  workspaceRoot`. The two `sdk list --online` spawns
+  (`src/deps/vscodeAdapter.ts`, `src/ideHub/sdkManagerMessages.ts`) passed
+  `undefined` as cwd; `sdk` resolves a project and an SDK from cwd, so an
+  omitted one answered about the extension host's directory rather than the
+  customer's. Neither of those two WRITES anything, so neither refuses with
+  no folder open — both now resolve through a shared `readOnlyProjectCwd()`,
+  falling back to `os.tmpdir()` when no project is open, the same "no folder
+  is not a refusal" rule `buildDependencyReport` already applies to `doctor`.
+  `src/west.ts`'s `ensureNativeSimOverlay` resolved `root` and used it to
+  check whether `boards/native_sim_native_64.overlay` already existed, then
+  spawned the `tan generate` that WRITES it with `undefined` instead of that
+  same `root` — reached from both "Alp: Run" and F5 Debug on a native_sim
+  target, and the wrong-directory write meant the check never found what the
+  generate step actually wrote, silently regenerating on every single run
+  with the app never picking up the overlay. Found on the adversarial review
+  pass over this issue, not in the original three; at least six more
+  omitted-cwd `tan` spawns are known to remain
+  (`src/ideHub/newProjectFlowPanel.ts`, `src/lsp/client.ts`,
+  `src/configurator/customEditor.ts`) and are filed as follow-ups rather than
+  folded into this change.
+- **The Renesas CLI-floor warning (#502) now guards all four `tan build`
+  spawn sites, not one (#606).** `warnIfCliCannotBuildSom` was wired only
+  into `alp.westBuild`; the Build Plan panel's Materialise and Build handlers
+  and the `preLaunchTask`/Run Task build — what `--pre-launch-task` runs
+  before a debug session — all skipped it, so a Renesas customer building
+  from any of those three still hit the bare `CONFIG_ALP_SDK_CHIP_NONE`
+  Kconfig abort with no explanation naming their CLI or their SoM. The check
+  moves into a shared `src/build/somCliFloorGuard.ts`, called explicitly from
+  all four sites. It is not folded into the generic `runAlpStreamed` /
+  `runAlpCommand` / `runAlpInTerminal` dispatch layer those sites already
+  share: those functions serve every non-build command this extension runs,
+  and a build-specific probe embedded there would mean sniffing every argv
+  the way `gateFlashDispatch` already does for a flash — a materially bigger
+  change than this fix's scope, left for if a fifth site ever needs it.
+- **The Build Plan panel's memory table no longer silently blanks for a
+  project that is not the workspace root (#607).** The file watcher fires on
+  any `**/board.yaml` / `**/system-manifest.yaml` change anywhere in the
+  workspace, but the size and manifest readers checked `workspaceFolders[0]`
+  while the panel's own Materialise/Build handlers (since #600) resolve
+  `cwd` through `collectProjectContext().workspaceRoot` — on a multi-root
+  workspace the two can name different folders, so a build the panel itself
+  just ran could leave the table blank with nothing on screen to say why.
+  Both readers now use the same resolver, and `report: null` always carries a
+  reason: "Open a folder…" with no root resolved, or the exact
+  `build/system-manifest.yaml` path checked when one resolved but no build
+  has written there yet.
 - **A bad `alpSdk.svdPath` no longer tells you to update your CLI.** The hint
   naming the setting was gated on tan exiting 5, measured against an
   implementation that has since been replaced. The pinned tan `0.6.0` returns

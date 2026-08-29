@@ -28,6 +28,7 @@ import {
   planSuccess,
 } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
+import { readOnlyProjectCwd } from "../project/vscodeAdapter";
 import {
   clearActiveSdk,
   setActiveSdk,
@@ -315,10 +316,22 @@ export function createSdkMessageHandler(
     // effect and its explicit Refresh button (`requestSdkReleases`), both
     // downstream of the user explicitly opening this panel — never a
     // background re-derive.
+    //
+    // `readOnlyProjectCwd()`, not `undefined` (#605): an omitted cwd reaches
+    // the spawn unset and the child inherits the extension host's own
+    // directory instead of the customer's project — `sdk` resolves a project
+    // and an SDK from cwd. `os.tmpdir()` when no project is open, matching
+    // the sibling reader in `src/deps/vscodeAdapter.ts` — a folder-less
+    // "browse SDKs to install" is a real, non-refusable state, unlike the
+    // panel's WRITE handlers. See that sibling's own comment for the two
+    // pre-consumer `sdk.*` issue codes this fallback interacts with, and
+    // `readOnlyProjectCwd`'s doc for why the `envelope.issues` loop just
+    // below does not withhold a project-scoped one the way `doctor`'s
+    // `withheldProjectChecks` does.
     const { outcome } = await runAlpCommand(
       context,
       ["sdk", "list", "--online"],
-      undefined,
+      readOnlyProjectCwd(),
       {
         interactive: true,
       },

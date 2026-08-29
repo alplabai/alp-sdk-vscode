@@ -387,6 +387,15 @@ async function drivePanel(opts) {
     "./webviewHtml": { buildWebviewHtml: () => "<html></html>" },
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../build/lastBuild": { readLastBuild: () => opts.lastBuild ?? null },
+    // #607: the panel's readers now resolve `cwd` through
+    // `collectProjectContext()`, not `workspaceFolders[0]` directly — see
+    // `docs/ARCHITECTURE_RULES.md` §3. The real resolver needs
+    // `vscode.workspace.getConfiguration`, which this file's minimal `vscode`
+    // stub does not provide, so it is stubbed here instead, answering with
+    // the same "/proj" root the old direct read used.
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({ workspaceRoot: "/proj" }),
+    },
   };
   Module._load = function (request, ...rest) {
     return Object.prototype.hasOwnProperty.call(stubs, request)

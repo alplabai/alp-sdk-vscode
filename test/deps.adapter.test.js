@@ -55,7 +55,10 @@ function loadDepsAdapter(overrides = {}) {
     "../alpCli/vscodeAdapter": {},
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
-    "../project/vscodeAdapter": {},
+    // `readOnlyProjectCwd` (#605) is `latestSdkTag`'s replacement for a bare
+    // `undefined` cwd on the `sdk list` spawn; none of the tests below assert
+    // on the exact value, only that a spawn happens and with which flags.
+    "../project/vscodeAdapter": { readOnlyProjectCwd: () => "/proj" },
     "../toolchain": {},
     "../util": { log() {} },
     ...overrides,
@@ -241,6 +244,7 @@ async function report(
     },
     "../project/vscodeAdapter": {
       collectProjectContext: () => ({ workspaceRoot, sdkRoot: null }),
+      readOnlyProjectCwd: () => workspaceRoot ?? "/tmp",
     },
   });
   const result = await buildDependencyReport({}, STATE, reportOptions);
@@ -374,6 +378,41 @@ test("withLatestSdk: the explicit Refresh click DOES ask tan CLI download consen
       true,
       "`refreshLatestSdk: true` IS the user's explicit Refresh click " +
         "(deps/panel.ts) and must reach `sdk list` interactively",
+    );
+  }
+});
+
+test("withLatestSdk: `sdk list` runs with an explicit, resolved cwd — never undefined (#605)", async () => {
+  const spawns = [];
+  const { withLatestSdk } = loadDepsAdapter({
+    "../alpCli/vscodeAdapter": {
+      runAlpCommand: async (_context, args, cwd, options) => {
+        spawns.push({ args, cwd, options });
+        return { outcome: { ok: true, envelope: null, message: "" } };
+      },
+    },
+    "../project/vscodeAdapter": {
+      readOnlyProjectCwd: () => "/work/renesas-control",
+    },
+  });
+  const context = {
+    globalState: { get: (_k, fallback) => fallback, update: async () => {} },
+  };
+  await withLatestSdk(
+    context,
+    { rows: [{ name: "sdk", installed: null }] },
+    { refreshLatestSdk: true },
+  );
+
+  const listSpawns = spawns.filter((spawn) => spawn.args.includes("list"));
+  assert.ok(listSpawns.length > 0, "the lookup must still run");
+  for (const spawn of listSpawns) {
+    assert.equal(
+      spawn.cwd,
+      "/work/renesas-control",
+      "an omitted cwd reaches child_process.spawn unset and the child " +
+        "inherits the extension host's own directory instead of the " +
+        "customer's project — `sdk` resolves a project and an SDK from cwd",
     );
   }
 });

@@ -12,6 +12,7 @@ import {
 import { buildWebviewHtml } from "./webviewHtml";
 import { manifestFreshness } from "@alp-sdk/core/systemManifest/staleness";
 import { readLastBuild } from "../build/lastBuild";
+import { warnIfCliCannotBuildSom } from "../build/somCliFloorGuard";
 import {
   BUILD_RUN_NAME,
   FLASH_RUN_NAME,
@@ -230,7 +231,13 @@ export class BuildPlanPanel {
    * panel can still say about the manifest while the parse is unavailable.
    */
   private postSystemManifestUnavailable(): void {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // #607: this used to read `workspaceFolders[0]` directly — a DIFFERENT
+    // resolver than `requireWorkspace()`'s `collectProjectContext().
+    // workspaceRoot`, so on a multi-root workspace this could look at a folder
+    // the panel's OWN spawns never wrote to. `docs/ARCHITECTURE_RULES.md` §3
+    // is the same rule `requireWorkspace` already follows; this brings the
+    // panel's readers into agreement with its writers.
+    const cwd = collectProjectContext().workspaceRoot;
     const built = cwd
       ? path.join(cwd, "build", "system-manifest.yaml")
       : undefined;
@@ -271,14 +278,45 @@ export class BuildPlanPanel {
    *  A missing size tool is not an error either — tan falls back to reading
    *  ELF section headers and still returns rows. */
   private async handleRequestSliceSizes(interactive: boolean): Promise<void> {
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const built = cwd
-      ? path.join(cwd, "build", "system-manifest.yaml")
-      : undefined;
-    if (!built || !fs.existsSync(built)) {
+    // #607: same resolver as `requireWorkspace()`, not `workspaceFolders[0]` —
+    // see `postSystemManifestUnavailable`'s note just above. A build dispatched
+    // from this panel always writes under THIS root, so the watcher (which
+    // fires on any `**/board.yaml`/`**/system-manifest.yaml` change) and this
+    // reader now agree on where to look.
+    const cwd = collectProjectContext().workspaceRoot;
+    if (!cwd) {
+      // `report: null` with no reason at all reads the same as "not built
+      // yet" — the two must not be indistinguishable, so this says which one
+      // it is. `error` is sourced from the SAME `planPrecondition` call the
+      // toast below renders, not a hand-typed copy of its wording — a copy
+      // is a second string this could drift from (and it already had:
+      // `planPrecondition`'s own `actions: [{id: "openFolder"}]` never
+      // reached the panel at all, only the toast).
+      const plan = planPrecondition("noWorkspace", {
+        operation: "see slice sizes",
+      });
+      notifyAsync(plan);
       void this.panel.webview.postMessage({
         type: "sliceSizesData",
         report: null,
+        error: plan.message,
+      } satisfies ExtToWebviewMessage);
+      return;
+    }
+    const built = path.join(cwd, "build", "system-manifest.yaml");
+    if (!fs.existsSync(built)) {
+      // "No system manifest", not "no build output" — this checks for ONE
+      // file, `build/system-manifest.yaml`, which is exactly what `--manifest`
+      // / `--manifest-from` are deferred for at this pin (tan-cli#427). The
+      // sibling reader ten lines up posts `deferredBuildOptionMessage
+      // ("--manifest")` for the very same reason, into the same "System
+      // manifest" section — "no build output" here would tell a project that
+      // HAS built that it has not, right beside a message saying the manifest
+      // flag is merely deferred.
+      void this.panel.webview.postMessage({
+        type: "sliceSizesData",
+        report: null,
+        error: `No system manifest at ${built}.`,
       } satisfies ExtToWebviewMessage);
       return;
     }
@@ -340,6 +378,15 @@ export class BuildPlanPanel {
   private async handleMaterialiseBuildPlan(): Promise<void> {
     const cwd = this.requireWorkspace("materialise the build plan");
     if (!cwd) return;
+    // #606/#9: BEFORE the reservation below, not inside it.
+    // `warnIfCliCannotBuildSom` can spawn `tan --version`
+    // (`probeTanVersion` -> `readResolvedCliVersion`, a 3s-timeout child
+    // process) — reserving `BUILD_RUN_NAME` first would refuse the Build
+    // button with `"Alp Build" is still running` for that whole window while
+    // nothing is actually running yet. `--materialise` is still `tan build`
+    // under the Kconfig abort #502 warns about, and this handler was one of
+    // the three sites that skipped the warning entirely.
+    await warnIfCliCannotBuildSom(this.context, cwd);
     // Envelope mode, but it WRITES into the build tree, so it takes the build
     // reservation like a build does — materialising underneath a running build
     // rewrites the very files that build is consuming.
@@ -465,6 +512,9 @@ export class BuildPlanPanel {
   private async handleRunBuild(): Promise<void> {
     const cwd = this.requireWorkspace("build");
     if (!cwd) return;
+    // #606: the Build button was one of the three `tan build` sites that
+    // skipped #502's Renesas CLI-floor warning.
+    await warnIfCliCannotBuildSom(this.context, cwd);
     // Stream to the "Alp SDK" channel (persistent), not a terminal that dies on
     // exit — same reason as the Build/Flash orchestrator commands (util.ts).
     await runAlpStreamed(this.context, ["build"], {
