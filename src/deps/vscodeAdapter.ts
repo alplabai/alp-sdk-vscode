@@ -31,6 +31,7 @@
 
 import {
   DependencyAction,
+  type DependencyCommandStep,
   DependencyLatest,
   DependencyReport,
   DependencyRow,
@@ -731,6 +732,18 @@ export function orphanedPrerequisiteLogLines(
   ];
 }
 
+/**
+ * Once per extension-host session, not once per refresh (#603, second
+ * review, minor 8) — the same one-shot shape `DependencyPanel`'s own
+ * `offeredBootstrap` uses. `refresh()` re-derives on EVERY window focus
+ * (`src/extension.ts`'s `onDidChangeWindowState`), and a genuinely orphaned
+ * envelope stays orphaned across every one of those — an unthrottled
+ * warn-level 60-word paragraph on every alt-tab back into the editor trains
+ * a reader to skim past the "Alp SDK" channel, which loses the invariant as
+ * surely as no line at all would.
+ */
+let orphanedPrerequisitesLogged = false;
+
 // The shared `runDoctor` spawn (`../alpCli/doctor`, #376) takes `interactive`
 // as its last argument:
 //
@@ -851,10 +864,16 @@ export async function buildDependencyReport(
   // this line `orphanedPrerequisites` is written and read by nothing outside
   // the type itself — the next `hostPrerequisites` rename would be exactly as
   // silent to a customer as the bug this report exists to catch.
-  for (const line of orphanedPrerequisiteLogLines(
-    planned.orphanedPrerequisites,
-  )) {
-    log(line, "warn");
+  if (
+    planned.orphanedPrerequisites.length > 0 &&
+    !orphanedPrerequisitesLogged
+  ) {
+    orphanedPrerequisitesLogged = true;
+    for (const line of orphanedPrerequisiteLogLines(
+      planned.orphanedPrerequisites,
+    )) {
+      log(line, "warn");
+    }
   }
 
   return {
@@ -1132,6 +1151,33 @@ export function describeFixAllSkip(
 }
 
 /**
+ * Appends what a cancelled/raced-away row already installed to a Fix-all
+ * summary sentence — the CUSTOMER-VISIBLE half, not `detail`.
+ *
+ * `planSuccess`'s status-bar channel (no `actions`, the plain case here)
+ * shows ONLY its `message` string; `detail` is written to the "Alp SDK"
+ * channel and never reaches the customer at all (`src/notify/vscodeAdapter.ts`
+ * — "the ONLY place `detail` is ever written"). A 2-step row that installs
+ * cmake and is then cancelled before ninja is never in `outcome.installed`
+ * (the ROW did not finish), but `outcome.skipped[].completed` says cmake IS
+ * on the machine — and that fact belongs in `base` (destined for `message` /
+ * `cause`), not folded into `parts.join(" · ")` (destined for `detail`),
+ * or it never reaches the customer who just watched the consent screen and
+ * pressed the button (#603).
+ *
+ * `base` unchanged when nothing completed outside `outcome.installed` — the
+ * ordinary case, where the existing sentence already says everything.
+ */
+export function withFixAllPartialNote(
+  base: string,
+  outcome: Pick<FixAllOutcome, "skipped">,
+): string {
+  const partial = outcome.skipped.flatMap((entry) => entry.completed ?? []);
+  if (partial.length === 0) return base;
+  return `${base} ${partial.join(", ")} installed before stopping.`;
+}
+
+/**
  * One `failed` entry, worded for the summary toast (`deps/panel.ts`).
  *
  * A `fix`/`bootstrap` row (no `failedCommand`) keeps the ORIGINAL wording —
@@ -1160,6 +1206,77 @@ export function describeFixAllFailure(
 }
 
 /**
+ * What a single row's OWN multi-step dispatch means for the customer, or
+ * `null` when there is nothing NEW to say — every step ran and succeeded (the
+ * generic "press Refresh" reload notice already covers it), or nothing ran at
+ * all (the per-step `isRunActive` refusal already showed its own warning).
+ *
+ * The "stopped short with nothing erroring" case (a single-row press has no
+ * cancel UI, so this is a run-name race mid-row) is NOT silent (#603, second
+ * review, minor 9): `offerReloadAfterInstall`'s generic reload prose blames
+ * "tan may have reported no install command for one of them", which is
+ * simply the wrong cause here — nothing about a missing command caused this,
+ * a later step was refused. Worded as a SKIP (`severity: "warning"`, but the
+ * sentence itself never uses "exited" or "failed"), not folded into the
+ * `describeFixAllFailure` failure wording, which is reserved for a step that
+ * actually returned a non-zero code.
+ *
+ * PURE, and exported specifically so the WORDING DECISION can be tested with
+ * VALUES rather than only through a source-level regex on the caller
+ * (`deps/panel.ts`'s `reportRowStepFailure`) — a regex that matches
+ * `describeFixAllFailure(`/`notifyAsync(`/`planFailure(` verbatim survives a
+ * same-shape mutation of the `find` predicate untouched (#603, second
+ * review, blocker 2): `find((step) => step.code !== 0)` mutated to
+ * `=== 0` still contains every one of those tokens, so nothing textual
+ * catches it, while a value-based test over THIS function's return catches it
+ * directly.
+ *
+ * The failure branch reuses `describeFixAllFailure`'s wording — a row button
+ * and a Fix-all report the SAME failure the SAME way.
+ */
+export function rowStepFailureNotice(
+  rowName: string,
+  commands: readonly DependencyCommandStep[],
+  steps: readonly CommandStepOutcome[],
+): { cause: string; dedupeKey: string; severity: "warning" } | null {
+  if (steps.length === 0) return null;
+  if (
+    steps.length === commands.length &&
+    steps.every((step) => step.code === 0)
+  ) {
+    return null;
+  }
+  const failedStep = steps.find((step) => step.code !== 0);
+  if (!failedStep) {
+    // Stopped short, but nothing returned a non-zero code — a run-name race
+    // mid-row, not a failed command. Say what completed and what never ran,
+    // never "exited"/"failed".
+    const completed = steps.map((step) => step.tool);
+    const notRun = commands.slice(steps.length).map((step) => step.tool);
+    return {
+      cause:
+        `${rowName}: installed ${completed.join(", ")}; ` +
+        `${notRun.join(", ")} was not attempted — press Refresh, then try again`,
+      dedupeKey: `deps-row-skipped-${rowName}`,
+      severity: "warning",
+    };
+  }
+  return {
+    cause: describeFixAllFailure({
+      name: rowName,
+      code: failedStep.code,
+      completed: steps
+        .filter((step) => step.code === 0)
+        .map((step) => step.tool),
+      failedCommand: failedStep.command,
+      notRun: commands.slice(steps.length).map((step) => step.tool),
+    }),
+    dedupeKey: `deps-row-failed-${rowName}`,
+    severity: "warning",
+  };
+}
+
+/**
  * A consent line, plus the row it consents to. The row is the OBJECT the loop
  * will dispatch, not a name to look up again — that identity is what makes it
  * impossible for this screen to name a different artifact than the one that
@@ -1174,7 +1291,11 @@ interface ConsentPick extends vscode.QuickPickItem {
 /** What a cell says when no producer reports it (alp-sdk#1574). */
 const NOT_REPORTED = "not reported";
 
-/** One consent line: artifact on the label, the four ADR 0021 §3 facts under it. */
+/** One consent line: artifact on the label, ADR 0021 §3's four facts under it,
+ *  plus — for a partial `command` row only — a fifth clause naming what tan
+ *  named no install command for (#603, second review, nit 10: this line
+ *  drifted stale once `minor 7` added that fifth clause; the inline comment
+ *  on `detail` below is the one that stays current). */
 function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
   return {
     name: item.name,
@@ -1192,18 +1313,20 @@ function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
     // own `runInTerminal` call — see that function's own doc for why joining
     // the DISPATCH would be wrong).
     //
-    // `item.title` — the SAME sentence the row's button shows as its tooltip
-    // — closes the consent screen out too (#603): a partial `hostPrerequisites`
-    // row's title says "tan reported no install command for ninja …", and
-    // that is exactly the fact a customer consenting to "install cmake and
-    // ninja" needs and could not see here before. Appended for every row, not
-    // only a partial one, so the two surfaces never describe the same button
-    // two different ways.
+    // `item.omittedTools` (#603, second review, minor 7) — NOT `item.title` —
+    // closes the consent screen out for a PARTIAL row: a short clause built
+    // here, appended only when non-empty. Appending the whole `title` sentence
+    // unconditionally was tried first and reverted: a non-partial row
+    // duplicated `Runs:` under a second separator, and a `fix`/`open-docs`/
+    // `bootstrap` row (always `omittedTools: []`) got a second, competing
+    // claim about what the button does.
     detail:
       `Runs: ${item.source ? item.source.join(" ; ") : NOT_REPORTED} · ` +
       `Size: ${item.size ?? NOT_REPORTED} · ` +
       `Licence: ${item.licence ?? NOT_REPORTED}` +
-      (item.title ? ` · ${item.title}` : ""),
+      (item.omittedTools.length > 0
+        ? ` · tan reported no install command for ${item.omittedTools.join(", ")}`
+        : ""),
     picked: true,
   };
 }
@@ -1573,9 +1696,31 @@ function runZephyrSdkInstall(
   if (!alreadyRunning) offerRefreshAfterZephyrSdkInstall(sevenZipStatus);
 }
 
+/**
+ * The one remaining single-shot terminal dispatch — reached only from
+ * `runZephyrSdkInstall`'s "not actually a plain `west …` command" fallback,
+ * where `retargetWestCommand` refused to retarget the line and the ordinary
+ * shell dispatch is what is left.
+ *
+ * Guarded the SAME way `runZephyrSdkInstall`'s own dispatch just above
+ * already is (and the generic per-step loop in `runDependencyAction` is):
+ * `runInTerminal` may refuse a concurrent press under this name — in which
+ * case it already told the customer why, and raising
+ * `offerReloadAfterInstall` on top would read as though a NEW install just
+ * started over a dispatch that never happened.
+ *
+ * THIS WAS MISSED THE FIRST TIME (#603, second review, major 5): the
+ * unconditional-`runInTerminal`-then-notice shape is the exact defect fixed
+ * in `runDependencyAction`'s per-step loop one review round earlier, and it
+ * survived here, unfixed, because that fix was scoped to a prose finding
+ * list rather than grepped for by SHAPE across the file. Lesson kept for the
+ * next reader: when a finding names a defect shape, grep the shape, not the
+ * one call site the finding happened to measure.
+ */
 function runInNewTerminal(command: string, cwd: string | undefined): void {
+  const alreadyRunning = isRunActive(INSTALL_RUN_NAME);
   runInTerminal({ name: INSTALL_RUN_NAME, command, cwd });
-  offerReloadAfterInstall();
+  if (!alreadyRunning) offerReloadAfterInstall();
 }
 
 /**

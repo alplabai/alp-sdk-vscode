@@ -81,6 +81,11 @@ test("the hostPrerequisites row gets an install action covering BOTH tools, tan'
     { tool: "cmake", command: "brew install cmake" },
     { tool: "ninja", command: "brew install ninja" },
   ]);
+  assert.deepEqual(
+    row.action.omittedTools,
+    [],
+    "both tools got a real command — nothing is omitted",
+  );
   // Every action carries a tooltip a customer can read before pressing.
   assert.equal(typeof row.action.title, "string");
   assert.ok(row.action.title.length > 0);
@@ -106,6 +111,12 @@ test("a mixed row (one tool named, one command: null) says so in the title — n
   assert.deepEqual(row.action.commands, [
     { tool: "cmake", command: "brew install cmake" },
   ]);
+  assert.deepEqual(
+    row.action.omittedTools,
+    ["ninja"],
+    "the structured signal the consent screen builds its own clause from " +
+      "(#603 second review, minor 7) — not re-derived from title's prose",
+  );
   assert.match(row.action.title, /brew install cmake/);
   assert.match(
     row.action.title,

@@ -746,6 +746,49 @@ test("an orphaned prerequisite is LOGGED, not only recorded on the report", asyn
   assert.match(hit, /hostPrerequisites/i);
 });
 
+test("the orphan line is logged ONCE per session, not once per refresh (#603 second review, minor 8)", async () => {
+  // `DependencyPanel.refresh()` re-derives on EVERY window focus, and a
+  // genuinely orphaned envelope stays orphaned across every one of those —
+  // the same one-shot shape as the panel's own `offeredBootstrap`.
+  const orphanData = {
+    checks: [{ name: "west", status: "pass", detail: "west 1.5.0" }],
+    summary: { pass: 1, warn: 0, fail: 0 },
+    missingPrerequisites: [{ tool: "cmake", command: "brew install cmake" }],
+  };
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: orphanData, message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  // Three "refreshes" against the SAME loaded module instance — a window
+  // focus, a settings edit, a bootstrap boundary, all re-deriving the same
+  // orphaned envelope.
+  await buildDependencyReport({}, STATE, {});
+  await buildDependencyReport({}, STATE, {});
+  await buildDependencyReport({}, STATE, {});
+
+  const hits = lines.filter((line) => line.includes("cmake"));
+  assert.equal(
+    hits.length,
+    1,
+    "the orphan warning must fire once for the session, not once per refresh",
+  );
+});
+
 test("nothing is logged when every prerequisite bound to a row", async () => {
   const lines = [];
   const { buildDependencyReport } = loadDepsAdapter({
@@ -1209,23 +1252,48 @@ test("a second press while the install run is already active: surfaced via runIn
       'the shared "deps-install-reload" dedupe key, leaving the customer ' +
       "with neither",
   );
+  // #603, second review, major 4: the refusal dispatch must reserve the SAME
+  // shared name the `isRunActive` check just tested — `"Alp: install
+  // dependency"`, never the row's own name (`rowName`, "ninja" here). This
+  // harness's `isRunActive: () => true` cannot itself distinguish the two
+  // (it ignores its argument), so the wrong name would slip through every
+  // OTHER assertion in this test unnoticed: in production `isRunActive("ninja")`
+  // is false, so a `runInTerminal` call under that name would actually START
+  // a real, unreserved second install — the exact #146 double-run the shared
+  // name exists to prevent.
+  assert.equal(
+    runs[0].name,
+    "Alp: install dependency",
+    "the refusal must be dispatched under the SHARED run name, not the row's own",
+  );
+  assert.equal(
+    runs[0].command,
+    "brew install ninja",
+    "the command line itself is still the one that was refused, verbatim",
+  );
 });
 
 test(
-  "isRunActive already true never reaches awaitRun — proves the guard exists rather than just believing it",
+  "isRunActive already true never reaches awaitRun — a HANG-DETECTION test, distinct from its sibling above",
   { timeout: 2000 },
   async () => {
-    // If the mid-loop `isRunActive` check were ever removed (or defeated),
-    // this dispatches straight to `awaitRun` on a name that this harness's
-    // stub never resolves — the promise this function returns would simply
-    // never settle, and the bounded test timeout below is what turns that
-    // into a reported failure instead of a hung test run. `awaitRun`'s own
-    // doc (src/util.ts) names exactly this as its one failure mode.
+    // #603, second review, nit 11: this test's unique value over "a second
+    // press while the install run is already active" (above) is specifically
+    // that `awaitRun` here NEVER resolves — that sibling's `awaitRun` stub
+    // resolves immediately, so it cannot tell "the guard stopped this before
+    // awaitRun" apart from "awaitRun was called and happened to resolve
+    // fast". If the mid-loop `isRunActive` check were ever removed (or
+    // defeated), this dispatches straight to `awaitRun` on a name whose
+    // promise never settles, and the bounded test timeout above is what
+    // turns THAT into a reported failure instead of a hung test run.
+    // `awaitRun`'s own doc (src/util.ts) names exactly this as its one
+    // failure mode.
+    const runs = [];
     const { runDependencyAction } = loadDepsAdapter({
       vscode: { window: {}, Uri: {} },
       "../util": {
         log() {},
-        runInTerminal() {},
+        runInTerminal: (opts) => runs.push(opts),
         isRunActive: () => true,
         awaitRun: () => new Promise(() => {}), // never resolves
       },
@@ -1244,6 +1312,13 @@ test(
     });
 
     assert.deepEqual(outcomes, []);
+    // Distinct from the sibling's assertions too: it never inspects `runs`.
+    assert.equal(
+      runs.length,
+      1,
+      "the refusal still dispatches through runInTerminal exactly once, " +
+        "and never reaches a second awaitRun call",
+    );
   },
 );
 
@@ -1515,7 +1590,11 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
   const runs = [];
   const { runDependencyAction } = loadDepsAdapter({
     vscode: { window: {}, Uri: {} },
-    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
+    },
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {
       collectProjectContext: () => ({
@@ -1557,6 +1636,64 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
     "/home/dev/.alp",
     "still `west sdk install` — it still needs the west workspace topdir, " +
       "not the open project folder, even un-retargeted",
+  );
+});
+
+test("the SAME un-retargeted fallback, refused by an active install run: no false press-Refresh notice", () => {
+  // #603, second review, major 5: this fallback (`runInNewTerminal`, reached
+  // when `retargetWestCommand` returns null) is byte-for-byte the antipattern
+  // fixed for the generic command-step loop in the SAME commit — unconditional
+  // `runInTerminal` + `offerReloadAfterInstall()` — and it survived untouched
+  // because the fix was scoped to a prose finding list rather than grepped
+  // for the shape. Driven exactly as the finding measured: `isRunActive("Alp:
+  // install dependency")` already true.
+  const runs = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => true,
+    },
+    "../notify/vscodeAdapter": {
+      notifyAsync: (plan) => plans.push(plan),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        westCwd: "/home/dev/proj",
+        sdkRoot: "/home/dev/.alp/sdk/v0.13.0",
+      }),
+    },
+    "../environment/vscodeAdapter": {
+      westWorkspaceTopdir: () => "/home/dev/.alp",
+      venvWestInTopdir: (topdir) => `${topdir}/.venv/bin/west`,
+    },
+  });
+
+  runDependencyAction({
+    action: {
+      kind: "command",
+      commands: [
+        { tool: "zephyrSdk", command: 'west sdk install --name "custom sdk"' },
+      ],
+      effect: "install",
+      title: 'west sdk install --name "custom sdk"',
+    },
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  // `runInTerminal` still gets called — it is what shows the customer the
+  // refusal, unchanged from before this fix.
+  assert.equal(runs.length, 1);
+  assert.equal(
+    plans.length,
+    0,
+    "measured on dev before this fix: 1 notice fired here " +
+      '(dedupeKey "deps-install-reload") for a dispatch runInTerminal ' +
+      "refuses — this is the false press-Refresh notice",
   );
 });
 

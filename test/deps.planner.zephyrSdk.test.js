@@ -144,6 +144,7 @@ test("tan's own answer still wins wherever tan gave one", () => {
     commands: [
       { tool: "ninja", command: "winget install -e --id Ninja-build.Ninja" },
     ],
+    omittedTools: [],
     effect: "install",
     title: "winget install -e --id Ninja-build.Ninja",
   });

@@ -29,8 +29,10 @@ import {
   describeFixAllFailure,
   describeFixAllSkip,
   fixAllTargets,
+  rowStepFailureNotice,
   runDependencyAction,
   runFixAll,
+  withFixAllPartialNote,
   withLatestSdk,
 } from "./vscodeAdapter";
 
@@ -357,31 +359,18 @@ export class DependencyPanel {
     row: DependencyRow,
     steps: readonly CommandStepOutcome[],
   ): void {
-    const total =
-      row.action?.kind === "command" ? row.action.commands.length : 0;
-    if (steps.length === 0) return;
-    if (steps.length === total && steps.every((step) => step.code === 0)) {
-      return;
-    }
-    const failedStep = steps.find((step) => step.code !== 0);
-    if (!failedStep) return; // stopped short with nothing errored — nothing new to report
+    if (row.action?.kind !== "command") return;
+    // The wording DECISION lives in `rowStepFailureNotice` (vscodeAdapter.ts),
+    // pure and value-tested — this method is only the wiring from that
+    // decision to the actual notification (#603, second review, blocker 2).
+    const notice = rowStepFailureNotice(row.name, row.action.commands, steps);
+    if (!notice) return;
     notifyAsync(
       planFailure({
         operation: `Installing ${row.label}`,
-        cause: describeFixAllFailure({
-          name: row.name,
-          code: failedStep.code,
-          completed: steps
-            .filter((step) => step.code === 0)
-            .map((step) => step.tool),
-          failedCommand: failedStep.command,
-          notRun:
-            row.action?.kind === "command"
-              ? row.action.commands.slice(steps.length).map((c) => c.tool)
-              : [],
-        }),
-        severity: "warning",
-        dedupeKey: `deps-row-failed-${row.name}`,
+        cause: notice.cause,
+        severity: notice.severity,
+        dedupeKey: notice.dedupeKey,
       }),
     );
   }
@@ -456,15 +445,27 @@ export class DependencyPanel {
       );
     }
     log(`[fix-all] ${parts.join(" | ")}`);
+    // The MESSAGE, not `detail`: a `planSuccess` with no `actions` renders on
+    // the status bar, which shows only its `message` string — `detail` is
+    // written to the "Alp SDK" channel and never reaches the customer at all
+    // (#603). A row cancelled or raced away mid-sequence already changed the
+    // machine for the steps it completed, and that fact has to be IN the
+    // sentence the customer reads, not filed away in `parts` alone.
     notifyAsync(
       outcome.failed.length === 0
         ? planSuccess(
-            `Fix all: ${outcome.installed.length} of ${targets.length} installed`,
+            withFixAllPartialNote(
+              `Fix all: ${outcome.installed.length} of ${targets.length} installed.`,
+              outcome,
+            ),
             { detail: parts.join(" · ") },
           )
         : planFailure({
             operation: "Fix all",
-            cause: `${outcome.failed.length} of ${targets.length} did not install.`,
+            cause: withFixAllPartialNote(
+              `${outcome.failed.length} of ${targets.length} did not install.`,
+              outcome,
+            ),
             detail: parts.join(" · "),
             severity: "warning",
             dedupeKey: "deps-fix-all",

@@ -268,6 +268,104 @@ test("each line carries artifact, source, size and licence (ADR 0021 §3)", asyn
   assert.match(item.detail, /Licence: not reported/);
 });
 
+test("a partial row's omission sentence reaches the CONSENT SCREEN, not only the button tooltip", async () => {
+  // #603, second review, finding 5/major 3, refined by minor 7:
+  // `action.omittedTools` (structured — not `title`'s prose) must reach the
+  // actual `showQuickPick` item — the customer consents on THIS screen, not
+  // on the button's hover tooltip. Deleting the omission clause from
+  // `consentPick` must go RED here.
+  const mod = load();
+
+  await run(mod, [
+    row({
+      name: "hostPrerequisites",
+      label: "Bootstrap prerequisites",
+      action: {
+        kind: "command",
+        commands: [{ tool: "cmake", command: "brew install cmake" }],
+        omittedTools: ["ninja"],
+        effect: "install",
+        title:
+          "Installs cmake: brew install cmake. tan reported no install " +
+          "command for ninja — this row can still read failing for it " +
+          "after a clean install of everything above.",
+      },
+    }),
+  ]);
+
+  const [item] = mod.shown[0];
+  assert.match(
+    item.detail,
+    /no install command for ninja/,
+    "the omission sentence must be ON the consent line the customer answers",
+  );
+});
+
+test("a FULL row (nothing omitted) gets no omission clause — no duplicated Runs:, no competing claim", async () => {
+  // #603, second review, minor 7: appending the whole `title` sentence
+  // unconditionally duplicated `Runs:` for a fully-covered multi-step row and
+  // added a second, contradicting claim for `fix`/`open-docs`/`bootstrap`
+  // rows (whose `omittedTools` is always `[]`). All three shapes below must
+  // render EXACTLY the plain four-fact line — nothing appended.
+  //
+  // `confirmDependencyInstalls` directly, not `run()` (`runFixAll`): a `fix`
+  // row here dispatches through `runToolchainFix`, which this file's stub
+  // never resolves the pending `awaitRun` for — this test is about what the
+  // CONSENT SCREEN renders, not about actually running the install sequence.
+  const mod = load();
+
+  await mod.confirmDependencyInstalls([
+    // A full 2-tool rollup row: `Runs:` already lists both commands.
+    row({
+      name: "hostPrerequisites",
+      action: {
+        kind: "command",
+        commands: [
+          { tool: "cmake", command: "brew install cmake" },
+          { tool: "ninja", command: "brew install ninja" },
+        ],
+        omittedTools: [],
+        effect: "install",
+        title: "Installs cmake, ninja: brew install cmake; brew install ninja",
+      },
+    }),
+    // A `fix`/bootstrap row: its own title describes a whole terminal run,
+    // not an install command — a second "Runs" claim would contradict it.
+    row({
+      name: "west",
+      action: {
+        kind: "fix",
+        fixId: "west",
+        effect: "bootstrap",
+        title:
+          "Runs the Alp SDK bootstrap in a terminal — installs west and " +
+          "the Zephyr Python dependencies into the workspace venv",
+      },
+    }),
+    // A `fix`/`guide` row (effect "install", `gdb`): its title names a MENU,
+    // not a single install — the source is a docs URL, not a command.
+    row({
+      name: "gdb",
+      action: {
+        kind: "fix",
+        fixId: "gdb",
+        effect: "install",
+        title: "Shows an install command for each OS (Install GDB)",
+      },
+    }),
+  ]);
+
+  const [rollup, west, gdb] = mod.shown[0];
+  assert.equal(
+    rollup.detail,
+    "Runs: brew install cmake ; brew install ninja · " +
+      "Size: not reported · Licence: not reported",
+  );
+  assert.doesNotMatch(rollup.detail, /Installs cmake/);
+  assert.doesNotMatch(west.detail, /Runs the Alp SDK bootstrap/);
+  assert.doesNotMatch(gdb.detail, /Shows an install command/);
+});
+
 test("a line whose command asks for elevation says so", async () => {
   // Arrange
   const mod = load();

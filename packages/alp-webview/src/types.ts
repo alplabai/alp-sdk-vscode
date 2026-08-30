@@ -424,6 +424,11 @@ export type DependencyAction =
   | {
       kind: "command";
       commands: DependencyCommandStep[];
+      /** Tool names tan named a `command: null` for on this row (#603). The
+       *  view never reads this either — the host-built `title` already says
+       *  the omission in prose; this exists only so the shape is declared in
+       *  full, same reason `commands` above is. */
+      omittedTools: string[];
       effect: "install";
       title: string;
     }

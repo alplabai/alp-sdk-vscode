@@ -130,6 +130,23 @@ export type DependencyAction =
        * single-command shape.
        */
       commands: readonly DependencyCommandStep[];
+      /**
+       * Tool names tan named for this row's install with a `command: null`
+       * — a real answer ("no confirmed install command"), never a gap this
+       * button fills. Always `[]` for a per-tool bound action (a single
+       * `MissingPrerequisite` entry cannot be partial by itself); non-empty
+       * only on the `hostPrerequisites` rollup when some of its leftover
+       * entries are null and others are not (#603 design item 5, second
+       * review minor 7).
+       *
+       * STRUCTURED, not re-derived from `title`'s prose: this is what lets
+       * the consent screen (`consent.ts` / `consentPick`) state the omission
+       * as its OWN short clause instead of appending the whole tooltip
+       * sentence, which for a non-partial row (this array empty) duplicated
+       * `Runs:` under a second separator, and for a `fix`/`guide` row read as
+       * two competing claims about what the button does.
+       */
+      omittedTools: readonly string[];
       effect: "install";
       title: string;
     }
@@ -470,6 +487,7 @@ export function planDependencyReport(
       ? {
           kind: "command",
           commands: leftoverBound,
+          omittedTools: leftoverOmitted,
           effect: "install",
           title: rollupActionTitle(leftoverBound, leftoverOmitted),
         }
@@ -498,6 +516,9 @@ export function planDependencyReport(
         ? {
             kind: "command",
             commands: [{ tool: entry.tool, command: entry.command }],
+            // A per-tool match is never partial — one `MissingPrerequisite`
+            // entry cannot omit part of itself.
+            omittedTools: [],
             // tan's own command line, run verbatim in a terminal — an install,
             // and the tooltip is the command it will run.
             effect: "install",

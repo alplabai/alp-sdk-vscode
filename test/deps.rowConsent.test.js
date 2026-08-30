@@ -133,28 +133,39 @@ test("runRowAction captures the dispatch result and hands it to reportRowStepFai
   );
 });
 
-test("reportRowStepFailure reuses describeFixAllFailure — one row and Fix-all say a failure the same way", () => {
+test("reportRowStepFailure delegates the WORDING to rowStepFailureNotice, not a hand-rolled decision here", () => {
+  // #603, second review, blocker 2: the wording decision (which step failed,
+  // what to say about it) used to live inline in this method, behind a
+  // source-level regex that a same-shape `find` mutation (`!== 0` -> `=== 0`)
+  // could survive untouched. It now lives in `rowStepFailureNotice`
+  // (vscodeAdapter.ts), pure and value-tested in
+  // `test/deps.fixAll.test.js` — this file only pins that the METHOD hands
+  // off to it rather than re-deriving anything.
   const body = reportRowStepFailureBody();
 
   assert.match(
     body,
-    /describeFixAllFailure\(/,
-    "must not hand-roll a second wording for the same failure shape",
+    /rowStepFailureNotice\(row\.name, row\.action\.commands, steps\)/,
+    "the decision must come from the pure, value-tested function",
   );
   assert.match(body, /notifyAsync\(/);
   assert.match(body, /planFailure\(/);
-});
-
-test("reportRowStepFailure says nothing for the two outcomes that already explain themselves", () => {
-  const body = reportRowStepFailureBody();
-
-  // Nothing dispatched at all (refused before step 1 — `runInTerminal`'s own
-  // warning already fired).
-  assert.match(body, /if \(steps\.length === 0\) return;/);
-  // Every dispatched step succeeded, and the row finished all of them — the
-  // generic "press Refresh" reload notice already covers this.
   assert.match(
     body,
-    /steps\.length === total && steps\.every\(\(step\) => step\.code === 0\)/,
+    /cause: notice\.cause/,
+    "the notice's own cause must reach the customer verbatim",
   );
+});
+
+test("reportRowStepFailure says nothing when the notice is null, and guards a non-command action", () => {
+  const body = reportRowStepFailureBody();
+
+  // `rowStepFailureNotice` already decides "nothing to say" (nothing ran,
+  // everything ran and succeeded, or stopped short with nothing erroring) —
+  // this method must not re-implement any of those cases, only react to the
+  // `null` result.
+  assert.match(body, /if \(!notice\) return;/);
+  // A `fix`/`bootstrap` row's action has no `commands` at all — narrowed
+  // before ever reaching the notice function, not cast past it.
+  assert.match(body, /row\.action\?\.kind !== "command"/);
 });
