@@ -749,17 +749,32 @@ export function orphanedPrerequisiteLogLines(
  * a reader to skim past the "Alp SDK" channel, which loses the invariant as
  * surely as no line at all would.
  *
- * KEYED BY TOOL, not a single process-wide flag: a bare boolean silences
- * every orphan AFTER the first, forever, which is the exact failure the
- * field this latch guards exists to catch — a SECOND, unrelated
+ * KEYED BY TOOL+COMMAND (`orphanKey`), not a single process-wide flag: a bare
+ * boolean silences every orphan AFTER the first, forever, which is the exact
+ * failure the field this latch guards exists to catch — a SECOND, unrelated
  * `hostPrerequisites` rename (or a different tool going orphaned) would
  * never log at all once one orphan had already been reported once. Adding a
- * tool here is permanent for the process (matching `offeredBootstrap`'s own
- * "ask at most once" intent) — it does not re-arm if that tool's row later
- * resolves and re-breaks, which is the one case this repo has decided not
- * to chase, per the reviewer's own fix instruction.
+ * key here is permanent for the process (matching `offeredBootstrap`'s own
+ * "ask at most once" intent). Two cases stay OUT of scope on purpose, and
+ * only one of them is this repo's own decision:
+ *
+ *  - the SAME tool with the SAME command resolving and re-breaking does not
+ *    re-arm, per the reviewer's own fix instruction;
+ *  - the SAME tool reported again with a DIFFERENT command DOES re-arm
+ *    (#603, round 5, nit 11) — the command is part of the key, because a
+ *    changed command is new information about what would run if the
+ *    (nonexistent) button were pressed, not a repeat of the same fact a
+ *    tool-only key would have swallowed.
  */
 const orphanedPrerequisitesReported = new Set<string>();
+
+/** The latch's own key — see `orphanedPrerequisitesReported`'s doc for why
+ *  both fields, not `tool` alone. `JSON.stringify` over a plain template
+ *  string: a tool or command containing a separator character must not
+ *  collide with a different (tool, command) pair. */
+function orphanKey(p: MissingPrerequisite): string {
+  return JSON.stringify([p.tool, p.command]);
+}
 
 // The shared `runDoctor` spawn (`../alpCli/doctor`, #376) takes `interactive`
 // as its last argument:
@@ -882,16 +897,25 @@ export async function buildDependencyReport(
   // the type itself — the next `hostPrerequisites` rename would be exactly as
   // silent to a customer as the bug this report exists to catch.
   //
-  // Keyed by TOOL (#603, third review, major 5): logging only the tools not
-  // already in `orphanedPrerequisitesReported` means a SECOND, different
-  // orphan arriving after the first is still reported — a bare "logged
-  // once" flag would silence every orphan after the first for the rest of
-  // the process, which is the exact failure this field exists to catch.
+  // Keyed by TOOL+COMMAND (#603, third review, major 5; round 5, nit 11
+  // widens the key), not tool alone: logging only the pairs not already in
+  // `orphanedPrerequisitesReported` means a SECOND, different orphan arriving
+  // after the first is still reported — a bare "logged once" flag would
+  // silence every orphan after the first for the rest of the process, which
+  // is the exact failure this field exists to catch. The COMMAND is part of
+  // the key for the same reason: a tool key alone latches on `cmake` once and
+  // then stays silent forever, even if tan starts reporting a DIFFERENT
+  // command for the same still-orphaned tool (measured: `cmake=brew install
+  // cmake` latches it, then `cmake=sudo /opt/attacker/brew install cmake`
+  // logs nothing) — a changed command is new information about what would
+  // run, not a repeat of the same fact. `orphanKey`'s own doc draws the line
+  // between this case and the RE-ARM case (a tool resolving and re-breaking
+  // with the SAME command), which stays out of scope on purpose.
   const newOrphans = planned.orphanedPrerequisites.filter(
-    (p) => !orphanedPrerequisitesReported.has(p.tool),
+    (p) => !orphanedPrerequisitesReported.has(orphanKey(p)),
   );
   if (newOrphans.length > 0) {
-    for (const p of newOrphans) orphanedPrerequisitesReported.add(p.tool);
+    for (const p of newOrphans) orphanedPrerequisitesReported.add(orphanKey(p));
     // The FULL current set, not just `newOrphans` (#603, round 4, minor 8):
     // `orphanedPrerequisiteLogLines`'s own sentence says "tan reported N
     // prerequisite(s)", counting and naming every one of ITS argument — pass
@@ -1222,52 +1246,76 @@ export function withFixAllPartialNote(
   ];
   const unique = [...new Set(partial)];
   if (unique.length === 0) return base;
-  return `${base} ${unique.join(", ")} installed before stopping.`;
+  // An em dash joining ONE sentence, not a period starting a new one (#603,
+  // round 5, minor 7): "1 of 1 did not install." followed by "cmake
+  // installed before stopping." reads as two flatly contradictory claims —
+  // verified through the real presenter as a `showWarningMessage` — even
+  // though both are true at once. The count is ROW-scoped (a
+  // `hostPrerequisites` row bundling cmake+ninja is ONE unit that did not
+  // finish); this clause is STEP-scoped (cmake, one command inside that row,
+  // really is on the machine). Two full stops hide that relationship; a dash
+  // keeps it one continuous, non-contradictory thought.
+  const lead = base.endsWith(".") ? base.slice(0, -1) : base;
+  return `${lead} — ${unique.join(", ")} installed before stopping.`;
 }
 
 /**
- * tan sometimes qualifies an install command with an absolute path to the
- * package manager itself rather than relying on PATH (`sudo
- * /opt/homebrew/bin/brew install ninja`, `C:\ProgramData\choco.exe install
- * ninja`). Shown verbatim, that command is exactly what
- * `src/notify/service.ts`'s `ABSOLUTE_PATH` leak filter exists to catch —
- * and `describeFixAllFailure`'s string reaches `planFailure`'s `cause` (via
- * `rowStepFailureNotice`), so a path-qualified command demoted the WHOLE
- * customer sentence (including which tool already installed) to a bare
- * `"<operation> failed."` (#603, round 4, major 6). Reduced to the
- * executable's own basename, which is all a customer needs to recognise the
- * command and is never itself path-shaped.
- */
-function withoutAbsolutePaths(command: string): string {
-  return command.replace(
-    /(?:[A-Za-z]:[\\/]|\/(?:home|Users|usr|var|tmp|opt|mnt|etc|private)\/)[^\s"']*/g,
-    (match) => match.split(/[\\/]/).pop() ?? match,
-  );
-}
-
-/**
- * One `failed` entry, worded for the summary toast (`deps/panel.ts`).
+ * The shared "X did not succeed (code N); nothing after it ran" shape both
+ * `describeFixAllFailure` (CHANNEL-ONLY: names the raw command, verbatim)
+ * and `rowStepFailureNotice`'s failure branch (CUSTOMER-FACING: names only
+ * the TOOL) build from.
  *
- * A multi-step `command` row says what actually happened on the machine:
- * what installed, what did not succeed with which code, and that nothing
- * after it ran (#603 design item 6).
+ * `whatFailed` is supplied by the CALLER, never derived here, because only
+ * the caller knows which is safe for where the resulting string is going
+ * (#603, round 5, majors 2 and 3). A single shared function that embedded
+ * the raw command directly is what mixed those two needs into one value
+ * that could not be made safe for a customer sentence without EDITING that
+ * command — and an editor can fabricate one that was never run (`[A-Za-z]:
+ * [\\/]` matches the `s:/` inside `https://`, turning `curl -fsSL
+ * https://apt.llvm.org/llvm.sh | sudo bash` into `curl -fsSL httpllvm.sh |
+ * sudo bash` — a command that does not exist, presented as truth, because
+ * having no path left it undemoted by `ABSOLUTE_PATH` too). This function
+ * takes no position on redaction at all: it only assembles parts, and the
+ * caller decides what `whatFailed` may say.
+ */
+function failureSequenceParts(
+  completed: readonly string[],
+  whatFailed: string,
+  code: number | undefined,
+  notRun: readonly string[],
+): string {
+  const parts: string[] = [];
+  if (completed.length > 0) {
+    parts.push(`installed ${completed.join(", ")}`);
+  }
+  parts.push(`${whatFailed} did not succeed (code ${code ?? "unknown"})`);
+  parts.push(
+    notRun.length > 0
+      ? `nothing after it ran (${notRun.join(", ")} skipped)`
+      : "nothing after it ran",
+  );
+  return parts.join("; ");
+}
+
+/**
+ * One `failed` entry, worded for the Fix-all summary — CHANNEL-ONLY text
+ * (`fixAllSummaryNotice`'s `detail`, the `[fix-all]` log line, and the "Alp
+ * SDK" output channel a support engineer reads). Names the command tan
+ * actually ran, VERBATIM (#603, round 5, majors 2 and 3): this is the sole
+ * consumer of `FixAllOutcome.failedCommand`, whose own doc says "The exact
+ * command that failed, verbatim" — a prior round ran it through a path
+ * redactor before this string, which not only fabricated commands that were
+ * never run (see `failureSequenceParts`'s own doc) but also meant NOTHING,
+ * anywhere, recorded what actually happened on the machine. This function's
+ * output must never be assigned to a customer-facing `cause` directly for
+ * exactly that reason — `rowStepFailureNotice`'s failure branch builds its
+ * own sentence instead, naming the tool rather than reusing this one.
  *
  * NEVER THE WORD "exit"/"exited" (#603, third review, blocker 1). This
- * string reaches `planFailure`'s `cause` (via `rowStepFailureNotice`), and
- * `src/notify/service.ts`'s `looksRaw` demotes any `cause` matching
- * `EXIT_CODE` (`/\bexit(?:ed)?.../i`) into channel-only `detail`, replacing
- * the customer-visible message with a bare `"<operation> failed."`. The
- * former wording (`` `cmd` exited 1 ``) tripped that filter every time,
- * so the FULL sentence — which tool installed, which command didn't, that
- * nothing ran after it — never reached the toast a customer actually reads.
- * "did not succeed (code N)" carries the same information without the
- * trigger word. Reworded HERE rather than only at the `cause` call site so
- * every consumer — this row wording and the Fix-all `detail`/log text this
- * same function feeds — says the same true thing the same way.
- *
- * The command itself is run through `withoutAbsolutePaths` for the SAME
- * reason, against `planFailure`'s OTHER demotion trigger, `ABSOLUTE_PATH`
- * (#603, round 4, major 6) — see that function's own doc.
+ * string still reaches `fixAllSummaryNotice`'s `detail`, which is
+ * channel-only and therefore never run through `planFailure`'s `looksRaw` —
+ * but `rowStepFailureNotice`'s own `cause` construction below shares this
+ * function's WORDING, and that one does, so both stay demotion-safe.
  */
 export function describeFixAllFailure(
   entry: FixAllOutcome["failed"][number],
@@ -1275,19 +1323,12 @@ export function describeFixAllFailure(
   if (entry.failedCommand === undefined) {
     return `${entry.name} did not succeed (code ${entry.code ?? "unknown"})`;
   }
-  const parts: string[] = [];
-  if (entry.completed.length > 0) {
-    parts.push(`installed ${entry.completed.join(", ")}`);
-  }
-  parts.push(
-    `\`${withoutAbsolutePaths(entry.failedCommand)}\` did not succeed (code ${entry.code ?? "unknown"})`,
-  );
-  parts.push(
-    entry.notRun.length > 0
-      ? `nothing after it ran (${entry.notRun.join(", ")} skipped)`
-      : "nothing after it ran",
-  );
-  return `${entry.name}: ${parts.join("; ")}`;
+  return `${entry.name}: ${failureSequenceParts(
+    entry.completed,
+    `\`${entry.failedCommand}\``,
+    entry.code,
+    entry.notRun,
+  )}`;
 }
 
 /**
@@ -1324,7 +1365,39 @@ export function describeFixAllFailure(
  * wrong channel for a fact the customer needs to still be readable a minute
  * later (#603, third review, major 6) — so that case is `planFailure` at
  * `severity: "warning"` too, same as an outright failure.
+ *
+ * `hasPartialCompletion` was the ONLY thing separating that from a clean
+ * success, and it read `outcome.skipped[].completed` and nothing else (#603,
+ * round 5, blocker 1) — so three rows refused because another install was
+ * already running (`isRunActive` true for the whole run: nothing installed,
+ * every reason landed in `skipped` with no `completed`) rendered
+ * `setStatusBarMessage("Fix all: 0 of 3 installed.", 5000)`: info severity,
+ * no button, gone in five seconds, with the actual reasons sitting in
+ * `detail` — a field `finalize` never backstops with `showOutput` on a
+ * `statusBar` plan, because a clean success is not supposed to need one. Two
+ * more conditions now force `planFailure` too:
+ *
+ *  - `outcome.installed.length === 0 && targetCount > 0` — a Fix-all that
+ *    installed LITERALLY NOTHING, when there was something to install, is
+ *    not a success by any reading of the word, whatever stopped it;
+ *  - any `skipped[].reason` NOT in `CUSTOMER_ANSWER_SKIP_REASONS` — an
+ *    ALLOWLIST, not a denylist, so a reason this file adds tomorrow starts
+ *    OUT of it and defaults to "say something", the same closed-class
+ *    discipline `withFixAllPartialNote`'s de-dup and
+ *    `orphanedPrerequisiteLogLines`'s full-set logging already apply
+ *    elsewhere in this file. `"already running"`, `"no command to run"` (the
+ *    planner's own invariant breaking) and `"nothing to wait for"` (the state
+ *    mapping and the dispatch disagreeing) are environmental refusals or bugs,
+ *    never the customer's own answer, and must not read as a quiet success
+ *    just because they landed in `skipped` rather than `failed` — even when
+ *    ANOTHER row in the same run did install something.
  */
+const CUSTOMER_ANSWER_SKIP_REASONS: ReadonlySet<string> = new Set([
+  "consent not given",
+  "left unchecked on the consent screen",
+  "cancelled",
+]);
+
 export function fixAllSummaryNotice(
   outcome: FixAllOutcome,
   targetCount: number,
@@ -1374,13 +1447,17 @@ export function fixAllSummaryNotice(
     `Fix all: ${outcome.installed.length} of ${targetCount} installed.`,
     outcome,
   );
-  // A skip that already installed something (cancelled/raced mid-row) makes
-  // this a HALF-modified machine, never a clean success — see this
-  // function's own doc for why that must not go out on the status bar.
+  // See this function's own doc (#603, round 5, blocker 1) for why each of
+  // these three, independently, rules out a clean success.
   const hasPartialCompletion = outcome.skipped.some(
     (entry) => (entry.completed?.length ?? 0) > 0,
   );
-  if (hasPartialCompletion) {
+  const installedNothingAtAll =
+    outcome.installed.length === 0 && targetCount > 0;
+  const hasUnexplainedSkip = outcome.skipped.some(
+    (entry) => !CUSTOMER_ANSWER_SKIP_REASONS.has(entry.reason),
+  );
+  if (hasPartialCompletion || installedNothingAtAll || hasUnexplainedSkip) {
     return planFailure({
       operation: "Fix all",
       cause: message,
@@ -1426,19 +1503,19 @@ export function fixAllSummaryNotice(
  * `"info"` and its `dedupeKey` to a shared constant left every existing gate
  * green, since neither field was pinned anywhere).
  *
- * The failure branch reuses `describeFixAllFailure`'s WORDING, not identical
- * text (#603, round 4, minor 11 corrects an earlier overclaim here): this
- * call passes `name: rowLabel` — the display label ("Bootstrap
- * prerequisites") — while Fix-all's own `outcome.failed[].name` is
- * `row.name`, tan's internal check id ("hostPrerequisites"). That is fine —
- * Fix-all's copy of this sentence lands only in the CHANNEL-ONLY `detail`
- * (`fixAllSummaryNotice`), never in front of the customer, so the id is a
- * legitimate log-line convention there. This ROW path is the one that puts
- * the string in `cause`, which is why it substitutes the label instead. That
- * function no longer says "exit"/"exited" (#603, third review, blocker 1) —
- * this `cause` is rendered through `planFailure`, whose `looksRaw` demotes
- * any `EXIT_CODE`-shaped `cause` into channel-only `detail` and replaces the
- * customer's message with a bare "<operation> failed.". Before that fix the
+ * The failure branch builds its OWN sentence — it does NOT call
+ * `describeFixAllFailure` (#603, round 5, majors 2 and 3 correct round 4's
+ * "reuses its WORDING" design here): that function names the raw command,
+ * verbatim, which is exactly right for the CHANNEL-ONLY text it is for
+ * (`fixAllSummaryNotice`'s `detail`) and exactly wrong for a customer-facing
+ * `cause` — a command tan qualifies with an absolute path
+ * (`sudo /opt/homebrew/bin/brew install ninja`) is unredacted here (good:
+ * nothing fabricates it) but also undemoted by `planFailure`'s
+ * `ABSOLUTE_PATH` filter, so it would reach the toast whole. This branch
+ * names the TOOL instead (`failedStep.tool`), which is never path-shaped and
+ * carries everything a customer needs — that function no longer says
+ * "exit"/"exited" either (#603, third review, blocker 1), so this `cause`
+ * still cannot trip `planFailure`'s `EXIT_CODE` trigger. Before that fix the
  * SKIP branch above (never "exited"/"failed") reached the toast in full
  * while the FAILURE branch below did not — the more severe outcome carried
  * strictly less information, backwards from what either branch intends.
@@ -1477,18 +1554,15 @@ export function rowStepFailureNotice(
   }
   return planFailure({
     operation: `Installing ${rowLabel}`,
-    cause: describeFixAllFailure({
-      // The DISPLAY name (#603, third review, nit 12): `rowName` is tan's
-      // internal check id ("hostPrerequisites"), never shown to a customer
-      // elsewhere on this row — the label ("Bootstrap prerequisites") is.
-      name: rowLabel,
-      code: failedStep.code,
-      completed: steps
-        .filter((step) => step.code === 0)
-        .map((step) => step.tool),
-      failedCommand: failedStep.command,
-      notRun: commands.slice(steps.length).map((step) => step.tool),
-    }),
+    // The TOOL (`failedStep.tool`), never `failedStep.command` — see this
+    // function's own doc for why a customer sentence may not name the raw
+    // command tan sends to the terminal.
+    cause: `${rowLabel}: ${failureSequenceParts(
+      steps.filter((step) => step.code === 0).map((step) => step.tool),
+      failedStep.tool,
+      failedStep.code,
+      commands.slice(steps.length).map((step) => step.tool),
+    )}`,
     severity: "warning",
     dedupeKey: `deps-row-failed-${rowName}`,
   });

@@ -172,7 +172,7 @@ test("fixAllSummaryNotice: a cancelled mid-row outcome (failed.length === 0) is 
   assert.equal(plan.dedupeKey, "deps-fix-all");
   assert.equal(
     plan.message,
-    "Fix all: 0 of 1 installed. cmake installed before stopping.",
+    "Fix all: 0 of 1 installed — cmake installed before stopping.",
     "the full sentence — including what cmake completed — must reach the " +
       "customer's toast verbatim, not be demoted",
   );
@@ -229,7 +229,7 @@ test("fixAllSummaryNotice: a failed row's OWN completed steps reach the customer
   assert.notEqual(plan.message, "1 of 1 did not install.");
   assert.equal(
     plan.message,
-    "1 of 1 did not install. cmake installed before stopping.",
+    "1 of 1 did not install — cmake installed before stopping.",
   );
 });
 
@@ -247,7 +247,7 @@ test("fixAllSummaryNotice: a tool named by two different rows is named ONCE (nit
   const plan = fixAllSummaryNotice(outcome, 2);
   assert.equal(
     plan.message,
-    "Fix all: 0 of 2 installed. cmake installed before stopping.",
+    "Fix all: 0 of 2 installed — cmake installed before stopping.",
     "cmake must be named once, not once per row that names it",
   );
 });
@@ -266,6 +266,70 @@ test("fixAllSummaryNotice: a skip with NO completed tools (consent declined) sta
     "statusBar",
     "a skip that installed nothing is not a half-modified machine",
   );
+});
+
+test("fixAllSummaryNotice: every row refused because another install was already running is a toast, not a silent 5-second status bar (#603 round 5, blocker 1)", () => {
+  // Measured end to end with the real `runFixAll` (`isRunActive: () => true`
+  // — the customer had already pressed one row's own Install button) and the
+  // real presenter: three rows refused, nothing installed, and
+  // `hasPartialCompletion` (the ONLY thing round 4 checked) saw no
+  // `completed` anywhere, so this rendered `setStatusBarMessage("Fix all: 0
+  // of 3 installed.", 5000)` — info severity, no button, gone in five
+  // seconds — while every actual reason sat in `detail`, a field `finalize`
+  // never backstops with `showOutput` on a `statusBar` plan.
+  const { fixAllSummaryNotice } = loadDepsAdapter();
+  const outcome = {
+    installed: [],
+    failed: [],
+    skipped: [
+      {
+        name: "hostPrerequisites",
+        reason: '"Alp: install dependency" is already running',
+      },
+      { name: "west", reason: '"Alp Bootstrap" is already running' },
+      { name: "westWorkspace", reason: '"Alp Bootstrap" is already running' },
+    ],
+  };
+
+  const plan = fixAllSummaryNotice(outcome, 3);
+  assert.equal(plan.channel, "toast");
+  assert.equal(plan.severity, "warning");
+  assert.equal(plan.dedupeKey, "deps-fix-all");
+  assert.ok(
+    plan.actions.some((a) => a.id === "showOutput"),
+    "a toast this file's own `finalize` backstop must add — the channel " +
+      "carrying the three real reasons must be reachable from the toast",
+  );
+  assert.equal(plan.message, "Fix all: 0 of 3 installed.");
+});
+
+test("fixAllSummaryNotice: a bug reason ('no command to run') is a toast even when ANOTHER row in the same run installed something (#603 round 5, blocker 1)", () => {
+  // `runFixAll` itself logs this one at `\"error\"` — "the planner's
+  // invariant broke" — so it must never read as a clean, silent success just
+  // because a DIFFERENT row in the same run happened to install something.
+  const { fixAllSummaryNotice } = loadDepsAdapter();
+  const outcome = {
+    installed: ["cmake"],
+    failed: [],
+    skipped: [{ name: "hostPrerequisites", reason: "no command to run" }],
+  };
+
+  const plan = fixAllSummaryNotice(outcome, 2);
+  assert.equal(plan.channel, "toast");
+  assert.equal(plan.severity, "warning");
+});
+
+test("fixAllSummaryNotice: 'nothing to wait for' (the state mapping and the dispatch disagreeing) is a toast too (#603 round 5, blocker 1)", () => {
+  const { fixAllSummaryNotice } = loadDepsAdapter();
+  const outcome = {
+    installed: [],
+    failed: [],
+    skipped: [{ name: "hostPrerequisites", reason: "nothing to wait for" }],
+  };
+
+  const plan = fixAllSummaryNotice(outcome, 1);
+  assert.equal(plan.channel, "toast");
+  assert.equal(plan.severity, "warning");
 });
 
 // ---------------------------------------------------------------------------
@@ -492,8 +556,83 @@ test("end to end: the panel hands notifyAsync EXACTLY what fixAllSummaryNotice r
   onMessage({ type: "runFixAll" });
   const plan = await notified;
 
+  // Proves `panel.ts` hands the plan through UNCHANGED — but `expected` is
+  // `fixAllSummaryNotice` itself, so this alone compares the pure function
+  // against ITSELF and cannot catch a mutation INSIDE it (#603, round 5,
+  // minor 6 — e.g. dropping `dedupeKey: "deps-fix-all"` from the
+  // `failed.length > 0` branch). The literal below pins the actual values.
   assert.deepEqual(plan, expected(outcome, targetRows.length));
-  assert.equal(plan.channel, "toast");
-  assert.equal(plan.severity, "warning");
-  assert.match(plan.message, /cmake installed before stopping/);
+  assert.deepEqual(plan, {
+    severity: "warning",
+    channel: "toast",
+    message: "1 of 1 did not install — cmake installed before stopping.",
+    detail:
+      "0 installed · 1 failed (hostPrerequisites: installed cmake; " +
+      "`brew install ninja` did not succeed (code 1); nothing after it ran)",
+    modalDetail: undefined,
+    actions: [{ id: "showOutput" }],
+    dedupeKey: "deps-fix-all",
+  });
+});
+
+/**
+ * Races `promise` against a bounded timer instead of `await`ing it directly
+ * — a mutation that makes `panel.ts` skip calling `notifyAsync` on THIS
+ * branch would otherwise hang this test (and the whole file) forever rather
+ * than failing it.
+ */
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_resolve, reject) => {
+      setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]);
+}
+
+test("end to end: a clean SUCCESS outcome also reaches notifyAsync — the success/statusBar half was otherwise ungated (#603 round 5, major 4)", async () => {
+  // The prior end-to-end mount used only a FAILED/toast fixture, so the
+  // entire `planSuccess`/`statusBar` half of the wiring had no coverage at
+  // all: `notifyAsync(plan)` mutated to `if (plan.channel !== "statusBar")
+  // notifyAsync(plan);` left every existing assertion here green (108/108)
+  // because the one fixture in this file never exercises the branch that
+  // guard silences. Under that mutation this test's own `notified` promise
+  // never resolves — `withTimeout` turns that into a clean failure rather
+  // than a hang.
+  const targetRows = [row({ name: "hostPrerequisites" })];
+  const outcome = {
+    installed: ["hostPrerequisites"],
+    failed: [],
+    skipped: [],
+  };
+
+  const { onMessage, notified, expected } = mountAndRunFixAll(
+    outcome,
+    targetRows,
+  );
+  onMessage({ type: "ready" });
+  await flush();
+  onMessage({ type: "runFixAll" });
+
+  const plan = await withTimeout(
+    notified,
+    2000,
+    "notifyAsync was never called for a clean-success outcome — the " +
+      "status-bar half of the wiring is not reaching the customer",
+  );
+
+  assert.deepEqual(plan, expected(outcome, targetRows.length));
+  // `planSuccess` (unlike `planFailure`) never sets `modalDetail` or
+  // `dedupeKey` at all — not even to `undefined` — so this literal omits
+  // them; `assert.deepEqual`'s strict mode tells an absent key apart from an
+  // explicit `undefined` one, and the wrong literal here fails on ITS OWN
+  // account rather than testing anything about `fixAllSummaryNotice`.
+  assert.deepEqual(plan, {
+    severity: "info",
+    channel: "statusBar",
+    message: "Fix all: 1 of 1 installed.",
+    detail: "1 installed",
+    actions: [],
+    timeoutMs: undefined,
+  });
 });

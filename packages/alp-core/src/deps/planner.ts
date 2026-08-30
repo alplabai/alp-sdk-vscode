@@ -463,6 +463,33 @@ function rollupActionTitle(
 }
 
 /**
+ * The `hostPrerequisites` row's own DETAIL-column fallback for the case
+ * `rollupActionTitle` never runs for at all (#603, round 5, major 5): when
+ * `command: null` for EVERY leftover entry, `leftoverBound` is empty, no
+ * `command` action exists (an empty `commands[]` is never valid — see
+ * `planDependencyReport`), and `rollupActionTitle` — the only place that
+ * would otherwise say "tan reported no install command for X" — is never
+ * called, because there is no action for it to be that action's title.
+ * `leftoverOmitted` was computed either way and simply discarded: partial
+ * omission (SOME tools bound) reached the customer via the button's own
+ * tooltip; total omission (NO tools bound) reached nobody. "When ONE tool is
+ * unbindable the panel says so; when ALL of them are, it says nothing" is
+ * the exact asymmetry this closes — the row's own `detail` is the only
+ * channel left once there is no action to carry `omittedTools`.
+ *
+ * `tanDetail` unchanged when there is nothing to add (the ordinary case:
+ * `omitted` empty means either every leftover entry bound to a real command,
+ * or there were no leftover entries at all).
+ */
+function rollupOmissionDetail(
+  tanDetail: string,
+  omitted: readonly string[],
+): string {
+  if (omitted.length === 0) return tanDetail;
+  return `${tanDetail} — tan reported no install command for ${omitted.join(", ")}.`;
+}
+
+/**
  * Plan the dependency table from one `tan doctor --build` envelope.
  *
  * Row set = one per `data.checks[]` entry (keyed on `check.name`, in tan's
@@ -563,7 +590,13 @@ export function planDependencyReport(
       label: LABELS[check.name] ?? humanise(check.name),
       status: check.status,
       state: dependencyState(check.status, action?.effect ?? null),
-      detail: check.detail,
+      // `rollupOmissionDetail` is a no-op for every row but the rollup one
+      // with nothing bindable at all — see its own doc for why THAT case has
+      // no other channel left to say tan named these tools.
+      detail:
+        check.name === PREREQUISITE_ROLLUP_ROW && leftoverBound.length === 0
+          ? rollupOmissionDetail(check.detail, leftoverOmitted)
+          : check.detail,
       // tan's prose, carried whole. Displayed, never read.
       hint: check.fix ?? null,
       // tan reports no per-check version, and inventing one from `detail` would

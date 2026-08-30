@@ -33,33 +33,57 @@
 - **A single row's failure now reaches the customer, not a bare
   "\<operation\> failed."** `notify/service.ts`'s leak filter demotes a
   message matching an exit-code shape (`` `cmd` exited 1 ``) or an absolute
-  path out of the customer-visible toast and into the channel-only log. The
-  single row button's own notice reuses the SAME wording Fix-all's
-  channel-only summary logs, and it used to contain both shapes: the
-  exit-code phrasing every multi-step failure sentence used, and — when tan
-  qualifies a package manager with its full path (`sudo
-  /opt/homebrew/bin/brew install ninja`) rather than relying on PATH — the
-  command tan names verbatim. Reworded to "did not succeed (code N)" and
-  reduced to the executable's own name; neither trips the filter. (Fix-all's
-  OWN top-level "N of M did not install." sentence never carried either shape
-  and was never demoted — this fix is scoped to the row path, which is where
-  the demotion actually happened.) A Fix-all row cancelled, raced away
-  mid-sequence, or that failed outright, with a step already completed, is no
-  longer reported as a plain, auto-dismissing status-bar "success" — a
+  path out of the customer-visible toast and into the channel-only log, and
+  the multi-step failure sentence used to trip the exit-code shape on every
+  failure. Reworded to "did not succeed (code N)", which carries the same
+  information without tripping the filter. The row button's own
+  customer-facing notice now names the TOOL that failed rather than the raw
+  command tan ran — never path-shaped, so the absolute-path trigger cannot
+  fire either, and (unlike an earlier attempt at this fix that ran the
+  command through a path-stripping regex before showing it) nothing here
+  edits a command a customer might read, which is what let that regex turn
+  `curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash` into a command that
+  was never run. The raw command tan sent stays out of every customer
+  sentence but reaches the "Alp SDK" channel and the `[fix-all]` log line
+  completely unedited, restoring the verbatim record a support engineer
+  reads. (Fix-all's own top-level "N of M did not install." sentence never
+  carried either leak shape and was never demoted — the filter fix is scoped
+  to the row path, which is where the demotion actually happened.)
+- **Fix-all's "did not install" toast now fires for every way a run can
+  install nothing, not only an outright failure.** A row cancelled, raced
+  away mid-sequence, or that failed outright, with a step already completed,
+  is no longer reported as a plain, auto-dismissing status-bar "success" — a
   half-modified machine now surfaces as a persistent warning toast, same as
   an outright failure, and that toast's own sentence now names what
   installed whether the step that stopped it was a SKIP or the FAILURE
   itself (a 2-step row that installs cmake and then fails on ninja used to
-  read "1 of 1 did not install.", saying nothing about cmake). The "N of M
-  did not install" count is now every row that did not install, not only the
-  ones that errored — a row that aborts because an earlier one failed counted
-  as 2 of 2 undone, not 1. `deps/panel.ts`'s Fix-all wrapper no longer builds
+  read "1 of 1 did not install.", saying nothing about cmake — now "1 of 1
+  did not install — cmake installed before stopping.", one connected
+  sentence rather than two that read as contradicting each other). The "N of
+  M did not install" count is every row that did not install, not only the
+  ones that errored — a row that aborts because an earlier one failed counts
+  as 2 of 2 undone, not 1. Two more cases that used to read as a quiet,
+  five-second, button-less "success" now toast instead: a run that installs
+  LITERALLY NOTHING (every row refused because another install was already
+  running is the measured case — three refusals, zero installs, and every
+  reason sat in a field the status bar never shows), and any row skipped for
+  a reason that is not the customer's own answer (declining consent or
+  cancelling) — an environmental refusal or an invariant this extension did
+  not expect must not read as success just because it landed in `skipped`
+  rather than `failed`. `deps/panel.ts`'s Fix-all wrapper no longer builds
   any part of the `NotificationPlan` itself: `fixAllSummaryNotice` returns
   the finished plan, the same shape the row path's own notice already did.
-  The orphan-rename log line is now keyed per tool rather than a single
-  one-shot flag, so a second, unrelated orphan is still reported after the
-  first one already fired once, and names every tool tan is CURRENTLY
-  reporting as orphaned, not only the ones newly seen this refresh.
+  The orphan latch is now keyed per tool AND command, not tool alone, so the
+  same tool reported again with a DIFFERENT command re-arms it — and the log
+  line it feeds names every tool tan is CURRENTLY reporting as orphaned, not
+  only the ones newly seen this refresh.
+- **The `hostPrerequisites` row now says which tools it cannot offer a button
+  for even when NONE of them can be — not only when some can.** A partial
+  rollup (tan names a real command for cmake but not ninja) already said so
+  on the button's own tooltip. When EVERY leftover tool comes back with
+  `command: null` — the common SDK-unresolved ground state — there is no
+  button at all to carry that sentence, and the row's own detail is now the
+  one that says it instead of staying silent.
 
 ## 0.5.2
 

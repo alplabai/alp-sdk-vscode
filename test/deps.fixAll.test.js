@@ -803,40 +803,53 @@ test("describeFixAllFailure: a fix/bootstrap row (no command string) still names
   );
 });
 
-test("describeFixAllFailure: an absolute-path command is reduced to its executable name (#603 round 4, major 6)", () => {
-  // tan sometimes qualifies an install command with an absolute path to the
-  // package manager itself rather than relying on PATH. Shown verbatim, that
-  // string trips `notify/service.ts`'s OTHER demotion trigger, `ABSOLUTE_PATH`
-  // — orthogonal to the "exit"/"exited" one the test above already covers —
-  // and this string reaches `planFailure`'s customer-visible `cause` via
-  // `rowStepFailureNotice`.
-  const { describeFixAllFailure, rowStepFailureNotice } = load();
+test("describeFixAllFailure: the raw command reaches the CHANNEL-ONLY text verbatim, never fabricated (#603 round 5, majors 2 and 3)", () => {
+  // Round 4 ran this string through a path redactor before handing it to the
+  // customer. That redactor is now DELETED (round 5's direction): its regex
+  // `[A-Za-z]:[\\/]` matched the `s:/` inside `https://` too, turning `curl
+  // -fsSL https://apt.llvm.org/llvm.sh | sudo bash` into `curl -fsSL
+  // httpllvm.sh | sudo bash` — a command that does not exist, presented as
+  // truth, and undemoted by `ABSOLUTE_PATH` for having no path left to match.
+  // `describeFixAllFailure`'s text is CHANNEL-ONLY (`fixAllSummaryNotice`'s
+  // `detail`, the `[fix-all]` log line, the "Alp SDK" channel a support
+  // engineer reads) and its own doc says the exact command tan ran belongs
+  // there verbatim — including a path-qualified one, which is not fabricated
+  // and not this function's business to edit.
+  const { describeFixAllFailure } = load();
 
-  const posix = describeFixAllFailure({
-    name: "hostPrerequisites",
-    code: 1,
-    completed: [],
-    failedCommand: "sudo /opt/homebrew/bin/brew install ninja",
-    notRun: [],
-  });
-  assert.match(posix, /`sudo brew install ninja` did not succeed/);
-  assert.doesNotMatch(posix, /\/opt\/homebrew/);
+  assert.equal(
+    describeFixAllFailure({
+      name: "hostPrerequisites",
+      code: 1,
+      completed: [],
+      failedCommand: "sudo /opt/homebrew/bin/brew install ninja",
+      notRun: [],
+    }),
+    "hostPrerequisites: `sudo /opt/homebrew/bin/brew install ninja` did not succeed (code 1); nothing after it ran",
+  );
 
-  const windows = describeFixAllFailure({
-    name: "hostPrerequisites",
-    code: 1,
-    completed: [],
-    failedCommand: "C:\\ProgramData\\choco.exe install ninja",
-    notRun: [],
-  });
-  assert.match(windows, /`choco\.exe install ninja` did not succeed/);
-  assert.doesNotMatch(windows, /ProgramData/);
+  // The exact fabrication measured against the deleted redactor: a URL
+  // survives completely untouched now that nothing rewrites it.
+  assert.equal(
+    describeFixAllFailure({
+      name: "hostPrerequisites",
+      code: 1,
+      completed: [],
+      failedCommand: "curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash",
+      notRun: [],
+    }),
+    "hostPrerequisites: `curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash` did not succeed (code 1); nothing after it ran",
+  );
+});
 
-  // End to end, through the ROW path (the one whose `cause` actually reaches
-  // a customer's toast, not just the Fix-all channel-only `detail`):
-  // `rowStepFailureNotice` already runs `planFailure` internally, so its
-  // `.message` IS what the customer sees — it must not have been demoted to
-  // a bare "<op> failed.".
+test("rowStepFailureNotice: the customer-facing cause names the TOOL, never the raw command — path-qualified or not (#603 round 5, blocker/majors 2 and 3)", () => {
+  // The ROW path is the one whose `cause` actually reaches a customer's
+  // toast (not just the Fix-all channel-only `detail`), so it may not reuse
+  // `describeFixAllFailure`'s verbatim-command wording at all — naming the
+  // tool is both customer-safe (never path-shaped, so `ABSOLUTE_PATH` never
+  // triggers) and impossible to fabricate.
+  const { rowStepFailureNotice } = load();
+
   const notice = rowStepFailureNotice(
     "Bootstrap prerequisites",
     "hostPrerequisites",
@@ -849,13 +862,13 @@ test("describeFixAllFailure: an absolute-path command is reduced to its executab
       },
     ],
   );
-  assert.notEqual(
+  assert.equal(
     notice.message,
-    "Installing Bootstrap prerequisites failed.",
-    "the ABSOLUTE_PATH leak filter must not swallow which tool failed and " +
-      "which command ran, the same way the EXIT_CODE filter was fixed not to",
+    "Bootstrap prerequisites: ninja did not succeed (code 1); nothing after it ran",
   );
   assert.doesNotMatch(notice.message, /\/opt\/homebrew/);
+  assert.doesNotMatch(notice.message, /sudo/);
+  assert.notEqual(notice.message, "Installing Bootstrap prerequisites failed.");
 });
 
 // ---------------------------------------------------------------------------
@@ -893,7 +906,7 @@ test("withFixAllPartialNote: names what installed before the row stopped", () =>
 
   assert.equal(
     note,
-    "Fix all: 0 of 1 installed. cmake installed before stopping.",
+    "Fix all: 0 of 1 installed — cmake installed before stopping.",
   );
   // The exact regression measured: a customer reading ONLY this string (the
   // status-bar case) must be told cmake is on the machine.
@@ -913,7 +926,7 @@ test("withFixAllPartialNote: multiple partially-completed rows are all named", (
 
   assert.equal(
     note,
-    "2 of 3 did not install. cmake, git, gperf installed before stopping.",
+    "2 of 3 did not install — cmake, git, gperf installed before stopping.",
   );
 });
 
@@ -940,7 +953,7 @@ test("withFixAllPartialNote: a FAILED row's own completed steps count too (#603 
 
   assert.equal(
     note,
-    "1 of 1 did not install. cmake installed before stopping.",
+    "1 of 1 did not install — cmake installed before stopping.",
   );
 });
 
@@ -962,7 +975,7 @@ test("withFixAllPartialNote: a tool named by both a skipped AND a failed row is 
 
   assert.equal(
     note,
-    "2 of 2 did not install. cmake, ninja installed before stopping.",
+    "2 of 2 did not install — cmake, ninja installed before stopping.",
   );
 });
 
@@ -1029,10 +1042,12 @@ test("rowStepFailureNotice: the ONLY step fails -> a notice, not silence, and it
   // message becomes a bare "<operation> failed." — `.message` here is the
   // RENDERED field, so this assertion already proves the sentence survived,
   // not just that the raw string looked right.
-  assert.match(
-    notice.message,
-    /brew install cmake.*did not succeed \(code 1\)/,
-  );
+  //
+  // The TOOL, never the raw command (#603, round 5, majors 2 and 3): a
+  // customer-facing `cause` must not name what tan actually ran, only what
+  // failed — see `rowStepFailureNotice`'s own doc for why.
+  assert.match(notice.message, /cmake did not succeed \(code 1\)/);
+  assert.doesNotMatch(notice.message, /brew install/);
   assert.notEqual(
     notice.message,
     "Installing Bootstrap prerequisites failed.",
@@ -1055,15 +1070,14 @@ test("rowStepFailureNotice: step 1 installs, step 2 fails — names both, never 
 
   assert.notEqual(notice, null);
   assert.match(notice.message, /installed cmake/);
-  assert.match(
-    notice.message,
-    /brew install ninja.*did not succeed \(code 1\)/,
-  );
+  // The TOOL, never the raw command (#603, round 5, majors 2 and 3).
+  assert.match(notice.message, /ninja did not succeed \(code 1\)/);
+  assert.doesNotMatch(notice.message, /brew install/);
   // The defect's other half: under the `=== 0` mutation the succeeded
-  // command (cmake) is what `find` returns, so the wrong command would be
+  // command (cmake) is what `find` returns, so the wrong tool would be
   // reported as the one that failed — cmake's own exit code is 0, and it
   // must never be described as not succeeding.
-  assert.doesNotMatch(notice.message, /brew install cmake.*did not succeed/);
+  assert.doesNotMatch(notice.message, /cmake did not succeed/);
 });
 
 test("rowStepFailureNotice: stopped short with nothing erroring -> a SKIP, worded as one, never as a failure (#603 second review, minor 9)", () => {

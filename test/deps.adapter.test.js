@@ -904,6 +904,54 @@ test("a still-orphaned tool is NOT dropped from the line when a NEW orphan arriv
   );
 });
 
+test("the SAME tool orphaned with a DIFFERENT command is logged again, not swallowed by a tool-only latch (#603 round 5, nit 11)", async () => {
+  // Measured repro: `cmake=brew install cmake` latches the tool, then
+  // `cmake=sudo /opt/attacker/brew install cmake` — a changed command for the
+  // SAME still-orphaned tool — logged nothing under a `tool`-only key. A
+  // changed command is new information about what would run if the
+  // (nonexistent) button were pressed, not a repeat of the same fact.
+  const lines = [];
+  const envelopes = [
+    { ...orphanEnvelope(["cmake"]) },
+    {
+      ...orphanEnvelope(["cmake"]),
+      missingPrerequisites: [
+        { tool: "cmake", command: "sudo /opt/attacker/brew install cmake" },
+      ],
+    },
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: cmake=install cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: cmake=DIFFERENT command
+
+  const hits = lines.filter((l) => l.includes("cmake"));
+  assert.equal(
+    hits.length,
+    2,
+    "a changed command for the same tool must log again, not be swallowed " +
+      "by a latch keyed on the tool name alone",
+  );
+  assert.match(hits[1], /sudo \/opt\/attacker\/brew install cmake/);
+});
+
 test("nothing is logged when every prerequisite bound to a row", async () => {
   const lines = [];
   const { buildDependencyReport } = loadDepsAdapter({

@@ -96,6 +96,52 @@ test("no orphaned prerequisite — every non-null command bound to a row", () =>
   assert.deepEqual(report.orphanedPrerequisites, []);
 });
 
+// ---------------------------------------------------------------------------
+// "reported, never silently dropped" also covers the row itself, not only
+// `orphanedPrerequisites` (#603, round 5, major 5). A tool tan names with
+// `command: null` legitimately offers no button — but when ALL leftover
+// entries are null, `leftoverBound` is empty, no rollup action exists at
+// all, and `rollupActionTitle` (the only place that would otherwise say "tan
+// reported no install command for X") is never reached, because there is no
+// action for it to BE that action's title. Round 1 measured the partial case
+// (one bound, one omitted); this is the total-omission ground state,
+// unexamined until now.
+// ---------------------------------------------------------------------------
+
+test("every leftover tool omitted (command: null for all of them) — the row itself still names them, not silence (#603 round 5, major 5)", () => {
+  const allOmitted = {
+    ...data,
+    missingPrerequisites: [
+      { tool: "cmake", command: null },
+      { tool: "ninja", command: null },
+    ],
+  };
+  const row = rowFor(plan(allOmitted), "hostPrerequisites");
+
+  assert.equal(
+    row.action,
+    null,
+    "nothing is installable — there is genuinely no button to offer",
+  );
+  assert.match(
+    row.detail,
+    /tan reported no install command for cmake, ninja/,
+    "the row's own detail is the only channel left once there is no action " +
+      "to carry `omittedTools` on a button that does not exist",
+  );
+  // Not reported as orphaned: tan's `command: null` is a real answer, not a
+  // command that bound to nothing (see the null-command test above).
+  assert.deepEqual(plan(allOmitted).orphanedPrerequisites, []);
+});
+
+test("a fully-covered row's detail is tan's own text, untouched", () => {
+  const row = rowFor(plan(), "hostPrerequisites");
+  assert.equal(
+    row.detail,
+    data.checks.find((c) => c.name === "hostPrerequisites").detail,
+  );
+});
+
 test("a mixed row (one tool named, one command: null) says so in the title — not indistinguishable from a full row", () => {
   // #603 design item 5: a partial button must not read like a full one. tan
   // named a real command for cmake but none for ninja — the button installs
