@@ -207,7 +207,6 @@ const BUILD_ACTIONS: Array<{ icon: IconName; label: string; command: string }> =
     },
     { icon: "package", label: "Image", command: "alp.westAlpImage" },
     { icon: "bug", label: "Debug", command: "alp.debug" },
-    { icon: "cpu", label: "Renode", command: "alp.westAlpRenode" },
     // "Update" lives in the Workspace section (module maintenance, not a
     // build/flash action) — don't duplicate it here.
     { icon: "x", label: "Clean", command: "alp.westAlpClean" },
