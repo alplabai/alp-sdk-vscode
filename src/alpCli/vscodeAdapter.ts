@@ -2373,6 +2373,23 @@ export async function runAlpCommand(
      * environment.
      */
     loginShell?: boolean;
+    /**
+     * Default `true`. Set `false` to send `args` VERBATIM, skipping
+     * `withSdkRoot`'s injection of `--sdk-root <the extension's own
+     * resolved SDK>`.
+     *
+     * `tan sdk current` (#614) is the one caller that needs this: the whole
+     * point of that verb is asking tan's OWN resolution ladder (project pin,
+     * global default, discovery) which SDK it independently resolves. With
+     * the injection left on, `collectProjectContext().sdkRoot` — this
+     * extension's OWN answer — is handed to tan as `--sdk-root`, and tan
+     * dutifully reports it straight back at `sourceTier: "sdkRootFlag"`.
+     * That is not tan disagreeing OR agreeing with anything; it is this
+     * extension asking tan to confirm a fact this extension just told it,
+     * and mistaking the echo for independent evidence (found in adversarial
+     * review of #604/#614).
+     */
+    injectSdkRoot?: boolean;
   },
 ): Promise<{
   outcome: CliOutcome;
@@ -2400,7 +2417,7 @@ export async function runAlpCommand(
       source: "unresolved",
     };
   }
-  const finalArgs = withSdkRoot(args);
+  const finalArgs = options?.injectSdkRoot === false ? args : withSdkRoot(args);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")} --format json` +
       (cwd ? `  (cwd: ${cwd})` : ""),

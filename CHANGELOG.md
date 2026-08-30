@@ -6,6 +6,43 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **`tan sdk current` is now asked after every bootstrap, and pins
+  `alpSdk.path` when nothing was pinned yet (#604, #614).** Nothing in this
+  extension previously called `tan sdk current` at all, so tan's own
+  resolution ladder (project pin, machine-global default, discovery) and
+  `alpSdk.path` could silently disagree with nobody asking tan who won.
+  `runBootstrapInTerminal` (`src/bootstrap.ts`) is now the ONE place a
+  bootstrap terminal is dispatched (`alp.installDependencies`/`alp.bootstrap`
+  and `toolchain.ts`'s `offerBootstrapFix` both route through it, guarded by
+  `test/statusReadiness.test.js` against a second site ever naming the same
+  run); once that run exits cleanly, it asks `tan sdk current` in the
+  background — with `injectSdkRoot: false` so this extension's own resolved
+  SDK is never handed back to tan as `--sdk-root` and echoed as if it were
+  independent evidence — and, ONLY when `alpSdk.path` is currently unset,
+  pins tan's answer through the existing writer (`setActiveSdk`,
+  `src/sdk/activeSdk.ts`, not a second `workspace.getConfiguration().update()`
+  call) with its own toast naming what got pinned and why. A NON-empty
+  `alpSdk.path` is never overwritten by this: adversarial review found no
+  reliable way for a `tan sdk current` disagreement alone to distinguish a
+  genuine relocation of the customer's own checkout from a foreign project's
+  bootstrap answering the shared global default (tan-cli#464) or a
+  temporarily unmounted volume — a disagreement against an existing pin is
+  logged, never acted on. `tan sdk current`'s untrusted payload is narrowed,
+  not cast, by a new `narrowSdkCurrent()` (`packages/alp-core/src/sdk/
+  service.ts`) — `sourceTier` and the nested readiness `state` are kept as
+  bare strings rather than closed unions, so a rung or state tan adds later
+  is reported, not dropped. A failed/cancelled bootstrap, a resolved-but-
+  unready SDK, and a second concurrent bootstrap dispatch (refused by
+  `runInTerminal`, but no longer left with a stray listener that reconciles
+  off the WRONG cwd once the original run finishes) all leave `alpSdk.path`
+  untouched. The local `checkSdkReadiness`-derived answer is unchanged
+  everywhere else in the extension; this is the one additional ask. The
+  dangling-pin-after-relocation case #604 opened with — a customer who
+  already had `alpSdk.path` set before a relocating bootstrap moved the
+  checkout — is NOT auto-repaired by this change; that needs
+  `bootstrap.workspace-relocated` read off the bootstrap run's own envelope,
+  which the terminal route this reconciles cannot see.
+
 - **Four call sites that discarded what `tan` reported now read `issues[]`
   and `ok` instead of dropping them (#611).** The old `fetchEnvelopeData`
   (`src/alpCli/envelope.ts`) returned `data` regardless of `ok` — only a

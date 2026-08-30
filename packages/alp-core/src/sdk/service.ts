@@ -152,6 +152,84 @@ export function narrowSdkReleases(raw: unknown): SdkRelease[] {
 }
 
 // ---------------------------------------------------------------------------
+// `tan sdk current` (#614)
+// ---------------------------------------------------------------------------
+
+/**
+ * The `readiness` object `tan sdk current` nests inside its `data` — the SAME
+ * shape `checkSdkReadiness` produces locally (measured against the pinned tan
+ * 0.6.0: `sdkPath`/`version`/`loaderScriptPresent`/`metadataPresent`/`state`/
+ * `issues`, byte-identical field names). Only the two fields a consumer of
+ * this narrower actually reads are kept; `state` stays a bare string rather
+ * than this package's own closed `SdkReadinessState` union for the same
+ * forward-compatibility reason `SdkCurrentResult.sourceTier` does below.
+ */
+export interface SdkCurrentReadiness {
+  state: string;
+  issues: string[];
+}
+
+/**
+ * `tan sdk current`'s resolved answer (tan-cli#263's `resolve_sdk_tiered`
+ * ladder). `sourceTier` names which rung produced `sdkPath` — measured
+ * against the pinned tan 0.6.0: `"sdkRootFlag"`, `"projectPin"`,
+ * `"globalDefault"`, `"discovery"`, `"none"` — kept as a bare `string`
+ * rather than a closed union so a rung tan adds later is still a fact this
+ * extension can report, not a value narrowing throws away (#614).
+ */
+export interface SdkCurrentResult {
+  sdkPath: string | null;
+  readiness: SdkCurrentReadiness | null;
+  sourceTier: string;
+}
+
+/** `readiness` narrowed on its own: a malformed one is dropped to `null`
+ *  rather than failing the whole `SdkCurrentResult` (the `"none"` tier
+ *  legitimately carries a `null` readiness, so "absent" and "malformed" must
+ *  read the same way here). */
+function narrowSdkCurrentReadiness(raw: unknown): SdkCurrentReadiness | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  if (typeof record.state !== "string") return null;
+  const issues = Array.isArray(record.issues)
+    ? record.issues.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
+    : [];
+  return { state: record.state, issues };
+}
+
+/**
+ * Narrow `tan sdk current`'s untrusted `data` payload into `SdkCurrentResult`,
+ * dropping what this repo cannot trust rather than coercing it (#611, #614) —
+ * see `narrowSdkReleases` above for the same discipline applied to `sdk list`.
+ *
+ * `sourceTier` is the one field a malformed answer cannot survive without:
+ * it is the whole reason to call this verb in the first place (#614 — "which
+ * rung of the ladder produced this path") — so a payload missing it is not
+ * this shape at all and the caller gets `null`, the same "answer nothing" a
+ * resolution failure already reads as. `sdkPath` legitimately IS `null` at
+ * the `"none"` tier — measured against the pinned tan 0.6.0 directly, and
+ * matching the `sdk-current-no-sdk` entry in the fetched (gitignored,
+ * `pnpm run contract:fetch`) `test/golden/tan-contract/envelope-contract.json`
+ * at the time this was written. That entry is NOT read by any test here —
+ * `test/sdk.service.test.js`'s fixture is a hand-typed literal, so a future
+ * tan release changing this shape would not be caught automatically — so a
+ * wrong-typed or absent value there degrades to `null` rather than dropping
+ * the whole result, on the same "don't trust it either way" footing.
+ */
+export function narrowSdkCurrent(raw: unknown): SdkCurrentResult | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  if (typeof record.sourceTier !== "string") return null;
+  return {
+    sdkPath: typeof record.sdkPath === "string" ? record.sdkPath : null,
+    readiness: narrowSdkCurrentReadiness(record.readiness),
+    sourceTier: record.sourceTier,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // SDK installation
 // ---------------------------------------------------------------------------
 
