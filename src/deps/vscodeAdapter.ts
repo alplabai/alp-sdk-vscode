@@ -37,6 +37,7 @@ import {
   DependencyStatus,
   DoctorCheckEnvelope,
   DoctorEnvelopeData,
+  type MissingPrerequisite,
   planDependencyReport,
   TAN_ROW_NAME,
 } from "@alp-sdk/core/deps/planner";
@@ -704,6 +705,32 @@ export function scopeDriftLogLines(
   return lines;
 }
 
+/**
+ * The log line `buildDependencyReport` raises when
+ * `DependencyReport.orphanedPrerequisites` is non-empty (#603) — a
+ * prerequisite tan named a real command for that bound to no row at all,
+ * because the `hostPrerequisites` check that carries every leftover entry is
+ * not in this envelope (renamed, or removed). Names every tool AND its
+ * command, so the "Alp SDK" channel says exactly what silently stopped
+ * reaching a button, not just that something did.
+ *
+ * Empty when there is nothing to say. Returned rather than logged directly so
+ * the test can read it; the caller logs it. Pure — exported for the test.
+ */
+export function orphanedPrerequisiteLogLines(
+  orphaned: readonly MissingPrerequisite[],
+): readonly string[] {
+  if (orphaned.length === 0) return [];
+  return [
+    `[deps] tan reported ${orphaned.length} prerequisite(s) with a real ` +
+      "install command that bound to NO row in the dependency table " +
+      `(${orphaned.map((p) => `${p.tool}: ${p.command}`).join("; ")}) — the ` +
+      '"hostPrerequisites" check this extension expects to carry every ' +
+      "leftover prerequisite is not in this envelope. Filed as an issue " +
+      "against tan-cli if this appears on the pinned binary. See #603.",
+  ];
+}
+
 // The shared `runDoctor` spawn (`../alpCli/doctor`, #376) takes `interactive`
 // as its last argument:
 //
@@ -820,6 +847,15 @@ export async function buildDependencyReport(
     // The repo's ONE SemVer comparator. Core must not grow a second.
     compareVersions: cliSkew,
   });
+  // #603: the orphan invariant is only real if a rename is ever SEEN. Without
+  // this line `orphanedPrerequisites` is written and read by nothing outside
+  // the type itself — the next `hostPrerequisites` rename would be exactly as
+  // silent to a customer as the bug this report exists to catch.
+  for (const line of orphanedPrerequisiteLogLines(
+    planned.orphanedPrerequisites,
+  )) {
+    log(line, "warn");
+  }
 
   return {
     report: {
@@ -958,20 +994,23 @@ export async function runDependencyAction(options: {
   // each to finish before the next is even attempted. NEVER joined with `&&`
   // (breaks Windows PowerShell 5.1 — #600) or `;` (runs a later step after an
   // earlier one failed and collapses two exit codes into one).
-  //
-  // Shown at the START of the sequence, same timing the single-shot dispatch
-  // this replaces always used: there was no completion signal to wait for
-  // before this run was sequenced (`sendText` into a bare terminal), and
-  // keeping the same timing keeps this a dispatch-loop change, not a UX one.
-  offerReloadAfterInstall();
   const outcomes: CommandStepOutcome[] = [];
+  let dispatchedAny = false;
   for (const step of action.commands) {
     if (token?.isCancellationRequested) break;
     if (isRunActive(INSTALL_RUN_NAME)) {
-      // A race for the same run name AFTER this row already started (its own
-      // first `isRunActive` check happened one level up, in `runFixAll` /
-      // `panel.ts`'s `runRowAction`, before step 1). Stop rather than await a
-      // dispatch that was just refused and will never fire.
+      // A collision with an already-running install under this same name —
+      // either a second press on THIS (or another) row while one is still
+      // going, or a race for the slot AFTER this row's own earlier step
+      // finished. `runInTerminal` itself is what refuses and tells the
+      // customer why (the same "is still running — wait for it to finish"
+      // warning + Show Terminal offer it has always shown), so it is called
+      // here too rather than silently breaking — a silent stop is worse than
+      // the bug this replaces (a customer who answers the consent screen and
+      // gets no feedback at all). Not awaited: a refused dispatch reserves
+      // nothing and fires nothing (see `awaitRun`'s own doc), so subscribing
+      // here would hang the whole row forever.
+      runInTerminal({ name: INSTALL_RUN_NAME, command: step.command, cwd });
       log(
         `[deps] "${INSTALL_RUN_NAME}" is already running — "${step.command}" was not dispatched`,
         "warn",
@@ -983,6 +1022,16 @@ export async function runDependencyAction(options: {
     const finished = awaitRun(INSTALL_RUN_NAME);
     // tan's own command line, run VERBATIM in its own terminal dispatch.
     runInTerminal({ name: INSTALL_RUN_NAME, command: step.command, cwd });
+    // Raised once, after the FIRST step actually dispatches — never before a
+    // press that turned out to dispatch nothing (the `isRunActive` refusal
+    // above). Raising it unconditionally up front meant a refused press
+    // still fired this notice, whose `dedupeKey` then suppressed the
+    // ALREADY-showing notice from the press that is actually running,
+    // leaving the customer with neither.
+    if (!dispatchedAny) {
+      dispatchedAny = true;
+      offerReloadAfterInstall();
+    }
     const code = await finished;
     outcomes.push({ tool: step.tool, command: step.command, code });
     if (code !== 0) break;
@@ -1050,7 +1099,36 @@ export interface FixAllOutcome {
   }[];
   /** Rows never started, because the user cancelled or a run was already
    *  holding the slot. Reported, never silently dropped. */
-  skipped: { name: string; reason: string }[];
+  skipped: {
+    name: string;
+    reason: string;
+    /**
+     * Tool names from THIS row that already installed before the row was cut
+     * short (cancelled between steps, or a run-name race after step 1) —
+     * `undefined`/empty for every skip that never started at all (declined
+     * consent, unchecked, `"<name>" is already running`, cancelled before
+     * this row's own turn). The SAME honesty `failed.completed` exists for:
+     * a 2-step row that installs cmake and is then cancelled before ninja is
+     * NOT "0 installed" — cmake is on the machine — and `skipped` must not
+     * say otherwise just because the row's own outcome landed here instead
+     * of in `failed` (#603).
+     */
+    completed?: string[];
+  }[];
+}
+
+/**
+ * One `skipped` entry, worded for the summary toast (`deps/panel.ts`) —
+ * `describeFixAllFailure`'s sibling. A skip with no `completed` keeps the
+ * ORIGINAL `"<name>: <reason>"` wording, unchanged.
+ */
+export function describeFixAllSkip(
+  entry: FixAllOutcome["skipped"][number],
+): string {
+  if (!entry.completed || entry.completed.length === 0) {
+    return `${entry.name}: ${entry.reason}`;
+  }
+  return `${entry.name}: ${entry.reason} (installed ${entry.completed.join(", ")} first)`;
 }
 
 /**
@@ -1113,10 +1191,19 @@ function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
     // that reaches a shell (`runDependencyAction` dispatches each line as its
     // own `runInTerminal` call — see that function's own doc for why joining
     // the DISPATCH would be wrong).
+    //
+    // `item.title` — the SAME sentence the row's button shows as its tooltip
+    // — closes the consent screen out too (#603): a partial `hostPrerequisites`
+    // row's title says "tan reported no install command for ninja …", and
+    // that is exactly the fact a customer consenting to "install cmake and
+    // ninja" needs and could not see here before. Appended for every row, not
+    // only a partial one, so the two surfaces never describe the same button
+    // two different ways.
     detail:
       `Runs: ${item.source ? item.source.join(" ; ") : NOT_REPORTED} · ` +
       `Size: ${item.size ?? NOT_REPORTED} · ` +
-      `Licence: ${item.licence ?? NOT_REPORTED}`,
+      `Licence: ${item.licence ?? NOT_REPORTED}` +
+      (item.title ? ` · ${item.title}` : ""),
     picked: true,
   };
 }
@@ -1256,6 +1343,23 @@ export async function runFixAll(options: {
     const action = row.action as DependencyAction;
 
     if (action.kind === "command" && row.name !== ZEPHYR_SDK_CHECK_NAME) {
+      if (action.commands.length === 0) {
+        // `DependencyAction`'s own doc says `commands` is never empty — this
+        // is that invariant breaking, not an ordinary outcome. Never treated
+        // as success: `steps.length === action.commands.length` below is
+        // `0 === 0`, and `[].every(...)` is vacuously true, so without this
+        // guard an empty list would report INSTALLED for a row that
+        // dispatched nothing at all.
+        log(
+          `[fix-all] ${row.name}: a command row reached runFixAll with an EMPTY commands[] — the planner's invariant broke`,
+          "error",
+        );
+        outcome.skipped.push({
+          name: row.name,
+          reason: "no command to run",
+        });
+        continue;
+      }
       // THE HARD CONTRACT (#603): `runDependencyAction` owns `awaitRun` for
       // this run name itself — see its own doc. This is the one branch that
       // must NOT also subscribe `awaitRun(runName)` here; doing so would let
@@ -1298,11 +1402,17 @@ export async function runFixAll(options: {
         // arriving after step 1. Nothing errored, so this is a skip, not a
         // failure, and the loop's own top-of-iteration cancellation check
         // marks every row after it the same way on its own turn.
+        //
+        // `completed` carries what DID install: a "cancelled" skip with no
+        // completed list reads as "nothing happened", which is false the
+        // moment step 1 of 2 already succeeded — the same dishonesty
+        // `failed.completed` exists to close, one branch over.
         outcome.skipped.push({
           name: row.name,
           reason: token.isCancellationRequested
             ? "cancelled"
             : `"${runName}" became active mid-row`,
+          completed: steps.map((s) => s.tool),
         });
         continue;
       }

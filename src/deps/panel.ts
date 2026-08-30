@@ -4,7 +4,10 @@
 // than sitting beside it: two surfaces answering "is my machine ready?" is how
 // they end up disagreeing.
 
-import type { DependencyReport } from "@alp-sdk/core/deps/planner";
+import type {
+  DependencyReport,
+  DependencyRow,
+} from "@alp-sdk/core/deps/planner";
 import * as vscode from "vscode";
 
 import { danglingWestManifest } from "../environment/vscodeAdapter";
@@ -21,8 +24,10 @@ import { log } from "../util";
 import type { StateManager } from "../views/stateManager";
 import {
   buildDependencyReport,
+  type CommandStepOutcome,
   confirmDependencyInstalls,
   describeFixAllFailure,
+  describeFixAllSkip,
   fixAllTargets,
   runDependencyAction,
   runFixAll,
@@ -319,12 +324,66 @@ export class DependencyPanel {
     // SEQUENCE (#603), and `runDependencyAction` is the one place that owns
     // `awaitRun` for it — this call must be the only consumer of that promise,
     // never a second `awaitRun` alongside it (see that function's own doc).
-    await runDependencyAction({
+    const steps = await runDependencyAction({
       action: row.action,
       rowName: row.name,
       cwd: collectProjectContext().workspaceRoot ?? undefined,
       sevenZipStatus: sevenZip?.status,
     });
+    // `steps` is `undefined` for `fix`/`bootstrap`/`zephyrSdk` rows — those
+    // already have their own notices (`runToolchainFix`, the Bootstrap
+    // panel, `offerRefreshAfterZephyrSdkInstall`). For a plain `command` row
+    // this is the ONLY place a single-row press can tell the customer a
+    // MID-SEQUENCE failure happened: `offerReloadAfterInstall`'s "press
+    // Refresh" notice fires at dispatch, before any step's result is known,
+    // and `runFixAll`'s `describeFixAllFailure` wording never runs for a
+    // lone button press (#603) — without this, a row whose step 1 of 2
+    // failed told the customer nothing beyond the generic reload notice.
+    if (steps) this.reportRowStepFailure(row, steps);
+  }
+
+  /**
+   * Tell the customer when a single row's OWN multi-step dispatch did not
+   * finish cleanly — reusing `describeFixAllFailure`'s wording so a row
+   * button and a Fix-all report the SAME failure the SAME way.
+   *
+   * Silent on every outcome that already has its own explanation: every step
+   * ran and succeeded (the generic "press Refresh" notice covers it), or
+   * nothing ran at all (the per-step `isRunActive` refusal already showed its
+   * own warning, or a single-row press has no cancel UI to explain a
+   * cancelled-before-anything-ran outcome).
+   */
+  private reportRowStepFailure(
+    row: DependencyRow,
+    steps: readonly CommandStepOutcome[],
+  ): void {
+    const total =
+      row.action?.kind === "command" ? row.action.commands.length : 0;
+    if (steps.length === 0) return;
+    if (steps.length === total && steps.every((step) => step.code === 0)) {
+      return;
+    }
+    const failedStep = steps.find((step) => step.code !== 0);
+    if (!failedStep) return; // stopped short with nothing errored — nothing new to report
+    notifyAsync(
+      planFailure({
+        operation: `Installing ${row.label}`,
+        cause: describeFixAllFailure({
+          name: row.name,
+          code: failedStep.code,
+          completed: steps
+            .filter((step) => step.code === 0)
+            .map((step) => step.tool),
+          failedCommand: failedStep.command,
+          notRun:
+            row.action?.kind === "command"
+              ? row.action.commands.slice(steps.length).map((c) => c.tool)
+              : [],
+        }),
+        severity: "warning",
+        dedupeKey: `deps-row-failed-${row.name}`,
+      }),
+    );
   }
 
   /**
@@ -392,7 +451,7 @@ export class DependencyPanel {
       // truncation this whole panel exists to avoid.
       parts.push(
         `${outcome.skipped.length} not run (${outcome.skipped
-          .map((entry) => `${entry.name}: ${entry.reason}`)
+          .map((entry) => describeFixAllSkip(entry))
           .join("; ")})`,
       );
     }

@@ -387,6 +387,48 @@ test("a multi-step row: step 2 fails — the outcome says what installed and wha
   ]);
 });
 
+test("a 3-step row: step 2 of 3 fails — the step that never ran is named in notRun", async () => {
+  // Distinct from the step-2-of-2 case above, which leaves `notRun` empty by
+  // construction (nothing is left after the LAST step). This is the one shape
+  // that can catch `notRun` being wired to nothing at all.
+  const { runFixAll, pending } = load();
+  const running = runFixAll({
+    report: report([
+      row({
+        name: "hostPrerequisites",
+        action: {
+          kind: "command",
+          commands: [
+            { tool: "cmake", command: "brew install cmake" },
+            { tool: "ninja", command: "brew install ninja" },
+            { tool: "git", command: "brew install git" },
+          ],
+          effect: "install",
+          title: "",
+        },
+      }),
+    ]),
+    cwd: "/proj",
+    token: NO_CANCEL,
+  });
+
+  await settle();
+  pending.get(INSTALL_RUN)(0); // cmake installs
+  await settle();
+  pending.get(INSTALL_RUN)(1); // ninja fails — git never gets dispatched
+  const outcome = await running;
+
+  assert.deepEqual(outcome.failed, [
+    {
+      name: "hostPrerequisites",
+      code: 1,
+      completed: ["cmake"],
+      failedCommand: "brew install ninja",
+      notRun: ["git"],
+    },
+  ]);
+});
+
 test("an unknown exit code is a failure, not a success", async () => {
   // Arrange -- `undefined` means the task never started or its code could not
   // be read (a task type that was never contributed, a window teardown).
@@ -464,6 +506,58 @@ test("cancelling stops the sequence between steps and never kills a live run", a
   assert.equal(dispatched.length, 1, "no further step was started");
   assert.deepEqual(outcome.skipped, [{ name: "cmake", reason: "cancelled" }]);
 });
+
+test(
+  "cancelling mid-ROW stops step 2 of the SAME row, and reports what step 1 already installed",
+  { timeout: 2000 },
+  async () => {
+    // Arrange -- the `token` a `command` row's OWN dispatch loop checks
+    // between its steps (`runDependencyAction`), distinct from the
+    // row-to-row cancel test above: that one cancels BETWEEN two
+    // single-command rows, this one cancels between two STEPS of one
+    // multi-command row. Cancel must stop step 2 from ever dispatching, and
+    // the row's own record must not erase the install step 1 already
+    // performed (#603).
+    const token = { isCancellationRequested: false };
+    const { runFixAll, dispatched, pending } = load();
+    const running = runFixAll({
+      report: report([
+        row({
+          name: "hostPrerequisites",
+          action: {
+            kind: "command",
+            commands: [
+              { tool: "cmake", command: "brew install cmake" },
+              { tool: "ninja", command: "brew install ninja" },
+            ],
+            effect: "install",
+            title: "",
+          },
+        }),
+      ]),
+      cwd: "/proj",
+      token,
+    });
+
+    // Act -- cancel while cmake's install is still going, then let it finish.
+    await settle();
+    token.isCancellationRequested = true;
+    pending.get(INSTALL_RUN)(0);
+    const outcome = await running;
+
+    // Assert
+    assert.equal(
+      dispatched.length,
+      1,
+      "step 2 (ninja) must never dispatch once cancelled",
+    );
+    assert.deepEqual(outcome.installed, []);
+    assert.deepEqual(outcome.failed, []);
+    assert.deepEqual(outcome.skipped, [
+      { name: "hostPrerequisites", reason: "cancelled", completed: ["cmake"] },
+    ]);
+  },
+);
 
 test("the progress callback names each row before it starts", async () => {
   // Arrange -- the progress line is the only thing on screen during a long
@@ -585,6 +679,35 @@ test("an empty target set does nothing at all", async () => {
   // Assert
   assert.deepEqual(dispatched, []);
   assert.deepEqual(outcome, { installed: [], failed: [], skipped: [] });
+});
+
+test("a command row with an EMPTY commands[] is never reported as installed", async () => {
+  // `DependencyAction`'s own doc says `commands` is never empty — the
+  // planner never produces this shape. But `steps.length === 0 ===
+  // action.commands.length` and `[].every(...)` is vacuously true, so a
+  // defensive guard has to exist ANYWAY: without it, a broken invariant
+  // upstream would report a row as cleanly installed while dispatching
+  // nothing at all (#603).
+  const { runFixAll, dispatched } = load();
+  const outcome = await runFixAll({
+    report: report([
+      row({
+        name: "hostPrerequisites",
+        action: { kind: "command", commands: [], effect: "install", title: "" },
+      }),
+    ]),
+    cwd: "/proj",
+    token: NO_CANCEL,
+  });
+
+  assert.deepEqual(
+    dispatched,
+    [],
+    "nothing may be dispatched for an empty row",
+  );
+  assert.deepEqual(outcome.installed, []);
+  assert.equal(outcome.skipped.length, 1);
+  assert.equal(outcome.skipped[0].name, "hostPrerequisites");
 });
 
 // ---------------------------------------------------------------------------

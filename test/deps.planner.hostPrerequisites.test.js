@@ -91,6 +91,35 @@ test("no orphaned prerequisite — every non-null command bound to a row", () =>
   assert.deepEqual(report.orphanedPrerequisites, []);
 });
 
+test("a mixed row (one tool named, one command: null) says so in the title — not indistinguishable from a full row", () => {
+  // #603 design item 5: a partial button must not read like a full one. tan
+  // named a real command for cmake but none for ninja — the button installs
+  // only cmake, and pressing it can leave the row still failing for ninja.
+  const mixed = {
+    ...data,
+    missingPrerequisites: [
+      { tool: "cmake", command: "brew install cmake" },
+      { tool: "ninja", command: null },
+    ],
+  };
+  const row = rowFor(plan(mixed), "hostPrerequisites");
+  assert.deepEqual(row.action.commands, [
+    { tool: "cmake", command: "brew install cmake" },
+  ]);
+  assert.match(row.action.title, /brew install cmake/);
+  assert.match(
+    row.action.title,
+    /no install command for ninja/,
+    "a mixed row's title must name the tool it cannot cover — otherwise a " +
+      "clean press reads as 'this row is now fixed' when it is not",
+  );
+
+  // The full (both-covered) row from the unmodified fixture must NOT carry
+  // that sentence — the whole point is that the two are distinguishable.
+  const full = rowFor(plan(), "hostPrerequisites");
+  assert.doesNotMatch(full.action.title, /no install command for/);
+});
+
 // ---------------------------------------------------------------------------
 // The orphan invariant (#603 design item 2 / gate iii): the NEXT rename must
 // be visible, not silently swallowed the way this one was.

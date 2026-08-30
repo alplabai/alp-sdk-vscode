@@ -395,7 +395,11 @@ function updateAvailable(
 
 /**
  * The `hostPrerequisites` rollup's own tooltip/consent-screen text (#603 design
- * item 5).
+ * item 5). One sentence, reused verbatim on BOTH surfaces: it becomes
+ * `action.title`, which `DependenciesView.tsx`'s `ActionCell` renders as the
+ * button's native tooltip AND `src/deps/vscodeAdapter.ts`'s `consentPick`
+ * appends to the QuickPick `detail` line — so the two never describe the same
+ * button two different ways.
  *
  * `omittedTools` is never empty on a partial row — tan named a tool's command
  * as `null`, which is a real answer ("no confirmed install command for this

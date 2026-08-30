@@ -695,6 +695,88 @@ test("the summary counts exactly the rows on screen, using tan's arithmetic", as
   assert.deepEqual(built.counts, REAL_PINNED.summary);
 });
 
+// ── the orphan invariant reaches the "Alp SDK" channel, not just the type ────
+
+test("an orphaned prerequisite is LOGGED, not only recorded on the report", async () => {
+  // #603: `orphanedPrerequisites` is worthless as a silent-drop catch if
+  // nothing ever reads it — the exact failure this field exists to end. A
+  // prerequisite for a tool with no check AND no `hostPrerequisites` rollup
+  // in this envelope has nowhere to bind.
+  const orphanData = {
+    checks: [
+      { name: "sdk", status: "pass", detail: "alp-sdk v0.6.0" },
+      { name: "west", status: "pass", detail: "west 1.5.0" },
+    ],
+    summary: { pass: 2, warn: 0, fail: 0 },
+    missingPrerequisites: [{ tool: "cmake", command: "brew install cmake" }],
+  };
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: orphanData, message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  const { report: built } = await buildDependencyReport({}, STATE, {});
+
+  assert.deepEqual(
+    built.orphanedPrerequisites,
+    [{ tool: "cmake", command: "brew install cmake" }],
+    "sanity: the planner's own half of the invariant still holds",
+  );
+  const hit = lines.find((line) => line.includes("cmake"));
+  assert.ok(
+    hit,
+    "no log line named the orphaned prerequisite — the next tan rename of " +
+      "hostPrerequisites would be exactly as silent as #603 itself",
+  );
+  assert.match(hit, /brew install cmake/, "the command, not just the tool");
+  assert.match(hit, /hostPrerequisites/i);
+});
+
+test("nothing is logged when every prerequisite bound to a row", async () => {
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: DOCTOR_DATA, message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {});
+
+  assert.equal(
+    lines.some(
+      (line) => line.includes("orphaned") || line.includes("bound to NO row"),
+    ),
+    false,
+    "a healthy envelope must not print a defect line nobody can act on",
+  );
+});
+
 // ── 0b: the panel with no project folder open ────────────────────────────────
 
 test("with no folder open the host checks still run", async () => {
@@ -1071,6 +1153,99 @@ test("a terminal install says what actually makes the row go green", async () =>
     "three Install presses must not stack three toasts",
   );
 });
+
+test("a second press while the install run is already active: surfaced via runInTerminal, not silent", async () => {
+  // A regression this file exists to pin down: the per-step `isRunActive`
+  // guard must not become a SILENT stop. `runInTerminal` (src/util.ts) is the
+  // one place that already shows "is still running — wait for it to finish"
+  // + Show Terminal for a same-named collision, so the loop must still call
+  // it (stubbed here, same as the zephyrSdk concurrent-press test below)
+  // rather than bypassing it with a bare log line nobody sees.
+  const runs = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => true,
+      awaitRun: () => Promise.resolve(0),
+    },
+    "../notify/vscodeAdapter": {
+      notifyAsync: (plan) => plans.push(plan),
+    },
+  });
+
+  const outcomes = await runDependencyAction({
+    action: {
+      kind: "command",
+      commands: [{ tool: "ninja", command: "brew install ninja" }],
+      effect: "install",
+      title: "brew install ninja",
+    },
+    rowName: "ninja",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  assert.deepEqual(
+    outcomes,
+    [],
+    "nothing dispatched successfully — the row installed nothing",
+  );
+  assert.equal(
+    runs.length,
+    1,
+    "runInTerminal is still called — it is what shows the refusal " +
+      '("is still running — wait for it to finish before starting it ' +
+      'again.") and offers Show Terminal; on dev this call is what the ' +
+      "customer saw and losing it is a silent regression",
+  );
+  assert.equal(
+    plans.length,
+    0,
+    "no press-Refresh notice for a press that dispatched nothing — raising " +
+      "it here would ALSO suppress the still-running press's own notice via " +
+      'the shared "deps-install-reload" dedupe key, leaving the customer ' +
+      "with neither",
+  );
+});
+
+test(
+  "isRunActive already true never reaches awaitRun — proves the guard exists rather than just believing it",
+  { timeout: 2000 },
+  async () => {
+    // If the mid-loop `isRunActive` check were ever removed (or defeated),
+    // this dispatches straight to `awaitRun` on a name that this harness's
+    // stub never resolves — the promise this function returns would simply
+    // never settle, and the bounded test timeout below is what turns that
+    // into a reported failure instead of a hung test run. `awaitRun`'s own
+    // doc (src/util.ts) names exactly this as its one failure mode.
+    const { runDependencyAction } = loadDepsAdapter({
+      vscode: { window: {}, Uri: {} },
+      "../util": {
+        log() {},
+        runInTerminal() {},
+        isRunActive: () => true,
+        awaitRun: () => new Promise(() => {}), // never resolves
+      },
+    });
+
+    const outcomes = await runDependencyAction({
+      action: {
+        kind: "command",
+        commands: [{ tool: "ninja", command: "brew install ninja" }],
+        effect: "install",
+        title: "",
+      },
+      rowName: "ninja",
+      cwd: "/home/dev/proj",
+      sevenZipStatus: undefined,
+    });
+
+    assert.deepEqual(outcomes, []);
+  },
+);
 
 // ── #412: `west sdk install …` retargeted onto the resolved venv binary ─────
 
