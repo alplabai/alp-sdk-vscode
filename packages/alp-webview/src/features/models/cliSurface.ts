@@ -3,12 +3,23 @@
 // Whether the resolved tan implements the model surface this panel drives.
 //
 // The panel is a thin `runAlpCommand(["model", ...])` shell over NINE
-// subcommands — list, doctor, check, zoo, add, prep, run, ab, build. The pinned
-// CLI (`SUPPORTED_CLI_VERSION = "0.6.0-rc1"`) implements exactly one of them,
-// `build`, and refuses the rest. Before this module every refusal was rendered
-// on its own, so ONE fact — "this CLI cannot do it yet" — reached the customer
-// as FOUR red `Models unavailable` alarms carrying tan's own command-line text.
-// Four alarms read as four broken things; a capability gap is not a breakage.
+// subcommands — list, doctor, check, zoo, add, prep, run, ab, build.
+// RE-MEASURED against the pinned CLI (`SUPPORTED_CLI_VERSION = "0.6.0"`, GA —
+// this used to read `0.6.0-rc1`, and the whole surface was re-run rather than
+// relabelled, per #609): the GA tag still implements exactly one of the nine,
+// `build`, and still refuses the other eight with the identical
+// `model.unknown-subcommand` code, exit 1, "Available: build." — unchanged
+// from the rc1 measurement this replaced. `build` itself now fails on an
+// empty project for an UNRELATED reason (`model.sdk-root-unresolved`, no SDK
+// resolved) rather than an unknown-subcommand refusal, which is what proves
+// it IS implemented: a subcommand tan does not recognise at all never gets
+// far enough to name a different problem. So the alarm-collapsing logic below
+// did not need to change, only this comment's version label.
+//
+// Before this module every refusal was rendered on its own, so ONE fact —
+// "this CLI cannot do it yet" — reached the customer as FOUR red `Models
+// unavailable` alarms carrying tan's own command-line text. Four alarms read
+// as four broken things; a capability gap is not a breakage.
 //
 // CLASSIFIED ON THE CODE, never on the message. Measured from the binary:
 //

@@ -108,7 +108,7 @@ const PLAIN_SCALAR_HAZARD = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
  * `scripts/validate_board_yaml.py` -- and PyYAML reads YAML 1.1, where a bare
  * `off` is the BOOLEAN false. So the one value the New Project wizard writes
  * for a core the customer set to "Off (skip core)" changed type in transit,
- * measured on the pinned tan 0.6.0-rc1 against a scaffold that had just
+ * measured on the pinned tan 0.6.0 against a scaffold that had just
  * validated clean:
  *
  *   validate.schema-violation | ALP-B004: False is not of type 'string'
@@ -157,7 +157,7 @@ function needsQuoting(text: string): boolean {
  * EXISTING Scalar's value and leaves its `type` -- the quote style already in
  * the file -- alone. `doc.createNode(value)` builds a fresh Scalar with
  * `type: undefined`, so a value the customer had written double-quoted came
- * back PLAIN. Measured on the pinned tan 0.6.0-rc1, editing a description that
+ * back PLAIN. Measured on the pinned tan 0.6.0, editing a description that
  * held a TAB inside a double-quoted scalar:
  *
  *   before   description: "release\tcandidate"       ok, exit 0

@@ -232,18 +232,22 @@ const LABELS: Readonly<Record<string, string>> = {
  * names whose fix this extension actually knows appear; a miss means no button,
  * never a missing row.
  *
- * Reached in TWO situations, and the pinned tan v0.4.0 is in both:
+ * Reached in TWO situations:
  *
  *  - the whole key is absent (v0.3.1 and earlier, still reachable through
  *    `alpSdk.cliPath`);
- *  - the key is present but names no entry for this check AT ALL. That list is
- *    built inside tan's `push_tool`, and `zephyrSdk` is pushed as a plain
- *    struct literal that never goes through it (v0.4.0
- *    `crates/tan-core/src/build_readiness.rs:384` vs `:553`, `missing.push` at
- *    `:573`). So on a real Windows install the Zephyr SDK row arrived
- *    `status: "warn"` with tan's prose and NO button — the customer was left to
- *    discover `west sdk install` on their own. tan-cli must route it through
- *    `push_tool`; until it does, "tan named no prerequisite for this check" is
+ *  - the key is present but names no entry for this check AT ALL. On the
+ *    v0.4.0 Rust CLI that list was built inside tan's `push_tool`, and
+ *    `zephyrSdk` was pushed as a plain struct literal that never went through
+ *    it (`crates/tan-core/src/build_readiness.rs:384` vs `:553`,
+ *    `missing.push` at `:573`) — that citation is the now-RETIRED Rust build
+ *    and this repo has not re-measured whether the Python port at the pinned
+ *    0.6.0 routes `zephyrSdk` through its own equivalent. So on a real
+ *    Windows install the Zephyr SDK row COULD arrive `status: "warn"` with
+ *    tan's prose and no button — the customer left to discover
+ *    `west sdk install` on their own. This entry is harmless if tan's gap
+ *    already closed (an entry tan DOES emit always wins, below) and stays the
+ *    fallback if it has not: "tan named no prerequisite for this check" is
  *    not the same statement as "there is nothing to offer".
  *
  * An entry tan DID emit is never overridden here — `command: null` is tan's

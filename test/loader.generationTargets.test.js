@@ -9,7 +9,7 @@
 //     data.failed.map((emit) => getGenerationTargetSupport(emit as EmitMode).displayName)
 //
 // and `getGenerationTargetSupport` THROWS on an id it does not know. Measured
-// against the pinned tan 0.6.0-rc1: `generate --all` runs NINE targets
+// against the pinned tan 0.6.0: `generate --all` runs NINE targets
 //
 //     zephyr-conf dts-overlay native-sim-overlay cmake-args yocto-conf
 //     carrier-netlist west-libraries hw-info-h os-topology

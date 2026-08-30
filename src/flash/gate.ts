@@ -118,7 +118,7 @@ const RUN_FLASH_FLAG = "--flash";
 /**
  * Where `tan flash` reads its manifest from.
  *
- * MEASURED, on the pinned 0.6.0-rc1 binary, `tan flash --help` verbatim:
+ * MEASURED, on the pinned 0.6.0 binary, `tan flash --help` verbatim:
  *
  *   APP_PATH      <str>  Application source directory (default: the current
  *                        directory). `build_root` defaults to <APP_PATH>/build.

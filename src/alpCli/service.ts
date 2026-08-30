@@ -1511,9 +1511,14 @@ const HTTP_PROXY_ENV_VARS = [
  * `http.proxy` and the environment the extension host inherited. Returns `{}`
  * when there is nothing to add.
  *
- * `tan` takes no `--proxy` flag: it reads the environment (see tan-cli
- * `crates/tan-cli/src/http.rs`), so handing VS Code's setting to the child is
- * the whole mechanism. Both variables are set because they reach different
+ * `tan` takes no `--proxy` flag: it reads the environment — RE-MEASURED
+ * against the pinned 0.6.0 rather than cited to the retired Rust
+ * `crates/tan-cli/src/http.rs` this used to name (that file cannot describe
+ * a Python binary): pointing `HTTPS_PROXY` at a closed local port makes
+ * `sdk list --online` fail to connect, with tan's own error message reading
+ * "Check ALL_PROXY/HTTPS_PROXY/NO_PROXY — the configured proxy refused or
+ * could not complete the connection" — so handing VS Code's setting to the
+ * child is the whole mechanism. Both variables are set because they reach different
  * things — `HTTPS_PROXY` is what tan's own in-process GitHub call honours, and
  * `HTTP_PROXY` is for the `git`/`pip`/`west` subprocesses tan spawns, which
  * inherit this environment and would otherwise have no http-side proxy at all.

@@ -133,7 +133,7 @@ test("boardLibrariesFromPresets returns [] for anything that is not one", () => 
 });
 
 test("an unresolved-SDK presets payload yields no vocabulary", () => {
-  // Measured against tan 0.6.0-rc1: no --sdk-root is exit 0, ok:true, the `sdk`
+  // Measured against tan 0.6.0: no --sdk-root is exit 0, ok:true, the `sdk`
   // key absent, and every SDK-sourced list empty — while tan's OWN built-in
   // `libraries` (8 build profiles) stays populated. Reading that field instead
   // of `boardLibraries` would look like a working catalogue and be the wrong

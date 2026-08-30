@@ -24,7 +24,7 @@ export interface CoreChoice {
  *
  * `./src` IS A SUGGESTION, NOT A PREDICTION, and this comment used to claim
  * otherwise — that `./src` is "the directory `tan init` puts the template's
- * real source in". Measured on the pinned tan 0.6.0-rc1, `minimal-app`
+ * real source in". Measured on the pinned tan 0.6.0, `minimal-app`
  * scaffolds `app: .` (the project root) and its source into `./src`
  * underneath. So tan's directory and this default do NOT agree, tan's wins
  * (`applyCoreAssignments`), and the customer is told through

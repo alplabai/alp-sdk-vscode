@@ -253,7 +253,7 @@ test("an undefined exit code (task never started) raises no plan at all, build o
 
 // ── #540: a non-zero flash exit is not evidence that a flash failed ────────
 //
-// At the 0.6.0-rc1 pin an UNARMED confirm gate exits non-zero for a run that
+// At the 0.6.0 pin an UNARMED confirm gate exits non-zero for a run that
 // deliberately previewed and wrote nothing; a missing backend tool exits
 // before a slice is touched; a multi-slice run can exit non-zero having
 // already programmed the slices ahead of the one that stopped it. One exit

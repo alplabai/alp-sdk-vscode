@@ -626,7 +626,7 @@ function ConfirmStep({
           //
           // NO APP DIRECTORY IS SHOWN, deliberately. tan chooses the app core's
           // directory itself and its choice wins (`applyCoreAssignments`);
-          // measured on the pinned 0.6.0-rc1, `minimal-app` scaffolds `app: .`
+          // measured on the pinned 0.6.0, `minimal-app` scaffolds `app: .`
           // while this wizard's default for that core is `./src`. A directory
           // printed here would therefore be wrong on essentially every project
           // — a promise broken at Create, which is the failure this row exists

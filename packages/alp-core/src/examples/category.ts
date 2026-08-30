@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 //
 // tan's `examples` envelope carries `id`, `sourceDir`, `title`, `description`
-// and nothing else — measured against the pinned v0.6.0-rc1's own published
+// and nothing else — measured against the pinned v0.6.0's own published
 // `envelope-contract.json`, not assumed from the issue, which was written
 // against an older pin. So `ex.category` is not on the wire today.
 //

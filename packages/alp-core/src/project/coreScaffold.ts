@@ -3,7 +3,7 @@
 // Giving every core the user chose its own app (#534).
 //
 // `tan init --cores` splices companions in APP-LESS. From `tan init --help` at
-// the pinned 0.6.0-rc1: a companion "can only be spliced in app-less, as
+// the pinned 0.6.0: a companion "can only be spliced in app-less, as
 // `:off` or (on a Cortex-A id) `:yocto`". So no `--template` + `--cores`
 // combination can produce a second Zephyr core with its own `app:`, and a
 // dual-M55 SoM — the Alif Ensemble line's defining topology — came out as a
@@ -191,7 +191,7 @@ export function appDirOverrides(
  * then took the application away from.
  *
  * tan puts the template's REAL SOURCE in the app core's directory — `app: .`
- * for `minimal-app`, measured on the pinned 0.6.0-rc1. Answering that core
+ * for `minimal-app`, measured on the pinned 0.6.0. Answering that core
  * `off`, `yocto` or `baremetal` is a legitimate thing to want, and this pass
  * honours it: the core stops being a Zephyr application and `app:` is dropped.
  * What is left behind is a directory full of code that nothing builds.
@@ -273,7 +273,7 @@ export function applyCoreAssignments(
   }
 
   // An `ipc:` entry whose endpoint was just turned off is not stale, it is
-  // FATAL. Measured on the pinned tan 0.6.0-rc1, on a project it had just
+  // FATAL. Measured on the pinned tan 0.6.0, on a project it had just
   // created and validated clean:
   //
   //   validate.schema-violation | consistency: ipc entry 'alp_default_rpmsg'

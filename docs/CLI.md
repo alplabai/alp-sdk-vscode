@@ -13,7 +13,7 @@ surface.
 > `alp` (`cli-rs`) binary and the TypeScript implementation (`packages/alp-cli`)
 > have been retired. This document is the envelope contract this repo depends
 > on. It describes the INTENDED surface: `tan` is not feature-complete at the
-> pinned `SUPPORTED_CLI_VERSION` 0.6.0-rc1 (`src/alpCli/service.ts`), and three
+> pinned `SUPPORTED_CLI_VERSION` 0.6.0 (`src/alpCli/service.ts`), and three
 > parts of it are declared by that binary but refuse when you run them — the
 > second note below names all three.
 > `tan` is published as a GitHub release asset for each target (tag
@@ -25,7 +25,7 @@ surface.
 > from the version — downloads it, unpacks an archive before running it, and
 > shells the resulting binary either way.
 
-> **The three gaps at 0.6.0-rc1.** Twelve of `build`'s options — `--all`,
+> **The three gaps at 0.6.0.** Twelve of `build`'s options — `--all`,
 > `--ci`, `--manifest`, `--manifest-from`, `--no-auto-bootstrap`, `--no-color`,
 > `--non-interactive`, `--plan`, `--pristine`, `--quiet`, `--target`,
 > `--verbose` — are accepted by the parser and then refused. Each exits 1 with
@@ -120,7 +120,7 @@ option to select one with (tan-cli#674). PREP MODEL (pick model + calibration
 folder → quantize → accuracy report), RUN MODEL / A-B COMPARE (host reference
 run) and the MODEL ZOO GALLERY (browse "runs on your SoM" + one-click Add) are
 INTENDED, not shipped: they need `model prep`, `model run`, `model ab` and
-`model zoo`, and none of those exist at 0.6.0-rc1 (tan-cli#674). When Run and
+`model zoo`, and none of those exist at 0.6.0 (tan-cli#674). When Run and
 A-B do arrive, the honest caveat still holds — they are a host reference, not
 target-SoM performance.
 
@@ -179,7 +179,7 @@ subcommands, same flags). `alp model` is the SDK-native command surface; `tan
 model` is the thin envelope wrapper emitting `{command, ok, exitCode, project,
 data, issues}`.
 
-At the pinned 0.6.0-rc1 the only subcommand implemented is `build`; every other
+At the pinned 0.6.0 the only subcommand implemented is `build`; every other
 entry below is the intended contract and exits 1 with `model.unknown-subcommand`
 ("Unknown model subcommand: check. Available: build.") until tan-cli#674 lands.
 Subcommands:
@@ -502,7 +502,7 @@ value-add subcommands below each emit the standard envelope; their payloads live
 under `data`, warnings/errors under `issues`.
 
 Of everything in this section only `build` is implemented at the pinned
-0.6.0-rc1 — `check`, `zoo`, `add`, `prep`, `run` and `ab` (and `list`, `info`
+0.6.0 — `check`, `zoo`, `add`, `prep`, `run` and `ab` (and `list`, `info`
 and `doctor`) exit 1 with `model.unknown-subcommand` — measured for every form,
 including one carrying a flag `tan model` really has (`tan model check --board
 board.yaml` refuses identically). The subcommand is rejected before any flag is

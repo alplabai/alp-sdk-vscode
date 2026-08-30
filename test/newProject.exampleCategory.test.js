@@ -4,7 +4,7 @@
 //
 // The rule has one safety property worth more than the rest: an explicit
 // `category` from tan ALWAYS wins over anything derived here. tan's envelope
-// does not carry one today — measured against the pinned v0.6.0-rc1's own
+// does not carry one today — measured against the pinned v0.6.0's own
 // published `envelope-contract.json`, whose `examples-catalog` entry offers
 // exactly `id`, `sourceDir`, `title`, `description` — so the leading segment of
 // `sourceDir` stands in. The day the producer sends the fact outright, this

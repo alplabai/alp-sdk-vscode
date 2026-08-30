@@ -310,7 +310,7 @@ export function activate(context: vscode.ExtensionContext): void {
         // picked from the mode the run actually used.
         // A flash does NOT get "failed." (#540). A non-zero exit from `tan
         // flash` is not evidence that a write was attempted and lost: at the
-        // 0.6.0-rc1 pin an UNARMED confirm gate exits non-zero for a run that
+        // 0.6.0 pin an UNARMED confirm gate exits non-zero for a run that
         // deliberately did nothing, a missing backend tool exits before any
         // slice is touched, and a multi-slice run can exit non-zero having
         // already programmed the slices ahead of the one that failed.

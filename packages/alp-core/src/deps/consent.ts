@@ -11,7 +11,7 @@
 //   alp-sdk `metadata/bootstrap.json` at the vendored v0.15.0 pin (top-level
 //   keys: `_comment`, `schemaVersion`, `zephyr`, `venv`, `prerequisites`,
 //   `west`, `pip`, `verdict`, `env`, `nativeLibHints`, `manualInstallHints`)
-//   and on `tan doctor --format json` at the 0.6.0-rc1 pin (check rows are
+//   and on `tan doctor --format json` at the 0.6.0 pin (check rows are
 //   `name` / `status` / `scope` / `detail` / `fix`). Neither side carries
 //   `tier`, `licence`, `source` or `size`. Filed as alp-sdk#1574.
 //

@@ -931,7 +931,8 @@ async function main() {
   }
 
   // ── the CLI-capability gap is ONE notice, not four alarms (#522) ──
-  // The pinned tan (0.6.0-rc1) implements only `model build` and refuses the
+  // The pinned tan (0.6.0, re-measured at GA — #609) implements only `model
+  // build` and refuses the
   // other eight subcommands the panel drives. Every refusal used to render on
   // its own, so one fact reached the customer as FOUR red `Models unavailable`
   // banners carrying tan's command-line text. Feed the real refusal envelope

@@ -177,7 +177,7 @@ export function getGenerationTargetSupport(
  * This one answers "what do I CALL this target in a sentence", and there the
  * unknown id is not an error at all: `tan generate --all` runs more targets
  * than this extension has catalog entries for — MEASURED at the pinned
- * 0.6.0-rc1, nine run against six in the catalog — and every one of them can
+ * 0.6.0, nine run against six in the catalog — and every one of them can
  * appear in the `failed` list. tan's own `explain` reports a TENTH it can
  * generate (`zephyr-board`), which `--all` does not run; the catalog cannot
  * name that one either, which is why the gate iterates the reported set rather

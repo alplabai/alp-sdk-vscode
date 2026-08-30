@@ -7,7 +7,7 @@
 // `tan init` with exit 2 / `init.invalid-cores` — the whole Alif Ensemble line,
 // whose defining topology is dual-M55.
 //
-// The contract, quoted from `tan init --help` at the pinned 0.6.0-rc1:
+// The contract, quoted from `tan init --help` at the pinned 0.6.0:
 //
 //   OS is inferred from the id when omitted, but that inference is only
 //   honored for the plan's app core -- any other id can only be spliced in

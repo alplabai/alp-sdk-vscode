@@ -3,7 +3,7 @@
 // Several tan verbs report an unresolved SDK as a SUCCESS, and the extension
 // has to tell that apart from a genuinely empty answer.
 //
-// Measured against the pinned tan 0.6.0-rc1, `tan examples` with no resolvable
+// Measured against the pinned tan 0.6.0, `tan examples` with no resolvable
 // SDK returns exit 0, `ok: true`, `data.examples: []`, and says what actually
 // happened only through:
 //

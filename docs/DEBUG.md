@@ -529,12 +529,17 @@ unresolvable `preLaunchTask` aborts the pre-launch and
 `vscode.debug.startDebugging` returns `false` with no useful error, pointing
 the user at a `launch.json` that looks perfectly fine.
 
-`tan` emits the key only when told to: `debug-config` writes `preLaunchTask`
-only for a `--pre-launch-task <TASK>` the caller passes, and drops the key
-otherwise. The extension passes it from `debugConfigArgs`
+MEASURED against the pinned tan 0.6.0: `debug-config` now writes
+`preLaunchTask` to a per-target-kind default even when `--pre-launch-task` is
+entirely absent from the argv — the same three labels below for
+zephyr-mcu/baremetal-mcu/native-host — and drops the key only for
+yocto-userspace, which has no default. The extension still passes
+`--pre-launch-task <TASK>` explicitly from `debugConfigArgs`
 (`src/debug/service.ts`), mapping the target class to a label via
-`preLaunchTaskFor` (`src/tasks/service.ts`) — without that, §10.1–10.3 and
-§10.5 would start a debug session against an ELF nothing had built.
+`preLaunchTaskFor` (`src/tasks/service.ts`): not because omitting it would
+currently blank the profile, but because that is the one place these three
+strings are owned, so a future change to tan's own default has nothing here
+to silently retarget §10.1–10.3 and §10.5 through.
 
 The extension contributes all four labels (`src/tasks/service.ts` holds the
 string contract, `src/tasks/vscodeAdapter.ts` the VS Code seam, task type +

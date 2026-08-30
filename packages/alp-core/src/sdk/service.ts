@@ -570,10 +570,14 @@ export function westManifestWarning(status: WestManifestStatus): string | null {
  * The output-channel line for a manifest status, or null when there is nothing
  * to record. Carries the manual escape hatch deliberately: no shipped command
  * is a guaranteed repair. `tan bootstrap` reconciles this pointer only when it
- * does NOT reuse an existing `$ZEPHYR_BASE` workspace (tan-cli v0.3.1
- * `bootstrap/mod.rs` gates the reconcile on `!reuse`), and an ambient
- * `$ZEPHYR_BASE` is exactly what masked this failure when it was reported. The
- * wording stays action-agnostic so it reads correctly from every caller.
+ * does NOT reuse an existing `$ZEPHYR_BASE` workspace, and an ambient
+ * `$ZEPHYR_BASE` is exactly what masked this failure when it was reported.
+ * (This used to cite `tan-cli v0.3.1 bootstrap/mod.rs`'s `!reuse` gate as the
+ * source — the RETIRED Rust CLI. `src/bootstrap.ts` already re-derived the
+ * neighbouring claim about this same reconcile against the pinned 0.6.0
+ * Python binary (#609); this file only re-states the conclusion for the log
+ * line and does not re-cite Rust source for it.) The wording stays
+ * action-agnostic so it reads correctly from every caller.
  */
 export function westManifestLogLine(status: WestManifestStatus): string | null {
   if (status.state !== "dangling") return null;

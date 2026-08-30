@@ -3,7 +3,7 @@
 // Giving every chosen core its own app (#534).
 //
 // `tan init --cores` splices companions in APP-LESS — from `tan init --help` at
-// the pinned 0.6.0-rc1, a companion "can only be spliced in app-less, as `:off`
+// the pinned 0.6.0, a companion "can only be spliced in app-less, as `:off`
 // or (on a Cortex-A id) `:yocto`". So a dual-M55 SoM, the Alif Ensemble line's
 // defining topology, could never be scaffolded with two Zephyr apps: one core
 // got `./src` and the rest were not in the file at all.
@@ -32,7 +32,7 @@ const {
 } = require("../packages/alp-core/dist/project/coreScaffold.js");
 
 /** What `tan init --template zephyr-app --som E1M-AEN801 --cores a32_cluster:yocto`
- *  actually produces, measured (pinned tan 0.6.0-rc1, alp-sdk v0.16.0-rc1). */
+ *  actually produces, measured (pinned tan 0.6.0, alp-sdk v0.16.0-rc1). */
 const SCAFFOLDED = {
   som: { sku: "E1M-AEN801" },
   preset: "e1m-evk",

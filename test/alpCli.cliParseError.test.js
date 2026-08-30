@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // `cli.parse-error` — what tan answers when it does not accept the argv the
-// EXTENSION sent. Measured against the pinned 0.6.0-rc1:
+// EXTENSION sent. Measured against the pinned 0.6.0:
 //
 //   $ tan presets --nosuchflag --format json   # exit 2
 //   {"command":"cli","ok":false,"exitCode":2,...,
@@ -32,7 +32,7 @@ const assert = require("node:assert/strict");
 const { classifyOutcome } = require("../out/alpCli/service.js");
 const { planCliOutcome } = require("../out/notify/service.js");
 
-/** The measured 0.6.0-rc1 payload, verbatim — box-drawing characters kept. */
+/** The measured 0.6.0 payload, verbatim — box-drawing characters kept. */
 const USAGE_DUMP =
   "Usage: tan presets [OPTIONS]\n" +
   "Try 'tan presets --help' for help.\n" +
