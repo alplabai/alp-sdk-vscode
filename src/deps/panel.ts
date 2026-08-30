@@ -16,7 +16,7 @@ import type {
   WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
-import { isCancellation, planFailure, planSuccess } from "../notify/service";
+import { isCancellation } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { offerBootstrapFix } from "../toolchain";
@@ -424,24 +424,18 @@ export class DependencyPanel {
       },
     );
 
-    // The WHOLE decision — kind, customer-visible message, channel-only
-    // detail — comes from `fixAllSummaryNotice`, pure and value-tested
-    // (#603, third review, blocker 2): this method only wires its result to
-    // the log line and the notification, so there is no second place that
-    // could re-derive `outcome.failed.length === 0` and disagree.
-    const summary = fixAllSummaryNotice(outcome, targets.length);
-    log(`[fix-all] ${summary.detail}`);
-    notifyAsync(
-      summary.kind === "success"
-        ? planSuccess(summary.message, { detail: summary.detail })
-        : planFailure({
-            operation: "Fix all",
-            cause: summary.message,
-            detail: summary.detail,
-            severity: "warning",
-            dedupeKey: "deps-fix-all",
-          }),
-    );
+    // The WHOLE decision — channel, severity, customer-visible message,
+    // channel-only detail, dedupe key — comes back FINISHED from
+    // `fixAllSummaryNotice` (#603, round 4, blockers 2 and 3): this method
+    // hands it straight to `notifyAsync` with nothing left to compute, so
+    // there is no ternary, no `severity`, and no `dedupeKey` here for a
+    // mutation to get wrong the way three earlier ones did (a literal
+    // `{ skipped: [] }` in place of `outcome`; the ternary widened to also
+    // route `"partial"` through `planSuccess`; `severity`/`dedupeKey`
+    // hand-set beside it) and still leave every gate green.
+    const plan = fixAllSummaryNotice(outcome, targets.length);
+    log(`[fix-all] ${plan.detail}`);
+    notifyAsync(plan);
 
     this.refresh();
   }

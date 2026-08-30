@@ -850,6 +850,60 @@ test("a DIFFERENT orphan arriving later is STILL logged — the latch must not o
   assert.equal(lines.filter((l) => l.includes("dtc")).length, 1);
 });
 
+test("a still-orphaned tool is NOT dropped from the line when a NEW orphan arrives beside it (#603 round 4, minor 8)", async () => {
+  // Measured repro: refresh 1 orphans cmake (1 line, naming cmake and its
+  // count of 1). Refresh 2's envelope is CUMULATIVE — tan still reports cmake
+  // AND now also ninja and gperf. `newOrphans` (the tools not already latched)
+  // is `[ninja, gperf]`, length 2 — the filtered list decided whether to log,
+  // correctly. Passing THAT filtered list to `orphanedPrerequisiteLogLines`
+  // undercounted it, though: the line said "tan reported 2 prerequisite(s)"
+  // and named only ninja and gperf, even though tan is reporting 3 right now
+  // and cmake is STILL one of them.
+  const lines = [];
+  const envelopes = [
+    orphanEnvelope(["cmake"]),
+    orphanEnvelope(["cmake", "ninja", "gperf"]),
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: orphan=cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: cmake,ninja,gperf
+
+  const refresh2Line = lines.find(
+    (l) => l.includes("ninja") || l.includes("gperf"),
+  );
+  assert.ok(refresh2Line, "refresh 2 must still log — it has new orphans");
+  assert.match(
+    refresh2Line,
+    /tan reported 3 prerequisite\(s\)/,
+    "tan is reporting 3 orphans right now (cmake, ninja, gperf) — the " +
+      "line must count all of them, not just the ones newly seen",
+  );
+  assert.match(
+    refresh2Line,
+    /cmake/,
+    "cmake is STILL orphaned on refresh 2 and must still be named, even " +
+      "though it already used up its own one-shot latch on refresh 1",
+  );
+});
+
 test("nothing is logged when every prerequisite bound to a row", async () => {
   const lines = [];
   const { buildDependencyReport } = loadDepsAdapter({

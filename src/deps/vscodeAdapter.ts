@@ -69,7 +69,7 @@ import {
 } from "../environment/vscodeAdapter";
 import { type AlpIdeState, BOOTSTRAP_RUN_NAME } from "../ideHub/messages";
 import type { NotificationPlan } from "../notify/models";
-import { planFailure, planPrecondition } from "../notify/service";
+import { planFailure, planPrecondition, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import {
   collectProjectContext,
@@ -892,7 +892,19 @@ export async function buildDependencyReport(
   );
   if (newOrphans.length > 0) {
     for (const p of newOrphans) orphanedPrerequisitesReported.add(p.tool);
-    for (const line of orphanedPrerequisiteLogLines(newOrphans)) {
+    // The FULL current set, not just `newOrphans` (#603, round 4, minor 8):
+    // `orphanedPrerequisiteLogLines`'s own sentence says "tan reported N
+    // prerequisite(s)", counting and naming every one of ITS argument — pass
+    // it only the newly-seen subset and a tool still orphaned from an
+    // earlier refresh (never re-added to `newOrphans` by the filter above)
+    // silently drops out of both the count and the parenthetical, even
+    // though tan is still reporting it right now. `newOrphans` decides only
+    // WHETHER to log at all (so a second, unrelated orphan still fires —
+    // major 5's own fix, unchanged); the line itself names everything tan
+    // currently reports.
+    for (const line of orphanedPrerequisiteLogLines(
+      planned.orphanedPrerequisites,
+    )) {
       log(line, "warn");
     }
   }
@@ -1172,8 +1184,8 @@ export function describeFixAllSkip(
 }
 
 /**
- * Appends what a cancelled/raced-away row already installed to a Fix-all
- * summary sentence — the CUSTOMER-VISIBLE half, not `detail`.
+ * Appends what a cancelled/raced-away OR failed row already installed to a
+ * Fix-all summary sentence — the CUSTOMER-VISIBLE half, not `detail`.
  *
  * `planSuccess`'s status-bar channel (no `actions`, the plain case here)
  * shows ONLY its `message` string; `detail` is written to the "Alp SDK"
@@ -1186,16 +1198,51 @@ export function describeFixAllSkip(
  * or it never reaches the customer who just watched the consent screen and
  * pressed the button (#603).
  *
+ * `outcome.failed[].completed` is read too (#603, round 4, blocker 1): a
+ * 2-step `hostPrerequisites` row that installs cmake and then FAILS on ninja
+ * never appears in `skipped` at all — the row is in `failed` — and reading
+ * only `skipped` left that exact case reporting "1 of 1 did not install." for
+ * a machine that already has cmake on it, the same dishonesty this function
+ * exists to close on the cancelled/raced branch.
+ *
+ * De-duplicated: a tool named by two different rows (or, in principle, by
+ * both a `failed` and a `skipped` entry in the same run) must appear once,
+ * not once per row that names it.
+ *
  * `base` unchanged when nothing completed outside `outcome.installed` — the
  * ordinary case, where the existing sentence already says everything.
  */
 export function withFixAllPartialNote(
   base: string,
-  outcome: Pick<FixAllOutcome, "skipped">,
+  outcome: Pick<FixAllOutcome, "skipped" | "failed">,
 ): string {
-  const partial = outcome.skipped.flatMap((entry) => entry.completed ?? []);
-  if (partial.length === 0) return base;
-  return `${base} ${partial.join(", ")} installed before stopping.`;
+  const partial = [
+    ...outcome.skipped.flatMap((entry) => entry.completed ?? []),
+    ...(outcome.failed ?? []).flatMap((entry) => entry.completed),
+  ];
+  const unique = [...new Set(partial)];
+  if (unique.length === 0) return base;
+  return `${base} ${unique.join(", ")} installed before stopping.`;
+}
+
+/**
+ * tan sometimes qualifies an install command with an absolute path to the
+ * package manager itself rather than relying on PATH (`sudo
+ * /opt/homebrew/bin/brew install ninja`, `C:\ProgramData\choco.exe install
+ * ninja`). Shown verbatim, that command is exactly what
+ * `src/notify/service.ts`'s `ABSOLUTE_PATH` leak filter exists to catch —
+ * and `describeFixAllFailure`'s string reaches `planFailure`'s `cause` (via
+ * `rowStepFailureNotice`), so a path-qualified command demoted the WHOLE
+ * customer sentence (including which tool already installed) to a bare
+ * `"<operation> failed."` (#603, round 4, major 6). Reduced to the
+ * executable's own basename, which is all a customer needs to recognise the
+ * command and is never itself path-shaped.
+ */
+function withoutAbsolutePaths(command: string): string {
+  return command.replace(
+    /(?:[A-Za-z]:[\\/]|\/(?:home|Users|usr|var|tmp|opt|mnt|etc|private)\/)[^\s"']*/g,
+    (match) => match.split(/[\\/]/).pop() ?? match,
+  );
 }
 
 /**
@@ -1217,6 +1264,10 @@ export function withFixAllPartialNote(
  * trigger word. Reworded HERE rather than only at the `cause` call site so
  * every consumer — this row wording and the Fix-all `detail`/log text this
  * same function feeds — says the same true thing the same way.
+ *
+ * The command itself is run through `withoutAbsolutePaths` for the SAME
+ * reason, against `planFailure`'s OTHER demotion trigger, `ABSOLUTE_PATH`
+ * (#603, round 4, major 6) — see that function's own doc.
  */
 export function describeFixAllFailure(
   entry: FixAllOutcome["failed"][number],
@@ -1229,7 +1280,7 @@ export function describeFixAllFailure(
     parts.push(`installed ${entry.completed.join(", ")}`);
   }
   parts.push(
-    `\`${entry.failedCommand}\` did not succeed (code ${entry.code ?? "unknown"})`,
+    `\`${withoutAbsolutePaths(entry.failedCommand)}\` did not succeed (code ${entry.code ?? "unknown"})`,
   );
   parts.push(
     entry.notRun.length > 0
@@ -1239,58 +1290,45 @@ export function describeFixAllFailure(
   return `${entry.name}: ${parts.join("; ")}`;
 }
 
-/** What `deps/panel.ts`'s `runFixAll` tells the customer after a run
- *  finishes — one, whole decision, so nothing is left for the caller to
- *  build by hand. */
-export interface FixAllSummaryNotice {
-  /**
-   * Which `notify/service.ts` planner the caller must use, and how urgently:
-   * `"success"` -> `planSuccess` (status bar, auto-dismissing — nothing on
-   * the machine needs a second look). `"partial"` and `"failure"` ->
-   * `planFailure` with `severity: "warning"` (a persistent toast).
-   *
-   * `"partial"` is `outcome.failed.length === 0` — nothing technically
-   * FAILED — but some row was cancelled or raced away mid-sequence with a
-   * completed step already on the machine (#603, third review, major 6): a
-   * half-modified machine is not a success, and `planSuccess`'s
-   * status-bar-with-no-`actions` channel is a 5-second, auto-dismissing,
-   * button-less line with no "Show Output" backstop — the WRONG channel for
-   * a fact the customer needs to still be readable a minute later.
-   *
-   * Never derived twice: the caller reads this instead of re-checking
-   * `outcome.failed.length` itself, which is what let round 2's blocker 1
-   * and this file's blocker 2 both happen — the DECISION and the WIRING
-   * drifted apart because two places computed it.
-   */
-  kind: "success" | "partial" | "failure";
-  /** The CUSTOMER-VISIBLE half — `planSuccess`'s `message` or `planFailure`'s
-   *  `cause`, the two fields `notify/service.ts` actually renders to the
-   *  customer. Already run through `withFixAllPartialNote`, so a row
-   *  cancelled or raced away mid-sequence has what it already installed
-   *  IN this string, not only in `detail` (#603, second review, blocker 1). */
-  message: string;
-  /** The CHANNEL-ONLY half — every row's own `describeFixAllFailure` /
-   *  `describeFixAllSkip` line, verbatim. Never the customer's only copy of
-   *  anything that must reach them — see `message` above. */
-  detail: string;
-}
-
 /**
- * Build the WHOLE Fix-all summary notice from a real `FixAllOutcome` — the
- * decision `deps/panel.ts`'s `runFixAll` method used to make inline, behind
- * nothing but a source-level regex on the call site (#603, third review,
- * blocker 2: that regex proved the CALL was typed, never that the VALUE
- * flowing through it was real — mutating the call to pass a literal
- * `{ skipped: [] }` instead of the actual `outcome` left every existing gate
- * green). PURE and exported so a test can drive a REAL outcome (from the
- * real `runFixAll` dispatch loop, `test/deps.fixAll.test.js`'s own harness)
- * through this function and assert on the customer-visible `message` it
- * returns, rather than asserting that a call site merely exists.
+ * Build the WHOLE Fix-all notice from a real `FixAllOutcome` — the FINISHED
+ * `NotificationPlan`, ready for `notifyAsync`, exactly the pattern
+ * `rowStepFailureNotice` already established for the single-row button
+ * (#603, round 4, blockers 2 and 3): `deps/panel.ts`'s `runFixAll` method
+ * used to make this decision inline — `summary.kind === "success" ?
+ * planSuccess(...) : planFailure(...)` — behind nothing but a source-level
+ * regex on the call site. That regex (and every regex after it: a check for
+ * `withFixAllPartialNote(`, a check for `summary.kind === "success"`) proved
+ * the CALL was typed, never that the VALUE flowing through it was real, or
+ * that the ternary itself still routed correctly — mutating the call to pass
+ * a literal `{ skipped: [] }`, or widening the ternary to also take
+ * `"partial"` down the `planSuccess` branch, or hand-setting `severity` /
+ * `dedupeKey` beside it, each left every existing gate green in turn. There
+ * is no longer a ternary, a `severity`, or a `dedupeKey` for `panel.ts` to
+ * get wrong: this function returns the plan whole, and the caller's only job
+ * is to hand it to `notifyAsync` and log `.detail`.
+ *
+ * PURE and exported so a test can drive a REAL outcome (from the real
+ * `runFixAll` dispatch loop) through this function and assert on the
+ * `NotificationPlan` VALUES it returns — `channel`, `severity`, `message`,
+ * `dedupeKey` — rather than on a substring of a caller that no longer has
+ * any of those to compute.
+ *
+ * `kind` (success / partial / failure) is `planSuccess`-vs-`planFailure`,
+ * decided ONCE here rather than left for a caller to re-derive:
+ * `outcome.failed.length === 0` is NOT the same fact as "clean success" once
+ * a skip can carry `completed` — a row cancelled or raced away mid-sequence
+ * with a step already on the machine is a HALF-modified machine, and
+ * `planSuccess`'s status-bar-with-no-`actions` channel is a 5-second,
+ * auto-dismissing, button-less line with no "Show Output" backstop, the
+ * wrong channel for a fact the customer needs to still be readable a minute
+ * later (#603, third review, major 6) — so that case is `planFailure` at
+ * `severity: "warning"` too, same as an outright failure.
  */
 export function fixAllSummaryNotice(
   outcome: FixAllOutcome,
   targetCount: number,
-): FixAllSummaryNotice {
+): NotificationPlan {
   const parts = [`${outcome.installed.length} installed`];
   if (outcome.failed.length > 0) {
     parts.push(
@@ -1309,31 +1347,49 @@ export function fixAllSummaryNotice(
     );
   }
   const detail = parts.join(" · ");
+
   if (outcome.failed.length > 0) {
-    return {
-      kind: "failure",
-      message: withFixAllPartialNote(
-        `${outcome.failed.length} of ${targetCount} did not install.`,
+    // The rows that did NOT install — every failed row AND every row skipped
+    // because of it (or for any other reason). `outcome.failed.length` alone
+    // undercounts an ordinary multi-row abort: row 1 fails, and everything
+    // after it lands in `skipped` (`"stopped after <row> failed"`), which
+    // still did not install (#603, round 4, major 5). Every target lands in
+    // exactly one of `installed` / `failed` / `skipped`, so `targetCount -
+    // installed.length` is exactly that count without re-summing the other
+    // two arrays.
+    const notInstalled = targetCount - outcome.installed.length;
+    return planFailure({
+      operation: "Fix all",
+      cause: withFixAllPartialNote(
+        `${notInstalled} of ${targetCount} did not install.`,
         outcome,
       ),
       detail,
-    };
+      severity: "warning",
+      dedupeKey: "deps-fix-all",
+    });
   }
+
   const message = withFixAllPartialNote(
     `Fix all: ${outcome.installed.length} of ${targetCount} installed.`,
     outcome,
   );
   // A skip that already installed something (cancelled/raced mid-row) makes
-  // this a HALF-modified machine, never a clean success — see `kind`'s own
-  // doc for why that must not go out on the status bar.
+  // this a HALF-modified machine, never a clean success — see this
+  // function's own doc for why that must not go out on the status bar.
   const hasPartialCompletion = outcome.skipped.some(
     (entry) => (entry.completed?.length ?? 0) > 0,
   );
-  return {
-    kind: hasPartialCompletion ? "partial" : "success",
-    message,
-    detail,
-  };
+  if (hasPartialCompletion) {
+    return planFailure({
+      operation: "Fix all",
+      cause: message,
+      detail,
+      severity: "warning",
+      dedupeKey: "deps-fix-all",
+    });
+  }
+  return planSuccess(message, { detail });
 }
 
 /**
@@ -1370,11 +1426,18 @@ export function fixAllSummaryNotice(
  * `"info"` and its `dedupeKey` to a shared constant left every existing gate
  * green, since neither field was pinned anywhere).
  *
- * The failure branch reuses `describeFixAllFailure`'s wording — a row button
- * and a Fix-all report the SAME failure the SAME way. That function no
- * longer says "exit"/"exited" (#603, third review, blocker 1) — this
- * `cause` is rendered through `planFailure`, whose `looksRaw` demotes any
- * `EXIT_CODE`-shaped `cause` into channel-only `detail` and replaces the
+ * The failure branch reuses `describeFixAllFailure`'s WORDING, not identical
+ * text (#603, round 4, minor 11 corrects an earlier overclaim here): this
+ * call passes `name: rowLabel` — the display label ("Bootstrap
+ * prerequisites") — while Fix-all's own `outcome.failed[].name` is
+ * `row.name`, tan's internal check id ("hostPrerequisites"). That is fine —
+ * Fix-all's copy of this sentence lands only in the CHANNEL-ONLY `detail`
+ * (`fixAllSummaryNotice`), never in front of the customer, so the id is a
+ * legitimate log-line convention there. This ROW path is the one that puts
+ * the string in `cause`, which is why it substitutes the label instead. That
+ * function no longer says "exit"/"exited" (#603, third review, blocker 1) —
+ * this `cause` is rendered through `planFailure`, whose `looksRaw` demotes
+ * any `EXIT_CODE`-shaped `cause` into channel-only `detail` and replaces the
  * customer's message with a bare "<operation> failed.". Before that fix the
  * SKIP branch above (never "exited"/"failed") reached the toast in full
  * while the FAILURE branch below did not — the more severe outcome carried
@@ -1900,9 +1963,16 @@ function runInNewTerminal(command: string, cwd: string | undefined): void {
  * resolves the file rather than a cached lookup. When it is not enough, only
  * quitting VS Code completely and reopening picks up a new PATH.
  *
- * Shown at DISPATCH, before the install finishes, because `sendText` writes a
- * shell command line and there is no completion signal to wait for (that is the
- * same reason the dispatch above is a terminal and not a `ProcessExecution`).
+ * Shown at DISPATCH, before the install finishes — NOT because there is no
+ * completion signal to wait for (#603, round 4, minor 12 corrects an earlier
+ * claim here: `runDependencyAction`'s per-step loop has exactly one,
+ * `awaitRun(INSTALL_RUN_NAME)`, and `rowStepFailureNotice` already consumes
+ * it once the row finishes). It fires at dispatch because its advice (press
+ * Refresh; a stale PATH needs a full VS Code restart, not a reload) applies
+ * whichever way the run ends, and a row that fails already gets its OWN,
+ * more specific notice from `rowStepFailureNotice` once it does — this one
+ * exists to be on screen for the WHOLE install, not sprung on the customer
+ * only after something goes wrong.
  *
  * `notifyAsync`, not `notify`: this is called from the webview's message pump.
  */

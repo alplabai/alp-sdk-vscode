@@ -803,6 +803,61 @@ test("describeFixAllFailure: a fix/bootstrap row (no command string) still names
   );
 });
 
+test("describeFixAllFailure: an absolute-path command is reduced to its executable name (#603 round 4, major 6)", () => {
+  // tan sometimes qualifies an install command with an absolute path to the
+  // package manager itself rather than relying on PATH. Shown verbatim, that
+  // string trips `notify/service.ts`'s OTHER demotion trigger, `ABSOLUTE_PATH`
+  // — orthogonal to the "exit"/"exited" one the test above already covers —
+  // and this string reaches `planFailure`'s customer-visible `cause` via
+  // `rowStepFailureNotice`.
+  const { describeFixAllFailure, rowStepFailureNotice } = load();
+
+  const posix = describeFixAllFailure({
+    name: "hostPrerequisites",
+    code: 1,
+    completed: [],
+    failedCommand: "sudo /opt/homebrew/bin/brew install ninja",
+    notRun: [],
+  });
+  assert.match(posix, /`sudo brew install ninja` did not succeed/);
+  assert.doesNotMatch(posix, /\/opt\/homebrew/);
+
+  const windows = describeFixAllFailure({
+    name: "hostPrerequisites",
+    code: 1,
+    completed: [],
+    failedCommand: "C:\\ProgramData\\choco.exe install ninja",
+    notRun: [],
+  });
+  assert.match(windows, /`choco\.exe install ninja` did not succeed/);
+  assert.doesNotMatch(windows, /ProgramData/);
+
+  // End to end, through the ROW path (the one whose `cause` actually reaches
+  // a customer's toast, not just the Fix-all channel-only `detail`):
+  // `rowStepFailureNotice` already runs `planFailure` internally, so its
+  // `.message` IS what the customer sees — it must not have been demoted to
+  // a bare "<op> failed.".
+  const notice = rowStepFailureNotice(
+    "Bootstrap prerequisites",
+    "hostPrerequisites",
+    [{ tool: "ninja", command: "sudo /opt/homebrew/bin/brew install ninja" }],
+    [
+      {
+        tool: "ninja",
+        command: "sudo /opt/homebrew/bin/brew install ninja",
+        code: 1,
+      },
+    ],
+  );
+  assert.notEqual(
+    notice.message,
+    "Installing Bootstrap prerequisites failed.",
+    "the ABSOLUTE_PATH leak filter must not swallow which tool failed and " +
+      "which command ran, the same way the EXIT_CODE filter was fixed not to",
+  );
+  assert.doesNotMatch(notice.message, /\/opt\/homebrew/);
+});
+
 // ---------------------------------------------------------------------------
 // `withFixAllPartialNote` — the CUSTOMER-VISIBLE half of a skip's `completed`
 // list (#603 second review, blocker 1). `planSuccess` with no `actions`
@@ -859,6 +914,55 @@ test("withFixAllPartialNote: multiple partially-completed rows are all named", (
   assert.equal(
     note,
     "2 of 3 did not install. cmake, git, gperf installed before stopping.",
+  );
+});
+
+test("withFixAllPartialNote: a FAILED row's own completed steps count too (#603 round 4, blocker 1)", () => {
+  // Measured repro: a 2-step `hostPrerequisites` row installs cmake, then
+  // fails on ninja. That row is in `failed`, never `skipped` — reading only
+  // `outcome.skipped[].completed` reported "1 of 1 did not install." for a
+  // machine that already has cmake on it, the same dishonesty this function
+  // exists to close on the cancelled/raced branch.
+  const { withFixAllPartialNote } = load();
+
+  const note = withFixAllPartialNote("1 of 1 did not install.", {
+    skipped: [],
+    failed: [
+      {
+        name: "hostPrerequisites",
+        code: 1,
+        completed: ["cmake"],
+        failedCommand: "brew install ninja",
+        notRun: [],
+      },
+    ],
+  });
+
+  assert.equal(
+    note,
+    "1 of 1 did not install. cmake installed before stopping.",
+  );
+});
+
+test("withFixAllPartialNote: a tool named by both a skipped AND a failed row is named once", () => {
+  const { withFixAllPartialNote } = load();
+
+  const note = withFixAllPartialNote("2 of 2 did not install.", {
+    skipped: [{ name: "a", reason: "cancelled", completed: ["cmake"] }],
+    failed: [
+      {
+        name: "b",
+        code: 1,
+        completed: ["cmake", "ninja"],
+        failedCommand: "brew install git",
+        notRun: [],
+      },
+    ],
+  });
+
+  assert.equal(
+    note,
+    "2 of 2 did not install. cmake, ninja installed before stopping.",
   );
 });
 

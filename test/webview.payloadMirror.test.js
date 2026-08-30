@@ -56,7 +56,14 @@
 // legitimately spell the same contract differently, and a gate that cries wolf
 // gets deleted. String-literal union ALIASES are the exception: there the
 // members ARE the contract, so they are compared by member set (one documented
-// divergence, `SdkReadinessState`, is allowlisted below).
+// divergence, `SdkReadinessState`, is allowlisted below). A FIELD typed as a
+// bare string literal (or a union of them) is the same exception one level
+// down (#603, round 4, nit 7): `DependencyCommandAction.kind` and
+// `DependencyFixAction.kind` are the discriminant these two interfaces were
+// extracted from one `DependencyAction` union to let a walk over named
+// interfaces reach — a field-name check alone cannot tell them apart if the
+// mirror's literal drifts (or collides with its sibling's), so those
+// literals are compared by member set too.
 //
 // Read as TEXT, again for #495's reason: `types.ts` is never compiled into
 // `out/`, so a structural check would only ever see the host half.
@@ -391,6 +398,49 @@ function fieldNames(body) {
   );
 }
 
+/**
+ * Top-level field name -> raw type text (nested brace groups blanked the same
+ * way `fieldNames` blanks them, so a `;` inside an inline object type cannot
+ * split a field in two). Unlike `fieldNames`, the type text survives — needed
+ * to compare a DISCRIMINANT literal (`kind: "command"`) the way `ALIASES`
+ * compares a union's members, rather than only its field NAME (#603, round 4,
+ * nit 7).
+ */
+function fieldTypes(body) {
+  let flat = "";
+  let depth = 0;
+  for (const ch of body) {
+    if (ch === "{") {
+      depth += 1;
+      flat += " ";
+    } else if (ch === "}") {
+      depth -= 1;
+      flat += " ";
+    } else {
+      flat += depth > 0 ? " " : ch;
+    }
+  }
+  const types = new Map();
+  for (const entry of flat.split(";")) {
+    const match = /^\s*(\w+)\??\s*:\s*(.+?)\s*$/.exec(entry);
+    if (match) types.set(match[1], match[2].trim());
+  }
+  return types;
+}
+
+/**
+ * The member set of a field's type text, when that type is ONLY a string
+ * literal or a union of them (`"command"`, `"a" | "b"`) — `null` for anything
+ * else (an object shape, an array, a named type), which this gate leaves
+ * alone for the reason the header gives: type text otherwise legitimately
+ * differs between the two sides.
+ */
+function literalUnionMembers(typeText) {
+  const trimmed = typeText.trim();
+  if (!/^"[^"]*"(\s*\|\s*"[^"]*")*$/.test(trimmed)) return null;
+  return new Set(trimmed.split("|").map((part) => part.trim()));
+}
+
 /** The member list of `export type <name> = A | B | C;`, or null. */
 function aliasMembers(source, name) {
   const match = new RegExp(`export type ${name}\\s*=([\\s\\S]*?);`, "m").exec(
@@ -484,6 +534,48 @@ test("every field the source adds is either mirrored or a recorded omission", ()
           `"${key}" to KNOWN_UNMIRRORED in this file with the reason — that is ` +
           `the whole point of the table: an intentional omission has to be a ` +
           `decision someone wrote down, not a field nobody noticed.`,
+      );
+    }
+  }
+});
+
+test("a field typed as a bare string literal (or union of them) is the SAME literal on both sides (#603 round 4, nit 7)", () => {
+  // `fieldNames` above (both directions) only ever compares field NAMES, by
+  // design — see the header's "NOT COMPARED — field TYPE text". That is right
+  // for an ordinary field, whose type text legitimately differs between a
+  // host model and its webview copy. It is WRONG for a discriminant: these
+  // interfaces exist in pairs (`DependencyCommandAction` / `DependencyFixAction`)
+  // PRECISELY so a union member can be told apart from its sibling, and
+  // `kind` is what does the telling. Measured: renaming the mirror's
+  // `DependencyCommandAction.kind` from `"command"` to `"fix"` (colliding
+  // with `DependencyFixAction`'s own literal) AND its `commands` field from
+  // an array to `number` passes every existing check here, 20 tests to 0 —
+  // `fieldNames` sees `kind` and `commands` present on both sides and stops
+  // looking. This walks every field whose SOURCE type is a bare string
+  // literal (or a union of them) and compares the member set the same way
+  // `ALIASES` already compares a whole union alias's members.
+  for (const model of MODELS) {
+    const source = sourceNameOf(model);
+    const mirrorBody = interfaceBody(mirror, model.mirror);
+    const sourceBody = interfaceBody(load(model.file), source);
+    if (!mirrorBody || !sourceBody) continue; // reported above
+
+    const mirrorTypes = fieldTypes(mirrorBody);
+    for (const [field, sourceType] of fieldTypes(sourceBody)) {
+      const sourceLiterals = literalUnionMembers(sourceType);
+      if (!sourceLiterals) continue; // not a literal field — type text is free to differ
+      const mirrorType = mirrorTypes.get(field);
+      if (mirrorType === undefined) continue; // a missing field is caught above
+
+      const mirrorLiterals = literalUnionMembers(mirrorType);
+      assert.deepEqual(
+        mirrorLiterals ? [...mirrorLiterals].sort() : mirrorType,
+        [...sourceLiterals].sort(),
+        `\`${model.mirror}.${field}\` is typed \`${mirrorType}\` in ` +
+          `${MIRROR_REL} but \`${source}.${field}\` is typed \`${sourceType}\` ` +
+          `in ${model.file}. A discriminant is the contract two sibling ` +
+          `interfaces exist to keep apart — a mismatch here lets a value ` +
+          `neither side can route reach the other.`,
       );
     }
   }
