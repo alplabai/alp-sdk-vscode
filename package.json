@@ -490,7 +490,7 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "description": "Path to the alp-sdk repository checkout.  When empty, the extension searches the workspace for the SDK root (a directory containing scripts/alp_project.py)."
+          "description": "Path to the alp-sdk repository checkout.  When empty, the extension searches the workspace for the SDK root (a directory containing scripts/alp_project.py), and may pin this setting to what `tan sdk current` resolves the first time a bootstrap finishes with nothing pinned yet.  Once set, bootstrapping never changes this value automatically."
         },
         "alpSdk.pythonPath": {
           "type": "string",

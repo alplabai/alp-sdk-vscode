@@ -3,12 +3,14 @@
 import {
   checkSdkReadiness,
   clearActiveSdkPointer,
+  narrowSdkCurrent,
   switchActiveSdk,
   westManifestLogLine,
   westManifestWarning,
 } from "@alp-sdk/core/sdk/service";
 import * as fs from "fs";
 import * as vscode from "vscode";
+import { fetchEnvelopeResult } from "../alpCli/envelope";
 import { SUPPORTED_CLI_VERSION } from "../alpCli/service";
 import { danglingWestManifest } from "../environment/vscodeAdapter";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
@@ -62,6 +64,14 @@ export function warnIfWestManifestDangling(sdkRoot: string | null): boolean {
  * when a folder is open (per-project override) and Global otherwise (the default
  * for windows without one); VS Code merges Workspace over Global. Refreshes the
  * native trees + status bar afterwards.
+ *
+ * `reconcileActiveSdkAfterBootstrap` (#604/#614) also routes its writes
+ * through here, but raises its OWN toast independently rather than through a
+ * message override on this function: `warnIfWestManifestDangling` below can
+ * return before the generic success notification ever fires, and a caller
+ * whose whole point is "tell the customer something happened" must not
+ * depend on a branch inside a shared writer that exists for a different
+ * reason (adversarial review of #604/#614, Major #3).
  */
 export async function setActiveSdk(sdkPath: string): Promise<void> {
   // Probe readiness before writing: a folder that is not an SDK root (missing
@@ -204,6 +214,124 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
       hasWorkspace
         ? `Alp: active SDK for this project → ${sdkPath}`
         : `Alp: default SDK → ${sdkPath} (open a project folder to override per-project)`,
+    ),
+  );
+}
+
+/**
+ * After a `tan bootstrap` terminal run finishes, ask tan directly which SDK
+ * it now resolves (`tan sdk current`) — the one moment tan's own resolution
+ * ladder and `alpSdk.path` are known to be worth comparing (#604, #614).
+ *
+ * ONLY EVER FILLS IN AN EMPTY PIN. Adversarial review of the first version
+ * found this call is architecturally unable to tell "tan-cli#185 relocated
+ * THIS checkout" apart from ordinary disagreement: `sourceTier:
+ * "globalDefault"` can be a DIFFERENT project's bootstrap answering for this
+ * one (tan-cli#464's own `sdk.global-default-foreign-project` warning exists
+ * because that is a real, everyday case, not a corner one), and a pin that
+ * does not currently resolve (an unmounted external volume, a not-yet-cloned
+ * SDK) looks identical to one whose checkout genuinely moved. So a non-empty
+ * `alpSdk.path` — a customer's deliberate pin — is NEVER overwritten here,
+ * no matter what tan answers; the disagreement is only logged. An EMPTY
+ * `alpSdk.path` carries no such risk: there is nothing to destroy, and
+ * filling it in from tan's own ladder is strictly better than leaving it
+ * unset. (The dangling-pin-after-relocation case #604 opened with therefore
+ * still needs a real fix — reading `bootstrap.workspace-relocated` off the
+ * bootstrap run's OWN envelope, which the terminal route this reconciles
+ * cannot see at all; tracked, not solved here.)
+ *
+ * `injectSdkRoot: false` on the `tan sdk current` call is load-bearing, not
+ * cosmetic: without it, `runAlpCommand`'s `withSdkRoot` hands tan THIS
+ * extension's own resolved SDK as `--sdk-root`, and tan reports it straight
+ * back at `sourceTier: "sdkRootFlag"` — this extension asking tan to confirm
+ * a fact it just told tan, and mistaking the echo for independent evidence.
+ *
+ * `checkSdkReadiness`'s local derivation stays the fallback everywhere else
+ * in this extension — this is the one additional ask, and it fails silent:
+ * no CLI, no answer, an answer already matching the pin, a pin already set,
+ * or a resolved-but-unready SDK (`readiness.state === "missing"` — writing
+ * that would make `setActiveSdk`'s own poison-guard pop an unrelated "not an
+ * Alp SDK root" dialog + "Choose Another Folder" out of a run the customer
+ * never asked this question of) all leave `alpSdk.path` untouched.
+ *
+ * Raises its OWN toast on a write, rather than routing a message through
+ * `setActiveSdk` — that function can return before its own success
+ * notification ever fires (`warnIfWestManifestDangling`), which would make
+ * this call's whole "tell the customer" purpose silently depend on a branch
+ * that exists for an unrelated reason.
+ *
+ * @param cwd - the SAME directory the bootstrap just ran in. `tan sdk
+ *   current` resolves from cwd exactly like every other command, so asking
+ *   from anywhere else would answer about a different project.
+ */
+export async function reconcileActiveSdkAfterBootstrap(
+  context: vscode.ExtensionContext,
+  cwd: string,
+): Promise<void> {
+  const result = await fetchEnvelopeResult(context, ["sdk", "current"], cwd, {
+    injectSdkRoot: false,
+  });
+  // Logged verbatim, not matched by code — the same treatment
+  // `project/vscodeAdapter.ts` documents for these two `"reserved"` codes
+  // (`sdk.project-pin-unresolved` / `sdk.global-default-foreign-project`):
+  // "reserved" means no consumer in this extension BINDS the spelling, not
+  // that tan never emits it, and a literal `===` match is what a rename
+  // could silently break. Each entry is checked before use — `isEnvelope`
+  // only validates that `issues` is an array, never each entry's shape.
+  for (const issue of result.issues) {
+    if (issue && typeof issue.message === "string") {
+      log(`[sdk] tan sdk current: ${issue.message}`, "warn");
+    }
+  }
+  if (!result.ok) return;
+
+  const current = narrowSdkCurrent(result.data);
+  if (!current?.sdkPath) return;
+
+  if (current.readiness?.state === "missing") {
+    log(
+      `[sdk] tan sdk current resolved ${current.sdkPath} (tier: ${current.sourceTier}), ` +
+        "but reports it is not a ready SDK root -- not acting on it from an " +
+        "unattended background check.",
+      "warn",
+    );
+    return;
+  }
+
+  const configuredPath = vscode.workspace
+    .getConfiguration("alpSdk")
+    .get<string>("path", "")
+    .trim();
+  if (configuredPath === current.sdkPath) return;
+
+  if (configuredPath) {
+    // A non-empty pin is the customer's own choice, and this check has no
+    // reliable way to tell a genuine relocation of THIS checkout from every
+    // other cause of disagreement — see this function's own doc. Report it,
+    // touch nothing.
+    log(
+      `[sdk] tan sdk current resolved ${current.sdkPath} (tier: ${current.sourceTier}), ` +
+        `which disagrees with the pinned alpSdk.path (${configuredPath}) -- leaving the ` +
+        'pin alone (no reliable relocation signal). Re-pin via "Select SDK" if this is stale.',
+      "warn",
+    );
+    return;
+  }
+
+  log(
+    `[sdk] tan sdk current resolved ${current.sdkPath} (tier: ${current.sourceTier}) with ` +
+      "no alpSdk.path pinned -- pinning it.",
+  );
+  await setActiveSdk(current.sdkPath);
+  // A real toast (an action makes it one, not the default status-bar blip
+  // `setActiveSdk`'s own success message uses) — this call fires from a
+  // background task the customer never explicitly triggered, so silence
+  // here is worse than the dangling path this feature exists to close.
+  notifyAsync(
+    planSuccess(
+      `Alp: pinned the active SDK after bootstrap → ${current.sdkPath} ` +
+        `(tan sdk current, tier: ${current.sourceTier}).`,
+      { actions: [{ id: "openSettings" }] },
     ),
   );
 }

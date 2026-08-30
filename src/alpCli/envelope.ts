@@ -38,9 +38,14 @@ export async function fetchEnvelopeResult(
   context: vscode.ExtensionContext,
   args: string[],
   cwd?: string,
+  /** Forwarded to `runAlpCommand` — see its own doc. Default carries the
+   *  usual `--sdk-root` injection; `{ injectSdkRoot: false }` is for a caller
+   *  that needs tan's OWN independent resolution (`tan sdk current`, #614),
+   *  not this extension's answer echoed back at it. */
+  options?: { injectSdkRoot?: boolean },
 ): Promise<EnvelopeResult> {
   try {
-    const { outcome } = await runAlpCommand(context, args, cwd);
+    const { outcome } = await runAlpCommand(context, args, cwd, options);
     const envelope = outcome.envelope;
     return {
       data: envelope?.data,

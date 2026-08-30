@@ -77,7 +77,8 @@ import {
 } from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
 import { collectProjectContext } from "./project/vscodeAdapter";
-import { log } from "./util";
+import { reconcileActiveSdkAfterBootstrap } from "./sdk/activeSdk";
+import { awaitRun, isRunActive, log } from "./util";
 
 /** Offer VS Code's Remote-WSL "Reopen in WSL"; if that extension isn't
  *  installed the command is absent and executeCommand rejects — fall back to
@@ -103,6 +104,88 @@ async function reopenInWsl(): Promise<void> {
       ),
     );
   }
+}
+
+/**
+ * `tan bootstrap` in a terminal, followed by asking tan directly which SDK it
+ * now resolves (#604, #614) — the one moment tan's own resolution ladder and
+ * `alpSdk.path` are worth comparing. Shared by every call site that ever
+ * runs `tan bootstrap` in a terminal (this file's own command, and
+ * `toolchain.ts`'s `offerBootstrapFix`), so the follow-up exists exactly
+ * once — enforced by `test/statusReadiness.test.js`, which greps ALL of
+ * `src/**` for a second site naming `BOOTSTRAP_RUN_NAME`, not just the two
+ * files known about today.
+ *
+ * The reconciliation runs in the BACKGROUND, on its own promise chain — not
+ * chained onto the promise this function returns. Every existing caller of a
+ * bootstrap dispatch (this file's command, `offerBootstrapFix`, and the
+ * Dependencies panel's "Fix all", which already awaits `BOOTSTRAP_RUN_NAME`
+ * through `alp.installDependencies`) expects the SAME "dispatched" timing
+ * `runAlpInTerminal` always had; making any of them block on the WHOLE
+ * bootstrap finishing would be a second, unrelated behaviour change riding
+ * along with this one.
+ *
+ * TWO races adversarial review found in the first version, both about
+ * `awaitRun`'s bare, uncancellable subscription (`util.ts`) — a promise that
+ * resolves on the FIRST `terminalFinished` event under this name, with no way
+ * to unsubscribe and no correlation to which caller's dispatch it belongs to:
+ *
+ *  - A SECOND call while one is already in flight: `runInTerminal` (util.ts)
+ *    refuses the real spawn (warns, reserves nothing), but an `awaitRun`
+ *    subscribed regardless would still fire when the FIRST run finishes —
+ *    reconciling twice, the second time against a `cwd` that never actually
+ *    bootstrapped. Guarded by checking `isRunActive` BEFORE subscribing: a
+ *    refused re-run does not subscribe at all, leaving the run already in
+ *    flight as the only one that reconciles.
+ *  - A dispatch that never actually starts (binary resolution failed and the
+ *    customer declined to retry): `finished` is still a live listener on the
+ *    shared bus with nothing left to fire it for THIS attempt, so it would
+ *    otherwise sit pending until some LATER, unrelated bootstrap eventually
+ *    runs under this name and wrongly resolves it. Guarded by checking
+ *    `isRunActive` again AFTER the dispatch settles: if nothing is actually
+ *    reserved, this attempt never really started and `finished` is dropped
+ *    unused (the underlying listener is still attached until the shared bus
+ *    eventually fires once — inert, not acted on).
+ *
+ * Subscribed to `awaitRun` BEFORE dispatching (`util.ts`'s own contract): a
+ * fast bootstrap (nothing to do, already up to date) could otherwise finish
+ * before a promise created afterwards ever attached.
+ *
+ * Only reconciles on a clean exit (`code === 0`) — a failed or cancelled
+ * bootstrap did not necessarily change anything tan would resolve
+ * differently, and re-deriving off a half-finished run risks reporting a
+ * location nothing actually finished writing to.
+ */
+export async function runBootstrapInTerminal(
+  context: vscode.ExtensionContext,
+  cwd: string,
+): Promise<void> {
+  const alreadyRunning = isRunActive(BOOTSTRAP_RUN_NAME);
+  const finished = alreadyRunning ? null : awaitRun(BOOTSTRAP_RUN_NAME);
+  await runAlpInTerminal(context, ["bootstrap"], {
+    name: BOOTSTRAP_RUN_NAME,
+    cwd,
+  });
+  if (finished === null) return; // refused re-run; the run in flight owns it
+  if (!isRunActive(BOOTSTRAP_RUN_NAME)) return; // never actually dispatched
+  void finished.then(async (code) => {
+    if (code !== 0) return;
+    try {
+      await reconcileActiveSdkAfterBootstrap(context, cwd);
+    } catch (err) {
+      // A window-teardown CancellationError can reach here AFTER
+      // `setActiveSdk` already wrote the setting — that is not a reconcile
+      // failure, and logging it as one when the write succeeded is
+      // misleading (`isCancellation` is the same guard `reopenInWsl` above
+      // uses for the identical teardown shape).
+      if (!isCancellation(err)) {
+        log(
+          `[bootstrap] post-bootstrap SDK reconcile failed: ${String(err)}`,
+          "warn",
+        );
+      }
+    }
+  });
 }
 
 export function registerBootstrapCommand(
@@ -240,10 +323,7 @@ export function registerBootstrapCommand(
       // Clear, a mixed-board advisory, or an unresolvable/unrelated outcome —
       // all fall through to the real run below.
     }
-    return runAlpInTerminal(context, ["bootstrap"], {
-      name: BOOTSTRAP_RUN_NAME,
-      cwd: workspaceRoot,
-    });
+    return runBootstrapInTerminal(context, workspaceRoot);
   };
   return [
     // Palette / Setup view command.

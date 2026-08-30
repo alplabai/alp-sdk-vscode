@@ -199,26 +199,106 @@ test("build tree offers NOTHING runnable while a bootstrap is still running", ()
 // ---------------------------------------------------------------------------
 
 // `bootstrapRunning()` probes `isRunActive(BOOTSTRAP_RUN_NAME)`. Re-type
-// the name at a dispatch site and the probe watches a run nobody starts: the
-// flag is false for the whole bootstrap, the spinner never appears, and every
-// gate above silently reopens — with the rest of the suite still green.
-test("both bootstrap dispatch sites take the run name from one constant", () => {
-  for (const file of ["src/bootstrap.ts", "src/toolchain.ts"]) {
-    const src = read(file);
-    assert.match(
-      src,
-      /BOOTSTRAP_RUN_NAME\s*}\s*from\s*"\.\/ideHub\/messages"/,
-      `${file} must import the shared run name, not spell it out`,
-    );
-    assert.match(
-      src,
-      /name:\s*BOOTSTRAP_RUN_NAME/,
-      `${file} must dispatch its bootstrap under BOOTSTRAP_RUN_NAME`,
-    );
-    assert.doesNotMatch(
-      src,
-      /"Alp Bootstrap"/,
-      `${file} must not carry its own copy of the run name`,
-    );
+// the name at a dispatch site — or dispatch a bootstrap terminal under a
+// second, independently-spelled name — and the probe watches a run nobody
+// starts: the flag is false for the whole bootstrap, the spinner never
+// appears, and every gate above silently reopens — with the rest of the
+// suite still green.
+//
+// #604/#614 collapsed this from "two sites both spell BOOTSTRAP_RUN_NAME" to
+// "one site dispatches under it, and everyone else calls that site" —
+// `runBootstrapInTerminal` (src/bootstrap.ts) is now the ONLY place a
+// bootstrap terminal is started, so it is also the only place the
+// post-bootstrap `tan sdk current` reconciliation (#604/#614) can be skipped
+// by a second, independent dispatch.
+//
+// MAJOR 8 (adversarial review): the first version of this test named exactly
+// two files (`src/bootstrap.ts`, `src/toolchain.ts`) — a NEW third file
+// spelling `BOOTSTRAP_RUN_NAME` was invisible to it, and it had also DROPPED
+// the literal-ban on `src/bootstrap.ts` itself, so re-spelling the constant
+// as a bare `"Alp Bootstrap"` literal INSIDE bootstrap.ts (the one spelling
+// that makes `awaitRun` watch a run nobody starts) was green under the new
+// assertion and would have been red under the old one. This greps the
+// ANTIPATTERN across all of `src/**`, the way `test/tanContract.test.js`'s
+// `scanGatedCodes` does for issue codes, so a file this test has never heard
+// of is still caught.
+test("only src/bootstrap.ts references the bootstrap run name -- everywhere, by any spelling", () => {
+  const bootstrapSrc = read("src/bootstrap.ts");
+  assert.match(
+    bootstrapSrc,
+    /BOOTSTRAP_RUN_NAME\s*}\s*from\s*"\.\/ideHub\/messages"/,
+    "src/bootstrap.ts must import the shared run name, not spell it out",
+  );
+  assert.match(
+    bootstrapSrc,
+    /name:\s*BOOTSTRAP_RUN_NAME/,
+    "src/bootstrap.ts must dispatch its bootstrap under BOOTSTRAP_RUN_NAME",
+  );
+  assert.match(
+    bootstrapSrc,
+    /awaitRun\(BOOTSTRAP_RUN_NAME\)/,
+    "src/bootstrap.ts must subscribe to the run's finish via the shared " +
+      "constant too, not a re-spelled literal",
+  );
+  assert.doesNotMatch(
+    bootstrapSrc,
+    /"Alp Bootstrap"/,
+    "src/bootstrap.ts must not carry a literal copy of the run name " +
+      "ANYWHERE -- every use must go through the imported BOOTSTRAP_RUN_NAME " +
+      'constant, or a re-spelled awaitRun("Alp Bootstrap") would watch a ' +
+      "run nobody starts",
+  );
+
+  // Legitimate READ-ONLY consumers of the constant are not the antipattern —
+  // `isRunActive(BOOTSTRAP_RUN_NAME)` (ideHub/vscodeAdapter.ts's
+  // `bootstrapRunning`), `def.run === BOOTSTRAP_RUN_NAME`
+  // (extension.ts's task-finish comparison), and `return BOOTSTRAP_RUN_NAME`
+  // (deps/vscodeAdapter.ts's `runNameFor`, which the Dependencies panel's
+  // "Fix all" awaits BEFORE dispatching through `alp.installDependencies`,
+  // never a second live dispatch). The antipattern is specifically DISPATCHING
+  // a terminal run under this name, or `awaitRun` SUBSCRIBING to one — both
+  // idioms bootstrap.ts uses and nowhere else legitimately does.
+  const srcRoot = path.join(root, "src");
+  const exempt = new Set([
+    path.join(srcRoot, "bootstrap.ts"),
+    // Declares the constant -- `export const BOOTSTRAP_RUN_NAME = "Alp
+    // Bootstrap"` is the literal's ONE legitimate home.
+    path.join(srcRoot, "ideHub", "messages.ts"),
+    // A doc-comment lists "Alp Bootstrap" purely as an illustrative task
+    // NAME (alongside "Alp: west build"/"Alp: west flash") while explaining
+    // `getMapKey()`'s collision risk -- not a dispatch or a subscription.
+    path.join(srcRoot, "util.ts"),
+  ]);
+  const offenders = [];
+  for (const rel of fs.readdirSync(srcRoot, { recursive: true })) {
+    const file = path.join(srcRoot, String(rel));
+    if (!/\.tsx?$/.test(file) || !fs.statSync(file).isFile()) continue;
+    if (exempt.has(file)) continue;
+    const text = fs.readFileSync(file, "utf-8");
+    if (
+      /name:\s*BOOTSTRAP_RUN_NAME/.test(text) ||
+      /awaitRun\(\s*BOOTSTRAP_RUN_NAME\s*\)/.test(text) ||
+      /"Alp Bootstrap"/.test(text)
+    ) {
+      offenders.push(path.relative(root, file));
+    }
   }
+  assert.deepEqual(
+    offenders,
+    [],
+    "only src/bootstrap.ts may DISPATCH (or awaitRun-subscribe to) the " +
+      `bootstrap run name -- found it in: ${offenders.join(", ")}. A ` +
+      "second dispatch site is a second place the post-bootstrap tan sdk " +
+      "current reconciliation (#604/#614) can be silently skipped.",
+  );
+
+  // The one legitimate caller left, still asserted directly: toolchain.ts
+  // must route through the shared function rather than spawn its own.
+  const toolchainSrc = read("src/toolchain.ts");
+  assert.match(
+    toolchainSrc,
+    /runBootstrapInTerminal\(/,
+    "src/toolchain.ts must route its bootstrap dispatch through " +
+      "bootstrap.ts's shared runBootstrapInTerminal, not spawn one itself",
+  );
 });

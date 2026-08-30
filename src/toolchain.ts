@@ -44,8 +44,7 @@ import {
   westManifestWarning,
 } from "@alp-sdk/core/sdk/service";
 import * as vscode from "vscode";
-import { runAlpInTerminal } from "./alpCli/vscodeAdapter";
-import { BOOTSTRAP_RUN_NAME } from "./ideHub/messages";
+import { runBootstrapInTerminal } from "./bootstrap";
 import type { NotificationPlan } from "./notify/models";
 import { planFailure, planSuccess } from "./notify/service";
 import { notify, notifyAsync } from "./notify/vscodeAdapter";
@@ -261,12 +260,10 @@ export async function offerBootstrapFix(
   //      on). Re-run `tan doctor --fix` from a real, interactive terminal,
   //      without --ci/--non-interactive/--format json, to allow it."
   // So this calls `tan bootstrap` directly — the verb that actually creates
-  // the workspace, in a terminal the user can watch.
-  await runAlpInTerminal(context, ["bootstrap"], {
-    // Same run name as `tan bootstrap` (src/bootstrap.ts) on purpose: this
-    // fix bootstraps too, so it must take the same reservation and light the
-    // same "bootstrapping, don't build yet" gate.
-    name: BOOTSTRAP_RUN_NAME,
-    cwd,
-  });
+  // the workspace, in a terminal the user can watch. `runBootstrapInTerminal`
+  // (src/bootstrap.ts) is the SAME dispatch `alp.installDependencies` uses —
+  // same run name/reservation, and the SAME post-bootstrap `tan sdk current`
+  // reconciliation (#604/#614), so this offer doesn't skip it just because it
+  // reached bootstrap a different way.
+  await runBootstrapInTerminal(context, cwd);
 }
