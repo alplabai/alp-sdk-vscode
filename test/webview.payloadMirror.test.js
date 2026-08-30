@@ -120,6 +120,7 @@ const MODELS = [
 
   // ── dependency panel ──
   { mirror: "DependencyLatest", file: PLANNER_REL },
+  { mirror: "DependencyCommandStep", file: PLANNER_REL },
   { mirror: "DependencyRow", file: PLANNER_REL },
   { mirror: "DependencyReport", file: PLANNER_REL },
 
@@ -188,6 +189,15 @@ const MODELS = [
  * omission becomes a line someone had to write and a reviewer had to read.
  */
 const KNOWN_UNMIRRORED = {
+  // ── dependency panel ──
+  "DependencyReport.orphanedPrerequisites":
+    "A diagnostic for the NEXT tan rename of the hostPrerequisites rollup " +
+    "(#603) — logged to the 'Alp SDK' output channel by " +
+    "src/deps/vscodeAdapter.ts, not rendered by any panel. There is nothing " +
+    "for the view to do with a prerequisite that bound to no row; the fix is " +
+    "upstream in tan-cli, the same rule DependencyReport's own header states " +
+    "for a prerequisite naming a tool with no check at all.",
+
   // ── system manifest ──
   "ManifestHwInfo.eeprom?":
     "The resolved EEPROM location (bus, bus_id, addr_7bit, offset). No surface " +

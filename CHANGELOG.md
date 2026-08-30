@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- **Dependency panel install buttons are no longer dead on the pinned tan
+  0.6.0 (#603).** `packages/alp-core/src/deps/planner.ts` matched a missing
+  prerequisite to a row by `p.tool === check.name`, which worked at v0.3.1
+  (one check per tool) but not at 0.6.0, which rolls `cmake`/`ninja` into one
+  `hostPrerequisites` check while `missingPrerequisites` stays keyed by tool
+  — so nothing matched and the row that exists to install these two tools
+  offered no button at all. `DependencyAction`'s `command` kind is now an
+  ordered, non-empty list of `{tool, command}` steps rather than a single
+  string: a per-tool prerequisite still binds to its own check first, and
+  every LEFTOVER prerequisite (a tool with no dedicated check) now binds to
+  the `hostPrerequisites` rollup row instead of falling out of the table
+  silently. If that rollup row is itself renamed or removed upstream, the new
+  report-level `orphanedPrerequisites` field and a log line say so rather
+  than quietly going back to no action — the same failure mode one field
+  over. `src/deps/vscodeAdapter.ts`'s `runDependencyAction` dispatches one
+  `runInTerminal` call PER STEP, sequentially, awaiting each one before the
+  next — never joined with `&&` (breaks Windows PowerShell 5.1, the default
+  terminal profile) or `;` (runs a later step after an earlier one failed and
+  collapses two exit codes into one). `runFixAll`'s multi-step failures now
+  report which tools installed, which command failed with which code, and
+  which never ran, instead of a bare exit code that implies nothing changed
+  on the machine when it did. A tool tan names with `command: null` still
+  contributes nothing to the button — that is tan's real answer, not a gap to
+  fill — and a row mixing null and non-null commands offers a button over the
+  non-null subset, with the tooltip and consent screen saying the row can
+  stay failing until the rest is handled another way.
+
 ## 0.5.2
 
 **Pre-release.** Continues `0.5`'s odd-minor pre-release channel —

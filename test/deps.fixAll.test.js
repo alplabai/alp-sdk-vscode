@@ -58,7 +58,7 @@ const row = (over) => ({
     over.action === undefined
       ? {
           kind: "command",
-          command: `install ${over.name}`,
+          commands: [{ tool: over.name, command: `install ${over.name}` }],
           effect: "install",
           title: `install ${over.name}`,
         }
@@ -69,6 +69,7 @@ const report = (rows) => ({
   rows,
   counts: { pass: 0, warn: 0, fail: rows.length },
   prerequisiteDataUnavailable: false,
+  orphanedPrerequisites: [],
 });
 
 const NO_CANCEL = { isCancellationRequested: false };
@@ -283,7 +284,15 @@ test("a failure stops the sequence, and every row left is named with the reason"
 
   // Assert
   assert.deepEqual(outcome.installed, []);
-  assert.deepEqual(outcome.failed, [{ name: "west", code: 1 }]);
+  assert.deepEqual(outcome.failed, [
+    {
+      name: "west",
+      code: 1,
+      completed: [],
+      failedCommand: "install west",
+      notRun: [],
+    },
+  ]);
   assert.deepEqual(
     outcome.skipped.map((entry) => entry.name),
     ["cmake", "ninja"],
@@ -291,6 +300,91 @@ test("a failure stops the sequence, and every row left is named with the reason"
   );
   assert.match(outcome.skipped[0].reason, /west failed/);
   assert.equal(dispatched.length, 1, "nothing ran after the failure");
+});
+
+// ---------------------------------------------------------------------------
+// Multi-step `command` rows (#603) — the `hostPrerequisites` rollup shape.
+// ---------------------------------------------------------------------------
+
+test("a multi-step row: step 2 dispatches only after step 1 finishes, no double-awaitRun", async () => {
+  // Arrange -- THE hard contract: `runDependencyAction` owns `awaitRun` for
+  // this run name; `runFixAll` must not ALSO subscribe it for a command row,
+  // or step 1's finish would be read as the whole row's finish.
+  const { runFixAll, dispatched, pending } = load();
+  const running = runFixAll({
+    report: report([
+      row({
+        name: "hostPrerequisites",
+        action: {
+          kind: "command",
+          commands: [
+            { tool: "cmake", command: "brew install cmake" },
+            { tool: "ninja", command: "brew install ninja" },
+          ],
+          effect: "install",
+          title: "",
+        },
+      }),
+    ]),
+    cwd: "/proj",
+    token: NO_CANCEL,
+  });
+
+  await settle();
+  assert.deepEqual(
+    dispatched.map((d) => d.command),
+    ["brew install cmake"],
+  );
+
+  pending.get(INSTALL_RUN)(0);
+  await settle();
+  assert.deepEqual(
+    dispatched.map((d) => d.command),
+    ["brew install cmake", "brew install ninja"],
+  );
+
+  pending.get(INSTALL_RUN)(0);
+  const outcome = await running;
+  assert.deepEqual(outcome.installed, ["hostPrerequisites"]);
+});
+
+test("a multi-step row: step 2 fails — the outcome says what installed and what did not", async () => {
+  const { runFixAll, pending } = load();
+  const running = runFixAll({
+    report: report([
+      row({
+        name: "hostPrerequisites",
+        action: {
+          kind: "command",
+          commands: [
+            { tool: "cmake", command: "brew install cmake" },
+            { tool: "ninja", command: "brew install ninja" },
+          ],
+          effect: "install",
+          title: "",
+        },
+      }),
+    ]),
+    cwd: "/proj",
+    token: NO_CANCEL,
+  });
+
+  await settle();
+  pending.get(INSTALL_RUN)(0); // cmake installs
+  await settle();
+  pending.get(INSTALL_RUN)(1); // ninja fails
+  const outcome = await running;
+
+  assert.deepEqual(outcome.installed, []);
+  assert.deepEqual(outcome.failed, [
+    {
+      name: "hostPrerequisites",
+      code: 1,
+      completed: ["cmake"],
+      failedCommand: "brew install ninja",
+      notRun: [],
+    },
+  ]);
 });
 
 test("an unknown exit code is a failure, not a success", async () => {
@@ -312,7 +406,15 @@ test("an unknown exit code is a failure, not a success", async () => {
 
   // Assert
   assert.deepEqual(outcome.installed, []);
-  assert.deepEqual(outcome.failed, [{ name: "ninja", code: undefined }]);
+  assert.deepEqual(outcome.failed, [
+    {
+      name: "ninja",
+      code: undefined,
+      completed: [],
+      failedCommand: "install ninja",
+      notRun: [],
+    },
+  ]);
 });
 
 test("a run already holding the slot is skipped with a reason, never awaited", async () => {
@@ -483,4 +585,63 @@ test("an empty target set does nothing at all", async () => {
   // Assert
   assert.deepEqual(dispatched, []);
   assert.deepEqual(outcome, { installed: [], failed: [], skipped: [] });
+});
+
+// ---------------------------------------------------------------------------
+// `describeFixAllFailure` — the summary toast's wording (#603 design item 6).
+// ---------------------------------------------------------------------------
+
+test("describeFixAllFailure: a multi-step row says what installed, what failed, and that nothing after it ran", () => {
+  const { describeFixAllFailure } = load();
+
+  assert.equal(
+    describeFixAllFailure({
+      name: "hostPrerequisites",
+      code: 1,
+      completed: ["cmake"],
+      failedCommand: "brew install ninja",
+      notRun: [],
+    }),
+    "hostPrerequisites: installed cmake; `brew install ninja` exited 1; nothing after it ran",
+  );
+});
+
+test("describeFixAllFailure: names the steps that never got a chance to run", () => {
+  const { describeFixAllFailure } = load();
+
+  assert.equal(
+    describeFixAllFailure({
+      name: "hostPrerequisites",
+      code: 1,
+      completed: [],
+      failedCommand: "brew install cmake",
+      notRun: ["ninja"],
+    }),
+    "hostPrerequisites: `brew install cmake` exited 1; nothing after it ran (ninja skipped)",
+  );
+});
+
+test("describeFixAllFailure: a fix/bootstrap row keeps the original wording, unchanged", () => {
+  const { describeFixAllFailure } = load();
+
+  assert.equal(
+    describeFixAllFailure({
+      name: "west",
+      code: 1,
+      completed: [],
+      failedCommand: undefined,
+      notRun: [],
+    }),
+    "west exit 1",
+  );
+  assert.equal(
+    describeFixAllFailure({
+      name: "west",
+      code: undefined,
+      completed: [],
+      failedCommand: undefined,
+      notRun: [],
+    }),
+    "west exit unknown",
+  );
 });

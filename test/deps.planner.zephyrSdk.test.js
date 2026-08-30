@@ -141,7 +141,9 @@ test("tan's own answer still wins wherever tan gave one", () => {
   // A command tan supplied: verbatim, untouched by the fallback.
   assert.deepEqual(rowFor(report, "ninja").action, {
     kind: "command",
-    command: "winget install -e --id Ninja-build.Ninja",
+    commands: [
+      { tool: "ninja", command: "winget install -e --id Ninja-build.Ninja" },
+    ],
     effect: "install",
     title: "winget install -e --id Ninja-build.Ninja",
   });

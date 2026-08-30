@@ -59,7 +59,12 @@ const row = (over) => ({
     over.action === undefined
       ? {
           kind: "command",
-          command: over.command ?? `apt-get install -y ${over.name}`,
+          commands: [
+            {
+              tool: over.name,
+              command: over.command ?? `apt-get install -y ${over.name}`,
+            },
+          ],
           effect: "install",
           title: `install ${over.name}`,
         }
@@ -70,6 +75,7 @@ const report = (rows) => ({
   rows,
   counts: { pass: 0, warn: 0, fail: rows.length },
   prerequisiteDataUnavailable: false,
+  orphanedPrerequisites: [],
 });
 
 const NO_CANCEL = { isCancellationRequested: false };

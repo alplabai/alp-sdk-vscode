@@ -95,6 +95,23 @@ export interface DependencyLatest {
 export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
 
 /**
+ * One dispatch inside a `command` action: the tool it installs, and the exact
+ * shell command LINE tan reported for it.
+ *
+ * `tool` is carried alongside `command` (not just the bare string) because a
+ * multi-tool row (the `hostPrerequisites` rollup, #603) has to say WHICH tool
+ * each line is for — in the tooltip, on the consent screen, and in a Fix-all
+ * failure's "installed cmake; `brew install ninja` exited 1" report. tan's own
+ * `MissingPrerequisite`, narrowed to the one case that reaches here:
+ * `command` is never `null` in this array — a `null` entry contributes no
+ * step at all (see `actionFor`).
+ */
+export interface DependencyCommandStep {
+  tool: string;
+  command: string;
+}
+
+/**
  * What a row's button does. `null` (no action) is a first-class outcome.
  *
  * `effect` is the verb the label must use and `title` the tooltip: every kind
@@ -103,7 +120,16 @@ export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
 export type DependencyAction =
   | {
       kind: "command";
-      command: string;
+      /**
+       * One dispatch per entry, run in THIS order, never joined into one
+       * shell line (#600: `&&` breaks Windows PowerShell 5.1, `;` runs a
+       * later step after an earlier one failed and hides its exit code).
+       * Non-empty — a row with nothing left to install after `command: null`
+       * entries are dropped gets no `command` action at all, see `actionFor`.
+       * A single-command row is a list of one; there is no separate
+       * single-command shape.
+       */
+      commands: readonly DependencyCommandStep[];
       effect: "install";
       title: string;
     }
@@ -167,6 +193,26 @@ export interface DependencyReport {
    * not the default one.
    */
   prerequisiteDataUnavailable: boolean;
+  /**
+   * Prerequisites tan reported with a NON-null command that bound to no row at
+   * all — neither a per-tool check (a `cmake` / `ninja` check, if tan ever adds
+   * one back) nor the `hostPrerequisites` rollup this extension currently binds
+   * every leftover entry to (#603).
+   *
+   * Empty in the ordinary case, and the whole point of the field: tan has
+   * already renamed this rollup once (`zephyrSdkHost` -> `zephyrSdkAvailableForHost`,
+   * a sibling check — see `LABELS`), and #603 itself was exactly this failure
+   * one field over — `missingPrerequisites` stayed tool-keyed while the check
+   * it used to match was rolled into `hostPrerequisites`, and the mismatch
+   * produced a silent `action: null` nobody noticed until this was measured
+   * against the pin. A prerequisite tan hands us a real command for is either
+   * OFFERED or SURFACED here — never silently dropped a second time.
+   *
+   * `command: null` entries never appear here: tan's own answer for those is
+   * "no confirmed install command", which is not a row failing to carry
+   * something — there is nothing to carry.
+   */
+  orphanedPrerequisites: readonly MissingPrerequisite[];
 }
 
 export interface DependencyPlanInput {
@@ -269,6 +315,27 @@ const FIX_IDS: Readonly<Record<string, ToolchainFixId>> = {
 /** The host-owned row id for the `tan` CLI itself. */
 export const TAN_ROW_NAME = "tan";
 
+/**
+ * The row every LEFTOVER prerequisite binds to (#603) — a prerequisite whose
+ * `tool` matches no check's `name` at all, so no per-tool row can claim it.
+ *
+ * A CONSTANT, not a derivation: nothing else in the envelope ties a
+ * prerequisite entry to this particular check. `scope: "host"` plus
+ * `status: "fail"` is ambiguous (`hostPython`, `pythonFloor` and `west` all
+ * qualify on a real failing envelope) and `detail`/`fix` are prose this repo
+ * already refused to parse once (#347). tan's own naming is the only signal:
+ * at the pinned 0.6.0 `hostPrerequisites` is the ONE check that rolls up
+ * every PATH-missing prerequisite tan does not give its own check
+ * (`detail: "missing from PATH: cmake, ninja …"`), so every leftover entry —
+ * not just cmake/ninja, whatever tan puts in `missingPrerequisites` for a tool
+ * with no dedicated check — is this row's to carry.
+ *
+ * If tan renames this check, leftover entries bind to NOTHING and
+ * `orphanedPrerequisites` says so rather than the action silently going back
+ * to `null` — see `planDependencyReport`.
+ */
+const PREREQUISITE_ROLLUP_ROW = "hostPrerequisites";
+
 /** This process's platform, narrowed to what `fixCommand` answers for. */
 const DEFAULT_HOST: BootstrapHost = bootstrapHost();
 
@@ -327,6 +394,38 @@ function updateAvailable(
 }
 
 /**
+ * The `hostPrerequisites` rollup's own tooltip/consent-screen text (#603 design
+ * item 5).
+ *
+ * `omittedTools` is never empty on a partial row — tan named a tool's command
+ * as `null`, which is a real answer ("no confirmed install command for this
+ * host") and not a gap this button can fill. The row's `state` still reads
+ * "Will install" (derived from `effect: "install"`, same as any other command
+ * row — see `./state`), which is why this SAYS the row can stay failing after
+ * a clean press: a customer who presses this and refreshes to see the row
+ * still red with no explanation would read the button as broken rather than
+ * partial.
+ */
+function rollupActionTitle(
+  bound: readonly DependencyCommandStep[],
+  omittedTools: readonly string[],
+): string {
+  const verb =
+    bound.length === 1
+      ? `Installs ${bound[0].tool}: ${bound[0].command}`
+      : `Installs ${bound.map((s) => s.tool).join(", ")}: ${bound
+          .map((s) => s.command)
+          .join("; ")}`;
+  if (omittedTools.length === 0) return verb;
+  return (
+    `${verb}. tan reported no install command for ` +
+    `${omittedTools.join(", ")} — this row can still read failing for ` +
+    `${omittedTools.length === 1 ? "it" : "those"} after a clean install ` +
+    "of everything above."
+  );
+}
+
+/**
  * Plan the dependency table from one `tan doctor --build` envelope.
  *
  * Row set = one per `data.checks[]` entry (keyed on `check.name`, in tan's
@@ -341,8 +440,48 @@ export function planDependencyReport(
   const prerequisites = data.missingPrerequisites;
   const prerequisiteDataUnavailable = prerequisites === undefined;
 
-  /** The action for one check row. tan's answer first, ours only where tan gave
-   *  none — see `FIX_IDS` for the two ways that happens. */
+  // Pass 1 / pass 2 partition (#603). A prerequisite whose `tool` matches some
+  // check's `name` binds to THAT check, exactly as before (`entry` in
+  // `actionFor` below) — this also prevents double-offering the day tan gives
+  // `cmake`/`ninja` their own checks again: that entry is drained here before
+  // the rollup below ever sees it. Everything left over — a tool with no
+  // dedicated check at all — is what the ROLLUP row (`PREREQUISITE_ROLLUP_ROW`)
+  // carries, never a per-check `find`.
+  const checkNames = new Set(data.checks.map((check) => check.name));
+  const leftover = (prerequisites ?? []).filter((p) => !checkNames.has(p.tool));
+  const leftoverBound: DependencyCommandStep[] = leftover
+    .filter((p): p is { tool: string; command: string } => p.command !== null)
+    .map((p) => ({ tool: p.tool, command: p.command }));
+  const leftoverOmitted = leftover
+    .filter((p) => p.command === null)
+    .map((p) => p.tool);
+  // Bound to the rollup row ONLY if that row exists in this envelope AND there
+  // is at least one command to offer — an empty `commands[]` is not a valid
+  // `command` action (see `DependencyAction`'s own doc), and a rollup row every
+  // one of whose leftover entries is `command: null` legitimately offers
+  // nothing, same as any other tool tan named no command for.
+  const rollupExists = checkNames.has(PREREQUISITE_ROLLUP_ROW);
+  const rollupAction: DependencyAction | null =
+    rollupExists && leftoverBound.length > 0
+      ? {
+          kind: "command",
+          commands: leftoverBound,
+          effect: "install",
+          title: rollupActionTitle(leftoverBound, leftoverOmitted),
+        }
+      : null;
+  // The orphan invariant (#603 design item 2): a non-null command that bound
+  // to NEITHER pass is a defect this report must SURFACE, not a silent
+  // `action: null` indistinguishable from "nothing was missing". This is what
+  // turns tan's NEXT rename of `hostPrerequisites` into a visible signal
+  // instead of a repeat of this exact bug.
+  const orphanedPrerequisites: MissingPrerequisite[] = rollupExists
+    ? []
+    : leftoverBound.map((step) => ({ tool: step.tool, command: step.command }));
+
+  /** The action for one check row. tan's per-tool answer first, then the
+   *  rollup (if this IS the rollup row), then this extension's own fix map —
+   *  see `FIX_IDS` for when that last one fires. */
   const actionFor = (check: DoctorCheckEnvelope): DependencyAction | null => {
     // A bootstrap is mid-flight and already mutating the toolchain; a second
     // installer racing it is how half-written workspaces happen.
@@ -354,13 +493,16 @@ export function planDependencyReport(
       return entry.command !== null
         ? {
             kind: "command",
-            command: entry.command,
+            commands: [{ tool: entry.tool, command: entry.command }],
             // tan's own command line, run verbatim in a terminal — an install,
             // and the tooltip is the command it will run.
             effect: "install",
             title: entry.command,
           }
         : null;
+    }
+    if (check.name === PREREQUISITE_ROLLUP_ROW && rollupAction) {
+      return rollupAction;
     }
     // tan named no prerequisite for this check. Fall back to what this
     // extension knows how to remedy — never to parsing `check.fix`, prose.
@@ -427,13 +569,16 @@ export function planDependencyReport(
     action: null,
   });
 
-  // A prerequisite tan lists for a tool that has NO check (tan reports no
-  // `git` / `python` / `dtc` / `gperf` check) is intentionally dropped rather
-  // than synthesised into a row: the fix is a check upstream in tan-cli, which
-  // then lands here for free.
+  // A prerequisite tan lists for a tool with NO dedicated check (tan reports
+  // no `git` / `python` / `dtc` / `gperf` check) no longer falls out of the
+  // table silently (#603 — that WAS this bug, one field over, for
+  // `cmake`/`ninja` specifically): it binds to `hostPrerequisites` above with
+  // every other leftover entry. Only when that rollup row is itself absent
+  // does a non-null command go unbound, and `orphanedPrerequisites` says so.
   return {
     rows,
     counts: data.summary,
     prerequisiteDataUnavailable,
+    orphanedPrerequisites,
   };
 }

@@ -205,13 +205,13 @@ test("entry with a command: carried VERBATIM", () => {
   assert.equal(report.prerequisiteDataUnavailable, false);
   assert.deepEqual(rowFor(report, "ninja").action, {
     kind: "command",
-    command,
+    commands: [{ tool: "ninja", command }],
     effect: "install",
     title: command,
   });
   assert.deepEqual(rowFor(report, "cmake").action, {
     kind: "command",
-    command: "sudo apt-get install -y cmake",
+    commands: [{ tool: "cmake", command: "sudo apt-get install -y cmake" }],
     effect: "install",
     title: "sudo apt-get install -y cmake",
   });
@@ -306,7 +306,7 @@ test("bootstrapRunning suppresses every action, in all three branches", () => {
   // Same envelope, bootstrap finished: the action comes back.
   assert.deepEqual(rowFor(plan({ data: branches[2] }), "ninja").action, {
     kind: "command",
-    command: "choco install ninja",
+    commands: [{ tool: "ninja", command: "choco install ninja" }],
     effect: "install",
     title: "choco install ninja",
   });

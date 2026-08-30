@@ -22,6 +22,7 @@ import type { StateManager } from "../views/stateManager";
 import {
   buildDependencyReport,
   confirmDependencyInstalls,
+  describeFixAllFailure,
   fixAllTargets,
   runDependencyAction,
   runFixAll,
@@ -314,7 +315,11 @@ export class DependencyPanel {
     const sevenZip = this.lastReport?.rows.find(
       (candidate) => candidate.name === "sevenZip",
     );
-    runDependencyAction({
+    // Awaited, not fired-and-forgotten: a `command` row's dispatch is now a
+    // SEQUENCE (#603), and `runDependencyAction` is the one place that owns
+    // `awaitRun` for it — this call must be the only consumer of that promise,
+    // never a second `awaitRun` alongside it (see that function's own doc).
+    await runDependencyAction({
       action: row.action,
       rowName: row.name,
       cwd: collectProjectContext().workspaceRoot ?? undefined,
@@ -378,7 +383,7 @@ export class DependencyPanel {
     if (outcome.failed.length > 0) {
       parts.push(
         `${outcome.failed.length} failed (${outcome.failed
-          .map((entry) => `${entry.name} exit ${entry.code ?? "unknown"}`)
+          .map((entry) => describeFixAllFailure(entry))
           .join(", ")})`,
       );
     }

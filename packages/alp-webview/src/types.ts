@@ -398,15 +398,32 @@ export interface DependencyLatest {
 export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
 
 /**
+ * One dispatch inside a `command` action — mirrors
+ * `DependencyCommandStep` in packages/alp-core/src/deps/planner.ts. The view
+ * itself never reads `commands[]` directly (it renders `action.title` /
+ * `action.effect`, both host-computed), so this exists only so the shape is
+ * declared in full rather than left partially mirrored.
+ */
+export interface DependencyCommandStep {
+  tool: string;
+  command: string;
+}
+
+/**
  * What a row's button does. `null` (no action) is a first-class outcome.
  *
  * `effect` picks the label and `title` is the tooltip: both are on every kind,
  * so the view never has to guess a verb or leave a button unexplained.
+ *
+ * `commands` (#603) is an ordered, non-empty list of dispatches — a
+ * `hostPrerequisites` row installing both cmake and ninja is two entries, a
+ * single-tool row is a list of one. The view does not iterate it; the host
+ * dispatches each step and reports back through a fresh `dependencyReport`.
  */
 export type DependencyAction =
   | {
       kind: "command";
-      command: string;
+      commands: DependencyCommandStep[];
       effect: "install";
       title: string;
     }

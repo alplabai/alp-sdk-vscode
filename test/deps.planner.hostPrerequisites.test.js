@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// #603: the `hostPrerequisites` rollup row's button was dead at the pinned
+// tan 0.6.0. `actionFor` (planner.ts) matched a missing prerequisite to a row
+// by `p.tool === check.name` — that worked at v0.3.1, which emitted one check
+// PER TOOL, but 0.6.0 rolls `cmake`/`ninja` into ONE `hostPrerequisites` check
+// while `missingPrerequisites` stays keyed by tool. Nothing matched, so the
+// button was `action: null` on the exact row that exists to install these two.
+//
+// The fixture: captured from the pinned tan 0.6.0 binary (`tan doctor
+// --format json`) against a real `tan init --template minimal-app --som
+// E1M-AEN801` project, cmake+ninja off PATH, `--sdk-root` resolved to a real
+// alp-sdk v0.16.0-rc1 checkout. The ONLY edits are `/Users/...` -> `/home/dev/`
+// path rewrites for the public repo (verified: zero `/Users/` occurrences).
+// This is the repo's first FAILING-state doctor fixture at this pin — both
+// prior 0.6.0 captures (`tan-doctor.v0.6.0.darwin.json`) carry
+// `hostPrerequisites: pass` / `missingPrerequisites: null`, which is exactly
+// why the dead button survived every gate until now.
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const {
+  planDependencyReport,
+} = require("../packages/alp-core/dist/deps/planner.js");
+
+const envelope = JSON.parse(
+  fs.readFileSync(
+    path.join(
+      __dirname,
+      "fixtures",
+      "tan-doctor.v0.6.0.missing-prereqs.darwin.json",
+    ),
+    "utf-8",
+  ),
+);
+const data = envelope.data;
+
+const plan = (overData = data, over = {}) =>
+  planDependencyReport({
+    data: overData,
+    bootstrapRunning: false,
+    cli: { installed: "0.6.0", latest: { version: "0.6.0", kind: "pin" } },
+    compareVersions: () => "same",
+    host: "darwin",
+    ...over,
+  });
+
+const rowFor = (report, name) => report.rows.find((r) => r.name === name);
+
+test("the fixture is the real pinned tan v0.6.0 failing-state doctor envelope", () => {
+  assert.equal(envelope.command, "doctor");
+  assert.equal(envelope.exitCode, 4);
+  assert.deepEqual(data.missingPrerequisites, [
+    { tool: "cmake", command: "brew install cmake" },
+    { tool: "ninja", command: "brew install ninja" },
+  ]);
+  const rollup = data.checks.find((c) => c.name === "hostPrerequisites");
+  assert.equal(rollup.status, "fail");
+  // No per-tool `cmake` / `ninja` check exists at this pin — that absence is
+  // the whole bug.
+  assert.equal(
+    data.checks.some((c) => c.name === "cmake" || c.name === "ninja"),
+    false,
+  );
+});
+
+test("the hostPrerequisites row gets an install action covering BOTH tools, tan's commands verbatim", () => {
+  const report = plan();
+  const row = rowFor(report, "hostPrerequisites");
+  assert.ok(row, "the row must exist — it is one of tan's own checks");
+  assert.ok(
+    row.action,
+    "hostPrerequisites fail state=needs-you action=NONE is the #603 bug — " +
+      "this must no longer be true",
+  );
+  assert.equal(row.action.kind, "command");
+  assert.equal(row.action.effect, "install");
+  assert.deepEqual(row.action.commands, [
+    { tool: "cmake", command: "brew install cmake" },
+    { tool: "ninja", command: "brew install ninja" },
+  ]);
+  // Every action carries a tooltip a customer can read before pressing.
+  assert.equal(typeof row.action.title, "string");
+  assert.ok(row.action.title.length > 0);
+});
+
+test("no orphaned prerequisite — every non-null command bound to a row", () => {
+  const report = plan();
+  assert.deepEqual(report.orphanedPrerequisites, []);
+});
+
+// ---------------------------------------------------------------------------
+// The orphan invariant (#603 design item 2 / gate iii): the NEXT rename must
+// be visible, not silently swallowed the way this one was.
+// ---------------------------------------------------------------------------
+
+test("renaming the rollup check surfaces the orphan, it does not silently drop the action", () => {
+  const renamed = {
+    ...data,
+    checks: data.checks.map((c) =>
+      c.name === "hostPrerequisites"
+        ? { ...c, name: "hostPrerequisitesV2" }
+        : c,
+    ),
+  };
+  const report = plan(renamed);
+
+  // The row that used to carry the button is simply gone (renamed); nothing
+  // else in this envelope may quietly absorb cmake/ninja's commands.
+  assert.equal(rowFor(report, "hostPrerequisites"), undefined);
+  const newRow = rowFor(report, "hostPrerequisitesV2");
+  assert.equal(
+    newRow.action,
+    null,
+    "no other row may synthesise an action for prerequisites tan never tied to it",
+  );
+
+  // The invariant: this must be SURFACED, not a quiet `action: null` that
+  // reads identically to "nothing was missing".
+  assert.deepEqual(report.orphanedPrerequisites, [
+    { tool: "cmake", command: "brew install cmake" },
+    { tool: "ninja", command: "brew install ninja" },
+  ]);
+});
+
+test("a null command is never counted as orphaned — there is nothing to carry", () => {
+  // tan's `command: null` is itself a real answer ("no confirmed install
+  // command for this host"). A row that legitimately offers nothing must not
+  // be reported as a dropped prerequisite.
+  const renamed = {
+    ...data,
+    checks: data.checks.map((c) =>
+      c.name === "hostPrerequisites"
+        ? { ...c, name: "hostPrerequisitesV2" }
+        : c,
+    ),
+    missingPrerequisites: [
+      { tool: "cmake", command: null },
+      { tool: "ninja", command: null },
+    ],
+  };
+  const report = plan(renamed);
+  assert.deepEqual(report.orphanedPrerequisites, []);
+});

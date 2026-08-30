@@ -44,11 +44,13 @@ export interface ConsentItem {
   /** The row's human label — what the customer is being asked to install. */
   artifact: string;
   /**
-   * What will actually run (a command line, verbatim) or open (a URL), or
-   * `null` when the row carries no action at all. Never paraphrased: a consent
-   * screen that summarises the command is a screen a security team cannot use.
+   * What will actually run — one line per dispatch, in dispatch order — or
+   * open (a URL, as the array's one entry), or `null` when the row carries no
+   * action at all. Never paraphrased and never truncated: a `command` row now
+   * carries one or more lines (#603), and a consent screen that drops or
+   * summarises any of them is a screen a security team cannot use.
    */
-  source: string | null;
+  source: readonly string[] | null;
   /** Producer-reported download size. `null` today — nothing reports one. */
   size: string | null;
   /** Producer-reported licence. `null` today — nothing reports one. */
@@ -81,29 +83,38 @@ export function commandNeedsElevation(command: string): boolean {
 }
 
 /**
- * What a row's action will run or open, verbatim.
+ * What a row's action will run or open, one line per entry, verbatim.
  *
  * A `fix` row is resolved through `fixCommand` for the SAME host the dispatch
  * uses, because the answer genuinely differs: `west` is a pip command on win32
  * and a whole `tan bootstrap` run everywhere else. Describing the wrong one
  * would make the consent screen name something other than what runs.
+ *
+ * A `command` row (#603) can carry more than one dispatch — the
+ * `hostPrerequisites` rollup names cmake AND ninja — and every one of them
+ * reaches this screen; there is no truncation to "the first command".
  */
-function sourceFor(row: DependencyRow, host: BootstrapHost): string | null {
+function sourceFor(
+  row: DependencyRow,
+  host: BootstrapHost,
+): readonly string[] | null {
   if (!row.action) return null;
-  if (row.action.kind === "command") return row.action.command;
+  if (row.action.kind === "command") {
+    return row.action.commands.map((step) => step.command);
+  }
   const result = fixCommand(row.action.fixId, host);
   switch (result.kind) {
     case "command":
-      return result.step.command;
+      return [result.step.command];
     // The resolved binary is a host fact (`alpSdk.cliPath`, the managed cache,
     // or a global `tan`), so the command is named by its argv rather than by a
     // path this module cannot know.
     case "bootstrap":
-      return "tan bootstrap";
+      return ["tan bootstrap"];
     case "pointer":
-      return result.pointer.url;
+      return [result.pointer.url];
     case "guide":
-      return result.guide.docUrl;
+      return [result.guide.docUrl];
   }
 }
 
@@ -129,7 +140,10 @@ export function planInstallConsent(
       source,
       size: null,
       licence: null,
-      needsElevation: source !== null && commandNeedsElevation(source),
+      // ANY line, not just the first: a multi-step `command` row (#603) whose
+      // SECOND line is `sudo apt-get install -y ninja-build` still needs to
+      // flag elevation even though its first line does not.
+      needsElevation: source !== null && source.some(commandNeedsElevation),
       effect: row.action?.effect ?? null,
       title: row.action?.title ?? null,
     };

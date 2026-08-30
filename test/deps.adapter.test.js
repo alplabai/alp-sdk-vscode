@@ -980,7 +980,12 @@ test("a terminal install says what actually makes the row go green", async () =>
   const plans = [];
   const { runDependencyAction } = loadDepsAdapter({
     vscode: { window: {}, Uri: {} },
-    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
+      awaitRun: () => Promise.resolve(0),
+    },
     "../notify/vscodeAdapter": {
       notifyAsync: (plan) => plans.push(plan),
     },
@@ -991,7 +996,12 @@ test("a terminal install says what actually makes the row go green", async () =>
       kind: "command",
       // tan 0.4.0's own `missingPrerequisites[].command` on this Windows host,
       // verbatim.
-      command: "winget install -e --id Ninja-build.Ninja",
+      commands: [
+        {
+          tool: "ninja",
+          command: "winget install -e --id Ninja-build.Ninja",
+        },
+      ],
       effect: "install",
       title: "winget install -e --id Ninja-build.Ninja",
     },
@@ -1068,7 +1078,12 @@ test("a terminal install says what actually makes the row go green", async () =>
  *  verbatim. */
 const ZEPHYR_SDK_ACTION = {
   kind: "command",
-  command: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
+  commands: [
+    {
+      tool: "zephyrSdk",
+      command: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
+    },
+  ],
   effect: "install",
   title: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
 };
@@ -1345,7 +1360,9 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
       // A shape `retargetWestCommand` refuses (a quoted argument) — never
       // actually reachable on the measured v0.4.1 command, but drift
       // insurance: it must fail in exactly ONE way, not two.
-      command: 'west sdk install --name "custom sdk"',
+      commands: [
+        { tool: "zephyrSdk", command: 'west sdk install --name "custom sdk"' },
+      ],
       effect: "install",
       title: 'west sdk install --name "custom sdk"',
     },
@@ -1372,7 +1389,12 @@ test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
   const runs = [];
   const { runDependencyAction } = loadDepsAdapter({
     vscode: { window: {}, Uri: {} },
-    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
+      awaitRun: () => Promise.resolve(0),
+    },
     // No override for "../project/vscodeAdapter" or "../environment/
     // vscodeAdapter": if the zephyrSdk branch fired by mistake for this row,
     // `collectProjectContext` (stubbed to `{}` by default) would throw "is not
@@ -1385,7 +1407,7 @@ test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
       // `workspace`/`westResolved` also carry a `west …` command via
       // `missingPrerequisites` (FIX_IDS in the planner) — only the `zephyrSdk`
       // ROW gets retargeted.
-      command: "west update",
+      commands: [{ tool: "workspace", command: "west update" }],
       effect: "install",
       title: "west update",
     },

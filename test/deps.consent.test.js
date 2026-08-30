@@ -46,7 +46,9 @@ const row = (over) => ({
     over.action === undefined
       ? {
           kind: "command",
-          command: `apt-get install -y ${over.name}`,
+          commands: [
+            { tool: over.name, command: `apt-get install -y ${over.name}` },
+          ],
           effect: "install",
           title: `install ${over.name}`,
         }
@@ -71,7 +73,9 @@ test("the source is the producer's command line, verbatim", () => {
         name: "ninja",
         action: {
           kind: "command",
-          command: "sudo apt-get install -y ninja-build",
+          commands: [
+            { tool: "ninja", command: "sudo apt-get install -y ninja-build" },
+          ],
           effect: "install",
           title: "install ninja",
         },
@@ -80,7 +84,34 @@ test("the source is the producer's command line, verbatim", () => {
     "linux",
   );
 
-  assert.equal(items[0].source, "sudo apt-get install -y ninja-build");
+  assert.deepEqual(items[0].source, ["sudo apt-get install -y ninja-build"]);
+});
+
+test("a multi-step command row: every line reaches the screen, none truncated", () => {
+  // #603: the `hostPrerequisites` rollup can carry more than one dispatch. No
+  // paraphrase, no "first line only" — every line the row will run.
+  const items = planInstallConsent(
+    [
+      row({
+        name: "hostPrerequisites",
+        action: {
+          kind: "command",
+          commands: [
+            { tool: "cmake", command: "brew install cmake" },
+            { tool: "ninja", command: "brew install ninja" },
+          ],
+          effect: "install",
+          title: "Installs cmake, ninja",
+        },
+      }),
+    ],
+    "darwin",
+  );
+
+  assert.deepEqual(items[0].source, [
+    "brew install cmake",
+    "brew install ninja",
+  ]);
 });
 
 test("size and licence are null — no producer reports either (alp-sdk#1574)", () => {
@@ -101,7 +132,9 @@ test("a check this extension has never heard of still gets an item", () => {
         label: "Quantum flux capacitor",
         action: {
           kind: "command",
-          command: "brew install quantum-flux",
+          commands: [
+            { tool: "quantumFlux", command: "brew install quantum-flux" },
+          ],
           effect: "install",
           title: "install quantumFlux",
         },
@@ -112,7 +145,7 @@ test("a check this extension has never heard of still gets an item", () => {
 
   assert.equal(items.length, 1);
   assert.equal(items[0].artifact, "Quantum flux capacitor");
-  assert.equal(items[0].source, "brew install quantum-flux");
+  assert.deepEqual(items[0].source, ["brew install quantum-flux"]);
 });
 
 test("a fix row's source is resolved through fixCommand for that host", () => {
@@ -127,8 +160,8 @@ test("a fix row's source is resolved through fixCommand for that host", () => {
   const [win] = planInstallConsent([westRow], "win32");
   const [linux] = planInstallConsent([westRow], "linux");
 
-  assert.match(win.source, /pip/);
-  assert.equal(linux.source, "tan bootstrap");
+  assert.match(win.source[0], /pip/);
+  assert.deepEqual(linux.source, ["tan bootstrap"]);
 });
 
 test("a row with no action reports a null source rather than being dropped", () => {
@@ -173,7 +206,12 @@ test("needsElevation rides on the item", () => {
         name: "udev",
         action: {
           kind: "command",
-          command: "sudo cp 99-jlink.rules /etc/udev/rules.d/",
+          commands: [
+            {
+              tool: "udev",
+              command: "sudo cp 99-jlink.rules /etc/udev/rules.d/",
+            },
+          ],
           effect: "install",
           title: "udev rules",
         },
@@ -182,7 +220,7 @@ test("needsElevation rides on the item", () => {
         name: "ninja",
         action: {
           kind: "command",
-          command: "brew install ninja",
+          commands: [{ tool: "ninja", command: "brew install ninja" }],
           effect: "install",
           title: "install ninja",
         },
@@ -193,6 +231,32 @@ test("needsElevation rides on the item", () => {
 
   assert.equal(elevated.needsElevation, true);
   assert.equal(plain.needsElevation, false);
+});
+
+test("needsElevation is ANY-of over a multi-step row's lines (#603)", () => {
+  // The line that needs elevation does not have to be the FIRST one.
+  const [item] = planInstallConsent(
+    [
+      row({
+        name: "hostPrerequisites",
+        action: {
+          kind: "command",
+          commands: [
+            { tool: "cmake", command: "brew install cmake" },
+            {
+              tool: "ninja",
+              command: "sudo apt-get install -y ninja-build",
+            },
+          ],
+          effect: "install",
+          title: "Installs cmake, ninja",
+        },
+      }),
+    ],
+    "linux",
+  );
+
+  assert.equal(item.needsElevation, true);
 });
 
 test("the item carries the action's own effect and title, unchanged", () => {
