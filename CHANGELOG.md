@@ -6,6 +6,94 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **The vendored `tan` surface capture now reads a command's DESCRIPTION, not
+  just its options table, and 36 inert-flag facts it was missing are now
+  recorded — LESS WRONG, not complete (#602).** `scripts/tan-surface/
+  fetch.mjs` classified a flag inert only from its own per-option help cell;
+  six commands (`diff`, `faultdecode`, `inspect`, `pinmux`, `support-bundle`,
+  `trace`) instead declare "accepted but not implemented" globals in the
+  free-text paragraph ABOVE their Options box, which the fetcher never read.
+  Re-capturing `test/golden/tan-surface/surface.json` against the pinned
+  `tan 0.6.0` with the fix reclassifies 13 flags from live to inert (`diff`,
+  `pinmux`, both already listing the flags in their box) and adds 23 more
+  that were entirely absent from the snapshot (`inspect`, `support-bundle`,
+  `trace`, `faultdecode`, none of which restate the flags in their own box at
+  all). `src/alpCli/pinnedSurface.ts`'s `INERT_OPTIONS` gains all 36 — 35
+  classified `parity` (tan's own reason, read past the matched clause: "the
+  oracle's clap `GlobalArgs` are `global = true`, so every verb accepts all
+  of them" — an adversarial review caught an earlier pass calling all 36
+  `not-applicable`, which conflated that with a genuine domain exclusion) and
+  1, `faultdecode --board-yaml`, `not-applicable` (its own marker names
+  board.yaml specifically, the same domain reason as the pre-existing
+  `faultdecode --project`/`--sdk-root`). The classifier also gained a hedge
+  guard (`isHedged`, with unit tests in `test/tanSurface.descriptionInert
+  .test.js`) so a CONDITIONAL "accepted and ignored" wording — tan's real
+  `run --flash`/`renode --sim-mode` shapes, "...for a native_sim/host
+  target", "...when `--sim-mode` is given" — is never recorded as
+  unconditional. `buildSnapshot` also now refuses to write a snapshot if any
+  command's options parse to zero entries, so a silent parser failure can no
+  longer be mistaken for "this command has no options."
+  **This does not close the gap it fixes a slice of.** Measured against the
+  pinned binary (every accepted flag probed with `tan <cmd> <flag> --help`,
+  0 rejections): 147 accepted `(command, global-flag)` pairs across 23
+  commands — `monitor` (10), `sdk` (8), `new-som` (8), and `bootstrap`/
+  `completion`/`flash`/`image`/`lock`/`model`/`quality`/`run`/`validate`
+  (7 each) among them — are still entirely absent from the snapshot, because
+  those commands' own help text says nothing about their global flags at
+  all, and this fetcher only ever recovers a flag when tan's OWN text
+  supports the classification.
+- **Nine documentation claims about the pinned CLI that the binary refutes
+  are corrected, and `test/docs.cliClaims.test.js` gains seven new
+  assertions to catch a recurrence (#608).** `docs/CLI.md`'s `tan pinmux`
+  section named the wrong family for `E1M-V2M*` SKUs, claimed the extension
+  consumes `tan pinmux` instead of reading `metadata/pinmux/<family>.yaml`
+  directly, and promised the CLI always fails soft on an empty capability
+  table (it exits 2 with `pinmux.table-empty` when the table file exists but
+  every pad is still `TBD` — currently all four V2N/V2M SKUs).
+  `docs/GETTING_STARTED_VSCODE.md` and `docs/EXTENSION_CLI_INTEGRATION.md`
+  both described `tan doctor --build` as changing doctor's checks; measured,
+  `--build` and plain `tan doctor` return a byte-identical check set and
+  summary (the specific pass/warn/fail counts are host-dependent and are not
+  quoted in either doc, only the equality). `docs/DEBUG.md` called
+  `inspect`/`trace`/`doctor`/`support-bundle` something the CLI "should
+  eventually expose" — all four already ship and run, and `doctor` is
+  already spawned — and, separately, called five VS Code commands
+  (`Alp: Configure debug profile`, `Alp: Debug preflight`, `Alp: Debug`,
+  `Alp: Debug doctor`, `Alp: Export debug support bundle`) an aspiration
+  though all five are registered in `package.json`'s `contributes.commands`
+  today; three others in the same list genuinely are not (a combined
+  flash-and-debug command, an attach-only command, and a dedicated debug
+  panel distinct from the troubleshooting panel). `docs/
+  EXTENSION_CLI_INTEGRATION.md`'s §3 envelope-commands list also named
+  `inspect`/`diff`/`trace`/`support-bundle` as spawned, though none has a
+  call site anywhere in `src/`, and separately claimed `setActiveSdk` shells
+  `tan sdk switch` — true at #364, reversed by #546, never updated here.
+  `PRODUCT.md` cited `SUPPORTED_CLI_VERSION` as `0.6.0-rc1` at a `file:line`
+  that has read `0.6.0` since the GA pin move; the first correction attempt
+  then claimed the Renesas Kconfig fix (tan-cli#688) landed AT that GA move,
+  which `src/alpCli/service.ts`'s own measurement contradicts — the fix was
+  already in `0.6.0-rc1` ("45 ahead / 0 behind"), so GA only dropped the rc
+  label. `src/alpCli/service.ts`'s own top-of-file prose still called
+  `0.6.0-rc1` "the pin" and "deliberately a PRE-RELEASE" a few lines above
+  where `SUPPORTED_CLI_VERSION` reads `"0.6.0"` — a tenth instance of the
+  same class, in the file `PRODUCT.md` cites; corrected to past tense, RC
+  history kept intact.
+  The new assertions check these against measured ground truth (the pinned
+  surface, the AST extractor `test/tan.surfaceContract.test.js` already
+  uses, and the source files a doc describes), scan the WHOLE prose corpus
+  `scripts/doc-cli-claims/scan.mjs` already walks rather than a hand-picked
+  file list, and match on markdown-and-whitespace-NORMALIZED text so a
+  line-wrap or a backtick cannot hide a phrase — an adversarial review of
+  the first version found five of the seven were spelling gates a re-wrap, a
+  `will`-for-`should` swap, a paraphrase, an unlisted file, or a reshaped
+  citation each defeated while the suite stayed green; every one is now
+  reproduced-then-fixed with the review's own exact bypass text.
+  `scripts/tan-surface/fetch.mjs`'s description-inert classifier also gained
+  a hedge guard (`isHedged`, unit-tested in `test/tanSurface
+  .descriptionInert.test.js`) so a CONDITIONAL "accepted and ignored"
+  wording — tan's real `run --flash`/`renode --sim-mode` shapes — is never
+  recorded as an unconditional one; see the #602 entry above for the
+  `INERT_OPTIONS` reclassification this same review triggered.
 - **`tan sdk current` is now asked after every bootstrap, and pins
   `alpSdk.path` when nothing was pinned yet (#604, #614).** Nothing in this
   extension previously called `tan sdk current` at all, so tan's own

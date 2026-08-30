@@ -93,10 +93,16 @@ others.
 | Linux armhf — `linux/arm`                 | none published                     | none published              | **No** — move to another host  |
 
 Running `tan doctor` yourself, with no flags, reports the same verdict as a
-`zephyrSdkHost` check, from `tan` v0.4.0 on. Two things do NOT count as a pass:
-an older `tan` omits the check entirely, and `tan doctor --build` omits it by
-design — so silence about your host says nothing either way. This table is the
-source of truth.
+`zephyrSdkAvailableForHost` check, from `tan` v0.4.0 on. `tan doctor --build`
+reports the SAME check — measured at the pin: the two invocations return a
+byte-identical check set and summary (the exact pass/warn/fail counts are
+host-dependent, like every other doctor output in this file — the EQUALITY
+between the two invocations is what was measured, not a specific count).
+`--build` is `Accepted for compatibility (tan-cli#290)`: it used to gate
+whether this check ran, and now does not change the output at all. One thing
+does NOT count as a pass: an older `tan` (pre-v0.4.0) omits the check
+entirely, so silence about your host says nothing on that CLI. This table is
+the source of truth.
 
 #### Linux arm64 — no `tan` binary for this pin
 

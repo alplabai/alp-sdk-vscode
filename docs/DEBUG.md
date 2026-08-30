@@ -611,23 +611,36 @@ says to update the CLI instead of blaming a setting that was never the problem
 
 ## 11. Product Commands to Support Debug
 
-The extension should eventually expose these commands:
+**Corrected (#608): five of the original eight below already ship.** This
+section listed all eight as a future aspiration; checked against
+`package.json`'s `contributes.commands`, five are real, registered commands
+today:
 
-- `Alp: Configure debug profile`
-- `Alp: Debug preflight`
-- `Alp: Start debug`
-- `Alp: Flash and debug`
-- `Alp: Attach to running target`
-- `Alp: Debug doctor`
-- `Alp: Open debug panel`
-- `Alp: Export support bundle`
+- `Alp: Configure debug profile (launch.json)` — ships (`alp.
+  configureDebugProfile`)
+- `Alp: Debug preflight` — ships (`alp.debugPreflight`)
+- `Alp: Debug (generate profile + start session)` — ships (`alp.debug`), the
+  "Start debug" concept this list originally named
+- `Alp: Debug doctor` — ships (`alp.debugDoctor`)
+- `Alp: Export debug support bundle` — ships (`alp.exportSupportBundle`)
 
-The CLI should eventually expose:
+Still aspirational — no command registered for any of these three:
 
-- `tan inspect`
-- `tan trace`
-- `tan doctor`
-- `tan support-bundle`
+- A combined "flash and debug" command (only separate `Alp: Flash (single
+  image)` / `Alp: Flash (all slices)` and debug commands exist)
+- "Attach to running target" (no attach-only command)
+- A dedicated "debug panel" distinct from `Alp: Open troubleshooting panel`
+  (`alp.openDebugTroubleshootingPanel`), which may or may not be the same
+  thing this line meant
+
+The CLI already exposes all four of these at the pinned version — this is not
+an aspiration:
+
+- `tan inspect` — ships and runs; no call site in this extension yet
+- `tan trace` — ships and runs; no call site in this extension yet
+- `tan doctor` — ships and runs; already spawned (`src/debug/vscodeAdapter.ts`,
+  `src/deps/vscodeAdapter.ts`)
+- `tan support-bundle` — ships and runs; no call site in this extension yet
 
 ## 12. Debug Preflight Requirements
 

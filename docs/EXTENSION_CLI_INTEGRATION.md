@@ -83,11 +83,19 @@ every flash dispatch `FLASH_RUN_NAME`, whole-project or per-core, `tan` or
 legacy `west`: two names would be two reservations over one build tree, or two
 programmers over one board.
 
-Envelope commands: `validate`, `generate`, `inspect`, `presets`, `explain`,
-`diff`, `trace`, `debug-config --preview`, `support-bundle`, `doctor`,
-`sdk list/current`, and the Models-panel surface `model
-check/zoo/add/prep/run/ab` (offline pre-flight / prep / host-reference — no
-toolchain; §6b).
+Envelope commands: `validate`, `generate`, `presets`, `explain`,
+`debug-config --preview`, `doctor`, `sdk list/current`, and the Models-panel
+surface `model check/zoo/add/prep/run/ab` (offline pre-flight / prep /
+host-reference — no toolchain; §6b).
+
+**`inspect`, `diff`, `trace` and `support-bundle` are NOT in this list**, and
+listing them here was the mistake #608 filed: none has a call site anywhere in
+this repo, measured (`git grep` for each as a spawned argv turns up nothing).
+§B3 already says this correctly for two of the four ("the rest are either
+host-coupled (the whole debug domain — doctor, preflight, inspect,
+support-bundle, debug-config — §4a) or not worth a spawn"); `diff` and `trace`
+were never migrated either and were never claimed done in §B3 — only listed,
+wrongly, as already-envelope commands here and in §4 below.
 
 Channel commands: `build`, `image`, `flash`, `clean`. (`renode` was a fifth
 until tan v0.6.0 removed the verb — tan-cli#848, #584. Sections below that
@@ -112,6 +120,12 @@ Delegate to the **`tan` binary** — user-triggered "actions":
 - `validate` (full, Python spawn), `generate`, `init`, `scaffold`, `diff`,
   `presets`, `explain`, `inspect`, `trace`, `debug-config`, `doctor`,
   `support-bundle`, `sdk *`, `bootstrap`, and (future) `build`.
+
+  This is the design classification (which commands BELONG in the delegated
+  category), not a status report — `diff`, `inspect`, `trace` and
+  `support-bundle` are in this list because a spawn is the right shape for
+  them, not because one exists. Same correction as §3: none of the four has a
+  call site in this repo today.
 
 Rule of thumb: **per-keystroke → in-process TS; per-click → CLI binary.**
 
@@ -658,18 +672,32 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   cwd, and hide `west`. west-not-found → `tan
   bootstrap` hint. Arg-forwarding unit-tested + stub-west smoke; no golden
   fixtures (real builds need west + a workspace).
-- **A3 — build preflight in `doctor`. ✅ done.** `tan doctor --build` resolves the
-  OS set from the active `board.yaml` (explicit core `os:` fields; falls back to all
-  three backends when none are declared — board.yaml alone doesn't carry per-core
-  type, that's derived by the SDK's `alp_orchestrate.py` planner and consumed via
-  the `--emit build-plan` contract, §9), probes the host build tools each
-  needs (west/cmake/ninja/zephyrSdk for Zephyr, bitbake for Yocto / Linux-only
-  warning otherwise, cmake+vendorToolchain for baremetal), and emits a doctor
-  envelope with per-OS checks + installer next-steps. Vendor compilers/Yocto host
-  pkgs stay pointer-only (decision 4). Advisory only. `tan-core/build_readiness.rs`
-  (6 unit tests); the default `tan doctor` (no `--build`) is unchanged. No golden
-  fixtures — output is machine-dependent like the debug doctor, so a recorded
-  run would red on every host but the one that made it.
+- **A3 — build preflight in `doctor`. ✅ done, but not behind `--build`.** `tan
+  doctor` resolves the OS set from the active `board.yaml` (explicit core `os:`
+  fields; falls back to all three backends when none are declared —
+  board.yaml alone doesn't carry per-core type, that's derived by the SDK's
+  `alp_orchestrate.py` planner and consumed via the `--emit build-plan`
+  contract, §9), probes the host build tools each needs (west/cmake/ninja/
+  zephyrSdk for Zephyr, bitbake for Yocto / Linux-only warning otherwise,
+  cmake+vendorToolchain for baremetal), and emits a doctor envelope with
+  per-OS checks + installer next-steps. Vendor compilers/Yocto host pkgs stay
+  pointer-only (decision 4). Advisory only. `tan-core/build_readiness.rs`
+  (6 unit tests).
+  **Correction (#608): "the default `tan doctor` (no `--build`) is unchanged"
+  is false at `SUPPORTED_CLI_VERSION`.** Measured, same host, one run of
+  each: `tan doctor` and `tan doctor --build` return a byte-identical check
+  set and summary — the pass/warn/fail counts themselves are host-dependent
+  (see the note below on why this bullet carries no golden fixture) and are
+  deliberately not quoted here; the EQUALITY between the two invocations is
+  what was measured. `--build`'s own help text says why the two are
+  identical — `Accepted for compatibility (tan-cli#290): zephyrWorkspace, the
+  check this used to gate, now runs unconditionally, so this flag no longer
+  changes the check` — and `pinnedSurface.ts`'s `INERT_OPTIONS` records
+  `"doctor --build": "compatibility"` for exactly that reason. The FEATURE
+  this bullet describes is real and shipped; the FLAG is decorative — every
+  check above already runs on plain `tan doctor`, and `--build` changes
+  nothing. No golden fixtures — output is machine-dependent like the debug
+  doctor, so a recorded run would red on every host but the one that made it.
   *(Amended 2026-08-15, #466 §3 — "no golden fixtures" had been read as "no gate
   at all", which is not the same decision. A rename of `data.checks` or
   `missingPrerequisites` landed as an empty dependency panel: no failing test,
@@ -764,19 +792,34 @@ follows the first `tan-cli` `v<version>` release (§5 + Phase 7).
   writer with an independently-evolving guard is how the two diverge on a file
   `west` depends on. The extension only **detects** it (`inspectWestManifest`,
   read-only, `packages/alp-core/src/sdk/service.ts`) and points at Bootstrap.
-  **Done (#364).** The pin reached `0.4.0` (#385) and `setActiveSdk` now shells
-  `tan sdk switch <absolute path>` with an explicit `cwd` of the workspace root,
-  skipped entirely when no folder is open — there is no `<topdir>/.west/config`
-  to reconcile without one, and an undefined `cwd` would aim the switch at
-  whatever directory the extension host happens to sit in. The absolute path is
-  required because a bare version resolves against `~/.alp/sdk-cache`, not the
-  `~/.alp/sdk` this extension installs into (tan-cli#88).
-  Still not a second writer: the extension shells the repair and then re-probes
-  the STATE (`warnIfWestManifestDangling`). It deliberately does not match
-  tan's `sdk.west-config-reconciled` / `sdk.west-config-not-reconciled` issue
-  codes, because neither is in tan's frozen `contract/issue-codes.json` — an
-  exact-string match on an unfrozen code reads as success forever the day it is
-  renamed (tan-cli#106). A state probe cannot be renamed.
+  **Done (#364), then UNDONE (#546) — #608 filed on this paragraph having gone
+  stale.** At `0.4.0` (#385) `setActiveSdk` did shell `tan sdk switch <absolute
+  path>` with an explicit `cwd` of the workspace root, skipped entirely when no
+  folder is open — there is no `<topdir>/.west/config` to reconcile without
+  one, and an undefined `cwd` would aim the switch at whatever directory the
+  extension host happens to sit in. The absolute path was required because a
+  bare version resolves against `~/.alp/sdk-cache`, not the `~/.alp/sdk` this
+  extension installs into (tan-cli#88). **That call is gone.** `src/sdk/
+  activeSdk.ts:29-34` and its `setActiveSdk` (:150-181) are the current source
+  of truth: at `SUPPORTED_CLI_VERSION` `tan sdk` has exactly four verbs —
+  list, current, install, switch — and its own help says install/switch "are
+  not yet ported and refuse in this build -- use --sdk-root instead"
+  (tan-cli#305); `tan sdk switch` exits non-zero with `sdk.not-ported` on
+  every call, so `setActiveSdk` no longer makes it (#546). `<topdir>/.west/
+  config` is NOT reconciled by this extension at all today — the setting
+  write and the `.alp/sdk-path` pointer mirror are the whole of what
+  activation does — and the state is only OBSERVED, never repaired:
+  `warnIfWestManifestDangling` (below) re-probes the pointer and offers `tan
+  bootstrap` (the one route that still reconciles it, per tan-cli #31) rather
+  than a switch this pin cannot run. Restoring the call is gated on
+  tan-cli#305 landing the port.
+  Still not a second writer, even in the pre-#546 shape: the extension shelled
+  the repair and then re-probed the STATE (`warnIfWestManifestDangling`). It
+  deliberately does not match tan's `sdk.west-config-reconciled` /
+  `sdk.west-config-not-reconciled` issue codes, because neither is in tan's
+  frozen `contract/issue-codes.json` — an exact-string match on an unfrozen
+  code reads as success forever the day it is renamed (tan-cli#106). A state
+  probe cannot be renamed.
 - **B4 — retire the TS CLI. ✅ done (retire); core shrink = n/a.** Inventory found
   the extension (`src/`) imports **nearly all** of `@alp-sdk/core` (board,
   boardSummary, configurator, the whole debug domain [in-process per §4a], loader,

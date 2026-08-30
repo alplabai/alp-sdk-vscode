@@ -55,9 +55,10 @@ import {
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
  *  test/tanContract.test.js tracks that, and moved with this pin.
  *
- *  v0.6.0-rc1 is the pin, and it is deliberately a PRE-RELEASE (#502). Every
- *  earlier pin was chosen from what was stable; this one is chosen from what can
- *  build the hardware this extension offers. `v0.5.1` cannot configure ANY
+ *  v0.6.0-rc1 WAS the pin, from #502 until the GA tag below superseded it —
+ *  deliberately a PRE-RELEASE at the time (#502), the first pin this
+ *  extension has ever taken that was chosen from what can build the target
+ *  hardware rather than from what was stable. `v0.5.1` cannot configure ANY
  *  Renesas SoM against the alp-sdk it ships beside: its vendored planner emits
  *  `CONFIG_ALP_SDK_CHIP_NONE=y`, alp-sdk v0.15.0 no longer defines that symbol,
  *  and Zephyr aborts the configure step with "attempt to assign the value 'y' to
@@ -71,8 +72,14 @@ import {
  *  behind (the fix IS in the tag); `6901280...v0.5.1` is diverged (it is not).
  *  So no stable tan can build a Renesas SoM today, and holding at v0.5.1 to
  *  avoid a pre-release would have meant knowingly keeping those four SKUs
- *  broken. The rc window is short: the v0.6.0 milestone stands at 0 open / 206
- *  closed, so this pin moves to `0.6.0` when that tag is cut.
+ *  broken. The rc window WAS short, as predicted: the v0.6.0 milestone closed
+ *  out at 0 open / 206 closed, and the GA tag `v0.6.0` was cut once that
+ *  window closed. #688 was already in `v0.6.0-rc1` ("45 ahead / 0 behind"
+ *  above) -- GA did not newly add the Renesas fix, it just dropped the rc
+ *  label from a tag that already carried it. This pin moved to
+ *  `"0.6.0"` below. `RENESAS_BUILD_CLI_VERSION` stays at `0.6.0-rc1`
+ *  deliberately -- it is a SEPARATE floor (`src/alpCli/somCliFloor.ts`), not
+ *  this pin's rc-era value carried over by oversight.
  *
  *  Pinning a pre-release is precedented and supported, not a workaround — #443
  *  taught every pin-resolution site to accept one and

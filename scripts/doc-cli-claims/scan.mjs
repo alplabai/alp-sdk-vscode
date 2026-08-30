@@ -131,7 +131,12 @@ function markdownFiles(target) {
   return out;
 }
 
-function corpus() {
+/** Every markdown file this gate treats as a reader instruction — the
+ *  README, `docs/**`, `media/**`, minus dated design records. Exported so
+ *  a check that needs to scan the WHOLE prose corpus (not one or two
+ *  hand-picked files) uses the identical file set `scan()` walks, rather
+ *  than a second, driftable list. */
+export function corpus() {
   const seen = new Set();
   const files = [];
   for (const root of ROOTS) {

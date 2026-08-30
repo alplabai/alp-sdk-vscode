@@ -145,10 +145,15 @@ const FLAG_CELL = /^--?[^\s,]+(?:,\s*--?[^\s,]+)*$/;
  *  "(unused; …)". All four were recorded `inert: false` — i.e. LIVE — while
  *  doing nothing, and `src/west.ts:338` already spawns `tan renode`.
  *
- *  The whole captured surface was swept for a fifth phrasing (see the header
- *  note on the sweep): there is none at this pin. What the sweep does turn up
- *  is a different shape this list deliberately cannot express — CONDITIONAL
- *  inertness, where a flag is live except in the presence of another
+ *  The whole captured surface was swept for a fifth phrasing IN THIS SHAPE —
+ *  an option's OWN help cell, inside its command's Options box (see the header
+ *  note on the sweep): there is none at this pin. That sweep never looked at
+ *  a command's DESCRIPTION (the prose above the boxes), which is a separate
+ *  shape entirely — see `DESCRIPTION_INERT_CLAUSE` below (#602).
+ *
+ *  What the option-cell sweep does turn up is a different shape this list
+ *  deliberately cannot express — CONDITIONAL inertness, where a flag is live
+ *  except in the presence of another
  *  (`renode --sim-mode` ends "…; --expect is ignored", `run --flash` ends
  *  "Ignored for a native_sim/host target"). Those depend on the rest of the
  *  argv, and a per-flag boolean would have to call them either dead
@@ -183,6 +188,179 @@ const INERT_PATTERNS = [
   // cannot condemn a live flag.
   /\(unused[:;](?:[^)]*\))?/,
 ];
+
+// --------------------------------------------------------- description text
+//
+// (#602) `diff`, `inspect`, `pinmux`, `support-bundle` and `trace` each carry
+// a paragraph ABOVE their Options box — outside any box `parseBoxEntries`
+// ever looks at — that names specific global flags as inert FOR THAT COMMAND.
+// The per-option help cell for these flags says nothing (it is the same live
+// help text every command shows, e.g. "--target EMIT  Generation target …"),
+// so `optionsFromEntries` alone recorded all of them `inert: false`. This is
+// the SAME defect `INERT_PATTERNS` closes, one prose location over.
+
+/** Everything rich prints between the `Usage:` line and the first box — the
+ *  free-text paragraph(s) a command's own description occupies. Lines are
+ *  trimmed and rejoined with a single space, same as a wrapped option cell's
+ *  continuation (`parseBoxEntries`) — including at a hard line-break inside
+ *  an unbroken `` `--a`/`--b`/… `` list, where rich has nowhere better to
+ *  wrap and the join reinserts a space the source text never had. That stray
+ *  space is why `DESCRIPTION_INERT_CLAUSE`'s flag list tolerates whitespace
+ *  around `/`: correctness of flag DETECTION does not depend on reproducing
+ *  rich's exact wrap byte-for-byte, only `marker`'s cosmetics do. */
+export function parseDescription(helpText) {
+  const lines = helpText.split("\n");
+  const usageIndex = lines.findIndex((line) => /^\s*Usage:\s+tan\b/.test(line));
+  if (usageIndex === -1) return "";
+  let boxIndex = lines.length;
+  for (let i = usageIndex + 1; i < lines.length; i++) {
+    if (BOX_TOP.test(lines[i])) {
+      boxIndex = i;
+      break;
+    }
+  }
+  return lines
+    .slice(usageIndex + 1, boxIndex)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** One backtick-quoted long flag, e.g. `` `--no-color` ``. */
+const DESCRIPTION_FLAG = "`--[a-z0-9-]+`";
+
+/** A run of one or more `DESCRIPTION_FLAG`s slash-joined with NO other text
+ *  between them — `` `--a`/`--b`/`--c` ``. Whitespace is tolerated around
+ *  each `/` for the wrap reason `parseDescription` documents; it is not
+ *  tolerated ANYWHERE ELSE, so a flag named earlier in the same sentence for
+ *  an unrelated reason (`diff`'s own paragraph names `--sdk-root` as LIVE,
+ *  three clauses after the inert list) cannot be swept in — only a flag
+ *  directly adjacent, via `/`, to the flag immediately before the verb. */
+const DESCRIPTION_FLAG_LIST = `(?:${DESCRIPTION_FLAG}\\s*/\\s*)*${DESCRIPTION_FLAG}`;
+
+/** The description-level wordings tan uses for "this flag is accepted here
+ *  and does nothing here" — three so far, none citing an issue number (`ref`
+ *  is always null for a match of this pattern; that is a fact about this pin,
+ *  not a design choice, and a future wording that does cite one should carry
+ *  it the same way `INERT_PATTERNS` does).
+ *
+ *  Anchored on `is`/`are` immediately after the flag list, exactly like
+ *  `classifyInert` anchors on the marker's own clause: the tail is what makes
+ *  a match, not proximity, so prose that merely MENTIONS a flag near one of
+ *  these phrases (there is none observed, but nothing rules it out) cannot
+ *  false-positive.
+ *
+ *  THIS PATTERN ALONE CANNOT TELL ABSOLUTE FROM CONDITIONAL, and that gap is
+ *  real, not hypothetical: `run --flash` at this pin reads "`--flash` is
+ *  accepted and ignored for a native_sim/host target" and `renode
+ *  --sim-mode` reads "...; --expect is ignored" — conditional on the REST OF
+ *  THE ARGV, exactly the shape the header comment on `INERT_PATTERNS` (the
+ *  per-option sibling of this pattern) already refuses to call universally
+ *  dead. A bare match of this regex against either sentence WOULD mark
+ *  `--flash`/`--expect` inert unconditionally, which is false — `run --flash`
+ *  is a flag this extension actually spawns. `isHedged` below is the guard;
+ *  it is applied in `classifyDescriptionInert`, not baked into this regex,
+ *  because the regex's job is finding the CANDIDATE clause and the guard's is
+ *  deciding whether that candidate is unconditional. */
+const DESCRIPTION_INERT_CLAUSE = new RegExp(
+  `(${DESCRIPTION_FLAG_LIST})\\s+(?:is|are)\\s+` +
+    "(declared, not consumed" +
+    "|accepted and ignored" +
+    "|`global = true` clap options `[a-z0-9_]+\\.rs` never reads)",
+  "g",
+);
+
+/** A sentence-ish boundary: `;`, `:`, or a `.` NOT between two digits — so
+ *  "0.6.0" inside a clause does not masquerade as three sentences. Used to
+ *  bound the clause `isHedged` inspects on each side of a candidate match,
+ *  so a hedge word two SENTENCES away (an unrelated `for`/`when` elsewhere in
+ *  a long paragraph) cannot condemn a genuinely unconditional claim. */
+const CLAUSE_BOUNDARY = /[;:]|\.(?!\d)/g;
+
+/** A qualifier immediately AFTER the matched clause, before its own sentence
+ *  ends, that turns "is accepted and ignored" from absolute into conditional:
+ *  "...for a native_sim/host target", "...when `--sim-mode` is given",
+ *  "...only when `--offline` is also passed". */
+const CONDITIONAL_TAIL = /\b(for|when|unless|only|except|provided|given|if)\b/i;
+
+/** A qualifier BEFORE the matched clause, in the same sentence, that makes it
+ *  a claim about a PAST or FUTURE pin rather than this one: "Until 0.5.0
+ *  `--verbose`/`--quiet` are accepted and ignored; since 0.6.0 both work." A
+ *  tail-only guard misses this shape — the sentence ends at the semicolon
+ *  right after "ignored", with nothing conditional AFTER the match at all;
+ *  the hedge is entirely in what precedes it. */
+const TEMPORAL_PREFIX =
+  /\b(until|before|previously|historically|used to|no longer)\b/i;
+
+/** Whether the `DESCRIPTION_INERT_CLAUSE` match at `[index, index + length)`
+ *  in `description` is CONDITIONAL or HISTORICAL rather than an absolute,
+ *  every-invocation claim — see the two regexes above for the shapes this
+ *  catches, both measured against a real upstream wording (`run --flash`,
+ *  `renode --sim-mode`) that this pattern would otherwise misread. Bounded to
+ *  the match's OWN clause on each side (`CLAUSE_BOUNDARY`) so a hedge word
+ *  belonging to a neighbouring sentence cannot reach in. */
+export function isHedged(description, index, length) {
+  const after = description.slice(index + length);
+  let afterBoundary = -1;
+  for (const boundary of after.matchAll(CLAUSE_BOUNDARY)) {
+    afterBoundary = boundary.index;
+    break;
+  }
+  const tailClause =
+    afterBoundary === -1 ? after : after.slice(0, afterBoundary);
+  if (CONDITIONAL_TAIL.test(tailClause)) return true;
+
+  // Bounded to 80 chars back rather than to the previous CLAUSE_BOUNDARY
+  // unconditionally: a paragraph's OPENING sentence has no boundary before
+  // it at all, and slicing from 0 every time is cheap and always safe.
+  const before = description.slice(Math.max(0, index - 80), index);
+  let lastBoundary = -1;
+  for (const boundary of before.matchAll(CLAUSE_BOUNDARY)) {
+    lastBoundary = boundary.index;
+  }
+  const precedingClause =
+    lastBoundary === -1 ? before : before.slice(lastBoundary + 1);
+  return TEMPORAL_PREFIX.test(precedingClause);
+}
+
+/** `trace`'s own paragraph names `--all` explicitly, then disposes of the
+ *  rest of the global surface it does not read in one sentence that names no
+ *  flag at all: "The other hidden flags are `global = true` clap options
+ *  `trace.rs` never reads." This is still a verbatim, per-command claim —
+ *  just one whose object is "whatever `globalOptions` this command has not
+ *  already accounted for" rather than a named list. `applyDescriptionInert`
+ *  resolves that against `globalOptions` for the one command whose own help
+ *  says it, never as a default for a command that says nothing (`new-som`
+ *  has no sentence in this shape, or any other — see the fetcher's own
+ *  report for what that means for its still-unrecorded global flags). */
+const DESCRIPTION_RESIDUAL_HIDDEN =
+  /The other hidden flags are (`global = true` clap options `[a-z0-9_]+\.rs` never reads)/;
+
+/**
+ * `description` → `{ named, residual }`.
+ *
+ * `named` maps a flag spelled out in an inert clause to `{ ref, marker }` —
+ * skipping any clause `isHedged` calls conditional or historical, so a
+ * hedged flag falls through to whatever the OPTIONS BOX already says about
+ * it (live, unless a per-option `INERT_PATTERNS` marker says otherwise),
+ * never to a guessed absolute inertness this pattern cannot support.
+ * `residual` is `{ marker }` when the command's own description carries the
+ * "other hidden flags" sentence, else `null` — never guessed from another
+ * command's wording.
+ */
+export function classifyDescriptionInert(description) {
+  const named = new Map();
+  for (const match of description.matchAll(DESCRIPTION_INERT_CLAUSE)) {
+    if (isHedged(description, match.index, match[0].length)) continue;
+    const marker = match[0].trim();
+    for (const flagMatch of match[1].matchAll(/`(--[a-z0-9-]+)`/g)) {
+      named.set(flagMatch[1], { ref: null, marker });
+    }
+  }
+  const residualMatch = DESCRIPTION_RESIDUAL_HIDDEN.exec(description);
+  const residual = residualMatch ? { marker: residualMatch[0].trim() } : null;
+  return { named, residual };
+}
 
 // ---------------------------------------------------------------- binary I/O
 
@@ -599,6 +777,103 @@ function walkCommand(binary, path, commands, depth, rawHelp) {
   }
 }
 
+/** The shape (`metavar`/`valueOptional`) a global flag was captured with on
+ *  WHATEVER command's own Options box declares it explicitly — `diff` and
+ *  `pinmux` alone restate all ten, so this always resolves for a real global
+ *  flag. Never invented: a flag no command's box ever shows falls back to the
+ *  boolean shape (`metavar: null`), which is what every flag in this file
+ *  that takes no value already looks like. */
+function globalShapeOf(commands, flag) {
+  for (const command of Object.values(commands)) {
+    const option = command.options[flag];
+    if (option)
+      return { metavar: option.metavar, valueOptional: option.valueOptional };
+  }
+  return { metavar: null, valueOptional: false };
+}
+
+/** (#602) Fold each command's own DESCRIPTION-level inert claims into its
+ *  `options` — reclassifying a flag the Options box already lists (`diff`,
+ *  `pinmux`: all ten global flags are restated there, live per the box,
+ *  inert per the paragraph above it) and ADDING one the box never lists at
+ *  all (`inspect`, `support-bundle`, `trace`: the box omits exactly the
+ *  flags the paragraph says are ignored).
+ *
+ *  `faultdecode` carries BOTH shapes on the SAME two flags: its own
+ *  per-option help cells already say `--project`/`--sdk-root` are unused
+ *  ("(unused: faultdecode is HW-free)" / "(unused; see below)"), which
+ *  `optionsFromEntries` + `INERT_PATTERNS` already classified inert with
+ *  THAT wording as `marker`. The description paragraph repeats the same
+ *  fact about those two flags in coarser, command-wide prose. The per-option
+ *  wording is strictly more specific — it is about ONE flag, not nine — so an
+ *  already-inert entry is left alone here; the description pass only ever
+ *  RAISES `inert: false` to `true`, never replaces one true classification
+ *  with a blunter one.
+ *
+ *  Deliberately NOT a blanket "every command accepts every `globalOptions`
+ *  flag, so mark whatever is missing inert" rule. `new-som` is missing eight
+ *  of the same global flags and its help — box AND paragraph — says nothing
+ *  about any of them; nothing here adds an entry for those eight, because
+ *  nothing in tan's own text supports classifying them either way. Recording
+ *  a guessed `inert: true` would trade the false-live defect this closes for
+ *  a false-inert one with the same cause: a claim `test/tan.surfaceContract
+ *  .test.js`'s own gate ("an inert option with neither `ref` nor `marker` is
+ *  a defect in the fetcher's classifier, not in the CLI") already refuses to
+ *  accept without a marker.
+ *
+ *  `new-som` IS NOT THE ONLY COMMAND LEFT WITH THIS GAP, and naming only it
+ *  understates the remainder by an order of magnitude. Measured against the
+ *  pinned binary (every accepted flag probed with `tan <cmd> <flag> --help`,
+ *  0 rejections): 147 accepted `(command, global-flag)` pairs across 23
+ *  commands are STILL entirely absent from this snapshot after this fix —
+ *  `monitor` (10), `sdk` (8), `new-som` (8), and `bootstrap`/`completion`/
+ *  `flash`/`image`/`lock`/`model`/`quality`/`run`/`validate` (7 each) among
+ *  them, plus a smaller remainder on `clean`/`debug-config`/`doctor`/
+ *  `examples`/`explain`/`generate`/`init`/`kconfig`/`migrate`/`presets`/
+ *  `size`. This fetcher is LESS WRONG than it was, not complete:
+ *  `applyDescriptionInert` only recovers a flag when tan's OWN help text says
+ *  something about it, and most commands' help says nothing about their
+ *  global flags at all — the six this pass fixes are the exception, not the
+ *  rule. `test/tan.surfaceContract.test.js:470-478`'s inert assertion reads
+ *  `options[flag]` and silently `continue`s past a missing key, so all 147
+ *  remaining pairs are structurally invisible to it: an upstream rewording
+ *  of any of those 23 commands' help that made a currently-missing flag
+ *  conditionally inert (the `isHedged` shape above) would go unnoticed the
+ *  same way the original 36 did. */
+function applyDescriptionInert(commands, rawHelp, globalOptions) {
+  for (const [key, helpText] of rawHelp) {
+    const command = commands[key];
+    if (!command) continue;
+    const { named, residual } = classifyDescriptionInert(
+      parseDescription(helpText),
+    );
+    for (const [flag, { ref, marker }] of named) {
+      const existing = command.options[flag];
+      if (existing?.inert === true) continue;
+      const shape = existing ?? globalShapeOf(commands, flag);
+      command.options[flag] = {
+        inert: true,
+        ref,
+        marker,
+        metavar: shape.metavar,
+        valueOptional: shape.valueOptional,
+      };
+    }
+    if (!residual) continue;
+    for (const flag of globalOptions) {
+      if (flag in command.options) continue;
+      const shape = globalShapeOf(commands, flag);
+      command.options[flag] = {
+        inert: true,
+        ref: null,
+        marker: residual.marker,
+        metavar: shape.metavar,
+        valueOptional: shape.valueOptional,
+      };
+    }
+  }
+}
+
 function sortedByKey(record) {
   return Object.fromEntries(
     Object.keys(record)
@@ -696,12 +971,31 @@ export function buildSnapshot(binary, capturedAt) {
       `"tan completion --shell bash" exited ${completion.status}`,
     );
   }
+  const globalOptions = parseGlobalOptions(completion.stdout);
+
   const commands = {};
   const rawHelp = new Map();
   for (const name of parseCommandNames(rootHelp)) {
     walkCommand(binary, [name], commands, 1, rawHelp);
   }
+
+  applyDescriptionInert(commands, rawHelp, globalOptions);
+
   for (const key of Object.keys(commands)) {
+    // (#602) A command with zero captured options is indistinguishable from
+    // "this command genuinely has no options" UNLESS something checks —
+    // every real tan command has at least `--help`, so an empty result here
+    // means a box the parser should have read produced nothing, silently.
+    // Refusing to write that snapshot is cheaper than shipping a green gate
+    // over a command nobody can prove was read at all.
+    if (Object.keys(commands[key].options).length === 0) {
+      throw new Error(
+        `tan ${key} --help parsed to ZERO options. Every real tan command ` +
+          "has at least --help, so this is a parser failure, not an empty " +
+          "surface — refusing to write a snapshot that cannot be told apart " +
+          "from a command with no options at all.",
+      );
+    }
     commands[key] = {
       ...commands[key],
       options: sortedByKey(commands[key].options),
@@ -715,7 +1009,7 @@ export function buildSnapshot(binary, capturedAt) {
     // the inputs to itself. Declared here to fix its position in the written
     // JSON, next to the digest it is routinely confused with.
     contentDigest: null,
-    globalOptions: parseGlobalOptions(completion.stdout),
+    globalOptions,
     commands: sortedByKey(commands),
   };
   return { ...snapshot, contentDigest: contentDigestOf(snapshot) };
