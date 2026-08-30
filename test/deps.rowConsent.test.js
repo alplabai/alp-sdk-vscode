@@ -133,38 +133,46 @@ test("runRowAction captures the dispatch result and hands it to reportRowStepFai
   );
 });
 
-test("reportRowStepFailure delegates the WORDING to rowStepFailureNotice, not a hand-rolled decision here", () => {
-  // #603, second review, blocker 2: the wording decision (which step failed,
-  // what to say about it) used to live inline in this method, behind a
-  // source-level regex that a same-shape `find` mutation (`!== 0` -> `=== 0`)
-  // could survive untouched. It now lives in `rowStepFailureNotice`
-  // (vscodeAdapter.ts), pure and value-tested in
-  // `test/deps.fixAll.test.js` — this file only pins that the METHOD hands
-  // off to it rather than re-deriving anything.
+test("reportRowStepFailure delegates the WHOLE decision to rowStepFailureNotice — no severity/dedupeKey left to set here", () => {
+  // #603, second review, blocker 2, and third review, major 3: the wording
+  // decision (which step failed, what to say about it) used to live inline
+  // in this method, behind a source-level regex that a same-shape `find`
+  // mutation (`!== 0` -> `=== 0`) could survive untouched. Then `severity`
+  // and `dedupeKey` were STILL set here after the wording moved, and THOSE
+  // were left ungated — mutating them to `"info"` / a shared constant also
+  // passed every gate. `rowStepFailureNotice` (vscodeAdapter.ts) now returns
+  // the FINISHED `NotificationPlan`, value-tested in
+  // `test/deps.fixAll.test.js` — this file only pins that the method hands
+  // the plan straight to `notifyAsync` rather than re-deriving or
+  // re-building any part of it.
   const body = reportRowStepFailureBody();
+  // Whitespace-normalized: prettier is free to wrap a long call across
+  // lines, and this check is about the ARGUMENTS, not the line breaks.
+  const flat = body.replace(/\s+/g, " ");
 
   assert.match(
-    body,
-    /rowStepFailureNotice\(row\.name, row\.action\.commands, steps\)/,
+    flat,
+    /rowStepFailureNotice\( ?row\.label, row\.name, row\.action\.commands, steps,? ?\)/,
     "the decision must come from the pure, value-tested function",
   );
-  assert.match(body, /notifyAsync\(/);
-  assert.match(body, /planFailure\(/);
-  assert.match(
+  assert.match(body, /notifyAsync\(plan\)/);
+  assert.doesNotMatch(
     body,
-    /cause: notice\.cause/,
-    "the notice's own cause must reach the customer verbatim",
+    /planFailure\(/,
+    "planFailure must be called INSIDE rowStepFailureNotice, not re-called " +
+      "here — a second call site is a second place severity/dedupeKey could " +
+      "be set and drift",
   );
 });
 
-test("reportRowStepFailure says nothing when the notice is null, and guards a non-command action", () => {
+test("reportRowStepFailure says nothing when the plan is null, and guards a non-command action", () => {
   const body = reportRowStepFailureBody();
 
   // `rowStepFailureNotice` already decides "nothing to say" (nothing ran,
   // everything ran and succeeded, or stopped short with nothing erroring) —
   // this method must not re-implement any of those cases, only react to the
   // `null` result.
-  assert.match(body, /if \(!notice\) return;/);
+  assert.match(body, /if \(!plan\) return;/);
   // A `fix`/`bootstrap` row's action has no `commands` at all — narrowed
   // before ever reaching the notice function, not cast past it.
   assert.match(body, /row\.action\?\.kind !== "command"/);

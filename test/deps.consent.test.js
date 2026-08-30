@@ -259,7 +259,10 @@ test("needsElevation is ANY-of over a multi-step row's lines (#603)", () => {
   assert.equal(item.needsElevation, true);
 });
 
-test("the item carries the action's own effect and title, unchanged", () => {
+test("the item carries the action's own effect, unchanged", () => {
+  // `ConsentItem.title` was deleted in the same diff that stopped reading it
+  // (#603, third review, minor 8 — no-legacy-compat: it had zero readers
+  // repo-wide once `consentPick` moved to `item.omittedTools`).
   const [item] = planInstallConsent(
     [
       row({
@@ -277,8 +280,9 @@ test("the item carries the action's own effect and title, unchanged", () => {
 
   assert.equal(item.effect, "bootstrap");
   assert.equal(
-    item.title,
-    "run tan bootstrap (venv + west + Zephyr Python deps)",
+    Object.prototype.hasOwnProperty.call(item, "title"),
+    false,
+    "ConsentItem must not carry a dead title field",
   );
 });
 

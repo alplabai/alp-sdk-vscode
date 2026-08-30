@@ -26,8 +26,25 @@
   on the machine when it did. A tool tan names with `command: null` still
   contributes nothing to the button — that is tan's real answer, not a gap to
   fill — and a row mixing null and non-null commands offers a button over the
-  non-null subset, with the tooltip and consent screen saying the row can
-  stay failing until the rest is handled another way.
+  non-null subset: the tooltip explains the row can stay failing until the
+  rest is handled another way, and the consent screen names the omitted
+  tool(s) in its own short clause (`· tan reported no install command for
+  ninja`).
+- **Fix-all and single-row failures now reach the customer, not a bare
+  "\<operation\> failed."** `notify/service.ts`'s leak filter demotes any
+  message matching an exit-code shape (`` `cmd` exited 1 ``) out of the
+  customer-visible toast and into the channel-only log — which every
+  multi-step failure sentence matched, so a real failure told the customer
+  strictly less than a row that merely raced away mid-sequence (worded
+  without "exited", so it reached the toast intact). Reworded to "did not
+  succeed (code N)", which carries the same information without tripping the
+  filter. A Fix-all row cancelled or raced away mid-sequence, with a step
+  already completed, is no longer reported as a plain, auto-dismissing
+  status-bar "success" — a half-modified machine now surfaces as a
+  persistent warning toast, same as an outright failure. The orphan-rename
+  log line is now keyed per tool rather than a single one-shot flag, so a
+  second, unrelated orphan is still reported after the first one already
+  fired once.
 
 ## 0.5.2
 

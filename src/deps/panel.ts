@@ -26,13 +26,11 @@ import {
   buildDependencyReport,
   type CommandStepOutcome,
   confirmDependencyInstalls,
-  describeFixAllFailure,
-  describeFixAllSkip,
+  fixAllSummaryNotice,
   fixAllTargets,
   rowStepFailureNotice,
   runDependencyAction,
   runFixAll,
-  withFixAllPartialNote,
   withLatestSdk,
 } from "./vscodeAdapter";
 
@@ -360,19 +358,20 @@ export class DependencyPanel {
     steps: readonly CommandStepOutcome[],
   ): void {
     if (row.action?.kind !== "command") return;
-    // The wording DECISION lives in `rowStepFailureNotice` (vscodeAdapter.ts),
-    // pure and value-tested — this method is only the wiring from that
-    // decision to the actual notification (#603, second review, blocker 2).
-    const notice = rowStepFailureNotice(row.name, row.action.commands, steps);
-    if (!notice) return;
-    notifyAsync(
-      planFailure({
-        operation: `Installing ${row.label}`,
-        cause: notice.cause,
-        severity: notice.severity,
-        dedupeKey: notice.dedupeKey,
-      }),
+    // The WHOLE decision — wording, severity, dedupeKey — lives in
+    // `rowStepFailureNotice` (vscodeAdapter.ts), which returns the finished
+    // `NotificationPlan` itself; this method only wires it to `notifyAsync`
+    // (#603, third review, major 3: leaving `severity`/`dedupeKey` for THIS
+    // wrapper to set left both ungated — mutating them to `"info"` and a
+    // shared constant passed every existing gate).
+    const plan = rowStepFailureNotice(
+      row.label,
+      row.name,
+      row.action.commands,
+      steps,
     );
+    if (!plan) return;
+    notifyAsync(plan);
   }
 
   /**
@@ -425,48 +424,20 @@ export class DependencyPanel {
       },
     );
 
-    // The table is the real report; this line is only what a table cannot say,
-    // which is what happened while it was not on screen.
-    const parts = [`${outcome.installed.length} installed`];
-    if (outcome.failed.length > 0) {
-      parts.push(
-        `${outcome.failed.length} failed (${outcome.failed
-          .map((entry) => describeFixAllFailure(entry))
-          .join(", ")})`,
-      );
-    }
-    if (outcome.skipped.length > 0) {
-      // Named, never a bare count: "3 skipped" with no reason is the silent
-      // truncation this whole panel exists to avoid.
-      parts.push(
-        `${outcome.skipped.length} not run (${outcome.skipped
-          .map((entry) => describeFixAllSkip(entry))
-          .join("; ")})`,
-      );
-    }
-    log(`[fix-all] ${parts.join(" | ")}`);
-    // The MESSAGE, not `detail`: a `planSuccess` with no `actions` renders on
-    // the status bar, which shows only its `message` string — `detail` is
-    // written to the "Alp SDK" channel and never reaches the customer at all
-    // (#603). A row cancelled or raced away mid-sequence already changed the
-    // machine for the steps it completed, and that fact has to be IN the
-    // sentence the customer reads, not filed away in `parts` alone.
+    // The WHOLE decision — kind, customer-visible message, channel-only
+    // detail — comes from `fixAllSummaryNotice`, pure and value-tested
+    // (#603, third review, blocker 2): this method only wires its result to
+    // the log line and the notification, so there is no second place that
+    // could re-derive `outcome.failed.length === 0` and disagree.
+    const summary = fixAllSummaryNotice(outcome, targets.length);
+    log(`[fix-all] ${summary.detail}`);
     notifyAsync(
-      outcome.failed.length === 0
-        ? planSuccess(
-            withFixAllPartialNote(
-              `Fix all: ${outcome.installed.length} of ${targets.length} installed.`,
-              outcome,
-            ),
-            { detail: parts.join(" · ") },
-          )
+      summary.kind === "success"
+        ? planSuccess(summary.message, { detail: summary.detail })
         : planFailure({
             operation: "Fix all",
-            cause: withFixAllPartialNote(
-              `${outcome.failed.length} of ${targets.length} did not install.`,
-              outcome,
-            ),
-            detail: parts.join(" · "),
+            cause: summary.message,
+            detail: summary.detail,
             severity: "warning",
             dedupeKey: "deps-fix-all",
           }),

@@ -746,19 +746,24 @@ test("an orphaned prerequisite is LOGGED, not only recorded on the report", asyn
   assert.match(hit, /hostPrerequisites/i);
 });
 
-test("the orphan line is logged ONCE per session, not once per refresh (#603 second review, minor 8)", async () => {
-  // `DependencyPanel.refresh()` re-derives on EVERY window focus, and a
-  // genuinely orphaned envelope stays orphaned across every one of those —
-  // the same one-shot shape as the panel's own `offeredBootstrap`.
-  const orphanData = {
+function orphanEnvelope(tools) {
+  return {
     checks: [{ name: "west", status: "pass", detail: "west 1.5.0" }],
     summary: { pass: 1, warn: 0, fail: 0 },
-    missingPrerequisites: [{ tool: "cmake", command: "brew install cmake" }],
+    missingPrerequisites: tools.map((tool) => ({
+      tool,
+      command: `install ${tool}`,
+    })),
   };
+}
+
+test("the SAME orphan is logged ONCE per session, not once per refresh (#603 second review, minor 8)", async () => {
+  // `DependencyPanel.refresh()` re-derives on EVERY window focus, and a
+  // genuinely orphaned envelope stays orphaned across every one of those.
   const lines = [];
   const { buildDependencyReport } = loadDepsAdapter({
     "../alpCli/doctor": {
-      runDoctor: async () => ({ data: orphanData, message: "" }),
+      runDoctor: async () => ({ data: orphanEnvelope(["cmake"]), message: "" }),
     },
     "../project/vscodeAdapter": {
       collectProjectContext: () => ({
@@ -787,6 +792,62 @@ test("the orphan line is logged ONCE per session, not once per refresh (#603 sec
     1,
     "the orphan warning must fire once for the session, not once per refresh",
   );
+});
+
+test("a DIFFERENT orphan arriving later is STILL logged — the latch must not over-silence (#603 third review, major 5)", async () => {
+  // Measured repro this test reproduces exactly: refresh 1 orphans cmake (1
+  // line), refresh 2 orphans a DIFFERENT tool, ninja, with cmake no longer
+  // orphaned (0 lines under the bug — a bare "logged once" boolean silences
+  // every orphan after the first, forever), refresh 3 orphans two more new
+  // tools, gperf and dtc (also 0 lines under the bug). The gate the prior
+  // round shipped replayed the SAME orphan three times, which is green
+  // under both this bug and the fix — this is the one that tells them apart.
+  const lines = [];
+  const envelopes = [
+    orphanEnvelope(["cmake"]),
+    orphanEnvelope(["ninja"]),
+    orphanEnvelope(["gperf", "dtc"]),
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: orphan=cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: NEW orphan=ninja
+  await buildDependencyReport({}, STATE, {}); // refresh 3: orphans=gperf,dtc
+
+  assert.equal(
+    lines.filter((l) => l.includes("cmake")).length,
+    1,
+    "refresh 1's orphan is reported",
+  );
+  assert.equal(
+    lines.filter((l) => l.includes("ninja")).length,
+    1,
+    "a NEW orphan on refresh 2 must still be reported, even though cmake " +
+      "already used up a bare one-shot latch",
+  );
+  assert.equal(
+    lines.filter((l) => l.includes("gperf")).length,
+    1,
+    "refresh 3's new orphans must be reported too",
+  );
+  assert.equal(lines.filter((l) => l.includes("dtc")).length, 1);
 });
 
 test("nothing is logged when every prerequisite bound to a row", async () => {

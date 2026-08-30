@@ -68,6 +68,7 @@ import {
   westWorkspaceTopdir,
 } from "../environment/vscodeAdapter";
 import { type AlpIdeState, BOOTSTRAP_RUN_NAME } from "../ideHub/messages";
+import type { NotificationPlan } from "../notify/models";
 import { planFailure, planPrecondition } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import {
@@ -733,16 +734,32 @@ export function orphanedPrerequisiteLogLines(
 }
 
 /**
- * Once per extension-host session, not once per refresh (#603, second
- * review, minor 8) — the same one-shot shape `DependencyPanel`'s own
- * `offeredBootstrap` uses. `refresh()` re-derives on EVERY window focus
+ * Tool names already reported as orphaned THIS extension-host process
+ * (#603, second review, minor 8; third review, major 5 + minor 7).
+ *
+ * PER-PROCESS, module-level state — survives dispose/re-open of the
+ * Dependencies panel, unlike `DependencyPanel`'s own `offeredBootstrap`
+ * (`deps/panel.ts`), which is an INSTANCE field reset every time the panel
+ * is re-created. The two are NOT the same lifetime, and an earlier version
+ * of this comment said they were; corrected here rather than repeated.
+ * `refresh()` re-derives on EVERY window focus
  * (`src/extension.ts`'s `onDidChangeWindowState`), and a genuinely orphaned
  * envelope stays orphaned across every one of those — an unthrottled
  * warn-level 60-word paragraph on every alt-tab back into the editor trains
  * a reader to skim past the "Alp SDK" channel, which loses the invariant as
  * surely as no line at all would.
+ *
+ * KEYED BY TOOL, not a single process-wide flag: a bare boolean silences
+ * every orphan AFTER the first, forever, which is the exact failure the
+ * field this latch guards exists to catch — a SECOND, unrelated
+ * `hostPrerequisites` rename (or a different tool going orphaned) would
+ * never log at all once one orphan had already been reported once. Adding a
+ * tool here is permanent for the process (matching `offeredBootstrap`'s own
+ * "ask at most once" intent) — it does not re-arm if that tool's row later
+ * resolves and re-breaks, which is the one case this repo has decided not
+ * to chase, per the reviewer's own fix instruction.
  */
-let orphanedPrerequisitesLogged = false;
+const orphanedPrerequisitesReported = new Set<string>();
 
 // The shared `runDoctor` spawn (`../alpCli/doctor`, #376) takes `interactive`
 // as its last argument:
@@ -864,14 +881,18 @@ export async function buildDependencyReport(
   // this line `orphanedPrerequisites` is written and read by nothing outside
   // the type itself — the next `hostPrerequisites` rename would be exactly as
   // silent to a customer as the bug this report exists to catch.
-  if (
-    planned.orphanedPrerequisites.length > 0 &&
-    !orphanedPrerequisitesLogged
-  ) {
-    orphanedPrerequisitesLogged = true;
-    for (const line of orphanedPrerequisiteLogLines(
-      planned.orphanedPrerequisites,
-    )) {
+  //
+  // Keyed by TOOL (#603, third review, major 5): logging only the tools not
+  // already in `orphanedPrerequisitesReported` means a SECOND, different
+  // orphan arriving after the first is still reported — a bare "logged
+  // once" flag would silence every orphan after the first for the rest of
+  // the process, which is the exact failure this field exists to catch.
+  const newOrphans = planned.orphanedPrerequisites.filter(
+    (p) => !orphanedPrerequisitesReported.has(p.tool),
+  );
+  if (newOrphans.length > 0) {
+    for (const p of newOrphans) orphanedPrerequisitesReported.add(p.tool);
+    for (const line of orphanedPrerequisiteLogLines(newOrphans)) {
       log(line, "warn");
     }
   }
@@ -1180,29 +1201,139 @@ export function withFixAllPartialNote(
 /**
  * One `failed` entry, worded for the summary toast (`deps/panel.ts`).
  *
- * A `fix`/`bootstrap` row (no `failedCommand`) keeps the ORIGINAL wording —
- * `"<name> exit <code>"` — unchanged, so this is additive rather than a
- * rewrite of an existing, already-correct sentence. A multi-step `command` row
- * says what actually happened on the machine: what installed, what failed
- * with which code, and that nothing after it ran (#603 design item 6).
+ * A multi-step `command` row says what actually happened on the machine:
+ * what installed, what did not succeed with which code, and that nothing
+ * after it ran (#603 design item 6).
+ *
+ * NEVER THE WORD "exit"/"exited" (#603, third review, blocker 1). This
+ * string reaches `planFailure`'s `cause` (via `rowStepFailureNotice`), and
+ * `src/notify/service.ts`'s `looksRaw` demotes any `cause` matching
+ * `EXIT_CODE` (`/\bexit(?:ed)?.../i`) into channel-only `detail`, replacing
+ * the customer-visible message with a bare `"<operation> failed."`. The
+ * former wording (`` `cmd` exited 1 ``) tripped that filter every time,
+ * so the FULL sentence — which tool installed, which command didn't, that
+ * nothing ran after it — never reached the toast a customer actually reads.
+ * "did not succeed (code N)" carries the same information without the
+ * trigger word. Reworded HERE rather than only at the `cause` call site so
+ * every consumer — this row wording and the Fix-all `detail`/log text this
+ * same function feeds — says the same true thing the same way.
  */
 export function describeFixAllFailure(
   entry: FixAllOutcome["failed"][number],
 ): string {
   if (entry.failedCommand === undefined) {
-    return `${entry.name} exit ${entry.code ?? "unknown"}`;
+    return `${entry.name} did not succeed (code ${entry.code ?? "unknown"})`;
   }
   const parts: string[] = [];
   if (entry.completed.length > 0) {
     parts.push(`installed ${entry.completed.join(", ")}`);
   }
-  parts.push(`\`${entry.failedCommand}\` exited ${entry.code ?? "unknown"}`);
+  parts.push(
+    `\`${entry.failedCommand}\` did not succeed (code ${entry.code ?? "unknown"})`,
+  );
   parts.push(
     entry.notRun.length > 0
       ? `nothing after it ran (${entry.notRun.join(", ")} skipped)`
       : "nothing after it ran",
   );
   return `${entry.name}: ${parts.join("; ")}`;
+}
+
+/** What `deps/panel.ts`'s `runFixAll` tells the customer after a run
+ *  finishes — one, whole decision, so nothing is left for the caller to
+ *  build by hand. */
+export interface FixAllSummaryNotice {
+  /**
+   * Which `notify/service.ts` planner the caller must use, and how urgently:
+   * `"success"` -> `planSuccess` (status bar, auto-dismissing — nothing on
+   * the machine needs a second look). `"partial"` and `"failure"` ->
+   * `planFailure` with `severity: "warning"` (a persistent toast).
+   *
+   * `"partial"` is `outcome.failed.length === 0` — nothing technically
+   * FAILED — but some row was cancelled or raced away mid-sequence with a
+   * completed step already on the machine (#603, third review, major 6): a
+   * half-modified machine is not a success, and `planSuccess`'s
+   * status-bar-with-no-`actions` channel is a 5-second, auto-dismissing,
+   * button-less line with no "Show Output" backstop — the WRONG channel for
+   * a fact the customer needs to still be readable a minute later.
+   *
+   * Never derived twice: the caller reads this instead of re-checking
+   * `outcome.failed.length` itself, which is what let round 2's blocker 1
+   * and this file's blocker 2 both happen — the DECISION and the WIRING
+   * drifted apart because two places computed it.
+   */
+  kind: "success" | "partial" | "failure";
+  /** The CUSTOMER-VISIBLE half — `planSuccess`'s `message` or `planFailure`'s
+   *  `cause`, the two fields `notify/service.ts` actually renders to the
+   *  customer. Already run through `withFixAllPartialNote`, so a row
+   *  cancelled or raced away mid-sequence has what it already installed
+   *  IN this string, not only in `detail` (#603, second review, blocker 1). */
+  message: string;
+  /** The CHANNEL-ONLY half — every row's own `describeFixAllFailure` /
+   *  `describeFixAllSkip` line, verbatim. Never the customer's only copy of
+   *  anything that must reach them — see `message` above. */
+  detail: string;
+}
+
+/**
+ * Build the WHOLE Fix-all summary notice from a real `FixAllOutcome` — the
+ * decision `deps/panel.ts`'s `runFixAll` method used to make inline, behind
+ * nothing but a source-level regex on the call site (#603, third review,
+ * blocker 2: that regex proved the CALL was typed, never that the VALUE
+ * flowing through it was real — mutating the call to pass a literal
+ * `{ skipped: [] }` instead of the actual `outcome` left every existing gate
+ * green). PURE and exported so a test can drive a REAL outcome (from the
+ * real `runFixAll` dispatch loop, `test/deps.fixAll.test.js`'s own harness)
+ * through this function and assert on the customer-visible `message` it
+ * returns, rather than asserting that a call site merely exists.
+ */
+export function fixAllSummaryNotice(
+  outcome: FixAllOutcome,
+  targetCount: number,
+): FixAllSummaryNotice {
+  const parts = [`${outcome.installed.length} installed`];
+  if (outcome.failed.length > 0) {
+    parts.push(
+      `${outcome.failed.length} failed (${outcome.failed
+        .map((entry) => describeFixAllFailure(entry))
+        .join(", ")})`,
+    );
+  }
+  if (outcome.skipped.length > 0) {
+    // Named, never a bare count: "3 skipped" with no reason is the silent
+    // truncation this whole panel exists to avoid.
+    parts.push(
+      `${outcome.skipped.length} not run (${outcome.skipped
+        .map((entry) => describeFixAllSkip(entry))
+        .join("; ")})`,
+    );
+  }
+  const detail = parts.join(" · ");
+  if (outcome.failed.length > 0) {
+    return {
+      kind: "failure",
+      message: withFixAllPartialNote(
+        `${outcome.failed.length} of ${targetCount} did not install.`,
+        outcome,
+      ),
+      detail,
+    };
+  }
+  const message = withFixAllPartialNote(
+    `Fix all: ${outcome.installed.length} of ${targetCount} installed.`,
+    outcome,
+  );
+  // A skip that already installed something (cancelled/raced mid-row) makes
+  // this a HALF-modified machine, never a clean success — see `kind`'s own
+  // doc for why that must not go out on the status bar.
+  const hasPartialCompletion = outcome.skipped.some(
+    (entry) => (entry.completed?.length ?? 0) > 0,
+  );
+  return {
+    kind: hasPartialCompletion ? "partial" : "success",
+    message,
+    detail,
+  };
 }
 
 /**
@@ -1231,14 +1362,30 @@ export function describeFixAllFailure(
  * catches it, while a value-based test over THIS function's return catches it
  * directly.
  *
+ * Returns the WHOLE `NotificationPlan` — `planFailure` is called IN HERE,
+ * not by the caller — so `severity` and `dedupeKey` are decided in the one
+ * place this file already value-tests, rather than left for
+ * `deps/panel.ts`'s wrapper to set (and possibly get wrong: #603, third
+ * review, major 3 measured that mutating the wrapper's `severity` to
+ * `"info"` and its `dedupeKey` to a shared constant left every existing gate
+ * green, since neither field was pinned anywhere).
+ *
  * The failure branch reuses `describeFixAllFailure`'s wording — a row button
- * and a Fix-all report the SAME failure the SAME way.
+ * and a Fix-all report the SAME failure the SAME way. That function no
+ * longer says "exit"/"exited" (#603, third review, blocker 1) — this
+ * `cause` is rendered through `planFailure`, whose `looksRaw` demotes any
+ * `EXIT_CODE`-shaped `cause` into channel-only `detail` and replaces the
+ * customer's message with a bare "<operation> failed.". Before that fix the
+ * SKIP branch above (never "exited"/"failed") reached the toast in full
+ * while the FAILURE branch below did not — the more severe outcome carried
+ * strictly less information, backwards from what either branch intends.
  */
 export function rowStepFailureNotice(
+  rowLabel: string,
   rowName: string,
   commands: readonly DependencyCommandStep[],
   steps: readonly CommandStepOutcome[],
-): { cause: string; dedupeKey: string; severity: "warning" } | null {
+): NotificationPlan | null {
   if (steps.length === 0) return null;
   if (
     steps.length === commands.length &&
@@ -1250,20 +1397,28 @@ export function rowStepFailureNotice(
   if (!failedStep) {
     // Stopped short, but nothing returned a non-zero code — a run-name race
     // mid-row, not a failed command. Say what completed and what never ran,
-    // never "exited"/"failed".
+    // never "exited"/"failed". "wait for it to finish" (#603, third review,
+    // nit 11), not "try again": the cause named IS another install already
+    // holding the run name, and retrying immediately is refused again.
     const completed = steps.map((step) => step.tool);
     const notRun = commands.slice(steps.length).map((step) => step.tool);
-    return {
+    return planFailure({
+      operation: `Installing ${rowLabel}`,
       cause:
-        `${rowName}: installed ${completed.join(", ")}; ` +
-        `${notRun.join(", ")} was not attempted — press Refresh, then try again`,
-      dedupeKey: `deps-row-skipped-${rowName}`,
+        `${rowLabel}: installed ${completed.join(", ")}; ` +
+        `${notRun.join(", ")} was not attempted — wait for the other ` +
+        "install to finish, then try again",
       severity: "warning",
-    };
+      dedupeKey: `deps-row-skipped-${rowName}`,
+    });
   }
-  return {
+  return planFailure({
+    operation: `Installing ${rowLabel}`,
     cause: describeFixAllFailure({
-      name: rowName,
+      // The DISPLAY name (#603, third review, nit 12): `rowName` is tan's
+      // internal check id ("hostPrerequisites"), never shown to a customer
+      // elsewhere on this row — the label ("Bootstrap prerequisites") is.
+      name: rowLabel,
       code: failedStep.code,
       completed: steps
         .filter((step) => step.code === 0)
@@ -1271,9 +1426,9 @@ export function rowStepFailureNotice(
       failedCommand: failedStep.command,
       notRun: commands.slice(steps.length).map((step) => step.tool),
     }),
-    dedupeKey: `deps-row-failed-${rowName}`,
     severity: "warning",
-  };
+    dedupeKey: `deps-row-failed-${rowName}`,
+  });
 }
 
 /**

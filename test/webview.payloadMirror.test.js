@@ -121,6 +121,12 @@ const MODELS = [
   // ── dependency panel ──
   { mirror: "DependencyLatest", file: PLANNER_REL },
   { mirror: "DependencyCommandStep", file: PLANNER_REL },
+  // The two `DependencyAction` union members (#603, third review, major 4):
+  // named interfaces specifically so this walk reaches them — the union type
+  // itself is invisible to it, which is how `omittedTools` grew on both
+  // sides with nothing ever comparing them.
+  { mirror: "DependencyCommandAction", file: PLANNER_REL },
+  { mirror: "DependencyFixAction", file: PLANNER_REL },
   { mirror: "DependencyRow", file: PLANNER_REL },
   { mirror: "DependencyReport", file: PLANNER_REL },
 

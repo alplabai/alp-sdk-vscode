@@ -59,12 +59,10 @@ export interface ConsentItem {
   needsElevation: boolean;
   /** The action's own effect, unchanged — `install`, `open-docs`, `bootstrap`. */
   effect: DependencyActionEffect | null;
-  /** The action's own tooltip, unchanged. */
-  title: string | null;
   /**
    * Tool names tan named a NULL command for on this row — carried structurally
    * so the consent screen can say the omission as its own short clause rather
-   * than appending `title`'s whole prose sentence, which for a non-partial
+   * than appending the row's whole tooltip sentence, which for a non-partial
    * `command` row duplicated `source` under a second separator and, for a
    * `fix`/`open-docs`/`bootstrap` row, read as a second, competing claim about
    * what pressing the button does (#603, second review, minor 7). Always `[]`
@@ -155,7 +153,6 @@ export function planInstallConsent(
       // flag elevation even though its first line does not.
       needsElevation: source !== null && source.some(commandNeedsElevation),
       effect: row.action?.effect ?? null,
-      title: row.action?.title ?? null,
       // `?? []` is defensive, not decorative: `row` crosses a JS boundary at
       // every call site in this repo (the webview message pump, a hand-built
       // test fixture), so a caller one version behind this field's own

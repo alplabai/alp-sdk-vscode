@@ -25,6 +25,14 @@ const Module = require("node:module");
 
 const root = path.join(__dirname, "..");
 
+// The REAL notification planner — pure, no `vscode` — loaded directly rather
+// than stubbed, so a `cause` that `looksRaw` would demote is caught by
+// actually running the demotion logic (#603, third review, blocker 1: a
+// gate that only pattern-matches the raw `cause` string cannot tell "reads
+// fine" from "reads fine, AND ALSO gets replaced with a bare '... failed.'
+// before the customer ever sees it").
+const { planFailure } = require(path.join(root, "out", "notify", "service.js"));
+
 function loadWithStubs(relPath, stubs) {
   const modPath = require.resolve(path.join(root, "out", relPath));
   delete require.cache[modPath];
@@ -725,7 +733,7 @@ test("describeFixAllFailure: a multi-step row says what installed, what failed, 
       failedCommand: "brew install ninja",
       notRun: [],
     }),
-    "hostPrerequisites: installed cmake; `brew install ninja` exited 1; nothing after it ran",
+    "hostPrerequisites: installed cmake; `brew install ninja` did not succeed (code 1); nothing after it ran",
   );
 });
 
@@ -740,11 +748,37 @@ test("describeFixAllFailure: names the steps that never got a chance to run", ()
       failedCommand: "brew install cmake",
       notRun: ["ninja"],
     }),
-    "hostPrerequisites: `brew install cmake` exited 1; nothing after it ran (ninja skipped)",
+    "hostPrerequisites: `brew install cmake` did not succeed (code 1); nothing after it ran (ninja skipped)",
   );
 });
 
-test("describeFixAllFailure: a fix/bootstrap row keeps the original wording, unchanged", () => {
+test("describeFixAllFailure: NEVER the word exit/exited — that shape gets demoted out of the customer's toast (#603 third review, blocker 1)", () => {
+  // `src/notify/service.ts`'s `looksRaw` demotes any `planFailure` `cause`
+  // matching `EXIT_CODE` (`/\bexit(?:ed)?.../i`) into channel-only `detail`,
+  // replacing the customer-visible message with a bare "<operation> failed."
+  // The former wording (`` `cmd` exited 1 ``) tripped that on every failure.
+  const { describeFixAllFailure } = load();
+
+  const full = describeFixAllFailure({
+    name: "hostPrerequisites",
+    code: 1,
+    completed: ["cmake"],
+    failedCommand: "brew install ninja",
+    notRun: ["git"],
+  });
+  const bare = describeFixAllFailure({
+    name: "west",
+    code: 1,
+    completed: [],
+    failedCommand: undefined,
+    notRun: [],
+  });
+
+  assert.doesNotMatch(full, /\bexit(?:ed)?\b/i);
+  assert.doesNotMatch(bare, /\bexit(?:ed)?\b/i);
+});
+
+test("describeFixAllFailure: a fix/bootstrap row (no command string) still names the code", () => {
   const { describeFixAllFailure } = load();
 
   assert.equal(
@@ -755,7 +789,7 @@ test("describeFixAllFailure: a fix/bootstrap row keeps the original wording, unc
       failedCommand: undefined,
       notRun: [],
     }),
-    "west exit 1",
+    "west did not succeed (code 1)",
   );
   assert.equal(
     describeFixAllFailure({
@@ -765,7 +799,7 @@ test("describeFixAllFailure: a fix/bootstrap row keeps the original wording, unc
       failedCommand: undefined,
       notRun: [],
     }),
-    "west exit unknown",
+    "west did not succeed (code unknown)",
   );
 });
 
@@ -829,25 +863,35 @@ test("withFixAllPartialNote: multiple partially-completed rows are all named", (
 });
 
 // ---------------------------------------------------------------------------
-// `rowStepFailureNotice` — the single-row press's wording decision, pulled
-// out of `deps/panel.ts` so it is tested with VALUES (#603 second review,
-// blocker 2). The prior source-level regex on `reportRowStepFailure` matched
+// `rowStepFailureNotice` — the single-row press's WHOLE notification
+// decision, pulled out of `deps/panel.ts` so it is tested with VALUES (#603
+// second review, blocker 2, and third review, major 3). It now returns the
+// FINISHED `NotificationPlan` — `severity`/`dedupeKey` are decided here, not
+// left for the caller to set (and possibly get wrong: mutating the wrapper's
+// `severity` to `"info"` and its `dedupeKey` to a shared constant left every
+// prior gate green, since neither field was pinned anywhere). `.message` IS
+// the rendered, post-`planFailure` text, so asserting on it already proves
+// it survived the leak filter — no second `planFailure` call needed here.
+//
+// The prior source-level regex on `reportRowStepFailure` matched
 // `describeFixAllFailure(` / `notifyAsync(` / `planFailure(` and the two
 // early-return guards verbatim — every one of those tokens SURVIVES mutating
 // `find((step) => step.code !== 0)` to `=== 0`, which turns a single-failed-
-// step row completely silent and a partially-failed row into "exited 0" for
-// the command that actually succeeded. A value-based test over the return of
-// this function catches that directly.
+// step row completely silent and a partially-failed row into "did not
+// succeed" for the command that actually succeeded. A value-based test over
+// the return of this function catches that directly.
 // ---------------------------------------------------------------------------
 
 const COMMANDS = [
   { tool: "cmake", command: "brew install cmake" },
   { tool: "ninja", command: "brew install ninja" },
 ];
+const ROW_LABEL = "Bootstrap prerequisites";
+const ROW_NAME = "hostPrerequisites";
 
 test("rowStepFailureNotice: nothing ran at all -> null (the isRunActive refusal already said why)", () => {
   const { rowStepFailureNotice } = load();
-  assert.equal(rowStepFailureNotice("hostPrerequisites", COMMANDS, []), null);
+  assert.equal(rowStepFailureNotice(ROW_LABEL, ROW_NAME, COMMANDS, []), null);
 });
 
 test("rowStepFailureNotice: every step ran and succeeded -> null (the reload notice already covers it)", () => {
@@ -857,44 +901,65 @@ test("rowStepFailureNotice: every step ran and succeeded -> null (the reload not
     { tool: "ninja", command: "brew install ninja", code: 0 },
   ];
   assert.equal(
-    rowStepFailureNotice("hostPrerequisites", COMMANDS, steps),
+    rowStepFailureNotice(ROW_LABEL, ROW_NAME, COMMANDS, steps),
     null,
   );
 });
 
-test("rowStepFailureNotice: the ONLY step fails -> a notice, not silence", () => {
+test("rowStepFailureNotice: the ONLY step fails -> a notice, not silence, and its .message survives planFailure's leak filter", () => {
   // The exact defect blocker 2 named: under the `=== 0` mutation this comes
   // back `null` because `find` returns the SUCCEEDED entries and there are
   // none, so `failedStep` is `undefined` and the early return fires.
   const { rowStepFailureNotice } = load();
   const steps = [{ tool: "cmake", command: "brew install cmake", code: 1 }];
   const notice = rowStepFailureNotice(
-    "hostPrerequisites",
+    ROW_LABEL,
+    ROW_NAME,
     [COMMANDS[0]],
     steps,
   );
 
   assert.notEqual(notice, null);
-  assert.match(notice.cause, /brew install cmake.*exited 1/);
+  // #603, third review, blocker 1: a `cause` matching `EXIT_CODE` gets
+  // demoted by `planFailure` into channel-only `detail`, and the customer's
+  // message becomes a bare "<operation> failed." — `.message` here is the
+  // RENDERED field, so this assertion already proves the sentence survived,
+  // not just that the raw string looked right.
+  assert.match(
+    notice.message,
+    /brew install cmake.*did not succeed \(code 1\)/,
+  );
+  assert.notEqual(
+    notice.message,
+    "Installing Bootstrap prerequisites failed.",
+    'must not be demoted to "Installing Bootstrap prerequisites failed."',
+  );
+  assert.equal(notice.severity, "warning");
   assert.equal(notice.dedupeKey, "deps-row-failed-hostPrerequisites");
+  // The DISPLAY name, not the internal check id (#603, third review, nit 12).
+  assert.match(notice.message, /^Bootstrap prerequisites:/);
+  assert.doesNotMatch(notice.message, /^hostPrerequisites:/);
 });
 
-test("rowStepFailureNotice: step 1 installs, step 2 fails — names both, never 'exited 0' for the one that worked", () => {
+test("rowStepFailureNotice: step 1 installs, step 2 fails — names both, never 'did not succeed' for the one that worked", () => {
   const { rowStepFailureNotice } = load();
   const steps = [
     { tool: "cmake", command: "brew install cmake", code: 0 },
     { tool: "ninja", command: "brew install ninja", code: 1 },
   ];
-  const notice = rowStepFailureNotice("hostPrerequisites", COMMANDS, steps);
+  const notice = rowStepFailureNotice(ROW_LABEL, ROW_NAME, COMMANDS, steps);
 
   assert.notEqual(notice, null);
-  assert.match(notice.cause, /installed cmake/);
-  assert.match(notice.cause, /brew install ninja.*exited 1/);
+  assert.match(notice.message, /installed cmake/);
+  assert.match(
+    notice.message,
+    /brew install ninja.*did not succeed \(code 1\)/,
+  );
   // The defect's other half: under the `=== 0` mutation the succeeded
   // command (cmake) is what `find` returns, so the wrong command would be
-  // reported as the one that "exited" — cmake's own exit code is 0, and it
-  // must never be described as having exited anything.
-  assert.doesNotMatch(notice.cause, /brew install cmake.*exited/);
+  // reported as the one that failed — cmake's own exit code is 0, and it
+  // must never be described as not succeeding.
+  assert.doesNotMatch(notice.message, /brew install cmake.*did not succeed/);
 });
 
 test("rowStepFailureNotice: stopped short with nothing erroring -> a SKIP, worded as one, never as a failure (#603 second review, minor 9)", () => {
@@ -906,13 +971,19 @@ test("rowStepFailureNotice: stopped short with nothing erroring -> a SKIP, worde
   // into `describeFixAllFailure`'s failure wording.
   const { rowStepFailureNotice } = load();
   const steps = [{ tool: "cmake", command: "brew install cmake", code: 0 }];
-  const notice = rowStepFailureNotice("hostPrerequisites", COMMANDS, steps);
+  const notice = rowStepFailureNotice(ROW_LABEL, ROW_NAME, COMMANDS, steps);
 
   assert.notEqual(notice, null);
-  assert.match(notice.cause, /installed cmake/);
-  assert.match(notice.cause, /ninja was not attempted/);
+  assert.match(notice.message, /installed cmake/);
+  assert.match(notice.message, /ninja was not attempted/);
   // Never the failure vocabulary — nothing here actually exited non-zero.
-  assert.doesNotMatch(notice.cause, /exit/i);
-  assert.doesNotMatch(notice.cause, /fail/i);
+  assert.doesNotMatch(notice.message, /exit/i);
+  assert.doesNotMatch(notice.message, /fail/i);
+  // #603, third review, nit 11: the remedy is to WAIT for the other install,
+  // not to retry immediately — an immediate retry is refused again.
+  assert.doesNotMatch(notice.message, /press Refresh, then try again/);
+  assert.match(notice.message, /wait for the other install to finish/);
   assert.equal(notice.dedupeKey, "deps-row-skipped-hostPrerequisites");
+  // The DISPLAY name (#603, third review, nit 12).
+  assert.match(notice.message, /^Bootstrap prerequisites:/);
 });

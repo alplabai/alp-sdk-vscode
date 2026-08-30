@@ -410,34 +410,50 @@ export interface DependencyCommandStep {
 }
 
 /**
- * What a row's button does. `null` (no action) is a first-class outcome.
- *
- * `effect` picks the label and `title` is the tooltip: both are on every kind,
- * so the view never has to guess a verb or leave a button unexplained.
+ * A `command`-kind `DependencyAction` — a NAMED interface, not an inline
+ * union member (#603, third review, major 4): `test/webview.payloadMirror
+ * .test.js`'s field-diff walk only reaches `export interface` declarations,
+ * and `DependencyAction` is an `export type` union, invisible to it either
+ * way. `omittedTools` was added to the inline literal on both sides with no
+ * gate ever comparing them — deleting this mirror's copy of the field left
+ * every existing gate, including the mirror test itself, green. Registered
+ * in `test/webview.payloadMirror.test.js`'s `MODELS`, source
+ * `DependencyCommandAction` in `packages/alp-core/src/deps/planner.ts`.
  *
  * `commands` (#603) is an ordered, non-empty list of dispatches — a
  * `hostPrerequisites` row installing both cmake and ninja is two entries, a
  * single-tool row is a list of one. The view does not iterate it; the host
  * dispatches each step and reports back through a fresh `dependencyReport`.
  */
-export type DependencyAction =
-  | {
-      kind: "command";
-      commands: DependencyCommandStep[];
-      /** Tool names tan named a `command: null` for on this row (#603). The
-       *  view never reads this either — the host-built `title` already says
-       *  the omission in prose; this exists only so the shape is declared in
-       *  full, same reason `commands` above is. */
-      omittedTools: string[];
-      effect: "install";
-      title: string;
-    }
-  | {
-      kind: "fix";
-      fixId: ToolchainFixId;
-      effect: DependencyActionEffect;
-      title: string;
-    };
+export interface DependencyCommandAction {
+  kind: "command";
+  commands: DependencyCommandStep[];
+  /** Tool names tan named a `command: null` for on this row (#603). The
+   *  view never reads this either — the host-built `title` already says
+   *  the omission in prose; this exists only so the shape is declared in
+   *  full, same reason `commands` above is. */
+  omittedTools: string[];
+  effect: "install";
+  title: string;
+}
+
+/** A `fix`-kind `DependencyAction` — see `DependencyCommandAction`'s own doc
+ *  for why this is a named, gate-reachable interface. Source
+ *  `DependencyFixAction` in `packages/alp-core/src/deps/planner.ts`. */
+export interface DependencyFixAction {
+  kind: "fix";
+  fixId: ToolchainFixId;
+  effect: DependencyActionEffect;
+  title: string;
+}
+
+/**
+ * What a row's button does. `null` (no action) is a first-class outcome.
+ *
+ * `effect` picks the label and `title` is the tooltip: both are on every kind,
+ * so the view never has to guess a verb or leave a button unexplained.
+ */
+export type DependencyAction = DependencyCommandAction | DependencyFixAction;
 
 /**
  * The state word the panel leads with, mirrored from

@@ -112,50 +112,66 @@ export interface DependencyCommandStep {
 }
 
 /**
+ * A `command`-kind `DependencyAction` — a NAMED interface rather than an
+ * inline union member (#603, third review, major 4) specifically so
+ * `test/webview.payloadMirror.test.js`'s field-diff walk can reach it:
+ * that gate's `MODELS` list and its "every `export interface` is gated"
+ * backstop both key off `export interface`, and `DependencyAction` is an
+ * `export type` union, which is invisible to both. Adding `omittedTools`
+ * to the inline literal reached no gate at all — deleting the mirror's copy
+ * of the field left the mirror test, the typecheck, and the full suite all
+ * green. See `DependencyFixAction` for the sibling variant, extracted for
+ * the same reason before it grows an ungated field of its own.
+ */
+export interface DependencyCommandAction {
+  kind: "command";
+  /**
+   * One dispatch per entry, run in THIS order, never joined into one
+   * shell line (#600: `&&` breaks Windows PowerShell 5.1, `;` runs a
+   * later step after an earlier one failed and hides its exit code).
+   * Non-empty — a row with nothing left to install after `command: null`
+   * entries are dropped gets no `command` action at all, see `actionFor`.
+   * A single-command row is a list of one; there is no separate
+   * single-command shape.
+   */
+  commands: readonly DependencyCommandStep[];
+  /**
+   * Tool names tan named for this row's install with a `command: null`
+   * — a real answer ("no confirmed install command"), never a gap this
+   * button fills. Always `[]` for a per-tool bound action (a single
+   * `MissingPrerequisite` entry cannot be partial by itself); non-empty
+   * only on the `hostPrerequisites` rollup when some of its leftover
+   * entries are null and others are not (#603 design item 5, second
+   * review minor 7).
+   *
+   * STRUCTURED, not re-derived from `title`'s prose: this is what lets
+   * the consent screen (`consent.ts` / `consentPick`) state the omission
+   * as its OWN short clause instead of appending the whole tooltip
+   * sentence, which for a non-partial row (this array empty) duplicated
+   * `Runs:` under a second separator, and for a `fix`/`guide` row read as
+   * two competing claims about what the button does.
+   */
+  omittedTools: readonly string[];
+  effect: "install";
+  title: string;
+}
+
+/** A `fix`-kind `DependencyAction` — see `DependencyCommandAction`'s own doc
+ *  for why this is a named interface rather than an inline union member. */
+export interface DependencyFixAction {
+  kind: "fix";
+  fixId: ToolchainFixId;
+  effect: DependencyActionEffect;
+  title: string;
+}
+
+/**
  * What a row's button does. `null` (no action) is a first-class outcome.
  *
  * `effect` is the verb the label must use and `title` the tooltip: every kind
  * carries both, so a customer can read what a button will do before pressing it.
  */
-export type DependencyAction =
-  | {
-      kind: "command";
-      /**
-       * One dispatch per entry, run in THIS order, never joined into one
-       * shell line (#600: `&&` breaks Windows PowerShell 5.1, `;` runs a
-       * later step after an earlier one failed and hides its exit code).
-       * Non-empty — a row with nothing left to install after `command: null`
-       * entries are dropped gets no `command` action at all, see `actionFor`.
-       * A single-command row is a list of one; there is no separate
-       * single-command shape.
-       */
-      commands: readonly DependencyCommandStep[];
-      /**
-       * Tool names tan named for this row's install with a `command: null`
-       * — a real answer ("no confirmed install command"), never a gap this
-       * button fills. Always `[]` for a per-tool bound action (a single
-       * `MissingPrerequisite` entry cannot be partial by itself); non-empty
-       * only on the `hostPrerequisites` rollup when some of its leftover
-       * entries are null and others are not (#603 design item 5, second
-       * review minor 7).
-       *
-       * STRUCTURED, not re-derived from `title`'s prose: this is what lets
-       * the consent screen (`consent.ts` / `consentPick`) state the omission
-       * as its OWN short clause instead of appending the whole tooltip
-       * sentence, which for a non-partial row (this array empty) duplicated
-       * `Runs:` under a second separator, and for a `fix`/`guide` row read as
-       * two competing claims about what the button does.
-       */
-      omittedTools: readonly string[];
-      effect: "install";
-      title: string;
-    }
-  | {
-      kind: "fix";
-      fixId: ToolchainFixId;
-      effect: DependencyActionEffect;
-      title: string;
-    };
+export type DependencyAction = DependencyCommandAction | DependencyFixAction;
 
 export interface DependencyRow {
   /** tan's `check.name`, verbatim — the row's identity. */
