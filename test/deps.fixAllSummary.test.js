@@ -152,16 +152,28 @@ test("fixAllSummaryNotice: a full success -> planSuccess's status bar, info seve
 test("fixAllSummaryNotice: a cancelled mid-row outcome (failed.length === 0) is a warning toast, not the status bar", () => {
   // #603, third review, major 6: `outcome.failed.length === 0` is not the
   // same fact as "clean success" once a skip can carry `completed`.
+  //
+  // `installed: ["west"]` and a SECOND, bystander skipped row with no
+  // `completed` (#603, round 6, major 2): the ORIGINAL fixture here had
+  // `installed: []`, which also made the (later-added) "installed nothing at
+  // all" disjunct true — so mutating `hasPartialCompletion`'s own
+  // `(entry.completed?.length ?? 0) > 0` to `> 9999` (disabling it
+  // entirely) still left this test, and the whole suite, green: the newer
+  // disjunct was silently doing the older one's job on this exact fixture.
+  // `installed` nonempty rules every OTHER disjunct out structurally, so
+  // `hasPartialCompletion` is the ONLY thing left that can still route this
+  // outcome to `planFailure`.
   const { fixAllSummaryNotice } = loadDepsAdapter();
   const outcome = {
-    installed: [],
+    installed: ["west"],
     failed: [],
     skipped: [
       { name: "hostPrerequisites", reason: "cancelled", completed: ["cmake"] },
+      { name: "westWorkspace", reason: "cancelled" },
     ],
   };
 
-  const plan = fixAllSummaryNotice(outcome, 1);
+  const plan = fixAllSummaryNotice(outcome, 3);
 
   // The routing rule this drives: anything but a clean success goes through
   // `planFailure` at `severity: "warning"`, which is ALWAYS a toast
@@ -172,7 +184,7 @@ test("fixAllSummaryNotice: a cancelled mid-row outcome (failed.length === 0) is 
   assert.equal(plan.dedupeKey, "deps-fix-all");
   assert.equal(
     plan.message,
-    "Fix all: 0 of 1 installed — cmake installed before stopping.",
+    "Fix all: 1 of 3 installed — cmake installed before stopping.",
     "the full sentence — including what cmake completed — must reach the " +
       "customer's toast verbatim, not be demoted",
   );
@@ -266,6 +278,87 @@ test("fixAllSummaryNotice: a skip with NO completed tools (consent declined) sta
     "statusBar",
     "a skip that installed nothing is not a half-modified machine",
   );
+});
+
+// ---------------------------------------------------------------------------
+// The customer's own "no" must stay quiet (#603 round 6, major 3).
+// `outcome.installed.length === 0 && targetCount > 0` on its own overrode
+// `CUSTOMER_ANSWER_SKIP_REASONS` for exactly the three ordinary ways a
+// customer can decline the WHOLE run — every one of these used to render a
+// persistent warning toast for a machine nothing happened to.
+// ---------------------------------------------------------------------------
+
+test("fixAllSummaryNotice: Escape on the consent screen (every target declined) stays quiet, not a warning toast (#603 round 6, major 3)", () => {
+  // `runFixAll`'s own `consented === null` branch: every target pushed to
+  // `skipped` with `reason: "consent not given"` before the loop ever runs.
+  const { fixAllSummaryNotice } = loadDepsAdapter();
+  const outcome = {
+    installed: [],
+    failed: [],
+    skipped: [
+      { name: "hostPrerequisites", reason: "consent not given" },
+      { name: "west", reason: "consent not given" },
+      { name: "westWorkspace", reason: "consent not given" },
+    ],
+  };
+
+  const plan = fixAllSummaryNotice(outcome, 3);
+  assert.equal(plan.channel, "statusBar");
+  assert.equal(plan.severity, "info");
+  assert.equal(plan.message, "Fix all: 0 of 3 installed.");
+});
+
+test("fixAllSummaryNotice: every row left unchecked, then OK, stays quiet (#603 round 6, major 3)", () => {
+  const { fixAllSummaryNotice } = loadDepsAdapter();
+  const outcome = {
+    installed: [],
+    failed: [],
+    skipped: [
+      {
+        name: "hostPrerequisites",
+        reason: "left unchecked on the consent screen",
+      },
+      { name: "west", reason: "left unchecked on the consent screen" },
+    ],
+  };
+
+  const plan = fixAllSummaryNotice(outcome, 2);
+  assert.equal(plan.channel, "statusBar");
+  assert.equal(plan.severity, "info");
+});
+
+test("fixAllSummaryNotice: cancelled before row 1 ever starts stays quiet — LESS alarming than a cancel that already changed the machine, not more (#603 round 6, major 3)", () => {
+  const { fixAllSummaryNotice } = loadDepsAdapter();
+  const outcome = {
+    installed: [],
+    failed: [],
+    skipped: [
+      { name: "hostPrerequisites", reason: "cancelled" },
+      { name: "west", reason: "cancelled" },
+    ],
+  };
+
+  const plan = fixAllSummaryNotice(outcome, 2);
+  assert.equal(
+    plan.channel,
+    "statusBar",
+    "nothing on the machine changed — this must not read as MORE alarming " +
+      "than a cancel after row 1 already installed something",
+  );
+  assert.equal(plan.severity, "info");
+});
+
+test("fixAllSummaryNotice: a run that accounts for NOTHING at all (no install, no failure, no skip) is the one case that still warrants a toast (#603 round 6, major 3)", () => {
+  // The genuinely unreachable-today invariant violation the gated condition
+  // exists for: `targetCount > 0` but not one target landed in any of the
+  // three arrays. `outcome.skipped.length === 0` is what tells this apart
+  // from every ordinary decline above, which always populates `skipped`.
+  const { fixAllSummaryNotice } = loadDepsAdapter();
+  const outcome = { installed: [], failed: [], skipped: [] };
+
+  const plan = fixAllSummaryNotice(outcome, 1);
+  assert.equal(plan.channel, "toast");
+  assert.equal(plan.severity, "warning");
 });
 
 test("fixAllSummaryNotice: every row refused because another install was already running is a toast, not a silent 5-second status bar (#603 round 5, blocker 1)", () => {
@@ -585,7 +678,17 @@ function withTimeout(promise, ms, message) {
   return Promise.race([
     promise,
     new Promise((_resolve, reject) => {
-      setTimeout(() => reject(new Error(message)), ms);
+      // `.unref()` (#603, round 6, nit 8): an un-refed timer is exactly the
+      // pending-watchdog case `src/util.ts`'s own convention names — this
+      // repo's stated rule is that one must never be the reason a process
+      // (or a headless test harness) can't exit cleanly. Measured: this file
+      // alone held the whole `node --test` run open for the full 2000 ms on
+      // every GREEN run (`real 2.15`s vs `0.16`s before this function
+      // existed); `.unref()` drops it back to `0.15`s without weakening the
+      // race itself — the timer still fires and still rejects on time if the
+      // real promise never settles, it just cannot keep the process alive on
+      // its own once nothing else is pending.
+      setTimeout(() => reject(new Error(message)), ms).unref();
     }),
   ]);
 }

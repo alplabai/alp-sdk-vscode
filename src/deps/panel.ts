@@ -344,8 +344,13 @@ export class DependencyPanel {
 
   /**
    * Tell the customer when a single row's OWN multi-step dispatch did not
-   * finish cleanly — reusing `describeFixAllFailure`'s wording so a row
-   * button and a Fix-all report the SAME failure the SAME way.
+   * finish cleanly. `rowStepFailureNotice` names the TOOL that failed in the
+   * customer-facing message, never the raw command — a row button and
+   * Fix-all's own channel-only summary deliberately word this DIFFERENTLY
+   * now (#603, round 6, minor 6 corrects this doc: it used to say they
+   * "report the SAME failure the SAME way", which stopped being true the
+   * round `rowStepFailureNotice` and `describeFixAllFailure` split — see
+   * `rowStepFailureNotice`'s own doc for why).
    *
    * Silent on every outcome that already has its own explanation: every step
    * ran and succeeded (the generic "press Refresh" notice covers it), or

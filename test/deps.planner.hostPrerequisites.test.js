@@ -129,6 +129,17 @@ test("every leftover tool omitted (command: null for all of them) — the row it
     "the row's own detail is the only channel left once there is no action " +
       "to carry `omittedTools` on a button that does not exist",
   );
+  // No double full stop (#603, round 6, nit 7): tan's own detail already
+  // ends in one, and joining it with a second sentence unstripped read as
+  // "...bootstrap.json). — tan reported...", two sentences bolted together
+  // rather than one continuous clause.
+  assert.equal(
+    row.detail,
+    "missing from PATH: cmake, ninja (facts from alp-sdk " +
+      "/home/dev/alp-sdk/metadata/bootstrap.json) — tan reported no " +
+      "install command for cmake, ninja.",
+  );
+  assert.doesNotMatch(row.detail, /\)\. — /);
   // Not reported as orphaned: tan's `command: null` is a real answer, not a
   // command that bound to nothing (see the null-command test above).
   assert.deepEqual(plan(allOmitted).orphanedPrerequisites, []);

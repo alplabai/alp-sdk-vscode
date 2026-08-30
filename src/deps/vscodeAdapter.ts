@@ -1377,9 +1377,27 @@ export function describeFixAllFailure(
  * `statusBar` plan, because a clean success is not supposed to need one. Two
  * more conditions now force `planFailure` too:
  *
- *  - `outcome.installed.length === 0 && targetCount > 0` — a Fix-all that
- *    installed LITERALLY NOTHING, when there was something to install, is
- *    not a success by any reading of the word, whatever stopped it;
+ *  - `outcome.installed.length === 0 && outcome.skipped.length === 0 &&
+ *    targetCount > 0` — a genuinely UNACCOUNTED-FOR run: `targetCount` rows
+ *    were targeted, `outcome.failed` is already known empty (the branch
+ *    above returned first), and NEITHER `installed` NOR `skipped` names a
+ *    single one of them, which `runFixAll`'s own loop should make
+ *    unreachable — every target it visits lands in exactly one of the three
+ *    arrays. `skipped.length === 0` is required (#603, round 6, major 3),
+ *    not just `installed.length === 0`: WITHOUT it this disjunct also fired
+ *    on an ORDINARY decline (`consented === null` pushes every target into
+ *    `skipped` with `"consent not given"`, `installed` stays empty) and on
+ *    an early cancel (same shape, `"cancelled"`) — both already IN
+ *    `CUSTOMER_ANSWER_SKIP_REASONS` below, which exists precisely so those
+ *    reasons stay quiet. `||` let this disjunct override that allowlist on
+ *    the customer's own "no", turning "Fix all: 0 of 2 installed." into a
+ *    persistent warning toast for a machine nothing happened to, and (worse)
+ *    made an early cancel (0 of 3, nothing touched) read MORE alarming than
+ *    a cancel after row 1 succeeded (1 of 3, the machine actually changed),
+ *    which stayed a quiet status bar. Gated on `skipped.length === 0`, it
+ *    now fires only when there is no recorded reason for ANY of the missing
+ *    rows at all — the allowlist has nothing to say because nothing was
+ *    said, not because it said something and was overruled;
  *  - any `skipped[].reason` NOT in `CUSTOMER_ANSWER_SKIP_REASONS` — an
  *    ALLOWLIST, not a denylist, so a reason this file adds tomorrow starts
  *    OUT of it and defaults to "say something", the same closed-class
@@ -1391,6 +1409,19 @@ export function describeFixAllFailure(
  *    never the customer's own answer, and must not read as a quiet success
  *    just because they landed in `skipped` rather than `failed` — even when
  *    ANOTHER row in the same run did install something.
+ *
+ * A LESSON kept here rather than only in a commit message (#603, round 6,
+ * major 2): adding a disjunct to an `||` can silently disarm the gate on a
+ * disjunct that was already there, if the two conditions overlap on the same
+ * fixture. `outcome.installed.length === 0 && targetCount > 0` above was
+ * ALSO true for every existing `hasPartialCompletion` test at the moment it
+ * was added — every one of them happened to fixture `installed: []` — so
+ * disabling `hasPartialCompletion` entirely (mutating its `> 0` to `>
+ * 9999`) still left the whole suite green; the newer disjunct was quietly
+ * doing the older one's job. Any test asserting one disjunct of a routing
+ * `||` must make the OTHER disjuncts structurally false on its own fixture
+ * (here: give it something in `installed`, or an allowlisted reason), not
+ * merely happen not to need them.
  */
 const CUSTOMER_ANSWER_SKIP_REASONS: ReadonlySet<string> = new Set([
   "consent not given",
@@ -1447,17 +1478,21 @@ export function fixAllSummaryNotice(
     `Fix all: ${outcome.installed.length} of ${targetCount} installed.`,
     outcome,
   );
-  // See this function's own doc (#603, round 5, blocker 1) for why each of
-  // these three, independently, rules out a clean success.
+  // See this function's own doc (#603, round 5, blocker 1; round 6, majors 2
+  // and 3) for why each of these three, INDEPENDENTLY, rules out a clean
+  // success — and for why that independence is itself the thing to keep
+  // gated, not just the routing decision each one contributes to.
   const hasPartialCompletion = outcome.skipped.some(
     (entry) => (entry.completed?.length ?? 0) > 0,
   );
-  const installedNothingAtAll =
-    outcome.installed.length === 0 && targetCount > 0;
+  const nothingAccountedFor =
+    outcome.installed.length === 0 &&
+    outcome.skipped.length === 0 &&
+    targetCount > 0;
   const hasUnexplainedSkip = outcome.skipped.some(
     (entry) => !CUSTOMER_ANSWER_SKIP_REASONS.has(entry.reason),
   );
-  if (hasPartialCompletion || installedNothingAtAll || hasUnexplainedSkip) {
+  if (hasPartialCompletion || nothingAccountedFor || hasUnexplainedSkip) {
     return planFailure({
       operation: "Fix all",
       cause: message,
@@ -1504,11 +1539,11 @@ export function fixAllSummaryNotice(
  * green, since neither field was pinned anywhere).
  *
  * The failure branch builds its OWN sentence — it does NOT call
- * `describeFixAllFailure` (#603, round 5, majors 2 and 3 correct round 4's
- * "reuses its WORDING" design here): that function names the raw command,
- * verbatim, which is exactly right for the CHANNEL-ONLY text it is for
- * (`fixAllSummaryNotice`'s `detail`) and exactly wrong for a customer-facing
- * `cause` — a command tan qualifies with an absolute path
+ * `describeFixAllFailure` for `cause` (#603, round 5, majors 2 and 3 correct
+ * round 4's "reuses its WORDING" design here): that function names the raw
+ * command, verbatim, which is exactly right for the CHANNEL-ONLY text it is
+ * for (`fixAllSummaryNotice`'s `detail`) and exactly wrong for a
+ * customer-facing `cause` — a command tan qualifies with an absolute path
  * (`sudo /opt/homebrew/bin/brew install ninja`) is unredacted here (good:
  * nothing fabricates it) but also undemoted by `planFailure`'s
  * `ABSOLUTE_PATH` filter, so it would reach the toast whole. This branch
@@ -1519,6 +1554,19 @@ export function fixAllSummaryNotice(
  * SKIP branch above (never "exited"/"failed") reached the toast in full
  * while the FAILURE branch below did not — the more severe outcome carried
  * strictly less information, backwards from what either branch intends.
+ *
+ * `describeFixAllFailure` IS called for `detail` (#603, round 6, major 1):
+ * moving the raw command out of `cause` moved it out of EVERY field this
+ * plan carries, not just the customer-facing one — `notifyAsync`'s presenter
+ * writes `detail` to the "Alp SDK" channel and nowhere else, and with no
+ * `detail` here that channel held nothing at all for a single-row press,
+ * while `runInTerminal` never logs the command it dispatches and
+ * `runDependencyAction`'s only `log` of `step.command` is the
+ * NOT-dispatched refusal path. Measured before this fix: a real failing row
+ * produced one toast and zero channel lines, so "brew install" appeared
+ * NOWHERE in anything the customer or a support engineer could read — the
+ * exact loss `describeFixAllFailure`'s own doc says restoring `detail`
+ * exists to prevent, moved from Fix-all onto the row button.
  */
 export function rowStepFailureNotice(
   rowLabel: string,
@@ -1552,17 +1600,32 @@ export function rowStepFailureNotice(
       dedupeKey: `deps-row-skipped-${rowName}`,
     });
   }
+  const completed = steps
+    .filter((step) => step.code === 0)
+    .map((step) => step.tool);
+  const notRun = commands.slice(steps.length).map((step) => step.tool);
   return planFailure({
     operation: `Installing ${rowLabel}`,
     // The TOOL (`failedStep.tool`), never `failedStep.command` — see this
     // function's own doc for why a customer sentence may not name the raw
     // command tan sends to the terminal.
     cause: `${rowLabel}: ${failureSequenceParts(
-      steps.filter((step) => step.code === 0).map((step) => step.tool),
+      completed,
       failedStep.tool,
       failedStep.code,
-      commands.slice(steps.length).map((step) => step.tool),
+      notRun,
     )}`,
+    // The verbatim command — `rowName` (tan's internal id), not `rowLabel`,
+    // matching the channel-only convention `fixAllSummaryNotice`'s own
+    // `detail` already uses (#603, round 6, major 1 — see this function's
+    // own doc for why `cause` above may not carry this).
+    detail: describeFixAllFailure({
+      name: rowName,
+      code: failedStep.code,
+      completed,
+      failedCommand: failedStep.command,
+      notRun,
+    }),
     severity: "warning",
     dedupeKey: `deps-row-failed-${rowName}`,
   });

@@ -44,39 +44,51 @@
   edits a command a customer might read, which is what let that regex turn
   `curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash` into a command that
   was never run. The raw command tan sent stays out of every customer
-  sentence but reaches the "Alp SDK" channel and the `[fix-all]` log line
-  completely unedited, restoring the verbatim record a support engineer
-  reads. (Fix-all's own top-level "N of M did not install." sentence never
-  carried either leak shape and was never demoted — the filter fix is scoped
+  sentence, but it does still reach the "Alp SDK" channel, completely
+  unedited: Fix-all's own `[fix-all]` log line for a Fix-all run, and — this
+  was missed in the same commit that moved the command out of `cause`, so
+  for one round it reached NEITHER — the row button's own notice `detail`
+  for a single-row press, which the presenter writes to that same channel.
+  (Fix-all's own top-level "N of M did not install." sentence never carried
+  either leak shape and was never demoted — the filter fix itself is scoped
   to the row path, which is where the demotion actually happened.)
-- **Fix-all's "did not install" toast now fires for every way a run can
-  install nothing, not only an outright failure.** A row cancelled, raced
-  away mid-sequence, or that failed outright, with a step already completed,
-  is no longer reported as a plain, auto-dismissing status-bar "success" — a
-  half-modified machine now surfaces as a persistent warning toast, same as
-  an outright failure, and that toast's own sentence now names what
-  installed whether the step that stopped it was a SKIP or the FAILURE
-  itself (a 2-step row that installs cmake and then fails on ninja used to
-  read "1 of 1 did not install.", saying nothing about cmake — now "1 of 1
-  did not install — cmake installed before stopping.", one connected
-  sentence rather than two that read as contradicting each other). The "N of
-  M did not install" count is every row that did not install, not only the
-  ones that errored — a row that aborts because an earlier one failed counts
-  as 2 of 2 undone, not 1. Two more cases that used to read as a quiet,
-  five-second, button-less "success" now toast instead: a run that installs
-  LITERALLY NOTHING (every row refused because another install was already
-  running is the measured case — three refusals, zero installs, and every
-  reason sat in a field the status bar never shows), and any row skipped for
-  a reason that is not the customer's own answer (declining consent or
-  cancelling) — an environmental refusal or an invariant this extension did
-  not expect must not read as success just because it landed in `skipped`
-  rather than `failed`. `deps/panel.ts`'s Fix-all wrapper no longer builds
-  any part of the `NotificationPlan` itself: `fixAllSummaryNotice` returns
-  the finished plan, the same shape the row path's own notice already did.
-  The orphan latch is now keyed per tool AND command, not tool alone, so the
-  same tool reported again with a DIFFERENT command re-arms it — and the log
-  line it feeds names every tool tan is CURRENTLY reporting as orphaned, not
-  only the ones newly seen this refresh.
+- **Fix-all's "did not install" toast now fires for every way a run can install
+  nothing, not only an outright failure — without overriding the customer's own
+  "no".** A row cancelled, raced away mid-sequence, or that failed outright,
+  with a step already completed, is no longer reported as a plain,
+  auto-dismissing status-bar "success" — a half-modified machine now surfaces as
+  a persistent warning toast, same as an outright failure, and that toast's own
+  sentence now names what installed whether the step that stopped it was a SKIP
+  or the FAILURE itself (a 2-step row that installs cmake and then fails on
+  ninja used to read "1 of 1 did not install.", saying nothing about cmake — now
+  "1 of 1 did not install — cmake installed before stopping.", one connected
+  sentence rather than two that read as contradicting each other). The "N of M
+  did not install" count is every row that did not install, not only the ones
+  that errored — a row that aborts because an earlier one failed counts as 2 of
+  2 undone, not 1. A row skipped for a reason that is not the customer's own
+  answer (an environmental refusal such as another install already running, or
+  an invariant this extension did not expect, like an install command list that
+  turned out empty, or a run name the dispatcher had nothing to wait for) now
+  toasts too, even when another row in the same run installed something — it
+  must not read as success just because it landed in `skipped` rather than
+  `failed`. A run that accounts for NOTHING at all — no install, no failure, no
+  skip, for a nonzero target count, an invariant `runFixAll`'s own loop should
+  make unreachable — toasts as a defensive backstop; that condition is
+  deliberately narrower than "installed nothing", because "installed nothing"
+  alone also matched three ORDINARY ways a customer declines the whole run
+  (dismissing the consent screen, leaving every row unchecked, cancelling before
+  row 1 starts), each of which pushes every target into `skipped` with a reason
+  already on the quiet allowlist — without the narrower condition, declining a
+  Fix-all read as a persistent warning toast for a machine nothing had happened
+  to, and made an early cancel (nothing touched) read MORE alarming than a
+  cancel after row 1 had already installed something (which stayed a quiet
+  status bar). `deps/panel.ts`'s Fix-all wrapper no longer builds any part of
+  the `NotificationPlan` itself: `fixAllSummaryNotice` returns the finished
+  plan, the same shape the row path's own notice already did. The orphan latch
+  is now keyed per tool AND command, not tool alone, so the same tool reported
+  again with a DIFFERENT command re-arms it — and the log line it feeds names
+  every tool tan is CURRENTLY reporting as orphaned, not only the ones newly
+  seen this refresh.
 - **The `hostPrerequisites` row now says which tools it cannot offer a button
   for even when NONE of them can be — not only when some can.** A partial
   rollup (tan names a real command for cmake but not ninja) already said so

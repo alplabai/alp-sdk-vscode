@@ -486,7 +486,15 @@ function rollupOmissionDetail(
   omitted: readonly string[],
 ): string {
   if (omitted.length === 0) return tanDetail;
-  return `${tanDetail} — tan reported no install command for ${omitted.join(", ")}.`;
+  // Strip tan's own trailing full stop before joining (#603, round 6, nit
+  // 7) — the same em-dash idiom `src/deps/vscodeAdapter.ts`'s
+  // `withFixAllPartialNote` uses, for the same reason: two full stops back
+  // to back (tan's own "...bootstrap.json)." immediately followed by this
+  // clause's own "...cmake, ninja.") read as two sentences bolted together,
+  // not one. tan's own text is otherwise untouched — only the terminal
+  // punctuation, never re-naming or re-ordering what tan already said.
+  const lead = tanDetail.endsWith(".") ? tanDetail.slice(0, -1) : tanDetail;
+  return `${lead} — tan reported no install command for ${omitted.join(", ")}.`;
 }
 
 /**
@@ -494,7 +502,13 @@ function rollupOmissionDetail(
  *
  * Row set = one per `data.checks[]` entry (keyed on `check.name`, in tan's
  * order) plus exactly one host-owned `tan` row. Every other cell is either
- * tan's own value or `null`.
+ * tan's own value or `null`, with ONE named exception (#603, round 6, minor
+ * 5): the `hostPrerequisites` rollup row's `detail` is host-composed when
+ * every leftover prerequisite is `command: null` — `rollupOmissionDetail`
+ * appends which tools tan named no install command for, because with no
+ * action at all on that row there is no OTHER cell left to say so (see that
+ * function's own doc). Every other row's `detail` stays `check.detail`,
+ * untouched.
  */
 export function planDependencyReport(
   input: DependencyPlanInput,

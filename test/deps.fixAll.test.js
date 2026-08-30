@@ -1058,6 +1058,15 @@ test("rowStepFailureNotice: the ONLY step fails -> a notice, not silence, and it
   // The DISPLAY name, not the internal check id (#603, third review, nit 12).
   assert.match(notice.message, /^Bootstrap prerequisites:/);
   assert.doesNotMatch(notice.message, /^hostPrerequisites:/);
+  // The verbatim command must still reach SOMEWHERE — `.detail`, the
+  // CHANNEL-ONLY field (#603, round 6, major 1): moving the command out of
+  // `cause` moved it out of every field this plan carries, and neither
+  // `runInTerminal` nor `runDependencyAction`'s non-zero-exit path logs it
+  // anywhere else, so "brew install cmake" would appear NOWHERE at all.
+  assert.equal(
+    notice.detail,
+    "hostPrerequisites: `brew install cmake` did not succeed (code 1); nothing after it ran",
+  );
 });
 
 test("rowStepFailureNotice: step 1 installs, step 2 fails — names both, never 'did not succeed' for the one that worked", () => {
@@ -1078,6 +1087,12 @@ test("rowStepFailureNotice: step 1 installs, step 2 fails — names both, never 
   // reported as the one that failed — cmake's own exit code is 0, and it
   // must never be described as not succeeding.
   assert.doesNotMatch(notice.message, /cmake did not succeed/);
+  // The raw command still reaches the channel-only `.detail` (#603, round 6,
+  // major 1) — including which tool already installed.
+  assert.equal(
+    notice.detail,
+    "hostPrerequisites: installed cmake; `brew install ninja` did not succeed (code 1); nothing after it ran",
+  );
 });
 
 test("rowStepFailureNotice: stopped short with nothing erroring -> a SKIP, worded as one, never as a failure (#603 second review, minor 9)", () => {
