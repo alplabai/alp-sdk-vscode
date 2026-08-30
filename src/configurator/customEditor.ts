@@ -10,7 +10,11 @@ import {
   boardLibrariesFromPresets,
   withPresetLibraries,
 } from "@alp-sdk/core/sdkCatalogue/derive";
-import { fetchEnvelopeData } from "../alpCli/envelope";
+import { fetchEnvelopeResult } from "../alpCli/envelope";
+import {
+  PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+  unresolvedSdkReason,
+} from "../alpCli/service";
 import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
@@ -147,10 +151,20 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
           // Then ask tan for the library vocabulary it owns and re-render once
           // it answers. It runs ONCE per editor rather than inside postRender,
           // which fires on every keystroke that reaches the document — spawning
-          // a CLI per edit is not an option. Failures are silent by design:
-          // `fetchEnvelopeData` resolves `undefined` and the scan stays.
-          void fetchEnvelopeData(this.context, ["presets"]).then((data) => {
-            const ids = boardLibrariesFromPresets(data);
+          // a CLI per edit is not an option. The UI stays silent by design on
+          // any failure — `boardLibrariesFromPresets` resolving empty leaves
+          // the filesystem-scanned vocabulary standing either way — but an
+          // unresolved SDK now reaches the "Alp SDK" channel instead of
+          // vanishing with nothing recorded anywhere (#611), through the same
+          // constant + function the other two `presets` readers
+          // (`lsp/client.ts`, `ideHub/newProjectFlowPanel.ts`) share.
+          void fetchEnvelopeResult(this.context, ["presets"]).then((result) => {
+            const reason = unresolvedSdkReason(
+              { issues: result.issues },
+              PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+            );
+            if (reason) log(`[configurator] presets: ${reason}`);
+            const ids = boardLibrariesFromPresets(result.data);
             if (ids.length === 0) return;
             presetLibraryIds = ids;
             postRender(parse());

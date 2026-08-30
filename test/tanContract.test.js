@@ -99,7 +99,11 @@ const GATED_CODES = {
   // same prefix. Ext: alpCli/service.ts `BOOTSTRAP_PREREQUISITE_CODES`.
   "bootstrap.prerequisites-missing": "frozen",
   // tan: commands/presets.rs emits this as a whole literal, no prefixing.
-  // Ext: ideHub/newProjectFlowPanel.ts, preset catalogue fallback.
+  // Ext: the spelling lives once, as `PRESETS_SDK_ROOT_UNRESOLVED_CODE`
+  // (alpCli/service.ts), matched through `unresolvedSdkReason` by all three
+  // `presets` readers this extension has (#611): ideHub/newProjectFlowPanel.ts
+  // (preset catalogue fallback), lsp/client.ts (board.yaml completion
+  // catalog) and configurator/customEditor.ts (library vocabulary scan).
   "presets.sdk-root-unresolved": "frozen",
 
   // RETIRED — no current tan emits it, and tan reserves the spelling so it can
@@ -162,9 +166,13 @@ const GATED_CODES = {
   // Same shape, same upstream ask (#542). tan's own note on this code names
   // the trap it creates: "fires when `sdk list` is run without `--online` --
   // now a `warning` on a SUCCESS envelope (exit 0, `ok: true`), not an `error`
-  // on a failure" (tan-cli#351). `src/deps/vscodeAdapter.ts` binds to it to
-  // refuse caching an answer tan never looked up, which makes this the second
-  // reserved code whose `consumer: "none"` is no longer true.
+  // on a failure" (tan-cli#351). The binding constant (`UNANSWERED_SDK_LIST_
+  // CODES` / `unansweredSdkListCodes` / `sdkListAnswered`) moved to alpCli/
+  // service.ts (#611) so it could be shared: `src/deps/vscodeAdapter.ts`
+  // still binds to it to refuse caching an answer tan never looked up, and
+  // `src/ideHub/sdkManagerMessages.ts` is now a second consumer, refusing to
+  // post an unanswered lookup's `releases` as a real catalogue — which makes
+  // this the second reserved code whose `consumer: "none"` is no longer true.
   "sdk.network-required": "reserved",
 
   // RESERVED, and this pin is the day a consumer bound to it — the third of

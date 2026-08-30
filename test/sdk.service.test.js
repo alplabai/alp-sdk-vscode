@@ -5,6 +5,7 @@ const {
   isSdkVersionBelowMin,
   listLocalSdkEntries,
   MIN_SDK_VERSION,
+  narrowSdkReleases,
 } = require("../packages/alp-core/dist/sdk/service.js");
 
 test("flags SDKs older than the supported floor", () => {
@@ -58,4 +59,56 @@ test("listLocalSdkEntries keeps case-distinct roots separate off win32", () => {
     "linux",
   );
   assert.equal(entries.length, 2);
+});
+
+// ── narrowSdkReleases (#611) ─────────────────────────────────────────────────
+//
+// Both `src/deps/vscodeAdapter.ts` and `src/ideHub/sdkManagerMessages.ts` used
+// to read `tan sdk list`'s untrusted envelope payload as
+// `(envelope.data as { releases?: SdkRelease[] }).releases ?? []` — a cast,
+// not a narrow. A `releases` that is not an array throws on `.find`
+// (`pickLatestSdkTag`); an entry without a string `tag` throws inside
+// `isStableTag`'s `tag.trim()`, on a path with no try/catch. This function is
+// the shared, narrowing replacement: malformed entries are DROPPED, never
+// coerced, and the well-formed ones survive byte-identical.
+
+const REAL_RELEASE = {
+  tag: "v0.16.0",
+  publishedAt: "2026-07-31T21:54:56Z",
+  tarballUrl: "https://api.github.com/repos/alplabai/alp-sdk/tarball/v0.16.0",
+  releaseNotesSummary: "Release notes.",
+  releaseNotes: "Release notes.",
+};
+
+test("narrowSdkReleases keeps a well-formed release byte-identical", () => {
+  assert.deepEqual(narrowSdkReleases({ releases: [REAL_RELEASE] }), [
+    REAL_RELEASE,
+  ]);
+});
+
+test("narrowSdkReleases drops an entry with no string tag rather than throwing", () => {
+  assert.deepEqual(
+    narrowSdkReleases({
+      releases: [{ ...REAL_RELEASE, tag: undefined }, REAL_RELEASE],
+    }),
+    [REAL_RELEASE],
+  );
+});
+
+test("narrowSdkReleases returns [] rather than throwing when `releases` is not an array", () => {
+  assert.deepEqual(narrowSdkReleases({ releases: "not-an-array" }), []);
+  assert.deepEqual(narrowSdkReleases({}), []);
+  assert.deepEqual(narrowSdkReleases(null), []);
+});
+
+test("narrowSdkReleases defaults a missing cosmetic field to empty string, never inventing one", () => {
+  assert.deepEqual(narrowSdkReleases({ releases: [{ tag: "v0.16.0" }] }), [
+    {
+      tag: "v0.16.0",
+      publishedAt: "",
+      tarballUrl: "",
+      releaseNotesSummary: "",
+      releaseNotes: "",
+    },
+  ]);
 });

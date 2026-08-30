@@ -49,10 +49,16 @@ import {
   type BootstrapHost,
   bootstrapHost,
 } from "@alp-sdk/core/toolchain/bootstrapPlan";
-import type { SdkRelease } from "@alp-sdk/core/sdk/models";
+import { narrowSdkReleases } from "@alp-sdk/core/sdk/service";
 import * as vscode from "vscode";
 
-import { cliSkew, isCliBehind, SUPPORTED_CLI_VERSION } from "../alpCli/service";
+import {
+  cliSkew,
+  isCliBehind,
+  sdkListAnswered,
+  SUPPORTED_CLI_VERSION,
+  unansweredSdkListCodes,
+} from "../alpCli/service";
 import { runDoctor } from "../alpCli/doctor";
 import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
 import {
@@ -221,46 +227,23 @@ async function latestSdkTag(
   // Caching that writes a FRESH stamp over an absent answer, which suppresses
   // the retry that would fix it, so the dash persists for the whole staleness
   // window. The failure sustains itself.
-  const unanswered = unansweredSdkListCodes(envelope);
-  if (unanswered.length > 0) {
+  if (!sdkListAnswered(envelope)) {
     log(
-      `[deps] latest-SDK lookup did not reach the registry (${unanswered.join(", ")}) — keeping the last known answer, retrying on the next open`,
+      `[deps] latest-SDK lookup did not reach the registry (${unansweredSdkListCodes(envelope).join(", ")}) — keeping the last known answer, retrying on the next open`,
     );
     return cache?.tag ?? null;
   }
-  const releases =
-    (envelope.data as { releases?: SdkRelease[] }).releases ?? [];
+  // Narrowed, not cast (#611): `envelope.data` is untrusted, and a `releases`
+  // entry without a string `tag` used to reach `pickLatestSdkTag`'s `.find`
+  // and throw inside `isStableTag`'s `tag.trim()` with no try/catch on this
+  // path.
+  const releases = narrowSdkReleases(envelope.data);
   const tag = pickLatestSdkTag(releases);
   await context.globalState.update(LATEST_SDK_CACHE_KEY, {
     tag,
     fetchedAt: Date.now(),
   } satisfies LatestSdkCache);
   return tag;
-}
-
-/**
- * Issue codes on which tan reports "I could not look" while still returning
- * `ok: true`. Matched on the CODE, never on the prose — the rule
- * `packages/alp-webview/src/features/models/cliSurface.ts` already follows,
- * and for the same reason: a message is free to be reworded between pins, a
- * code is the contract.
- *
- * Measured against pinned tan 0.6.0-rc1 — `tan --format json sdk list` with no
- * `--online` returns `{"ok":true,"exitCode":0,"data":{"subcommand":"list",
- * "releases":[]},"issues":[{"code":"sdk.network-required","severity":
- * "warning", ...}]}`.
- */
-export const UNANSWERED_SDK_LIST_CODES: readonly string[] = [
-  "sdk.network-required",
-];
-
-/** The codes above that this envelope actually carries. */
-export function unansweredSdkListCodes(envelope: {
-  issues?: readonly { code?: string }[];
-}): string[] {
-  return (envelope.issues ?? [])
-    .map((issue) => issue.code ?? "")
-    .filter((code) => UNANSWERED_SDK_LIST_CODES.includes(code));
 }
 
 // ── Host-known cells ─────────────────────────────────────────────────────────
