@@ -53,8 +53,8 @@
   either leak shape and was never demoted — the filter fix itself is scoped
   to the row path, which is where the demotion actually happened.)
 - **Fix-all's "did not install" toast now fires for every way a run can install
-  nothing, not only an outright failure — without overriding the customer's own
-  "no".** A row cancelled, raced away mid-sequence, or that failed outright,
+  nothing THAT IS NOT THE CUSTOMER'S OWN ANSWER, not only an outright
+  failure.** A row cancelled, raced away mid-sequence, or that failed outright,
   with a step already completed, is no longer reported as a plain,
   auto-dismissing status-bar "success" — a half-modified machine now surfaces as
   a persistent warning toast, same as an outright failure, and that toast's own

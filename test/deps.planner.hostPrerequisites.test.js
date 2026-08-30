@@ -145,6 +145,36 @@ test("every leftover tool omitted (command: null for all of them) — the row it
   assert.deepEqual(plan(allOmitted).orphanedPrerequisites, []);
 });
 
+test("a tan detail that does NOT end in a full stop keeps its last character", () => {
+  // The period strip is guarded (`endsWith(".") ? slice(0, -1) : detail`) and
+  // every fixture in this file happens to end in one, so an unguarded
+  // `slice(0, -1)` passed every gate while silently eating a character of
+  // tan's verbatim text — exactly the class of gap round 6 named: a guard
+  // whose false arm no fixture reaches. tan's detail is not required to end
+  // in punctuation, and this repo does not edit tan's words.
+  const bare = "missing from PATH: cmake, ninja";
+  const noStop = {
+    ...data,
+    missingPrerequisites: [
+      { tool: "cmake", command: null },
+      { tool: "ninja", command: null },
+    ],
+    checks: data.checks.map((c) =>
+      c.name === "hostPrerequisites" ? { ...c, detail: bare } : c,
+    ),
+  };
+  const row = rowFor(plan(noStop), "hostPrerequisites");
+  assert.equal(
+    row.detail,
+    `${bare} — tan reported no install command for cmake, ninja.`,
+  );
+  assert.ok(
+    row.detail.startsWith(bare),
+    "tan's own sentence must survive whole — a bare `slice(0, -1)` would " +
+      "truncate it to `...ninj`",
+  );
+});
+
 test("a fully-covered row's detail is tan's own text, untouched", () => {
   const row = rowFor(plan(), "hostPrerequisites");
   assert.equal(
@@ -186,6 +216,19 @@ test("a mixed row (one tool named, one command: null) says so in the title — n
   // that sentence — the whole point is that the two are distinguishable.
   const full = rowFor(plan(), "hostPrerequisites");
   assert.doesNotMatch(full.action.title, /no install command for/);
+
+  // The clause belongs to the TITLE here and nowhere else. `detail` gets it
+  // only when there is no action to carry it (the all-omitted row above), and
+  // the `leftoverBound.length === 0` conjunct is the only thing enforcing
+  // that. Without this assertion, dropping the conjunct leaves every gate
+  // green while a partial row claims the same omission twice — once on the
+  // button, once under it — which is the duplicate `rollupActionTitle` was
+  // written to avoid.
+  assert.equal(
+    row.detail,
+    data.checks.find((c) => c.name === "hostPrerequisites").detail,
+    "a partial row's detail is tan's own text: the omission is on the title",
+  );
 });
 
 // ---------------------------------------------------------------------------
