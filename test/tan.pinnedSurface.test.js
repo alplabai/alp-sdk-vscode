@@ -448,32 +448,54 @@ test("a `deferred` classification is backed by the recording's own upstream ref"
   }
 });
 
-test("the classification is not vacuous: three kinds are present, and parity is not", () => {
+test("the classification is not vacuous: all four kinds are present", () => {
   // A table that had collapsed to one kind would pass every assertion above
-  // while telling the customer the same thing about all 15 options.
+  // while telling the customer the same thing about all 51 options.
   //
-  // It was FOUR kinds over 17 options until #584. tan v0.6.0 removed the
-  // `renode` verb (tan-cli#848), and `renode --board-yaml` and
-  // `renode --image-bundle` were the only two `parity` flags in the recording,
-  // so that kind now has no instance at this pin.
+  // `"parity"` had no instance at this pin between #584 (tan v0.6.0 removed
+  // `renode`, taking its two `parity` flags with it) and #602's first pass —
+  // that first pass classified all 36 newly-recorded flags `not-applicable`,
+  // which an adversarial review refuted: most of them carry tan's own
+  // "the oracle's clap `GlobalArgs` are `global = true`, so every verb
+  // accepts all of them" reasoning, which is `INERT_KIND_REASON.parity`'s
+  // definition, not `not-applicable`'s (genuinely domain-inapplicable, like
+  // `faultdecode --project` — "reads no board.yaml and drives no alp-sdk
+  // checkout"). 35 of the 36 are `parity`; the 36th, `faultdecode
+  // --board-yaml`, joins `--project`/`--sdk-root` as `not-applicable`
+  // because faultdecode's OWN marker names board.yaml specifically, the same
+  // domain exclusion as the other two.
   //
-  // `"parity"` stays in the `InertKind` union deliberately: it names a WORDING
-  // tan uses ("Accepted for parity with every other command's global flag"),
-  // not a flag that happens to exist, so the next command to say it is
-  // classified on the day it lands instead of falling through as unknown.
-  // Asserted as an ABSENCE rather than dropped, so that day is not silent.
+  // 15 -> 51 is #602, not a pin move: `fetch.mjs` gained
+  // `applyDescriptionInert` (it used to read only an option's own help cell,
+  // never the command-wide paragraph above the box), and re-capturing the
+  // SAME binary at the SAME version found 36 more inert flags across `diff`,
+  // `faultdecode`, `inspect`, `pinmux`, `support-bundle` and `trace` — none
+  // `deferred` (the recording's `ref` is null on every one, so none names an
+  // upstream issue to wait for).
   const kinds = new Set(Object.values(INERT_OPTIONS));
   assert.deepEqual(
     [...kinds].sort(),
-    ["compatibility", "deferred", "not-applicable"],
-    "the kinds present in the table changed — if a `parity` flag is back, say " +
-      "so here and in test/tan.inertKind.test.js rather than widening this list",
+    ["compatibility", "deferred", "not-applicable", "parity"],
+    "the kinds present in the table changed — update this list and say why " +
+      "here and in test/tan.inertKind.test.js rather than widening it blindly",
   );
   assert.equal(
     Object.keys(INERT_OPTIONS).length,
-    15,
-    "the recording carries 15 inert options at tan 0.6.0 (17 at 0.6.0-rc1, " +
-      "less the two renode flags); every one of them must be classified",
+    51,
+    "the recording carries 51 inert options at tan 0.6.0 (15 before #602's " +
+      "fetch.mjs fix taught the fetcher to read a command's own description, " +
+      "not just its options table); every one of them must be classified",
+  );
+  const parityCount = [...kinds].length
+    ? Object.values(INERT_OPTIONS).filter((k) => k === "parity").length
+    : 0;
+  assert.equal(
+    parityCount,
+    35,
+    "35 of the 36 flags #602 added are `parity` (the 36th, `faultdecode " +
+      "--board-yaml`, is `not-applicable`) — a count drifting here means a " +
+      "flag was reclassified without checking whether its marker still " +
+      "supports that",
   );
 });
 

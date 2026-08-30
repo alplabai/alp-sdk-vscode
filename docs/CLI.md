@@ -461,19 +461,33 @@ Suggested flags:
 Purpose:
 
 - surface the E1M pinmux capability table (E1M pad → silicon function) for a SoM
-  family, as the single source the extension/LSP consume instead of reading
-  `metadata/pinmux/<family>.yaml` directly
+  family as an envelope command
+
+  > **Not the extension's source today.** `src/pinmux/loader.ts` reads
+  > `metadata/pinmux/<family>.yaml` with `fs` directly and nothing in this repo
+  > spawns `tan pinmux` — measured against the pinned binary, not aspirational.
+  > The extension's own family mapping (`SKU_PINMUX_FAMILY`) agrees with tan's
+  > (below), so the two do not currently disagree, but they are two
+  > independent implementations of the same mapping, not one shared source.
 
 Required behavior:
 
 - resolve the family from `--family <stem>` or by mapping `--sku <sku>`
-  (`E1M-AEN*` → `aen`, `E1M-V2N*` → `v2n`, `E1M-V2M*` → `v2n-m1`,
+  (`E1M-AEN*` → `aen`, `E1M-V2N*` → `v2n`, `E1M-V2M*` → `v2n` — V2M is the
+  same PCB/E1M edge as V2N, so it shares the v2n capability table —
   `E1M-NX9*` → `imx93`)
 - read `<sdk>/metadata/pinmux/<family>.yaml` and emit its pads (`e1mPad`,
   `e1mFunction`, `owner`, `siliconPeripheral`, `siliconPad`) in the envelope
   `data`, matching the extension's `PinmuxTable`
-- fail soft (exit 0 + a warning issue) when the SDK root is unresolved, the SKU
-  has no known family, or the family has no generated table — pads is then empty
+- fail soft (exit 0 + a warning issue, `pinmux.sdk-root-unresolved` /
+  `pinmux.unknown-sku` / `pinmux.table-not-found`) when the SDK root is
+  unresolved, the SKU has no known family, or the family has no
+  `metadata/pinmux/<family>.yaml` file at all
+- but fail HARD (exit 2, `ok: false`, `pinmux.table-empty`, severity `error`)
+  when that file exists and parses to zero pads with a resolved
+  `e1m_pad`/`e1m_function` — measured: this is the state of `v2n.yaml` today
+  (207 of 207 pads still `TBD`), so all four V2N/V2M SKUs hit this branch, not
+  the soft one, against the shipping SDK
 
 Suggested flags:
 

@@ -2,26 +2,36 @@
 //
 // An inert option is not one thing.
 //
-// `test/golden/tan-surface/surface.json` records 17 options as `inert: true`
-// across 32 commands, and the recording's own markers put them in FOUR
-// different situations:
+// `test/golden/tan-surface/surface.json` records 51 options as `inert: true`,
+// and the recording's own markers put them in FOUR different situations:
 //
 //   deferred        12  build --plan/--manifest/--manifest-from/--all/--ci/…
 //                       "Accepted by other commands; not implemented for
 //                       `build` yet (tan-cli#427)" — the capability is coming.
 //   compatibility    1  doctor --build, "Accepted for compatibility
 //                       (tan-cli#290)" — kept so old callers do not break.
-//   parity           0  NO INSTANCE at tan 0.6.0. Its two were
-//                       `renode --board-yaml/--image-bundle`, "Accepted for
-//                       parity with every other command's global flag", and
-//                       v0.6.0 removed the `renode` verb (tan-cli#848, #584).
-//                       The kind stays in the union: it names a wording tan
-//                       uses, not a flag that happens to exist, and the next
-//                       command to say "accepted for parity" is classified on
-//                       the day it lands rather than falling through as
-//                       unknown.
-//   not-applicable   2  faultdecode --project/--sdk-root, "(unused:
-//                       faultdecode is HW-free)".
+//   parity          35  diff/faultdecode/inspect/pinmux/support-bundle/trace's
+//                       global ergonomics flags (--all/--ci/--no-color/
+//                       --non-interactive/--quiet/--target/--verbose), each
+//                       command's own description paragraph naming the
+//                       reason verbatim: "the oracle's clap `GlobalArgs` are
+//                       `global = true`, so every verb accepts all of them"
+//                       (#602). HAD no instance between v0.6.0 removing
+//                       `renode` (tan-cli#848, #584 — `renode
+//                       --board-yaml`/`--image-bundle` were the previous two)
+//                       and #602's first pass, which misclassified all 36
+//                       of these `not-applicable` before an adversarial
+//                       review caught the distinction below.
+//   not-applicable   3  faultdecode --project/--sdk-root/--board-yaml,
+//                       "(unused: faultdecode is HW-free)" / "reads no
+//                       board.yaml and drives no alp-sdk checkout -- it is
+//                       pure ARMv8-M register arithmetic" — a genuine DOMAIN
+//                       reason specific to this one command, not the generic
+//                       "every verb has it" reason `parity` names. The line
+//                       between the two: `parity` flags are applicable
+//                       concepts a command declines to implement;
+//                       `not-applicable` flags are concepts that do not mean
+//                       anything for this command's domain at all.
 //
 // Only the first will ever start doing something. Telling a customer that
 // `doctor --build` is "deferred, see tan-cli#427" would promise an arrival that
@@ -50,14 +60,15 @@ test("each recorded kind of inertness is told apart", () => {
   assert.equal(inertKindOf("build", "--plan"), "deferred");
   assert.equal(inertKindOf("doctor", "--build"), "compatibility");
   assert.equal(inertKindOf("faultdecode", "--project"), "not-applicable");
-  // `parity` has NO instance to assert at this pin — see the header. Pinned as
-  // an absence rather than left unmentioned, so the day a `parity` flag lands
-  // this line fails and somebody adds the positive case.
-  assert.equal(
-    Object.values(INERT_OPTIONS).includes("parity"),
-    false,
-    "a `parity` flag exists again — add it to the three assertions above",
-  );
+  // `faultdecode --board-yaml` is the domain exclusion, same reason as
+  // `--project`/`--sdk-root` just above — NOT `parity`, even though it is
+  // one of the 36 flags #602 added, because faultdecode's own marker names
+  // board.yaml specifically rather than the generic "every verb accepts all
+  // of them" wording.
+  assert.equal(inertKindOf("faultdecode", "--board-yaml"), "not-applicable");
+  // `parity` has a real instance again as of #602 — `diff --all` is one of
+  // 35. Pinned as a POSITIVE case now rather than an asserted absence.
+  assert.equal(inertKindOf("diff", "--all"), "parity");
 });
 
 test("a live option has no kind at all", () => {

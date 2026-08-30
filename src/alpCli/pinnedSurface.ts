@@ -208,15 +208,78 @@ export const INERT_OPTIONS: Readonly<Record<string, InertKind>> = {
   // break. Never going to act; there is nothing to wait for.
   "doctor --build": "compatibility",
 
-  // PARITY — accepted so this command's flag surface matches its siblings'.
-  // Same permanence as compatibility, different reason, and the distinction is
-  // worth keeping: a customer told "for parity" can stop looking for an effect.
+  // PARITY (#602) — tan's own reason, read past the matched clause into the
+  // rest of the sentence, is the parity wording verbatim: "the oracle's clap
+  // `GlobalArgs` are `global = true`, so every verb accepts all of them"
+  // (`diff`, `pinmux`, `faultdecode`) / "clap makes every one of them
+  // `global = true` in the oracle" (`inspect`) / "`global = true` clap
+  // options `<mod>.rs` never reads" (`support-bundle`, `trace` — this one
+  // literally embeds `global = true` in the matched marker, not just the
+  // surrounding sentence). That is a claim about WHY the flag exists on this
+  // command — because every command has it, not because this one has a
+  // domain-specific need for it — which is `INERT_KIND_REASON.parity`'s
+  // definition, not `not-applicable`'s. `--verbose`/`--quiet`/`--ci`/
+  // `--no-color`/`--non-interactive`/`--all`/`--target` are ordinary,
+  // applicable CLI ergonomics concepts (any command COULD read them); these
+  // six commands simply do not act on them. Corrected from an earlier
+  // `not-applicable` pass over all 36 that conflated "global-architecture
+  // artifact" with "meaningless by nature" — refuted by `faultdecode`'s own
+  // marker for `--board-yaml`/`--project`/`--sdk-root` just below, which
+  // states a genuine domain reason ("reads no board.yaml and drives no
+  // alp-sdk checkout") that none of the parity flags carry.
+  "diff --all": "parity",
+  "diff --ci": "parity",
+  "diff --no-color": "parity",
+  "diff --non-interactive": "parity",
+  "diff --target": "parity",
+  "diff --verbose": "parity",
+
+  "faultdecode --all": "parity",
+  "faultdecode --ci": "parity",
+  "faultdecode --non-interactive": "parity",
+  "faultdecode --quiet": "parity",
+  "faultdecode --target": "parity",
+  "faultdecode --verbose": "parity",
+
+  "inspect --all": "parity",
+  "inspect --ci": "parity",
+  "inspect --no-color": "parity",
+  "inspect --non-interactive": "parity",
+  "inspect --target": "parity",
+  "inspect --verbose": "parity",
+
+  "pinmux --all": "parity",
+  "pinmux --ci": "parity",
+  "pinmux --no-color": "parity",
+  "pinmux --non-interactive": "parity",
+  "pinmux --quiet": "parity",
+  "pinmux --target": "parity",
+  "pinmux --verbose": "parity",
+
+  "support-bundle --all": "parity",
+  "support-bundle --ci": "parity",
+  "support-bundle --no-color": "parity",
+  "support-bundle --non-interactive": "parity",
+  "support-bundle --quiet": "parity",
+
+  "trace --all": "parity",
+  "trace --ci": "parity",
+  "trace --no-color": "parity",
+  "trace --non-interactive": "parity",
+  "trace --verbose": "parity",
 
   // NOT APPLICABLE — the recording's words are "(unused: faultdecode is
-  // HW-free)". The flag is meaningless for this command by nature, not
-  // unimplemented.
+  // HW-free)" / "reads no board.yaml and drives no alp-sdk checkout -- it is
+  // pure ARMv8-M register arithmetic". The flag is meaningless for THIS
+  // command by nature — a fault decoder has no notion of a project or a
+  // board — not merely unimplemented the way the `parity` flags above are.
+  // `--board-yaml` joins `--project`/`--sdk-root` here rather than the
+  // `parity` block above for exactly that reason: faultdecode's own marker
+  // names board.yaml specifically, the same domain exclusion as the other
+  // two, not the generic "every verb accepts all of them" one.
   "faultdecode --project": "not-applicable",
   "faultdecode --sdk-root": "not-applicable",
+  "faultdecode --board-yaml": "not-applicable",
 };
 
 /** How each permanent kind is explained to a customer. `deferred` is absent on

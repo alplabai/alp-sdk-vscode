@@ -1,8 +1,8 @@
 {
   "version": "0.6.0",
-  "capturedAt": "2026-08-26",
+  "capturedAt": "2026-08-30",
   "sourceDigest": "28112bfd9d9a28d1d0300e9701de8ce79e538bc1e318df222075919a997197ec",
-  "contentDigest": "78f6701b6d6107c13d1332a9eaf5bb4ab6153aafc4bf51a0e8b287cf75d93587",
+  "contentDigest": "a307a4cbe9f67c5b42ee78f7149b8ee89f05e9735d59179b76e3da584e60dbfd",
   "globalOptions": [
     "--project",
     "--board-yaml",
@@ -479,9 +479,9 @@
       "refusingSubcommands": {},
       "options": {
         "--all": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
@@ -493,9 +493,9 @@
           "valueOptional": false
         },
         "--ci": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
@@ -514,16 +514,16 @@
           "valueOptional": false
         },
         "--no-color": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
         "--non-interactive": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
@@ -549,16 +549,16 @@
           "valueOptional": false
         },
         "--target": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
           "metavar": "EMIT",
           "valueOptional": false
         },
         "--verbose": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         }
@@ -758,6 +758,13 @@
       "subcommandValues": [],
       "refusingSubcommands": {},
       "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
         "--bfar": {
           "inert": false,
           "ref": null,
@@ -772,11 +779,25 @@
           "metavar": "<str>",
           "valueOptional": false
         },
+        "--board-yaml": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": "PATH",
+          "valueOptional": false
+        },
         "--cfsr": {
           "inert": false,
           "ref": null,
           "marker": null,
           "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
           "valueOptional": false
         },
         "--dfsr": {
@@ -856,6 +877,13 @@
           "metavar": null,
           "valueOptional": false
         },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
         "--pc": {
           "inert": false,
           "ref": null,
@@ -870,6 +898,13 @@
           "metavar": "PATH",
           "valueOptional": false
         },
+        "--quiet": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
         "--sdk-root": {
           "inert": true,
           "ref": null,
@@ -877,11 +912,25 @@
           "metavar": "PATH",
           "valueOptional": false
         },
+        "--target": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
         "--ufsr": {
           "inert": false,
           "ref": null,
           "marker": null,
           "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
           "valueOptional": false
         }
       }
@@ -1269,11 +1318,25 @@
       "subcommandValues": [],
       "refusingSubcommands": {},
       "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
         "--board-yaml": {
           "inert": false,
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": null,
           "valueOptional": false
         },
         "--format": {
@@ -1287,6 +1350,20 @@
           "inert": false,
           "ref": null,
           "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
           "metavar": null,
           "valueOptional": false
         },
@@ -1322,6 +1399,20 @@
           "inert": false,
           "ref": null,
           "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
           "metavar": null,
           "valueOptional": false
         }
@@ -1734,9 +1825,9 @@
       "refusingSubcommands": {},
       "options": {
         "--all": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
@@ -1748,9 +1839,9 @@
           "valueOptional": false
         },
         "--ci": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
@@ -1776,16 +1867,16 @@
           "valueOptional": false
         },
         "--no-color": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
         "--non-interactive": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
@@ -1797,9 +1888,9 @@
           "valueOptional": false
         },
         "--quiet": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         },
@@ -1825,16 +1916,16 @@
           "valueOptional": false
         },
         "--target": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
           "metavar": "EMIT",
           "valueOptional": false
         },
         "--verbose": {
-          "inert": false,
+          "inert": true,
           "ref": null,
-          "marker": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
           "metavar": null,
           "valueOptional": false
         }
@@ -2277,11 +2368,25 @@
       "subcommandValues": [],
       "refusingSubcommands": {},
       "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--all` is accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
         "--board-yaml": {
           "inert": false,
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--quiet`/ `--no-color`/`--non-interactive`/`--ci` are `global = true` clap options `support_bundle.rs` never reads",
+          "metavar": null,
           "valueOptional": false
         },
         "--destination": {
@@ -2305,6 +2410,20 @@
           "metavar": null,
           "valueOptional": false
         },
+        "--no-color": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--quiet`/ `--no-color`/`--non-interactive`/`--ci` are `global = true` clap options `support_bundle.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--quiet`/ `--no-color`/`--non-interactive`/`--ci` are `global = true` clap options `support_bundle.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
         "--path": {
           "inert": false,
           "ref": null,
@@ -2317,6 +2436,13 @@
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--quiet`/ `--no-color`/`--non-interactive`/`--ci` are `global = true` clap options `support_bundle.rs` never reads",
+          "metavar": null,
           "valueOptional": false
         },
         "--sdk-root": {
@@ -2361,11 +2487,25 @@
       "subcommandValues": [],
       "refusingSubcommands": {},
       "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--all` is accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
         "--board-yaml": {
           "inert": false,
           "ref": null,
           "marker": null,
           "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "The other hidden flags are `global = true` clap options `trace.rs` never reads",
+          "metavar": null,
           "valueOptional": false
         },
         "--format": {
@@ -2379,6 +2519,20 @@
           "inert": false,
           "ref": null,
           "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": true,
+          "ref": null,
+          "marker": "The other hidden flags are `global = true` clap options `trace.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "The other hidden flags are `global = true` clap options `trace.rs` never reads",
           "metavar": null,
           "valueOptional": false
         },
@@ -2415,6 +2569,13 @@
           "ref": null,
           "marker": null,
           "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": null,
+          "marker": "The other hidden flags are `global = true` clap options `trace.rs` never reads",
+          "metavar": null,
           "valueOptional": false
         }
       }
