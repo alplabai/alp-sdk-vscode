@@ -6,6 +6,92 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **Comments across `src/`, `packages/`, `test/` and `README.md`/`docs/**`
+  that measured the pinned tan CLI against `0.6.0-rc1` now say `0.6.0` — the
+  pin moved, and most were label-only, but several were not, including one
+  that survived a first pass at this same sweep (#609, adversarially
+  reviewed twice).** `packages/alp-webview/src/features/models/cliSurface.ts`
+  (and its test companion) is RE-MEASURED, not relabelled: all nine `model`
+  subcommands were re-run against the pinned GA binary, and the
+  alarm-collapsing logic did not need to change. `test/deps.adapter.test.js`
+  resolves its captured `tan doctor` fixture from `SUPPORTED_CLI_VERSION`
+  (matching `test/deps.projectScope.test.js`) and derives its
+  withheld-row-count assertion from the fixture's own per-status counts
+  instead of a hand-counted literal, because the GA capture's checks differ
+  from the rc1 one it replaces (`sdkProvenance` gained; `zephyrWorkspace` is
+  state-dependent, not removed). The stale rc1 doctor fixture is deleted, and
+  `test/validation.diagnosticV1.test.js`'s six inline `tool.version` fixtures
+  get the same treatment (measured: the pin emits `"version": "0.6.0"`
+  verbatim). Roughly twenty label-only sites across `test/` and four
+  customer-facing docs (`README.md`, `docs/TASK_RECIPES.md`,
+  `docs/ALP_IDE_ONBOARDING.md`, `docs/GETTING_STARTED_CLI.md`,
+  `docs/GETTING_STARTED_VSCODE.md`) missed by the first pass are relabelled
+  too, plus `docs/RELEASE_GATES.md` and `docs/GETTING_STARTED_CLI.md`'s
+  "the pin IS a pre-release" framing, now past tense (the pin is GA).
+  `scripts/doc-cli-claims/scan.mjs` gains a narrow new `versionLabel` claim
+  class — "tan (VERSION) implements/publishes/accepts/takes" — and
+  `test/docs.cliClaims.test.js` gates it against `SUPPORTED_CLI_VERSION`, so
+  a future pin bump reds on a stale prose label instead of needing a second
+  adversarial review to find one. Several comments citing the now-retired
+  Rust `tan-cli` as the source of a still-live behavioural claim are
+  re-measured against the pinned Python 0.6.0 binary rather than relabelled
+  or hedged: `tan debug-config` now defaults `preLaunchTask` per target kind
+  even with no `--pre-launch-task` on the argv at all, and both places that
+  claim is made (`src/tasks/service.ts`'s module doc AND
+  `preLaunchTaskFor`'s own docstring — the first pass fixed only one) now
+  agree (`src/debug/service.ts`, `docs/DEBUG.md` §10.6); the `sdk list`
+  GitHub request is still bounded, measured at ~20s directly; `HTTPS_PROXY`
+  is confirmed read (a closed local port makes the call fail to connect, with
+  tan's own error message naming `ALL_PROXY`/`HTTPS_PROXY`/`NO_PROXY`); the
+  data-loss-relevant `configFiles` array-merge rule in `src/debug/service.ts`
+  is confirmed to still operate on a live, placeholder-bearing field
+  (`"configFiles":["<resolved-openocd-board-cfg>"]`, measured) even though
+  tan itself no longer merges at all, so its correctness now rests on this
+  repo's own `test/debug.rescue.test.js` rather than retired Rust source; and
+  a routing decision in `src/toolchain.ts` that cited retired `doctor.rs`
+  gating logic is re-derived from an already-measured, stronger reason
+  (`--format json` unconditionally suppresses `--fix`) that makes the old
+  citation moot rather than wrong. **The TLS/proxy finding changed
+  materially between the first pass and this one**: `src/alpCli/
+  vscodeAdapter.ts`'s claim that a proxy's CA "merged into the OS trust
+  store" was first downgraded to unverified, then actually MEASURED —
+  `SSL_CERT_FILE=/dev/null SSL_CERT_DIR=/nonexistent`, `REQUESTS_CA_BUNDLE`
+  and `CURL_CA_BUNDLE` pointed at bogus paths all leave `sdk list --online`
+  succeeding, meaning tan reads none of the usual override variables and
+  verifies against an explicit, non-configurable bundled CA file. The
+  customer-facing log message is rewritten to stop recommending "install the
+  proxy's CA in the OS trust store" — a remedy the measurement shows cannot
+  help tan itself — and to say plainly that there is currently no workaround
+  for tan's own calls behind a TLS-inspecting proxy.
+
+- **`test/e2e/cli-smoke.sh`'s `pinmux` check asserted only an exit code, never
+  exercised the SKU family whose capability table is empty against the
+  shipping SDK, and had no `new-som` check at all (#612, adversarially
+  reviewed twice).** `pinmux` is now asked for `--format json` (text mode
+  writes its summary to stderr, nothing to stdout) and checked for real pad
+  content on an AEN SKU plus the `pinmux.table-empty` refusal code on a V2N
+  one — correctly described as every one of 207 pads still being `"TBD"`,
+  not an empty table, and flagged as binding to a `status: "reserved"`,
+  `consumer: "none"` code the vendored contract says nothing in this repo
+  yet depends on. `new-som --dry-run` is exercised once (not twice) and
+  asserted to write nothing, with a note that `new-som` has no captured
+  envelope in the vendored contract at all — this script measures it
+  directly against the live binary instead. The `doctor` call this issue
+  named (`--target-kind native-host --server none`, which `doctor` accepts
+  neither of) had already been fixed in #556, before this branch — but the
+  check that replaced it turns out to structurally never pass: a fresh,
+  never-bootstrapped scaffold always fails `workspace`/`westResolved`, so it
+  now asserts real per-tool check content instead of `ok:true`. Both
+  envelope-content helpers (`okj`, and the new `hasj`) capture a command's
+  output through a variable rather than piping straight from it, because
+  `hasj`'s first version had a `set -o pipefail` bug that let a
+  deliberately-refused command's own exit code override a `grep` match that
+  DID find its answer — caught by driving the whole script end to end
+  against the pinned binary, and `okj` carried the identical latent bug
+  unnoticed until the second review pass. Nothing wires this script into CI
+  — it is renamed `test:e2e:cli:manual` and documented as a manual tool, run
+  by hand after a pin bump.
+
 - **The vendored `tan` surface capture now reads a command's DESCRIPTION, not
   just its options table, and 36 inert-flag facts it was missing are now
   recorded — LESS WRONG, not complete (#602).** `scripts/tan-surface/

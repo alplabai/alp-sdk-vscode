@@ -95,12 +95,13 @@ const LATEST_SDK_CACHE_KEY = "alp.deps.latestSdkTag";
  * ~72 KB) against a 60-requests-per-hour-per-IP budget already shared with the
  * Hub's SDK Manager. So the panel must never make it a per-open cost.
  *
- * The pinned tan v0.4.0 DOES bound the request (`http.rs` builds one shared
- * agent with a total timeout, covered by its own
- * `the_timeout_bounds_a_request_the_peer_never_answers` test), so an
- * unreachable host no longer stalls until tan's spawn cap. v0.3.1 and earlier
- * set none — still reachable through `alpSdk.cliPath` — and the rate budget
- * argument above holds either way, so the cache stays.
+ * The request IS bounded, RE-MEASURED against the pinned 0.6.0 rather than
+ * carried forward from the v0.4.0 Rust build this paragraph used to cite
+ * (`http.rs`'s shared agent no longer describes a Python binary): pointing
+ * `HTTPS_PROXY` at a black-hole address returns a clean `sdk.fetch-failed` /
+ * `<urlopen error timed out>` after roughly 20s, not a hang. v0.3.1 and
+ * earlier set none — still reachable through `alpSdk.cliPath` — and the rate
+ * budget argument above holds either way, so the cache stays.
  *
  * 12 h and not shorter: SDK releases land weeks apart, so a tighter TTL buys
  * nothing but requests. 12 h and not longer: a customer who opens the IDE the
@@ -509,7 +510,7 @@ export function withheldProjectChecks(
  * The per-tool PATH probes the Dependencies table exists to report.
  *
  * MEASURED, never guessed. `west`, `zephyrSdk` and `hostPython` are read off
- * the pinned binary (`test/fixtures/tan-doctor.v0.6.0-rc1.darwin.json`);
+ * the pinned binary (`test/fixtures/tan-doctor.v0.6.0.darwin.json`);
  * `git`, `python`, `cmake`, `ninja`, `dtc`, `gperf`, `yoctoHost` and
  * `vendorToolchain` off tan v0.4.0's `--build` envelope
  * (`test/fixtures/tan-doctor-build.v0.4.0.windows.json`). Two generations of

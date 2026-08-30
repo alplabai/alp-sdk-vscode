@@ -829,29 +829,40 @@ let strictSSLNotForwardableWarned = false;
  * `http.proxyStrictSSL: false` says "a TLS-intercepting middlebox re-signs my
  * traffic, accept it". Examined and NOT representable in the spawn environment:
  * `tan` has no environment knob (nor a flag) that relaxes certificate
- * verification — the only env vars it reads for the network are the proxy names
- * in `proxyEnvOverrides`, and its rustls config is built unconditionally
- * (tan-cli `crates/tan-cli/src/http.rs` `tls_config`).
+ * verification — MEASURED at the pinned 0.6.0, not inherited: every
+ * subcommand's own `--help` (all THIRTY-ONE of them) was checked for `cert`,
+ * `ssl`, `tls`, `verify`, `proxy`, `insecure` and `trust`, and none appears.
+ * The only env vars this extension itself adds for the network are the proxy
+ * names in `proxyEnvOverrides`.
  *
- * It also should not need one. That same `tls_config` trusts the bundled webpki
- * roots MERGED WITH THE OS TRUST STORE, so a middlebox CA installed in
- * Windows/macOS/Linux system trust is already accepted. The remedy for this
- * user is to install their proxy's CA there — not a per-tool "skip
- * verification" switch we would have to invent. Inventing one is also the wrong
- * trade: it would turn a verified download of an executable we then run into an
- * unverified one.
+ * THE MECHANISM THIS PARAGRAPH USED TO NAME IS GONE, AND RE-MEASURED, NOT
+ * GUESSED. It used to attribute the "no skip-verification switch" behaviour
+ * to a specific rustls `tls_config` (`tan-cli crates/tan-cli/src/http.rs`)
+ * that trusted the bundled webpki roots merged with the OS trust store — a
+ * citation that cannot describe the shipped binary: 0.6.0 is Python. What it
+ * actually does was then MEASURED rather than left unverified: the pinned
+ * binary bundles `_internal/certifi/cacert.pem` (240216 bytes), and
+ * `SSL_CERT_FILE=/dev/null SSL_CERT_DIR=/nonexistent tan --format json sdk
+ * list --online` still succeeds — OpenSSL's own env-configurable verify
+ * paths are not being consulted at all, so tan is not falling back to
+ * `set_default_verify_paths()`. `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` and
+ * `SSL_CERT_FILE` pointed at a real-but-empty file were each tried too, and
+ * every one of them was silently ignored (the call still succeeds). tan is
+ * passing an explicit CA file — almost certainly its own bundled certifi —
+ * and reads NONE of the usual override variables. So the OS trust store is
+ * NOT merged in, and there is currently no lever, of any kind, for a
+ * customer to add a proxy's CA to what tan itself trusts.
  *
- * The OS trust store is NOT claimed to fix the subprocesses, because it does
- * not. tan's own module doc is explicit that `git clone`, `pip` and `west
- * update` "do their own networking with their own trust stores" (tan-cli
- * `crates/tan-cli/src/http.rs`): pip verifies against `certifi`'s bundled CA
- * and never consults the Windows/macOS store (it needs `PIP_CERT` /
- * `REQUESTS_CA_BUNDLE` / `--trusted-host`), and Git for Windows built against
- * OpenSSL uses its own `ca-bundle.crt`. Promising them here is how a user
- * installs the CA as told, watches tan start working, then hits
- * `CERTIFICATE_VERIFY_FAILED` on the pip step and concludes the extension lied.
+ * The OS trust store is NOT claimed to fix the subprocesses either, because
+ * it does not, independent of tan's own implementation language: pip
+ * verifies against `certifi`'s bundled CA and never consults the
+ * Windows/macOS store (it needs `PIP_CERT` / `REQUESTS_CA_BUNDLE` /
+ * `--trusted-host`), and Git for Windows built against OpenSSL uses its own
+ * `ca-bundle.crt`.
  *
- * So this logs the honest answer once instead of silently doing nothing.
+ * So this logs the honest answer once instead of silently doing nothing, and
+ * the honest answer is now narrower than it used to be: there is no remedy
+ * to hand the customer for tan itself, only for the subprocesses it spawns.
  */
 function warnIfStrictSSLNotForwardable(strictSSL: boolean | undefined): void {
   if (strictSSL !== false || strictSSLNotForwardableWarned) {
@@ -860,13 +871,13 @@ function warnIfStrictSSLNotForwardable(strictSSL: boolean | undefined): void {
   strictSSLNotForwardableWarned = true;
   log(
     "[cli] http.proxyStrictSSL is off, but that setting does not reach the " +
-      "tan CLI — tan always verifies TLS, against the bundled roots plus your " +
-      "OS trust store. If a TLS-inspecting proxy is breaking tan, install its " +
-      "CA certificate into the OS trust store; there is no way to disable the " +
-      "check for tan alone. Note that this fixes tan itself only — the tools " +
-      "it runs (git, pip, west) each verify against their own trust store, so " +
-      "a TLS-inspecting proxy may still need PIP_CERT / REQUESTS_CA_BUNDLE " +
-      "for pip and http.sslCAInfo for git.",
+      "tan CLI — tan always verifies TLS against its own bundled CA list and " +
+      "has no flag or environment variable that adds to it or turns the " +
+      "check off, so a TLS-inspecting proxy will break tan itself with no " +
+      "available workaround today. The tools tan runs (git, pip, west) each " +
+      "verify against their own trust store regardless, so once tan's own " +
+      "calls are unblocked upstream a TLS-inspecting proxy may still need " +
+      "PIP_CERT / REQUESTS_CA_BUNDLE for pip and http.sslCAInfo for git.",
   );
 }
 

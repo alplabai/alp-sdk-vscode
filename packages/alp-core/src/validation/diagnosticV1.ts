@@ -14,7 +14,7 @@ import {
  * rest of this extension already uses (`alpCli/vscodeAdapter.ts:withSdkRoot`).
  *
  * `--offline` is deliberately never passed. It runs only the structural checks
- * that ship inside tan, and measured against the pinned 0.6.0-rc1 those accept
+ * that ship inside tan, and measured against the pinned 0.6.0 those accept
  * an unknown top-level key (`not_a_key: 3`) at exit 0 with an EMPTY diagnostics
  * list — the SDK-backed path reports the same file as `ALP-B002`. Falling back
  * to offline would weaken validation without saying so.

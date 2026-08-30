@@ -25,6 +25,8 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const Module = require("node:module");
 
+const { SUPPORTED_CLI_VERSION } = require("../out/alpCli/service.js");
+
 const root = path.join(__dirname, "..");
 
 /** Require `relPath` out of `out/` with `stubs` standing in for the requires
@@ -71,17 +73,30 @@ function loadDepsAdapter(overrides = {}) {
  * verbatim except for one redaction: every absolute path is rewritten onto
  * `/home/dev`.
  *
+ * RESOLVED FROM `SUPPORTED_CLI_VERSION`, not a hardcoded filename, for the
+ * same reason `test/deps.projectScope.test.js` derives its own copy that way:
+ * a pin bump is a doctor-envelope change (check names, the `scope`
+ * vocabulary, and which checks are project-scoped all move with it), and a
+ * hardcoded literal would leave this whole file reading a superseded
+ * binary's envelope with nothing to say so.
+ *
  * It is here because the split this file asserts is a claim about tan, not
  * about a stub. tan SCOPES each check itself — `"scope": "project"` or
  * `"scope": "host"` on all fourteen — and that field is what decides which
  * rows are withheld with no folder open. Six are project-scoped
- * (`sdk`, `boardYaml`, `workspace`, `westResolved`, `zephyrWorkspace`,
- * `pythonFloor`) and eight are host-scoped; note that TWO of the six are ones
+ * (`sdk`, `boardYaml`, `workspace`, `westResolved`, `pythonFloor`,
+ * `sdkProvenance`) and eight are host-scoped; note that `sdkProvenance` is one
  * the retired hand list never named, which is the whole argument for reading
- * tan's answer instead of maintaining our own.
+ * tan's answer instead of maintaining our own. `zephyrWorkspace`, which used
+ * to be the second such check in the rc1 capture this replaced, is not on the
+ * wire in THIS capture at all — it depends on a bootstrapped Zephyr workspace
+ * being present, and this one was taken against a project that has an SDK
+ * resolved but no workspace bootstrapped yet. A check's presence in the
+ * checks array is itself state-dependent, not just its status.
  */
-const REAL_PINNED =
-  require("./fixtures/tan-doctor.v0.6.0-rc1.darwin.json").data;
+const REAL_PINNED = require(
+  `./fixtures/tan-doctor.v${SUPPORTED_CLI_VERSION}.darwin.json`,
+).data;
 
 /**
  * A REAL `tan 0.4.0` plain-`doctor` envelope from a Windows 11 host, same
@@ -461,7 +476,7 @@ async function sdkListLookup({ envelope, cached }) {
   };
 }
 
-/** Measured against pinned tan 0.6.0-rc1: `tan --format json sdk list` with no
+/** Measured against pinned tan 0.6.0: `tan --format json sdk list` with no
  *  `--online`. `ok: true`, exit 0, empty list, real answer in a WARNING. */
 const NOT_LOOKED_UP = {
   command: "sdk",
@@ -619,7 +634,7 @@ test("no allowlist stands between a check tan reported and a row", async () => {
   const planned = planDependencyReport({
     data: REAL_LEGACY,
     bootstrapRunning: false,
-    cli: { installed: "0.4.0", latest: { version: "0.6.0-rc1", kind: "pin" } },
+    cli: { installed: "0.4.0", latest: { version: "0.6.0", kind: "pin" } },
     compareVersions: () => "behind",
   });
   const row = (name) => planned.rows.find((c) => c.name === name);
@@ -755,10 +770,10 @@ test("with no folder open a project check is withheld, and says so", async () =>
     );
   }
 
-  // Two of these six — `zephyrWorkspace` and `pythonFloor` — were NOT in the
+  // Two of these six — `pythonFloor` and `sdkProvenance` — were NOT in the
   // hand list this replaced. Reading tan's own `scope` is what admits them, and
   // it is why the list is a fallback rather than the source (#472).
-  for (const name of ["zephyrWorkspace", "pythonFloor"]) {
+  for (const name of ["pythonFloor", "sdkProvenance"]) {
     assert.equal(
       row(name).status,
       "not checked",
@@ -767,17 +782,28 @@ test("with no folder open a project check is withheld, and says so", async () =>
     );
   }
 
-  const withheldVerdicts = projectChecks.filter((check) =>
-    ["pass", "warn", "fail"].includes(check.status),
-  ).length;
+  // Summed BY STATUS off the fixture itself rather than hand-counted, so a
+  // re-capture that shuffles which project checks pass/warn/fail (as the GA
+  // capture already did once, relative to the rc1 one this replaced) moves
+  // this assertion for free. NOT because the hand-counted form fails
+  // silently — MEASURED, it does not: reverting to the old `-4/-1/-1`
+  // literal REDs against this fixture (`{pass:5,warn:2,fail:0}` vs the
+  // hand-counted `{pass:4,warn:2,fail:1}`) — but because that red then costs
+  // a maintainer a trip back to the fixture to recompute three digits by
+  // hand on every future re-capture, for no reason the derivation below
+  // does not already remove.
+  const withheldByStatus = { pass: 0, warn: 0, fail: 0 };
+  for (const check of projectChecks) {
+    if (check.status in withheldByStatus) withheldByStatus[check.status] += 1;
+  }
   assert.deepEqual(
     built.counts,
     {
-      pass: REAL_PINNED.summary.pass - 4,
-      warn: REAL_PINNED.summary.warn - 1,
-      fail: REAL_PINNED.summary.fail - 1,
+      pass: REAL_PINNED.summary.pass - withheldByStatus.pass,
+      warn: REAL_PINNED.summary.warn - withheldByStatus.warn,
+      fail: REAL_PINNED.summary.fail - withheldByStatus.fail,
     },
-    `a withheld row counts as nothing — ${withheldVerdicts} project checks ` +
+    `a withheld row counts as nothing — ${projectChecks.length} project checks ` +
       "carried a verdict about nowhere, and counting them would put marks in " +
       "the header for checks that never ran",
   );

@@ -107,10 +107,11 @@ async function alpBuild(context: vscode.ExtensionContext): Promise<void> {
   );
   if (!target) return;
   await warnIfCliCannotBuildSom(context, target.cwd);
-  // `tan build` (cli.rs BuildArgs) has no positional app_path — project scope
-  // resolves from `--project` (which defaults to the cwd). Active project: a
-  // bare `build` from the project root. Fallback: point `--project` at the
-  // chosen example (a bare positional would be a parse error, not ignored).
+  // `tan build` has no positional app_path — project scope resolves from
+  // `--project` (which defaults to the cwd; MEASURED, `tan build --help` at
+  // the pinned 0.6.0). Active project: a bare `build` from the project root.
+  // Fallback: point `--project` at the chosen example (a bare positional is a
+  // parse error, exit 2 — MEASURED, not assumed — not silently ignored).
   const args = target.active
     ? ["build"]
     : ["--project", ...target.appArg, "build"];

@@ -566,7 +566,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js",
-    "test:e2e:cli": "node scripts/run-bash.mjs test/e2e/cli-smoke.sh",
+    "test:e2e:cli:manual": "node scripts/run-bash.mjs test/e2e/cli-smoke.sh",
     "test:e2e:webview": "node test/webview/run.mjs"
   },
   "pnpm": {

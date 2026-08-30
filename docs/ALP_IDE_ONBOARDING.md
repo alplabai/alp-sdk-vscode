@@ -165,7 +165,7 @@ Palette (`"when": "false"`, #525). The commands are still registered, but nothin
 in the GUI reaches them, so there is no step here to follow on a first run.
 Restoring the surface is tracked as #524.
 
-The panel is also ahead of the CLI it shells. The pinned `tan` (0.6.0-rc1)
+The panel is also ahead of the CLI it shells. The pinned `tan` (0.6.0)
 implements exactly one `model` subcommand — `build`, which compiles and packages
 the `models:` entries of `board.yaml` into `.alpmodel` packages (default output
 directory `build/models`). The pre-flight NPU-coverage badge, INT8 prep with an

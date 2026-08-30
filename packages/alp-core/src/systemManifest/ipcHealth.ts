@@ -4,7 +4,7 @@
 // words for it (#553).
 //
 // THE DEFECT. `tan init --cores` scaffolds a default `ipc:` channel whenever a
-// companion core is named — measured on tan `0.6.0-rc1`: no `--cores` at all
+// companion core is named — measured on tan `0.6.0`: no `--cores` at all
 // yields no `ipc:`, `--cores a32_cluster:yocto` yields one, and
 // `--cores a32_cluster:off` yields none. On an AEN SoM that channel resolves
 // `status: blocked` with a concrete, actionable `reason`, the build reports

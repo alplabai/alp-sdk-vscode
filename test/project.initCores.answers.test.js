@@ -13,7 +13,7 @@
 //
 // THE OBVIOUS FIX IS WORSE THAN THE DEFECT, and it was measured rather than
 // argued. Feeding the answers straight through, over every combination of four
-// answers for every core of all eleven SoMs, driving the pinned tan 0.6.0-rc1:
+// answers for every core of all eleven SoMs, driving the pinned tan 0.6.0:
 //
 //   sending the declared topology (what shipped):  0 of 368 refused
 //   sending the answers verbatim:                276 of 368 refused, exit 2 /

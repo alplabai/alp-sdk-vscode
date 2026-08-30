@@ -171,7 +171,7 @@ export async function setActiveSdk(sdkPath: string): Promise<void> {
   // leave unreconciled and nothing to say.
   //
   // AND THE SENTENCE IS ABOUT THE PIN, NOT ABOUT THE RESOLVED BINARY. Nothing
-  // here probes tan, so "`tan sdk switch` refuses at 0.6.0-rc1" stated as a
+  // here probes tan, so "`tan sdk switch` refuses at 0.6.0" stated as a
   // fact about the running CLI would be false for a `alpSdk.cliPath` user on a
   // v0.4.x tan, where `switch` WORKED (tan-cli#74, gaps closed by #88). The
   // reason no call is made is that this build targets SUPPORTED_CLI_VERSION

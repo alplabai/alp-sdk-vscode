@@ -196,7 +196,7 @@ const GATED_CODES = {
   // `new-som` refusals and `faultdecode`'s reached consumers "as
   // `cli.parse-error` on a `command: "cli"` envelope" before that change, and
   // that an interrupted run "fell into the `cli.parse-error` fallback" before
-  // `cli.interrupted` existed. Against the PINNED 0.6.0-rc1 all three have
+  // `cli.interrupted` existed. Against the PINNED 0.6.0 all three have
   // their own codes, so the branch means what it says; on an older binary
   // reached through `alpSdk.cliPath` it can over-report "wrong command line".
   "cli.parse-error": "reserved",

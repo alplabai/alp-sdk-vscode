@@ -2,7 +2,7 @@
 //
 // `tan validate --format diagnostic-v1`, parsed from its measured shape.
 //
-// Everything asserted here was recorded from the PINNED tan 0.6.0-rc1, because
+// Everything asserted here was recorded from the PINNED tan 0.6.0, because
 // this format breaks three rules the rest of tan follows:
 //
 //   1. It does NOT emit the envelope. The top level is
@@ -72,7 +72,7 @@ test("createTanValidateArgs never passes --offline", () => {
 
 const SDK_BACKED = JSON.stringify({
   schemaVersion: 1,
-  tool: { name: "tan", version: "0.6.0-rc1" },
+  tool: { name: "tan", version: "0.6.0" },
   diagnostics: [
     {
       uri: "/w/board.yaml",
@@ -106,7 +106,7 @@ test("an SDK-backed diagnostic keeps its code and converts its range to 1-based"
 test("the hyphenated structural code is kept verbatim, not rewritten", () => {
   const offline = JSON.stringify({
     schemaVersion: 1,
-    tool: { name: "tan", version: "0.6.0-rc1" },
+    tool: { name: "tan", version: "0.6.0" },
     diagnostics: [
       {
         uri: "./board.yaml",
@@ -129,7 +129,7 @@ test("the hyphenated structural code is kept verbatim, not rewritten", () => {
 test("a zero-width range at the origin carries no location at all", () => {
   const stub = JSON.stringify({
     schemaVersion: 1,
-    tool: { name: "tan", version: "0.6.0-rc1" },
+    tool: { name: "tan", version: "0.6.0" },
     diagnostics: [
       {
         uri: "./board.yaml",
@@ -153,7 +153,7 @@ test("a zero-width range at the origin carries no location at all", () => {
 test("a real range on line 1 is kept — it is not the stub", () => {
   const firstLine = JSON.stringify({
     schemaVersion: 1,
-    tool: { name: "tan", version: "0.6.0-rc1" },
+    tool: { name: "tan", version: "0.6.0" },
     diagnostics: [
       {
         uri: "./board.yaml",
@@ -174,7 +174,7 @@ test("a real range on line 1 is kept — it is not the stub", () => {
 test("no diagnostics and exit 0 is a clean verdict", () => {
   const clean = JSON.stringify({
     schemaVersion: 1,
-    tool: { name: "tan", version: "0.6.0-rc1" },
+    tool: { name: "tan", version: "0.6.0" },
     diagnostics: [],
   });
 
@@ -187,7 +187,7 @@ test("no diagnostics and exit 0 is a clean verdict", () => {
 test("severities map onto the validation vocabulary", () => {
   const payload = JSON.stringify({
     schemaVersion: 1,
-    tool: { name: "tan", version: "0.6.0-rc1" },
+    tool: { name: "tan", version: "0.6.0" },
     diagnostics: [
       { message: "a", severity: "error" },
       { message: "b", severity: "warning" },

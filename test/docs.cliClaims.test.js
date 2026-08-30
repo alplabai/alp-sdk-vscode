@@ -41,9 +41,11 @@
 // is live. It does NOT mean the recipe is CORRECT — a documented `tan flash`
 // without `--confirm` previews and writes nothing (#540) while parsing
 // perfectly, exactly as the same omission is invisible to the code-side gate.
-// It also says nothing about prose that makes a capability claim without argv:
-// `docs/CLI.md`'s "tan is feature-complete" is false at this pin and no
-// assertion here reaches it.
+// It also says nothing about MOST prose that makes a capability claim without
+// argv: `docs/CLI.md`'s "tan is feature-complete" is false at this pin and no
+// assertion here reaches it. One narrow slice of that class IS checked —
+// section 4b below, "tan (VERSION) implements/publishes/accepts/takes" — see
+// `scripts/doc-cli-claims/scan.mjs`'s header for why only that shape.
 //
 // This file needs `pnpm run compile` (or `pnpm run test`, which runs it first)
 // before `node --test` alone will pass — `require("../out/alpCli/...")`
@@ -87,6 +89,7 @@ test.before(async () => {
 
 const invocations = () => CLAIMS.filter((c) => c.kind === "invocation");
 const releaseTags = () => CLAIMS.filter((c) => c.kind === "releaseTag");
+const versionLabels = () => CLAIMS.filter((c) => c.kind === "versionLabel");
 const at = (claim) => `${claim.file}:${claim.line}\n      ${claim.raw}`;
 
 // ---------------------------------------------------------------------------
@@ -208,6 +211,41 @@ test("every tan release the docs install is the pinned one", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 4b. Every prose sentence that LABELS the pinned tan's version says the
+//     version that is actually pinned (#609/#612 adversarial review)
+// ---------------------------------------------------------------------------
+
+// Unlike `releaseTags()`, which reads argv a reader copies verbatim,
+// `versionLabels()` reads a CAPABILITY SENTENCE — "tan (VERSION) implements
+// X" — that install-recipe check above never sees at all. Five sites in this
+// exact corpus said `0.6.0-rc1` after the pin moved to `0.6.0`, entirely
+// unnoticed by every gate that existed before this one. See
+// `scripts/doc-cli-claims/scan.mjs`'s header for why the pattern is narrow
+// (the two shapes actually found stale) rather than "any version near the
+// word tan": the wider net also flags every legitimate historical mention
+// this corpus carries, and a gate that reds on a correct sentence is worse
+// than one with a narrower catch.
+test("every prose sentence labelling the pinned tan's version names the pin", () => {
+  const offenders = [];
+  for (const claim of versionLabels()) {
+    if (claim.version === SUPPORTED_CLI_VERSION) continue;
+    offenders.push(
+      `${at(claim)}\n      labels tan ${claim.version}, pin is ${SUPPORTED_CLI_VERSION}`,
+    );
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "a prose sentence describing what the pinned tan implements/publishes/" +
+      "accepts/takes names a DIFFERENT version than `SUPPORTED_CLI_VERSION` " +
+      `(src/alpCli/service.ts) — re-measure the claim against the version ` +
+      `actually pinned, ${SUPPORTED_CLI_VERSION}, and update the label; do ` +
+      "not just change the digits.\n" +
+      offenders.join("\n"),
+  );
+});
+
+// ---------------------------------------------------------------------------
 // 5. The gate actually read something
 // ---------------------------------------------------------------------------
 
@@ -227,6 +265,13 @@ test("the scanner still reads the prose corpus", () => {
     releaseTags().length > 0,
     "no tan release tag found in the docs at all — the install instructions " +
       "cannot have vanished, so the tag pattern stopped matching.",
+  );
+  assert.ok(
+    versionLabels().length > 0,
+    "no prose version label found in the docs at all — this corpus has " +
+      "always carried at least one 'the pinned tan (VERSION) …' sentence, so " +
+      "a collapse to zero means the pattern stopped matching, not that every " +
+      "such sentence was rewritten away.",
   );
   // Files, not just lines: a scanner that reads one file well and skips the
   // rest passes the count above.

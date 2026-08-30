@@ -127,9 +127,13 @@ same change rather than lowering the floor to silence the gate.
 
 This is also why the pin may legitimately name a PRE-RELEASE. "Never ahead of a
 published tag" above means published, not stable: a prerelease is a published
-tag with real assets, and `v0.6.0-rc1` is pinned precisely because no stable tan
-can build a Renesas SoM. `install.sh`/`install.ps1` resolve their own `latest`
-to the newest NON-prerelease and will not upgrade onto such a pin, which is why
+tag with real assets, and `v0.6.0-rc1` WAS pinned (until the GA tag below
+superseded it, unchanged in substance) precisely because no stable tan could
+build a Renesas SoM at the time. `SUPPORTED_CLI_VERSION` is `0.6.0` now, a
+non-prerelease, but the mechanism this paragraph describes stays live: a
+future rollback that lands back on a prerelease tag is exactly as legitimate
+as this one was. `install.sh`/`install.ps1` resolve their own `latest` to the
+newest NON-prerelease and will not upgrade onto a prerelease pin, which is why
 every managed invocation passes `--version`/`-Version` explicitly.
 
 **What this repo cannot gate.** No workflow here runs a real `tan build`, so

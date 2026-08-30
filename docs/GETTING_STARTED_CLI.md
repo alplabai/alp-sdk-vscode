@@ -58,11 +58,13 @@ this guide is for terminal/CI use where you manage `tan` yourself.
 The tag above, `v0.6.0`, is the release this extension pins
 (`SUPPORTED_CLI_VERSION` in `src/alpCli/service.ts`); install that one for
 terminal use too, so the binary you type at is the binary every gate in this
-repo measures. It is deliberately a PRE-RELEASE (#502): below `0.6.0-rc1` tan's
-vendored planner emits `CONFIG_ALP_SDK_CHIP_NONE=y` and the four Renesas SKUs —
-`E1M-V2N101`, `E1M-V2N102`, `E1M-V2M101`, `E1M-V2M102` — die in Zephyr's
-configure step, so a stable-only download policy does not get you a `tan` that
-can build those modules.
+repo measures. The pin was deliberately a PRE-RELEASE at the time it was
+chosen (#502, `v0.6.0-rc1`) and moved to this GA tag once it was cut, without
+changing the reasoning: below `0.6.0` tan's vendored planner emits
+`CONFIG_ALP_SDK_CHIP_NONE=y` and the four Renesas SKUs — `E1M-V2N101`,
+`E1M-V2N102`, `E1M-V2M101`, `E1M-V2M102` — die in Zephyr's configure step, so
+a stable-only download policy does not get you a `tan` that can build those
+modules.
 
 ### Host support: `tan` runs vs. firmware builds
 
@@ -221,7 +223,7 @@ tan completion --shell fish
 [`CLI.md`](CLI.md)): `{command,ok,exitCode,project,data,issues}`, plus an `sdk`
 block on a run that resolved one, with the packages it wrote in `data.built`.
 
-At the pinned tan (0.6.0-rc1) it takes exactly ONE subcommand, `build`.
+At the pinned tan (0.6.0) it takes exactly ONE subcommand, `build`.
 `tan model --help` prints the whole list: `SUBCOMMAND      <str>  build.`
 
 ```bash

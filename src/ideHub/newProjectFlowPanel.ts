@@ -241,7 +241,7 @@ export class NewProjectFlowPanel {
     // (#528) and the 12 refused template x SoM pairs (#530) both shipped
     // unnoticed by any gate.
     //
-    // Verified byte-identical on the pinned tan 0.6.0-rc1 for `presets`,
+    // Verified byte-identical on the pinned tan 0.6.0 for `presets`,
     // `explain`, `explain --template <id>` and `examples`: `--sdk-root` is a
     // declared option of each of those commands, not merely a root-position
     // global, and `withSdkRoot` tests `args.includes("--sdk-root")` — which is
@@ -416,7 +416,7 @@ export class NewProjectFlowPanel {
                 sourceDir: string;
                 title?: string;
                 description?: string;
-                /** Not on the wire as of the pinned tan v0.6.0-rc1 (measured
+                /** Not on the wire as of the pinned tan v0.6.0 (measured
                  *  against its own published envelope-contract.json), so it is
                  *  optional and `exampleCategory` falls back to `sourceDir`'s
                  *  leading segment. Typed here so the day tan sends one, it

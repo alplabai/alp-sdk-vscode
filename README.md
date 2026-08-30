@@ -17,7 +17,7 @@ First-class IDE support for projects built against the
   without embedding debugger implementation into the extension.
 * **Models / edge-AI panel — hidden at this pin.** A full-tab preview over the
   `tan model` CLI whose build action runs `tan model build`, the one `model`
-  subcommand tan 0.6.0-rc1 implements. Its NPU-coverage badge
+  subcommand tan 0.6.0 implements. Its NPU-coverage badge
   (`full-eligible` / `partial` / `cpu-only` / `undetermined`), Prep Model, Run
   Model, A-B Compare and Model Zoo screens are written against eight `model`
   subcommands this CLI does not have, so the panel reports that gap in a

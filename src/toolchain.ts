@@ -225,11 +225,17 @@ export async function offerBootstrapFix(
   const choice = await notify(plan);
   if (choice !== "custom") return;
 
-  // `tan doctor --build --fix` used to bootstrap ONLY when its own `workspace`
-  // check failed (`doctor.rs` `run_build_readiness` gated on
-  // `c.name == "workspace" && c.status == Fail`) — a workspace that exists but
-  // dangles passed that check, so `--fix` printed a green report and repaired
-  // nothing. That is still why the dangling case below routes to
+  // The dangling case never reaches `--fix` at all, and the reason is the
+  // MEASURED, universal one below rather than tan's now-retired internal
+  // gating logic: every doctor spawn from this extension goes through
+  // `runAlpCommand`, which appends `--format json`, and tan's own `--fix`
+  // help text says that alone disables it ("Only in an interactive, non-CI,
+  // text-mode run") — confirmed by spawning `tan doctor --fix --format json`
+  // and reading back `doctor.fix-suppressed` (see the non-dangling branch
+  // below for the exact probe). That holds whatever tan's internal decision
+  // about a dangling manifest specifically would have been, so this repo does
+  // not need to re-derive that old Rust-era condition to know `--fix` cannot
+  // repair it from here. So the dangling case routes to
   // `alp.installDependencies` instead: it reconciles the manifest pointer
   // (tan-cli #31), unless it reuses a `$ZEPHYR_BASE` workspace, which the
   // logged line above spells out.
@@ -239,7 +245,7 @@ export async function offerBootstrapFix(
   }
   // The remaining case — no Zephyr workspace at all — is exactly what `tan
   // bootstrap` creates, and NOT something `doctor --fix` can do. `--fix` DOES
-  // still exist at the pinned `SUPPORTED_CLI_VERSION`: tan 0.6.0-rc1's
+  // still exist at the pinned `SUPPORTED_CLI_VERSION`: tan 0.6.0's
   // `tan doctor --help` lists `--project --sdk-root --board-yaml --build
   // --fix --format --non-interactive --ci --no-color --help`. The claim that
   // stood here — that the Python `tan` has no `--fix` at all and exits 2 with

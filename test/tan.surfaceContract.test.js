@@ -63,7 +63,7 @@
 //     not assert any particular command accepts them. A 384-probe sweep (12
 //     global flags x 32 commands) at this pin found ZERO rejections, so there
 //     is no live false-accept to fix — but "every command takes every global
-//     flag" is a measured property of 0.6.0-rc1, NOT something the snapshot
+//     flag" is a measured property of 0.6.0, NOT something the snapshot
 //     records, and a future tan could narrow it without this gate noticing.
 //
 // (c) A FLAG INSIDE A NON-LITERAL SPREAD IS INVISIBLE TO EVERY ASSERTION
@@ -110,7 +110,7 @@
 // is how a gate emits a false `Got unexpected extra argument(s)`; the
 // extractor consumes it and marks the record opaque instead, which costs the
 // site its arity check and lists it in `EXPECTED_PARTIAL` where the cost is
-// visible. NO option in tan 0.6.0-rc1 uses a bracketed metavar — all 33 help
+// visible. NO option in tan 0.6.0 uses a bracketed metavar — all 33 help
 // pages were swept — so this path is unreachable at this pin. It is a parser
 // that can read a spelling tan does not yet use, not a false RED that was
 // observed and removed.

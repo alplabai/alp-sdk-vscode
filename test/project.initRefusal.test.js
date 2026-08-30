@@ -4,7 +4,7 @@
 //
 // The New Project flow lets a customer pick any template with any SoM, and 12
 // of the 44 pairs cannot be scaffolded. Measured against the pinned tan
-// 0.6.0-rc1 with alp-sdk v0.16.0-rc1:
+// 0.6.0 with alp-sdk v0.16.0-rc1:
 //
 //   minimal-app      ok on all 11 SoMs
 //   zephyr-app       ok except E1M-NX9101        -> init.som-unsupported
@@ -28,7 +28,7 @@ const {
   classifyInitRefusal,
 } = require("../packages/alp-core/dist/project/initRefusal.js");
 
-// Verbatim from tan 0.6.0-rc1.
+// Verbatim from tan 0.6.0.
 const NO_SCAFFOLD = {
   code: "init.som-unsupported",
   severity: "error",

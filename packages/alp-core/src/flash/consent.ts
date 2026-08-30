@@ -15,7 +15,7 @@
 //      envelopes; flash is not among them). Its JSON shape is neither frozen
 //      nor measurable in this repo, so a parser written against it would be
 //      inventing a contract rather than consuming one.
-//   2. `--dry-run`'s own help at the 0.6.0-rc1 pin says it "also bypasses the
+//   2. `--dry-run`'s own help at the 0.6.0 pin says it "also bypasses the
 //      required-tool PATH gate". A green dry-run therefore does NOT prove the
 //      flashing tools are installed, and rendering it as a preview would put
 //      a reassurance on screen that the run does not support.
@@ -45,7 +45,7 @@
 //     statement that there is no flash wiring — and still appears.
 //
 // The one thing this module DOES claim is scope, and it claims it only where
-// the CLI's own help states it, verbatim at the 0.6.0-rc1 pin:
+// the CLI's own help states it, verbatim at the 0.6.0 pin:
 //
 //   --core   CORE_ID  "Flash only the slice with this core_id (skips every
 //                      other slice AND all helpers)."

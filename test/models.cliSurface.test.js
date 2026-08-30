@@ -4,8 +4,9 @@
 // (packages/alp-webview/src/features/models/cliSurface.ts) under the CI gate.
 //
 // Why this module exists (#522): the panel is a thin `runAlpCommand(["model",
-// ...])` shell over NINE subcommands, and the pinned tan (0.6.0-rc1) implements
-// exactly one of them — `build`. Every other call came back refused, and each
+// ...])` shell over NINE subcommands, and the pinned tan (0.6.0, RE-MEASURED
+// at GA — #609) implements exactly one of them — `build`. Every other call
+// came back refused, and each
 // refusal was rendered independently, so ONE fact ("this CLI cannot do it yet")
 // reached the customer as FOUR red `Models unavailable` alarms carrying tan's
 // own command-line text.
@@ -48,7 +49,8 @@ const {
   withoutUnsupportedSubcommand,
 } = require(out);
 
-/** The refusal tan really sends, verbatim from the 0.6.0-rc1 envelope. */
+/** The refusal tan really sends, verbatim from the pinned 0.6.0 envelope
+ *  (re-measured at GA; byte-for-byte unchanged from the rc1 capture). */
 function refusal(sub) {
   return {
     code: "model.unknown-subcommand",

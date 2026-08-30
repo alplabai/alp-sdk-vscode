@@ -9,7 +9,7 @@
 // `init.invalid-cores` — six of eleven SoMs, the whole Alif Ensemble line,
 // whose defining topology is dual-M55.
 //
-// The contract, quoted from `tan init --help` at the pinned 0.6.0-rc1:
+// The contract, quoted from `tan init --help` at the pinned 0.6.0:
 //
 //   OS is inferred from the id when omitted, but that inference is only
 //   honored for the plan's app core -- any other id can only be spliced in
@@ -111,7 +111,7 @@ function isCortexA(id: string): boolean {
  *     was, and `:off` otherwise.
  *
  * Measured over four answers for every core of all eleven SoMs, driving the
- * pinned tan 0.6.0-rc1: sending the declared topology is refused 0 times in
+ * pinned tan 0.6.0: sending the declared topology is refused 0 times in
  * 368, and sending the customer's answers VERBATIM is refused 276 times with
  * exit 2 / `init.invalid-cores`. Every one of the 276 is the same rule —
  * `--cores` naming the app core as `:off` — and an answer of `baremetal`,

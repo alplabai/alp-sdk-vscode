@@ -81,7 +81,7 @@ test.before(async () => {
 
 /**
  * Every SoM's declared topology, VERBATIM from `tan presets --format json`
- * (`data.soms[].cores[]`) at tan 0.6.0-rc1 against SDK v0.16.0-rc1.
+ * (`data.soms[].cores[]`) at tan 0.6.0 against SDK v0.16.0-rc1.
  *
  * Real topologies rather than invented ones, because the shape is what broke:
  * six of these eleven declare TWO `os: zephyr` cores, and sending that pair

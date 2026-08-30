@@ -86,7 +86,7 @@ CLI:
 
 tan model build --board board.yaml --sdk-root ../alp-sdk
 
-`build` is the only subcommand `tan model` accepts in tan 0.6.0-rc1: it compiles
+`build` is the only subcommand `tan model` accepts in tan 0.6.0: it compiles
 and packages the `models:` entries of board.yaml into `.alpmodel` packages. Its
 whole option set is `--board`/`--board-yaml`, `--out` (default `build/models`),
 `--metadata-root`, `--project`, `--sdk-root`, `--format` (`text|json`) and
@@ -94,7 +94,7 @@ whole option set is `--board`/`--board-yaml`, `--out` (default `build/models`),
 
 ## 9. Model Tooling That Does Not Exist at This Pin
 
-The pinned tan 0.6.0-rc1 implements no `tan model` subcommand other than
+The pinned tan 0.6.0 implements no `tan model` subcommand other than
 `build`, so the four capabilities below have no command line to type today.
 They are recorded here as intent: the CLI half of all four is tracked upstream
 as tan-cli#674, and the VS Code half needs the Models panel back, which is #524.

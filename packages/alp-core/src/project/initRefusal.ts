@@ -3,7 +3,7 @@
 // The ways `tan init` refuses what the wizard sends it (#530, #582).
 //
 // The New Project flow offers every template with every SoM, and 12 of the 44
-// pairs cannot be scaffolded. Measured against the pinned tan 0.6.0-rc1 with
+// pairs cannot be scaffolded. Measured against the pinned tan 0.6.0 with
 // alp-sdk v0.16.0-rc1:
 //
 //   minimal-app      ok on all 11 SoMs

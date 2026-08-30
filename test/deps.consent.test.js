@@ -7,7 +7,7 @@
 // 1. **Nothing is invented.** ADR 0021 asks the screen to itemise artifact,
 //    source, size and licence. No producer emits a size or a licence today —
 //    measured on `metadata/bootstrap.json` at SDK v0.15.0 and on `tan doctor
-//    --format json` at the 0.6.0-rc1 pin, neither of which carries `tier`,
+//    --format json` at the 0.6.0 pin, neither of which carries `tier`,
 //    `licence`, `source` or `size` (alp-sdk#1574). So those cells are `null`
 //    and the screen says "not reported"; a plausible-looking number here would
 //    be this extension making a claim it has no authority to make, and a

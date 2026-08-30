@@ -58,8 +58,28 @@
 //     nobody trusts the next time it fires. The limit is written down rather
 //     than left for someone to discover.
 //
-// (c) CAPABILITY CLAIMS IN PROSE. `docs/CLI.md`'s "tan is feature-complete" is
-//     false at this pin and no argv check reaches it.
+// (c) CAPABILITY CLAIMS IN PROSE, MOSTLY. `docs/CLI.md`'s "tan is
+//     feature-complete" is false at this pin and no check here reaches it —
+//     that is still a real, undissolved limit, general prose capability
+//     claims need English parsing this file otherwise refuses to do. ONE
+//     narrow slice of that class IS extracted as `versionLabel` records,
+//     below, because it stopped being hypothetical: an adversarial review of
+//     #609/#612 found five sites in this exact corpus still reading "tan
+//     (0.6.0-rc1)"/"tan 0.6.0-rc1 implements" after `SUPPORTED_CLI_VERSION`
+//     had moved to `0.6.0`, and the install-recipe TAG check further down
+//     never reads prose sentences at all — only URLs and env assignments.
+//     The pattern is deliberately the two SHAPES actually found stale
+//     (`pinned tan (VERSION)` and `tan VERSION` directly followed by one of a
+//     small, closed set of present-tense capability verbs — "implements",
+//     "publishes", "accepts", "takes" — the exact verbs this corpus used),
+//     not a general "version near the word tan" search: that wider net also
+//     catches every HISTORICAL mention this corpus legitimately carries
+//     ("tan v0.4.0 on…", "driven on tan 0.4.0…"), which a hard gate cannot
+//     tell from a live claim without parsing tense — the same reason (d)
+//     below gives for not trying. Missing a future author's new phrasing is
+//     an acceptable failure mode here (a miss, not a false red); inventing a
+//     false red on a correct historical sentence is not, because that is
+//     the fastest way to make the next person stop trusting this gate.
 //
 // (d) AN INVOCATION `looksLikeProse` CANNOT TELL FROM A SENTENCE. The rule
 //     below reads a line beginning `tan ` as English when it carries no flag
@@ -179,6 +199,17 @@ export function scan() {
           raw: raw.trim(),
         });
       }
+      for (const match of raw.matchAll(
+        /(?:\bpinned\s+`?tan`?\s*\(?|`?tan`?\s*\()v?([0-9]+\.[0-9]+\.[0-9]+(?:-rc[0-9]+)?)\)?|`?tan`?\s+v?([0-9]+\.[0-9]+\.[0-9]+(?:-rc[0-9]+)?)\)?\s+(?:implements|publishes|accepts|takes)/gi,
+      )) {
+        records.push({
+          kind: "versionLabel",
+          file: rel,
+          line: i + 1,
+          version: match[1] ?? match[2],
+          raw: raw.trim(),
+        });
+      }
 
       if (/^\s*```/.test(raw)) {
         continued = "";
@@ -247,7 +278,8 @@ function main() {
   const count = (kind) => records.filter((r) => r.kind === kind).length;
   process.stderr.write(
     `[docs:scan] ${count("invocation")} invocations, ` +
-      `${count("releaseTag")} release tags\n`,
+      `${count("releaseTag")} release tags, ` +
+      `${count("versionLabel")} version labels\n`,
   );
 }
 

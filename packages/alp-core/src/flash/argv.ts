@@ -11,7 +11,7 @@
 // swallows its value, while the same token after a boolean flag is the
 // APP_PATH positional — and APP_PATH is what decides where
 // `build/system-manifest.yaml` is read from (`tan flash --help` at the
-// 0.6.0-rc1 pin, verbatim: "`build_root` defaults to <APP_PATH>/build").
+// 0.6.0 pin, verbatim: "`build_root` defaults to <APP_PATH>/build").
 // Getting that wrong points the consent screen at a different project than the
 // one being written.
 //
@@ -48,7 +48,7 @@
 // site the extractor calls `flash` is a site `isFlashArgv` recognises.
 
 /**
- * Options of `tan flash` that CONSUME the next token, at the 0.6.0-rc1 pin.
+ * Options of `tan flash` that CONSUME the next token, at the 0.6.0 pin.
  *
  * Exactly the entries of `commands.flash.options` carrying a `metavar` in the
  * vendored surface (their metavars: PATH, PATH, CORE_ID, <text|json>, NAME,
@@ -68,7 +68,7 @@ export const FLASH_VALUE_TAKING_FLAGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * ROOT-position options that consume the next token, at the 0.6.0-rc1 pin.
+ * ROOT-position options that consume the next token, at the 0.6.0 pin.
  *
  * Exactly the members of the surface's `globalOptions` that carry a `metavar`
  * in some command's option map. `globalOptions` is a bare name list with no

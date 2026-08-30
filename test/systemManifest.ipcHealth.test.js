@@ -6,7 +6,7 @@
 // The defect: `tan init --cores` scaffolds a default `ipc:` channel, on an AEN
 // SoM it resolves `status: blocked` with a concrete `reason`, the build reports
 // success and exits 0, and nothing anywhere says so. The reason is real
-// information the customer never sees — measured on tan `0.6.0-rc1` /
+// information the customer never sees — measured on tan `0.6.0` /
 // alp-sdk `v0.16.0-rc1`:
 //
 //   reason: memory_map.base is TBD for region 'mram_main' in SoM E1M-AEN801;

@@ -5,7 +5,7 @@
 // Turning a core off is not a one-field edit. tan writes an `ipc:` stanza of
 // its own whenever `--cores` names a Cortex-A companion, and `alp_project`
 // refuses an entry whose endpoint is disabled. Measured on the pinned tan
-// 0.6.0-rc1, answering the Cortex-A companion `yocto` (so tan writes the
+// 0.6.0, answering the Cortex-A companion `yocto` (so tan writes the
 // channel) and the app core `off`:
 //
 //   ok: false  exit: 2
