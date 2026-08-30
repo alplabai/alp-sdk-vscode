@@ -8,8 +8,12 @@ import {
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
-import { fetchEnvelopeData } from "../alpCli/envelope";
+import { fetchEnvelopeResult } from "../alpCli/envelope";
 import { resolveAlpBinaryForContext } from "../alpCli/vscodeAdapter";
+import {
+  PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+  unresolvedSdkReason,
+} from "../alpCli/service";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { reportError } from "../notify/vscodeAdapter";
 import { resolveSlice } from "./buildConfig";
@@ -17,6 +21,7 @@ import { isPrjConfPath } from "./kconfig";
 import type { KconfigSymbol } from "./kconfig";
 import { catalogFromPresets, fetchKconfigSymbolsForCore } from "./sdkCatalog";
 import type { SdkCompletionCatalog } from "./sdkCatalog";
+import { log } from "../util";
 
 let client: LanguageClient | undefined;
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
@@ -111,12 +116,25 @@ async function pushSdkCatalog(context: vscode.ExtensionContext): Promise<void> {
   if (!client) {
     return;
   }
-  const [presetsData, kconfigByCore] = await Promise.all([
-    fetchEnvelopeData(context, ["presets"]),
+  const [presetsResult, kconfigByCore] = await Promise.all([
+    fetchEnvelopeResult(context, ["presets"]),
     fetchOpenPrjConfKconfig(context),
   ]);
+  // Shared with the other two `presets` readers (`configurator/
+  // customEditor.ts`, `ideHub/newProjectFlowPanel.ts`) through the same
+  // constant + function, rather than this site dropping `issues[]` outright
+  // the way the old data-only helper did (#611). Logged, not toasted: this is
+  // a background refresh (LSP start, an `alpSdk` settings edit, a prj.conf
+  // opening), never something the customer directly asked for.
+  const presetsUnresolvedReason = unresolvedSdkReason(
+    { issues: presetsResult.issues },
+    PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+  );
+  if (presetsUnresolvedReason) {
+    log(`[lsp] presets: ${presetsUnresolvedReason}`);
+  }
   const catalog: SdkCompletionCatalog = {
-    ...catalogFromPresets(presetsData),
+    ...catalogFromPresets(presetsResult.data),
     kconfigByCore,
   };
   try {
@@ -135,7 +153,7 @@ async function pushSdkCatalog(context: vscode.ExtensionContext): Promise<void> {
  * own process with no such module. Pushed alongside the catalog so the same
  * events refresh it — LSP start, an `alpSdk` settings edit, a prj.conf opening.
  *
- * Non-interactive for the same reason `fetchEnvelopeData` is: none of those
+ * Non-interactive for the same reason `fetchEnvelopeResult` is: none of those
  * events is the customer asking to download a CLI, and an interactive
  * resolution would pop ADR 0021's consent modal out of opening an editor tab.
  * When nothing resolves, `null` is pushed and the server shells the SDK's
@@ -190,7 +208,24 @@ async function fetchOpenPrjConfKconfig(
         slice.coreId,
         path.dirname(slice.boardYamlPath),
         (coreId, cwd) =>
-          fetchEnvelopeData(context, ["kconfig", "--core", coreId], cwd),
+          fetchEnvelopeResult(context, ["kconfig", "--core", coreId], cwd).then(
+            (result) => {
+              // No single shared code to check here the way `presets` has
+              // `presets.sdk-root-unresolved`: `kconfig.*` is a family of
+              // distinct error codes (no-sdk-root, board-yaml-missing,
+              // core-ambiguous, …) with no one "degraded but ok" advisory to
+              // standardize on, so every issue is logged rather than matched
+              // (#611) — this call already degrades to an empty symbol set on
+              // failure; only the CHANNEL LINE explaining why is new.
+              for (const issue of result.issues) {
+                if (!issue.message) continue;
+                log(
+                  `[lsp] kconfig --core ${coreId}: ${issue.severity}: ${issue.message}`,
+                );
+              }
+              return result.data;
+            },
+          ),
       );
       return [key, symbols] as const;
     }),

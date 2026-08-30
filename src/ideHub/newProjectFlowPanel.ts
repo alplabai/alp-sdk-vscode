@@ -21,7 +21,11 @@ import type { BoardConfig } from "@alp-sdk/core/board/models";
 import { parseBoardConfig } from "@alp-sdk/core/board/parse";
 import { serializeBoardConfig } from "@alp-sdk/core/board/serialize";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
-import { unresolvedSdkReason } from "../alpCli/service";
+import {
+  hasIssueCode,
+  PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+  unresolvedSdkReason,
+} from "../alpCli/service";
 import {
   type CreateNewProjectMessage,
   emptyAlpIdeState,
@@ -271,12 +275,26 @@ export class NewProjectFlowPanel {
       // `soms` and a `presets.sdk-root-unresolved` warning. Fall back to the
       // static catalog — which carries no `cores`, so a heterogeneous SoM would
       // scaffold as single-core with no IPC. Surface the CLI's (otherwise
-      // discarded) warning so that topology gap isn't silent.
-      if (
-        outcome.envelope?.issues?.some(
-          (i) => i.code === "presets.sdk-root-unresolved",
-        )
-      ) {
+      // discarded) warning so that topology gap isn't silent. Shared with the
+      // other two `presets` readers (`lsp/client.ts`, `configurator/
+      // customEditor.ts`) through the same `PRESETS_SDK_ROOT_UNRESOLVED_CODE`
+      // constant rather than each hand-rolling its own `issues[].code` check
+      // (#611).
+      //
+      // `hasIssueCode`, NOT `unresolvedSdkReason` (adversarial review, #611
+      // follow-up): the toast below is a hardcoded sentence, not tan's own
+      // message, so this only ever needed a BOOLEAN. `unresolvedSdkReason`
+      // additionally requires a non-empty `message` — an issue that carries
+      // the code with no message (or an empty one) then satisfied neither
+      // this branch NOR the `!outcome.ok` one below (presets reports an
+      // unresolved SDK as `ok: true`), so it was reported nowhere at all.
+      // Latent at the pinned tan, which always sends a message on this code —
+      // but `hasIssueCode` cannot have that gap by construction.
+      const unresolved = hasIssueCode(
+        outcome.envelope,
+        PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+      );
+      if (unresolved) {
         // `reloadCatalog` re-runs on mount AND on every wizard SDK change, so
         // the same warning would stack; `dedupeKey` drops a repeat while one is
         // still on screen. TODO: this is degraded state for the Hardware step
@@ -289,8 +307,18 @@ export class NewProjectFlowPanel {
             cause:
               "No SDK resolved, so the Hardware list can't report core topology — a multi-core SoM (e.g. E1M-V2N101) will scaffold as single-core with no IPC. Select an SDK for full multi-core scaffolding.",
             severity: "warning",
-            dedupeKey: "presets.sdk-root-unresolved",
+            dedupeKey: PRESETS_SDK_ROOT_UNRESOLVED_CODE,
           }),
+        );
+      } else if (!outcome.ok) {
+        // A genuinely empty `soms` with NO unresolved-SDK issue means
+        // `presets` itself failed (unresolvable binary, non-zero exit) rather
+        // than degrading gracefully — before this, that case fell through the
+        // SAME branch as the known "no SDK resolved" one above and was never
+        // reported at all: the wizard silently rendered the static catalogue
+        // with nothing on screen saying tan, not the SDK, is why (#611).
+        notifyAsync(
+          planCliOutcome(outcome, { operation: "Loading the hardware list" }),
         );
       }
       this.somModules = E1M_MODULES;

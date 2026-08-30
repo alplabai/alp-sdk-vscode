@@ -100,6 +100,57 @@ function extractFirstParagraph(body: string): string {
   return blankLine === -1 ? trimmed : trimmed.slice(0, blankLine).trim();
 }
 
+/** A field of `record` if present AND a string, else `""` — never invented,
+ *  never coerced from a wrong-typed value. Both known readers of a narrowed
+ *  `SdkRelease` already treat an empty string as "not reported"
+ *  (`packages/alp-webview/src/shared/sdkRows.ts`'s `r.publishedAt ||
+ *  undefined`), so this is the same "absent" a real tan that omits the field
+ *  would produce, not a guess standing in for one. */
+function stringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Narrow `tan sdk list`'s untrusted `data` payload into `SdkRelease[]`,
+ * dropping any entry this repo cannot trust rather than coercing it (#611).
+ *
+ * This is NOT `listRemoteSdkReleases` above: that one maps GitHub's OWN raw
+ * response shape (`tag_name`, `published_at`, …) into `SdkRelease`; this one
+ * narrows a payload that already CLAIMS to be `SdkRelease`-shaped — tan's own
+ * envelope — and must not be trusted just because the field names line up.
+ *
+ * `tag` is the one field a dropped entry cannot survive without: both known
+ * readers (`src/deps/vscodeAdapter.ts`'s `pickLatestSdkTag`, which calls
+ * `.find` over the array, and its `isStableTag`, which calls `tag.trim()`)
+ * read it with no try/catch on the path, so a `releases` that is not an array
+ * or an entry missing a string `tag` is exactly what used to throw out of a
+ * bare `(envelope.data as { releases?: SdkRelease[] }).releases ?? []` cast.
+ * Every other field is cosmetic (rendered, never branched on), so a
+ * wrong-typed or absent one degrades to `""` rather than dropping the whole
+ * release a customer could otherwise still install.
+ */
+export function narrowSdkReleases(raw: unknown): SdkRelease[] {
+  if (typeof raw !== "object" || raw === null) return [];
+  const releases = (raw as Record<string, unknown>).releases;
+  if (!Array.isArray(releases)) return [];
+
+  const out: SdkRelease[] = [];
+  for (const entry of releases) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record.tag !== "string") continue;
+    out.push({
+      tag: record.tag,
+      publishedAt: stringField(record, "publishedAt"),
+      tarballUrl: stringField(record, "tarballUrl"),
+      releaseNotesSummary: stringField(record, "releaseNotesSummary"),
+      releaseNotes: stringField(record, "releaseNotes"),
+    });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // SDK installation
 // ---------------------------------------------------------------------------

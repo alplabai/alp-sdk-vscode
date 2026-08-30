@@ -12,14 +12,17 @@
 // the active-pointer clear are preserved exactly as they were in the panel.
 
 import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
-import type { SdkRelease } from "@alp-sdk/core/sdk/models";
-import { installSdkRelease } from "@alp-sdk/core/sdk/service";
+import {
+  installSdkRelease,
+  narrowSdkReleases,
+} from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { sameUserPath } from "@alp-sdk/core/paths";
 import * as vscode from "vscode";
 import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
+import { sdkListAnswered } from "../alpCli/service";
 import {
   isCancellation,
   planCliOutcome,
@@ -364,8 +367,35 @@ export function createSdkMessageHandler(
     for (const issue of envelope.issues ?? []) {
       logChannel(`[sdk-list] ${issue.severity}: ${issue.message}`);
     }
-    const releases =
-      (envelope.data as { releases?: SdkRelease[] }).releases ?? [];
+    // Shared with the OTHER `sdk list` reader (`src/deps/vscodeAdapter.ts`'s
+    // `latestSdkTag`, which refuses to CACHE an unanswered lookup) — this
+    // handler used to post `releases` as a real catalogue regardless of
+    // whether tan actually looked (#611). Unreachable at the pinned tan with
+    // `--online` always on the argv (see `sdkListAnswered`'s own doc), so
+    // this is a divergence closed rather than a live bug fixed.
+    if (!sdkListAnswered(envelope)) {
+      // A silent `{ releases: [] }` here renders IDENTICALLY to "upstream
+      // published no releases" — the same silent-blank class #607 fixed for
+      // the Build Plan panel (adversarial review, #611 follow-up). The
+      // channel line just above already carries tan's own message; this adds
+      // the on-screen half so it is not the ONLY record.
+      notifyAsync(
+        planFailure({
+          operation: "Fetching the SDK list",
+          cause:
+            "Alp: tan reported it did not look up the SDK release list this time. Check the Alp SDK output channel, then Refresh.",
+          severity: "warning",
+        }),
+      );
+      post({ type: "sdkReleasesLoaded", releases: [] });
+      return;
+    }
+    // Narrowed, not cast (#611): `envelope.data` is untrusted, and a
+    // `releases` entry without a string `tag` used to reach `isStableTag`'s
+    // `tag.trim()` (`src/deps/vscodeAdapter.ts`) with no try/catch on the
+    // path — this handler shares the SAME risk on whatever it posts to the
+    // webview, which renders `tag` too.
+    const releases = narrowSdkReleases(envelope.data);
     post({ type: "sdkReleasesLoaded", releases });
   }
 

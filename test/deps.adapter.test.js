@@ -536,6 +536,43 @@ test("a real empty list IS cached — absence of releases is an answer", async (
   );
 });
 
+// ── #611: sdkListAnswered (shared with src/ideHub/sdkManagerMessages.ts) ────
+//
+// `sdkListAnswered` lives in `../alpCli/service` (pure, no vscode import),
+// not `deps/vscodeAdapter.ts` — moved there precisely so this repo's OTHER
+// `sdk list` reader (`src/ideHub/sdkManagerMessages.ts`) could import it
+// without pulling in the whole dependency-table adapter. Required directly
+// from its real home instead of through `loadDepsAdapter()`'s re-export:
+// adversarial review (#611 follow-up) found that re-export protected nothing
+// (the moved symbols had zero importers outside this file at base
+// `c9ddc48c`) and was deleted.
+const { sdkListAnswered } = require("../out/alpCli/service.js");
+
+test("sdkListAnswered agrees with unansweredSdkListCodes on both directions", () => {
+  assert.equal(sdkListAnswered(NOT_LOOKED_UP), false);
+  assert.equal(
+    sdkListAnswered({ ok: true, data: { releases: [] }, issues: [] }),
+    true,
+  );
+});
+
+test("a release entry with no string tag does not crash the lookup — narrowSdkReleases drops it", async () => {
+  const { latest } = await sdkListLookup({
+    envelope: {
+      ok: true,
+      data: { releases: [{ tag: 12345 }, { tag: "v0.16.0" }] },
+      issues: [],
+    },
+  });
+
+  assert.equal(
+    latest?.version,
+    "v0.16.0",
+    "the malformed entry must be dropped, not thrown on and not crash the " +
+      "whole lookup",
+  );
+});
+
 // ── A-0f: every check tan reports reaches the table ──────────────────────────
 
 test("no allowlist stands between a check tan reported and a row", async () => {

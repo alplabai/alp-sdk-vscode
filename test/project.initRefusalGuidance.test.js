@@ -39,10 +39,47 @@ const VIEW = fs.readFileSync(
 test("the refusal branch runs before the generic outcome report", () => {
   // Arrange -- order is the whole point: `planCliOutcome` returns, so a branch
   // placed after it is unreachable.
-  const classify = PANEL.indexOf(
+  //
+  // Scoped to `createProject`'s own body, not the whole file. Two problems
+  // with a file-wide search, both found by adversarial review (#611
+  // follow-up):
+  //
+  //  1. `fetchSomModules` (#611) reports a genuine `presets` CLI failure
+  //     through its OWN, EARLIER `planCliOutcome(outcome, ...)` call — a
+  //     plain `PANEL.indexOf("planCliOutcome(outcome,")` finds that one
+  //     instead and fails here on a change with nothing to do with this
+  //     refusal-guidance flow.
+  //  2. Anchoring the second search with `PANEL.indexOf(needle, classify)`
+  //     "fixed" (1) but made the assertion VACUOUS: `indexOf(needle,
+  //     fromIndex)` can only return `-1` or an index `>= fromIndex`, so
+  //     `classify < generic` can never be false once `notEqual(generic, -1)`
+  //     already passed — the "order" it claimed to check was unfalsifiable.
+  //     Reproduced: reordering `createProject` so the generic report precedes
+  //     `classifyInitRefusal` still passed this assertion, and only failed on
+  //     `notEqual(generic, -1)` with a misleading message pointing at a call
+  //     that was merely moved, not removed.
+  //
+  // Scoping BOTH searches to the same slice — `createProject`'s own body,
+  // found the same way `src/lsp/client.ts`'s tests scope to one function
+  // (`test/lsp.presetsUnresolvedLogged.test.js`) — fixes both: neither search
+  // is offset by the other, so the two indices are directly comparable, and
+  // `fetchSomModules`' unrelated call sits outside the slice entirely.
+  const start = PANEL.indexOf(
+    "private async createProject(msg: CreateNewProjectMessage): Promise<void> {",
+  );
+  const end = PANEL.indexOf("private pinProjectSdk(", start);
+  assert.notEqual(start, -1, "createProject must still exist");
+  assert.notEqual(
+    end,
+    -1,
+    "the next method must still exist, to bound the slice",
+  );
+  const body = PANEL.slice(start, end);
+
+  const classify = body.indexOf(
     "classifyInitRefusal(outcome.envelope?.issues)",
   );
-  const generic = PANEL.indexOf("planCliOutcome(outcome,");
+  const generic = body.indexOf("planCliOutcome(outcome,");
 
   // Assert
   assert.notEqual(classify, -1, "the panel must classify the refusal");

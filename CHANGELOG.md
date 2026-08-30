@@ -6,6 +6,42 @@
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
 
+- **Four call sites that discarded what `tan` reported now read `issues[]`
+  and `ok` instead of dropping them (#611).** The old `fetchEnvelopeData`
+  (`src/alpCli/envelope.ts`) returned `data` regardless of `ok` — only a
+  thrown exception or a missing envelope produced `undefined` — and dropped
+  `issues[]` unconditionally either way. Its replacement, `fetchEnvelopeResult`,
+  returns `{ data, ok, issues }`; `fetchEnvelopeData` itself is DELETED
+  rather than kept as a wrapper, since every call site migrated and nothing
+  else called it. The three `presets` readers (`src/lsp/client.ts`,
+  `src/configurator/customEditor.ts`, `src/ideHub/newProjectFlowPanel.ts`)
+  used to read the same envelope three different ways — two dropped
+  `issues[]` entirely, one checked it inline — and now share one
+  `PRESETS_SDK_ROOT_UNRESOLVED_CODE` constant; `newProjectFlowPanel.ts`'s
+  `fetchSomModules` gates on `hasIssueCode` rather than the message-carrying
+  `unresolvedSdkReason` its siblings use, since the toast it raises is a
+  hardcoded sentence and an issue that carries the code with no message must
+  still warn. `fetchSomModules` also now tells a genuine `presets` CLI
+  failure apart from a resolved-but-degraded SDK, which used to fall through
+  to the same silent static-catalogue fallback with nothing naming the
+  cause. `src/debug.ts`'s `runDebugConfig` now logs a successful
+  `debug-config` run's advisory `issues[]` — a migrated legacy launch.json
+  entry, a dropped comment, an SDK-identity value tan overwrote or could not
+  resolve — to the "Alp SDK" channel; a customer used to get a launch.json
+  with no sign tan had any reservations about it. That log is de-duplicated
+  across the preview/write pair one "configure debug profile" run makes, since
+  tan's own registry names two advisory codes that fire on both and would
+  otherwise double the channel line. `sdk list`'s two readers
+  (`src/deps/vscodeAdapter.ts`, `src/ideHub/sdkManagerMessages.ts`) now share
+  one `sdkListAnswered` check (moved into `src/alpCli/service.ts`, pure, so
+  neither reader needs the other's module) — closing a divergence that
+  cannot fire while both readers pass `--online`, not a live bug — and both
+  read `envelope.data.releases` through a new `narrowSdkReleases()`
+  (`packages/alp-core/src/sdk/service.ts`) instead of casting, so a malformed
+  entry is dropped rather than crashing `pickLatestSdkTag`'s `.find` /
+  `isStableTag`. The `sdkManagerMessages.ts` branch also now toasts a reason
+  when the lookup goes unanswered, instead of posting an empty release list
+  with nothing on screen saying why.
 - **Four `tan` spawns in this diff run with an explicit cwd instead of an
   unchecked or omitted one (#605) — more of the same class remain and are
   tracked separately, not claimed fixed here.** `src/models/panel.ts`'s

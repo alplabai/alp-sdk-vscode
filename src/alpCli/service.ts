@@ -1077,11 +1077,23 @@ export function classifyExitCode(code: number): CliExitKind {
 }
 
 /**
+ * tan's code for "`presets` did not resolve an SDK", verbatim.
+ *
+ * Exported so the three sites that read a `presets` envelope
+ * (`src/lsp/client.ts`, `src/configurator/customEditor.ts`,
+ * `src/ideHub/newProjectFlowPanel.ts`) share ONE spelling with
+ * `unresolvedSdkReason` instead of each hand-rolling its own `issues[].code`
+ * check (#611) — before this, two of the three dropped `issues[]` entirely and
+ * the third compared against an inline literal nothing else could reuse.
+ */
+export const PRESETS_SDK_ROOT_UNRESOLVED_CODE = "presets.sdk-root-unresolved";
+
+/**
  * tan's own words for "the SDK did not resolve", when that is what an
  * otherwise-successful envelope is reporting — otherwise null.
  *
  * Several verbs report an unresolved SDK as a SUCCESS rather than a failure.
- * Measured against the pinned 0.6.0-rc1, `tan examples` with no resolvable SDK
+ * Measured against the pinned tan 0.6.0, `tan examples` with no resolvable SDK
  * returns exit 0 with `ok: true` and an empty `data.examples`, and says what
  * happened only through `issues[].code == examples.sdk-root-unresolved`.
  * `presets` does the same under `presets.sdk-root-unresolved`. So a caller that
@@ -1120,7 +1132,7 @@ export function unresolvedSdkReason(
 /**
  * tan's code for "the argv this extension sent is not a command I accept".
  *
- * Measured against the pinned 0.6.0-rc1: `tan presets --nosuchflag` and
+ * Measured against the pinned tan 0.6.0: `tan presets --nosuchflag` and
  * `tan bogusverb` both exit 2 with a WELL-FORMED envelope whose `command` is
  * `"cli"` and whose single issue is
  * `{ code: "cli.parse-error", severity: "error", message: <click usage dump> }`.
@@ -1773,4 +1785,54 @@ export function launchConfigPlaceholders(
   };
   walk(value, "");
   return found;
+}
+
+/**
+ * Issue codes on which tan reports "I could not look" while still returning
+ * `ok: true`. Matched on the CODE, never on the prose — the rule
+ * `packages/alp-webview/src/features/models/cliSurface.ts` already follows,
+ * and for the same reason: a message is free to be reworded between pins, a
+ * code is the contract.
+ *
+ * Measured against pinned tan 0.6.0 — `tan --format json sdk list` with no
+ * `--online` returns `{"ok":true,"exitCode":0,"data":{"subcommand":"list",
+ * "releases":[]},"issues":[{"code":"sdk.network-required","severity":
+ * "warning", ...}]}`.
+ *
+ * Lives here, not in `src/deps/vscodeAdapter.ts` (its original home), so the
+ * other reader of a `sdk list` envelope (`src/ideHub/sdkManagerMessages.ts`)
+ * can share it without importing the whole dependency-table adapter (#611).
+ */
+export const UNANSWERED_SDK_LIST_CODES: readonly string[] = [
+  "sdk.network-required",
+];
+
+/** The codes above that this envelope actually carries. */
+export function unansweredSdkListCodes(envelope: {
+  issues?: readonly { code?: string }[];
+}): string[] {
+  return (envelope.issues ?? [])
+    .map((issue) => issue.code ?? "")
+    .filter((code) => UNANSWERED_SDK_LIST_CODES.includes(code));
+}
+
+/**
+ * Whether a `sdk list` envelope actually answered, rather than reporting
+ * `ok: true` while explaining why it never looked.
+ *
+ * Shared by both readers of a `sdk list` envelope
+ * (`src/deps/vscodeAdapter.ts`'s `latestSdkTag`, `src/ideHub/
+ * sdkManagerMessages.ts`'s `handleRequestSdkReleases`), which used to answer
+ * this question two different ways — the first refused to cache on it, the
+ * second logged the same `issues[]` and then posted `releases` as a real
+ * catalogue regardless (#611). A divergence to close rather than a live bug:
+ * both readers always pass `--online`, and measured against the pinned tan a
+ * forced network failure on that argv is `ok: false, exitCode 1,
+ * sdk.fetch-failed`, which both readers already refuse through their own
+ * `!ok` branch before this function is ever reached.
+ */
+export function sdkListAnswered(envelope: {
+  issues?: readonly { code?: string }[];
+}): boolean {
+  return unansweredSdkListCodes(envelope).length === 0;
 }
