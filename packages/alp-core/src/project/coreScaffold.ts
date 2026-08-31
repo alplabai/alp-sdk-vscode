@@ -114,6 +114,67 @@ function takesApp(os: string): boolean {
 }
 
 /**
+ * Bare-metal cores the wizard is about to write with no `app:` — the shape the
+ * SDK cannot build (#623).
+ *
+ * MEASURED, against the pinned tan 0.6.0 / SDK v0.16.0-rc1, because the issue
+ * that opened this asked for a measurement before any fix:
+ *
+ *   `tan validate` passes the shape silently: ok true, exit 0, zero issues.
+ *
+ *   The SDK's own planner does NOT. `scripts/alp_orchestrate/orchestrator.py`
+ *   `_slice_command` reads, verbatim:
+ *
+ *       if slice_.os == "baremetal":
+ *           if not slice_.app:
+ *               return None
+ *
+ *   and its docstring says what that means: "Returns None when there is no
+ *   buildable command yet -- the caller carries the slice as `skipped` /
+ *   `no-command`, never dropped." `buildplan.py` handles that case explicitly
+ *   too, suppressing the slice's config artefact when the command is None.
+ *
+ *   There is NO baremetal stock default. `heterogeneous-builds.md` names two —
+ *   `alp-stock-shim` on a Zephyr core, `alp-image-edge` on a Linux core — and
+ *   neither is baremetal; the code has no third.
+ *
+ * So a Bare-metal answer produces a core the build silently skips, and the one
+ * gate a customer hits first says nothing. This is NOT scaffolded away here on
+ * purpose: this file is INTERIM (see its header) precisely because generating
+ * another program's build files in TypeScript is knowledge tan owns and no gate
+ * in this repo can catch drifting. Adding a third generated file set would
+ * deepen exactly the debt the header says to remove.
+ *
+ * What is fixable here is the silence. The caller names these cores to the
+ * customer at the moment the project is created.
+ */
+export function baremetalCoresWithoutApp(
+  assignments: readonly CoreAssignment[],
+): string[] {
+  return assignments
+    .filter(
+      (assignment) => assignment.os === "baremetal" && !assignment.app?.trim(),
+    )
+    .map((assignment) => assignment.id);
+}
+
+/**
+ * What the customer is told. Names the cores and the ONE thing that makes them
+ * buildable — a directory with a `CMakeLists.txt`, which is what
+ * `board.schema.json` requires for `os: baremetal` and what the planner looks
+ * for. Does not promise a stock default, because there is none.
+ */
+export function baremetalNoAppNotice(coreIds: readonly string[]): string {
+  const plural = coreIds.length > 1;
+  return (
+    `${coreIds.join(", ")} ${plural ? "are" : "is"} declared bare-metal with ` +
+    `no application directory, so the build skips ${plural ? "them" : "it"}. ` +
+    `Add a directory containing a CMakeLists.txt and point ` +
+    `cores.${coreIds[0]}.app at it.`
+  );
+}
+
+/**
  * Where a core's application may live: inside the project, and nowhere else.
  *
  * The wizard's field is free text and the host resolves it against the project

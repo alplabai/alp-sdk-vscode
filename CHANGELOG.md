@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **A bare-metal core the wizard writes with no `app:` is now named to the
+  customer (#623).** Measured, because the issue asked for the measurement
+  before any fix: `tan validate` passes the shape with zero issues, while the
+  SDK's own planner refuses it — `alp_orchestrate/orchestrator.py`'s
+  `_slice_command` reads `if slice_.os == "baremetal": if not slice_.app:
+  return None`, and its docstring says the caller then carries the slice as
+  `skipped` / `no-command`. There is no bare-metal stock default: the two
+  documented fallbacks are `alp-stock-shim` (Zephyr) and `alp-image-edge`
+  (Linux), and the code has no third. So the build silently skips a core the
+  customer asked for. Deliberately NOT fixed by scaffolding one:
+  `coreScaffold.ts` is interim by its own header because generating another
+  program's build files in TypeScript is knowledge tan owns and no gate here
+  can catch it drifting. What is fixed is the silence. Filed upstream as
+  alplabai/alp-sdk#1889.
+- **`fetch.mjs --check` now actually compares, and a nightly job runs it
+  (#629).** Nothing in this repo ever compared the recorded tan surface to a
+  real binary — every gate checks the record against itself, which is how #602
+  passed 36/36 against 36 wrongly-recorded flags. `--check` was part of that
+  gap rather than the answer to it: it built a fresh snapshot, printed its
+  digests and returned exit 0, having never opened `surface.json`. It now
+  compares content digests, exits non-zero on drift, and NAMES the commands
+  that moved rather than only reporting that a digest changed. The new
+  `tan-surface-drift.yml` runs it nightly against the pinned binary, staged
+  through the same resolver `ci.yml` and `release-vsix.yml` use — not whatever
+  `tan` is on PATH, which on a developer machine can be an entirely different
+  version. Scheduled, not per-PR, for the reason `e2e.yml` argues at length:
+  a flaky required check does not get fixed, it gets re-run.
+
 - **New command: `Alp: Install tan shell completion` (#621).**
   `tan completion --shell {bash,zsh,fish}` was called only by the dev-side
   surface capture script; there was no user-facing way to install it. The

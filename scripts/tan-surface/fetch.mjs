@@ -1031,6 +1031,98 @@ function countOptions(snapshot) {
   return { total, inert, refusing };
 }
 
+/**
+ * Compare a freshly captured snapshot against the committed record, and FAIL
+ * when they differ (#629).
+ *
+ * `--check` used to build the snapshot, print its digests and return — exit 0,
+ * always, having never opened `surface.json`. It reported what the binary says
+ * and left a human to notice that the record said something else. That is the
+ * defence that had already failed for the 36 wrongly-recorded flags of #602,
+ * where `node --test` passed 36/36 against the wrong record for as long as it
+ * existed: every gate in this repo checks the record against ITSELF (that
+ * `pinnedSurface.ts` agrees with `surface.json`, that documented claims agree
+ * with `surface.json`, that `surface.json` agrees with its own digest), so
+ * none of them can notice the record disagreeing with tan.
+ *
+ * This is the one comparison that can. It writes nothing.
+ *
+ * The failure NAMES WHICH COMMANDS MOVED, not just that a digest changed: a
+ * digest tells a reader something is wrong and nothing about where, and the
+ * whole point of running this unattended is that the message is all anyone
+ * gets.
+ */
+function compareWithRecord(fresh) {
+  let recorded;
+  try {
+    recorded = JSON.parse(readFileSync(SNAPSHOT_PATH, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `cannot read the recorded surface at ${SNAPSHOT_PATH}: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  if (recorded.contentDigest === fresh.contentDigest) {
+    console.log("[surface] --check: the record matches the binary.");
+    return;
+  }
+
+  // `capturedAt` is deliberately NOT part of this: it is the one field that
+  // changes on every capture without anything about tan having moved, and
+  // `contentDigest` already excludes it — which is why the comparison is on
+  // that digest rather than on the file's bytes.
+  const moved = [];
+  const names = new Set([
+    ...Object.keys(recorded.commands ?? {}),
+    ...Object.keys(fresh.commands ?? {}),
+  ]);
+  for (const name of [...names].sort()) {
+    const before = recorded.commands?.[name];
+    const after = fresh.commands?.[name];
+    if (before === undefined) {
+      moved.push(`  + ${name} — the binary has it, the record does not`);
+      continue;
+    }
+    if (after === undefined) {
+      moved.push(`  - ${name} — the record has it, the binary does not`);
+      continue;
+    }
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      const flagsBefore = new Set(Object.keys(before.options ?? {}));
+      const flagsAfter = new Set(Object.keys(after.options ?? {}));
+      const added = [...flagsAfter].filter((f) => !flagsBefore.has(f));
+      const dropped = [...flagsBefore].filter((f) => !flagsAfter.has(f));
+      // Spelled out rather than sigil-prefixed: a dropped `--invented-flag`
+      // rendered as `-` + the flag reads `---invented-flag`, which is not a
+      // thing and costs the reader a second look at the one line that is
+      // supposed to save them the diff.
+      const detail = [
+        added.length ? `binary adds ${added.join(", ")}` : null,
+        dropped.length ? `record has ${dropped.join(", ")}` : null,
+      ]
+        .filter(Boolean)
+        .join("; ");
+      moved.push(
+        `  ~ ${name}${detail ? ` — ${detail}` : " — options changed"}`,
+      );
+    }
+  }
+  if (recorded.globalOptions?.join(",") !== fresh.globalOptions?.join(",")) {
+    moved.push("  ~ (global options) — the root option list changed");
+  }
+
+  throw new Error(
+    `the recorded surface no longer matches the pinned binary.\n` +
+      `  recorded content digest ${String(recorded.contentDigest).slice(0, 12)}\n` +
+      `  binary   content digest ${fresh.contentDigest.slice(0, 12)}\n` +
+      `${moved.length ? `${moved.join("\n")}\n` : ""}` +
+      `Re-capture with "node scripts/tan-surface/fetch.mjs" and READ THE ` +
+      `DIFF before committing it — a wrong record is silently authoritative ` +
+      `(src/alpCli/pinnedSurface.ts drives real behaviour from it).`,
+  );
+}
+
 function main(argv) {
   const checkOnly = argv.includes("--check");
   const binary = process.env.TAN_BIN || DEFAULT_TAN_BIN;
@@ -1055,7 +1147,8 @@ function main(argv) {
     `content ${snapshot.contentDigest.slice(0, 12)}`;
 
   if (checkOnly) {
-    console.log(`[surface] ${summary} (--check: nothing written)`);
+    console.log(`[surface] ${summary}`);
+    compareWithRecord(snapshot);
     return;
   }
   mkdirSync(dirname(SNAPSHOT_PATH), { recursive: true });
