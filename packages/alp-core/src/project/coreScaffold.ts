@@ -56,6 +56,17 @@ export interface CoreAssignment {
   os: string;
   /** Where this core's application lives, relative to the project root. */
   app?: string;
+  /**
+   * The bitbake recipe packaging `app:`, for an app-only `os: yocto` slice
+   * (#624). Only ever meaningful alongside `app` on a yocto core.
+   *
+   * The pair is INDIVISIBLE. `board.schema.json:606` requires it, and the SDK
+   * enforces it by refusing to build: `_slice_command`'s yocto branch returns
+   * `None` for an `app:` with no `recipe:`, which carries the slice as
+   * `skipped` / `no-command` — silently unbuildable, exactly the shape #623
+   * found for bare-metal. `takesApp` is what keeps them together here.
+   */
+  recipe?: string;
 }
 
 /**
@@ -109,8 +120,52 @@ export function unknownCoreOs(
  * this wizard does not claim to scaffold a bare-metal core rather than claiming
  * it badly; the core is still declared, just without an app.
  */
-function takesApp(os: string): boolean {
-  return os === "zephyr";
+function takesApp(assignment: CoreAssignment): boolean {
+  if (assignment.os === "zephyr") return true;
+  // The APP-ONLY yocto slice (#624): a project-relative source directory plus
+  // the bitbake recipe that packages it. BOTH or neither — see
+  // `CoreAssignment.recipe`. A half-filled answer is not a weaker version of
+  // this mode, it is the unbuildable one, so it falls through to the stock
+  // image rather than being written.
+  return (
+    assignment.os === "yocto" &&
+    Boolean(assignment.app?.trim()) &&
+    Boolean(assignment.recipe?.trim())
+  );
+}
+
+/**
+ * A yocto core the customer half-answered: a source directory with no recipe,
+ * or a recipe with no directory (#624).
+ *
+ * Neither half is written — `takesApp` refuses the pair — so the core falls
+ * back to the SoM's stock image, which is a working project and not what they
+ * asked for. Reported rather than silently corrected: the customer typed
+ * something, and a wizard that drops it without a word is how the #623 class
+ * happens.
+ */
+export function incompleteYoctoAppSlices(
+  assignments: readonly CoreAssignment[],
+): string[] {
+  return assignments
+    .filter((assignment) => {
+      if (assignment.os !== "yocto") return false;
+      const hasApp = Boolean(assignment.app?.trim());
+      const hasRecipe = Boolean(assignment.recipe?.trim());
+      return hasApp !== hasRecipe;
+    })
+    .map((assignment) => assignment.id);
+}
+
+/** What the customer is told when they half-answered one. */
+export function incompleteYoctoAppNotice(coreIds: readonly string[]): string {
+  const plural = coreIds.length > 1;
+  return (
+    `${coreIds.join(", ")} ${plural ? "need" : "needs"} BOTH an application ` +
+    `directory and the bitbake recipe that packages it — one without the ` +
+    `other cannot be built, so ${plural ? "they were" : "it was"} left on the ` +
+    `SoM's stock image.`
+  );
 }
 
 /**
@@ -236,7 +291,7 @@ export function appDirOverrides(
   const overrides: { id: string; requested: string; kept: string }[] = [];
   for (const assignment of assignments) {
     const existing = board.cores?.[assignment.id]?.app;
-    if (!existing || !assignment.app || !takesApp(assignment.os)) continue;
+    if (!existing || !assignment.app || !takesApp(assignment)) continue;
     if (normaliseAppDir(existing) === normaliseAppDir(assignment.app)) continue;
     overrides.push({
       id: assignment.id,
@@ -281,7 +336,7 @@ export function orphanedAppDirs(
     // while `unknownCoreOs` reported the opposite for the same input.
     if (narrowCoreOs(assignment.os) === null) continue;
     const app = board.cores?.[assignment.id]?.app;
-    if (!app || takesApp(assignment.os)) continue;
+    if (!app || takesApp(assignment)) continue;
     orphans.push({ id: assignment.id, app, os: assignment.os });
   }
   return orphans;
@@ -314,8 +369,12 @@ export function applyCoreAssignments(
     if (os === null) continue;
     const existing = cores[assignment.id] ?? {};
     const next: CoreEntry = { ...existing, os };
-    if (!takesApp(assignment.os)) {
+    if (!takesApp(assignment)) {
       delete next.app;
+      // `recipe:` is meaningless without an `app:` and `image:` wins over both
+      // (`board.schema.json:602`), so a leftover recipe on a stock-image core
+      // is a key the SDK ignores and a reader misreads.
+      delete next.recipe;
     } else if (existing.app) {
       // TAN'S APP DIRECTORY WINS, and this is a safety rule rather than a
       // preference. tan picks the plan's app core itself — the extension cannot
@@ -326,6 +385,16 @@ export function applyCoreAssignments(
       next.app = existing.app;
     } else if (assignment.app) {
       next.app = assignment.app;
+    }
+    // Written WITH the app, never after it: `takesApp` already refused the
+    // half-filled pair, so reaching here on a yocto core means both are
+    // present. `image:` is dropped in the same breath — it takes priority over
+    // `app:`/`recipe:` (`board.schema.json:602`), so leaving one behind would
+    // make the slice build the stock image while the board.yaml reads as
+    // though it builds the customer's source.
+    if (assignment.os === "yocto" && takesApp(assignment)) {
+      next.recipe = assignment.recipe;
+      delete next.image;
     }
     if (os === "off" && cores[assignment.id]?.os !== "off") {
       switchedOff.add(assignment.id);

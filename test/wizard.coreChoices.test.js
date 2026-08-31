@@ -79,9 +79,9 @@ test("a fresh catalog with the same cores keeps the customer's answers", () => {
   // brand-new array carrying identical content, exactly as the SDK-step reload
   // delivers it.
   const edited = [
-    { id: "a32_cluster", os: "off", app: "" },
-    { id: "m55_hp", os: "zephyr", app: "./src" },
-    { id: "m55_he", os: "baremetal", app: "" },
+    { id: "a32_cluster", os: "off", app: "", recipe: "" },
+    { id: "m55_hp", os: "zephyr", app: "./src", recipe: "" },
+    { id: "m55_he", os: "baremetal", app: "", recipe: "" },
   ];
 
   const next = reconcileCoreChoices(edited, [
@@ -108,14 +108,14 @@ test("a different SoM does replace the layout", () => {
   // The reason the reset existed, and it still has to work: a layout carried
   // over from another SoM names cores this one does not have.
   const edited = [
-    { id: "a32_cluster", os: "off", app: "" },
-    { id: "m55_hp", os: "zephyr", app: "./src" },
-    { id: "m55_he", os: "zephyr", app: "./m55_he" },
+    { id: "a32_cluster", os: "off", app: "", recipe: "" },
+    { id: "m55_hp", os: "zephyr", app: "./src", recipe: "" },
+    { id: "m55_he", os: "zephyr", app: "./m55_he", recipe: "" },
   ];
 
   assert.deepEqual(reconcileCoreChoices(edited, V2N101), [
-    { id: "a55_cluster", os: "yocto", app: "" },
-    { id: "m33_sm", os: "zephyr", app: "./src" },
+    { id: "a55_cluster", os: "yocto", app: "", recipe: "" },
+    { id: "m33_sm", os: "zephyr", app: "./src", recipe: "" },
   ]);
 });
 
@@ -123,8 +123,8 @@ test("a SoM with the same count but different ids still replaces", () => {
   // Length alone is not identity. Two SoMs with two cores each are still two
   // different parts.
   const edited = [
-    { id: "a55_cluster", os: "off", app: "" },
-    { id: "m33_sm", os: "zephyr", app: "./src" },
+    { id: "a55_cluster", os: "off", app: "", recipe: "" },
+    { id: "m33_sm", os: "zephyr", app: "./src", recipe: "" },
   ];
 
   assert.deepEqual(reconcileCoreChoices(edited, V2N101.slice()), edited);
@@ -134,8 +134,8 @@ test("a SoM with the same count but different ids still replaces", () => {
       { id: "m55_he", os: "zephyr" },
     ]),
     [
-      { id: "m55_hp", os: "zephyr", app: "./src" },
-      { id: "m55_he", os: "zephyr", app: "./m55_he" },
+      { id: "m55_hp", os: "zephyr", app: "./src", recipe: "" },
+      { id: "m55_he", os: "zephyr", app: "./m55_he", recipe: "" },
     ],
   );
 });
@@ -151,9 +151,9 @@ test("the os values are NOT compared, and that is on purpose", () => {
   // the step on every catalog message — the defect, restored by a stricter-
   // looking rule.
   const edited = [
-    { id: "a32_cluster", os: "off", app: "" },
-    { id: "m55_hp", os: "baremetal", app: "" },
-    { id: "m55_he", os: "off", app: "" },
+    { id: "a32_cluster", os: "off", app: "", recipe: "" },
+    { id: "m55_hp", os: "baremetal", app: "", recipe: "" },
+    { id: "m55_he", os: "off", app: "", recipe: "" },
   ];
 
   assert.equal(reconcileCoreChoices(edited, AEN801), edited);

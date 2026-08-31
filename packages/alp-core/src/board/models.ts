@@ -48,6 +48,27 @@ export type LibraryEntry = string | { name: string; cores?: string[] };
 export interface CoreEntry {
   os?: CoreOs;
   app?: string;
+  /**
+   * The bitbake recipe that packages `app:`, for an APP-ONLY `os: yocto` slice
+   * (#624). Meaningless on any other runtime.
+   *
+   * REQUIRED whenever a yocto core sets `app:` and no `image:`
+   * (`board.schema.json:606`), and the SDK enforces it by refusing to build:
+   * `alp_orchestrate/orchestrator.py`'s `_slice_command` yocto branch reads
+   *
+   *     if slice_.app:
+   *         if not slice_.recipe:
+   *             return None
+   *         return ["bitbake", str(slice_.recipe)]
+   *
+   * and a `None` command carries the slice as `skipped` / `no-command`. So an
+   * `app:` written without a `recipe:` is silently unbuildable — the same shape
+   * #623 found for bare-metal. Anything that writes one MUST write both.
+   *
+   * `image:` wins when both are set (`:602`), which is why the two modes are
+   * exclusive rather than additive.
+   */
+  recipe?: string;
   image?: string;
   peripherals?: string[];
   extra_libraries?: ExtraLibrary[];

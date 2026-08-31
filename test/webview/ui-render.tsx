@@ -1090,9 +1090,66 @@ async function main() {
       problems.push(
         "cores-step: the yocto core had no app-directory field at all",
       );
-    } else if (!yoctoInput.disabled) {
+    } else if (yoctoInput.disabled) {
+      // THE RULE MOVED, and this assertion is inverted on purpose (#624).
+      //
+      // It used to require the field be inert, on the reading that a Linux
+      // core's image always comes from a recipe rather than this project. That
+      // is the DEFAULT, not the whole story: `board.schema.json` documents an
+      // app-only `os: yocto` slice — `app:` naming a project-relative source
+      // directory, `recipe:` naming the bitbake recipe that packages it, no
+      // `image:` — and the wizard could never produce it, which is what #624
+      // opened about.
+      //
+      // The field is now live. The stock image is still what a Linux core gets
+      // by default (`defaultCoreChoices` leaves it empty), and the pair is
+      // still indivisible — the recipe input below is what enforces that.
       problems.push(
-        "cores-step: a yocto core's app directory must be inert — its image comes from a recipe, not this project",
+        "cores-step: a yocto core's app directory must be typeable — the " +
+          "app-only slice (app: + recipe:, no image:) is a documented mode " +
+          "and the wizard is its only path (#624)",
+      );
+    }
+
+    // The PAIR, which is what actually decides whether the slice builds
+    // (#624). `_slice_command`'s yocto branch returns None for an `app:` with
+    // no `recipe:`, so the recipe field is not decoration — without it the
+    // wizard could express only the unbuildable half.
+    //
+    // Asserted by RE-RENDERING rather than by typing: `CoresStep` is
+    // controlled, so an `input` event only calls `onChange` and the harness
+    // holds `choices` fixed. What is under test here is the rendering rule —
+    // the recipe field follows the app directory — and that is exactly what a
+    // second render with a filled-in choice measures.
+    const recipeBefore = container.querySelector(
+      'input[aria-label="Bitbake recipe for a32_cluster"]',
+    );
+    if (recipeBefore) {
+      problems.push(
+        "cores-step: the recipe field is shown before an app directory is " +
+          "typed — a recipe with nothing to package is not a slice",
+      );
+    }
+    root.render(
+      React.createElement(CoresStep, {
+        choices: defaults.map((c) =>
+          c.id === "a32_cluster" ? { ...c, app: "./linux" } : c,
+        ),
+        onChange: () => {},
+        isExample: false,
+      }),
+    );
+    await settle();
+    if (
+      !container.querySelector(
+        'input[aria-label="Bitbake recipe for a32_cluster"]',
+      )
+    ) {
+      problems.push(
+        "cores-step: a Linux core WITH an app directory offered no recipe " +
+          "field — an app: without a recipe: is carried by the SDK as " +
+          "skipped/no-command, so the wizard would express only the " +
+          "unbuildable half",
       );
     }
     const hpInput = container.querySelector(

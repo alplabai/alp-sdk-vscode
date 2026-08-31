@@ -437,3 +437,127 @@ test("the notice reads correctly for more than one core", () => {
   assert.match(text, /m55_he, m55_hp are/);
   assert.match(text, /skips them/);
 });
+
+// ── #624: the app-only Yocto slice ───────────────────────────────────────────
+//
+// `board.schema.json` documents a second, distinct Linux mode: `app:` naming a
+// project-relative source directory, paired with `recipe:` naming the bitbake
+// recipe that packages it, and NO `image:`. The wizard could never produce it —
+// `takesApp` was `os === "zephyr"` — so a customer wanting their own Linux
+// application had only the stock image.
+//
+// THE PAIR IS INDIVISIBLE, and that is the whole reason this is not a one-line
+// widening. `alp_orchestrate/orchestrator.py`'s `_slice_command` yocto branch:
+//
+//     if slice_.app:
+//         if not slice_.recipe:
+//             return None
+//         return ["bitbake", str(slice_.recipe)]
+//
+// so an `app:` written without a `recipe:` is carried as `skipped` /
+// `no-command` — silently unbuildable, exactly the shape #623 found for
+// bare-metal. A half-filled answer must therefore NOT be written.
+
+const {
+  incompleteYoctoAppSlices,
+  incompleteYoctoAppNotice,
+} = require("../packages/alp-core/dist/project/coreScaffold.js");
+
+const boardWith = (cores) => ({ som: { sku: "E1M-AEN801" }, cores });
+
+test("a complete yocto app slice writes BOTH app and recipe", () => {
+  const board = applyCoreAssignments(boardWith({ a32_cluster: {} }), [
+    { id: "a32_cluster", os: "yocto", app: "./linux", recipe: "my-app" },
+  ]);
+  assert.equal(board.cores.a32_cluster.app, "./linux");
+  assert.equal(board.cores.a32_cluster.recipe, "my-app");
+});
+
+test("a complete yocto app slice drops any image: — it wins over app/recipe", () => {
+  const board = applyCoreAssignments(
+    boardWith({ a32_cluster: { image: "alp-image-edge" } }),
+    [{ id: "a32_cluster", os: "yocto", app: "./linux", recipe: "my-app" }],
+  );
+  assert.equal(
+    board.cores.a32_cluster.image,
+    undefined,
+    "`image:` takes priority over `app:`/`recipe:` (board.schema.json:602), so " +
+      "leaving one behind builds the stock image while the board.yaml reads as " +
+      "though it builds the customer's source",
+  );
+});
+
+test("an app with NO recipe writes neither — it would be unbuildable", () => {
+  const board = applyCoreAssignments(boardWith({ a32_cluster: {} }), [
+    { id: "a32_cluster", os: "yocto", app: "./linux" },
+  ]);
+  assert.equal(
+    board.cores.a32_cluster.app,
+    undefined,
+    "`_slice_command` returns None for an app: with no recipe:, so writing " +
+      "the app alone produces a slice the build silently skips",
+  );
+  assert.equal(board.cores.a32_cluster.recipe, undefined);
+});
+
+test("a recipe with NO app writes neither", () => {
+  const board = applyCoreAssignments(boardWith({ a32_cluster: {} }), [
+    { id: "a32_cluster", os: "yocto", recipe: "my-app" },
+  ]);
+  assert.equal(board.cores.a32_cluster.app, undefined);
+  assert.equal(
+    board.cores.a32_cluster.recipe,
+    undefined,
+    "a recipe with nothing to package is a key the SDK ignores and a reader " +
+      "misreads",
+  );
+});
+
+test("a stock-image yocto core keeps no stale recipe", () => {
+  const board = applyCoreAssignments(
+    boardWith({ a32_cluster: { recipe: "left-over" } }),
+    [{ id: "a32_cluster", os: "yocto" }],
+  );
+  assert.equal(board.cores.a32_cluster.recipe, undefined);
+});
+
+test("a half-answered yocto core is named", () => {
+  assert.deepEqual(
+    incompleteYoctoAppSlices([
+      { id: "a32_cluster", os: "yocto", app: "./linux" },
+      { id: "a55_cluster", os: "yocto", recipe: "only-a-recipe" },
+      { id: "m55_hp", os: "zephyr", app: "./src" },
+    ]),
+    ["a32_cluster", "a55_cluster"],
+  );
+});
+
+test("a COMPLETE or an EMPTY yocto core is not named", () => {
+  assert.deepEqual(
+    incompleteYoctoAppSlices([
+      { id: "a32_cluster", os: "yocto", app: "./linux", recipe: "my-app" },
+      { id: "a55_cluster", os: "yocto" },
+    ]),
+    [],
+    "an app-less yocto core is the DOCUMENTED default — it builds the SoM's " +
+      "stock alp-image-edge — and warning about it would fire on every " +
+      "ordinary project",
+  );
+});
+
+test("whitespace is not half an answer", () => {
+  assert.deepEqual(
+    incompleteYoctoAppSlices([
+      { id: "a32_cluster", os: "yocto", app: "./linux", recipe: "   " },
+    ]),
+    ["a32_cluster"],
+  );
+});
+
+test("the half-answer notice says both halves are needed", () => {
+  const text = incompleteYoctoAppNotice(["a32_cluster"]);
+  assert.match(text, /a32_cluster/);
+  assert.match(text, /BOTH/);
+  assert.match(text, /recipe/);
+  assert.match(text, /stock image/);
+});

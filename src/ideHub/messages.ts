@@ -775,7 +775,16 @@ export interface CreateNewProjectMessage {
    * plan's own app core, so the host writes the rest into `board.yaml` after
    * the scaffold and creates each directory.
    */
-  cores?: { id: string; os: string; app?: string }[];
+  cores?: {
+    id: string;
+    os: string;
+    app?: string;
+    /** The bitbake recipe packaging `app` on an app-only `os: yocto` slice
+     *  (#624). Carried alongside `app` because the SDK requires the pair —
+     *  an `app:` with no `recipe:` is refused by `_slice_command` and the
+     *  slice is carried as `skipped` / `no-command`. */
+    recipe?: string;
+  }[];
 }
 
 /**
