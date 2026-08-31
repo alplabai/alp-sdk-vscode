@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **A flash-blocking J-Link warning now reaches the customer about to flash,
+  not just the Dependencies panel (#615).** tan works out precisely what is
+  wrong and says so: on this bench host `jlink` comes back `status: "warn"`
+  with "J-Link V9.26 (/usr/local/bin/JLinkExe) predates V9.46, which is where
+  Alif's MRAM flash loader became built in" and a `fix` of "Upgrade the SEGGER
+  J-Link pack to V9.46+." On AEN hardware that is the difference between a
+  flash that programs MRAM and one that does not, and the Flash command never
+  asked. It now runs `tan doctor` first and, when a flash-relevant check is
+  `warn` or `fail`, shows a blocking modal carrying tan's own detail and fix
+  before spawning anything. A CONFIRM, not a refusal: `jlink` is about Alif's
+  Flow D and a customer flashing a Renesas part is right to continue. Every
+  other outcome flashes — a doctor that could not run, answered nothing, or
+  reported no flash-relevant problem must never stand between a customer and
+  their board, because "tan did not tell us" is not "tan said no".
+- **The `jlink` and `setools` rows are named in the Dependencies panel
+  (#615).** Neither had a label, so `humanise` rendered them "Jlink" and
+  "Setools" — and a row nobody recognises is a row nobody reads. They are now
+  "SEGGER J-Link" and "Alif SETOOLS".
+- **Recorded, correcting #615's body: the three rows are NOT unrendered.**
+  `sdkProvenance`, `setools` and `jlink` all reach the panel, and
+  `planner.ts`'s `hint` field already carries tan's `check.fix` prose verbatim
+  under the detail. What was missing was a label for two of them and, for
+  `jlink`, any path to the customer at the moment it matters. `sdkProvenance`
+  is `status: "pass"` reporting `alp-sdk 0.16.0 @ e1dddd37` and needs no
+  action at all.
+
 - **"board.yaml is clean" is no longer said about a file the resolved SDK
   cannot process (#613).** A `board.yaml` carrying a `schemaVersion` newer than
   the resolved SDK's — written by a newer SDK, opened against an older one —
