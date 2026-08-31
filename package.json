@@ -278,6 +278,11 @@
         "category": "Alp"
       },
       {
+        "command": "alp.installShellCompletion",
+        "title": "Alp: Install tan shell completion",
+        "category": "Alp"
+      },
+      {
         "command": "alp.scaffoldModule",
         "title": "Alp: Scaffold module",
         "category": "Alp"

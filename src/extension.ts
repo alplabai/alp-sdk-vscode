@@ -57,6 +57,7 @@ import {
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
+import { installShellCompletion } from "./completion";
 import {
   maybeOfferFirstRunWizard,
   registerProjectWizardCommand,
@@ -370,6 +371,11 @@ export function activate(context: vscode.ExtensionContext): void {
       DependencyPanel.open(context, stateMgr),
     ),
     registerProjectWizardCommand(context),
+    // #621: emits `tan completion --shell <shell>` for customers who also use
+    // tan from a terminal. Writes nothing outside an untitled editor.
+    vscode.commands.registerCommand("alp.installShellCompletion", () =>
+      installShellCompletion(context),
+    ),
     ...registerLspCommands(),
     ...registerDebugCommands(context),
     // #586: the consent gate in front of a debug session that programs the

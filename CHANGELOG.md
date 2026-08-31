@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **New command: `Alp: Install tan shell completion` (#621).**
+  `tan completion --shell {bash,zsh,fish}` was called only by the dev-side
+  surface capture script; there was no user-facing way to install it. The
+  command detects the customer's shell from `$SHELL` and falls back to a
+  picker offering exactly the three tan supports.
+  bash and zsh get the script in an untitled editor with a one-line
+  instruction — **nothing is written to disk**, because their completion
+  scripts are conventionally sourced from a profile the customer owns and
+  appending to that blindly is not this extension's to do. fish is the one
+  case that offers a write, because its `completions/` directory auto-loads
+  whole files: behind an explicit confirm naming the exact path and saying
+  whether it creates or overwrites, never an append, and a decline falls back
+  to the same editor.
+
 - **The New Project wizard names the files it is about to write (#616).**
   Create used to write blind: the Confirm step showed no file list at all. It
   now runs `tan init --preview` first — measured, that writes nothing and
