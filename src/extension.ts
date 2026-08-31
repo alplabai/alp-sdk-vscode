@@ -369,7 +369,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.toolchainDoctor", () =>
       DependencyPanel.open(context, stateMgr),
     ),
-    registerProjectWizardCommand(),
+    registerProjectWizardCommand(context),
     ...registerLspCommands(),
     ...registerDebugCommands(context),
     // #586: the consent gate in front of a debug session that programs the

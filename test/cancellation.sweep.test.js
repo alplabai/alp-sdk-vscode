@@ -354,16 +354,17 @@ async function offerFirstRunWithRejection(rejection) {
       commands: { registerCommand: () => ({ dispose() {} }) },
       window: {},
     },
-    "@alp-sdk/core/wizard/fileSystem": {
-      collectWizardFileChanges: () => [],
-      writeWizardFiles: () => ({ written: [], unchanged: [] }),
+    "@alp-sdk/core/wizard/scaffoldArgv": { planScaffoldArgv: () => [] },
+    "@alp-sdk/core/wizard/scaffoldPayload": {
+      classifyScaffoldRefusal: () => null,
+      isScaffoldNoOp: () => false,
+      narrowScaffoldResult: () => null,
     },
-    "@alp-sdk/core/wizard/service": {
-      createModuleScaffoldPlan: () => ({}),
-      createModuleScaffoldPreviewMarkdown: () => "",
-      listModuleTemplates: () => [],
+    "./alpCli/vscodeAdapter": { runAlpCommand: async () => ({}) },
+    "./loader": {
+      CANCELLED: Symbol("cancelled"),
+      runAlpWithProgress: async () => ({}),
     },
-    "./configurator/vscodeAdapter": { loadBoardModel: () => null },
     "./notify/vscodeAdapter": {
       notify: async (plan) => {
         plans.push(plan);

@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+- **`Alp: Scaffold module` now calls `tan scaffold` instead of
+  re-implementing it, so a module scaffolded from VS Code is actually
+  compiled (#601).** `tan scaffold` emits a `## Wiring` section in the module
+  README naming the two `CMakeLists.txt` edits without which the module is
+  never compiled; the TypeScript port in
+  `packages/alp-core/src/wizard/service.ts` emitted `## Notes` and stopped.
+  Everything around that section was byte-identical between the two, which is
+  what identified it as a port that never picked up an upstream addition — and
+  the customer got a module that silently never built, with nothing saying
+  why. The port is DELETED rather than patched: patching the text closes this
+  symptom and leaves a second, un-gated copy of a generator tan owns to miss
+  the next addition the same way. `wizard/service.ts`, `wizard/models.ts` and
+  `wizard/fileSystem.ts` are gone (`collectGeneratedOutputPreviews` went with
+  them — it had no callers), replaced by `wizard/scaffoldArgv.ts` (the argv,
+  pure) and `wizard/scaffoldPayload.ts` (narrowing + refusal classification).
+  The module-template picker is now built from `tan explain`'s
+  `available.moduleTemplates[]` plus a per-id explain, the same shape the New
+  Project flow already used, so a template tan adds tomorrow appears with no
+  change here — the retired four-entry table is what made that impossible.
+- **The scaffold confirm now lists what tan will actually write, and
+  `--force` is gated behind a second dialog that names what it destroys
+  (#601).** The old flow opened a markdown preview rendered by the port —
+  precisely the text that had gone stale. It now runs `tan scaffold
+  --preview` (which writes nothing) and puts tan's own `fileChanges[]` on the
+  confirmation dialog. `--force` is never predicted from that list: the write
+  runs WITHOUT it, and only tan's own `scaffold.would-overwrite` refusal
+  (exit 3) raises a second, error-severity modal naming the differing files
+  and saying the edits in them are lost. Measured on the pinned tan 0.6.0,
+  `--force` replaces a file with no diff and no backup. Both spawns carry the
+  project root as `--project` AND as the spawn's cwd: measured, a `scaffold`
+  with neither answers `project.root: "."`, which for an extension-host child
+  is whatever directory VS Code was launched from (#605's class, not joined).
+  An `ok: true` whose payload carries no `fileChanges`/`written` list is
+  reported as a failure rather than as "wrote 0 file(s)" — the `written ?? []`
+  shape pinned in `test/ideHub.materialiseGuard.test.js` — and tan's
+  `issues[]` reach the output channel on the success path too (#611).
+- **Known regression, filed upstream: the generated module source now always
+  reads `// Board context: unavailable`.** The retired port read `board.yaml`
+  and wrote the SoM SKU and OS into that comment. Measured on the pinned tan
+  0.6.0, `tan scaffold` reports `project.boardYaml: null` and emits the
+  `unavailable` spelling even with `--board-yaml` passed explicitly, an
+  `--sdk-root` resolved, and the cwd inside the project. It is a comment, not
+  a build input — the module compiles either way, which the `## Wiring`
+  section is what makes true — but it is a real loss and is recorded here
+  rather than left to be rediscovered.
+
 - **Dependency panel install buttons are no longer dead on the pinned tan
   0.6.0 (#603).** `packages/alp-core/src/deps/planner.ts` matched a missing
   prerequisite to a row by `p.tool === check.name`, which worked at v0.3.1

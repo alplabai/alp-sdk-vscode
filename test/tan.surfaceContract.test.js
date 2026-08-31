@@ -736,6 +736,9 @@ const EXPECTED_UNRESOLVABLE = [
   "src/ideHub/newProjectFlowPanel.ts  initArgs",
   "src/loader.ts  args",
   "src/west.ts  args",
+  // The module wizard's `tan scaffold`, and the second entry in this list that
+  // IS checked — see the note below the `initArgs` one.
+  "src/wizard.ts  argv",
 ];
 
 /**
@@ -754,6 +757,25 @@ const EXPECTED_UNRESOLVABLE = [
  * Written down because the entry alone reads as "unchecked", and for this one
  * site that is no longer true. Delete this note with the entry if the argv ever
  * becomes static; do not delete the note while the entry stands.
+ */
+
+/**
+ * `src/wizard.ts  argv` is the module wizard's `tan scaffold` (#601), and it is
+ * checked the same way, in `test/wizard.scaffoldArgv.test.js`.
+ *
+ * ONE entry for TWO passes: the preview and the write both go through a single
+ * `runScaffold` helper, so the extractor sees one call site. Its argv is
+ * conditional (`--preview` on the plan pass, `--force` only after the overwrite
+ * confirm), so it lives in `packages/alp-core/src/wizard/scaffoldArgv.ts` as a
+ * pure function and every branch is enumerated through `reduceLiteralArgv`
+ * against this same snapshot.
+ *
+ * This site did not exist before #601 — there was no argv at all, because
+ * `tan scaffold` was re-implemented in TypeScript. A generator that IS the
+ * second copy cannot be checked against the command it copies, which is how the
+ * README's `## Wiring` section went missing and modules scaffolded from VS Code
+ * were never compiled. An unresolvable-but-enumerated call site is what
+ * replaced it; do not read this entry as a step backwards.
  */
 
 /**
