@@ -441,10 +441,18 @@ import {
 /** Why a core has no app directory to type into. Said out loud rather than
  *  leaving an inert box: a disabled control with no reason reads as broken. */
 function appDirPlaceholder(os: string): string {
-  if (os === "yocto") return "built from a Yocto image";
+  // Yocto's placeholder describes the DEFAULT, not a prohibition (#624): a
+  // Linux core builds the SoM's stock image unless the customer names both a
+  // source directory and the recipe that packages it.
+  if (os === "yocto") return "stock image — or a source dir, with a recipe";
   if (os === "baremetal") return "bare-metal: create the app yourself";
   if (os === "off") return "core is off";
   return "./src";
+}
+
+/** Does this row let the customer type an application directory? */
+function acceptsAppDir(os: string): boolean {
+  return os === "zephyr" || os === "yocto";
 }
 
 interface CoresStepProps {
@@ -500,7 +508,9 @@ export function CoresStep({ choices, onChange, isExample }: CoresStepProps) {
       <p className={styles.stepHeading}>Assign the cores</p>
       <p className={styles.stepDesc}>
         Each core that runs an application gets its own directory, built as its
-        own image. Set a core to Off to leave it out.
+        own image. Set a core to Off to leave it out. A Linux core builds the
+        SoM's stock image unless you give it both a source directory and the
+        bitbake recipe that packages it.
       </p>
       {choices.map((choice) => (
         <div key={choice.id} className={styles.coreRow}>
@@ -522,10 +532,26 @@ export function CoresStep({ choices, onChange, isExample }: CoresStepProps) {
             type="text"
             aria-label={`App directory for ${choice.id}`}
             placeholder={appDirPlaceholder(choice.os)}
-            value={choice.os === "zephyr" ? choice.app : ""}
-            disabled={choice.os !== "zephyr"}
+            value={acceptsAppDir(choice.os) ? choice.app : ""}
+            disabled={!acceptsAppDir(choice.os)}
             onChange={(e) => update(choice.id, { app: e.target.value })}
           />
+          {/* The app-only Yocto slice (#624). Shown ONLY once the customer has
+              typed a source directory, because the recipe is meaningless
+              without one — and REQUIRED from that moment, because an `app:`
+              with no `recipe:` is what the SDK refuses to build
+              (`_slice_command` returns None, and the slice is carried as
+              `skipped` / `no-command`). The host writes the pair or neither. */}
+          {choice.os === "yocto" && choice.app.trim() !== "" && (
+            <input
+              className={styles.coreRowInput}
+              type="text"
+              aria-label={`Bitbake recipe for ${choice.id}`}
+              placeholder="bitbake recipe (required)"
+              value={choice.recipe}
+              onChange={(e) => update(choice.id, { recipe: e.target.value })}
+            />
+          )}
         </div>
       ))}
     </>

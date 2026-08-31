@@ -9,6 +9,8 @@ import { planInitArgv } from "@alp-sdk/core/project/initArgv";
 import {
   baremetalCoresWithoutApp,
   baremetalNoAppNotice,
+  incompleteYoctoAppNotice,
+  incompleteYoctoAppSlices,
 } from "@alp-sdk/core/project/coreScaffold";
 import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
 import { narrowInitPreview } from "@alp-sdk/core/project/initPreview";
@@ -969,6 +971,25 @@ export class NewProjectFlowPanel {
     // skips a core the customer asked for, and the first gate they hit says
     // nothing. Said here, at creation, because it is the only moment this
     // extension knows the answer AND the customer is looking.
+    // #624: a Linux core the customer half-answered — a source directory with
+    // no recipe, or a recipe with no directory. Neither half is written (the
+    // pair is what the SDK requires; `_slice_command` returns None for an
+    // `app:` with no `recipe:`), so the core falls back to the SoM's stock
+    // image. That is a working project and NOT what they asked for, so it is
+    // said rather than silently corrected.
+    const halfAnswered = incompleteYoctoAppSlices(coreAssignments ?? []);
+    if (halfAnswered.length > 0) {
+      notifyAsync(
+        planSuccess(`Alp: ${incompleteYoctoAppNotice(halfAnswered)}`, {
+          actions: [{ id: "showOutput" }],
+        }),
+      );
+      log(
+        `[new-project] ${moduleId}: yocto core(s) ${halfAnswered.join(", ")} ` +
+          "had only one of app:/recipe: — left on the stock image",
+      );
+    }
+
     const baremetalNoApp = baremetalCoresWithoutApp(coreAssignments ?? []);
     if (baremetalNoApp.length > 0) {
       notifyAsync(

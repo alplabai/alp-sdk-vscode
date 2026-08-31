@@ -166,6 +166,10 @@ export interface CoreIot {
 export interface CoreEntry {
   os?: CoreOs;
   app?: string;
+  /** The bitbake recipe packaging `app:` on an app-only `os: yocto` slice
+   *  (#624). Written only WITH an `app:` — the SDK refuses to build one
+   *  without the other. Mirrors `packages/alp-core/src/board/models.ts`. */
+  recipe?: string;
   image?: string;
   peripherals?: string[];
   inference?: CoreInference;
@@ -1028,7 +1032,15 @@ export interface CreateNewProjectMessage {
   /** Open the created project in the CURRENT window (replace the workspace) vs a
    *  new window. Omitted = true (the wizard checkbox defaults to on). */
   openInCurrentWindow?: boolean;
-  cores?: { id: string; os: string; app?: string }[];
+  cores?: {
+    id: string;
+    os: string;
+    app?: string;
+    /** Mirrors `src/ideHub/messages.ts` — the bitbake recipe for an app-only
+     *  `os: yocto` slice (#624), carried with `app` because the SDK needs
+     *  both. */
+    recipe?: string;
+  }[];
 }
 /** Ask what Create WOULD write, without writing it (#616) — `tan init
  *  --preview`, answered by `newProjectPreviewData`. `destination` is

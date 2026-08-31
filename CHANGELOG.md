@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **The New Project wizard can now scaffold a custom Linux app, not only the
+  stock image (#624).** `board.schema.json` documents an app-only `os: yocto`
+  slice — `app:` naming a project-relative source directory, `recipe:` naming
+  the bitbake recipe that packages it, and no `image:` — and the wizard could
+  never produce it: `takesApp()` was `os === "zephyr"`, so a customer who
+  wanted their own Linux application on the A-cluster had no path through New
+  Project. The Cores step now accepts a source directory on a Linux core and,
+  once one is typed, asks for the recipe.
+- **The pair is written together or not at all.** `recipe:` is not optional:
+  `_slice_command`'s yocto branch returns `None` for an `app:` with no
+  `recipe:`, which carries the slice as `skipped` / `no-command` — silently
+  unbuildable, exactly the shape #623 found for bare-metal. So a half-filled
+  answer writes NEITHER half and the core stays on the SoM's stock image, and
+  the customer is told which cores that happened to rather than having their
+  input dropped in silence. A completed pair also clears any `image:`, which
+  takes priority over `app:`/`recipe:` (`board.schema.json:602`) and would
+  otherwise build the stock image while the board.yaml read as though it built
+  the customer's source.
+- The stock image stays the DEFAULT for a Linux core. It is what the SoM ships
+  and what `heterogeneous-builds.md` blesses; the app-only slice is a
+  deliberate opt-in.
+
 - **A bare-metal core the wizard writes with no `app:` is now named to the
   customer (#623).** Measured, because the issue asked for the measurement
   before any fix: `tan validate` passes the shape with zero issues, while the

@@ -12,6 +12,16 @@ export interface CoreChoice {
   id: string;
   os: string;
   app: string;
+  /**
+   * The bitbake recipe packaging `app`, for an app-only `os: yocto` slice
+   * (#624). Empty string for every other core, and for a Linux core left on
+   * the SoM's stock image.
+   *
+   * Carried BESIDE `app` rather than folded into it because the pair is what
+   * the SDK requires: `_slice_command`'s yocto branch returns `None` for an
+   * `app:` with no `recipe:`, which makes the slice silently unbuildable.
+   */
+  recipe: string;
 }
 
 /**
@@ -39,11 +49,15 @@ export function defaultCoreChoices(
     // shape is `cmake-args`, not a Zephyr application — scaffolding one for it
     // produces a project that cannot configure (#538).
     if (core.os !== "zephyr") {
-      return { id: core.id, os: core.os, app: "" };
+      // Still EMPTY by default, including for yocto (#624): the stock image is
+      // the right default — it is what the SoM ships and what
+      // `heterogeneous-builds.md` blesses — and the app-only slice is a
+      // deliberate opt-in the customer types both halves of.
+      return { id: core.id, os: core.os, app: "", recipe: "" };
     }
     const app = appCoreTaken ? `./${core.id}` : "./src";
     appCoreTaken = true;
-    return { id: core.id, os: core.os, app };
+    return { id: core.id, os: core.os, app, recipe: "" };
   });
 }
 
