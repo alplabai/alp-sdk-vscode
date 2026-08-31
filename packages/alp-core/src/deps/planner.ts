@@ -304,6 +304,12 @@ const LABELS: Readonly<Record<string, string>> = {
   dd: "dd",
   vendorToolchain: "Vendor toolchain",
   sdkProvenance: "SDK provenance",
+  // Both rows arrive from the pinned tan and had no entry, so `humanise` put
+  // "Setools" and "Jlink" on screen — a row nobody recognises is a row nobody
+  // reads, and `jlink` is the one that decides whether an AEN flash programs
+  // anything at all (#615).
+  setools: "Alif SETOOLS",
+  jlink: "SEGGER J-Link",
 };
 
 /**

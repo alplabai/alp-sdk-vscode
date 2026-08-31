@@ -12,6 +12,11 @@
 // (not the retired `west alp-*` driver) with no tan equivalent, so they stay as
 // direct west terminal invocations.
 
+import {
+  collectFlashReadinessWarnings,
+  describeFlashReadiness,
+  flashReadinessModalDetail,
+} from "@alp-sdk/core/deps/flashReadiness";
 import { WestWorkspaceContext } from "@alp-sdk/core/west/models";
 import {
   createWestFlashPlan,
@@ -27,7 +32,7 @@ import {
   runAlpStreamed,
 } from "./alpCli/vscodeAdapter";
 import { warnIfCliCannotBuildSom } from "./build/somCliFloorGuard";
-import { planPrecondition } from "./notify/service";
+import { planConfirm, planPrecondition } from "./notify/service";
 import { notify } from "./notify/vscodeAdapter";
 import {
   collectWestWorkspaceContext,
@@ -168,10 +173,66 @@ async function alpFlash(context: vscode.ExtensionContext): Promise<void> {
   // nothing until they accept. `--confirm` here would additionally arm the
   // three backends that DO honour it — an irreversible write nobody asked for
   // — and `test/flash.dispatch.test.js` fails the build if anyone writes it.
+  if (!(await confirmFlashReadiness(context, target.cwd))) return;
   await runAlpStreamed(context, ["flash", ...target.appArg], {
     name: FLASH_RUN_NAME,
     cwd: target.cwd,
   });
+}
+
+/**
+ * Ask `tan doctor` whether this host can actually program the part, and let the
+ * customer decide when it says no (#615).
+ *
+ * tan already works this out and says so precisely — on this bench host,
+ * `jlink` comes back `warn` with "J-Link V9.26 … predates V9.46, which is where
+ * Alif's MRAM flash loader became built in" and a `fix` of "Upgrade the SEGGER
+ * J-Link pack to V9.46+." — and until now it said it only inside the
+ * Dependencies panel, which a customer about to flash need never have opened.
+ * On AEN hardware that is the difference between a flash that programs the part
+ * and one that does not.
+ *
+ * MODAL, not a toast, for the reason the rest of this flash path is modal: a
+ * corner notification is easy to miss or auto-dismiss, and the cost of missing
+ * this one is a bench slot spent on a write that cannot land. It is a CONFIRM
+ * and not a refusal because the warning is not universal — `jlink` is about
+ * Alif's Flow D, and a customer flashing a Renesas part is right to continue.
+ *
+ * Returns `true` — flash — for every outcome except an explicit decline. A
+ * doctor that could not run, answered nothing, or reported no flash-relevant
+ * problem must never stand between a customer and their board; "tan did not
+ * tell us" is not "tan said no".
+ */
+async function confirmFlashReadiness(
+  context: vscode.ExtensionContext,
+  cwd: string,
+): Promise<boolean> {
+  let res;
+  try {
+    res = await runAlpCommand(context, ["doctor"], cwd, {
+      interactive: false,
+    });
+  } catch {
+    return true;
+  }
+  const envelope = res.outcome.envelope;
+  if (!envelope) return true;
+
+  const data = envelope.data as { checks?: unknown } | undefined;
+  const warnings = collectFlashReadinessWarnings(data?.checks);
+  if (warnings.length === 0) return true;
+
+  log(`[flash] readiness: ${warnings.map((w) => w.name).join(", ")}`, "warn");
+  const picked = await notify(
+    planConfirm({
+      message: describeFlashReadiness(warnings),
+      // tan's own detail and fix, on the dialog. `present` logs `modalDetail`
+      // as well, so the record survives whichever way the customer clicks.
+      modalDetail: flashReadinessModalDetail(warnings),
+      confirm: { id: "applyChanges" },
+    }),
+  );
+  return picked === "applyChanges";
 }
 
 async function alpClean(context: vscode.ExtensionContext): Promise<void> {
