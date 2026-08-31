@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **"board.yaml is clean" is no longer said about a file the resolved SDK
+  cannot process (#613).** A `board.yaml` carrying a `schemaVersion` newer than
+  the resolved SDK's — written by a newer SDK, opened against an older one —
+  passes `tan validate` with `ok: true`, exit 0 and `issues: []`, because the
+  schema permits any integer >= 1. The SDK's own migrator refuses the same file
+  outright. `alp.validateBoardYaml` now asks `tan migrate --check` after a
+  clean validation and reports a refusal at warning severity, with west's own
+  sentence carried verbatim to the "Alp SDK" channel. Classification is on
+  `issues[].code`, never on that sentence: `migrate.failed` is a generic
+  wrapper tan emits for any non-zero west exit, so the customer-facing text
+  says the migrator refused the file and does not guess why. A migrator that
+  could not run at all — no SDK resolved, no west workspace — leaves the clean
+  verdict alone rather than turning validation into an error about a verb that
+  never ran.
+- **The board.yaml `os:` -> `cores:` quick fix no longer guesses the core id
+  (#613).** It inferred the core from a substring of the SKU, in a table this
+  repo maintained by hand. Measured against `tan presets` at alp-sdk
+  v0.16.0-rc1 that table was wrong twice: `os: yocto` on `E1M-AEN301` or
+  `E1M-AEN401` answered `m55_hp`, and those SoMs declare
+  `[{m55_hp, zephyr}, {m55_he, zephyr}]` with no yocto core at all; and an
+  unrecognised SKU fell through to `m33_sm` / `a55_cluster`, Renesas core ids,
+  written into whatever part the customer actually had. It also never offered
+  `m55_he`, a legal answer on all six AEN SoMs that declare it. The LSP
+  completion catalogue now carries `soms[].cores[]` from `tan presets`, and the
+  fix offers one action per core the SoM declares for that os — or none at all
+  when the catalogue has no answer. `inferCoreIdFromSkuAndOs` is deleted.
+- **Recorded, because #613's body says otherwise: no board.yaml can be behind
+  at this pin.** `scripts/alp_migrate` has `LATEST = 1` and an EMPTY migration
+  registry, and the board schema documents an absent `schemaVersion` as
+  "version 1 permanently … never out-of-date". `tan migrate --check` on a
+  normal project answers `alp-migrate: all board.yaml at v1.` and `--preview`
+  returns an empty stdout — not the `diagnostic-v1` payload the issue expects,
+  which is why nothing here parses one.
+
 - **The module scaffold now goes where `board.yaml` is, not where the
   workspace folder is (#601).** `alpSdk.boardYamlPath` is a documented,
   per-folder setting holding a path relative to its workspace folder. Point it

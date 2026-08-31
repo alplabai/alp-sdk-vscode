@@ -399,6 +399,9 @@ connection.onCodeAction((params): CodeAction[] => {
     for (const fix of createBoardYamlQuickFixes(
       documentText,
       diagnostic.message,
+      // The SDK's own core table. Without it the `os:` -> `cores:` fix is not
+      // offered at all, which is the point — it used to guess.
+      sdkCatalog,
     )) {
       if (seenTitles.has(fix.title)) {
         continue;

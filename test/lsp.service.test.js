@@ -290,31 +290,106 @@ test("detectV2StructuralIssues returns empty for clean v2 document", () => {
 
 // --- createBoardYamlQuickFixes v2 migration ---
 
-test("createBoardYamlQuickFixes offers migration fix for v2 legacy os field", () => {
-  const doc = [
-    "schema_version: 2",
-    "som:",
-    "  sku: E1M-AEN801",
-    "os: zephyr",
-  ].join("\n");
-  const fixes = createBoardYamlQuickFixes(doc, V2_LEGACY_OS_FIELD_MSG);
-  assert.equal(fixes.length, 1);
-  assert.match(fixes[0].title, /Migrate 'os: zephyr' to cores: block/);
-  // Should replace the os: line
-  assert.equal(fixes[0].endLine, fixes[0].line);
-  assert.match(fixes[0].newText, /^cores:\n\s+m55_hp:/);
+// The SoM core tables below are VERBATIM from `tan presets --format json`
+// (`data.soms[].cores[]`) at tan 0.6.0 against alp-sdk v0.16.0-rc1. They are
+// the fixture because the defect these tests replace was a hand-written table
+// that DISAGREED with them.
+const CATALOG = {
+  skus: ["E1M-AEN301", "E1M-AEN801", "E1M-V2N101"],
+  coresBySku: {
+    "E1M-AEN301": [
+      { id: "m55_hp", os: "zephyr" },
+      { id: "m55_he", os: "zephyr" },
+    ],
+    "E1M-AEN801": [
+      { id: "a32_cluster", os: "yocto" },
+      { id: "m55_hp", os: "zephyr" },
+      { id: "m55_he", os: "zephyr" },
+    ],
+    "E1M-V2N101": [
+      { id: "a55_cluster", os: "yocto" },
+      { id: "m33_sm", os: "zephyr" },
+    ],
+  },
+  libraries: [],
+  kconfigByCore: {},
+};
+
+const v2Doc = (sku, os) =>
+  ["schema_version: 2", "som:", `  sku: ${sku}`, `os: ${os}`].join("\n");
+
+test("the os -> cores fix offers EVERY core the SoM declares for that os", () => {
+  const fixes = createBoardYamlQuickFixes(
+    v2Doc("E1M-AEN801", "zephyr"),
+    V2_LEGACY_OS_FIELD_MSG,
+    CATALOG,
+  );
+  assert.deepEqual(
+    fixes.map((f) => f.title),
+    [
+      "Migrate 'os: zephyr' to cores: m55_hp",
+      "Migrate 'os: zephyr' to cores: m55_he",
+    ],
+    "the deleted guess answered `m55_hp` and silently never offered `m55_he`, " +
+      "which is an equally legal answer on all six AEN SoMs that declare it",
+  );
+  for (const fix of fixes) {
+    assert.equal(fix.endLine, fix.line, "the os: line must be replaced");
+  }
+  assert.match(fixes[0].newText, /^cores:\n\s+m55_hp:\n\s+os: zephyr$/);
 });
 
-test("createBoardYamlQuickFixes migration uses a55_cluster for yocto on V2N SoM", () => {
-  const doc = [
-    "schema_version: 2",
-    "som:",
-    "  sku: E1M-V2N101",
-    "os: yocto",
-  ].join("\n");
-  const fixes = createBoardYamlQuickFixes(doc, V2_LEGACY_OS_FIELD_MSG);
+test("the os -> cores fix names the one core that runs that os", () => {
+  const fixes = createBoardYamlQuickFixes(
+    v2Doc("E1M-V2N101", "yocto"),
+    V2_LEGACY_OS_FIELD_MSG,
+    CATALOG,
+  );
   assert.equal(fixes.length, 1);
   assert.match(fixes[0].newText, /^cores:\n\s+a55_cluster:/);
+});
+
+test("NO fix is offered when the SoM declares no core running that os", () => {
+  const fixes = createBoardYamlQuickFixes(
+    v2Doc("E1M-AEN301", "yocto"),
+    V2_LEGACY_OS_FIELD_MSG,
+    CATALOG,
+  );
+  assert.deepEqual(
+    fixes,
+    [],
+    "E1M-AEN301 declares [m55_hp/zephyr, m55_he/zephyr] and NO yocto core. " +
+      "The deleted guess answered `m55_hp` here — writing a core that cannot " +
+      "run the os the customer asked for, into their board.yaml.",
+  );
+});
+
+test("NO fix is offered for a SKU the catalogue does not know", () => {
+  const fixes = createBoardYamlQuickFixes(
+    v2Doc("E1M-XX0000", "zephyr"),
+    V2_LEGACY_OS_FIELD_MSG,
+    CATALOG,
+  );
+  assert.deepEqual(
+    fixes,
+    [],
+    "the deleted guess fell through to `m33_sm` / `a55_cluster` — Renesas " +
+      "core ids, written into whatever part the customer actually had",
+  );
+});
+
+test("NO fix is offered with no SDK catalogue at all", () => {
+  const fixes = createBoardYamlQuickFixes(
+    v2Doc("E1M-AEN801", "zephyr"),
+    V2_LEGACY_OS_FIELD_MSG,
+  );
+  assert.deepEqual(
+    fixes,
+    [],
+    "before the first `alp/updateSdkCatalog` push, and whenever no SDK " +
+      "resolves, there is no core table — and a fix that would have to guess " +
+      "one is worse than the customer editing the line themselves",
+  );
 });
 
 test("createBoardYamlQuickFixes does not offer add-os fix for v2 documents", () => {

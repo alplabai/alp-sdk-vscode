@@ -14,6 +14,10 @@ import * as vscode from "vscode";
 
 import { EmitMode } from "@alp-sdk/core/loader/models";
 import {
+  classifyMigrateCheck,
+  MIGRATE_REFUSED_MESSAGE,
+} from "@alp-sdk/core/validation/migrateCheck";
+import {
   describeGenerationFailure,
   getGenerationTargetSupport,
 } from "@alp-sdk/core/loader/service";
@@ -23,6 +27,7 @@ import {
   collectLoaderWorkspaceContext,
   previewGeneratedFile,
 } from "./loader/vscodeAdapter";
+import { NotificationPlan } from "./notify/models";
 import {
   planCliOutcome,
   planFailure,
@@ -301,7 +306,13 @@ async function runValidator(context: vscode.ExtensionContext): Promise<void> {
   // a field the envelope contract does not guarantee, so a tan that omitted it
   // reported "validation failed unexpectedly" for a board.yaml that passed.
   if (envelope.ok && envelope.issues.length === 0) {
-    await notify(planSuccess("Alp: board.yaml is clean."));
+    // `tan validate` clean is not the whole answer (#613). A board.yaml
+    // stamped with a `schemaVersion` newer than the resolved SDK's passes
+    // validation — the schema permits any integer >= 1 — while the SDK's
+    // migrator refuses it outright. Measured at tan 0.6.0 / alp-sdk
+    // v0.16.0-rc1: `validate` answers ok/exit 0/issues [], `migrate --check`
+    // answers ok false/exit 1/`migrate.failed`.
+    await notify(await checkMigrator(context));
     return;
   }
   // Validation failures are always about the board.yaml this command just read,
@@ -316,6 +327,50 @@ async function runValidator(context: vscode.ExtensionContext): Promise<void> {
   ) {
     await runValidator(context);
   }
+}
+
+/**
+ * Second opinion on a board.yaml `tan validate` just called clean: ask the
+ * SDK's own migrator whether it will accept the file (#613).
+ *
+ * Returns the plan the caller shows either way, so the clean path has exactly
+ * one notification rather than two.
+ *
+ * A refusal is the ONLY thing reported. `--check` needs a resolved SDK and a
+ * west workspace, and a project without one must not have a clean validation
+ * turned into an error about a verb that never ran — those outcomes are
+ * `unavailable`, logged and nothing more. The customer-facing sentence does not
+ * guess WHY the migrator refused; west's own words ride in `detail`, which the
+ * planner routes to the "Alp SDK" channel.
+ */
+async function checkMigrator(
+  context: vscode.ExtensionContext,
+): Promise<NotificationPlan> {
+  const clean = planSuccess("Alp: board.yaml is clean.");
+  let res;
+  try {
+    res = await runAlpCommand(context, ["migrate", "--check"], undefined, {
+      interactive: false,
+    });
+  } catch {
+    return clean;
+  }
+  const envelope = res.outcome.envelope;
+  if (!envelope) return clean;
+  logIssues("migrate --check", envelope.issues);
+
+  const verdict = classifyMigrateCheck(envelope.ok, envelope.issues);
+  if (verdict.kind !== "refused") return clean;
+
+  return planFailure({
+    operation: "Checking board.yaml against the SDK migrator",
+    cause: MIGRATE_REFUSED_MESSAGE,
+    detail: verdict.message
+      ? `tan reported ${verdict.code}: ${verdict.message}`
+      : `tan reported ${verdict.code}`,
+    severity: "warning",
+    actions: [{ id: "openBoardYaml" }],
+  });
 }
 
 export function registerLoaderCommands(
