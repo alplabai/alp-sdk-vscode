@@ -8,13 +8,18 @@ import {
   westManifestLogLine,
   westManifestWarning,
 } from "@alp-sdk/core/sdk/service";
+import {
+  classifySdkPin,
+  describePinDangling,
+  PIN_DANGLING_MESSAGE,
+} from "@alp-sdk/core/sdk/pinReconciliation";
 import * as fs from "fs";
 import * as vscode from "vscode";
 import { fetchEnvelopeResult } from "../alpCli/envelope";
 import { SUPPORTED_CLI_VERSION } from "../alpCli/service";
 import { danglingWestManifest } from "../environment/vscodeAdapter";
 import { queryAlpIdeState } from "../ideHub/vscodeAdapter";
-import { planFailure, planSuccess } from "../notify/service";
+import { planConfirm, planFailure, planSuccess } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { log } from "../util";
@@ -285,55 +290,98 @@ export async function reconcileActiveSdkAfterBootstrap(
   }
   if (!result.ok) return;
 
-  const current = narrowSdkCurrent(result.data);
-  if (!current?.sdkPath) return;
-
-  if (current.readiness?.state === "missing") {
-    log(
-      `[sdk] tan sdk current resolved ${current.sdkPath} (tier: ${current.sourceTier}), ` +
-        "but reports it is not a ready SDK root -- not acting on it from an " +
-        "unattended background check.",
-      "warn",
-    );
-    return;
-  }
-
   const configuredPath = vscode.workspace
     .getConfiguration("alpSdk")
     .get<string>("path", "")
     .trim();
-  if (configuredPath === current.sdkPath) return;
+  const verdict = classifySdkPin({
+    configuredPath,
+    current: narrowSdkCurrent(result.data),
+    // The one piece of evidence a relocation actually leaves behind (#604).
+    // `tan bootstrap` MOVES the checkout — by default, not only under
+    // `--workspace` — so the pin is left naming a directory that is gone.
+    // Read once, here, rather than inside the classifier, which stays free of
+    // `fs`. An empty pin never reaches this value.
+    pinExists: configuredPath ? fs.existsSync(configuredPath) : false,
+  });
 
-  if (configuredPath) {
-    // A non-empty pin is the customer's own choice, and this check has no
-    // reliable way to tell a genuine relocation of THIS checkout from every
-    // other cause of disagreement — see this function's own doc. Report it,
-    // touch nothing.
-    log(
-      `[sdk] tan sdk current resolved ${current.sdkPath} (tier: ${current.sourceTier}), ` +
-        `which disagrees with the pinned alpSdk.path (${configuredPath}) -- leaving the ` +
-        'pin alone (no reliable relocation signal). Re-pin via "Select SDK" if this is stale.',
-      "warn",
-    );
-    return;
+  switch (verdict.kind) {
+    case "no-answer":
+      return;
+
+    case "agrees":
+      return;
+
+    case "not-ready":
+      log(
+        `[sdk] tan sdk current resolved ${verdict.sdkPath} (tier: ${verdict.sourceTier}), ` +
+          "but reports it is not a ready SDK root -- not acting on it from an " +
+          "unattended background check.",
+        "warn",
+      );
+      return;
+
+    case "pin-differs":
+      // Both paths exist. Two real SDKs and no evidence that THIS checkout
+      // moved, so the customer's own pin wins and this is a channel line —
+      // the rule adversarial review of #614 arrived at, unchanged.
+      log(
+        `[sdk] tan sdk current resolved ${verdict.sdkPath} (tier: ${verdict.sourceTier}), ` +
+          `which disagrees with the pinned alpSdk.path (${verdict.configuredPath}) -- leaving the ` +
+          'pin alone (both paths exist; no relocation signal). Re-pin via "Select SDK" if this is stale.',
+        "warn",
+      );
+      return;
+
+    case "pin-dangling": {
+      // The pin names a directory that is NOT THERE and tan resolved a ready
+      // SDK elsewhere. Still not written unasked — an unmounted volume looks
+      // the same from here — but silence was the actual defect in #604: the
+      // customer's builds stop resolving and nothing connects that to the
+      // bootstrap they just ran. So it asks.
+      log(
+        `[sdk] pinned alpSdk.path (${verdict.configuredPath}) does not exist; ` +
+          `tan sdk current resolves ${verdict.sdkPath} (tier: ${verdict.sourceTier}) -- asking.`,
+        "warn",
+      );
+      const picked = await notify(
+        planConfirm({
+          message: PIN_DANGLING_MESSAGE,
+          modalDetail: describePinDangling(
+            verdict.configuredPath,
+            verdict.sdkPath,
+            verdict.sourceTier,
+          ),
+          confirm: { id: "applyChanges" },
+        }),
+      );
+      if (picked !== "applyChanges") {
+        log("[sdk] customer declined; alpSdk.path left as it was.");
+        return;
+      }
+      await setActiveSdk(verdict.sdkPath);
+      return;
+    }
+
+    case "pin-empty":
+      log(
+        `[sdk] tan sdk current resolved ${verdict.sdkPath} (tier: ${verdict.sourceTier}) with ` +
+          "no alpSdk.path pinned -- pinning it.",
+      );
+      await setActiveSdk(verdict.sdkPath);
+      // A real toast (an action makes it one, not the default status-bar blip
+      // `setActiveSdk`'s own success message uses) — this call fires from a
+      // background task the customer never explicitly triggered, so silence
+      // here is worse than the dangling path this feature exists to close.
+      notifyAsync(
+        planSuccess(
+          `Alp: pinned the active SDK after bootstrap → ${verdict.sdkPath} ` +
+            `(tan sdk current, tier: ${verdict.sourceTier}).`,
+          { actions: [{ id: "openSettings" }] },
+        ),
+      );
+      return;
   }
-
-  log(
-    `[sdk] tan sdk current resolved ${current.sdkPath} (tier: ${current.sourceTier}) with ` +
-      "no alpSdk.path pinned -- pinning it.",
-  );
-  await setActiveSdk(current.sdkPath);
-  // A real toast (an action makes it one, not the default status-bar blip
-  // `setActiveSdk`'s own success message uses) — this call fires from a
-  // background task the customer never explicitly triggered, so silence
-  // here is worse than the dangling path this feature exists to close.
-  notifyAsync(
-    planSuccess(
-      `Alp: pinned the active SDK after bootstrap → ${current.sdkPath} ` +
-        `(tan sdk current, tier: ${current.sourceTier}).`,
-      { actions: [{ id: "openSettings" }] },
-    ),
-  );
 }
 
 /**
