@@ -156,6 +156,18 @@ const ACTIONS: Record<
     title: "Show Result",
     run: () => vscode.commands.executeCommand("alp.showBuildPlan"),
   },
+  explainDiagnostic: {
+    // Never rendered: `loader.ts`'s `runValidator` always supplies a
+    // `title: "Explain ALP-Bxxx"` override per code (#617) — this is a
+    // fallback for a future caller that forgets to. `arg` is the code; a
+    // click with none does nothing rather than spawning `tan explain --code
+    // undefined`.
+    title: "Explain",
+    run: (arg) =>
+      arg
+        ? vscode.commands.executeCommand("alp.explainDiagnosticCode", arg)
+        : Promise.resolve(undefined),
+  },
   // ── caller-handled: no `run`, so the id comes back from notify() ──
   retry: { title: "Retry" },
   startAnyway: { title: "Start Anyway" },

@@ -84,6 +84,14 @@ export type ActionId =
   // because only the panel that owns the webview can post to it.
   | "chooseProjectType"
   | "chooseCoreLayout"
+  // Runs `tan explain --code <code>` for one ALP-Bxxx diagnostic and shows its
+  // summary + details (#617). `arg` is REQUIRED here, unlike most `arg`-
+  // bearing ids above: `loader.ts`'s `runValidator` extracts every DISTINCT
+  // code a validate failure's issue messages name and builds one action per
+  // code, so this id can appear more than once in a single plan's `actions`,
+  // each with its own `arg` and a `title` override ("Explain ALP-B002") — the
+  // ACTIONS table's default title is a fallback that is never meant to render.
+  | "explainDiagnostic"
   // presenter-only: an ad-hoc button whose title comes from `NotifyAction.title`.
   // Exists solely for `reportError`'s legacy `...actions: string[]` parameter;
   // the pure planner never emits it.

@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **`board.yaml` gets a structural check even with no SDK resolved, and it is
+  never dressed up as a clean bill of health (#619).** `tan validate
+  --offline` runs only the checks that ship in tan, and the two modes are not
+  interchangeable: measured at the pin, on a `board.yaml` carrying BOTH an
+  unknown top-level key and an invalid enum value, `--offline` answered
+  `ok true / exit 0 / issues []` while a resolved SDK answered `ok false /
+  exit 2` with `ALP-B002` and `ALP-B003`. So a clean offline result now says
+  plainly that only tan's built-in checks ran and offers to select an SDK —
+  never the "board.yaml is clean" sentence a real validation gets. The
+  migrator second-opinion (#613) is skipped on that path, since it would
+  report its own clean verdict when it cannot run.
+- **The fallback asks tan rather than resolving the SDK itself.** An earlier
+  version gated on `collectProjectContext().sdkRoot === null`, which is the
+  competing resolution `withSdkRoot` forbids — measured, the two disagree: tan
+  walks up to an enclosing alp-sdk checkout while `resolveSdkRoot` looks only
+  at the workspace folder, a `../alp-sdk` sibling and `~/.alp/sdk/*`, so a
+  project at `<checkout>/examples/app` would have been forced onto the reduced
+  check AND told no SDK was active, both wrong. It now runs plain `validate`
+  and retries with `--offline` only on tan's own
+  `validate.sdk-root-unresolved`, which is registered in `GATED_CODES` as part
+  of this change — binding a `reserved` code is what makes this extension its
+  consumer.
+- **`ALP-Bxxx` diagnostics can now be explained from the failure that raised
+  them (#617).** `tan explain --code <ALP-Bxxx>` is the diagnostic catalogue
+  and nothing surfaced it. A validation failure now carries one "Explain
+  ALP-Bxxx" action per DISTINCT code found in tan's messages, extracted with an
+  anchored `/\bALP-B\d{3}\b/` in a pure module — a miss yields no action and
+  never an error. NOT offered on the offline path: `tan explain --code` needs a
+  resolved SDK and exits 1 with `explain.sdk-root-unresolved` without one, so a
+  button there could only ever fail.
+
 - **`tan validate` and both `tan generate` sites were still spawning with no
   cwd — #605 did not close the class.** All three go through
   `runAlpWithProgress`, whose `cwd` parameter is optional and which all three

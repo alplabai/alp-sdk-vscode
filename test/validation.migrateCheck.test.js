@@ -216,7 +216,21 @@ async function driveValidate({ validate, migrate }) {
     // computes the cwd INSIDE its own try/catch — so an unstubbed throw here
     // is swallowed and the migrator silently never runs, which is a green
     // suite hiding a skipped check rather than a passing one.
-    "./project/vscodeAdapter": { readOnlyProjectCwd: () => "/home/dev/proj" },
+    //
+    // `collectProjectContext` answers a RESOLVED `sdkRoot` on purpose (#619):
+    // this suite is entirely about the migrate-check second opinion, which
+    // only runs on the non-offline path — a null `sdkRoot` here would route
+    // every scripted `validate` through `--offline` instead and the
+    // `["validate"], ["migrate", "--check"]` argv assertions below would never
+    // see the second call. `test/loader.validateOfflineExplain.test.js` covers
+    // the `sdkRoot === null` fallback this suite deliberately does not.
+    "./project/vscodeAdapter": {
+      readOnlyProjectCwd: () => "/home/dev/proj",
+      collectProjectContext: () => ({
+        sdkRoot: "/home/dev/.alp/sdk/v0.16.0-rc1",
+        workspaceRoot: "/home/dev/proj",
+      }),
+    },
     "./loader/vscodeAdapter": {
       boardYamlExists: () => true,
       collectLoaderWorkspaceContext: () => ({
