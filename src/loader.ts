@@ -147,6 +147,11 @@ async function runLoader(
     context,
     ["generate", "--target", emit],
     `Generating ${target.displayName}…`,
+    // `readOnlyProjectCwd()` (#605 follow-up). `generate` WRITES, and with no
+    // cwd it wrote into the extension host's own directory — on Windows, the
+    // VS Code install directory. `runAlpWithProgress`'s `cwd` is optional and
+    // all three of this file's callers were omitting it.
+    readOnlyProjectCwd(),
   );
   if (res === CANCELLED) {
     await notify(
@@ -221,6 +226,7 @@ async function runLoaderAll(context: vscode.ExtensionContext): Promise<void> {
     context,
     ["generate", "--all"],
     "Regenerating all formats…",
+    readOnlyProjectCwd(),
   );
   if (res === CANCELLED) {
     await notify(
@@ -285,6 +291,10 @@ async function runValidator(context: vscode.ExtensionContext): Promise<void> {
     context,
     ["validate"],
     "Validating board.yaml…",
+    // Without this, `validate` reported on whatever board.yaml sat in the
+    // extension host's directory rather than the customer's project — and the
+    // verdict it produces is about a specific file.
+    readOnlyProjectCwd(),
   );
   if (res === CANCELLED) {
     await notify(

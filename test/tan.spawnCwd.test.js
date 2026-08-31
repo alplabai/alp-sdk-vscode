@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Every `tan` envelope spawn states a cwd (#605).
+// Every `tan` spawn states a cwd (#605).
 //
 // ── The class this closes ───────────────────────────────────────────────────
 //
@@ -10,52 +10,59 @@
 // place: it makes the command answer about somewhere that is nobody's project.
 //
 // The failure is quiet, which is why it kept coming back. `tan presets`
-// reports an UNRESOLVED SDK as a SUCCESS with empty lists
-// (`src/alpCli/envelope.ts`), so a cwd-caused empty catalogue is
-// indistinguishable at the call site from a genuinely empty one — and
-// `ensureNativeSimOverlay` wrote its overlay into the extension host's
-// directory with `outcome.ok` still true, regenerating on every run while the
-// app never picked it up.
+// reports an UNRESOLVED SDK as a SUCCESS with empty lists, so a cwd-caused
+// empty catalogue is indistinguishable at the call site from a genuinely empty
+// one — and `tan generate` WRITES, so a cwd-less one wrote into the extension
+// host's directory with `ok` still true.
 //
-// #605 opened naming THREE sites. Its own comments then found a fourth, then
-// six more. Ten, found by hand, one re-read at a time — and an eleventh was
-// introduced by #613 an hour before this gate was written. Nine edits do not
-// close a class; this file does.
+// ── Why the first version of this gate was not enough ───────────────────────
+//
+// It shipped in #605 policing the two direct spawners, and three commits later
+// `validate` and BOTH `generate` sites were still spawning with no cwd. They
+// went through `runAlpWithProgress`, a FORWARDER: it wraps `runAlpCommand` in
+// a progress notification and passes the cwd along as an identifier, which
+// satisfied every rule here on its own line, while its three callers omitted
+// their own argument entirely.
+//
+// Adding it to a hand-written table was not the fix either. Registering the
+// direct forwarders revealed five more, and registering those revealed three
+// that forward into THEM. A list needs extending on every round, and the round
+// nobody notices is the hole. Worse, SHRINKING a hand-written allowlist is
+// invisible: deleting an entry leaves every other assertion green — verified
+// by mutation, which is what motivated this rewrite.
+//
+// So the table is DERIVED. `SEED` names the two helpers that actually reach
+// `child_process.spawn`; everything that forwards a cwd into them is computed
+// to a fixpoint — the same "derive it, do not keep a second copy" discipline
+// `scripts/tan-surface/extract.mjs` applies to argv indices.
 //
 // ── What it checks ──────────────────────────────────────────────────────────
 //
-// Parsed with the TypeScript compiler API, not grepped: the argument list is
-// the thing under test, and a regex cannot tell `undefined` in the cwd slot
-// from the word appearing anywhere else in a multi-line call.
-//
-// The rule is that the cwd argument is PRESENT and is not the `undefined`
-// literal. It deliberately does not check WHICH expression: `readOnlyProjectCwd()`
-// for a read-only command, a `requireWorkspace`-style guard for one that
-// writes, and a local `root`/`cwd` already resolved by the caller are all
-// correct, and picking between them is a judgement this gate has no business
-// making.
+// That the cwd argument is PRESENT and is not the `undefined` literal, at every
+// call site of every helper in that closure. It deliberately does not check
+// WHICH expression: `readOnlyProjectCwd()` for a read-only command, a
+// `requireWorkspace`-style guard for one that writes, and a local `root`/`cwd`
+// already resolved by the caller are all correct, and picking between them is a
+// judgement this gate has no business making.
 //
 // ── What it does NOT cover ──────────────────────────────────────────────────
 //
 // The TERMINAL spawners — `runInTerminal`, `runAlpInTerminal`, `runAlpStreamed`
-// — are out of scope here and are NOT policed. They take their cwd as a named
+// — are out of scope and are NOT policed. They take their cwd as a named
 // property of an options object rather than a positional argument, which is a
-// second shape (including shorthand `{ cwd }`), and several of their sites
-// have their own resolution already. Stating that plainly because a gate whose
-// name reads "spawn cwd" invites the assumption that it covers every spawn:
-// it covers the two ENVELOPE spawners and nothing else. Extending it is
-// tracked separately rather than half-done here.
-
+// second shape (including shorthand `{ cwd }`). Stated plainly because a gate
+// whose name reads "spawn cwd" invites the assumption that it covers every
+// spawn.
+//
 // ── The parser, and why it is not `ts.createSourceFile` ─────────────────────
 //
 // This repo pins `typescript@7.0.2`, the NATIVE compiler, which DELETED the
 // old JS compiler API: `require("typescript")` resolves to `lib/version.cjs`
-// and exposes nothing but a version string — verified here, not assumed
-// (`ts.ScriptTarget` is `undefined`). The AST lives behind two unstable
-// subpath exports, and `scripts/tan-surface/extract.mjs` already documents
-// and uses exactly this pair. This file follows it rather than inventing a
-// second way to read the same tree; when that one has to move for a TS bump,
-// so does this one, and they will be found together.
+// and exposes nothing but a version string — verified, not assumed. The AST
+// lives behind two unstable subpath exports, and
+// `scripts/tan-surface/extract.mjs` already documents and uses exactly this
+// pair. This file follows it rather than inventing a second way to read the
+// same tree.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -76,18 +83,16 @@ test.before(async () => {
   ({ API } = await import("typescript/unstable/sync"));
 });
 
-/** The spawn helpers whose third parameter is `cwd`. */
-const SPAWNERS = new Set(["runAlpCommand", "fetchEnvelopeResult"]);
-
 /**
- * Sites the rule cannot apply to, each with the reason.
+ * The TRUE spawners: the two helpers that actually reach `child_process.spawn`,
+ * and which argument of each carries the cwd.
  *
- * Both are the DEFINITIONS of the helpers themselves — they forward a `cwd`
- * their own caller supplied, so there is nothing here for them to state.
+ * A SEED, not the rule. Everything else that must obey the rule is DERIVED
+ * below, because a hand-maintained list is what let this gate ship with a hole.
  */
-const EXEMPT_FILES = new Set([
-  path.join("src", "alpCli", "envelope.ts"),
-  path.join("src", "alpCli", "vscodeAdapter.ts"),
+const SEED = new Map([
+  ["runAlpCommand", 2],
+  ["fetchEnvelopeResult", 2],
 ]);
 
 /** `node.forEachChild(visit)` is a METHOD on the node in this API, not a free
@@ -129,12 +134,12 @@ function lineOf(lineStarts, pos) {
   return low + 1;
 }
 
-/** Every call to a spawner, with what sits in the cwd slot. */
-function collectSpawnSites() {
-  const files = tsFiles(SRC).filter(
-    (file) => !EXEMPT_FILES.has(path.relative(ROOT, file)),
-  );
-  const sites = [];
+/** Parse every source file once; both passes below reuse the ASTs. */
+let PARSED = null;
+function parsed() {
+  if (PARSED) return PARSED;
+  const files = tsFiles(SRC);
+  const out = [];
   const api = new API({ cwd: ROOT });
   try {
     const snapshot = api.updateSnapshot({ openFiles: files });
@@ -150,29 +155,155 @@ function collectSpawnSites() {
             "report a clean sweep that skipped a file",
         );
       }
-      const lineStarts = ast.computeLineStarts(sourceFile.text);
-      const rel = path.relative(ROOT, file);
-      walk(sourceFile, (node) => {
-        if (node.kind !== SK.CallExpression) return;
-        const name = calleeName(node.expression);
-        if (!name || !SPAWNERS.has(name)) return;
-        const cwd = node.arguments?.[2];
-        sites.push({
-          file: rel,
-          line: lineOf(lineStarts, ast.getTokenPosOfNode(node, sourceFile)),
-          callee: name,
-          argCount: node.arguments?.length ?? 0,
-          cwdText: cwd ? sourceFile.text.slice(cwd.pos, cwd.end).trim() : null,
-        });
+      out.push({
+        rel: path.relative(ROOT, file),
+        sourceFile,
+        lineStarts: ast.computeLineStarts(sourceFile.text),
       });
     }
   } finally {
     api.close?.();
   }
+  PARSED = out;
+  return out;
+}
+
+/** Every named function that hands one of its OWN parameters to something in
+ *  `known` as a cwd, with the index of that parameter in its own signature. */
+function forwardersGiven(known) {
+  const found = [];
+  for (const { rel, sourceFile } of parsed()) {
+    walk(sourceFile, (node) => {
+      const isFn =
+        node.kind === SK.FunctionDeclaration ||
+        node.kind === SK.MethodDeclaration;
+      if (!isFn || !node.body) return;
+      const fnName = node.name?.kind === SK.Identifier ? node.name.text : null;
+      if (!fnName) return;
+      const params = (node.parameters ?? []).map((param) =>
+        param.name?.kind === SK.Identifier ? param.name.text : null,
+      );
+      if (params.length === 0) return;
+      walk(node.body, (inner) => {
+        if (inner.kind !== SK.CallExpression) return;
+        const callee = calleeName(inner.expression);
+        if (!callee || !known.has(callee)) return;
+        const cwdArg = inner.arguments?.[known.get(callee)];
+        if (!cwdArg || cwdArg.kind !== SK.Identifier) return;
+        const paramIndex = params.indexOf(cwdArg.text);
+        if (paramIndex === -1) return;
+        found.push({ file: rel, fn: fnName, paramIndex, via: callee });
+      });
+    });
+  }
+  return found;
+}
+
+/**
+ * The seed plus every forwarder that reaches it, to a FIXPOINT.
+ *
+ * Transitive on purpose. Measured while writing this: the direct forwarders are
+ * `runAlpWithProgress`, `runDoctor`, `runDebugConfig`,
+ * `reconcileActiveSdkAfterBootstrap`, `confirmFlashReadiness` and
+ * `fetchModuleTemplates`; registering those revealed `runBootstrapInTerminal`,
+ * `runDebugDoctor` and `previewMaintainedConfigName` forwarding into THEM. A
+ * hand-written list would need extending on every one of those rounds.
+ */
+let SPAWNERS = null;
+function computeSpawners() {
+  if (SPAWNERS) return SPAWNERS;
+  const known = new Map(SEED);
+  for (let round = 0; round < 16; round += 1) {
+    let grew = false;
+    for (const f of forwardersGiven(known)) {
+      if (known.has(f.fn)) continue;
+      known.set(f.fn, f.paramIndex);
+      grew = true;
+    }
+    if (!grew) {
+      SPAWNERS = known;
+      return known;
+    }
+  }
+  throw new Error(
+    "the forwarder closure did not settle in 16 rounds — either the call " +
+      "graph grew a cycle or this walker is re-adding the same name",
+  );
+}
+
+/**
+ * Every call to a spawner, with what sits in the cwd slot.
+ *
+ * A forwarder's OWN body is not a site: handing its parameter along is the
+ * definition of forwarding, and the rule applies to whoever calls IT.
+ */
+function collectSpawnSites() {
+  const known = computeSpawners();
+  const bodies = new Set(
+    forwardersGiven(known).map((f) => `${f.file}::${f.fn}::${f.via}`),
+  );
+  const sites = [];
+  for (const { rel, sourceFile, lineStarts } of parsed()) {
+    const stack = [];
+    const visit = (node) => {
+      const isFn =
+        node.kind === SK.FunctionDeclaration ||
+        node.kind === SK.MethodDeclaration;
+      const named = isFn && node.name?.kind === SK.Identifier;
+      if (named) stack.push(node.name.text);
+      if (node.kind === SK.CallExpression) {
+        const name = calleeName(node.expression);
+        if (name && known.has(name)) {
+          const enclosing = stack[stack.length - 1];
+          if (!bodies.has(`${rel}::${enclosing}::${name}`)) {
+            const cwdIndex = known.get(name);
+            const cwd = node.arguments?.[cwdIndex];
+            sites.push({
+              file: rel,
+              line: lineOf(lineStarts, ast.getTokenPosOfNode(node, sourceFile)),
+              callee: name,
+              cwdIndex,
+              argCount: node.arguments?.length ?? 0,
+              cwdText: cwd
+                ? sourceFile.text.slice(cwd.pos, cwd.end).trim()
+                : null,
+            });
+          }
+        }
+      }
+      node.forEachChild(visit);
+      if (named) stack.pop();
+    };
+    visit(sourceFile);
+  }
   return sites;
 }
 
 const at = (s) => `${s.file}:${s.line} (${s.callee})`;
+
+test("the derivation finds the forwarders, and the seed survives it", () => {
+  const known = computeSpawners();
+  for (const name of SEED.keys()) {
+    assert.ok(
+      known.has(name),
+      `\`${name}\` fell out of the computed set — the seed is the one thing ` +
+        "that cannot be derived",
+    );
+  }
+  assert.ok(
+    known.size > SEED.size,
+    "the closure found NO forwarders at all, which cannot be right in this " +
+      "repo — the derivation has stopped working, and every rule below now " +
+      "polices only the two direct spawners, which is the hole this gate " +
+      "shipped with",
+  );
+  assert.ok(
+    known.has("runAlpWithProgress"),
+    "`runAlpWithProgress` is the forwarder that let `validate` and both " +
+      "`generate` sites spawn with no cwd for three commits. If the " +
+      "derivation stops seeing it, that hole is open again.",
+  );
+});
 
 test("the gate actually finds the spawn sites it is meant to police", () => {
   const sites = collectSpawnSites();
@@ -181,14 +312,6 @@ test("the gate actually finds the spawn sites it is meant to police", () => {
     `only ${sites.length} spawn sites parsed — the walker stopped seeing ` +
       "them, so every assertion below would pass vacuously",
   );
-  assert.ok(
-    sites.some((s) => s.callee === "runAlpCommand"),
-    "no `runAlpCommand` site found at all",
-  );
-  assert.ok(
-    sites.some((s) => s.callee === "fetchEnvelopeResult"),
-    "no `fetchEnvelopeResult` site found at all",
-  );
 });
 
 test("no tan spawn omits its cwd argument", () => {
@@ -196,7 +319,8 @@ test("no tan spawn omits its cwd argument", () => {
     .filter((s) => s.cwdText === null)
     .map(
       (s) =>
-        `${at(s)} — called with ${s.argCount} argument(s); the third is the cwd`,
+        `${at(s)} — called with ${s.argCount} argument(s); argument ` +
+        `${s.cwdIndex + 1} is the cwd`,
     );
   assert.deepEqual(
     offenders,
@@ -204,7 +328,8 @@ test("no tan spawn omits its cwd argument", () => {
     "an omitted cwd reaches `child_process.spawn` unset, so the child " +
       "inherits the extension host's own directory — on Windows, the VS Code " +
       "install directory. `tan` resolves the project AND the SDK from cwd, so " +
-      "the command then answers about somewhere that is nobody's project.\n" +
+      "the command then answers about somewhere that is nobody's project — " +
+      "and `tan generate` WRITES there.\n" +
       offenders.join("\n"),
   );
 });

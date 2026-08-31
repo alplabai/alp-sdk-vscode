@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **`tan validate` and both `tan generate` sites were still spawning with no
+  cwd — #605 did not close the class.** All three go through
+  `runAlpWithProgress`, whose `cwd` parameter is optional and which all three
+  callers in `src/loader.ts` omitted. Confirmed by driving the compiled
+  `out/loader.js`: `argv=["validate"] cwd=undefined` and
+  `argv=["generate","--target","zephyr-conf"] cwd=undefined`, while the
+  `migrate --check` call two lines away correctly carried the project root.
+  `generate` WRITES, so a cwd-less run wrote into the extension host's own
+  directory — on Windows the VS Code install directory — with `ok` still true.
+  All three now pass `readOnlyProjectCwd()`.
+- **The gate that was supposed to prevent this had a hole, and it was in the
+  gate's shape rather than its list.** `test/tan.spawnCwd.test.js` policed the
+  two direct spawners. `runAlpWithProgress` is a FORWARDER: it hands its own
+  `cwd` parameter to `runAlpCommand` as an identifier, which satisfied every
+  rule in the gate on its own line while its callers omitted theirs. Adding it
+  to the hand-written table was not the fix either — registering the direct
+  forwarders revealed five more (`runDoctor`, `runDebugConfig`,
+  `reconcileActiveSdkAfterBootstrap`, `confirmFlashReadiness`,
+  `fetchModuleTemplates`) and registering those revealed three that forward
+  into THEM. The table is now DERIVED to a fixpoint from a two-entry seed of
+  the helpers that actually reach `child_process.spawn`. Measured why that
+  matters: with the hand-written table, deleting an entry left the whole gate
+  green — shrinking an allowlist is invisible. With the derivation, both that
+  mutation and a real dropped cwd are caught.
+
 - **"Fix all" no longer hangs forever on the Zephyr SDK row (#631).**
   `runFixAll` subscribes to `awaitRun(runNameFor(row))` and then dispatches
   the row, and `awaitRun` settles only on a `terminalFinished` event carrying
