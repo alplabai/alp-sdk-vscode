@@ -83,7 +83,9 @@ function openPanel(initAnswer) {
       runAlpCommand: async (_ctx, args) => {
         sentArgs.push(args);
         if (args[0] === "explain" && !args.includes("--template")) {
-          return stubbedEnvelope({ available: { projectTemplates: ["blinky"] } });
+          return stubbedEnvelope({
+            available: { projectTemplates: ["blinky"] },
+          });
         }
         if (args[0] === "explain" && args.includes("--template")) {
           return stubbedEnvelope({
@@ -183,7 +185,10 @@ test("a successful tan init --preview reports its file list, and sends --preview
   ]);
 
   const initCall = drive.sentArgs.find((a) => a[0] === "init");
-  assert.ok(initCall.includes("--preview"), "the preview pass must send --preview");
+  assert.ok(
+    initCall.includes("--preview"),
+    "the preview pass must send --preview",
+  );
   assert.ok(
     initCall.includes(REQUEST.destination),
     "the preview must resolve into the SAME destination Create would use",
@@ -226,8 +231,8 @@ test("a refused tan init --preview answers files: null — never an empty list r
 });
 
 test("an ok:true envelope whose data does not narrow (no fileChanges[]) also answers null, and is logged", async () => {
-  const drive = openPanel(() =>
-    stubbedEnvelope({ preview: true, written: [] }), // no `fileChanges` at all
+  const drive = openPanel(
+    () => stubbedEnvelope({ preview: true, written: [] }), // no `fileChanges` at all
   );
 
   drive.fire({ type: "ready" });
