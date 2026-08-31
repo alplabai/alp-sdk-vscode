@@ -17,7 +17,12 @@ import {
   StepperNav,
 } from "../../shared/ui";
 import type { IconName } from "../../shared/ui";
-import type { E1mModule, LocalSdkEntry, ProjectTemplate } from "../../types";
+import type {
+  E1mModule,
+  LocalSdkEntry,
+  NewProjectFileChange,
+  ProjectTemplate,
+} from "../../types";
 import { onMessage, postMessage } from "../../vscode";
 import styles from "./NewProjectFlowView.module.css";
 
@@ -34,6 +39,27 @@ const STEPS: StepDef[] = [
  *  id rather than hardcoded: the host already addresses steps by id and never by
  *  index, for the same reason (#530). */
 const TEMPLATE_STEP_INDEX = STEPS.findIndex((step) => step.id === "template");
+
+/** Where the preview request fires from — same derive-by-id rule as
+ *  TEMPLATE_STEP_INDEX, for the same reason (#616). */
+const CONFIRM_STEP_INDEX = STEPS.findIndex((step) => step.id === "confirm");
+
+/**
+ * `tan init --preview`'s file list, or why there isn't one yet (#616).
+ *
+ * FOUR states, not a bare `NewProjectFileChange[] | null`, because "no
+ * destination yet" and "the preview failed" read as the SAME thing to a
+ * customer if both render as nothing — the first is expected (the row above
+ * already says "Chosen when you click Create"), the second is worth a note.
+ * `"loading"` is its own state for the same reason `TemplateStep`'s `loading`
+ * is: rendering the PREVIOUS visit's file list while a new one is in flight
+ * would show stale files for whatever the customer just changed.
+ */
+type PreviewState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; files: NewProjectFileChange[] }
+  | { status: "unavailable" };
 
 /** Last path segment (cross-platform); the cache dir is named after the tag. */
 function pathTail(p: string): string {
@@ -586,6 +612,9 @@ interface ConfirmStepProps {
    *  topology. A summary that shows what the PART has rather than what was
    *  ASKED FOR cannot be checked against anything (#582). */
   coreChoices: CoreChoice[];
+  /** `tan init --preview`'s own file list, so Create no longer writes a
+   *  project the customer has never seen a file list for (#616). */
+  preview: PreviewState;
 }
 
 function ConfirmStep({
@@ -599,6 +628,7 @@ function ConfirmStep({
   openInThisWindow,
   onToggleOpenInThisWindow,
   coreChoices,
+  preview,
 }: ConfirmStepProps) {
   const tpl = templates.find((t) => t.id === templateId);
   const mod = modules.find((m) => m.id === moduleId);
@@ -657,6 +687,7 @@ function ConfirmStep({
           </div>
         ))}
       </Card>
+      <PreviewFiles preview={preview} />
       <p className={styles.groupLabel}>When created</p>
       <div
         className={styles.filterChips}
@@ -694,6 +725,81 @@ function ConfirmStep({
         )}
         {destination ? "" : " — you'll choose a folder first"}.
       </p>
+    </>
+  );
+}
+
+/**
+ * `tan init --preview`'s file list (#616) — a SEPARATE section from the
+ * summary Card above it, not a row inside it: this can run to eight-plus
+ * entries on its own (measured: `minimal-app`), and folding it into
+ * `.summaryRow`'s one-line-per-field layout would wrap badly or need its own
+ * scroll either way.
+ *
+ * `"idle"` renders NOTHING — that state is "no destination chosen yet", and
+ * the Location row above already says "Chosen when you click Create" for the
+ * same reason; a second, empty-looking section here would repeat that without
+ * adding anything. Every OTHER state renders something, on purpose: `null`
+ * files (`"unavailable"`) must never look like the same nothing `"idle"`
+ * shows, or a preview failure would read as "this creates nothing" — the
+ * `written ?? []` failure this whole feature exists not to repeat.
+ */
+function PreviewFiles({ preview }: { preview: PreviewState }) {
+  if (preview.status === "idle") return null;
+
+  if (preview.status === "loading") {
+    return (
+      <>
+        <p className={styles.groupLabel}>Files</p>
+        <div role="status" aria-label="Loading the file preview">
+          <Skeleton lines={3} />
+        </div>
+      </>
+    );
+  }
+
+  if (preview.status === "unavailable") {
+    return (
+      <>
+        <p className={styles.groupLabel}>Files</p>
+        <p className={styles.templateNotice} role="status">
+          <span className={styles.templateNoticeIcon} aria-hidden="true">
+            <Icon name="warning" size={14} />
+          </span>
+          Couldn&apos;t preview the files tan will create. Create will still
+          work — see the &quot;Alp SDK&quot; output channel for why.
+        </p>
+      </>
+    );
+  }
+
+  // `status === "ready"`. An empty list is a genuine answer from tan
+  // (`narrowInitPreview` never fabricates entries — see
+  // `NewProjectPreviewDataMessage`), distinct from `"unavailable"`, and said
+  // plainly rather than rendered as no section at all.
+  if (preview.files.length === 0) {
+    return (
+      <>
+        <p className={styles.groupLabel}>Files</p>
+        <p className={styles.stepDesc}>tan reported no files to create.</p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <p className={styles.groupLabel}>Files ({preview.files.length})</p>
+      <Card padding="sm" className={styles.previewFileList}>
+        {preview.files.map((file) => (
+          <div key={file.relativePath} className={styles.previewFileRow}>
+            <span className={styles.previewFilePath}>{file.relativePath}</span>
+            {/* `kind` is display-only and deliberately not narrowed to a closed
+                set (see NewProjectFileChange) — an unseen word is still shown,
+                never dropped. */}
+            <span className={styles.previewFileKind}>{file.kind}</span>
+          </div>
+        ))}
+      </Card>
     </>
   );
 }
@@ -779,6 +885,9 @@ export function NewProjectFlowView() {
   const [destination, setDestination] = useState("");
   // Open the created project in the current window (replace) vs a new window.
   const [openInThisWindow, setOpenInThisWindow] = useState(true);
+  // `tan init --preview`'s file list for the Confirm step (#616). See
+  // `PreviewState`'s doc for why this is four states, not a bare array.
+  const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
 
   // Receive the parent folder chosen via the native picker (or the default).
   useEffect(() => {
@@ -793,6 +902,16 @@ export function NewProjectFlowView() {
       if (msg.type === "newProjectFlowGoToStep") {
         const index = STEPS.findIndex((step) => step.id === msg.stepId);
         if (index >= 0) goTo(index);
+      }
+      // `files: null` means the preview COULD NOT BE READ, and must render as
+      // "unavailable" — NEVER as `{status: "ready", files: []}`, which would
+      // read as "this creates nothing" (see NewProjectPreviewDataMessage).
+      if (msg.type === "newProjectPreviewData") {
+        setPreview(
+          msg.files === null
+            ? { status: "unavailable" }
+            : { status: "ready", files: msg.files },
+        );
       }
     });
   }, [goTo]);
@@ -853,6 +972,55 @@ export function NewProjectFlowView() {
     () => templates.some((t) => t.id === selectedTemplate && !!t.sourceDir),
     [templates, selectedTemplate],
   );
+
+  // The customer's Cores-step answers, on the wire shape both `createNewProject`
+  // AND `requestNewProjectPreview` send (#616) — ONE place, so a change to that
+  // shape cannot drift between the preview request and the real Create. Omitted
+  // for an example: it ships its own board.yaml, and a layout written over it
+  // (or previewed against it) would contradict the source tree it arrived with.
+  const coresPayload = useMemo(
+    () =>
+      selectedIsExample
+        ? undefined
+        : coreChoices.map((choice) => ({
+            id: choice.id,
+            os: choice.os,
+            app: choice.os === "zephyr" ? choice.app.trim() : undefined,
+          })),
+    [selectedIsExample, coreChoices],
+  );
+
+  // Ask for `tan init --preview`'s file list whenever the Confirm step is
+  // REACHED (#616) — never on every keystroke of an earlier step, which
+  // Confirm's own fields do not change anyway (its only control,
+  // "open in this window", is not part of this payload).
+  //
+  // Narrow deps ON PURPOSE: this must re-fire on returning to Confirm after
+  // changing an earlier answer (index goes 5 -> something else -> 5, which IS
+  // a dependency change), but must NOT re-fire on every render while sitting
+  // on it — the values it closes over do not change without leaving the step.
+  useEffect(() => {
+    if (stepper.currentIndex !== CONFIRM_STEP_INDEX) return;
+    if (!destination) {
+      // Nothing to preview INTO yet — `tan init --preview` still needs a
+      // `--destination`, and the Location row already explains why for the
+      // same reason. Not a failure: `"idle"` renders nothing, same as before
+      // this feature existed.
+      setPreview({ status: "idle" });
+      return;
+    }
+    setPreview({ status: "loading" });
+    postMessage({
+      type: "requestNewProjectPreview",
+      templateId: selectedTemplate,
+      moduleId: selectedModule,
+      projectName,
+      sdkPath: selectedSdk || undefined,
+      destination,
+      cores: coresPayload,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepper.currentIndex]);
 
   const coresValid = useMemo(() => {
     // Only a Zephyr core carries a directory (#538), and each one must be a
@@ -937,15 +1105,7 @@ export function NewProjectFlowView() {
         sdkPath: selectedSdk || undefined,
         destination: destination || undefined,
         openInCurrentWindow: openInThisWindow,
-        // Omitted for an example: it ships its own board.yaml, and a layout
-        // written over it would contradict the source tree it arrived with.
-        cores: selectedIsExample
-          ? undefined
-          : coreChoices.map((choice) => ({
-              id: choice.id,
-              os: choice.os,
-              app: choice.os === "zephyr" ? choice.app.trim() : undefined,
-            })),
+        cores: coresPayload,
       });
     } else {
       goNext();
@@ -1030,6 +1190,7 @@ export function NewProjectFlowView() {
                   openInThisWindow={openInThisWindow}
                   onToggleOpenInThisWindow={setOpenInThisWindow}
                   coreChoices={coreChoices}
+                  preview={preview}
                 />
               )}
             </>

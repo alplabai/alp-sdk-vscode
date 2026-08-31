@@ -75,6 +75,26 @@ export interface InitArgvInput {
    * `runAlpCommand`'s `withSdkRoot` injects the window's active SDK instead.
    */
   sdkPath?: string;
+  /**
+   * `--preview`: ask tan what it WOULD write, without writing it (#616).
+   *
+   * Measured on the pinned tan 0.6.0 / SDK v0.16.0-rc1: `tan init --preview
+   * --format json` exits 0, `data.written` is `[]`, and the destination
+   * directory is verified UNCHANGED — nothing is written on this pass.
+   * `data.fileChanges[]` is the same `{relativePath, kind}` shape `tan
+   * scaffold` reports (see `wizard/scaffoldPayload.ts`); this flag is what
+   * lets the SAME `planInitArgv` call the wizard's Confirm step already needs
+   * (same template, same SoM, same cores, same SDK) also produce that list,
+   * rather than a second, hand-assembled argv that could drift from the one
+   * Create actually sends.
+   *
+   * CORRECTION to #616's own body: it says `data.sdkPinned` is "a fact the
+   * customer should see before Create". Measured, `data.sdkPinned` is `null`
+   * on a `--preview` pass — only the REAL (non-preview) run resolves and
+   * reports it. This flag does not make that fact available, and no caller of
+   * this function should build UI that promises it before Create.
+   */
+  preview?: boolean;
 }
 
 export interface InitArgvPlan {
@@ -173,6 +193,13 @@ export function planInitArgv(input: InitArgvInput): InitArgvPlan {
   // is position-independent, so this tail placement still suppresses it.
   if (sdkPath) {
     argv.push("--sdk-root", sdkPath);
+  }
+
+  // Tail placement, same reasoning as `--sdk-root` above: `--preview` takes no
+  // value (click parses it as a bare flag), so where it sits among the other
+  // tokens is not load-bearing — only WHETHER it is present is.
+  if (input.preview) {
+    argv.push("--preview");
   }
 
   return { argv, zephyrCores, deferredCores, unknownCores };

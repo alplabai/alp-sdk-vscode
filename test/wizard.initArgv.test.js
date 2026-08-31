@@ -151,63 +151,83 @@ const SOM_TOPOLOGIES = {
 const PARENT_DIR = "/Users/someone/Alp Projects";
 const SDK_PATH = "/Users/someone/.alp/sdk/v0.16.0-rc1";
 
-/** Every branch of `planInitArgv`, crossed with every SoM. */
+/**
+ * Every branch of `planInitArgv`, crossed with every SoM AND with `preview`
+ * (#616) — the same full cross-product `test/wizard.scaffoldArgv.test.js`
+ * uses for ITS two booleans (`preview`/`force`), for the same reason: a
+ * dimension crossed with only one arm of the existing matrix would leave
+ * `--preview` checked on, say, only starter templates, and every assertion
+ * below would pass vacuously for the branches it never reached.
+ */
 function buildMatrix() {
   const cases = [];
   for (const [moduleId, cores] of Object.entries(SOM_TOPOLOGIES)) {
     for (const sdkPath of [undefined, SDK_PATH]) {
-      // Starter template: `--template` + `--som` (+ `--cores` when the SoM has
-      // a companion).
-      cases.push({
-        label: `starter blinky on ${moduleId}${sdkPath ? " +sdk" : ""}`,
-        input: {
-          templateId: "blinky",
-          projectName: "my-project",
-          parentDir: PARENT_DIR,
-          moduleId,
-          cores,
-          sdkPath,
-        },
-      });
-      // Example: `--from-example` + `--som`, never `--cores`.
-      cases.push({
-        label: `example mproc-mailbox on ${moduleId}${sdkPath ? " +sdk" : ""}`,
-        input: {
-          templateId: "multicore/mproc-mailbox",
-          sourceDir: "/sdk/examples/multicore/mproc-mailbox",
-          projectName: "my-project",
-          parentDir: PARENT_DIR,
-          moduleId,
-          cores,
-          sdkPath,
-        },
-      });
+      for (const preview of [false, true]) {
+        // Starter template: `--template` + `--som` (+ `--cores` when the SoM has
+        // a companion).
+        cases.push({
+          label:
+            `starter blinky on ${moduleId}${sdkPath ? " +sdk" : ""}` +
+            `${preview ? " +preview" : ""}`,
+          input: {
+            templateId: "blinky",
+            projectName: "my-project",
+            parentDir: PARENT_DIR,
+            moduleId,
+            cores,
+            sdkPath,
+            preview,
+          },
+        });
+        // Example: `--from-example` + `--som`, never `--cores`.
+        cases.push({
+          label:
+            `example mproc-mailbox on ${moduleId}${sdkPath ? " +sdk" : ""}` +
+            `${preview ? " +preview" : ""}`,
+          input: {
+            templateId: "multicore/mproc-mailbox",
+            sourceDir: "/sdk/examples/multicore/mproc-mailbox",
+            projectName: "my-project",
+            parentDir: PARENT_DIR,
+            moduleId,
+            cores,
+            sdkPath,
+            preview,
+          },
+        });
+      }
     }
   }
   // The two degenerate inputs the panel can still produce: an example scaffolded
   // with no SoM chosen (the copied board.yaml keeps its own), and a starter for
   // a SoM whose topology never loaded (`presets` returned nothing, so the
-  // built-in `E1M_MODULES` fallback supplies no `cores`).
-  cases.push({
-    label: "example with no SoM chosen",
-    input: {
-      templateId: "hello",
-      sourceDir: "/sdk/examples/hello",
-      projectName: "my-project",
-      parentDir: PARENT_DIR,
-      moduleId: "",
-    },
-  });
-  cases.push({
-    label: "starter with no topology loaded",
-    input: {
-      templateId: "blinky",
-      projectName: "my-project",
-      parentDir: PARENT_DIR,
-      moduleId: "E1M-AEN801",
-      cores: [],
-    },
-  });
+  // built-in `E1M_MODULES` fallback supplies no `cores`). Each crossed with
+  // `preview` too, same reason as above.
+  for (const preview of [false, true]) {
+    cases.push({
+      label: `example with no SoM chosen${preview ? " +preview" : ""}`,
+      input: {
+        templateId: "hello",
+        sourceDir: "/sdk/examples/hello",
+        projectName: "my-project",
+        parentDir: PARENT_DIR,
+        moduleId: "",
+        preview,
+      },
+    });
+    cases.push({
+      label: `starter with no topology loaded${preview ? " +preview" : ""}`,
+      input: {
+        templateId: "blinky",
+        projectName: "my-project",
+        parentDir: PARENT_DIR,
+        moduleId: "E1M-AEN801",
+        cores: [],
+        preview,
+      },
+    });
+  }
   return cases;
 }
 
@@ -448,6 +468,22 @@ test("--sdk-root is sent when and only when the wizard picked an SDK", () => {
   );
 });
 
+test("--preview is sent when and only when the input asks for it", () => {
+  // The load-bearing direction is the omission: a Confirm-step preview
+  // request that reached tan WITHOUT `--preview` would scaffold the project
+  // for real on what the customer believes is only a look at the file list
+  // (#616). The other direction — a stray `--preview` on the real Create
+  // call — would make Create silently write nothing while reporting success.
+  const offenders = [];
+  for (const entry of reducedCases()) {
+    const sent = entry.plan.argv.includes("--preview");
+    const asked = Boolean(entry.input.preview);
+    if (sent === asked) continue;
+    offenders.push(`${at(entry)}\n    sent=${sent}, input.preview=${asked}`);
+  }
+  assert.deepEqual(offenders, [], offenders.join("\n"));
+});
+
 test("every core the SoM declares as zephyr is reported back to the caller", () => {
   // The planner OMITS every Zephyr core from `--cores` and lets tan pick its
   // own app core, so any core past the app one is absent from the generated
@@ -480,14 +516,15 @@ test("every core the SoM declares as zephyr is reported back to the caller", () 
 // satisfies perfectly. A `buildMatrix` that returns nothing — a renamed field,
 // a topology table emptied by a bad edit — turns this whole file green with no
 // code change anywhere.
-test("the matrix covers every SoM and both scaffold sources", () => {
-  const expected = Object.keys(SOM_TOPOLOGIES).length * 2 * 2 + 2;
+test("the matrix covers every SoM, both scaffold sources, and both preview states", () => {
+  const expected = Object.keys(SOM_TOPOLOGIES).length * 2 * 2 * 2 + 2 * 2;
   assert.equal(
     MATRIX.length,
     expected,
     `${MATRIX.length} cases, expected ${expected} (11 SoMs x starter/example ` +
-      "x with/without an SDK, plus the two degenerate inputs). A shrunken " +
-      "matrix passes every assertion above without checking anything.",
+      "x with/without an SDK x with/without --preview, plus the two " +
+      "degenerate inputs each x with/without --preview). A shrunken matrix " +
+      "passes every assertion above without checking anything.",
   );
   const cases = reducedCases();
   assert.ok(
@@ -498,5 +535,14 @@ test("the matrix covers every SoM and both scaffold sources", () => {
   assert.ok(
     cases.some((entry) => entry.plan.argv.includes("--from-example")),
     "no case produced an example scaffold.",
+  );
+  assert.ok(
+    cases.some((entry) => entry.plan.argv.includes("--preview")),
+    "no case produced a `--preview` argument — #616's flag is unchecked.",
+  );
+  assert.ok(
+    cases.some((entry) => !entry.plan.argv.includes("--preview")),
+    "every case produced a `--preview` argument — the real (non-preview) " +
+      "Create call is unchecked.",
   );
 });
