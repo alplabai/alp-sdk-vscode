@@ -105,6 +105,17 @@ const GATED_CODES = {
   // (preset catalogue fallback), lsp/client.ts (board.yaml completion
   // catalog) and configurator/customEditor.ts (library vocabulary scan).
   "presets.sdk-root-unresolved": "frozen",
+  // tan: python/tan/commands/validate_cmd.py, prefixed by that file's local
+  // `fail()` closure. Ext: `VALIDATE_SDK_UNRESOLVED_CODE` (src/loader.ts),
+  // which is how `runValidator` decides to retry with `--offline` (#619).
+  //
+  // Status `reserved` with `consumer: "none"` in the artefact — and that entry
+  // is now stale in tan's favour, not ours: binding it here MAKES this
+  // extension the consumer. Read `reserved` correctly, as this file's own
+  // header says: it means nothing BINDS the spelling, not that tan never emits
+  // it. Measured at the pin, a `validate` with no resolvable SDK returns exit
+  // 2 carrying exactly this code.
+  "validate.sdk-root-unresolved": "reserved",
 
   // RETIRED — no current tan emits it, and tan reserves the spelling so it can
   // never come back meaning something else.

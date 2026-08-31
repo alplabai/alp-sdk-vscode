@@ -801,6 +801,7 @@ const EXPECTED_PARTIAL = [
   'src/ideHub/newProjectFlowPanel.ts  ["explain", "--template", id, ...root]',
   'src/ideHub/newProjectFlowPanel.ts  ["explain", ...root]',
   'src/ideHub/newProjectFlowPanel.ts  ["presets", ...root]',
+
   'src/west.ts  ["clean", ...target.appArg]',
   'src/west.ts  ["flash", ...target.appArg]',
   'src/west.ts  ["image", ...target.appArg]',
