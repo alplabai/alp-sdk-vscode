@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- **A `alpSdk.path` that stopped resolving after a bootstrap now says so, and
+  offers the SDK tan resolves (#604).** `tan bootstrap` MOVES the alp-sdk
+  checkout — measured on the pinned tan 0.6.0, by DEFAULT and not only under
+  `--workspace`: a plain bootstrap relocates it to
+  `<parent>/alp-workspace/<name>` and writes `~/.alp/sdk-default` there. The
+  pin was then left naming a directory that is gone, every `--sdk-root` this
+  extension sent pointed at nothing, and the only trace was a line in an
+  output channel nobody had open. `reconcileActiveSdkAfterBootstrap` now
+  checks whether the pinned path still EXISTS: gone, plus a ready SDK
+  resolved elsewhere, raises a modal naming both paths. The pin is still
+  never written unasked — an unmounted volume produces identical evidence, so
+  declining keeps it exactly as it was — but silence was the defect, and
+  asking is safe in the very case that ruled out writing. A pin that still
+  exists is unchanged: logged, never touched, never even asked about.
+- **Recorded, correcting #604's suggested fix: the bootstrap envelope cannot
+  carry this.** The issue proposes reading `bootstrap.workspace-relocated`
+  off the run. Measured, the REAL bootstrap produces no envelope at all — it
+  goes through `runAlpInTerminal`, which parses nothing — and the one
+  envelope carrying the code is the win32 `--dry-run` pre-flight, where
+  `data.sdkRoot` is the PLANNED destination that does not exist yet (the
+  dry-run moves nothing, and its message reads "would move" where the real
+  run reads "moved"). Re-pointing the pin at that would create the dangling
+  pin this change exists to detect. The signal is on disk, not on the wire.
+  `bootstrap.workspace-relocated` is therefore NOT registered in
+  `GATED_CODES`: this extension has no honest consumer for it, and
+  registering one anyway is exactly what that list exists to prevent.
+
 - **A flash-blocking J-Link warning now reaches the customer about to flash,
   not just the Dependencies panel (#615).** tan works out precisely what is
   wrong and says so: on this bench host `jlink` comes back `status: "warn"`
