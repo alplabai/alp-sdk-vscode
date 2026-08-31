@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- **The module scaffold now goes where `board.yaml` is, not where the
+  workspace folder is (#601).** `alpSdk.boardYamlPath` is a documented,
+  per-folder setting holding a path relative to its workspace folder. Point it
+  at `firmware/board.yaml` and the project is `<outer>/firmware`, which is
+  where `src/west.ts` has always run the build — but `Alp: Scaffold module`
+  passed `<outer>` to `tan scaffold` as both `--project` and the spawn's cwd,
+  so the module landed beside the project and was never compiled. That is
+  #601's own symptom re-created through a different mechanism, found in
+  adversarial review and confirmed live against the pinned tan 0.6.0. The rule
+  is now one function, `packages/alp-core/src/project/projectRoot.ts`, used by
+  both callers.
+- **The overwrite dialog no longer names files it is not about to destroy
+  (#601).** It listed every row that was not `unchanged` under "any edits made
+  in them are lost" — and a refusal legitimately carries `"new"` rows beside
+  the offending one (delete a scaffolded header, edit its `.c`, and tan refuses
+  with the header marked `"new"`). A file that does not exist was named as one
+  whose contents were about to be replaced, in the one dialog whose whole job
+  is being exact about that. Three headings now: replaced (`"update"` only),
+  created (`"new"`), and a separate one for a kind this extension does not
+  recognise, which is named rather than hidden but not claimed to be replaced.
+  The first confirm likewise counts files that change rather than every row
+  tan listed, and shows the untouched ones under their own heading.
+- **Cancelling a scaffold no longer reports a killed write as a clean
+  cancellation (#601).** `runAlpWithProgress` aborts the controller and kills
+  the tan child, so a cancelled `--preview` is a no-op while a cancelled write
+  was interrupted mid-run; tan keeps no journal and reports nothing on a kill.
+  All three passes announced the same info-severity "cancelled". The preview
+  now says nothing was written; a cancelled write, and a cancelled `--force`
+  replace, say so at warning severity and tell the customer to check the
+  module.
+- **A refusal now reaches the customer in this extension's words, with tan's
+  verbatim in the channel (#601).** tan writes for a terminal: "Use --force to
+  allow updates", "Use --name <name> or run interactively" — flags this UI
+  never exposes and a customer in the editor cannot act on. The toast carries
+  the route forward; `detail` carries tan's own sentence and its code,
+  unedited. A per-template `tan explain` failure is logged instead of leaving
+  a picker of bare ids with nothing anywhere saying why, and the catalogue
+  progress is cancellable (`1 + N` sequential spawns, and `N` is tan's number).
+  `classifyScaffoldRefusal` now looks its codes up with `hasOwnProperty`: a
+  refusal coded `constructor` or `toString` used to read a function back off
+  `Object.prototype` and classify as a kind that does not exist.
+- **The modal body reaches the output channel (#601).** `modalDetail` is
+  rendered on the dialog and was written nowhere else, so a customer who
+  confirmed a destructive replace left no record of the file list they were
+  shown. `src/notify/vscodeAdapter.ts`'s `present` now logs it with the rest of
+  the plan.
+
 - **`Alp: Scaffold module` now calls `tan scaffold` instead of
   re-implementing it, so a module scaffolded from VS Code is actually
   compiled (#601).** `tan scaffold` emits a `## Wiring` section in the module
@@ -14,7 +61,8 @@
   README differing in that section and in `Template:` alone, where the port
   spelled the template's label and tan spells its id. (#601's body says
   everything outside `## Wiring` was byte-identical and counts `Template:`
-  among the identical lines; that detail is wrong, the conclusion is not.) The port is DELETED rather than patched: patching the text closes this
+  among the identical lines; that detail is wrong, the conclusion is not.)
+  The port is DELETED rather than patched: patching the text closes this
   symptom and leaves a second, un-gated copy of a generator tan owns to miss
   the next addition the same way. `wizard/service.ts`, `wizard/models.ts` and
   `wizard/fileSystem.ts` are gone (`collectGeneratedOutputPreviews` went with

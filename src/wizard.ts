@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { resolveProjectRoot } from "@alp-sdk/core/project/projectRoot";
 import { planScaffoldArgv } from "@alp-sdk/core/wizard/scaffoldArgv";
 import {
   classifyScaffoldRefusal,
@@ -109,9 +110,12 @@ export async function maybeOfferFirstRunWizard(
  * README itself, from a TypeScript re-implementation of `tan scaffold` that had
  * drifted from the command it copied: tan's README carries a `## Wiring`
  * section naming the two `CMakeLists.txt` edits without which the module is
- * never compiled, and the port emitted `## Notes` and stopped. Everything
- * around that section was byte-identical, so a customer scaffolding from VS
- * Code got a module that silently never built, and nothing told them why.
+ * never compiled, and the port emitted `## Notes` and stopped. So a customer
+ * scaffolding from VS Code got a module that silently never built, and nothing
+ * told them why. (Measured by compiling the deleted port out of git history and
+ * diffing its output against the pinned tan: header and source byte-identical
+ * with no board.yaml resolved, README differing in that section and in
+ * `Template:` alone — see `wizard/scaffoldArgv.ts`.)
  *
  * The port is gone rather than patched. Patching the text closes this symptom
  * and leaves the mechanism — a second, un-gated copy of a generator tan owns —
@@ -135,7 +139,18 @@ async function runModuleScaffoldWizard(
     );
     return;
   }
-  const projectRoot = project.workspaceRoot;
+  // The workspace FOLDER is not the project (#601, found in adversarial
+  // review). `alpSdk.boardYamlPath` is a per-folder setting; point it at
+  // `firmware/board.yaml` and the module belongs in `firmware/`, which is where
+  // `src/west.ts` has always run the build. Passing the outer folder here wrote
+  // the module beside the project instead of inside it — a module that never
+  // compiles, which is the defect this whole change exists to fix.
+  const projectRoot = resolveProjectRoot(
+    project.workspaceRoot,
+    project.boardYamlPath,
+    fs.existsSync,
+    path.dirname,
+  );
 
   const templates = await fetchModuleTemplates(context, projectRoot);
   if (templates === null) return;
@@ -202,9 +217,15 @@ async function runModuleScaffoldWizard(
   // text that had gone stale. The pick still gates the write: `applyChanges`
   // has no `run` in the presenter's table, so `notify` hands the id back
   // instead of swallowing it.
+  // The COUNT is of files that actually change. `fileChanges[]` also carries
+  // `"unchanged"` rows, and counting those announced "apply 3 module file
+  // change(s)?" for a run that would touch one.
+  const changingCount = preview.result.fileChanges.filter(
+    (change) => change.kind !== "unchanged",
+  ).length;
   const applyAction = await notify(
     planConfirm({
-      message: `Alp: apply ${preview.result.fileChanges.length} module file change(s)?`,
+      message: `Alp: apply ${changingCount} module file change(s)?`,
       modalDetail: describeChanges(preview.result),
       confirm: { id: "applyChanges" },
     }),
@@ -291,12 +312,16 @@ async function fetchModuleTemplates(
     {
       location: vscode.ProgressLocation.Notification,
       title: "Alp: loading module templates…",
-      cancellable: false,
+      // CANCELLABLE because the loop below is `1 + N` sequential spawns and `N`
+      // is tan's number, not this extension's — four templates cost about a
+      // second at the pin, and nothing here caps a catalogue that grows.
+      cancellable: true,
     },
-    async () => {
+    async (_progress, token) => {
       const overview = await runAlpCommand(context, ["explain"], cwd, {
         interactive: true,
       });
+      if (token.isCancellationRequested) return null;
       if (!overview.outcome.envelope) {
         // An unresolvable or failed CLI returns a null-envelope outcome rather
         // than throwing. Without surfacing it the picker opens empty with no
@@ -319,6 +344,7 @@ async function fetchModuleTemplates(
 
       const templates: ModuleTemplate[] = [];
       for (const id of ids) {
+        if (token.isCancellationRequested) return null;
         const detail = await runAlpCommand(
           context,
           ["explain", "--template", id],
@@ -326,6 +352,17 @@ async function fetchModuleTemplates(
           { interactive: true },
         );
         const data = detail.outcome.envelope?.data;
+        if (!detail.outcome.envelope) {
+          // NOT a refusal: the id came from tan's own catalogue, so the picker
+          // still offers it, with the raw id as its label. But the overview's
+          // failure is surfaced and its N children used to be swallowed whole —
+          // a picker of four bare ids with no descriptions and nothing anywhere
+          // saying why.
+          log(
+            `[scaffold] could not describe template ${id}: ${detail.outcome.message}`,
+            "warn",
+          );
+        }
         templates.push({
           id,
           title: explainString(data, "summary") ?? id,
@@ -407,8 +444,24 @@ async function runScaffold(
     input.projectRoot,
   );
   if (res === CANCELLED) {
+    // Cancelling is not one thing. `runAlpWithProgress` aborts the controller
+    // and KILLS the tan child (`src/loader.ts`), so a cancelled `--preview` is
+    // a clean no-op while a cancelled WRITE was interrupted mid-run. tan keeps
+    // no journal and reports nothing on a kill, so this extension cannot say
+    // what landed — which is precisely why it must not say "cancelled" in the
+    // same info-severity breath for both.
     await notify(
-      planSuccess("Alp: module scaffold cancelled.", { timeoutMs: 3000 }),
+      input.preview
+        ? planSuccess("Alp: module scaffold cancelled. Nothing was written.", {
+            timeoutMs: 3000,
+          })
+        : planFailure({
+            operation,
+            cause: input.force
+              ? "Cancelled while replacing the module files. Some may already have been replaced — check the module before re-running."
+              : "Cancelled while writing the module. Some files may already have been written — check the module before re-running.",
+            severity: "warning",
+          }),
     );
     return { kind: "cancelled" };
   }
@@ -448,7 +501,7 @@ async function runScaffold(
       planFailure({
         operation,
         cause:
-          "The tan CLI reported success but returned a scaffold result this extension cannot read — no file list came back, so what was written is unknown.",
+          "The tan CLI reported success but returned a scaffold result this extension cannot read. Files may already have been written — check the project before re-running.",
         actions: [{ id: "updateCli" }, { id: "runDoctor" }],
       }),
     );
@@ -468,11 +521,15 @@ async function reportScaffoldRefusal(
   await notify(
     planFailure({
       operation,
-      // tan's own sentence, verbatim — it names the template or the offending
-      // input, which no table here could — with this extension's route forward
-      // appended. Never parsed.
-      cause: `${refusal.message ?? "The tan CLI refused the module scaffold."} ${scaffoldAdvice(refusal)}`,
-      detail: `tan reported ${refusal.code}`,
+      // OUR sentence, not tan's. tan's messages are written for a terminal and
+      // name flags this UI never exposes — "Use --force to allow updates",
+      // "Use --name <name> or run interactively" — advice a customer in the
+      // editor cannot act on and should not be handed. tan's own words go
+      // VERBATIM to the channel below, where they remain the record.
+      cause: scaffoldAdvice(refusal),
+      detail: refusal.message
+        ? `tan reported ${refusal.code}: ${refusal.message}`
+        : `tan reported ${refusal.code}`,
     }),
   );
 }
@@ -480,26 +537,46 @@ async function reportScaffoldRefusal(
 function scaffoldAdvice(refusal: ScaffoldRefusal): string {
   switch (refusal.kind) {
     case "invalid-name":
-      return 'Re-run "Alp: Scaffold module" and enter a name containing at least one letter or digit.';
+      return 'The tan CLI could not use that module name. Re-run "Alp: Scaffold module" and enter a name containing at least one letter or digit.';
     case "invalid-template":
-      return 'Re-run "Alp: Scaffold module" and pick a template again — the list is read from the tan CLI each time, so a stale one refreshes.';
+      return 'The tan CLI does not ship that module template. Re-run "Alp: Scaffold module" and pick a template again — the list is read from the CLI each time, so a stale one refreshes.';
     case "would-overwrite":
-      // Reached only when the SECOND, forced run is refused again, which means
-      // the files changed between the two spawns.
-      return 'The files changed while the scaffold was running. Re-run "Alp: Scaffold module".';
+      // Two ways here, and the sentence has to be true on both. The expected
+      // one is the SECOND, forced run being refused again — the files changed
+      // between the two spawns. The other is a `--preview` refused this way,
+      // which the pinned tan 0.6.0 was not observed to do and which this text
+      // must not claim timing about either way.
+      return 'Some files on disk differ from the template and were not replaced. Nothing was written. Re-run "Alp: Scaffold module".';
   }
 }
 
 /** The modal body for the first confirm: every path tan named, with its kind. */
 function describeChanges(result: ScaffoldResult): string {
-  const lines = result.fileChanges.map(
-    (change) => `${change.kind.toUpperCase()}: ${change.relativePath}`,
+  const changing = result.fileChanges.filter(
+    (change) => change.kind !== "unchanged",
   );
-  return [
-    "The tan CLI will write these files into the open project:",
+  const untouched = result.fileChanges.filter(
+    (change) => change.kind === "unchanged",
+  );
+  const lines: string[] = [
+    "The tan CLI will write these files into the project:",
     "",
-    ...lines,
-  ].join("\n");
+    ...changing.map(
+      (change) => `${change.kind.toUpperCase()}: ${change.relativePath}`,
+    ),
+  ];
+  if (untouched.length > 0) {
+    // Listed, but under their own heading: the sentence above is a promise
+    // about what changes, and an `unchanged` row under it is a file the dialog
+    // claims to write and tan will not touch.
+    lines.push(
+      "",
+      "Already identical to the template, and left alone:",
+      "",
+      ...untouched.map((change) => change.relativePath),
+    );
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -512,33 +589,88 @@ function describeOverwrite(
   result: ScaffoldResult | null,
   refusal: ScaffoldRefusal,
 ): string {
-  const paths = (result?.fileChanges ?? [])
-    .filter((change) => change.kind !== "unchanged")
+  const changes = result?.fileChanges ?? [];
+  // ONLY `"update"`. A refusal legitimately carries `"new"` rows alongside the
+  // offending one — delete a scaffolded header, edit its `.c`, and tan refuses
+  // with the header marked `"new"` (measured on the pinned tan 0.6.0). Listing
+  // that header under "any edits made in them are lost" names a file which does
+  // not exist as one whose contents are about to be destroyed, in the one
+  // dialog whose entire job is being exact about that.
+  const replaced = changes
+    .filter((change) => change.kind === "update")
     .map((change) => change.relativePath);
-  const named =
-    paths.length > 0
-      ? paths
-      : // tan refused without naming the files. Say so, rather than showing an
-        // empty list that reads as "nothing will be replaced".
-        ["(the tan CLI did not name the files)"];
-  return [
+  // Created, not replaced. A refusal legitimately carries these and they are
+  // worth naming — the customer is about to write files — but not under a
+  // sentence about losing edits.
+  const created = changes
+    .filter((change) => change.kind === "new")
+    .map((change) => change.relativePath);
+  // Everything else: a vocabulary this extension has never seen. Named, because
+  // a dialog that gates `--force` must not hide a row; named SEPARATELY,
+  // because this extension does not know what tan will do to it and must not
+  // claim to. `"new"` is NOT in here — it is a known-safe kind, and lumping it
+  // in with the unrecognised ones was this fix's own first bug.
+  const unknown = changes
+    .filter(
+      (change) =>
+        change.kind !== "update" &&
+        change.kind !== "unchanged" &&
+        change.kind !== "new",
+    )
+    .map((change) => `${change.relativePath} (reported as "${change.kind}")`);
+
+  const lines: string[] = [
     refusal.message ?? "One or more files would be overwritten.",
     "",
-    "These files will be REPLACED with the template's contents. Any edits made",
-    "in them are lost, and this cannot be undone from the editor:",
-    "",
-    ...named,
-  ].join("\n");
+  ];
+  if (replaced.length > 0) {
+    lines.push(
+      "These files will be REPLACED with the template's contents. Any edits",
+      "made in them are lost, and this cannot be undone from the editor:",
+      "",
+      ...replaced,
+      "",
+    );
+  }
+  if (created.length > 0) {
+    lines.push("These files will be created:", "", ...created, "");
+  }
+  if (unknown.length > 0) {
+    lines.push(
+      "These files are also affected, in a way this extension does not",
+      "recognise — check them afterwards:",
+      "",
+      ...unknown,
+      "",
+    );
+  }
+  if (replaced.length === 0 && unknown.length === 0) {
+    // tan refused without naming a file at risk. Say so, rather than showing an
+    // empty list that reads as "nothing will be replaced".
+    lines.push(
+      "The tan CLI did not name the files it would overwrite. Continuing",
+      "replaces whatever it finds that differs from the template.",
+      "",
+    );
+  }
+  return lines.join("\n").trimEnd();
 }
 
 /**
  * Open the module source tan wrote, so the customer lands in the file they are
  * about to edit.
  *
- * The path is tan's, taken from `written[]` — never rebuilt from the module
- * name and an assumed `src/modules/<name>/<name>.c` layout, which is the same
- * class of local copy #601 is removing. A run that wrote no `.c` (every file
- * already up to date) opens nothing, which is correct.
+ * The PATH is tan's, taken from `written[]` — never rebuilt from the module name
+ * and an assumed `src/modules/<name>/<name>.c` layout, which is the same class
+ * of local copy #601 is removing. A run that wrote no `.c` opens nothing, which
+ * is correct.
+ *
+ * The SELECTION rule is this extension's, and is the one convention here that
+ * tan does not declare: "the module source is the first written path ending in
+ * `.c`". A template that ever emits `.cpp`, `.rs`, or two sources would open
+ * nothing or the wrong one. Both failures are a missed convenience, never a
+ * wrong write, so it stays a heuristic rather than an upstream ask — but it is
+ * a heuristic, not a field.
  */
 async function openScaffoldedSource(
   projectRoot: string,

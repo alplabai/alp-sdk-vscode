@@ -249,8 +249,11 @@ async function present(
   plan: NotificationPlan,
 ): Promise<NotifyAction | undefined> {
   // 1. The channel first, and the ONLY place `detail` is ever written.
+  //    `modalDetail` too (#601): it is rendered ON the dialog and nowhere else,
+  //    so a customer who confirmed a destructive replace left no record of the
+  //    file list they were shown. The channel is where that record belongs.
   log(
-    plan.detail ? `${plan.message} — ${plan.detail}` : plan.message,
+    [plan.message, plan.modalDetail, plan.detail].filter(Boolean).join(" — "),
     plan.severity === "error"
       ? "error"
       : plan.severity === "warning"

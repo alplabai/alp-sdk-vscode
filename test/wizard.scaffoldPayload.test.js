@@ -388,6 +388,28 @@ test("issues that are not a list, or carry no code, never throw", () => {
   }
 });
 
+test("an inherited Object.prototype key is NOT a classification", () => {
+  for (const code of [
+    "constructor",
+    "toString",
+    "valueOf",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "__proto__",
+  ]) {
+    assert.equal(
+      classifyScaffoldRefusal([{ code, severity: "error", message: "x" }]),
+      null,
+      `\`${code}\` classified. A plain object literal inherits ` +
+        "`Object.prototype`, so `KINDS[code]` reads back a FUNCTION, which is " +
+        "truthy — the refusal then carries a kind that does not exist, " +
+        "`scaffoldAdvice` falls off the end of its switch returning " +
+        "`undefined`, and the customer's sentence ends in the literal word " +
+        '"undefined" while tan\'s own issues never reach them.',
+    );
+  }
+});
+
 test("a code with a non-string message keeps the classification and drops the message", () => {
   assert.deepEqual(
     classifyScaffoldRefusal([

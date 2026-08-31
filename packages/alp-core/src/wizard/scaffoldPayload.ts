@@ -185,8 +185,16 @@ export function classifyScaffoldRefusal(
     if (!isRecord(issue)) continue;
     const code = issue.code;
     if (typeof code !== "string") continue;
+    // `hasOwnProperty`, not `KINDS[code]`. A plain object literal inherits
+    // `Object.prototype`, so `code: "constructor"` (or `toString`, `valueOf`,
+    // `__proto__`) reads back a FUNCTION, which is truthy — the refusal then
+    // classifies as a kind that does not exist, `scaffoldAdvice` falls off the
+    // end of its switch returning `undefined`, and the customer's sentence ends
+    // in the literal word "undefined" while the designed fallback (tan's own
+    // issues behind "Show issues") is bypassed. Unreachable at this pin, where
+    // every tan code is dotted; a guard costs one call.
+    if (!Object.prototype.hasOwnProperty.call(KINDS, code)) continue;
     const kind = KINDS[code];
-    if (!kind) continue;
     return {
       kind,
       code,
