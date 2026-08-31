@@ -25,6 +25,14 @@ const Module = require("node:module");
 
 const root = path.join(__dirname, "..");
 
+// The REAL notification planner — pure, no `vscode` — loaded directly rather
+// than stubbed, so a `cause` that `looksRaw` would demote is caught by
+// actually running the demotion logic (#603, third review, blocker 1: a
+// gate that only pattern-matches the raw `cause` string cannot tell "reads
+// fine" from "reads fine, AND ALSO gets replaced with a bare '... failed.'
+// before the customer ever sees it").
+const { planFailure } = require(path.join(root, "out", "notify", "service.js"));
+
 function loadWithStubs(relPath, stubs) {
   const modPath = require.resolve(path.join(root, "out", relPath));
   delete require.cache[modPath];
@@ -58,7 +66,7 @@ const row = (over) => ({
     over.action === undefined
       ? {
           kind: "command",
-          command: `install ${over.name}`,
+          commands: [{ tool: over.name, command: `install ${over.name}` }],
           effect: "install",
           title: `install ${over.name}`,
         }
@@ -69,6 +77,7 @@ const report = (rows) => ({
   rows,
   counts: { pass: 0, warn: 0, fail: rows.length },
   prerequisiteDataUnavailable: false,
+  orphanedPrerequisites: [],
 });
 
 const NO_CANCEL = { isCancellationRequested: false };
@@ -283,7 +292,15 @@ test("a failure stops the sequence, and every row left is named with the reason"
 
   // Assert
   assert.deepEqual(outcome.installed, []);
-  assert.deepEqual(outcome.failed, [{ name: "west", code: 1 }]);
+  assert.deepEqual(outcome.failed, [
+    {
+      name: "west",
+      code: 1,
+      completed: [],
+      failedCommand: "install west",
+      notRun: [],
+    },
+  ]);
   assert.deepEqual(
     outcome.skipped.map((entry) => entry.name),
     ["cmake", "ninja"],
@@ -291,6 +308,133 @@ test("a failure stops the sequence, and every row left is named with the reason"
   );
   assert.match(outcome.skipped[0].reason, /west failed/);
   assert.equal(dispatched.length, 1, "nothing ran after the failure");
+});
+
+// ---------------------------------------------------------------------------
+// Multi-step `command` rows (#603) — the `hostPrerequisites` rollup shape.
+// ---------------------------------------------------------------------------
+
+test("a multi-step row: step 2 dispatches only after step 1 finishes, no double-awaitRun", async () => {
+  // Arrange -- THE hard contract: `runDependencyAction` owns `awaitRun` for
+  // this run name; `runFixAll` must not ALSO subscribe it for a command row,
+  // or step 1's finish would be read as the whole row's finish.
+  const { runFixAll, dispatched, pending } = load();
+  const running = runFixAll({
+    report: report([
+      row({
+        name: "hostPrerequisites",
+        action: {
+          kind: "command",
+          commands: [
+            { tool: "cmake", command: "brew install cmake" },
+            { tool: "ninja", command: "brew install ninja" },
+          ],
+          effect: "install",
+          title: "",
+        },
+      }),
+    ]),
+    cwd: "/proj",
+    token: NO_CANCEL,
+  });
+
+  await settle();
+  assert.deepEqual(
+    dispatched.map((d) => d.command),
+    ["brew install cmake"],
+  );
+
+  pending.get(INSTALL_RUN)(0);
+  await settle();
+  assert.deepEqual(
+    dispatched.map((d) => d.command),
+    ["brew install cmake", "brew install ninja"],
+  );
+
+  pending.get(INSTALL_RUN)(0);
+  const outcome = await running;
+  assert.deepEqual(outcome.installed, ["hostPrerequisites"]);
+});
+
+test("a multi-step row: step 2 fails — the outcome says what installed and what did not", async () => {
+  const { runFixAll, pending } = load();
+  const running = runFixAll({
+    report: report([
+      row({
+        name: "hostPrerequisites",
+        action: {
+          kind: "command",
+          commands: [
+            { tool: "cmake", command: "brew install cmake" },
+            { tool: "ninja", command: "brew install ninja" },
+          ],
+          effect: "install",
+          title: "",
+        },
+      }),
+    ]),
+    cwd: "/proj",
+    token: NO_CANCEL,
+  });
+
+  await settle();
+  pending.get(INSTALL_RUN)(0); // cmake installs
+  await settle();
+  pending.get(INSTALL_RUN)(1); // ninja fails
+  const outcome = await running;
+
+  assert.deepEqual(outcome.installed, []);
+  assert.deepEqual(outcome.failed, [
+    {
+      name: "hostPrerequisites",
+      code: 1,
+      completed: ["cmake"],
+      failedCommand: "brew install ninja",
+      notRun: [],
+    },
+  ]);
+});
+
+test("a 3-step row: step 2 of 3 fails — the step that never ran is named in notRun", async () => {
+  // Distinct from the step-2-of-2 case above, which leaves `notRun` empty by
+  // construction (nothing is left after the LAST step). This is the one shape
+  // that can catch `notRun` being wired to nothing at all.
+  const { runFixAll, pending } = load();
+  const running = runFixAll({
+    report: report([
+      row({
+        name: "hostPrerequisites",
+        action: {
+          kind: "command",
+          commands: [
+            { tool: "cmake", command: "brew install cmake" },
+            { tool: "ninja", command: "brew install ninja" },
+            { tool: "git", command: "brew install git" },
+          ],
+          effect: "install",
+          title: "",
+        },
+      }),
+    ]),
+    cwd: "/proj",
+    token: NO_CANCEL,
+  });
+
+  await settle();
+  pending.get(INSTALL_RUN)(0); // cmake installs
+  await settle();
+  pending.get(INSTALL_RUN)(1); // ninja fails — git never gets dispatched
+  const outcome = await running;
+
+  assert.deepEqual(outcome.failed, [
+    {
+      name: "hostPrerequisites",
+      code: 1,
+      completed: ["cmake"],
+      failedCommand: "brew install ninja",
+      notRun: ["git"],
+    },
+  ]);
 });
 
 test("an unknown exit code is a failure, not a success", async () => {
@@ -312,7 +456,15 @@ test("an unknown exit code is a failure, not a success", async () => {
 
   // Assert
   assert.deepEqual(outcome.installed, []);
-  assert.deepEqual(outcome.failed, [{ name: "ninja", code: undefined }]);
+  assert.deepEqual(outcome.failed, [
+    {
+      name: "ninja",
+      code: undefined,
+      completed: [],
+      failedCommand: "install ninja",
+      notRun: [],
+    },
+  ]);
 });
 
 test("a run already holding the slot is skipped with a reason, never awaited", async () => {
@@ -362,6 +514,58 @@ test("cancelling stops the sequence between steps and never kills a live run", a
   assert.equal(dispatched.length, 1, "no further step was started");
   assert.deepEqual(outcome.skipped, [{ name: "cmake", reason: "cancelled" }]);
 });
+
+test(
+  "cancelling mid-ROW stops step 2 of the SAME row, and reports what step 1 already installed",
+  { timeout: 2000 },
+  async () => {
+    // Arrange -- the `token` a `command` row's OWN dispatch loop checks
+    // between its steps (`runDependencyAction`), distinct from the
+    // row-to-row cancel test above: that one cancels BETWEEN two
+    // single-command rows, this one cancels between two STEPS of one
+    // multi-command row. Cancel must stop step 2 from ever dispatching, and
+    // the row's own record must not erase the install step 1 already
+    // performed (#603).
+    const token = { isCancellationRequested: false };
+    const { runFixAll, dispatched, pending } = load();
+    const running = runFixAll({
+      report: report([
+        row({
+          name: "hostPrerequisites",
+          action: {
+            kind: "command",
+            commands: [
+              { tool: "cmake", command: "brew install cmake" },
+              { tool: "ninja", command: "brew install ninja" },
+            ],
+            effect: "install",
+            title: "",
+          },
+        }),
+      ]),
+      cwd: "/proj",
+      token,
+    });
+
+    // Act -- cancel while cmake's install is still going, then let it finish.
+    await settle();
+    token.isCancellationRequested = true;
+    pending.get(INSTALL_RUN)(0);
+    const outcome = await running;
+
+    // Assert
+    assert.equal(
+      dispatched.length,
+      1,
+      "step 2 (ninja) must never dispatch once cancelled",
+    );
+    assert.deepEqual(outcome.installed, []);
+    assert.deepEqual(outcome.failed, []);
+    assert.deepEqual(outcome.skipped, [
+      { name: "hostPrerequisites", reason: "cancelled", completed: ["cmake"] },
+    ]);
+  },
+);
 
 test("the progress callback names each row before it starts", async () => {
   // Arrange -- the progress line is the only thing on screen during a long
@@ -483,4 +687,436 @@ test("an empty target set does nothing at all", async () => {
   // Assert
   assert.deepEqual(dispatched, []);
   assert.deepEqual(outcome, { installed: [], failed: [], skipped: [] });
+});
+
+test("a command row with an EMPTY commands[] is never reported as installed", async () => {
+  // `DependencyAction`'s own doc says `commands` is never empty — the
+  // planner never produces this shape. But `steps.length === 0 ===
+  // action.commands.length` and `[].every(...)` is vacuously true, so a
+  // defensive guard has to exist ANYWAY: without it, a broken invariant
+  // upstream would report a row as cleanly installed while dispatching
+  // nothing at all (#603).
+  const { runFixAll, dispatched } = load();
+  const outcome = await runFixAll({
+    report: report([
+      row({
+        name: "hostPrerequisites",
+        action: { kind: "command", commands: [], effect: "install", title: "" },
+      }),
+    ]),
+    cwd: "/proj",
+    token: NO_CANCEL,
+  });
+
+  assert.deepEqual(
+    dispatched,
+    [],
+    "nothing may be dispatched for an empty row",
+  );
+  assert.deepEqual(outcome.installed, []);
+  assert.equal(outcome.skipped.length, 1);
+  assert.equal(outcome.skipped[0].name, "hostPrerequisites");
+});
+
+// ---------------------------------------------------------------------------
+// `describeFixAllFailure` — the summary toast's wording (#603 design item 6).
+// ---------------------------------------------------------------------------
+
+test("describeFixAllFailure: a multi-step row says what installed, what failed, and that nothing after it ran", () => {
+  const { describeFixAllFailure } = load();
+
+  assert.equal(
+    describeFixAllFailure({
+      name: "hostPrerequisites",
+      code: 1,
+      completed: ["cmake"],
+      failedCommand: "brew install ninja",
+      notRun: [],
+    }),
+    "hostPrerequisites: installed cmake; `brew install ninja` did not succeed (code 1); nothing after it ran",
+  );
+});
+
+test("describeFixAllFailure: names the steps that never got a chance to run", () => {
+  const { describeFixAllFailure } = load();
+
+  assert.equal(
+    describeFixAllFailure({
+      name: "hostPrerequisites",
+      code: 1,
+      completed: [],
+      failedCommand: "brew install cmake",
+      notRun: ["ninja"],
+    }),
+    "hostPrerequisites: `brew install cmake` did not succeed (code 1); nothing after it ran (ninja skipped)",
+  );
+});
+
+test("describeFixAllFailure: NEVER the word exit/exited — that shape gets demoted out of the customer's toast (#603 third review, blocker 1)", () => {
+  // `src/notify/service.ts`'s `looksRaw` demotes any `planFailure` `cause`
+  // matching `EXIT_CODE` (`/\bexit(?:ed)?.../i`) into channel-only `detail`,
+  // replacing the customer-visible message with a bare "<operation> failed."
+  // The former wording (`` `cmd` exited 1 ``) tripped that on every failure.
+  const { describeFixAllFailure } = load();
+
+  const full = describeFixAllFailure({
+    name: "hostPrerequisites",
+    code: 1,
+    completed: ["cmake"],
+    failedCommand: "brew install ninja",
+    notRun: ["git"],
+  });
+  const bare = describeFixAllFailure({
+    name: "west",
+    code: 1,
+    completed: [],
+    failedCommand: undefined,
+    notRun: [],
+  });
+
+  assert.doesNotMatch(full, /\bexit(?:ed)?\b/i);
+  assert.doesNotMatch(bare, /\bexit(?:ed)?\b/i);
+});
+
+test("describeFixAllFailure: a fix/bootstrap row (no command string) still names the code", () => {
+  const { describeFixAllFailure } = load();
+
+  assert.equal(
+    describeFixAllFailure({
+      name: "west",
+      code: 1,
+      completed: [],
+      failedCommand: undefined,
+      notRun: [],
+    }),
+    "west did not succeed (code 1)",
+  );
+  assert.equal(
+    describeFixAllFailure({
+      name: "west",
+      code: undefined,
+      completed: [],
+      failedCommand: undefined,
+      notRun: [],
+    }),
+    "west did not succeed (code unknown)",
+  );
+});
+
+test("describeFixAllFailure: the raw command reaches the CHANNEL-ONLY text verbatim, never fabricated (#603 round 5, majors 2 and 3)", () => {
+  // Round 4 ran this string through a path redactor before handing it to the
+  // customer. That redactor is now DELETED (round 5's direction): its regex
+  // `[A-Za-z]:[\\/]` matched the `s:/` inside `https://` too, turning `curl
+  // -fsSL https://apt.llvm.org/llvm.sh | sudo bash` into `curl -fsSL
+  // httpllvm.sh | sudo bash` — a command that does not exist, presented as
+  // truth, and undemoted by `ABSOLUTE_PATH` for having no path left to match.
+  // `describeFixAllFailure`'s text is CHANNEL-ONLY (`fixAllSummaryNotice`'s
+  // `detail`, the `[fix-all]` log line, the "Alp SDK" channel a support
+  // engineer reads) and its own doc says the exact command tan ran belongs
+  // there verbatim — including a path-qualified one, which is not fabricated
+  // and not this function's business to edit.
+  const { describeFixAllFailure } = load();
+
+  assert.equal(
+    describeFixAllFailure({
+      name: "hostPrerequisites",
+      code: 1,
+      completed: [],
+      failedCommand: "sudo /opt/homebrew/bin/brew install ninja",
+      notRun: [],
+    }),
+    "hostPrerequisites: `sudo /opt/homebrew/bin/brew install ninja` did not succeed (code 1); nothing after it ran",
+  );
+
+  // The exact fabrication measured against the deleted redactor: a URL
+  // survives completely untouched now that nothing rewrites it.
+  assert.equal(
+    describeFixAllFailure({
+      name: "hostPrerequisites",
+      code: 1,
+      completed: [],
+      failedCommand: "curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash",
+      notRun: [],
+    }),
+    "hostPrerequisites: `curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash` did not succeed (code 1); nothing after it ran",
+  );
+});
+
+test("rowStepFailureNotice: the customer-facing cause names the TOOL, never the raw command — path-qualified or not (#603 round 5, blocker/majors 2 and 3)", () => {
+  // The ROW path is the one whose `cause` actually reaches a customer's
+  // toast (not just the Fix-all channel-only `detail`), so it may not reuse
+  // `describeFixAllFailure`'s verbatim-command wording at all — naming the
+  // tool is both customer-safe (never path-shaped, so `ABSOLUTE_PATH` never
+  // triggers) and impossible to fabricate.
+  const { rowStepFailureNotice } = load();
+
+  const notice = rowStepFailureNotice(
+    "Bootstrap prerequisites",
+    "hostPrerequisites",
+    [{ tool: "ninja", command: "sudo /opt/homebrew/bin/brew install ninja" }],
+    [
+      {
+        tool: "ninja",
+        command: "sudo /opt/homebrew/bin/brew install ninja",
+        code: 1,
+      },
+    ],
+  );
+  assert.equal(
+    notice.message,
+    "Bootstrap prerequisites: ninja did not succeed (code 1); nothing after it ran",
+  );
+  assert.doesNotMatch(notice.message, /\/opt\/homebrew/);
+  assert.doesNotMatch(notice.message, /sudo/);
+  assert.notEqual(notice.message, "Installing Bootstrap prerequisites failed.");
+});
+
+// ---------------------------------------------------------------------------
+// `withFixAllPartialNote` — the CUSTOMER-VISIBLE half of a skip's `completed`
+// list (#603 second review, blocker 1). `planSuccess` with no `actions`
+// renders on the status bar, which shows ONLY its `message` string — `detail`
+// is written to the "Alp SDK" channel and never reaches the customer at all.
+// So what a cancelled/raced-away row already installed has to be IN the
+// sentence this function returns, not left for `detail` alone to carry.
+// ---------------------------------------------------------------------------
+
+test("withFixAllPartialNote: nothing to add when no skip carries a completed list", () => {
+  const { withFixAllPartialNote } = load();
+
+  assert.equal(
+    withFixAllPartialNote("Fix all: 2 of 2 installed.", { skipped: [] }),
+    "Fix all: 2 of 2 installed.",
+  );
+  assert.equal(
+    withFixAllPartialNote("Fix all: 0 of 1 installed.", {
+      skipped: [{ name: "ninja", reason: "consent not given" }],
+    }),
+    "Fix all: 0 of 1 installed.",
+  );
+});
+
+test("withFixAllPartialNote: names what installed before the row stopped", () => {
+  const { withFixAllPartialNote } = load();
+
+  const note = withFixAllPartialNote("Fix all: 0 of 1 installed.", {
+    skipped: [
+      { name: "hostPrerequisites", reason: "cancelled", completed: ["cmake"] },
+    ],
+  });
+
+  assert.equal(
+    note,
+    "Fix all: 0 of 1 installed — cmake installed before stopping.",
+  );
+  // The exact regression measured: a customer reading ONLY this string (the
+  // status-bar case) must be told cmake is on the machine.
+  assert.match(note, /cmake installed before stopping/);
+});
+
+test("withFixAllPartialNote: multiple partially-completed rows are all named", () => {
+  const { withFixAllPartialNote } = load();
+
+  const note = withFixAllPartialNote("2 of 3 did not install.", {
+    skipped: [
+      { name: "a", reason: "cancelled", completed: ["cmake"] },
+      { name: "b", reason: "consent not given" },
+      { name: "c", reason: "cancelled", completed: ["git", "gperf"] },
+    ],
+  });
+
+  assert.equal(
+    note,
+    "2 of 3 did not install — cmake, git, gperf installed before stopping.",
+  );
+});
+
+test("withFixAllPartialNote: a FAILED row's own completed steps count too (#603 round 4, blocker 1)", () => {
+  // Measured repro: a 2-step `hostPrerequisites` row installs cmake, then
+  // fails on ninja. That row is in `failed`, never `skipped` — reading only
+  // `outcome.skipped[].completed` reported "1 of 1 did not install." for a
+  // machine that already has cmake on it, the same dishonesty this function
+  // exists to close on the cancelled/raced branch.
+  const { withFixAllPartialNote } = load();
+
+  const note = withFixAllPartialNote("1 of 1 did not install.", {
+    skipped: [],
+    failed: [
+      {
+        name: "hostPrerequisites",
+        code: 1,
+        completed: ["cmake"],
+        failedCommand: "brew install ninja",
+        notRun: [],
+      },
+    ],
+  });
+
+  assert.equal(
+    note,
+    "1 of 1 did not install — cmake installed before stopping.",
+  );
+});
+
+test("withFixAllPartialNote: a tool named by both a skipped AND a failed row is named once", () => {
+  const { withFixAllPartialNote } = load();
+
+  const note = withFixAllPartialNote("2 of 2 did not install.", {
+    skipped: [{ name: "a", reason: "cancelled", completed: ["cmake"] }],
+    failed: [
+      {
+        name: "b",
+        code: 1,
+        completed: ["cmake", "ninja"],
+        failedCommand: "brew install git",
+        notRun: [],
+      },
+    ],
+  });
+
+  assert.equal(
+    note,
+    "2 of 2 did not install — cmake, ninja installed before stopping.",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// `rowStepFailureNotice` — the single-row press's WHOLE notification
+// decision, pulled out of `deps/panel.ts` so it is tested with VALUES (#603
+// second review, blocker 2, and third review, major 3). It now returns the
+// FINISHED `NotificationPlan` — `severity`/`dedupeKey` are decided here, not
+// left for the caller to set (and possibly get wrong: mutating the wrapper's
+// `severity` to `"info"` and its `dedupeKey` to a shared constant left every
+// prior gate green, since neither field was pinned anywhere). `.message` IS
+// the rendered, post-`planFailure` text, so asserting on it already proves
+// it survived the leak filter — no second `planFailure` call needed here.
+//
+// The prior source-level regex on `reportRowStepFailure` matched
+// `describeFixAllFailure(` / `notifyAsync(` / `planFailure(` and the two
+// early-return guards verbatim — every one of those tokens SURVIVES mutating
+// `find((step) => step.code !== 0)` to `=== 0`, which turns a single-failed-
+// step row completely silent and a partially-failed row into "did not
+// succeed" for the command that actually succeeded. A value-based test over
+// the return of this function catches that directly.
+// ---------------------------------------------------------------------------
+
+const COMMANDS = [
+  { tool: "cmake", command: "brew install cmake" },
+  { tool: "ninja", command: "brew install ninja" },
+];
+const ROW_LABEL = "Bootstrap prerequisites";
+const ROW_NAME = "hostPrerequisites";
+
+test("rowStepFailureNotice: nothing ran at all -> null (the isRunActive refusal already said why)", () => {
+  const { rowStepFailureNotice } = load();
+  assert.equal(rowStepFailureNotice(ROW_LABEL, ROW_NAME, COMMANDS, []), null);
+});
+
+test("rowStepFailureNotice: every step ran and succeeded -> null (the reload notice already covers it)", () => {
+  const { rowStepFailureNotice } = load();
+  const steps = [
+    { tool: "cmake", command: "brew install cmake", code: 0 },
+    { tool: "ninja", command: "brew install ninja", code: 0 },
+  ];
+  assert.equal(
+    rowStepFailureNotice(ROW_LABEL, ROW_NAME, COMMANDS, steps),
+    null,
+  );
+});
+
+test("rowStepFailureNotice: the ONLY step fails -> a notice, not silence, and its .message survives planFailure's leak filter", () => {
+  // The exact defect blocker 2 named: under the `=== 0` mutation this comes
+  // back `null` because `find` returns the SUCCEEDED entries and there are
+  // none, so `failedStep` is `undefined` and the early return fires.
+  const { rowStepFailureNotice } = load();
+  const steps = [{ tool: "cmake", command: "brew install cmake", code: 1 }];
+  const notice = rowStepFailureNotice(
+    ROW_LABEL,
+    ROW_NAME,
+    [COMMANDS[0]],
+    steps,
+  );
+
+  assert.notEqual(notice, null);
+  // #603, third review, blocker 1: a `cause` matching `EXIT_CODE` gets
+  // demoted by `planFailure` into channel-only `detail`, and the customer's
+  // message becomes a bare "<operation> failed." — `.message` here is the
+  // RENDERED field, so this assertion already proves the sentence survived,
+  // not just that the raw string looked right.
+  //
+  // The TOOL, never the raw command (#603, round 5, majors 2 and 3): a
+  // customer-facing `cause` must not name what tan actually ran, only what
+  // failed — see `rowStepFailureNotice`'s own doc for why.
+  assert.match(notice.message, /cmake did not succeed \(code 1\)/);
+  assert.doesNotMatch(notice.message, /brew install/);
+  assert.notEqual(
+    notice.message,
+    "Installing Bootstrap prerequisites failed.",
+    'must not be demoted to "Installing Bootstrap prerequisites failed."',
+  );
+  assert.equal(notice.severity, "warning");
+  assert.equal(notice.dedupeKey, "deps-row-failed-hostPrerequisites");
+  // The DISPLAY name, not the internal check id (#603, third review, nit 12).
+  assert.match(notice.message, /^Bootstrap prerequisites:/);
+  assert.doesNotMatch(notice.message, /^hostPrerequisites:/);
+  // The verbatim command must still reach SOMEWHERE — `.detail`, the
+  // CHANNEL-ONLY field (#603, round 6, major 1): moving the command out of
+  // `cause` moved it out of every field this plan carries, and neither
+  // `runInTerminal` nor `runDependencyAction`'s non-zero-exit path logs it
+  // anywhere else, so "brew install cmake" would appear NOWHERE at all.
+  assert.equal(
+    notice.detail,
+    "hostPrerequisites: `brew install cmake` did not succeed (code 1); nothing after it ran",
+  );
+});
+
+test("rowStepFailureNotice: step 1 installs, step 2 fails — names both, never 'did not succeed' for the one that worked", () => {
+  const { rowStepFailureNotice } = load();
+  const steps = [
+    { tool: "cmake", command: "brew install cmake", code: 0 },
+    { tool: "ninja", command: "brew install ninja", code: 1 },
+  ];
+  const notice = rowStepFailureNotice(ROW_LABEL, ROW_NAME, COMMANDS, steps);
+
+  assert.notEqual(notice, null);
+  assert.match(notice.message, /installed cmake/);
+  // The TOOL, never the raw command (#603, round 5, majors 2 and 3).
+  assert.match(notice.message, /ninja did not succeed \(code 1\)/);
+  assert.doesNotMatch(notice.message, /brew install/);
+  // The defect's other half: under the `=== 0` mutation the succeeded
+  // command (cmake) is what `find` returns, so the wrong tool would be
+  // reported as the one that failed — cmake's own exit code is 0, and it
+  // must never be described as not succeeding.
+  assert.doesNotMatch(notice.message, /cmake did not succeed/);
+  // The raw command still reaches the channel-only `.detail` (#603, round 6,
+  // major 1) — including which tool already installed.
+  assert.equal(
+    notice.detail,
+    "hostPrerequisites: installed cmake; `brew install ninja` did not succeed (code 1); nothing after it ran",
+  );
+});
+
+test("rowStepFailureNotice: stopped short with nothing erroring -> a SKIP, worded as one, never as a failure (#603 second review, minor 9)", () => {
+  // Only 1 of 2 commands ran, and the one that ran succeeded — a run-name
+  // race mid-row (a single-row press has no cancel UI). Silence here left
+  // `offerReloadAfterInstall`'s generic prose as the only explanation, which
+  // blames "tan may have reported no install command for one of them" — the
+  // WRONG cause. This must be reported, and reported as a skip, not folded
+  // into `describeFixAllFailure`'s failure wording.
+  const { rowStepFailureNotice } = load();
+  const steps = [{ tool: "cmake", command: "brew install cmake", code: 0 }];
+  const notice = rowStepFailureNotice(ROW_LABEL, ROW_NAME, COMMANDS, steps);
+
+  assert.notEqual(notice, null);
+  assert.match(notice.message, /installed cmake/);
+  assert.match(notice.message, /ninja was not attempted/);
+  // Never the failure vocabulary — nothing here actually exited non-zero.
+  assert.doesNotMatch(notice.message, /exit/i);
+  assert.doesNotMatch(notice.message, /fail/i);
+  // #603, third review, nit 11: the remedy is to WAIT for the other install,
+  // not to retry immediately — an immediate retry is refused again.
+  assert.doesNotMatch(notice.message, /press Refresh, then try again/);
+  assert.match(notice.message, /wait for the other install to finish/);
+  assert.equal(notice.dedupeKey, "deps-row-skipped-hostPrerequisites");
+  // The DISPLAY name (#603, third review, nit 12).
+  assert.match(notice.message, /^Bootstrap prerequisites:/);
 });

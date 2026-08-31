@@ -5,6 +5,7 @@ import type { ConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel
 import type {
   DependencyAction,
   DependencyActionEffect,
+  DependencyCommandStep,
   DependencyReport,
   DependencyRow,
 } from "@alp-sdk/core/deps/planner";
@@ -33,6 +34,9 @@ export type {
   // The verb a row's button promises (`install` / `open-docs` / `bootstrap`),
   // read off the host's own fix dispatch. Mirrored in the webview types.
   DependencyActionEffect,
+  // One dispatch inside a `command` action's `commands[]` (#603). Mirrored in
+  // the webview types.
+  DependencyCommandStep,
   DependencyReport,
   DependencyRow,
   // Ready / Will install / Needs you — presentation over the (status, action)

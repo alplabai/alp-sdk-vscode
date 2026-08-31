@@ -31,12 +31,14 @@
 
 import {
   DependencyAction,
+  type DependencyCommandStep,
   DependencyLatest,
   DependencyReport,
   DependencyRow,
   DependencyStatus,
   DoctorCheckEnvelope,
   DoctorEnvelopeData,
+  type MissingPrerequisite,
   planDependencyReport,
   TAN_ROW_NAME,
 } from "@alp-sdk/core/deps/planner";
@@ -66,7 +68,8 @@ import {
   westWorkspaceTopdir,
 } from "../environment/vscodeAdapter";
 import { type AlpIdeState, BOOTSTRAP_RUN_NAME } from "../ideHub/messages";
-import { planFailure, planPrecondition } from "../notify/service";
+import type { NotificationPlan } from "../notify/models";
+import { planFailure, planPrecondition, planSuccess } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import {
   collectProjectContext,
@@ -704,6 +707,75 @@ export function scopeDriftLogLines(
   return lines;
 }
 
+/**
+ * The log line `buildDependencyReport` raises when
+ * `DependencyReport.orphanedPrerequisites` is non-empty (#603) — a
+ * prerequisite tan named a real command for that bound to no row at all,
+ * because the `hostPrerequisites` check that carries every leftover entry is
+ * not in this envelope (renamed, or removed). Names every tool AND its
+ * command, so the "Alp SDK" channel says exactly what silently stopped
+ * reaching a button, not just that something did.
+ *
+ * Empty when there is nothing to say. Returned rather than logged directly so
+ * the test can read it; the caller logs it. Pure — exported for the test.
+ */
+export function orphanedPrerequisiteLogLines(
+  orphaned: readonly MissingPrerequisite[],
+): readonly string[] {
+  if (orphaned.length === 0) return [];
+  return [
+    `[deps] tan reported ${orphaned.length} prerequisite(s) with a real ` +
+      "install command that bound to NO row in the dependency table " +
+      `(${orphaned.map((p) => `${p.tool}: ${p.command}`).join("; ")}) — the ` +
+      '"hostPrerequisites" check this extension expects to carry every ' +
+      "leftover prerequisite is not in this envelope. Filed as an issue " +
+      "against tan-cli if this appears on the pinned binary. See #603.",
+  ];
+}
+
+/**
+ * Tool names already reported as orphaned THIS extension-host process
+ * (#603, second review, minor 8; third review, major 5 + minor 7).
+ *
+ * PER-PROCESS, module-level state — survives dispose/re-open of the
+ * Dependencies panel, unlike `DependencyPanel`'s own `offeredBootstrap`
+ * (`deps/panel.ts`), which is an INSTANCE field reset every time the panel
+ * is re-created. The two are NOT the same lifetime, and an earlier version
+ * of this comment said they were; corrected here rather than repeated.
+ * `refresh()` re-derives on EVERY window focus
+ * (`src/extension.ts`'s `onDidChangeWindowState`), and a genuinely orphaned
+ * envelope stays orphaned across every one of those — an unthrottled
+ * warn-level 60-word paragraph on every alt-tab back into the editor trains
+ * a reader to skim past the "Alp SDK" channel, which loses the invariant as
+ * surely as no line at all would.
+ *
+ * KEYED BY TOOL+COMMAND (`orphanKey`), not a single process-wide flag: a bare
+ * boolean silences every orphan AFTER the first, forever, which is the exact
+ * failure the field this latch guards exists to catch — a SECOND, unrelated
+ * `hostPrerequisites` rename (or a different tool going orphaned) would
+ * never log at all once one orphan had already been reported once. Adding a
+ * key here is permanent for the process (matching `offeredBootstrap`'s own
+ * "ask at most once" intent). Two cases stay OUT of scope on purpose, and
+ * only one of them is this repo's own decision:
+ *
+ *  - the SAME tool with the SAME command resolving and re-breaking does not
+ *    re-arm, per the reviewer's own fix instruction;
+ *  - the SAME tool reported again with a DIFFERENT command DOES re-arm
+ *    (#603, round 5, nit 11) — the command is part of the key, because a
+ *    changed command is new information about what would run if the
+ *    (nonexistent) button were pressed, not a repeat of the same fact a
+ *    tool-only key would have swallowed.
+ */
+const orphanedPrerequisitesReported = new Set<string>();
+
+/** The latch's own key — see `orphanedPrerequisitesReported`'s doc for why
+ *  both fields, not `tool` alone. `JSON.stringify` over a plain template
+ *  string: a tool or command containing a separator character must not
+ *  collide with a different (tool, command) pair. */
+function orphanKey(p: MissingPrerequisite): string {
+  return JSON.stringify([p.tool, p.command]);
+}
+
 // The shared `runDoctor` spawn (`../alpCli/doctor`, #376) takes `interactive`
 // as its last argument:
 //
@@ -820,6 +892,46 @@ export async function buildDependencyReport(
     // The repo's ONE SemVer comparator. Core must not grow a second.
     compareVersions: cliSkew,
   });
+  // #603: the orphan invariant is only real if a rename is ever SEEN. Without
+  // this line `orphanedPrerequisites` is written and read by nothing outside
+  // the type itself — the next `hostPrerequisites` rename would be exactly as
+  // silent to a customer as the bug this report exists to catch.
+  //
+  // Keyed by TOOL+COMMAND (#603, third review, major 5; round 5, nit 11
+  // widens the key), not tool alone: logging only the pairs not already in
+  // `orphanedPrerequisitesReported` means a SECOND, different orphan arriving
+  // after the first is still reported — a bare "logged once" flag would
+  // silence every orphan after the first for the rest of the process, which
+  // is the exact failure this field exists to catch. The COMMAND is part of
+  // the key for the same reason: a tool key alone latches on `cmake` once and
+  // then stays silent forever, even if tan starts reporting a DIFFERENT
+  // command for the same still-orphaned tool (measured: `cmake=brew install
+  // cmake` latches it, then `cmake=sudo /opt/attacker/brew install cmake`
+  // logs nothing) — a changed command is new information about what would
+  // run, not a repeat of the same fact. `orphanKey`'s own doc draws the line
+  // between this case and the RE-ARM case (a tool resolving and re-breaking
+  // with the SAME command), which stays out of scope on purpose.
+  const newOrphans = planned.orphanedPrerequisites.filter(
+    (p) => !orphanedPrerequisitesReported.has(orphanKey(p)),
+  );
+  if (newOrphans.length > 0) {
+    for (const p of newOrphans) orphanedPrerequisitesReported.add(orphanKey(p));
+    // The FULL current set, not just `newOrphans` (#603, round 4, minor 8):
+    // `orphanedPrerequisiteLogLines`'s own sentence says "tan reported N
+    // prerequisite(s)", counting and naming every one of ITS argument — pass
+    // it only the newly-seen subset and a tool still orphaned from an
+    // earlier refresh (never re-added to `newOrphans` by the filter above)
+    // silently drops out of both the count and the parenthetical, even
+    // though tan is still reporting it right now. `newOrphans` decides only
+    // WHETHER to log at all (so a second, unrelated orphan still fires —
+    // major 5's own fix, unchanged); the line itself names everything tan
+    // currently reports.
+    for (const line of orphanedPrerequisiteLogLines(
+      planned.orphanedPrerequisites,
+    )) {
+      log(line, "warn");
+    }
+  }
 
   return {
     report: {
@@ -894,43 +1006,113 @@ export async function withLatestSdk(
  */
 const ZEPHYR_SDK_CHECK_NAME = "zephyrSdk";
 
+/** One `command` action step's dispatch result. `code: undefined` means the
+ *  task never started or its exit code could not be read — never a success. */
+export interface CommandStepOutcome {
+  tool: string;
+  command: string;
+  code: number | undefined;
+}
+
 /**
  * Run one row's action. The caller resolved it by ROW ID against the report it
- * last posted, so neither the command string, the fix id, nor `rowName` is
- * ever taken from the webview — they all came out of tan's own envelope.
+ * last posted, so neither a command string, the fix id, nor `rowName` is ever
+ * taken from the webview — they all came out of tan's own envelope.
  *
- * An options object, not four positional parameters: `rowName` and `cwd` are
- * both plain strings, so swapping them at a call site type-checks silently —
- * a shape only a test that actually asserts on `cwd` would catch, and the
+ * An options object, not positional parameters: `rowName` and `cwd` are both
+ * plain strings, so swapping them at a call site type-checks silently — a
+ * shape only a test that actually asserts on `cwd` would catch, and the
  * winget test that predates this signature did not.
  *
  * `sevenZipStatus` is tan's own `sevenZip` check row's status (undefined when
  * that envelope carried no such row) — read only by the `zephyrSdk` branch's
  * post-install notice, and never re-probed here: tan owns that fact.
+ *
+ * Returns the per-step outcomes for a `command` row, or `undefined` for
+ * `fix`/`zephyrSdk` rows — those are always a single fire-and-forget terminal
+ * launch with no sequence to report on.
+ *
+ * THE HARD CONTRACT (#603): for a `command` row, THIS is the one place that
+ * owns `awaitRun(INSTALL_RUN_NAME)`. `runFixAll` calls this function directly
+ * and awaits its promise rather than keeping a second `awaitRun` of its own —
+ * two owners would let step 1's finish be read as the WHOLE row's finish,
+ * advancing to the next row (or the next STEP) while an earlier one is still
+ * running, or dropping steps 2..N outright, since `runInTerminal` refuses a
+ * same-named run that is still active. That is exactly how the reverted #600
+ * attempt would have failed even after fixing its `&&` join.
  */
-export function runDependencyAction(options: {
+export async function runDependencyAction(options: {
   action: DependencyAction;
   rowName: string;
   cwd: string | undefined;
   sevenZipStatus: DependencyStatus | undefined;
-}): void {
-  const { action, rowName, cwd, sevenZipStatus } = options;
+  /** Checked BETWEEN steps, never mid-step — `runFixAll`'s own cancellation
+   *  token, so Fix-all's Cancel stops a multi-step row the same way it stops
+   *  the row-to-row loop: no FURTHER step, never one already in flight
+   *  (#146). `undefined` for every other caller — a single row's own button
+   *  has no cancel UI. */
+  token?: vscode.CancellationToken;
+}): Promise<CommandStepOutcome[] | undefined> {
+  const { action, rowName, cwd, sevenZipStatus, token } = options;
   if (action.kind === "fix") {
     runToolchainFix(action.fixId);
-    return;
+    return undefined;
   }
   if (rowName === ZEPHYR_SDK_CHECK_NAME) {
-    runZephyrSdkInstall(action.command, sevenZipStatus);
-    return;
+    // Always exactly one step: only a per-tool MATCH can bind an action to
+    // this row (`planDependencyReport`'s pass 1) — the rollup pass never
+    // claims a check that already has its own dedicated row.
+    runZephyrSdkInstall(action.commands[0].command, sevenZipStatus);
+    return undefined;
   }
-  // tan's `missingPrerequisites[].command` is a shell command LINE (`sudo
-  // apt-get install -y ninja-build`). This used to be a bare terminal because
-  // `runInTerminal` only spoke argv, and splitting the line on whitespace to
-  // fit that mangles any quoted argument. `runInTerminal` now takes a
-  // `command` too (a ShellExecution — see `RunExecutionSpec`), so the line
-  // still reaches a shell verbatim AND the run gets an exit code and a
-  // reservation, which is what a sequential "Fix all" waits on (#466 §2).
-  runInNewTerminal(action.command, cwd);
+
+  // The plain `command` path: one dispatch per step, in order, waiting for
+  // each to finish before the next is even attempted. NEVER joined with `&&`
+  // (breaks Windows PowerShell 5.1 — #600) or `;` (runs a later step after an
+  // earlier one failed and collapses two exit codes into one).
+  const outcomes: CommandStepOutcome[] = [];
+  let dispatchedAny = false;
+  for (const step of action.commands) {
+    if (token?.isCancellationRequested) break;
+    if (isRunActive(INSTALL_RUN_NAME)) {
+      // A collision with an already-running install under this same name —
+      // either a second press on THIS (or another) row while one is still
+      // going, or a race for the slot AFTER this row's own earlier step
+      // finished. `runInTerminal` itself is what refuses and tells the
+      // customer why (the same "is still running — wait for it to finish"
+      // warning + Show Terminal offer it has always shown), so it is called
+      // here too rather than silently breaking — a silent stop is worse than
+      // the bug this replaces (a customer who answers the consent screen and
+      // gets no feedback at all). Not awaited: a refused dispatch reserves
+      // nothing and fires nothing (see `awaitRun`'s own doc), so subscribing
+      // here would hang the whole row forever.
+      runInTerminal({ name: INSTALL_RUN_NAME, command: step.command, cwd });
+      log(
+        `[deps] "${INSTALL_RUN_NAME}" is already running — "${step.command}" was not dispatched`,
+        "warn",
+      );
+      break;
+    }
+    // Subscribed BEFORE the dispatch — see `awaitRun`'s own doc: a fast
+    // install can finish before a promise created afterwards ever attaches.
+    const finished = awaitRun(INSTALL_RUN_NAME);
+    // tan's own command line, run VERBATIM in its own terminal dispatch.
+    runInTerminal({ name: INSTALL_RUN_NAME, command: step.command, cwd });
+    // Raised once, after the FIRST step actually dispatches — never before a
+    // press that turned out to dispatch nothing (the `isRunActive` refusal
+    // above). Raising it unconditionally up front meant a refused press
+    // still fired this notice, whose `dedupeKey` then suppressed the
+    // ALREADY-showing notice from the press that is actually running,
+    // leaving the customer with neither.
+    if (!dispatchedAny) {
+      dispatchedAny = true;
+      offerReloadAfterInstall();
+    }
+    const code = await finished;
+    outcomes.push({ tool: step.tool, command: step.command, code });
+    if (code !== 0) break;
+  }
+  return outcomes;
 }
 
 /** The run name every plain dependency install claims — see
@@ -969,11 +1151,484 @@ export function fixAllTargets(report: DependencyReport): DependencyRow[] {
 /** What a "Fix all" run did, so the caller can say it rather than guess. */
 export interface FixAllOutcome {
   installed: string[];
-  /** Rows whose run exited non-zero, each with the code. */
-  failed: { name: string; code: number | undefined }[];
+  /**
+   * Rows whose run exited non-zero, each with the code.
+   *
+   * `completed` / `failedCommand` / `notRun` are the multi-step half (#603): a
+   * `command` row that installs cmake then fails on ninja already changed the
+   * machine, and a bare `{name, code}` implies otherwise. Empty / `undefined`
+   * for a `fix`/`bootstrap` row, which is always a single dispatch with no
+   * sub-steps to enumerate — `describeFixAllFailure` reads exactly that to
+   * keep those rows worded the way they always were.
+   */
+  failed: {
+    name: string;
+    code: number | undefined;
+    /** Tool names from THIS row whose step already succeeded. */
+    completed: string[];
+    /** The exact command that failed, verbatim — `undefined` for a
+     *  `fix`/`bootstrap` row, which has no command string to show. */
+    failedCommand: string | undefined;
+    /** Tool names from this row whose step never ran because an earlier one
+     *  in the SAME row failed first. */
+    notRun: string[];
+  }[];
   /** Rows never started, because the user cancelled or a run was already
    *  holding the slot. Reported, never silently dropped. */
-  skipped: { name: string; reason: string }[];
+  skipped: {
+    name: string;
+    reason: string;
+    /**
+     * Tool names from THIS row that already installed before the row was cut
+     * short (cancelled between steps, or a run-name race after step 1) —
+     * `undefined`/empty for every skip that never started at all (declined
+     * consent, unchecked, `"<name>" is already running`, cancelled before
+     * this row's own turn). The SAME honesty `failed.completed` exists for:
+     * a 2-step row that installs cmake and is then cancelled before ninja is
+     * NOT "0 installed" — cmake is on the machine — and `skipped` must not
+     * say otherwise just because the row's own outcome landed here instead
+     * of in `failed` (#603).
+     */
+    completed?: string[];
+  }[];
+}
+
+/**
+ * One `skipped` entry, worded for the summary toast (`deps/panel.ts`) —
+ * `describeFixAllFailure`'s sibling. A skip with no `completed` keeps the
+ * ORIGINAL `"<name>: <reason>"` wording, unchanged.
+ */
+export function describeFixAllSkip(
+  entry: FixAllOutcome["skipped"][number],
+): string {
+  if (!entry.completed || entry.completed.length === 0) {
+    return `${entry.name}: ${entry.reason}`;
+  }
+  return `${entry.name}: ${entry.reason} (installed ${entry.completed.join(", ")} first)`;
+}
+
+/**
+ * Appends what a cancelled/raced-away OR failed row already installed to a
+ * Fix-all summary sentence — the CUSTOMER-VISIBLE half, not `detail`.
+ *
+ * `planSuccess`'s status-bar channel (no `actions`, the plain case here)
+ * shows ONLY its `message` string; `detail` is written to the "Alp SDK"
+ * channel and never reaches the customer at all (`src/notify/vscodeAdapter.ts`
+ * — "the ONLY place `detail` is ever written"). A 2-step row that installs
+ * cmake and is then cancelled before ninja is never in `outcome.installed`
+ * (the ROW did not finish), but `outcome.skipped[].completed` says cmake IS
+ * on the machine — and that fact belongs in `base` (destined for `message` /
+ * `cause`), not folded into `parts.join(" · ")` (destined for `detail`),
+ * or it never reaches the customer who just watched the consent screen and
+ * pressed the button (#603).
+ *
+ * `outcome.failed[].completed` is read too (#603, round 4, blocker 1): a
+ * 2-step `hostPrerequisites` row that installs cmake and then FAILS on ninja
+ * never appears in `skipped` at all — the row is in `failed` — and reading
+ * only `skipped` left that exact case reporting "1 of 1 did not install." for
+ * a machine that already has cmake on it, the same dishonesty this function
+ * exists to close on the cancelled/raced branch.
+ *
+ * De-duplicated: a tool named by two different rows (or, in principle, by
+ * both a `failed` and a `skipped` entry in the same run) must appear once,
+ * not once per row that names it.
+ *
+ * `base` unchanged when nothing completed outside `outcome.installed` — the
+ * ordinary case, where the existing sentence already says everything.
+ */
+export function withFixAllPartialNote(
+  base: string,
+  outcome: Pick<FixAllOutcome, "skipped" | "failed">,
+): string {
+  const partial = [
+    ...outcome.skipped.flatMap((entry) => entry.completed ?? []),
+    ...(outcome.failed ?? []).flatMap((entry) => entry.completed),
+  ];
+  const unique = [...new Set(partial)];
+  if (unique.length === 0) return base;
+  // An em dash joining ONE sentence, not a period starting a new one (#603,
+  // round 5, minor 7): "1 of 1 did not install." followed by "cmake
+  // installed before stopping." reads as two flatly contradictory claims —
+  // verified through the real presenter as a `showWarningMessage` — even
+  // though both are true at once. The count is ROW-scoped (a
+  // `hostPrerequisites` row bundling cmake+ninja is ONE unit that did not
+  // finish); this clause is STEP-scoped (cmake, one command inside that row,
+  // really is on the machine). Two full stops hide that relationship; a dash
+  // keeps it one continuous, non-contradictory thought.
+  const lead = base.endsWith(".") ? base.slice(0, -1) : base;
+  return `${lead} — ${unique.join(", ")} installed before stopping.`;
+}
+
+/**
+ * The shared "X did not succeed (code N); nothing after it ran" shape both
+ * `describeFixAllFailure` (CHANNEL-ONLY: names the raw command, verbatim)
+ * and `rowStepFailureNotice`'s failure branch (CUSTOMER-FACING: names only
+ * the TOOL) build from.
+ *
+ * `whatFailed` is supplied by the CALLER, never derived here, because only
+ * the caller knows which is safe for where the resulting string is going
+ * (#603, round 5, majors 2 and 3). A single shared function that embedded
+ * the raw command directly is what mixed those two needs into one value
+ * that could not be made safe for a customer sentence without EDITING that
+ * command — and an editor can fabricate one that was never run (`[A-Za-z]:
+ * [\\/]` matches the `s:/` inside `https://`, turning `curl -fsSL
+ * https://apt.llvm.org/llvm.sh | sudo bash` into `curl -fsSL httpllvm.sh |
+ * sudo bash` — a command that does not exist, presented as truth, because
+ * having no path left it undemoted by `ABSOLUTE_PATH` too). This function
+ * takes no position on redaction at all: it only assembles parts, and the
+ * caller decides what `whatFailed` may say.
+ */
+function failureSequenceParts(
+  completed: readonly string[],
+  whatFailed: string,
+  code: number | undefined,
+  notRun: readonly string[],
+): string {
+  const parts: string[] = [];
+  if (completed.length > 0) {
+    parts.push(`installed ${completed.join(", ")}`);
+  }
+  parts.push(`${whatFailed} did not succeed (code ${code ?? "unknown"})`);
+  parts.push(
+    notRun.length > 0
+      ? `nothing after it ran (${notRun.join(", ")} skipped)`
+      : "nothing after it ran",
+  );
+  return parts.join("; ");
+}
+
+/**
+ * One `failed` entry, worded for the Fix-all summary — CHANNEL-ONLY text
+ * (`fixAllSummaryNotice`'s `detail`, the `[fix-all]` log line, and the "Alp
+ * SDK" output channel a support engineer reads). Names the command tan
+ * actually ran, VERBATIM (#603, round 5, majors 2 and 3): this is the sole
+ * consumer of `FixAllOutcome.failedCommand`, whose own doc says "The exact
+ * command that failed, verbatim" — a prior round ran it through a path
+ * redactor before this string, which not only fabricated commands that were
+ * never run (see `failureSequenceParts`'s own doc) but also meant NOTHING,
+ * anywhere, recorded what actually happened on the machine. This function's
+ * output must never be assigned to a customer-facing `cause` directly for
+ * exactly that reason — `rowStepFailureNotice`'s failure branch builds its
+ * own sentence instead, naming the tool rather than reusing this one.
+ *
+ * NEVER THE WORD "exit"/"exited" (#603, third review, blocker 1). This
+ * string still reaches `fixAllSummaryNotice`'s `detail`, which is
+ * channel-only and therefore never run through `planFailure`'s `looksRaw` —
+ * but `rowStepFailureNotice`'s own `cause` construction below shares this
+ * function's WORDING, and that one does, so both stay demotion-safe.
+ */
+export function describeFixAllFailure(
+  entry: FixAllOutcome["failed"][number],
+): string {
+  if (entry.failedCommand === undefined) {
+    return `${entry.name} did not succeed (code ${entry.code ?? "unknown"})`;
+  }
+  return `${entry.name}: ${failureSequenceParts(
+    entry.completed,
+    `\`${entry.failedCommand}\``,
+    entry.code,
+    entry.notRun,
+  )}`;
+}
+
+/**
+ * Build the WHOLE Fix-all notice from a real `FixAllOutcome` — the FINISHED
+ * `NotificationPlan`, ready for `notifyAsync`, exactly the pattern
+ * `rowStepFailureNotice` already established for the single-row button
+ * (#603, round 4, blockers 2 and 3): `deps/panel.ts`'s `runFixAll` method
+ * used to make this decision inline — `summary.kind === "success" ?
+ * planSuccess(...) : planFailure(...)` — behind nothing but a source-level
+ * regex on the call site. That regex (and every regex after it: a check for
+ * `withFixAllPartialNote(`, a check for `summary.kind === "success"`) proved
+ * the CALL was typed, never that the VALUE flowing through it was real, or
+ * that the ternary itself still routed correctly — mutating the call to pass
+ * a literal `{ skipped: [] }`, or widening the ternary to also take
+ * `"partial"` down the `planSuccess` branch, or hand-setting `severity` /
+ * `dedupeKey` beside it, each left every existing gate green in turn. There
+ * is no longer a ternary, a `severity`, or a `dedupeKey` for `panel.ts` to
+ * get wrong: this function returns the plan whole, and the caller's only job
+ * is to hand it to `notifyAsync` and log `.detail`.
+ *
+ * PURE and exported so a test can drive a REAL outcome (from the real
+ * `runFixAll` dispatch loop) through this function and assert on the
+ * `NotificationPlan` VALUES it returns — `channel`, `severity`, `message`,
+ * `dedupeKey` — rather than on a substring of a caller that no longer has
+ * any of those to compute.
+ *
+ * `kind` (success / partial / failure) is `planSuccess`-vs-`planFailure`,
+ * decided ONCE here rather than left for a caller to re-derive:
+ * `outcome.failed.length === 0` is NOT the same fact as "clean success" once
+ * a skip can carry `completed` — a row cancelled or raced away mid-sequence
+ * with a step already on the machine is a HALF-modified machine, and
+ * `planSuccess`'s status-bar-with-no-`actions` channel is a 5-second,
+ * auto-dismissing, button-less line with no "Show Output" backstop, the
+ * wrong channel for a fact the customer needs to still be readable a minute
+ * later (#603, third review, major 6) — so that case is `planFailure` at
+ * `severity: "warning"` too, same as an outright failure.
+ *
+ * `hasPartialCompletion` was the ONLY thing separating that from a clean
+ * success, and it read `outcome.skipped[].completed` and nothing else (#603,
+ * round 5, blocker 1) — so three rows refused because another install was
+ * already running (`isRunActive` true for the whole run: nothing installed,
+ * every reason landed in `skipped` with no `completed`) rendered
+ * `setStatusBarMessage("Fix all: 0 of 3 installed.", 5000)`: info severity,
+ * no button, gone in five seconds, with the actual reasons sitting in
+ * `detail` — a field `finalize` never backstops with `showOutput` on a
+ * `statusBar` plan, because a clean success is not supposed to need one. Two
+ * more conditions now force `planFailure` too:
+ *
+ *  - `outcome.installed.length === 0 && outcome.skipped.length === 0 &&
+ *    targetCount > 0` — a genuinely UNACCOUNTED-FOR run: `targetCount` rows
+ *    were targeted, `outcome.failed` is already known empty (the branch
+ *    above returned first), and NEITHER `installed` NOR `skipped` names a
+ *    single one of them, which `runFixAll`'s own loop should make
+ *    unreachable — every target it visits lands in exactly one of the three
+ *    arrays. `skipped.length === 0` is required (#603, round 6, major 3),
+ *    not just `installed.length === 0`: WITHOUT it this disjunct also fired
+ *    on an ORDINARY decline (`consented === null` pushes every target into
+ *    `skipped` with `"consent not given"`, `installed` stays empty) and on
+ *    an early cancel (same shape, `"cancelled"`) — both already IN
+ *    `CUSTOMER_ANSWER_SKIP_REASONS` below, which exists precisely so those
+ *    reasons stay quiet. `||` let this disjunct override that allowlist on
+ *    the customer's own "no", turning "Fix all: 0 of 2 installed." into a
+ *    persistent warning toast for a machine nothing happened to, and (worse)
+ *    made an early cancel (0 of 3, nothing touched) read MORE alarming than
+ *    a cancel after row 1 succeeded (1 of 3, the machine actually changed),
+ *    which stayed a quiet status bar. Gated on `skipped.length === 0`, it
+ *    now fires only when there is no recorded reason for ANY of the missing
+ *    rows at all — the allowlist has nothing to say because nothing was
+ *    said, not because it said something and was overruled;
+ *  - any `skipped[].reason` NOT in `CUSTOMER_ANSWER_SKIP_REASONS` — an
+ *    ALLOWLIST, not a denylist, so a reason this file adds tomorrow starts
+ *    OUT of it and defaults to "say something", the same closed-class
+ *    discipline `withFixAllPartialNote`'s de-dup and
+ *    `orphanedPrerequisiteLogLines`'s full-set logging already apply
+ *    elsewhere in this file. `"already running"`, `"no command to run"` (the
+ *    planner's own invariant breaking) and `"nothing to wait for"` (the state
+ *    mapping and the dispatch disagreeing) are environmental refusals or bugs,
+ *    never the customer's own answer, and must not read as a quiet success
+ *    just because they landed in `skipped` rather than `failed` — even when
+ *    ANOTHER row in the same run did install something.
+ *
+ * A LESSON kept here rather than only in a commit message (#603, round 6,
+ * major 2): adding a disjunct to an `||` can silently disarm the gate on a
+ * disjunct that was already there, if the two conditions overlap on the same
+ * fixture. `outcome.installed.length === 0 && targetCount > 0` above was
+ * ALSO true for every existing `hasPartialCompletion` test at the moment it
+ * was added — every one of them happened to fixture `installed: []` — so
+ * disabling `hasPartialCompletion` entirely (mutating its `> 0` to `>
+ * 9999`) still left the whole suite green; the newer disjunct was quietly
+ * doing the older one's job. Any test asserting one disjunct of a routing
+ * `||` must make the OTHER disjuncts structurally false on its own fixture
+ * (here: give it something in `installed`, or an allowlisted reason), not
+ * merely happen not to need them.
+ */
+const CUSTOMER_ANSWER_SKIP_REASONS: ReadonlySet<string> = new Set([
+  "consent not given",
+  "left unchecked on the consent screen",
+  "cancelled",
+]);
+
+export function fixAllSummaryNotice(
+  outcome: FixAllOutcome,
+  targetCount: number,
+): NotificationPlan {
+  const parts = [`${outcome.installed.length} installed`];
+  if (outcome.failed.length > 0) {
+    parts.push(
+      `${outcome.failed.length} failed (${outcome.failed
+        .map((entry) => describeFixAllFailure(entry))
+        .join(", ")})`,
+    );
+  }
+  if (outcome.skipped.length > 0) {
+    // Named, never a bare count: "3 skipped" with no reason is the silent
+    // truncation this whole panel exists to avoid.
+    parts.push(
+      `${outcome.skipped.length} not run (${outcome.skipped
+        .map((entry) => describeFixAllSkip(entry))
+        .join("; ")})`,
+    );
+  }
+  const detail = parts.join(" · ");
+
+  if (outcome.failed.length > 0) {
+    // The rows that did NOT install — every failed row AND every row skipped
+    // because of it (or for any other reason). `outcome.failed.length` alone
+    // undercounts an ordinary multi-row abort: row 1 fails, and everything
+    // after it lands in `skipped` (`"stopped after <row> failed"`), which
+    // still did not install (#603, round 4, major 5). Every target lands in
+    // exactly one of `installed` / `failed` / `skipped`, so `targetCount -
+    // installed.length` is exactly that count without re-summing the other
+    // two arrays.
+    const notInstalled = targetCount - outcome.installed.length;
+    return planFailure({
+      operation: "Fix all",
+      cause: withFixAllPartialNote(
+        `${notInstalled} of ${targetCount} did not install.`,
+        outcome,
+      ),
+      detail,
+      severity: "warning",
+      dedupeKey: "deps-fix-all",
+    });
+  }
+
+  const message = withFixAllPartialNote(
+    `Fix all: ${outcome.installed.length} of ${targetCount} installed.`,
+    outcome,
+  );
+  // See this function's own doc (#603, round 5, blocker 1; round 6, majors 2
+  // and 3) for why each of these three, INDEPENDENTLY, rules out a clean
+  // success — and for why that independence is itself the thing to keep
+  // gated, not just the routing decision each one contributes to.
+  const hasPartialCompletion = outcome.skipped.some(
+    (entry) => (entry.completed?.length ?? 0) > 0,
+  );
+  const nothingAccountedFor =
+    outcome.installed.length === 0 &&
+    outcome.skipped.length === 0 &&
+    targetCount > 0;
+  const hasUnexplainedSkip = outcome.skipped.some(
+    (entry) => !CUSTOMER_ANSWER_SKIP_REASONS.has(entry.reason),
+  );
+  if (hasPartialCompletion || nothingAccountedFor || hasUnexplainedSkip) {
+    return planFailure({
+      operation: "Fix all",
+      cause: message,
+      detail,
+      severity: "warning",
+      dedupeKey: "deps-fix-all",
+    });
+  }
+  return planSuccess(message, { detail });
+}
+
+/**
+ * What a single row's OWN multi-step dispatch means for the customer, or
+ * `null` when there is nothing NEW to say — every step ran and succeeded (the
+ * generic "press Refresh" reload notice already covers it), or nothing ran at
+ * all (the per-step `isRunActive` refusal already showed its own warning).
+ *
+ * The "stopped short with nothing erroring" case (a single-row press has no
+ * cancel UI, so this is a run-name race mid-row) is NOT silent (#603, second
+ * review, minor 9): `offerReloadAfterInstall`'s generic reload prose blames
+ * "tan may have reported no install command for one of them", which is
+ * simply the wrong cause here — nothing about a missing command caused this,
+ * a later step was refused. Worded as a SKIP (`severity: "warning"`, but the
+ * sentence itself never uses "exited" or "failed"), not folded into the
+ * `describeFixAllFailure` failure wording, which is reserved for a step that
+ * actually returned a non-zero code.
+ *
+ * PURE, and exported specifically so the WORDING DECISION can be tested with
+ * VALUES rather than only through a source-level regex on the caller
+ * (`deps/panel.ts`'s `reportRowStepFailure`) — a regex that matches
+ * `describeFixAllFailure(`/`notifyAsync(`/`planFailure(` verbatim survives a
+ * same-shape mutation of the `find` predicate untouched (#603, second
+ * review, blocker 2): `find((step) => step.code !== 0)` mutated to
+ * `=== 0` still contains every one of those tokens, so nothing textual
+ * catches it, while a value-based test over THIS function's return catches it
+ * directly.
+ *
+ * Returns the WHOLE `NotificationPlan` — `planFailure` is called IN HERE,
+ * not by the caller — so `severity` and `dedupeKey` are decided in the one
+ * place this file already value-tests, rather than left for
+ * `deps/panel.ts`'s wrapper to set (and possibly get wrong: #603, third
+ * review, major 3 measured that mutating the wrapper's `severity` to
+ * `"info"` and its `dedupeKey` to a shared constant left every existing gate
+ * green, since neither field was pinned anywhere).
+ *
+ * The failure branch builds its OWN sentence — it does NOT call
+ * `describeFixAllFailure` for `cause` (#603, round 5, majors 2 and 3 correct
+ * round 4's "reuses its WORDING" design here): that function names the raw
+ * command, verbatim, which is exactly right for the CHANNEL-ONLY text it is
+ * for (`fixAllSummaryNotice`'s `detail`) and exactly wrong for a
+ * customer-facing `cause` — a command tan qualifies with an absolute path
+ * (`sudo /opt/homebrew/bin/brew install ninja`) is unredacted here (good:
+ * nothing fabricates it) but also undemoted by `planFailure`'s
+ * `ABSOLUTE_PATH` filter, so it would reach the toast whole. This branch
+ * names the TOOL instead (`failedStep.tool`), which is never path-shaped and
+ * carries everything a customer needs — that function no longer says
+ * "exit"/"exited" either (#603, third review, blocker 1), so this `cause`
+ * still cannot trip `planFailure`'s `EXIT_CODE` trigger. Before that fix the
+ * SKIP branch above (never "exited"/"failed") reached the toast in full
+ * while the FAILURE branch below did not — the more severe outcome carried
+ * strictly less information, backwards from what either branch intends.
+ *
+ * `describeFixAllFailure` IS called for `detail` (#603, round 6, major 1):
+ * moving the raw command out of `cause` moved it out of EVERY field this
+ * plan carries, not just the customer-facing one — `notifyAsync`'s presenter
+ * writes `detail` to the "Alp SDK" channel and nowhere else, and with no
+ * `detail` here that channel held nothing at all for a single-row press,
+ * while `runInTerminal` never logs the command it dispatches and
+ * `runDependencyAction`'s only `log` of `step.command` is the
+ * NOT-dispatched refusal path. Measured before this fix: a real failing row
+ * produced one toast and zero channel lines, so "brew install" appeared
+ * NOWHERE in anything the customer or a support engineer could read — the
+ * exact loss `describeFixAllFailure`'s own doc says restoring `detail`
+ * exists to prevent, moved from Fix-all onto the row button.
+ */
+export function rowStepFailureNotice(
+  rowLabel: string,
+  rowName: string,
+  commands: readonly DependencyCommandStep[],
+  steps: readonly CommandStepOutcome[],
+): NotificationPlan | null {
+  if (steps.length === 0) return null;
+  if (
+    steps.length === commands.length &&
+    steps.every((step) => step.code === 0)
+  ) {
+    return null;
+  }
+  const failedStep = steps.find((step) => step.code !== 0);
+  if (!failedStep) {
+    // Stopped short, but nothing returned a non-zero code — a run-name race
+    // mid-row, not a failed command. Say what completed and what never ran,
+    // never "exited"/"failed". "wait for it to finish" (#603, third review,
+    // nit 11), not "try again": the cause named IS another install already
+    // holding the run name, and retrying immediately is refused again.
+    const completed = steps.map((step) => step.tool);
+    const notRun = commands.slice(steps.length).map((step) => step.tool);
+    return planFailure({
+      operation: `Installing ${rowLabel}`,
+      cause:
+        `${rowLabel}: installed ${completed.join(", ")}; ` +
+        `${notRun.join(", ")} was not attempted — wait for the other ` +
+        "install to finish, then try again",
+      severity: "warning",
+      dedupeKey: `deps-row-skipped-${rowName}`,
+    });
+  }
+  const completed = steps
+    .filter((step) => step.code === 0)
+    .map((step) => step.tool);
+  const notRun = commands.slice(steps.length).map((step) => step.tool);
+  return planFailure({
+    operation: `Installing ${rowLabel}`,
+    // The TOOL (`failedStep.tool`), never `failedStep.command` — see this
+    // function's own doc for why a customer sentence may not name the raw
+    // command tan sends to the terminal.
+    cause: `${rowLabel}: ${failureSequenceParts(
+      completed,
+      failedStep.tool,
+      failedStep.code,
+      notRun,
+    )}`,
+    // The verbatim command — `rowName` (tan's internal id), not `rowLabel`,
+    // matching the channel-only convention `fixAllSummaryNotice`'s own
+    // `detail` already uses (#603, round 6, major 1 — see this function's
+    // own doc for why `cause` above may not carry this).
+    detail: describeFixAllFailure({
+      name: rowName,
+      code: failedStep.code,
+      completed,
+      failedCommand: failedStep.command,
+      notRun,
+    }),
+    severity: "warning",
+    dedupeKey: `deps-row-failed-${rowName}`,
+  });
 }
 
 /**
@@ -991,7 +1646,11 @@ interface ConsentPick extends vscode.QuickPickItem {
 /** What a cell says when no producer reports it (alp-sdk#1574). */
 const NOT_REPORTED = "not reported";
 
-/** One consent line: artifact on the label, the four ADR 0021 §3 facts under it. */
+/** One consent line: artifact on the label, ADR 0021 §3's four facts under it,
+ *  plus — for a partial `command` row only — a fifth clause naming what tan
+ *  named no install command for (#603, second review, nit 10: this line
+ *  drifted stale once `minor 7` added that fifth clause; the inline comment
+ *  on `detail` below is the one that stays current). */
 function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
   return {
     name: item.name,
@@ -1002,10 +1661,27 @@ function consentPick(item: ConsentItem, row: DependencyRow): ConsentPick {
     // describing it. Derived from the command text tan emitted, never from the
     // tool's name — see `@alp-sdk/core/deps/consent`.
     description: item.needsElevation ? "requires elevation" : "",
+    // Every line, verbatim, in dispatch order — a multi-step `command` row
+    // (#603) names EVERY command it will run, never just the first. The " ; "
+    // join is DISPLAY TEXT for this QuickPick row only; it is never the string
+    // that reaches a shell (`runDependencyAction` dispatches each line as its
+    // own `runInTerminal` call — see that function's own doc for why joining
+    // the DISPATCH would be wrong).
+    //
+    // `item.omittedTools` (#603, second review, minor 7) — NOT `item.title` —
+    // closes the consent screen out for a PARTIAL row: a short clause built
+    // here, appended only when non-empty. Appending the whole `title` sentence
+    // unconditionally was tried first and reverted: a non-partial row
+    // duplicated `Runs:` under a second separator, and a `fix`/`open-docs`/
+    // `bootstrap` row (always `omittedTools: []`) got a second, competing
+    // claim about what the button does.
     detail:
-      `Runs: ${item.source ?? NOT_REPORTED} · ` +
+      `Runs: ${item.source ? item.source.join(" ; ") : NOT_REPORTED} · ` +
       `Size: ${item.size ?? NOT_REPORTED} · ` +
-      `Licence: ${item.licence ?? NOT_REPORTED}`,
+      `Licence: ${item.licence ?? NOT_REPORTED}` +
+      (item.omittedTools.length > 0
+        ? ` · tan reported no install command for ${item.omittedTools.join(", ")}`
+        : ""),
     picked: true,
   };
 }
@@ -1141,12 +1817,110 @@ export async function runFixAll(options: {
 
     onStep?.(row, index, targets.length);
     log(`[fix-all] ${row.name}: starting "${runName}"`);
+    // Narrowed by `fixAllTargets` — a `will-install` row always has one.
+    const action = row.action as DependencyAction;
+
+    if (action.kind === "command" && row.name !== ZEPHYR_SDK_CHECK_NAME) {
+      if (action.commands.length === 0) {
+        // `DependencyAction`'s own doc says `commands` is never empty — this
+        // is that invariant breaking, not an ordinary outcome. Never treated
+        // as success: `steps.length === action.commands.length` below is
+        // `0 === 0`, and `[].every(...)` is vacuously true, so without this
+        // guard an empty list would report INSTALLED for a row that
+        // dispatched nothing at all.
+        log(
+          `[fix-all] ${row.name}: a command row reached runFixAll with an EMPTY commands[] — the planner's invariant broke`,
+          "error",
+        );
+        outcome.skipped.push({
+          name: row.name,
+          reason: "no command to run",
+        });
+        continue;
+      }
+      // THE HARD CONTRACT (#603): `runDependencyAction` owns `awaitRun` for
+      // this run name itself — see its own doc. This is the one branch that
+      // must NOT also subscribe `awaitRun(runName)` here; doing so would let
+      // step 1's finish be read as this whole row's finish and advance past
+      // steps 2..N while they are still running.
+      const steps =
+        (await runDependencyAction({
+          action,
+          rowName: row.name,
+          cwd,
+          sevenZipStatus: sevenZip?.status,
+          token,
+        })) ?? [];
+      log(
+        `[fix-all] ${row.name}: ${steps.length}/${action.commands.length} step(s) ran`,
+      );
+
+      if (
+        steps.length === action.commands.length &&
+        steps.every((s) => s.code === 0)
+      ) {
+        outcome.installed.push(row.name);
+        continue;
+      }
+      if (steps.length === 0) {
+        // Nothing even started — a race for `runName` after this row's own
+        // turn began (the pre-dispatch `isRunActive` check above only rules
+        // out a collision BEFORE step 1). Not a failure: nothing on the
+        // machine changed for this row, so the sequence continues rather
+        // than aborting the rows after it.
+        outcome.skipped.push({
+          name: row.name,
+          reason: `"${runName}" is already running`,
+        });
+        continue;
+      }
+      if (steps.every((s) => s.code === 0)) {
+        // Every step that ran succeeded, but the row stopped short of the
+        // full list — cancellation between steps, or the same race as above
+        // arriving after step 1. Nothing errored, so this is a skip, not a
+        // failure, and the loop's own top-of-iteration cancellation check
+        // marks every row after it the same way on its own turn.
+        //
+        // `completed` carries what DID install: a "cancelled" skip with no
+        // completed list reads as "nothing happened", which is false the
+        // moment step 1 of 2 already succeeded — the same dishonesty
+        // `failed.completed` exists to close, one branch over.
+        outcome.skipped.push({
+          name: row.name,
+          reason: token.isCancellationRequested
+            ? "cancelled"
+            : `"${runName}" became active mid-row`,
+          completed: steps.map((s) => s.tool),
+        });
+        continue;
+      }
+
+      const failedStep = steps.find((s) => s.code !== 0);
+      outcome.failed.push({
+        name: row.name,
+        code: failedStep?.code,
+        completed: steps.filter((s) => s.code === 0).map((s) => s.tool),
+        failedCommand: failedStep?.command,
+        notRun: action.commands.slice(steps.length).map((s) => s.tool),
+      });
+      for (const rest of targets.slice(index + 1)) {
+        outcome.skipped.push({
+          name: rest.name,
+          reason: `stopped after ${row.name} failed`,
+        });
+      }
+      break;
+    }
+
+    // `fix` / `bootstrap` rows, and the `zephyrSdk` special case: a single
+    // fire-and-forget terminal launch, unchanged from before #603 — this is
+    // the path `runNameFor`'s own doc calls out as staying on the existing
+    // `awaitRun` + dispatch pattern.
     // Subscribed BEFORE the dispatch: a fast install can finish before a
     // promise created afterwards ever attaches.
     const finished = awaitRun(runName);
-    runDependencyAction({
-      // Narrowed by `fixAllTargets` — a `will-install` row always has one.
-      action: row.action as DependencyAction,
+    void runDependencyAction({
+      action,
       rowName: row.name,
       cwd,
       sevenZipStatus: sevenZip?.status,
@@ -1161,7 +1935,13 @@ export async function runFixAll(options: {
       outcome.installed.push(row.name);
       continue;
     }
-    outcome.failed.push({ name: row.name, code });
+    outcome.failed.push({
+      name: row.name,
+      code,
+      completed: [],
+      failedCommand: undefined,
+      notRun: [],
+    });
     for (const rest of targets.slice(index + 1)) {
       outcome.skipped.push({
         name: rest.name,
@@ -1271,9 +2051,31 @@ function runZephyrSdkInstall(
   if (!alreadyRunning) offerRefreshAfterZephyrSdkInstall(sevenZipStatus);
 }
 
+/**
+ * The one remaining single-shot terminal dispatch — reached only from
+ * `runZephyrSdkInstall`'s "not actually a plain `west …` command" fallback,
+ * where `retargetWestCommand` refused to retarget the line and the ordinary
+ * shell dispatch is what is left.
+ *
+ * Guarded the SAME way `runZephyrSdkInstall`'s own dispatch just above
+ * already is (and the generic per-step loop in `runDependencyAction` is):
+ * `runInTerminal` may refuse a concurrent press under this name — in which
+ * case it already told the customer why, and raising
+ * `offerReloadAfterInstall` on top would read as though a NEW install just
+ * started over a dispatch that never happened.
+ *
+ * THIS WAS MISSED THE FIRST TIME (#603, second review, major 5): the
+ * unconditional-`runInTerminal`-then-notice shape is the exact defect fixed
+ * in `runDependencyAction`'s per-step loop one review round earlier, and it
+ * survived here, unfixed, because that fix was scoped to a prose finding
+ * list rather than grepped for by SHAPE across the file. Lesson kept for the
+ * next reader: when a finding names a defect shape, grep the shape, not the
+ * one call site the finding happened to measure.
+ */
 function runInNewTerminal(command: string, cwd: string | undefined): void {
+  const alreadyRunning = isRunActive(INSTALL_RUN_NAME);
   runInTerminal({ name: INSTALL_RUN_NAME, command, cwd });
-  offerReloadAfterInstall();
+  if (!alreadyRunning) offerReloadAfterInstall();
 }
 
 /**
@@ -1298,9 +2100,16 @@ function runInNewTerminal(command: string, cwd: string | undefined): void {
  * resolves the file rather than a cached lookup. When it is not enough, only
  * quitting VS Code completely and reopening picks up a new PATH.
  *
- * Shown at DISPATCH, before the install finishes, because `sendText` writes a
- * shell command line and there is no completion signal to wait for (that is the
- * same reason the dispatch above is a terminal and not a `ProcessExecution`).
+ * Shown at DISPATCH, before the install finishes — NOT because there is no
+ * completion signal to wait for (#603, round 4, minor 12 corrects an earlier
+ * claim here: `runDependencyAction`'s per-step loop has exactly one,
+ * `awaitRun(INSTALL_RUN_NAME)`, and `rowStepFailureNotice` already consumes
+ * it once the row finishes). It fires at dispatch because its advice (press
+ * Refresh; a stale PATH needs a full VS Code restart, not a reload) applies
+ * whichever way the run ends, and a row that fails already gets its OWN,
+ * more specific notice from `rowStepFailureNotice` once it does — this one
+ * exists to be on screen for the WHOLE install, not sprung on the customer
+ * only after something goes wrong.
  *
  * `notifyAsync`, not `notify`: this is called from the webview's message pump.
  */
@@ -1312,7 +2121,11 @@ function offerReloadAfterInstall(): void {
         "Installing in the terminal. When it finishes, press Refresh. This " +
         "window's PATH was captured when VS Code started, so if the row still " +
         "reads as missing, close VS Code completely and reopen it — a window " +
-        "reload does not pick up a new PATH.",
+        "reload does not pick up a new PATH. If this row covers more than one " +
+        "tool, tan may have reported no install command for one of them — see " +
+        "the row's hint and this button's tooltip for what this press does " +
+        "not cover; the row can stay failing even after a clean install of " +
+        "everything it did.",
       severity: "info",
       // One install at a time on screen: pressing Install on three rows must
       // not stack three identical toasts.

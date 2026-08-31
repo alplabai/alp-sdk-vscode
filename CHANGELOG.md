@@ -1,5 +1,102 @@
 # Changelog
 
+## Unreleased
+
+- **Dependency panel install buttons are no longer dead on the pinned tan
+  0.6.0 (#603).** `packages/alp-core/src/deps/planner.ts` matched a missing
+  prerequisite to a row by `p.tool === check.name`, which worked at v0.3.1
+  (one check per tool) but not at 0.6.0, which rolls `cmake`/`ninja` into one
+  `hostPrerequisites` check while `missingPrerequisites` stays keyed by tool
+  — so nothing matched and the row that exists to install these two tools
+  offered no button at all. `DependencyAction`'s `command` kind is now an
+  ordered, non-empty list of `{tool, command}` steps rather than a single
+  string: a per-tool prerequisite still binds to its own check first, and
+  every LEFTOVER prerequisite (a tool with no dedicated check) now binds to
+  the `hostPrerequisites` rollup row instead of falling out of the table
+  silently. If that rollup row is itself renamed or removed upstream, the new
+  report-level `orphanedPrerequisites` field and a log line say so rather
+  than quietly going back to no action — the same failure mode one field
+  over. `src/deps/vscodeAdapter.ts`'s `runDependencyAction` dispatches one
+  `runInTerminal` call PER STEP, sequentially, awaiting each one before the
+  next — never joined with `&&` (breaks Windows PowerShell 5.1, the default
+  terminal profile) or `;` (runs a later step after an earlier one failed and
+  collapses two exit codes into one). `runFixAll`'s multi-step failures now
+  report which tools installed, which command failed with which code, and
+  which never ran, instead of a bare exit code that implies nothing changed
+  on the machine when it did. A tool tan names with `command: null` still
+  contributes nothing to the button — that is tan's real answer, not a gap to
+  fill — and a row mixing null and non-null commands offers a button over the
+  non-null subset: the tooltip explains the row can stay failing until the
+  rest is handled another way, and the consent screen names the omitted
+  tool(s) in its own short clause (`· tan reported no install command for
+  ninja`).
+- **A single row's failure now reaches the customer, not a bare
+  "\<operation\> failed."** `notify/service.ts`'s leak filter demotes a
+  message matching an exit-code shape (`` `cmd` exited 1 ``) or an absolute
+  path out of the customer-visible toast and into the channel-only log, and
+  the multi-step failure sentence used to trip the exit-code shape on every
+  failure. Reworded to "did not succeed (code N)", which carries the same
+  information without tripping the filter. The row button's own
+  customer-facing notice now names the TOOL that failed rather than the raw
+  command tan ran — never path-shaped, so the absolute-path trigger cannot
+  fire either, and (unlike an earlier attempt at this fix that ran the
+  command through a path-stripping regex before showing it) nothing here
+  edits a command a customer might read, which is what let that regex turn
+  `curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash` into a command that
+  was never run. The raw command tan sent stays out of every customer
+  sentence, but it does still reach the "Alp SDK" channel, completely
+  unedited: Fix-all's own `[fix-all]` log line for a Fix-all run, and — this
+  was missed in the same commit that moved the command out of `cause`, so
+  for one round it reached NEITHER — the row button's own notice `detail`
+  for a single-row press, which the presenter writes to that same channel.
+  (Fix-all's own top-level "N of M did not install." sentence never carried
+  either leak shape and was never demoted — the filter fix itself is scoped
+  to the row path, which is where the demotion actually happened.)
+- **Fix-all's "did not install" toast now fires for every way a run can install
+  nothing THAT IS NOT THE CUSTOMER'S OWN ANSWER, not only an outright
+  failure.** A row cancelled, raced away mid-sequence, or that failed outright,
+  with a step already completed, is no longer reported as a plain,
+  auto-dismissing status-bar "success" — a half-modified machine now surfaces as
+  a persistent warning toast, same as an outright failure, and that toast's own
+  sentence now names what installed whether the step that stopped it was a SKIP
+  or the FAILURE itself (a 2-step row that installs cmake and then fails on
+  ninja used to read "1 of 1 did not install.", saying nothing about cmake — now
+  "1 of 1 did not install — cmake installed before stopping.", one connected
+  sentence rather than two that read as contradicting each other). The "N of M
+  did not install" count is every row that did not install, not only the ones
+  that errored — a row that aborts because an earlier one failed counts as 2 of
+  2 undone, not 1. A row skipped for a reason that is not the customer's own
+  answer (an environmental refusal such as another install already running, or
+  an invariant this extension did not expect, like an install command list that
+  turned out empty, or a run name the dispatcher had nothing to wait for) now
+  toasts too, even when another row in the same run installed something — it
+  must not read as success just because it landed in `skipped` rather than
+  `failed`. A run that accounts for NOTHING at all — no install, no failure, no
+  skip, for a nonzero target count, an invariant `runFixAll`'s own loop should
+  make unreachable — toasts as a defensive backstop; that condition is
+  deliberately narrower than "installed nothing", because "installed nothing"
+  alone also matched three ORDINARY ways a customer declines the whole run
+  (dismissing the consent screen, leaving every row unchecked, cancelling before
+  row 1 starts), each of which pushes every target into `skipped` with a reason
+  already on the quiet allowlist — without the narrower condition, declining a
+  Fix-all read as a persistent warning toast for a machine nothing had happened
+  to, and made an early cancel (nothing touched) read MORE alarming than a
+  cancel after row 1 had already installed something (which stayed a quiet
+  status bar). `deps/panel.ts`'s Fix-all wrapper no longer builds any part of
+  the `NotificationPlan` itself: `fixAllSummaryNotice` returns the finished
+  plan, the same shape the row path's own notice already did. The orphan latch
+  is now keyed per tool AND command, not tool alone, so the same tool reported
+  again with a DIFFERENT command re-arms it — and the log line it feeds names
+  every tool tan is CURRENTLY reporting as orphaned, not only the ones newly
+  seen this refresh.
+- **The `hostPrerequisites` row now says which tools it cannot offer a button
+  for even when NONE of them can be — not only when some can.** A partial
+  rollup (tan names a real command for cmake but not ninja) already said so
+  on the button's own tooltip. When EVERY leftover tool comes back with
+  `command: null` — the common SDK-unresolved ground state — there is no
+  button at all to carry that sentence, and the row's own detail is now the
+  one that says it instead of staying silent.
+
 ## 0.5.2
 
 **Pre-release.** Continues `0.5`'s odd-minor pre-release channel —

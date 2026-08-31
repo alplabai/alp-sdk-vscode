@@ -4,7 +4,10 @@
 // than sitting beside it: two surfaces answering "is my machine ready?" is how
 // they end up disagreeing.
 
-import type { DependencyReport } from "@alp-sdk/core/deps/planner";
+import type {
+  DependencyReport,
+  DependencyRow,
+} from "@alp-sdk/core/deps/planner";
 import * as vscode from "vscode";
 
 import { danglingWestManifest } from "../environment/vscodeAdapter";
@@ -13,7 +16,7 @@ import type {
   WebviewToExtMessage,
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
-import { isCancellation, planFailure, planSuccess } from "../notify/service";
+import { isCancellation } from "../notify/service";
 import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { offerBootstrapFix } from "../toolchain";
@@ -21,8 +24,11 @@ import { log } from "../util";
 import type { StateManager } from "../views/stateManager";
 import {
   buildDependencyReport,
+  type CommandStepOutcome,
   confirmDependencyInstalls,
+  fixAllSummaryNotice,
   fixAllTargets,
+  rowStepFailureNotice,
   runDependencyAction,
   runFixAll,
   withLatestSdk,
@@ -314,12 +320,63 @@ export class DependencyPanel {
     const sevenZip = this.lastReport?.rows.find(
       (candidate) => candidate.name === "sevenZip",
     );
-    runDependencyAction({
+    // Awaited, not fired-and-forgotten: a `command` row's dispatch is now a
+    // SEQUENCE (#603), and `runDependencyAction` is the one place that owns
+    // `awaitRun` for it — this call must be the only consumer of that promise,
+    // never a second `awaitRun` alongside it (see that function's own doc).
+    const steps = await runDependencyAction({
       action: row.action,
       rowName: row.name,
       cwd: collectProjectContext().workspaceRoot ?? undefined,
       sevenZipStatus: sevenZip?.status,
     });
+    // `steps` is `undefined` for `fix`/`bootstrap`/`zephyrSdk` rows — those
+    // already have their own notices (`runToolchainFix`, the Bootstrap
+    // panel, `offerRefreshAfterZephyrSdkInstall`). For a plain `command` row
+    // this is the ONLY place a single-row press can tell the customer a
+    // MID-SEQUENCE failure happened: `offerReloadAfterInstall`'s "press
+    // Refresh" notice fires at dispatch, before any step's result is known,
+    // and `runFixAll`'s `describeFixAllFailure` wording never runs for a
+    // lone button press (#603) — without this, a row whose step 1 of 2
+    // failed told the customer nothing beyond the generic reload notice.
+    if (steps) this.reportRowStepFailure(row, steps);
+  }
+
+  /**
+   * Tell the customer when a single row's OWN multi-step dispatch did not
+   * finish cleanly. `rowStepFailureNotice` names the TOOL that failed in the
+   * customer-facing message, never the raw command — a row button and
+   * Fix-all's own channel-only summary deliberately word this DIFFERENTLY
+   * now (#603, round 6, minor 6 corrects this doc: it used to say they
+   * "report the SAME failure the SAME way", which stopped being true the
+   * round `rowStepFailureNotice` and `describeFixAllFailure` split — see
+   * `rowStepFailureNotice`'s own doc for why).
+   *
+   * Silent on every outcome that already has its own explanation: every step
+   * ran and succeeded (the generic "press Refresh" notice covers it), or
+   * nothing ran at all (the per-step `isRunActive` refusal already showed its
+   * own warning, or a single-row press has no cancel UI to explain a
+   * cancelled-before-anything-ran outcome).
+   */
+  private reportRowStepFailure(
+    row: DependencyRow,
+    steps: readonly CommandStepOutcome[],
+  ): void {
+    if (row.action?.kind !== "command") return;
+    // The WHOLE decision — wording, severity, dedupeKey — lives in
+    // `rowStepFailureNotice` (vscodeAdapter.ts), which returns the finished
+    // `NotificationPlan` itself; this method only wires it to `notifyAsync`
+    // (#603, third review, major 3: leaving `severity`/`dedupeKey` for THIS
+    // wrapper to set left both ungated — mutating them to `"info"` and a
+    // shared constant passed every existing gate).
+    const plan = rowStepFailureNotice(
+      row.label,
+      row.name,
+      row.action.commands,
+      steps,
+    );
+    if (!plan) return;
+    notifyAsync(plan);
   }
 
   /**
@@ -372,40 +429,18 @@ export class DependencyPanel {
       },
     );
 
-    // The table is the real report; this line is only what a table cannot say,
-    // which is what happened while it was not on screen.
-    const parts = [`${outcome.installed.length} installed`];
-    if (outcome.failed.length > 0) {
-      parts.push(
-        `${outcome.failed.length} failed (${outcome.failed
-          .map((entry) => `${entry.name} exit ${entry.code ?? "unknown"}`)
-          .join(", ")})`,
-      );
-    }
-    if (outcome.skipped.length > 0) {
-      // Named, never a bare count: "3 skipped" with no reason is the silent
-      // truncation this whole panel exists to avoid.
-      parts.push(
-        `${outcome.skipped.length} not run (${outcome.skipped
-          .map((entry) => `${entry.name}: ${entry.reason}`)
-          .join("; ")})`,
-      );
-    }
-    log(`[fix-all] ${parts.join(" | ")}`);
-    notifyAsync(
-      outcome.failed.length === 0
-        ? planSuccess(
-            `Fix all: ${outcome.installed.length} of ${targets.length} installed`,
-            { detail: parts.join(" · ") },
-          )
-        : planFailure({
-            operation: "Fix all",
-            cause: `${outcome.failed.length} of ${targets.length} did not install.`,
-            detail: parts.join(" · "),
-            severity: "warning",
-            dedupeKey: "deps-fix-all",
-          }),
-    );
+    // The WHOLE decision — channel, severity, customer-visible message,
+    // channel-only detail, dedupe key — comes back FINISHED from
+    // `fixAllSummaryNotice` (#603, round 4, blockers 2 and 3): this method
+    // hands it straight to `notifyAsync` with nothing left to compute, so
+    // there is no ternary, no `severity`, and no `dedupeKey` here for a
+    // mutation to get wrong the way three earlier ones did (a literal
+    // `{ skipped: [] }` in place of `outcome`; the ternary widened to also
+    // route `"partial"` through `planSuccess`; `severity`/`dedupeKey`
+    // hand-set beside it) and still leave every gate green.
+    const plan = fixAllSummaryNotice(outcome, targets.length);
+    log(`[fix-all] ${plan.detail}`);
+    notifyAsync(plan);
 
     this.refresh();
   }

@@ -1,0 +1,167 @@
+{
+  "command": "doctor",
+  "ok": false,
+  "exitCode": 4,
+  "project": {
+    "root": "/home/dev/proj",
+    "boardYaml": "/home/dev/proj/board.yaml"
+  },
+  "sdk": {
+    "root": "/home/dev/alp-sdk",
+    "sourceTier": "sdkRootFlag"
+  },
+  "data": {
+    "generatedAt": "2026-08-30T15:21:56Z",
+    "summary": {
+      "pass": 12,
+      "warn": 2,
+      "fail": 2
+    },
+    "checks": [
+      {
+        "name": "sdk",
+        "status": "pass",
+        "scope": "project",
+        "detail": "alp-sdk at /home/dev/alp-sdk (sdkRootFlag)"
+      },
+      {
+        "name": "boardYaml",
+        "status": "pass",
+        "scope": "project",
+        "detail": "board.yaml found"
+      },
+      {
+        "name": "workspace",
+        "status": "pass",
+        "scope": "project",
+        "detail": "Zephyr workspace at /home/dev/alp-sdk"
+      },
+      {
+        "name": "westResolved",
+        "status": "pass",
+        "scope": "project",
+        "detail": "west 1.5 resolved: /home/dev/alp-sdk/.venv/bin/west."
+      },
+      {
+        "name": "venvProvenance",
+        "status": "pass",
+        "scope": "project",
+        "detail": "workspace venv populated for the active SDK (/home/dev/alp-sdk)"
+      },
+      {
+        "name": "zephyrVersion",
+        "status": "pass",
+        "scope": "project",
+        "detail": "Zephyr v4.4.1 matches the SDK pin"
+      },
+      {
+        "name": "zephyrWorkspace",
+        "status": "pass",
+        "scope": "project",
+        "detail": "Zephyr 4.4.1 at `/home/dev/alp-sdk`."
+      },
+      {
+        "name": "zephyrSdkAvailableForHost",
+        "status": "pass",
+        "scope": "host",
+        "detail": "The Zephyr SDK publishes a host build for macos-aarch64."
+      },
+      {
+        "name": "homePath",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Home directory has no spaces: /home/dev"
+      },
+      {
+        "name": "hostPython",
+        "status": "fail",
+        "scope": "host",
+        "detail": "Python 3.9 (`python3`) is below the effective floor 3.12, which comes from /home/dev/alp-sdk/zephyr/cmake/modules/python.cmake. The build does not fail here -- it fails later, inside Zephyr's own CMake configure, with an error that names Zephyr rather than your Python.",
+        "fix": "Install Python 3.12+ and put it ahead of 3.9 on PATH, then re-run `tan bootstrap` so the workspace venv is built with it."
+      },
+      {
+        "name": "pythonFloor",
+        "status": "warn",
+        "scope": "project",
+        "detail": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev/alp-sdk/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure.",
+        "fix": "Known, Zephyr-scoped skew (alp-sdk#1078) -- raising `prerequisites.pythonMinVersion` to 3.12 was tried and reverted, because that key also gates Yocto-only and metadata-only projects, which do not need it. Building for Zephyr on a host below 3.12 needs a newer interpreter -- see the `hostPython` check above."
+      },
+      {
+        "name": "hostPrerequisites",
+        "status": "fail",
+        "scope": "host",
+        "detail": "missing from PATH: cmake, ninja (facts from alp-sdk /home/dev/alp-sdk/metadata/bootstrap.json).",
+        "fix": "Install the missing prerequisites, then run `tan bootstrap`.  brew install cmake; brew install ninja"
+      },
+      {
+        "name": "west",
+        "status": "pass",
+        "scope": "host",
+        "detail": "`west` is not on bare PATH, but resolves through the workspace venv: /home/dev/alp-sdk/.venv/bin/west -- the same binary `westResolved` above reports, and the one a real build actually spawns. This is the default state right after `tan bootstrap`, which deliberately does not put `west` on PATH; activating the venv (its `bin`/`Scripts` directory holds the `west` launcher) would additionally put it on bare PATH, for tools that spawn it directly rather than through tan."
+      },
+      {
+        "name": "zephyrSdk",
+        "status": "pass",
+        "scope": "host",
+        "detail": "Zephyr SDK toolchain detected."
+      },
+      {
+        "name": "setools",
+        "status": "unknown",
+        "scope": "host",
+        "detail": "AEN MRAM flashing over the SE-UART is Linux-only in this tree: scripts/west_commands/runners/alif_flash.py hard-codes `app-release-exec-linux`, so its bundle is `app-release-exec-linux-SE_FW_x.y.z`. Nothing to check on this host for THAT path -- run it from WSL2/Linux (Windows hosts pass the SE-UART through with usbipd). Flow D below is a different matter: it signs on Windows with the WINDOWS SETOOLS build, which is a different bundle from the `-linux` one named above -- point `--setools-dir` at it (measured: `app-gen-toc.exe` under a Windows `app-release-exec`, SETOOLS_version_SE_FW_1.110.00_DEV, signed an ATOC the part booted from)."
+      },
+      {
+        "name": "jlink",
+        "status": "warn",
+        "scope": "host",
+        "detail": "J-Link tools found at /usr/bin/JLink but their version could not be read, so the Flow D MRAM loader could not be confirmed. Flow D needs the `AE822FA0E5597LS0_M55_HE` part-number device profile (NOT the generic `Cortex-M55`, which has no MRAM loader) and a J-Link DLL V9.46+. Device profile resolved from: /home/dev/alp-sdk/metadata/socs/alif/ensemble/e8.json.",
+        "fix": "Run `JLinkExe` by hand (it prints the banner unprompted, then type `exit`) and confirm it reports V9.46 or newer."
+      },
+      {
+        "name": "sdkProvenance",
+        "status": "pass",
+        "scope": "project",
+        "detail": "alp-sdk 0.16.0 @ e1dddd37"
+      }
+    ],
+    "nextSteps": [
+      "Install Python 3.12+ and put it ahead of 3.9 on PATH, then re-run `tan bootstrap` so the workspace venv is built with it.",
+      "Known, Zephyr-scoped skew (alp-sdk#1078) -- raising `prerequisites.pythonMinVersion` to 3.12 was tried and reverted, because that key also gates Yocto-only and metadata-only projects, which do not need it. Building for Zephyr on a host below 3.12 needs a newer interpreter -- see the `hostPython` check above.",
+      "Install the missing prerequisites, then run `tan bootstrap`.  brew install cmake; brew install ninja",
+      "Run `JLinkExe` by hand (it prints the banner unprompted, then type `exit`) and confirm it reports V9.46 or newer."
+    ],
+    "missingPrerequisites": [
+      {
+        "tool": "cmake",
+        "command": "brew install cmake"
+      },
+      {
+        "tool": "ninja",
+        "command": "brew install ninja"
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "bootstrap.python-too-old",
+      "severity": "error",
+      "message": "Python 3.9 (`python3`) is below the effective floor 3.12, which comes from /home/dev/alp-sdk/zephyr/cmake/modules/python.cmake. The build does not fail here -- it fails later, inside Zephyr's own CMake configure, with an error that names Zephyr rather than your Python."
+    },
+    {
+      "code": "doctor.python-floor",
+      "severity": "warning",
+      "message": "alp-sdk's metadata/bootstrap.json declares pythonMinVersion 3.10, but the build's effective floor is 3.12 (from /home/dev/alp-sdk/zephyr/cmake/modules/python.cmake). Both `tan doctor` and `tan bootstrap` enforce the higher, effective floor, so a host this manifest would have accepted is refused up front rather than failing later at Zephyr's CMake configure."
+    },
+    {
+      "code": "bootstrap.prerequisites-missing",
+      "severity": "error",
+      "message": "missing from PATH: cmake, ninja (facts from alp-sdk /home/dev/alp-sdk/metadata/bootstrap.json)."
+    },
+    {
+      "code": "doctor.jlink",
+      "severity": "warning",
+      "message": "J-Link tools found at /usr/bin/JLink but their version could not be read, so the Flow D MRAM loader could not be confirmed. Flow D needs the `AE822FA0E5597LS0_M55_HE` part-number device profile (NOT the generic `Cortex-M55`, which has no MRAM loader) and a J-Link DLL V9.46+. Device profile resolved from: /home/dev/alp-sdk/metadata/socs/alif/ensemble/e8.json."
+    }
+  ]
+}

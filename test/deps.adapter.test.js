@@ -695,6 +695,294 @@ test("the summary counts exactly the rows on screen, using tan's arithmetic", as
   assert.deepEqual(built.counts, REAL_PINNED.summary);
 });
 
+// ── the orphan invariant reaches the "Alp SDK" channel, not just the type ────
+
+test("an orphaned prerequisite is LOGGED, not only recorded on the report", async () => {
+  // #603: `orphanedPrerequisites` is worthless as a silent-drop catch if
+  // nothing ever reads it — the exact failure this field exists to end. A
+  // prerequisite for a tool with no check AND no `hostPrerequisites` rollup
+  // in this envelope has nowhere to bind.
+  const orphanData = {
+    checks: [
+      { name: "sdk", status: "pass", detail: "alp-sdk v0.6.0" },
+      { name: "west", status: "pass", detail: "west 1.5.0" },
+    ],
+    summary: { pass: 2, warn: 0, fail: 0 },
+    missingPrerequisites: [{ tool: "cmake", command: "brew install cmake" }],
+  };
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: orphanData, message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  const { report: built } = await buildDependencyReport({}, STATE, {});
+
+  assert.deepEqual(
+    built.orphanedPrerequisites,
+    [{ tool: "cmake", command: "brew install cmake" }],
+    "sanity: the planner's own half of the invariant still holds",
+  );
+  const hit = lines.find((line) => line.includes("cmake"));
+  assert.ok(
+    hit,
+    "no log line named the orphaned prerequisite — the next tan rename of " +
+      "hostPrerequisites would be exactly as silent as #603 itself",
+  );
+  assert.match(hit, /brew install cmake/, "the command, not just the tool");
+  assert.match(hit, /hostPrerequisites/i);
+});
+
+function orphanEnvelope(tools) {
+  return {
+    checks: [{ name: "west", status: "pass", detail: "west 1.5.0" }],
+    summary: { pass: 1, warn: 0, fail: 0 },
+    missingPrerequisites: tools.map((tool) => ({
+      tool,
+      command: `install ${tool}`,
+    })),
+  };
+}
+
+test("the SAME orphan is logged ONCE per session, not once per refresh (#603 second review, minor 8)", async () => {
+  // `DependencyPanel.refresh()` re-derives on EVERY window focus, and a
+  // genuinely orphaned envelope stays orphaned across every one of those.
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: orphanEnvelope(["cmake"]), message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  // Three "refreshes" against the SAME loaded module instance — a window
+  // focus, a settings edit, a bootstrap boundary, all re-deriving the same
+  // orphaned envelope.
+  await buildDependencyReport({}, STATE, {});
+  await buildDependencyReport({}, STATE, {});
+  await buildDependencyReport({}, STATE, {});
+
+  const hits = lines.filter((line) => line.includes("cmake"));
+  assert.equal(
+    hits.length,
+    1,
+    "the orphan warning must fire once for the session, not once per refresh",
+  );
+});
+
+test("a DIFFERENT orphan arriving later is STILL logged — the latch must not over-silence (#603 third review, major 5)", async () => {
+  // Measured repro this test reproduces exactly: refresh 1 orphans cmake (1
+  // line), refresh 2 orphans a DIFFERENT tool, ninja, with cmake no longer
+  // orphaned (0 lines under the bug — a bare "logged once" boolean silences
+  // every orphan after the first, forever), refresh 3 orphans two more new
+  // tools, gperf and dtc (also 0 lines under the bug). The gate the prior
+  // round shipped replayed the SAME orphan three times, which is green
+  // under both this bug and the fix — this is the one that tells them apart.
+  const lines = [];
+  const envelopes = [
+    orphanEnvelope(["cmake"]),
+    orphanEnvelope(["ninja"]),
+    orphanEnvelope(["gperf", "dtc"]),
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: orphan=cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: NEW orphan=ninja
+  await buildDependencyReport({}, STATE, {}); // refresh 3: orphans=gperf,dtc
+
+  assert.equal(
+    lines.filter((l) => l.includes("cmake")).length,
+    1,
+    "refresh 1's orphan is reported",
+  );
+  assert.equal(
+    lines.filter((l) => l.includes("ninja")).length,
+    1,
+    "a NEW orphan on refresh 2 must still be reported, even though cmake " +
+      "already used up a bare one-shot latch",
+  );
+  assert.equal(
+    lines.filter((l) => l.includes("gperf")).length,
+    1,
+    "refresh 3's new orphans must be reported too",
+  );
+  assert.equal(lines.filter((l) => l.includes("dtc")).length, 1);
+});
+
+test("a still-orphaned tool is NOT dropped from the line when a NEW orphan arrives beside it (#603 round 4, minor 8)", async () => {
+  // Measured repro: refresh 1 orphans cmake (1 line, naming cmake and its
+  // count of 1). Refresh 2's envelope is CUMULATIVE — tan still reports cmake
+  // AND now also ninja and gperf. `newOrphans` (the tools not already latched)
+  // is `[ninja, gperf]`, length 2 — the filtered list decided whether to log,
+  // correctly. Passing THAT filtered list to `orphanedPrerequisiteLogLines`
+  // undercounted it, though: the line said "tan reported 2 prerequisite(s)"
+  // and named only ninja and gperf, even though tan is reporting 3 right now
+  // and cmake is STILL one of them.
+  const lines = [];
+  const envelopes = [
+    orphanEnvelope(["cmake"]),
+    orphanEnvelope(["cmake", "ninja", "gperf"]),
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: orphan=cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: cmake,ninja,gperf
+
+  const refresh2Line = lines.find(
+    (l) => l.includes("ninja") || l.includes("gperf"),
+  );
+  assert.ok(refresh2Line, "refresh 2 must still log — it has new orphans");
+  assert.match(
+    refresh2Line,
+    /tan reported 3 prerequisite\(s\)/,
+    "tan is reporting 3 orphans right now (cmake, ninja, gperf) — the " +
+      "line must count all of them, not just the ones newly seen",
+  );
+  assert.match(
+    refresh2Line,
+    /cmake/,
+    "cmake is STILL orphaned on refresh 2 and must still be named, even " +
+      "though it already used up its own one-shot latch on refresh 1",
+  );
+});
+
+test("the SAME tool orphaned with a DIFFERENT command is logged again, not swallowed by a tool-only latch (#603 round 5, nit 11)", async () => {
+  // Measured repro: `cmake=brew install cmake` latches the tool, then
+  // `cmake=sudo /opt/attacker/brew install cmake` — a changed command for the
+  // SAME still-orphaned tool — logged nothing under a `tool`-only key. A
+  // changed command is new information about what would run if the
+  // (nonexistent) button were pressed, not a repeat of the same fact.
+  const lines = [];
+  const envelopes = [
+    { ...orphanEnvelope(["cmake"]) },
+    {
+      ...orphanEnvelope(["cmake"]),
+      missingPrerequisites: [
+        { tool: "cmake", command: "sudo /opt/attacker/brew install cmake" },
+      ],
+    },
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: cmake=install cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: cmake=DIFFERENT command
+
+  const hits = lines.filter((l) => l.includes("cmake"));
+  assert.equal(
+    hits.length,
+    2,
+    "a changed command for the same tool must log again, not be swallowed " +
+      "by a latch keyed on the tool name alone",
+  );
+  assert.match(hits[1], /sudo \/opt\/attacker\/brew install cmake/);
+});
+
+test("nothing is logged when every prerequisite bound to a row", async () => {
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: DOCTOR_DATA, message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {});
+
+  assert.equal(
+    lines.some(
+      (line) => line.includes("orphaned") || line.includes("bound to NO row"),
+    ),
+    false,
+    "a healthy envelope must not print a defect line nobody can act on",
+  );
+});
+
 // ── 0b: the panel with no project folder open ────────────────────────────────
 
 test("with no folder open the host checks still run", async () => {
@@ -980,7 +1268,12 @@ test("a terminal install says what actually makes the row go green", async () =>
   const plans = [];
   const { runDependencyAction } = loadDepsAdapter({
     vscode: { window: {}, Uri: {} },
-    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
+      awaitRun: () => Promise.resolve(0),
+    },
     "../notify/vscodeAdapter": {
       notifyAsync: (plan) => plans.push(plan),
     },
@@ -991,7 +1284,12 @@ test("a terminal install says what actually makes the row go green", async () =>
       kind: "command",
       // tan 0.4.0's own `missingPrerequisites[].command` on this Windows host,
       // verbatim.
-      command: "winget install -e --id Ninja-build.Ninja",
+      commands: [
+        {
+          tool: "ninja",
+          command: "winget install -e --id Ninja-build.Ninja",
+        },
+      ],
       effect: "install",
       title: "winget install -e --id Ninja-build.Ninja",
     },
@@ -1062,13 +1360,143 @@ test("a terminal install says what actually makes the row go green", async () =>
   );
 });
 
+test("a second press while the install run is already active: surfaced via runInTerminal, not silent", async () => {
+  // A regression this file exists to pin down: the per-step `isRunActive`
+  // guard must not become a SILENT stop. `runInTerminal` (src/util.ts) is the
+  // one place that already shows "is still running — wait for it to finish"
+  // + Show Terminal for a same-named collision, so the loop must still call
+  // it (stubbed here, same as the zephyrSdk concurrent-press test below)
+  // rather than bypassing it with a bare log line nobody sees.
+  const runs = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => true,
+      awaitRun: () => Promise.resolve(0),
+    },
+    "../notify/vscodeAdapter": {
+      notifyAsync: (plan) => plans.push(plan),
+    },
+  });
+
+  const outcomes = await runDependencyAction({
+    action: {
+      kind: "command",
+      commands: [{ tool: "ninja", command: "brew install ninja" }],
+      effect: "install",
+      title: "brew install ninja",
+    },
+    rowName: "ninja",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  assert.deepEqual(
+    outcomes,
+    [],
+    "nothing dispatched successfully — the row installed nothing",
+  );
+  assert.equal(
+    runs.length,
+    1,
+    "runInTerminal is still called — it is what shows the refusal " +
+      '("is still running — wait for it to finish before starting it ' +
+      'again.") and offers Show Terminal; on dev this call is what the ' +
+      "customer saw and losing it is a silent regression",
+  );
+  assert.equal(
+    plans.length,
+    0,
+    "no press-Refresh notice for a press that dispatched nothing — raising " +
+      "it here would ALSO suppress the still-running press's own notice via " +
+      'the shared "deps-install-reload" dedupe key, leaving the customer ' +
+      "with neither",
+  );
+  // #603, second review, major 4: the refusal dispatch must reserve the SAME
+  // shared name the `isRunActive` check just tested — `"Alp: install
+  // dependency"`, never the row's own name (`rowName`, "ninja" here). This
+  // harness's `isRunActive: () => true` cannot itself distinguish the two
+  // (it ignores its argument), so the wrong name would slip through every
+  // OTHER assertion in this test unnoticed: in production `isRunActive("ninja")`
+  // is false, so a `runInTerminal` call under that name would actually START
+  // a real, unreserved second install — the exact #146 double-run the shared
+  // name exists to prevent.
+  assert.equal(
+    runs[0].name,
+    "Alp: install dependency",
+    "the refusal must be dispatched under the SHARED run name, not the row's own",
+  );
+  assert.equal(
+    runs[0].command,
+    "brew install ninja",
+    "the command line itself is still the one that was refused, verbatim",
+  );
+});
+
+test(
+  "isRunActive already true never reaches awaitRun — a HANG-DETECTION test, distinct from its sibling above",
+  { timeout: 2000 },
+  async () => {
+    // #603, second review, nit 11: this test's unique value over "a second
+    // press while the install run is already active" (above) is specifically
+    // that `awaitRun` here NEVER resolves — that sibling's `awaitRun` stub
+    // resolves immediately, so it cannot tell "the guard stopped this before
+    // awaitRun" apart from "awaitRun was called and happened to resolve
+    // fast". If the mid-loop `isRunActive` check were ever removed (or
+    // defeated), this dispatches straight to `awaitRun` on a name whose
+    // promise never settles, and the bounded test timeout above is what
+    // turns THAT into a reported failure instead of a hung test run.
+    // `awaitRun`'s own doc (src/util.ts) names exactly this as its one
+    // failure mode.
+    const runs = [];
+    const { runDependencyAction } = loadDepsAdapter({
+      vscode: { window: {}, Uri: {} },
+      "../util": {
+        log() {},
+        runInTerminal: (opts) => runs.push(opts),
+        isRunActive: () => true,
+        awaitRun: () => new Promise(() => {}), // never resolves
+      },
+    });
+
+    const outcomes = await runDependencyAction({
+      action: {
+        kind: "command",
+        commands: [{ tool: "ninja", command: "brew install ninja" }],
+        effect: "install",
+        title: "",
+      },
+      rowName: "ninja",
+      cwd: "/home/dev/proj",
+      sevenZipStatus: undefined,
+    });
+
+    assert.deepEqual(outcomes, []);
+    // Distinct from the sibling's assertions too: it never inspects `runs`.
+    assert.equal(
+      runs.length,
+      1,
+      "the refusal still dispatches through runInTerminal exactly once, " +
+        "and never reaches a second awaitRun call",
+    );
+  },
+);
+
 // ── #412: `west sdk install …` retargeted onto the resolved venv binary ─────
 
 /** tan v0.4.1's own `missingPrerequisites[].command` for the `zephyrSdk` row,
  *  verbatim. */
 const ZEPHYR_SDK_ACTION = {
   kind: "command",
-  command: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
+  commands: [
+    {
+      tool: "zephyrSdk",
+      command: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
+    },
+  ],
   effect: "install",
   title: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
 };
@@ -1325,7 +1753,11 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
   const runs = [];
   const { runDependencyAction } = loadDepsAdapter({
     vscode: { window: {}, Uri: {} },
-    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
+    },
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {
       collectProjectContext: () => ({
@@ -1345,7 +1777,9 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
       // A shape `retargetWestCommand` refuses (a quoted argument) — never
       // actually reachable on the measured v0.4.1 command, but drift
       // insurance: it must fail in exactly ONE way, not two.
-      command: 'west sdk install --name "custom sdk"',
+      commands: [
+        { tool: "zephyrSdk", command: 'west sdk install --name "custom sdk"' },
+      ],
       effect: "install",
       title: 'west sdk install --name "custom sdk"',
     },
@@ -1368,11 +1802,74 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
   );
 });
 
+test("the SAME un-retargeted fallback, refused by an active install run: no false press-Refresh notice", () => {
+  // #603, second review, major 5: this fallback (`runInNewTerminal`, reached
+  // when `retargetWestCommand` returns null) is byte-for-byte the antipattern
+  // fixed for the generic command-step loop in the SAME commit — unconditional
+  // `runInTerminal` + `offerReloadAfterInstall()` — and it survived untouched
+  // because the fix was scoped to a prose finding list rather than grepped
+  // for the shape. Driven exactly as the finding measured: `isRunActive("Alp:
+  // install dependency")` already true.
+  const runs = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => true,
+    },
+    "../notify/vscodeAdapter": {
+      notifyAsync: (plan) => plans.push(plan),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        westCwd: "/home/dev/proj",
+        sdkRoot: "/home/dev/.alp/sdk/v0.13.0",
+      }),
+    },
+    "../environment/vscodeAdapter": {
+      westWorkspaceTopdir: () => "/home/dev/.alp",
+      venvWestInTopdir: (topdir) => `${topdir}/.venv/bin/west`,
+    },
+  });
+
+  runDependencyAction({
+    action: {
+      kind: "command",
+      commands: [
+        { tool: "zephyrSdk", command: 'west sdk install --name "custom sdk"' },
+      ],
+      effect: "install",
+      title: 'west sdk install --name "custom sdk"',
+    },
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  // `runInTerminal` still gets called — it is what shows the customer the
+  // refusal, unchanged from before this fix.
+  assert.equal(runs.length, 1);
+  assert.equal(
+    plans.length,
+    0,
+    "measured on dev before this fix: 1 notice fired here " +
+      '(dedupeKey "deps-install-reload") for a dispatch runInTerminal ' +
+      "refuses — this is the false press-Refresh notice",
+  );
+});
+
 test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
   const runs = [];
   const { runDependencyAction } = loadDepsAdapter({
     vscode: { window: {}, Uri: {} },
-    "../util": { log() {}, runInTerminal: (opts) => runs.push(opts) },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
+      awaitRun: () => Promise.resolve(0),
+    },
     // No override for "../project/vscodeAdapter" or "../environment/
     // vscodeAdapter": if the zephyrSdk branch fired by mistake for this row,
     // `collectProjectContext` (stubbed to `{}` by default) would throw "is not
@@ -1385,7 +1882,7 @@ test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
       // `workspace`/`westResolved` also carry a `west …` command via
       // `missingPrerequisites` (FIX_IDS in the planner) — only the `zephyrSdk`
       // ROW gets retargeted.
-      command: "west update",
+      commands: [{ tool: "workspace", command: "west update" }],
       effect: "install",
       title: "west update",
     },
