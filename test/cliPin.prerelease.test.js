@@ -50,6 +50,9 @@ const declaration = (version) =>
 const SITES = [
   ".github/workflows/ci.yml",
   ".github/workflows/release-vsix.yml",
+  // #629's nightly drift check resolves the pin the same way, to stage the
+  // same binary. Listed the day it was written rather than the day it drifts.
+  ".github/workflows/tan-surface-drift.yml",
   "scripts/fetch-tan-contract.mjs",
 ];
 

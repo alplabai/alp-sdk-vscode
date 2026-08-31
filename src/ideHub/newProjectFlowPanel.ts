@@ -6,6 +6,10 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { exampleCategory } from "@alp-sdk/core/examples/category";
 import { planInitArgv } from "@alp-sdk/core/project/initArgv";
+import {
+  baremetalCoresWithoutApp,
+  baremetalNoAppNotice,
+} from "@alp-sdk/core/project/coreScaffold";
 import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
 import { narrowInitPreview } from "@alp-sdk/core/project/initPreview";
 import {
@@ -953,6 +957,29 @@ export class NewProjectFlowPanel {
         `[new-project] ${moduleId}: ${unscaffolded.length} zephyr cores ` +
           `(${unscaffolded.join(", ")}), only the SoM's app core is scaffolded ` +
           "— tan init --cores splices companions app-less",
+      );
+    }
+
+    // #623: a Bare-metal core the customer chose gets no `app:` — this wizard
+    // does not scaffold one, and the SDK has no baremetal stock default to
+    // fall back on the way a Zephyr core has `alp-stock-shim` and a Linux one
+    // has `alp-image-edge`. Measured: `tan validate` passes the shape with
+    // zero issues while the planner's `_slice_command` returns None for it,
+    // carrying the slice as `skipped` / `no-command`. So the build quietly
+    // skips a core the customer asked for, and the first gate they hit says
+    // nothing. Said here, at creation, because it is the only moment this
+    // extension knows the answer AND the customer is looking.
+    const baremetalNoApp = baremetalCoresWithoutApp(coreAssignments ?? []);
+    if (baremetalNoApp.length > 0) {
+      notifyAsync(
+        planSuccess(`Alp: ${baremetalNoAppNotice(baremetalNoApp)}`, {
+          actions: [{ id: "showOutput" }],
+        }),
+      );
+      log(
+        `[new-project] ${moduleId}: baremetal core(s) ` +
+          `${baremetalNoApp.join(", ")} written without an app: — the SDK's ` +
+          "`_slice_command` returns None for that shape (skipped/no-command)",
       );
     }
 

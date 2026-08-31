@@ -350,3 +350,90 @@ test("every value the board schema knows is accepted", () => {
   }
   assert.deepEqual(unknownCoreOs([{ id: "m55_he", os: "off" }]), []);
 });
+
+// ── #623: the bare-metal core the SDK cannot build ───────────────────────────
+//
+// MEASURED against the pinned tan 0.6.0 / SDK v0.16.0-rc1, because #623 asked
+// for the measurement before any fix:
+//
+//   `tan validate` on the spliced shape: ok true, exit 0, ZERO issues.
+//   `scripts/alp_orchestrate/orchestrator.py` `_slice_command`, verbatim:
+//       if slice_.os == "baremetal":
+//           if not slice_.app:
+//               return None
+//   and its docstring: "Returns None when there is no buildable command yet --
+//   the caller carries the slice as `skipped` / `no-command`, never dropped."
+//
+//   No baremetal stock default exists: `heterogeneous-builds.md` names
+//   `alp-stock-shim` (zephyr) and `alp-image-edge` (linux), and the code has
+//   no third.
+//
+// So the wizard writes a core the build skips. It is NOT scaffolded away —
+// `coreScaffold.ts` is INTERIM by its own header and a third generated file set
+// would deepen that debt — so what is fixed is the silence.
+
+const {
+  baremetalCoresWithoutApp,
+  baremetalNoAppNotice,
+} = require("../packages/alp-core/dist/project/coreScaffold.js");
+
+test("a bare-metal core with no app is named", () => {
+  assert.deepEqual(
+    baremetalCoresWithoutApp([
+      { id: "m55_hp", os: "zephyr", app: "./src" },
+      { id: "m55_he", os: "baremetal" },
+    ]),
+    ["m55_he"],
+  );
+});
+
+test("a bare-metal core that HAS an app is not named", () => {
+  assert.deepEqual(
+    baremetalCoresWithoutApp([{ id: "m55_he", os: "baremetal", app: "./bm" }]),
+    [],
+    "an app: is exactly what makes `_slice_command` return a command instead " +
+      "of None, so this core builds and there is nothing to warn about",
+  );
+});
+
+test("whitespace is not an app directory", () => {
+  assert.deepEqual(
+    baremetalCoresWithoutApp([{ id: "m55_he", os: "baremetal", app: "   " }]),
+    ["m55_he"],
+    "`app: '   '` reaches the planner as a falsy-after-trim value; treating " +
+      "it as present would suppress the one warning the customer gets",
+  );
+});
+
+test("yocto and zephyr cores are never named", () => {
+  assert.deepEqual(
+    baremetalCoresWithoutApp([
+      { id: "a32_cluster", os: "yocto" },
+      { id: "m55_hp", os: "zephyr" },
+      { id: "m33", os: "off" },
+    ]),
+    [],
+    "an app-less yocto core is DOCUMENTED and buildable (it builds the SoM's " +
+      "stock `alp-image-edge`), and a zephyr one falls back to " +
+      "`alp-stock-shim` — baremetal is the one with no such default",
+  );
+});
+
+test("the notice names the cores and the CMakeLists.txt requirement", () => {
+  const text = baremetalNoAppNotice(["m55_he"]);
+  assert.match(text, /m55_he/);
+  assert.match(text, /CMakeLists\.txt/);
+  assert.match(text, /skips/);
+  assert.doesNotMatch(
+    text,
+    /stock|default/i,
+    "there IS no baremetal stock default — promising one would send the " +
+      "customer looking for something that does not exist",
+  );
+});
+
+test("the notice reads correctly for more than one core", () => {
+  const text = baremetalNoAppNotice(["m55_he", "m55_hp"]);
+  assert.match(text, /m55_he, m55_hp are/);
+  assert.match(text, /skips them/);
+});
