@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **"Fix all" no longer hangs forever on the Zephyr SDK row (#631).**
+  `runFixAll` subscribes to `awaitRun(runNameFor(row))` and then dispatches
+  the row, and `awaitRun` settles only on a `terminalFinished` event carrying
+  the name it subscribed to. `runNameFor` promises the `zephyrSdk` row
+  `"Alp: install Zephyr SDK"`, but `runZephyrSdkInstall`'s
+  `retargetWestCommand`-refused FALLBACK dispatched through a helper that
+  hardcoded `"Alp: install dependency"` — so the progress notification spun
+  forever, no later row ran, nothing on screen said why, and only a window
+  reload cleared it. Both dispatch paths now claim the promised name.
+  Measured on the compiled `runFixAll`: with the bug, dispatched under
+  `Alp: install dependency` while awaiting `Alp: install Zephyr SDK`, never
+  resolved; fixed, it returns `installed: ["zephyrSdk"]`.
+- **The fallback also gave the wrong notice.** It raised
+  `offerReloadAfterInstall`, whose prose is written for a `winget` install and
+  blames the window's PATH — wrong advice for `west sdk install` — and it
+  dropped `sevenZipStatus` on the floor along with the run name. It now raises
+  `offerRefreshAfterZephyrSdkInstall`, the same notice the retargeted path
+  gives. `runInNewTerminal` is deleted: this fallback was its only caller.
+- **New gate: `test/deps.runNameContract.test.js`.** Nothing asserted that the
+  name `runNameFor` promises for a row is the name that row's dispatch
+  actually claims. The invariant held for every other row and broke on exactly
+  one, in exactly one of its two branches, reachable only when a failing
+  Zephyr SDK check and a refused retarget coincide — and `runFixAll`'s
+  existing `isRunActive` guard structurally cannot catch it, because the
+  mismatch is between the AWAITED name and the DISPATCHED one rather than
+  between two dispatches. The gate drives the real compiled dispatcher per
+  action kind and per branch, and includes a vacuity check: it fails if
+  nothing was dispatched, and if `runNameFor` itself drifts to the generic
+  name (which would make the contract hold by agreeing with the bug).
+
 - **Every tan envelope spawn now states a cwd, and a gate keeps it that way
   (#605).** A spawn with no cwd inherits the extension host's own working
   directory — on Windows, the VS Code install directory — and `tan` resolves

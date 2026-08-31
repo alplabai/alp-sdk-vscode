@@ -1956,10 +1956,15 @@ export async function runFixAll(options: {
 
 /**
  * The dedicated `runInTerminal` run name for the Zephyr SDK install, distinct
- * from `runInNewTerminal`'s `"Alp: install dependency"`: with a `winget`
- * terminal already open under that name, a refused second `zephyrSdk` press
- * would offer "Show Terminal" for a name shared with an unrelated install —
- * revealing the wrong one.
+ * from the generic `INSTALL_RUN_NAME` (`"Alp: install dependency"`): with a
+ * `winget` terminal already open under that name, a refused second `zephyrSdk`
+ * press would offer "Show Terminal" for a name shared with an unrelated
+ * install — revealing the wrong one.
+ *
+ * BOTH of `runZephyrSdkInstall`'s dispatch paths claim this name, including
+ * the `retargetWestCommand`-refused fallback. They must: `runNameFor` promises
+ * it for this row, and `runFixAll` awaits exactly what `runNameFor` returns
+ * (#631). `test/deps.runNameContract.test.js` is what keeps the two in step.
  */
 const ZEPHYR_SDK_RUN_NAME = "Alp: install Zephyr SDK";
 
@@ -2034,7 +2039,25 @@ function runZephyrSdkInstall(
     // is still `west sdk install`, which still needs its own workspace root —
     // falling back to a DIFFERENT cwd here would fail it a second, unrelated
     // way on top of the un-retargeted binary.
-    runInNewTerminal(command, topdir);
+    //
+    // `ZEPHYR_SDK_RUN_NAME`, not `INSTALL_RUN_NAME` (#631). This used to
+    // dispatch through `runInNewTerminal`, which hardcoded the generic install
+    // name — and `runNameFor` promises THIS row `ZEPHYR_SDK_RUN_NAME`, so a
+    // "Fix all" that reached this branch subscribed to one name while the
+    // dispatch claimed another. `awaitRun` only ever settles on the name it
+    // subscribed to, so the progress notification span forever, no later row
+    // ran, and only a window reload cleared it. Measured by driving the
+    // compiled `runFixAll`: dispatched under `Alp: install dependency`,
+    // awaited under `Alp: install Zephyr SDK`, never resolved.
+    //
+    // The NOTICE changes with it. `offerReloadAfterInstall`'s prose is
+    // PATH-specific ("this window's PATH") and written for a `winget` install;
+    // this is `west sdk install`, and `offerRefreshAfterZephyrSdkInstall` is
+    // the one that knows about `sevenZipStatus` — which the old fallback
+    // dropped on the floor along with the name.
+    const fallbackRunning = isRunActive(ZEPHYR_SDK_RUN_NAME);
+    runInTerminal({ name: ZEPHYR_SDK_RUN_NAME, command, cwd: topdir });
+    if (!fallbackRunning) offerRefreshAfterZephyrSdkInstall(sevenZipStatus);
     return;
   }
   // `runInTerminal` may refuse a concurrent press for this name (a second
@@ -2049,33 +2072,6 @@ function runZephyrSdkInstall(
     env: proxyEnvAdditions(),
   });
   if (!alreadyRunning) offerRefreshAfterZephyrSdkInstall(sevenZipStatus);
-}
-
-/**
- * The one remaining single-shot terminal dispatch — reached only from
- * `runZephyrSdkInstall`'s "not actually a plain `west …` command" fallback,
- * where `retargetWestCommand` refused to retarget the line and the ordinary
- * shell dispatch is what is left.
- *
- * Guarded the SAME way `runZephyrSdkInstall`'s own dispatch just above
- * already is (and the generic per-step loop in `runDependencyAction` is):
- * `runInTerminal` may refuse a concurrent press under this name — in which
- * case it already told the customer why, and raising
- * `offerReloadAfterInstall` on top would read as though a NEW install just
- * started over a dispatch that never happened.
- *
- * THIS WAS MISSED THE FIRST TIME (#603, second review, major 5): the
- * unconditional-`runInTerminal`-then-notice shape is the exact defect fixed
- * in `runDependencyAction`'s per-step loop one review round earlier, and it
- * survived here, unfixed, because that fix was scoped to a prose finding
- * list rather than grepped for by SHAPE across the file. Lesson kept for the
- * next reader: when a finding names a defect shape, grep the shape, not the
- * one call site the finding happened to measure.
- */
-function runInNewTerminal(command: string, cwd: string | undefined): void {
-  const alreadyRunning = isRunActive(INSTALL_RUN_NAME);
-  runInTerminal({ name: INSTALL_RUN_NAME, command, cwd });
-  if (!alreadyRunning) offerReloadAfterInstall();
 }
 
 /**
