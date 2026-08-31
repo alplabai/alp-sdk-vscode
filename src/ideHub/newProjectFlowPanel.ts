@@ -21,6 +21,7 @@ import type { BoardConfig } from "@alp-sdk/core/board/models";
 import { parseBoardConfig } from "@alp-sdk/core/board/parse";
 import { serializeBoardConfig } from "@alp-sdk/core/board/serialize";
 import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { readOnlyProjectCwd } from "../project/vscodeAdapter";
 import {
   hasIssueCode,
   PRESETS_SDK_ROOT_UNRESOLVED_CODE,
@@ -247,6 +248,13 @@ export class NewProjectFlowPanel {
     // global, and `withSdkRoot` tests `args.includes("--sdk-root")` — which is
     // position-independent — so it still declines to inject a second one.
     const root = sdkPath ? ["--sdk-root", sdkPath] : [];
+    // `readOnlyProjectCwd()` on this and the three catalogue reads below
+    // (#605): all four resolve their SDK from cwd, and `tan presets` reports
+    // an UNRESOLVED SDK as a SUCCESS with empty lists — so an omitted cwd
+    // makes the wizard's Hardware and Template steps answer for the extension
+    // host's own directory, with no way for the caller to tell that apart
+    // from a genuinely empty catalogue.
+    //
     // `interactive: true`: only reached from `sendState`/`reloadCatalog`,
     // themselves only called on the wizard's own `ready`/`reloadProjectTemplates`
     // messages — i.e. the user opened or is actively driving this wizard, never
@@ -254,7 +262,7 @@ export class NewProjectFlowPanel {
     const { outcome } = await runAlpCommand(
       this.context,
       ["presets", ...root],
-      undefined,
+      readOnlyProjectCwd(),
       { interactive: true },
     );
     const soms =
@@ -343,7 +351,7 @@ export class NewProjectFlowPanel {
     const overview = await runAlpCommand(
       this.context,
       ["explain", ...root],
-      undefined,
+      readOnlyProjectCwd(),
       { interactive: true },
     );
     if (overview.outcome.envelope === null) {
@@ -375,7 +383,7 @@ export class NewProjectFlowPanel {
       const detail = await runAlpCommand(
         this.context,
         ["explain", "--template", id, ...root],
-        undefined,
+        readOnlyProjectCwd(),
         { interactive: true },
       );
       const data = detail.outcome.envelope?.data as
@@ -394,7 +402,7 @@ export class NewProjectFlowPanel {
     const examplesRes = await runAlpCommand(
       this.context,
       ["examples", ...root],
-      undefined,
+      readOnlyProjectCwd(),
       { interactive: true },
     );
     // An unresolved SDK is not a failure here: tan returns exit 0 with
@@ -760,9 +768,17 @@ export class NewProjectFlowPanel {
     });
     // `interactive: true`: reached only from the wizard's "Create" button
     // (`createNewProject`) — a direct, explicit user action.
-    const { outcome } = await runAlpCommand(this.context, initArgs, undefined, {
-      interactive: true,
-    });
+    // `readOnlyProjectCwd()`, not `undefined` (#605). `--destination` is
+    // absolute (`project/initArgv.ts`) so this never wrote to the wrong place
+    // — but with `sdkPath` unset, cwd is what decides which SDK `tan init`
+    // resolves the template from, and the extension host's own directory is
+    // nobody's project.
+    const { outcome } = await runAlpCommand(
+      this.context,
+      initArgs,
+      readOnlyProjectCwd(),
+      { interactive: true },
+    );
     if (!outcome.envelope || !outcome.envelope.ok) {
       // Severity comes from the outcome, never from here: `alp init --som` with
       // a bad SKU exits 2 (validation ⇒ warning) and must not read like the

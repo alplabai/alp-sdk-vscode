@@ -11,6 +11,7 @@ import {
   withPresetLibraries,
 } from "@alp-sdk/core/sdkCatalogue/derive";
 import { fetchEnvelopeResult } from "../alpCli/envelope";
+import { readOnlyProjectCwd } from "../project/vscodeAdapter";
 import {
   PRESETS_SDK_ROOT_UNRESOLVED_CODE,
   unresolvedSdkReason,
@@ -158,7 +159,14 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
           // vanishing with nothing recorded anywhere (#611), through the same
           // constant + function the other two `presets` readers
           // (`lsp/client.ts`, `ideHub/newProjectFlowPanel.ts`) share.
-          void fetchEnvelopeResult(this.context, ["presets"]).then((result) => {
+          // `readOnlyProjectCwd()` (#605) — same reason as the other two
+          // `presets` readers: an unresolved SDK comes back as a SUCCESS, so a
+          // cwd-caused empty catalogue is indistinguishable from a real one.
+          void fetchEnvelopeResult(
+            this.context,
+            ["presets"],
+            readOnlyProjectCwd(),
+          ).then((result) => {
             const reason = unresolvedSdkReason(
               { issues: result.issues },
               PRESETS_SDK_ROOT_UNRESOLVED_CODE,

@@ -35,6 +35,7 @@ import {
   planSuccess,
 } from "./notify/service";
 import { notify, notifyAsync } from "./notify/vscodeAdapter";
+import { readOnlyProjectCwd } from "./project/vscodeAdapter";
 import { log, showOutput } from "./util";
 
 interface GenerateData {
@@ -349,9 +350,19 @@ async function checkMigrator(
   const clean = planSuccess("Alp: board.yaml is clean.");
   let res;
   try {
-    res = await runAlpCommand(context, ["migrate", "--check"], undefined, {
-      interactive: false,
-    });
+    // `readOnlyProjectCwd()`, not `undefined` (#605). `migrate` resolves the
+    // project and the SDK from cwd, and this verb is asked BECAUSE a specific
+    // board.yaml was just validated — an omitted cwd would have it answer
+    // about the extension host's own directory (on Windows, the VS Code
+    // install directory) instead of the file the customer is looking at.
+    res = await runAlpCommand(
+      context,
+      ["migrate", "--check"],
+      readOnlyProjectCwd(),
+      {
+        interactive: false,
+      },
+    );
   } catch {
     return clean;
   }

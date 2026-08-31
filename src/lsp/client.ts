@@ -9,6 +9,7 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { fetchEnvelopeResult } from "../alpCli/envelope";
+import { readOnlyProjectCwd } from "../project/vscodeAdapter";
 import { resolveAlpBinaryForContext } from "../alpCli/vscodeAdapter";
 import {
   PRESETS_SDK_ROOT_UNRESOLVED_CODE,
@@ -117,7 +118,13 @@ async function pushSdkCatalog(context: vscode.ExtensionContext): Promise<void> {
     return;
   }
   const [presetsResult, kconfigByCore] = await Promise.all([
-    fetchEnvelopeResult(context, ["presets"]),
+    // `readOnlyProjectCwd()`, not an omitted cwd (#605): `tan presets`
+    // resolves its SDK from cwd and reports an UNRESOLVED one as a SUCCESS
+    // (`alpCli/envelope.ts`), so the catalogue this pushes to the language
+    // server would silently be the answer for the extension host's own
+    // directory rather than the customer's project — and empty-because-wrong-
+    // cwd is indistinguishable from empty-because-no-SDK at the call site.
+    fetchEnvelopeResult(context, ["presets"], readOnlyProjectCwd()),
     fetchOpenPrjConfKconfig(context),
   ]);
   // Shared with the other two `presets` readers (`configurator/
