@@ -12,9 +12,31 @@ import * as fs from "fs";
 import type { KconfigSymbol, KconfigType } from "./kconfig";
 
 /** Concrete value lists derived from the active SDK via `alp presets`. */
+/** One core a SoM declares, verbatim from `tan presets` `soms[].cores[]`. */
+export interface SdkCatalogCore {
+  /** The core id, e.g. `m55_hp`, `a32_cluster`, `m33_sm`. */
+  id: string;
+  /** The OS that core runs, e.g. `zephyr`, `yocto`. */
+  os: string;
+}
+
 export interface SdkCompletionCatalog {
   /** SoM SKUs (`alp presets` `soms[].sku`). */
   skus: readonly string[];
+  /**
+   * Each SoM's declared cores, keyed by SKU (`alp presets` `soms[].cores[]`).
+   *
+   * Carried so the board.yaml quick fixes can name a REAL core instead of
+   * guessing one from the SKU string. The guess they replaced was wrong in two
+   * measurable ways at alp-sdk v0.16.0-rc1: it answered `m55_hp` for
+   * `os: yocto` on E1M-AEN301/E1M-AEN401, which declare no yocto core at all,
+   * and it answered a Renesas `m33_sm` for any SKU it did not recognise.
+   *
+   * Empty before the first `alp/updateSdkCatalog` push and whenever no SDK
+   * resolves — which is a real state, not a degenerate one: a quick fix that
+   * would have to guess is then not offered.
+   */
+  coresBySku: Readonly<Record<string, readonly SdkCatalogCore[]>>;
   /** ADR-0018 board libraries (`alp presets` `boardLibraries`). */
   libraries: readonly string[];
   /**
@@ -31,13 +53,14 @@ export interface SdkCompletionCatalog {
  *  available — completion then falls back to the built-in defaults. */
 export const EMPTY_SDK_CATALOG: SdkCompletionCatalog = {
   skus: [],
+  coresBySku: {},
   libraries: [],
   kconfigByCore: {},
 };
 
 /** The subset of the `alp presets` envelope `data` payload the catalog needs. */
 interface PresetsData {
-  soms?: { sku?: string }[];
+  soms?: { sku?: string; cores?: { id?: string; os?: string }[] }[];
   boardLibraries?: string[];
 }
 
@@ -52,7 +75,22 @@ export function catalogFromPresets(data: unknown): SdkCompletionCatalog {
   const libraries = (payload.boardLibraries ?? []).filter(
     (name): name is string => typeof name === "string" && name.length > 0,
   );
-  return { skus, libraries, kconfigByCore: {} };
+  // Narrowed, not cast: an entry missing either field is DROPPED. A core with
+  // no `os` cannot be matched against a document's `os:` value, and one with no
+  // `id` cannot be written into a `cores:` block — either way it is not an
+  // answer, and coercing it would put an `undefined` in the customer's file.
+  const coresBySku: Record<string, readonly SdkCatalogCore[]> = {};
+  for (const som of payload.soms ?? []) {
+    if (typeof som?.sku !== "string" || som.sku.length === 0) continue;
+    const cores: SdkCatalogCore[] = [];
+    for (const core of som.cores ?? []) {
+      if (typeof core?.id !== "string" || core.id.length === 0) continue;
+      if (typeof core.os !== "string" || core.os.length === 0) continue;
+      cores.push({ id: core.id, os: core.os });
+    }
+    coresBySku[som.sku] = cores;
+  }
+  return { skus, coresBySku, libraries, kconfigByCore: {} };
 }
 
 // kconfiglib's TYPE_TO_STR set, minus "unknown" (which stays undefined here —

@@ -408,3 +408,76 @@ test("som.sku hover surfaces the pushed catalog's allowed values", () => {
   assert.ok(hover, "hover info expected on som.sku");
   assert.deepEqual(hover.allowedValues, ["E1M-AEN401", "E1M-V2N101"]);
 });
+
+// --- coresBySku (#613) ------------------------------------------------------
+//
+// The catalogue carries each SoM's declared cores so the board.yaml quick fixes
+// can name a REAL core instead of guessing one from the SKU string. The payload
+// below is VERBATIM from `tan presets --format json` (`data.soms[].cores[]`) at
+// tan 0.6.0 against alp-sdk v0.16.0-rc1.
+
+test("catalogFromPresets carries each SoM's declared cores", () => {
+  const catalog = catalogFromPresets({
+    soms: [
+      {
+        sku: "E1M-AEN301",
+        cores: [
+          { id: "m55_hp", os: "zephyr" },
+          { id: "m55_he", os: "zephyr" },
+        ],
+      },
+      {
+        sku: "E1M-V2N101",
+        cores: [
+          { id: "a55_cluster", os: "yocto" },
+          { id: "m33_sm", os: "zephyr" },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(catalog.coresBySku, {
+    "E1M-AEN301": [
+      { id: "m55_hp", os: "zephyr" },
+      { id: "m55_he", os: "zephyr" },
+    ],
+    "E1M-V2N101": [
+      { id: "a55_cluster", os: "yocto" },
+      { id: "m33_sm", os: "zephyr" },
+    ],
+  });
+});
+
+test("a core missing an id or an os is DROPPED, never coerced", () => {
+  const catalog = catalogFromPresets({
+    soms: [
+      {
+        sku: "E1M-AEN801",
+        cores: [
+          { id: "m55_hp", os: "zephyr" },
+          { id: "m55_he" },
+          { os: "yocto" },
+          { id: "", os: "zephyr" },
+          null,
+          "m33",
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(
+    catalog.coresBySku["E1M-AEN801"],
+    [{ id: "m55_hp", os: "zephyr" }],
+    "a core with no os cannot be matched against a document's `os:` value, " +
+      "and one with no id cannot be written into a `cores:` block — coercing " +
+      "either puts an `undefined` in the customer's board.yaml",
+  );
+});
+
+test("a SoM that declares no cores is present with an empty list, not absent", () => {
+  const catalog = catalogFromPresets({ soms: [{ sku: "E1M-AEN801" }] });
+  assert.deepEqual(catalog.coresBySku, { "E1M-AEN801": [] });
+});
+
+test("the empty catalogue has an empty core table, not a missing one", () => {
+  assert.deepEqual(EMPTY_SDK_CATALOG.coresBySku, {});
+  assert.deepEqual(catalogFromPresets(undefined).coresBySku, {});
+});
