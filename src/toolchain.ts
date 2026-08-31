@@ -48,6 +48,7 @@ import { runBootstrapInTerminal } from "./bootstrap";
 import type { NotificationPlan } from "./notify/models";
 import { planFailure, planSuccess } from "./notify/service";
 import { notify, notifyAsync } from "./notify/vscodeAdapter";
+import { readOnlyProjectCwd } from "./project/vscodeAdapter";
 import { log, runInTerminal } from "./util";
 
 /**
@@ -98,7 +99,16 @@ export function runToolchainFix(fixId: ToolchainFixId): void {
     // A toolchain install is machine-wide, but a cwd still has to be stated:
     // `undefined` inherits the extension host's own, which on Windows is the
     // VS Code INSTALL DIRECTORY.
-    cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    //
+    // This line USED TO BE `workspaceFolders?.[0]?.uri.fsPath`, which broke
+    // the rule the comment above it states — with no folder open it evaluates
+    // to exactly the `undefined` being warned against — and re-derived the
+    // root per call site, which `docs/ARCHITECTURE_RULES.md` §3 forbids
+    // (`workspaceFolders[0]` and `collectProjectContext` disagree on a
+    // multi-root workspace). `readOnlyProjectCwd()` is the one seam for
+    // "a project-scoped cwd, or a real directory that is nobody's project"
+    // (#605).
+    cwd: readOnlyProjectCwd(),
   });
 }
 

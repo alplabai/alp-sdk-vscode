@@ -72,6 +72,13 @@ function driveReady(presetsOutcome) {
       commands: { executeCommand: async () => undefined },
       env: { openExternal: async () => true },
     },
+    // The cwd seam these four catalogue reads now resolve through (#605).
+    // Stubbed rather than left real: the genuine one reads `vscode.workspace`,
+    // which this harness does not build.
+    "../project/vscodeAdapter": {
+      readOnlyProjectCwd: () => "/home/dev/proj",
+      collectProjectContext: () => ({ workspaceRoot: "/home/dev/proj" }),
+    },
     "../alpCli/vscodeAdapter": {
       runAlpCommand: async (_ctx, args) => {
         if (args[0] === "presets") return presetsOutcome;

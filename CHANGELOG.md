@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- **Every tan envelope spawn now states a cwd, and a gate keeps it that way
+  (#605).** A spawn with no cwd inherits the extension host's own working
+  directory — on Windows, the VS Code install directory — and `tan` resolves
+  both the project and the SDK from cwd, so the command answers about
+  somewhere that is nobody's project. The failure is quiet: `tan presets`
+  reports an unresolved SDK as a SUCCESS with empty lists, so a cwd-caused
+  empty catalogue is indistinguishable at the call site from a real one. Nine
+  sites fixed — the four New Project catalogue reads (`presets`, `explain`,
+  `explain --template`, `examples`), `tan init`, the LSP client's `presets`,
+  the Configurator's `presets`, `runToolchainFix`'s terminal dispatch, and
+  `migrate --check`.
+- **`runToolchainFix`'s comment stated the rule its own line broke.** It
+  explained why `undefined` must not be passed and then resolved the cwd
+  through `vscode.workspace.workspaceFolders?.[0]?.uri.fsPath`, which
+  evaluates to exactly `undefined` when no folder is open — and re-derived the
+  root per call site, which `docs/ARCHITECTURE_RULES.md` §3 forbids. Now
+  `readOnlyProjectCwd()`, the one seam for this.
+- **New gate: `test/tan.spawnCwd.test.js`.** #605 opened naming three sites;
+  its own comments then found a fourth, then six more, all by hand. Nine edits
+  do not close a class. The gate parses `src/**/*.ts` with the TypeScript
+  compiler API — the same `typescript/unstable/ast` + `unstable/sync` pair
+  `scripts/tan-surface/extract.mjs` already documents, since TypeScript 7
+  deleted the old JS API — and fails on any `runAlpCommand` /
+  `fetchEnvelopeResult` call that omits its cwd, passes the `undefined`
+  literal, or re-derives the root from `workspaceFolders[0]`. Stated limit,
+  in the file: it covers the two ENVELOPE spawners and NOT the terminal ones
+  (`runInTerminal`, `runAlpInTerminal`, `runAlpStreamed`), whose cwd is a
+  named option rather than a positional argument.
+- **Correcting the record: one of the nine was mine.** `migrate --check`, added
+  hours earlier for #613, passed `undefined` as its cwd — the same class,
+  introduced while the issue describing it was open. It is the reason this
+  change ships a gate rather than nine edits.
+
 - **A `alpSdk.path` that stopped resolving after a bootstrap now says so, and
   offers the SDK tan resolves (#604).** `tan bootstrap` MOVES the alp-sdk
   checkout — measured on the pinned tan 0.6.0, by DEFAULT and not only under

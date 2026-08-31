@@ -169,6 +169,7 @@ async function driveValidate({ validate, migrate }) {
   const notified = [];
   const logs = [];
   const argvs = [];
+  const cwds = [];
   const commands = new Map();
   let outputRevealed = false;
 
@@ -195,8 +196,9 @@ async function driveValidate({ validate, migrate }) {
       ProgressLocation: { Notification: 15 },
     },
     "./alpCli/vscodeAdapter": {
-      runAlpCommand: async (_ctx, args) => {
+      runAlpCommand: async (_ctx, args, cwd) => {
         argvs.push(args);
+        cwds.push(cwd);
         if (args[0] === "validate") return { outcome: validate };
         if (args[0] === "migrate") {
           if (!migrate) {
@@ -209,6 +211,12 @@ async function driveValidate({ validate, migrate }) {
         throw new Error(`unexpected argv ${JSON.stringify(args)}`);
       },
     },
+    // The seam `checkMigrator` resolves its cwd through (#605). Stubbed
+    // because the REAL one reads `vscode.workspace`, and `checkMigrator`
+    // computes the cwd INSIDE its own try/catch — so an unstubbed throw here
+    // is swallowed and the migrator silently never runs, which is a green
+    // suite hiding a skipped check rather than a passing one.
+    "./project/vscodeAdapter": { readOnlyProjectCwd: () => "/home/dev/proj" },
     "./loader/vscodeAdapter": {
       boardYamlExists: () => true,
       collectLoaderWorkspaceContext: () => ({
@@ -249,7 +257,7 @@ async function driveValidate({ validate, migrate }) {
   const run = commands.get("alp.validateBoardYaml");
   assert.ok(run, "alp.validateBoardYaml was never registered");
   await run();
-  return { notified, logs, argvs, outputRevealed };
+  return { notified, logs, argvs, cwds, outputRevealed };
 }
 
 const ok = (envelope) => ({
@@ -266,6 +274,12 @@ test("a clean validate ALSO asks the migrator, and stays clean when it agrees", 
     migrate: ok(MIGRATE_CLEAN),
   });
   assert.deepEqual(result.argvs, [["validate"], ["migrate", "--check"]]);
+  assert.equal(
+    result.cwds.at(-1),
+    "/home/dev/proj",
+    "`migrate` resolves the project AND the SDK from cwd, so an omitted one " +
+      "answers about the extension host's own directory (#605)",
+  );
   assert.equal(result.notified.length, 1, "the customer saw two verdicts");
   assert.match(result.notified[0].message, /board\.yaml is clean/);
 });
