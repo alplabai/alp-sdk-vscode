@@ -2,6 +2,103 @@
 
 ## Unreleased
 
+- **The module scaffold now goes where `board.yaml` is, not where the
+  workspace folder is (#601).** `alpSdk.boardYamlPath` is a documented,
+  per-folder setting holding a path relative to its workspace folder. Point it
+  at `firmware/board.yaml` and the project is `<outer>/firmware`, which is
+  where `src/west.ts` has always run the build — but `Alp: Scaffold module`
+  passed `<outer>` to `tan scaffold` as both `--project` and the spawn's cwd,
+  so the module landed beside the project and was never compiled. That is
+  #601's own symptom re-created through a different mechanism, found in
+  adversarial review and confirmed live against the pinned tan 0.6.0. The rule
+  is now one function, `packages/alp-core/src/project/projectRoot.ts`, used by
+  both callers.
+- **The overwrite dialog no longer names files it is not about to destroy
+  (#601).** It listed every row that was not `unchanged` under "any edits made
+  in them are lost" — and a refusal legitimately carries `"new"` rows beside
+  the offending one (delete a scaffolded header, edit its `.c`, and tan refuses
+  with the header marked `"new"`). A file that does not exist was named as one
+  whose contents were about to be replaced, in the one dialog whose whole job
+  is being exact about that. Three headings now: replaced (`"update"` only),
+  created (`"new"`), and a separate one for a kind this extension does not
+  recognise, which is named rather than hidden but not claimed to be replaced.
+  The first confirm likewise counts files that change rather than every row
+  tan listed, and shows the untouched ones under their own heading.
+- **Cancelling a scaffold no longer reports a killed write as a clean
+  cancellation (#601).** `runAlpWithProgress` aborts the controller and kills
+  the tan child, so a cancelled `--preview` is a no-op while a cancelled write
+  was interrupted mid-run; tan keeps no journal and reports nothing on a kill.
+  All three passes announced the same info-severity "cancelled". The preview
+  now says nothing was written; a cancelled write, and a cancelled `--force`
+  replace, say so at warning severity and tell the customer to check the
+  module.
+- **A refusal now reaches the customer in this extension's words, with tan's
+  verbatim in the channel (#601).** tan writes for a terminal: "Use --force to
+  allow updates", "Use --name <name> or run interactively" — flags this UI
+  never exposes and a customer in the editor cannot act on. The toast carries
+  the route forward; `detail` carries tan's own sentence and its code,
+  unedited. A per-template `tan explain` failure is logged instead of leaving
+  a picker of bare ids with nothing anywhere saying why, and the catalogue
+  progress is cancellable (`1 + N` sequential spawns, and `N` is tan's number).
+  `classifyScaffoldRefusal` now looks its codes up with `hasOwnProperty`: a
+  refusal coded `constructor` or `toString` used to read a function back off
+  `Object.prototype` and classify as a kind that does not exist.
+- **The modal body reaches the output channel (#601).** `modalDetail` is
+  rendered on the dialog and was written nowhere else, so a customer who
+  confirmed a destructive replace left no record of the file list they were
+  shown. `src/notify/vscodeAdapter.ts`'s `present` now logs it with the rest of
+  the plan.
+
+- **`Alp: Scaffold module` now calls `tan scaffold` instead of
+  re-implementing it, so a module scaffolded from VS Code is actually
+  compiled (#601).** `tan scaffold` emits a `## Wiring` section in the module
+  README naming the two `CMakeLists.txt` edits without which the module is
+  never compiled; the TypeScript port in
+  `packages/alp-core/src/wizard/service.ts` emitted `## Notes` and stopped, so
+  the customer got a module that silently never built with nothing saying why.
+  Measured by compiling the port out of git history and diffing it against the
+  pinned tan: header and source byte-identical (with no board.yaml resolved),
+  README differing in that section and in `Template:` alone, where the port
+  spelled the template's label and tan spells its id. (#601's body says
+  everything outside `## Wiring` was byte-identical and counts `Template:`
+  among the identical lines; that detail is wrong, the conclusion is not.)
+  The port is DELETED rather than patched: patching the text closes this
+  symptom and leaves a second, un-gated copy of a generator tan owns to miss
+  the next addition the same way. `wizard/service.ts`, `wizard/models.ts` and
+  `wizard/fileSystem.ts` are gone (`collectGeneratedOutputPreviews` went with
+  them — it had no callers), replaced by `wizard/scaffoldArgv.ts` (the argv,
+  pure) and `wizard/scaffoldPayload.ts` (narrowing + refusal classification).
+  The module-template picker is now built from `tan explain`'s
+  `available.moduleTemplates[]` plus a per-id explain, the same shape the New
+  Project flow already used, so a template tan adds tomorrow appears with no
+  change here — the retired four-entry table is what made that impossible.
+- **The scaffold confirm now lists what tan will actually write, and
+  `--force` is gated behind a second dialog that names what it destroys
+  (#601).** The old flow opened a markdown preview rendered by the port —
+  precisely the text that had gone stale. It now runs `tan scaffold
+  --preview` (which writes nothing) and puts tan's own `fileChanges[]` on the
+  confirmation dialog. `--force` is never predicted from that list: the write
+  runs WITHOUT it, and only tan's own `scaffold.would-overwrite` refusal
+  (exit 3) raises a second, error-severity modal naming the differing files
+  and saying the edits in them are lost. Measured on the pinned tan 0.6.0,
+  `--force` replaces a file with no diff and no backup. Both spawns carry the
+  project root as `--project` AND as the spawn's cwd: measured, a `scaffold`
+  with neither answers `project.root: "."`, which for an extension-host child
+  is whatever directory VS Code was launched from (#605's class, not joined).
+  An `ok: true` whose payload carries no `fileChanges`/`written` list is
+  reported as a failure rather than as "wrote 0 file(s)" — the `written ?? []`
+  shape pinned in `test/ideHub.materialiseGuard.test.js` — and tan's
+  `issues[]` reach the output channel on the success path too (#611).
+- **Known regression, filed as tan-cli#1031: the generated module source now
+  always reads `// Board context: unavailable`.** The retired port read `board.yaml`
+  and wrote the SoM SKU and OS into that comment. Measured on the pinned tan
+  0.6.0, `tan scaffold` reports `project.boardYaml: null` and emits the
+  `unavailable` spelling even with `--board-yaml` passed explicitly, an
+  `--sdk-root` resolved, and the cwd inside the project. It is a comment, not
+  a build input — the module compiles either way, which the `## Wiring`
+  section is what makes true — but it is a real loss and is recorded here
+  rather than left to be rediscovered.
+
 - **Dependency panel install buttons are no longer dead on the pinned tan
   0.6.0 (#603).** `packages/alp-core/src/deps/planner.ts` matched a missing
   prerequisite to a row by `p.tool === check.name`, which worked at v0.3.1
