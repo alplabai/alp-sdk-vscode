@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **The New Project wizard names the files it is about to write (#616).**
+  Create used to write blind: the Confirm step showed no file list at all. It
+  now runs `tan init --preview` first — measured, that writes nothing and
+  returns `data.fileChanges[]`, 8 entries for `minimal-app` — and shows them
+  before Create. A preview that fails or returns a payload this extension
+  cannot read does NOT block Create (a preview is an aid, not a gate), but the
+  customer is never shown an empty list as though it meant "no files".
+- **Correcting #616's body: `sdkPinned` is not available before Create.** The
+  issue calls it "a fact the customer should see before Create". Measured on
+  the pinned tan 0.6.0, `data.sdkPinned` is `null` on a `--preview` pass and
+  carries the path only on the real run, so no UI here promises it beforehand.
+
 - **`board.yaml` gets a structural check even with no SDK resolved, and it is
   never dressed up as a clean bill of health (#619).** `tan validate
   --offline` runs only the checks that ship in tan, and the two modes are not

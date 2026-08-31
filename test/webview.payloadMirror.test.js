@@ -191,6 +191,9 @@ const MODELS = [
   // because no union names them directly (they are nested inside one).
   { mirror: "ModelEnergyMeasurement", file: HOST_REL, strict: true },
   { mirror: "ZooEntry", file: HOST_REL, strict: true },
+
+  // ── New Project preview (#616): `tan init --preview`'s file list ──
+  { mirror: "NewProjectFileChange", file: HOST_REL, strict: true },
 ];
 
 /**

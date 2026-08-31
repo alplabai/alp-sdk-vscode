@@ -902,6 +902,29 @@ export interface NewProjectFlowGoToStepMessage {
   stepId: string;
 }
 
+/** One file `tan init --preview` says it would write — see
+ *  NewProjectPreviewDataMessage. `kind` stays a plain string on purpose: an
+ *  unseen word must still be LISTED to the customer, never dropped. */
+export interface NewProjectFileChange {
+  relativePath: string;
+  kind: string;
+}
+
+/**
+ * Answer to `requestNewProjectPreview` — `tan init --preview`'s file list
+ * (#616).
+ *
+ * `files: null` means the preview COULD NOT BE READ (spawn failure, a refused
+ * (template, SoM) pair, or an unreadable envelope) — NOT "zero files". Every
+ * real template lists at least one file, so render `null` as "preview
+ * unavailable", never as an empty list — the same failure `written ?? []`
+ * caused for module scaffold.
+ */
+export interface NewProjectPreviewDataMessage {
+  type: "newProjectPreviewData";
+  files: NewProjectFileChange[] | null;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -927,7 +950,8 @@ export type ExtToWebviewMessage =
   | ZooDataMessage
   | ZooAddStartedMessage
   | ZooAddResultMessage
-  | SliceSizesDataMessage;
+  | SliceSizesDataMessage
+  | NewProjectPreviewDataMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -1006,6 +1030,19 @@ export interface CreateNewProjectMessage {
   openInCurrentWindow?: boolean;
   cores?: { id: string; os: string; app?: string }[];
 }
+/** Ask what Create WOULD write, without writing it (#616) — `tan init
+ *  --preview`, answered by `newProjectPreviewData`. `destination` is
+ *  REQUIRED here, unlike `createNewProject`'s optional one: this message is
+ *  never sent until the Name step has set one. */
+export interface RequestNewProjectPreviewMessage {
+  type: "requestNewProjectPreview";
+  templateId: string;
+  moduleId: string;
+  projectName: string;
+  sdkPath?: string;
+  destination: string;
+  cores?: { id: string; os: string; app?: string }[];
+}
 export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
   current?: string;
@@ -1077,6 +1114,7 @@ export type WebviewToExtMessage =
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage
+  | RequestNewProjectPreviewMessage
   | PickProjectLocationMessage
   | ReloadProjectTemplatesMessage
   | OpenExistingProjectMessage

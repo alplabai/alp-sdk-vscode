@@ -544,6 +544,48 @@ export interface NewProjectFlowGoToStepMessage {
   stepId: string;
 }
 
+/** One file `tan init --preview` says it would write, exactly as tan reports
+ *  it — see `NewProjectPreviewDataMessage`. `kind` (`"new"`/`"update"`/…) is a
+ *  plain `string`, not narrowed to a closed union: an unseen word must still
+ *  be LISTED to the customer, never silently dropped (same rule
+ *  `@alp-sdk/core/wizard/scaffoldPayload`'s `ScaffoldFileChange.kind` states
+ *  for `tan scaffold`'s near-identical payload). */
+export interface NewProjectFileChange {
+  relativePath: string;
+  kind: string;
+}
+
+/**
+ * Answer to `requestNewProjectPreview` — `tan init --preview`'s own file list
+ * (#616), so Create no longer writes a project the customer has never seen a
+ * file list for.
+ *
+ * `files: null` means the preview COULD NOT BE READ — the spawn failed, tan
+ * refused the (template, SoM) pair, or the envelope's `data` did not narrow
+ * (`@alp-sdk/core/project/initPreview`'s `narrowInitPreview`) — and is NOT
+ * "zero files". Every real template's preview lists at least one file
+ * (measured on the pinned tan 0.6.0: 8 for `minimal-app`), so a genuinely
+ * empty list would itself be surprising; the webview must not render `null`
+ * as an empty list, the same failure `written ?? []` caused for module
+ * scaffold (`test/ideHub.materialiseGuard.test.js`, #611, #517).
+ *
+ * Preview is an AID, never a gate: unlike `createNewProject`, a failure here
+ * has no refusal-classification path and does not block Create — the panel
+ * logs the reason to the "Alp SDK" output channel and answers `files: null`,
+ * and Create sends the same argv (minus `--preview`) regardless.
+ *
+ * NOTE, correcting #616's own body: it claims `data.sdkPinned` is "a fact the
+ * customer should see before Create". Measured on the pinned tan 0.6.0,
+ * `data.sdkPinned` is `null` on a `--preview` pass — only the REAL
+ * (non-preview) run resolves and reports it. This message carries no
+ * `sdkPinned` field on purpose; do not add one that promises a value the
+ * preview pass cannot supply.
+ */
+export interface NewProjectPreviewDataMessage {
+  type: "newProjectPreviewData";
+  files: NewProjectFileChange[] | null;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -569,7 +611,8 @@ export type ExtToWebviewMessage =
   | ZooDataMessage
   | ZooAddStartedMessage
   | ZooAddResultMessage
-  | SliceSizesDataMessage;
+  | SliceSizesDataMessage
+  | NewProjectPreviewDataMessage;
 
 // ---------------------------------------------------------------------------
 // New-project / existing-project shared types
@@ -735,6 +778,33 @@ export interface CreateNewProjectMessage {
   cores?: { id: string; os: string; app?: string }[];
 }
 
+/**
+ * Ask what Create WOULD write, without writing it (#616) — `tan init
+ * --preview`, answered by `newProjectPreviewData`.
+ *
+ * Carries the same fields `createNewProject` does, MINUS `openInCurrentWindow`
+ * (a post-scaffold decision the preview does not need). Deliberately a
+ * SEPARATE interface rather than `Omit<CreateNewProjectMessage, …>` — the two
+ * are sent from different points in the wizard for different reasons, and
+ * coupling their shapes would make a field added for one silently reshape the
+ * other's wire contract too.
+ *
+ * `destination` is REQUIRED here, unlike `createNewProject`'s optional one:
+ * `tan init --preview` still needs somewhere to preview INTO, and the webview
+ * does not send this message until the Name step has set one — there is no
+ * "prompt with a dialog" fallback for a request the customer did not
+ * explicitly make (see `NewProjectFlowView.tsx`'s Confirm-step effect).
+ */
+export interface RequestNewProjectPreviewMessage {
+  type: "requestNewProjectPreview";
+  templateId: string;
+  moduleId: string;
+  projectName: string;
+  sdkPath?: string;
+  destination: string;
+  cores?: { id: string; os: string; app?: string }[];
+}
+
 export interface OpenExistingProjectMessage {
   type: "openExistingProject";
   /** true = also run west init after opening folder */
@@ -852,6 +922,7 @@ export type WebviewToExtMessage =
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage
+  | RequestNewProjectPreviewMessage
   | PickProjectLocationMessage
   | ReloadProjectTemplatesMessage
   | OpenExistingProjectMessage

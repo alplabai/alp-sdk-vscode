@@ -312,6 +312,50 @@
   text-align: right;
 }
 
+/* The `tan init --preview` file list (#616). A scrollable list rather than
+   `.summaryCard`'s single-line rows: this can run to eight-plus entries
+   (measured: minimal-app), and a Confirm step that grew that tall would push
+   the Create button below the fold. */
+.previewFileList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.previewFileRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-widget, var(--border-default));
+}
+
+.previewFileRow:last-child {
+  border-bottom: none;
+}
+
+.previewFilePath {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* tan's own word for what happens to this path ("new", "update", …) — kept a
+   plain string on the wire (NewProjectFileChange.kind) and rendered verbatim
+   here, so an unseen future word is still legible rather than reformatted
+   into an assumed shape. */
+.previewFileKind {
+  flex: 0 0 auto;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* The per-category heading inside the Examples list (#482 §2). Lighter than
    `.groupLabel`, which separates Starters from Examples — these sit one level
    down and must not compete with it. */

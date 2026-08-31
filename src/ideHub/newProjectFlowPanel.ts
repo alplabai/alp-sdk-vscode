@@ -7,6 +7,7 @@ import * as vscode from "vscode";
 import { exampleCategory } from "@alp-sdk/core/examples/category";
 import { planInitArgv } from "@alp-sdk/core/project/initArgv";
 import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
+import { narrowInitPreview } from "@alp-sdk/core/project/initPreview";
 import {
   appDirOverrides,
   orphanedAppDirs,
@@ -33,7 +34,9 @@ import {
   PROTOCOL_VERSION,
   type E1mModule,
   type ExtToWebviewMessage,
+  type NewProjectFileChange,
   type ProjectTemplate,
+  type RequestNewProjectPreviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
 import { E1M_MODULES } from "./projectScaffold";
@@ -469,6 +472,10 @@ export class NewProjectFlowPanel {
         await this.createProject(msg);
         break;
 
+      case "requestNewProjectPreview":
+        await this.requestPreview(msg);
+        break;
+
       case "reloadProjectTemplates":
         await this.reloadCatalog(msg.sdkPath);
         break;
@@ -676,6 +683,86 @@ export class NewProjectFlowPanel {
         );
       }
     }
+  }
+
+  /**
+   * Answer the Confirm step's `requestNewProjectPreview` with `tan init
+   * --preview`'s own file list (#616), so Create no longer writes a project
+   * the customer has never seen a file list for.
+   *
+   * `planInitArgv` is called with the SAME inputs `createProject` resolves
+   * below — the same `sourceDir` lookup, the same cached SoM cores — plus
+   * `preview: true`. That is deliberate, not incidental: a hand-assembled
+   * second argv here could drift from the one Create actually sends, and the
+   * whole point of a PREVIEW is that it describes the run that is really
+   * about to happen.
+   *
+   * Preview is an AID, never a gate. Unlike `createProject`, a refused or
+   * unreadable result here does not classify anything and does not stop
+   * Create — it is logged to the "Alp SDK" output channel and answered with
+   * `files: null`, which the webview must render as "preview unavailable",
+   * never as "this creates nothing" (see `NewProjectPreviewDataMessage`).
+   * Create itself runs the identical argv, minus `--preview`, regardless of
+   * what happened here.
+   */
+  private async requestPreview(
+    msg: RequestNewProjectPreviewMessage,
+  ): Promise<void> {
+    const sourceDir = this.templates.find(
+      (t) => t.id === msg.templateId,
+    )?.sourceDir;
+    const { argv: previewArgs } = planInitArgv({
+      templateId: msg.templateId,
+      sourceDir,
+      projectName: msg.projectName,
+      parentDir: msg.destination,
+      moduleId: msg.moduleId,
+      cores: this.somModules.find((m) => m.id === msg.moduleId)?.cores ?? [],
+      coreAssignments: msg.cores,
+      sdkPath: msg.sdkPath,
+      preview: true,
+    });
+
+    // `readOnlyProjectCwd()` (#605): `tan init --preview` still resolves its
+    // SDK from cwd the same way the real `init` does, and this is a
+    // background query the extension host's own directory must never answer
+    // for. `interactive: true`: reached only from the wizard's own Confirm
+    // step, an active user session, the same rule `fetchSomModules` follows.
+    const { outcome } = await runAlpCommand(
+      this.context,
+      previewArgs,
+      readOnlyProjectCwd(),
+      { interactive: true },
+    );
+
+    // Issues reach the channel on every outcome, ok or not — the same rule
+    // `wizard.ts`'s `logIssues` follows for `tan scaffold`'s preview pass.
+    for (const issue of outcome.envelope?.issues ?? []) {
+      log(`[new-project] preview ${issue.severity}: ${issue.message}`);
+    }
+
+    let files: NewProjectFileChange[] | null = null;
+    if (!outcome.envelope || !outcome.envelope.ok) {
+      log(`[new-project] preview failed: ${outcome.message}`);
+    } else {
+      const result = narrowInitPreview(outcome.envelope.data);
+      if (result) {
+        files = result.fileChanges;
+      } else {
+        // `ok: true` with a `data` this extension cannot read is NOT a
+        // preview of zero files — see NewProjectPreviewDataMessage. Logged
+        // rather than surfaced as a notification: the customer did not click
+        // a button for this, Create is unaffected, and a toast per Confirm
+        // visit would be its own defect.
+        log("[new-project] preview data did not narrow (no fileChanges[])");
+      }
+    }
+
+    const previewMsg: ExtToWebviewMessage = {
+      type: "newProjectPreviewData",
+      files,
+    };
+    void this.panel.webview.postMessage(previewMsg);
   }
 
   private async createProject(msg: CreateNewProjectMessage): Promise<void> {

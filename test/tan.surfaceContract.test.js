@@ -734,6 +734,11 @@ const EXPECTED_UNRESOLVABLE = [
   "src/alpCli/vscodeAdapter.ts  finalArgs",
   "src/debug.ts  args",
   "src/ideHub/newProjectFlowPanel.ts  initArgs",
+  // #616's `--preview` pass, built by the SAME `planInitArgv` and therefore
+  // covered by the SAME enumeration — `test/wizard.initArgv.test.js` crosses
+  // every branch with the `preview` boolean, so this entry is checked for the
+  // identical reason `initArgs` is, not merely pinned.
+  "src/ideHub/newProjectFlowPanel.ts  previewArgs",
   "src/loader.ts  args",
   "src/west.ts  args",
   // The module wizard's `tan scaffold`, and the second entry in this list that
