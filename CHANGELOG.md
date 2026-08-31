@@ -7,11 +7,14 @@
   compiled (#601).** `tan scaffold` emits a `## Wiring` section in the module
   README naming the two `CMakeLists.txt` edits without which the module is
   never compiled; the TypeScript port in
-  `packages/alp-core/src/wizard/service.ts` emitted `## Notes` and stopped.
-  Everything around that section was byte-identical between the two, which is
-  what identified it as a port that never picked up an upstream addition — and
-  the customer got a module that silently never built, with nothing saying
-  why. The port is DELETED rather than patched: patching the text closes this
+  `packages/alp-core/src/wizard/service.ts` emitted `## Notes` and stopped, so
+  the customer got a module that silently never built with nothing saying why.
+  Measured by compiling the port out of git history and diffing it against the
+  pinned tan: header and source byte-identical (with no board.yaml resolved),
+  README differing in that section and in `Template:` alone, where the port
+  spelled the template's label and tan spells its id. (#601's body says
+  everything outside `## Wiring` was byte-identical and counts `Template:`
+  among the identical lines; that detail is wrong, the conclusion is not.) The port is DELETED rather than patched: patching the text closes this
   symptom and leaves a second, un-gated copy of a generator tan owns to miss
   the next addition the same way. `wizard/service.ts`, `wizard/models.ts` and
   `wizard/fileSystem.ts` are gone (`collectGeneratedOutputPreviews` went with
@@ -38,8 +41,8 @@
   reported as a failure rather than as "wrote 0 file(s)" — the `written ?? []`
   shape pinned in `test/ideHub.materialiseGuard.test.js` — and tan's
   `issues[]` reach the output channel on the success path too (#611).
-- **Known regression, filed upstream: the generated module source now always
-  reads `// Board context: unavailable`.** The retired port read `board.yaml`
+- **Known regression, filed as tan-cli#1031: the generated module source now
+  always reads `// Board context: unavailable`.** The retired port read `board.yaml`
   and wrote the SoM SKU and OS into that comment. Measured on the pinned tan
   0.6.0, `tan scaffold` reports `project.boardYaml: null` and emits the
   `unavailable` spelling even with `--board-yaml` passed explicitly, an

@@ -763,12 +763,16 @@ const EXPECTED_UNRESOLVABLE = [
  * `src/wizard.ts  argv` is the module wizard's `tan scaffold` (#601), and it is
  * checked the same way, in `test/wizard.scaffoldArgv.test.js`.
  *
- * ONE entry for TWO passes: the preview and the write both go through a single
- * `runScaffold` helper, so the extractor sees one call site. Its argv is
- * conditional (`--preview` on the plan pass, `--force` only after the overwrite
- * confirm), so it lives in `packages/alp-core/src/wizard/scaffoldArgv.ts` as a
- * pure function and every branch is enumerated through `reduceLiteralArgv`
- * against this same snapshot.
+ * ONE entry for THREE passes: preview, write, and the forced retry all go
+ * through a single `runScaffold` helper, so the extractor sees one call site.
+ *
+ * Unlike `initArgs`, this argv COULD have been literal — the three passes each
+ * have a compile-time-constant flag set, so three duplicated literals would
+ * have landed in EXPECTED_PARTIAL instead. It is a pure function because
+ * enumerating it reduces every branch to `resolution: "full"` and adds the
+ * arity, stray-positional and dangling-value assertions a `"partial"` record
+ * does not carry, with no duplication to drift. The entry below is the price of
+ * that, not evidence the site could not be read.
  *
  * This site did not exist before #601 — there was no argv at all, because
  * `tan scaffold` was re-implemented in TypeScript. A generator that IS the

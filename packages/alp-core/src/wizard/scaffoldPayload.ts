@@ -26,10 +26,20 @@ export interface ScaffoldFileChange {
    * `"unchanged"` are the three the pinned tan 0.6.0 emits.
    *
    * Kept as a plain `string` rather than narrowed to that union ON PURPOSE, and
-   * read at exactly one decision point: `isScaffoldNoOp` treats only the
-   * literal `"unchanged"` as "nothing to do". Every other value — including one
-   * this extension has never seen — falls through to the confirm, so a
-   * vocabulary this repo does not know cannot be mistaken for a no-op.
+   * read at TWO decision points, both of which fail OPEN — toward showing the
+   * customer more, never toward a silent success:
+   *
+   *   `isScaffoldNoOp` here treats only the literal `"unchanged"` as "nothing
+   *   to do", so an unseen word falls through to the confirm.
+   *
+   *   `describeOverwrite` in `src/wizard.ts` names every path whose kind is not
+   *   `"unchanged"`, so an unseen word is LISTED as at risk rather than
+   *   quietly left out of the dialog that gates `--force`.
+   *
+   * Walked through: a hypothetical `kind: "delete"` is not a no-op, appears in
+   * the first confirm, and appears in the overwrite confirm. The dialogs' prose
+   * ("will write", "will be REPLACED") would then be the wrong verb for it —
+   * wrong words, right severity, and nothing acts on it silently.
    *
    * Nothing here predicts whether `--force` is required. tan decides that, by
    * refusing with `scaffold.would-overwrite`; see `classifyScaffoldRefusal`.
@@ -62,11 +72,19 @@ function narrowStringList(raw: unknown): string[] | null {
 /**
  * Narrow `tan scaffold`'s untrusted `data` into `ScaffoldResult`, or `null`.
  *
- * `fileChanges` and `written` must BOTH be arrays or the answer is `null`. They
- * are the two things every caller here needs — the list shown before the write,
- * and the list reported after it — and a payload carrying neither is not this
- * shape at all. A preview pass legitimately reports `written: []`, which is an
- * array, so one rule covers both passes.
+ * `fileChanges` and `written` must BOTH be arrays or the answer is `null` —
+ * EITHER one missing is enough to refuse, not both. One rule for both passes:
+ * `fileChanges` is the list shown before the write, `written` the list reported
+ * after it, and a preview legitimately reports `written: []`, which is an array.
+ *
+ * That is deliberately stricter than any single caller needs (the preview reads
+ * only `fileChanges`, the write only `written`), and the cost is real: a future
+ * tan that drops one field from one pass dead-ends a flow it could have
+ * completed. The trade is taken because the alternative — degrading a missing
+ * list to `[]` — is the `written ?? []` shape that reported a SUCCESS for a run
+ * whose output nobody could read. The caller's failure sentence is worded for
+ * this: it says the result could not be read and that files may already have
+ * been written, never that nothing was.
  */
 export function narrowScaffoldResult(raw: unknown): ScaffoldResult | null {
   if (!isRecord(raw)) return null;

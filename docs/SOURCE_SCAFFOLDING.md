@@ -1,6 +1,6 @@
 # Source Scaffolding
 
-Last revised: 2026-05-14
+Last revised: 2026-08-31
 
 This guide covers project bootstrap and module scaffolding workflows.
 
@@ -49,8 +49,9 @@ the CLI reported in a confirmation dialog, and only then runs the write.
 
 `--force` is never sent up front. When a file on disk differs from the
 template, `tan scaffold` refuses with `scaffold.would-overwrite` and the
-extension raises a second dialog naming those files before retrying with
-`--force`. That retry REPLACES them: any edits in a previously scaffolded file
+extension raises a second dialog naming those files. Only if you confirm that
+dialog does it retry with `--force`; declining leaves every file untouched.
+That retry REPLACES the named files: any edits in a previously scaffolded file
 are lost, and the editor cannot undo it.
 
 ## 4. Template Discovery

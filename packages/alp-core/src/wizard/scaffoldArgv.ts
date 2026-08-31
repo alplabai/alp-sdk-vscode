@@ -6,23 +6,41 @@
 // re-implemented in TypeScript (`wizard/service.ts`), and the port had drifted
 // from the command it copied. tan emits a `## Wiring` section in the module
 // README naming the two `CMakeLists.txt` edits without which the module is
-// never compiled; the port emitted `## Notes` and stopped. Everything around
-// that section was byte-identical, which is what identified it as a port that
-// never picked up an upstream addition rather than a deliberate divergence.
+// never compiled; the port emitted `## Notes` and stopped.
+//
+// MEASURED, by compiling the deleted port out of git history and diffing its
+// output against the pinned tan 0.6.0 for the same template and name: the
+// header and the source are byte-identical (with no board.yaml resolved), and
+// the README differs in exactly TWO places — that section, and `Template:`,
+// which the port spelled with the template's LABEL (`Sensor driver module`)
+// where tan spells its id (`sensor-driver`). #601's body says everything
+// outside `## Wiring` was byte-identical and lists `Template:` among the
+// identical lines; that part of it is wrong. The conclusion is not: a
+// generator that agrees with its original everywhere except where the original
+// moved is a port that stopped tracking it.
 //
 // So the fix is not to add the missing text. It is to stop having a second
 // generator: the extension collects intent, tan generates. This file is the
 // intent, spelled as flags.
 //
-// WHY A PURE FUNCTION AND NOT A LITERAL AT THE CALL SITE. The argv is genuinely
-// conditional — `--preview` on the plan pass and not on the write pass,
-// `--force` only after the customer confirmed an overwrite — so no call-site
-// shape makes it an `ArrayLiteralExpression`, and `scripts/tan-surface/extract.mjs`
-// reads the argv ARGUMENT at the call site. An identifier reduces to
-// `resolution: "none"`, which `test/tan.surfaceContract.test.js` skips in all
-// five assertions. `packages/alp-core/src/project/initArgv.ts` hit the same wall
-// and took the same way out: enumerate every branch against the pinned CLI's own
-// recorded surface, in `test/wizard.scaffoldArgv.test.js`.
+// WHY A PURE FUNCTION AND NOT A LITERAL AT THE CALL SITE. Not because a literal
+// is impossible — it is not. The three passes (`--preview`; write; write
+// `--force`) each have a compile-time-constant flag set, so three duplicated
+// array literals at three call sites WOULD work, and
+// `scripts/tan-surface/extract.mjs` would reduce each to `resolution: "partial"`
+// (command and literal flags checked, the identifier values opaque). This file
+// exists because ONE enumerated function is strictly stronger than three partial
+// records: `test/wizard.scaffoldArgv.test.js` reduces every branch to
+// `resolution: "full"` and gets the arity, stray-positional and dangling-value
+// assertions a `"partial"` record does not carry — with no duplication to drift.
+//
+// The cost is that the single call site passes an identifier, which reduces to
+// `resolution: "none"` and is skipped by every membership assertion in
+// `test/tan.surfaceContract.test.js`. That is why the site is pinned by name in
+// its `EXPECTED_UNRESOLVABLE` list, with a note pointing here.
+// `packages/alp-core/src/project/initArgv.ts` made the same trade, though for a
+// stronger reason: ITS argv varies within one call site and genuinely cannot be
+// a literal.
 //
 // Nothing here spawns, reads the filesystem, or touches `vscode`. Keep it that
 // way, or the gate that enumerates it stops being cheap enough to enumerate.
@@ -71,10 +89,12 @@ export interface ScaffoldArgvInput {
 /**
  * Build the `tan scaffold` argv. Command first, `--format json` is the runner's.
  *
- * The flag ORDER is fixed rather than incidental: `test/wizard.scaffoldArgv.test.js`
- * reduces this through the extractor's own `reduceLiteralArgv` against
- * `test/golden/tan-surface/surface.json`, so every token has to be a flag the
- * pinned tan declares, carrying the arity it declares.
+ * `test/wizard.scaffoldArgv.test.js` reduces this through the extractor's own
+ * `reduceLiteralArgv` against `test/golden/tan-surface/surface.json`, so every
+ * token has to be a flag the pinned tan declares, carrying the arity it
+ * declares, with no stray positional and no value-flag left dangling. Note what
+ * that does NOT check: nothing pins the flags' ORDER. click does not care, and
+ * neither does the gate — do not read the sequence below as verified.
  */
 export function planScaffoldArgv(input: ScaffoldArgvInput): string[] {
   const argv = [

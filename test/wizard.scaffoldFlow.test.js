@@ -16,9 +16,16 @@
 // been the same file. So the port is deleted and the command calls tan. The
 // tests here hold the two properties that replace it:
 //
-//   1. NOTHING IS GENERATED HERE. `fs.writeFileSync`/`mkdirSync` are booby
-//      traps below: if this command ever writes a module file again, the test
-//      that catches it is the one that fails.
+//   1. NOTHING IS GENERATED HERE — with a stated limit. `writeFileSync`,
+//      `mkdirSync` and `readFileSync` are booby traps in the stub table below,
+//      and they cover the module's TOP-LEVEL filesystem imports: `fs`,
+//      `node:fs`, `fs/promises`, `node:fs/promises`. They do NOT cover a lazy
+//      `require`/`import()` inside the handler (the `Module._load` swap is
+//      restored before the command runs, so only load-time resolution is
+//      redirected), nor `vscode.workspace.fs`, nor a `child_process` spawn. A
+//      reintroduced generator written the ordinary way trips these; one written
+//      any of those other ways does not, and would be caught — if at all — by
+//      the unscripted-spawn throw and the argv assertions instead.
 //   2. `--force` IS ONLY EVER REACHED THROUGH A CONFIRM THAT NAMES THE FILES.
 //      Measured on the pinned tan 0.6.0, `--force` REPLACES a file whose
 //      contents differ, with no diff and no backup — an edit inside a
@@ -195,6 +202,11 @@ const FORCED_WRITE = okEnvelope({
   unchanged: ["include/modules/probesens.h", "src/modules/probesens/README.md"],
 });
 
+/** Script a modal the customer closes without picking the confirm action.
+ *  A literal `undefined` in `answers` cannot say this — it is what an EXHAUSTED
+ *  list returns, and the two must not be the same value. */
+const DISMISS = Symbol("dismissed");
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -205,7 +217,13 @@ const FORCED_WRITE = okEnvelope({
  * `scaffoldRuns` is consumed in order, one entry per `tan scaffold` spawn — an
  * unscripted spawn THROWS rather than returning something benign, so a flow
  * that runs a pass this test did not expect fails loudly.
- * `answers` is consumed in order, one per modal (`undefined` = dismissed).
+ *
+ * `answers` is consumed the same way, one per MODAL, and an unscripted modal
+ * also throws. That matters more than it looks: the obvious spelling (`shift()`
+ * off an empty array) returns `undefined`, which every caller here reads as
+ * "the customer declined" — so an unexpected extra dialog would silently shift
+ * every later answer by one and the test would still pass or fail for the wrong
+ * reason. Use the exported `DISMISS` to script a dialog the customer closes.
  */
 async function driveScaffold({
   scaffoldRuns,
@@ -233,16 +251,23 @@ async function driveScaffold({
         "be gone; tan writes these files",
     );
   };
+  const fsStub = {
+    existsSync: () => true,
+    writeFileSync: fsTrap("writeFileSync"),
+    mkdirSync: fsTrap("mkdirSync"),
+    readFileSync: fsTrap("readFileSync"),
+    writeFile: fsTrap("writeFile"),
+    mkdir: fsTrap("mkdir"),
+    readFile: fsTrap("readFile"),
+  };
 
   const modPath = require.resolve(path.join(root, "out", "wizard.js"));
   delete require.cache[modPath];
   const stubs = {
-    fs: {
-      existsSync: () => true,
-      writeFileSync: fsTrap("writeFileSync"),
-      mkdirSync: fsTrap("mkdirSync"),
-      readFileSync: fsTrap("readFileSync"),
-    },
+    fs: fsStub,
+    "node:fs": fsStub,
+    "fs/promises": fsStub,
+    "node:fs/promises": fsStub,
     vscode: {
       commands: {
         registerCommand: (_id, cb) => {
@@ -296,7 +321,20 @@ async function driveScaffold({
     "./notify/vscodeAdapter": {
       notify: async (plan) => {
         notified.push(plan);
-        return plan.channel === "modal" ? modalAnswers.shift() : undefined;
+        if (plan.channel !== "modal") return undefined;
+        if (modalAnswers.length === 0) {
+          throw new Error(
+            "unscripted modal: " +
+              JSON.stringify({
+                message: plan.message,
+                severity: plan.severity,
+              }) +
+              " — this flow raised a dialog the test did not expect, and " +
+              "answering it `undefined` would read as a decline",
+          );
+        }
+        const answer = modalAnswers.shift();
+        return answer === DISMISS ? undefined : answer;
       },
       notifyAsync: (plan) => notified.push(plan),
     },
@@ -482,7 +520,7 @@ test("the confirm names every file tan planned, from tan's own list", async () =
 test("declining the confirm runs no write pass at all", async () => {
   const result = await driveScaffold({
     scaffoldRuns: [PREVIEW_NEW],
-    answers: [undefined],
+    answers: [DISMISS],
   });
   assert.equal(
     scaffoldArgvs(result).length,
@@ -553,7 +591,7 @@ test("--force is sent only on the pass that follows the overwrite confirm", asyn
 test("DECLINING the overwrite confirm sends no forced pass — the customer's edits survive", async () => {
   const result = await driveScaffold({
     scaffoldRuns: [PREVIEW_NEW, WOULD_OVERWRITE],
-    answers: ["applyChanges", undefined],
+    answers: ["applyChanges", DISMISS],
   });
   const argvs = scaffoldArgvs(result);
   assert.equal(

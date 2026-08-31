@@ -12,14 +12,16 @@
 // module is never compiled. A gate over a generator that IS the second copy
 // cannot catch that; calling tan is what closes it.
 //
-// Having called tan, the argv itself becomes the thing to hold. It is genuinely
-// conditional (`--preview` on the plan pass, `--force` only after the overwrite
-// confirm), so no call-site shape makes it an `ArrayLiteralExpression` and
-// `scripts/tan-surface/extract.mjs` reduces it to `resolution: "none"` — which
-// `test/tan.surfaceContract.test.js` skips in all five assertions. Same wall
-// `packages/alp-core/src/project/initArgv.ts` hit, same way out: a pure
-// function, enumerated here through the extractor's OWN reducer against the
-// same committed snapshot.
+// Having called tan, the argv itself becomes the thing to hold — and this file
+// is the STRONGER of the two shapes that were available, not the only one. See
+// `packages/alp-core/src/wizard/scaffoldArgv.ts` for the trade: three
+// duplicated literals at three call sites would have reduced to
+// `resolution: "partial"`; one pure function enumerated here reduces every
+// branch to `"full"` and adds the arity, stray-positional and dangling-value
+// assertions a partial record does not carry. The price is that the single call
+// site reduces to `resolution: "none"`, which every membership assertion in
+// `test/tan.surfaceContract.test.js` skips — so the site is pinned by name in
+// its `EXPECTED_UNRESOLVABLE` list and checked here instead.
 //
 // ── What this file does NOT claim ───────────────────────────────────────────
 //
