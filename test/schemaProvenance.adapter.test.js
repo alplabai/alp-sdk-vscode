@@ -4,6 +4,7 @@
 // counts as a NEW mismatch worth saying again, the severity mapping, and the
 // invariant that a customer with no SDK is never nagged.
 const test = require("node:test");
+const realSdkService = require("../packages/alp-core/dist/sdk/service.js");
 const assert = require("node:assert/strict");
 const realFs = require("node:fs");
 const path = require("node:path");
@@ -120,6 +121,11 @@ function harness(opts) {
         state: "ready",
         issues: [],
       }),
+      // Delegated to the REAL implementation, not re-stubbed. It is pure (a
+      // string in, a string out, no IO), so a hand-written stub here would
+      // only give the test a second opinion to agree with — and the whole
+      // point of it is deciding an rc install's identity from its path.
+      sdkIdentityVersion: realSdkService.sdkIdentityVersion,
     },
     "./project/vscodeAdapter": {
       collectProjectContext: () => ({ sdkRoot: opts.sdkRoot ?? null }),
@@ -376,4 +382,33 @@ test("disposing releases both the item and the state subscription", () => {
   // Assert
   assert.equal(h.listeners.length, 0);
   assert.equal(h.item.disposed, true);
+});
+
+test("an rc install is named by its tag in the status text, not by its metadata", async () => {
+  // The reported disagreement, at this surface. `sdkLabel` renders
+  // `alp-sdk v${sdkVersion}` into the language-status item and the one-time
+  // notice, and an RC's `metadata/sdk_version.yaml` names the release it is a
+  // CANDIDATE for -- `~/.alp/sdk/v0.16.0-rc1` declares `0.16.0`
+  // (alp-sdk#1902). Saying "alp-sdk v0.16.0" here names a tree the customer
+  // does not have, in the one sentence whose job is telling them WHICH schemas
+  // the editor followed.
+  const h = harness({
+    sdkRoot: "/home/dev/.alp/sdk/v0.16.0-rc1",
+    sdkVersion: "0.16.0",
+    sdkFiles: VENDORED,
+  });
+  await settle();
+
+  assert.match(
+    h.item.text,
+    /alp-sdk v0\.16\.0-rc1/,
+    "the status text must name the install, not the release it is a " +
+      "candidate for",
+  );
+  assert.doesNotMatch(
+    h.item.text,
+    /alp-sdk v0\.16\.0(?!-rc1)/,
+    "and must not ALSO read as the GA — the two declare the same string, " +
+      "which is exactly why the declaration cannot be the answer",
+  );
 });
