@@ -79,6 +79,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Compile
+        # `scripts/stage-tan-cli-asset.mjs` requires `../out/alpCli/service.js`
+        # and `../out/alpCli/download.js`. `out/` is gitignored and there is no
+        # `prepare`/`postinstall` script, so `pnpm install` alone does NOT
+        # produce it and the staging step below dies MODULE_NOT_FOUND.
+        #
+        # `ci.yml` never needed this line because its staging happens inside the
+        # `build` job, after that job's own compile step. This workflow is
+        # standalone, and shipped without one -- caught before the first
+        # scheduled run, which had never verified anything.
+        run: pnpm exec tsc --build
+
       - name: Resolve the pinned tan version
         id: cli_version
         # The SAME pattern ci.yml and release-vsix.yml use, and this file is
