@@ -112,6 +112,7 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.openModelsPanel",
   "alp.openOverview",
   "alp.openSdkManager",
+  "alp.openSerialMonitor",
   "alp.openSettings",
   "alp.openSetupFlow",
   "alp.previewEffectiveConfig",

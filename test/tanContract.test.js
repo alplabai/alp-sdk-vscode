@@ -240,6 +240,21 @@ const GATED_CODES = {
   // day tan declares a `models.panel-not-wired` of its own is the day two
   // different verdicts share one spelling on the same wire. The assertion
   // above turns that collision into a red instead of a silent overlap.
+  // RESERVED in the artefact, with `consumer: none` and a note that says
+  // outright "Pre-consumer -- nothing in alp-sdk-vscode matches this code
+  // yet, so renaming or dropping it is cheap". That stopped being true when
+  // #552 wired `tan monitor`: `src/monitor.ts` binds this code, and it binds
+  // it on the SUCCESS path -- the port list rides back inside the refusal, so
+  // a rename does not degrade the feature, it removes the only way this
+  // extension can enumerate serial ports.
+  //
+  // Registered the same day that consumer landed, for the reason
+  // `debug-config.invalid-argument` above was: tan reserves the right to
+  // rename a code nothing binds to, and without this row that rename lands
+  // green in both repos while the port picker silently starts reporting every
+  // listing call as a CLI failure.
+  "monitor.no-port": "reserved",
+
   "models.panel-not-wired": null,
 };
 
