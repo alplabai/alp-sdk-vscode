@@ -73,8 +73,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
-          cache: pnpm
+          # `node-version: "24"`, NOT `node-version-file: .nvmrc` — this repo
+          # has no `.nvmrc` (0 tracked files by that name) and setup-node fails
+          # outright on a missing version file, before install. Shipped wrong in
+          # #629 and never noticed, because this workflow is schedule-only and
+          # had not fired yet.
+          node-version: "24"
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
