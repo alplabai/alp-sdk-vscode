@@ -253,6 +253,11 @@ const GATED_CODES = {
   // rename a code nothing binds to, and without this row that rename lands
   // green in both repos while the port picker silently starts reporting every
   // listing call as a CLI failure.
+  //
+  // Filed upstream as tan-cli#1092: tan's own note says to promote this to
+  // `frozen` "the moment a consumer binds to it", which is what #552 did. Until
+  // that lands, tan's record and this one disagree about whether a rename is
+  // cheap -- and only this side knows it is not.
   "monitor.no-port": "reserved",
 
   "models.panel-not-wired": null,
