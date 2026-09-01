@@ -66,7 +66,7 @@ Four mechanisms a neighboring embedded extension could not truthfully copy:
 
 ## Operating Context
 
-- Ships as a single VS Code extension, version `0.5.2`, distributed via the
+- Ships as a single VS Code extension, version `0.6.0`, distributed via the
   Marketplace and as a `.vsix`.
 - **Shell:** one Activity Bar container, *Alp IDE*, with native tree views
   (`src/views/`: `setup`, `workspaces`, `projects`, `sdk`, `build`), a status

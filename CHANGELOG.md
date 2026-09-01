@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
+
+**Stable.** First even-minor cut since `0.4.0`, so `release-vsix.yml` publishes
+this build to the STABLE Marketplace channel — reaching every user, not only
+those opted into pre-release updates. Everything in `0.5.0`, `0.5.1` and
+`0.5.2` reached pre-release users only and arrives here for the first time.
+
 
 - **The New Project wizard can now scaffold a custom Linux app, not only the
   stock image (#624).** `board.schema.json` documents an app-only `os: yocto`
