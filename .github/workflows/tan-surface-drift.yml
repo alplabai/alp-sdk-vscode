@@ -73,11 +73,30 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
-          cache: pnpm
+          # `node-version: "24"`, NOT `node-version-file: .nvmrc` — this repo
+          # has no `.nvmrc` (0 tracked files by that name) and setup-node fails
+          # outright on a missing version file, before install. Shipped wrong in
+          # #629 and never noticed, because this workflow is schedule-only and
+          # had not fired yet.
+          node-version: "24"
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Compile
+        # `scripts/stage-tan-cli-asset.mjs` requires `../out/alpCli/service.js`
+        # and `../out/alpCli/download.js`. `out/` is gitignored and there is no
+        # `prepare`/`postinstall` script, so `pnpm install` alone does NOT
+        # produce it and the staging step below dies MODULE_NOT_FOUND.
+        #
+        # `ci.yml`'s `build` job needs no such line because its staging happens
+        # after that job's own compile step; its `verify_pinned_cli_hosts` job
+        # carries one for the same reason this does. Any workflow that stages
+        # the CLI outside `build` must compile first. This one shipped without
+        # it -- caught before the first scheduled run, which had never verified
+        # anything.
+        run: pnpm exec tsc --build
 
       - name: Resolve the pinned tan version
         id: cli_version
