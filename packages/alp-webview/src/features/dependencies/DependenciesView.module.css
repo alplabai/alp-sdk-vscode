@@ -12,7 +12,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 860px;
+  max-width: var(--content-max);
   margin: 0 auto;
   min-height: 0;
 }
@@ -137,8 +137,21 @@
   word-break: break-word;
 }
 
-.mono {
-  font-family: var(--vscode-editor-font-family, monospace);
+/* The two version columns stay in the panel's own font.
+ *
+ * They used to set `--vscode-editor-font-family`, which is the user's EDITOR
+ * font — a setting with nothing to do with this panel, and commonly a
+ * distinctive coding face. This table has no other monospace content, so that
+ * lone code face read as a second UI dropped into one row of cells. Worse, the
+ * var resolves EMPTY in some webview hosts and the `, monospace` fallback does
+ * not cover that: a var() fallback applies only when the property is unset,
+ * never when it is set to nothing — see the note on `--text-mono` in
+ * tokens.css.
+ *
+ * `tabular-nums` keeps the digits column-aligned down the table, which was the
+ * only thing the monospace was actually buying here. */
+.versionCell {
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -148,10 +161,11 @@
 
 /* A pin is not an upgrade path — label it so nobody reads the version column
    as "you are behind". */
+/* No `font-family` reset here any more: these badges used to have to escape the
+   cell's monospace, and the cell no longer sets one. */
 .pin,
 .update {
   margin-left: var(--space-2);
-  font-family: var(--vscode-font-family);
   font-size: var(--font-size-xs);
   font-weight: 500;
   text-transform: uppercase;
@@ -185,6 +199,29 @@
 .status[data-status="fail"] {
   color: var(--status-err);
 }
+
+/* The state word leads; tan's own status sits under it in the muted detail
+   style, so the summary never replaces the fact it summarises (#466 §1). */
+.state {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.state[data-state="ready"] {
+  color: var(--status-ok);
+}
+
+.state[data-state="will-install"] {
+  color: var(--status-warn);
+}
+
+.state[data-state="needs-you"] {
+  color: var(--status-err);
+}
+
+/* `unknown` deliberately takes the default foreground: it is the absence of a
+   claim, and colouring it would make it look like one. */
 
 .action {
   text-align: right;

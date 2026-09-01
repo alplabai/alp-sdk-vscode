@@ -1,0 +1,2633 @@
+{
+  "version": "0.6.0",
+  "capturedAt": "2026-08-30",
+  "sourceDigest": "28112bfd9d9a28d1d0300e9701de8ce79e538bc1e318df222075919a997197ec",
+  "contentDigest": "a307a4cbe9f67c5b42ee78f7149b8ee89f05e9735d59179b76e3da584e60dbfd",
+  "globalOptions": [
+    "--project",
+    "--board-yaml",
+    "--sdk-root",
+    "--target",
+    "--all",
+    "--format",
+    "--verbose",
+    "--quiet",
+    "--no-color",
+    "--non-interactive",
+    "--ci",
+    "--help"
+  ],
+  "commands": {
+    "bootstrap": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--allow-partial": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--dry-run": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-pip": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-west": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--print-env": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--workspace": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "build": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--build-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "DIR",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--execute": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--manifest": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--manifest-from": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": "FILE",
+          "valueOptional": false
+        },
+        "--materialise": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--native": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-auto-bootstrap": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--plan": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--plan-from": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "FILE",
+          "valueOptional": false
+        },
+        "--pristine": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": "tan-cli#427",
+          "marker": "Accepted by other commands; not implemented for `build` yet (tan-cli#427)",
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "clean": {
+      "maxPositionals": 1,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--build-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--dry-run": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "completion": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--shell": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SHELL",
+          "valueOptional": false
+        }
+      }
+    },
+    "debug-config": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--core": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "CORE_ID",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--gdbserver-address": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "HOST:PORT",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--pre-launch-task": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "TASK",
+          "valueOptional": false
+        },
+        "--preview": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--server": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SERVER",
+          "valueOptional": false
+        },
+        "--svd": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--target-kind": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "KIND",
+          "valueOptional": false
+        }
+      }
+    },
+    "diff": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--no-color`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "doctor": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--build": {
+          "inert": true,
+          "ref": "tan-cli#290",
+          "marker": "Accepted for compatibility (tan-cli#290)",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--fix": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "examples": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--category": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "NAME",
+          "valueOptional": false
+        },
+        "--filter": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "TEXT",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "explain": {
+      "maxPositionals": 1,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--code": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "CODE",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--template": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "ID",
+          "valueOptional": false
+        }
+      }
+    },
+    "faultdecode": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--bfar": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--bfsr": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--cfsr": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--dfsr": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--elf": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--file": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--hfsr": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--json": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--lr": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--mmfar": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--mmfsr": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--pc": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": true,
+          "ref": null,
+          "marker": "(unused: faultdecode is HW-free)",
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": true,
+          "ref": null,
+          "marker": "(unused; see below)",
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--ufsr": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--project`/`--sdk-root`/`--board-yaml`/`--target`/`--all`/`--verbose`/ `--quiet`/`--non-interactive`/`--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "flash": {
+      "maxPositionals": 1,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--build-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--confirm": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--core": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "CORE_ID",
+          "valueOptional": false
+        },
+        "--dry-run": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--helper": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "NAME",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--recover": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--setools-dir": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--skip-missing-tools": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "generate": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--core": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "CORE_ID",
+          "valueOptional": false
+        },
+        "--force": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--output": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "image": {
+      "maxPositionals": 1,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--build-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "init": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--cores": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "CORES",
+          "valueOptional": false
+        },
+        "--destination": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--force": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--from-example": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "DIR",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--name": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "NAME",
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--preview": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sku": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SKU",
+          "valueOptional": false
+        },
+        "--som": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SKU",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--template": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "ID",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "inspect": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--path": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--show-origin": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--verbose`/`--no-color`/`--non-interactive`/`--ci`/`--target`/`--all` are accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "kconfig": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--core": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "CORE_ID",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "lock": {
+      "maxPositionals": -1,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "migrate": {
+      "maxPositionals": -1,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--apply": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--check": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--preview": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "model": {
+      "maxPositionals": 1,
+      "subcommandValues": [
+        "build"
+      ],
+      "refusingSubcommands": {},
+      "options": {
+        "--board": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--metadata-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--out": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "monitor": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--baud": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<int>",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--port": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        }
+      }
+    },
+    "new-som": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--cores": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--default-board": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--default-hw-rev": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--display-name": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--dry-run": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--ethos-u-variant": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--family": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--force": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--inference-backend": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--output-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sku": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--soc-ref": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--som": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        },
+        "--vendor": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<str>",
+          "valueOptional": false
+        }
+      }
+    },
+    "pinmux": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--family": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "FAMILY",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sku": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SKU",
+          "valueOptional": false
+        },
+        "--som": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SKU",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--target`/`--all`/`--verbose`/`--quiet`/`--no-color`/`--non-interactive`/ `--ci` are declared, not consumed",
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "presets": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "quality": {
+      "maxPositionals": -1,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--profile": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "{quick,pr,full,release}",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "run": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--confirm": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--core": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "CORE_ID",
+          "valueOptional": false
+        },
+        "--flash": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "scaffold": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--destination": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "DESTINATION",
+          "valueOptional": false
+        },
+        "--force": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--name": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "NAME",
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--preview": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--template": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "TEMPLATE",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "sdk": {
+      "maxPositionals": 2,
+      "subcommandValues": [
+        "list",
+        "current",
+        "install",
+        "switch"
+      ],
+      "refusingSubcommands": {
+        "install": {
+          "ref": "tan-cli#305"
+        },
+        "switch": {
+          "ref": "tan-cli#305"
+        }
+      },
+      "options": {
+        "--destination": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--global": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--online": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "size": {
+      "maxPositionals": 1,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SKU",
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--build-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--fail-over-budget": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    },
+    "support-bundle": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--all` is accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--quiet`/ `--no-color`/`--non-interactive`/`--ci` are `global = true` clap options `support_bundle.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--destination": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "DESTINATION",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--quiet`/ `--no-color`/`--non-interactive`/`--ci` are `global = true` clap options `support_bundle.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--quiet`/ `--no-color`/`--non-interactive`/`--ci` are `global = true` clap options `support_bundle.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--path": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--quiet`/ `--no-color`/`--non-interactive`/`--ci` are `global = true` clap options `support_bundle.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--server": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "SERVER",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--target-kind": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "KIND",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "trace": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--all": {
+          "inert": true,
+          "ref": null,
+          "marker": "`--all` is accepted and ignored",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--ci": {
+          "inert": true,
+          "ref": null,
+          "marker": "The other hidden flags are `global = true` clap options `trace.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--no-color": {
+          "inert": true,
+          "ref": null,
+          "marker": "The other hidden flags are `global = true` clap options `trace.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--non-interactive": {
+          "inert": true,
+          "ref": null,
+          "marker": "The other hidden flags are `global = true` clap options `trace.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--path": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--quiet": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--target": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "EMIT",
+          "valueOptional": false
+        },
+        "--verbose": {
+          "inert": true,
+          "ref": null,
+          "marker": "The other hidden flags are `global = true` clap options `trace.rs` never reads",
+          "metavar": null,
+          "valueOptional": false
+        }
+      }
+    },
+    "validate": {
+      "maxPositionals": 0,
+      "subcommandValues": [],
+      "refusingSubcommands": {},
+      "options": {
+        "--board-yaml": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--format": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "<text|json|diagnostic-v1|sarif>",
+          "valueOptional": false
+        },
+        "--help": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--offline": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": null,
+          "valueOptional": false
+        },
+        "--project": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        },
+        "--sdk-root": {
+          "inert": false,
+          "ref": null,
+          "marker": null,
+          "metavar": "PATH",
+          "valueOptional": false
+        }
+      }
+    }
+  }
+}

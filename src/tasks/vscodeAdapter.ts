@@ -25,6 +25,9 @@
 import * as vscode from "vscode";
 
 import { runAlpInTerminal } from "../alpCli/vscodeAdapter";
+import { warnIfCliCannotBuildSom } from "../build/somCliFloorGuard";
+import { planPrecondition } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import {
   BUILD_RUN_NAME,
@@ -107,6 +110,23 @@ class BuildDelegatePty implements vscode.Pseudoterminal {
   ) {}
 
   open(): void {
+    // #605: `cwd` unresolved must REFUSE, not dispatch with it `undefined` —
+    // `runAlpInTerminal`'s own doc names exactly this hazard: an omitted cwd
+    // reaches `child_process.spawn` unset and the child inherits the
+    // extension host's own directory (on Windows, the VS Code install
+    // directory), and `tan build` WRITES a `build/` tree where it runs. This
+    // task is what `--pre-launch-task` runs on F5, so a customer with no
+    // folder open would otherwise get a build in the wrong place with no
+    // explanation — the same shape `src/models/panel.ts` and
+    // `src/ideHub/buildPlanPanel.ts` already refuse in this diff. Checked
+    // BEFORE the "building..." line and the finish-event subscription: no
+    // run is dispatched, so nothing should look like one started.
+    if (!this.cwd) {
+      notifyAsync(planPrecondition("noWorkspace", { operation: "build" }));
+      this.writeEmitter.fire("Alp: open a folder to build this project.\r\n");
+      this.finish(1);
+      return;
+    }
     const alreadyRunning = isRunActive(BUILD_RUN_NAME);
     const status = alreadyRunning
       ? "a build is already running -- waiting for it to finish"
@@ -123,14 +143,25 @@ class BuildDelegatePty implements vscode.Pseudoterminal {
       this.finish(event.code ?? 1);
     });
     if (!alreadyRunning) {
-      void runAlpInTerminal(this.context, ["build"], {
-        name: BUILD_RUN_NAME,
-        cwd: this.cwd,
-      }).then(
+      void this.dispatchBuild(this.cwd).then(
         () => this.failIfNothingStarted(),
         () => this.failIfNothingStarted(),
       );
     }
+  }
+
+  /** #606: this `tan build` was one of the four spawn sites that skipped
+   *  #502's Renesas CLI-floor warning — and the one reached by `--pre-
+   *  launch-task`, so a Renesas customer hitting it from F5 got the bare
+   *  Kconfig abort with no explanation at all. `cwd` is narrowed to `string`
+   *  by the caller (`open()`'s guard above), so this always runs the check —
+   *  there is no second "cwd unresolved" branch to keep in sync with it. */
+  private async dispatchBuild(cwd: string): Promise<void> {
+    await warnIfCliCannotBuildSom(this.context, cwd);
+    await runAlpInTerminal(this.context, ["build"], {
+      name: BUILD_RUN_NAME,
+      cwd,
+    });
   }
 
   /** `runAlpInTerminal` RESOLVES without dispatching anything when the `tan`

@@ -147,8 +147,9 @@ function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /**
- * tan's array branch of `merge_value` (`crates/tan-core/src/debug_launch.rs`),
- * which exists precisely so a hand-added second `.cfg` is not lost.
+ * An array-shaped launch-config value's own merge rule, ported from tan's
+ * Rust-era `merge_value` array branch and now PERMANENTLY owned here — which
+ * exists precisely so a hand-added second `.cfg` is not lost.
  *
  * It is NOT a refinement of the per-key rule, it is load-bearing on its own:
  * `isConcrete` reads an array as ONE opaque value, so a cortex-debug
@@ -156,12 +157,31 @@ function sameValue(a: unknown, b: unknown): boolean {
  * `interface/stlink-v2-1.cfg` is "not concrete" as a whole — and without this
  * the whole array, hand-added entry included, is deleted with the orphan.
  *
+ * WHY THIS IS PROVENANCE, NOT A LIVE CLAIM ABOUT TAN, AND WHY THAT IS
+ * DELIBERATE. The pinned 0.6.0 `debug-config` does not merge with an
+ * existing file at all — MEASURED: every call regenerates the full
+ * configuration fresh (`replaced: false`/`true` on the envelope, never a
+ * partial patch), so there is no live `merge_value` left in tan to
+ * re-verify this algorithm against. What IS re-measured is the structural
+ * assumption the algorithm depends on: `configFiles` is still a real,
+ * array-shaped, placeholder-bearing field at this pin (`tan debug-config
+ * --target-kind zephyr-mcu --server openocd` still returns
+ * `"configFiles":["<resolved-openocd-board-cfg>"]`), so the shape this
+ * function operates on has not changed even though tan's own merging has
+ * been retired entirely. Correctness of the algorithm itself now rests on
+ * this repo's own regression coverage (`test/debug.rescue.test.js` —
+ * "a hand-added second .cfg is not deleted with the orphan", "an
+ * all-placeholder maintained list keeps the orphan's list WHOLE", "a
+ * concrete tail the maintained list has no room for is discarded, and
+ * NAMED"), not on a citation to a binary that no longer runs this code path.
+ *
  * THE RULE IS TAN'S, PORTED, NOT A PER-INDEX MERGE. `merge_value`
- * (`crates/tan-core/src/debug_launch.rs` on tag v0.4.0) reads, for the array
- * case: *"an all-placeholder incoming list keeps the existing list WHOLE, or a
- * hand-added second `.cfg` is lost to a per-index merge against a one-element
- * draft. A mixed list still merges per element, so an entry we did resolve
- * wins."*
+ * (`crates/tan-core/src/debug_launch.rs` on tag v0.4.0 — the RETIRED Rust
+ * CLI, kept as historical provenance for the algorithm's origin, not as a
+ * claim about current tan) read, for the array case: *"an all-placeholder
+ * incoming list keeps the existing list WHOLE, or a hand-added second `.cfg`
+ * is lost to a per-index merge against a one-element draft. A mixed list
+ * still merges per element, so an entry we did resolve wins."*
  *
  * Direction matters and is easy to get backwards. In tan, `existing` is the
  * customer's file and `next` is the fresh draft. Here the ORPHAN is the
@@ -579,10 +599,16 @@ export function debugConfigArgs(
   // rather than choosing between cores. A user wanting the SECOND Zephyr core
   // is still never asked; that is a separate gap.
   if (spec.coreId) args.push("--core", spec.coreId);
-  // Without this the generated profile has no `preLaunchTask` at all — tan
-  // drops the key unless `--pre-launch-task` names one — so F5 on a fresh
-  // clone starts cortex-debug against an ELF nothing has built. The four
-  // labels have been registered since #387; nothing referenced them.
+  // MEASURED against the pinned 0.6.0: tan now defaults `preLaunchTask` to
+  // this same label per target kind even with the flag entirely absent, and
+  // drops the key only for yocto-userspace (`preLaunchTaskFor` returns
+  // `undefined` there, matching that). Passing it explicitly here is no
+  // longer the only thing standing between a fresh clone and F5 launching
+  // cortex-debug at an ELF nothing has built — it is what keeps the three
+  // labels owned by `TASK_SPECS` (src/tasks/service.ts) instead of an
+  // implicit agreement with tan's own default that nothing here would notice
+  // drifting. The four labels have been registered since #387; nothing
+  // referenced them.
   const preLaunchTask = preLaunchTaskFor(spec.targetKind);
   if (preLaunchTask) args.push("--pre-launch-task", preLaunchTask);
   const svdPath = options.svdPath?.trim();

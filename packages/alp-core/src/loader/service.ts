@@ -166,6 +166,68 @@ export function getGenerationTargetSupport(
   return target;
 }
 
+/**
+ * A display name for a generation target, degrading to the id itself.
+ *
+ * DELIBERATELY NOT `getGenerationTargetSupport`. That one answers "how do I
+ * BUILD this target" — it hands back `outputRelativePath` and `preview`, and an
+ * id it does not know is a programming error it must stay loud about, because
+ * inventing a path would write a generated file somewhere undefined.
+ *
+ * This one answers "what do I CALL this target in a sentence", and there the
+ * unknown id is not an error at all: `tan generate --all` runs more targets
+ * than this extension has catalog entries for — MEASURED at the pinned
+ * 0.6.0, nine run against six in the catalog — and every one of them can
+ * appear in the `failed` list. tan's own `explain` reports a TENTH it can
+ * generate (`zephyr-board`), which `--all` does not run; the catalog cannot
+ * name that one either, which is why the gate iterates the reported set rather
+ * than the `--all` set. Throwing
+ * while REPORTING a failure replaces the toast that carries "Open board.yaml"
+ * and "Run Doctor" with VS Code's unbranded "command failed" popup, which is
+ * the failure `src/loader.ts`'s own header warns against.
+ *
+ * The fallback is the raw id, not "unknown" and not "": that id is the string
+ * tan prints in its own `generate.emit-failed` issue, so it is the one token a
+ * user can match between the toast and the "Alp SDK" channel.
+ *
+ * Gated by `test/loader.generationTargets.test.js` against the recorded
+ * envelope corpus, so the guarantee moves with the pin rather than with this
+ * catalog.
+ */
+export function describeGenerationTarget(emit: string): string {
+  const target = (
+    GENERATION_TARGETS_BY_EMIT as Record<string, GenerationTargetSupport>
+  )[emit];
+  return target ? target.displayName : emit;
+}
+
+/**
+ * The customer-facing sentence for a `generate --all` that did not fully
+ * succeed.
+ *
+ * Pure, and in core, so it can be exercised over every combination of failed
+ * targets the pinned tan can actually report. It used to be assembled inline in
+ * a VS Code command handler, where the only way to reach it was to run the
+ * command against a broken board.yaml.
+ *
+ * An EMPTY `failed` with a failed envelope is a real shape, not a degenerate
+ * one: the run can die before any target is attempted. It gets the plain
+ * sentence rather than "Regenerated N of N formats — failed.", which would
+ * report a success count for a run that produced nothing.
+ */
+export function describeGenerationFailure(summary: {
+  readonly targets: readonly string[];
+  readonly written: readonly string[];
+  readonly failed: readonly string[];
+}): string {
+  if (summary.failed.length === 0) return "Regenerating all formats failed.";
+  const names = summary.failed.map(describeGenerationTarget).join(", ");
+  return (
+    `Regenerated ${summary.written.length} of ${summary.targets.length} ` +
+    `formats — ${names} failed.`
+  );
+}
+
 export function createLoaderPlan(
   context: LoaderWorkspaceContext,
   emit: EmitMode,

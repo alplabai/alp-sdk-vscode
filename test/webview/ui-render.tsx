@@ -8,15 +8,22 @@ import "./jsdom-setup.js";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../../packages/alp-webview/src/shared/AppContext";
+import { ErrorBoundary } from "../../packages/alp-webview/src/shared/ui";
+import { TextInput } from "../../packages/alp-webview/src/features/configurator/ConfiguratorView";
 import { OverviewView } from "../../packages/alp-webview/src/features/overview";
 import { SidebarHubView } from "../../packages/alp-webview/src/features/sidebar-hub";
 import { SetupFlowView } from "../../packages/alp-webview/src/features/setup-flow";
 import { NewProjectFlowView } from "../../packages/alp-webview/src/features/new-project-flow";
+import {
+  CoresStep,
+  defaultCoreChoices,
+} from "../../packages/alp-webview/src/features/new-project-flow/NewProjectFlowView";
 import { ExistingProjectFlowView } from "../../packages/alp-webview/src/features/existing-project-flow";
 import { SdkView } from "../../packages/alp-webview/src/features/sdk";
 import { DependenciesView } from "../../packages/alp-webview/src/features/dependencies";
 import { HardwareExplorerView } from "../../packages/alp-webview/src/features/hardware-explorer";
 import { BuildPlanView } from "../../packages/alp-webview/src/features/build-plan";
+import { ModelsView } from "../../packages/alp-webview/src/features/models";
 // Imported, not hardcoded: a hardcoded `_v: 2` outlived the bump to 3, so every
 // AppProvider here saw a protocol mismatch, held `state` at null, and rendered
 // nine skeletons that the harness scored as PASS.
@@ -153,14 +160,12 @@ function feedState() {
         title: "Minimal app",
         description: "A minimal app",
         category: "starter",
-        icon: "rocket",
       },
       {
         id: "gpio-button-led",
         title: "gpio-button-led",
         description: "GPIO demo",
         category: "example",
-        icon: "circuit-board",
         sourceDir: "peripheral-io/gpio-button-led",
       },
     ],
@@ -198,6 +203,167 @@ function feedState() {
       warnings: [],
     },
   });
+  // Models panel: a `tan model list`/`doctor` merge, plus REAL
+  // `tan model check --board board.yaml [--exact] --format json` payloads
+  // captured on E1M-AEN801 (which resolves `ethos_u` only) against
+  // metadata/npu_ops/ethos_u/u85@vela-5.1.0.json, with `--exact` run through
+  // a real vela 5.1.0. Every backend block below is copied field-for-field
+  // and note-for-note from one of those runs — nothing here is a
+  // transcription of the vocabulary. Between them the four rows exercise all
+  // four badge branches, so a regression in the ADR-0028 mapping shows up as
+  // a rendered problem rather than a silent relabel:
+  //   tiny          static screen, `full-eligible`  -> eligibility, never green
+  //   tiny_compiled the SAME model under `--exact`, `fits` -> proven, green
+  //   f32fc         `--exact`, `cpu-only` at 0 % placed, yet its KEPT static
+  //                 `ops[0].status` still reads `npu-eligible` — the
+  //                 disagreement the op-derived lines are suppressed for
+  //   onnxmodel     `undetermined` from a format ethos_u does not ingest
+  // (`tiny_compiled` is `tiny`'s `--exact` result under a second name only so
+  // both bases can sit in one fixture message.)
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "modelsData",
+    ok: true,
+    models: [
+      {
+        name: "tiny",
+        source: "tiny_int8.tflite",
+        artifact: { exists: true, bytes: 712, stale: false },
+      },
+      {
+        name: "tiny_compiled",
+        source: "tiny_int8.tflite",
+        artifact: { exists: true, bytes: 712, stale: false },
+      },
+      {
+        name: "f32fc",
+        source: "float32_fc.tflite",
+        artifact: { exists: false },
+      },
+      {
+        name: "onnxmodel",
+        source: "v_npu_full.onnx",
+        artifact: { exists: false },
+      },
+    ],
+    toolchains: [
+      { backend: "ethos_u", tool: "vela", available: true, version: "5.1.0" },
+    ],
+    issues: [],
+  });
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "modelFitData",
+    ok: true,
+    sku: "E1M-AEN801",
+    models: [
+      {
+        name: "tiny",
+        source: "/ws/tiny_int8.tflite",
+        backends: [
+          {
+            backend: "ethos_u",
+            variant: "u85",
+            table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+            npuCoverage: "full-eligible",
+            computeOnNpuPctMax: 100.0,
+            npuPlacementPctReal: null,
+            uncostedCpuOpCount: 0,
+            basis: "static-screen",
+            confidence: "screening",
+            notes: [
+              "static screen (screening): operator-name membership against u85@vela-5.1.0.json only. Eligible ops still carry unchecked quantization/shape/dtype constraints this check cannot verify -- the model will run either way, an unsupported op falls back to the CPU silently rather than failing. Only a real compile proves NPU execution.",
+            ],
+            ops: [
+              {
+                op: "FULLY_CONNECTED",
+                status: "npu-eligible",
+                reason: "constraint-unchecked",
+                macs: 8,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "tiny_compiled",
+        source: "/ws/tiny_int8.tflite",
+        backends: [
+          {
+            backend: "ethos_u",
+            variant: "u85",
+            table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+            npuCoverage: "fits",
+            computeOnNpuPctMax: null,
+            npuPlacementPctReal: 100.0,
+            uncostedCpuOpCount: 0,
+            basis: "compiled",
+            confidence: "certain",
+            notes: [
+              "vela compiled for ethos-u85-256: 1/1 operators placed on the NPU (100%); arena 32 bytes, SRAM 1 KiB.",
+              "vela used its BUILT-IN default system-config Ethos_U85_SYS_DRAM_Mid for bandwidth/latency estimates -- no module-authored one is available -- so its scheduling is tuned for that system, not this module's. The arena/SRAM figures are unaffected: they follow --memory-mode Sram_Only, which came from this module's SoC metadata, whose const/arena/cache areas are all one AXI port every system config maps to SRAM.",
+            ],
+            ops: [],
+          },
+        ],
+      },
+      {
+        name: "f32fc",
+        source: "/ws/float32_fc.tflite",
+        backends: [
+          {
+            backend: "ethos_u",
+            variant: "u85",
+            table: "/sdk/metadata/npu_ops/ethos_u/u85@vela-5.1.0.json",
+            npuCoverage: "cpu-only",
+            computeOnNpuPctMax: null,
+            npuPlacementPctReal: 0.0,
+            uncostedCpuOpCount: 0,
+            basis: "compiled",
+            confidence: "certain",
+            notes: [
+              "vela compiled for ethos-u85-256: 0/1 operators placed on the NPU (0%); arena 0 bytes, SRAM 0 KiB.",
+              "vela used its BUILT-IN default system-config Ethos_U85_SYS_DRAM_Mid for bandwidth/latency estimates -- no module-authored one is available -- so its scheduling is tuned for that system, not this module's. The arena/SRAM figures are unaffected: they follow --memory-mode Sram_Only, which came from this module's SoC metadata, whose const/arena/cache areas are all one AXI port every system config maps to SRAM.",
+            ],
+            ops: [
+              {
+                op: "FULLY_CONNECTED",
+                status: "npu-eligible",
+                reason: "constraint-unchecked",
+                macs: 8,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "onnxmodel",
+        source: "/ws/v_npu_full.onnx",
+        backends: [
+          {
+            backend: "ethos_u",
+            variant: "u85",
+            table: null,
+            npuCoverage: "undetermined",
+            computeOnNpuPctMax: null,
+            npuPlacementPctReal: null,
+            uncostedCpuOpCount: 0,
+            basis: "static-screen",
+            confidence: "screening",
+            notes: [
+              "ethos_u does not ingest 'onnx' source models; no score computed. This is not a verdict on the model, only on the format/backend pairing.",
+            ],
+            ops: [],
+          },
+        ],
+      },
+    ],
+    issues: [],
+  });
+  g.__ALP_POST_TO_WEBVIEW__({
+    type: "zooData",
+    ok: true,
+    entries: [],
+    issues: [],
+  });
   // A real post-build manifest, not `null` — the System manifest section was
   // never rendered by this harness at all, so nothing here covered it. The
   // shape is the one #331 is about: one slice that succeeded and one that did
@@ -217,13 +383,29 @@ function feedState() {
           build_dir: "build/m55_hp",
           output_artefact: "build/m55_hp/zephyr/zephyr.elf",
           flash_method: "jlink",
+          toolchain: "arm-zephyr-eabi",
         },
         {
+          // No `toolchain` — either an SDK predating the field, or a preset
+          // that declares none. Deliberately paired with the slice above that
+          // has one, so the harness covers both the reported and the "not
+          // reported" branch of the readout.
           core_id: "a32_cluster",
           os: "yocto",
           status: "skipped",
           reason: "bitbake not found",
           log_path: "build/a32_cluster/bitbake.log",
+        },
+        {
+          // `os: "off"` — this slice never builds. The real fixture
+          // (test/fixtures/system-manifest.aen801.yaml) carries exactly this
+          // shape: an off slice with a `toolchain` value still on it. The
+          // build-toolchain row must be gated on `active`, like the Flash
+          // button, so this value must NOT reach the screen (asserted below).
+          core_id: "a32_idle",
+          os: "off",
+          status: "pending",
+          toolchain: "poky-glibc",
         },
       ],
       ipc: [
@@ -373,6 +555,7 @@ const VIEWS: Array<[string, React.FC]> = [
   ["dependencies", DependenciesView],
   ["hardware-explorer", HardwareExplorerView],
   ["build-plan", BuildPlanView],
+  ["models", ModelsView],
 ];
 
 // Text a broken/degraded UI shows — flagged so we SEE the problem, not skip it.
@@ -410,9 +593,9 @@ async function main() {
       await settle();
       feedState();
       // AppProvider renders its children only once it HAS state, so a feature
-      // hook that subscribes below it (useBuildPlan, …) does not exist until
-      // this first feed has been processed and committed. Feed again once it
-      // does — see `settle` for why two ticks were never enough.
+      // hook that subscribes below it (useBuildPlan, useModels, …) does not
+      // exist until this first feed has been processed and committed. Feed
+      // again once it does — see `settle` for why two ticks were never enough.
       await settle();
       feedState();
       await settle();
@@ -464,10 +647,26 @@ async function main() {
         "16.6 kib / 256.0 kib (6.5%)", // ram, measured
         "in budget", // status verdict
         "not built", // a slice tan could not measure
+        // #314 readout half — the per-slice toolchain from THIS build's
+        // emitted manifest, and the explicit absence text for the slice that
+        // has none (never a blank cell, never the Hardware Explorer preset).
+        "arm-zephyr-eabi", // m55_hp: toolchain reported
+        "not reported", // a32_cluster: toolchain absent from the manifest
       ]) {
         if (!text.includes(needle)) {
           problems.push(
             `build-plan: system manifest detail missing "${needle}"`,
+          );
+        }
+      }
+      // The build-toolchain row is gated on `active` (`os !== "off"`), same as
+      // the Flash button — an `os: "off"` slice never builds, so its manifest
+      // toolchain value (a32_idle: "poky-glibc") must not render even though
+      // the manifest carries one.
+      for (const forbidden of ["poky-glibc"]) {
+        if (text.includes(forbidden)) {
+          problems.push(
+            `build-plan: system manifest rendered "${forbidden}" for an inactive (os: "off") slice`,
           );
         }
       }
@@ -524,6 +723,52 @@ async function main() {
       }
     }
 
+    // The Models panel must never render the retired `fits | cpu-fallback |
+    // no-fit` vocabulary, and must never turn `undetermined` into a negative.
+    if (mode === "models") {
+      // Anchored on the old panel's `${backend}: ${FIT_LABEL[verdict]}` badge
+      // shape, NOT on the bare words: "certain CPU fallback" is tan's own
+      // current wording for the cpu-certain op list, so a bare "cpu fallback"
+      // needle would fire on correct output.
+      for (const retired of [": cpu fallback", ": no fit", ": fits"]) {
+        if (text.includes(retired)) {
+          problems.push(
+            `models: retired verdict vocabulary rendered ("${retired}")`,
+          );
+        }
+      }
+      // Anchored on the BADGE, not the bare words. `UNDETERMINED_CAVEAT`
+      // contains the string "not determined" and renders under the same
+      // `anyUndetermined` condition as the badge itself, so a bare needle was
+      // satisfied by the caveat and could never fail: renaming the badge to
+      // "ZZZ", or flipping its variant to `err`, both left this green. The
+      // `onnxmodel` fixture's undetermined backend is `ethos_u`/`u85`.
+      if (!text.includes("ethos-u85: not determined")) {
+        problems.push(
+          "models: `undetermined` backend not rendered as 'not determined'",
+        );
+      }
+      if (!text.includes("all ops npu-eligible")) {
+        problems.push(
+          "models: static-screen positive not rendered as eligibility",
+        );
+      }
+      if (!text.includes("all ops on npu (proven)")) {
+        problems.push("models: compiled result not rendered as proven");
+      }
+      // The compiled `cpu-only` row must report the compiler's own placement,
+      // never a figure recomputed from the STATIC per-op verdicts it keeps —
+      // those still read `npu-eligible` beside a real 0 % placement.
+      if (!text.includes("0% of operators placed on the npu")) {
+        problems.push(
+          "models: proven result not rendered as compiler-measured placement",
+        );
+      }
+      if (!text.includes("falls back to the cpu silently")) {
+        problems.push("models: silent-CPU-fallback caveat missing from the UI");
+      }
+    }
+
     const buttons = Array.from(container.querySelectorAll("button"));
     if (process.env.ALP_DUMP) {
       console.log(
@@ -558,6 +803,517 @@ async function main() {
     noteCrash(); // catch a crash triggered by a click or a late re-render
     console.log(
       `  ${ok ? "PASS" : "FAIL"}  ${mode}: rendered, ${buttons.length} button(s), clicked ${clickedHere}`,
+    );
+  }
+
+  // ── the example filter degrades to nothing when there is nothing to filter (#482 §5) ──
+  // #507 landed the domain chips and the grouped headings. The degrade posture
+  // -- "when the fields are absent, hide the filter row rather than showing
+  // empty controls" -- was implemented with it but never gated: the derivation
+  // (`exampleCategory`) has nine tests, the RENDER had none. `domains.length >
+  // 1` is one character away from `>= 1`, and an older tan that sends no
+  // category is exactly the case nobody re-runs by hand.
+  {
+    const CHIP_ROW = '[aria-label="Filter examples by domain"]';
+    const example = (id: string, group?: string) => ({
+      id,
+      title: id,
+      description: `${id} demo`,
+      category: "example",
+      sourceDir: `dir/${id}`,
+      ...(group ? { group } : {}),
+    });
+
+    const cases: Array<{
+      name: string;
+      templates: unknown[];
+      wantRow: boolean;
+    }> = [
+      // An older tan sends no category at all; nothing is derivable.
+      {
+        name: "no group on any example",
+        templates: [example("a"), example("b")],
+        wantRow: false,
+      },
+      // One chip is a control with nothing to choose -- still hidden.
+      {
+        name: "exactly one group",
+        templates: [example("a", "ai"), example("b", "ai")],
+        wantRow: false,
+      },
+      // Two domains is the first state where filtering means anything.
+      {
+        name: "two groups",
+        templates: [example("a", "ai"), example("b", "peripheral-io")],
+        wantRow: true,
+      },
+    ];
+
+    for (const c of cases) {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      root.render(
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(NewProjectFlowView),
+        ),
+      );
+      await settle();
+      feedState();
+      await settle();
+      g.__ALP_POST_TO_WEBVIEW__({
+        type: "projectTemplatesData",
+        templates: c.templates,
+      });
+      await settle();
+
+      const row = container.querySelector(CHIP_ROW);
+      if (c.wantRow && !row) {
+        problems.push(
+          `example-filter-degrade: ${c.name} -- the filter row is missing, so two domains cannot be narrowed`,
+        );
+      }
+      if (!c.wantRow && row) {
+        problems.push(
+          `example-filter-degrade: ${c.name} -- an empty filter row rendered, which is the control #482 §5 says to hide`,
+        );
+      }
+      // Whatever the row does, the examples themselves must still be reachable:
+      // hiding the control must never hide the content it filters.
+      const text = container.textContent ?? "";
+      for (const id of ["a", "b"]) {
+        if (!text.includes(`${id} demo`)) {
+          problems.push(
+            `example-filter-degrade: ${c.name} -- example "${id}" did not render`,
+          );
+        }
+      }
+    }
+
+    // An ungrouped example alongside grouped ones goes in a trailing bucket,
+    // never under a heading with an empty name.
+    {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      root.render(
+        React.createElement(
+          AppProvider,
+          null,
+          React.createElement(NewProjectFlowView),
+        ),
+      );
+      await settle();
+      feedState();
+      await settle();
+      g.__ALP_POST_TO_WEBVIEW__({
+        type: "projectTemplatesData",
+        templates: [
+          example("a", "ai"),
+          example("b", "peripheral-io"),
+          example("c"),
+        ],
+      });
+      await settle();
+      const text = container.textContent ?? "";
+      if (!text.includes("c demo")) {
+        problems.push(
+          "example-filter-degrade: an ungrouped example vanished when its siblings had groups",
+        );
+      }
+    }
+
+    console.log(
+      `  ${problems.length === 0 ? "PASS" : "FAIL"}  example-filter-degrade: the filter row appears only when it can narrow`,
+    );
+  }
+
+  // ── the CLI-capability gap is ONE notice, not four alarms (#522) ──
+  // The pinned tan (0.6.0, re-measured at GA — #609) implements only `model
+  // build` and refuses the
+  // other eight subcommands the panel drives. Every refusal used to render on
+  // its own, so one fact reached the customer as FOUR red `Models unavailable`
+  // banners carrying tan's command-line text. Feed the real refusal envelope
+  // and assert the panel states it once, in the neutral style, with the actions
+  // it cannot drive switched off.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const refusal = (sub: string) => ({
+      code: "model.unknown-subcommand",
+      severity: "error",
+      message: `Unknown model subcommand: ${sub}. Available: build.`,
+    });
+    const root = createRoot(container);
+    root.render(
+      React.createElement(AppProvider, null, React.createElement(ModelsView)),
+    );
+    await settle();
+    feedState();
+    await settle();
+    feedState();
+    await settle();
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelsData",
+      ok: false,
+      models: [],
+      toolchains: [],
+      issues: [refusal("list"), refusal("doctor")],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "modelFitData",
+      ok: false,
+      sku: null,
+      models: [],
+      issues: [refusal("check")],
+    });
+    g.__ALP_POST_TO_WEBVIEW__({
+      type: "zooData",
+      ok: false,
+      entries: [],
+      issues: [refusal("zoo")],
+    });
+    await settle();
+
+    const text = container.textContent ?? "";
+    const alarms = container.querySelectorAll('[data-ok="false"]').length;
+    if (alarms !== 0) {
+      problems.push(
+        `models-cli-gap: ${alarms} red alarm banner(s) still rendered for a capability gap`,
+      );
+    }
+    if (!text.includes("These model tools need a newer CLI.")) {
+      problems.push("models-cli-gap: the capability notice was not rendered");
+    }
+    // Stated ONCE. The whole defect was the same fact repeated per section.
+    const stated = text.split("These model tools need a newer CLI.").length - 1;
+    if (stated !== 1) {
+      problems.push(
+        `models-cli-gap: notice rendered ${stated} times, want exactly 1`,
+      );
+    }
+    const labels = [...container.querySelectorAll("button")].map((b) => ({
+      label: (b.textContent ?? "").trim(),
+      disabled: (b as HTMLButtonElement).disabled,
+    }));
+    for (const want of [
+      "Check NPU coverage",
+      "Prep model",
+      "Run model",
+      "A/B compare",
+    ]) {
+      const hit = labels.find((l) => l.label === want);
+      if (!hit) {
+        problems.push(`models-cli-gap: no "${want}" button to check`);
+      } else if (!hit.disabled) {
+        problems.push(
+          `models-cli-gap: "${want}" is clickable against a CLI that cannot run it`,
+        );
+      }
+    }
+    // `model build` IS implemented — switching Refresh off would be a second
+    // wrong answer, hiding the one action that still works.
+    const refreshBtn = labels.find((l) => l.label === "Refresh");
+    if (refreshBtn && refreshBtn.disabled) {
+      problems.push("models-cli-gap: Refresh was disabled, but it still works");
+    }
+    console.log(
+      `  ${problems.length === 0 ? "PASS" : "FAIL"}  models-cli-gap: one notice, unusable actions disabled`,
+    );
+  }
+
+  // ── the wizard's Cores step (#534) ──
+  // `tan init --cores` splices companions APP-LESS, so before this step a
+  // dual-M55 SoM — the Alif Ensemble line's defining topology — scaffolded as a
+  // single-core project with the second M55 absent from board.yaml entirely.
+  // Two things are pinned: the DEFAULT layout (the first Zephyr core must land
+  // on `./src`, because that is where `tan init` puts the template's real
+  // source — anything else orphans it), and that a core built from a Yocto
+  // image offers no app directory to type into.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+
+    // Verbatim from `tan presets` at alp-sdk v0.16.0-rc1.
+    const AEN801 = [
+      { id: "a32_cluster", os: "yocto" },
+      { id: "m55_hp", os: "zephyr" },
+      { id: "m55_he", os: "zephyr" },
+    ];
+    const defaults = defaultCoreChoices(AEN801);
+    const byId = Object.fromEntries(defaults.map((c) => [c.id, c]));
+
+    if (byId.m55_hp?.app !== "./src") {
+      problems.push(
+        `cores-step: the first Zephyr core must default to ./src (tan's own directory) — got "${byId.m55_hp?.app}"`,
+      );
+    }
+    if (byId.m55_he?.app !== "./m55_he") {
+      problems.push(
+        `cores-step: the second Zephyr core must get its own directory — got "${byId.m55_he?.app}"`,
+      );
+    }
+    if (byId.a32_cluster?.app !== "") {
+      problems.push(
+        `cores-step: a yocto core must get no app directory — got "${byId.a32_cluster?.app}"`,
+      );
+    }
+    if (byId.m55_hp?.app === byId.m55_he?.app) {
+      problems.push(
+        "cores-step: two cores defaulted to the same directory — tan build would build one source twice",
+      );
+    }
+
+    const root = createRoot(container);
+    root.render(
+      React.createElement(CoresStep, {
+        choices: defaults,
+        onChange: () => {},
+        isExample: false,
+      }),
+    );
+    await settle();
+
+    const rows = container.querySelectorAll("select");
+    if (rows.length !== 3) {
+      problems.push(
+        `cores-step: expected one runtime picker per declared core, got ${rows.length}`,
+      );
+    }
+    const yoctoInput = container.querySelector(
+      'input[aria-label="App directory for a32_cluster"]',
+    ) as HTMLInputElement | null;
+    if (!yoctoInput) {
+      problems.push(
+        "cores-step: the yocto core had no app-directory field at all",
+      );
+    } else if (yoctoInput.disabled) {
+      // THE RULE MOVED, and this assertion is inverted on purpose (#624).
+      //
+      // It used to require the field be inert, on the reading that a Linux
+      // core's image always comes from a recipe rather than this project. That
+      // is the DEFAULT, not the whole story: `board.schema.json` documents an
+      // app-only `os: yocto` slice — `app:` naming a project-relative source
+      // directory, `recipe:` naming the bitbake recipe that packages it, no
+      // `image:` — and the wizard could never produce it, which is what #624
+      // opened about.
+      //
+      // The field is now live. The stock image is still what a Linux core gets
+      // by default (`defaultCoreChoices` leaves it empty), and the pair is
+      // still indivisible — the recipe input below is what enforces that.
+      problems.push(
+        "cores-step: a yocto core's app directory must be typeable — the " +
+          "app-only slice (app: + recipe:, no image:) is a documented mode " +
+          "and the wizard is its only path (#624)",
+      );
+    }
+
+    // The PAIR, which is what actually decides whether the slice builds
+    // (#624). `_slice_command`'s yocto branch returns None for an `app:` with
+    // no `recipe:`, so the recipe field is not decoration — without it the
+    // wizard could express only the unbuildable half.
+    //
+    // Asserted by RE-RENDERING rather than by typing: `CoresStep` is
+    // controlled, so an `input` event only calls `onChange` and the harness
+    // holds `choices` fixed. What is under test here is the rendering rule —
+    // the recipe field follows the app directory — and that is exactly what a
+    // second render with a filled-in choice measures.
+    const recipeBefore = container.querySelector(
+      'input[aria-label="Bitbake recipe for a32_cluster"]',
+    );
+    if (recipeBefore) {
+      problems.push(
+        "cores-step: the recipe field is shown before an app directory is " +
+          "typed — a recipe with nothing to package is not a slice",
+      );
+    }
+    root.render(
+      React.createElement(CoresStep, {
+        choices: defaults.map((c) =>
+          c.id === "a32_cluster" ? { ...c, app: "./linux" } : c,
+        ),
+        onChange: () => {},
+        isExample: false,
+      }),
+    );
+    await settle();
+    if (
+      !container.querySelector(
+        'input[aria-label="Bitbake recipe for a32_cluster"]',
+      )
+    ) {
+      problems.push(
+        "cores-step: a Linux core WITH an app directory offered no recipe " +
+          "field — an app: without a recipe: is carried by the SDK as " +
+          "skipped/no-command, so the wizard would express only the " +
+          "unbuildable half",
+      );
+    }
+    const hpInput = container.querySelector(
+      'input[aria-label="App directory for m55_hp"]',
+    ) as HTMLInputElement | null;
+    if (hpInput?.disabled) {
+      problems.push(
+        "cores-step: a Zephyr core's app directory must be editable",
+      );
+    }
+
+    // An example brings its own board.yaml; the step must not offer edits that
+    // would be overwritten.
+    root.render(
+      React.createElement(CoresStep, {
+        choices: defaults,
+        onChange: () => {},
+        isExample: true,
+      }),
+    );
+    await settle();
+    if (container.querySelectorAll("select").length !== 0) {
+      problems.push(
+        "cores-step: an example's cores must not be offered for editing — its board.yaml already assigns them",
+      );
+    }
+
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  cores-step: every declared core is assignable`,
+    );
+  }
+
+  // ── the configurator's inputs must be typeable (#532) ──
+  // The `value` prop is the HOST's view model, which lags every keystroke by a
+  // full round-trip: the mutation is debounced 200 ms, written to the document,
+  // re-parsed, and posted back as `configuratorRender`. Bound straight to that,
+  // React re-rendered each keystroke with the stale value and WIPED the
+  // character just typed — "./peer" came out as nothing, or as one letter.
+  //
+  // Reproduced exactly that way here: type, then re-render with the OLD prop,
+  // which is what the lagging echo does. The field must still hold what the
+  // customer typed. Then blur and push a new prop — a field nobody is typing in
+  // must still follow the document, or an external YAML edit would never show.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const problemsBefore = problems.length;
+    const typed: string[] = [];
+    const root = createRoot(container);
+
+    root.render(
+      React.createElement(TextInput, {
+        label: "App directory",
+        value: "",
+        placeholder: "./src",
+        onChange: (v: string) => typed.push(v),
+      }),
+    );
+    await settle();
+
+    const input = container.querySelector(
+      'input[aria-label="App directory"]',
+    ) as HTMLInputElement | null;
+    if (!input) {
+      problems.push(
+        "configurator-typing: the App directory input did not render",
+      );
+    } else {
+      // jsdom + React: set through the native setter so React's own value
+      // tracker does not swallow the event as a no-op.
+      const setValue = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      input.focus();
+      for (const text of ["./p", "./pe", "./pee", "./peer"]) {
+        setValue?.call(input, text);
+        input.dispatchEvent(new window.Event("input", { bubbles: true }));
+        // The stale echo: the host has not caught up, so it re-renders with the
+        // value it still believes in.
+        root.render(
+          React.createElement(TextInput, {
+            label: "App directory",
+            value: "",
+            placeholder: "./src",
+            onChange: (v: string) => typed.push(v),
+          }),
+        );
+        await settle();
+      }
+
+      if (input.value !== "./peer") {
+        problems.push(
+          `configurator-typing: a stale host echo overwrote the field — expected "./peer", got "${input.value}"`,
+        );
+      }
+      if (typed[typed.length - 1] !== "./peer") {
+        problems.push(
+          `configurator-typing: the last keystroke never reached onChange — got "${typed[typed.length - 1] ?? "nothing"}"`,
+        );
+      }
+
+      // Blurred, the field must accept the document again.
+      input.blur();
+      root.render(
+        React.createElement(TextInput, {
+          label: "App directory",
+          value: "./from-disk",
+          placeholder: "./src",
+          onChange: (v: string) => typed.push(v),
+        }),
+      );
+      await settle();
+      if (input.value !== "./from-disk") {
+        problems.push(
+          `configurator-typing: a blurred field ignored an external edit — expected "./from-disk", got "${input.value}"`,
+        );
+      }
+    }
+    console.log(
+      `  ${problems.length === problemsBefore ? "PASS" : "FAIL"}  configurator-typing: a stale echo cannot eat a keystroke`,
+    );
+  }
+
+  // ── the real ErrorBoundary, not the harness's own (#517) ──
+  // Every view above is wrapped by `ErrorBoundary` in App.tsx. Without it a
+  // throwing render unmounts the whole tree and leaves an EMPTY panel, which
+  // reads to a customer as "nothing to report" rather than "this broke". Assert
+  // the boundary turns that into words, and that the words name the failure —
+  // a boundary rendering a bare "something went wrong" swaps a blank panel for
+  // an uninformative one and no bug report survives it.
+  {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    function Throws(): React.ReactElement {
+      throw new Error("harness-induced render failure");
+    }
+    let threw = false;
+    try {
+      const root = createRoot(container);
+      root.render(
+        React.createElement(ErrorBoundary, null, React.createElement(Throws)),
+      );
+      await settle();
+    } catch (err) {
+      threw = true;
+      problems.push(`error-boundary: escaped the boundary — ${String(err)}`);
+    }
+    const text = (container.textContent ?? "").toLowerCase();
+    if (!threw && text.length === 0) {
+      problems.push(
+        "error-boundary: rendered nothing — a blank panel is the failure it exists to prevent",
+      );
+    }
+    if (!threw && !text.includes("this view failed to render")) {
+      problems.push("error-boundary: did not say the view failed to render");
+    }
+    if (!threw && !text.includes("harness-induced render failure")) {
+      problems.push(
+        "error-boundary: swallowed the error message, leaving nothing to report a bug with",
+      );
+    }
+    console.log(
+      `  ${problems.length === 0 ? "PASS" : "FAIL"}  error-boundary: caught a throwing render`,
     );
   }
 

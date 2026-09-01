@@ -81,8 +81,11 @@ and **never ahead of a published tag**. The pin is a download target, not an
 aspiration: `shouldFetchManagedCli` re-fetches for a `download` source and for a
 `cached` binary behind the pin, so an unreleased pin makes every activation retry
 a 404 that nothing self-corrects. A feature needing an unreleased `tan` gets its
-own gate against the probed version instead (e.g. `RENODE_CORE_CLI_VERSION` in
-`src/west.ts`, which degrades to "don't offer the picker"). CI enforces this:
+own gate against the probed version instead (e.g. `RENESAS_BUILD_CLI_VERSION`
+in `src/alpCli/somCliFloor.ts`, which warns instead of failing the configure
+step). The example here used to be `RENODE_CORE_CLI_VERSION`; tan v0.6.0
+removed the `renode` verb and that constant went with it (#584). CI enforces
+this:
 `scripts/check-cli-pin.mjs` HEADs every per-target asset for `v<pin>` and fails
 on a 404 (a network error is skipped, not failed).
 
@@ -111,3 +114,46 @@ it names. The real consequence of leaving it at `-gnu` against a Rust tag is
 the glibc floor `-musl` existed to avoid (see `src/alpCli/service.ts`), not a
 missing asset — revert it to `-musl` in lockstep to get that back, not to
 avoid a 404 that was never going to happen.
+
+**Second floor — hardware coverage (#502):** the pin also cannot go below
+`RENESAS_BUILD_CLI_VERSION` (`src/alpCli/somCliFloor.ts`, `0.6.0-rc1`). Below
+it, tan's vendored planner emits `CONFIG_ALP_SDK_CHIP_NONE=y` and every Renesas
+SKU New Project offers — `E1M-V2N101`, `E1M-V2N102`, `E1M-V2M101`,
+`E1M-V2M102` — dies in Zephyr's configure step, so a rollback for an unrelated
+defect would silently take four of nine supported modules with it.
+`test/alpCli.somCliFloor.test.js` fails if the pin drops below the floor; if a
+rollback genuinely requires it, drop the Renesas SKUs from `E1M_MODULES` in the
+same change rather than lowering the floor to silence the gate.
+
+This is also why the pin may legitimately name a PRE-RELEASE. "Never ahead of a
+published tag" above means published, not stable: a prerelease is a published
+tag with real assets, and `v0.6.0-rc1` WAS pinned (until the GA tag below
+superseded it, unchanged in substance) precisely because no stable tan could
+build a Renesas SoM at the time. `SUPPORTED_CLI_VERSION` is `0.6.0` now, a
+non-prerelease, but the mechanism this paragraph describes stays live: a
+future rollback that lands back on a prerelease tag is exactly as legitimate
+as this one was. `install.sh`/`install.ps1` resolve their own `latest` to the
+newest NON-prerelease and will not upgrade onto a prerelease pin, which is why
+every managed invocation passes `--version`/`-Version` explicitly.
+
+**What this repo cannot gate.** No workflow here runs a real `tan build`, so
+nothing local proves the pinned tan can actually build each supported SoM
+family — the floor above is a version assertion, not a build. The real per-SoM
+build gate needs alp-sdk + Zephyr + a toolchain and lives in tan-cli's
+`release-combination.yml`.
+
+That workflow's SCHEDULED run installs tan via `install.sh`'s own default,
+which resolves the newest NON-prerelease — so it exercises whatever `latest`
+means, not the version this extension pins. The two agree most of the time and
+the gate then covers us by coincidence; when they diverge, as they must
+whenever the pin is a prerelease, the pinned pair is tested by nothing. That is
+how #502 reached a release. The capability to test a specific version is
+already there (`release-combination.yml` takes a `tan_version`
+`workflow_dispatch` input, and `install.sh` honours an explicit prerelease —
+its `latest` redirect block runs only when no `--version` is passed); what is
+missing is anything driving it at our pin on a schedule. Filed as
+alplabai/tan-cli#767.
+
+Until that lands, treat a prerelease pin as UNVERIFIED against real hardware
+builds and dispatch `release-combination.yml` by hand with
+`tan_version: v<pin>` when moving the pin.

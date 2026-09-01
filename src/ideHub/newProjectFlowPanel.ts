@@ -4,13 +4,45 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { exampleCategory } from "@alp-sdk/core/examples/category";
+import { planInitArgv } from "@alp-sdk/core/project/initArgv";
 import {
+  baremetalCoresWithoutApp,
+  baremetalNoAppNotice,
+  incompleteYoctoAppNotice,
+  incompleteYoctoAppSlices,
+} from "@alp-sdk/core/project/coreScaffold";
+import { classifyInitRefusal } from "@alp-sdk/core/project/initRefusal";
+import { narrowInitPreview } from "@alp-sdk/core/project/initPreview";
+import {
+  appDirOverrides,
+  orphanedAppDirs,
+  applyCoreAssignments,
+  companionCmakeLists,
+  companionMainC,
+  companionPrjConf,
+  isSafeAppDir,
+  unknownCoreOs,
+} from "@alp-sdk/core/project/coreScaffold";
+import type { BoardConfig } from "@alp-sdk/core/board/models";
+import { parseBoardConfig } from "@alp-sdk/core/board/parse";
+import { serializeBoardConfig } from "@alp-sdk/core/board/serialize";
+import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { readOnlyProjectCwd } from "../project/vscodeAdapter";
+import {
+  hasIssueCode,
+  PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+  unresolvedSdkReason,
+} from "../alpCli/service";
+import {
+  type CreateNewProjectMessage,
   emptyAlpIdeState,
   PROTOCOL_VERSION,
   type E1mModule,
   type ExtToWebviewMessage,
+  type NewProjectFileChange,
   type ProjectTemplate,
+  type RequestNewProjectPreviewMessage,
   type WebviewToExtMessage,
 } from "./messages";
 import { E1M_MODULES } from "./projectScaffold";
@@ -22,6 +54,7 @@ import {
   isCancellation,
   planCliOutcome,
   planFailure,
+  planPrecondition,
   planSuccess,
 } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
@@ -30,11 +63,22 @@ import { log } from "../util";
 const PANEL_VIEW_TYPE = "alp-ide.new-project-flow";
 const PANEL_TITLE = "Alp IDE — New Project";
 
+/** tan's code for "I returned an empty example catalogue because no SDK
+ *  resolved" — exit 0 and `ok: true` carry no hint of it. */
+const EXAMPLES_SDK_ROOT_UNRESOLVED = "examples.sdk-root-unresolved";
+
 export class NewProjectFlowPanel {
   private static instance?: NewProjectFlowPanel;
 
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
+
+  /** tan's verbatim reason for an empty example catalogue, or null when the
+   *  catalogue is legitimately empty. Set by `fetchTemplates`. */
+  private examplesUnavailableReason: string | null = null;
+  /** The toast is once per panel, not per catalog reload: the wizard re-fetches
+   *  whenever the SDK selection changes. */
+  private warnedAboutExamples = false;
 
   private constructor(private readonly context: vscode.ExtensionContext) {
     this.panel = vscode.window.createWebviewPanel(
@@ -122,12 +166,43 @@ export class NewProjectFlowPanel {
    *  `examples/`). Without this the lists come from the ambient SDK and
    *  `alp init --from-example` fails with "was not found" on a divergent pick. */
   private async reloadCatalog(sdkPath?: string): Promise<void> {
+    const templates = await this.fetchTemplates(sdkPath);
     const catalogMsg: ExtToWebviewMessage = {
       type: "projectTemplatesData",
-      templates: await this.fetchTemplates(sdkPath),
+      templates,
       modules: await this.fetchSomModules(sdkPath),
+      ...(this.examplesUnavailableReason
+        ? { examplesUnavailableReason: this.examplesUnavailableReason }
+        : {}),
     };
     void this.panel.webview.postMessage(catalogMsg);
+    this.warnOnceAboutMissingExamples();
+  }
+
+  /**
+   * Say once, out loud, that the example catalogue is empty because the SDK did
+   * not resolve.
+   *
+   * The wizard also renders the reason where the Examples section would be, but
+   * a user who never scrolls to that step would still not know they are picking
+   * from a truncated list. Once per panel, not per catalog reload — the wizard
+   * re-fetches whenever the SDK selection changes, and a toast per keystroke is
+   * its own defect.
+   */
+  private warnOnceAboutMissingExamples(): void {
+    if (!this.examplesUnavailableReason || this.warnedAboutExamples) return;
+    this.warnedAboutExamples = true;
+    // `planPrecondition` rather than a failure: an unresolved SDK on first run
+    // is a state, not a fault, and this kind carries the action that fixes it
+    // (Open SDK Manager) — the GUI equivalent of the `--sdk-root` flag tan's
+    // own message names. That verbatim message is rendered in the wizard, next
+    // to where the examples would have been.
+    void notifyAsync(
+      planPrecondition("noSdk", {
+        operation: "list the SDK's example projects",
+        dedupeKey: "newProject.examplesSdkRootUnresolved",
+      }),
+    );
   }
 
   /** Push a chosen/default parent directory to the wizard's Location field. */
@@ -167,14 +242,38 @@ export class NewProjectFlowPanel {
    *  actual modules). Falls back to the built-in list when no SDK is resolved
    *  (presets returns an empty `soms`) so New Project works pre-SDK. */
   private async fetchSomModules(sdkPath?: string): Promise<E1mModule[]> {
-    const args = sdkPath ? ["--sdk-root", sdkPath, "presets"] : ["presets"];
+    // COMMAND FIRST, `--sdk-root` at the tail — the shape, not a style choice.
+    // `test/tan.surfaceContract.test.js` can only check an argv whose command
+    // is a LEADING string literal; an argv assembled into a variable, or one
+    // opening with a conditional spread, reduces to `resolution: "none"` and
+    // every assertion in that gate skips it. All five of this panel's tan
+    // calls used to sit in that state, which is how `init.invalid-cores`
+    // (#528) and the 12 refused template x SoM pairs (#530) both shipped
+    // unnoticed by any gate.
+    //
+    // Verified byte-identical on the pinned tan 0.6.0 for `presets`,
+    // `explain`, `explain --template <id>` and `examples`: `--sdk-root` is a
+    // declared option of each of those commands, not merely a root-position
+    // global, and `withSdkRoot` tests `args.includes("--sdk-root")` — which is
+    // position-independent — so it still declines to inject a second one.
+    const root = sdkPath ? ["--sdk-root", sdkPath] : [];
+    // `readOnlyProjectCwd()` on this and the three catalogue reads below
+    // (#605): all four resolve their SDK from cwd, and `tan presets` reports
+    // an UNRESOLVED SDK as a SUCCESS with empty lists — so an omitted cwd
+    // makes the wizard's Hardware and Template steps answer for the extension
+    // host's own directory, with no way for the caller to tell that apart
+    // from a genuinely empty catalogue.
+    //
     // `interactive: true`: only reached from `sendState`/`reloadCatalog`,
     // themselves only called on the wizard's own `ready`/`reloadProjectTemplates`
     // messages — i.e. the user opened or is actively driving this wizard, never
     // a background re-derive.
-    const { outcome } = await runAlpCommand(this.context, args, undefined, {
-      interactive: true,
-    });
+    const { outcome } = await runAlpCommand(
+      this.context,
+      ["presets", ...root],
+      readOnlyProjectCwd(),
+      { interactive: true },
+    );
     const soms =
       (
         outcome.envelope?.data as
@@ -193,12 +292,26 @@ export class NewProjectFlowPanel {
       // `soms` and a `presets.sdk-root-unresolved` warning. Fall back to the
       // static catalog — which carries no `cores`, so a heterogeneous SoM would
       // scaffold as single-core with no IPC. Surface the CLI's (otherwise
-      // discarded) warning so that topology gap isn't silent.
-      if (
-        outcome.envelope?.issues?.some(
-          (i) => i.code === "presets.sdk-root-unresolved",
-        )
-      ) {
+      // discarded) warning so that topology gap isn't silent. Shared with the
+      // other two `presets` readers (`lsp/client.ts`, `configurator/
+      // customEditor.ts`) through the same `PRESETS_SDK_ROOT_UNRESOLVED_CODE`
+      // constant rather than each hand-rolling its own `issues[].code` check
+      // (#611).
+      //
+      // `hasIssueCode`, NOT `unresolvedSdkReason` (adversarial review, #611
+      // follow-up): the toast below is a hardcoded sentence, not tan's own
+      // message, so this only ever needed a BOOLEAN. `unresolvedSdkReason`
+      // additionally requires a non-empty `message` — an issue that carries
+      // the code with no message (or an empty one) then satisfied neither
+      // this branch NOR the `!outcome.ok` one below (presets reports an
+      // unresolved SDK as `ok: true`), so it was reported nowhere at all.
+      // Latent at the pinned tan, which always sends a message on this code —
+      // but `hasIssueCode` cannot have that gap by construction.
+      const unresolved = hasIssueCode(
+        outcome.envelope,
+        PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+      );
+      if (unresolved) {
         // `reloadCatalog` re-runs on mount AND on every wizard SDK change, so
         // the same warning would stack; `dedupeKey` drops a repeat while one is
         // still on screen. TODO: this is degraded state for the Hardware step
@@ -211,8 +324,18 @@ export class NewProjectFlowPanel {
             cause:
               "No SDK resolved, so the Hardware list can't report core topology — a multi-core SoM (e.g. E1M-V2N101) will scaffold as single-core with no IPC. Select an SDK for full multi-core scaffolding.",
             severity: "warning",
-            dedupeKey: "presets.sdk-root-unresolved",
+            dedupeKey: PRESETS_SDK_ROOT_UNRESOLVED_CODE,
           }),
+        );
+      } else if (!outcome.ok) {
+        // A genuinely empty `soms` with NO unresolved-SDK issue means
+        // `presets` itself failed (unresolvable binary, non-zero exit) rather
+        // than degrading gracefully — before this, that case fell through the
+        // SAME branch as the known "no SDK resolved" one above and was never
+        // reported at all: the wizard silently rendered the static catalogue
+        // with nothing on screen saying tan, not the SDK, is why (#611).
+        notifyAsync(
+          planCliOutcome(outcome, { operation: "Loading the hardware list" }),
         );
       }
       this.somModules = E1M_MODULES;
@@ -230,12 +353,14 @@ export class NewProjectFlowPanel {
   /** Build the template picker from the CLI's real templates (single source of
    *  truth): `alp explain` lists ids, then per-id explain gives title/blurb. */
   private async fetchTemplates(sdkPath?: string): Promise<ProjectTemplate[]> {
+    // Command first, `--sdk-root` at the tail — see `fetchSomModules` for why
+    // the shape is load-bearing and for the pinned-tan equivalence check.
     const root = sdkPath ? ["--sdk-root", sdkPath] : [];
     // `interactive: true` on all three calls below — see `fetchSomModules`.
     const overview = await runAlpCommand(
       this.context,
-      [...root, "explain"],
-      undefined,
+      ["explain", ...root],
+      readOnlyProjectCwd(),
       { interactive: true },
     );
     if (overview.outcome.envelope === null) {
@@ -266,8 +391,8 @@ export class NewProjectFlowPanel {
     for (const id of ids) {
       const detail = await runAlpCommand(
         this.context,
-        [...root, "explain", "--template", id],
-        undefined,
+        ["explain", "--template", id, ...root],
+        readOnlyProjectCwd(),
         { interactive: true },
       );
       const data = detail.outcome.envelope?.data as
@@ -278,18 +403,26 @@ export class NewProjectFlowPanel {
         title: data?.summary ?? id,
         description: data?.details?.[0] ?? "",
         category: "starter",
-        icon: "📦",
       });
     }
 
     // Append the SDK's ready-made example projects (`alp examples` → category
     // "example"), so users can scaffold from a real example, not just a starter.
-    // Empty when no SDK resolves — the picker simply shows no Examples section.
     const examplesRes = await runAlpCommand(
       this.context,
-      [...root, "examples"],
-      undefined,
+      ["examples", ...root],
+      readOnlyProjectCwd(),
       { interactive: true },
+    );
+    // An unresolved SDK is not a failure here: tan returns exit 0 with
+    // `ok: true` and an EMPTY catalogue, naming the reason only in
+    // `issues[].code`. That used to render as "no Examples section", so a user
+    // whose SDK is unresolved lost every example with nothing saying why. A
+    // legitimately empty list (a `--category` that matched nothing) carries no
+    // issue and correctly leaves this null.
+    this.examplesUnavailableReason = unresolvedSdkReason(
+      examplesRes.outcome.envelope,
+      EXAMPLES_SDK_ROOT_UNRESOLVED,
     );
     const examples =
       (
@@ -300,18 +433,28 @@ export class NewProjectFlowPanel {
                 sourceDir: string;
                 title?: string;
                 description?: string;
+                /** Not on the wire as of the pinned tan v0.6.0 (measured
+                 *  against its own published envelope-contract.json), so it is
+                 *  optional and `exampleCategory` falls back to `sourceDir`'s
+                 *  leading segment. Typed here so the day tan sends one, it
+                 *  wins with no further change (#482 §1). */
+                category?: string;
               }[];
             }
           | undefined
       )?.examples ?? [];
     for (const ex of examples) {
+      // `?? undefined` and not `?? ""`: an example with no category must leave
+      // the field ABSENT so the view groups it nowhere, rather than under a
+      // heading with an empty name.
+      const group = exampleCategory(ex) ?? undefined;
       templates.push({
         id: ex.id,
         title: ex.title || ex.id,
         description: ex.description ?? "",
         category: "example",
-        icon: "🧪",
         sourceDir: ex.sourceDir,
+        group,
       });
     }
 
@@ -332,14 +475,11 @@ export class NewProjectFlowPanel {
         break;
 
       case "createNewProject":
-        await this.createProject(
-          msg.templateId,
-          msg.moduleId,
-          msg.projectName,
-          msg.sdkPath,
-          msg.destination,
-          msg.openInCurrentWindow ?? true,
-        );
+        await this.createProject(msg);
+        break;
+
+      case "requestNewProjectPreview":
+        await this.requestPreview(msg);
         break;
 
       case "reloadProjectTemplates":
@@ -363,14 +503,284 @@ export class NewProjectFlowPanel {
     }
   }
 
-  private async createProject(
-    templateId: string,
-    moduleId: string,
+  /**
+   * Write the wizard's core layout into the scaffolded project (#534).
+   *
+   * TWO WRITES, both additive:
+   *
+   *  1. `board.yaml` gains each assigned core's runtime and `app:`, applied to
+   *     the document tan just wrote and serialised back through the SAME
+   *     writer the Configurator uses, so comments and key order survive.
+   *  2. Every companion app directory that does not already exist is created
+   *     with its own `CMakeLists.txt`, `main.c` and `prj.conf` — a Zephyr
+   *     application is one CMake project per core, and the root CMakeLists tan
+   *     generated is hardcoded to the app core.
+   *
+   * NEVER OVERWRITES. A directory that already has files is left alone: the app
+   * core's `./src` is full of the template's real source, and clobbering it
+   * would delete the very thing the customer asked to be scaffolded.
+   *
+   * Failures are reported, never swallowed — a project that silently came out
+   * single-core is the bug this whole feature exists to fix.
+   */
+  private applyCoreLayout(
+    projectDir: string,
     projectName: string,
-    sdkPath?: string,
-    destination?: string,
-    openInCurrentWindow: boolean = true,
+    assignments: { id: string; os: string; app?: string }[],
+  ): void {
+    // An os this extension cannot validate is DROPPED by `applyCoreAssignments`
+    // rather than written into board.yaml to die later at the SDK's enum check.
+    // Dropping it silently would leave a project missing a core the customer
+    // configured, so it is said here, before anything is written.
+    const unknown = unknownCoreOs(assignments);
+    if (unknown.length > 0) {
+      log(
+        `[new-project] unknown os value(s): ${unknown
+          .map((entry) => `${entry.id}=${entry.os}`)
+          .join(", ")}`,
+      );
+      notifyAsync(
+        planFailure({
+          operation: "Writing the project's core layout",
+          cause:
+            unknown
+              .map((entry) => `${entry.id} asked for "${entry.os}"`)
+              .join(", ") +
+            ", which this version does not recognise, so those cores were " +
+            "left out of board.yaml. Add them from the Board Configurator, or " +
+            "update the extension.",
+          severity: "warning",
+        }),
+      );
+    }
+
+    const boardPath = path.join(projectDir, "board.yaml");
+    let merged: BoardConfig | undefined;
+    let overrides: { id: string; requested: string; kept: string }[] = [];
+    let orphans: { id: string; app: string; os: string }[] = [];
+    try {
+      const original = fs.readFileSync(boardPath, "utf8");
+      const before = parseBoardConfig(original);
+      // Collected BEFORE the merge overwrites the evidence: tan's directory
+      // wins (it holds the template's real source), but a customer who renamed
+      // it and was silently ignored would find nothing on screen saying so.
+      overrides = appDirOverrides(before, assignments);
+      orphans = orphanedAppDirs(before, assignments);
+      const next = applyCoreAssignments(before, assignments);
+      merged = next;
+      fs.writeFileSync(boardPath, serializeBoardConfig(next, original), "utf8");
+      log(`[new-project] wrote ${assignments.length} core(s) into board.yaml`);
+    } catch (err) {
+      log(`[new-project] core layout FAILED for ${boardPath}: ${String(err)}`);
+      notifyAsync(
+        planFailure({
+          operation: "Writing the project's core layout",
+          cause:
+            `Project "${projectName}" was created, but the extra cores could ` +
+            "not be written to board.yaml. It has one core configured; add " +
+            "the others from the Board Configurator.",
+          detail: `${boardPath}: ${String(err)}`,
+          severity: "warning",
+        }),
+      );
+      return;
+    }
+
+    // A directory tan filled with the template's real source, whose core the
+    // customer then took the application away from (#582). Honoured, not
+    // prevented — but said out loud, because the code is still on disk and
+    // nothing builds it now.
+    if (orphans.length > 0) {
+      log(
+        `[new-project] orphaned app dir(s): ${orphans
+          .map((o) => `${o.id} -> ${o.app}`)
+          .join(", ")}`,
+      );
+      notifyAsync(
+        planFailure({
+          operation: "Assigning the project's core directories",
+          cause: orphans
+            .map(
+              (o) =>
+                `${o.id} is set to "${o.os}", so the project template's ` +
+                `source in "${o.app}" is not built by any core. Point a ` +
+                "Zephyr core at that directory, or delete it.",
+            )
+            .join(" "),
+          severity: "warning",
+        }),
+      );
+    }
+
+    if (overrides.length > 0) {
+      notifyAsync(
+        planFailure({
+          operation: "Assigning the project's core directories",
+          cause: overrides
+            .map(
+              (o) =>
+                `${o.id} keeps "${o.kept}" rather than "${o.requested}": the ` +
+                "project template's source was scaffolded there. Move the " +
+                "files and change board.yaml if you want it elsewhere.",
+            )
+            .join(" "),
+          severity: "info",
+        }),
+      );
+    }
+
+    // KEYED ON THE MERGED BOARD, never on the wizard's raw request. The two
+    // disagree wherever tan had already chosen a directory, and scaffolding the
+    // requested one would create a directory `board.yaml` does not point at —
+    // holding a generated comment that claims it does.
+    for (const assignment of assignments) {
+      const app = merged?.cores?.[assignment.id]?.app;
+      if (!app) continue;
+      // Refused, not resolved: `../..` walks out of the project and an absolute
+      // path ignores it entirely, and three files land wherever that points.
+      // The webview validates too; this is the boundary that counts.
+      if (!isSafeAppDir(app)) {
+        log(`[new-project] refused app directory outside the project: ${app}`);
+        notifyAsync(
+          planFailure({
+            operation: "Scaffolding a core's application",
+            cause:
+              `${assignment.id}'s app directory "${app}" is not inside the ` +
+              "project, so nothing was written for it. Point it at a path " +
+              "under the project root in board.yaml.",
+            severity: "warning",
+          }),
+        );
+        continue;
+      }
+      const dir = path.resolve(projectDir, app);
+      // Already scaffolded (the app core's ./src) — leave every file alone.
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length > 0) continue;
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(
+          path.join(dir, "CMakeLists.txt"),
+          companionCmakeLists({ coreId: assignment.id, projectName }),
+          "utf8",
+        );
+        fs.writeFileSync(
+          path.join(dir, "main.c"),
+          companionMainC({ coreId: assignment.id }),
+          "utf8",
+        );
+        fs.writeFileSync(
+          path.join(dir, "prj.conf"),
+          companionPrjConf(assignment.id),
+          "utf8",
+        );
+        log(`[new-project] scaffolded ${assignment.id} into ${dir}`);
+      } catch (err) {
+        log(`[new-project] scaffold FAILED for ${dir}: ${String(err)}`);
+        notifyAsync(
+          planFailure({
+            operation: "Scaffolding a core's application",
+            cause:
+              `board.yaml declares ${assignment.id} at "${app}", ` +
+              "but that directory could not be created. Create it with a " +
+              "CMakeLists.txt and main.c, or set the core to off.",
+            detail: `${dir}: ${String(err)}`,
+            severity: "warning",
+          }),
+        );
+      }
+    }
+  }
+
+  /**
+   * Answer the Confirm step's `requestNewProjectPreview` with `tan init
+   * --preview`'s own file list (#616), so Create no longer writes a project
+   * the customer has never seen a file list for.
+   *
+   * `planInitArgv` is called with the SAME inputs `createProject` resolves
+   * below — the same `sourceDir` lookup, the same cached SoM cores — plus
+   * `preview: true`. That is deliberate, not incidental: a hand-assembled
+   * second argv here could drift from the one Create actually sends, and the
+   * whole point of a PREVIEW is that it describes the run that is really
+   * about to happen.
+   *
+   * Preview is an AID, never a gate. Unlike `createProject`, a refused or
+   * unreadable result here does not classify anything and does not stop
+   * Create — it is logged to the "Alp SDK" output channel and answered with
+   * `files: null`, which the webview must render as "preview unavailable",
+   * never as "this creates nothing" (see `NewProjectPreviewDataMessage`).
+   * Create itself runs the identical argv, minus `--preview`, regardless of
+   * what happened here.
+   */
+  private async requestPreview(
+    msg: RequestNewProjectPreviewMessage,
   ): Promise<void> {
+    const sourceDir = this.templates.find(
+      (t) => t.id === msg.templateId,
+    )?.sourceDir;
+    const { argv: previewArgs } = planInitArgv({
+      templateId: msg.templateId,
+      sourceDir,
+      projectName: msg.projectName,
+      parentDir: msg.destination,
+      moduleId: msg.moduleId,
+      cores: this.somModules.find((m) => m.id === msg.moduleId)?.cores ?? [],
+      coreAssignments: msg.cores,
+      sdkPath: msg.sdkPath,
+      preview: true,
+    });
+
+    // `readOnlyProjectCwd()` (#605): `tan init --preview` still resolves its
+    // SDK from cwd the same way the real `init` does, and this is a
+    // background query the extension host's own directory must never answer
+    // for. `interactive: true`: reached only from the wizard's own Confirm
+    // step, an active user session, the same rule `fetchSomModules` follows.
+    const { outcome } = await runAlpCommand(
+      this.context,
+      previewArgs,
+      readOnlyProjectCwd(),
+      { interactive: true },
+    );
+
+    // Issues reach the channel on every outcome, ok or not — the same rule
+    // `wizard.ts`'s `logIssues` follows for `tan scaffold`'s preview pass.
+    for (const issue of outcome.envelope?.issues ?? []) {
+      log(`[new-project] preview ${issue.severity}: ${issue.message}`);
+    }
+
+    let files: NewProjectFileChange[] | null = null;
+    if (!outcome.envelope || !outcome.envelope.ok) {
+      log(`[new-project] preview failed: ${outcome.message}`);
+    } else {
+      const result = narrowInitPreview(outcome.envelope.data);
+      if (result) {
+        files = result.fileChanges;
+      } else {
+        // `ok: true` with a `data` this extension cannot read is NOT a
+        // preview of zero files — see NewProjectPreviewDataMessage. Logged
+        // rather than surfaced as a notification: the customer did not click
+        // a button for this, Create is unaffected, and a toast per Confirm
+        // visit would be its own defect.
+        log("[new-project] preview data did not narrow (no fileChanges[])");
+      }
+    }
+
+    const previewMsg: ExtToWebviewMessage = {
+      type: "newProjectPreviewData",
+      files,
+    };
+    void this.panel.webview.postMessage(previewMsg);
+  }
+
+  private async createProject(msg: CreateNewProjectMessage): Promise<void> {
+    const {
+      templateId,
+      moduleId,
+      projectName,
+      sdkPath,
+      destination,
+      cores: coreAssignments,
+    } = msg;
+    const openInCurrentWindow = msg.openInCurrentWindow ?? true;
     // Prefer the location chosen in the wizard; fall back to a picker if absent.
     let parentDir = destination?.trim() ?? "";
     if (!parentDir || !fs.existsSync(parentDir)) {
@@ -412,64 +822,239 @@ export class NewProjectFlowPanel {
     const sourceDir = this.templates.find(
       (t) => t.id === templateId,
     )?.sourceDir;
-    const initArgs = sourceDir
-      ? [
-          "init",
-          "--from-example",
-          sourceDir,
-          "--name",
-          projectName,
-          "--destination",
-          parentDir,
-          "--non-interactive",
-        ]
-      : [
-          "init",
-          "--template",
-          templateId,
-          "--name",
-          projectName,
-          "--destination",
-          parentDir,
-          "--som",
-          moduleId,
-          "--non-interactive",
-        ];
-    // Heterogeneous SoMs (≥2 cores) scaffold every core + a default IPC channel
-    // via `alp init --cores` (requires the CLI's --cores support; see
-    // SUPPORTED_CLI_VERSION). Single-core SoMs keep the plain --som path.
-    if (!sourceDir) {
-      const cores = this.somModules.find((m) => m.id === moduleId)?.cores ?? [];
-      if (cores.length >= 2) {
-        initArgs.push("--cores", cores.map((c) => `${c.id}:${c.os}`).join(","));
-      }
-    }
-    // Examples copy their own board.yaml verbatim; when the user picks a SoM,
-    // retarget the copied board.yaml to it (alp init --from-example --som), so an
-    // example can be scaffolded onto the user's SoM instead of its default.
-    if (sourceDir && moduleId) {
-      initArgs.push("--som", moduleId);
-    }
-    // Source the scaffold from the SDK the user picked in the wizard (the same one
-    // pinned below), overriding runAlpCommand's active-SDK injection — so an
-    // example is copied from, and validated against, the selected SDK rather than
-    // whatever SDK happens to be globally active.
-    if (sdkPath) {
-      initArgs.push("--sdk-root", sdkPath);
-    }
+    //
+    // The argv itself is `planInitArgv`, in core, and it is there so a GATE can
+    // read it: assembled inline here it reduced to `resolution: "none"` in
+    // `scripts/tan-surface/extract.mjs` and no assertion in
+    // `test/tan.surfaceContract.test.js` ever ran on it — which is how #528 and
+    // #530 both reached customers. `test/wizard.initArgv.test.js` now enumerates
+    // every branch of it against the pinned tan's recorded surface. Keep the
+    // assembly there; a flag pushed back onto `initArgs` here is a flag no gate
+    // checks again.
+    //
+    // Heterogeneous SoMs scaffold their companion cores + a default IPC channel
+    // via `tan init --cores`, FILTERED through `planInitCores` (#528) — see that
+    // module for the contract and for why no core is named as the app core.
+    //
+    // BOTH the topology AND the customer's answers (#582). They answer
+    // different questions — `tan presets` reports which cores the part HAS,
+    // the Cores step records which the customer WANTS — and sending only the
+    // first meant a core set to "Off (skip core)" still reached `--cores` as an
+    // enabled runtime, dragging in, for a Cortex-A companion, a whole `ipc:`
+    // stanza nobody asked for. Sending only the second is measurably worse:
+    // 276 of 368 answer combinations are then refused with exit 2 /
+    // `init.invalid-cores`, against 0 today. `planInitCores` needs both.
+    const {
+      argv: initArgs,
+      zephyrCores: unscaffolded,
+      deferredCores,
+      unknownCores,
+    } = planInitArgv({
+      templateId,
+      sourceDir,
+      projectName,
+      parentDir,
+      moduleId,
+      cores: this.somModules.find((m) => m.id === moduleId)?.cores ?? [],
+      coreAssignments,
+      sdkPath,
+    });
     // `interactive: true`: reached only from the wizard's "Create" button
     // (`createNewProject`) — a direct, explicit user action.
-    const { outcome } = await runAlpCommand(this.context, initArgs, undefined, {
-      interactive: true,
-    });
+    // `readOnlyProjectCwd()`, not `undefined` (#605). `--destination` is
+    // absolute (`project/initArgv.ts`) so this never wrote to the wrong place
+    // — but with `sdkPath` unset, cwd is what decides which SDK `tan init`
+    // resolves the template from, and the extension host's own directory is
+    // nobody's project.
+    const { outcome } = await runAlpCommand(
+      this.context,
+      initArgs,
+      readOnlyProjectCwd(),
+      { interactive: true },
+    );
     if (!outcome.envelope || !outcome.envelope.ok) {
       // Severity comes from the outcome, never from here: `alp init --som` with
       // a bad SKU exits 2 (validation ⇒ warning) and must not read like the
       // spawn failure that exits 1.
+      // Two refusals get guidance instead of a bare report (#530): this
+      // wizard lets any template be paired with any SoM, and 12 of the 44
+      // pairs cannot be scaffolded — `iot-starter` alone is refused on 10 of
+      // the 11 SoMs. tan is right to refuse (rendering an Alif tree under an
+      // NXP SKU would write another vendor's content into the project), but a
+      // raw refusal leaves the customer on a Confirm step whose Create button
+      // will fail again, with nothing saying where to go.
+      //
+      // Classified on the CODE (`@alp-sdk/core/project/initRefusal`), and the
+      // two kinds get different sentences on purpose: `init.invalid-som` is
+      // fixable by changing the SoM and tan's own message names the SKU that
+      // works, while `init.som-unsupported` is not — no SoM change helps when
+      // the template ships no tree for that family, so the way out is another
+      // template or an example. Examples carry their own board.yaml and
+      // scaffold onto any SoM (verified for E1M-NX9101 on the pinned tan).
+      const refusal = classifyInitRefusal(outcome.envelope?.issues);
+      if (refusal) {
+        // The core layout is refused on a different screen from the other two,
+        // so it gets its own route back (#582). tan's message names the core it
+        // would not accept, which no table here could.
+        const isCoreLayout = refusal.kind === "core-layout-refused";
+        const advice = isCoreLayout
+          ? "Go back to Cores and leave that core on its default runtime."
+          : refusal.kind === "template-pinned-to-som"
+            ? "Choose the SoM it names, or go back and pick another project type."
+            : "No SoM change helps here — go back and pick another project type, or start from an example, which brings its own board.yaml and scaffolds onto any SoM.";
+        const picked = await notify(
+          planFailure({
+            operation: "Creating the project",
+            cause: `${refusal.message ?? "This project type cannot be scaffolded for this SoM."} ${advice}`,
+            // The code is an internal identifier, so it travels as channel
+            // detail rather than in the sentence.
+            detail: `${refusal.code}: ${templateId} + ${moduleId}`,
+            severity: "warning",
+            actions: [
+              { id: isCoreLayout ? "chooseCoreLayout" : "chooseProjectType" },
+            ],
+          }),
+        );
+        if (picked === "chooseProjectType" || picked === "chooseCoreLayout") {
+          const msg: ExtToWebviewMessage = {
+            type: "newProjectFlowGoToStep",
+            stepId: isCoreLayout ? "cores" : "template",
+          };
+          void this.panel.webview.postMessage(msg);
+        }
+        return;
+      }
       notifyAsync(
         planCliOutcome(outcome, { operation: "Creating the project" }),
       );
       return;
+    }
+
+    // The one thing the scaffold cannot say for itself (#528): this SoM
+    // declares more than one Zephyr core, and `tan init --cores` can only
+    // splice companions in APP-LESS, so exactly one of them — the SoM's app
+    // core, which tan picks — got the app and the rest are absent from the
+    // generated board.yaml. Silently handing a dual-M55 customer a
+    // single-core project is the failure this notice exists to prevent.
+    //
+    // A TOAST, not the default statusBar: `planSuccess` with no actions is a
+    // transient status-bar line and `detail` is channel-only, so the fact
+    // would never reach the screen. The example named is the shipped one that
+    // DOES give a second Zephyr core its own `app:` — something no
+    // `--template` + `--cores` combination can express.
+    // Only when the second pass did NOT run (#538): with a core layout the
+    // wizard configures every core it names, so this toast would contradict the
+    // project sitting on disk.
+    if (unscaffolded.length > 1 && !coreAssignments?.length) {
+      notifyAsync(
+        planSuccess(
+          `Project "${projectName}" created with one Zephyr core configured. ` +
+            `${moduleId} has ${unscaffolded.length} (${unscaffolded.join(", ")}) — ` +
+            "to start from a project that uses both, create it from the " +
+            "multicore/mproc-mailbox example instead.",
+          { actions: [{ id: "showOutput" }] },
+        ),
+      );
+      log(
+        `[new-project] ${moduleId}: ${unscaffolded.length} zephyr cores ` +
+          `(${unscaffolded.join(", ")}), only the SoM's app core is scaffolded ` +
+          "— tan init --cores splices companions app-less",
+      );
+    }
+
+    // #623: a Bare-metal core the customer chose gets no `app:` — this wizard
+    // does not scaffold one, and the SDK has no baremetal stock default to
+    // fall back on the way a Zephyr core has `alp-stock-shim` and a Linux one
+    // has `alp-image-edge`. Measured: `tan validate` passes the shape with
+    // zero issues while the planner's `_slice_command` returns None for it,
+    // carrying the slice as `skipped` / `no-command`. So the build quietly
+    // skips a core the customer asked for, and the first gate they hit says
+    // nothing. Said here, at creation, because it is the only moment this
+    // extension knows the answer AND the customer is looking.
+    // #624: a Linux core the customer half-answered — a source directory with
+    // no recipe, or a recipe with no directory. Neither half is written (the
+    // pair is what the SDK requires; `_slice_command` returns None for an
+    // `app:` with no `recipe:`), so the core falls back to the SoM's stock
+    // image. That is a working project and NOT what they asked for, so it is
+    // said rather than silently corrected.
+    const halfAnswered = incompleteYoctoAppSlices(coreAssignments ?? []);
+    if (halfAnswered.length > 0) {
+      notifyAsync(
+        planSuccess(`Alp: ${incompleteYoctoAppNotice(halfAnswered)}`, {
+          actions: [{ id: "showOutput" }],
+        }),
+      );
+      log(
+        `[new-project] ${moduleId}: yocto core(s) ${halfAnswered.join(", ")} ` +
+          "had only one of app:/recipe: — left on the stock image",
+      );
+    }
+
+    const baremetalNoApp = baremetalCoresWithoutApp(coreAssignments ?? []);
+    if (baremetalNoApp.length > 0) {
+      notifyAsync(
+        planSuccess(`Alp: ${baremetalNoAppNotice(baremetalNoApp)}`, {
+          actions: [{ id: "showOutput" }],
+        }),
+      );
+      log(
+        `[new-project] ${moduleId}: baremetal core(s) ` +
+          `${baremetalNoApp.join(", ")} written without an app: — the SDK's ` +
+          "`_slice_command` returns None for that shape (skipped/no-command)",
+      );
+    }
+
+    // SECOND PASS (#534): give every core the wizard assigned its own app.
+    //
+    // `tan init --cores` splices companions in APP-LESS, so the scaffold above
+    // can only ever have one core with an `app:`. Everything the customer chose
+    // beyond that is written here, on top of what tan produced — never instead
+    // of it: tan owns `preset:`, `supported_boards:` and the SoM's topology,
+    // and this pass re-derives none of them.
+    //
+    // An answer naming a core this SoM does not declare is DROPPED here, at the
+    // boundary (#582). The assignments arrive in a webview message and the
+    // declared topology is the authority on which cores exist; writing one the
+    // part does not have would produce a board.yaml no SoM can build.
+    // `planInitCores` already refused to send it to tan — the second pass has
+    // no topology of its own, so the filter belongs here.
+    const declaredIds = new Set(
+      (this.somModules.find((m) => m.id === moduleId)?.cores ?? []).map(
+        (core) => core.id,
+      ),
+    );
+    if (unknownCores.length > 0) {
+      log(`[new-project] dropped unknown core(s): ${unknownCores.join(", ")}`);
+      notifyAsync(
+        planFailure({
+          operation: "Writing the project's core layout",
+          cause:
+            `${moduleId} does not have ${unknownCores.join(", ")}, so ` +
+            (unknownCores.length === 1 ? "that core was" : "those cores were") +
+            " left out of board.yaml. Pick the hardware again if this is the " +
+            "wrong module.",
+          severity: "warning",
+        }),
+      );
+    }
+    // Channel-only: every one of these IS carried by the second pass below, and
+    // the ones that need a sentence get their own (an unrecognised os through
+    // `unknownCoreOs`, an orphaned directory through `orphanedAppDirs`). What
+    // the log buys is the ability to see, after the fact, which answers
+    // `--cores` could not express for a given SoM.
+    if (deferredCores.length > 0) {
+      log(
+        "[new-project] deferred to the second pass: " +
+          deferredCores
+            .map((core) => `${core.id}=${core.requested}`)
+            .join(", "),
+      );
+    }
+    const applicable = (coreAssignments ?? []).filter((core) =>
+      declaredIds.has(core.id),
+    );
+    if (applicable.length > 0) {
+      this.applyCoreLayout(projectDir, projectName, applicable);
     }
 
     // Pin the chosen SDK for the new project so it opens with the right one

@@ -53,9 +53,49 @@ import {
  *  It also freezes `bootstrap.python-not-runnable` and `bootstrap.python-too-old`:
  *  through v0.4.0 this extension matched two codes tan declared at no status, so
  *  a rename would have gone unnoticed by both repos' CI. `GATED_CODES` in
- *  test/tanContract.test.js tracks that, and moved with this pin. */
+ *  test/tanContract.test.js tracks that, and moved with this pin.
+ *
+ *  v0.6.0-rc1 WAS the pin, from #502 until the GA tag below superseded it —
+ *  deliberately a PRE-RELEASE at the time (#502), the first pin this
+ *  extension has ever taken that was chosen from what can build the target
+ *  hardware rather than from what was stable. `v0.5.1` cannot configure ANY
+ *  Renesas SoM against the alp-sdk it ships beside: its vendored planner emits
+ *  `CONFIG_ALP_SDK_CHIP_NONE=y`, alp-sdk v0.15.0 no longer defines that symbol,
+ *  and Zephyr aborts the configure step with "attempt to assign the value 'y' to
+ *  the undefined symbol ALP_SDK_CHIP_NONE". That is four of the nine SKUs
+ *  `E1M_MODULES` offers in New Project — E1M-V2N101, E1M-V2N102, E1M-V2M101 and
+ *  E1M-V2M102 — broken by DEFAULT, on the path the GUI steers people down.
+ *
+ *  tan-cli#639 is the upstream bug and tan-cli#688 (`6901280`) the fix. Which
+ *  releases carry it was measured, not read off the notes — v0.6.0-rc1's own
+ *  "Fixed" list does not mention it. `6901280...v0.6.0-rc1` is 45 ahead / 0
+ *  behind (the fix IS in the tag); `6901280...v0.5.1` is diverged (it is not).
+ *  So no stable tan can build a Renesas SoM today, and holding at v0.5.1 to
+ *  avoid a pre-release would have meant knowingly keeping those four SKUs
+ *  broken. The rc window WAS short, as predicted: the v0.6.0 milestone closed
+ *  out at 0 open / 206 closed, and the GA tag `v0.6.0` was cut once that
+ *  window closed. #688 was already in `v0.6.0-rc1` ("45 ahead / 0 behind"
+ *  above) -- GA did not newly add the Renesas fix, it just dropped the rc
+ *  label from a tag that already carried it. This pin moved to
+ *  `"0.6.0"` below. `RENESAS_BUILD_CLI_VERSION` stays at `0.6.0-rc1`
+ *  deliberately -- it is a SEPARATE floor (`src/alpCli/somCliFloor.ts`), not
+ *  this pin's rc-era value carried over by oversight.
+ *
+ *  Pinning a pre-release is precedented and supported, not a workaround — #443
+ *  taught every pin-resolution site to accept one and
+ *  `test/cliPin.prerelease.test.js` holds them to it; `0.5.0-rc1` through `rc4`
+ *  were each pinned in turn. `install.sh`/`install.ps1` resolve their OWN
+ *  `latest` to v0.5.1 and would not upgrade onto this, which is why every
+ *  managed invocation passes `--version`/`-Version` explicitly (see
+ *  `installTanCliGlobally`).
+ *
+ *  A pin is not the whole fix, because it only governs the MANAGED binary: a
+ *  customer resolving their own older tan through `alpSdk.cliPath` or PATH still
+ *  hits the identical Kconfig abort. `RENESAS_BUILD_CLI_VERSION` in
+ *  `src/alpCli/somCliFloor.ts` is the matching guard, and it compares against
+ *  the PROBED version for exactly the reason `RENODE_CORE_CLI_VERSION` does. */
 
-export const SUPPORTED_CLI_VERSION = "0.5.1";
+export const SUPPORTED_CLI_VERSION = "0.6.0";
 
 /**
  * Every published `alplabai/tan-cli` tag that does NOT carry an
@@ -164,6 +204,16 @@ export const RELEASES_PREDATING_CONTRACT_ASSET: readonly string[] = [
  * `tan-x86_64-unknown-linux-gnu.tar.gz`, plus `checksums.txt` and
  * `envelope-contract.json` — six assets, the same four binaries as v0.5.0 and
  * every rc before it, now archived rather than raw (tan-cli#349).
+ *
+ * `"0.6.0-rc1"` carries the same two gaps, and this was read off the published
+ * tag rather than carried forward: it lists exactly
+ * `tan-aarch64-apple-darwin.tar.gz`, `tan-x86_64-apple-darwin.tar.gz`,
+ * `tan-x86_64-pc-windows-msvc.zip`, `tan-x86_64-unknown-linux-gnu.tar.gz`,
+ * `checksums.txt` and `envelope-contract.json` — six assets, byte-for-byte the
+ * same NAMES as v0.5.1. The reason is unchanged (PyInstaller cannot
+ * cross-compile and the matrix runs four runners), so `win32/arm64` and
+ * `linux/arm64` stay declared. Retiring the Rust oracle in this release changed
+ * what builds the payload, not which hosts it is built for.
  */
 export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   Record<string, readonly string[]>
@@ -173,6 +223,14 @@ export const HOSTS_WITHOUT_RELEASE_ASSET: Readonly<
   "0.5.0-rc3": ["win32/arm64", "linux/arm64"],
   "0.5.0-rc4": ["win32/arm64", "linux/arm64"],
   "0.5.1": ["win32/arm64", "linux/arm64"],
+  "0.6.0-rc1": ["win32/arm64", "linux/arm64"],
+  // MEASURED against the GA release, not assumed from the RC: `gh release view
+  // v0.6.0 --repo alplabai/tan-cli` lists the same four archives as v0.6.0-rc1
+  // — `tan-{aarch64,x86_64}-apple-darwin.tar.gz`,
+  // `tan-x86_64-pc-windows-msvc.zip`, `tan-x86_64-unknown-linux-gnu.tar.gz`.
+  // No `aarch64-pc-windows-msvc`, no `aarch64-unknown-linux-gnu`. Without this
+  // row the pin bump would promise those two hosts an asset and 404 them.
+  "0.6.0": ["win32/arm64", "linux/arm64"],
 };
 
 /** The repo whose GitHub releases host the prebuilt `tan` binaries. */
@@ -1025,6 +1083,109 @@ export function classifyExitCode(code: number): CliExitKind {
   return EXIT_KINDS[code] ?? "unknown";
 }
 
+/**
+ * tan's code for "`presets` did not resolve an SDK", verbatim.
+ *
+ * Exported so the three sites that read a `presets` envelope
+ * (`src/lsp/client.ts`, `src/configurator/customEditor.ts`,
+ * `src/ideHub/newProjectFlowPanel.ts`) share ONE spelling with
+ * `unresolvedSdkReason` instead of each hand-rolling its own `issues[].code`
+ * check (#611) — before this, two of the three dropped `issues[]` entirely and
+ * the third compared against an inline literal nothing else could reuse.
+ */
+export const PRESETS_SDK_ROOT_UNRESOLVED_CODE = "presets.sdk-root-unresolved";
+
+/**
+ * tan's own words for "the SDK did not resolve", when that is what an
+ * otherwise-successful envelope is reporting — otherwise null.
+ *
+ * Several verbs report an unresolved SDK as a SUCCESS rather than a failure.
+ * Measured against the pinned tan 0.6.0, `tan examples` with no resolvable SDK
+ * returns exit 0 with `ok: true` and an empty `data.examples`, and says what
+ * happened only through `issues[].code == examples.sdk-root-unresolved`.
+ * `presets` does the same under `presets.sdk-root-unresolved`. So a caller that
+ * trusts the exit code, or simply reads the empty list, shows an empty
+ * catalogue and never mentions that the SDK is the reason.
+ *
+ * The confusable case has to stay distinguishable: `--category <typo>` also
+ * returns exit 0 with an empty list, but carries NO issue at all.
+ * Empty-because-unresolved and empty-because-nothing-matched are different
+ * situations, and only the first has a fix to offer.
+ *
+ * The code is a parameter rather than a constant because each verb spells its
+ * own, and the message comes back verbatim rather than reworded: it already
+ * names the flag that fixes it.
+ */
+export function unresolvedSdkReason(
+  envelope: unknown,
+  code: string,
+): string | null {
+  if (typeof envelope !== "object" || envelope === null) return null;
+  const issues = (envelope as Record<string, unknown>).issues;
+  if (!Array.isArray(issues)) return null;
+
+  for (const issue of issues) {
+    if (typeof issue !== "object" || issue === null) continue;
+    const record = issue as Record<string, unknown>;
+    if (record.code !== code) continue;
+    if (typeof record.message !== "string" || record.message.length === 0) {
+      continue;
+    }
+    return record.message;
+  }
+  return null;
+}
+
+/**
+ * tan's code for "the argv this extension sent is not a command I accept".
+ *
+ * Measured against the pinned tan 0.6.0: `tan presets --nosuchflag` and
+ * `tan bogusverb` both exit 2 with a WELL-FORMED envelope whose `command` is
+ * `"cli"` and whose single issue is
+ * `{ code: "cli.parse-error", severity: "error", message: <click usage dump> }`.
+ *
+ * Two consequences make it worth naming rather than leaving to the exit code.
+ * Exit 2 is `"validation"`, so without this a rejected argv is graded the same
+ * `warning` as a board.yaml the customer can fix — but the project is fine
+ * here, the extension and the CLI simply disagree about the command surface.
+ * And the message is a click/rich usage dump complete with box-drawing
+ * characters, which is channel material, not a sentence.
+ */
+export const CLI_PARSE_ERROR_CODE = "cli.parse-error";
+
+/**
+ * The usage dump behind a `cli.parse-error`, or null when this envelope is not
+ * one. Returned verbatim: it is bound for the output channel, where the
+ * `No such option: --x` line is exactly what identifies the offending argv.
+ */
+export function cliUsageErrorDump(envelope: AlpEnvelope | null): string | null {
+  for (const issue of envelope?.issues ?? []) {
+    if (issue.code === CLI_PARSE_ERROR_CODE && issue.message) {
+      return issue.message;
+    }
+  }
+  return null;
+}
+
+/** tan's code for "the flag was recognised, its VALUE is wrong" on
+ *  `debug-config` -- e.g. an `--svd` naming a path it cannot read. Distinct
+ *  from `cli.parse-error`, which means the flag itself was not recognised. */
+export const DEBUG_CONFIG_INVALID_ARGUMENT_CODE =
+  "debug-config.invalid-argument";
+
+/** Whether `envelope` carries an issue with exactly this code.
+ *
+ *  Classify on the CODE, never on the message prose: tan's wording is not a
+ *  contract and has changed under us before, while a code rename is a visible
+ *  envelope-contract break. A null envelope answers false -- "tan said
+ *  nothing" is not "tan said this". */
+export function hasIssueCode(
+  envelope: AlpEnvelope | null | undefined,
+  code: string,
+): boolean {
+  return (envelope?.issues ?? []).some((issue) => issue.code === code);
+}
+
 /** Parse the envelope from a command's stdout. Returns null when stdout is
  *  empty or not a well-formed envelope (so callers can fall back gracefully). */
 export function parseEnvelope(stdout: string): AlpEnvelope | null {
@@ -1069,11 +1230,20 @@ export function classifyOutcome(
 ): CliOutcome {
   const kind = classifyExitCode(exitCode);
   const ok = exitCode === 0;
+  // A rejected argv exits 2 like a genuine validation failure, so the exit code
+  // alone cannot separate them — `cliUsageErrorDump` reads the issue code that
+  // can. `kind` stays "validation" on purpose: `src/debug.ts` keys its "run
+  // Alp: Update CLI" skew hint on that kind together with `--core` /
+  // `--pre-launch-task` on the argv, and an unrecognised flag on a stale tan is
+  // precisely this envelope — retyping the kind would silently kill the hint.
+  const isUsageError = !ok && cliUsageErrorDump(envelope) !== null;
   const severity: CliOutcome["severity"] = ok
     ? "info"
-    : kind === "validation" || kind === "doctor"
-      ? "warning"
-      : "error";
+    : isUsageError
+      ? "error"
+      : kind === "validation" || kind === "doctor"
+        ? "warning"
+        : "error";
   return {
     exitCode,
     kind,
@@ -1341,9 +1511,14 @@ const HTTP_PROXY_ENV_VARS = [
  * `http.proxy` and the environment the extension host inherited. Returns `{}`
  * when there is nothing to add.
  *
- * `tan` takes no `--proxy` flag: it reads the environment (see tan-cli
- * `crates/tan-cli/src/http.rs`), so handing VS Code's setting to the child is
- * the whole mechanism. Both variables are set because they reach different
+ * `tan` takes no `--proxy` flag: it reads the environment — RE-MEASURED
+ * against the pinned 0.6.0 rather than cited to the retired Rust
+ * `crates/tan-cli/src/http.rs` this used to name (that file cannot describe
+ * a Python binary): pointing `HTTPS_PROXY` at a closed local port makes
+ * `sdk list --online` fail to connect, with tan's own error message reading
+ * "Check ALL_PROXY/HTTPS_PROXY/NO_PROXY — the configured proxy refused or
+ * could not complete the connection" — so handing VS Code's setting to the
+ * child is the whole mechanism. Both variables are set because they reach different
  * things — `HTTPS_PROXY` is what tan's own in-process GitHub call honours, and
  * `HTTP_PROXY` is for the `git`/`pip`/`west` subprocesses tan spawns, which
  * inherit this environment and would otherwise have no http-side proxy at all.
@@ -1398,22 +1573,29 @@ export function proxyEnvOverrides(
 }
 
 /**
- * Verdict from a `tan bootstrap --no-pip --no-west --format json` pre-flight
- * call: whether `src/bootstrap.ts` must refuse to spawn the real bootstrap
- * terminal on this host, and the reason to show the user.
+ * Verdict from a `tan bootstrap --no-pip --no-west --dry-run --format json`
+ * pre-flight call: whether `src/bootstrap.ts` must refuse to spawn the real
+ * bootstrap terminal on this host, and the reason to show the user.
  *
  * tan resolves each core's runtime from the SoM topology in the SDK metadata
  * (`som.sku` -> `<sdkRoot>/metadata/e1m_modules/<sku>.yaml` `topology:`) —
  * `board.yaml` alone does not carry that (a per-core `os:` there is only an
  * OVERRIDE, mostly used as `os: "off"`), so re-deriving this verdict from a
  * parsed `board.yaml` here would miss every real Yocto-only project. This
- * reads tan's own answer instead of re-guessing it (`crates/tan-core/src/
- * bootstrap/runtime.rs`'s `yocto_gate`, single-sourced in tan-cli).
+ * reads tan's own answer instead of re-guessing it — single-sourced in
+ * tan-cli, whose yocto gate is Python at the pinned 0.6.0 (the old citation
+ * here named a `crates/tan-core/src/bootstrap/runtime.rs`, from the RETIRED
+ * Rust oracle).
  *
- * `--no-pip --no-west` makes the call side-effect-free while running the
- * IDENTICAL gate a real `tan bootstrap` invocation would hit: tan-cli's
- * `bootstrap/mod.rs` never creates the venv when both flags are set, and the
- * gate itself runs (and can return before) any prerequisite check.
+ * `--dry-run` is what makes the call read-only, NOT `--no-pip --no-west`.
+ * Those two skip only the pip and west PHASES; the tan-cli#185 workspace
+ * relocation and the `~/.alp/sdk-default` write both run BEFORE them and are
+ * ungated by either, so the un-dry-run form MOVES the customer's alp-sdk
+ * checkout at `ok:true, exitCode:0` (see `src/bootstrap.ts`, which owns the
+ * argv). The gate this function reads is unaffected by the change: measured
+ * on a Yocto-only `E1M-V2N101`, both forms return an identical
+ * `ok:false, exitCode:2, bootstrap.yocto-host/error`, so `--dry-run` does not
+ * short-circuit before topology resolution.
  *
  * Two DISTINCT refusal shapes, both from real tan-cli releases:
  *
@@ -1615,4 +1797,54 @@ export function launchConfigPlaceholders(
   };
   walk(value, "");
   return found;
+}
+
+/**
+ * Issue codes on which tan reports "I could not look" while still returning
+ * `ok: true`. Matched on the CODE, never on the prose — the rule
+ * `packages/alp-webview/src/features/models/cliSurface.ts` already follows,
+ * and for the same reason: a message is free to be reworded between pins, a
+ * code is the contract.
+ *
+ * Measured against pinned tan 0.6.0 — `tan --format json sdk list` with no
+ * `--online` returns `{"ok":true,"exitCode":0,"data":{"subcommand":"list",
+ * "releases":[]},"issues":[{"code":"sdk.network-required","severity":
+ * "warning", ...}]}`.
+ *
+ * Lives here, not in `src/deps/vscodeAdapter.ts` (its original home), so the
+ * other reader of a `sdk list` envelope (`src/ideHub/sdkManagerMessages.ts`)
+ * can share it without importing the whole dependency-table adapter (#611).
+ */
+export const UNANSWERED_SDK_LIST_CODES: readonly string[] = [
+  "sdk.network-required",
+];
+
+/** The codes above that this envelope actually carries. */
+export function unansweredSdkListCodes(envelope: {
+  issues?: readonly { code?: string }[];
+}): string[] {
+  return (envelope.issues ?? [])
+    .map((issue) => issue.code ?? "")
+    .filter((code) => UNANSWERED_SDK_LIST_CODES.includes(code));
+}
+
+/**
+ * Whether a `sdk list` envelope actually answered, rather than reporting
+ * `ok: true` while explaining why it never looked.
+ *
+ * Shared by both readers of a `sdk list` envelope
+ * (`src/deps/vscodeAdapter.ts`'s `latestSdkTag`, `src/ideHub/
+ * sdkManagerMessages.ts`'s `handleRequestSdkReleases`), which used to answer
+ * this question two different ways — the first refused to cache on it, the
+ * second logged the same `issues[]` and then posted `releases` as a real
+ * catalogue regardless (#611). A divergence to close rather than a live bug:
+ * both readers always pass `--online`, and measured against the pinned tan a
+ * forced network failure on that argv is `ok: false, exitCode 1,
+ * sdk.fetch-failed`, which both readers already refuse through their own
+ * `!ok` branch before this function is ever reached.
+ */
+export function sdkListAnswered(envelope: {
+  issues?: readonly { code?: string }[];
+}): boolean {
+  return unansweredSdkListCodes(envelope).length === 0;
 }

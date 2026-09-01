@@ -55,6 +55,10 @@ const ACTIONS: Record<
   // Handled inside `present` (it needs the plan's issues), so no `run` here —
   // it must never be returned to a caller as an unhandled pick either.
   showIssues: { title: "Show All Issues" },
+  // No `run`: the New Project panel owns the webview this navigates, so the
+  // pick goes back to it (#530).
+  chooseProjectType: { title: "Choose Another Project Type" },
+  chooseCoreLayout: { title: "Change Core Layout" },
   runDoctor: {
     title: "Run Doctor",
     run: () => vscode.commands.executeCommand("alp.toolchainDoctor"),
@@ -152,6 +156,18 @@ const ACTIONS: Record<
     title: "Show Result",
     run: () => vscode.commands.executeCommand("alp.showBuildPlan"),
   },
+  explainDiagnostic: {
+    // Never rendered: `loader.ts`'s `runValidator` always supplies a
+    // `title: "Explain ALP-Bxxx"` override per code (#617) — this is a
+    // fallback for a future caller that forgets to. `arg` is the code; a
+    // click with none does nothing rather than spawning `tan explain --code
+    // undefined`.
+    title: "Explain",
+    run: (arg) =>
+      arg
+        ? vscode.commands.executeCommand("alp.explainDiagnosticCode", arg)
+        : Promise.resolve(undefined),
+  },
   // ── caller-handled: no `run`, so the id comes back from notify() ──
   retry: { title: "Retry" },
   startAnyway: { title: "Start Anyway" },
@@ -159,6 +175,18 @@ const ACTIONS: Record<
   openAnyway: { title: "Open Anyway" },
   deleteFromDisk: { title: "Delete from disk" },
   downloadTanCli: { title: "Download" },
+  // Names the consequence, not the command: "Flash" alone reads like the
+  // button that was already clicked, and this dialog is the last point at
+  // which an irreversible write to real silicon can still be stopped.
+  flashDevice: { title: "Write to Device" },
+  // Same consequence, reached through Debug (#586). "Debug" alone would read
+  // as the button already clicked and hide the write entirely; the title has
+  // to carry the programming step, which is what the customer cannot undo.
+  programDevice: { title: "Program and Debug" },
+  // Likewise the consequence, not the verb: "Stop" would read as stopping a
+  // build. What is being stopped is a write already under way, and the thing
+  // the reader has to weigh is what a half-written device is.
+  stopFlash: { title: "Stop Writing" },
   custom: { title: "" }, // title always overridden by NotifyAction.title
 };
 
@@ -233,8 +261,11 @@ async function present(
   plan: NotificationPlan,
 ): Promise<NotifyAction | undefined> {
   // 1. The channel first, and the ONLY place `detail` is ever written.
+  //    `modalDetail` too (#601): it is rendered ON the dialog and nowhere else,
+  //    so a customer who confirmed a destructive replace left no record of the
+  //    file list they were shown. The channel is where that record belongs.
   log(
-    plan.detail ? `${plan.message} — ${plan.detail}` : plan.message,
+    [plan.message, plan.modalDetail, plan.detail].filter(Boolean).join(" — "),
     plan.severity === "error"
       ? "error"
       : plan.severity === "warning"

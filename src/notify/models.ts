@@ -67,6 +67,31 @@ export type ActionId =
   | "openAnyway"
   | "deleteFromDisk"
   | "downloadTanCli"
+  // The one act that programs hardware (#540). Caller-handled on purpose: the
+  // pick must come back so `gateFlashDispatch` can gate the spawn on it — an
+  // action the presenter ran itself would leave the gate with nothing to read.
+  | "flashDevice"
+  // The same act reached through a debug session (#586). A cortex-debug
+  // `launch` programs the target before it runs, so the pick has to come back
+  // to the gate that decides whether the session starts at all.
+  | "programDevice"
+  // Terminating a flash that is ALREADY writing (#540). Caller-handled for the
+  // same reason as `flashDevice`: the runner has to read the pick to decide
+  // whether to signal the child, and a half-programmed board is the cost of
+  // getting it wrong in either direction.
+  | "stopFlash"
+  // Sends the New Project wizard back to its first step (#530). Caller-handled
+  // because only the panel that owns the webview can post to it.
+  | "chooseProjectType"
+  | "chooseCoreLayout"
+  // Runs `tan explain --code <code>` for one ALP-Bxxx diagnostic and shows its
+  // summary + details (#617). `arg` is REQUIRED here, unlike most `arg`-
+  // bearing ids above: `loader.ts`'s `runValidator` extracts every DISTINCT
+  // code a validate failure's issue messages name and builds one action per
+  // code, so this id can appear more than once in a single plan's `actions`,
+  // each with its own `arg` and a `title` override ("Explain ALP-B002") — the
+  // ACTIONS table's default title is a fallback that is never meant to render.
+  | "explainDiagnostic"
   // presenter-only: an ad-hoc button whose title comes from `NotifyAction.title`.
   // Exists solely for `reportError`'s legacy `...actions: string[]` parameter;
   // the pure planner never emits it.

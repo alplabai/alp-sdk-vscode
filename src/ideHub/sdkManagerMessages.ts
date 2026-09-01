@@ -6,19 +6,23 @@
 // it handles the SDK-specific message types and returns true, or returns false
 // so the host handles its own `ready`/`runCommand`/`openUrl`/`closePanel`.
 //
-// The `handleUninstallSdk` path deletes a folder from disk (fs.rmSync) after a
+// The `handleUninstallSdk` path deletes a folder from disk (`removeSdkTree`,
+// which classifies the failure — see that module) after a
 // modal confirmation — the confirm, the Alp-managed-vs-external path check, and
 // the active-pointer clear are preserved exactly as they were in the panel.
 
 import type { SdkInstallAdapter } from "@alp-sdk/core/sdk/adapterCore";
-import type { SdkRelease } from "@alp-sdk/core/sdk/models";
-import { installSdkRelease } from "@alp-sdk/core/sdk/service";
+import {
+  installSdkRelease,
+  narrowSdkReleases,
+} from "@alp-sdk/core/sdk/service";
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { sameUserPath } from "@alp-sdk/core/paths";
 import * as vscode from "vscode";
 import { proxyEnvAdditions, runAlpCommand } from "../alpCli/vscodeAdapter";
+import { sdkListAnswered } from "../alpCli/service";
 import {
   isCancellation,
   planCliOutcome,
@@ -27,11 +31,13 @@ import {
   planSuccess,
 } from "../notify/service";
 import { notify, notifyAsync } from "../notify/vscodeAdapter";
+import { readOnlyProjectCwd } from "../project/vscodeAdapter";
 import {
   clearActiveSdk,
   setActiveSdk,
   warnIfWestManifestDangling,
 } from "../sdk/activeSdk";
+import { removalFailureMessage, removeSdkTree } from "../sdk/removeTree";
 import { writeAlpSetting } from "../sdk/settingsWrite";
 import { log as logChannel } from "../util";
 import type { ExtToWebviewMessage, WebviewToExtMessage } from "./messages";
@@ -104,7 +110,7 @@ export function createSdkMessageHandler(
 
   async function handleSwitchSdk(sdkPath: string): Promise<void> {
     try {
-      await setActiveSdk(context, sdkPath);
+      await setActiveSdk(sdkPath);
     } catch (err) {
       // `setActiveSdk` awaits a toast and `alp.views.refresh` — both
       // main-thread RPCs — so at window teardown it rejects with a
@@ -160,16 +166,30 @@ export function createSdkMessageHandler(
     );
     if (confirm !== "deleteFromDisk") return;
 
-    try {
-      fs.rmSync(target, { recursive: true, force: true });
-    } catch (err) {
+    // NOT a bare `fs.rmSync`, and not for the reason first written here — see
+    // `removeSdkTree`'s header, which records the measurement that corrected
+    // it. Node already chmods and retries on Windows; what this buys is a
+    // POSIX read-only DIRECTORY (which Node does not touch) and, mainly, a
+    // failure message that names the cause instead of telling every failure to
+    // close an editor.
+    const removal = removeSdkTree(target);
+    if (removal.ok) {
+      if (removal.clearedAttributes) {
+        // Channel only. The user asked for a delete and got one; how many
+        // read-only bits it took is a fact for whoever reads a report later.
+        logChannel(
+          `[sdk] removed ${target} after clearing read-only attributes`,
+        );
+      }
+    } else {
       notifyAsync(
         planFailure({
           operation: "Removing the SDK",
-          cause:
-            "Alp: couldn't delete the SDK folder — close anything using it " +
-            "(an editor, a terminal, a running build), then try again.",
-          detail: `${target}: ${String(err)}`,
+          // The cause is DECIDED, not guessed: the advice differs per cause,
+          // and telling someone to close an editor over a permissions problem
+          // is a wrong instruction, not merely an unhelpful one.
+          cause: removalFailureMessage(removal.cause ?? "other"),
+          detail: `${target}: ${removal.error ?? "unknown error"}`,
         }),
       );
       return;
@@ -299,10 +319,22 @@ export function createSdkMessageHandler(
     // effect and its explicit Refresh button (`requestSdkReleases`), both
     // downstream of the user explicitly opening this panel — never a
     // background re-derive.
+    //
+    // `readOnlyProjectCwd()`, not `undefined` (#605): an omitted cwd reaches
+    // the spawn unset and the child inherits the extension host's own
+    // directory instead of the customer's project — `sdk` resolves a project
+    // and an SDK from cwd. `os.tmpdir()` when no project is open, matching
+    // the sibling reader in `src/deps/vscodeAdapter.ts` — a folder-less
+    // "browse SDKs to install" is a real, non-refusable state, unlike the
+    // panel's WRITE handlers. See that sibling's own comment for the two
+    // pre-consumer `sdk.*` issue codes this fallback interacts with, and
+    // `readOnlyProjectCwd`'s doc for why the `envelope.issues` loop just
+    // below does not withhold a project-scoped one the way `doctor`'s
+    // `withheldProjectChecks` does.
     const { outcome } = await runAlpCommand(
       context,
       ["sdk", "list", "--online"],
-      undefined,
+      readOnlyProjectCwd(),
       {
         interactive: true,
       },
@@ -335,8 +367,35 @@ export function createSdkMessageHandler(
     for (const issue of envelope.issues ?? []) {
       logChannel(`[sdk-list] ${issue.severity}: ${issue.message}`);
     }
-    const releases =
-      (envelope.data as { releases?: SdkRelease[] }).releases ?? [];
+    // Shared with the OTHER `sdk list` reader (`src/deps/vscodeAdapter.ts`'s
+    // `latestSdkTag`, which refuses to CACHE an unanswered lookup) — this
+    // handler used to post `releases` as a real catalogue regardless of
+    // whether tan actually looked (#611). Unreachable at the pinned tan with
+    // `--online` always on the argv (see `sdkListAnswered`'s own doc), so
+    // this is a divergence closed rather than a live bug fixed.
+    if (!sdkListAnswered(envelope)) {
+      // A silent `{ releases: [] }` here renders IDENTICALLY to "upstream
+      // published no releases" — the same silent-blank class #607 fixed for
+      // the Build Plan panel (adversarial review, #611 follow-up). The
+      // channel line just above already carries tan's own message; this adds
+      // the on-screen half so it is not the ONLY record.
+      notifyAsync(
+        planFailure({
+          operation: "Fetching the SDK list",
+          cause:
+            "Alp: tan reported it did not look up the SDK release list this time. Check the Alp SDK output channel, then Refresh.",
+          severity: "warning",
+        }),
+      );
+      post({ type: "sdkReleasesLoaded", releases: [] });
+      return;
+    }
+    // Narrowed, not cast (#611): `envelope.data` is untrusted, and a
+    // `releases` entry without a string `tag` used to reach `isStableTag`'s
+    // `tag.trim()` (`src/deps/vscodeAdapter.ts`) with no try/catch on the
+    // path — this handler shares the SAME risk on whatever it posts to the
+    // webview, which renders `tag` too.
+    const releases = narrowSdkReleases(envelope.data);
     post({ type: "sdkReleasesLoaded", releases });
   }
 

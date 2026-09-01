@@ -100,6 +100,135 @@ function extractFirstParagraph(body: string): string {
   return blankLine === -1 ? trimmed : trimmed.slice(0, blankLine).trim();
 }
 
+/** A field of `record` if present AND a string, else `""` — never invented,
+ *  never coerced from a wrong-typed value. Both known readers of a narrowed
+ *  `SdkRelease` already treat an empty string as "not reported"
+ *  (`packages/alp-webview/src/shared/sdkRows.ts`'s `r.publishedAt ||
+ *  undefined`), so this is the same "absent" a real tan that omits the field
+ *  would produce, not a guess standing in for one. */
+function stringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Narrow `tan sdk list`'s untrusted `data` payload into `SdkRelease[]`,
+ * dropping any entry this repo cannot trust rather than coercing it (#611).
+ *
+ * This is NOT `listRemoteSdkReleases` above: that one maps GitHub's OWN raw
+ * response shape (`tag_name`, `published_at`, …) into `SdkRelease`; this one
+ * narrows a payload that already CLAIMS to be `SdkRelease`-shaped — tan's own
+ * envelope — and must not be trusted just because the field names line up.
+ *
+ * `tag` is the one field a dropped entry cannot survive without: both known
+ * readers (`src/deps/vscodeAdapter.ts`'s `pickLatestSdkTag`, which calls
+ * `.find` over the array, and its `isStableTag`, which calls `tag.trim()`)
+ * read it with no try/catch on the path, so a `releases` that is not an array
+ * or an entry missing a string `tag` is exactly what used to throw out of a
+ * bare `(envelope.data as { releases?: SdkRelease[] }).releases ?? []` cast.
+ * Every other field is cosmetic (rendered, never branched on), so a
+ * wrong-typed or absent one degrades to `""` rather than dropping the whole
+ * release a customer could otherwise still install.
+ */
+export function narrowSdkReleases(raw: unknown): SdkRelease[] {
+  if (typeof raw !== "object" || raw === null) return [];
+  const releases = (raw as Record<string, unknown>).releases;
+  if (!Array.isArray(releases)) return [];
+
+  const out: SdkRelease[] = [];
+  for (const entry of releases) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record.tag !== "string") continue;
+    out.push({
+      tag: record.tag,
+      publishedAt: stringField(record, "publishedAt"),
+      tarballUrl: stringField(record, "tarballUrl"),
+      releaseNotesSummary: stringField(record, "releaseNotesSummary"),
+      releaseNotes: stringField(record, "releaseNotes"),
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// `tan sdk current` (#614)
+// ---------------------------------------------------------------------------
+
+/**
+ * The `readiness` object `tan sdk current` nests inside its `data` — the SAME
+ * shape `checkSdkReadiness` produces locally (measured against the pinned tan
+ * 0.6.0: `sdkPath`/`version`/`loaderScriptPresent`/`metadataPresent`/`state`/
+ * `issues`, byte-identical field names). Only the two fields a consumer of
+ * this narrower actually reads are kept; `state` stays a bare string rather
+ * than this package's own closed `SdkReadinessState` union for the same
+ * forward-compatibility reason `SdkCurrentResult.sourceTier` does below.
+ */
+export interface SdkCurrentReadiness {
+  state: string;
+  issues: string[];
+}
+
+/**
+ * `tan sdk current`'s resolved answer (tan-cli#263's `resolve_sdk_tiered`
+ * ladder). `sourceTier` names which rung produced `sdkPath` — measured
+ * against the pinned tan 0.6.0: `"sdkRootFlag"`, `"projectPin"`,
+ * `"globalDefault"`, `"discovery"`, `"none"` — kept as a bare `string`
+ * rather than a closed union so a rung tan adds later is still a fact this
+ * extension can report, not a value narrowing throws away (#614).
+ */
+export interface SdkCurrentResult {
+  sdkPath: string | null;
+  readiness: SdkCurrentReadiness | null;
+  sourceTier: string;
+}
+
+/** `readiness` narrowed on its own: a malformed one is dropped to `null`
+ *  rather than failing the whole `SdkCurrentResult` (the `"none"` tier
+ *  legitimately carries a `null` readiness, so "absent" and "malformed" must
+ *  read the same way here). */
+function narrowSdkCurrentReadiness(raw: unknown): SdkCurrentReadiness | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  if (typeof record.state !== "string") return null;
+  const issues = Array.isArray(record.issues)
+    ? record.issues.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
+    : [];
+  return { state: record.state, issues };
+}
+
+/**
+ * Narrow `tan sdk current`'s untrusted `data` payload into `SdkCurrentResult`,
+ * dropping what this repo cannot trust rather than coercing it (#611, #614) —
+ * see `narrowSdkReleases` above for the same discipline applied to `sdk list`.
+ *
+ * `sourceTier` is the one field a malformed answer cannot survive without:
+ * it is the whole reason to call this verb in the first place (#614 — "which
+ * rung of the ladder produced this path") — so a payload missing it is not
+ * this shape at all and the caller gets `null`, the same "answer nothing" a
+ * resolution failure already reads as. `sdkPath` legitimately IS `null` at
+ * the `"none"` tier — measured against the pinned tan 0.6.0 directly, and
+ * matching the `sdk-current-no-sdk` entry in the fetched (gitignored,
+ * `pnpm run contract:fetch`) `test/golden/tan-contract/envelope-contract.json`
+ * at the time this was written. That entry is NOT read by any test here —
+ * `test/sdk.service.test.js`'s fixture is a hand-typed literal, so a future
+ * tan release changing this shape would not be caught automatically — so a
+ * wrong-typed or absent value there degrades to `null` rather than dropping
+ * the whole result, on the same "don't trust it either way" footing.
+ */
+export function narrowSdkCurrent(raw: unknown): SdkCurrentResult | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  if (typeof record.sourceTier !== "string") return null;
+  return {
+    sdkPath: typeof record.sdkPath === "string" ? record.sdkPath : null,
+    readiness: narrowSdkCurrentReadiness(record.readiness),
+    sourceTier: record.sourceTier,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // SDK installation
 // ---------------------------------------------------------------------------
@@ -441,10 +570,14 @@ export function westManifestWarning(status: WestManifestStatus): string | null {
  * The output-channel line for a manifest status, or null when there is nothing
  * to record. Carries the manual escape hatch deliberately: no shipped command
  * is a guaranteed repair. `tan bootstrap` reconciles this pointer only when it
- * does NOT reuse an existing `$ZEPHYR_BASE` workspace (tan-cli v0.3.1
- * `bootstrap/mod.rs` gates the reconcile on `!reuse`), and an ambient
- * `$ZEPHYR_BASE` is exactly what masked this failure when it was reported. The
- * wording stays action-agnostic so it reads correctly from every caller.
+ * does NOT reuse an existing `$ZEPHYR_BASE` workspace, and an ambient
+ * `$ZEPHYR_BASE` is exactly what masked this failure when it was reported.
+ * (This used to cite `tan-cli v0.3.1 bootstrap/mod.rs`'s `!reuse` gate as the
+ * source — the RETIRED Rust CLI. `src/bootstrap.ts` already re-derived the
+ * neighbouring claim about this same reconcile against the pinned 0.6.0
+ * Python binary (#609); this file only re-states the conclusion for the log
+ * line and does not re-cite Rust source for it.) The wording stays
+ * action-agnostic so it reads correctly from every caller.
  */
 export function westManifestLogLine(status: WestManifestStatus): string | null {
   if (status.state !== "dangling") return null;

@@ -28,12 +28,23 @@ const Module = require("node:module");
 
 const root = path.join(__dirname, "..");
 
+// `warnIfCliCannotBuildSom` (#606) lives in its own compiled module,
+// `src/build/somCliFloorGuard.ts`, which `west.js` requires and which
+// captures `probeTanVersion`/`notifyAsync` at LOAD time. Only `modPath` was
+// cache-busted below; left cached across `register()` calls it would keep
+// serving the FIRST call's stubs to every later one. Same trap and fix as
+// test/proxyEnv.nonTanChildren.test.js's `ALP_ADAPTER`.
+const SOM_FLOOR_GUARD = require.resolve(
+  path.join(root, "out", "build", "somCliFloorGuard.js"),
+);
+
 /** Load out/west.js with `stubs` standing in for the requires named. Swaps
  *  Node's loader only for the duration of the synchronous require, so it never
  *  leaks into another test file sharing the process. */
 function loadWest(stubs) {
   const modPath = require.resolve(path.join(root, "out", "west.js"));
   delete require.cache[modPath];
+  delete require.cache[SOM_FLOOR_GUARD];
   const originalLoad = Module._load;
   Module._load = function (request, ...rest) {
     return Object.prototype.hasOwnProperty.call(stubs, request)
@@ -45,6 +56,7 @@ function loadWest(stubs) {
   } finally {
     Module._load = originalLoad;
     delete require.cache[modPath];
+    delete require.cache[SOM_FLOOR_GUARD];
   }
 }
 
@@ -90,6 +102,13 @@ function register(workspaceContext) {
         return { outcome: { ok: true }, raw: {}, source: "test" };
       },
     },
+    // `warnIfCliCannotBuildSom` (#606) lives one directory deeper than
+    // `west.ts`, so its OWN requires are spelled "../..." rather than
+    // "./..." — both spellings need stubbing or the "../" ones fall through
+    // to the real, vscode-heavy modules. See SOM_FLOOR_GUARD's comment above.
+    "../alpCli/vscodeAdapter": { probeTanVersion: async () => null },
+    "../notify/vscodeAdapter": { notifyAsync() {} },
+    "../util": { log() {} },
     "./west/vscodeAdapter": {
       collectWestWorkspaceContext: () => workspaceContext,
       executeWestPlan: () => {},
@@ -149,12 +168,6 @@ const COMMANDS = [
     message: "Open a folder to clean this project.",
     terminal: "Alp Clean",
     argv: ["clean", "examples/multicore/rpmsg-v2n"],
-  },
-  {
-    id: "alp.westAlpRenode",
-    message: "Open a folder to run this project in Renode.",
-    terminal: "Alp Renode",
-    argv: ["renode", "examples/multicore/rpmsg-v2n"],
   },
   {
     id: "alp.westRunNativeSim",

@@ -27,8 +27,9 @@ the binary in this order:
 1. the `alpSdk.cliPath` setting (point it at a local build to override),
 2. a `bin/tan[.exe]` **bundled** in the VSIX (present only in a platform-specific
    VSIX),
-3. a locally-built sibling `tan-cli/target/{release,debug}/tan[.exe]` (source
-   checkout),
+3. a locally-built sibling `tan-cli/python/dist/tan/tan[.exe]` (source
+   checkout — where `cd python && bash scripts/build_binary.sh` puts its
+   PyInstaller freeze),
 4. a previously cached copy in the extension's global storage,
 5. a verified-native `tan` on your `PATH` (last resort — a `tan` that does not
    emit the native `tan X.Y.Z` version line is treated as not present and falls
@@ -46,9 +47,10 @@ the binary in this order:
 > arm64). Windows on ARM and Linux arm64 get an explained "no build for this
 > platform" message instead of a download 404 (see the two rows below),
 > because the pinned `tan` is a PyInstaller freeze and PyInstaller cannot
-> cross-compile. To run a local build instead, `cargo build --release` (Rust
-> `tan`) or `pip install` (Python `tan`) in a `tan-cli` checkout and point
-> `alpSdk.cliPath` at the result (or put a `tan` on `PATH`).
+> cross-compile. To run a local build instead, `python3 -m pip install ./python`
+> in a `tan-cli` checkout and point `alpSdk.cliPath` at the resulting `tan` (or
+> put it on `PATH`). There is no `cargo` route any more — tan-cli#269 removed
+> `Cargo.toml`, so `cargo build --release` errors out.
 >
 > **That is not the same as "you can build firmware here."** Even a host
 > with a working `tan` binary may not be able to compile a Zephyr image. See
@@ -56,7 +58,7 @@ the binary in this order:
 > you pick a machine.
 
 > **The Linux asset is a glibc build, not musl.** The extension downloads
-> `tan-x86_64-unknown-linux-gnu`. A PyInstaller musl freeze is musl-*dynamic*,
+> `tan-x86_64-unknown-linux-gnu.tar.gz`. A PyInstaller musl freeze is musl-*dynamic*,
 > not static — it needs `/lib/ld-musl-x86_64.so.1` present and would not
 > start on Ubuntu/Debian/Fedora at all — so `-gnu` is the only usable Linux
 > asset the Python `tan` publishes. It is built inside `python:3.12-slim-bullseye`
@@ -80,21 +82,27 @@ Two different claims, and only the first one is about this extension:
 `linux-aarch64`, `linux-x86_64`, `macos-aarch64`, `windows-x86_64` — and no
 others.
 
-| Host (`process.platform`/`process.arch`) | `tan` binary                       | Zephyr SDK 1.0.1 host build | Firmware builds?               |
+| Host (`process.platform`/`process.arch`) | `tan` release asset                | Zephyr SDK 1.0.1 host build | Firmware builds?               |
 | ---------------------------------------- | ---------------------------------- | --------------------------- | ------------------------------ |
-| Windows x64 — `win32/x64`                 | `tan-x86_64-pc-windows-msvc.exe`   | `windows-x86_64`            | Yes                            |
-| Linux x64 — `linux/x64`                   | `tan-x86_64-unknown-linux-gnu`     | `linux-x86_64`              | Yes                            |
+| Windows x64 — `win32/x64`                 | `tan-x86_64-pc-windows-msvc.zip`  | `windows-x86_64`            | Yes                            |
+| Linux x64 — `linux/x64`                   | `tan-x86_64-unknown-linux-gnu.tar.gz` | `linux-x86_64`           | Yes                            |
 | Linux arm64 — `linux/arm64`               | none published for this pin        | `linux-aarch64`             | **No** — see below             |
-| macOS Apple silicon — `darwin/arm64`      | `tan-aarch64-apple-darwin`         | `macos-aarch64`             | Yes                            |
+| macOS Apple silicon — `darwin/arm64`      | `tan-aarch64-apple-darwin.tar.gz`  | `macos-aarch64`             | Yes                            |
 | Windows on ARM — `win32/arm64`            | none published for this pin        | never published             | **No** — see below             |
-| macOS Intel — `darwin/x64`                | `tan-x86_64-apple-darwin`          | dropped in SDK 1.0.0        | **No** — build on a Linux host |
+| macOS Intel — `darwin/x64`                | `tan-x86_64-apple-darwin.tar.gz`   | dropped in SDK 1.0.0        | **No** — build on a Linux host |
 | Linux armhf — `linux/arm`                 | none published                     | none published              | **No** — move to another host  |
 
 Running `tan doctor` yourself, with no flags, reports the same verdict as a
-`zephyrSdkHost` check, from `tan` v0.4.0 on. Two things do NOT count as a pass:
-an older `tan` omits the check entirely, and `tan doctor --build` omits it by
-design — so silence about your host says nothing either way. This table is the
-source of truth.
+`zephyrSdkAvailableForHost` check, from `tan` v0.4.0 on. `tan doctor --build`
+reports the SAME check — measured at the pin: the two invocations return a
+byte-identical check set and summary (the exact pass/warn/fail counts are
+host-dependent, like every other doctor output in this file — the EQUALITY
+between the two invocations is what was measured, not a specific count).
+`--build` is `Accepted for compatibility (tan-cli#290)`: it used to gate
+whether this check ran, and now does not change the output at all. One thing
+does NOT count as a pass: an older `tan` (pre-v0.4.0) omits the check
+entirely, so silence about your host says nothing on that CLI. This table is
+the source of truth.
 
 #### Linux arm64 — no `tan` binary for this pin
 
@@ -127,7 +135,7 @@ this host. A later `tan` release may add the missing binary; check
 
 #### macOS Intel — build on a Linux host
 
-`tan-x86_64-apple-darwin` exists and installs, so the extension provisions
+`tan-x86_64-apple-darwin.tar.gz` exists and installs, so the extension provisions
 cleanly and then the first build fails. The Zephyr SDK published `macos-x86_64`
 through **0.17.4** and dropped it in **1.0.0**; the pinned 1.0.1 serves
 `macos-aarch64` only.
@@ -147,14 +155,18 @@ extension maps six `platform/arch` keys and `linux/arm` is not one of them, so
 download-on-demand refuses with:
 
 ```text
-No prebuilt tan CLI for linux/arm. Set alpSdk.cliPath to a local build (tan-cli/target/release/tan).
+No prebuilt tan CLI for linux/arm — tan v0.6.0 publishes binaries for other platforms only, so this is a limit of that release rather than a broken install. Point alpSdk.cliPath at a tan you build locally or install with pip.
 ```
 
 **Building `tan` from source does not rescue this host.** The Zephyr SDK
 publishes no 32-bit-ARM Linux host build either, so a self-built `tan` would
 resolve, run, and then have no toolchain to hand `west` — the same wall, one
-step later. Use a `linux-x86_64` or `linux-aarch64` machine (64-bit arm64 Linux
-on the same board, where available, is served).
+step later. Use a `linux-x86_64` machine.
+
+64-bit arm64 Linux is a different case, and this page says so twice above:
+there is no prebuilt `tan` for `linux/arm64` at this pin either, but the Zephyr
+SDK does publish `linux-aarch64` — so there, unlike here, a `tan` you build or
+`pip install` locally does have a toolchain to hand `west`.
 
 ## 2. Install and Open
 
@@ -210,7 +222,71 @@ Use:
 - Alp: West flash
 - Alp: Run under native_sim
 
-## 7. Troubleshooting Quick Checks
+## 7. Models Panel
+
+**Not reachable in this build, and the CLI behind it is one subcommand.**
+`package.json` contributes exactly one view to the `alp-ide` Activity Bar
+container — `alp-ide.hub`, "Alp IDE" — so there is no Models entry there, and
+both palette commands (`alp.openModelsPanel`, "Alp: Models", and
+`alp.buildModel`, "Alp: Build Model") carry `"when": "false"` in
+`contributes.menus.commandPalette`. The commands are still registered; only the
+surface is hidden. Restoring it is #524.
+
+The design is unchanged: the panel is a thin GUI over the `tan model …` command
+family — it shells `tan` and renders the JSON envelope, it does not re-implement
+any model logic. What is missing is the family. tan 0.6.0 implements exactly
+ONE `model` subcommand, `build`, whose own options are `--board`,
+`--board-yaml`, `--format`, `--help`, `--metadata-root`, `--out`, `--project`
+and `--sdk-root`. The eight subcommands the panel drives — `list`, `doctor`,
+`check`, `zoo`, `add`, `prep`, `run` and `ab` — are not in this binary, and
+neither are the flags that belong to them (`--exact`, `--calibration`,
+`--per-channel`, `--min-samples`, `--input`, `--expected`, `--runs`, `--sku`,
+`--name`, `--models-dir`). Landing them is upstream, `tan-cli#674`. Against the
+pinned binary today, `tan model build --help` is the whole surface.
+
+The rest of this section is INTENT — what the panel shows once `tan-cli#674`
+lands the subcommands and #524 restores the surface. None of it renders at this
+pin, which is why no `tan model` recipe is printed with it.
+
+- **NPU-coverage badge (before build).** Each model in board.yaml `models:`
+  gets one badge per SoM NPU backend from a static eligibility screen. Offline,
+  no toolchain. The coverage reads `full-eligible`, `partial`, `cpu-only` or
+  `undetermined`, alongside the basis it was decided on.
+
+  Read a `basis: static-screen` result as ELIGIBILITY, never a guarantee: an
+  eligible operator still carries quantization, shape and dtype constraints the
+  screen cannot check, and the model runs either way — an operator the NPU
+  cannot take falls back to the CPU silently rather than failing. The
+  percentage the panel shows is labelled an upper bound for the same reason.
+
+  `undetermined` means there is NO DATA for that backend — a support table
+  that is absent by decision, or a source format the backend does not ingest.
+  It is not a finding that the model will not run.
+
+  An exact-compile upgrade turns Ethos-U into a real `vela` compile
+  (`pip install alp-tan[model-compile]`); only a `basis: compiled` or
+  `basis: bench` result is marked "proven" in the panel.
+- **Prep Model.** Pick a model and a calibration folder to run a license-free
+  INT8 quantize (onnxruntime QDQ) and get an fp32-vs-int8 accuracy report (top1
+  agreement %, mean cosine, max-abs-err, verdict good|degraded + guidance). A
+  `.tflite` input is converted to ONNX first via tf2onnx. (Prep runs Python —
+  the `model-prep` extra; `.tflite` conversion needs `model-convert`.)
+- **Run Model / A-B Compare.** Run a model as a host reference, or compare two
+  on the same input, for latency + size delta. Honest caveat: this is a
+  `cpu-host` reference run — functional + host latency + accuracy — **not** the
+  target SoM's performance; `peak_sram_kib` / `power_mj` come back null on host
+  (on-device values are hardware-gated).
+- **Model Zoo gallery + Add.** Browse curated zoo entries, each marked whether
+  it runs on your SoM, and add one with a click, which fetches the
+  sha256-verified source and appends `{name, source}` to board.yaml `models:`.
+  Add is non-destructive — a duplicate name errors.
+
+> **Honest caveats.** Run / A-B are host reference runs, not target-SoM
+> performance. Power and on-device measurement are hardware-gated — they need
+> the EVK power-topology and the Yocto NPU runtimes. The static fit check is a
+> conservative estimate, confirmed on silicon later.
+
+## 8. Troubleshooting Quick Checks
 
 1. Confirm SDK path resolves to a folder containing scripts/alp_project.py.
 2. Confirm board.yaml path is correct.
@@ -218,7 +294,7 @@ Use:
 4. Run Alp: Debug doctor for environment checks.
 5. If needed, run Alp: Export debug support bundle.
 
-## 8. Next Steps
+## 9. Next Steps
 
 - For terminal-first usage, continue with GETTING_STARTED_CLI.md.
 - For CI setup examples, see CI_EXAMPLES.md.

@@ -38,12 +38,40 @@ export function isDoctorEnvelopeData(
   ) {
     return false;
   }
+  // #474: `fix` and `nextSteps` are now RENDERED, not merely carried, so they
+  // have to be narrowed here too. Before that they were dead weight in the
+  // type and an unexpected shape cost nothing; now the troubleshooting panel
+  // calls `escapeHtml` on `fix` and `.map` on `nextSteps`, and a tan that
+  // restructured either one — `fix` as the `{command}` object #347 debated,
+  // say — would throw mid-render. `openDebugTroubleshootingPanel` creates the
+  // webview BEFORE assigning its html, so that throw leaves an EMPTY panel
+  // open behind a generic toast naming no field. Refusing the payload here
+  // turns it into `tanPayloadShape`'s explained message instead.
+  if (
+    data.nextSteps !== undefined &&
+    data.nextSteps !== null &&
+    (!Array.isArray(data.nextSteps) ||
+      !data.nextSteps.every((step) => typeof step === "string"))
+  ) {
+    return false;
+  }
   return data.checks.every((check) => {
     const entry = check as Record<string, unknown> | null;
     return (
       typeof entry?.name === "string" &&
       typeof entry.status === "string" &&
-      typeof entry.detail === "string"
+      typeof entry.detail === "string" &&
+      // `scope` is REQUIRED by tan's frozen contract, and this still accepts
+      // an envelope without it. Not an oversight: `alpSdk.cliPath` can point
+      // at a pre-0.5 binary that never emitted the field, and refusing that
+      // envelope would blank the Dependencies table — the one surface whose
+      // `tan` row tells the customer their binary is behind the pin. What is
+      // refused is a `scope` of the WRONG SHAPE, which no tan emits and which
+      // would reach `isProjectCheck` as a truthy non-string.
+      (entry.scope === undefined || typeof entry.scope === "string") &&
+      (entry.fix === undefined ||
+        entry.fix === null ||
+        typeof entry.fix === "string")
     );
   });
 }
@@ -101,6 +129,18 @@ export async function runDoctor(
   const { outcome } = await runAlpCommand(context, args, cwd, {
     signal,
     interactive,
+    // Doctor's entire job is reporting on the environment, so it has to look at
+    // the SAME one the build runs in. Builds go through `runAlpStreamed`, which
+    // spawns under the user's LOGIN shell; this path did not, and saw only the
+    // PATH a GUI-launched VS Code inherited. That is how the Dependencies panel
+    // came to advise installing a tool the build had just found — measured on
+    // the streamed path as `spawn west ENOENT` before the login shell and
+    // `West version: v1.5.0` after.
+    //
+    // The shell startup is real cost, and doctor runs on state refresh, but a
+    // fast wrong answer about the toolchain is worse than a slow right one.
+    // No-op on Windows, where the host already has the login environment.
+    loginShell: true,
   });
   const data = outcome.envelope?.data;
   if (!outcome.envelope || !isDoctorEnvelopeData(data)) {

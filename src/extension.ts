@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import {
   checkCliVersion,
@@ -14,6 +16,7 @@ import {
   maybeRescueOrphanedLaunchConfig,
   registerDebugCommands,
 } from "./debug";
+import { registerDebugDeviceWriteGate } from "./debug/deviceWriteGate";
 import { DependencyPanel } from "./deps/panel";
 import { showHardwareExplorerPanel } from "./hardwareExplorer/panel";
 import {
@@ -29,14 +32,24 @@ import { maybeOfferSetupPanel } from "./ideHub/setupOrchestrator";
 import { registerLoaderCommands } from "./loader";
 import { startLanguageServer, stopLanguageServer } from "./lsp/client";
 import { registerLspCommands } from "./lsp/commands";
+import { showModelsPanel, triggerModelBuild } from "./models/panel";
 import { planFailure, planSuccess } from "./notify/service";
 import { notifyAsync, setExtensionId } from "./notify/vscodeAdapter";
+import {
+  describeUnhealthyIpc,
+  unhealthyIpcLinks,
+} from "@alp-sdk/core/systemManifest/ipcHealth";
+import { parseSystemManifest } from "@alp-sdk/core/systemManifest/service";
+import { createSchemaProvenanceStatus } from "./schemaProvenance";
+import { createSdkSchemaContributor } from "./yamlSchemaContributor";
 import { registerSelectSdkCommand } from "./sdk/activeSdk";
 import { createStatusBar } from "./statusBar";
 import { registerAlpTaskProvider } from "./tasks/vscodeAdapter";
+import { recordBuildFinish } from "./build/lastBuild";
 import {
   BUILD_RUN_NAME,
   disposeTaskTracking,
+  FLASH_RUN_NAME,
   log,
   onDidFinishTerminalCommand,
   showOutput,
@@ -44,6 +57,7 @@ import {
 import { registerTreeViews } from "./views";
 import { StateManager } from "./views/stateManager";
 import { registerWestCommands } from "./west";
+import { installShellCompletion } from "./completion";
 import {
   maybeOfferFirstRunWizard,
   registerProjectWizardCommand,
@@ -78,6 +92,65 @@ const PRE_MARKER_STATE_KEYS = [
   "alp.setupOrchestrator.lastShownFingerprint",
   "alp.lastBootstrapAt",
 ] as const;
+
+/**
+ * Say so when a build that PASSED left an IPC link that did not resolve (#553).
+ *
+ * The manifest is read straight off disk, the way `src/debug.ts` and
+ * `src/flash/gate.ts` already read this same file — `tan build` wrote it, and
+ * nothing about reading it depends on the deferred `--manifest` flags the
+ * Build Plan panel is waiting on (tan-cli#427 / #580). That panel's renderer
+ * already prints `status` and `reason` correctly and is unit-tested; it is
+ * simply never given a manifest, so it cannot be the surface that closes this.
+ *
+ * The RUN'S OWN cwd, carried on the finish event, never the workspace root.
+ * `alpBuild` sends `["--project", <example>, "build"]` when the active project
+ * is not the target, and tan then writes that project's manifest — reading the
+ * root's would name an IPC link from a project this build never compiled, on a
+ * notice whose whole purpose is to say something true about what just
+ * finished.
+ *
+ * Absent cwd is silence. Terminal-mode runs do not carry one (see the event's
+ * own doc in `src/util.ts`), and saying nothing is the safe direction where
+ * guessing a directory is not.
+ *
+ * Any read failure is silence too. No manifest means no build artefact to
+ * describe; a malformed one is the build's problem to report, and an extra
+ * "could not read the manifest" on a green build would be noise about a file
+ * the customer never asked this code to open.
+ */
+function reportUnhealthyIpc(cwd: string | undefined): void {
+  if (cwd === undefined) return;
+  let links;
+  try {
+    links = unhealthyIpcLinks(
+      parseSystemManifest(
+        fs.readFileSync(
+          path.join(cwd, "build", "system-manifest.yaml"),
+          "utf-8",
+        ),
+      ),
+    );
+  } catch {
+    return;
+  }
+  if (links.length === 0) return;
+
+  const { message, detail } = describeUnhealthyIpc(links);
+  // A WARNING, not a failure: the run succeeded and the toast must not read as
+  // if it had not. `detail` is channel-only by this repo's convention, so the
+  // reason — the one actionable half — rides `showOutput` and is one click
+  // away rather than buried.
+  notifyAsync(
+    planFailure({
+      operation: BUILD_RUN_NAME,
+      cause: message,
+      detail,
+      severity: "warning",
+      actions: [{ id: "showOutput" }],
+    }),
+  );
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   // The presenter has no `context` of its own but needs this extension's id for
@@ -170,13 +243,23 @@ export function activate(context: vscode.ExtensionContext): void {
       const def = e.execution.task.definition as { run?: unknown };
       if (def.run === BOOTSTRAP_RUN_NAME) refreshState();
     }),
-    onDidFinishTerminalCommand(({ name, code, mode }) => {
+    onDidFinishTerminalCommand(({ name, code, mode, cwd }) => {
       // Re-derive the shared state FIRST, whatever the verdict: a finished
       // bootstrap changed the workspace on disk and released the run's
       // reservation, and this event is the only signal of either. Repainting
       // the old snapshot instead is what made a SUCCESSFUL bootstrap flip the
       // bar to "$(warning) Alp: setup" — a warning at the moment of success.
       refreshState();
+      // Record every build finish, whatever the verdict (#470). This is the
+      // ONE place that sees them all — panel, palette and status bar dispatch
+      // the same run name through the same event — and a FAILED build is the
+      // case that matters most: the Build Plan panel compares this against
+      // `build/system-manifest.yaml`'s mtime, and a build that finished after
+      // the file was written and did not update it is the only hard evidence
+      // that what the panel is about to render belongs to an earlier build.
+      if (name === BUILD_RUN_NAME) {
+        void recordBuildFinish(context, code, Date.now());
+      }
       // "Show Result" (#331) is SUCCESS-ONLY, and only for BUILD_RUN_NAME —
       // two gates, not one:
       //  - which run: the Build Plan panel renders `build/system-manifest.yaml`,
@@ -188,11 +271,15 @@ export function activate(context: vscode.ExtensionContext): void {
       //  - which outcome: even for a build, a FAILED run must not offer it.
       //    Nothing in this codebase pins when `tan` (re)writes the manifest on
       //    a failure — a prior GREEN run's `system-manifest.yaml` can still be
-      //    sitting there from yesterday, and `SYSTEM_MANIFEST_SHAPE`
-      //    (`@alp-sdk/core/tanPayloadShape`) carries no timestamp, so neither
-      //    the payload nor the panel can tell stale from fresh. A "Show
-      //    Result" on a failure toast could present yesterday's green build as
-      //    today's. The failure toast already carries what actually matters —
+      //    sitting there from yesterday. `SYSTEM_MANIFEST_SHAPE`
+      //    (`@alp-sdk/core/tanPayloadShape`) still carries no timestamp, but
+      //    the panel is no longer blind: #470 gave it the file's mtime and the
+      //    record written just above, so a manifest an already-finished build
+      //    did not update now renders with a `stale` badge and a sentence
+      //    saying so. That makes the panel SAFE to reach after a failure; it
+      //    does not make it USEFUL, which is why this gate stays. Offering
+      //    "Show Result" on a failure would still steer the reader at an
+      //    earlier build's numbers, now merely labelled. The failure toast already carries what actually matters —
       //    the terminal/channel reveal (the real error) and Run Doctor — and
       //    the panel stays reachable from the palette and status bar either
       //    way, so this is not a regression in reachability, only in the
@@ -204,15 +291,42 @@ export function activate(context: vscode.ExtensionContext): void {
             actions: showsBuildResult ? [{ id: "showBuildResult" }] : [],
           }),
         );
+        // #553: a green build can still ship a dead IPC channel. `tan init
+        // --cores` scaffolds a default `ipc:` entry whenever a companion core
+        // is named, and on a SoM that has not been HW-mapped it resolves
+        // `status: blocked` with a concrete reason — while the build succeeds
+        // and exits 0. Nothing said so, and the customer found out by opening
+        // the manifest.
+        //
+        // AFTER the success toast, deliberately: the build DID succeed, and
+        // this has to read as a second, quieter sentence about it rather than
+        // as a verdict on the run. Gated on `showsBuildResult` because that is
+        // already "a build, and it passed" — `tan flash`/`image`/`renode`
+        // never write the manifest and `tan clean` deletes it.
+        if (showsBuildResult) reportUnhealthyIpc(cwd);
       } else if (code !== undefined) {
         // A channel-mode run has no terminal to reveal — its whole log is in
         // the "Alp SDK" channel, which is the point of streaming it there. An
         // action that opens nothing is worse than no action, so the reveal is
         // picked from the mode the run actually used.
+        // A flash does NOT get "failed." (#540). A non-zero exit from `tan
+        // flash` is not evidence that a write was attempted and lost: at the
+        // 0.6.0 pin an UNARMED confirm gate exits non-zero for a run that
+        // deliberately did nothing, a missing backend tool exits before any
+        // slice is touched, and a multi-slice run can exit non-zero having
+        // already programmed the slices ahead of the one that failed.
+        // Nothing here can tell those apart — the exit status is one number —
+        // so this sentence says what is known and stops at it. Inventing a
+        // classification is what put "flash failed" on screen for a preview
+        // that wrote nothing; the log, not the toast, carries the reason.
         notifyAsync(
           planFailure({
             operation: name,
-            cause: `${name} failed.`,
+            cause:
+              name === FLASH_RUN_NAME
+                ? `${name} did not complete. That does not say whether any ` +
+                  "slice was written — read the log before re-flashing."
+                : `${name} failed.`,
             detail: `exit ${code}`,
             actions: [
               mode === "channel"
@@ -232,7 +346,12 @@ export function activate(context: vscode.ExtensionContext): void {
     // nothing to resolve those against and pre-launch aborts silently.
     registerAlpTaskProvider(context),
     createStatusBar(stateMgr),
-    registerSelectSdkCommand(context),
+    // Validate board.yaml against the RESOLVED SDK's schema, with the vendored
+    // snapshot demoted to the no-SDK fallback (#493) -- then name which of the
+    // two is in force, since a squiggle cannot say where it came from.
+    createSdkSchemaContributor(stateMgr),
+    createSchemaProvenanceStatus(context, stateMgr),
+    registerSelectSdkCommand(),
     ...registerConfiguratorEditor(context),
     vscode.commands.registerCommand("alp.openDependencies", () =>
       DependencyPanel.open(context, stateMgr),
@@ -251,9 +370,20 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("alp.toolchainDoctor", () =>
       DependencyPanel.open(context, stateMgr),
     ),
-    registerProjectWizardCommand(),
+    registerProjectWizardCommand(context),
+    // #621: emits `tan completion --shell <shell>` for customers who also use
+    // tan from a terminal. Writes nothing outside an untitled editor.
+    vscode.commands.registerCommand("alp.installShellCompletion", () =>
+      installShellCompletion(context),
+    ),
     ...registerLspCommands(),
     ...registerDebugCommands(context),
+    // #586: the consent gate in front of a debug session that programs the
+    // board. Registered here, not inside a command, because VS Code calls a
+    // DebugConfigurationProvider for EVERY launch of the type — including the
+    // F5 and Run-and-Debug launches of the launch.json this extension wrote,
+    // which no command of ours ever sees.
+    ...registerDebugDeviceWriteGate(),
     ...registerTreeViews(context, stateMgr),
     ...registerWorkspaceCommands(),
     vscode.commands.registerCommand("alp.openSetupFlow", () =>
@@ -293,6 +423,12 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand("alp.showBuildPlan", () =>
       BuildPlanPanel.open(context),
+    ),
+    vscode.commands.registerCommand("alp.openModelsPanel", () =>
+      showModelsPanel(context),
+    ),
+    vscode.commands.registerCommand("alp.buildModel", () =>
+      triggerModelBuild(context),
     ),
     vscode.commands.registerCommand("alp.openGettingStarted", () =>
       vscode.commands.executeCommand(

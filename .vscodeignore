@@ -80,3 +80,11 @@ packages/alp-core/node_modules/**
 packages/**/src/**
 packages/**/vite.config.*
 packages/**/tsconfig*
+
+# Design-system documentation and its sidecar — development context for
+# contributors and tooling, not runtime assets. The Marketplace listing
+# renders README.md; these would only inflate the VSIX and trip the
+# top-level allowlist gate (#70).
+PRODUCT.md
+DESIGN.md
+.impeccable/**

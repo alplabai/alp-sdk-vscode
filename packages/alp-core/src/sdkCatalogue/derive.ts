@@ -12,6 +12,54 @@ function somBySku(catalogue: SdkCatalogue, sku: string): SomPreset | undefined {
   return catalogue.soms.find((s) => s.sku === sku);
 }
 
+/**
+ * `data.boardLibraries` out of a `tan presets` envelope, or `[]` when the
+ * payload does not carry one.
+ *
+ * Everything here is `unknown` on purpose: the envelope crosses a process
+ * boundary from a separately-versioned binary, so its shape is a claim, not a
+ * guarantee. The element type stays `unknown` and `withPresetLibraries` does
+ * the per-entry narrowing.
+ */
+export function boardLibrariesFromPresets(data: unknown): readonly unknown[] {
+  if (!data || typeof data !== "object") return [];
+  const value = (data as Record<string, unknown>).boardLibraries;
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * The catalogue with `tan presets`' library vocabulary in place of the scanned
+ * one — when the CLI actually answered with a vocabulary.
+ *
+ * board.yaml's `libraries[]` takes canonical manifest names (#564), and `tan
+ * presets` reports exactly that set as `data.boardLibraries`. The filesystem
+ * scan reads the same names off `metadata/libraries/`, so this is a change of
+ * source, not of meaning.
+ *
+ * An EMPTY list is not an answer, and must not be treated as one. With an
+ * unresolved SDK `tan presets` does not fail: it exits 0 with `ok: true`, omits
+ * the `sdk` envelope key entirely, returns an empty `boardLibraries`, and says
+ * so only through `issues[].code == presets.sdk-root-unresolved`. Overwriting
+ * on that would blank a picker the scan could still have filled, so an empty
+ * list leaves the fallback standing.
+ *
+ * Unknown entries are DROPPED rather than coerced: a forward-compatible tan
+ * that grows a richer element type must not be stringified into a name no
+ * schema accepts.
+ */
+export function withPresetLibraries(
+  catalogue: SdkCatalogue,
+  presetLibraryIds: readonly unknown[],
+): SdkCatalogue {
+  const ids = presetLibraryIds
+    .filter((id): id is string => typeof id === "string" && id.length > 0)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (ids.length === 0) return catalogue;
+
+  return { ...catalogue, libraries: ids.map((id) => ({ id })) };
+}
+
 export function boardsForSom(
   catalogue: SdkCatalogue,
   sku: string,

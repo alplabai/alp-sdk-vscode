@@ -2,28 +2,42 @@
 //
 // Pure task specs for the four `alp:` task labels this extension contributes.
 // All four are spelled the way tan itself hardcoded them before tan-cli#85
-// made the key opt-in (crates/tan-core/src/debug_launch.rs:49,62,75,93,107,
-// 115 — see docs/DEBUG.md §10). THREE of them are what a generated
-// launch.json now carries as its `preLaunchTask`; the fourth, "deploy and
-// start gdbserver" (line 107, under `DebugTargetKind::YoctoUserspace`), is
-// reachable only from the Tasks picker, because this extension deliberately
-// does not restore that pairing — see `preLaunchTaskFor`. VS Code renders a
-// *provided* task's label as `${source}: ${name}`, so TASK_SOURCE plus each
-// spec's `name` here are the exact string contract with tan: renaming either
-// side breaks
+// (in the now-RETIRED Rust CLI, crates/tan-core/src/debug_launch.rs:49,62,75,
+// 93,107,115 — see docs/DEBUG.md §10) made `--pre-launch-task` a FLAG WITH NO
+// DEFAULT — a stage that is itself now superseded, see the next paragraph:
+// the pinned 0.6.0 defaults the flag again, back to these same three labels,
+// so "opt-in" describes only that middle stage of tan's history, not today.
+// THREE of them are what a generated launch.json now carries as its
+// `preLaunchTask`; the
+// fourth, "deploy and start gdbserver" (line 107, under
+// `DebugTargetKind::YoctoUserspace`), is reachable only from the Tasks
+// picker, because this extension deliberately does not restore that pairing
+// — see `preLaunchTaskFor`. VS Code renders a *provided* task's label as
+// `${source}: ${name}`, so TASK_SOURCE plus each spec's `name` here are the
+// exact string contract with tan: renaming either side breaks
 // `vscode.debug.startDebugging`'s `preLaunchTask` resolution silently (no
 // compile error, no lint — the debug run just aborts pre-launch). This file
 // is what makes that contract testable without an extension host: no
 // `vscode`, `fs`, or `child_process` import here — those seams live in
 // `vscodeAdapter.ts`.
 //
-// Registering the tasks is only half of it: tan emits `preLaunchTask` ONLY
-// when `--pre-launch-task` names one (tan-cli v0.4.0
-// `crates/tan-core/src/debug_launch.rs`, `drop_absent_pre_launch_task`), so
-// four registered labels that nothing referenced left F5 launching
-// cortex-debug at an ELF no step had built. `preLaunchTaskFor` below is the
-// half that names the three, and `debugConfigArgs` (../debug/service.ts) is
-// its only caller.
+// Registering the tasks is only half of it, and the reason changed under this
+// paragraph. MEASURED against the pinned 0.6.0: `tan debug-config
+// --target-kind <kind> --server <server>`, with no `--pre-launch-task` on the
+// argv at all, already emits `preLaunchTask` set to exactly these three
+// labels for zephyr-mcu/baremetal-mcu/native-host — tan's own `--help` now
+// documents a per-target-kind default ("the v0.3.1 task name for this
+// target", tan-cli#138) — and drops the key only for yocto-userspace, which
+// still carries none. The v0.4.0 Rust CLI this paragraph used to describe
+// dropped the key whenever the caller did not name one explicitly, with no
+// per-kind default at all; that claim was true of that binary and is not
+// true of this one. The extension still passes `--pre-launch-task`
+// explicitly rather than relying on tan's default — `TASK_SPECS` below stays
+// the one place these three strings are owned, so a future change to tan's
+// own default has nothing here to silently retarget F5 through. `preLaunchTaskFor`
+// below is the half that names the three (and withholds one for
+// yocto-userspace, where the key must still not appear), and
+// `debugConfigArgs` (../debug/service.ts) is its only caller.
 // @callers 1 preLaunchTaskFor
 
 import { DebugTargetKind } from "@alp-sdk/core/debug/models";
@@ -57,14 +71,33 @@ export function taskLabel(spec: TaskSpec): string {
  * The four tasks this extension contributes. THREE are referenced by label
  * from a generated launch.json profile; the fourth is picker-only.
  *
- * `tan build` has NO per-target selector (crates/tan-cli/src/cli.rs
- * `BuildArgs`: only --plan/--plan-from/--materialise/--native/--manifest/
- * --manifest-from/--no-auto-bootstrap) — it builds every slice board.yaml
- * declares. So the three "build …" names below all run the identical `tan
- * build`; three labels exist because three debug-target kinds (zephyr-mcu,
- * baremetal-mcu, native-host) reference them under different names, not
- * because the command differs. Do not invent a --target/--core flag to
- * "properly" distinguish them — none exists on the tan side.
+ * `tan build` has NO WORKING per-target selector, so the three "build …"
+ * names below all run the identical `tan build` — it builds every slice
+ * board.yaml declares. Three labels exist because three debug-target kinds
+ * (zephyr-mcu, baremetal-mcu, native-host) reference them under different
+ * names, not because the command differs.
+ *
+ * THE FLAG LIST THIS PARAGRAPH USED TO CARRY WAS READ OFF THE WRONG BINARY.
+ * It enumerated `BuildArgs` from `crates/tan-cli/src/cli.rs` — the RETIRED
+ * Rust CLI — as "--plan/--plan-from/--materialise/--native/--manifest/
+ * --manifest-from/--no-auto-bootstrap". We ship the Python port, and its
+ * surface is neither a superset nor a subset of that: `tan build` at
+ * SUPPORTED_CLI_VERSION accepts twenty-two options, of which TWELVE are inert
+ * ("Accepted by other commands; not implemented for `build` yet",
+ * tan-cli#427) — `--plan`, `--manifest` and `--manifest-from` among them
+ * (#541). Reading a shipped surface off the oracle is the root cause of #541,
+ * so the enumeration is deleted rather than corrected: the recording in
+ * `test/golden/tan-surface/surface.json` is the one place that answers "what
+ * does the pinned tan accept", it is regenerated when the pin moves, and
+ * `test/tan.surfaceContract.test.js` checks every argv this tree sends
+ * against it.
+ *
+ * What survives as a CLAIM, because it is what these three labels rest on:
+ * there is no per-target build selector. `--target` IS accepted by `tan
+ * build` at this pin and is recorded INERT, and `--core` exists on
+ * `flash`/`run` but not on `build` at all. Do not reach for either to
+ * "properly" distinguish the three labels — one does nothing and the other
+ * does not exist.
  *
  * "deploy and start gdbserver" has no tan equivalent at all: the extension
  * has no deploy story, and the yocto-userspace debug profile ships
@@ -93,8 +126,11 @@ export const TASK_SPECS: readonly TaskSpec[] = [
  * or undefined when it should reference none.
  *
  * The three build kinds map one-to-one onto the three build labels — the same
- * pairing tan itself hardcoded before tan-cli#85 made the key opt-in, so this
- * restores the intended profiles rather than inventing an association.
+ * pairing tan itself hardcodes again TODAY as `--pre-launch-task`'s per-kind
+ * default at the pinned 0.6.0 (see the module doc above), after an
+ * intermediate Rust-era stage where tan-cli#85 made the flag opt-in with no
+ * default at all. This restores the intended profiles explicitly rather than
+ * leaning on a default this repo does not control.
  *
  * yocto-userspace deliberately gets NOTHING. The only task registered for it
  * is the "deploy and start gdbserver" placeholder, which exits 1 by design

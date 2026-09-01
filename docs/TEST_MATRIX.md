@@ -11,7 +11,9 @@ Covered by service and adapter-core tests under test/:
 - project.service.test.js
 - validation.service.test.js
 - loader.service.test.js
-- wizard.service.test.js
+- wizard.scaffoldArgv.test.js
+- wizard.scaffoldPayload.test.js
+- wizard.scaffoldFlow.test.js
 - debug.service.test.js
 
 ## 2. Golden Tests (Generation Outputs)

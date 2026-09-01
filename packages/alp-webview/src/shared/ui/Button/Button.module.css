@@ -91,7 +91,7 @@
   height: 12px;
   border: 2px solid currentColor;
   border-top-color: transparent;
-  border-radius: 9999px;
+  border-radius: var(--radius-full, 9999px);
   animation: btnSpin var(--duration-slow, 250ms) linear infinite;
   flex-shrink: 0;
 }

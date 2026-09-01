@@ -529,12 +529,17 @@ unresolvable `preLaunchTask` aborts the pre-launch and
 `vscode.debug.startDebugging` returns `false` with no useful error, pointing
 the user at a `launch.json` that looks perfectly fine.
 
-`tan` emits the key only when told to: `debug-config` writes `preLaunchTask`
-only for a `--pre-launch-task <TASK>` the caller passes, and drops the key
-otherwise. The extension passes it from `debugConfigArgs`
+MEASURED against the pinned tan 0.6.0: `debug-config` now writes
+`preLaunchTask` to a per-target-kind default even when `--pre-launch-task` is
+entirely absent from the argv — the same three labels below for
+zephyr-mcu/baremetal-mcu/native-host — and drops the key only for
+yocto-userspace, which has no default. The extension still passes
+`--pre-launch-task <TASK>` explicitly from `debugConfigArgs`
 (`src/debug/service.ts`), mapping the target class to a label via
-`preLaunchTaskFor` (`src/tasks/service.ts`) — without that, §10.1–10.3 and
-§10.5 would start a debug session against an ELF nothing had built.
+`preLaunchTaskFor` (`src/tasks/service.ts`): not because omitting it would
+currently blank the profile, but because that is the one place these three
+strings are owned, so a future change to tan's own default has nothing here
+to silently retarget §10.1–10.3 and §10.5 through.
 
 The extension contributes all four labels (`src/tasks/service.ts` holds the
 string contract, `src/tasks/vscodeAdapter.ts` the VS Code seam, task type +
@@ -600,29 +605,47 @@ refuse the WHOLE `debug-config` command and write no `launch.json` at all** —
 never a fallback to dropping just the SVD key. A typo here breaks Configure
 Debug Profile / F5 outright, not merely the peripheral view. `runDebugConfig`
 narrows the resulting failure toast to name `alpSdk.svdPath` (with an
-`openSettings` action) whenever `--svd` was actually on the argv, so the
-symptom does not read as "debug is broken" with nothing to point at
+`openSettings` action) when `--svd` was on the argv **and tan blamed the
+argument** — the `debug-config.invalid-argument` issue code, which is what the
+pinned tan `0.6.0` returns at exit 2 for an unreadable path (an older binary
+signalled the same thing with exit 5, and that arm is still accepted). It is
+deliberately NOT "any failure while `--svd` is on the argv": a tan too old to
+know the flag answers `cli.parse-error`, and that is version skew, so the toast
+says to update the CLI instead of blaming a setting that was never the problem
 (`test/debug.svdFailureHint.test.js`).
 
 ## 11. Product Commands to Support Debug
 
-The extension should eventually expose these commands:
+**Corrected (#608): five of the original eight below already ship.** This
+section listed all eight as a future aspiration; checked against
+`package.json`'s `contributes.commands`, five are real, registered commands
+today:
 
-- `Alp: Configure debug profile`
-- `Alp: Debug preflight`
-- `Alp: Start debug`
-- `Alp: Flash and debug`
-- `Alp: Attach to running target`
-- `Alp: Debug doctor`
-- `Alp: Open debug panel`
-- `Alp: Export support bundle`
+- `Alp: Configure debug profile (launch.json)` — ships (`alp.
+  configureDebugProfile`)
+- `Alp: Debug preflight` — ships (`alp.debugPreflight`)
+- `Alp: Debug (generate profile + start session)` — ships (`alp.debug`), the
+  "Start debug" concept this list originally named
+- `Alp: Debug doctor` — ships (`alp.debugDoctor`)
+- `Alp: Export debug support bundle` — ships (`alp.exportSupportBundle`)
 
-The CLI should eventually expose:
+Still aspirational — no command registered for any of these three:
 
-- `tan inspect`
-- `tan trace`
-- `tan doctor`
-- `tan support-bundle`
+- A combined "flash and debug" command (only separate `Alp: Flash (single
+  image)` / `Alp: Flash (all slices)` and debug commands exist)
+- "Attach to running target" (no attach-only command)
+- A dedicated "debug panel" distinct from `Alp: Open troubleshooting panel`
+  (`alp.openDebugTroubleshootingPanel`), which may or may not be the same
+  thing this line meant
+
+The CLI already exposes all four of these at the pinned version — this is not
+an aspiration:
+
+- `tan inspect` — ships and runs; no call site in this extension yet
+- `tan trace` — ships and runs; no call site in this extension yet
+- `tan doctor` — ships and runs; already spawned (`src/debug/vscodeAdapter.ts`,
+  `src/deps/vscodeAdapter.ts`)
+- `tan support-bundle` — ships and runs; no call site in this extension yet
 
 ## 12. Debug Preflight Requirements
 

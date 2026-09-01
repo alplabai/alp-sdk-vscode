@@ -64,12 +64,6 @@ const BUILD_ACTIONS: Array<{
     command: "alp.debug",
   },
   {
-    label: "Renode",
-    description: "simulate in Renode",
-    icon: "beaker",
-    command: "alp.westAlpRenode",
-  },
-  {
     label: "Update modules (west)",
     description: "fetch & update modules",
     icon: "sync",

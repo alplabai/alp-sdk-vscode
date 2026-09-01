@@ -90,7 +90,7 @@ test("kconfigSymbolsFromEnvelope maps every field of the canonical alp-sdk contr
 
   // A realistic Envelope<KconfigData>, exactly as tan kconfig --core <id>
   // wraps it and client.ts unwraps it (`outcome.envelope?.data`, see
-  // src/lsp/client.ts:fetchEnvelopeData) — the fixture is the RAW `--emit
+  // src/lsp/client.ts:fetchEnvelopeResult) — the fixture is the RAW `--emit
   // kconfig` payload, i.e. the envelope's `data` field.
   const envelope = {
     command: "kconfig",

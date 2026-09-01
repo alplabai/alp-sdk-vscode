@@ -1,0 +1,563 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Giving every chosen core its own app (#534).
+//
+// `tan init --cores` splices companions in APP-LESS — from `tan init --help` at
+// the pinned 0.6.0, a companion "can only be spliced in app-less, as `:off`
+// or (on a Cortex-A id) `:yocto`". So a dual-M55 SoM, the Alif Ensemble line's
+// defining topology, could never be scaffolded with two Zephyr apps: one core
+// got `./src` and the rest were not in the file at all.
+//
+// This is the second pass. tan writes what it knows (`preset:`,
+// `supported_boards:`, the SoM's own topology, any `ipc:`), and then only the
+// part it CANNOT express is added on top. Composing the whole board.yaml here
+// instead — via `tan init --board-yaml`, which does render a file verbatim —
+// was the first design and was dropped: it would mean re-deriving `preset:`
+// and `supported_boards:` in this extension, which is the SDK's knowledge, not
+// ours.
+//
+// IMMUTABLE, like everything else in core: the input board is never touched.
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+const {
+  appDirOverrides,
+  applyCoreAssignments,
+  companionCmakeLists,
+  companionMainC,
+  isSafeAppDir,
+  normaliseAppDir,
+  unknownCoreOs,
+} = require("../packages/alp-core/dist/project/coreScaffold.js");
+
+/** What `tan init --template zephyr-app --som E1M-AEN801 --cores a32_cluster:yocto`
+ *  actually produces, measured (pinned tan 0.6.0, alp-sdk v0.16.0-rc1). */
+const SCAFFOLDED = {
+  som: { sku: "E1M-AEN801" },
+  preset: "e1m-evk",
+  cores: {
+    m55_hp: { app: "./src", peripherals: [] },
+    a32_cluster: { os: "yocto", image: "alp-image-edge" },
+  },
+  diagnostics: { logLevel: "info" },
+};
+
+test("a companion core gains an app directory and its runtime", () => {
+  // Arrange / Act
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_hp", os: "zephyr", app: "./src" },
+    { id: "m55_he", os: "zephyr", app: "./m55_he" },
+    { id: "a32_cluster", os: "yocto" },
+  ]);
+
+  // Assert
+  assert.equal(next.cores.m55_he.app, "./m55_he");
+  assert.equal(next.cores.m55_he.os, "zephyr");
+});
+
+test("the input board is never mutated", () => {
+  // Arrange -- core's immutability rule, and it is load-bearing here: the
+  // caller keeps the ORIGINAL text to hand to `serializeBoardConfig`, so a
+  // mutated input would serialise against a document that no longer matches.
+  const before = JSON.stringify(SCAFFOLDED);
+
+  // Act
+  applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_he", os: "zephyr", app: "./m55_he" },
+  ]);
+
+  // Assert
+  assert.equal(JSON.stringify(SCAFFOLDED), before);
+});
+
+test("what tan already wrote is preserved, not rebuilt", () => {
+  // Arrange -- `peripherals: []`, the yocto `image:`, `preset:` and the SoM are
+  // tan's own output. This pass adds; it never re-derives.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_hp", os: "zephyr", app: "./src" },
+    { id: "m55_he", os: "zephyr", app: "./m55_he" },
+    { id: "a32_cluster", os: "yocto" },
+  ]);
+
+  assert.equal(next.preset, "e1m-evk");
+  assert.equal(next.som.sku, "E1M-AEN801");
+  assert.deepEqual(next.cores.m55_hp.peripherals, []);
+  assert.equal(next.cores.a32_cluster.image, "alp-image-edge");
+});
+
+test("the app core keeps the app directory tan gave it", () => {
+  // Arrange -- tan chose `./src` and put the template's `main.c` there. Moving
+  // it would orphan a directory full of real code.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_hp", os: "zephyr", app: "./src" },
+  ]);
+
+  assert.equal(next.cores.m55_hp.app, "./src");
+});
+
+test("tan's app directory wins over the wizard's guess", () => {
+  // Arrange -- the dangerous case. tan chose `m55_hp` as the app core and put
+  // the template's real source in `./src`. If the wizard guessed a different
+  // directory for that same core, honouring it would repoint the core at a new
+  // empty directory and orphan the code the customer just asked to be
+  // scaffolded. Which core tan picked is not knowable here (#528/#529), so the
+  // rule is: a core that already HAS an app keeps it.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_hp", os: "zephyr", app: "./app_hp" },
+  ]);
+
+  assert.equal(next.cores.m55_hp.app, "./src");
+});
+
+test("a core assigned `off` gets os: off and NO app directory", () => {
+  const next = applyCoreAssignments(SCAFFOLDED, [{ id: "m55_he", os: "off" }]);
+
+  assert.equal(next.cores.m55_he.os, "off");
+  assert.equal(next.cores.m55_he.app, undefined);
+});
+
+test("an app on a core assigned `off` is dropped, not written", () => {
+  // Arrange -- the UI can carry a stale directory string in a disabled field;
+  // writing `app:` under `os: off` would be a slice that claims an app it will
+  // never build.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_he", os: "off", app: "./m55_he" },
+  ]);
+
+  assert.equal(next.cores.m55_he.app, undefined);
+});
+
+test("no assignments leaves the board exactly as tan wrote it", () => {
+  assert.deepEqual(applyCoreAssignments(SCAFFOLDED, []), SCAFFOLDED);
+});
+
+// ---------------------------------------------------------------------------
+// The companion's own CMake application
+// ---------------------------------------------------------------------------
+
+test("the companion CMakeLists targets ITS core and the shared board.yaml", () => {
+  // Arrange -- a Zephyr application is one CMake project per core. The
+  // scaffolded root `CMakeLists.txt` is hardcoded to the app core
+  // (`--emit zephyr-conf --core m55_hp`, `target_sources(app PRIVATE src/main.c)`),
+  // so a second core needs its own, pointing UP at the one board.yaml.
+  const text = companionCmakeLists({
+    coreId: "m55_he",
+    projectName: "deneme123",
+  });
+
+  assert.match(text, /--emit zephyr-conf --core m55_he/);
+  assert.match(
+    text,
+    /--input \$\{CMAKE_CURRENT_SOURCE_DIR\}\/\.\.\/board\.yaml/,
+  );
+  assert.match(text, /target_sources\(app PRIVATE main\.c\)/);
+  assert.match(text, /project\(deneme123_m55_he LANGUAGES C\)/);
+});
+
+test("the companion CMakeLists demands ALP_SDK_ROOT rather than guessing it", () => {
+  // Arrange -- the SDK's own `multicore/mproc-mailbox` peer falls back to
+  // `../../../..`, which only resolves because that example lives INSIDE the
+  // SDK tree. A generated project does not, so the same fallback would resolve
+  // to some unrelated directory and fail later and less legibly. The root
+  // CMakeLists tan generates uses the explicit form; this matches it.
+  const text = companionCmakeLists({ coreId: "m55_he", projectName: "p" });
+
+  assert.match(text, /ALP_SDK_ROOT is not set/);
+  assert.doesNotMatch(text, /\.\.\/\.\.\/\.\.\/\.\./);
+});
+
+test("a project name that is not a C identifier is sanitised for project()", () => {
+  // Arrange -- CMake project names take the wizard's project name, which is
+  // validated as `[a-zA-Z0-9][a-zA-Z0-9_-]*` — hyphens are legal there and
+  // awkward here.
+  const text = companionCmakeLists({
+    coreId: "m33_sm",
+    projectName: "my-cool-app",
+  });
+
+  assert.match(text, /project\(my_cool_app_m33_sm LANGUAGES C\)/);
+});
+
+test("the companion main.c builds and says which core it is", () => {
+  // Arrange -- the point of a scaffold is a compiling starting point on every
+  // core, not a demo. It prints its own core id so a bring-up engineer can tell
+  // the two images apart on one console.
+  const text = companionMainC({ coreId: "m55_he" });
+
+  assert.match(text, /#include <stdio\.h>/);
+  assert.match(text, /int main\(void\)/);
+  assert.match(text, /m55_he/);
+  assert.match(text, /alp_init\(\)/);
+});
+
+test("the companion main.c pulls in no IPC header", () => {
+  // Arrange -- the wizard emits no active `ipc:` (alp-sdk#1613 and #534: every
+  // current SKU family has that channel blocked or half-proven). A skeleton
+  // including <alp/system_ipc.h> would reference macros that resolve to
+  // safe-zero stubs, teaching the customer they are real addresses.
+  const text = companionMainC({ coreId: "m55_he" });
+
+  // The header may be NAMED in the comment — telling the customer how to add a
+  // channel is the point — but never included, and no macro from it used.
+  assert.doesNotMatch(
+    text,
+    /^\s*#include\s*<alp\/system_ipc\.h>/m,
+    "the skeleton must not include the IPC header",
+  );
+  assert.doesNotMatch(
+    text,
+    /^(?!\s*\*).*ALP_IPC_/m,
+    "no IPC macro may be used outside a comment",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Defects found by adversarial review after #535 landed (#538)
+// ---------------------------------------------------------------------------
+
+test("only a zephyr core gets an app directory", () => {
+  // Arrange -- the wizard offers Bare-metal for every Cortex-M core, and #535
+  // wrote `app:` for it and then generated a ZEPHYR application there. That
+  // cannot configure: `alp_project.py`'s `_EMIT_OS_CLASSES` maps
+  // `"zephyr-conf": ("zephyr",)` and an explicit `--core` whose os is not in
+  // that tuple prints to stderr and returns 1, which the generated
+  // CMakeLists turns into a FATAL_ERROR. The SDK's baremetal shape is
+  // `cmake-args`, not a Zephyr app, so this wizard does not claim to scaffold
+  // one at all rather than claiming it badly.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_he", os: "baremetal", app: "./m55_he" },
+  ]);
+
+  assert.equal(next.cores.m55_he.os, "baremetal");
+  assert.equal(next.cores.m55_he.app, undefined);
+});
+
+test("a yocto core still gets no app directory", () => {
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "a32_cluster", os: "yocto", app: "./linux" },
+  ]);
+
+  assert.equal(next.cores.a32_cluster.app, undefined);
+});
+
+test("an app directory tan already chose is REPORTED as overridden, not silently kept", () => {
+  // Arrange -- tan's directory wins (it holds the template's real source), but
+  // #535 discarded the user's choice without a word AND then scaffolded a
+  // decoy at the discarded path, containing a comment claiming board.yaml
+  // pointed at it. Whoever keeps the rule owes the user the sentence.
+  const overrides = appDirOverrides(SCAFFOLDED, [
+    { id: "m55_hp", os: "zephyr", app: "./application" },
+    { id: "m55_he", os: "zephyr", app: "./m55_he" },
+  ]);
+
+  assert.deepEqual(overrides, [
+    { id: "m55_hp", requested: "./application", kept: "./src" },
+  ]);
+});
+
+test("no override is reported when the request matches what tan chose", () => {
+  assert.deepEqual(
+    appDirOverrides(SCAFFOLDED, [{ id: "m55_hp", os: "zephyr", app: "./src" }]),
+    [],
+  );
+});
+
+test("no override is reported for a core tan gave no app", () => {
+  // The companion case: nothing was overridden, the wizard's choice stands.
+  assert.deepEqual(
+    appDirOverrides(SCAFFOLDED, [
+      { id: "m55_he", os: "zephyr", app: "./m55_he" },
+    ]),
+    [],
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Where a core's app directory may live
+// ---------------------------------------------------------------------------
+
+test("an app directory that escapes the project is refused", () => {
+  // Arrange -- the field is free text and reached the host as
+  // `path.resolve(projectDir, app)`, which happily lands anywhere: `../..`
+  // walks out of the project and an absolute path ignores it entirely. Three
+  // files were then written there.
+  assert.equal(isSafeAppDir("../../../etc"), false);
+  assert.equal(isSafeAppDir("/etc/alp"), false);
+  assert.equal(isSafeAppDir("./src/../../escape"), false);
+  assert.equal(isSafeAppDir("C:\\Windows\\Temp"), false);
+});
+
+test("ordinary project-relative directories are allowed", () => {
+  assert.equal(isSafeAppDir("./src"), true);
+  assert.equal(isSafeAppDir("src"), true);
+  assert.equal(isSafeAppDir("./cores/m55_he"), true);
+  assert.equal(isSafeAppDir("./src/../peer"), true);
+});
+
+test("an empty directory is not a directory", () => {
+  assert.equal(isSafeAppDir(""), false);
+  assert.equal(isSafeAppDir("   "), false);
+});
+
+test("two spellings of one directory are one directory", () => {
+  // Arrange -- the wizard's uniqueness check was raw-string, so `./src`,
+  // `src` and `./a/../src` passed as three distinct choices and then resolved
+  // to one tree. `tan build` would build the same source under two slice
+  // configs.
+  assert.equal(normaliseAppDir("./src"), normaliseAppDir("src"));
+  assert.equal(normaliseAppDir("./a/../src"), normaliseAppDir("./src"));
+  assert.notEqual(normaliseAppDir("./src"), normaliseAppDir("./peer"));
+});
+
+// ---------------------------------------------------------------------------
+// The os vocabulary: narrowed, never cast (#538 follow-up)
+// ---------------------------------------------------------------------------
+
+test("an os value outside the schema's vocabulary is NOT written", () => {
+  // Arrange -- `assignment.os as CoreOs` wrote the wizard's string verbatim, so
+  // a value the board schema does not know landed in board.yaml and died much
+  // later, at `validate.py`'s enum check, with nothing naming the wizard as the
+  // source. This is the same cast pattern #517 removed from the models panel:
+  // DROP what cannot be validated, never coerce it.
+  const next = applyCoreAssignments(SCAFFOLDED, [
+    { id: "m55_he", os: "rtos-of-the-future", app: "./m55_he" },
+  ]);
+
+  assert.equal(next.cores.m55_he, undefined);
+});
+
+test("a bad os value is reported, not silently skipped", () => {
+  // Arrange -- dropping a core with no word is how a project quietly comes out
+  // missing the core the customer configured. The caller gets the list.
+  assert.deepEqual(
+    unknownCoreOs([
+      { id: "m55_hp", os: "zephyr", app: "./src" },
+      { id: "m55_he", os: "rtos-of-the-future", app: "./m55_he" },
+      { id: "a32_cluster", os: "yocto" },
+    ]),
+    [{ id: "m55_he", os: "rtos-of-the-future" }],
+  );
+});
+
+test("every value the board schema knows is accepted", () => {
+  // Arrange -- the vocabulary is the schema's, and pinning it here means a
+  // future value added upstream fails THIS test rather than silently dropping
+  // a core in front of a customer.
+  for (const os of ["zephyr", "yocto", "baremetal", "off"]) {
+    const next = applyCoreAssignments(SCAFFOLDED, [{ id: "m55_he", os }]);
+    assert.equal(next.cores.m55_he.os, os, `${os} must be accepted`);
+  }
+  assert.deepEqual(unknownCoreOs([{ id: "m55_he", os: "off" }]), []);
+});
+
+// ── #623: the bare-metal core the SDK cannot build ───────────────────────────
+//
+// MEASURED against the pinned tan 0.6.0 / SDK v0.16.0-rc1, because #623 asked
+// for the measurement before any fix:
+//
+//   `tan validate` on the spliced shape: ok true, exit 0, ZERO issues.
+//   `scripts/alp_orchestrate/orchestrator.py` `_slice_command`, verbatim:
+//       if slice_.os == "baremetal":
+//           if not slice_.app:
+//               return None
+//   and its docstring: "Returns None when there is no buildable command yet --
+//   the caller carries the slice as `skipped` / `no-command`, never dropped."
+//
+//   No baremetal stock default exists: `heterogeneous-builds.md` names
+//   `alp-stock-shim` (zephyr) and `alp-image-edge` (linux), and the code has
+//   no third.
+//
+// So the wizard writes a core the build skips. It is NOT scaffolded away —
+// `coreScaffold.ts` is INTERIM by its own header and a third generated file set
+// would deepen that debt — so what is fixed is the silence.
+
+const {
+  baremetalCoresWithoutApp,
+  baremetalNoAppNotice,
+} = require("../packages/alp-core/dist/project/coreScaffold.js");
+
+test("a bare-metal core with no app is named", () => {
+  assert.deepEqual(
+    baremetalCoresWithoutApp([
+      { id: "m55_hp", os: "zephyr", app: "./src" },
+      { id: "m55_he", os: "baremetal" },
+    ]),
+    ["m55_he"],
+  );
+});
+
+test("a bare-metal core that HAS an app is not named", () => {
+  assert.deepEqual(
+    baremetalCoresWithoutApp([{ id: "m55_he", os: "baremetal", app: "./bm" }]),
+    [],
+    "an app: is exactly what makes `_slice_command` return a command instead " +
+      "of None, so this core builds and there is nothing to warn about",
+  );
+});
+
+test("whitespace is not an app directory", () => {
+  assert.deepEqual(
+    baremetalCoresWithoutApp([{ id: "m55_he", os: "baremetal", app: "   " }]),
+    ["m55_he"],
+    "`app: '   '` reaches the planner as a falsy-after-trim value; treating " +
+      "it as present would suppress the one warning the customer gets",
+  );
+});
+
+test("yocto and zephyr cores are never named", () => {
+  assert.deepEqual(
+    baremetalCoresWithoutApp([
+      { id: "a32_cluster", os: "yocto" },
+      { id: "m55_hp", os: "zephyr" },
+      { id: "m33", os: "off" },
+    ]),
+    [],
+    "an app-less yocto core is DOCUMENTED and buildable (it builds the SoM's " +
+      "stock `alp-image-edge`), and a zephyr one falls back to " +
+      "`alp-stock-shim` — baremetal is the one with no such default",
+  );
+});
+
+test("the notice names the cores and the CMakeLists.txt requirement", () => {
+  const text = baremetalNoAppNotice(["m55_he"]);
+  assert.match(text, /m55_he/);
+  assert.match(text, /CMakeLists\.txt/);
+  assert.match(text, /skips/);
+  assert.doesNotMatch(
+    text,
+    /stock|default/i,
+    "there IS no baremetal stock default — promising one would send the " +
+      "customer looking for something that does not exist",
+  );
+});
+
+test("the notice reads correctly for more than one core", () => {
+  const text = baremetalNoAppNotice(["m55_he", "m55_hp"]);
+  assert.match(text, /m55_he, m55_hp are/);
+  assert.match(text, /skips them/);
+});
+
+// ── #624: the app-only Yocto slice ───────────────────────────────────────────
+//
+// `board.schema.json` documents a second, distinct Linux mode: `app:` naming a
+// project-relative source directory, paired with `recipe:` naming the bitbake
+// recipe that packages it, and NO `image:`. The wizard could never produce it —
+// `takesApp` was `os === "zephyr"` — so a customer wanting their own Linux
+// application had only the stock image.
+//
+// THE PAIR IS INDIVISIBLE, and that is the whole reason this is not a one-line
+// widening. `alp_orchestrate/orchestrator.py`'s `_slice_command` yocto branch:
+//
+//     if slice_.app:
+//         if not slice_.recipe:
+//             return None
+//         return ["bitbake", str(slice_.recipe)]
+//
+// so an `app:` written without a `recipe:` is carried as `skipped` /
+// `no-command` — silently unbuildable, exactly the shape #623 found for
+// bare-metal. A half-filled answer must therefore NOT be written.
+
+const {
+  incompleteYoctoAppSlices,
+  incompleteYoctoAppNotice,
+} = require("../packages/alp-core/dist/project/coreScaffold.js");
+
+const boardWith = (cores) => ({ som: { sku: "E1M-AEN801" }, cores });
+
+test("a complete yocto app slice writes BOTH app and recipe", () => {
+  const board = applyCoreAssignments(boardWith({ a32_cluster: {} }), [
+    { id: "a32_cluster", os: "yocto", app: "./linux", recipe: "my-app" },
+  ]);
+  assert.equal(board.cores.a32_cluster.app, "./linux");
+  assert.equal(board.cores.a32_cluster.recipe, "my-app");
+});
+
+test("a complete yocto app slice drops any image: — it wins over app/recipe", () => {
+  const board = applyCoreAssignments(
+    boardWith({ a32_cluster: { image: "alp-image-edge" } }),
+    [{ id: "a32_cluster", os: "yocto", app: "./linux", recipe: "my-app" }],
+  );
+  assert.equal(
+    board.cores.a32_cluster.image,
+    undefined,
+    "`image:` takes priority over `app:`/`recipe:` (board.schema.json:602), so " +
+      "leaving one behind builds the stock image while the board.yaml reads as " +
+      "though it builds the customer's source",
+  );
+});
+
+test("an app with NO recipe writes neither — it would be unbuildable", () => {
+  const board = applyCoreAssignments(boardWith({ a32_cluster: {} }), [
+    { id: "a32_cluster", os: "yocto", app: "./linux" },
+  ]);
+  assert.equal(
+    board.cores.a32_cluster.app,
+    undefined,
+    "`_slice_command` returns None for an app: with no recipe:, so writing " +
+      "the app alone produces a slice the build silently skips",
+  );
+  assert.equal(board.cores.a32_cluster.recipe, undefined);
+});
+
+test("a recipe with NO app writes neither", () => {
+  const board = applyCoreAssignments(boardWith({ a32_cluster: {} }), [
+    { id: "a32_cluster", os: "yocto", recipe: "my-app" },
+  ]);
+  assert.equal(board.cores.a32_cluster.app, undefined);
+  assert.equal(
+    board.cores.a32_cluster.recipe,
+    undefined,
+    "a recipe with nothing to package is a key the SDK ignores and a reader " +
+      "misreads",
+  );
+});
+
+test("a stock-image yocto core keeps no stale recipe", () => {
+  const board = applyCoreAssignments(
+    boardWith({ a32_cluster: { recipe: "left-over" } }),
+    [{ id: "a32_cluster", os: "yocto" }],
+  );
+  assert.equal(board.cores.a32_cluster.recipe, undefined);
+});
+
+test("a half-answered yocto core is named", () => {
+  assert.deepEqual(
+    incompleteYoctoAppSlices([
+      { id: "a32_cluster", os: "yocto", app: "./linux" },
+      { id: "a55_cluster", os: "yocto", recipe: "only-a-recipe" },
+      { id: "m55_hp", os: "zephyr", app: "./src" },
+    ]),
+    ["a32_cluster", "a55_cluster"],
+  );
+});
+
+test("a COMPLETE or an EMPTY yocto core is not named", () => {
+  assert.deepEqual(
+    incompleteYoctoAppSlices([
+      { id: "a32_cluster", os: "yocto", app: "./linux", recipe: "my-app" },
+      { id: "a55_cluster", os: "yocto" },
+    ]),
+    [],
+    "an app-less yocto core is the DOCUMENTED default — it builds the SoM's " +
+      "stock alp-image-edge — and warning about it would fire on every " +
+      "ordinary project",
+  );
+});
+
+test("whitespace is not half an answer", () => {
+  assert.deepEqual(
+    incompleteYoctoAppSlices([
+      { id: "a32_cluster", os: "yocto", app: "./linux", recipe: "   " },
+    ]),
+    ["a32_cluster"],
+  );
+});
+
+test("the half-answer notice says both halves are needed", () => {
+  const text = incompleteYoctoAppNotice(["a32_cluster"]);
+  assert.match(text, /a32_cluster/);
+  assert.match(text, /BOTH/);
+  assert.match(text, /recipe/);
+  assert.match(text, /stock image/);
+});

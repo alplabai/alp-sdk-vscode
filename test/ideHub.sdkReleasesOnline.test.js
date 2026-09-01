@@ -50,11 +50,15 @@ function loadWithStubs(relPath, stubs) {
   }
 }
 
-/** One Refresh click. `envelope` is what the stubbed `tan` answers with. */
-async function driveRefresh(envelope) {
+/** One Refresh click. `envelope` is what the stubbed `tan` answers with.
+ *  `readOnlyProjectCwd` is overridable per-test — #605's own test wants a
+ *  DISTINCT value to prove it reaches the spawn, not just any string. */
+async function driveRefresh(envelope, projectCwd = "/proj") {
   const argvs = [];
+  const cwds = [];
   const channel = [];
   const posted = [];
+  const plans = [];
 
   const handler = loadWithStubs("ideHub/sdkManagerMessages.js", {
     vscode: {
@@ -66,15 +70,19 @@ async function driveRefresh(envelope) {
     },
     "../alpCli/vscodeAdapter": {
       proxyEnvAdditions: () => ({}),
-      runAlpCommand: async (_context, args) => {
+      runAlpCommand: async (_context, args, cwd) => {
         argvs.push(args);
+        cwds.push(cwd);
         return { outcome: { envelope } };
       },
     },
     "../notify/vscodeAdapter": {
       notify: async () => undefined,
-      notifyAsync: () => {},
+      notifyAsync: (plan) => plans.push(plan),
     },
+    // #605: this handler used to pass `undefined` as the `sdk list` cwd; it
+    // now resolves through `readOnlyProjectCwd()`.
+    "../project/vscodeAdapter": { readOnlyProjectCwd: () => projectCwd },
     "../sdk/activeSdk": {
       clearActiveSdk: async () => {},
       setActiveSdk: async () => {},
@@ -97,7 +105,7 @@ async function driveRefresh(envelope) {
   for (let i = 0; i < 200 && posted.length === 0; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  return { argvs, channel, posted };
+  return { argvs, cwds, channel, posted, plans };
 }
 
 const RELEASE = {
@@ -151,4 +159,92 @@ test("a successful-but-empty answer records its own reason", async () => {
   assert.deepEqual(channel, [
     "[sdk-list] warning: `sdk list` reports the Alp SDK releases published upstream on GitHub -- there is no local/offline copy to answer from. Add --online to fetch them.",
   ]);
+});
+
+// ── #611: share sdkListAnswered with the OTHER `sdk list` reader, and narrow
+// rather than cast `releases` ────────────────────────────────────────────────
+//
+// `src/deps/vscodeAdapter.ts` refuses to CACHE an unanswered `sdk list`
+// lookup; this handler used to log the same `issues[]` and post `releases`
+// as a real catalogue regardless — a divergence, not (at the pinned tan,
+// with `--online` always on the argv) a reachable bug: constructed directly
+// here rather than through a real `tan` run, since the pin itself cannot
+// produce `ok: true` + `sdk.network-required` while `--online` is set.
+test("an (unreachable-at-the-pin, but still handled) ok:true+unanswered envelope posts no releases, closing the divergence with the other sdk-list reader", async () => {
+  const { posted, channel, plans } = await driveRefresh({
+    command: "sdk",
+    ok: true,
+    exitCode: 0,
+    project: { root: null, boardYaml: null },
+    data: { subcommand: "list", releases: [RELEASE] },
+    issues: [
+      {
+        code: "sdk.network-required",
+        severity: "warning",
+        message: "tan reports it did not look.",
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    posted,
+    [{ type: "sdkReleasesLoaded", releases: [] }],
+    "an unanswered lookup must not post a real release as though it were one",
+  );
+  assert.deepEqual(channel, [
+    "[sdk-list] warning: tan reports it did not look.",
+  ]);
+  // Adversarial review (#611 follow-up): posting `{ releases: [] }` with NO
+  // notification renders identically to "there really are no releases" —
+  // the same silent-blank class #607 fixed for the Build Plan panel. Even
+  // though this branch is unreachable at the pinned tan, it must not leave a
+  // new silent blank behind while closing the divergence.
+  assert.equal(
+    plans.length,
+    1,
+    "an unanswered lookup must say so on screen, not just to the channel",
+  );
+});
+
+test("a release entry with no string tag is dropped, not thrown on, before it ever reaches the webview", async () => {
+  const { posted } = await driveRefresh({
+    command: "sdk",
+    ok: true,
+    exitCode: 0,
+    project: { root: null, boardYaml: null },
+    data: {
+      subcommand: "list",
+      releases: [{ ...RELEASE, tag: undefined }, RELEASE],
+    },
+    issues: [],
+  });
+
+  assert.deepEqual(posted, [
+    { type: "sdkReleasesLoaded", releases: [RELEASE] },
+  ]);
+});
+
+test("`sdk list` runs with an explicit, resolved cwd — never undefined (#605)", async () => {
+  const { cwds } = await driveRefresh(
+    {
+      command: "sdk",
+      ok: true,
+      exitCode: 0,
+      project: { root: null, boardYaml: null },
+      data: { subcommand: "list", releases: [RELEASE] },
+      issues: [],
+    },
+    "/work/renesas-control",
+  );
+
+  assert.ok(cwds.length > 0, "the lookup must still run");
+  for (const cwd of cwds) {
+    assert.equal(
+      cwd,
+      "/work/renesas-control",
+      "an omitted cwd reaches child_process.spawn unset and the child " +
+        "inherits the extension host's own directory instead of the " +
+        "customer's project — `sdk` resolves a project and an SDK from cwd",
+    );
+  }
 });

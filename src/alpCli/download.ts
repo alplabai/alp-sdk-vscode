@@ -446,14 +446,150 @@ function connectRefused(status: number, proxy: URL): ProxyError {
   );
 }
 
-/** A failure on the tunnelled request. It happened INSIDE the proxy's tunnel,
- *  so it is reported as a proxy failure — but a certificate rejection gets its
- *  own remedy, because a TLS-inspecting proxy is the common cause and
- *  `http.proxyStrictSSL` is the switch that accepts it. */
+/** OpenSSL verify codes with no `CERT`, `SSL` or `TLS` substring to spot them
+ *  by. `UNABLE_TO_VERIFY_LEAF_SIGNATURE` is the one that matters in practice —
+ *  it is what a TLS-inspecting proxy serving an incomplete chain produces, and
+ *  the substring test below missed it every single time. */
+const TLS_TRUST_CODES = new Set([
+  // Chain judgements a re-signing appliance provokes.
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY",
+  "INVALID_CA",
+  "INVALID_PURPOSE",
+  "PATH_LENGTH_EXCEEDED",
+  "HOSTNAME_MISMATCH",
+  // OpenSSL's catch-all. NOT exotic: a CA still signing with SHA-1 — the most
+  // ordinary way a corporate appliance is out of date — arrives as
+  // `UNSPECIFIED` with "CA signature digest algorithm too weak" in the
+  // message, and an allowlist without it sends that customer to debug their
+  // http.proxy setting.
+  "UNSPECIFIED",
+  // Node never enables CRL checking, so these are unreachable today. Listed
+  // anyway: they are verify verdicts, they would be right if they ever
+  // appeared, and leaving a hole for the next Node release to open is how the
+  // hand-picked list went wrong the first time.
+  "UNABLE_TO_GET_CRL",
+  "UNABLE_TO_DECRYPT_CRL_SIGNATURE",
+  "CRL_SIGNATURE_FAILURE",
+  "CRL_NOT_YET_VALID",
+  "CRL_HAS_EXPIRED",
+  "ERROR_IN_CRL_LAST_UPDATE_FIELD",
+  "ERROR_IN_CRL_NEXT_UPDATE_FIELD",
+]);
+
+/** Only consulted when the code says nothing useful — see `isTlsTrustFailure`. */
+const OPENSSL_TEXT = /SSL routines|ssl\/tls alert|certificate/i;
+
+/** OpenSSL's way of saying "that wasn't TLS", or "that TLS was unusable". */
+const NON_TLS_ANSWER =
+  /WRONG_VERSION_NUMBER|UNSUPPORTED_PROTOCOL|PACKET_LENGTH_TOO_LONG|BAD_RECORD_MAC|wrong version number|unsupported protocol|packet length too long|bad record mac/i;
+
+/**
+ * Did the tunnel open onto something that is not a usable TLS peer?
+ *
+ * This is NOT a certificate verdict, and the distinction has teeth. A proxy
+ * that answers CONNECT with `200` and then puts you through to a plain-http
+ * listener — or a filtering appliance answering in the release host's place —
+ * fails the handshake with `ERR_SSL_WRONG_VERSION_NUMBER`, which contains
+ * `SSL` and so was reported as an untrusted certificate.
+ *
+ * `rejectUnauthorized: false` cannot make a peer that is not speaking TLS
+ * speak it, so that advice fixed nothing — and `http.proxyStrictSSL` is a
+ * GLOBAL VS Code setting, so someone who follows it, still fails, and leaves
+ * it off has loosened every extension's traffic for a problem it never
+ * touched. Checked BEFORE the trust branch for exactly that reason.
+ *
+ * The message arm is gated on `EPROTO`/absent for the same reason its sibling
+ * is, in the opposite direction: ungated, an explicit certificate verdict
+ * whose message merely mentioned one of these phrases would be overridden by
+ * it, and the customer would lose a remedy that WAS the right one.
+ */
+export function isNonTlsTunnelAnswer(error: unknown): boolean {
+  const code = String((error as NodeJS.ErrnoException)?.code ?? "");
+  if (NON_TLS_ANSWER.test(code)) return true;
+  if (code !== "EPROTO" && code !== "") return false;
+  return error instanceof Error && NON_TLS_ANSWER.test(error.message);
+}
+
+/**
+ * Was this failure the peer's certificate, rather than the connection to it?
+ *
+ * Exported because the chain verdicts below cannot be produced end-to-end
+ * without a live TLS server and an untrusted certificate fixture, which this
+ * repo does not have — and they are the spellings that were being got wrong.
+ *
+ * Node spells a single condition several ways, and the difference is not
+ * cosmetic — it decides whether the customer is told to accept the proxy's
+ * certificate or sent to debug a proxy that is working:
+ *
+ *   - read path   `ERR_SSL_SSL/TLS_ALERT_HANDSHAKE_FAILURE` — the alert arrived
+ *                 as its own readable event;
+ *   - write path  `EPROTO` — the SAME alert, discovered while completing the
+ *                 client's own pending ClientHello write. The OpenSSL text
+ *                 lives in `message`; the code says nothing about TLS;
+ *   - chain       `UNABLE_TO_VERIFY_LEAF_SIGNATURE` — no `CERT`/`SSL`/`TLS`
+ *                 substring anywhere in it.
+ *
+ * Which of the first two Node picks is a timing accident: whether the alert
+ * shared a TCP segment with the proxy's `200 Connection Established`. A
+ * `code`-only substring test therefore gave the right remedy MOST of the time
+ * and the wrong one the rest — which is what #511 was as a flaky test, and what
+ * a customer behind a TLS-inspecting proxy hit intermittently for real.
+ *
+ * The message check is gated on the code being `EPROTO` or absent, deliberately
+ * and not as an oversight: the branch it unlocks tells someone to turn off
+ * `http.proxyStrictSSL`. Advising a person to loosen TLS verification on a
+ * loose text match — when the truth might be that their proxy is simply down —
+ * is a worse failure than the generic sentence.
+ */
+export function isTlsTrustFailure(error: unknown): boolean {
+  // First, because half those spellings carry `SSL` in the code and would
+  // otherwise be read as a certificate the user could choose to accept. The
+  // production caller has already taken that branch by the time it gets here,
+  // so this guard is for anyone else holding the exported predicate.
+  if (isNonTlsTunnelAnswer(error)) return false;
+  const code = String((error as NodeJS.ErrnoException)?.code ?? "");
+  if (/CERT|SSL|TLS/.test(code) || TLS_TRUST_CODES.has(code)) return true;
+  if (code !== "EPROTO" && code !== "") return false;
+  return error instanceof Error && OPENSSL_TEXT.test(error.message);
+}
+
+/**
+ * A failure on the tunnelled request. It happened INSIDE the proxy's tunnel,
+ * so it is reported as a proxy failure — but WHICH proxy failure decides which
+ * remedy the reader is handed, and there are three:
+ *
+ *  1. the TLS layer failed before any certificate was judged — the tunnel did
+ *     not open onto a TLS peer this client can talk to;
+ *  2. a certificate was judged and rejected — a TLS-inspecting proxy is the
+ *     common cause, and `http.proxyStrictSSL` is the switch that accepts it;
+ *  3. anything else, which is a transport failure on the hop.
+ *
+ * One and two both mention TLS and used to share a sentence. They must not:
+ * the remedy for two is exactly the thing that cannot work for one.
+ */
 function tunnelFailure(error: unknown, proxy: URL): Error {
   if (isAbort(error) || error instanceof ProxyError) return error as Error;
   const code = String((error as NodeJS.ErrnoException)?.code ?? "");
-  if (/CERT|SSL|TLS/.test(code)) {
+  if (isNonTlsTunnelAnswer(error)) {
+    // Says outright that the toggle will not help. Left unsaid, the reader
+    // reaches for it anyway — it is the only TLS-shaped switch they have, and
+    // this failure mentions TLS. The reason given is the load-bearing part:
+    // it is true for a plain-http listener, for an appliance below this
+    // client's TLS floor, and for a corrupted record stream alike.
+    return new ProxyError(
+      `The secure connection through the proxy ${redactProxy(proxy)} failed ` +
+        `in the TLS layer, before any certificate was judged. A tunnel that ` +
+        `opens onto a plain-http listener, a filtering appliance answering ` +
+        `in the release host's place, and an appliance too old for this ` +
+        `client's TLS version all look like this. Turning off ` +
+        `http.proxyStrictSSL will not help — it governs whether a ` +
+        `certificate is trusted, and no certificate was reached. Check what ` +
+        `the http.proxy setting points at.`,
+      `${code}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (isTlsTrustFailure(error)) {
     return new ProxyError(
       `The secure connection through the proxy ${redactProxy(proxy)} was ` +
         `rejected: the certificate it served isn't trusted here. A ` +
@@ -469,7 +605,17 @@ function tunnelFailure(error: unknown, proxy: URL): Error {
 /** Idle-timeout arming, shared by every request shape below. */
 function armIdleTimeout(request: http.ClientRequest, what: string): void {
   request.setTimeout(IDLE_TIMEOUT_MS, () => {
-    request.destroy(new Error(`Timed out downloading ${what}`));
+    // The errno is what every classifier downstream branches on, and without
+    // one this error matched nothing: `isAbort` looks at `name` (which is
+    // "Error", not "TimeoutError"), and `proxyUnreachable`'s ladder fell to its
+    // default arm — so a PROXIED download that timed out was reported as "the
+    // connection to it failed" rather than "it did not respond". The message is
+    // left exactly as it was: `service.ts` matches on `Timed out downloading`.
+    const timedOut = new Error(
+      `Timed out downloading ${what}`,
+    ) as NodeJS.ErrnoException;
+    timedOut.code = "ETIMEDOUT";
+    request.destroy(timedOut);
   });
 }
 

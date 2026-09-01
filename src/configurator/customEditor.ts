@@ -7,6 +7,16 @@ import { parseBoardConfig } from "@alp-sdk/core/board/parse";
 import { serializeBoardConfig } from "@alp-sdk/core/board/serialize";
 import { buildConfiguratorViewModel } from "@alp-sdk/core/configurator/viewModel";
 import {
+  boardLibrariesFromPresets,
+  withPresetLibraries,
+} from "@alp-sdk/core/sdkCatalogue/derive";
+import { fetchEnvelopeResult } from "../alpCli/envelope";
+import { readOnlyProjectCwd } from "../project/vscodeAdapter";
+import {
+  PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+  unresolvedSdkReason,
+} from "../alpCli/service";
+import {
   type ExtToWebviewMessage,
   type WebviewToExtMessage,
 } from "../ideHub/messages";
@@ -76,10 +86,18 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       }
     };
 
+    // The library vocabulary `tan presets` owns (`data.boardLibraries`), once
+    // the CLI has answered. Empty until then, and empty forever if the CLI
+    // cannot be resolved — `withPresetLibraries` treats that as "no answer" and
+    // leaves the filesystem scan standing, so the picker is never blanked by a
+    // CLI that is missing, old, or pointed at an unresolved SDK.
+    let presetLibraryIds: readonly unknown[] = [];
+
     const postRender = (board: BoardConfig): void => {
       const project = collectProjectContext();
-      const catalogue = loadSdkCatalogue(project.sdkRoot ?? null, (m) =>
-        log(m),
+      const catalogue = withPresetLibraries(
+        loadSdkCatalogue(project.sdkRoot ?? null, (m) => log(m)),
+        presetLibraryIds,
       );
       const message: ExtToWebviewMessage = {
         type: "configuratorRender",
@@ -131,6 +149,34 @@ class ConfiguratorEditorProvider implements vscode.CustomTextEditorProvider {
       switch (msg.type) {
         case "ready":
           postRender(parse());
+          // Then ask tan for the library vocabulary it owns and re-render once
+          // it answers. It runs ONCE per editor rather than inside postRender,
+          // which fires on every keystroke that reaches the document — spawning
+          // a CLI per edit is not an option. The UI stays silent by design on
+          // any failure — `boardLibrariesFromPresets` resolving empty leaves
+          // the filesystem-scanned vocabulary standing either way — but an
+          // unresolved SDK now reaches the "Alp SDK" channel instead of
+          // vanishing with nothing recorded anywhere (#611), through the same
+          // constant + function the other two `presets` readers
+          // (`lsp/client.ts`, `ideHub/newProjectFlowPanel.ts`) share.
+          // `readOnlyProjectCwd()` (#605) — same reason as the other two
+          // `presets` readers: an unresolved SDK comes back as a SUCCESS, so a
+          // cwd-caused empty catalogue is indistinguishable from a real one.
+          void fetchEnvelopeResult(
+            this.context,
+            ["presets"],
+            readOnlyProjectCwd(),
+          ).then((result) => {
+            const reason = unresolvedSdkReason(
+              { issues: result.issues },
+              PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+            );
+            if (reason) log(`[configurator] presets: ${reason}`);
+            const ids = boardLibrariesFromPresets(result.data);
+            if (ids.length === 0) return;
+            presetLibraryIds = ids;
+            postRender(parse());
+          });
           break;
         case "configuratorUpdate":
           void writeBoard(msg.board).then(() => {

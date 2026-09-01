@@ -25,13 +25,29 @@
 # darwin-arm64-targeted VSIX with the `tan` CLI bundled at `bin/tan` (the
 # extension's `bundled` resolver source, src/alpCli — see
 # docs/EXTENSION_CLI_INTEGRATION.md §5, picks it up with no first-run
-# download). It downloads the prebuilt RAW `tan-aarch64-apple-darwin` binary
-# from the `alplabai/tan-cli` `v<SUPPORTED_CLI_VERSION>` release
-# (src/alpCli/service.ts is the source of truth for the version), reuses the
-# same VSCE_PAT secret and SHOULD_PUBLISH gate as the universal job, and always
-# publishes `--pre-release` (it's the first bundled-CLI VSIX, regardless of the
-# odd/even-minor convention above). The universal (binary-less) job stays
-# unchanged and independent.
+# download). It stages whichever asset the `alplabai/tan-cli`
+# `v<SUPPORTED_CLI_VERSION>` release actually published for darwin/arm64 —
+# through v0.5.0-rc4 that was a RAW `tan-aarch64-apple-darwin` binary; from the
+# archive freeze (tan-cli#349) on, it is a `tan-aarch64-apple-darwin.tar.gz`
+# onedir tree (the launcher plus its `_internal/` support files), because a
+# PyInstaller onefile freeze re-extracted itself on every invocation. Which
+# shape a given release published is resolved the same way the extension's own
+# `bundled`/`download` resolver does at activation — `releaseAssetForTarget` +
+# `resolvePublishedAsset` + `downloadFile` (src/alpCli/{service,download}.ts,
+# invoked via `scripts/stage-tan-cli-asset.mjs`) — never a hardcoded asset name
+# here, which is how the raw-name URL drifted stale once already: the archive
+# migration shipped in the extension (src/alpCli) and this job's own
+# hardcoded URL did not move with it. `bin/tan` therefore may have siblings on
+# disk (e.g. `bin/_internal/`) for an archive release; `vsce package` below is
+# passed
+# `--follow-symlinks` for exactly that reason — see that step's comment. It
+# reuses the same VSCE_PAT secret and SHOULD_PUBLISH gate as the universal job,
+# and follows the SAME odd/even-minor parity rule as that job for its own
+# publish channel — both jobs resolve it via the identical
+# `scripts/resolve-vsix-channel.mjs` step, so the parity rule itself lives in
+# exactly one place instead of two independent copies. The universal job stays
+# independent (no `needs:` between the two jobs); its own resolve step now
+# calls that same script rather than carrying its own inline copy of the rule.
 
 name: release-vsix
 
@@ -133,16 +149,32 @@ jobs:
         run: node scripts/check-cli-pin.mjs
 
       - name: Resolve pre-release flag (VS Code convention — odd minor = pre-release)
+        # The odd/even parity rule itself lives in scripts/resolve-vsix-channel.mjs
+        # (also called by package_darwin_arm64's identically-named step below),
+        # so there is exactly one implementation of the rule, not two that can
+        # silently drift apart.
         run: |
-          MINOR=$(node -p "require('./package.json').version.split('.')[1]")
-          if [ "$((MINOR % 2))" -eq 1 ]; then
+          # Assign FIRST, then read. `read -r ... <<< "$(cmd)"` returns 0 even
+          # when cmd failed (the here-string is merely empty), so `set -e` never
+          # fires, CHANNEL is empty, and the else-branch publishes a PRE-RELEASE
+          # build to the STABLE Marketplace channel. That is unrecoverable: the
+          # tag is spent and the version cannot be republished. A plain
+          # assignment carries the substitution's exit status, so the step dies
+          # on a bad package.json instead. The final `else` refuses anything
+          # that is not one of the two channels rather than picking one.
+          RESOLVED="$(node scripts/resolve-vsix-channel.mjs)"
+          read -r CHANNEL MAJOR MINOR <<< "$RESOLVED"
+          if [ "$CHANNEL" = "pre-release" ]; then
             echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
             echo "IS_PRERELEASE=true" >> "$GITHUB_ENV"
-            echo "::notice::version 0.$MINOR.x → publishing as a PRE-RELEASE (odd minor)."
-          else
+            echo "::notice::version $MAJOR.$MINOR.x → publishing as a PRE-RELEASE (odd minor)."
+          elif [ "$CHANNEL" = "stable" ]; then
             echo "PRERELEASE_FLAG=" >> "$GITHUB_ENV"
             echo "IS_PRERELEASE=false" >> "$GITHUB_ENV"
-            echo "::notice::version 0.$MINOR.x → publishing as a STABLE release (even minor)."
+            echo "::notice::version $MAJOR.$MINOR.x → publishing as a STABLE release (even minor)."
+          else
+            echo "::error::resolve-vsix-channel.mjs produced no usable channel: '$RESOLVED'"
+            exit 1
           fi
 
       - name: Package (.vsix)
@@ -239,10 +271,13 @@ jobs:
   # SIX platform/arch combos, so six is the ceiling for jobs to add, one
   # shipped, FIVE to go — but the release actually pinned, not the ceiling, is
   # what decides whether a job has an asset to bundle. A Python `tan` release
-  # (v0.5.0 on, a PyInstaller freeze that cannot cross-compile) publishes only
-  # FOUR raw target binaries (x86_64 × pc-windows-msvc/apple-darwin, aarch64 ×
-  # apple-darwin, and Linux x64 as unknown-linux-gnu only — no musl, no arm64
-  # Linux or Windows), declared in `HOSTS_WITHOUT_RELEASE_ASSET`. A job added
+  # (v0.5.0 on, a PyInstaller freeze that cannot cross-compile) publishes an
+  # asset for only FOUR targets (x86_64 × pc-windows-msvc/apple-darwin, aarch64
+  # × apple-darwin, and Linux x64 as unknown-linux-gnu only — no musl, no arm64
+  # Linux or Windows), declared in `HOSTS_WITHOUT_RELEASE_ASSET`. Whether that
+  # asset is a raw binary or a `.zip`/`.tar.gz` archive is a separate axis (see
+  # the header comment above) and does not change which FOUR hosts are covered.
+  # A job added
   # for one of those two undeclared hosts would have nothing to bundle against
   # the current pin. (Correcting the doc is a separate change — not this one.)
   #
@@ -271,9 +306,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # See package_and_publish's outputs: comment above -- same reasoning, this
-    # channel is declared "always" (always --pre-release) so its own step
-    # outcome is a safe, non-circular signal for release_gate (#432).
+    # See package_and_publish's outputs: comment above -- same mechanism, and
+    # the non-circularity argument does NOT depend on which channel this job
+    # resolves: marketplace_publish's own `if:` is gated on SHOULD_PUBLISH (and
+    # VSCE_PAT), never on pre-release-vs-stable, so steps.marketplace_publish.
+    # outcome is read from what the runner actually recorded for THIS run, not
+    # re-derived from the SHOULD_PUBLISH/channel declaration release_gate
+    # compares it against. That was true back when this job's channel was
+    # hardcoded to --pre-release and is equally true now that it follows the
+    # odd/even parity rule (scripts/resolve-vsix-channel.mjs) -- the channel
+    # choice and the publish-outcome signal are orthogonal facts.
     outputs:
       marketplace_outcome: ${{ steps.marketplace_publish.outcome }}
     env:
@@ -312,6 +354,32 @@ jobs:
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 
+      - name: Resolve pre-release flag (VS Code convention — odd minor = pre-release)
+        # Same resolution as package_and_publish's identically-named step --
+        # both call scripts/resolve-vsix-channel.mjs so the odd/even parity
+        # rule is decided in exactly one place. This job never creates a
+        # GitHub Release (that only happens in package_and_publish), so it has
+        # no `IS_PRERELEASE`/`prerelease:` consumer -- only PRERELEASE_FLAG is
+        # exported here.
+        run: |
+          # Assign FIRST, then read -- see package_and_publish's identically
+          # named step for why: `read <<< "$(cmd)"` swallows cmd's exit status,
+          # so a failing resolver would silently pick STABLE. Logic-identical to
+          # that step; it differs only in the ::notice:: wording and in not
+          # exporting IS_PRERELEASE (this job creates no GitHub Release).
+          RESOLVED="$(node scripts/resolve-vsix-channel.mjs)"
+          read -r CHANNEL MAJOR MINOR <<< "$RESOLVED"
+          if [ "$CHANNEL" = "pre-release" ]; then
+            echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
+            echo "::notice::version $MAJOR.$MINOR.x → bundling darwin-arm64 as a PRE-RELEASE (odd minor)."
+          elif [ "$CHANNEL" = "stable" ]; then
+            echo "PRERELEASE_FLAG=" >> "$GITHUB_ENV"
+            echo "::notice::version $MAJOR.$MINOR.x → bundling darwin-arm64 as a STABLE release (even minor)."
+          else
+            echo "::error::resolve-vsix-channel.mjs produced no usable channel: '$RESOLVED'"
+            exit 1
+          fi
+
       - name: Resolve pinned CLI version (mirrors SUPPORTED_CLI_VERSION in src/alpCli/service.ts)
         id: cli_version
         # The `(-[0-9A-Za-z.-]+)?` suffix is not decoration: without it a
@@ -338,47 +406,38 @@ jobs:
         # darwin-arm64 VSIX without bin/tan is the universal VSIX wearing a
         # platform label, and VS Code PREFERS a platform-specific VSIX over the
         # universal one — publishing an empty one is strictly worse than
-        # publishing none. So we keep it fatal and make the failure legible:
-        # `curl -f` alone exits 22 and says nothing about which pin, which URL,
-        # or which status. Dropping -f and reading %{http_code} separates "the
-        # tan tag isn't published" (404) from "the network/permissions broke"
-        # (000/403/5xx) — different problems, different fixes. Note -f is not
-        # what blocks %{http_code}: `curl -f -w '%{http_code}'` prints 404 quite
-        # happily (driven). -f is dropped so curl_exit means TRANSPORT only —
-        # http_status=404 curl_exit=0 reads "network fine, server said no",
-        # where -f collapses every HTTP error into exit 22. The price is that
-        # curl then WRITES the non-2xx body: on a 404 that is GitHub's 9-byte
-        # "Not Found" at bin/tan, which -f suppressed entirely. Hence
-        # `rm -f bin/tan` on every failure path — it cleans up after this step's
-        # own choice, not after some older bug.
+        # publishing none. No `|| true`, no exit-code special-casing: any
+        # non-zero exit from the script below fails this step, including its
+        # own "no asset published for this host" outcome (exit 2) — unlike
+        # ci.yml's smoke test, this job may NOT treat that as a loud skip.
+        #
+        # The resolution + download + checksum-verify + (if archived) unpack
+        # is NOT hand-rolled here — see scripts/stage-tan-cli-asset.mjs's own
+        # header for why: it calls the exact same
+        # `releaseAssetForTarget`/`resolvePublishedAsset`/`downloadFile`
+        # (src/alpCli/{service,download}.ts) the extension's own `bundled`/
+        # `download` resolver runs at activation, compiled by the `Compile`
+        # step above into out/alpCli/*.js. That is what keeps this job from
+        # ever again requesting an asset name `scripts/check-cli-pin.mjs`
+        # didn't already verify resolves for the pinned release.
         run: |
-          set -euo pipefail
-          VERSION="${{ steps.cli_version.outputs.version }}"
-          # tan-cli ships a RAW binary per target (not an archive) — download it
-          # straight to bin/tan (the extension's `bundled` resolver source).
-          URL="https://github.com/alplabai/tan-cli/releases/download/v${VERSION}/tan-aarch64-apple-darwin"
-          mkdir -p bin
-          CURL_RC=0
-          STATUS=$(curl -sSL -w '%{http_code}' -o bin/tan "$URL") || CURL_RC=$?
-          # bin/tan is absent when curl never connected — read the size only if
-          # it exists, or the failed input redirect prints its own noise.
-          BYTES=0
-          if [ -f bin/tan ]; then BYTES=$(wc -c < bin/tan); fi
-          if [ "$CURL_RC" -ne 0 ] || [ "$STATUS" != "200" ] || [ ! -s bin/tan ]; then
-            rm -f bin/tan
-            echo "::error::Could not stage the bundled tan CLI. pin=v${VERSION} (SUPPORTED_CLI_VERSION in src/alpCli/service.ts) url=${URL} http_status=${STATUS} curl_exit=${CURL_RC} bytes=${BYTES}"
-            if [ "$STATUS" = "404" ]; then
-              echo "::error::alplabai/tan-cli has no tan-aarch64-apple-darwin asset at tag v${VERSION}. The tan-cli release must be published BEFORE this extension is tagged — SUPPORTED_CLI_VERSION may only ever name an already-published tan tag. Fix: cut+publish tan-cli v${VERSION}, or repin src/alpCli/service.ts to a published version, then re-run."
-            else
-              echo "::error::Not a missing-tag failure (http_status=${STATUS}, curl_exit=${CURL_RC}) — treat as network, proxy, or permissions and re-run the job. http_status=000 would mean curl never completed the request; any other status is the server's answer, and a 200 here means the asset downloaded empty."
-            fi
-            exit 1
-          fi
-          chmod +x bin/tan
-          echo "::notice::Staged tan v${VERSION} aarch64-apple-darwin (${BYTES} bytes) at bin/tan from ${URL}"
+          node scripts/stage-tan-cli-asset.mjs \
+            --platform darwin --arch arm64 --dest bin \
+            --version "${{ steps.cli_version.outputs.version }}"
 
       - name: Package (.vsix, darwin-arm64, bundled CLI)
-        run: pnpm exec vsce package --no-dependencies --target darwin-arm64 --pre-release --out alp-sdk-darwin-arm64.vsix
+        # --follow-symlinks is REQUIRED, not a style preference, once bin/ can
+        # hold an archive-installed onedir tree: a PyInstaller macOS freeze's
+        # `_internal/` carries real symlinks (e.g.
+        # `Python.framework/Versions/Current -> 3.12`), and without this flag
+        # `vsce package`'s secret scan tries to `read()` a directory symlink as
+        # a file and dies with `EISDIR`, packaging NOTHING and producing no
+        # .vsix — measured locally against the real v0.5.1 darwin-arm64
+        # archive. `--follow-symlinks` makes vsce recurse into (and thereby
+        # materialise) those entries instead of choking on them; it has no
+        # effect when bin/ holds a single raw binary (no symlinks to find), so
+        # it is safe to pass unconditionally for either shape.
+        run: pnpm exec vsce package --no-dependencies --target darwin-arm64 $PRERELEASE_FLAG --follow-symlinks --out alp-sdk-darwin-arm64.vsix
 
       - name: Upload vsix artefact
         uses: actions/upload-artifact@v4
@@ -399,7 +458,7 @@ jobs:
         # `vsce package --target darwin-arm64`; vsce rejects both together
         # ("Both options not supported simultaneously: 'packagePath' and
         # 'target'"). Publish the pre-built platform .vsix by path only.
-        run: pnpm exec vsce publish --no-dependencies --pre-release --packagePath alp-sdk-darwin-arm64.vsix
+        run: pnpm exec vsce publish --no-dependencies $PRERELEASE_FLAG --packagePath alp-sdk-darwin-arm64.vsix
         # VSCE_PAT is read from the environment by vsce.
 
       - name: Note when Marketplace publish was skipped
@@ -432,7 +491,7 @@ jobs:
   #   |                              | never creates one, by design)            |
   #   | Marketplace (universal)      | SHOULD_PUBLISH (push, or dispatch with   |
   #   |                              | publish=true)                            |
-  #   | Marketplace (darwin-arm64)   | same SHOULD_PUBLISH, always --pre-release|
+  #   | Marketplace (darwin-arm64)   | same SHOULD_PUBLISH, odd/even parity     |
   #   | Open VSX                     | optional -- only asserted at all when    |
   #   |                              | SHOULD_PUBLISH=true (OVSX_PAT documented |
   #   |                              | optional at the top of this file)        |
@@ -481,7 +540,7 @@ jobs:
           note "|---|---|---|"
           note "| GitHub Release | push-only, declared=${RELEASE_DECLARED} | \`${RELEASE_OUTCOME:-<empty>}\` |"
           note "| Marketplace (universal) | SHOULD_PUBLISH=${SHOULD_PUBLISH} | \`${MARKETPLACE_OUTCOME:-<empty>}\` |"
-          note "| Marketplace (darwin-arm64) | SHOULD_PUBLISH=${SHOULD_PUBLISH}, --pre-release | \`${DARWIN_MARKETPLACE_OUTCOME:-<empty>}\` |"
+          note "| Marketplace (darwin-arm64) | SHOULD_PUBLISH=${SHOULD_PUBLISH} | \`${DARWIN_MARKETPLACE_OUTCOME:-<empty>}\` |"
           note "| Open VSX | optional when SHOULD_PUBLISH=true | published=\`${OVSX_PUBLISHED:-<none>}\` |"
           note ""
 

@@ -9,7 +9,7 @@ import boardSchema from "../../schemas/board.schema.json";
 // Pure data (no runtime imports of its own) — shared so the SKU list has ONE
 // hand-maintained home instead of a second literal that silently drifts.
 import { E1M_MODULES } from "../ideHub/projectScaffold";
-import type { SdkCompletionCatalog } from "./sdkCatalog";
+import { EMPTY_SDK_CATALOG, SdkCompletionCatalog } from "./sdkCatalog";
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   sdkPath: "",
@@ -99,6 +99,7 @@ const TOP_LEVEL_KEYS: readonly string[] = Object.keys(
 const CHILD_KEYS: Readonly<Record<string, readonly string[]>> = {
   som: ["sku"],
   inference: ["default_arena_kib"],
+  models: ["name", "source", "compile"],
   iot: ["wifi", "mqtt", "ble", "tls"],
   diagnostics: ["last_error", "log_level"],
 };
@@ -176,6 +177,26 @@ const FIELD_DOCS: Readonly<Record<string, BoardYamlHoverInfo>> = {
   "inference.default_arena_kib": {
     title: "inference.default_arena_kib",
     description: "Default tensor arena size in KiB.",
+  },
+  models: {
+    title: "models",
+    description:
+      "models[] declares AI models to compile into .alpmodel packages. Each entry has a name + source (ONNX/TFLite); compile backends are DERIVED from the SoM (som.sku), never customer-specified.",
+  },
+  "models.name": {
+    title: "models.name",
+    description:
+      "Model instance identifier; used to name the generated .alpmodel artifact.",
+  },
+  "models.source": {
+    title: "models.source",
+    description:
+      "Path (relative to board.yaml) to the source model. `.tflite` compiles for CPU (TFLM) + Ethos-U (Vela) out of the box; `.onnx` requires a vendor toolchain (DRP-AI / DEEPX) on the build host.",
+  },
+  "models.compile": {
+    title: "models.compile",
+    description:
+      "Per-backend compile configuration (DRP-AI, DEEPX config + calibration) for NPU toolchains the SDK cannot derive settings for; a backend with no block here is recorded as a coverage skip.",
   },
   libraries: {
     title: "libraries",
@@ -274,6 +295,53 @@ export function createIssueRange(
 
   const firstLine = lines[0] ?? "";
   return createLineZeroRange(firstLine.length);
+}
+
+/** A validator issue, carrying the location the validator itself reported. */
+export interface LocatedValidationIssue {
+  message: string;
+  /** 1-based line the validator pinpointed, when it pinpointed one. */
+  line?: number;
+  /** 1-based column the validator pinpointed, when it pinpointed one. */
+  col?: number;
+}
+
+/**
+ * Range for a validator issue, preferring the location the validator gave us.
+ *
+ * The rich validator emits an ALP-B* block whose `--> board.yaml:LINE:COL`
+ * arrow points straight at the offending token, and `parseValidationIssues`
+ * (alp-core/validation/service.ts) already parses that arrow into `line`/`col`.
+ * Re-deriving a range by scanning the document for a key guessed out of the
+ * message prose throws away an exact answer and replaces it with a heuristic
+ * that lands on line 0 whenever the guess misses — so use the reported
+ * location, and keep `createIssueRange` for the issues that carry none (the
+ * legacy `FAIL`/`WARN` lines, and tan's `--offline` structural checks, whose
+ * diagnostic-v1 range is a `0,0 -> 0,0` stub).
+ *
+ * A reported line can still be stale: the document may have been edited while
+ * the validator ran. An out-of-range position makes the editor drop the
+ * diagnostic outright, so a line past the end degrades to the scan rather than
+ * being clamped to an arbitrary neighbour.
+ */
+export function rangeForIssue(
+  documentText: string,
+  issue: LocatedValidationIssue,
+): LineZeroRange {
+  const lines = documentText.split(/\r?\n/);
+  const lineIndex = (issue.line ?? 0) - 1;
+
+  if (lineIndex >= 0 && lineIndex < lines.length) {
+    const lineText = lines[lineIndex] ?? "";
+    const column = Math.max(0, (issue.col ?? 1) - 1);
+    const start = Math.min(column, lineText.length);
+    return {
+      start: { line: lineIndex, character: start },
+      end: { line: lineIndex, character: Math.max(start, lineText.length) },
+    };
+  }
+
+  return createIssueRange(documentText, issue.message);
 }
 
 export function createBoardYamlCompletionSuggestions(
@@ -388,29 +456,38 @@ export function detectV2StructuralIssues(documentText: string): Array<{
   return [];
 }
 
-function inferCoreIdFromSkuAndOs(sku: string | undefined, os: string): string {
-  const skuUpper = (sku ?? "").toUpperCase();
-  const isYocto = os.toLowerCase() === "yocto";
-  if (skuUpper.includes("AEN301") || skuUpper.includes("AEN401")) {
-    // M55-only SoMs — no A-class core
-    return "m55_hp";
-  }
-  if (skuUpper.includes("AEN")) {
-    return isYocto ? "a32_cluster" : "m55_hp";
-  }
-  if (skuUpper.includes("V2N") || skuUpper.includes("V2M")) {
-    return isYocto ? "a55_cluster" : "m33_sm";
-  }
-  if (skuUpper.includes("NX9")) {
-    return isYocto ? "a55_cluster" : "m33";
-  }
-  // Unknown SKU — use generic fallback
-  return isYocto ? "a55_cluster" : "m33_sm";
-}
-
+/**
+ * Quick fixes for a board.yaml diagnostic.
+ *
+ * `catalog` carries the SDK's own `soms[].cores[]` (`tan presets`, pushed over
+ * `alp/updateSdkCatalog`). The `os:` -> `cores:` fix NEEDS it and is not
+ * offered without it.
+ *
+ * WHY. That fix used to guess the core id from a substring of the SKU
+ * (`inferCoreIdFromSkuAndOs`, deleted with this change) — a fourth copy of a
+ * table the SDK publishes, and wrong in two ways measured against
+ * `tan presets` at alp-sdk v0.16.0-rc1:
+ *
+ *   `os: yocto` on E1M-AEN301 or E1M-AEN401 answered `m55_hp`. Those SoMs
+ *   declare `[{m55_hp, zephyr}, {m55_he, zephyr}]` and NO yocto core, so the
+ *   fix wrote a core that cannot run the os the customer asked for.
+ *
+ *   An unrecognised SKU answered `m33_sm` / `a55_cluster` — Renesas core ids,
+ *   written into whatever part the customer actually had.
+ *
+ * It also silently never offered `m55_he`, which is a legal answer on all six
+ * AEN SoMs that declare it.
+ *
+ * So it does not guess any more. Every core the SoM declares for that os gets
+ * its own fix, the customer picks, and when the catalogue has no answer — no
+ * SDK resolved, an unknown SKU, or no core running that os — there is no fix.
+ * The diagnostic still stands; a wrong edit to the customer's board.yaml is
+ * worse than an edit they make themselves.
+ */
 export function createBoardYamlQuickFixes(
   documentText: string,
   issueMessage: string,
+  catalog: SdkCompletionCatalog = EMPTY_SDK_CATALOG,
 ): BoardYamlQuickFix[] {
   const lines = splitLines(documentText);
   const fixes: BoardYamlQuickFix[] = [];
@@ -422,16 +499,23 @@ export function createBoardYamlQuickFixes(
       const osLine = lines[osLineIndex] ?? "";
       const osValueMatch = /^os:\s*(.+)$/.exec(osLine);
       const osValue = osValueMatch?.[1]?.trim() ?? "zephyr";
-      const model = parseBoardModel(documentText);
-      const coreId = inferCoreIdFromSkuAndOs(model.som?.sku, osValue);
-      fixes.push({
-        title: `Migrate 'os: ${osValue}' to cores: block (schema v2)`,
-        line: osLineIndex,
-        character: 0,
-        endLine: osLineIndex,
-        endCharacter: osLine.length,
-        newText: `cores:\n  ${coreId}:\n    os: ${osValue}`,
-      });
+      const sku = parseBoardModel(documentText).som?.sku;
+      const declared = sku ? (catalog.coresBySku[sku] ?? []) : [];
+      const candidates = declared.filter(
+        (core) => core.os.toLowerCase() === osValue.toLowerCase(),
+      );
+      for (const core of candidates) {
+        fixes.push({
+          // The core id is IN the title: with more than one candidate these are
+          // the only thing telling them apart in the lightbulb menu.
+          title: `Migrate 'os: ${osValue}' to cores: ${core.id}`,
+          line: osLineIndex,
+          character: 0,
+          endLine: osLineIndex,
+          endCharacter: osLine.length,
+          newText: `cores:\n  ${core.id}:\n    os: ${osValue}`,
+        });
+      }
     }
     return fixes;
   }

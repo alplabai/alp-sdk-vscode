@@ -1,13 +1,13 @@
 # ALP IDE — GUI Onboarding Guide
 
-Last revised: 2026-05-16
+Last revised: 2026-07-25
 
 This guide walks through every GUI-first path for getting started with the ALP SDK
 inside VS Code, using the ALP IDE sidebar panel and wizard flows.
 
 ## Overview
 
-The ALP IDE extension provides four entry-point surfaces:
+The ALP IDE extension provides five entry-point surfaces:
 
 | Surface | Command | Purpose |
 |---------|---------|---------|
@@ -156,7 +156,36 @@ All actions update the sidebar status chips in real time.
 
 ---
 
-## 6. Recovery Language Reference
+## 6. Models Panel
+
+**There is no Models surface to open in this release.** The Activity Bar
+contributes exactly one view — **Alp IDE** (`alp-ide.hub`) — and both Models
+commands (`Alp: Models` and `Alp: Build Model`) are hidden from the Command
+Palette (`"when": "false"`, #525). The commands are still registered, but nothing
+in the GUI reaches them, so there is no step here to follow on a first run.
+Restoring the surface is tracked as #524.
+
+The panel is also ahead of the CLI it shells. The pinned `tan` (0.6.0)
+implements exactly one `model` subcommand — `build`, which compiles and packages
+the `models:` entries of `board.yaml` into `.alpmodel` packages (default output
+directory `build/models`). The pre-flight NPU-coverage badge, INT8 prep with an
+fp32-vs-int8 accuracy report, host reference run, A-B compare and the model-zoo
+gallery are all intended, and each of them needs a `model` subcommand this `tan`
+does not have (`check`, `prep`, `run`, `ab`, `zoo`, `add`) — that gap is
+tan-cli#674, and keeping this documentation in step with it is #551.
+
+> **When the surface returns, two of its numbers still need reading carefully:**
+>
+> - NPU coverage is an _eligibility_ screen, not proof of NPU execution. An
+>   operator the NPU cannot take falls back to the CPU silently rather than
+>   failing, and `undetermined` means "no data for that backend" — never "the
+>   model will not run".
+> - **Run Model** and **A-B Compare** are _host reference_ runs (backend
+>   `cpu-host`) — they measure the host, **not** the target SoM.
+
+---
+
+## 7. Recovery Language Reference
 
 | Chip label | Meaning | Suggested action |
 |------------|---------|-----------------|
@@ -168,7 +197,7 @@ All actions update the sidebar status chips in real time.
 
 ---
 
-## 7. Related Guides
+## 8. Related Guides
 
 - [GETTING_STARTED_VSCODE.md](GETTING_STARTED_VSCODE.md) — Quick terminal-and-command-palette path
 - [ALP_IDE_SDK_INSTALLATION.md](ALP_IDE_SDK_INSTALLATION.md) — Detailed SDK install and management

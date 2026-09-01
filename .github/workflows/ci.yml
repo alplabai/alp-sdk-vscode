@@ -116,6 +116,19 @@ jobs:
       - name: Unit / integration tests
         run: node --test "test/*.test.js"
 
+      # `node --test "test/*.test.js"` above does NOT pick this up: the harness
+      # is `test/webview/run.mjs`, a directory deeper than the glob and not a
+      # `.test.js`. It renders every webview view under jsdom, clicks every
+      # button, and asserts on the rendered text — the only thing in the repo
+      # that checks what a panel actually SAYS. It had been running in no
+      # workflow at all, so its assertions were documentation: on the
+      # model-edge-ai line a models-panel block grew to 209 lines while nothing
+      # ever executed them outside a developer's terminal.
+      #
+      # It runs after Compile because it imports the built webview sources.
+      - name: Webview render harness (every view, every button)
+        run: pnpm run test:e2e:webview
+
       - name: Gate — extensionDependencies resolve on the Marketplace + Open VSX
         run: node scripts/check-extension-deps.mjs
 
@@ -158,12 +171,13 @@ jobs:
       # The second half of #416, and the reason the macOS leg is worth its
       # minutes beyond "one more POSIX host".
       #
-      # `release-vsix.yml`'s `package_darwin_arm64` job downloads
-      # `tan-aarch64-apple-darwin` into `bin/tan` and packages it — while
-      # `runs-on: ubuntu-latest` (release-vsix.yml:182). Nothing anywhere has
-      # ever EXECUTED that binary; an ubuntu x64 runner physically cannot. So
-      # "the bundled CLI runs" has been an untested claim on every release of
-      # the one VSIX variant that bundles a CLI at all.
+      # `release-vsix.yml`'s `package_darwin_arm64` job stages whichever
+      # darwin/arm64 asset the pinned tan-cli release publishes so the
+      # launcher lands at `bin/tan`, and packages it — while
+      # `runs-on: ubuntu-latest`. Nothing anywhere has ever EXECUTED that
+      # binary; an ubuntu x64 runner physically cannot. So "the bundled CLI
+      # runs" has been an untested claim on every release of the one VSIX
+      # variant that bundles a CLI at all.
       #
       # Scope, stated so this is not mistaken for more than it is: this does
       # NOT test the packaged VSIX. That artefact is only assembled at a
@@ -192,40 +206,62 @@ jobs:
 
       - name: The bundled darwin-arm64 tan binary runs on darwin-arm64
         if: matrix.os == 'macos-latest'
-        # Same URL shape and the same non-`-f` curl accounting as
-        # release-vsix.yml:246-268, so a 404 stays distinguishable from a
-        # network failure instead of collapsing into curl's exit 22.
+        # Stages via the SAME resolver + downloader release-vsix.yml's
+        # package_darwin_arm64 job uses (scripts/stage-tan-cli-asset.mjs —
+        # see its header) instead of a hand-rolled raw-name URL. That
+        # hardcoded URL is exactly how this step went stale before: tan-cli#349
+        # moved the darwin/arm64 asset to a `.tar.gz` archive, and this step
+        # kept requesting the old raw name, read every resulting 404 as "not
+        # published yet", and exited 0 — a SILENT skip of the one job that
+        # actually executes the bundled binary, for over a week, with nothing
+        # in a green run to say so. `scripts/check-cli-pin.mjs` above already
+        # confirms the pin publishes SOMETHING for this host; this step exists
+        # to run what it found.
         #
-        # Deliberately NOT fatal on a missing asset, and that is the one place
-        # it differs from the release job. There, no asset means the VSIX would
-        # ship broken, so it must stop the release. Here the pin can
-        # legitimately name a tag whose darwin asset is not published yet, and
-        # reddening every PR on that would only teach people to ignore this
-        # job. A published binary that does NOT run is a hard failure — that is
-        # the case worth having.
+        # Deliberately still NOT fatal on "genuinely no asset for this host",
+        # and that remains the one place this differs from the release job:
+        # the pin can legitimately name a tag whose darwin asset is not
+        # published yet (HOSTS_WITHOUT_RELEASE_ASSET, or a release still being
+        # cut), and reddening every PR on that would teach people to ignore
+        # this job. The distinction is now the script's own exit code, not a
+        # curl status this step re-derives: exit 2 is ONLY "nothing published
+        # for this host under this pin" (mirrors the old 404 case) and is a
+        # loud, named skip; any other non-zero exit — including a transient
+        # fetch failure — is now FATAL here too. That narrows the old
+        # tolerance (which also downgraded a plain network/proxy hiccup to a
+        # warning); consistent with release-vsix.yml, which already treats
+        # every non-"no asset" failure as fatal and expects a re-run, rather
+        # than adding a second, differently-tuned leniency rule for the same
+        # download.
         run: |
           set -uo pipefail
-          VERSION="${{ steps.cli_version.outputs.version }}"
-          URL="https://github.com/alplabai/tan-cli/releases/download/v${VERSION}/tan-aarch64-apple-darwin"
-          mkdir -p /tmp/bundled
-          CURL_RC=0
-          STATUS=$(curl -sSL -w '%{http_code}' -o /tmp/bundled/tan "$URL") || CURL_RC=$?
-          BYTES=0
-          if [ -f /tmp/bundled/tan ]; then BYTES=$(wc -c < /tmp/bundled/tan); fi
-          if [ "$STATUS" = "404" ]; then
-            rm -f /tmp/bundled/tan
-            echo "::warning::No tan-aarch64-apple-darwin asset at tag v${VERSION} (SUPPORTED_CLI_VERSION, src/alpCli/service.ts). Nothing to execute — not a defect in this repo. url=${URL}"
-            exit 0
-          fi
-          if [ "$CURL_RC" -ne 0 ] || [ "$STATUS" != "200" ] || [ ! -s /tmp/bundled/tan ]; then
-            rm -f /tmp/bundled/tan
-            echo "::warning::Could not fetch the bundled tan binary — treat as network/proxy/outage, not a code defect. pin=v${VERSION} http_status=${STATUS} curl_exit=${CURL_RC} bytes=${BYTES} url=${URL}"
-            exit 0
-          fi
-          chmod +x /tmp/bundled/tan
-          # Published and downloaded, so from here a failure IS ours: an
-          # unrunnable bundled binary is exactly what reaches a Mac customer.
+          set +e
+          node scripts/stage-tan-cli-asset.mjs \
+            --platform darwin --arch arm64 --dest /tmp/bundled \
+            --version "${{ steps.cli_version.outputs.version }}"
+          RC=$?
           set -e
+          if [ "$RC" -eq 2 ]; then
+            # tan-cli#151 is the proof that an annotation alone is the weakest
+            # signal GitHub has: the script's ::warning:: leaves this reading as
+            # a fully green run in the checks list, which is a quieter version
+            # of the silence this job exists to remove. Pair it with a summary
+            # row, same as release-vsix.yml's skipped-publish notes.
+            {
+              echo "### Bundled darwin-arm64 smoke test: SKIPPED"
+              echo
+              echo "tan-cli \`${{ steps.cli_version.outputs.version }}\` publishes no darwin/arm64 asset, so there was nothing to download and run. Not a failure — see \`HOSTS_WITHOUT_RELEASE_ASSET\` in \`src/alpCli/service.ts\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$RC" -ne 0 ]; then
+            exit 1
+          fi
+
+          VERSION="${{ steps.cli_version.outputs.version }}"
+          # Published, downloaded, and checksum-verified, so from here a
+          # failure IS ours: an unrunnable bundled binary is exactly what
+          # reaches a Mac customer.
           file /tmp/bundled/tan
           OUT=$(/tmp/bundled/tan --version)
           echo "bundled tan on darwin-arm64: ${OUT}"
@@ -236,3 +272,208 @@ jobs:
               exit 1
               ;;
           esac
+
+  # Does the pinned tan RUN on every host we hand it to? (#446)
+  #
+  # ── The debt this pays ──────────────────────────────────────────────────────
+  #
+  # #446's remaining item was per-platform verification before a stable cut:
+  # "`win32/x64`, `darwin/x64` and `linux/x64` have a published asset and no CI
+  # execution -- those three need a manual pass." Measured again today and still
+  # true: the only CI sites that stage a tan binary are the `build` job's
+  # macOS-only step above (darwin/arm64), `tan-surface-drift.yml` (darwin/arm64),
+  # and `release-vsix.yml`'s packaging job, which stages on ubuntu and therefore
+  # cannot execute what it packages. The contract gate fetches
+  # `envelope-contract.json` -- a JSON file, not a binary.
+  #
+  # A manual pass would have gone stale at the next pin bump. This does not.
+  #
+  # ── Why a separate job, given the step above ────────────────────────────────
+  #
+  # They assert different things and both are worth keeping. The `build` step
+  # asserts the binary that gets BUNDLED into the darwin-arm64 VSIX runs on
+  # darwin-arm64 (#416). This job asserts that for every host the extension would
+  # DOWNLOAD a CLI for, the asset that pin resolves actually executes there. The
+  # darwin/arm64 overlap is one extra download on one runner; collapsing them
+  # would cost the #416 framing, which is release-shaped rather than host-shaped.
+  #
+  # Keeping it out of `build` also keeps it off `build`'s critical path: this
+  # needs a compile and a download, not a package, a webview bundle or a test
+  # run.
+  #
+  # ── The matrix is DERIVED, not chosen ───────────────────────────────────────
+  #
+  # The entries are `TARGETS` minus `HOSTS_WITHOUT_RELEASE_ASSET` at the current
+  # pin -- every host with a published asset at 0.6.0 -- minus the one host with
+  # no free runner to execute it on (below).
+  # `test/ci.cliHostCoverage.test.js` recomputes that set from
+  # `src/alpCli/service.ts` and fails if this matrix does not cover it, so a
+  # future pin that starts publishing `win32/arm64` reds until a runner is added
+  # here. Shrinking an allowlist is invisible; deriving it is not.
+  #
+  # ── darwin/x64 is NOT here, and that is a runner fact, not a decision ───────
+  #
+  # `tan-x86_64-apple-darwin.tar.gz` IS published and the universal VSIX fetches
+  # it for every Intel Mac customer, so this host genuinely wants executing.
+  # There is no free runner left to execute it on:
+  #
+  #   `macos-13` was the last standard-rate Intel image and is RETIRED --
+  #   unsupported since 2025-12-04, dropped from the docs, and absent from
+  #   `actions/runner-images`' README table entirely. Measured here, not assumed:
+  #   a `macos-13` job on this repo sat QUEUED with no runner assigned while
+  #   ubuntu/windows/macos-latest all picked one up in seconds.
+  #
+  #   Every remaining x64 macOS label is a LARGER runner --
+  #   `macos-15-intel`/`macos-15-large`, `macos-26-intel`/`macos-26-large`
+  #   (bare `macos-15` and `macos-26` are arm64; `macos-latest` is macOS 26
+  #   Arm64). Larger runners are billed even on a public repo, so putting one on
+  #   every PR is a spend decision rather than a CI decision.
+  #
+  # So darwin/x64 is a DECLARED exemption in
+  # `test/ci.cliHostCoverage.test.js`, carrying that reason, and that gate
+  # refuses to let the exemption list grow. The hole is the same hole #446
+  # named; what changes is that it is now visible and asserted instead of
+  # silent. Delete the exemption the day a standard-rate Intel image exists.
+  verify_pinned_cli_hosts:
+    name: pinned tan runs · ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    strategy:
+      # One host failing must not cancel the others: which hosts fail is the
+      # whole signal, and cancelling turns "linux and windows are both broken"
+      # into "linux is broken".
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            launcher: tan
+            label: linux/x64
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            launcher: tan.exe
+            label: win32/x64
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+            launcher: tan
+            label: darwin/arm64
+
+    defaults:
+      run:
+        # Git Bash on Windows, so one step body serves all four hosts -- the
+        # same reason the `build` job pins it.
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # `node-version: "24"`, NOT `node-version-file: .nvmrc` — this repo
+          # has no `.nvmrc` (0 tracked files by that name) and setup-node fails
+          # outright on a missing version file, before install. Every other
+          # setup-node in this repo pins "24" literally; match them.
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile
+        # `stage-tan-cli-asset.mjs` requires `../out/alpCli/service.js`, and
+        # `out/` is gitignored with no `prepare` script to produce it. Omitting
+        # this is how `tan-surface-drift.yml` shipped a job that would have died
+        # MODULE_NOT_FOUND on its first scheduled run.
+        run: pnpm exec tsc --build
+
+      - name: Resolve the pinned tan version
+        id: cli_version
+        # Byte-identical to the `build` job's copy, including the
+        # `(-[0-9A-Za-z.-]+)?` prerelease suffix on BOTH greps -- widening only
+        # the first extracts `0.5.0` out of `0.5.0-rc1`, a silently wrong
+        # version rather than a loud failure (#443).
+        # `test/cliPin.prerelease.test.js` reads every occurrence in this file,
+        # so this line is covered the day it is written.
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not resolve SUPPORTED_CLI_VERSION from src/alpCli/service.ts"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stage and run the pinned tan for this host
+        # EVERY non-zero exit is fatal here, exit 2 included -- and that is the
+        # one place this deliberately differs from the `build` job's bundled
+        # smoke test above.
+        #
+        # There, exit 2 ("nothing published for this host under this pin") is a
+        # legitimate transient: the pin may name a tag whose darwin asset is
+        # still being cut, and reddening every PR on that teaches people to
+        # ignore the job. Here it cannot be legitimate. The coverage gate
+        # guarantees no host in this matrix is declared in
+        # `HOSTS_WITHOUT_RELEASE_ASSET`, so exit 2 means the release contents
+        # and that table disagree -- which is a defect, not an absence.
+        #
+        # Exiting 0 on it would launder a live defect into a green named check.
+        # The concrete case is not hypothetical: `resolvePublishedAsset` raises
+        # `ChecksumError` kind `unlisted` (exit 2) when the asset URL exists but
+        # `checksums.txt` has no entry for it -- a re-upload after checksum
+        # generation. `scripts/check-cli-pin.mjs` HEAD-probes the asset URL and
+        # would call that "present", so this job would be the only thing that
+        # could notice, while every customer's activation-time download is
+        # refused by the very same resolver.
+        #
+        # `/tmp` on the Windows runner: `--dest /tmp/pinned-tan` is rewritten by
+        # MSYS argument conversion before node sees it, landing the launcher at
+        # `C:\Users\RUNNER~1\AppData\Local\Temp\pinned-tan\tan.exe`, and Git
+        # Bash resolves its own `/tmp` to the same directory -- so `$BIN` finds
+        # it. Both sides agree because the SAME mechanism rewrites both. Change
+        # `shell:` away from bash, or "tidy" one side to `$RUNNER_TEMP` without
+        # the other, and they stop agreeing. Measured working, not assumed.
+        run: |
+          set -uo pipefail
+          set +e
+          node scripts/stage-tan-cli-asset.mjs \
+            --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} \
+            --dest /tmp/pinned-tan \
+            --version "${{ steps.cli_version.outputs.version }}"
+          RC=$?
+          set -e
+          if [ "$RC" -eq 2 ]; then
+            {
+              echo "### ${{ matrix.label }}: NO ASSET — treated as a failure"
+              echo
+              echo "tan-cli \`${{ steps.cli_version.outputs.version }}\` published nothing usable for ${{ matrix.label }}, but \`test/ci.cliHostCoverage.test.js\` only puts a host in this matrix when it is NOT declared in \`HOSTS_WITHOUT_RELEASE_ASSET\`. So either the release is incomplete, or its \`checksums.txt\` is missing this asset's entry, or that table is stale. All three are defects a customer hits at activation time."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$RC" -ne 0 ]; then
+            exit 1
+          fi
+
+          VERSION="${{ steps.cli_version.outputs.version }}"
+          BIN=/tmp/pinned-tan/${{ matrix.launcher }}
+          # Downloaded and checksum-verified by the script, so from here a
+          # failure is ours: this is exactly the binary a customer on this host
+          # is handed.
+          OUT=$("$BIN" --version)
+          echo "pinned tan on ${{ matrix.label }}: ${OUT}"
+          # EXACT, not a substring. `case "$OUT" in *"$VERSION"*)` would accept
+          # a binary reporting `0.6.0-rc1` under a `0.6.0` pin, and `10.6.0`
+          # too -- the same silent-truncation class as #443, where widening one
+          # grep and not the other extracted `0.5.0` out of `0.5.0-rc1`.
+          # `tan --version` prints `tan <version>`; take the last field of the
+          # first line and compare it whole.
+          REPORTED=$(printf '%s\n' "$OUT" | head -n 1 | awk '{print $NF}')
+          if [ "$REPORTED" != "$VERSION" ]; then
+            echo "::error::The pinned tan for ${{ matrix.label }} runs but reports version '${REPORTED}' (full output: '${OUT}'), not the pinned ${VERSION}. Customers on this host would be handed a CLI that disagrees with SUPPORTED_CLI_VERSION."
+            exit 1
+          fi

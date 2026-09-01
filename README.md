@@ -15,6 +15,21 @@ First-class IDE support for projects built against the
 * **Debug-aware orchestration.** Inspect, doctor, preflight,
   launch-profile planning, and support-bundle surfaces are available
   without embedding debugger implementation into the extension.
+* **Models / edge-AI panel — hidden at this pin.** A full-tab preview over the
+  `tan model` CLI whose build action runs `tan model build`, the one `model`
+  subcommand tan 0.6.0 implements. Its NPU-coverage badge
+  (`full-eligible` / `partial` / `cpu-only` / `undetermined`), Prep Model, Run
+  Model, A-B Compare and Model Zoo screens are written against eight `model`
+  subcommands this CLI does not have, so the panel reports that gap in a
+  banner instead of running them (tan-cli#674); both of its commands,
+  `Alp: Models` and `Alp: Build Model`, are hidden from the command palette
+  (#525). The intent is to re-expose the whole surface once tan implements
+  those subcommands (#524): a before-you-build eligibility badge, INT8
+  quantization against a calibration folder with an fp32-vs-int8 accuracy
+  report, host-reference single and A-B runs, and a "runs on your SoM" zoo
+  gallery. Even then the badge is a conservative offline estimate and a host
+  run is a reference, not the target SoM's measured performance — power and
+  on-device measurement are hardware-gated.
 
 ## Screenshots
 
@@ -211,31 +226,81 @@ Marketplace; no functionality changed.
 
 ## Schema-sync
 
-The extension's schema-aware validation uses a **vendored** copy of the board
-schema at `schemas/board.schema.json` (so it ships inside the VSIX —
-`alp-sdk-upstream/**` is excluded from the package). It is derived from the
-alp-sdk submodule's board schema; `package.json::contributes.yamlValidation.url`
-points at the vendored path. Its presence + structure (`$id`, `required`) are
-enforced by `test/board.schema.vendored.test.js` and the CI "vendored schema"
-check.
+When an SDK is resolved, `board.yaml` and `system-manifest.yaml` are validated
+against **that SDK's own** schemas at `<sdkRoot>/metadata/schemas/`, so the
+editor and `tan` agree by construction (#493). The extension pins no SDK
+version, so this is the only way the two can agree; the language-status item on
+those files names which schema is in force.
+
+The **vendored** copies at `schemas/board.schema.json` and
+`schemas/system-manifest-v1.schema.json` are the fallback for a customer with no
+SDK yet — the common first-run state — and they are what
+`package.json::contributes.yamlValidation` points at. They ship inside the VSIX
+(`alp-sdk-upstream/**` is excluded from the package) and are derived from the
+alp-sdk submodule's schemas at a pinned TAG. Their presence + structure (`$id`,
+`required`) and their sha256 pins are enforced by
+`test/board.schema.vendored.test.js` and the CI "vendored schema" check.
+
+Keeping them current still matters: they are what every first-run user is
+validated against, and an SDK schema this extension refuses (oversized, not a
+JSON object, or carrying a remote `$ref` — see
+`packages/alp-core/src/validation/schemaSafety.ts`) falls back to them too.
 
 > **Schema v2 (requires alp-sdk v0.10.0+):** `board.yaml` now uses `schema_version: 2`
 > with a per-core `cores:` block replacing the top-level `os:` field.
 > Use the `alp-board-min` or `alp-board-hetero` snippet to get a
 > valid starting point.
 
-When alp-sdk bumps the schema:
+When alp-sdk cuts a release, re-vendor from its **TAG** — never from `main` or
+`dev`. `test/board.schema.vendored.test.js` calls re-vendoring from a moving
+branch "forward drift" and fails on it by design.
 
 ```bash
-cd alp-sdk-upstream
-git fetch && git checkout main
-cd ..
-cp alp-sdk-upstream/metadata/schemas/<board-schema>.json schemas/board.schema.json  # re-vendor
-git add alp-sdk-upstream schemas/board.schema.json
-git commit -m "deps(alp-sdk): bump submodule to <sha> + re-vendor schema"
-pnpm test         # re-runs the schema-snapshot tests
-pnpm run package  # builds the .vsix against the new schema
+TAG=v0.15.0   # the alp-sdk release you are assessing
+
+git -C alp-sdk-upstream fetch origin --tags
+git -C alp-sdk-upstream checkout --detach "$TAG"
+
+# 1. BOTH schemas, always together — packages/alp-core/src/validation/
+#    vendoredSchemas.ts pins one tag for the pair, so they can never green
+#    while disagreeing. (test/vendored-sdk-tag.js re-exports it for the gates.)
+git -C alp-sdk-upstream show "$TAG:metadata/schemas/board.schema.json" \
+  > schemas/board.schema.json
+git -C alp-sdk-upstream show "$TAG:metadata/schemas/system-manifest-v1.schema.json" \
+  > schemas/system-manifest-v1.schema.json
+
+# 2. Recompute BOTH hashes (LF-normalised — portable, no `shasum` on Windows)
+#    and put them, with the tag, in
+#    packages/alp-core/src/validation/vendoredSchemas.ts — NOT in test/. The
+#    extension reads them at runtime to tell the customer which schema is in
+#    force when their resolved SDK ships a different one (#493).
+node -e "const f=require('fs'),c=require('crypto');for(const p of ['schemas/board.schema.json','schemas/system-manifest-v1.schema.json'])console.log(p,c.createHash('sha256').update(f.readFileSync(p,'utf-8').replace(/\r\n/g,'\n'),'utf-8').digest('hex'))"
+
+# 3. Regenerate BOTH vendored Kconfig artefacts. The .txt fixture carries no
+#    submoduleRev and its test only asserts curated ⊆ vendored, so a stale copy
+#    stays GREEN — nothing will remind you.
+node scripts/vendor-kconfig-metadata.mjs
+node scripts/vendor-kconfig-symbols.mjs
+
+# 4. tsc --build is incremental and re-copies src/**/*.json only when a .ts
+#    changes, so out/ keeps the PREVIOUS harvest without this. The
+#    "compiled metadata copy is not stale" gate catches it if you forget.
+pnpm exec tsc --build --force
+
+# 5. The gitlink may carry skip-worktree locally (a per-clone index bit, not
+#    committed), in which case `git add alp-sdk-upstream` is a silent no-op and
+#    the pin stays behind while the schemas move. Check and clear it first.
+git ls-files -v alp-sdk-upstream          # a leading `S` means skip-worktree
+git update-index --no-skip-worktree alp-sdk-upstream
+
+git add -A
+pnpm run format:check && pnpm run typecheck && node --test test/*.test.js
+pnpm run package   # builds the .vsix against the new schema
 ```
+
+Then record the release in `docs/COMPATIBILITY_RULES.md` §5 — that log is the
+only thing tracking which upstream releases were assessed, and two re-vendors
+(v0.13.0, v0.14.0) shipped without an entry before this was written down.
 
 ## Build
 

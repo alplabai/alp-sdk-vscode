@@ -3,7 +3,7 @@
   "displayName": "Alp IDE",
   "packageManager": "pnpm@11.1.0",
   "description": "First-class IDE support for Alp SDK projects: board.yaml schema-aware editing, alp_project.py loader commands, per-OS dependency bootstrap, and west build/flash/run workflows.",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "publisher": "AlpLabAI",
   "license": "Apache-2.0",
   "repository": {
@@ -42,6 +42,7 @@
     "onCommand:alp.openExistingProject",
     "onLanguage:yaml",
     "onTaskType:alp",
+    "onDebugResolve:cortex-debug",
     "workspaceContains:**/board.yaml",
     "workspaceContains:**/prj*.conf"
   ],
@@ -205,11 +206,6 @@
         "category": "Alp"
       },
       {
-        "command": "alp.westAlpRenode",
-        "title": "Alp: Run in Renode (simulate)",
-        "category": "Alp"
-      },
-      {
         "command": "alp.openConfigurator",
         "title": "Alp: Open board configurator (GUI)",
         "category": "Alp",
@@ -236,6 +232,16 @@
         "title": "Alp: Preview build plan",
         "category": "Alp",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "alp.openModelsPanel",
+        "title": "Alp: Models",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.buildModel",
+        "title": "Alp: Build Model",
+        "category": "Alp"
       },
       {
         "command": "alp.openGettingStarted",
@@ -269,6 +275,11 @@
       {
         "command": "alp.newProjectWizard",
         "title": "Alp: New project wizard",
+        "category": "Alp"
+      },
+      {
+        "command": "alp.installShellCompletion",
+        "title": "Alp: Install tan shell completion",
         "category": "Alp"
       },
       {
@@ -416,6 +427,14 @@
         {
           "command": "alp.toolchainDoctor",
           "when": "false"
+        },
+        {
+          "command": "alp.openModelsPanel",
+          "when": "false"
+        },
+        {
+          "command": "alp.buildModel",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -476,7 +495,7 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "description": "Path to the alp-sdk repository checkout.  When empty, the extension searches the workspace for the SDK root (a directory containing scripts/alp_project.py)."
+          "description": "Path to the alp-sdk repository checkout.  When empty, the extension searches the workspace for the SDK root (a directory containing scripts/alp_project.py), and may pin this setting to what `tan sdk current` resolves the first time a bootstrap finishes with nothing pinned yet.  Once set, bootstrapping never changes this value automatically."
         },
         "alpSdk.pythonPath": {
           "type": "string",
@@ -500,7 +519,7 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a `tan` on PATH whose `--version` identifies it as a native build, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/target/release/tan`) to override."
+          "description": "Path to the native `tan` CLI binary. When empty, the extension resolves its own managed copy first (a bundled binary, a locally built sibling `tan-cli` checkout, or a previously downloaded copy cached in global storage), then a `tan` on PATH whose `--version` identifies it as a native build, and only then downloads the matching release into global storage. Point this at a local dev build (e.g. `../tan-cli/python/dist/tan/tan`, where `cd python && bash scripts/build_binary.sh` puts its freeze) to override."
         },
         "alpSdk.preferGlobalCli": {
           "type": "boolean",
@@ -537,6 +556,8 @@
     "compile": "tsc --build && pnpm --filter ./packages/alp-webview run build",
     "vendor:kconfig-metadata": "node scripts/vendor-kconfig-metadata.mjs",
     "contract:fetch": "node scripts/fetch-tan-contract.mjs",
+    "surface:extract": "node scripts/tan-surface/extract.mjs",
+    "surface:fetch": "node scripts/tan-surface/fetch.mjs",
     "compile:watch": "tsc --build --watch",
     "typecheck": "tsc --noEmit -p packages/alp-core --tsBuildInfoFile node_modules/.cache/alp-core.typecheck.tsbuildinfo && tsc --noEmit -p tsconfig.json && pnpm --filter ./packages/alp-webview run typecheck",
     "bundle:ext": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --format=cjs --sourcemap && esbuild src/lsp/server.ts --bundle --platform=node --target=node18 --outfile=out/lsp/server.js --format=cjs --sourcemap && node -e \"require('fs').rmSync('tsconfig.tsbuildinfo',{force:true})\"",
@@ -550,7 +571,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "pnpm run compile && pnpm run bundle:ext && node test/e2e/runTest.js",
-    "test:e2e:cli": "node scripts/run-bash.mjs test/e2e/cli-smoke.sh",
+    "test:e2e:cli:manual": "node scripts/run-bash.mjs test/e2e/cli-smoke.sh",
     "test:e2e:webview": "node test/webview/run.mjs"
   },
   "pnpm": {

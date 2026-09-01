@@ -33,6 +33,7 @@ import {
   writeSupportBundle,
 } from "./debug/vscodeAdapter";
 import { readSvdPath } from "./project/vscodeAdapter";
+import { consumeDebugConsentDeclined } from "./debug/consentDecline";
 import {
   readLaunchJsonDocument,
   writeLaunchJsonDocument,
@@ -46,8 +47,10 @@ import {
 import { ALL_EMIT_MODES, createLoaderPlan } from "@alp-sdk/core/loader/service";
 import { runAlpCommand } from "./alpCli/vscodeAdapter";
 import {
+  DEBUG_CONFIG_INVALID_ARGUMENT_CODE,
   DebugConfigData,
   SUPPORTED_CLI_VERSION,
+  hasIssueCode,
   isDebugConfigData,
 } from "./alpCli/service";
 import { ensureNativeSimOverlay } from "./west";
@@ -278,11 +281,16 @@ async function writeLaunchProfile(
   // than opened a second time, and the preview/write pair must see the same
   // value or the preview stops previewing the command that actually runs.
   const svdPath = readSvdPath();
+  // Shared across both calls below so an advisory tan repeats on both the
+  // preview and the real write (#611 follow-up) is logged once, not twice,
+  // for what is one logical "configure debug profile" action.
+  const loggedAdvisories = new Set<string>();
 
   const preview = await runDebugConfig(
     extensionContext,
     context.workspaceRoot,
     debugConfigArgs(spec, { preview: true, svdPath }),
+    loggedAdvisories,
   );
   if (!preview) return null;
 
@@ -291,6 +299,7 @@ async function writeLaunchProfile(
     extensionContext,
     context.workspaceRoot,
     debugConfigArgs(spec, { svdPath }),
+    loggedAdvisories,
   );
   if (!written) return null;
 
@@ -350,11 +359,22 @@ async function writeLaunchProfile(
  *  CLI's own complaint (a bad flag, an unreadable `launch.json`). A zero exit
  *  whose payload has no `configuration` is version skew — `outcome.message` is
  *  literally "Command completed." there, so reporting it as the failure reason
- *  tells the user the command both failed and succeeded. */
+ *  tells the user the command both failed and succeeded.
+ *
+ *  `loggedAdvisories` de-dupes the advisory-logging loop below ACROSS the two
+ *  calls one `writeLaunchProfile` run makes (`--preview` then the real
+ *  write) — adversarial review (#611 follow-up) found tan's own registry
+ *  names at least two `debug-config.*` codes that fire on BOTH
+ *  (`sdk-identity-key-absent`, `gdbserver-address-unresolved`), which without
+ *  this doubled the channel line for one logical "configure debug profile"
+ *  action. Callers that make only ONE call (`previewMaintainedConfigName`)
+ *  pass a fresh `Set()` — there is nothing to de-dupe against, but the
+ *  signature stays uniform rather than branching on call count. */
 async function runDebugConfig(
   extensionContext: vscode.ExtensionContext,
   cwd: string,
   args: string[],
+  loggedAdvisories: Set<string>,
 ): Promise<DebugConfigData | null> {
   const outcome = await vscode.window.withProgress(
     {
@@ -389,8 +409,27 @@ async function runDebugConfig(
     // `--pre-launch-task` is present and `--core` may not be, because
     // `resolveManifestSlice` finds no slice before the first build — reporting
     // tan's raw complaint with no hint that the CLI is what needs updating.
+    // ...UNLESS tan named the offending argument itself. A
+    // `debug-config.invalid-argument` issue is tan saying "this VALUE is
+    // wrong", which is definitionally not version skew: the flag WAS
+    // recognised. Measured on the pinned 0.6.0, an unreadable `--svd` is
+    // exactly this -- `ok:false, exitCode:2` (so `kind` is `"validation"`)
+    // carrying `debug-config.invalid-argument`. Without this suppression the
+    // customer is told to update a CLI that is already current, and the real
+    // remedy below never shows. A tan too old to know the flag at all sends
+    // `cli.parse-error` instead -- a DIFFERENT code on an envelope of the same
+    // shape and the same exit 2 -- so the skew hint still fires there, which is
+    // the right remedy for an unrecognised flag. Both stale-tan shapes are
+    // pinned in test/debug.svdFailureHint.test.js: the no-envelope one and the
+    // `cli.parse-error` one. The second is the load-bearing case -- a guard
+    // reading "any issue at all" passes every other test in that file.
+    const namedBadArgument = hasIssueCode(
+      outcome.envelope,
+      DEBUG_CONFIG_INVALID_ARGUMENT_CODE,
+    );
     const skew =
       outcome.kind === "validation" &&
+      !namedBadArgument &&
       (args.includes("--core") || args.includes("--pre-launch-task"))
         ? ` This extension requires tan ${SUPPORTED_CLI_VERSION} or newer; run "Alp: Update CLI" and retry.`
         : "";
@@ -401,21 +440,26 @@ async function runDebugConfig(
     // launch.json at all, not even one missing the SVD key — so without this
     // hint the symptom is indistinguishable from "debug is broken" (#340).
     //
-    // Narrowed to `outcome.kind === "internal"` (exit 5) — driven against the
-    // pinned tan (`internal_failure`/`ExitCode::InternalFailure` in
-    // `crates/tan-cli/src/commands/debug_config.rs`), BOTH `--svd` failure
-    // modes (empty-after-trim, unreadable file) land there, and it is
-    // structurally disjoint from `skew`'s `"validation"` check above — so the
-    // two hints can never both fire for the same failure. That disjointness
-    // is what makes the wide "any failure while --svd is on the argv" version
-    // wrong rather than merely imprecise: a customer on a stale tan with a
-    // perfectly good `alpSdk.svdPath` who presses F5 gets exit 2 (`--svd`
-    // unrecognised) — `skew` correctly fires ("update tan"), and the WIDE svd
-    // hint fired too, offering an Open Settings button for a setting that was
-    // never the problem, with the wrong remedy the more actionable-looking
-    // one. Narrowing to `internal` suppresses it on that path.
+    // Two accepted shapes, and NOT "any failure while --svd is on the argv".
+    // The wide version double-fires on a stale tan that does not recognise
+    // `--svd` at all: `skew` correctly says "update tan", and an Open Settings
+    // button for a setting that was never the problem shows next to it as the
+    // more actionable-looking remedy.
+    //
+    // - `debug-config.invalid-argument` is what the PINNED tan 0.6.0 returns,
+    //   at exit 2. This is the shape that actually ships.
+    // - `outcome.kind === "internal"` (exit 5) is kept for the older tan that
+    //   landed both `--svd` failure modes (empty-after-trim, unreadable file)
+    //   there. That arm was measured against `ExitCode::InternalFailure` in
+    //   the RETIRED Rust oracle; 0.6.0 is Python and no longer uses it, so on
+    //   the pinned CLI it is legacy cover, not the live path -- which is why
+    //   an `internal`-only guard silently stopped firing at all.
+    //
+    // Still disjoint from `skew`: the invalid-argument code suppresses it
+    // above, and exit 5 was never a `"validation"` kind.
     const svdHint =
-      outcome.kind === "internal" && args.includes("--svd")
+      (outcome.kind === "internal" || namedBadArgument) &&
+      args.includes("--svd")
         ? " If alpSdk.svdPath is set, check that it names a file that exists and is readable — tan refuses to write launch.json at all otherwise."
         : "";
     await notify(
@@ -432,6 +476,37 @@ async function runDebugConfig(
       }),
     );
     return null;
+  }
+
+  // tan's `debug-config` can report SUCCESS (`ok: true`) alongside advisory
+  // issues -- a migrated legacy launch.json entry, a dropped comment, an SDK
+  // identity value it overwrote or could not resolve. Reading only `data`
+  // dropped every one of them: the customer got a launch.json with no sign
+  // tan had any reservations about it (#611). Logged, not toasted -- this
+  // runs on the in-process PREVIEW too, which the customer never asked to see
+  // a popup for, and `showOutput()` already sends the curious to this same
+  // channel. No single code to match: unlike `presets`, tan's advisories here
+  // are a family of distinct, mostly `info`-severity codes with no one
+  // "degraded but ok" spelling to standardize on, so every issue is logged
+  // rather than matched by code.
+  //
+  // DELIBERATE CHOICE, not an oversight: this binds MESSAGE PROSE, never a
+  // code -- every `debug-config.*` issue in tan's registry is `"status":
+  // "reserved", "consumer": "none"` (`test/golden/tan-contract/envelope-
+  // contract.json`; `debug-config.gdbserver-address-unresolved`'s own note
+  // reads "reserved for alp-sdk-vscode to surface this notice ... Promote to
+  // `frozen` the moment a consumer binds to it"). Matching on `.code` would
+  // register a consumer and, per that note, be the correct next step -- but
+  // it would also mean picking ONE code to bind per advisory today rather
+  // than surfacing whichever tan actually sends, and would need six-plus new
+  // `test/tanContract.test.js` `GATED_CODES` entries for codes this repo does
+  // not yet need to distinguish from one another. Prose is a WEAKER contract
+  // than a code (tan may reword it between pins with nothing here noticing),
+  // which is the trade this loop makes on purpose, not by accident.
+  for (const issue of outcome.envelope?.issues ?? []) {
+    if (!issue.message || loggedAdvisories.has(issue.message)) continue;
+    loggedAdvisories.add(issue.message);
+    log(`[debug-config] ${issue.severity}: ${issue.message}`);
   }
 
   const data = outcome.envelope?.data;
@@ -718,6 +793,9 @@ async function previewMaintainedConfigName(
       { targetKind: "zephyr-mcu", server: "jlink", coreId: null },
       { preview: true },
     ),
+    // A single call — nothing to de-dupe against, but `runDebugConfig`'s
+    // signature stays uniform rather than branching on call count.
+    new Set<string>(),
   );
   return preview?.configuration.name ?? null;
 }
@@ -831,7 +909,10 @@ async function startDebugging(context: vscode.ExtensionContext): Promise<void> {
     samePath(candidate.uri.fsPath, result.workspaceRoot),
   );
   const started = await vscode.debug.startDebugging(folder, result.configName);
-  if (!started) {
+  // A launch the customer refused at the device-write gate (#586) also comes
+  // back false. That is not a failure and must not be reported as one — the
+  // gate has already said what happened, on its own terms.
+  if (!started && !consumeDebugConsentDeclined(result.configName)) {
     // The presenter logs this and appends "Show Output"; the message itself
     // points at the Debug Console / launch.json, so don't also force-open the
     // Alp SDK channel here.

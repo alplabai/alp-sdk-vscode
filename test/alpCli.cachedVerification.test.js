@@ -1291,7 +1291,7 @@ test("#396 the heal is NARROW: cliPath / localBuild / bundled keep an un-digeste
       return { config: { "alpSdk.cliPath": chosen } };
     },
     localBuild: (home) => {
-      const dir = path.join(home.dir, "tan-cli", "target", "release");
+      const dir = path.join(home.dir, "tan-cli", "python", "dist", "tan");
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, BINARY), GOOD);
       return {};
@@ -1633,7 +1633,7 @@ test("#396 nothing to heal: a fresh install and a localBuild developer are uncha
   // and no cache: `localBuild` resolves, and it is theirs, not ours.
   const dev = extensionHome();
   try {
-    const localBuild = path.join(dev.dir, "tan-cli", "target", "release");
+    const localBuild = path.join(dev.dir, "tan-cli", "python", "dist", "tan");
     fs.mkdirSync(localBuild, { recursive: true });
     fs.writeFileSync(path.join(localBuild, BINARY), GOOD);
     const { adapter, plans } = loadAdapter({ releaseAsset: OFFLINE_ASSET });
@@ -1646,6 +1646,62 @@ test("#396 nothing to heal: a fresh install and a localBuild developer are uncha
     );
   } finally {
     dev.cleanup();
+  }
+});
+
+// The `localBuild` rung looked for `tan-cli/target/{release,debug}/tan` —
+// cargo output — long after tan-cli stopped being Rust (no Cargo.toml since
+// v0.5.0, tan-cli#269). It could not match any checkout the pin wants, so a
+// developer's own build was silently skipped in favour of a download. Both
+// paths are staged here so the assertion names WHICH one wins: a revert to the
+// cargo shape reds because the command is the cargo path, and dropping the
+// python path reds because nothing resolves as `localBuild` at all.
+test("the localBuild rung resolves tan-cli's PyInstaller freeze, not a cargo target/ path", async () => {
+  const dev = extensionHome();
+  try {
+    const frozen = path.join(dev.dir, "tan-cli", "python", "dist", "tan");
+    const cargo = path.join(dev.dir, "tan-cli", "target", "release");
+    for (const dir of [frozen, cargo]) {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, BINARY), GOOD);
+    }
+    const { adapter } = loadAdapter({ releaseAsset: OFFLINE_ASSET });
+    const resolved = await adapter.resolveAlpBinaryForContext(dev.context);
+    assert.equal(resolved.source, "localBuild");
+    assert.equal(
+      resolved.command.includes(`${path.sep}target${path.sep}`),
+      false,
+      `resolved a cargo target/ path (${resolved.command}) — tan-cli has published no such build since v0.5.0`,
+    );
+    assert.equal(resolved.command, path.join(frozen, BINARY));
+  } finally {
+    dev.cleanup();
+  }
+
+  // The staging above proves ordering, not exclusion: a cargo candidate
+  // re-added BELOW the freeze would still lose and keep this green. So assert
+  // the harder half separately — with the cargo path as the only thing on
+  // disk, nothing may resolve as `localBuild` at all.
+  const stale = extensionHome();
+  try {
+    const cargo = path.join(stale.dir, "tan-cli", "target", "release");
+    fs.mkdirSync(cargo, { recursive: true });
+    fs.writeFileSync(path.join(cargo, BINARY), GOOD);
+    const { adapter } = loadAdapter({ releaseAsset: OFFLINE_ASSET });
+    let source = null;
+    try {
+      source = (await adapter.resolveAlpBinaryForContext(stale.context)).source;
+    } catch {
+      // Offline with nothing resolvable — the expected outcome, and already
+      // proof that the cargo tree was not adopted.
+    }
+    assert.notEqual(
+      source,
+      "localBuild",
+      "a cargo target/ tree was adopted as a local build; tan-cli has not produced one since v0.5.0",
+    );
+  } finally {
+    stale.cleanup();
   }
 });
 

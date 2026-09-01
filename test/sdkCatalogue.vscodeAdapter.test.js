@@ -12,8 +12,15 @@ function writeTree(root) {
   fs.mkdirSync(path.join(m, "boards"), { recursive: true });
   fs.mkdirSync(path.join(m, "chips"), { recursive: true });
   fs.mkdirSync(path.join(m, "socs", "alif", "ensemble"), { recursive: true });
-  fs.mkdirSync(path.join(m, "library-profiles", "etl"), { recursive: true });
-  fs.mkdirSync(path.join(m, "library-profiles", "fmt"), { recursive: true });
+  // The library vocabulary is the canonical manifests, not the build profiles
+  // — see configurator.libraryVocabulary.test.js. `library-profiles/` is still
+  // written here so the scan is proven to ignore it.
+  fs.mkdirSync(path.join(m, "libraries"), { recursive: true });
+  fs.writeFileSync(path.join(m, "libraries", "etl.yaml"), "name: etl\n");
+  fs.writeFileSync(path.join(m, "libraries", "fmt.yaml"), "name: fmt\n");
+  fs.mkdirSync(path.join(m, "library-profiles", "cmsis_dsp"), {
+    recursive: true,
+  });
 
   fs.writeFileSync(
     path.join(m, "e1m_modules", "E1M-AEN801.yaml"),

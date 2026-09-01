@@ -220,8 +220,86 @@ test("an https download is tunnelled with CONNECT through the proxy", async () =
         //    segment with the 200), so it only reaches the handshake if those
         //    bytes are unshifted back onto the socket. Without that the
         //    handshake waits for a ServerHello it has already been sent.
+        // ONE write, so the two really do share a segment. Two writes usually
+        // coalesce and usually did — but "usually" made this test a coin flip
+        // that came up tails on 2026-08-16 (#511), and the tails case is now a
+        // test of its own below rather than a rare red here.
+        socket.write(
+          Buffer.concat([
+            Buffer.from("HTTP/1.1 200 Connection Established\r\n\r\n"),
+            TLS_FATAL_ALERT,
+          ]),
+        );
+      },
+    },
+    async (proxyUrl, seen) => {
+      const { dest } = tmpDest();
+      const rejection = await downloadFile(
+        `https://127.0.0.1:${dead}/asset`,
+        dest,
+        null,
+        { proxy: { proxy: proxyUrl, env: {} } },
+      ).then(
+        () => null,
+        (error) => error,
+      );
+      assert.ok(rejection, "a bad tunnel must not resolve");
+      assert.deepEqual(
+        seen.connects,
+        [`127.0.0.1:${dead}`],
+        "the proxy must be asked to CONNECT to the target authority",
+      );
+      assert.ok(rejection instanceof ProxyError, `got ${rejection.name}`);
+      // The DISCRIMINATING text, not `http.proxyStrictSSL` — both TLS
+      // sentences name that setting (one to offer it, one to say it will not
+      // help), so matching on it alone passes even when the failure lands on
+      // the wrong branch entirely.
+      assert.match(
+        rejection.message,
+        /certificate it served isn't trusted here/,
+        // The errno goes in the failure text on purpose. When this went red
+        // once for real, the report carried only `message`, and the errno that
+        // would have named the cause in one line was gone — it took a fleet of
+        // measurements to get back what `detail` had all along.
+        `a TLS failure INSIDE the tunnel names the setting that accepts it — detail: ${rejection.detail}`,
+      );
+      assert.doesNotMatch(
+        rejection.message,
+        /will not help/,
+        "that is the sibling TLS sentence — this failure IS about a certificate",
+      );
+      assert.doesNotMatch(
+        rejection.message,
+        /refused the connection/,
+        "that wording would mean the request bypassed the tunnel",
+      );
+    },
+  );
+});
+
+// The SAME fatal alert, delivered in a separate write a tick later, so it
+// cannot arrive as the CONNECT response's `head`.
+//
+// This is not a hypothetical. It is what the intermittent red of #511 was:
+// with the alert in `head`, `tls.connect` reads it and Node reports
+// `ERR_SSL_SSL/TLS_ALERT_HANDSHAKE_FAILURE`; without it, the client's own
+// ClientHello write is still pending when the alert lands and Node reports the
+// identical OpenSSL condition as `EPROTO`, whose message — not code — carries
+// the TLS text. One condition, two spellings, and only one of them used to
+// reach the remedy.
+//
+// The customer this protects is not a test runner: behind a TLS-inspecting
+// corporate proxy the same two spellings occur, and the EPROTO one used to say
+// "check the http.proxy setting" about a proxy that was answering perfectly.
+test("a TLS alert delivered after the CONNECT response still names http.proxyStrictSSL", async () => {
+  const dead = await closedPort();
+  await withProxy(
+    {
+      connect: (_req, socket) => {
         socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-        socket.write(TLS_FATAL_ALERT);
+        // A later macrotask, so the segments cannot merge. 25 ms is far below
+        // any timeout here and far above the loopback round trip.
+        setTimeout(() => socket.write(TLS_FATAL_ALERT), 25);
       },
     },
     async (proxyUrl, seen) => {
@@ -244,14 +322,95 @@ test("an https download is tunnelled with CONNECT through the proxy", async () =
       assert.ok(rejection instanceof ProxyError, `got ${rejection.name}`);
       assert.match(
         rejection.message,
-        /http\.proxyStrictSSL/,
-        "a TLS failure INSIDE the tunnel names the setting that accepts it",
+        /certificate it served isn't trusted here/,
+        `the late alert must reach the same remedy as the coalesced one — detail: ${rejection.detail}`,
+      );
+      // The precise regression: this is the sentence the EPROTO spelling used
+      // to get, and it points at a setting that is not the problem.
+      assert.doesNotMatch(
+        rejection.message,
+        /Couldn't reach the proxy/,
+        "the proxy answered the CONNECT — blaming reachability is the bug",
+      );
+      // And it must not have swung to the OTHER TLS sentence either. Both
+      // contain `http.proxyStrictSSL`, so only this tells them apart.
+      assert.doesNotMatch(
+        rejection.message,
+        /will not help/,
+        "an alert IS a certificate-shaped failure; the toggle is the remedy",
+      );
+    },
+  );
+});
+
+// The third branch, end to end: the proxy opens the tunnel and then answers in
+// plain http. The handshake gets HTTP bytes where a ServerHello belongs and
+// fails with `ERR_SSL_WRONG_VERSION_NUMBER` — a code containing `SSL`, which
+// is how it used to be reported as an untrusted certificate.
+//
+// This is a filtering appliance or a captive portal, not an exotic case, and
+// the advice it used to draw was actively harmful: `http.proxyStrictSSL` is a
+// GLOBAL setting, so a reader who turns it off, fails again and leaves it off
+// has loosened every extension's traffic for a problem certificates never
+// touched.
+test("a tunnel that answers in plain http says the TLS layer failed, not the certificate", async () => {
+  const dead = await closedPort();
+  await withProxy(
+    {
+      connect: (_req, socket) => {
+        socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        // Now speak http INSIDE the tunnel, where TLS is expected.
+        setTimeout(
+          () =>
+            socket.write("HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n"),
+          25,
+        );
+      },
+    },
+    async (proxyUrl, seen) => {
+      const { dest } = tmpDest();
+      const rejection = await downloadFile(
+        `https://127.0.0.1:${dead}/asset`,
+        dest,
+        null,
+        { proxy: { proxy: proxyUrl, env: {} } },
+      ).then(
+        () => null,
+        (error) => error,
+      );
+      assert.ok(rejection, "a tunnel to a non-TLS peer must not resolve");
+      assert.deepEqual(seen.connects, [`127.0.0.1:${dead}`]);
+      assert.ok(rejection instanceof ProxyError, `got ${rejection.name}`);
+      assert.match(
+        rejection.message,
+        /failed in the TLS layer, before any certificate was judged/,
+        `detail: ${rejection.detail}`,
+      );
+      // The whole point of the branch: it must SAY the toggle is not the
+      // answer, because the reader will reach for it otherwise.
+      assert.match(rejection.message, /will not help/);
+      assert.doesNotMatch(
+        rejection.message,
+        /certificate it served isn't trusted here/,
+        "no certificate was ever judged — offering to accept one is the bug",
       );
       assert.doesNotMatch(
         rejection.message,
-        /refused the connection/,
-        "that wording would mean the request bypassed the tunnel",
+        /Couldn't reach the proxy/,
+        "the proxy answered the CONNECT",
       );
+
+      // Same end-of-wire check the 407 and socks sentences carry: an errno, an
+      // exit code or a scheme-bearing URL in `cause` silently demotes the
+      // toast to "Updating the tan CLI failed." and buries this explanation
+      // behind a Show Output click (#368).
+      const plan = planFailure({
+        operation: "Updating the tan CLI",
+        cause: rejection.message,
+        detail: rejection.detail,
+        actions: [{ id: "openSettings", arg: "http.proxy" }],
+      });
+      assert.equal(plan.message, rejection.message);
     },
   );
 });

@@ -8,7 +8,13 @@ import {
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
-import { runAlpCommand } from "../alpCli/vscodeAdapter";
+import { fetchEnvelopeResult } from "../alpCli/envelope";
+import { readOnlyProjectCwd } from "../project/vscodeAdapter";
+import { resolveAlpBinaryForContext } from "../alpCli/vscodeAdapter";
+import {
+  PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+  unresolvedSdkReason,
+} from "../alpCli/service";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { reportError } from "../notify/vscodeAdapter";
 import { resolveSlice } from "./buildConfig";
@@ -16,6 +22,7 @@ import { isPrjConfPath } from "./kconfig";
 import type { KconfigSymbol } from "./kconfig";
 import { catalogFromPresets, fetchKconfigSymbolsForCore } from "./sdkCatalog";
 import type { SdkCompletionCatalog } from "./sdkCatalog";
+import { log } from "../util";
 
 let client: LanguageClient | undefined;
 const PREVIEW_EFFECTIVE_CONFIG_COMMAND = "alp.lsp.previewEffectiveConfig";
@@ -110,18 +117,69 @@ async function pushSdkCatalog(context: vscode.ExtensionContext): Promise<void> {
   if (!client) {
     return;
   }
-  const [presetsData, kconfigByCore] = await Promise.all([
-    fetchEnvelopeData(context, ["presets"]),
+  const [presetsResult, kconfigByCore] = await Promise.all([
+    // `readOnlyProjectCwd()`, not an omitted cwd (#605): `tan presets`
+    // resolves its SDK from cwd and reports an UNRESOLVED one as a SUCCESS
+    // (`alpCli/envelope.ts`), so the catalogue this pushes to the language
+    // server would silently be the answer for the extension host's own
+    // directory rather than the customer's project — and empty-because-wrong-
+    // cwd is indistinguishable from empty-because-no-SDK at the call site.
+    fetchEnvelopeResult(context, ["presets"], readOnlyProjectCwd()),
     fetchOpenPrjConfKconfig(context),
   ]);
+  // Shared with the other two `presets` readers (`configurator/
+  // customEditor.ts`, `ideHub/newProjectFlowPanel.ts`) through the same
+  // constant + function, rather than this site dropping `issues[]` outright
+  // the way the old data-only helper did (#611). Logged, not toasted: this is
+  // a background refresh (LSP start, an `alpSdk` settings edit, a prj.conf
+  // opening), never something the customer directly asked for.
+  const presetsUnresolvedReason = unresolvedSdkReason(
+    { issues: presetsResult.issues },
+    PRESETS_SDK_ROOT_UNRESOLVED_CODE,
+  );
+  if (presetsUnresolvedReason) {
+    log(`[lsp] presets: ${presetsUnresolvedReason}`);
+  }
   const catalog: SdkCompletionCatalog = {
-    ...catalogFromPresets(presetsData),
+    ...catalogFromPresets(presetsResult.data),
     kconfigByCore,
   };
   try {
     await client.sendNotification("alp/updateSdkCatalog", catalog);
   } catch {
     // Best-effort — the server keeps its current catalog.
+  }
+  await pushCliPath(context);
+}
+
+/**
+ * Tell the server which `tan` to validate board.yaml with.
+ *
+ * The server cannot work this out for itself: resolution lives in
+ * `alpCli/vscodeAdapter.ts`, which imports `vscode`, and the server runs in its
+ * own process with no such module. Pushed alongside the catalog so the same
+ * events refresh it — LSP start, an `alpSdk` settings edit, a prj.conf opening.
+ *
+ * Non-interactive for the same reason `fetchEnvelopeResult` is: none of those
+ * events is the customer asking to download a CLI, and an interactive
+ * resolution would pop ADR 0021's consent modal out of opening an editor tab.
+ * When nothing resolves, `null` is pushed and the server shells the SDK's
+ * Python validator exactly as it did before.
+ */
+async function pushCliPath(context: vscode.ExtensionContext): Promise<void> {
+  if (!client) {
+    return;
+  }
+  let command: string | null = null;
+  try {
+    command = (await resolveAlpBinaryForContext(context)).command;
+  } catch {
+    command = null;
+  }
+  try {
+    await client.sendNotification("alp/updateCliPath", command);
+  } catch {
+    // Best-effort — the server keeps whatever it last knew.
   }
 }
 
@@ -157,32 +215,29 @@ async function fetchOpenPrjConfKconfig(
         slice.coreId,
         path.dirname(slice.boardYamlPath),
         (coreId, cwd) =>
-          fetchEnvelopeData(context, ["kconfig", "--core", coreId], cwd),
+          fetchEnvelopeResult(context, ["kconfig", "--core", coreId], cwd).then(
+            (result) => {
+              // No single shared code to check here the way `presets` has
+              // `presets.sdk-root-unresolved`: `kconfig.*` is a family of
+              // distinct error codes (no-sdk-root, board-yaml-missing,
+              // core-ambiguous, …) with no one "degraded but ok" advisory to
+              // standardize on, so every issue is logged rather than matched
+              // (#611) — this call already degrades to an empty symbol set on
+              // failure; only the CHANNEL LINE explaining why is new.
+              for (const issue of result.issues) {
+                if (!issue.message) continue;
+                log(
+                  `[lsp] kconfig --core ${coreId}: ${issue.severity}: ${issue.message}`,
+                );
+              }
+              return result.data;
+            },
+          ),
       );
       return [key, symbols] as const;
     }),
   );
   return Object.fromEntries(entries);
-}
-
-/** Run a CLI envelope command and return its `data`, or `undefined` on any
- *  failure (unresolvable binary, unknown subcommand, non-zero exit, …). */
-async function fetchEnvelopeData(
-  context: vscode.ExtensionContext,
-  args: string[],
-  cwd?: string,
-): Promise<unknown> {
-  try {
-    // Deliberately NOT `{ interactive: true }`: `pushSdkCatalog` (its only
-    // caller) fires on LSP start, on every `alpSdk` settings edit, and on
-    // opening any prj.conf — none of those is the customer asking to
-    // download a tan CLI, so an interactive resolution here would pop ADR
-    // 0021's consent modal out of opening an editor tab.
-    const { outcome } = await runAlpCommand(context, args, cwd);
-    return outcome.envelope?.data;
-  } catch {
-    return undefined;
-  }
 }
 
 export async function stopLanguageServer(): Promise<void> {

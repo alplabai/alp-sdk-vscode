@@ -25,6 +25,8 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const Module = require("node:module");
 
+const { SUPPORTED_CLI_VERSION } = require("../out/alpCli/service.js");
+
 const root = path.join(__dirname, "..");
 
 /** Require `relPath` out of `out/` with `stubs` standing in for the requires
@@ -55,7 +57,10 @@ function loadDepsAdapter(overrides = {}) {
     "../alpCli/vscodeAdapter": {},
     "../alpCli/doctor": {},
     "../notify/vscodeAdapter": { notifyAsync() {} },
-    "../project/vscodeAdapter": {},
+    // `readOnlyProjectCwd` (#605) is `latestSdkTag`'s replacement for a bare
+    // `undefined` cwd on the `sdk list` spawn; none of the tests below assert
+    // on the exact value, only that a spawn happens and with which flags.
+    "../project/vscodeAdapter": { readOnlyProjectCwd: () => "/proj" },
     "../toolchain": {},
     "../util": { log() {} },
     ...overrides,
@@ -63,21 +68,78 @@ function loadDepsAdapter(overrides = {}) {
 }
 
 /**
- * The two doctor envelopes a REAL `tan 0.4.0` printed on a Windows 11 host,
- * captured with `tan doctor --format json` and `tan doctor --build --format
- * json` and committed verbatim except for two redactions: the home directory's
- * account name and the temp directory the no-project run was launched in.
+ * A REAL `tan doctor` envelope from the PINNED binary, captured with
+ * `COLUMNS=200 tan --format json doctor` inside a project and committed
+ * verbatim except for one redaction: every absolute path is rewritten onto
+ * `/home/dev`.
  *
- * They are here because the split this file asserts is a claim about tan, not
- * about a stub: that four host checks — `longPaths`, `homePath`,
- * `zephyrSdkHost`, `hostPrerequisites` — exist ONLY on plain `doctor`, and that
- * `--build` alone can therefore never report them. tan says so in
- * `doctor.rs`'s `append_host_environment` ("`--build` deliberately does NOT get
- * them"); these files are that sentence, measured.
+ * RESOLVED FROM `SUPPORTED_CLI_VERSION`, not a hardcoded filename, for the
+ * same reason `test/deps.projectScope.test.js` derives its own copy that way:
+ * a pin bump is a doctor-envelope change (check names, the `scope`
+ * vocabulary, and which checks are project-scoped all move with it), and a
+ * hardcoded literal would leave this whole file reading a superseded
+ * binary's envelope with nothing to say so.
+ *
+ * It is here because the split this file asserts is a claim about tan, not
+ * about a stub. tan SCOPES each check itself — `"scope": "project"` or
+ * `"scope": "host"` on all fourteen — and that field is what decides which
+ * rows are withheld with no folder open. Six are project-scoped
+ * (`sdk`, `boardYaml`, `workspace`, `westResolved`, `pythonFloor`,
+ * `sdkProvenance`) and eight are host-scoped; note that `sdkProvenance` is one
+ * the retired hand list never named, which is the whole argument for reading
+ * tan's answer instead of maintaining our own. `zephyrWorkspace`, which used
+ * to be the second such check in the rc1 capture this replaced, is not on the
+ * wire in THIS capture at all — it depends on a bootstrapped Zephyr workspace
+ * being present, and this one was taken against a project that has an SDK
+ * resolved but no workspace bootstrapped yet. A check's presence in the
+ * checks array is itself state-dependent, not just its status.
  */
-const REAL_PLAIN = require("./fixtures/tan-doctor.v0.4.0.windows.json").data;
-const REAL_BUILD =
+const REAL_PINNED = require(
+  `./fixtures/tan-doctor.v${SUPPORTED_CLI_VERSION}.darwin.json`,
+).data;
+
+/**
+ * A REAL `tan 0.4.0` plain-`doctor` envelope from a Windows 11 host, same
+ * redaction rules, kept for ONE thing: it has no `scope` on any check, so it
+ * is the only way to exercise `LEGACY_PROJECT_CHECKS` — the fallback that runs
+ * when `alpSdk.cliPath` points at a binary older than the contract. Its
+ * `longPaths` row is also the concrete #472 customer: `LongPathsEnabled = 0`
+ * is the stock Windows default and the build then dies in CMake complaining
+ * about a file that exists.
+ *
+ * IT NO LONGER REACHES A TABLE, and that is the point of it now: it carries no
+ * per-tool PATH probe at all, so `buildDependencyReport` refuses it outright
+ * (`carriesToolchainProbes`) rather than rendering the twelve rows that are
+ * there and none of the nine that are not. See "a tan whose doctor reports no
+ * host tool at all is refused" below. What it is still driven through directly
+ * is the PURE planner, which is where the no-allowlist rule actually lives.
+ */
+const REAL_LEGACY = require("./fixtures/tan-doctor.v0.4.0.windows.json").data;
+
+/**
+ * The `--build` half of that same v0.4.0 capture, back in this file for a
+ * DIFFERENT reason than the one it was removed for.
+ *
+ * It was here to prove that four host checks reached the table only through a
+ * second spawn; there is no second spawn any more (#544). It is here now
+ * because it is the only real envelope that is BOTH pre-contract (no `scope`
+ * on any check, so `LEGACY_PROJECT_CHECKS` is exercised) and carrying the
+ * per-tool probes the table is built from (`git`, `python`, `cmake`, `ninja`,
+ * `dtc`, `gperf`, `zephyrSdk`, `yoctoHost`, `vendorToolchain`) — i.e. an
+ * envelope the toolchain-probe guard admits. The two properties are genuinely
+ * independent, and this fixture is the proof: an old binary is not
+ * automatically a refused one.
+ */
+const REAL_LEGACY_BUILD =
   require("./fixtures/tan-doctor-build.v0.4.0.windows.json").data;
+
+/** The PURE planner, loaded for real. Two tests below drive it directly on an
+ *  envelope `buildDependencyReport` now refuses, because the rule they assert
+ *  ("every check tan reported is a row") is the planner's and holds regardless
+ *  of whether the adapter is willing to render that particular envelope. */
+const {
+  planDependencyReport,
+} = require("../packages/alp-core/dist/deps/planner.js");
 
 const { pickLatestSdkTag, latestSdkCacheStale } = loadDepsAdapter();
 
@@ -179,21 +241,12 @@ const STATE = {
   },
 };
 
-/** The plain-`doctor` half, minimal, for the tests that only care about `--build`
- *  cells. The real captured one is `REAL_PLAIN`. */
-const PLAIN_DATA = {
-  checks: [
-    { name: "longPaths", status: "pass", detail: "long paths are enabled" },
-  ],
-  summary: { pass: 1, warn: 0, fail: 0 },
-};
-
 /** Build a report against a fake CLI, collecting every argv (and cwd) it was
  *  asked to spawn. `workspaceRoot: null` is the no-folder-open machine; a `null`
  *  envelope stands for a run that produced nothing usable. */
 async function report(
   workspaceRoot = "/home/dev/proj",
-  { build = DOCTOR_DATA, plain = PLAIN_DATA } = {},
+  { doctor = DOCTOR_DATA } = {},
   reportOptions = {},
 ) {
   const spawns = [];
@@ -201,12 +254,12 @@ async function report(
     "../alpCli/doctor": {
       runDoctor: async (_context, args, cwd, _signal, interactive) => {
         spawns.push({ args, cwd, options: { interactive } });
-        const data = args.includes("--build") ? build : plain;
-        return { data, message: "tan produced no usable envelope" };
+        return { data: doctor, message: "tan produced no usable envelope" };
       },
     },
     "../project/vscodeAdapter": {
       collectProjectContext: () => ({ workspaceRoot, sdkRoot: null }),
+      readOnlyProjectCwd: () => workspaceRoot ?? "/tmp",
     },
   });
   const result = await buildDependencyReport({}, STATE, reportOptions);
@@ -243,10 +296,15 @@ test("the table does not wait on the latest-SDK lookup", async () => {
 
   assert.deepEqual(
     spawns.map((spawn) => spawn.args),
-    [["doctor", "--build"], ["doctor"]],
-    "the two doctor runs, and NOTHING else — the live GitHub call that fills " +
-      "the sdk row's 'latest' cell must not be awaited before the rows already " +
-      "in hand are posted",
+    [["doctor"]],
+    "ONE doctor run, and NOTHING else. Two things at once: the live GitHub " +
+      "call that fills the sdk row's 'latest' cell must not be awaited before " +
+      "the rows already in hand are posted; and `--build` must not come back " +
+      '(#544). It used to be `[["doctor", "--build"], ["doctor"]]`, ' +
+      "pinned here BY VALUE — the flag is a documented no-op at the pin " +
+      "(tan-cli#290) and the two envelopes were byte-identical apart from " +
+      "`generatedAt`, so the second spawn was a subprocess per refresh for a " +
+      "duplicate payload",
   );
   assert.equal(
     built.rows.find((row) => row.name === "sdk").latest,
@@ -339,92 +397,283 @@ test("withLatestSdk: the explicit Refresh click DOES ask tan CLI download consen
   }
 });
 
-// ── A-0f: the four checks that live on PLAIN `tan doctor` only ───────────────
+test("withLatestSdk: `sdk list` runs with an explicit, resolved cwd — never undefined (#605)", async () => {
+  const spawns = [];
+  const { withLatestSdk } = loadDepsAdapter({
+    "../alpCli/vscodeAdapter": {
+      runAlpCommand: async (_context, args, cwd, options) => {
+        spawns.push({ args, cwd, options });
+        return { outcome: { ok: true, envelope: null, message: "" } };
+      },
+    },
+    "../project/vscodeAdapter": {
+      readOnlyProjectCwd: () => "/work/renesas-control",
+    },
+  });
+  const context = {
+    globalState: { get: (_k, fallback) => fallback, update: async () => {} },
+  };
+  await withLatestSdk(
+    context,
+    { rows: [{ name: "sdk", installed: null }] },
+    { refreshLatestSdk: true },
+  );
 
-test("the host checks tan puts on plain `doctor` reach the table", async () => {
-  // Measured on a real tan 0.4.0 (the pin) on Windows 11, not asserted from a
-  // stub: `--build` emits 14 checks and NOT ONE of these four is among them.
-  const buildOnly = new Set(REAL_BUILD.checks.map((check) => check.name));
-  for (const name of [
-    "longPaths",
-    "homePath",
-    "zephyrSdkHost",
-    "hostPrerequisites",
-  ]) {
+  const listSpawns = spawns.filter((spawn) => spawn.args.includes("list"));
+  assert.ok(listSpawns.length > 0, "the lookup must still run");
+  for (const spawn of listSpawns) {
     assert.equal(
-      buildOnly.has(name),
-      false,
-      `${name} is absent from \`tan doctor --build\` — running only --build is ` +
-        "structurally blind to it, which is why the panel had no row for it",
+      spawn.cwd,
+      "/work/renesas-control",
+      "an omitted cwd reaches child_process.spawn unset and the child " +
+        "inherits the extension host's own directory instead of the " +
+        "customer's project — `sdk` resolves a project and an SDK from cwd",
     );
   }
+});
 
-  const { report: built, spawns } = await report("/home/dev/proj", {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
+// ── #542: `ok: true` is not "I have the data" ────────────────────────────────
+
+/** The key `latestSdkTag` stamps. Duplicated deliberately: it is a storage
+ *  contract, and a test that discovered it from the code under test could not
+ *  notice the code changing it. */
+const LATEST_SDK_CACHE_KEY = "alp.deps.latestSdkTag";
+
+/** Drive the REAL `withLatestSdk` against a scripted `sdk list` envelope.
+ *  Returns the argv of every `sdk list` spawn, plus every globalState write —
+ *  what is NOT written is the whole point of these tests. */
+async function sdkListLookup({ envelope, cached }) {
+  const spawns = [];
+  const writes = [];
+  const { withLatestSdk } = loadDepsAdapter({
+    "../alpCli/vscodeAdapter": {
+      runAlpCommand: async (_context, args, _cwd, options) => {
+        spawns.push({ args, options });
+        return { outcome: { ok: true, envelope, message: "" } };
+      },
+    },
   });
-  const row = (name) => built.rows.find((candidate) => candidate.name === name);
-
-  assert.ok(
-    spawns.some(
-      (spawn) => spawn.args.length === 1 && spawn.args[0] === "doctor",
-    ),
-    "plain `tan doctor` must actually be run — before this it never was, " +
-      "anywhere in the extension",
+  const store = new Map();
+  if (cached) store.set(LATEST_SDK_CACHE_KEY, cached);
+  const context = {
+    globalState: {
+      get: (key, fallback) => (store.has(key) ? store.get(key) : fallback),
+      update: async (key, value) => {
+        writes.push({ key, value });
+        store.set(key, value);
+      },
+    },
+  };
+  const report = await withLatestSdk(
+    context,
+    { rows: [{ name: "sdk", installed: null }] },
+    { refreshLatestSdk: true },
   );
+  return {
+    argv: spawns.filter((s) => s.args.includes("list")).map((s) => s.args),
+    writes,
+    latest: report?.rows?.find((r) => r.name === "sdk")?.latest ?? null,
+  };
+}
+
+/** Measured against pinned tan 0.6.0: `tan --format json sdk list` with no
+ *  `--online`. `ok: true`, exit 0, empty list, real answer in a WARNING. */
+const NOT_LOOKED_UP = {
+  command: "sdk",
+  ok: true,
+  exitCode: 0,
+  data: { subcommand: "list", releases: [] },
+  issues: [
+    {
+      code: "sdk.network-required",
+      severity: "warning",
+      message:
+        "`sdk list` reports the Alp SDK releases published upstream on GitHub -- there is no local/offline copy to answer from. Add --online to fetch them.",
+    },
+  ],
+};
+
+test("`sdk list` is asked to go online — without it tan cannot answer at all", async () => {
+  const { argv } = await sdkListLookup({
+    envelope: {
+      ok: true,
+      data: { releases: [{ tag: "v0.16.0" }] },
+      issues: [],
+    },
+  });
+  assert.ok(argv.length > 0, "the lookup must reach a spawn");
+  for (const args of argv) {
+    assert.ok(
+      args.includes("--online"),
+      "`--online` is what lets `list` query the GitHub releases API. Without " +
+        "it tan returns an empty list plus `sdk.network-required` and every " +
+        "caller reads the empty list as an answer (#542). The sibling reader " +
+        "in src/ideHub/sdkManagerMessages.ts has always passed it: " +
+        JSON.stringify(args),
+    );
+  }
+});
+
+test("a `sdk.network-required` warning is never cached as an answer", async () => {
+  const { writes, latest } = await sdkListLookup({
+    envelope: NOT_LOOKED_UP,
+    cached: { tag: "v0.15.0", fetchedAt: 1 },
+  });
+
+  assert.deepEqual(
+    writes,
+    [],
+    "tan said it did not look. Caching that writes a FRESH stamp over an " +
+      "absent answer, which suppresses the retry that would fix it — so the " +
+      "dash persists for the whole staleness window and the failure sustains " +
+      "itself. `ok: true` is not `I have the data`.",
+  );
+  assert.equal(
+    latest?.version,
+    "v0.15.0",
+    "the last known answer must survive a lookup that never happened",
+  );
+});
+
+test("a real empty list IS cached — absence of releases is an answer", async () => {
+  const { writes } = await sdkListLookup({
+    envelope: { ok: true, data: { releases: [] }, issues: [] },
+  });
+
+  assert.equal(writes.length, 1, "a lookup that reached the registry answers");
+  assert.equal(writes[0].key, LATEST_SDK_CACHE_KEY);
+  assert.equal(
+    writes[0].value.tag,
+    null,
+    "no stable tag published is a real null, not a withheld one — this is " +
+      "the direction that proves the guard reads the CODE and not merely the " +
+      "empty list, which both cases share",
+  );
+});
+
+// ── #611: sdkListAnswered (shared with src/ideHub/sdkManagerMessages.ts) ────
+//
+// `sdkListAnswered` lives in `../alpCli/service` (pure, no vscode import),
+// not `deps/vscodeAdapter.ts` — moved there precisely so this repo's OTHER
+// `sdk list` reader (`src/ideHub/sdkManagerMessages.ts`) could import it
+// without pulling in the whole dependency-table adapter. Required directly
+// from its real home instead of through `loadDepsAdapter()`'s re-export:
+// adversarial review (#611 follow-up) found that re-export protected nothing
+// (the moved symbols had zero importers outside this file at base
+// `c9ddc48c`) and was deleted.
+const { sdkListAnswered } = require("../out/alpCli/service.js");
+
+test("sdkListAnswered agrees with unansweredSdkListCodes on both directions", () => {
+  assert.equal(sdkListAnswered(NOT_LOOKED_UP), false);
+  assert.equal(
+    sdkListAnswered({ ok: true, data: { releases: [] }, issues: [] }),
+    true,
+  );
+});
+
+test("a release entry with no string tag does not crash the lookup — narrowSdkReleases drops it", async () => {
+  const { latest } = await sdkListLookup({
+    envelope: {
+      ok: true,
+      data: { releases: [{ tag: 12345 }, { tag: "v0.16.0" }] },
+      issues: [],
+    },
+  });
+
+  assert.equal(
+    latest?.version,
+    "v0.16.0",
+    "the malformed entry must be dropped, not thrown on and not crash the " +
+      "whole lookup",
+  );
+});
+
+// ── A-0f: every check tan reports reaches the table ──────────────────────────
+
+test("no allowlist stands between a check tan reported and a row", async () => {
+  // A-0f was "four host checks reached no row because only `--build` ran".
+  // Its fix was a SECOND spawn plus an allowlist of names the merge could take
+  // from it, and #472 was that allowlist going stale in silence. Both are gone
+  // (#544): one envelope, no merge, no allowlist, so the defect class cannot
+  // come back — not because the list is right, but because there is no list.
+  //
+  // Through the ADAPTER, on a real pre-contract envelope it accepts: the
+  // v0.4.0 `--build` capture. (The plain-`doctor` half of that same capture no
+  // longer reaches a table at all — it carries no PATH probe, so the guard
+  // refuses it; the second half of this test drives the planner on it
+  // directly, which is where the no-allowlist rule lives.)
+  const { report: built, spawns } = await report("/home/dev/proj", {
+    doctor: REAL_LEGACY_BUILD,
+  });
+
+  assert.deepEqual(
+    spawns.map((spawn) => spawn.args),
+    [["doctor"]],
+    "plain `tan doctor` is the run, and the only one",
+  );
+
+  const names = built.rows.map((r) => r.name);
+  assert.deepEqual(
+    names.slice(0, REAL_LEGACY_BUILD.checks.length),
+    REAL_LEGACY_BUILD.checks.map((check) => check.name),
+    "every check tan reported is a row, in tan's own order — the rule " +
+      "`deps/planner.ts` states and the allowlist was the one exception to",
+  );
+  assert.deepEqual(
+    names.slice(REAL_LEGACY_BUILD.checks.length),
+    ["tan"],
+    "and the ONLY row not derived from a check is the planner's own `tan` " +
+      "row, which is about the binary rather than about anything it reported",
+  );
+
+  // And the PLANNER, on the plain-`doctor` envelope, because the three checks
+  // the retired allowlist deliberately excluded live only there. The adapter
+  // refuses this envelope now — that refusal is asserted in its own test — but
+  // the rule under assertion here is the planner's, and it still holds against
+  // the exact payload the allowlist would have filtered.
+  const planned = planDependencyReport({
+    data: REAL_LEGACY,
+    bootstrapRunning: false,
+    cli: { installed: "0.4.0", latest: { version: "0.6.0", kind: "pin" } },
+    compareVersions: () => "behind",
+  });
+  const row = (name) => planned.rows.find((c) => c.name === name);
+
+  assert.deepEqual(
+    planned.rows.map((r) => r.name).slice(0, REAL_LEGACY.checks.length),
+    REAL_LEGACY.checks.map((check) => check.name),
+    "same rule, same order, on the envelope the allowlist was written for",
+  );
+
   // The concrete customer: LongPathsEnabled = 0 is the stock Windows default,
   // and the build then dies in CMake complaining about a file that exists.
-  assert.ok(row("longPaths"), "the long-paths row exists");
   assert.equal(
     row("longPaths").status,
     "pass",
-    "and carries tan's verdict verbatim — this host has it enabled",
+    "the long-paths row carries tan's verdict verbatim — this host has it " +
+      "enabled",
   );
   assert.match(
     row("longPaths").detail,
     /LongPathsEnabled = 1/,
     "with tan's own detail, registry value and all",
   );
-  assert.ok(row("homePath"), "the home-directory row exists");
-  assert.ok(row("zephyrSdkHost"), "the Zephyr-SDK-host-support row exists");
   assert.equal(
     row("hostPrerequisites").status,
     "fail",
     "the bootstrap prerequisite gate is reported as tan rated it",
   );
-});
 
-test("the two runs' rows are not merged into each other", async () => {
-  const { report: built } = await report("/home/dev/proj", {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
-  });
-  const names = built.rows.map((row) => row.name);
-
-  assert.equal(
-    new Set(names).size,
-    names.length,
-    "no duplicate row ids: plain `doctor` re-reports sdk / workspace / " +
-      "westResolved, and taking them alongside --build's would render one fact " +
-      "twice under one name and collide the view's `key={row.name}`",
-  );
-  assert.deepEqual(
-    names.slice(0, REAL_BUILD.checks.length),
-    REAL_BUILD.checks.map((check) => check.name),
-    "--build's block comes first, in tan's own order and unchanged",
-  );
-  assert.deepEqual(
-    names.slice(REAL_BUILD.checks.length, -1),
-    ["lldb", "hostPrerequisites", "zephyrSdkHost", "longPaths", "homePath"],
-    "then plain `doctor`'s host block, also in tan's order — so which run a " +
-      "row came from is readable off the table",
-  );
+  // The three the allowlist deliberately EXCLUDED, now present. Two were
+  // excluded to avoid a duplicate row key across two envelopes — a problem
+  // that does not exist with one — and `codeLLDBExtension` was excluded as a
+  // fact tan answers `unknown`. `unknown` is an answer, and dropping the row
+  // said "not a problem" about a question nobody could see was asked.
   for (const name of ["workspaceRoot", "sdkRoot", "codeLLDBExtension"]) {
-    assert.equal(
-      names.includes(name),
-      false,
-      `${name} is a project fact (or, for codeLLDBExtension, one tan itself ` +
-        "answers `unknown` from a standalone binary) and is not this table's",
+    assert.ok(
+      row(name),
+      `${name} is a check tan reported, so it is a row — the allowlist that ` +
+        "silently withheld it is gone",
     );
   }
 });
@@ -432,27 +681,306 @@ test("the two runs' rows are not merged into each other", async () => {
 test("the summary counts exactly the rows on screen, using tan's arithmetic", async () => {
   const { tallyChecks } = loadDepsAdapter();
 
-  // First: the tally IS tan's own. Re-run over each real envelope's checks it
+  // First: the tally IS tan's own. Re-run over a real envelope's checks it
   // reproduces that envelope's own summary byte for byte — including tan's rule
-  // that a status outside pass/warn/fail (`codeLLDBExtension: unknown`) counts
-  // toward nothing.
-  assert.deepEqual(tallyChecks(REAL_BUILD.checks), REAL_BUILD.summary);
-  assert.deepEqual(tallyChecks(REAL_PLAIN.checks), REAL_PLAIN.summary);
+  // that a status outside pass/warn/fail counts toward nothing
+  // (`codeLLDBExtension: unknown` on 0.4.0, `setools: unknown` at the pin).
+  assert.deepEqual(tallyChecks(REAL_LEGACY.checks), REAL_LEGACY.summary);
+  assert.deepEqual(tallyChecks(REAL_PINNED.checks), REAL_PINNED.summary);
 
   const { report: built } = await report("/home/dev/proj", {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
+    doctor: REAL_PINNED,
   });
-  // The header must describe the table under it. With rows from two envelopes,
-  // neither envelope's own summary does — `--build` alone would report 0 of the
-  // five host rows, so a failing `hostPrerequisites` sat under "4 fail".
-  // The five host rows this host produced: zephyrSdkHost / longPaths / homePath
-  // pass, lldb warns, hostPrerequisites fails.
-  assert.deepEqual(built.counts, {
-    pass: REAL_BUILD.summary.pass + 3,
-    warn: REAL_BUILD.summary.warn + 1,
-    fail: REAL_BUILD.summary.fail + 1,
+  // With a folder open nothing is withheld, so the header IS tan's summary.
+  assert.deepEqual(built.counts, REAL_PINNED.summary);
+});
+
+// ── the orphan invariant reaches the "Alp SDK" channel, not just the type ────
+
+test("an orphaned prerequisite is LOGGED, not only recorded on the report", async () => {
+  // #603: `orphanedPrerequisites` is worthless as a silent-drop catch if
+  // nothing ever reads it — the exact failure this field exists to end. A
+  // prerequisite for a tool with no check AND no `hostPrerequisites` rollup
+  // in this envelope has nowhere to bind.
+  const orphanData = {
+    checks: [
+      { name: "sdk", status: "pass", detail: "alp-sdk v0.6.0" },
+      { name: "west", status: "pass", detail: "west 1.5.0" },
+    ],
+    summary: { pass: 2, warn: 0, fail: 0 },
+    missingPrerequisites: [{ tool: "cmake", command: "brew install cmake" }],
+  };
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: orphanData, message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
   });
+
+  const { report: built } = await buildDependencyReport({}, STATE, {});
+
+  assert.deepEqual(
+    built.orphanedPrerequisites,
+    [{ tool: "cmake", command: "brew install cmake" }],
+    "sanity: the planner's own half of the invariant still holds",
+  );
+  const hit = lines.find((line) => line.includes("cmake"));
+  assert.ok(
+    hit,
+    "no log line named the orphaned prerequisite — the next tan rename of " +
+      "hostPrerequisites would be exactly as silent as #603 itself",
+  );
+  assert.match(hit, /brew install cmake/, "the command, not just the tool");
+  assert.match(hit, /hostPrerequisites/i);
+});
+
+function orphanEnvelope(tools) {
+  return {
+    checks: [{ name: "west", status: "pass", detail: "west 1.5.0" }],
+    summary: { pass: 1, warn: 0, fail: 0 },
+    missingPrerequisites: tools.map((tool) => ({
+      tool,
+      command: `install ${tool}`,
+    })),
+  };
+}
+
+test("the SAME orphan is logged ONCE per session, not once per refresh (#603 second review, minor 8)", async () => {
+  // `DependencyPanel.refresh()` re-derives on EVERY window focus, and a
+  // genuinely orphaned envelope stays orphaned across every one of those.
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: orphanEnvelope(["cmake"]), message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  // Three "refreshes" against the SAME loaded module instance — a window
+  // focus, a settings edit, a bootstrap boundary, all re-deriving the same
+  // orphaned envelope.
+  await buildDependencyReport({}, STATE, {});
+  await buildDependencyReport({}, STATE, {});
+  await buildDependencyReport({}, STATE, {});
+
+  const hits = lines.filter((line) => line.includes("cmake"));
+  assert.equal(
+    hits.length,
+    1,
+    "the orphan warning must fire once for the session, not once per refresh",
+  );
+});
+
+test("a DIFFERENT orphan arriving later is STILL logged — the latch must not over-silence (#603 third review, major 5)", async () => {
+  // Measured repro this test reproduces exactly: refresh 1 orphans cmake (1
+  // line), refresh 2 orphans a DIFFERENT tool, ninja, with cmake no longer
+  // orphaned (0 lines under the bug — a bare "logged once" boolean silences
+  // every orphan after the first, forever), refresh 3 orphans two more new
+  // tools, gperf and dtc (also 0 lines under the bug). The gate the prior
+  // round shipped replayed the SAME orphan three times, which is green
+  // under both this bug and the fix — this is the one that tells them apart.
+  const lines = [];
+  const envelopes = [
+    orphanEnvelope(["cmake"]),
+    orphanEnvelope(["ninja"]),
+    orphanEnvelope(["gperf", "dtc"]),
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: orphan=cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: NEW orphan=ninja
+  await buildDependencyReport({}, STATE, {}); // refresh 3: orphans=gperf,dtc
+
+  assert.equal(
+    lines.filter((l) => l.includes("cmake")).length,
+    1,
+    "refresh 1's orphan is reported",
+  );
+  assert.equal(
+    lines.filter((l) => l.includes("ninja")).length,
+    1,
+    "a NEW orphan on refresh 2 must still be reported, even though cmake " +
+      "already used up a bare one-shot latch",
+  );
+  assert.equal(
+    lines.filter((l) => l.includes("gperf")).length,
+    1,
+    "refresh 3's new orphans must be reported too",
+  );
+  assert.equal(lines.filter((l) => l.includes("dtc")).length, 1);
+});
+
+test("a still-orphaned tool is NOT dropped from the line when a NEW orphan arrives beside it (#603 round 4, minor 8)", async () => {
+  // Measured repro: refresh 1 orphans cmake (1 line, naming cmake and its
+  // count of 1). Refresh 2's envelope is CUMULATIVE — tan still reports cmake
+  // AND now also ninja and gperf. `newOrphans` (the tools not already latched)
+  // is `[ninja, gperf]`, length 2 — the filtered list decided whether to log,
+  // correctly. Passing THAT filtered list to `orphanedPrerequisiteLogLines`
+  // undercounted it, though: the line said "tan reported 2 prerequisite(s)"
+  // and named only ninja and gperf, even though tan is reporting 3 right now
+  // and cmake is STILL one of them.
+  const lines = [];
+  const envelopes = [
+    orphanEnvelope(["cmake"]),
+    orphanEnvelope(["cmake", "ninja", "gperf"]),
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: orphan=cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: cmake,ninja,gperf
+
+  const refresh2Line = lines.find(
+    (l) => l.includes("ninja") || l.includes("gperf"),
+  );
+  assert.ok(refresh2Line, "refresh 2 must still log — it has new orphans");
+  assert.match(
+    refresh2Line,
+    /tan reported 3 prerequisite\(s\)/,
+    "tan is reporting 3 orphans right now (cmake, ninja, gperf) — the " +
+      "line must count all of them, not just the ones newly seen",
+  );
+  assert.match(
+    refresh2Line,
+    /cmake/,
+    "cmake is STILL orphaned on refresh 2 and must still be named, even " +
+      "though it already used up its own one-shot latch on refresh 1",
+  );
+});
+
+test("the SAME tool orphaned with a DIFFERENT command is logged again, not swallowed by a tool-only latch (#603 round 5, nit 11)", async () => {
+  // Measured repro: `cmake=brew install cmake` latches the tool, then
+  // `cmake=sudo /opt/attacker/brew install cmake` — a changed command for the
+  // SAME still-orphaned tool — logged nothing under a `tool`-only key. A
+  // changed command is new information about what would run if the
+  // (nonexistent) button were pressed, not a repeat of the same fact.
+  const lines = [];
+  const envelopes = [
+    { ...orphanEnvelope(["cmake"]) },
+    {
+      ...orphanEnvelope(["cmake"]),
+      missingPrerequisites: [
+        { tool: "cmake", command: "sudo /opt/attacker/brew install cmake" },
+      ],
+    },
+  ];
+  let call = 0;
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: envelopes[call++], message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {}); // refresh 1: cmake=install cmake
+  await buildDependencyReport({}, STATE, {}); // refresh 2: cmake=DIFFERENT command
+
+  const hits = lines.filter((l) => l.includes("cmake"));
+  assert.equal(
+    hits.length,
+    2,
+    "a changed command for the same tool must log again, not be swallowed " +
+      "by a latch keyed on the tool name alone",
+  );
+  assert.match(hits[1], /sudo \/opt\/attacker\/brew install cmake/);
+});
+
+test("nothing is logged when every prerequisite bound to a row", async () => {
+  const lines = [];
+  const { buildDependencyReport } = loadDepsAdapter({
+    "../alpCli/doctor": {
+      runDoctor: async () => ({ data: DOCTOR_DATA, message: "" }),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        workspaceRoot: "/home/dev/proj",
+        sdkRoot: null,
+      }),
+      readOnlyProjectCwd: () => "/home/dev/proj",
+    },
+    "../util": {
+      log: (line) => lines.push(line),
+      isRunActive: () => false,
+      runInTerminal() {},
+    },
+  });
+
+  await buildDependencyReport({}, STATE, {});
+
+  assert.equal(
+    lines.some(
+      (line) => line.includes("orphaned") || line.includes("bound to NO row"),
+    ),
+    false,
+    "a healthy envelope must not print a defect line nobody can act on",
+  );
 });
 
 // ── 0b: the panel with no project folder open ────────────────────────────────
@@ -467,10 +995,7 @@ test("with no folder open the host checks still run", async () => {
     report: built,
     error,
     spawns,
-  } = await report(null, {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
-  });
+  } = await report(null, { doctor: REAL_PINNED });
   const row = (name) => built.rows.find((candidate) => candidate.name === name);
 
   assert.equal(error, undefined, "no refusal — this is a table, not a wall");
@@ -484,113 +1009,270 @@ test("with no folder open the host checks still run", async () => {
     );
   }
 
-  // The host facts, which is the whole point: none of these reads a project.
-  for (const name of ["git", "python", "cmake", "ninja", "longPaths"]) {
+  // The host facts, which is the whole point: none of these reads a project,
+  // and tan says so itself on every one of them.
+  for (const check of REAL_PINNED.checks.filter((c) => c.scope === "host")) {
     assert.equal(
-      row(name).status,
-      REAL_BUILD.checks.concat(REAL_PLAIN.checks).find((c) => c.name === name)
-        .status,
-      `${name} is a host probe and carries tan's real verdict with no folder open`,
+      row(check.name).status,
+      check.status,
+      `${check.name} is scoped \`host\` by tan and carries its real verdict ` +
+        "with no folder open",
     );
   }
-  assert.equal(
-    row("ninja").action.command,
-    "winget install -e --id Ninja-build.Ninja",
-    "and the missing prerequisite is still one click away — that button is " +
-      "the exit from the deadlock",
-  );
 });
 
 test("with no folder open a project check is withheld, and says so", async () => {
-  const { report: built } = await report(null, {
-    build: REAL_BUILD,
-    plain: REAL_PLAIN,
-  });
+  const { report: built } = await report(null, { doctor: REAL_PINNED });
   const row = (name) => built.rows.find((candidate) => candidate.name === name);
 
-  for (const name of ["sdk", "boardYaml", "workspace", "westResolved"]) {
+  const projectChecks = REAL_PINNED.checks.filter(
+    (check) => check.scope === "project",
+  );
+  assert.ok(
+    projectChecks.length >= 5,
+    "the fixture must actually carry project-scoped checks, or this test " +
+      "asserts nothing",
+  );
+  for (const check of projectChecks) {
     // Reporting these would be worse than the old refusal: tan answers them
     // about whatever directory it was launched in, so a customer with no folder
     // open would read "board.yaml not found" about a temp directory.
     assert.ok(
-      row(name),
-      `${name} is still a row — a vanished row teaches nothing`,
+      row(check.name),
+      `${check.name} is still a row — a vanished row teaches nothing`,
     );
     assert.equal(
-      row(name).status,
+      row(check.name).status,
       "not checked",
-      `${name} must not carry a verdict about a project that is not open`,
+      `${check.name} must not carry a verdict about a project that is not open`,
     );
     assert.match(
-      row(name).detail,
+      row(check.name).detail,
       /no project folder is open/i,
       "and the row itself says why",
     );
     assert.equal(
-      row(name).hint,
+      row(check.name).hint,
       null,
       "tan's remedy prose belongs to the verdict it never reached",
     );
   }
-  assert.equal(
-    built.counts.fail,
-    REAL_BUILD.summary.fail - 3 + 1,
-    "a withheld row counts as nothing — `sdk`, `boardYaml` and `workspace` " +
-      "each rated `fail` about nowhere, and counting them would put three red " +
-      "marks in the header for checks that never ran",
+
+  // Two of these six — `pythonFloor` and `sdkProvenance` — were NOT in the
+  // hand list this replaced. Reading tan's own `scope` is what admits them, and
+  // it is why the list is a fallback rather than the source (#472).
+  for (const name of ["pythonFloor", "sdkProvenance"]) {
+    assert.equal(
+      row(name).status,
+      "not checked",
+      `${name} is scoped \`project\` by tan and was absent from the retired ` +
+        "hand list — a hand list of check names rots the moment tan adds one",
+    );
+  }
+
+  // Summed BY STATUS off the fixture itself rather than hand-counted, so a
+  // re-capture that shuffles which project checks pass/warn/fail (as the GA
+  // capture already did once, relative to the rc1 one this replaced) moves
+  // this assertion for free. NOT because the hand-counted form fails
+  // silently — MEASURED, it does not: reverting to the old `-4/-1/-1`
+  // literal REDs against this fixture (`{pass:5,warn:2,fail:0}` vs the
+  // hand-counted `{pass:4,warn:2,fail:1}`) — but because that red then costs
+  // a maintainer a trip back to the fixture to recompute three digits by
+  // hand on every future re-capture, for no reason the derivation below
+  // does not already remove.
+  const withheldByStatus = { pass: 0, warn: 0, fail: 0 };
+  for (const check of projectChecks) {
+    if (check.status in withheldByStatus) withheldByStatus[check.status] += 1;
+  }
+  assert.deepEqual(
+    built.counts,
+    {
+      pass: REAL_PINNED.summary.pass - withheldByStatus.pass,
+      warn: REAL_PINNED.summary.warn - withheldByStatus.warn,
+      fail: REAL_PINNED.summary.fail - withheldByStatus.fail,
+    },
+    `a withheld row counts as nothing — ${projectChecks.length} project checks ` +
+      "carried a verdict about nowhere, and counting them would put marks in " +
+      "the header for checks that never ran",
   );
 });
 
-test("a plain `doctor` that answers nothing leaves a row saying so", async () => {
-  const { report: built } = await report("/home/dev/proj", {
-    build: REAL_BUILD,
-    plain: null,
-  });
-  const row = built.rows.find(
-    (candidate) => candidate.name === "hostEnvironment",
-  );
-
+test("a tan too old to report `scope` still withholds the project rows", async () => {
+  // `alpSdk.cliPath` can point at a pre-contract binary. `isDoctorEnvelope-
+  // Data` accepts its envelope on purpose — refusing it would blank the one
+  // table whose `tan` row reports the skew — so the withholding decision has
+  // to survive a check with no `scope` at all. `LEGACY_PROJECT_CHECKS` is that
+  // fallback, and this is the only thing that exercises it.
   assert.ok(
-    row,
-    "silently dropping the host half is the A-0f defect coming back invisibly",
+    REAL_LEGACY_BUILD.checks.every((check) => check.scope === undefined),
+    "the legacy fixture must carry no `scope`, or this asserts nothing",
   );
-  assert.equal(row.status, "not checked");
-  assert.match(row.detail, /long paths/i);
+  const { report: built } = await report(null, { doctor: REAL_LEGACY_BUILD });
+  const row = (name) => built.rows.find((candidate) => candidate.name === name);
+
+  for (const name of ["sdk", "boardYaml", "workspace", "westResolved"]) {
+    assert.equal(
+      row(name).status,
+      "not checked",
+      `${name} reads the project on v0.4.0 too, and the fallback knows it`,
+    );
+  }
+  for (const [name, status] of [
+    ["git", "pass"],
+    ["cmake", "pass"],
+    ["ninja", "fail"],
+  ]) {
+    assert.equal(
+      row(name).status,
+      status,
+      `${name} is a PATH probe and is NOT withheld by the fallback — a list ` +
+        "that withheld everything would pass the arm above and hide the " +
+        "whole table",
+    );
+  }
 });
 
-test("a `--build` that answers nothing is still an error state", async () => {
+test("a doctor that answers nothing is an error state, not an empty table", async () => {
   const { report: built, error } = await report("/home/dev/proj", {
-    build: null,
-    plain: REAL_PLAIN,
+    doctor: null,
   });
 
   assert.equal(
     built,
     null,
-    "--build carries every PATH probe in the table, so losing it is losing " +
-      "the table — five host rows that looked complete would be the worse answer",
+    "the one run carries every row in the table, so losing it is losing the " +
+      "table — a partial table that looked complete would be the worse answer",
   );
   assert.match(error, /no usable envelope/);
+});
+
+// ── A tan whose doctor envelope cannot build this table ──────────────────────
+//
+// The #544 regression this guards. dev refused when the `--build` run produced
+// nothing, because "`--build` carries every PATH probe in the table, so losing
+// it is losing the table". Dropping that arm dropped the refusal with it, and
+// on a pre-0.5 binary reached through `alpSdk.cliPath` the plain envelope has
+// NONE of those probes — so the panel rendered a confident, mostly-passing
+// table with no row for the nine tools it exists to report.
+//
+// Both states below are real. They are the two the review ran to prove the
+// defect, and neither was covered before.
+
+test("a tan whose doctor reports no host tool at all is refused, with a folder open", async () => {
+  const { report: built, error } = await report("/home/dev/proj", {
+    doctor: REAL_LEGACY,
+  });
+
+  // What the un-guarded code produced: 12 rows + `tan`, and not one of these.
+  const missing = [
+    "git",
+    "python",
+    "cmake",
+    "ninja",
+    "dtc",
+    "gperf",
+    "zephyrSdk",
+    "yoctoHost",
+    "vendorToolchain",
+  ];
+  assert.deepEqual(
+    REAL_LEGACY.checks.filter((check) => missing.includes(check.name)),
+    [],
+    "the fixture must genuinely carry none of the nine, or this test is " +
+      "asserting against an envelope that was never the problem",
+  );
+
+  assert.equal(
+    built,
+    null,
+    "nine tool rows silently absent from a table whose whole subject is " +
+      "those tools reads as `all fine`, not as `not asked` — the same " +
+      "judgement dev's deleted `--build` guard made, on the one envelope " +
+      "there is now",
+  );
+  assert.match(
+    error,
+    /no host tool checks at all/,
+    "the refusal must name the CAUSE, not just decline",
+  );
+  assert.match(
+    error,
+    /Reinstall the pinned tan CLI/,
+    "and the way out, by the name it carries in the command palette",
+  );
+  assert.match(
+    error,
+    /alpSdk\.cliPath/,
+    "including the setting that is how a binary this old gets resolved in " +
+      "the first place",
+  );
+  assert.match(
+    error,
+    /0\.3\.1/,
+    "the version the extension already probed sharpens the sentence — it is " +
+      "not what DECIDES (see `carriesToolchainProbes`), but withholding it " +
+      "would leave the reader guessing which binary is meant",
+  );
+});
+
+test("the same tan with NO folder open is refused too, rather than reporting on os.tmpdir()", async () => {
+  const { report: built, error } = await report(null, { doctor: REAL_LEGACY });
+
+  // The extra damage in this state, on top of the nine missing rows: tan was
+  // launched in `os.tmpdir()`, and these two carry no `scope`, so the legacy
+  // hand list — which never named them — lets them through un-withheld.
+  for (const name of ["workspaceRoot", "sdkRoot"]) {
+    assert.ok(
+      REAL_LEGACY.checks.some((check) => check.name === name),
+      `${name} must be in the fixture, or this test asserts nothing`,
+    );
+  }
+  assert.equal(
+    built,
+    null,
+    "`workspaceRoot pass C:/tmp/no-project` and `sdkRoot fail No alp-sdk " +
+      "checkout resolved.` are verdicts about a temp directory, rendered " +
+      "live beside six rows that say `No project folder is open` — and the " +
+      "red one can contradict the extension's own host-known SDK state",
+  );
+  assert.match(error, /no host tool checks at all/);
+});
+
+test("the guard does not fire on an envelope that DOES carry the probes", async () => {
+  // A false refusal blanks the table, which is the same damage in the other
+  // direction. Both directions, on real captured envelopes.
+  for (const [label, doctor] of [
+    ["the pinned binary", REAL_PINNED],
+    ["a v0.4.0 `--build` envelope", REAL_LEGACY_BUILD],
+  ]) {
+    for (const root of ["/home/dev/proj", null]) {
+      const { report: built, error } = await report(root, { doctor });
+      assert.ok(
+        built,
+        `${label} carries per-tool probes, so it must render — refusing it ` +
+          `would be the guard firing on the wrong thing (${error})`,
+      );
+    }
+  }
 });
 
 // ── A-0g: a winget install leaves a stale PATH ───────────────────────────────
 
 test("a terminal install says what actually makes the row go green", async () => {
-  const sent = [];
-  const terminals = [];
+  // A TASK now, not a bare terminal (#466 §2): the same shell line, but the
+  // run reports an exit code and holds a reservation, which is what a
+  // sequential Fix all waits on. The assertions below are the same claims they
+  // always were — the line goes to the shell verbatim, the cwd is the
+  // caller's — read off `runInTerminal`'s options instead of a terminal's.
+  const runs = [];
   const plans = [];
   const { runDependencyAction } = loadDepsAdapter({
-    vscode: {
-      window: {
-        createTerminal: (opts) => {
-          terminals.push(opts);
-          return {
-            show() {},
-            sendText: (text) => sent.push(text),
-          };
-        },
-      },
-      Uri: {},
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
+      awaitRun: () => Promise.resolve(0),
     },
     "../notify/vscodeAdapter": {
       notifyAsync: (plan) => plans.push(plan),
@@ -602,7 +1284,12 @@ test("a terminal install says what actually makes the row go green", async () =>
       kind: "command",
       // tan 0.4.0's own `missingPrerequisites[].command` on this Windows host,
       // verbatim.
-      command: "winget install -e --id Ninja-build.Ninja",
+      commands: [
+        {
+          tool: "ninja",
+          command: "winget install -e --id Ninja-build.Ninja",
+        },
+      ],
       effect: "install",
       title: "winget install -e --id Ninja-build.Ninja",
     },
@@ -611,9 +1298,20 @@ test("a terminal install says what actually makes the row go green", async () =>
     sevenZipStatus: undefined,
   });
 
-  assert.deepEqual(sent, ["winget install -e --id Ninja-build.Ninja"]);
+  assert.deepEqual(
+    runs.map((run) => run.command),
+    ["winget install -e --id Ninja-build.Ninja"],
+    "the shell LINE reaches the shell verbatim — a ShellExecution, never an " +
+      "argv split that would mangle a quoted argument",
+  );
   assert.equal(
-    terminals[0].cwd,
+    runs[0].argv,
+    undefined,
+    "argv and command are mutually exclusive; passing both is a bug the type " +
+      "forbids and this pins at runtime",
+  );
+  assert.equal(
+    runs[0].cwd,
     "/home/dev/proj",
     // `rowName` and `cwd` are both plain strings — an options object, not
     // positional parameters, is what makes a swap between them fail to
@@ -662,13 +1360,143 @@ test("a terminal install says what actually makes the row go green", async () =>
   );
 });
 
+test("a second press while the install run is already active: surfaced via runInTerminal, not silent", async () => {
+  // A regression this file exists to pin down: the per-step `isRunActive`
+  // guard must not become a SILENT stop. `runInTerminal` (src/util.ts) is the
+  // one place that already shows "is still running — wait for it to finish"
+  // + Show Terminal for a same-named collision, so the loop must still call
+  // it (stubbed here, same as the zephyrSdk concurrent-press test below)
+  // rather than bypassing it with a bare log line nobody sees.
+  const runs = [];
+  const plans = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => true,
+      awaitRun: () => Promise.resolve(0),
+    },
+    "../notify/vscodeAdapter": {
+      notifyAsync: (plan) => plans.push(plan),
+    },
+  });
+
+  const outcomes = await runDependencyAction({
+    action: {
+      kind: "command",
+      commands: [{ tool: "ninja", command: "brew install ninja" }],
+      effect: "install",
+      title: "brew install ninja",
+    },
+    rowName: "ninja",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  assert.deepEqual(
+    outcomes,
+    [],
+    "nothing dispatched successfully — the row installed nothing",
+  );
+  assert.equal(
+    runs.length,
+    1,
+    "runInTerminal is still called — it is what shows the refusal " +
+      '("is still running — wait for it to finish before starting it ' +
+      'again.") and offers Show Terminal; on dev this call is what the ' +
+      "customer saw and losing it is a silent regression",
+  );
+  assert.equal(
+    plans.length,
+    0,
+    "no press-Refresh notice for a press that dispatched nothing — raising " +
+      "it here would ALSO suppress the still-running press's own notice via " +
+      'the shared "deps-install-reload" dedupe key, leaving the customer ' +
+      "with neither",
+  );
+  // #603, second review, major 4: the refusal dispatch must reserve the SAME
+  // shared name the `isRunActive` check just tested — `"Alp: install
+  // dependency"`, never the row's own name (`rowName`, "ninja" here). This
+  // harness's `isRunActive: () => true` cannot itself distinguish the two
+  // (it ignores its argument), so the wrong name would slip through every
+  // OTHER assertion in this test unnoticed: in production `isRunActive("ninja")`
+  // is false, so a `runInTerminal` call under that name would actually START
+  // a real, unreserved second install — the exact #146 double-run the shared
+  // name exists to prevent.
+  assert.equal(
+    runs[0].name,
+    "Alp: install dependency",
+    "the refusal must be dispatched under the SHARED run name, not the row's own",
+  );
+  assert.equal(
+    runs[0].command,
+    "brew install ninja",
+    "the command line itself is still the one that was refused, verbatim",
+  );
+});
+
+test(
+  "isRunActive already true never reaches awaitRun — a HANG-DETECTION test, distinct from its sibling above",
+  { timeout: 2000 },
+  async () => {
+    // #603, second review, nit 11: this test's unique value over "a second
+    // press while the install run is already active" (above) is specifically
+    // that `awaitRun` here NEVER resolves — that sibling's `awaitRun` stub
+    // resolves immediately, so it cannot tell "the guard stopped this before
+    // awaitRun" apart from "awaitRun was called and happened to resolve
+    // fast". If the mid-loop `isRunActive` check were ever removed (or
+    // defeated), this dispatches straight to `awaitRun` on a name whose
+    // promise never settles, and the bounded test timeout above is what
+    // turns THAT into a reported failure instead of a hung test run.
+    // `awaitRun`'s own doc (src/util.ts) names exactly this as its one
+    // failure mode.
+    const runs = [];
+    const { runDependencyAction } = loadDepsAdapter({
+      vscode: { window: {}, Uri: {} },
+      "../util": {
+        log() {},
+        runInTerminal: (opts) => runs.push(opts),
+        isRunActive: () => true,
+        awaitRun: () => new Promise(() => {}), // never resolves
+      },
+    });
+
+    const outcomes = await runDependencyAction({
+      action: {
+        kind: "command",
+        commands: [{ tool: "ninja", command: "brew install ninja" }],
+        effect: "install",
+        title: "",
+      },
+      rowName: "ninja",
+      cwd: "/home/dev/proj",
+      sevenZipStatus: undefined,
+    });
+
+    assert.deepEqual(outcomes, []);
+    // Distinct from the sibling's assertions too: it never inspects `runs`.
+    assert.equal(
+      runs.length,
+      1,
+      "the refusal still dispatches through runInTerminal exactly once, " +
+        "and never reaches a second awaitRun call",
+    );
+  },
+);
+
 // ── #412: `west sdk install …` retargeted onto the resolved venv binary ─────
 
 /** tan v0.4.1's own `missingPrerequisites[].command` for the `zephyrSdk` row,
  *  verbatim. */
 const ZEPHYR_SDK_ACTION = {
   kind: "command",
-  command: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
+  commands: [
+    {
+      tool: "zephyrSdk",
+      command: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
+    },
+  ],
   effect: "install",
   title: "west sdk install --version 1.0.1 -t arm-zephyr-eabi",
 };
@@ -922,17 +1750,13 @@ test("a topdir resolves but its venv has no west: refused, warning severity, Boo
 });
 
 test("a zephyrSdk command that cannot be retargeted falls back to the topdir, not the open project's cwd", () => {
-  const sent = [];
-  const terminals = [];
+  const runs = [];
   const { runDependencyAction } = loadDepsAdapter({
-    vscode: {
-      window: {
-        createTerminal: (opts) => {
-          terminals.push(opts);
-          return { show() {}, sendText: (text) => sent.push(text) };
-        },
-      },
-      Uri: {},
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
     },
     "../notify/vscodeAdapter": { notifyAsync() {} },
     "../project/vscodeAdapter": {
@@ -953,7 +1777,9 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
       // A shape `retargetWestCommand` refuses (a quoted argument) — never
       // actually reachable on the measured v0.4.1 command, but drift
       // insurance: it must fail in exactly ONE way, not two.
-      command: 'west sdk install --name "custom sdk"',
+      commands: [
+        { tool: "zephyrSdk", command: 'west sdk install --name "custom sdk"' },
+      ],
       effect: "install",
       title: 'west sdk install --name "custom sdk"',
     },
@@ -962,26 +1788,87 @@ test("a zephyrSdk command that cannot be retargeted falls back to the topdir, no
     sevenZipStatus: undefined,
   });
 
-  assert.deepEqual(sent, ['west sdk install --name "custom sdk"']);
+  assert.deepEqual(
+    runs.map((run) => run.command),
+    ['west sdk install --name "custom sdk"'],
+    "the quoted argument survives — the whole reason this path is a shell " +
+      "line and not an argv array",
+  );
   assert.equal(
-    terminals[0].cwd,
+    runs[0].cwd,
     "/home/dev/.alp",
     "still `west sdk install` — it still needs the west workspace topdir, " +
       "not the open project folder, even un-retargeted",
   );
 });
 
-test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
-  const sent = [];
+test("the SAME un-retargeted fallback, refused by an active install run: no false press-Refresh notice", () => {
+  // #603, second review, major 5: this fallback (`runInNewTerminal`, reached
+  // when `retargetWestCommand` returns null) is byte-for-byte the antipattern
+  // fixed for the generic command-step loop in the SAME commit — unconditional
+  // `runInTerminal` + `offerReloadAfterInstall()` — and it survived untouched
+  // because the fix was scoped to a prose finding list rather than grepped
+  // for the shape. Driven exactly as the finding measured: `isRunActive("Alp:
+  // install dependency")` already true.
+  const runs = [];
+  const plans = [];
   const { runDependencyAction } = loadDepsAdapter({
-    vscode: {
-      window: {
-        createTerminal: () => ({
-          show() {},
-          sendText: (text) => sent.push(text),
-        }),
-      },
-      Uri: {},
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => true,
+    },
+    "../notify/vscodeAdapter": {
+      notifyAsync: (plan) => plans.push(plan),
+    },
+    "../project/vscodeAdapter": {
+      collectProjectContext: () => ({
+        westCwd: "/home/dev/proj",
+        sdkRoot: "/home/dev/.alp/sdk/v0.13.0",
+      }),
+    },
+    "../environment/vscodeAdapter": {
+      westWorkspaceTopdir: () => "/home/dev/.alp",
+      venvWestInTopdir: (topdir) => `${topdir}/.venv/bin/west`,
+    },
+  });
+
+  runDependencyAction({
+    action: {
+      kind: "command",
+      commands: [
+        { tool: "zephyrSdk", command: 'west sdk install --name "custom sdk"' },
+      ],
+      effect: "install",
+      title: 'west sdk install --name "custom sdk"',
+    },
+    rowName: "zephyrSdk",
+    cwd: "/home/dev/proj",
+    sevenZipStatus: undefined,
+  });
+
+  // `runInTerminal` still gets called — it is what shows the customer the
+  // refusal, unchanged from before this fix.
+  assert.equal(runs.length, 1);
+  assert.equal(
+    plans.length,
+    0,
+    "measured on dev before this fix: 1 notice fired here " +
+      '(dedupeKey "deps-install-reload") for a dispatch runInTerminal ' +
+      "refuses — this is the false press-Refresh notice",
+  );
+});
+
+test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
+  const runs = [];
+  const { runDependencyAction } = loadDepsAdapter({
+    vscode: { window: {}, Uri: {} },
+    "../util": {
+      log() {},
+      runInTerminal: (opts) => runs.push(opts),
+      isRunActive: () => false,
+      awaitRun: () => Promise.resolve(0),
     },
     // No override for "../project/vscodeAdapter" or "../environment/
     // vscodeAdapter": if the zephyrSdk branch fired by mistake for this row,
@@ -995,7 +1882,7 @@ test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
       // `workspace`/`westResolved` also carry a `west …` command via
       // `missingPrerequisites` (FIX_IDS in the planner) — only the `zephyrSdk`
       // ROW gets retargeted.
-      command: "west update",
+      commands: [{ tool: "workspace", command: "west update" }],
       effect: "install",
       title: "west update",
     },
@@ -1005,9 +1892,9 @@ test("a non-zephyrSdk row carrying a west command is not hijacked", () => {
   });
 
   assert.deepEqual(
-    sent,
+    runs.map((run) => run.command),
     ["west update"],
-    "the command reaches the plain terminal dispatch untouched",
+    "the command reaches the plain install dispatch untouched",
   );
 });
 

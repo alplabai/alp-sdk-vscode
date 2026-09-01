@@ -14,6 +14,8 @@ import * as path from "path";
 import { promisify } from "util";
 import * as vscode from "vscode";
 
+import { isFlashArgv } from "@alp-sdk/core/flash/argv";
+
 import {
   ResolveDeps,
   ResolvedBinary,
@@ -67,6 +69,7 @@ import {
   TanCliDownloadConsentSetting,
   unverifiedCacheCause,
 } from "./service";
+import { gateFlashDispatch } from "../flash/gate";
 import { ActionId, NotificationPlan, NotifyAction } from "../notify/models";
 import {
   isCancellation,
@@ -126,11 +129,20 @@ function clip(text: string, max = 4000): string {
  * TypeScript copy of tan's walk-up would drift from it). Reporting the SDK
  * root tan actually used is a tan-side envelope ask.
  *
- * Exported for the `alp` task provider (`src/tasks/vscodeAdapter.ts`), which
- * spawns `tan build` itself rather than through `runAlpCommand`/
- * `runAlpInTerminal` and must not re-derive this rule — a second copy is how a
- * task-driven build silently starts using a different SDK than every other
- * command in the window.
+ * NOT exported, and that is the point: every `tan` spawn in this extension goes
+ * through one of the runners below, so this rule has exactly one caller-facing
+ * surface and no second copy to drift from. The `alp` task provider is the case
+ * that looks like an exception and is not — `src/tasks/vscodeAdapter.ts` states
+ * it itself: its three build tasks "do NOT spawn `tan` themselves — they
+ * delegate to `runAlpInTerminal`", precisely so that binary resolution,
+ * `--sdk-root` augmentation and the `runInTerminal` concurrency reservation
+ * stay "in the ONE place that already owns them".
+ *
+ * (This paragraph used to say the opposite — that the function was "Exported
+ * for the `alp` task provider ... which spawns `tan build` itself". Neither
+ * half was true: `withSdkRoot` has never carried an `export`, and the task
+ * provider has never spawned `tan`. A maintainer reading it went looking for a
+ * second copy of the SDK rule that does not exist.)
  */
 function withSdkRoot(args: string[]): string[] {
   if (args.includes("--sdk-root")) return args;
@@ -817,29 +829,40 @@ let strictSSLNotForwardableWarned = false;
  * `http.proxyStrictSSL: false` says "a TLS-intercepting middlebox re-signs my
  * traffic, accept it". Examined and NOT representable in the spawn environment:
  * `tan` has no environment knob (nor a flag) that relaxes certificate
- * verification — the only env vars it reads for the network are the proxy names
- * in `proxyEnvOverrides`, and its rustls config is built unconditionally
- * (tan-cli `crates/tan-cli/src/http.rs` `tls_config`).
+ * verification — MEASURED at the pinned 0.6.0, not inherited: every
+ * subcommand's own `--help` (all THIRTY-ONE of them) was checked for `cert`,
+ * `ssl`, `tls`, `verify`, `proxy`, `insecure` and `trust`, and none appears.
+ * The only env vars this extension itself adds for the network are the proxy
+ * names in `proxyEnvOverrides`.
  *
- * It also should not need one. That same `tls_config` trusts the bundled webpki
- * roots MERGED WITH THE OS TRUST STORE, so a middlebox CA installed in
- * Windows/macOS/Linux system trust is already accepted. The remedy for this
- * user is to install their proxy's CA there — not a per-tool "skip
- * verification" switch we would have to invent. Inventing one is also the wrong
- * trade: it would turn a verified download of an executable we then run into an
- * unverified one.
+ * THE MECHANISM THIS PARAGRAPH USED TO NAME IS GONE, AND RE-MEASURED, NOT
+ * GUESSED. It used to attribute the "no skip-verification switch" behaviour
+ * to a specific rustls `tls_config` (`tan-cli crates/tan-cli/src/http.rs`)
+ * that trusted the bundled webpki roots merged with the OS trust store — a
+ * citation that cannot describe the shipped binary: 0.6.0 is Python. What it
+ * actually does was then MEASURED rather than left unverified: the pinned
+ * binary bundles `_internal/certifi/cacert.pem` (240216 bytes), and
+ * `SSL_CERT_FILE=/dev/null SSL_CERT_DIR=/nonexistent tan --format json sdk
+ * list --online` still succeeds — OpenSSL's own env-configurable verify
+ * paths are not being consulted at all, so tan is not falling back to
+ * `set_default_verify_paths()`. `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` and
+ * `SSL_CERT_FILE` pointed at a real-but-empty file were each tried too, and
+ * every one of them was silently ignored (the call still succeeds). tan is
+ * passing an explicit CA file — almost certainly its own bundled certifi —
+ * and reads NONE of the usual override variables. So the OS trust store is
+ * NOT merged in, and there is currently no lever, of any kind, for a
+ * customer to add a proxy's CA to what tan itself trusts.
  *
- * The OS trust store is NOT claimed to fix the subprocesses, because it does
- * not. tan's own module doc is explicit that `git clone`, `pip` and `west
- * update` "do their own networking with their own trust stores" (tan-cli
- * `crates/tan-cli/src/http.rs`): pip verifies against `certifi`'s bundled CA
- * and never consults the Windows/macOS store (it needs `PIP_CERT` /
- * `REQUESTS_CA_BUNDLE` / `--trusted-host`), and Git for Windows built against
- * OpenSSL uses its own `ca-bundle.crt`. Promising them here is how a user
- * installs the CA as told, watches tan start working, then hits
- * `CERTIFICATE_VERIFY_FAILED` on the pip step and concludes the extension lied.
+ * The OS trust store is NOT claimed to fix the subprocesses either, because
+ * it does not, independent of tan's own implementation language: pip
+ * verifies against `certifi`'s bundled CA and never consults the
+ * Windows/macOS store (it needs `PIP_CERT` / `REQUESTS_CA_BUNDLE` /
+ * `--trusted-host`), and Git for Windows built against OpenSSL uses its own
+ * `ca-bundle.crt`.
  *
- * So this logs the honest answer once instead of silently doing nothing.
+ * So this logs the honest answer once instead of silently doing nothing, and
+ * the honest answer is now narrower than it used to be: there is no remedy
+ * to hand the customer for tan itself, only for the subprocesses it spawns.
  */
 function warnIfStrictSSLNotForwardable(strictSSL: boolean | undefined): void {
   if (strictSSL !== false || strictSSLNotForwardableWarned) {
@@ -848,13 +871,13 @@ function warnIfStrictSSLNotForwardable(strictSSL: boolean | undefined): void {
   strictSSLNotForwardableWarned = true;
   log(
     "[cli] http.proxyStrictSSL is off, but that setting does not reach the " +
-      "tan CLI — tan always verifies TLS, against the bundled roots plus your " +
-      "OS trust store. If a TLS-inspecting proxy is breaking tan, install its " +
-      "CA certificate into the OS trust store; there is no way to disable the " +
-      "check for tan alone. Note that this fixes tan itself only — the tools " +
-      "it runs (git, pip, west) each verify against their own trust store, so " +
-      "a TLS-inspecting proxy may still need PIP_CERT / REQUESTS_CA_BUNDLE " +
-      "for pip and http.sslCAInfo for git.",
+      "tan CLI — tan always verifies TLS against its own bundled CA list and " +
+      "has no flag or environment variable that adds to it or turns the " +
+      "check off, so a TLS-inspecting proxy will break tan itself with no " +
+      "available workaround today. The tools tan runs (git, pip, west) each " +
+      "verify against their own trust store regardless, so once tan's own " +
+      "calls are unblocked upstream a TLS-inspecting proxy may still need " +
+      "PIP_CERT / REQUESTS_CA_BUNDLE for pip and http.sslCAInfo for git.",
   );
 }
 
@@ -918,15 +941,33 @@ function buildResolveDeps(
   // A locally-built tan from a SIBLING `tan-cli` checkout — present when running
   // from a source checkout with both repos cloned side by side (F5 / dev host /
   // `code --extensionDevelopmentPath`), where no `bin/` is staged and a network
-  // download may be unavailable. Prefer a release build over debug. In an
-  // installed VSIX `../tan-cli` does not exist, so this is null and resolution
-  // falls through to the cached/downloaded binary.
+  // download may be unavailable. In an installed VSIX `../tan-cli` does not
+  // exist, so this is null and resolution falls through to the cached/downloaded
+  // binary.
+  //
+  // `python/dist/tan/` is where tan-cli's own build lands: `python/scripts/
+  // build_binary.sh` freezes the CLI with PyInstaller `--onedir --name tan
+  // --distpath dist`, and both tan-cli workflows invoke it with
+  // `working-directory: python`. The launcher is pointed at IN PLACE and never
+  // copied out — a onedir freeze resolves its payload relative to itself, so
+  // `tan` only runs while it sits beside its `_internal/` sibling.
+  //
+  // This used to look for `target/{release,debug}` — cargo output. tan-cli has
+  // had no `Cargo.toml` since v0.5.0 (tan-cli#269), so those candidates could
+  // not match any checkout the current pin wants, and a developer's own build
+  // was silently skipped in favour of a download. The other local-dev route,
+  // `pip install ./python`, puts `tan` on PATH and is the `path` rung's job.
   const siblingTanCli = path.join(context.extensionPath, "..", "tan-cli");
-  const localBuildBinaryPath =
-    [
-      path.join(siblingTanCli, "target", "release", binaryName(platform)),
-      path.join(siblingTanCli, "target", "debug", binaryName(platform)),
-    ].find((candidate) => fs.existsSync(candidate)) ?? null;
+  const localBuildCandidate = path.join(
+    siblingTanCli,
+    "python",
+    "dist",
+    "tan",
+    binaryName(platform),
+  );
+  const localBuildBinaryPath = fs.existsSync(localBuildCandidate)
+    ? localBuildCandidate
+    : null;
   return {
     cliPathSetting: vscode.workspace
       .getConfiguration("alpSdk")
@@ -2323,7 +2364,44 @@ export async function runAlpCommand(
   context: vscode.ExtensionContext,
   args: string[],
   cwd?: string,
-  options?: { signal?: AbortSignal; interactive?: boolean },
+  options?: {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    interactive?: boolean;
+    /**
+     * Run under the user's LOGIN shell on POSIX, the way `runAlpStreamed`
+     * already does (`loginShellInvocation`).
+     *
+     * Opt-in, not the default. It costs a shell startup per call, and most
+     * envelope commands (`presets`, `examples`, `explain`) only read metadata
+     * — they do not care what else is on PATH. It matters for the commands
+     * that REPORT ON THE ENVIRONMENT, because otherwise they answer about a
+     * different one than the build runs in: builds go through
+     * `runAlpStreamed`, under the profile's PATH, while this path sees only
+     * whatever a GUI-launched VS Code inherited.
+     *
+     * No-op on Windows, where the extension host already has the login
+     * environment.
+     */
+    loginShell?: boolean;
+    /**
+     * Default `true`. Set `false` to send `args` VERBATIM, skipping
+     * `withSdkRoot`'s injection of `--sdk-root <the extension's own
+     * resolved SDK>`.
+     *
+     * `tan sdk current` (#614) is the one caller that needs this: the whole
+     * point of that verb is asking tan's OWN resolution ladder (project pin,
+     * global default, discovery) which SDK it independently resolves. With
+     * the injection left on, `collectProjectContext().sdkRoot` — this
+     * extension's OWN answer — is handed to tan as `--sdk-root`, and tan
+     * dutifully reports it straight back at `sourceTier: "sdkRootFlag"`.
+     * That is not tan disagreeing OR agreeing with anything; it is this
+     * extension asking tan to confirm a fact this extension just told it,
+     * and mistaking the echo for independent evidence (found in adversarial
+     * review of #604/#614).
+     */
+    injectSdkRoot?: boolean;
+  },
 ): Promise<{
   outcome: CliOutcome;
   raw: SpawnResult;
@@ -2338,7 +2416,7 @@ export async function runAlpCommand(
     // Never throw: a resolution failure becomes an error outcome so callers
     // can present it uniformly (the message already points at alpSdk.cliPath).
     const message = error instanceof Error ? error.message : String(error);
-    log(`[cli] ✗ CLI unavailable: ${message}`);
+    log(`[cli] [fail] CLI unavailable: ${message}`);
     return {
       outcome: unavailableOutcome(error),
       raw: {
@@ -2350,7 +2428,7 @@ export async function runAlpCommand(
       source: "unresolved",
     };
   }
-  const finalArgs = withSdkRoot(args);
+  const finalArgs = options?.injectSdkRoot === false ? args : withSdkRoot(args);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")} --format json` +
       (cwd ? `  (cwd: ${cwd})` : ""),
@@ -2358,8 +2436,22 @@ export async function runAlpCommand(
   const result = await runAlpAsync(
     binary.command,
     finalArgs,
-    (command, spawnArgs, spawnCwd) =>
-      spawnAlpAsync(command, spawnArgs, spawnCwd, options?.signal),
+    (command, spawnArgs, spawnCwd) => {
+      // `loginShellInvocation` returns null on Windows and whenever the caller
+      // did not ask, which is the ordinary direct spawn. `cwd` is passed in
+      // BOTH branches, matching `runAlpStreamed` — the shell command cds
+      // itself, and the spawn cwd stays the same either way.
+      const shellRun = options?.loginShell
+        ? loginShellInvocation(command, spawnArgs, spawnCwd)
+        : null;
+      return spawnAlpAsync(
+        shellRun?.file ?? command,
+        shellRun?.argv ?? spawnArgs,
+        spawnCwd,
+        options?.signal,
+        options?.timeoutMs,
+      );
+    },
     cwd,
   );
   const { outcome, raw } = result;
@@ -2402,6 +2494,20 @@ export async function runAlpInTerminal(
   args: string[],
   options: { name: string; cwd: string | undefined },
 ): Promise<void> {
+  // #596: this is the SECOND spawn channel, and it had no gate at all.
+  // `gateFlashDispatch` lived in `runAlpStreamed` alone, whose header calls
+  // it "unconditional, on every argv" — true of that function, not of this
+  // extension. No caller builds a flashing argv today (["bootstrap"],
+  // ["build"], ["run"]), but `tan run` accepts `--flash` and
+  // `westRunNativeSim` already routes ["run"] through here. A gate a channel
+  // opts into is a gate the next channel forgets, which IS defect #540.
+  //
+  // BEFORE resolving the binary, so a refusal never costs a CLI download.
+  // The retry path below re-enters this function and therefore re-asks: one
+  // consent authorises one dispatch, and re-asking is the safe direction.
+  const gated = await gateFlashDispatch(args, options.cwd);
+  if (gated === null) return;
+
   let binary: ResolvedBinary;
   try {
     // Every caller runs a terminal command the user just triggered (a build/
@@ -2412,7 +2518,7 @@ export async function runAlpInTerminal(
     binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     log(
-      `[cli] ✗ CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
+      `[cli] [fail] CLI unavailable (terminal): ${error instanceof Error ? error.message : String(error)}`,
     );
     // "Retry" is caller-handled by the seam's contract, so it has to be
     // honoured here or the button is a dead end: resolution threw, so nothing
@@ -2423,7 +2529,10 @@ export async function runAlpInTerminal(
     }
     return;
   }
-  const finalArgs = withSdkRoot(args);
+  // The GATED argv, not the raw one: an approved flash is armed with tan's
+  // `--confirm` by the gate, and spawning `args` here would drop it and
+  // preview instead of write.
+  const finalArgs = withSdkRoot(gated);
   log(
     `[cli] $ ${binaryLabel(binary.command)} ${finalArgs.join(" ")}  (terminal: ${options.name})`,
   );
@@ -2522,6 +2631,11 @@ export async function runAlpStreamed(
   // unbootable — the hazard `runInTerminal`'s guard was written for (#146).
   // Reserved BEFORE the first await, so two clicks landing back-to-back can't
   // both pass while the binary is still being resolved.
+  //
+  // The progress notification's Cancel button IS a termination, and it is the
+  // one exception — bounded rather than removed: for a FLASH it asks
+  // first (`confirmStopOfFlash`), so the kill exists for a hung run but
+  // cannot be taken by a single mis-click into a live write.
   if (!reserveStreamedRun(options.name)) {
     log(
       `[channel] "${options.name}" refused — a run under that name is still in flight`,
@@ -2544,18 +2658,139 @@ export async function runAlpStreamed(
     return;
   }
   try {
-    await streamRun(context, args, options);
+    // The hardware-consent gate (#540), INSIDE the runner rather than at the
+    // call sites. A gate wired per call site is a gate the next call site
+    // forgets the same way — which is exactly how both flash sites came to
+    // omit the same flag. Every other argv is returned unchanged, so this
+    // covers a dispatch site that does not exist yet.
+    //
+    // It does NOT arm `--confirm`; see `src/flash/gate.ts`'s header. Three of
+    // tan's six flash backends program the board on a bare `tan flash`, so the
+    // dialog — not the flag — is what stands between a click and a write.
+    //
+    // It finds the command the way `scripts/tan-surface/extract.mjs` does —
+    // skipping root-position flags with their values — so a future
+    // `["--project", <dir>, "flash"]`, the shape `alpBuild` already builds for
+    // Build forty lines above `alpFlash`, is a flash to this gate and not a
+    // bare argv-index comparison's "not a flash".
+    //
+    // AFTER the reservation, deliberately: the modal is blocking, and holding
+    // the flash run name across it is what stops a second click opening a
+    // second dialog into a second programmer on the same board. `isRunActive`
+    // already documents that state as "or its start is still pending
+    // confirmation", and the `finally` below releases it on every answer.
+    const gated = await gateFlashDispatch(args, options.cwd);
+    // Refused or cancelled: the gate has already said so on its own terms —
+    // "cancelled", never a failure — and NOTHING is spawned here.
+    if (gated === null) return;
+    // Whether THIS spawn writes a device. Asked of the argv actually going out,
+    // and keyed on it being a FLASH rather than on `--confirm` being present:
+    // `plan_zephyr_west_flash`, `plan_baremetal_cmake_flash` and
+    // `plan_swd_probe` write without it (tan-cli#796), so an armed-only test
+    // would answer "not a write" on the backends that write unasked.
+    // `streamRun` needs this for the two places a write and a build must not
+    // behave alike: the Cancel button, and a death by signal.
+    const isFlash = isFlashArgv(gated);
+    await streamRun(context, gated, { ...options, isFlash });
   } finally {
     releaseStreamedRun(options.name);
   }
 }
 
+/**
+ * Ask before terminating a flash that is already writing. Resolves true only
+ * on an explicit accept.
+ *
+ * ── WHY A SECOND DIALOG AND NOT ONE OF THE OBVIOUS ALTERNATIVES ────────────
+ *
+ * `runAlpStreamed`'s own header says the reservation refuses a same-named
+ * re-run and NEVER terminates one, "killing a flash mid-write can leave a
+ * board unbootable". The progress notification's Cancel button is the one
+ * exception, and it is aimed at a live write TODAY — this is not a hazard the
+ * gate introduces. An earlier draft of this paragraph said the opposite:
+ * "on `dev` it was harmless: without `--confirm` tan previewed and wrote
+ * nothing". Measured against tan v0.6.0, that is false for three of the six
+ * backends — `plan_zephyr_west_flash`, `plan_baremetal_cmake_flash` and
+ * `plan_swd_probe` never set `planning_only`, so a bare `tan flash` on a
+ * Zephyr slice is a real write and Cancel already sends SIGTERM, then SIGKILL
+ * ten seconds behind it, into it.
+ *
+ * Making the progress non-cancellable would trade one hazard for another. The
+ * kill is load-bearing: the run name is released only when this promise
+ * settles, so a `tan` that hangs would keep Flash refused ("still running")
+ * until the window is reloaded, with no way out from the UI. A confirm keeps
+ * BOTH properties — the escape hatch survives, and it can no longer be taken
+ * by a single mis-click on a notification that looks like every other one.
+ *
+ * ONE LIMIT, STATED RATHER THAN HIDDEN: VS Code's progress token is one-shot.
+ * A declined stop cannot re-arm the Cancel button, so a customer who says
+ * "keep flashing" to a genuinely hung run is back to reloading the window.
+ * That is the deliberate trade: the recovery for a hung run is a reload; the
+ * recovery for a board bricked mid-write is a bench and a debug probe. The
+ * dialog says so, so the choice is made with that in view.
+ */
+async function confirmStopOfFlash(name: string): Promise<boolean> {
+  const picked = await notify(
+    planConfirm({
+      message: `${name} is writing to the device. Stop it now?`,
+      modalDetail:
+        "The write is already in progress. Stopping it part-way leaves the " +
+        "target's non-volatile memory half-programmed: the device can be " +
+        "left unbootable, and recovering it may need a debug probe rather " +
+        "than another flash from here.\n\n" +
+        "Letting the run finish is normally the safer choice — a failed " +
+        "flash that ran to the end still reports what it did, in the Alp " +
+        "SDK log.\n\n" +
+        "This prompt appears once. If you keep flashing, the Cancel button " +
+        "will not ask again, and a run that never finishes would then need " +
+        "the window reloaded.",
+      confirm: { id: "stopFlash" },
+    }),
+  );
+  return picked === "stopFlash";
+}
+
+/**
+ * Report a flash that died on a signal.
+ *
+ * This is the quietest outcome in the runner and the most dangerous one: the
+ * `exit` handler deliberately raises nothing for a signal death ("a kill is
+ * not a failure to report as one"), which is right for a build and wrong for
+ * a write. There is no exit code here — a signal death has none — so
+ * `signalStreamedFinished` would hand the verdict subscriber `undefined` and
+ * it would say nothing at all, which is how a half-programmed board became
+ * the one case with no message.
+ *
+ * It does NOT say the flash failed, and it does not guess. It says the write
+ * was interrupted and the device's state is unknown, which is the entire
+ * extent of what a signal number supports.
+ */
+function warnInterruptedFlash(name: string, signal: NodeJS.Signals): void {
+  notifyAsync(
+    planFailure({
+      severity: "warning",
+      operation: name,
+      cause:
+        `${name} was interrupted while it was writing. The write stopped ` +
+        "part-way, so the device's memory is in an unknown state and it may " +
+        "not boot — read the log, then re-flash it before using it.",
+      detail: `stopped by ${signal}`,
+      actions: [{ id: "showOutput" }],
+    }),
+  );
+}
+
 /** The body of `runAlpStreamed`, split out so its every exit path — including
- *  a failed binary resolution — releases the reservation via one `finally`. */
+ *  a failed binary resolution — releases the reservation via one `finally`.
+ *
+ *  `isFlash` says this particular spawn is a flash and may therefore WRITE
+ *  non-volatile memory. It changes exactly two behaviours —
+ *  `confirmStopOfFlash` and `warnInterruptedFlash` — and nothing else;
+ *  everything a build does, a flash still does. */
 async function streamRun(
   context: vscode.ExtensionContext,
   args: string[],
-  options: { name: string; cwd?: string },
+  options: { name: string; cwd?: string; isFlash?: boolean },
 ): Promise<void> {
   let binary: ResolvedBinary;
   try {
@@ -2565,7 +2800,7 @@ async function streamRun(
     binary = await resolveAlpBinaryForContext(context, { interactive: true });
   } catch (error) {
     log(
-      `[cli] ✗ CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
+      `[cli] [fail] CLI unavailable (streamed): ${error instanceof Error ? error.message : String(error)}`,
     );
     // NOT awaited: an error notification with a button does not auto-dismiss,
     // so awaiting it would hold this run's reservation for as long as the toast
@@ -2637,10 +2872,10 @@ async function streamRun(
           clearTimeout(killTimer);
           resolve();
         };
-        token.onCancellationRequested(() => {
-          // The user's own explicit stop — the ONE kill left on this path.
-          // `posixLoginShellCommand` `exec`s the binary, so this signals `tan`
-          // itself rather than a wrapper shell that would leave it orphaned.
+        // The user's own explicit stop — the ONE kill left on this path.
+        // `posixLoginShellCommand` `exec`s the binary, so this signals `tan`
+        // itself rather than a wrapper shell that would leave it orphaned.
+        const stop = (): void => {
           log(`[channel] "${options.name}" cancelled by the user`);
           appendOutput(`\n[cancelled] ${options.name}\n`);
           child.kill();
@@ -2656,6 +2891,32 @@ async function streamRun(
             );
             child.kill("SIGKILL");
           }, CANCEL_GRACE_MS);
+        };
+        token.onCancellationRequested(() => {
+          // A build, an image, a clean, a renode: stop it, no questions. A
+          // FLASH is asked about, because a flash is mid-write — see
+          // `confirmStopOfFlash` for the whole argument. Keyed on flash-ness,
+          // not on `--confirm`: three backends write without it.
+          if (!options.isFlash) {
+            stop();
+            return;
+          }
+          void confirmStopOfFlash(options.name).then((stopIt) => {
+            // It may have finished on its own while the dialog sat open. There
+            // is then nothing to signal, and `child.kill()` on a reaped pid is
+            // at best a no-op and at worst somebody else's process.
+            if (settled) return;
+            if (!stopIt) {
+              log(
+                `[channel] "${options.name}" cancel declined — the write continues`,
+              );
+              appendOutput(
+                `\n[cancel declined] ${options.name} is still writing\n`,
+              );
+              return;
+            }
+            stop();
+          });
         });
         child.on("error", (err) => {
           notifyAsync(
@@ -2675,12 +2936,55 @@ async function streamRun(
         // must be freed there; late output still reaches the channel because
         // the `data` handlers stay attached.
         child.on("exit", (code, signal) => {
-          // A kill (the Cancel button) is not a failure to report as one.
+          // A kill (the Cancel button) is not a failure to report as one. It IS
+          // a finish, though, and the event is not only how a verdict reaches a
+          // toast — it is also how `BuildDelegatePty`
+          // (`src/tasks/vscodeAdapter.ts`) learns that the build it is WAITING
+          // on has ended, how `refreshState()` runs after a dispatch, and how
+          // `recordBuildFinish` records that a build ended at all (#470).
+          //
+          // Skipping it on a signal death made this the ONE dispatch path that
+          // can end without saying so: cancelling a streamed `tan build` that
+          // an F5 was queued behind left that pty open, and the debug session
+          // waited until the window was reloaded. The terminal path never had
+          // the gap — `util.ts`'s `finish` fires unconditionally — so this is
+          // symmetry, not a new convention.
           if (signal) {
             log(`[channel] "${options.name}" stopped (signal=${signal})`);
-          } else {
-            signalStreamedFinished(options.name, code ?? undefined);
+            // …but for a FLASH, silence is the wrong answer: this is the
+            // outcome most likely to have left a half-programmed board, and it
+            // was the ONLY outcome that said nothing at all.
+            //
+            // Keyed on the run being a FLASH, not on the confirm gate being
+            // armed. Measured in tan v0.6.0: `plan_zephyr_west_flash`,
+            // `plan_baremetal_cmake_flash` and `plan_swd_probe` return a bare
+            // `FlashPlan` and inherit `planning_only: bool = False`
+            // (`flash_plan.py:1232`), and `flash_cmd.py:2892` only skips the
+            // spawn on `plan.planning_only or ctx.dry_run` — so those three
+            // program the board on a bare `tan flash`, with no `--confirm`
+            // anywhere. An armed-only warning would stay silent on exactly the
+            // backends that write without being asked.
+            if (options.isFlash) warnInterruptedFlash(options.name, signal);
           }
+          // NO exit code on a signal death. Node sets exactly one of the two,
+          // but the ternary states the intent rather than leaning on that: an
+          // exit code here would be a verdict, and there is none — the run was
+          // stopped, not judged. `undefined` is the value both consumers are
+          // already written for. The subscriber in `src/extension.ts` branches
+          // `code === 0` / `else if (code !== undefined)` and so stays silent,
+          // which is the "not a failure to report as one" part; and
+          // `BuildDelegatePty` does `event.code ?? 1`, so a killed build fails
+          // its `preLaunchTask` instead of waving the debugger through.
+          // The run's own cwd rides along (#553). It is the project tan acted
+          // on, which is not always the workspace root — `alpBuild` sends
+          // `["--project", <example>, "build"]` when the active project is not
+          // the target — so a subscriber reading `build/system-manifest.yaml`
+          // reads the one THIS run wrote rather than whatever sits at the root.
+          signalStreamedFinished(
+            options.name,
+            signal ? undefined : (code ?? undefined),
+            options.cwd,
+          );
           finish();
         });
         // Backstop for the one case `exit` cannot cover: a spawn that fails
@@ -2715,16 +3019,19 @@ const ALP_SPAWN_MAX_OUTPUT = 16 * 1024 * 1024;
  * Async twin of the former `spawnAlp`: runs a `tan` envelope command off the
  * extension-host event loop via `cp.spawn`, so a slow or network-bound command
  * (e.g. `sdk list`) — and any webview waiting on it — never freezes the editor.
- * Preserves the sync path's guards: utf8 output, a 16 MB cap, and a 60s timeout,
- * each surfaced as `SpawnResult.error` so `runAlpAsync` maps it to an error
- * outcome (caller's spinner-clear / error toast still fires). An optional
- * `signal` (from a command's CancellationToken) kills the child on user cancel.
+ * Preserves the sync path's guards: utf8 output, a 16 MB cap, and a timeout
+ * (default 60s, `timeoutMs` overrides it — e.g. `model build` runs a real NPU
+ * compile that can outlast 60s and must not be killed mid-compile), each
+ * surfaced as `SpawnResult.error` so `runAlpAsync` maps it to an error outcome
+ * (caller's spinner-clear / error toast still fires). An optional `signal`
+ * (from a command's CancellationToken) kills the child on user cancel.
  */
 function spawnAlpAsync(
   command: string,
   args: string[],
   cwd?: string,
   signal?: AbortSignal,
+  timeoutMs: number = ALP_SPAWN_TIMEOUT_MS,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     let stdout = "";
@@ -2752,11 +3059,9 @@ function spawnAlpAsync(
         status: null,
         stdout,
         stderr,
-        error: new Error(
-          `tan CLI timed out after ${ALP_SPAWN_TIMEOUT_MS / 1000}s`,
-        ),
+        error: new Error(`tan CLI timed out after ${timeoutMs / 1000}s`),
       });
-    }, ALP_SPAWN_TIMEOUT_MS);
+    }, timeoutMs);
 
     // Cap BOTH streams (spawnSync's maxBuffer applied per-stream) so a runaway
     // tan can't grow ext-host memory unbounded.

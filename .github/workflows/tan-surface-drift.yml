@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Does the surface we RECORDED still match the binary we PIN? (#629)
+#
+# ── Why this exists at all ──────────────────────────────────────────────────
+#
+# Nothing else in this repo ever compares `test/golden/tan-surface/surface.json`
+# to a real tan. Every gate that reads it checks it against ITSELF:
+#
+#   test/tan.pinnedSurface.test.js   `pinnedSurface.ts` agrees with surface.json
+#   test/tan.surfaceContract.test.js the argv sites agree with surface.json
+#   test/docs.cliClaims.test.js      the docs agree with surface.json
+#   (the snapshot's own contentDigest agrees with the snapshot)
+#
+# All internally consistent by construction, and none of them can notice the
+# record disagreeing with tan. #602 is the proof: 36 flags were recorded wrongly
+# across six commands, and `node --test` passed 36/36 against that wrong record
+# for as long as it existed.
+#
+# A wrong record is SILENTLY AUTHORITATIVE. `src/alpCli/pinnedSurface.ts` drives
+# real behaviour from it — a flag recorded `inert` tells this extension not to
+# send a flag that works, and a flag missing entirely is invisible to the
+# contract test, which reads `options[flag]` and `continue`s when the key is
+# absent. After #602's fix, 147 accepted (command, global-flag) pairs across 23
+# commands are still unrecorded.
+#
+# ── Why scheduled, and not a required check on every PR ─────────────────────
+#
+# Per-PR is the wrong cadence and would make this worse, not better:
+#
+#   * it needs the pinned binary downloaded on every runner, on every PR;
+#   * it would red on changes that have nothing to do with the surface, the
+#     moment upstream publishes a tan whose help text moved.
+#
+# The useful signal is "the pin's surface no longer matches what we recorded",
+# which is a nightly question, not a per-commit one. `e2e.yml` already
+# establishes this cadence and its own header argues the same trade at length:
+# a flaky required check does not get fixed, it gets re-run until it passes,
+# which leaves the repo believing it has a gate it does not have.
+#
+# ── What a failure here means ───────────────────────────────────────────────
+#
+# Either the record is wrong (re-capture it and READ THE DIFF), or the pinned
+# release was re-published under the same tag. Both need a human; neither
+# should be auto-committed. This job writes nothing — `fetch.mjs --check`
+# builds a fresh snapshot in memory, compares content digests, and names the
+# commands that moved.
+
+name: tan surface drift
+
+on:
+  schedule:
+    # 04:20 UTC daily. Off the hour on purpose: GitHub's scheduler queues
+    # heavily at :00 and a drift check has no deadline.
+    - cron: "20 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: recorded surface vs the pinned binary
+    # darwin-arm64 because that is the host this repo's own capture was taken
+    # on, and the surface is help text rather than behaviour — but see the
+    # STATED LIMIT in the summary step: this checks ONE host's binary.
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # `node-version: "24"`, NOT `node-version-file: .nvmrc` — this repo
+          # has no `.nvmrc` (0 tracked files by that name) and setup-node fails
+          # outright on a missing version file, before install. Shipped wrong in
+          # #629 and never noticed, because this workflow is schedule-only and
+          # had not fired yet.
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile
+        # `scripts/stage-tan-cli-asset.mjs` requires `../out/alpCli/service.js`
+        # and `../out/alpCli/download.js`. `out/` is gitignored and there is no
+        # `prepare`/`postinstall` script, so `pnpm install` alone does NOT
+        # produce it and the staging step below dies MODULE_NOT_FOUND.
+        #
+        # `ci.yml`'s `build` job needs no such line because its staging happens
+        # after that job's own compile step; its `verify_pinned_cli_hosts` job
+        # carries one for the same reason this does. Any workflow that stages
+        # the CLI outside `build` must compile first. This one shipped without
+        # it -- caught before the first scheduled run, which had never verified
+        # anything.
+        run: pnpm exec tsc --build
+
+      - name: Resolve the pinned tan version
+        id: cli_version
+        # The SAME pattern ci.yml and release-vsix.yml use, and this file is
+        # listed alongside them in test/cliPin.prerelease.test.js's `SITES` —
+        # so a prerelease pin that stops resolving here fails that test rather
+        # than silently resolving to the empty string (#443).
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -oE 'SUPPORTED_CLI_VERSION = "[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?"' src/alpCli/service.ts | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not resolve SUPPORTED_CLI_VERSION from src/alpCli/service.ts"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stage the pinned tan binary
+        # Through the SAME resolver + downloader `ci.yml` and
+        # `release-vsix.yml` use. NOT a hand-rolled asset URL: tan-cli#349
+        # moved the asset from a raw binary to an archive and every
+        # hand-rolled caller 404'd. And NOT whatever `tan` is on PATH — a
+        # developer machine can carry an entirely different version (0.5.0-rc4
+        # against a 0.6.0 pin is the case that produced confident wrong
+        # answers while #602 was being found), which is the whole reason this
+        # job resolves the pin explicitly.
+        run: |
+          set -euo pipefail
+          node scripts/stage-tan-cli-asset.mjs \
+            --platform darwin --arch arm64 --dest /tmp/pinned-tan \
+            --version "${{ steps.cli_version.outputs.version }}"
+
+      - name: Does the record still match the binary?
+        env:
+          # `fetch.mjs` defaults to the copy VS Code installed on a developer's
+          # own machine, which does not exist on a runner.
+          TAN_BIN: /tmp/pinned-tan/tan
+        run: node scripts/tan-surface/fetch.mjs --check
+
+      - name: Say what a failure means
+        if: failure()
+        run: |
+          {
+            echo "### The recorded tan surface no longer matches the pinned binary"
+            echo
+            echo "This job wrote nothing. Either:"
+            echo
+            echo "* \`test/golden/tan-surface/surface.json\` is wrong — re-capture it with"
+            echo "  \`node scripts/tan-surface/fetch.mjs\` and **read the diff** before"
+            echo "  committing. A wrong record is silently authoritative:"
+            echo "  \`src/alpCli/pinnedSurface.ts\` drives real behaviour from it, and every"
+            echo "  other gate in this repo checks the record against itself."
+            echo "* or the pinned release was re-published under the same tag, which is a"
+            echo "  separate conversation with tan-cli."
+            echo
+            echo "The step above names the commands that moved. **Stated limit:** this"
+            echo "checks the darwin-arm64 asset only, so a divergence that exists on one"
+            echo "host's build and not another is outside what this job can see."
+          } >> "$GITHUB_STEP_SUMMARY"

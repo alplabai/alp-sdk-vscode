@@ -13,14 +13,22 @@
 // argv (i.e. the setting was actually set), and names the setting by key so
 // it is actionable rather than a vague "something is wrong".
 //
-// It ALSO pins the narrower half of the guard (#340 review, MINOR): the hint
-// is scoped to `outcome.kind === "internal"` (tan's exit 5, which is where
-// BOTH `--svd` failure modes land — confirmed against the pinned tan's
-// `ExitCode::InternalFailure`), not "any failure while --svd is on the
-// argv". A wide version double-fires on a stale tan that does not recognise
-// `--svd` at all (exit 2 / `"validation"`): the skew hint ("update tan")
-// AND the svd hint (Open Settings on a setting that was never the problem)
-// would both show, and the wrong remedy is the more actionable-looking one.
+// It ALSO pins the narrower half of the guard, and what "narrower" MEANS here
+// has changed. The original scoping was `outcome.kind === "internal"` (exit 5,
+// measured against `ExitCode::InternalFailure` in what is now the RETIRED Rust
+// oracle). Against the pinned tan 0.6.0 every live `--svd` failure is exit 2
+// carrying `debug-config.invalid-argument` — measured: a missing path, a
+// directory, and an empty string all land there — so an `internal`-only guard
+// never fired at all. The guard now keys on that ISSUE CODE, with the exit-5
+// arm kept only as cover for an older binary.
+//
+// What it must still refuse: firing on "any failure while --svd is on the
+// argv". A stale tan that does not recognise the flag answers exit 2 too, with
+// `cli.parse-error` — so a wide guard shows the skew hint ("update tan") AND
+// the svd hint (Open Settings on a setting that was never the problem) side by
+// side, with the wrong remedy the more actionable-looking one. Both stale-tan
+// shapes are pinned below, the envelope-carrying one being the load-bearing
+// case: a guard reading "any issue at all" passes every other test here.
 //
 // Same `Module._load` swap as test/debug.skewHint.test.js, driving the real
 // registered `alp.configureDebugProfile` handler out of `out/debug.js` so the
@@ -210,5 +218,128 @@ test("a stale tan that does not recognise --svd is named as CLI skew, never blam
     ),
     false,
     "the svd hint must not fire alongside the skew hint",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The shape the PINNED tan 0.6.0 actually returns.
+//
+// The two tests above fabricate `kind: "internal"` (exit 5). Measured against
+// the pinned binary, an unreadable `--svd` is exit 2 -- `kind: "validation"` --
+// carrying `debug-config.invalid-argument`:
+//
+//   {"ok":false,"exitCode":2,"issues":[{"code":"debug-config.invalid-argument",
+//    "message":"Alp: --svd path cannot be read: /nonexistent/nope.svd ([Errno 2]
+//    No such file or directory...). Pass the path to the vendor's own .svd file;
+//    the SDK ships none (alp-sdk#948)."}]}
+//
+// So an `internal`-only guard never fires on the shipping CLI, and the skew
+// hint -- keyed on `validation` plus a `--pre-launch-task` that is on the argv
+// for three of the four target kinds -- fires instead, telling a customer with
+// a bad path to update a CLI that is already current. Both hints classify on
+// the ISSUE CODE now, which is what actually separates the two failures.
+
+/** The measured 0.6.0 failure for an unreadable `--svd`. */
+const INVALID_ARGUMENT_OUTCOME = {
+  ok: false,
+  kind: "validation",
+  message:
+    "Alp: --svd path cannot be read: /home/dev/nope.svd ([Errno 2] No such " +
+    "file or directory). Pass the path to the vendor's own .svd file; the " +
+    "SDK ships none (alp-sdk#948).",
+  envelope: {
+    command: "debug-config",
+    ok: false,
+    exitCode: 2,
+    issues: [
+      {
+        code: "debug-config.invalid-argument",
+        severity: "error",
+        message: "Alp: --svd path cannot be read: /home/dev/nope.svd",
+      },
+    ],
+  },
+};
+
+test("an unreadable --svd at the pinned tan still names the setting", async () => {
+  const { argv, plans } = await configureWith(INVALID_ARGUMENT_OUTCOME, {
+    svdPath: "vendor/nope.svd",
+  });
+
+  assert.ok(argv[0].includes("--svd"), "the argv under test must carry --svd");
+  assert.equal(plans.length, 1);
+  assert.match(
+    plans[0].message,
+    /alpSdk\.svdPath/,
+    "exit 2 + debug-config.invalid-argument is the SHIPPING shape of this " +
+      "failure; a guard that only fires on exit 5 never fires at all",
+  );
+  assert.ok(
+    plans[0].actions.some(
+      (action) =>
+        action.id === "openSettings" && action.arg === "alpSdk.svdPath",
+    ),
+    `expected an openSettings->alpSdk.svdPath action, got ${JSON.stringify(plans[0].actions)}`,
+  );
+});
+
+test("an unreadable --svd is NOT reported as a stale CLI", async () => {
+  const { plans } = await configureWith(INVALID_ARGUMENT_OUTCOME, {
+    svdPath: "vendor/nope.svd",
+  });
+
+  assert.doesNotMatch(
+    plans[0].message,
+    new RegExp(`requires tan ${SUPPORTED_CLI_VERSION.replace(/\./g, "\\.")}`),
+    "the customer's CLI is current -- the bad path is theirs to fix, and " +
+      "'run Alp: Update CLI' is the wrong remedy shown as the actionable one",
+  );
+});
+
+test("a stale tan's cli.parse-error envelope still reads as CLI skew", async () => {
+  // The stale-tan case above feeds an outcome with NO `envelope` key, so it
+  // only ever exercised the `envelope === undefined` arm. A real stale tan
+  // DOES send an envelope -- measured, `debug-config` with an unknown flag:
+  //
+  //   {"command":"cli","ok":false,"exitCode":2,...,"issues":[{
+  //     "code":"cli.parse-error","severity":"error",
+  //     "message":"...No such option: --svd..."}]}
+  //
+  // so the guard has to distinguish `cli.parse-error` from
+  // `debug-config.invalid-argument` on two envelopes that are otherwise the
+  // same shape and the same exit code. Without this case a guard reading "any
+  // issue at all" passes the whole suite while getting both hints backwards.
+  const { plans } = await configureWith(
+    {
+      ok: false,
+      kind: "validation",
+      message: "Usage: tan debug-config [OPTIONS]\nNo such option: --svd",
+      envelope: {
+        command: "cli",
+        ok: false,
+        exitCode: 2,
+        issues: [
+          {
+            code: "cli.parse-error",
+            severity: "error",
+            message: "Usage: tan debug-config [OPTIONS]\nNo such option: --svd",
+          },
+        ],
+      },
+    },
+    { svdPath: "vendor/E8.svd" },
+  );
+
+  assert.equal(plans.length, 1);
+  assert.match(
+    plans[0].message,
+    new RegExp(`requires tan ${SUPPORTED_CLI_VERSION.replace(/\./g, "\\.")}`),
+    "an unrecognised flag IS version skew -- updating tan is the right remedy",
+  );
+  assert.doesNotMatch(
+    plans[0].message,
+    /alpSdk\.svdPath/,
+    "the setting was never the problem; pointing at it here is the wrong " +
+      "remedy wearing the more actionable-looking button",
   );
 });

@@ -105,6 +105,10 @@ export interface ProjectTemplatesDataMessage {
   type: "projectTemplatesData";
   templates: ProjectTemplate[];
   modules: E1mModule[];
+  /** Why the example catalogue is empty, in tan's own words — set only when it
+   *  gave a reason (`examples.sdk-root-unresolved`), absent when the list is
+   *  legitimately empty. */
+  examplesUnavailableReason?: string;
 }
 /** Scroll a named Hub section into view (e.g. the SDK Manager section). */
 export interface FocusSectionMessage {
@@ -118,8 +122,19 @@ export interface ProjectTemplate {
   title: string;
   description: string;
   category: "starter" | "example" | "library";
-  icon: string;
+  /** No `icon` on the wire by design — see the host-side note in messages.ts. */
   sourceDir?: string;
+  /**
+   * The SDK category this example renders under (`aen`, `ai`, `multicore`, …),
+   * or absent when it has none (#482 §2).
+   *
+   * DISTINCT from `category` above, which is the KIND — starter / example /
+   * library. This is the heading WITHIN the examples, and only examples carry
+   * it. Derived host-side by `exampleCategory` (@alp-sdk/core/examples/category)
+   * from the leading segment of `sourceDir`, deferring to tan the day its
+   * envelope carries one outright.
+   */
+  group?: string;
 }
 
 export interface E1mModule {
@@ -151,6 +166,10 @@ export interface CoreIot {
 export interface CoreEntry {
   os?: CoreOs;
   app?: string;
+  /** The bitbake recipe packaging `app:` on an app-only `os: yocto` slice
+   *  (#624). Written only WITH an `app:` — the SDK refuses to build one
+   *  without the other. Mirrors `packages/alp-core/src/board/models.ts`. */
+  recipe?: string;
   image?: string;
   peripherals?: string[];
   inference?: CoreInference;
@@ -170,7 +189,9 @@ export interface StoragePartition {
   mount?: string;
   flash_device?: string;
   offset_kib?: number;
-  raw?: boolean;
+  // No `raw?: boolean` — mirrors @alp-sdk/core's StoragePartition, where the
+  // reason is spelled out: alp-sdk v0.15.0 deleted the legacy `fs: raw` alias
+  // and storage items are `additionalProperties: false`.
 }
 
 export interface SecurityPsa {
@@ -381,24 +402,78 @@ export interface DependencyLatest {
 export type DependencyActionEffect = "install" | "open-docs" | "bootstrap";
 
 /**
+ * One dispatch inside a `command` action — mirrors
+ * `DependencyCommandStep` in packages/alp-core/src/deps/planner.ts. The view
+ * itself never reads `commands[]` directly (it renders `action.title` /
+ * `action.effect`, both host-computed), so this exists only so the shape is
+ * declared in full rather than left partially mirrored.
+ */
+export interface DependencyCommandStep {
+  tool: string;
+  command: string;
+}
+
+/**
+ * A `command`-kind `DependencyAction` — a NAMED interface, not an inline
+ * union member (#603, third review, major 4): `test/webview.payloadMirror
+ * .test.js`'s field-diff walk only reaches `export interface` declarations,
+ * and `DependencyAction` is an `export type` union, invisible to it either
+ * way. `omittedTools` was added to the inline literal on both sides with no
+ * gate ever comparing them — deleting this mirror's copy of the field left
+ * every existing gate, including the mirror test itself, green. Registered
+ * in `test/webview.payloadMirror.test.js`'s `MODELS`, source
+ * `DependencyCommandAction` in `packages/alp-core/src/deps/planner.ts`.
+ *
+ * `commands` (#603) is an ordered, non-empty list of dispatches — a
+ * `hostPrerequisites` row installing both cmake and ninja is two entries, a
+ * single-tool row is a list of one. The view does not iterate it; the host
+ * dispatches each step and reports back through a fresh `dependencyReport`.
+ */
+export interface DependencyCommandAction {
+  kind: "command";
+  commands: DependencyCommandStep[];
+  /** Tool names tan named a `command: null` for on this row (#603). The
+   *  view never reads this either — the host-built `title` already says
+   *  the omission in prose; this exists only so the shape is declared in
+   *  full, same reason `commands` above is. */
+  omittedTools: string[];
+  effect: "install";
+  title: string;
+}
+
+/** A `fix`-kind `DependencyAction` — see `DependencyCommandAction`'s own doc
+ *  for why this is a named, gate-reachable interface. Source
+ *  `DependencyFixAction` in `packages/alp-core/src/deps/planner.ts`. */
+export interface DependencyFixAction {
+  kind: "fix";
+  fixId: ToolchainFixId;
+  effect: DependencyActionEffect;
+  title: string;
+}
+
+/**
  * What a row's button does. `null` (no action) is a first-class outcome.
  *
  * `effect` picks the label and `title` is the tooltip: both are on every kind,
  * so the view never has to guess a verb or leave a button unexplained.
  */
-export type DependencyAction =
-  | {
-      kind: "command";
-      command: string;
-      effect: "install";
-      title: string;
-    }
-  | {
-      kind: "fix";
-      fixId: ToolchainFixId;
-      effect: DependencyActionEffect;
-      title: string;
-    };
+export type DependencyAction = DependencyCommandAction | DependencyFixAction;
+
+/**
+ * The state word the panel leads with, mirrored from
+ * `@alp-sdk/core/deps/state` (#466 §1). Computed HOST-SIDE from the
+ * (`status`, `action.effect`) pair — the webview renders it and derives
+ * nothing, which is the only shape that does not re-derive tan's verdict.
+ *
+ * `unknown` is not just tan's own `unknown`: any status the host mapping does
+ * not recognise lands here rather than being coerced into one of the other
+ * three. Render it as unknown, never as a guess.
+ */
+export type DependencyState =
+  | "ready"
+  | "will-install"
+  | "needs-you"
+  | "unknown";
 
 export interface DependencyRow {
   /** tan's `check.name`, verbatim — the row's identity and what the webview
@@ -406,6 +481,10 @@ export interface DependencyRow {
   name: string;
   label: string;
   status: DependencyStatus;
+  /** Ready / Will install / Needs you / Unknown. An EXTRA field: `status`
+   *  above is still tan's word and is still rendered, so nothing this
+   *  summarises can be lost. */
+  state: DependencyState;
   detail: string;
   /** tan's own `check.fix` PROSE, verbatim, or `null` when tan gave none.
    *  DISPLAY ONLY — rendered under the detail, never parsed into a command
@@ -482,6 +561,183 @@ export interface HardwareExplorerDataMessage {
   som: HardwareExplorerSom | null;
   cores: ExplorerCore[];
   sdkConnected: boolean;
+}
+
+// --- Models panel (mirrors messages.ts; merges `tan model list` +
+// `tan model doctor` envelopes). `models`/`toolchains` stay `unknown[]` at
+// the boundary — narrowed here, not re-declared from the tan-owned schema. ---
+export interface ModelsDataMessage {
+  type: "modelsData";
+  ok: boolean;
+  models: unknown[];
+  toolchains: unknown[];
+  issues: { code: string; severity: string; message: string }[];
+}
+export interface ModelBuildProgressMessage {
+  type: "modelBuildProgress";
+  log: string;
+  done: boolean;
+  success?: boolean;
+}
+
+/** Per-model NPU-coverage reports from `tan model check --board`. `models`
+ *  stays `unknown[]` at the boundary — the payload
+ *  ([{name,source,backends:[{backend,variant,table,npuCoverage,
+ *  computeOnNpuPctMax,npuPlacementPctReal,uncostedCpuOpCount,basis,
+ *  confidence,notes,ops}]}]) is narrowed in the webview's
+ *  features/models/coverage.ts, which owns the ADR-0028 vocabulary. There is
+ *  no per-model `error` field: tan reports a per-model failure as an envelope
+ *  issue coded `model.check-failed`. The message TYPE keeps its name — it is
+ *  the webview↔extension protocol, not the tan vocabulary. */
+export interface ModelFitDataMessage {
+  type: "modelFitData";
+  /** Envelope `ok` (false → show issues, e.g. the alp stderr via `model.failed`). */
+  ok: boolean;
+  /** `envelope.data.sku` (the board's `som.sku`); absent on failure. */
+  sku?: string;
+  /** `envelope.data.models` — board-mode per-model results. */
+  models: unknown[];
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Ack that `tan model prep` actually started (both file dialogs confirmed) —
+ *  lets the webview flip `prepping:true` only for real work, so a cancelled
+ *  dialog (panel.ts returns early, posts nothing) never sticks the button. */
+export interface ModelPrepStartedMessage {
+  type: "modelPrepStarted";
+}
+
+/** Result of `tan model prep` — the quantized artifact + accuracy report. */
+export interface ModelPrepResultMessage {
+  type: "modelPrepResult";
+  ok: boolean;
+  quantized?: string;
+  accuracy?: {
+    samples: number;
+    top1_agreement_pct: number;
+    mean_cosine: number;
+    max_abs_err: number;
+    verdict: string;
+    guidance: string | null;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Ack that a `tan model run`/`tan model ab` measurement actually started
+ *  (the file dialog(s) confirmed) — lets the webview flip `measuring:true`
+ *  only for real work, so a cancelled dialog (panel.ts returns early, posts
+ *  nothing) never sticks the button. Mirrors ModelPrepStartedMessage. */
+export interface ModelMeasureStartedMessage {
+  type: "modelMeasureStarted";
+}
+
+/** A real bench-measured energy result (`alp_model.measure.EnergyMeasurement`
+ *  in alp-sdk) attached to a `tan model run --on-device`/`tan model ab`
+ *  payload. `source`/`scope` are always `"measured"`/`"carrier-rail-delta"` —
+ *  a board-level carrier-rail delta, never an isolated NPU/U85/U55/M55
+ *  figure; `scope` drives the webview's label (never hardcode "NPU power" /
+ *  "silicon energy" from it). Undefined on a host-only run (the
+ *  overwhelmingly common case) or when the CLI's energy object was
+ *  malformed. */
+export interface ModelEnergyMeasurement {
+  source: string;
+  scope: string;
+  value_mj_per_inference: number;
+  rails: string[];
+  n_inferences: number;
+  window_ms: number;
+  sample_count: number;
+  spread_mj: number | null;
+}
+
+/** Result of `tan model run` — a host reference (CPU) inference measurement. */
+export interface ModelRunResultMessage {
+  type: "modelRunResult";
+  ok: boolean;
+  run?: {
+    backend: string;
+    latency_ms: number;
+    output_argmax: number | null;
+    peak_sram_kib: number | null;
+    power_mj: number | null;
+    runs: number;
+    random_input: boolean;
+    note: string;
+    accuracy?: { expected: number; match: boolean };
+    energy?: ModelEnergyMeasurement;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Result of `tan model ab` — two models' host reference measurements + a
+ *  head-to-head comparison. */
+export interface ModelAbResultMessage {
+  type: "modelAbResult";
+  ok: boolean;
+  ab?: {
+    a: {
+      model: string;
+      backend: string;
+      latency_ms: number;
+      energy?: ModelEnergyMeasurement;
+    };
+    b: {
+      model: string;
+      backend: string;
+      latency_ms: number;
+      energy?: ModelEnergyMeasurement;
+    };
+    comparison: {
+      faster: string;
+      latency_ratio: number | null;
+      a_latency_ms: number;
+      b_latency_ms: number;
+      size_delta_bytes: number | null;
+      /** Present only when BOTH `a`/`b` carry a real energy object — mirrors
+       *  the CLI, which omits the key entirely rather than sending `null`
+       *  when either side lacks one. */
+      energy_delta_mj_per_inference?: number;
+    };
+    note: string;
+  };
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** A single curated zoo entry from `tan model zoo --board` — `runs_here` is
+ *  `true`/`false` when the board's `som.sku` was resolvable, `null` when it
+ *  wasn't (e.g. no board.yaml yet) — the MVP shows every entry badged rather
+ *  than silently hiding the ones it can't validate. */
+export interface ZooEntry {
+  id: string;
+  task: string;
+  description: string;
+  license: string;
+  validated_soms: string[];
+  runs_here: boolean | null;
+}
+
+/** Zoo gallery state from `tan model zoo --board`. */
+export interface ZooDataMessage {
+  type: "zooData";
+  ok: boolean;
+  entries: ZooEntry[];
+  issues: { code: string; severity: string; message: string }[];
+}
+
+/** Ack that `tan model add` actually started — mirrors ModelPrepStartedMessage
+ *  (Add mutates board.yaml + fetches, so it gets the same started-ack shape
+ *  as prep: the webview poster does NOT set `adding` optimistically). */
+export interface ZooAddStartedMessage {
+  type: "zooAddStarted";
+}
+
+/** Result of `tan model add <id> --board` — the fetched model appended to
+ *  board.yaml. */
+export interface ZooAddResultMessage {
+  type: "zooAddResult";
+  ok: boolean;
+  added?: string;
+  issues: { code: string; severity: string; message: string }[];
 }
 
 // --- Build-plan preview (mirrors messages.ts; consumes `alp build --plan`) ---
@@ -574,10 +830,31 @@ export interface SystemManifest {
   boot_order: unknown[];
   storage?: unknown[];
 }
+/**
+ * Whether the rendered manifest still describes the last build (#470),
+ * mirrored from `@alp-sdk/core/systemManifest/staleness`.
+ *
+ * `stale` is a CLAIM with evidence behind it: a build finished after the file
+ * was written and did not update it. `unknown` is the honest rest — nothing
+ * observed since, or a clock that cannot be trusted. Render `unknown` as
+ * unknown; collapsing it into `fresh` is the original defect.
+ */
+export type ManifestFreshness = "fresh" | "stale" | "unknown";
+
+export interface ManifestProvenance {
+  /** The manifest file's mtime, ISO-8601, or null when it could not be read. */
+  writtenAt: string | null;
+  freshness: ManifestFreshness;
+  /** One sentence, present for every `stale` verdict. */
+  reason: string | null;
+}
+
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
   postBuild: boolean;
+  /** Null on the projection path, which has no file to be stale. */
+  provenance: ManifestProvenance | null;
   error?: string;
 }
 
@@ -624,6 +901,34 @@ export interface ProjectLocationPickedMessage {
   path: string;
 }
 
+export interface NewProjectFlowGoToStepMessage {
+  type: "newProjectFlowGoToStep";
+  stepId: string;
+}
+
+/** One file `tan init --preview` says it would write — see
+ *  NewProjectPreviewDataMessage. `kind` stays a plain string on purpose: an
+ *  unseen word must still be LISTED to the customer, never dropped. */
+export interface NewProjectFileChange {
+  relativePath: string;
+  kind: string;
+}
+
+/**
+ * Answer to `requestNewProjectPreview` — `tan init --preview`'s file list
+ * (#616).
+ *
+ * `files: null` means the preview COULD NOT BE READ (spawn failure, a refused
+ * (template, SoM) pair, or an unreadable envelope) — NOT "zero files". Every
+ * real template lists at least one file, so render `null` as "preview
+ * unavailable", never as an empty list — the same failure `written ?? []`
+ * caused for module scaffold.
+ */
+export interface NewProjectPreviewDataMessage {
+  type: "newProjectPreviewData";
+  files: NewProjectFileChange[] | null;
+}
+
 export type ExtToWebviewMessage =
   | StateUpdateMessage
   | SdkReleasesLoadedMessage
@@ -635,9 +940,22 @@ export type ExtToWebviewMessage =
   | DependencyReportMessage
   | HardwareExplorerDataMessage
   | ProjectLocationPickedMessage
+  | NewProjectFlowGoToStepMessage
   | BuildPlanDataMessage
   | SystemManifestDataMessage
-  | SliceSizesDataMessage;
+  | ModelsDataMessage
+  | ModelBuildProgressMessage
+  | ModelFitDataMessage
+  | ModelPrepStartedMessage
+  | ModelPrepResultMessage
+  | ModelMeasureStartedMessage
+  | ModelRunResultMessage
+  | ModelAbResultMessage
+  | ZooDataMessage
+  | ZooAddStartedMessage
+  | ZooAddResultMessage
+  | SliceSizesDataMessage
+  | NewProjectPreviewDataMessage;
 
 // Webview → Extension
 export interface ReadyMessage {
@@ -652,6 +970,32 @@ export interface SelectSdkPathMessage {
 }
 export interface RequestSdkReleasesMessage {
   type: "requestSdkReleases";
+}
+export interface RequestModelsMessage {
+  type: "requestModels";
+}
+export interface BuildModelMessage {
+  type: "buildModel";
+  name?: string;
+}
+export interface CheckModelFitMessage {
+  type: "checkModelFit";
+}
+export interface PrepModelMessage {
+  type: "prepModel";
+}
+export interface RunModelMessage {
+  type: "runModel";
+}
+export interface AbModelsMessage {
+  type: "abModels";
+}
+export interface RequestZooMessage {
+  type: "requestZoo";
+}
+export interface AddFromZooMessage {
+  type: "addFromZoo";
+  id: string;
 }
 export interface RequestSdkInstallMessage {
   type: "requestSdkInstall";
@@ -688,6 +1032,28 @@ export interface CreateNewProjectMessage {
   /** Open the created project in the CURRENT window (replace the workspace) vs a
    *  new window. Omitted = true (the wizard checkbox defaults to on). */
   openInCurrentWindow?: boolean;
+  cores?: {
+    id: string;
+    os: string;
+    app?: string;
+    /** Mirrors `src/ideHub/messages.ts` — the bitbake recipe for an app-only
+     *  `os: yocto` slice (#624), carried with `app` because the SDK needs
+     *  both. */
+    recipe?: string;
+  }[];
+}
+/** Ask what Create WOULD write, without writing it (#616) — `tan init
+ *  --preview`, answered by `newProjectPreviewData`. `destination` is
+ *  REQUIRED here, unlike `createNewProject`'s optional one: this message is
+ *  never sent until the Name step has set one. */
+export interface RequestNewProjectPreviewMessage {
+  type: "requestNewProjectPreview";
+  templateId: string;
+  moduleId: string;
+  projectName: string;
+  sdkPath?: string;
+  destination: string;
+  cores?: { id: string; os: string; app?: string }[];
 }
 export interface PickProjectLocationMessage {
   type: "pickProjectLocation";
@@ -725,6 +1091,12 @@ export interface RunDependencyActionMessage {
   type: "runDependencyAction";
   name: string;
 }
+/** Run every installing row, one at a time (#466 §2). Carries NOTHING: the
+ *  host resolves the set from the report it last sent, so the webview can
+ *  neither name a different set than the one on screen nor post a command. */
+export interface RunFixAllMessage {
+  type: "runFixAll";
+}
 export interface ReloadHardwareExplorerMessage {
   type: "reloadHardwareExplorer";
 }
@@ -754,6 +1126,7 @@ export type WebviewToExtMessage =
   | OpenUrlMessage
   | ClosePanelMessage
   | CreateNewProjectMessage
+  | RequestNewProjectPreviewMessage
   | PickProjectLocationMessage
   | ReloadProjectTemplatesMessage
   | OpenExistingProjectMessage
@@ -763,8 +1136,17 @@ export type WebviewToExtMessage =
   | PreviewEffectiveConfigMessage
   | RefreshDependenciesMessage
   | RunDependencyActionMessage
+  | RunFixAllMessage
   | ReloadHardwareExplorerMessage
   | RequestBuildPlanMessage
   | MaterialiseBuildPlanMessage
   | RunBuildMessage
-  | FlashSliceMessage;
+  | FlashSliceMessage
+  | RequestModelsMessage
+  | BuildModelMessage
+  | CheckModelFitMessage
+  | PrepModelMessage
+  | RunModelMessage
+  | AbModelsMessage
+  | RequestZooMessage
+  | AddFromZooMessage;

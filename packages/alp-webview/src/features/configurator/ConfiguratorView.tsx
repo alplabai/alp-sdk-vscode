@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Icon } from "../../shared/ui";
 import type {
   BoardConfig,
@@ -10,6 +10,7 @@ import type {
   Ota,
 } from "../../types";
 import { consoleRecommendation } from "./consoleRecommendation";
+import { coreSiliconClass, runtimeOptions } from "../../shared/coreRuntime";
 import styles from "./ConfiguratorView.module.css";
 import {
   CONFIGURATOR_SECTIONS,
@@ -75,7 +76,26 @@ function Select({
   );
 }
 
-function TextInput({
+/**
+ * A text field that can actually be typed in.
+ *
+ * The `value` prop is the HOST's view model (`CorePanel.app` and friends),
+ * which lags every keystroke by a full round-trip: the mutation is debounced
+ * 200 ms, then written to the document, re-parsed and posted back as
+ * `configuratorRender`. Bound straight to `value`, React re-rendered each
+ * keystroke with the stale host value and wiped the character the customer had
+ * just typed — every letter vanished and reappeared a fifth of a second later,
+ * and typing at speed lost most of them.
+ *
+ * So the field keeps a DRAFT while it has focus, and accepts the incoming
+ * `value` only when it does not — a blurred field must still follow the
+ * document (an external edit in a side-by-side YAML editor, or a reload), which
+ * is why the draft is not simply local state forever.
+ *
+ * Exported for `test/webview/ui-render.tsx`, which drives it with a
+ * deliberately stale prop — the exact condition that produced the bug.
+ */
+export function TextInput({
   value,
   placeholder,
   onChange,
@@ -86,19 +106,36 @@ function TextInput({
   onChange: (v: string) => void;
   label: string;
 }) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(value);
+  }, [value]);
   return (
     <input
       className={styles.control}
       type="text"
-      value={value}
+      value={draft}
       placeholder={placeholder}
       aria-label={label}
-      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onBlur={() => {
+        focused.current = false;
+      }}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onChange(e.target.value);
+      }}
     />
   );
 }
 
-function NumberInput({
+/** Same draft-while-focused rule as `TextInput` — see its comment. A number
+ *  field is worse without it: the host drops a partial value like "12" on the
+ *  way through `parseInt`, so the round-trip could snap the caret back mid-entry. */
+export function NumberInput({
   value,
   placeholder,
   onChange,
@@ -109,14 +146,28 @@ function NumberInput({
   onChange: (v: string) => void;
   label: string;
 }) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(value);
+  }, [value]);
   return (
     <input
       className={styles.control}
       type="number"
-      value={value}
+      value={draft}
       placeholder={placeholder}
       aria-label={label}
-      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onBlur={() => {
+        focused.current = false;
+      }}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onChange(e.target.value);
+      }}
     />
   );
 }
@@ -413,22 +464,6 @@ function ProjectSection({ cfg }: { cfg: UseConfigurator }) {
   );
 }
 
-type CoreClass = "cortex-m" | "cortex-a" | "unknown";
-
-/** Best-effort silicon class from the core ID (stopgap until the CLI emits the
- *  SoM topology's per-core class): m33/m55/… → Cortex-M, a55/a32/… → Cortex-A.
- *  KEEP IN SYNC with Rust `infer_runtime_for_core_id`
- *  (`cli-rs/crates/alp-core/src/wizard/service.rs`): same `a<digit>`/`m<digit>`
- *  word-start heuristic. Difference by design: there an unknown id defaults to
- *  `zephyr` (it must pick a runtime); here it returns "unknown" so the UI offers
- *  all OS options. */
-function coreSiliconClass(id: string): CoreClass {
-  const s = id.toLowerCase();
-  if (/(^|[_-])m\d/.test(s)) return "cortex-m";
-  if (/(^|[_-])a\d/.test(s)) return "cortex-a";
-  return "unknown";
-}
-
 /** DeepX NPU compile target enabled but missing its config/calibration path(s).
  *  A configurator-time gate so the user fixes it here instead of hitting a
  *  downstream `alp generate` file-not-found. */
@@ -447,30 +482,6 @@ function drpaiPathMissing(m: ModelEntry): boolean {
 function naturalRuntime(id: string): string | null {
   const cls = coreSiliconClass(id);
   return cls === "cortex-m" ? "zephyr" : cls === "cortex-a" ? "yocto" : null;
-}
-
-/** Runtimes selectable for a core, gated by silicon class: a Cortex-A core runs
- *  Linux (Yocto) or off — you never pick Zephyr there; a Cortex-M core runs
- *  Zephyr (default), bare-metal, or off. Unknown ids fall back to all four. */
-function runtimeOptions(id: string): Array<[string, string]> {
-  const cls = coreSiliconClass(id);
-  if (cls === "cortex-m")
-    return [
-      ["zephyr", "Zephyr (default)"],
-      ["baremetal", "Bare-metal"],
-      ["off", "Off (skip core)"],
-    ];
-  if (cls === "cortex-a")
-    return [
-      ["yocto", "Yocto Linux (default)"],
-      ["off", "Off (skip core)"],
-    ];
-  return [
-    ["zephyr", "Zephyr"],
-    ["yocto", "Yocto Linux"],
-    ["baremetal", "Bare-metal"],
-    ["off", "Off (skip core)"],
-  ];
 }
 
 /** Per-core peripheral classes. Source of truth is the vendored schema's
@@ -1714,11 +1725,25 @@ export function ConfiguratorView() {
   } = cfg;
 
   const validClass = validation.errors.length ? styles.vErr : styles.vOk;
-  const validText = validation.errors.length
-    ? `✗ ${validation.errors.length} error${validation.errors.length > 1 ? "s" : ""}`
-    : validation.warnings.length
-      ? `⚠ ${validation.warnings.length} warning${validation.warnings.length > 1 ? "s" : ""}`
-      : "✓ Valid — ready to save";
+  // A node, not a string: the status marker is an <Icon>, matching the two
+  // badges this same file already renders in the validation summary rather
+  // than the dingbats that used to stand in for them (DESIGN.md, The
+  // No-Emoji Rule).
+  const validBadge = validation.errors.length ? (
+    <>
+      <Icon name="x" size={14} /> {validation.errors.length} error
+      {validation.errors.length > 1 ? "s" : ""}
+    </>
+  ) : validation.warnings.length ? (
+    <>
+      <Icon name="warning" size={14} /> {validation.warnings.length} warning
+      {validation.warnings.length > 1 ? "s" : ""}
+    </>
+  ) : (
+    <>
+      <Icon name="check" size={14} /> Valid — ready to save
+    </>
+  );
 
   function renderSection() {
     if (!cfg.loaded) {
@@ -1804,7 +1829,7 @@ export function ConfiguratorView() {
 
       <footer className={styles.footer}>
         <span className={`${styles.valid} ${validClass}`} role="status">
-          {validText}
+          {validBadge}
         </span>
         {status ? (
           <span className={styles.statusMsg} role="status" aria-live="polite">

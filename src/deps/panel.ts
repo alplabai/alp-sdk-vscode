@@ -4,7 +4,10 @@
 // than sitting beside it: two surfaces answering "is my machine ready?" is how
 // they end up disagreeing.
 
-import type { DependencyReport } from "@alp-sdk/core/deps/planner";
+import type {
+  DependencyReport,
+  DependencyRow,
+} from "@alp-sdk/core/deps/planner";
 import * as vscode from "vscode";
 
 import { danglingWestManifest } from "../environment/vscodeAdapter";
@@ -14,13 +17,20 @@ import type {
 } from "../ideHub/messages";
 import { buildWebviewHtml } from "../ideHub/webviewHtml";
 import { isCancellation } from "../notify/service";
+import { notifyAsync } from "../notify/vscodeAdapter";
 import { collectProjectContext } from "../project/vscodeAdapter";
 import { offerBootstrapFix } from "../toolchain";
 import { log } from "../util";
 import type { StateManager } from "../views/stateManager";
 import {
   buildDependencyReport,
+  type CommandStepOutcome,
+  confirmDependencyInstalls,
+  fixAllSummaryNotice,
+  fixAllTargets,
+  rowStepFailureNotice,
   runDependencyAction,
+  runFixAll,
   withLatestSdk,
 } from "./vscodeAdapter";
 
@@ -147,7 +157,13 @@ export class DependencyPanel {
         this.refresh({ refreshLatestSdk: true });
         break;
       case "runDependencyAction":
-        this.runRowAction(msg.name);
+        // Awaits a consent screen (#467), so it gets the same handler the Fix
+        // all run does — an unanswered dialog is the likeliest main-thread call
+        // still pending when the window goes away.
+        fireAndForget(this.runRowAction(msg.name), "the dependency install");
+        break;
+      case "runFixAll":
+        fireAndForget(this.runFixAll(), "the Fix all run");
         break;
       case "openUrl":
         if (msg.url.startsWith("https://") || msg.url.startsWith("vscode://")) {
@@ -278,23 +294,155 @@ export class DependencyPanel {
    * run whatever action THAT row carries. The webview names a row; it never
    * hands over a command to execute.
    */
-  private runRowAction(name: string): void {
+  private async runRowAction(name: string): Promise<void> {
     const row = this.lastReport?.rows.find(
       (candidate) => candidate.name === name,
     );
     if (!row?.action) return;
+    // ADR 0021 §3 (#467): one consent screen before anything installs on this
+    // machine — the same gate `runFixAll` runs, over a set of one, so pressing
+    // a single row's button and pressing "Fix all" disclose the same four facts
+    // rather than one path being the quiet way in.
+    //
+    // NOT for `open-docs`: that opens a web page and installs nothing, so
+    // asking consent to install would be asking about something that is not
+    // happening.
+    if (row.action.effect !== "open-docs") {
+      const consented = await confirmDependencyInstalls([row]);
+      if (consented === null || consented.length === 0) {
+        log(`[deps] ${row.name}: consent not given, nothing dispatched`);
+        return;
+      }
+    }
     // tan's own `sevenZip` row status (`this.lastReport` already holds it) —
     // the Zephyr SDK dispatch reads it for its post-install notice and must
     // not re-probe the host for it.
     const sevenZip = this.lastReport?.rows.find(
       (candidate) => candidate.name === "sevenZip",
     );
-    runDependencyAction({
+    // Awaited, not fired-and-forgotten: a `command` row's dispatch is now a
+    // SEQUENCE (#603), and `runDependencyAction` is the one place that owns
+    // `awaitRun` for it — this call must be the only consumer of that promise,
+    // never a second `awaitRun` alongside it (see that function's own doc).
+    const steps = await runDependencyAction({
       action: row.action,
       rowName: row.name,
       cwd: collectProjectContext().workspaceRoot ?? undefined,
       sevenZipStatus: sevenZip?.status,
     });
+    // `steps` is `undefined` for `fix`/`bootstrap`/`zephyrSdk` rows — those
+    // already have their own notices (`runToolchainFix`, the Bootstrap
+    // panel, `offerRefreshAfterZephyrSdkInstall`). For a plain `command` row
+    // this is the ONLY place a single-row press can tell the customer a
+    // MID-SEQUENCE failure happened: `offerReloadAfterInstall`'s "press
+    // Refresh" notice fires at dispatch, before any step's result is known,
+    // and `runFixAll`'s `describeFixAllFailure` wording never runs for a
+    // lone button press (#603) — without this, a row whose step 1 of 2
+    // failed told the customer nothing beyond the generic reload notice.
+    if (steps) this.reportRowStepFailure(row, steps);
+  }
+
+  /**
+   * Tell the customer when a single row's OWN multi-step dispatch did not
+   * finish cleanly. `rowStepFailureNotice` names the TOOL that failed in the
+   * customer-facing message, never the raw command — a row button and
+   * Fix-all's own channel-only summary deliberately word this DIFFERENTLY
+   * now (#603, round 6, minor 6 corrects this doc: it used to say they
+   * "report the SAME failure the SAME way", which stopped being true the
+   * round `rowStepFailureNotice` and `describeFixAllFailure` split — see
+   * `rowStepFailureNotice`'s own doc for why).
+   *
+   * Silent on every outcome that already has its own explanation: every step
+   * ran and succeeded (the generic "press Refresh" notice covers it), or
+   * nothing ran at all (the per-step `isRunActive` refusal already showed its
+   * own warning, or a single-row press has no cancel UI to explain a
+   * cancelled-before-anything-ran outcome).
+   */
+  private reportRowStepFailure(
+    row: DependencyRow,
+    steps: readonly CommandStepOutcome[],
+  ): void {
+    if (row.action?.kind !== "command") return;
+    // The WHOLE decision — wording, severity, dedupeKey — lives in
+    // `rowStepFailureNotice` (vscodeAdapter.ts), which returns the finished
+    // `NotificationPlan` itself; this method only wires it to `notifyAsync`
+    // (#603, third review, major 3: leaving `severity`/`dedupeKey` for THIS
+    // wrapper to set left both ungated — mutating them to `"info"` and a
+    // shared constant passed every existing gate).
+    const plan = rowStepFailureNotice(
+      row.label,
+      row.name,
+      row.action.commands,
+      steps,
+    );
+    if (!plan) return;
+    notifyAsync(plan);
+  }
+
+  /**
+   * Run every installing row, one at a time, against the report the webview is
+   * currently showing (#466 §2).
+   *
+   * The set is resolved HERE, from `this.lastReport` — the webview asked for
+   * "all", it did not name them. Same rule as `runRowAction`, one level up.
+   *
+   * Progress lives in VS Code's notification UI rather than in the panel: the
+   * user can close the panel mid-install, and a progress bar that went with it
+   * would leave a long install running with nothing on screen saying so.
+   * Cancellable, and cancelling stops the SEQUENCE — it never kills a run
+   * already in flight (#146).
+   *
+   * One refresh at the end, not one per row: each refresh is two `tan doctor`
+   * spawns, and re-running them between steps would triple the cost of a
+   * five-row fix to say something the final table says anyway.
+   */
+  private async runFixAll(): Promise<void> {
+    const report = this.lastReport;
+    if (!report) return;
+    const targets = fixAllTargets(report);
+    if (targets.length === 0) return;
+
+    const outcome = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        // NOT "installing dependencies": this notification is up while the
+        // consent screen is still being answered (#467), and a spinner claiming
+        // an install that has not been agreed to yet is a false statement with
+        // an animation on it. The title covers both phases; the message below
+        // says which one is running.
+        title: "Alp: dependencies",
+        cancellable: true,
+      },
+      (progress, token) => {
+        // Replaced by the first `onStep` the moment a row actually starts.
+        progress.report({ message: "waiting for your consent…" });
+        return runFixAll({
+          report,
+          cwd: collectProjectContext().workspaceRoot ?? undefined,
+          token,
+          onStep: (row, index, total) =>
+            progress.report({
+              message: `${index + 1}/${total} — ${row.label}`,
+              increment: index === 0 ? 0 : 100 / total,
+            }),
+        });
+      },
+    );
+
+    // The WHOLE decision — channel, severity, customer-visible message,
+    // channel-only detail, dedupe key — comes back FINISHED from
+    // `fixAllSummaryNotice` (#603, round 4, blockers 2 and 3): this method
+    // hands it straight to `notifyAsync` with nothing left to compute, so
+    // there is no ternary, no `severity`, and no `dedupeKey` here for a
+    // mutation to get wrong the way three earlier ones did (a literal
+    // `{ skipped: [] }` in place of `outcome`; the ternary widened to also
+    // route `"partial"` through `planSuccess`; `severity`/`dedupeKey`
+    // hand-set beside it) and still leave every gate green.
+    const plan = fixAllSummaryNotice(outcome, targets.length);
+    log(`[fix-all] ${plan.detail}`);
+    notifyAsync(plan);
+
+    this.refresh();
   }
 
   private dispose(): void {

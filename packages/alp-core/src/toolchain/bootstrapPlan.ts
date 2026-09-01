@@ -1,6 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export type BootstrapHost = "linux" | "darwin" | "win32";
+
+/**
+ * This process's platform, narrowed to what `fixCommand` answers for.
+ *
+ * ONE narrowing, here rather than at each caller: `process.platform` has values
+ * (`freebsd`, `aix`, …) that `BootstrapHost` does not, so a bare cast at a call
+ * site is a claim the type system then trusts. Anything not win32/darwin takes
+ * the POSIX arm, which is what every fix in this module already does for it.
+ */
+export function bootstrapHost(): BootstrapHost {
+  if (process.platform === "win32") return "win32";
+  if (process.platform === "darwin") return "darwin";
+  return "linux";
+}
 export type BootstrapOs = "zephyr" | "yocto" | "baremetal";
 export type ToolchainFixId =
   | "python-deps"

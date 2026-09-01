@@ -99,8 +99,23 @@ const GATED_CODES = {
   // same prefix. Ext: alpCli/service.ts `BOOTSTRAP_PREREQUISITE_CODES`.
   "bootstrap.prerequisites-missing": "frozen",
   // tan: commands/presets.rs emits this as a whole literal, no prefixing.
-  // Ext: ideHub/newProjectFlowPanel.ts, preset catalogue fallback.
+  // Ext: the spelling lives once, as `PRESETS_SDK_ROOT_UNRESOLVED_CODE`
+  // (alpCli/service.ts), matched through `unresolvedSdkReason` by all three
+  // `presets` readers this extension has (#611): ideHub/newProjectFlowPanel.ts
+  // (preset catalogue fallback), lsp/client.ts (board.yaml completion
+  // catalog) and configurator/customEditor.ts (library vocabulary scan).
   "presets.sdk-root-unresolved": "frozen",
+  // tan: python/tan/commands/validate_cmd.py, prefixed by that file's local
+  // `fail()` closure. Ext: `VALIDATE_SDK_UNRESOLVED_CODE` (src/loader.ts),
+  // which is how `runValidator` decides to retry with `--offline` (#619).
+  //
+  // Status `reserved` with `consumer: "none"` in the artefact — and that entry
+  // is now stale in tan's favour, not ours: binding it here MAKES this
+  // extension the consumer. Read `reserved` correctly, as this file's own
+  // header says: it means nothing BINDS the spelling, not that tan never emits
+  // it. Measured at the pin, a `validate` with no resolvable SDK returns exit
+  // 2 carrying exactly this code.
+  "validate.sdk-root-unresolved": "reserved",
 
   // RETIRED — no current tan emits it, and tan reserves the spelling so it can
   // never come back meaning something else.
@@ -133,6 +148,99 @@ const GATED_CODES = {
   // extension's hope.
   "bootstrap.python-not-runnable": "frozen",
   "bootstrap.python-too-old": "frozen",
+
+  // RESERVED — and this repo is now on BOTH ends of it, which is why it is
+  // here at all.
+  //
+  // tan: python/tan/commands/model_cmd.py, registered by tan-cli#224. The
+  // artefact declares it `"status": "reserved", "consumer": "none"`, with the
+  // standing note "Promote to `frozen` (filling in consumer/consumerEffect for
+  // real) the moment a consumer binds to it".
+  //
+  // A CONSUMER HAS BOUND TO IT, twice. #522 made
+  // `packages/alp-webview/src/features/models/cliSurface.ts` classify on this
+  // exact code — that whole module exists to match it and nothing else — and
+  // #544 added a PRODUCER, `src/alpCli/pinnedSurface.ts`, which synthesises
+  // the refusal rather than spawning nine subcommands to hear it. So the
+  // extension both emits and matches a spelling tan reserves the right to
+  // rename, and until now nothing on either side of the seam watched it: this
+  // gate did not list it, and the two in-repo spellings were pinned equal to
+  // EACH OTHER, which is circular — rename both and every test stays green.
+  //
+  // The status stays `reserved` here because that is what tan declares TODAY,
+  // and this file asserts tan's declaration rather than the one we would
+  // prefer. Promoting it to `frozen` is an upstream ask against tan-cli, not
+  // an edit to the vendored corpus; the day tan promotes it, the status
+  // assertion below reds and this entry is updated to match.
+  "model.unknown-subcommand": "reserved",
+
+  // Same shape, same upstream ask (#542). tan's own note on this code names
+  // the trap it creates: "fires when `sdk list` is run without `--online` --
+  // now a `warning` on a SUCCESS envelope (exit 0, `ok: true`), not an `error`
+  // on a failure" (tan-cli#351). The binding constant (`UNANSWERED_SDK_LIST_
+  // CODES` / `unansweredSdkListCodes` / `sdkListAnswered`) moved to alpCli/
+  // service.ts (#611) so it could be shared: `src/deps/vscodeAdapter.ts`
+  // still binds to it to refuse caching an answer tan never looked up, and
+  // `src/ideHub/sdkManagerMessages.ts` is now a second consumer, refusing to
+  // post an unanswered lookup's `releases` as a real catalogue — which makes
+  // this the second reserved code whose `consumer: "none"` is no longer true.
+  "sdk.network-required": "reserved",
+
+  // RESERVED, and this pin is the day a consumer bound to it — the third of
+  // these, after the two above.
+  //
+  // tan: crates/tan-cli/src/main.rs, `literal: 'code: "cli.parse-error"'`. The
+  // artefact declares it `"status": "reserved", "consumer": "none"` with the
+  // standing note "nothing in alp-sdk-vscode matches this code, so renaming or
+  // dropping it is not a breaking wire change. Promote to `frozen` … the
+  // moment a consumer binds to it". `cliUsageErrorDump`
+  // (`src/alpCli/service.ts`) is now that consumer, and `planCliOutcome` routes
+  // the whole toast on it, so the note's premise no longer holds.
+  //
+  // The status stays `reserved` because that is what tan declares TODAY and
+  // this file asserts tan's declaration, not the one we would prefer.
+  // Promoting it is an upstream ask against tan-cli, not an edit to the
+  // vendored corpus.
+  //
+  // Worth knowing when reading the consumer: this code is OVERLOADED on tan
+  // releases older than tan-cli#399. The artefact's own notes record that
+  // `new-som` refusals and `faultdecode`'s reached consumers "as
+  // `cli.parse-error` on a `command: "cli"` envelope" before that change, and
+  // that an interrupted run "fell into the `cli.parse-error` fallback" before
+  // `cli.interrupted` existed. Against the PINNED 0.6.0 all three have
+  // their own codes, so the branch means what it says; on an older binary
+  // reached through `alpSdk.cliPath` it can over-report "wrong command line".
+  "cli.parse-error": "reserved",
+
+  // RESERVED in the artefact ("consumer: none -- no consumer matches this code
+  // yet"), and this extension now DOES match it: `src/debug.ts` uses it to tell
+  // "tan rejected this flag's VALUE" from "tan does not know this flag", which
+  // is what decides between the `alpSdk.svdPath` hint and the version-skew
+  // hint. Registered here the same day that consumer landed, for the same
+  // reason `cli.parse-error`, `model.unknown-subcommand` and
+  // `sdk.network-required` were: tan explicitly reserves the right to rename or
+  // split a code NOTHING binds to, and without this row the rename lands green
+  // in both repos while the svd hint silently stops firing again.
+  //
+  // Note it is ONE code for five causes -- the artefact lists `--target-kind`,
+  // `--server`, an unsupported target+server pairing, `--svd` and
+  // `--gdbserver-address` -- so a consumer must not read it as "the SVD path is
+  // bad". `src/debug.ts` only widens a hint it already gated on `--svd` being
+  // on the argv.
+  "debug-config.invalid-argument": "reserved",
+
+  // UNDECLARED, and never going to be: this extension MANUFACTURES it
+  // (`src/alpCli/pinnedSurface.ts`) for "the pinned tan can do this and this
+  // panel does not call it" — a statement about this repo's wiring that no CLI
+  // could make. It is in the `models.` family for that reason, next to
+  // `models.cli-error` and `models.tan-outdated` (`src/models/service.ts`),
+  // and deliberately NOT in tan's `model.` one.
+  //
+  // Pinned at `null` rather than left out because the entry is cheap and the
+  // day tan declares a `models.panel-not-wired` of its own is the day two
+  // different verdicts share one spelling on the same wire. The assertion
+  // above turns that collision into a red instead of a silent overlap.
+  "models.panel-not-wired": null,
 };
 
 /**
@@ -152,8 +260,15 @@ const GATED_CODES = {
 const ISSUE_CODE_SHAPE = /^[a-z][a-z0-9-]*\.[a-z0-9-]+$/;
 
 /**
- * Every issue code this extension MATCHES ON, found in source, by the two
- * idioms it uses to match one — not by family.
+ * Every issue code this extension BINDS TO, found in source, by the idioms it
+ * uses to bind one — not by family.
+ *
+ * "Binds to" and not "matches on", since idiom 4 below: a one-code constant is
+ * a binding whether it is compared against or emitted through, and both
+ * deserve a decision. A code this repo MANUFACTURES is classified `null`
+ * ("tan declares this nowhere"), which is not a formality — it is what turns
+ * a future collision, tan shipping the same spelling for a different verdict,
+ * into a red rather than a silent overlap on one wire.
  *
  * The family alternation (idiom 3) was the whole scan, and it recognised only
  * `bootstrap.*` and `presets.*`. A new `===` against any other family — the
@@ -203,9 +318,131 @@ function scanGatedCodes(roots) {
       for (const m of text.matchAll(/"((?:bootstrap|presets)\.[a-z0-9-]+)"/g)) {
         add(m[1]);
       }
+      // 4. A SINGLE declared code — `const FOO_CODE = "…"` — membership-tested
+      //    through the constant (`issue.code === UNKNOWN_SUBCOMMAND_CODE`) or
+      //    emitted through it. Idiom 2 requires an ARRAY, idiom 1 requires a
+      //    LITERAL at the comparison, and a one-code constant is neither: it
+      //    was invisible to this scan at both of its sites (the webview
+      //    classifier that matches it and `pinnedSurface.ts` that produces
+      //    it), so `model.unknown-subcommand` could be renamed on both sides
+      //    at once with nothing going red.
+      for (const m of text.matchAll(
+        /\b[A-Z][A-Z0-9_]*CODE\b[^=\n]*=\s*"([^"]*)"/g,
+      )) {
+        add(m[1]);
+      }
     }
   }
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// The doctor envelope's key set (#466 §3)
+// ---------------------------------------------------------------------------
+//
+// The dependency panel renders `tan doctor --build`'s `data`, and until now
+// nothing here mentioned `doctor`, `checks` or `missingPrerequisites` at all: a
+// producer-side rename landed as an EMPTY PANEL, not a failing test. Same
+// fail-open as everything else in this file — rename `data.checks` and
+// `planDependencyReport` maps over `undefined`; rename `missingPrerequisites`
+// and `prerequisites ?? []` finds nothing, so every Fix button quietly
+// disappears while CI stays green on both sides.
+//
+// #466 ruled out a golden fixture, and `docs/EXTENSION_CLI_INTEGRATION.md` had
+// already ruled it out for this exact output: doctor output is
+// machine-dependent, so a recorded run reds on every host but the one that made
+// it. What it asked for instead is a key-set conformance gate.
+//
+// tan got there first. Of the entries in the artefact's `envelopes` block, 17
+// publish a golden `envelope`; `doctor` alone publishes `dataKeys` — a
+// declarative schema of required/optional keys and their kinds, carrying no
+// values at all. So this gate does not restate the shape in TypeScript. It
+// reads tan's own declaration and compares it against the extension's own
+// declaration (`packages/alp-core/src/cli/doctorEnvelope.ts`), which is the
+// same "tan owns the facts" rule `deps/planner.ts` is built on, applied to the
+// gate itself.
+//
+// The two directions get different rules, for the same reason
+// `test/webview.payloadMirror.test.js` splits them (#497):
+//
+//   * a key the EXTENSION declares that tan does not — a hard red, no
+//     allowlist. That is the direction that empties the panel.
+//   * a key TAN declares that the extension does not model — allowed only when
+//     `UNMODELLED_DOCTOR_KEYS` names it with a reason, and the entry must still
+//     describe a live omission or it reds as stale.
+
+const DOCTOR_ENVELOPE_MODELS = "packages/alp-core/src/cli/doctorEnvelope.ts";
+
+/**
+ * Keys tan's `dataKeys` declares that `doctorEnvelope.ts` deliberately does not
+ * model, with the reason. Both are additive keys nothing renders.
+ */
+const UNMODELLED_DOCTOR_KEYS = {
+  generatedAt:
+    "The run's timestamp. Nothing renders it — the panel shows the report it " +
+    "just fetched, so a stamp would only ever say 'now'. Modelling it would " +
+    "invite a surface to print a time that is not the one on screen after a " +
+    "refresh races.",
+};
+
+/** Field names of `export interface <name>`, each keeping its `?`. Nested brace
+ *  groups are blanked first so a `;` inside an inline object type (the
+ *  `summary` field) cannot split a field in two. */
+function declaredFields(source, name) {
+  const header = new RegExp(`export interface ${name}\\b[^{]*\\{`, "m").exec(
+    source,
+  );
+  if (!header) return null;
+
+  let depth = 1;
+  let body = null;
+  const start = header.index + header[0].length;
+  for (let i = start; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    else if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        body = source.slice(start, i);
+        break;
+      }
+    }
+  }
+  if (body === null) return null;
+
+  let flat = "";
+  let nesting = 0;
+  for (const ch of body) {
+    if (ch === "{") {
+      nesting += 1;
+      flat += " ";
+    } else if (ch === "}") {
+      nesting -= 1;
+      flat += " ";
+    } else {
+      flat += nesting > 0 ? " " : ch;
+    }
+  }
+  return new Set(
+    flat
+      .split(";")
+      .map((entry) => /^\s*(\w+)(\?)?\s*:/.exec(entry))
+      .filter(Boolean)
+      .map((m) => `${m[1]}${m[2] ?? ""}`),
+  );
+}
+
+/** Strip comments so prose in a doc block cannot be read as a field. */
+function stripTsComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((line) => {
+      const at = line.indexOf("//");
+      if (at < 0) return line;
+      const quotes = (line.slice(0, at).match(/"/g) ?? []).length;
+      return quotes % 2 === 0 ? line.slice(0, at) : line;
+    })
+    .join("\n");
 }
 
 /**
@@ -407,6 +644,12 @@ test("gated issue codes: every code matched in src/ is classified exactly once",
   const scanned = scanGatedCodes([
     path.join(__dirname, "..", "src"),
     path.join(__dirname, "..", "packages", "alp-core", "src"),
+    // The webview is a separate package and was outside this scan entirely.
+    // It is not a lesser consumer: `features/models/cliSurface.ts` is the ONLY
+    // thing in this repo that classifies a tan issue code into a different
+    // banner, and it shipped in #522 with nothing watching the spelling it
+    // binds to.
+    path.join(__dirname, "..", "packages", "alp-webview", "src"),
   ]);
   assert.deepEqual(
     [...scanned].sort(),
@@ -595,6 +838,279 @@ test(
         `extension's \`AlpEnvelope.sdk\` still declares — or the goldens no longer cover a ` +
         `command that resolves an SDK, which leaves the key untested on the wire.`,
     );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// doctor envelope conformance (#466 §3)
+// ---------------------------------------------------------------------------
+
+const doctorEntry = present ? doc?.envelopes?.doctor : undefined;
+const doctorKeys = doctorEntry?.dataKeys;
+
+const models = present
+  ? stripTsComments(
+      fs.readFileSync(
+        path.join(__dirname, "..", DOCTOR_ENVELOPE_MODELS),
+        "utf8",
+      ),
+    )
+  : "";
+
+/** `pass` / `warn` / `fail` off `DoctorEnvelopeData`'s inline `summary` type —
+ *  `declaredFields` blanks nested braces, so those three need their own read. */
+function modelledSummaryKeys() {
+  const match = /summary:\s*\{([^}]*)\}/.exec(models);
+  if (!match) return null;
+  return new Set([...match[1].matchAll(/(\w+)\s*:/g)].map((m) => m[1]));
+}
+
+const bare = (field) => field.replace(/\?$/, "");
+
+test("doctor: tan still publishes a dataKeys schema for it", { skip }, () => {
+  // The whole gate below hangs off this. `doctor` is the one entry that carries
+  // a schema instead of a golden, precisely because its output is
+  // machine-dependent; if tan ever drops it or swaps it for a recorded run,
+  // every assertion after this would skip and the panel would be back to
+  // unverified — so the absence is a failure, not a skip.
+  assert.ok(
+    doctorEntry,
+    `${ASSET} for v${SUPPORTED_CLI_VERSION} publishes no \`envelopes.doctor\` ` +
+      `entry. The dependency panel renders that envelope and nothing else here ` +
+      `gates it — see ${ISSUE}.`,
+  );
+  assert.ok(
+    doctorKeys && typeof doctorKeys === "object",
+    `\`envelopes.doctor\` carries no \`dataKeys\` schema (keys: ` +
+      `${Object.keys(doctorEntry ?? {}).join(", ")}). A golden envelope cannot ` +
+      `replace it: doctor output is machine-dependent, which is why ` +
+      `docs/EXTENSION_CLI_INTEGRATION.md rules a fixture out for this command.`,
+  );
+  assert.deepEqual(
+    doctorEntry.args?.slice(0, 1),
+    ["doctor"],
+    `\`envelopes.doctor.args\` does not start with \`doctor\` — this entry ` +
+      `describes some other command`,
+  );
+  artefactChecks += 1;
+});
+
+test(
+  "doctor: every key the extension reads is one tan declares",
+  { skip },
+  (t) => {
+    if (!doctorKeys) {
+      t.skip("no dataKeys — reported by the test above");
+      return;
+    }
+    /** The extension's declaration vs tan's, per nesting level. */
+    const groups = [
+      {
+        interface: "DoctorEnvelopeData",
+        declared: () => new Set(Object.keys(doctorKeys)),
+        where: "data",
+      },
+      {
+        interface: "DoctorCheckEnvelope",
+        declared: () =>
+          new Set([
+            ...Object.keys(doctorKeys.checks?.requiredKeys ?? {}),
+            ...Object.keys(doctorKeys.checks?.optionalKeys ?? {}),
+          ]),
+        where: "data.checks[]",
+      },
+      {
+        interface: "MissingPrerequisite",
+        declared: () =>
+          new Set(Object.keys(doctorKeys.missingPrerequisites?.items ?? {})),
+        where: "data.missingPrerequisites[]",
+      },
+    ];
+
+    for (const group of groups) {
+      const modelled = declaredFields(models, group.interface);
+      assert.ok(
+        modelled,
+        `${DOCTOR_ENVELOPE_MODELS}: no \`export interface ${group.interface}\``,
+      );
+      const declared = group.declared();
+      assert.ok(
+        declared.size > 0,
+        `tan declares no keys at all for \`${group.where}\` — the schema is ` +
+          `present but empty, so this comparison would assert nothing`,
+      );
+
+      for (const field of modelled) {
+        assert.ok(
+          declared.has(bare(field)),
+          `\`${group.interface}.${field}\` reads \`${group.where}.${bare(field)}\`, ` +
+            `which tan v${SUPPORTED_CLI_VERSION} does not declare. Every read of ` +
+            `it FAILS OPEN — the panel renders an empty table or drops every Fix ` +
+            `button, with nothing on any surface saying why. There is no ` +
+            `allowlist for this direction.`,
+        );
+      }
+      artefactChecks += 1;
+    }
+
+    // `summary` is an inline object in the model, so it needs its own read.
+    const summary = modelledSummaryKeys();
+    assert.ok(summary, `${DOCTOR_ENVELOPE_MODELS}: no inline \`summary\` type`);
+    for (const key of summary) {
+      assert.ok(
+        key in (doctorKeys.summary ?? {}),
+        `\`DoctorEnvelopeData.summary.${key}\` is read but tan declares only ` +
+          `${Object.keys(doctorKeys.summary ?? {}).join(", ")}. \`counts\` is ` +
+          `forwarded to the panel verbatim, so a missing member renders as ` +
+          `\`undefined\` in the summary line.`,
+      );
+    }
+    artefactChecks += 1;
+  },
+);
+
+test(
+  "doctor: every key tan declares is modelled, or recorded as deliberately not",
+  { skip },
+  (t) => {
+    if (!doctorKeys) {
+      t.skip("no dataKeys — reported above");
+      return;
+    }
+    const unmodelled = [];
+    const check = (declared, modelled, prefix) => {
+      for (const key of declared) {
+        if (modelled.has(key) || modelled.has(`${key}?`)) continue;
+        unmodelled.push(`${prefix}${key}`);
+      }
+    };
+
+    check(
+      Object.keys(doctorKeys),
+      declaredFields(models, "DoctorEnvelopeData") ?? new Set(),
+      "",
+    );
+    check(
+      [
+        ...Object.keys(doctorKeys.checks?.requiredKeys ?? {}),
+        ...Object.keys(doctorKeys.checks?.optionalKeys ?? {}),
+      ],
+      declaredFields(models, "DoctorCheckEnvelope") ?? new Set(),
+      "checks[].",
+    );
+    check(
+      Object.keys(doctorKeys.missingPrerequisites?.items ?? {}),
+      declaredFields(models, "MissingPrerequisite") ?? new Set(),
+      "missingPrerequisites[].",
+    );
+
+    const unrecorded = unmodelled.filter(
+      (key) =>
+        !Object.prototype.hasOwnProperty.call(UNMODELLED_DOCTOR_KEYS, key),
+    );
+    assert.deepEqual(
+      unrecorded,
+      [],
+      `tan v${SUPPORTED_CLI_VERSION} declares ${unrecorded.join(", ")} in the ` +
+        `doctor envelope and ${DOCTOR_ENVELOPE_MODELS} does not model it.\n\n` +
+        `If a surface should render it, model it. If not, add it to ` +
+        `UNMODELLED_DOCTOR_KEYS in this file with the reason — a key nobody ` +
+        `decided about is how a producer-side addition sits unnoticed for a ` +
+        `release.`,
+    );
+    artefactChecks += 1;
+  },
+);
+
+test(
+  "doctor: every recorded omission is still a live omission",
+  { skip },
+  (t) => {
+    if (!doctorKeys) {
+      t.skip("no dataKeys — reported above");
+      return;
+    }
+    // Same rot rule as test/webview.payloadMirror.test.js: an allowlist nothing
+    // re-checks empties the gate one merge at a time.
+    const declaredEverywhere = new Set([
+      ...Object.keys(doctorKeys),
+      ...Object.keys(doctorKeys.checks?.requiredKeys ?? {}).map(
+        (k) => `checks[].${k}`,
+      ),
+      ...Object.keys(doctorKeys.checks?.optionalKeys ?? {}).map(
+        (k) => `checks[].${k}`,
+      ),
+      ...Object.keys(doctorKeys.missingPrerequisites?.items ?? {}).map(
+        (k) => `missingPrerequisites[].${k}`,
+      ),
+    ]);
+    const modelledEverywhere = new Set([
+      ...[...(declaredFields(models, "DoctorEnvelopeData") ?? [])].map(bare),
+      ...[...(declaredFields(models, "DoctorCheckEnvelope") ?? [])].map(
+        (f) => `checks[].${bare(f)}`,
+      ),
+      ...[...(declaredFields(models, "MissingPrerequisite") ?? [])].map(
+        (f) => `missingPrerequisites[].${bare(f)}`,
+      ),
+    ]);
+
+    for (const [key, reason] of Object.entries(UNMODELLED_DOCTOR_KEYS)) {
+      assert.ok(
+        typeof reason === "string" && reason.trim().length >= 40,
+        `UNMODELLED_DOCTOR_KEYS["${key}"] has no real reason`,
+      );
+      assert.ok(
+        declaredEverywhere.has(key),
+        `UNMODELLED_DOCTOR_KEYS["${key}"] is stale: tan v${SUPPORTED_CLI_VERSION} ` +
+          `no longer declares it. Delete the entry.`,
+      );
+      assert.ok(
+        !modelledEverywhere.has(key),
+        `UNMODELLED_DOCTOR_KEYS["${key}"] is stale: ${DOCTOR_ENVELOPE_MODELS} now ` +
+          `DOES model it. Delete the entry so the key is gated like every other ` +
+          `modelled one.`,
+      );
+    }
+    artefactChecks += 1;
+  },
+);
+
+test(
+  "doctor: a check key tan marks optional is optional in the model too",
+  { skip },
+  (t) => {
+    if (!doctorKeys?.checks) {
+      t.skip("no checks schema — reported above");
+      return;
+    }
+    // Only `checks` is compared for optionality, because it is the only place
+    // tan SPLITS required from optional. At the top level the model's `?` marks
+    // are a tolerant-reader decision about older binaries reachable through
+    // `alpSdk.cliPath` (`missingPrerequisites`, `nextSteps`), not a claim about
+    // today's contract — asserting them against tan would red on a difference
+    // that is deliberate.
+    const modelled = declaredFields(models, "DoctorCheckEnvelope") ?? new Set();
+    for (const key of Object.keys(doctorKeys.checks.requiredKeys ?? {})) {
+      if (!modelled.has(key) && !modelled.has(`${key}?`)) continue; // unmodelled: reported above
+      assert.ok(
+        modelled.has(key),
+        `tan declares \`checks[].${key}\` REQUIRED, but ` +
+          `${DOCTOR_ENVELOPE_MODELS} marks it optional. A reader that treats a ` +
+          `guaranteed field as absent writes a \`?? fallback\` branch that can ` +
+          `never be right.`,
+      );
+    }
+    for (const key of Object.keys(doctorKeys.checks.optionalKeys ?? {})) {
+      if (!modelled.has(key) && !modelled.has(`${key}?`)) continue; // unmodelled
+      assert.ok(
+        modelled.has(`${key}?`),
+        `tan declares \`checks[].${key}\` OPTIONAL, but ` +
+          `${DOCTOR_ENVELOPE_MODELS} marks it required. Every check tan emits ` +
+          `without it then reads as \`undefined\` through a type that promised ` +
+          `a value.`,
+      );
+    }
+    artefactChecks += 1;
   },
 );
 

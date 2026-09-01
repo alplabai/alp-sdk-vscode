@@ -72,7 +72,7 @@ export function buildWebviewHtml(
 <body data-alp-mode="${mode}">
   <div id="root">
     <p class="alp-shell-loading">
-      ⏳ Loading Alp IDE…
+      Loading Alp IDE…
     </p>
   </div>
   <script nonce="${nonce}">
@@ -109,6 +109,7 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.openExistingProject",
   "alp.openHardwareExplorer",
   "alp.openHub",
+  "alp.openModelsPanel",
   "alp.openOverview",
   "alp.openSdkManager",
   "alp.openSettings",
@@ -125,7 +126,6 @@ export const ALLOWED_WEBVIEW_COMMANDS: ReadonlySet<string> = new Set([
   "alp.westAlpClean",
   "alp.westAlpFlash",
   "alp.westAlpImage",
-  "alp.westAlpRenode",
   "alp.westBuild",
   "alp.westFlash",
   "alp.westRunNativeSim",

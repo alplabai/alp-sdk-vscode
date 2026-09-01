@@ -80,6 +80,14 @@ Owners:
   `deps/vscodeAdapter.ts` (#376) so `deps/vscodeAdapter.ts` and
   `debug/vscodeAdapter.ts` share exactly one way of running the command
   instead of drifting into two
+- `src/build/somCliFloorGuard.ts` — the #502 Renesas CLI-floor pre-build
+  check, extracted out of `west.ts` (#606) rather than a `vscodeAdapter.ts` —
+  closer in shape to `alpCli/doctor.ts` than to `download.ts`: it is not
+  vscode-free (`warnIfCliCannotBuildSom` takes a `vscode.ExtensionContext`
+  and calls `probeTanVersion`/`notifyAsync`/`log`), and the reason it moved
+  is the SAME one — `west.ts`, `ideHub/buildPlanPanel.ts` and
+  `tasks/vscodeAdapter.ts` all spawn `tan build` and must share exactly one
+  copy of this check instead of each carrying (or skipping) its own
 
 Responsibilities:
 

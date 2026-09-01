@@ -1,10 +1,1278 @@
 # Changelog
 
+## 0.6.0
+
+**Stable.** First even-minor cut since `0.4.0`, so `release-vsix.yml` publishes
+this build to the STABLE Marketplace channel — reaching every user, not only
+those opted into pre-release updates. Everything in `0.5.0`, `0.5.1` and
+`0.5.2` reached pre-release users only and arrives here for the first time.
+
+
+- **The New Project wizard can now scaffold a custom Linux app, not only the
+  stock image (#624).** `board.schema.json` documents an app-only `os: yocto`
+  slice — `app:` naming a project-relative source directory, `recipe:` naming
+  the bitbake recipe that packages it, and no `image:` — and the wizard could
+  never produce it: `takesApp()` was `os === "zephyr"`, so a customer who
+  wanted their own Linux application on the A-cluster had no path through New
+  Project. The Cores step now accepts a source directory on a Linux core and,
+  once one is typed, asks for the recipe.
+- **The pair is written together or not at all.** `recipe:` is not optional:
+  `_slice_command`'s yocto branch returns `None` for an `app:` with no
+  `recipe:`, which carries the slice as `skipped` / `no-command` — silently
+  unbuildable, exactly the shape #623 found for bare-metal. So a half-filled
+  answer writes NEITHER half and the core stays on the SoM's stock image, and
+  the customer is told which cores that happened to rather than having their
+  input dropped in silence. A completed pair also clears any `image:`, which
+  takes priority over `app:`/`recipe:` (`board.schema.json:602`) and would
+  otherwise build the stock image while the board.yaml read as though it built
+  the customer's source.
+- The stock image stays the DEFAULT for a Linux core. It is what the SoM ships
+  and what `heterogeneous-builds.md` blesses; the app-only slice is a
+  deliberate opt-in.
+
+- **A bare-metal core the wizard writes with no `app:` is now named to the
+  customer (#623).** Measured, because the issue asked for the measurement
+  before any fix: `tan validate` passes the shape with zero issues, while the
+  SDK's own planner refuses it — `alp_orchestrate/orchestrator.py`'s
+  `_slice_command` reads `if slice_.os == "baremetal": if not slice_.app:
+  return None`, and its docstring says the caller then carries the slice as
+  `skipped` / `no-command`. There is no bare-metal stock default: the two
+  documented fallbacks are `alp-stock-shim` (Zephyr) and `alp-image-edge`
+  (Linux), and the code has no third. So the build silently skips a core the
+  customer asked for. Deliberately NOT fixed by scaffolding one:
+  `coreScaffold.ts` is interim by its own header because generating another
+  program's build files in TypeScript is knowledge tan owns and no gate here
+  can catch it drifting. What is fixed is the silence. Filed upstream as
+  alplabai/alp-sdk#1889.
+- **`fetch.mjs --check` now actually compares, and a nightly job runs it
+  (#629).** Nothing in this repo ever compared the recorded tan surface to a
+  real binary — every gate checks the record against itself, which is how #602
+  passed 36/36 against 36 wrongly-recorded flags. `--check` was part of that
+  gap rather than the answer to it: it built a fresh snapshot, printed its
+  digests and returned exit 0, having never opened `surface.json`. It now
+  compares content digests, exits non-zero on drift, and NAMES the commands
+  that moved rather than only reporting that a digest changed. The new
+  `tan-surface-drift.yml` runs it nightly against the pinned binary, staged
+  through the same resolver `ci.yml` and `release-vsix.yml` use — not whatever
+  `tan` is on PATH, which on a developer machine can be an entirely different
+  version. Scheduled, not per-PR, for the reason `e2e.yml` argues at length:
+  a flaky required check does not get fixed, it gets re-run.
+
+- **New command: `Alp: Install tan shell completion` (#621).**
+  `tan completion --shell {bash,zsh,fish}` was called only by the dev-side
+  surface capture script; there was no user-facing way to install it. The
+  command detects the customer's shell from `$SHELL` and falls back to a
+  picker offering exactly the three tan supports.
+  bash and zsh get the script in an untitled editor with a one-line
+  instruction — **nothing is written to disk**, because their completion
+  scripts are conventionally sourced from a profile the customer owns and
+  appending to that blindly is not this extension's to do. fish is the one
+  case that offers a write, because its `completions/` directory auto-loads
+  whole files: behind an explicit confirm naming the exact path and saying
+  whether it creates or overwrites, never an append, and a decline falls back
+  to the same editor.
+
+- **The New Project wizard names the files it is about to write (#616).**
+  Create used to write blind: the Confirm step showed no file list at all. It
+  now runs `tan init --preview` first — measured, that writes nothing and
+  returns `data.fileChanges[]`, 8 entries for `minimal-app` — and shows them
+  before Create. A preview that fails or returns a payload this extension
+  cannot read does NOT block Create (a preview is an aid, not a gate), but the
+  customer is never shown an empty list as though it meant "no files".
+- **Correcting #616's body: `sdkPinned` is not available before Create.** The
+  issue calls it "a fact the customer should see before Create". Measured on
+  the pinned tan 0.6.0, `data.sdkPinned` is `null` on a `--preview` pass and
+  carries the path only on the real run, so no UI here promises it beforehand.
+
+- **`board.yaml` gets a structural check even with no SDK resolved, and it is
+  never dressed up as a clean bill of health (#619).** `tan validate
+  --offline` runs only the checks that ship in tan, and the two modes are not
+  interchangeable: measured at the pin, on a `board.yaml` carrying BOTH an
+  unknown top-level key and an invalid enum value, `--offline` answered
+  `ok true / exit 0 / issues []` while a resolved SDK answered `ok false /
+  exit 2` with `ALP-B002` and `ALP-B003`. So a clean offline result now says
+  plainly that only tan's built-in checks ran and offers to select an SDK —
+  never the "board.yaml is clean" sentence a real validation gets. The
+  migrator second-opinion (#613) is skipped on that path, since it would
+  report its own clean verdict when it cannot run.
+- **The fallback asks tan rather than resolving the SDK itself.** An earlier
+  version gated on `collectProjectContext().sdkRoot === null`, which is the
+  competing resolution `withSdkRoot` forbids — measured, the two disagree: tan
+  walks up to an enclosing alp-sdk checkout while `resolveSdkRoot` looks only
+  at the workspace folder, a `../alp-sdk` sibling and `~/.alp/sdk/*`, so a
+  project at `<checkout>/examples/app` would have been forced onto the reduced
+  check AND told no SDK was active, both wrong. It now runs plain `validate`
+  and retries with `--offline` only on tan's own
+  `validate.sdk-root-unresolved`, which is registered in `GATED_CODES` as part
+  of this change — binding a `reserved` code is what makes this extension its
+  consumer.
+- **`ALP-Bxxx` diagnostics can now be explained from the failure that raised
+  them (#617).** `tan explain --code <ALP-Bxxx>` is the diagnostic catalogue
+  and nothing surfaced it. A validation failure now carries one "Explain
+  ALP-Bxxx" action per DISTINCT code found in tan's messages, extracted with an
+  anchored `/\bALP-B\d{3}\b/` in a pure module — a miss yields no action and
+  never an error. NOT offered on the offline path: `tan explain --code` needs a
+  resolved SDK and exits 1 with `explain.sdk-root-unresolved` without one, so a
+  button there could only ever fail.
+
+- **`tan validate` and both `tan generate` sites were still spawning with no
+  cwd — #605 did not close the class.** All three go through
+  `runAlpWithProgress`, whose `cwd` parameter is optional and which all three
+  callers in `src/loader.ts` omitted. Confirmed by driving the compiled
+  `out/loader.js`: `argv=["validate"] cwd=undefined` and
+  `argv=["generate","--target","zephyr-conf"] cwd=undefined`, while the
+  `migrate --check` call two lines away correctly carried the project root.
+  `generate` WRITES, so a cwd-less run wrote into the extension host's own
+  directory — on Windows the VS Code install directory — with `ok` still true.
+  All three now pass `readOnlyProjectCwd()`.
+- **The gate that was supposed to prevent this had a hole, and it was in the
+  gate's shape rather than its list.** `test/tan.spawnCwd.test.js` policed the
+  two direct spawners. `runAlpWithProgress` is a FORWARDER: it hands its own
+  `cwd` parameter to `runAlpCommand` as an identifier, which satisfied every
+  rule in the gate on its own line while its callers omitted theirs. Adding it
+  to the hand-written table was not the fix either — registering the direct
+  forwarders revealed five more (`runDoctor`, `runDebugConfig`,
+  `reconcileActiveSdkAfterBootstrap`, `confirmFlashReadiness`,
+  `fetchModuleTemplates`) and registering those revealed three that forward
+  into THEM. The table is now DERIVED to a fixpoint from a two-entry seed of
+  the helpers that actually reach `child_process.spawn`. Measured why that
+  matters: with the hand-written table, deleting an entry left the whole gate
+  green — shrinking an allowlist is invisible. With the derivation, both that
+  mutation and a real dropped cwd are caught.
+
+- **"Fix all" no longer hangs forever on the Zephyr SDK row (#631).**
+  `runFixAll` subscribes to `awaitRun(runNameFor(row))` and then dispatches
+  the row, and `awaitRun` settles only on a `terminalFinished` event carrying
+  the name it subscribed to. `runNameFor` promises the `zephyrSdk` row
+  `"Alp: install Zephyr SDK"`, but `runZephyrSdkInstall`'s
+  `retargetWestCommand`-refused FALLBACK dispatched through a helper that
+  hardcoded `"Alp: install dependency"` — so the progress notification spun
+  forever, no later row ran, nothing on screen said why, and only a window
+  reload cleared it. Both dispatch paths now claim the promised name.
+  Measured on the compiled `runFixAll`: with the bug, dispatched under
+  `Alp: install dependency` while awaiting `Alp: install Zephyr SDK`, never
+  resolved; fixed, it returns `installed: ["zephyrSdk"]`.
+- **The fallback also gave the wrong notice.** It raised
+  `offerReloadAfterInstall`, whose prose is written for a `winget` install and
+  blames the window's PATH — wrong advice for `west sdk install` — and it
+  dropped `sevenZipStatus` on the floor along with the run name. It now raises
+  `offerRefreshAfterZephyrSdkInstall`, the same notice the retargeted path
+  gives. `runInNewTerminal` is deleted: this fallback was its only caller.
+- **New gate: `test/deps.runNameContract.test.js`.** Nothing asserted that the
+  name `runNameFor` promises for a row is the name that row's dispatch
+  actually claims. The invariant held for every other row and broke on exactly
+  one, in exactly one of its two branches, reachable only when a failing
+  Zephyr SDK check and a refused retarget coincide — and `runFixAll`'s
+  existing `isRunActive` guard structurally cannot catch it, because the
+  mismatch is between the AWAITED name and the DISPATCHED one rather than
+  between two dispatches. The gate drives the real compiled dispatcher per
+  action kind and per branch, and includes a vacuity check: it fails if
+  nothing was dispatched, and if `runNameFor` itself drifts to the generic
+  name (which would make the contract hold by agreeing with the bug).
+
+- **Every tan envelope spawn now states a cwd, and a gate keeps it that way
+  (#605).** A spawn with no cwd inherits the extension host's own working
+  directory — on Windows, the VS Code install directory — and `tan` resolves
+  both the project and the SDK from cwd, so the command answers about
+  somewhere that is nobody's project. The failure is quiet: `tan presets`
+  reports an unresolved SDK as a SUCCESS with empty lists, so a cwd-caused
+  empty catalogue is indistinguishable at the call site from a real one. Nine
+  sites fixed — the four New Project catalogue reads (`presets`, `explain`,
+  `explain --template`, `examples`), `tan init`, the LSP client's `presets`,
+  the Configurator's `presets`, `runToolchainFix`'s terminal dispatch, and
+  `migrate --check`.
+- **`runToolchainFix`'s comment stated the rule its own line broke.** It
+  explained why `undefined` must not be passed and then resolved the cwd
+  through `vscode.workspace.workspaceFolders?.[0]?.uri.fsPath`, which
+  evaluates to exactly `undefined` when no folder is open — and re-derived the
+  root per call site, which `docs/ARCHITECTURE_RULES.md` §3 forbids. Now
+  `readOnlyProjectCwd()`, the one seam for this.
+- **New gate: `test/tan.spawnCwd.test.js`.** #605 opened naming three sites;
+  its own comments then found a fourth, then six more, all by hand. Nine edits
+  do not close a class. The gate parses `src/**/*.ts` with the TypeScript
+  compiler API — the same `typescript/unstable/ast` + `unstable/sync` pair
+  `scripts/tan-surface/extract.mjs` already documents, since TypeScript 7
+  deleted the old JS API — and fails on any `runAlpCommand` /
+  `fetchEnvelopeResult` call that omits its cwd, passes the `undefined`
+  literal, or re-derives the root from `workspaceFolders[0]`. Stated limit,
+  in the file: it covers the two ENVELOPE spawners and NOT the terminal ones
+  (`runInTerminal`, `runAlpInTerminal`, `runAlpStreamed`), whose cwd is a
+  named option rather than a positional argument.
+- **Correcting the record: one of the nine was mine.** `migrate --check`, added
+  hours earlier for #613, passed `undefined` as its cwd — the same class,
+  introduced while the issue describing it was open. It is the reason this
+  change ships a gate rather than nine edits.
+
+- **A `alpSdk.path` that stopped resolving after a bootstrap now says so, and
+  offers the SDK tan resolves (#604).** `tan bootstrap` MOVES the alp-sdk
+  checkout — measured on the pinned tan 0.6.0, by DEFAULT and not only under
+  `--workspace`: a plain bootstrap relocates it to
+  `<parent>/alp-workspace/<name>` and writes `~/.alp/sdk-default` there. The
+  pin was then left naming a directory that is gone, every `--sdk-root` this
+  extension sent pointed at nothing, and the only trace was a line in an
+  output channel nobody had open. `reconcileActiveSdkAfterBootstrap` now
+  checks whether the pinned path still EXISTS: gone, plus a ready SDK
+  resolved elsewhere, raises a modal naming both paths. The pin is still
+  never written unasked — an unmounted volume produces identical evidence, so
+  declining keeps it exactly as it was — but silence was the defect, and
+  asking is safe in the very case that ruled out writing. A pin that still
+  exists is unchanged: logged, never touched, never even asked about.
+- **Recorded, correcting #604's suggested fix: the bootstrap envelope cannot
+  carry this.** The issue proposes reading `bootstrap.workspace-relocated`
+  off the run. Measured, the REAL bootstrap produces no envelope at all — it
+  goes through `runAlpInTerminal`, which parses nothing — and the one
+  envelope carrying the code is the win32 `--dry-run` pre-flight, where
+  `data.sdkRoot` is the PLANNED destination that does not exist yet (the
+  dry-run moves nothing, and its message reads "would move" where the real
+  run reads "moved"). Re-pointing the pin at that would create the dangling
+  pin this change exists to detect. The signal is on disk, not on the wire.
+  `bootstrap.workspace-relocated` is therefore NOT registered in
+  `GATED_CODES`: this extension has no honest consumer for it, and
+  registering one anyway is exactly what that list exists to prevent.
+
+- **A flash-blocking J-Link warning now reaches the customer about to flash,
+  not just the Dependencies panel (#615).** tan works out precisely what is
+  wrong and says so: on this bench host `jlink` comes back `status: "warn"`
+  with "J-Link V9.26 (/usr/local/bin/JLinkExe) predates V9.46, which is where
+  Alif's MRAM flash loader became built in" and a `fix` of "Upgrade the SEGGER
+  J-Link pack to V9.46+." On AEN hardware that is the difference between a
+  flash that programs MRAM and one that does not, and the Flash command never
+  asked. It now runs `tan doctor` first and, when a flash-relevant check is
+  `warn` or `fail`, shows a blocking modal carrying tan's own detail and fix
+  before spawning anything. A CONFIRM, not a refusal: `jlink` is about Alif's
+  Flow D and a customer flashing a Renesas part is right to continue. Every
+  other outcome flashes — a doctor that could not run, answered nothing, or
+  reported no flash-relevant problem must never stand between a customer and
+  their board, because "tan did not tell us" is not "tan said no".
+- **The `jlink` and `setools` rows are named in the Dependencies panel
+  (#615).** Neither had a label, so `humanise` rendered them "Jlink" and
+  "Setools" — and a row nobody recognises is a row nobody reads. They are now
+  "SEGGER J-Link" and "Alif SETOOLS".
+- **Recorded, correcting #615's body: the three rows are NOT unrendered.**
+  `sdkProvenance`, `setools` and `jlink` all reach the panel, and
+  `planner.ts`'s `hint` field already carries tan's `check.fix` prose verbatim
+  under the detail. What was missing was a label for two of them and, for
+  `jlink`, any path to the customer at the moment it matters. `sdkProvenance`
+  is `status: "pass"` reporting `alp-sdk 0.16.0 @ e1dddd37` and needs no
+  action at all.
+
+- **"board.yaml is clean" is no longer said about a file the resolved SDK
+  cannot process (#613).** A `board.yaml` carrying a `schemaVersion` newer than
+  the resolved SDK's — written by a newer SDK, opened against an older one —
+  passes `tan validate` with `ok: true`, exit 0 and `issues: []`, because the
+  schema permits any integer >= 1. The SDK's own migrator refuses the same file
+  outright. `alp.validateBoardYaml` now asks `tan migrate --check` after a
+  clean validation and reports a refusal at warning severity, with west's own
+  sentence carried verbatim to the "Alp SDK" channel. Classification is on
+  `issues[].code`, never on that sentence: `migrate.failed` is a generic
+  wrapper tan emits for any non-zero west exit, so the customer-facing text
+  says the migrator refused the file and does not guess why. A migrator that
+  could not run at all — no SDK resolved, no west workspace — leaves the clean
+  verdict alone rather than turning validation into an error about a verb that
+  never ran.
+- **The board.yaml `os:` -> `cores:` quick fix no longer guesses the core id
+  (#613).** It inferred the core from a substring of the SKU, in a table this
+  repo maintained by hand. Measured against `tan presets` at alp-sdk
+  v0.16.0-rc1 that table was wrong twice: `os: yocto` on `E1M-AEN301` or
+  `E1M-AEN401` answered `m55_hp`, and those SoMs declare
+  `[{m55_hp, zephyr}, {m55_he, zephyr}]` with no yocto core at all; and an
+  unrecognised SKU fell through to `m33_sm` / `a55_cluster`, Renesas core ids,
+  written into whatever part the customer actually had. It also never offered
+  `m55_he`, a legal answer on all six AEN SoMs that declare it. The LSP
+  completion catalogue now carries `soms[].cores[]` from `tan presets`, and the
+  fix offers one action per core the SoM declares for that os — or none at all
+  when the catalogue has no answer. `inferCoreIdFromSkuAndOs` is deleted.
+- **Recorded, because #613's body says otherwise: no board.yaml can be behind
+  at this pin.** `scripts/alp_migrate` has `LATEST = 1` and an EMPTY migration
+  registry, and the board schema documents an absent `schemaVersion` as
+  "version 1 permanently … never out-of-date". `tan migrate --check` on a
+  normal project answers `alp-migrate: all board.yaml at v1.` and `--preview`
+  returns an empty stdout — not the `diagnostic-v1` payload the issue expects,
+  which is why nothing here parses one.
+
+- **The module scaffold now goes where `board.yaml` is, not where the
+  workspace folder is (#601).** `alpSdk.boardYamlPath` is a documented,
+  per-folder setting holding a path relative to its workspace folder. Point it
+  at `firmware/board.yaml` and the project is `<outer>/firmware`, which is
+  where `src/west.ts` has always run the build — but `Alp: Scaffold module`
+  passed `<outer>` to `tan scaffold` as both `--project` and the spawn's cwd,
+  so the module landed beside the project and was never compiled. That is
+  #601's own symptom re-created through a different mechanism, found in
+  adversarial review and confirmed live against the pinned tan 0.6.0. The rule
+  is now one function, `packages/alp-core/src/project/projectRoot.ts`, used by
+  both callers.
+- **The overwrite dialog no longer names files it is not about to destroy
+  (#601).** It listed every row that was not `unchanged` under "any edits made
+  in them are lost" — and a refusal legitimately carries `"new"` rows beside
+  the offending one (delete a scaffolded header, edit its `.c`, and tan refuses
+  with the header marked `"new"`). A file that does not exist was named as one
+  whose contents were about to be replaced, in the one dialog whose whole job
+  is being exact about that. Three headings now: replaced (`"update"` only),
+  created (`"new"`), and a separate one for a kind this extension does not
+  recognise, which is named rather than hidden but not claimed to be replaced.
+  The first confirm likewise counts files that change rather than every row
+  tan listed, and shows the untouched ones under their own heading.
+- **Cancelling a scaffold no longer reports a killed write as a clean
+  cancellation (#601).** `runAlpWithProgress` aborts the controller and kills
+  the tan child, so a cancelled `--preview` is a no-op while a cancelled write
+  was interrupted mid-run; tan keeps no journal and reports nothing on a kill.
+  All three passes announced the same info-severity "cancelled". The preview
+  now says nothing was written; a cancelled write, and a cancelled `--force`
+  replace, say so at warning severity and tell the customer to check the
+  module.
+- **A refusal now reaches the customer in this extension's words, with tan's
+  verbatim in the channel (#601).** tan writes for a terminal: "Use --force to
+  allow updates", "Use --name <name> or run interactively" — flags this UI
+  never exposes and a customer in the editor cannot act on. The toast carries
+  the route forward; `detail` carries tan's own sentence and its code,
+  unedited. A per-template `tan explain` failure is logged instead of leaving
+  a picker of bare ids with nothing anywhere saying why, and the catalogue
+  progress is cancellable (`1 + N` sequential spawns, and `N` is tan's number).
+  `classifyScaffoldRefusal` now looks its codes up with `hasOwnProperty`: a
+  refusal coded `constructor` or `toString` used to read a function back off
+  `Object.prototype` and classify as a kind that does not exist.
+- **The modal body reaches the output channel (#601).** `modalDetail` is
+  rendered on the dialog and was written nowhere else, so a customer who
+  confirmed a destructive replace left no record of the file list they were
+  shown. `src/notify/vscodeAdapter.ts`'s `present` now logs it with the rest of
+  the plan.
+
+- **`Alp: Scaffold module` now calls `tan scaffold` instead of
+  re-implementing it, so a module scaffolded from VS Code is actually
+  compiled (#601).** `tan scaffold` emits a `## Wiring` section in the module
+  README naming the two `CMakeLists.txt` edits without which the module is
+  never compiled; the TypeScript port in
+  `packages/alp-core/src/wizard/service.ts` emitted `## Notes` and stopped, so
+  the customer got a module that silently never built with nothing saying why.
+  Measured by compiling the port out of git history and diffing it against the
+  pinned tan: header and source byte-identical (with no board.yaml resolved),
+  README differing in that section and in `Template:` alone, where the port
+  spelled the template's label and tan spells its id. (#601's body says
+  everything outside `## Wiring` was byte-identical and counts `Template:`
+  among the identical lines; that detail is wrong, the conclusion is not.)
+  The port is DELETED rather than patched: patching the text closes this
+  symptom and leaves a second, un-gated copy of a generator tan owns to miss
+  the next addition the same way. `wizard/service.ts`, `wizard/models.ts` and
+  `wizard/fileSystem.ts` are gone (`collectGeneratedOutputPreviews` went with
+  them — it had no callers), replaced by `wizard/scaffoldArgv.ts` (the argv,
+  pure) and `wizard/scaffoldPayload.ts` (narrowing + refusal classification).
+  The module-template picker is now built from `tan explain`'s
+  `available.moduleTemplates[]` plus a per-id explain, the same shape the New
+  Project flow already used, so a template tan adds tomorrow appears with no
+  change here — the retired four-entry table is what made that impossible.
+- **The scaffold confirm now lists what tan will actually write, and
+  `--force` is gated behind a second dialog that names what it destroys
+  (#601).** The old flow opened a markdown preview rendered by the port —
+  precisely the text that had gone stale. It now runs `tan scaffold
+  --preview` (which writes nothing) and puts tan's own `fileChanges[]` on the
+  confirmation dialog. `--force` is never predicted from that list: the write
+  runs WITHOUT it, and only tan's own `scaffold.would-overwrite` refusal
+  (exit 3) raises a second, error-severity modal naming the differing files
+  and saying the edits in them are lost. Measured on the pinned tan 0.6.0,
+  `--force` replaces a file with no diff and no backup. Both spawns carry the
+  project root as `--project` AND as the spawn's cwd: measured, a `scaffold`
+  with neither answers `project.root: "."`, which for an extension-host child
+  is whatever directory VS Code was launched from (#605's class, not joined).
+  An `ok: true` whose payload carries no `fileChanges`/`written` list is
+  reported as a failure rather than as "wrote 0 file(s)" — the `written ?? []`
+  shape pinned in `test/ideHub.materialiseGuard.test.js` — and tan's
+  `issues[]` reach the output channel on the success path too (#611).
+- **Known regression, filed as tan-cli#1031: the generated module source now
+  always reads `// Board context: unavailable`.** The retired port read `board.yaml`
+  and wrote the SoM SKU and OS into that comment. Measured on the pinned tan
+  0.6.0, `tan scaffold` reports `project.boardYaml: null` and emits the
+  `unavailable` spelling even with `--board-yaml` passed explicitly, an
+  `--sdk-root` resolved, and the cwd inside the project. It is a comment, not
+  a build input — the module compiles either way, which the `## Wiring`
+  section is what makes true — but it is a real loss and is recorded here
+  rather than left to be rediscovered.
+
+- **Dependency panel install buttons are no longer dead on the pinned tan
+  0.6.0 (#603).** `packages/alp-core/src/deps/planner.ts` matched a missing
+  prerequisite to a row by `p.tool === check.name`, which worked at v0.3.1
+  (one check per tool) but not at 0.6.0, which rolls `cmake`/`ninja` into one
+  `hostPrerequisites` check while `missingPrerequisites` stays keyed by tool
+  — so nothing matched and the row that exists to install these two tools
+  offered no button at all. `DependencyAction`'s `command` kind is now an
+  ordered, non-empty list of `{tool, command}` steps rather than a single
+  string: a per-tool prerequisite still binds to its own check first, and
+  every LEFTOVER prerequisite (a tool with no dedicated check) now binds to
+  the `hostPrerequisites` rollup row instead of falling out of the table
+  silently. If that rollup row is itself renamed or removed upstream, the new
+  report-level `orphanedPrerequisites` field and a log line say so rather
+  than quietly going back to no action — the same failure mode one field
+  over. `src/deps/vscodeAdapter.ts`'s `runDependencyAction` dispatches one
+  `runInTerminal` call PER STEP, sequentially, awaiting each one before the
+  next — never joined with `&&` (breaks Windows PowerShell 5.1, the default
+  terminal profile) or `;` (runs a later step after an earlier one failed and
+  collapses two exit codes into one). `runFixAll`'s multi-step failures now
+  report which tools installed, which command failed with which code, and
+  which never ran, instead of a bare exit code that implies nothing changed
+  on the machine when it did. A tool tan names with `command: null` still
+  contributes nothing to the button — that is tan's real answer, not a gap to
+  fill — and a row mixing null and non-null commands offers a button over the
+  non-null subset: the tooltip explains the row can stay failing until the
+  rest is handled another way, and the consent screen names the omitted
+  tool(s) in its own short clause (`· tan reported no install command for
+  ninja`).
+- **A single row's failure now reaches the customer, not a bare
+  "\<operation\> failed."** `notify/service.ts`'s leak filter demotes a
+  message matching an exit-code shape (`` `cmd` exited 1 ``) or an absolute
+  path out of the customer-visible toast and into the channel-only log, and
+  the multi-step failure sentence used to trip the exit-code shape on every
+  failure. Reworded to "did not succeed (code N)", which carries the same
+  information without tripping the filter. The row button's own
+  customer-facing notice now names the TOOL that failed rather than the raw
+  command tan ran — never path-shaped, so the absolute-path trigger cannot
+  fire either, and (unlike an earlier attempt at this fix that ran the
+  command through a path-stripping regex before showing it) nothing here
+  edits a command a customer might read, which is what let that regex turn
+  `curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash` into a command that
+  was never run. The raw command tan sent stays out of every customer
+  sentence, but it does still reach the "Alp SDK" channel, completely
+  unedited: Fix-all's own `[fix-all]` log line for a Fix-all run, and — this
+  was missed in the same commit that moved the command out of `cause`, so
+  for one round it reached NEITHER — the row button's own notice `detail`
+  for a single-row press, which the presenter writes to that same channel.
+  (Fix-all's own top-level "N of M did not install." sentence never carried
+  either leak shape and was never demoted — the filter fix itself is scoped
+  to the row path, which is where the demotion actually happened.)
+- **Fix-all's "did not install" toast now fires for every way a run can install
+  nothing THAT IS NOT THE CUSTOMER'S OWN ANSWER, not only an outright
+  failure.** A row cancelled, raced away mid-sequence, or that failed outright,
+  with a step already completed, is no longer reported as a plain,
+  auto-dismissing status-bar "success" — a half-modified machine now surfaces as
+  a persistent warning toast, same as an outright failure, and that toast's own
+  sentence now names what installed whether the step that stopped it was a SKIP
+  or the FAILURE itself (a 2-step row that installs cmake and then fails on
+  ninja used to read "1 of 1 did not install.", saying nothing about cmake — now
+  "1 of 1 did not install — cmake installed before stopping.", one connected
+  sentence rather than two that read as contradicting each other). The "N of M
+  did not install" count is every row that did not install, not only the ones
+  that errored — a row that aborts because an earlier one failed counts as 2 of
+  2 undone, not 1. A row skipped for a reason that is not the customer's own
+  answer (an environmental refusal such as another install already running, or
+  an invariant this extension did not expect, like an install command list that
+  turned out empty, or a run name the dispatcher had nothing to wait for) now
+  toasts too, even when another row in the same run installed something — it
+  must not read as success just because it landed in `skipped` rather than
+  `failed`. A run that accounts for NOTHING at all — no install, no failure, no
+  skip, for a nonzero target count, an invariant `runFixAll`'s own loop should
+  make unreachable — toasts as a defensive backstop; that condition is
+  deliberately narrower than "installed nothing", because "installed nothing"
+  alone also matched three ORDINARY ways a customer declines the whole run
+  (dismissing the consent screen, leaving every row unchecked, cancelling before
+  row 1 starts), each of which pushes every target into `skipped` with a reason
+  already on the quiet allowlist — without the narrower condition, declining a
+  Fix-all read as a persistent warning toast for a machine nothing had happened
+  to, and made an early cancel (nothing touched) read MORE alarming than a
+  cancel after row 1 had already installed something (which stayed a quiet
+  status bar). `deps/panel.ts`'s Fix-all wrapper no longer builds any part of
+  the `NotificationPlan` itself: `fixAllSummaryNotice` returns the finished
+  plan, the same shape the row path's own notice already did. The orphan latch
+  is now keyed per tool AND command, not tool alone, so the same tool reported
+  again with a DIFFERENT command re-arms it — and the log line it feeds names
+  every tool tan is CURRENTLY reporting as orphaned, not only the ones newly
+  seen this refresh.
+- **The `hostPrerequisites` row now says which tools it cannot offer a button
+  for even when NONE of them can be — not only when some can.** A partial
+  rollup (tan names a real command for cmake but not ninja) already said so
+  on the button's own tooltip. When EVERY leftover tool comes back with
+  `command: null` — the common SDK-unresolved ground state — there is no
+  button at all to carry that sentence, and the row's own detail is now the
+  one that says it instead of staying silent.
+
 ## 0.5.2
 
 **Pre-release.** Continues `0.5`'s odd-minor pre-release channel —
 `release-vsix.yml` still publishes this build with `--pre-release`, reaching
 only Marketplace/Open VSX users opted into pre-release updates.
+
+- **Comments across `src/`, `packages/`, `test/` and `README.md`/`docs/**`
+  that measured the pinned tan CLI against `0.6.0-rc1` now say `0.6.0` — the
+  pin moved, and most were label-only, but several were not, including one
+  that survived a first pass at this same sweep (#609, adversarially
+  reviewed twice).** `packages/alp-webview/src/features/models/cliSurface.ts`
+  (and its test companion) is RE-MEASURED, not relabelled: all nine `model`
+  subcommands were re-run against the pinned GA binary, and the
+  alarm-collapsing logic did not need to change. `test/deps.adapter.test.js`
+  resolves its captured `tan doctor` fixture from `SUPPORTED_CLI_VERSION`
+  (matching `test/deps.projectScope.test.js`) and derives its
+  withheld-row-count assertion from the fixture's own per-status counts
+  instead of a hand-counted literal, because the GA capture's checks differ
+  from the rc1 one it replaces (`sdkProvenance` gained; `zephyrWorkspace` is
+  state-dependent, not removed). The stale rc1 doctor fixture is deleted, and
+  `test/validation.diagnosticV1.test.js`'s six inline `tool.version` fixtures
+  get the same treatment (measured: the pin emits `"version": "0.6.0"`
+  verbatim). Roughly twenty label-only sites across `test/` and four
+  customer-facing docs (`README.md`, `docs/TASK_RECIPES.md`,
+  `docs/ALP_IDE_ONBOARDING.md`, `docs/GETTING_STARTED_CLI.md`,
+  `docs/GETTING_STARTED_VSCODE.md`) missed by the first pass are relabelled
+  too, plus `docs/RELEASE_GATES.md` and `docs/GETTING_STARTED_CLI.md`'s
+  "the pin IS a pre-release" framing, now past tense (the pin is GA).
+  `scripts/doc-cli-claims/scan.mjs` gains a narrow new `versionLabel` claim
+  class — "tan (VERSION) implements/publishes/accepts/takes" — and
+  `test/docs.cliClaims.test.js` gates it against `SUPPORTED_CLI_VERSION`, so
+  a future pin bump reds on a stale prose label instead of needing a second
+  adversarial review to find one. Several comments citing the now-retired
+  Rust `tan-cli` as the source of a still-live behavioural claim are
+  re-measured against the pinned Python 0.6.0 binary rather than relabelled
+  or hedged: `tan debug-config` now defaults `preLaunchTask` per target kind
+  even with no `--pre-launch-task` on the argv at all, and both places that
+  claim is made (`src/tasks/service.ts`'s module doc AND
+  `preLaunchTaskFor`'s own docstring — the first pass fixed only one) now
+  agree (`src/debug/service.ts`, `docs/DEBUG.md` §10.6); the `sdk list`
+  GitHub request is still bounded, measured at ~20s directly; `HTTPS_PROXY`
+  is confirmed read (a closed local port makes the call fail to connect, with
+  tan's own error message naming `ALL_PROXY`/`HTTPS_PROXY`/`NO_PROXY`); the
+  data-loss-relevant `configFiles` array-merge rule in `src/debug/service.ts`
+  is confirmed to still operate on a live, placeholder-bearing field
+  (`"configFiles":["<resolved-openocd-board-cfg>"]`, measured) even though
+  tan itself no longer merges at all, so its correctness now rests on this
+  repo's own `test/debug.rescue.test.js` rather than retired Rust source; and
+  a routing decision in `src/toolchain.ts` that cited retired `doctor.rs`
+  gating logic is re-derived from an already-measured, stronger reason
+  (`--format json` unconditionally suppresses `--fix`) that makes the old
+  citation moot rather than wrong. **The TLS/proxy finding changed
+  materially between the first pass and this one**: `src/alpCli/
+  vscodeAdapter.ts`'s claim that a proxy's CA "merged into the OS trust
+  store" was first downgraded to unverified, then actually MEASURED —
+  `SSL_CERT_FILE=/dev/null SSL_CERT_DIR=/nonexistent`, `REQUESTS_CA_BUNDLE`
+  and `CURL_CA_BUNDLE` pointed at bogus paths all leave `sdk list --online`
+  succeeding, meaning tan reads none of the usual override variables and
+  verifies against an explicit, non-configurable bundled CA file. The
+  customer-facing log message is rewritten to stop recommending "install the
+  proxy's CA in the OS trust store" — a remedy the measurement shows cannot
+  help tan itself — and to say plainly that there is currently no workaround
+  for tan's own calls behind a TLS-inspecting proxy.
+
+- **`test/e2e/cli-smoke.sh`'s `pinmux` check asserted only an exit code, never
+  exercised the SKU family whose capability table is empty against the
+  shipping SDK, and had no `new-som` check at all (#612, adversarially
+  reviewed twice).** `pinmux` is now asked for `--format json` (text mode
+  writes its summary to stderr, nothing to stdout) and checked for real pad
+  content on an AEN SKU plus the `pinmux.table-empty` refusal code on a V2N
+  one — correctly described as every one of 207 pads still being `"TBD"`,
+  not an empty table, and flagged as binding to a `status: "reserved"`,
+  `consumer: "none"` code the vendored contract says nothing in this repo
+  yet depends on. `new-som --dry-run` is exercised once (not twice) and
+  asserted to write nothing, with a note that `new-som` has no captured
+  envelope in the vendored contract at all — this script measures it
+  directly against the live binary instead. The `doctor` call this issue
+  named (`--target-kind native-host --server none`, which `doctor` accepts
+  neither of) had already been fixed in #556, before this branch — but the
+  check that replaced it turns out to structurally never pass: a fresh,
+  never-bootstrapped scaffold always fails `workspace`/`westResolved`, so it
+  now asserts real per-tool check content instead of `ok:true`. Both
+  envelope-content helpers (`okj`, and the new `hasj`) capture a command's
+  output through a variable rather than piping straight from it, because
+  `hasj`'s first version had a `set -o pipefail` bug that let a
+  deliberately-refused command's own exit code override a `grep` match that
+  DID find its answer — caught by driving the whole script end to end
+  against the pinned binary, and `okj` carried the identical latent bug
+  unnoticed until the second review pass. Nothing wires this script into CI
+  — it is renamed `test:e2e:cli:manual` and documented as a manual tool, run
+  by hand after a pin bump.
+
+- **The vendored `tan` surface capture now reads a command's DESCRIPTION, not
+  just its options table, and 36 inert-flag facts it was missing are now
+  recorded — LESS WRONG, not complete (#602).** `scripts/tan-surface/
+  fetch.mjs` classified a flag inert only from its own per-option help cell;
+  six commands (`diff`, `faultdecode`, `inspect`, `pinmux`, `support-bundle`,
+  `trace`) instead declare "accepted but not implemented" globals in the
+  free-text paragraph ABOVE their Options box, which the fetcher never read.
+  Re-capturing `test/golden/tan-surface/surface.json` against the pinned
+  `tan 0.6.0` with the fix reclassifies 13 flags from live to inert (`diff`,
+  `pinmux`, both already listing the flags in their box) and adds 23 more
+  that were entirely absent from the snapshot (`inspect`, `support-bundle`,
+  `trace`, `faultdecode`, none of which restate the flags in their own box at
+  all). `src/alpCli/pinnedSurface.ts`'s `INERT_OPTIONS` gains all 36 — 35
+  classified `parity` (tan's own reason, read past the matched clause: "the
+  oracle's clap `GlobalArgs` are `global = true`, so every verb accepts all
+  of them" — an adversarial review caught an earlier pass calling all 36
+  `not-applicable`, which conflated that with a genuine domain exclusion) and
+  1, `faultdecode --board-yaml`, `not-applicable` (its own marker names
+  board.yaml specifically, the same domain reason as the pre-existing
+  `faultdecode --project`/`--sdk-root`). The classifier also gained a hedge
+  guard (`isHedged`, with unit tests in `test/tanSurface.descriptionInert
+  .test.js`) so a CONDITIONAL "accepted and ignored" wording — tan's real
+  `run --flash`/`renode --sim-mode` shapes, "...for a native_sim/host
+  target", "...when `--sim-mode` is given" — is never recorded as
+  unconditional. `buildSnapshot` also now refuses to write a snapshot if any
+  command's options parse to zero entries, so a silent parser failure can no
+  longer be mistaken for "this command has no options."
+  **This does not close the gap it fixes a slice of.** Measured against the
+  pinned binary (every accepted flag probed with `tan <cmd> <flag> --help`,
+  0 rejections): 147 accepted `(command, global-flag)` pairs across 23
+  commands — `monitor` (10), `sdk` (8), `new-som` (8), and `bootstrap`/
+  `completion`/`flash`/`image`/`lock`/`model`/`quality`/`run`/`validate`
+  (7 each) among them — are still entirely absent from the snapshot, because
+  those commands' own help text says nothing about their global flags at
+  all, and this fetcher only ever recovers a flag when tan's OWN text
+  supports the classification.
+- **Nine documentation claims about the pinned CLI that the binary refutes
+  are corrected, and `test/docs.cliClaims.test.js` gains seven new
+  assertions to catch a recurrence (#608).** `docs/CLI.md`'s `tan pinmux`
+  section named the wrong family for `E1M-V2M*` SKUs, claimed the extension
+  consumes `tan pinmux` instead of reading `metadata/pinmux/<family>.yaml`
+  directly, and promised the CLI always fails soft on an empty capability
+  table (it exits 2 with `pinmux.table-empty` when the table file exists but
+  every pad is still `TBD` — currently all four V2N/V2M SKUs).
+  `docs/GETTING_STARTED_VSCODE.md` and `docs/EXTENSION_CLI_INTEGRATION.md`
+  both described `tan doctor --build` as changing doctor's checks; measured,
+  `--build` and plain `tan doctor` return a byte-identical check set and
+  summary (the specific pass/warn/fail counts are host-dependent and are not
+  quoted in either doc, only the equality). `docs/DEBUG.md` called
+  `inspect`/`trace`/`doctor`/`support-bundle` something the CLI "should
+  eventually expose" — all four already ship and run, and `doctor` is
+  already spawned — and, separately, called five VS Code commands
+  (`Alp: Configure debug profile`, `Alp: Debug preflight`, `Alp: Debug`,
+  `Alp: Debug doctor`, `Alp: Export debug support bundle`) an aspiration
+  though all five are registered in `package.json`'s `contributes.commands`
+  today; three others in the same list genuinely are not (a combined
+  flash-and-debug command, an attach-only command, and a dedicated debug
+  panel distinct from the troubleshooting panel). `docs/
+  EXTENSION_CLI_INTEGRATION.md`'s §3 envelope-commands list also named
+  `inspect`/`diff`/`trace`/`support-bundle` as spawned, though none has a
+  call site anywhere in `src/`, and separately claimed `setActiveSdk` shells
+  `tan sdk switch` — true at #364, reversed by #546, never updated here.
+  `PRODUCT.md` cited `SUPPORTED_CLI_VERSION` as `0.6.0-rc1` at a `file:line`
+  that has read `0.6.0` since the GA pin move; the first correction attempt
+  then claimed the Renesas Kconfig fix (tan-cli#688) landed AT that GA move,
+  which `src/alpCli/service.ts`'s own measurement contradicts — the fix was
+  already in `0.6.0-rc1` ("45 ahead / 0 behind"), so GA only dropped the rc
+  label. `src/alpCli/service.ts`'s own top-of-file prose still called
+  `0.6.0-rc1` "the pin" and "deliberately a PRE-RELEASE" a few lines above
+  where `SUPPORTED_CLI_VERSION` reads `"0.6.0"` — a tenth instance of the
+  same class, in the file `PRODUCT.md` cites; corrected to past tense, RC
+  history kept intact.
+  The new assertions check these against measured ground truth (the pinned
+  surface, the AST extractor `test/tan.surfaceContract.test.js` already
+  uses, and the source files a doc describes), scan the WHOLE prose corpus
+  `scripts/doc-cli-claims/scan.mjs` already walks rather than a hand-picked
+  file list, and match on markdown-and-whitespace-NORMALIZED text so a
+  line-wrap or a backtick cannot hide a phrase — an adversarial review of
+  the first version found five of the seven were spelling gates a re-wrap, a
+  `will`-for-`should` swap, a paraphrase, an unlisted file, or a reshaped
+  citation each defeated while the suite stayed green; every one is now
+  reproduced-then-fixed with the review's own exact bypass text.
+  `scripts/tan-surface/fetch.mjs`'s description-inert classifier also gained
+  a hedge guard (`isHedged`, unit-tested in `test/tanSurface
+  .descriptionInert.test.js`) so a CONDITIONAL "accepted and ignored"
+  wording — tan's real `run --flash`/`renode --sim-mode` shapes — is never
+  recorded as an unconditional one; see the #602 entry above for the
+  `INERT_OPTIONS` reclassification this same review triggered.
+- **`tan sdk current` is now asked after every bootstrap, and pins
+  `alpSdk.path` when nothing was pinned yet (#604, #614).** Nothing in this
+  extension previously called `tan sdk current` at all, so tan's own
+  resolution ladder (project pin, machine-global default, discovery) and
+  `alpSdk.path` could silently disagree with nobody asking tan who won.
+  `runBootstrapInTerminal` (`src/bootstrap.ts`) is now the ONE place a
+  bootstrap terminal is dispatched (`alp.installDependencies`/`alp.bootstrap`
+  and `toolchain.ts`'s `offerBootstrapFix` both route through it, guarded by
+  `test/statusReadiness.test.js` against a second site ever naming the same
+  run); once that run exits cleanly, it asks `tan sdk current` in the
+  background — with `injectSdkRoot: false` so this extension's own resolved
+  SDK is never handed back to tan as `--sdk-root` and echoed as if it were
+  independent evidence — and, ONLY when `alpSdk.path` is currently unset,
+  pins tan's answer through the existing writer (`setActiveSdk`,
+  `src/sdk/activeSdk.ts`, not a second `workspace.getConfiguration().update()`
+  call) with its own toast naming what got pinned and why. A NON-empty
+  `alpSdk.path` is never overwritten by this: adversarial review found no
+  reliable way for a `tan sdk current` disagreement alone to distinguish a
+  genuine relocation of the customer's own checkout from a foreign project's
+  bootstrap answering the shared global default (tan-cli#464) or a
+  temporarily unmounted volume — a disagreement against an existing pin is
+  logged, never acted on. `tan sdk current`'s untrusted payload is narrowed,
+  not cast, by a new `narrowSdkCurrent()` (`packages/alp-core/src/sdk/
+  service.ts`) — `sourceTier` and the nested readiness `state` are kept as
+  bare strings rather than closed unions, so a rung or state tan adds later
+  is reported, not dropped. A failed/cancelled bootstrap, a resolved-but-
+  unready SDK, and a second concurrent bootstrap dispatch (refused by
+  `runInTerminal`, but no longer left with a stray listener that reconciles
+  off the WRONG cwd once the original run finishes) all leave `alpSdk.path`
+  untouched. The local `checkSdkReadiness`-derived answer is unchanged
+  everywhere else in the extension; this is the one additional ask. The
+  dangling-pin-after-relocation case #604 opened with — a customer who
+  already had `alpSdk.path` set before a relocating bootstrap moved the
+  checkout — is NOT auto-repaired by this change; that needs
+  `bootstrap.workspace-relocated` read off the bootstrap run's own envelope,
+  which the terminal route this reconciles cannot see.
+
+- **Four call sites that discarded what `tan` reported now read `issues[]`
+  and `ok` instead of dropping them (#611).** The old `fetchEnvelopeData`
+  (`src/alpCli/envelope.ts`) returned `data` regardless of `ok` — only a
+  thrown exception or a missing envelope produced `undefined` — and dropped
+  `issues[]` unconditionally either way. Its replacement, `fetchEnvelopeResult`,
+  returns `{ data, ok, issues }`; `fetchEnvelopeData` itself is DELETED
+  rather than kept as a wrapper, since every call site migrated and nothing
+  else called it. The three `presets` readers (`src/lsp/client.ts`,
+  `src/configurator/customEditor.ts`, `src/ideHub/newProjectFlowPanel.ts`)
+  used to read the same envelope three different ways — two dropped
+  `issues[]` entirely, one checked it inline — and now share one
+  `PRESETS_SDK_ROOT_UNRESOLVED_CODE` constant; `newProjectFlowPanel.ts`'s
+  `fetchSomModules` gates on `hasIssueCode` rather than the message-carrying
+  `unresolvedSdkReason` its siblings use, since the toast it raises is a
+  hardcoded sentence and an issue that carries the code with no message must
+  still warn. `fetchSomModules` also now tells a genuine `presets` CLI
+  failure apart from a resolved-but-degraded SDK, which used to fall through
+  to the same silent static-catalogue fallback with nothing naming the
+  cause. `src/debug.ts`'s `runDebugConfig` now logs a successful
+  `debug-config` run's advisory `issues[]` — a migrated legacy launch.json
+  entry, a dropped comment, an SDK-identity value tan overwrote or could not
+  resolve — to the "Alp SDK" channel; a customer used to get a launch.json
+  with no sign tan had any reservations about it. That log is de-duplicated
+  across the preview/write pair one "configure debug profile" run makes, since
+  tan's own registry names two advisory codes that fire on both and would
+  otherwise double the channel line. `sdk list`'s two readers
+  (`src/deps/vscodeAdapter.ts`, `src/ideHub/sdkManagerMessages.ts`) now share
+  one `sdkListAnswered` check (moved into `src/alpCli/service.ts`, pure, so
+  neither reader needs the other's module) — closing a divergence that
+  cannot fire while both readers pass `--online`, not a live bug — and both
+  read `envelope.data.releases` through a new `narrowSdkReleases()`
+  (`packages/alp-core/src/sdk/service.ts`) instead of casting, so a malformed
+  entry is dropped rather than crashing `pickLatestSdkTag`'s `.find` /
+  `isStableTag`. The `sdkManagerMessages.ts` branch also now toasts a reason
+  when the lookup goes unanswered, instead of posting an empty release list
+  with nothing on screen saying why.
+- **Four `tan` spawns in this diff run with an explicit cwd instead of an
+  unchecked or omitted one (#605) — more of the same class remain and are
+  tracked separately, not claimed fixed here.** `src/models/panel.ts`'s
+  `buildModel` read `workspaceFolders[0]` and passed it straight to a spawn —
+  the same defect class #600 fixed for the Build Plan panel — so with no
+  folder open `tan model build` compiled into the extension host's own
+  directory. It now refuses the same way, through `collectProjectContext().
+  workspaceRoot`. The two `sdk list --online` spawns
+  (`src/deps/vscodeAdapter.ts`, `src/ideHub/sdkManagerMessages.ts`) passed
+  `undefined` as cwd; `sdk` resolves a project and an SDK from cwd, so an
+  omitted one answered about the extension host's directory rather than the
+  customer's. Neither of those two WRITES anything, so neither refuses with
+  no folder open — both now resolve through a shared `readOnlyProjectCwd()`,
+  falling back to `os.tmpdir()` when no project is open, the same "no folder
+  is not a refusal" rule `buildDependencyReport` already applies to `doctor`.
+  `src/west.ts`'s `ensureNativeSimOverlay` resolved `root` and used it to
+  check whether `boards/native_sim_native_64.overlay` already existed, then
+  spawned the `tan generate` that WRITES it with `undefined` instead of that
+  same `root` — reached from both "Alp: Run" and F5 Debug on a native_sim
+  target, and the wrong-directory write meant the check never found what the
+  generate step actually wrote, silently regenerating on every single run
+  with the app never picking up the overlay. Found on the adversarial review
+  pass over this issue, not in the original three; at least six more
+  omitted-cwd `tan` spawns are known to remain
+  (`src/ideHub/newProjectFlowPanel.ts`, `src/lsp/client.ts`,
+  `src/configurator/customEditor.ts`) and are filed as follow-ups rather than
+  folded into this change.
+- **The Renesas CLI-floor warning (#502) now guards all four `tan build`
+  spawn sites, not one (#606).** `warnIfCliCannotBuildSom` was wired only
+  into `alp.westBuild`; the Build Plan panel's Materialise and Build handlers
+  and the `preLaunchTask`/Run Task build — what `--pre-launch-task` runs
+  before a debug session — all skipped it, so a Renesas customer building
+  from any of those three still hit the bare `CONFIG_ALP_SDK_CHIP_NONE`
+  Kconfig abort with no explanation naming their CLI or their SoM. The check
+  moves into a shared `src/build/somCliFloorGuard.ts`, called explicitly from
+  all four sites. It is not folded into the generic `runAlpStreamed` /
+  `runAlpCommand` / `runAlpInTerminal` dispatch layer those sites already
+  share: those functions serve every non-build command this extension runs,
+  and a build-specific probe embedded there would mean sniffing every argv
+  the way `gateFlashDispatch` already does for a flash — a materially bigger
+  change than this fix's scope, left for if a fifth site ever needs it.
+- **The Build Plan panel's memory table no longer silently blanks for a
+  project that is not the workspace root (#607).** The file watcher fires on
+  any `**/board.yaml` / `**/system-manifest.yaml` change anywhere in the
+  workspace, but the size and manifest readers checked `workspaceFolders[0]`
+  while the panel's own Materialise/Build handlers (since #600) resolve
+  `cwd` through `collectProjectContext().workspaceRoot` — on a multi-root
+  workspace the two can name different folders, so a build the panel itself
+  just ran could leave the table blank with nothing on screen to say why.
+  Both readers now use the same resolver, and `report: null` always carries a
+  reason: "Open a folder…" with no root resolved, or the exact
+  `build/system-manifest.yaml` path checked when one resolved but no build
+  has written there yet.
+- **A bad `alpSdk.svdPath` no longer tells you to update your CLI.** The hint
+  naming the setting was gated on tan exiting 5, measured against an
+  implementation that has since been replaced. The pinned tan `0.6.0` returns
+  exit 2 with `debug-config.invalid-argument` for an unreadable `--svd`, so the
+  hint never fired and its "Open Settings" button went with it; the
+  version-skew hint fired instead, sending you to update a CLI that was already
+  current. Both hints now read the issue code, which is what separates "this
+  flag is unknown" from "this flag's value is wrong". A genuinely old tan still
+  gets the skew hint.
+- **Build Plan panel buttons no longer run in the wrong project.** With no
+  folder open the panel still opened, and Materialise / Build / Flash passed no
+  working directory to tan, so the child inherited the editor's own directory
+  (on Windows, the VS Code install directory). All three now stop and say a
+  folder is needed, matching what Build and Bootstrap already did. They also
+  resolve the project the same way every other command does, so on a
+  multi-root workspace the panel's Build button and the palette's Build no
+  longer disagree about which folder they are building.
+- **The Windows bootstrap pre-flight no longer moves your alp-sdk checkout.**
+  On Windows, "Initialize Workspace" first ran `tan bootstrap --no-pip
+  --no-west` as a probe, documented in this repo as side-effect-free. It was
+  not. `--no-pip`/`--no-west` skip only the pip and west phases; against the
+  pinned tan `0.6.0` the workspace relocation (tan-cli#185) and the default-SDK
+  pointer write both run *before* those phases and are ungated by either flag.
+  So the probe moved the alp-sdk checkout to `<parent>/alp-workspace/alp-sdk`
+  and repointed the machine-global `~/.alp/sdk-default` — while returning
+  `ok:true, exitCode:0`, so every verdict the extension parses stayed silent
+  and nothing reached the log. If `alpSdk.path` named the pre-move directory it
+  then pointed at nothing, and the progress toast's Cancel button could
+  interrupt the move part-way. The probe now passes `--dry-run`, which resolves
+  everything and writes nothing. Both verdicts it exists to read were measured
+  to survive unchanged: `bootstrap.prerequisites-missing` with its populated
+  `missingPrerequisites[]`, and the host-level `bootstrap.yocto-host` refusal
+  on a Yocto-only SoM. `test/bootstrap.noWorkspace.test.js` now pins the argv,
+  which nothing did before.
+- **The tan pin gate stops calling a published release missing off one probe
+  (#510).** `scripts/check-cli-pin.mjs` retried a `5xx` or a `429` and did not
+  retry a `404` — the 404 arm sat inside the retry loop but returned from the
+  first attempt. So one bad sample became a verdict, and on a CSS-only PR the
+  gate printed `MISSING v0.6.0-rc1 tan-x86_64-pc-windows-msvc.exe /
+  tan-x86_64-pc-windows-msvc.zip` and
+  `MISSING v0.6.0-rc1 tan-aarch64-apple-darwin / tan-aarch64-apple-darwin.tar.gz`
+  for two assets that existed, had not been touched since
+  `2026-08-14T20:14:02Z`, and answered `curl -I -L` with 200; re-running the
+  job with no change passed. That blocks every PR, and the failure text steers
+  the reader toward lowering `SUPPORTED_CLI_VERSION` or adding a
+  `HOSTS_WITHOUT_RELEASE_ASSET` entry — the second of which would silently stop
+  covering a host that IS published. A 404 is now retried like any other
+  non-2xx, and absence is claimed only when every attempt agrees; a mixed
+  answer, a 5xx or a network error reports `unknown`, which prints as `skipped`
+  and fails nothing. **Why the runner saw a 404 at all is still not
+  established** — a transient 404, a rate limit and a CDN edge glitch all fit
+  the evidence, and nothing here claims to know which. The gate also now prints
+  what it observed: a MISSING line carries the per-candidate status and the
+  attempt count (`tan-aarch64-apple-darwin.tar.gz: missing (404 on all 3
+  attempts)`) with the URLs on their own line, because the original message
+  stated absence without saying what it saw. The probe moved to
+  `scripts/lib/probe-asset.mjs` so it could be driven against a local
+  `node:http` server with a scripted status sequence — a real rate limit cannot
+  be ordered on demand, so `test/cliPin.probe.test.js` nails the behaviour
+  instead of the cause: 404-then-200 must read PRESENT, 404 on every attempt
+  must still read MISSING.
+- **`SUPPORTED_CLI_VERSION` moves to `0.6.0-rc1`, was `0.5.1` — and this pin is
+  a PRE-RELEASE on purpose (#502).** Every earlier pin was chosen from what was
+  stable; this one is chosen from what can build the hardware this extension
+  offers. tan `v0.5.1` cannot configure ANY Renesas SoM against the alp-sdk it
+  ships beside: its vendored planner emits `CONFIG_ALP_SDK_CHIP_NONE=y`,
+  alp-sdk v0.15.0 no longer defines that symbol, and Zephyr aborts the
+  configure step with `warning: attempt to assign the value 'y' to the
+  undefined symbol ALP_SDK_CHIP_NONE` / `error: Aborting due to Kconfig
+  warnings`. The board, toolchain and devicetree all resolve first, so the
+  failure reads as a project problem rather than a version one. That is four of
+  the nine SKUs New Project offers — `E1M-V2N101`, `E1M-V2N102`, `E1M-V2M101`,
+  `E1M-V2M102` — broken by default, on the path the GUI steers people down.
+  Which releases carry the fix was MEASURED, not read off the notes, which do
+  not mention it: tan-cli#688 (`6901280`) is the fix and `6901280...v0.6.0-rc1`
+  is 45 ahead / 0 behind, while `6901280...v0.5.1` is diverged. No stable tan
+  can build a Renesas SoM today, so holding at `v0.5.1` would have meant
+  knowingly keeping those four SKUs broken. The pin moves to `0.6.0` when that
+  tag is cut (its milestone stands at 0 open / 206 closed). Pinning a
+  prerelease is precedented and already supported — #443 taught every
+  pin-resolution site to accept one, and `0.5.0-rc1` through `rc4` were each
+  pinned in turn; `install.sh`/`install.ps1` resolve their own `latest` to
+  `v0.5.1` and will not upgrade onto this, which is why every managed
+  invocation passes `--version`/`-Version` explicitly. `v0.6.0-rc1` publishes
+  the same six assets as `v0.5.1`, so the two declared `win32/arm64` and
+  `linux/arm64` gaps move with the pin rather than being dropped.
+
+- **A tan too old to build your Renesas SoM now says so before the build,
+  instead of as a Kconfig error afterwards (#502).** The pin only governs the
+  MANAGED binary; a customer resolving their own tan through `alpSdk.cliPath`
+  or PATH keeps whatever they had and hits the identical abort, whose text
+  names neither the CLI nor the SoM. `alp.westBuild` now reads the project's
+  `som.sku` and, only for a Renesas module, compares the PROBED tan against
+  `RENESAS_BUILD_CLI_VERSION` — the same rule `RENODE_CORE_CLI_VERSION`
+  follows, because a feature gate must ask what is running, not what this build
+  would download. It warns and continues rather than refusing: the floor is a
+  claim about someone else's binary, and a wrong refusal is worse than a wrong
+  warning. Silent for every uncertain case — a non-Renesas or unknown SKU, an
+  unparseable `board.yaml`, or a CLI not yet downloaded.
+  `RENESAS_BUILD_CLI_VERSION` is deliberately a separate constant from the pin
+  even though the two are equal today: the pin moves at v0.6.0 GA, the floor
+  stays at `0.6.0-rc1`, which really is the oldest tan that works. A gate holds
+  the pin at or above the floor, so the managed binary can never be one this
+  extension would then warn about.
+
+- **The webview panels use the window they are given.** Every view carried its
+  own hard cap — Hub 920px, New Project 720px, Dependencies 860px, Setup and
+  Open Project 640px — so a panel opened in a wide editor sat in a narrow
+  column with most of the window empty, while the grids inside it wrapped early
+  for want of room they actually had. The caps are now two tokens in
+  `styles/tokens.css` and nothing else decides it: `--content-max` for the page
+  shell, `--prose-max` for running text. Two tokens rather than one because
+  "use the width" and "stay readable" are different jobs — a card grid should
+  fill a monitor, a paragraph past about 90 characters should not. Hub's status
+  cards also stopped being a fixed `repeat(3, 1fr)`: they are
+  `repeat(auto-fit, minmax(260px, 1fr))`, so they stretch on a wide window and
+  drop to two or one as it narrows. Left alone on purpose: the Configurator's
+  section widths and the New Project name field, which are FORM measures — a
+  text input stretched across a monitor is worse, not better.
+- **A TLS-inspecting proxy no longer gets told to check the wrong setting.**
+  When the secure connection through a proxy is rejected, the download names
+  the remedy that actually applies — install the proxy's certificate, or turn
+  off `http.proxyStrictSSL`. It reached that sentence by testing `error.code`
+  against `/CERT|SSL|TLS/`, and Node spells **one** condition more than one
+  way. The alert a TLS-inspecting proxy sends surfaces as
+  `ERR_SSL_SSL/TLS_ALERT_HANDSHAKE_FAILURE` when it arrives as its own read,
+  but as `EPROTO` when it lands while the client's own ClientHello write is
+  still pending — same failure, and the OpenSSL text is then in `message`
+  where nothing was looking. Which one you get is a timing accident: whether
+  the alert shared a TCP segment with the proxy's `200 Connection
+  Established`. So the same customer, on the same proxy, intermittently got
+  `Couldn't reach the proxy <addr> — the connection to it failed. … check the
+  http.proxy setting` about a proxy that had just answered a CONNECT
+  perfectly, with the real remedy nowhere on screen.
+  `UNABLE_TO_VERIFY_LEAF_SIGNATURE` — an incomplete chain, the most ordinary
+  way a corporate proxy fails — contains no `CERT`, `SSL` or `TLS` substring
+  at all, so it took the wrong branch **every** time, not intermittently.
+  Classification now lives in two exported, unit-tested predicates that read
+  the code, a small allowlist, and — only when the code says nothing useful —
+  the OpenSSL text in the message. That last check is gated deliberately: the
+  branch it unlocks tells someone to loosen TLS verification, and doing that
+  on a loose text match when their proxy is merely down would be a worse
+  failure than a generic sentence. The allowlist grew past
+  `UNABLE_TO_VERIFY_LEAF_SIGNATURE` to the other verify verdicts a re-signing
+  appliance produces without a `CERT`, `SSL` or `TLS` substring to spot them
+  by — `INVALID_CA`, `INVALID_PURPOSE`, `PATH_LENGTH_EXCEEDED`,
+  `HOSTNAME_MISMATCH`, `UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY`, the CRL codes,
+  and `UNSPECIFIED`. That last one is not a corner case and was the reason to
+  stop hand-picking: a CA still signing with SHA-1, the most ordinary way a
+  corporate appliance is out of date, arrives as `UNSPECIFIED` with
+  `CA signature digest algorithm too weak` in the message, and an allowlist
+  chosen from the interesting-looking names missed it.
+- **A proxy that tunnels you to something that isn't TLS now says so, instead
+  of blaming a certificate.** `ERR_SSL_WRONG_VERSION_NUMBER` — what you get
+  when the tunnel opens onto a plain-http listener, or a filtering appliance
+  answers in the release host's place — contains `SSL`, so it was reported as
+  an untrusted certificate and the reader was told to install one or turn off
+  `http.proxyStrictSSL`. Neither does anything: `rejectUnauthorized: false`
+  cannot make a peer that is not speaking TLS speak it. And the cost of
+  following that advice is not zero — `http.proxyStrictSSL` is a GLOBAL VS
+  Code setting, so someone who flips it, fails again and leaves it off has
+  loosened every extension's traffic for a problem it never touched. This
+  class (`WRONG_VERSION_NUMBER`, `UNSUPPORTED_PROTOCOL`,
+  `PACKET_LENGTH_TOO_LONG`, `BAD_RECORD_MAC`, in either the code or the
+  OpenSSL message) now gets its own sentence, which names what happened and
+  says outright that the toggle will not help.
+  Separately, `armIdleTimeout` now stamps `ETIMEDOUT` on the error it
+  destroys the request with; it carried no code, matched no arm, and reported
+  a proxied download that timed out as "the connection to it failed" instead
+  of "it did not respond". This also closes #511: that flaky test was this
+  bug, reproducing about 0.2% of the time on its own and 10.85% under load —
+  0/6000 after the fix, and the split-segment shape it depended on is now a
+  test of its own rather than a coin flip inside another one.
+- **Hardware Explorer's raw-value columns are monospace again, which is what
+  they always claimed to be.** The class is called `.mono` and the note above
+  `.section` says the pad-route and I2C tables are wide because of "mono
+  addresses, pins" — but the declaration itself had drifted to
+  `var(--vscode-font-family, system-ui, sans-serif)`. So the one panel in the
+  extension whose content is almost entirely hex and identifiers — core and
+  toolchain IDs, app paths, `E1M_GPIO_IO11`-style signal names, dispatch
+  targets, bus and chip names, I2C addresses like `0x6a` — rendered all of it
+  proportionally at 0.82rem. Those columns are read character by character, and
+  `0x6a` against `0x68` is exactly the comparison a proportional face makes
+  harder. They now use `--text-mono`. The `Pin` column of the pad-route table
+  joins them: it holds a board value (`dispatch_pin: 2`) and sat between two
+  monospace columns in the UI font, the only raw column in the table left out.
+  Note this is not the reverse of the Dependencies change above — there, two
+  version cells were the sole monospace content in a panel of prose and became
+  an island; here monospace IS the panel. Both changes are the same underlying
+  rule: reach for `--text-mono` when a value should be read character by
+  character, and never for `--vscode-editor-font-family`.
+- **The Dependencies table's version columns stop borrowing your editor's
+  font.** `Installed` and `Latest` set
+  `font-family: var(--vscode-editor-font-family, monospace)` — the font from
+  `editor.fontFamily`, a setting about source code that has nothing to say
+  about a panel, and on most machines a distinctive coding face. The panel has
+  no other monospace content, so those two cells read as a second UI dropped
+  into every row. They now inherit the panel font like the rest of the table
+  and keep their column alignment with `font-variant-numeric: tabular-nums`,
+  which is the only thing the monospace was actually buying; `HardwareExplorer`
+  already treated its cells this way. The `pinned` / `update` badges lose the
+  `font-family` reset they only carried to escape that monospace. The same var
+  is also gone from `.alp-boot-error-detail`, the message `main.tsx` writes when
+  React never mounts: `--vscode-editor-font-family` resolves EMPTY in some
+  webview hosts, and a `var()` fallback covers a property that is unset, never
+  one set to nothing — so the stack trace would have dropped to the serif UA
+  default on exactly the hosts where something had already gone wrong.
+  `tokens.css` has said not to use that var since `--text-mono` was added;
+  these were the last two places still doing it.
+- **A failed SDK removal now says which failure it was, instead of blaming an
+  open editor for everything.** The panel deleted the folder with a bare
+  `fs.rmSync(target, { recursive: true, force: true })` and, on any error, told
+  the user to "close anything using it (an editor, a terminal, a running
+  build)". For a permissions problem that is not merely unhelpful — it is a
+  wrong instruction that sends someone hunting a holder that does not exist.
+  Removal now clears read-only attributes, retries, and reports the cause it
+  actually ended on, with a sentence per cause. The attribute pass fixes a real
+  case on macOS and Linux: a read-only DIRECTORY defeats the delete of every
+  child there, and Node does nothing about it. The walk skips symlinks —
+  `fs.chmodSync` follows them, so an unguarded pass would rewrite the mode of a
+  directory outside the tree being deleted. Six mutations, each producing a RED.
+
+  **Correction to an earlier claim, recorded because it was measured.** This
+  was first written up as a Windows fix, on the theory that git marks its pack
+  and object files read-only and `force: true` does not clear them. Node
+  already handles that: its internal rimraf carries `fixWinEPERM`
+  (chmod-and-retry, Windows-only, 4 occurrences in the shipped v24 binary), and
+  on the Windows runner a `0o444` file did not make `rmSync` refuse at all —
+  the tests arranging one skip there and print the reason. **The reported
+  Windows permission error is therefore still unexplained.** After Node's own
+  retry the remaining candidates are a held file handle, the 260-character path
+  limit (a bootstrapped SDK is about 3 GB and deep), or a synced or junctioned
+  folder; telling them apart needs the raw error from the "Alp SDK" output
+  channel, which this change is what finally puts there in a usable form.
+
+  Not the CLI's bug either: `tan sdk` has no remove verb at all — `list`,
+  `current`, `install`, `switch`, and the last two refuse in the pinned
+  v0.6.0-rc1 — so every consumer deletes the tree itself. Asked for upstream as
+  tan-cli#790.
+
+- **New Project groups the 100 SDK examples under their categories (#482, part).**
+  The picker already had a search box and domain filter chips (#98, 2026-07-13),
+  so #482's "one flat block with no way to narrow them" was out of date the day
+  it was written — but "All" was still 100 undifferentiated cards. They now sit
+  under the SDK's own 12 headings (`aen`, `ai`, `audio`, `bringup`,
+  `camera-vision`, `connectivity`, `display`, `multicore`, `peripheral-io`,
+  `power-timing`, `testing`, `v2n`). The category is decided host-side and
+  DEFERS to tan: an explicit `category` in the envelope always wins, and the
+  leading segment of `sourceDir` stands in only because tan does not send one
+  yet — measured against the pinned v0.6.0-rc1's own published
+  `envelope-contract.json`, whose examples payload carries exactly `id`,
+  `sourceDir`, `title` and `description`. That derivation is not a guess about
+  the SDK's taxonomy: every one of the 100 entries in `metadata/catalog.json`
+  has `path === examples/<category>/<name>`, asserted in the tests against the
+  vendored catalogue. The view stopped keeping its own copy of the rule (it was
+  re-splitting `sourceDir` inline, a duplicate that could never defer to tan).
+  An example with no directory gets NO heading rather than an invented
+  "Other", which is also how this degrades on an older tan.
+
+  NOT shipped, and still blocked upstream: filter chips for core count, OS set
+  and SoM SKU, and defaulting the SoM filter to the SKU picked in the wizard
+  (#482 §3/§4). Those facets are absent from the envelope, and #482 measured
+  why they cannot be computed here — the raw `board.yaml` disagrees with the
+  resolved topology for almost every example (96 look single-core where 23
+  are), so a local filter would mislabel the list.
+
+- **The Build Plan panel stops calling yesterday's build "post-build" (#470).**
+  It decided a manifest described the last build from the mere EXISTENCE of
+  `build/system-manifest.yaml`, never from its age. So after any past
+  successful build the panel presented that build's per-slice status and its
+  FLASH/RAM figures as the current state — including right after a build that
+  had just failed, with nothing on screen saying so. Monday's green table, on
+  Tuesday, over a tree that no longer compiles. The producer cannot help yet:
+  `system-manifest-v1` carries no timestamp and no build id, which is why
+  `SYSTEM_MANIFEST_SHAPE` has nothing to key on. So the panel now reads the two
+  facts this side already has — the file's mtime, and the finish of the last
+  build the extension actually watched run, newly recorded per workspace. A
+  build that finished AFTER the file was written and did not update it is hard
+  evidence, and that case now renders a `stale` badge plus a sentence naming
+  the exit code. Everything else is `unknown`, deliberately: no build observed
+  since means the sources may have changed or nothing may have happened, and
+  this side cannot tell those apart — calling that `fresh` is the original
+  defect with a new word on it, and calling it `stale` would put a permanent
+  warning on every project that also builds from a terminal. What makes even
+  `unknown` an improvement is that the manifest's AGE is now always on screen
+  ("post-build · 3 days ago"), so the reader can draw the conclusion the
+  extension refuses to draw for them. A future-dated file is `unknown` too, and
+  says so: a clock that moved makes every real build look older than the file,
+  which is the direction that reads `fresh` forever. Eight mutations, each
+  producing a RED.
+
+- **The dependency panel says whether it will fix a row or you must, and can
+  now fix them all in one press (#466).** Three changes, one panel.
+
+  *Ready / Will install / Needs you.* The table rendered tan's `pass` / `warn`
+  / `fail` verbatim, which does not answer the question the panel gets opened
+  with: do I have to do something? A `fail` the extension fixes with one press
+  and a `fail` that needs a vendor toolchain installed by hand read
+  identically. The state word is derived from the (`status`, `action.effect`)
+  PAIR and nothing else, which is what keeps it presentation rather than the
+  re-derivation `deps/planner.ts` forbids — "Will install" is not a status, it
+  is the presence of an action. `open-docs` is deliberately NOT "Will install":
+  its own contract says it opens a page and installs nothing. tan's raw status
+  stays on the row and on screen beneath the word, and any status the mapping
+  does not recognise — tan's own `unknown`, or one it ships next year — lands
+  on `Unknown` rather than being labelled with confidence.
+
+  *One "Fix all".* Runs every installing row SEQUENTIALLY, waiting for each
+  before starting the next. That is the design, not a simplification: several
+  of these fixes mutate the same venv, the same west workspace or the same
+  machine-wide package manager, and firing them together would also lose to the
+  run reservations, which refuse a second run under a name already active — a
+  parallel dispatch would drop rows and report success. It stops at the first
+  failure, because a `west` install failing makes the workspace step after it
+  fail for a reason that has nothing to do with the workspace. Progress and
+  cancellation live in VS Code's own notification, so they survive the panel
+  being closed; cancelling stops the sequence and never kills a run already in
+  flight. Everything not run is named with its reason, never counted silently.
+  To make any of it possible, the two dispatches that were bare
+  `createTerminal` + `sendText` are now tasks: a raw terminal reports no exit
+  code and holds no reservation, so nothing could wait for one. The shell line
+  still reaches the shell verbatim — `runInTerminal` gained a `ShellExecution`
+  form, so the argv-splitting that would mangle a quoted argument, the original
+  reason for the bare terminal, never happens.
+
+  *A conformance gate for the doctor envelope.* Nothing in this repo mentioned
+  `doctor`, `checks` or `missingPrerequisites`, so a producer-side rename landed
+  as an empty panel rather than a failing test. A golden fixture was ruled out —
+  doctor output is machine-dependent — and tan had already solved it: of the 18
+  entries in its published `envelope-contract.json`, `doctor` alone carries a
+  `dataKeys` schema instead of a recorded run. The gate compares that schema
+  against `cli/doctorEnvelope.ts`, so a key the extension reads and tan does not
+  declare is a hard red, while a key tan declares and the extension does not
+  model must be recorded with a reason — two are, `generatedAt` and
+  `checks[].scope`, the latter a required key the model never carried.
+  `docs/EXTENSION_CLI_INTEGRATION.md`'s "no golden fixtures" paragraph now names
+  the gate that replaced the idea, instead of reading as "no gate at all".
+
+  Nineteen mutations across the three parts, each producing a RED and reverted.
+
+- **The webview's hand-mirrored payload models are gated, and the mirror is
+  now covered end to end (#497).** `packages/alp-webview/src/types.ts` is a
+  772-line hand copy of two different things, and only the message half was
+  gated (#495); the payload half — `SystemManifest`, `BoardConfig`, `Ota`, the
+  size report, the dependency rows, the Hardware Explorer models — was compared
+  against nothing. A survey of all 52 model pairs found **19** fields core
+  declares and the mirror does not, in six interfaces. The issue named four of
+  them; the other 15 (`BoardConfig.schemaVersion`, `.e1m_routes`, `.pins`,
+  `.features`, `.supported_boards`, `CoreEntry.extra_libraries`, `.memory`,
+  `.power`, and seven `SomPreset` fields) had not been noticed at all, which is
+  the point. The two directions get different rules because they are not
+  equally dangerous: a core-only field is an omission and is allowed only when
+  an allowlist names it WITH a reason, while a mirror-only field — the
+  direction that actually blanks a panel, since the view then reads
+  `undefined` — is forbidden outright, with no escape hatch, because the survey
+  found zero and a gate is only ever strict on the day it lands. The allowlist
+  is itself gated against rot: mirror the field or delete it from core and the
+  stale entry reds. Two further rules close what is left — the wire format's
+  own nested payload types (`BuildPlanData`, `SdkStatus`, …), which no union
+  names and #495 therefore never reached, must match field-for-field and may
+  allowlist nothing; and every `export interface` in the mirror must be either
+  a union member gated by #495 or a model listed here, so a new hand-mirrored
+  type cannot be born ungated. Also covered: the string-literal union aliases
+  (members are the contract, unlike field type text — one documented
+  divergence, `SdkReadinessState`), and the two functions `ConfiguratorView.tsx`
+  copies verbatim from `@alp-sdk/core/board/models`, which between them decide
+  what `board.yaml`'s `libraries[]` ends up holding. Every rule was verified by
+  a deliberately produced RED. Separately, that file's `coreSiliconClass`
+  claimed to be kept in sync with a Rust `infer_runtime_for_core_id` that no
+  longer exists — the named file is gone and the symbol returns no hit on any
+  alplabai default branch — so the comment now records that the heuristic is
+  unpaired and ungateable instead.
+
+- **The editor now says which board.yaml schema it is validating against.** The
+  bundled `schemas/*.json` are snapshots of one alp-sdk tag, contributed
+  unconditionally, while the extension pins no SDK version — so a customer on a
+  different tag can get a squiggle their own `tan build` does not produce, or
+  miss one it does. A `board.yaml` / `system-manifest.yaml` language-status item
+  now names the schema in force, and when the bundled copies differ from
+  `<sdkRoot>/metadata/schemas/`, warns once per distinct mismatch that the CLI
+  is the side to trust.
+
+- **`board.yaml` is now validated against the RESOLVED SDK's schema, not the
+  vendored snapshot (#493, closes the half #187 never shipped).** A
+  `redhat.vscode-yaml` contributor serves `<sdkRoot>/metadata/schemas/*.json`
+  ahead of the static `contributes.yamlValidation` entry, which keeps the
+  bundled copies as the genuine no-SDK fallback — so a first-run user is
+  unaffected and everyone else stops getting squiggles their own `tan build`
+  does not produce. The SDK's schema is treated as untrusted input: it is
+  refused if it is not a JSON object, exceeds a size cap, or carries a `$ref`
+  that is not a local `#` pointer, and a refusal falls back to the bundled copy
+  rather than failing open. Because the SDK's schema is now the one in force, a
+  plain bundled-vs-SDK difference is no longer a defect and no longer warns;
+  what does warn is a served schema carrying top-level keys the visual
+  configurator does not model, which it would silently drop on save.
+
+- **Both vendored SDK schemas re-vendored from alp-sdk v0.15.0 (was v0.14.0).**
+  `board.schema.json` changes what the editor accepts in two ways. `som.sku`'s
+  pattern widens from `^E1M-(AEN[3-8]01|V2N10[12]|V2M10[12]|NX9[0-9]{3})$` to
+  `^E1M-(AEN[3-8][0-9]{2}|V2N[0-9]{3}|V2M[0-9]{3}|NX9[0-9]{3})$`, so the editor
+  no longer pre-rejects a SKU the PLM has allocated but the SDK has not yet
+  shipped a preset for — v0.15.0 carries the same 11 presets as v0.14.0, so
+  nothing in the catalogue moves. And `storage[].raw`, the legacy `fs: raw`
+  alias, is gone: storage items are `additionalProperties: false`, so a
+  `board.yaml` carrying `raw: true` is now rejected. That is upstream's stated
+  intent — v0.15.0's `scripts/alp_orchestrate/loader.py` deleted the
+  normalising branch and records that **zero** tracked `board.yaml` files used
+  it before removal. `system-manifest-v1.schema.json` moves for the first time
+  since v0.11.0, by description text only (the emitter is now named as the
+  `alp_orchestrate` package rather than `scripts/alp_orchestrate.py`).
+  Both vendored Kconfig artefacts regenerate:
+  `src/lsp/generated/kconfig-metadata.json` 221 → 222 symbols (the new one
+  being `CMSISSTREAM` from `metadata/libraries/cmsis-stream.yaml`), and
+  `test/fixtures/alp-kconfig-symbols.txt` 346 → 350. The fixture carries no
+  `submoduleRev` and its test asserts only curated ⊆ vendored, so a stale copy
+  of it stays green — the re-vendor procedure in `README.md` now spells that
+  out, along with the tag-not-`main` rule, both hashes, the
+  `tsc --build --force` the staleness gate demands, and the gitlink's
+  `skip-worktree` bit, which makes `git add alp-sdk-upstream` a silent no-op.
+  `StoragePartition.raw` is deleted from both type mirrors
+  (`packages/alp-core/src/board/models.ts`, `packages/alp-webview/src/types.ts`)
+  — nothing read it, and modelling it would type-bless a document the SDK now
+  refuses.
+  `docs/COMPATIBILITY_RULES.md` §5 gains the v0.15.0 assessment and, with it,
+  the two re-vendors (v0.13.0 in #328, v0.14.0 in #427) that shipped without
+  one — which is why that log still claimed the vendored schema tracked
+  v0.11.0 while `test/vendored-sdk-tag.js` said `v0.14.0`.
+
+- **The troubleshooting panel's doctor table now shows tan's remediation, not
+  just its diagnosis (#474).** The table rendered `Check | Status | Detail` and
+  dropped two fields the envelope carries and populates: each check's `fix`,
+  and the report-level `data.nextSteps`. So the panel told a blocked customer
+  what was wrong and never what to do about it, with the answer sitting in the
+  payload it had just parsed. Measured on the pinned `tan 0.5.1`, 4 of 14
+  checks carry a `fix` (`"--sdk-root <path>"` for a missing SDK); 10 carry
+  none. Both fields are prose from tan, rendered verbatim and never parsed —
+  the rule commit `e359d37` (#347) set, because a mangled command reaching a
+  terminal is worse than no button at all. `data.missingPrerequisites` sits in
+  the same payload and is deliberately still not rendered here: it is the
+  structured per-tool route for a different surface. A check with no `fix`
+  renders an empty cell rather than the `-` the trace table above uses for an
+  absent path — this column is remediation text, and a filler glyph in it
+  reads as advice. `nextSteps` carries only what the Fix column does not
+  already show: on the pinned tan the two are byte-identical, so rendering
+  both would print every remediation twice, a 257-character paragraph
+  included. `isDoctorEnvelopeData` now narrows both fields, because a tan that
+  restructured either would otherwise throw mid-render and leave an empty
+  panel open behind a toast that names no field.
+
+- **Build Plan panel: the system manifest section now shows each slice's
+  resolved toolchain (#314, readout half).** #314 asked for a GUI toolchain
+  picker; the picker half stays hard-blocked on alp-sdk#964 (`core_entry`'s
+  `additionalProperties: false` rejects a customer `toolchain` key today), so
+  this ships only what's data-complete: `slices[].toolchain`, already emitted
+  by `alp_orchestrate.py` into `build/system-manifest.yaml` and already
+  mirrored in `ManifestSlice`, was never rendered. It now reads as "build
+  toolchain `<value>`" per slice, and a slice whose manifest carries no
+  toolchain reads as an explicit "not reported" — never a blank cell, never a
+  fallback to a guess. (Omitting it is schema-legal: `som-preset-v1`'s
+  `topology_entry` declares `required: []` and `models.py` drops `None` keys —
+  though all 26 topology cores across the 11 shipped
+  `metadata/e1m_modules/*.yaml` presets declare one today.) This is read-only
+  and SDK/SoM-
+  derived, not a setting or an override path. It is labelled "build
+  toolchain", not bare "Toolchain", to distinguish it from Hardware
+  Explorer's "Toolchain" column — not because the two read from different
+  places, but because they don't: both resolve to the exact same
+  `topology.<core>.toolchain` field (Hardware Explorer:
+  `packages/alp-core/src/sdkCatalogue/parse.ts:137`; the manifest: alp-sdk
+  `scripts/alp_orchestrate/loader.py:201` sets
+  `toolchain=entry.get("toolchain")` from that same SoM-preset-topology entry
+  merged with `board.yaml`'s `cores`, and
+  `scripts/alp_orchestrate/buildplan.py:110` documents it outright as "the
+  same field `Slice.to_manifest_entry` already surfaces in
+  `system-manifest.yaml` -- never invented"). What differs is WHEN each is
+  read, and it only differs at all once a build has run: under the panel's
+  `projection` badge tan re-derived the value live from the current
+  `board.yaml`/preset (`build --manifest`), so it cannot be stale and agrees
+  with Hardware Explorer; under `post-build` it came off a
+  `build/system-manifest.yaml` on disk (`build --manifest-from`), which a
+  previous `som.sku` can have left behind — and that stale file then shows up
+  here instead of silently tracking the current preset. A genuine per-core
+  override, where the two values could actually diverge, is exactly the #314
+  picker half, and it stays blocked on alp-sdk#964 until `core_entry` accepts
+  a customer `toolchain` key.
 
 - **New setting: `alpSdk.svdPath`, populating cortex-debug's Peripherals
   register view (#340).** The SDK ships no `.svd` of its own
@@ -1725,6 +2993,28 @@ there.
   first tan-cli release carrying tan-cli #74. Note that `tan bootstrap` skips
   the reconcile when it reuses an existing `$ZEPHYR_BASE` workspace, so the
   logged line also carries the manual fix.
+- Models panel: migrate to the ADR-0028 NPU-coverage vocabulary. `tan model
+  check` no longer emits the `fits | cpu-fallback | no-fit` verdict the panel
+  hard-coded; it reports `npuCoverage` (`full-eligible` / `partial` /
+  `cpu-only` / `undetermined`) together with `basis`
+  (`static-screen` / `compiled` / `bench`), `confidence`,
+  `computeOnNpuPctMax` (a MAC-weighted upper bound), `npuPlacementPctReal`
+  (a real op-count placement from a compile), `uncostedCpuOpCount`, per-op
+  verdicts and `notes`. The panel's "Fit" column becomes "NPU coverage", and a
+  new "NPU coverage detail" section renders the basis, the correctly-united
+  percentage, the certain-CPU operators, and tan's own caveats verbatim.
+- The panel now states, in words, that a `basis: static-screen` result is
+  eligibility rather than a guarantee — the model runs either way, an operator
+  the NPU cannot take falls back to the CPU silently rather than failing — and
+  that `undetermined` means absent data, not "will not run". `undetermined`
+  gets its own neutral badge instead of borrowing a negative one: DEEPX DX-M1
+  ships no operator table by decision and is the headline NPU of E1M-V2M101 /
+  E1M-V2M102, so a red badge there would be a false negative on the flagship
+  part. Only `basis: compiled` or `basis: bench` is labelled "proven".
+- Requires a `tan` release that ships `tan model check`'s ADR-0028 payload. No
+  tagged tan-cli release carries it yet, so `SUPPORTED_CLI_VERSION` is
+  unchanged at `0.3.0` and must be bumped in the same change that first ships
+  this panel to users.
 
 ## 0.3.7
 
