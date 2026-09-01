@@ -84,6 +84,14 @@ export function installedFor(
   );
 }
 
+/** What to call a local install that matched no release. Directory name when
+ *  it names one, else the SDK's own declaration, else the bare directory. */
+function identityLabel(e: LocalSdkEntry): string {
+  const tail = pathTail(e.path);
+  if (looksLikeVersionDir(tail)) return tail;
+  return e.version ?? tail;
+}
+
 /** Merge the remote release list with local installs into one keyed list. */
 export function buildRows(
   releases: SdkRelease[] | null,
@@ -118,7 +126,12 @@ export function buildRows(
     if (usedPaths.has(e.path)) continue;
     rows.push({
       id: e.path,
-      label: e.version ?? pathTail(e.path),
+      // Same order of authority as `installedFor` above, for the same
+      // reason: `e.version` is the SDK's own declaration and an RC names the
+      // release it is a candidate for, so a version-shaped directory outranks
+      // it. Without this a linked rc checkout renders as its GA here while
+      // the matched-release rows above get it right.
+      label: identityLabel(e),
       localPath: e.path,
       isActive: !!e.active,
       // Absent `activeSource` falls back to "auto", not "pinned": host and

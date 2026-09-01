@@ -3,7 +3,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { checkSdkReadiness } from "@alp-sdk/core/sdk/service";
+import {
+  checkSdkReadiness,
+  sdkIdentityVersion,
+} from "@alp-sdk/core/sdk/service";
 import {
   COMPARED_SCHEMA_IDS,
   buildSchemaProvenance,
@@ -96,7 +99,17 @@ export function readSdkSchemas(): SdkSchemaSnapshot {
     );
   }
 
-  return { sdkRoot, sdkVersion: readiness.version, sdkReads };
+  // `sdkIdentityVersion`, not `readiness.version`: `sdkLabel` renders this as
+  // "alp-sdk v<x>" in the language-status item and the one-time notice, and an
+  // RC declares the release it is a candidate for (alp-sdk#1902). Without this
+  // the notice names `v0.16.0` for a tree that is `v0.16.0-rc1` -- and the
+  // whole point of that sentence is telling the customer WHICH schemas the
+  // editor followed.
+  return {
+    sdkRoot,
+    sdkVersion: sdkIdentityVersion(sdkRoot, readiness.version),
+    sdkReads,
+  };
 }
 
 /** Read the resolved SDK's copies and compare them to the bundled ones. */

@@ -2,6 +2,7 @@
 
 import {
   checkSdkReadiness,
+  sdkIdentityVersion,
   listLocalSdkEntries,
 } from "@alp-sdk/core/sdk/service";
 import { sameUserPath, toPosix } from "@alp-sdk/core/paths";
@@ -186,7 +187,16 @@ export async function queryAlpIdeState(
       (p) => fs.readFileSync(p, "utf8"),
     );
     sdkReadiness = report.state;
-    sdkVersion = report.version;
+    // NOT `report.version`. That is what the SDK declares about ITSELF, and an
+    // RC declares the release it is a candidate for: `~/.alp/sdk/v0.16.0-rc1`
+    // reports `0.16.0` (alp-sdk#1902 -- systematic, `v0.15.0-rc1` does it too).
+    //
+    // The SDK Manager panel already answers this correctly, because #593 taught
+    // `installedFor` that the directory name outranks the declared version.
+    // This badge never learned it, so the two surfaces disagreed about which
+    // SDK was active -- panel `v0.16.0-rc1`, badge `v0.16.0`, neither wrong by
+    // its own source. `sdkIdentityVersion` is that same order of authority.
+    sdkVersion = sdkIdentityVersion(sdkPath, report.version);
   }
 
   const cacheRoot = sdkCacheRoot();
