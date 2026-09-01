@@ -94,23 +94,42 @@ test("every deferred build flag is described as deferred, not as working", () =>
   // Plan panel would SEND — and said of everything else that it "does
   // something", so nine of the twelve deferred build flags were described to
   // the customer as working.
-  for (const flag of [
-    "--plan",
-    "--manifest",
-    "--manifest-from",
-    "--all",
-    "--ci",
-  ]) {
+  // Split by what tan-cli#427 actually did to each, which is not uniform: it
+  // RETIRED `--plan`/`--manifest`/`--manifest-from` and left the rest deferred.
+  // Both wordings are correct; describing either as working is not.
+  const RETIRED = ["--plan", "--manifest", "--manifest-from"];
+  const STILL_DEFERRED = ["--all", "--ci"];
+
+  for (const flag of [...RETIRED, ...STILL_DEFERRED]) {
     const message = deferredBuildOptionMessage(flag);
-    assert.match(
-      message,
-      /is deferred in tan/,
-      `\`tan build ${flag}\` is recorded inert under tan-cli#427 — ${message}`,
-    );
+    // The invariant this test exists for, and it holds across both wordings.
     assert.doesNotMatch(
       message,
       /it does something/,
       `\`tan build ${flag}\` does nothing at this pin — ${message}`,
+    );
+  }
+
+  for (const flag of STILL_DEFERRED) {
+    assert.match(
+      deferredBuildOptionMessage(flag),
+      /is deferred in tan/,
+      `\`tan build ${flag}\` is recorded inert under tan-cli#427`,
+    );
+  }
+
+  for (const flag of RETIRED) {
+    const message = deferredBuildOptionMessage(flag);
+    assert.match(
+      message,
+      /is retired/,
+      `\`tan build ${flag}\` was retired by tan-cli#427, not deferred by it`,
+    );
+    assert.doesNotMatch(
+      message,
+      /is deferred in tan/,
+      `\`tan build ${flag}\` is not coming back, so the message must not ` +
+        `read as a wait — ${message}`,
     );
   }
 });
