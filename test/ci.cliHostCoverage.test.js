@@ -45,12 +45,44 @@ const JOB = "verify_pinned_cli_hosts";
 
 const workflow = yaml.load(fs.readFileSync(CI_WORKFLOW, "utf-8"));
 
+/**
+ * Hosts that HAVE a published asset but have no runner to execute it on.
+ *
+ * This is the one place a host is allowed to go unverified, and it is not a
+ * convenience list — every entry is a standing hole of exactly the kind #446
+ * was opened about. The difference from before is that the hole is asserted:
+ * the entry carries its reason, and the size assertion below refuses to let
+ * this grow quietly.
+ *
+ * `darwin/x64`: `macos-13` was the last standard-rate Intel macOS image and is
+ * RETIRED — unsupported since 2025-12-04 and absent from
+ * `actions/runner-images`' README table. Measured rather than assumed: a
+ * `macos-13` job on this repo sat QUEUED with no runner assigned while
+ * ubuntu-latest, windows-latest and macos-latest each picked one up in seconds.
+ * Every remaining x64 macOS label (`macos-15-intel`, `macos-15-large`,
+ * `macos-26-intel`, `macos-26-large`) is a LARGER runner, billed even on a
+ * public repo. Bare `macos-15`/`macos-26` are arm64, as is `macos-latest`.
+ *
+ * DELETE the entry the day a standard-rate Intel image exists.
+ */
+const NO_RUNNER_AVAILABLE = Object.freeze({
+  "darwin/x64":
+    "macos-13 is retired; every remaining x64 macOS label is a billed larger runner",
+});
+
 /** The hosts this pin actually publishes an asset for. */
 function hostsWithAnAsset() {
   const declaredGaps = new Set(
     HOSTS_WITHOUT_RELEASE_ASSET[SUPPORTED_CLI_VERSION] ?? [],
   );
   return Object.keys(TARGETS).filter((host) => !declaredGaps.has(host));
+}
+
+/** Hosts that must actually be executed: published, and runnable somewhere. */
+function hostsRequiringExecution() {
+  return hostsWithAnAsset().filter(
+    (host) => !Object.prototype.hasOwnProperty.call(NO_RUNNER_AVAILABLE, host),
+  );
 }
 
 /** The `platform/arch` tuples the verification job runs, from its own matrix. */
@@ -70,8 +102,8 @@ function hostsCoveredByCi() {
 // The invariant
 // ---------------------------------------------------------------------------
 
-test("every host with a published asset is executed by CI", () => {
-  const required = hostsWithAnAsset();
+test("every host with a published asset AND a runner is executed by CI", () => {
+  const required = hostsRequiringExecution();
   const covered = new Set(hostsCoveredByCi());
 
   const missing = required.filter((host) => !covered.has(host));
@@ -81,12 +113,44 @@ test("every host with a published asset is executed by CI", () => {
     `these hosts have a published tan asset at the ${SUPPORTED_CLI_VERSION} ` +
       `pin and nothing in CI ever runs it: ${missing.join(", ")}. Either add ` +
       `a matrix entry to \`${JOB}\` (ubuntu-latest / windows-latest / ` +
-      `macos-latest / macos-13 cover linux/x64, win32/x64, darwin/arm64 and ` +
-      `darwin/x64 respectively), or, if tan genuinely stopped publishing for ` +
-      `the host, declare it in HOSTS_WITHOUT_RELEASE_ASSET. Shipping a CLI ` +
-      `nobody has ever executed on the host it targets is what #446 was open ` +
-      `on.`,
+      `macos-latest cover linux/x64, win32/x64 and darwin/arm64), or, if tan ` +
+      `genuinely stopped publishing for the host, declare it in ` +
+      `HOSTS_WITHOUT_RELEASE_ASSET. Shipping a CLI nobody has ever executed ` +
+      `on the host it targets is what #446 was open on.`,
   );
+});
+
+test("the no-runner exemption stays exactly one host, with its reason", () => {
+  const exempt = Object.keys(NO_RUNNER_AVAILABLE);
+  assert.deepEqual(
+    exempt,
+    ["darwin/x64"],
+    "the exemption list is the one place a published host may go unexecuted, " +
+      "so it must not grow by habit. A new entry needs the same standard the " +
+      "existing one met: a MEASURED absence of any runner, not an inconvenience.",
+  );
+  for (const [host, reason] of Object.entries(NO_RUNNER_AVAILABLE)) {
+    assert.ok(
+      reason.trim().length > 20,
+      `${host} is exempt with no substantive reason recorded — an exemption ` +
+        `whose justification is not written down is indistinguishable from an ` +
+        `oversight the next reader will preserve`,
+    );
+  }
+});
+
+test("an exempt host is genuinely published — otherwise it belongs in the gaps table", () => {
+  const published = new Set(hostsWithAnAsset());
+  for (const host of Object.keys(NO_RUNNER_AVAILABLE)) {
+    assert.ok(
+      published.has(host),
+      `${host} is exempted from EXECUTION but the pin publishes no asset for ` +
+        `it either. Two different facts: "no asset" belongs in ` +
+        `HOSTS_WITHOUT_RELEASE_ASSET, "asset but no runner" belongs here. ` +
+        `Recording it in the wrong one hides a missing upload behind a runner ` +
+        `excuse.`,
+    );
+  }
 });
 
 test("CI does not claim a host the pin publishes nothing for", () => {
@@ -116,8 +180,13 @@ test("the derived requirement is non-empty and the matrix is real", () => {
       "has moved and this file's premise needs re-reading",
   );
   assert.ok(
-    hostsCoveredByCi().length >= 4,
-    "the matrix parsed to fewer than four entries, so the assertions above " +
+    hostsRequiringExecution().length >= 3,
+    "fewer than three hosts require execution, so the coverage assertion " +
+      "would be nearly vacuous — most likely the exemption list grew",
+  );
+  assert.ok(
+    hostsCoveredByCi().length >= 3,
+    "the matrix parsed to fewer than three entries, so the assertions above " +
       "would be comparing against an almost-empty set",
   );
 });

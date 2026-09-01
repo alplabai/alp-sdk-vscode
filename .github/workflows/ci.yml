@@ -303,18 +303,37 @@ jobs:
   #
   # ── The matrix is DERIVED, not chosen ───────────────────────────────────────
   #
-  # The four entries are exactly `TARGETS` minus `HOSTS_WITHOUT_RELEASE_ASSET`
-  # at the current pin -- i.e. every host that has a published asset at 0.6.0.
+  # The entries are `TARGETS` minus `HOSTS_WITHOUT_RELEASE_ASSET` at the current
+  # pin -- every host with a published asset at 0.6.0 -- minus the one host with
+  # no free runner to execute it on (below).
   # `test/ci.cliHostCoverage.test.js` recomputes that set from
   # `src/alpCli/service.ts` and fails if this matrix does not cover it, so a
   # future pin that starts publishing `win32/arm64` reds until a runner is added
   # here. Shrinking an allowlist is invisible; deriving it is not.
   #
-  # `macos-13` is the x64 runner. The `build` matrix rejects it on purpose --
-  # there it "would test nothing we actually ship" because no x64 VSIX bundles a
-  # CLI. That reasoning is about the BUNDLED artefact and does not carry here:
-  # `tan-x86_64-apple-darwin.tar.gz` is published, and the universal VSIX
-  # downloads it for every Intel Mac customer.
+  # ── darwin/x64 is NOT here, and that is a runner fact, not a decision ───────
+  #
+  # `tan-x86_64-apple-darwin.tar.gz` IS published and the universal VSIX fetches
+  # it for every Intel Mac customer, so this host genuinely wants executing.
+  # There is no free runner left to execute it on:
+  #
+  #   `macos-13` was the last standard-rate Intel image and is RETIRED --
+  #   unsupported since 2025-12-04, dropped from the docs, and absent from
+  #   `actions/runner-images`' README table entirely. Measured here, not assumed:
+  #   a `macos-13` job on this repo sat QUEUED with no runner assigned while
+  #   ubuntu/windows/macos-latest all picked one up in seconds.
+  #
+  #   Every remaining x64 macOS label is a LARGER runner --
+  #   `macos-15-intel`/`macos-15-large`, `macos-26-intel`/`macos-26-large`
+  #   (bare `macos-15` and `macos-26` are arm64; `macos-latest` is macOS 26
+  #   Arm64). Larger runners are billed even on a public repo, so putting one on
+  #   every PR is a spend decision rather than a CI decision.
+  #
+  # So darwin/x64 is a DECLARED exemption in
+  # `test/ci.cliHostCoverage.test.js`, carrying that reason, and that gate
+  # refuses to let the exemption list grow. The hole is the same hole #446
+  # named; what changes is that it is now visible and asserted instead of
+  # silent. Delete the exemption the day a standard-rate Intel image exists.
   verify_pinned_cli_hosts:
     name: pinned tan runs · ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
@@ -342,11 +361,6 @@ jobs:
             arch: arm64
             launcher: tan
             label: darwin/arm64
-          - os: macos-13
-            platform: darwin
-            arch: x64
-            launcher: tan
-            label: darwin/x64
 
     defaults:
       run:
