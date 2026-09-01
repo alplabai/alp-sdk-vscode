@@ -22,6 +22,20 @@
 // upstream issue.
 
 const test = require("node:test");
+const MANIFEST_YAML = [
+  "schema_version: 1",
+  "generated_by: tan 0.6.0",
+  "hw_info:",
+  "  sku: E1M-AEN801",
+  "slices:",
+  "  - core_id: m55_hp",
+  "    os: zephyr",
+  "    status: ok",
+  "ipc: []",
+  "helper_mcus: []",
+  "boot_order: []",
+].join("\n");
+
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const Module = require("node:module");
@@ -78,7 +92,13 @@ function mountPanel() {
   const { BuildPlanPanel } = loadWithStubs("ideHub/buildPlanPanel.js", {
     // A manifest on disk, so the one remaining spawn (`tan size`) actually
     // runs — see this file's header.
-    fs: { existsSync: () => true, statSync: () => ({ mtimeMs: 0 }) },
+    fs: {
+      existsSync: () => true,
+      statSync: () => ({ mtimeMs: 0 }),
+      // #580: the panel reads the manifest now rather than posting `manifest:
+      // null`, so the stub has to be able to answer.
+      readFileSync: () => MANIFEST_YAML,
+    },
     vscode: {
       window: {
         createWebviewPanel: () => panel,
@@ -209,14 +229,35 @@ test("BuildPlanPanel: no trigger spawns a deferred `tan build` flag, and the pan
   assert.match(plan.error, /tan-cli#427/);
   assert.match(plan.error, /issues\/427/, "with the URL tan itself printed");
 
+  assert.match(
+    plan.error,
+    /retired/,
+    "tan-cli#427 closed by RETIRING `--plan`. The message must not still " +
+      "read as a wait — the flag is not on its way.",
+  );
+
+  // #580: the manifest is READ now. `--manifest-from` was retired in favour of
+  // reading `build/system-manifest.yaml`, which needs no CLI at all — two
+  // other sites in this repo (`src/debug.ts`, `src/flash/gate.ts`) had been
+  // doing exactly that the whole time while this panel waited.
   const manifest = posted.find((m) => m.type === "systemManifestData");
   assert.ok(manifest, "and a systemManifestData");
-  assert.equal(manifest.manifest, null);
-  assert.match(manifest.error, /tan-cli#427/);
+  assert.ok(
+    manifest.manifest,
+    "the panel posted no manifest even though one is on disk and parses — " +
+      "the renderer in BuildPlanView.tsx has been correct and unreachable " +
+      "since it was written",
+  );
+  assert.equal(manifest.manifest.hw_info.sku, "E1M-AEN801");
+  assert.equal(
+    manifest.error,
+    undefined,
+    "a manifest that parsed is not an error state",
+  );
   assert.equal(
     manifest.postBuild,
     true,
-    "the on-disk facts survive the CLI gap: whether a manifest exists does " +
-      "not depend on tan being able to parse it",
+    "the on-disk facts are still posted, and they matter MORE now than when " +
+      "nothing was rendered: they are what dates the manifest on screen",
   );
 });

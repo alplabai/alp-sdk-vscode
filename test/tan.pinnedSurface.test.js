@@ -51,6 +51,7 @@ const {
   MODEL_SUBCOMMAND_UNWIRED_CODE,
   BUILD_DEFERRED_RESTORE_REF,
   INERT_OPTIONS,
+  RETIRED_BUILD_OPTIONS,
   inertKindOf,
   isBuildOptionDeferred,
   isModelSubcommandImplemented,
@@ -244,8 +245,17 @@ test("the deferred message says at least what the CLI's own refusal said", () =>
   // The regression bar, stated as an assertion rather than as a hope. tan's
   // own text, measured: "`tan build --plan` is deferred and not available in
   // this build (see https://github.com/alplabai/tan-cli/issues/427)."
-  const message = deferredBuildOptionMessage("--plan");
-  assert.match(message, /tan build --plan/, "the flag, as a command line");
+  // `--no-auto-bootstrap`, NOT `--plan`. tan-cli#427 closed by retiring
+  // `--plan`/`--manifest`/`--manifest-from` and left this one deferred
+  // (`build_cmd.py:202  _DEFERRED_FLAGS = ("--no-auto-bootstrap",)`), so it is
+  // the flag that still exercises this branch — and it stays the right subject
+  // across the next re-pin, since it is deferred on tan's `dev` too.
+  const message = deferredBuildOptionMessage("--no-auto-bootstrap");
+  assert.match(
+    message,
+    /tan build --no-auto-bootstrap/,
+    "the flag, as a command line",
+  );
   assert.match(message, /deferred/);
   assert.match(message, /tan-cli#427/);
   assert.match(
@@ -390,8 +400,66 @@ test("a `build` flag this pin does NOT defer is not described as deferred", () =
 });
 
 test("a `build` flag this pin DOES defer still reads as deferred", () => {
+  // Not `DEFERRED_BUILD_OPTIONS` any more: all three of its entries were
+  // RETIRED by tan-cli#427, so reading them here would assert the wrong half
+  // and leave the deferred branch untested.
+  assert.match(
+    deferredBuildOptionMessage("--no-auto-bootstrap"),
+    /is deferred in tan/,
+    "the one flag #427 left deferred",
+  );
+});
+
+test("the panel's three flags read as RETIRED, naming a replacement", () => {
+  // tan-cli#427 closed by retiring these, not by shipping them:
+  //   build_cmd.py:229  _RETIRED_FLAGS = { "--plan", "--manifest", "--manifest-from" }
+  // A message that still said "deferred" would point a customer at a closed
+  // issue and imply a wait that never ends — which is the failure
+  // `deferredBuildOptionMessage`'s own prose warns about.
   for (const flag of DEFERRED_BUILD_OPTIONS) {
-    assert.match(deferredBuildOptionMessage(flag), /is deferred in tan/, flag);
+    const message = deferredBuildOptionMessage(flag);
+    assert.match(message, /is retired/, flag);
+    assert.doesNotMatch(
+      message,
+      /is deferred in tan/,
+      `${flag} still reads as pending`,
+    );
+    assert.match(message, /tan-cli#427/, `${flag} drops the upstream ref`);
+    assert.match(
+      message,
+      /https:\/\/github\.com\/alplabai\/tan-cli\/issues\/427/,
+      `${flag} drops the URL tan itself printed`,
+    );
+    assert.match(
+      message,
+      /Nothing was run/i,
+      `${flag} drops the one thing the CLI could not say`,
+    );
+  }
+});
+
+test("every flag the panel wanted is one tan actually retired", () => {
+  // Two hand-maintained lists that must agree is the drift this repo keeps
+  // getting bitten by. Pinned rather than merged: they answer different
+  // questions (what the PANEL wanted vs what TAN retired) and only happen to
+  // coincide today. The day they stop, this is a red rather than a message
+  // that quietly falls back to the deferred wording.
+  const retired = Object.keys(RETIRED_BUILD_OPTIONS).sort();
+  assert.deepEqual(
+    [...DEFERRED_BUILD_OPTIONS].sort(),
+    retired,
+    "DEFERRED_BUILD_OPTIONS and RETIRED_BUILD_OPTIONS disagree. If tan " +
+      "retired a flag the panel never wanted, drop it from the panel's list; " +
+      "if the panel wants one tan did NOT retire, it is deferred and needs no " +
+      "entry here.",
+  );
+  for (const [flag, replacement] of Object.entries(RETIRED_BUILD_OPTIONS)) {
+    assert.ok(
+      replacement && replacement.length > 0,
+      `${flag} has no replacement text — a retired flag whose message names ` +
+        "nothing to use instead is the tracker-pointing tan's own decision " +
+        "comment asked consumers to stop doing",
+    );
   }
 });
 
