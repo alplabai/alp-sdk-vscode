@@ -378,10 +378,101 @@ export const BUILD_DEFERRED_RESTORE_REF = "#580";
  * that nothing ran, so a reader does not go looking for a failed subprocess in
  * the log.
  */
+/**
+ * The `build` flags tan RETIRED, and what replaces each.
+ *
+ * ── Why this is not just a value in `INERT_OPTIONS` ─────────────────────────
+ *
+ * `INERT_OPTIONS` mirrors the pinned RECORDING, and the recording is correct:
+ * on tan `0.6.0` these three still refuse with `cli.command-deferred` and the
+ * message still names tan-cli#427. Changing their kind there would make the
+ * table disagree with the binary it claims to describe.
+ *
+ * What changed is not the binary's behaviour but the DECISION behind it.
+ * tan-cli#427 closed having RETIRED them rather than delivered them:
+ *
+ *   build_cmd.py:229   _RETIRED_FLAGS = { "--plan", "--manifest", "--manifest-from" }
+ *
+ * and `build_cmd.py:218-228` commits the reasoning, including the trade it
+ * accepts: there is no "preview the live plan and stop" mode left at all.
+ *
+ * ── Why the message had to change on the same day ──────────────────────────
+ *
+ * `deferredBuildOptionMessage`'s `deferred` branch hands the customer
+ * `tan-cli#427` and its URL. That was right while the flag was pending. It is
+ * now the exact failure the SAME function warns about two branches up, in
+ * prose written before anyone knew which way #427 would go:
+ *
+ *   "naming tan-cli#427 here would promise an arrival that is not coming,
+ *    which is the more expensive half of the same confusion -- a customer who
+ *    waits for a flag to start working waits forever."
+ *
+ * A customer who follows that link now lands on a CLOSED issue whose decision
+ * is that the flag is gone. So these carry the replacement instead, which is
+ * also what tan's own decision comment asked consumers to do: "a customer who
+ * typed `--plan` should be told to type `--plan-from`, in the error itself,
+ * not sent to a tracker."
+ */
+export const RETIRED_BUILD_OPTIONS: Readonly<Record<string, string>> =
+  Object.freeze({
+    "--plan":
+      "`tan build --plan-from FILE` reads a plan, and `--materialise` / " +
+      "`--execute` act on one. There is no flag that previews the live plan " +
+      "and stops -- that mode was retired with this one.",
+    "--manifest":
+      "A native `tan build` writes `build/system-manifest.yaml` itself. There " +
+      "is no pre-build projection of it any more -- build, then read the file.",
+    "--manifest-from":
+      "`build/system-manifest.yaml` is plain YAML written by `tan build`, and " +
+      "a caller reads it directly rather than asking the CLI to hand it over.",
+  });
+
+/**
+ * The message for a flag tan retired. Names the replacement, never an issue.
+ *
+ * Callers do NOT have to know a flag is retired: `deferredBuildOptionMessage`
+ * consults this first, so every existing site got the corrected wording
+ * without being edited. A gate a caller opts into is a gate the next caller
+ * forgets, which is #596 written down.
+ */
+export function retiredBuildOptionMessage(
+  flag: string,
+  command = "build",
+): string {
+  const replacement = RETIRED_BUILD_OPTIONS[flag];
+  if (!replacement) {
+    // Not retired. Fall through to the inertness answer rather than inventing
+    // one -- claiming a live flag is retired is the same lie in the other
+    // direction.
+    return deferredBuildOptionMessage(flag, command);
+  }
+  // The URL stays, and that is a correction to this function's first draft.
+  // It was dropped on the reasoning that a closed issue promises nothing --
+  // but `test/tanPayloadShape.test.js` and `test/ideHub.buildPlanPanel.test.js`
+  // both require the panel to say AT LEAST what tan's own refusal said, and
+  // tan prints that URL. Dropping it gave the customer less than the CLI
+  // would have. The false promise was never the link; it was the word
+  // "deferred" and the implied wait, and #427 read today tells them exactly
+  // what replaced the flag.
+  return (
+    `\`tan ${command} ${flag}\` is retired. It still refuses in tan ` +
+    `${SUPPORTED_CLI_VERSION}, and it is not coming back -- ${BUILD_DEFERRED_REF} ` +
+    "(https://github.com/alplabai/tan-cli/issues/427) closed by retiring it, " +
+    `not by implementing it. ${replacement} Nothing was run.`
+  );
+}
+
 export function deferredBuildOptionMessage(
   flag: string,
   command = "build",
 ): string {
+  // Retired beats every other answer, and is checked BEFORE `inertKindOf`.
+  // The pinned recording still marks these `deferred`, so without this the
+  // branch below would hand the customer a closed issue and an implied wait.
+  if (command === "build" && flag in RETIRED_BUILD_OPTIONS) {
+    return retiredBuildOptionMessage(flag, command);
+  }
+
   const kind = inertKindOf(command, flag);
   if (kind === null) {
     return (
