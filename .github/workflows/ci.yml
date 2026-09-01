@@ -410,15 +410,34 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Stage and run the pinned tan for this host
-        # Exit 2 from the staging script means ONLY "nothing published for this
-        # host under this pin" and is a named skip, matching the `build` job's
-        # rule. Any other non-zero exit -- including a transient fetch failure --
-        # is fatal, so a network hiccup does not quietly become "verified".
+        # EVERY non-zero exit is fatal here, exit 2 included -- and that is the
+        # one place this deliberately differs from the `build` job's bundled
+        # smoke test above.
         #
-        # A skip here should be rare and is worth reading when it happens: the
-        # coverage gate derives this matrix from the hosts that DO have an
-        # asset, so an exit 2 means the release contents and
-        # `HOSTS_WITHOUT_RELEASE_ASSET` disagree.
+        # There, exit 2 ("nothing published for this host under this pin") is a
+        # legitimate transient: the pin may name a tag whose darwin asset is
+        # still being cut, and reddening every PR on that teaches people to
+        # ignore the job. Here it cannot be legitimate. The coverage gate
+        # guarantees no host in this matrix is declared in
+        # `HOSTS_WITHOUT_RELEASE_ASSET`, so exit 2 means the release contents
+        # and that table disagree -- which is a defect, not an absence.
+        #
+        # Exiting 0 on it would launder a live defect into a green named check.
+        # The concrete case is not hypothetical: `resolvePublishedAsset` raises
+        # `ChecksumError` kind `unlisted` (exit 2) when the asset URL exists but
+        # `checksums.txt` has no entry for it -- a re-upload after checksum
+        # generation. `scripts/check-cli-pin.mjs` HEAD-probes the asset URL and
+        # would call that "present", so this job would be the only thing that
+        # could notice, while every customer's activation-time download is
+        # refused by the very same resolver.
+        #
+        # `/tmp` on the Windows runner: `--dest /tmp/pinned-tan` is rewritten by
+        # MSYS argument conversion before node sees it, landing the launcher at
+        # `C:\Users\RUNNER~1\AppData\Local\Temp\pinned-tan\tan.exe`, and Git
+        # Bash resolves its own `/tmp` to the same directory -- so `$BIN` finds
+        # it. Both sides agree because the SAME mechanism rewrites both. Change
+        # `shell:` away from bash, or "tidy" one side to `$RUNNER_TEMP` without
+        # the other, and they stop agreeing. Measured working, not assumed.
         run: |
           set -uo pipefail
           set +e
@@ -430,11 +449,11 @@ jobs:
           set -e
           if [ "$RC" -eq 2 ]; then
             {
-              echo "### ${{ matrix.label }}: SKIPPED"
+              echo "### ${{ matrix.label }}: NO ASSET — treated as a failure"
               echo
-              echo "tan-cli \`${{ steps.cli_version.outputs.version }}\` publishes no ${{ matrix.label }} asset, so there was nothing to run. If that is expected, \`HOSTS_WITHOUT_RELEASE_ASSET\` in \`src/alpCli/service.ts\` should declare it -- and if it already does, \`test/ci.cliHostCoverage.test.js\` should have dropped this host from the matrix."
+              echo "tan-cli \`${{ steps.cli_version.outputs.version }}\` published nothing usable for ${{ matrix.label }}, but \`test/ci.cliHostCoverage.test.js\` only puts a host in this matrix when it is NOT declared in \`HOSTS_WITHOUT_RELEASE_ASSET\`. So either the release is incomplete, or its \`checksums.txt\` is missing this asset's entry, or that table is stale. All three are defects a customer hits at activation time."
             } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            exit 1
           fi
           if [ "$RC" -ne 0 ]; then
             exit 1
@@ -447,10 +466,14 @@ jobs:
           # is handed.
           OUT=$("$BIN" --version)
           echo "pinned tan on ${{ matrix.label }}: ${OUT}"
-          case "$OUT" in
-            *"$VERSION"*) ;;
-            *)
-              echo "::error::The pinned tan for ${{ matrix.label }} runs but reports '${OUT}', which does not contain the pinned version ${VERSION}. Customers on this host would be handed a CLI that disagrees with SUPPORTED_CLI_VERSION."
-              exit 1
-              ;;
-          esac
+          # EXACT, not a substring. `case "$OUT" in *"$VERSION"*)` would accept
+          # a binary reporting `0.6.0-rc1` under a `0.6.0` pin, and `10.6.0`
+          # too -- the same silent-truncation class as #443, where widening one
+          # grep and not the other extracted `0.5.0` out of `0.5.0-rc1`.
+          # `tan --version` prints `tan <version>`; take the last field of the
+          # first line and compare it whole.
+          REPORTED=$(printf '%s\n' "$OUT" | head -n 1 | awk '{print $NF}')
+          if [ "$REPORTED" != "$VERSION" ]; then
+            echo "::error::The pinned tan for ${{ matrix.label }} runs but reports version '${REPORTED}' (full output: '${OUT}'), not the pinned ${VERSION}. Customers on this host would be handed a CLI that disagrees with SUPPORTED_CLI_VERSION."
+            exit 1
+          fi

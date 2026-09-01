@@ -90,10 +90,12 @@ jobs:
         # `prepare`/`postinstall` script, so `pnpm install` alone does NOT
         # produce it and the staging step below dies MODULE_NOT_FOUND.
         #
-        # `ci.yml` never needed this line because its staging happens inside the
-        # `build` job, after that job's own compile step. This workflow is
-        # standalone, and shipped without one -- caught before the first
-        # scheduled run, which had never verified anything.
+        # `ci.yml`'s `build` job needs no such line because its staging happens
+        # after that job's own compile step; its `verify_pinned_cli_hosts` job
+        # carries one for the same reason this does. Any workflow that stages
+        # the CLI outside `build` must compile first. This one shipped without
+        # it -- caught before the first scheduled run, which had never verified
+        # anything.
         run: pnpm exec tsc --build
 
       - name: Resolve the pinned tan version

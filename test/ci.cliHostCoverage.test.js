@@ -161,10 +161,10 @@ test("CI does not claim a host the pin publishes nothing for", () => {
     [],
     `\`${JOB}\` runs for ${spurious.join(", ")}, which ` +
       `HOSTS_WITHOUT_RELEASE_ASSET declares has no asset at ` +
-      `${SUPPORTED_CLI_VERSION}. That job would take the staging script's ` +
-      `exit 2 and report a green SKIP forever — a host that looks covered in ` +
-      `the checks list and is not. Drop the entry, or drop the declared gap ` +
-      `if it is the stale one.`,
+      `${SUPPORTED_CLI_VERSION}. The staging script would exit 2 for it, and ` +
+      `this job treats exit 2 as fatal — so that host would red on every PR ` +
+      `for a state the pin already declares expected. Drop the matrix entry, ` +
+      `or drop the declared gap if it is the stale one.`,
   );
 });
 
@@ -209,16 +209,108 @@ test("each matrix entry names the launcher its host actually produces", () => {
 
 test("the verification job resolves the pin with the prerelease-capable pattern", () => {
   // test/cliPin.prerelease.test.js already asserts every occurrence in this
-  // file accepts a prerelease. This asserts the new job HAS one, so it cannot
-  // quietly stop resolving the pin and start verifying whatever `--version`
-  // defaults to.
+  // file accepts a prerelease. This asserts the new job HAS one, so the staging
+  // call cannot quietly stop resolving the pin.
   const job = workflow.jobs[JOB];
   const resolver = job.steps.find((step) => step.id === "cli_version");
   assert.ok(
     resolver,
-    `\`${JOB}\` has no \`cli_version\` step — without it the staging call has ` +
-      `no --version and would resolve the LATEST release rather than the pin, ` +
-      `verifying a binary this extension does not ship.`,
+    `\`${JOB}\` has no \`cli_version\` step. The staging call would then have ` +
+      `no --version, and \`releaseAssetForTarget\` would fall back to its ` +
+      `default parameter — the COMPILED SUPPORTED_CLI_VERSION. That is not ` +
+      `"the latest release", but it does silently decouple this job from the ` +
+      `grep, so a workflow editing mistake stops being visible.`,
   );
   assert.match(resolver.run, /SUPPORTED_CLI_VERSION = "\[0-9\]/);
+});
+
+// ---------------------------------------------------------------------------
+// The verification still RUNS
+//
+// Everything above asserts the host SET. None of it asserts that anything is
+// still executed for those hosts, and that gap is the #639 lesson one level
+// up: six ways to neuter this job — deleting the staging step, `if: false` on
+// the step or the job, `continue-on-error: true`, replacing the version
+// comparison with one that always matches, or hardcoding a `--version` — all
+// leave the matrix untouched and every assertion above green.
+// ---------------------------------------------------------------------------
+
+const STAGING_SCRIPT = "scripts/stage-tan-cli-asset.mjs";
+
+/** The step that does the work, or `undefined`. */
+function stagingStep() {
+  return (workflow.jobs[JOB].steps ?? []).find(
+    (step) => typeof step.run === "string" && step.run.includes(STAGING_SCRIPT),
+  );
+}
+
+test("the job still has a step that stages and runs the binary", () => {
+  assert.ok(
+    stagingStep(),
+    `no step in \`${JOB}\` invokes ${STAGING_SCRIPT}. The matrix can be ` +
+      `perfectly correct and this job verify nothing — which is exactly what ` +
+      `the host-set assertions above cannot see.`,
+  );
+});
+
+test("nothing can switch the verification off while leaving the matrix intact", () => {
+  const job = workflow.jobs[JOB];
+  const step = stagingStep();
+
+  assert.equal(
+    job.if,
+    undefined,
+    `\`${JOB}\` carries a job-level \`if:\`. A condition here can make every ` +
+      `host skip while the checks list still shows the job — a green check ` +
+      `that ran nothing.`,
+  );
+  assert.equal(
+    step.if,
+    undefined,
+    `the staging step carries an \`if:\`. Same failure, one level down: the ` +
+      `job runs, the step is skipped, the check is green.`,
+  );
+  assert.notEqual(
+    step["continue-on-error"],
+    true,
+    `the staging step is \`continue-on-error: true\`, so a host that cannot ` +
+      `run the pinned binary reports success anyway. If a host is genuinely ` +
+      `unverifiable it belongs in NO_RUNNER_AVAILABLE with a reason, not ` +
+      `behind a swallowed failure.`,
+  );
+  assert.notEqual(
+    job["continue-on-error"],
+    true,
+    "the job is `continue-on-error: true`, which makes every failure advisory " +
+      "at the job level",
+  );
+});
+
+test("the staging call is driven by the RESOLVED pin, not a literal", () => {
+  const step = stagingStep();
+  assert.match(
+    step.run,
+    /--version "\$\{\{ steps\.cli_version\.outputs\.version \}\}"/,
+    "the staging call does not pass the resolved pin. A hardcoded " +
+      '`--version "0.4.0"` would verify a binary this extension does not ' +
+      "ship, and would keep passing forever after the pin moves.",
+  );
+});
+
+test("the version comparison is exact and can still fail", () => {
+  const step = stagingStep();
+  assert.match(
+    step.run,
+    /\[ "\$REPORTED" != "\$VERSION" \]/,
+    'the exact-comparison guard is gone. A substring form (`case "$OUT" in ' +
+      '*"$VERSION"*`) accepts `0.6.0-rc1` under a `0.6.0` pin, and an ' +
+      "always-matching pattern accepts anything at all — either way the step " +
+      "runs the binary and then asserts nothing about it.",
+  );
+  assert.match(
+    step.run,
+    /exit 1/,
+    "the comparison no longer fails the step, so a wrong version is reported " +
+      "and then ignored",
+  );
 });
