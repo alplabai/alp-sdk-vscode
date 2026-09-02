@@ -500,6 +500,75 @@ jobs:
   # publish leg on a publish=false dry run) SATISFIES the invariant rather
   # than being excused from it: the assertion below checks the declaration
   # AGAINST the outcome, not "was this declared" alone.
+  # ── Did the Marketplace actually take it? (#648) ────────────────────────────
+  #
+  # SEPARATE from release_gate on purpose. That gate reads each publish step's
+  # own outcome, which is the right thing for it to read -- taking the step's
+  # word rather than re-deriving its arming condition is what made the first
+  # half-publish legible. Its limit is SCOPE: a workflow can observe what it
+  # DID, never what the Marketplace ACCEPTED.
+  #
+  # Measured on v0.6.0, the two are ~6 minutes apart:
+  #
+  #   09:19:02.663Z  darwin-arm64 visible in the gallery
+  #   09:22:04       universal publish step exits 0    <-- release_gate green
+  #   09:28:21.2Z    universal visible in the gallery
+  #
+  # The survivable case is that window. The one that is not: a publish call
+  # exits 0 and the version is never ingested -- release_gate then stays green
+  # forever on a tag that is spent and cannot be republished.
+  #
+  # It does NOT need release_gate: ingestion is a separate fact, and a run whose
+  # gate failed still wants to know whether anything reached customers.
+  verify_marketplace_ingest:
+    name: marketplace ingest
+    runs-on: ubuntu-latest
+    needs: [package_and_publish, package_darwin_arm64]
+    # `!cancelled()`, matching release_gate: a failed publish must still be
+    # reported against the gallery rather than skipping the question.
+    if: ${{ !cancelled() }}
+    # The backoff schedule holds ~12 minutes across its 10 attempts.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Resolve the version that was packaged
+        id: packaged
+        # `package.json`, not the tag: every job in this workflow checks out the
+        # same ref, so this is the version the publish steps actually packaged.
+        # On a pushed tag the two are cross-checked below -- verifying the wrong
+        # version would make this whole job a green that means nothing.
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -z "$VERSION" ]; then
+            echo "::error::could not read version from package.json"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+              echo "::error::tag ${GITHUB_REF_NAME} does not name the packaged version ${VERSION}. Verifying ingestion of a version this tag did not publish would be a green that means nothing."
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Is the gallery serving every target this run published?
+        # The expected target set is DERIVED from the publish steps' own
+        # outcomes, never listed here. A hardcoded pair would fail a legitimate
+        # single-channel run, and a hardcoded list someone later shrinks is
+        # invisible to the check that reads it.
+        run: |
+          node scripts/verify-marketplace-ingest.mjs \
+            --extension AlpLabAI.alp-sdk \
+            --version "${{ steps.packaged.outputs.version }}" \
+            --universal "${{ needs.package_and_publish.outputs.marketplace_outcome }}" \
+            --darwin-arm64 "${{ needs.package_darwin_arm64.outputs.marketplace_outcome }}"
+
   release_gate:
     name: release outcome matches intent
     needs: [package_and_publish, package_darwin_arm64]
