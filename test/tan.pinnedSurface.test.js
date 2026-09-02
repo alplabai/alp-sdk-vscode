@@ -282,9 +282,9 @@ test("the deferred message says at least what the CLI's own refusal said", () =>
 // ---------------------------------------------------------------------------
 //
 // Both helpers used to ignore their own constant. `unsupportedModelSubcommand`
-// synthesised "not implemented in tan <version> (tan-cli#857)" for whatever
+// synthesised "not implemented in tan <version> (tan-cli#674)" for whatever
 // verb it was handed, and `deferredBuildOptionMessage` described whatever flag
-// it was handed as deferred. So when tan-cli#857 or tan-cli#427 lands and the
+// it was handed as deferred. So when tan-cli#674 or tan-cli#427 lands and the
 // pin moves, the ONLY red is a constant-vs-snapshot compare above, and the
 // one-line edit that greens it leaves eight call sites in `models/panel.ts`
 // and two in `buildPlanPanel.ts` telling the customer a capability is missing
@@ -297,7 +297,7 @@ test("a `model` verb this pin DOES implement is not described as missing", () =>
   // `build` is the one. Nothing calls `unsupportedModelSubcommand("build")`
   // today — `buildModel` spawns it for real — which is exactly why this has to
   // be asserted rather than observed: it is the shape EVERY verb takes the day
-  // tan-cli#857 lands, and there would be nothing red to notice it by.
+  // tan-cli#674 lands, and there would be nothing red to notice it by.
   assert.ok(
     isModelSubcommandImplemented("build"),
     "the fixture verb for this test must actually be implemented at the pin",
@@ -313,7 +313,7 @@ test("a `model` verb this pin DOES implement is not described as missing", () =>
   );
   assert.doesNotMatch(
     outcome.message,
-    /tan-cli#857/,
+    /tan-cli#674/,
     "and it must not cite the upstream issue for a gap that is closed",
   );
   assert.match(

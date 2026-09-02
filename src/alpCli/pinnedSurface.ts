@@ -43,7 +43,7 @@ import { SUPPORTED_CLI_VERSION } from "./service";
  * Every subcommand `tan model` implements at `SUPPORTED_CLI_VERSION`.
  *
  * ONE. The Models panel drives nine (list, doctor, check, zoo, add, prep, run,
- * ab, build) and this pin has `build` — the other eight are tan-cli#857, and
+ * ab, build) and this pin has `build` — the other eight are tan-cli#674, and
  * this repo's half of it is #524.
  *
  * Held to `surface.json`'s `commands.model.subcommandValues` by the gate.
@@ -55,8 +55,14 @@ export const MODEL_SUBCOMMANDS: readonly string[] = ["build"];
  *  classifies on it; the gate pins the two spellings equal. */
 export const MODEL_UNKNOWN_SUBCOMMAND_CODE = "model.unknown-subcommand";
 
-/** The upstream issue tracking the eight missing `tan model` subcommands. */
-export const MODEL_SURFACE_REF = "tan-cli#857";
+/** The upstream issue tracking the eight missing `tan model` subcommands.
+ *
+ *  #674, NOT #857. This constant reaches the CUSTOMER — `unsupportedModel-
+ *  Subcommand` synthesises "not implemented in tan <version> (<ref>)" from it
+ *  — and #857 was closed as a DUPLICATE of #674, so the banner was sending a
+ *  reader to a closed issue that reads as "already handled". #674 is open and
+ *  assigned. */
+export const MODEL_SURFACE_REF = "tan-cli#674";
 
 /** Whether the pinned tan implements `tan model <subcommand>`. */
 export function isModelSubcommandImplemented(subcommand: string): boolean {
@@ -78,7 +84,7 @@ export function isModelSubcommandImplemented(subcommand: string): boolean {
  */
 export const MODEL_SUBCOMMAND_UNWIRED_CODE = "models.panel-not-wired";
 
-/** This repo's half of tan-cli#857 — restoring the Models surface in the IDE
+/** This repo's half of tan-cli#674 — restoring the Models surface in the IDE
  *  once the subcommands exist. */
 export const MODEL_SURFACE_RESTORE_REF = "#524";
 
@@ -89,9 +95,9 @@ export const MODEL_SURFACE_RESTORE_REF = "#524";
  *
  * IT CONSULTS `isModelSubcommandImplemented`, so that constant is not merely
  * snapshot-checked, it DECIDES. Before this branch existed, a pin bump closing
- * tan-cli#857 reddened one constant-vs-snapshot compare, and the one-line edit
+ * tan-cli#674 reddened one constant-vs-snapshot compare, and the one-line edit
  * that greened it left all eight call sites in `src/models/panel.ts` still
- * synthesising "not implemented in tan <new version> (tan-cli#857)" about
+ * synthesising "not implemented in tan <new version> (tan-cli#674)" about
  * capabilities that had just arrived — a false statement about the shipping
  * binary, produced by the very change that made it false.
  *

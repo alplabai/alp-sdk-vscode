@@ -7,7 +7,8 @@
 //
 // ONE of the nine subcommands this panel presents is implemented by the pinned
 // tan, and it is `build`. The other eight — list, doctor, check, zoo, add,
-// prep, run, ab — are tan-cli#857, and this panel USED TO ESTABLISH THAT BY
+// prep, run, ab — are tan-cli#674 (#857 was closed as its duplicate; the old
+// pointer led to a closed issue), and this panel USED TO ESTABLISH THAT BY
 // SPAWNING THEM (#543): nine `runAlpCommand(["model", …])` calls whose only
 // possible answer was a refusal.
 //
@@ -23,7 +24,15 @@
 // envelope at all and the webview got a bare failure instead of a capability
 // notice.
 //
-// WHEN tan-cli#857 LANDS: `test/tan.pinnedSurface.test.js` goes red, and each
+// MEASURED SINCE, on the pinned 0.6.0 GA: it is FOUR, not two. `model prep
+// <path>` and `model run <path>` carry a path positional and die the same way
+// as `add` and `ab` — exit 2, no envelope. Whoever restores the spawns for
+// #524 has to handle that half; `cliSurface.ts` carries the per-subcommand
+// table. (Easy to measure wrongly: passing `"prep p.tflite"` as ONE shell word
+// makes it an unknown subcommand and shows the classifiable exit-1 shape
+// instead.)
+//
+// WHEN tan-cli#674 LANDS: `test/tan.pinnedSurface.test.js` goes red, and each
 // handler below gets its `runAlpCommand(["model", <verb>, …])` back. Restoring
 // the surface in the IDE is #524.
 //
@@ -128,7 +137,7 @@ class ModelsPanel {
     void this.panel.webview.postMessage(msg);
   }
 
-  /** The model list + toolchain doctor. Both subcommands are tan-cli#857, so
+  /** The model list + toolchain doctor. Both subcommands are tan-cli#674, so
    *  the pair is answered from the pin instead of from two spawns — the same
    *  `modelsData` message, `ok: false`, carrying the refusal that raises the
    *  capability banner. `checkFit`/`refreshZoo` still run: they post their own
@@ -144,14 +153,14 @@ class ModelsPanel {
     void this.refreshZoo();
   }
 
-  /** The curated zoo gallery. `tan model zoo` is tan-cli#857, so the section
+  /** The curated zoo gallery. `tan model zoo` is tan-cli#674, so the section
    *  reports the gap from the pin rather than spawning for it. Zoo logic lives
    *  in tan/alp-sdk; nothing about it is re-derived here. */
   private async refreshZoo(): Promise<void> {
     this.post(toZooData(unsupportedModelSubcommand("zoo")));
   }
 
-  /** Add a curated zoo entry to board.yaml. `tan model add` is tan-cli#857.
+  /** Add a curated zoo entry to board.yaml. `tan model add` is tan-cli#674.
    *
    *  NO `zooAddStarted` and NO progress notification: both announce work that
    *  is not starting, and a spinner that resolves into "not implemented" is a
@@ -169,7 +178,7 @@ class ModelsPanel {
   }
 
   /** The static NPU-eligibility screen over every board.yaml model.
-   *  `tan model check` is tan-cli#857, so the coverage section reports the gap
+   *  `tan model check` is tan-cli#674, so the coverage section reports the gap
    *  from the pin. The screen, its vocabulary and every caveat live in
    *  `tan`/alp-sdk and none of it is re-derived here — an eligibility verdict
    *  invented locally would be exactly the wrong thing to invent. */
@@ -177,7 +186,7 @@ class ModelsPanel {
     this.post(toModelFitData(unsupportedModelSubcommand("check")));
   }
 
-  /** Prep a raw .onnx (quantize + accuracy). `tan model prep` is tan-cli#857.
+  /** Prep a raw .onnx (quantize + accuracy). `tan model prep` is tan-cli#674.
    *
    *  NO file dialogs and NO `modelPrepStarted`: asking a customer to pick a
    *  model and a calibration folder before telling them the CLI cannot prep
@@ -187,12 +196,12 @@ class ModelsPanel {
   }
 
   /** Host reference latency/accuracy for one model. `tan model run` is
-   *  tan-cli#857 — see `prepModel` for why no dialog opens first. */
+   *  tan-cli#674 — see `prepModel` for why no dialog opens first. */
   private async runModel(): Promise<void> {
     this.post(toModelRunResult(unsupportedModelSubcommand("run")));
   }
 
-  /** Head-to-head comparison of two models. `tan model ab` is tan-cli#857 —
+  /** Head-to-head comparison of two models. `tan model ab` is tan-cli#674 —
    *  see `prepModel` for why no dialog opens first. */
   private async abModels(): Promise<void> {
     this.post(toModelAbResult(unsupportedModelSubcommand("ab")));
@@ -283,7 +292,7 @@ class ModelsPanel {
    *  an undisclosed build-everything, and #524 removes at least one of them by
    *  design. Settle the pre-dispatch-consent question BEFORE that lands —
    *  either a confirmation in front of this call, or `tan model` growing the
-   *  per-model selection that removes the surprise entirely (tan-cli#857) —
+   *  per-model selection that removes the surprise entirely (tan-cli#674) —
    *  rather than after the panel is visible again. */
   async buildModel(name?: string): Promise<void> {
     // Defined BEFORE the workspace guard below, and the guard's own refusal
@@ -322,7 +331,7 @@ class ModelsPanel {
       name
         ? `Building ALL models — tan ${SUPPORTED_CLI_VERSION} has no ` +
             `per-model selection, so ${name} is built along with every other ` +
-            "model in board.yaml (tan-cli#857)…"
+            "model in board.yaml (tan-cli#674)…"
         : "Building all models…",
       false,
     );

@@ -444,10 +444,14 @@ export function useModels() {
   }
 
   // ONE capability gap, established once and stated once (#522). Every list is
-  // scanned because ANY of them can be the first call to reach a CLI that does
-  // not implement the surface — the panel fires `model list` and `model doctor`
-  // on open, but a customer who clicks straight through to the zoo gets the
-  // refusal there first.
+  // scanned because ANY of them can carry the refusal.
+  //
+  // The old reason given here — "the panel fires `model list` and `model
+  // doctor` on open" — has been false since #543: the host spawns none of the
+  // eight, and `unsupportedModelSubcommand` synthesises the refusal from the
+  // pin instead. Scanning every list is still right, and now for a different
+  // reason: which shaper the synthesised issue lands in follows the customer's
+  // click, not a fixed pair of calls on open.
   const cliModelSurfaceMissing =
     findUnsupportedSubcommand(state.issues) ??
     findUnsupportedSubcommand(state.coverageIssues) ??
