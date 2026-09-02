@@ -69,9 +69,42 @@ test("the code is the contract, spelled exactly as tan sends it", () => {
   assert.equal(UNKNOWN_SUBCOMMAND_CODE, "model.unknown-subcommand");
 });
 
-test("findUnsupportedSubcommand returns null when the CLI implements the surface", () => {
+test("null when tan ANSWERED and did not refuse — the subcommand is implemented", () => {
+  // An envelope exists and carries no unknown-subcommand refusal. This is the
+  // half of `null` the old title claimed was all of it.
   assert.equal(findUnsupportedSubcommand([]), null);
   assert.equal(findUnsupportedSubcommand([OTHER]), null);
+});
+
+test("null ALSO when tan produced no envelope — which is not the same thing", () => {
+  // `tan model` takes ONE optional SUBCOMMAND, so `model add m1`,
+  // `model prep <path>`, `model run <path>` and `model ab <p1> <p2>` supply a
+  // second positional and die as click usage errors: exit 2, no envelope, no
+  // `issues` list to scan. Measured on the pinned 0.6.0 GA, alongside the four
+  // that DO refuse with `model.unknown-subcommand` at exit 1.
+  //
+  // So this input is not a malformed payload — it is a real, reproducible half
+  // of the surface. `findUnsupportedSubcommand` answers `null` for it, and
+  // that `null` means "nothing here to classify", NOT "tan implements this".
+  for (const noEnvelope of [undefined, null]) {
+    assert.equal(
+      findUnsupportedSubcommand(noEnvelope),
+      null,
+      "an absent issues list must not throw",
+    );
+  }
+  // The property that matters, stated as an assertion so a future reader
+  // cannot re-derive the wrong meaning from the return value alone: the four
+  // exit-2 subcommands and an implemented subcommand are INDISTINGUISHABLE
+  // here. Anything that starts treating `null` as proof of support is wrong
+  // for half the surface.
+  assert.equal(
+    findUnsupportedSubcommand(undefined),
+    findUnsupportedSubcommand([OTHER]),
+    "no-envelope and implemented-but-failed both answer null; a caller that " +
+      "needs to tell them apart cannot do it with this function, and must not " +
+      "assume either meaning",
+  );
 });
 
 test("findUnsupportedSubcommand recognises the refusal by code", () => {
@@ -97,7 +130,11 @@ test("findUnsupportedSubcommand does not classify on the prose", () => {
 test("findUnsupportedSubcommand survives a malformed issue list", () => {
   // The issues array crosses the same wire as everything else; a panel that
   // blanks on a null issue is the #517 failure in a different place.
-  for (const bad of [undefined, null, "nope", 42, {}]) {
+  //
+  // `undefined`/`null` are covered above as the no-envelope case rather than
+  // as malformation — they are what a click usage error actually produces, and
+  // filing them under "malformed" is what let that half go unnamed.
+  for (const bad of ["nope", 42, {}]) {
     assert.equal(findUnsupportedSubcommand(bad), null, String(bad));
   }
   assert.equal(
