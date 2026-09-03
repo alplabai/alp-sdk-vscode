@@ -255,9 +255,29 @@ const GATED_CODES = {
   // listing call as a CLI failure.
   //
   // Filed upstream as tan-cli#1092: tan's own note says to promote this to
-  // `frozen` "the moment a consumer binds to it", which is what #552 did. Until
-  // that lands, tan's record and this one disagree about whether a rename is
-  // cheap -- and only this side knows it is not.
+  // `frozen` "the moment a consumer binds to it", which is what #552 did. That
+  // landed -- tan-cli#1158 (`dd6ac839`) flipped the entry to `frozen` and filled
+  // in `consumer: "alp-sdk-vscode src/monitor.ts :: listSerialPorts"` and a
+  // `consumerEffect` for real. tan's record and this one now agree about the
+  // cost of a rename.
+  //
+  // `"reserved"` below is therefore NOT stale, and must not be "corrected" to
+  // `"frozen"` on its own: this row is asserted against the
+  // `envelope-contract.json` published for the PINNED tan, and v0.6.0's copy --
+  // cut before #1158 -- still says `reserved`. `scripts/fetch-tan-contract.mjs`
+  // fetches for `SUPPORTED_CLI_VERSION`, never `latest`, so tan's `main` moving
+  // cannot reach this gate. Only the pin can.
+  //
+  // Which makes the red DATED rather than possible: the first bump of
+  // `SUPPORTED_CLI_VERSION` onto a tan release carrying `dd6ac839` fires the
+  // equality assertion below with `tan vX declares monitor.no-port "frozen",
+  // not "reserved"`. Flip it to `"frozen"` in the SAME change as that pin bump,
+  // never as a follow-up -- alp-sdk-vscode#423 is the precedent, and its reason
+  // holds here unchanged: `release-vsix.yml:131` and `:355` run this suite
+  // inside `package_and_publish` and `package_darwin_arm64`, so a pin bump that
+  // defers this line does not red a PR, it fails the RELEASE. There is no
+  // escape hatch to lean on either -- `TAN_CONTRACT_OFFLINE=1` downgrades a
+  // MISSING artefact and nothing else, and is ignored outright under CI.
   "monitor.no-port": "reserved",
 
   "models.panel-not-wired": null,
