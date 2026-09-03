@@ -2,6 +2,7 @@
 
 import {
   checkSdkReadiness,
+  sdkIdentityVersion,
   clearActiveSdkPointer,
   narrowSdkCurrent,
   switchActiveSdk,
@@ -474,7 +475,17 @@ async function selectSdk(): Promise<void> {
   const entries = state?.sdk.localEntries ?? [];
 
   const items: SdkPickItem[] = entries.map((entry) => {
-    const label = entry.version ?? pathTail(entry.path);
+    // `sdkIdentityVersion`, not `entry.version ?? pathTail(...)`. The
+    // priority was backwards: `entry.version` is read from the SDK's own
+    // metadata, and an RC declares the release it is a CANDIDATE for
+    // (alp-sdk#1902), so `~/.alp/sdk/v0.16.0-rc1` labelled itself `0.16.0`.
+    //
+    // This is a PICKER, which makes it the worst place for that: with both
+    // `v0.16.0` and `v0.16.0-rc1` installed, two rows carried the SAME label
+    // and choosing between them activated an SDK the customer did not pick.
+    // `detail` shows the path, but a label is what a picker is read by.
+    const label =
+      sdkIdentityVersion(entry.path, entry.version) ?? pathTail(entry.path);
     return {
       label: entry.active ? `$(check) ${label}` : label,
       description: entry.active ? "active" : "",
