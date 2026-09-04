@@ -128,12 +128,61 @@ jobs:
             --platform darwin --arch arm64 --dest /tmp/pinned-tan \
             --version "${{ steps.cli_version.outputs.version }}"
 
+      - name: Capture the pages this check is about to parse
+        # DIAGNOSIS, not verification — this step asserts nothing and cannot
+        # fail the job.
+        #
+        # Every scheduled run so far reported `0 commands, 0 options` against
+        # a binary that parses to 31 commands / 340 options on a developer's
+        # machine from the SAME staged archive. `--check` prints digests and a
+        # moved-command list, so its failure text cannot say which of "the
+        # help page differs here" or "the parser misread it" happened, and the
+        # pages it read are gone when the runner is torn down. Capturing them
+        # is what lets the NEXT red run explain itself instead of needing this
+        # workflow edited again to find out.
+        #
+        # The env matches `runTan`'s (`COLUMNS=200`, `NO_COLOR=1`) exactly. A
+        # capture taken under a different width or colour setting would be a
+        # different page from the one that failed, which is worse than none.
+        env:
+          COLUMNS: "200"
+          NO_COLOR: "1"
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/tan-help
+          /tmp/pinned-tan/tan --version > /tmp/tan-help/version.txt 2>&1 || true
+          /tmp/pinned-tan/tan --help > /tmp/tan-help/root-help.txt 2>&1 || true
+          /tmp/pinned-tan/tan completion --shell bash \
+            > /tmp/tan-help/completion.txt 2>&1 || true
+          {
+            echo "uname -m:        $(uname -m)"
+            echo "productVersion:  $(sw_vers -productVersion)"
+            echo "TERM:            ${TERM:-<unset>}"
+            echo "binary sha256:   $(shasum -a 256 /tmp/pinned-tan/tan)"
+            echo "root-help bytes: $(wc -c < /tmp/tan-help/root-help.txt)"
+            echo "--- box headers rich drew (this is the whole diagnosis) ---"
+            grep -oE '^╭─ [^─]+ ─' /tmp/tan-help/root-help.txt \
+              || echo "(no box header matched -- rich drew no boxes at all)"
+          } > /tmp/tan-help/host.txt 2>&1
+          cat /tmp/tan-help/host.txt
+
       - name: Does the record still match the binary?
         env:
           # `fetch.mjs` defaults to the copy VS Code installed on a developer's
           # own machine, which does not exist on a runner.
           TAN_BIN: /tmp/pinned-tan/tan
         run: node scripts/tan-surface/fetch.mjs --check
+
+      - name: Upload the captured pages
+        # Only on failure: a green run's pages are the ones already recorded in
+        # `test/golden/tan-surface/surface.json`, so keeping them is storage
+        # spent on something already in git.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tan-help-${{ github.run_id }}
+          path: /tmp/tan-help/
+          if-no-files-found: error
 
       - name: Say what a failure means
         if: failure()

@@ -733,7 +733,9 @@ function describeCommand(helpText, label) {
  *  The Options box is skipped: its rows are flags, not commands. */
 export function parseCommandNames(rootHelp) {
   const names = new Set();
+  const titles = [];
   for (const box of parseBoxes(rootHelp)) {
+    titles.push(box.title);
     if (box.title === "Options") continue;
     for (const entry of parseBoxEntries(
       box.rows,
@@ -741,6 +743,41 @@ export function parseCommandNames(rootHelp) {
     )) {
       if (/^[a-z][a-z0-9-]*$/.test(entry.name)) names.add(entry.name);
     }
+  }
+  // ZERO COMMANDS IS A HARD FAILURE, the same way `global_flags is empty` is.
+  //
+  // This is the gap the other guards in this file left open, and it is the
+  // one that cost four consecutive red `tan surface drift` runs reading
+  // `0 commands, 0 options (0 inert), 0 refusing subcommand(s), 12 global
+  // options` against a binary that parses to 31 commands elsewhere.
+  //
+  // Returning `[]` is worse than any misparse, because every downstream check
+  // is written to iterate what this produced:
+  //
+  //   * `buildSnapshot`'s #602 guard ("zero captured options is a parser
+  //     failure") loops over `Object.keys(commands)`. Empty object, zero
+  //     iterations, nothing to catch.
+  //   * `globalOptions` is read from `tan completion --shell bash`, not from
+  //     this page, so it stays right and the summary line reads like a
+  //     healthy probe that found an empty CLI.
+  //   * `--check` then reports every real command as "the record has it, the
+  //     binary does not" and tells the reader to re-capture — which would
+  //     write `commands: {}` over a correct record that
+  //     `src/alpCli/pinnedSurface.ts` drives real behaviour from.
+  //
+  // The box titles go in the message on purpose: they are the whole
+  // diagnosis. `Options` alone means the command-group boxes were not on the
+  // page; `Options, Setup, Build & run, …` means they WERE and every row in
+  // them was misread, which is a parser fix, not a tan change.
+  if (names.size === 0) {
+    throw new Error(
+      `tan --help yielded no command names. Boxes read: ` +
+        `${titles.length ? titles.join(", ") : "(none)"}. Every real tan ` +
+        `lists its commands here, so this is a help-layout or capture ` +
+        `failure, not a CLI with no commands — refusing to report an empty ` +
+        `surface as a finding, because a re-capture would then overwrite the ` +
+        `record every other gate trusts.`,
+    );
   }
   return [...names].sort();
 }
