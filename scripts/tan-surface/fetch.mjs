@@ -366,10 +366,43 @@ export function classifyDescriptionInert(description) {
 
 /** Run tan read-only. Throws on a spawn failure; returns the raw result so
  *  callers can decide what a non-zero exit means. */
+/** The env every probe runs under. `NO_COLOR=1` is NOT enough on its own, and
+ *  that gap is what kept `tan surface drift` red on every scheduled run since
+ *  the workflow landed.
+ *
+ *  rich reads `NO_COLOR` as "drop the COLOURS", not "emit no ANSI": bold and
+ *  dim survive it. It stays silent locally only because nothing there asks for
+ *  a terminal, so rich disables ANSI wholesale. A GitHub runner sets
+ *  `FORCE_COLOR`, which puts rich back into terminal mode, and the help page
+ *  arrives as
+ *
+ *    \x1b[2m╭─\x1b[0m\x1b[2m Options \x1b[0m…
+ *
+ *  Every box header then fails to start with `╭`, `parseBoxes` returns
+ *  nothing, and the whole CLI reads as empty — with `TERM=dumb` already set on
+ *  that host and doing nothing to stop it.
+ *
+ *  DELETED rather than set to "0": `FORCE_COLOR=0` is itself a value some
+ *  readers treat as "explicitly asked about colour", and the goal here is a
+ *  probe that looks like no one asked at all. `CLICOLOR_FORCE` does not
+ *  reproduce it on the pinned 0.6.0 and is removed on the same principle
+ *  rather than on evidence — it is the same lever with another name.
+ *
+ *  Stripping ANSI from the captured text afterwards would ALSO parse, and is
+ *  the wrong fix: `sourceDigest` is a digest of the raw pages, so a strip
+ *  would silently redefine what the recorded digest means and force a
+ *  re-capture of a record nothing is wrong with. */
+export function helpEnv(baseEnv) {
+  const env = { ...baseEnv, COLUMNS: HELP_COLUMNS, NO_COLOR: "1" };
+  delete env.FORCE_COLOR;
+  delete env.CLICOLOR_FORCE;
+  return env;
+}
+
 function runTan(binary, args) {
   const result = spawnSync(binary, args, {
     encoding: "utf8",
-    env: { ...process.env, COLUMNS: HELP_COLUMNS, NO_COLOR: "1" },
+    env: helpEnv(process.env),
     maxBuffer: 32 * 1024 * 1024,
   });
   if (result.error) {

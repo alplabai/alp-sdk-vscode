@@ -158,6 +158,12 @@ jobs:
             echo "uname -m:        $(uname -m)"
             echo "productVersion:  $(sw_vers -productVersion)"
             echo "TERM:            ${TERM:-<unset>}"
+            # The three that decide whether rich emits ANSI at all. This is
+            # what the first capture was missing: FORCE_COLOR on the runner is
+            # why NO_COLOR=1 was not enough, and nothing in the log said so.
+            echo "FORCE_COLOR:     ${FORCE_COLOR:-<unset>}"
+            echo "CLICOLOR_FORCE:  ${CLICOLOR_FORCE:-<unset>}"
+            echo "NO_COLOR:        ${NO_COLOR:-<unset>}"
             echo "binary sha256:   $(shasum -a 256 /tmp/pinned-tan/tan)"
             echo "root-help bytes: $(wc -c < /tmp/tan-help/root-help.txt)"
             echo "--- box headers rich drew (this is the whole diagnosis) ---"

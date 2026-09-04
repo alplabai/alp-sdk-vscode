@@ -103,6 +103,50 @@ test("a root help that yields no command names is a failure, not an empty surfac
   );
 });
 
+// ---------------------------------------------------------------------------
+// helpEnv — the CAUSE behind the guard above
+//
+// Measured, not reasoned: the runner's captured `root-help.txt` and a local
+// capture come from a byte-identical binary
+// (sha256 6035d67ac4f11204ccbd7701a20fdda80b95ae4946a32a7f0b7b0d0070a3c17e),
+// and `FORCE_COLOR=1` alone reproduces the CI failure verbatim on a developer
+// machine — same message, same `Boxes read: (none)`.
+
+test("FORCE_COLOR is removed, because NO_COLOR does not stop rich emitting bold and dim", () => {
+  // Arrange: a runner-shaped env. GitHub's macOS host carries FORCE_COLOR and
+  // TERM=dumb, and TERM=dumb does NOT prevent the ANSI.
+  const runnerEnv = { FORCE_COLOR: "1", TERM: "dumb", PATH: "/usr/bin" };
+
+  // Act
+  const env = mod.helpEnv(runnerEnv);
+
+  // Assert — absent, not "0". A probe should look like nobody asked about
+  // colour, and `FORCE_COLOR=0` is still an answer to that question.
+  assert.ok(
+    !("FORCE_COLOR" in env),
+    "FORCE_COLOR survived — rich re-enters terminal mode and every box header " +
+      "arrives as \\x1b[2m╭─, which parseBoxes cannot match",
+  );
+  assert.ok(!("CLICOLOR_FORCE" in env), "CLICOLOR_FORCE survived");
+  assert.equal(env.NO_COLOR, "1");
+  assert.equal(env.COLUMNS, "200");
+  // Everything else is passed through: the probe still needs a PATH.
+  assert.equal(env.PATH, "/usr/bin");
+});
+
+test("the caller's own environment is never mutated", () => {
+  // Arrange
+  const runnerEnv = { FORCE_COLOR: "1", PATH: "/usr/bin" };
+
+  // Act
+  mod.helpEnv(runnerEnv);
+
+  // Assert — `process.env` is what gets passed in production. Deleting from it
+  // in place would change the colour behaviour of everything downstream of
+  // this script, which is a side effect a probe has no business having.
+  assert.equal(runnerEnv.FORCE_COLOR, "1");
+});
+
 test("the guard names the box titles it did read, so the layout change is diagnosable", () => {
   // Arrange / Act
   let message = "";
