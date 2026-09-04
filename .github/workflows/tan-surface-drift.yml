@@ -158,12 +158,19 @@ jobs:
             echo "uname -m:        $(uname -m)"
             echo "productVersion:  $(sw_vers -productVersion)"
             echo "TERM:            ${TERM:-<unset>}"
-            # The three that decide whether rich emits ANSI at all. This is
-            # what the first capture was missing: FORCE_COLOR on the runner is
-            # why NO_COLOR=1 was not enough, and nothing in the log said so.
-            echo "FORCE_COLOR:     ${FORCE_COLOR:-<unset>}"
-            echo "CLICOLOR_FORCE:  ${CLICOLOR_FORCE:-<unset>}"
-            echo "NO_COLOR:        ${NO_COLOR:-<unset>}"
+            # EVERY env name that could put rich into terminal mode, not a
+            # hand-picked three. Picking three is exactly how this took an
+            # extra round trip: the second capture printed `FORCE_COLOR:
+            # <unset>` and refuted the cause the fix had already been written
+            # for, without naming what IS set instead.
+            #
+            # Names AND values, deliberately: none of these carry secrets, and
+            # a name with no value cannot say whether rich would honour it.
+            # The pattern is deliberately wider than rich's current list so a
+            # variable added by a future runner image still shows up.
+            echo "--- colour/terminal environment ---"
+            env | grep -aiE '^[A-Z_]*(COLOR|COLOUR|TTY|TERM|ANSI|CI|INTERACTIVE)[A-Z_]*=' \
+              | sort || echo "(nothing matched)"
             echo "binary sha256:   $(shasum -a 256 /tmp/pinned-tan/tan)"
             echo "root-help bytes: $(wc -c < /tmp/tan-help/root-help.txt)"
             echo "--- box headers rich drew (this is the whole diagnosis) ---"

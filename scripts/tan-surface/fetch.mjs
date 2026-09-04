@@ -366,32 +366,38 @@ export function classifyDescriptionInert(description) {
 
 /** Run tan read-only. Throws on a spawn failure; returns the raw result so
  *  callers can decide what a non-zero exit means. */
-/** The env every probe runs under. `NO_COLOR=1` is NOT enough on its own, and
- *  that gap is what kept `tan surface drift` red on every scheduled run since
- *  the workflow landed.
+/** The env every probe runs under, and the one thing that is PROVEN about it:
+ *  `NO_COLOR=1` is not enough on its own.
  *
- *  rich reads `NO_COLOR` as "drop the COLOURS", not "emit no ANSI": bold and
- *  dim survive it. It stays silent locally only because nothing there asks for
- *  a terminal, so rich disables ANSI wholesale. A GitHub runner sets
- *  `FORCE_COLOR`, which puts rich back into terminal mode, and the help page
- *  arrives as
+ *  rich reads `NO_COLOR` as "drop the COLOURS", not "emit no ANSI" — bold
+ *  (`\x1b[1m`) and dim (`\x1b[2m`) survive it. When something else puts rich
+ *  into terminal mode, every box header arrives as
  *
  *    \x1b[2m╭─\x1b[0m\x1b[2m Options \x1b[0m…
  *
- *  Every box header then fails to start with `╭`, `parseBoxes` returns
- *  nothing, and the whole CLI reads as empty — with `TERM=dumb` already set on
- *  that host and doing nothing to stop it.
+ *  no line starts with `╭`, `parseBoxes` returns nothing, and the whole CLI
+ *  reads as empty. That is the `tan surface drift` failure, and it reproduces
+ *  on a developer machine under `FORCE_COLOR=1`, `PY_COLORS=1` or
+ *  `TTY_COMPATIBLE=1` against the staged 0.6.0.
  *
- *  DELETED rather than set to "0": `FORCE_COLOR=0` is itself a value some
- *  readers treat as "explicitly asked about colour", and the goal here is a
- *  probe that looks like no one asked at all. `CLICOLOR_FORCE` does not
- *  reproduce it on the pinned 0.6.0 and is removed on the same principle
- *  rather than on evidence — it is the same lever with another name.
+ *  WHICH of those the runner sets is NOT established. An earlier version of
+ *  this comment claimed `FORCE_COLOR`; the runner's own capture then printed
+ *  `FORCE_COLOR: <unset>`, `CLICOLOR_FORCE: <unset>`, `NO_COLOR: 1`,
+ *  `TERM: dumb` — and that exact combination reproduces NOTHING locally, so
+ *  the forcing variable is still unidentified. The deletions below are
+ *  therefore hardening against three known levers, NOT the fix for the
+ *  observed failure. They are kept because each one demonstrably causes it if
+ *  present, and dropped names are cheap; do not read them as a diagnosis.
  *
- *  Stripping ANSI from the captured text afterwards would ALSO parse, and is
- *  the wrong fix: `sourceDigest` is a digest of the raw pages, so a strip
- *  would silently redefine what the recorded digest means and force a
- *  re-capture of a record nothing is wrong with. */
+ *  DELETED rather than set to "0": `FORCE_COLOR=0` is itself an answer to a
+ *  question this probe should not be asking. The goal is an env that looks
+ *  like nobody asked about colour at all.
+ *
+ *  Stripping ANSI from the captured text afterwards would also parse, and is a
+ *  larger change than it looks: `sourceDigest` is a digest of the raw pages,
+ *  so stripping before hashing redefines what the recorded digest means and
+ *  needs a deliberate re-capture. That may still be the right answer — it is
+ *  the only cause-independent one — but it is not this change. */
 export function helpEnv(baseEnv) {
   const env = { ...baseEnv, COLUMNS: HELP_COLUMNS, NO_COLOR: "1" };
   delete env.FORCE_COLOR;
