@@ -10,11 +10,12 @@
 //   [surface] tan 0.6.0: 0 commands, 0 options (0 inert), 0 refusing
 //   subcommand(s), 12 global options, ...
 //
-// while the SAME staged binary (sha256
-// c6c72b1fbcd42e43cebbf91111699773c64e003099e472090792e8226528cfe6) parses to
-// 31 commands / 340 options locally. Whatever makes the runner's root help
-// different, the fetcher's answer to it was to report an empty surface as a
-// finding rather than as a failure.
+// while the SAME binary (launcher sha256
+// 6035d67ac4f11204ccbd7701a20fdda80b95ae4946a32a7f0b7b0d0070a3c17e, identical
+// on both hosts) parses to 31 commands / 340 options locally. The cause turned
+// out to be terminal styling -- see the stripAnsi block below -- but the
+// fetcher's answer to it was to report an empty surface as a FINDING rather
+// than as a failure, and that is what this first pair of tests pins.
 //
 // Why that is the dangerous direction, and not merely an unhelpful one:
 //
@@ -104,47 +105,61 @@ test("a root help that yields no command names is a failure, not an empty surfac
 });
 
 // ---------------------------------------------------------------------------
-// helpEnv — the CAUSE behind the guard above
+// stripAnsi — the CAUSE the guard above exposed
 //
-// Measured, not reasoned: the runner's captured `root-help.txt` and a local
-// capture come from a byte-identical binary
-// (sha256 6035d67ac4f11204ccbd7701a20fdda80b95ae4946a32a7f0b7b0d0070a3c17e),
-// and `FORCE_COLOR=1` alone reproduces the CI failure verbatim on a developer
-// machine — same message, same `Boxes read: (none)`.
+// Measured, not reasoned. The runner's captured `root-help.txt` and a local
+// capture come from a byte-identical binary (sha256
+// 6035d67ac4f11204ccbd7701a20fdda80b95ae4946a32a7f0b7b0d0070a3c17e) on the
+// same macOS (26.5.2). Strip the runner page's 384 SGR sequences and the two
+// files are BYTE-IDENTICAL. Only the styling differed.
 
-test("FORCE_COLOR is removed, because NO_COLOR does not stop rich emitting bold and dim", () => {
-  // Arrange: a runner-shaped env. GitHub's macOS host carries FORCE_COLOR and
-  // TERM=dumb, and TERM=dumb does NOT prevent the ANSI.
-  const runnerEnv = { FORCE_COLOR: "1", TERM: "dumb", PATH: "/usr/bin" };
+/** One real box header, exactly as the runner emitted it. */
+const STYLED_BOX_HEADER =
+  "\x1b[2m╭─\x1b[0m\x1b[2m Setup \x1b[0m\x1b[2m──────────────────────╮\x1b[0m";
 
-  // Act
-  const env = mod.helpEnv(runnerEnv);
+test("SGR sequences are removed, so a styled page and a clean one are one page", () => {
+  // Arrange / Act
+  const stripped = mod.stripAnsi(STYLED_BOX_HEADER);
 
-  // Assert — absent, not "0". A probe should look like nobody asked about
-  // colour, and `FORCE_COLOR=0` is still an answer to that question.
+  // Assert — the header must now START with the box character, which is the
+  // single condition `parseBoxes` failed on in CI.
   assert.ok(
-    !("FORCE_COLOR" in env),
-    "FORCE_COLOR survived — rich re-enters terminal mode and every box header " +
-      "arrives as \\x1b[2m╭─, which parseBoxes cannot match",
+    stripped.startsWith("╭─"),
+    `still not a box header after stripping: ${JSON.stringify(stripped)}`,
   );
-  assert.ok(!("CLICOLOR_FORCE" in env), "CLICOLOR_FORCE survived");
-  assert.equal(env.NO_COLOR, "1");
-  assert.equal(env.COLUMNS, "200");
-  // Everything else is passed through: the probe still needs a PATH.
-  assert.equal(env.PATH, "/usr/bin");
+  assert.ok(!stripped.includes("\x1b"), "an escape survived the strip");
 });
 
-test("the caller's own environment is never mutated", () => {
-  // Arrange
-  const runnerEnv = { FORCE_COLOR: "1", PATH: "/usr/bin" };
+test("stripping is the identity on a clean capture, so the recorded digest cannot move", () => {
+  // Arrange: the local capture carries ZERO escapes. This is the whole reason
+  // the fix does not require re-capturing `surface.json` — a claim that was
+  // made the other way round once and was wrong.
+  // Act / Assert
+  assert.equal(mod.stripAnsi(ROOT_HELP_WITH_COMMANDS), ROOT_HELP_WITH_COMMANDS);
+});
+
+test("a styled page parses to exactly the commands its clean twin does", () => {
+  // Arrange: the same fixture, restyled the way the runner styles it.
+  const styled = ROOT_HELP_WITH_COMMANDS.split("\n")
+    .map((line) =>
+      line.startsWith("╭") || line.startsWith("│") || line.startsWith("╰")
+        ? `\x1b[2m${line}\x1b[0m`
+        : line,
+    )
+    .join("\n");
 
   // Act
-  mod.helpEnv(runnerEnv);
+  const clean = mod.parseCommandNames(ROOT_HELP_WITH_COMMANDS);
+  const viaStrip = mod.parseCommandNames(mod.stripAnsi(styled));
 
-  // Assert — `process.env` is what gets passed in production. Deleting from it
-  // in place would change the colour behaviour of everything downstream of
-  // this script, which is a side effect a probe has no business having.
-  assert.equal(runnerEnv.FORCE_COLOR, "1");
+  // Assert — and prove the fixture is not vacuous: unstripped, the same page
+  // is the CI failure.
+  assert.deepEqual(viaStrip, clean);
+  assert.throws(
+    () => mod.parseCommandNames(styled),
+    /no command names/i,
+    "the styled fixture must reproduce the failure, or it proves nothing",
+  );
 });
 
 test("the guard names the box titles it did read, so the layout change is diagnosable", () => {

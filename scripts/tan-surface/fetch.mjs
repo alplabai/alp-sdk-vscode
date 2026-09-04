@@ -366,51 +366,64 @@ export function classifyDescriptionInert(description) {
 
 /** Run tan read-only. Throws on a spawn failure; returns the raw result so
  *  callers can decide what a non-zero exit means. */
-/** The env every probe runs under, and the one thing that is PROVEN about it:
- *  `NO_COLOR=1` is not enough on its own.
+/** SGR escape sequences — `\x1b[…m`, the only kind rich emits into help text.
+ *  Deliberately not a general ANSI matcher: a cursor-movement or clear-screen
+ *  sequence in a help page would be a real change worth failing on, and this
+ *  should not quietly absorb one. */
+const SGR_SEQUENCE = /\x1b\[[0-9;]*m/g;
+
+/** Remove terminal styling from a captured page.
  *
- *  rich reads `NO_COLOR` as "drop the COLOURS", not "emit no ANSI" — bold
- *  (`\x1b[1m`) and dim (`\x1b[2m`) survive it. When something else puts rich
- *  into terminal mode, every box header arrives as
+ *  WHY, measured rather than assumed: the runner's captured `tan --help` and a
+ *  developer's are the same page. Strip its 384 SGR sequences and the two are
+ *  BYTE-IDENTICAL — same macOS (26.5.2), same binary (sha256
+ *  6035d67ac4f11204ccbd7701a20fdda80b95ae4946a32a7f0b7b0d0070a3c17e). Only the
+ *  styling differs, and every box header arrives as
  *
  *    \x1b[2m╭─\x1b[0m\x1b[2m Options \x1b[0m…
  *
- *  no line starts with `╭`, `parseBoxes` returns nothing, and the whole CLI
- *  reads as empty. That is the `tan surface drift` failure, and it reproduces
- *  on a developer machine under `FORCE_COLOR=1`, `PY_COLORS=1` or
- *  `TTY_COMPATIBLE=1` against the staged 0.6.0.
+ *  so no line starts with `╭`, `parseBoxes` returns nothing, and the whole CLI
+ *  reads as empty.
  *
- *  WHICH of those the runner sets is NOT established. An earlier version of
- *  this comment claimed `FORCE_COLOR`; the runner's own capture then printed
- *  `FORCE_COLOR: <unset>`, `CLICOLOR_FORCE: <unset>`, `NO_COLOR: 1`,
- *  `TERM: dumb` — and that exact combination reproduces NOTHING locally, so
- *  the forcing variable is still unidentified. The deletions below are
- *  therefore hardening against three known levers, NOT the fix for the
- *  observed failure. They are kept because each one demonstrably causes it if
- *  present, and dropped names are cheap; do not read them as a diagnosis.
+ *  `NO_COLOR=1` does not prevent it: rich reads it as "drop the COLOURS", not
+ *  "emit no ANSI", and bold (`\x1b[1m`) and dim (`\x1b[2m`) survive. Neither
+ *  does `TERM=dumb`, which the runner already sets.
  *
- *  DELETED rather than set to "0": `FORCE_COLOR=0` is itself an answer to a
- *  question this probe should not be asking. The goal is an env that looks
- *  like nobody asked about colour at all.
+ *  WHICH env var puts rich into terminal mode there is still NOT identified.
+ *  `FORCE_COLOR`, `PY_COLORS` and `TTY_COMPATIBLE` each reproduce it locally —
+ *  but only with a TTY-ish `TERM`; under the runner's own `TERM=dumb` none of
+ *  them do, and the runner's capture shows `FORCE_COLOR: <unset>`,
+ *  `CLICOLOR_FORCE: <unset>`. An earlier fix here named `FORCE_COLOR` as the
+ *  cause and was wrong. This one does not need the answer: it is
+ *  cause-independent, which is why it replaced the env-scrubbing attempt
+ *  rather than joining it.
  *
- *  Stripping ANSI from the captured text afterwards would also parse, and is a
- *  larger change than it looks: `sourceDigest` is a digest of the raw pages,
- *  so stripping before hashing redefines what the recorded digest means and
- *  needs a deliberate re-capture. That may still be the right answer — it is
- *  the only cause-independent one — but it is not this change. */
-export function helpEnv(baseEnv) {
-  const env = { ...baseEnv, COLUMNS: HELP_COLUMNS, NO_COLOR: "1" };
-  delete env.FORCE_COLOR;
-  delete env.CLICOLOR_FORCE;
-  return env;
+ *  AND IT DOES NOT MOVE THE RECORD. Stripping was rejected once on the
+ *  grounds that `sourceDigest` hashes the raw pages, so hashing stripped text
+ *  would redefine the digest and force a re-capture. That reasoning was wrong
+ *  for this input: a clean capture contains ZERO SGR sequences, so the strip
+ *  is the identity function on it and `sourceDigest` is unchanged
+ *  (`28112bfd9d9a`, still the value in `surface.json`). What it changes is
+ *  that a STYLED capture now hashes to that same value instead of a different
+ *  one — which is the whole point. */
+export function stripAnsi(text) {
+  return text.replace(SGR_SEQUENCE, "");
 }
 
 function runTan(binary, args) {
   const result = spawnSync(binary, args, {
     encoding: "utf8",
-    env: helpEnv(process.env),
+    env: { ...process.env, COLUMNS: HELP_COLUMNS, NO_COLOR: "1" },
     maxBuffer: 32 * 1024 * 1024,
   });
+  // Stripped at the boundary, so NOTHING downstream — parser, digest, or the
+  // `--check` diff — can see a styled page and a clean one as different.
+  if (typeof result.stdout === "string") {
+    result.stdout = stripAnsi(result.stdout);
+  }
+  if (typeof result.stderr === "string") {
+    result.stderr = stripAnsi(result.stderr);
+  }
   if (result.error) {
     throw new Error(
       `could not run "${binary} ${args.join(" ")}": ${result.error.message}`,
