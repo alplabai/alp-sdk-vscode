@@ -775,6 +775,43 @@ async function main() {
         (tabs[0] as HTMLButtonElement).click();
         await settle();
       }
+
+      // `tan build --plan` is deferred (tan-cli#427), so on the pinned CLI the
+      // panel ALWAYS posts `plan: null` with a deferred message. That used to
+      // collapse the whole tab into "No build plan" and take the system
+      // manifest down with it — the slices, the footprints and the memory map,
+      // all of which the panel had already read off disk and posted. Nothing
+      // could open any of it in a shipped build.
+      const g2 = globalThis as unknown as {
+        __ALP_POST_TO_WEBVIEW__: (m: unknown) => void;
+      };
+      g2.__ALP_POST_TO_WEBVIEW__({
+        type: "buildPlanData",
+        plan: null,
+        error:
+          "`tan build --plan` is deferred and not available in this build " +
+          "(see https://github.com/alplabai/tan-cli/issues/427).",
+      });
+      await settle();
+      const noPlan = (container.textContent || "").toLowerCase();
+      if (!noPlan.includes("system manifest")) {
+        problems.push(
+          "build-plan: the system manifest vanished when no plan was available",
+        );
+      }
+      if (noPlan.includes("no build plan")) {
+        problems.push(
+          "build-plan: a deferred plan still collapses the tab into the empty state",
+        );
+      }
+      if (!noPlan.includes("tan-cli/issues/427")) {
+        problems.push(
+          "build-plan: the plan's absence is not explained on screen",
+        );
+      }
+      // Put the plan back so the click sweep below sees the normal panel.
+      feedState();
+      await settle();
     }
     // The defect this panel exists to remove, asserted at the surface a customer
     // actually reads. Fed the tan-cli#103 report — `fail: 0`, `ninja` at `warn`,
