@@ -75,10 +75,27 @@
   color: var(--status-warn);
 }
 
-.ruler {
+.rulers {
   display: flex;
   gap: var(--space-2);
-  width: 260px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.railGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 152px;
+  flex: none;
+}
+
+.railCaption {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-family-mono);
+  text-align: center;
 }
 
 /* Two labels, not a tick ladder: the window's ends are the only two addresses
@@ -92,9 +109,44 @@
   color: var(--text-secondary);
 }
 
+.axis[data-side="left"] .axisEnd {
+  right: 0;
+}
+
+.axis[data-side="right"] .axisEnd {
+  left: 0;
+}
+
+/* An aperture is a name plus the hull of what landed in it. Drawn beside the
+   map, never as a band inside it: it has no extent of its own in this
+   contract, and a band would claim one. */
+.apertureRail {
+  position: relative;
+  width: 26px;
+  flex: none;
+}
+
+.aperture {
+  position: absolute;
+  left: 3px;
+  width: 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.apertureLabel {
+  position: absolute;
+  left: 14px;
+  writing-mode: vertical-rl;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
 .axisEnd {
   position: absolute;
-  right: 0;
   transform: translateY(-50%);
 }
 
@@ -248,4 +300,58 @@
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
   white-space: pre-wrap;
+}
+
+/* Overlapping extents, stated before the picture rather than under it — this
+   is the one thing this view knows that the manifest does not. */
+.conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--status-err);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--status-err) 10%, transparent);
+}
+
+.conflictsTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--status-err);
+}
+
+.conflictList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.conflictRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.conflictKind {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.conflictNote {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  max-width: var(--prose-max);
+}
+
+.apertureNote {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  max-width: var(--prose-max);
 }

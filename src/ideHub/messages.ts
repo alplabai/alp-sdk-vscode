@@ -492,21 +492,24 @@ export interface BuildPlanDataMessage {
   error?: string;
 }
 
-/** The system manifest — the post-build IDE/tool contract (`alp build
- *  --manifest`). Pushed alongside the build plan: the plan is the planner's
- *  pre-build intent, the manifest is the resolved per-core slices + ipc +
- *  helper MCUs (post-build when `build/system-manifest.yaml` exists, else the
- *  SDK's pre-build projection). */
+/** The system manifest — the post-build IDE/tool contract. Pushed alongside
+ *  the build plan: the plan is the planner's pre-build intent, the manifest is
+ *  the resolved per-core slices + ipc + helper MCUs that a build wrote to
+ *  `build/system-manifest.yaml`.
+ *
+ *  There is no longer a pre-build projection to fall back on: `--manifest` is
+ *  RETIRED, not pending, so with no file on disk the panel posts a null
+ *  manifest and names what produces the file (`retiredBuildOptionMessage`)
+ *  rather than a flag to wait for. */
 export interface SystemManifestDataMessage {
   type: "systemManifestData";
   manifest: SystemManifest | null;
-  /** True when `manifest` is the populated `build/system-manifest.yaml`;
-   *  false when it's the SDK's pre-build projection (slices `status: pending`). */
+  /** True when `manifest` is the populated `build/system-manifest.yaml`.
+   *  False means there is no such file — not a projection standing in for it. */
   postBuild: boolean;
   /**
    * WHEN that file was written and whether it still describes the last build
-   * (#470). `null` on the projection path, which has no file — a projection is
-   * computed on the spot and cannot be stale.
+   * (#470). `null` when there is no file, which has no date to report.
    *
    * `postBuild` alone was the defect: it says a manifest EXISTS, and the panel
    * read that as "this is what your last build did". After a failed build the

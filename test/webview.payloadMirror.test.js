@@ -114,6 +114,8 @@ const MODELS = [
   // match, and a mirror-only field is refused outright either way.
   { mirror: "MemorySpan", file: MEMORY_REL },
   { mirror: "MemoryUnresolved", file: MEMORY_REL },
+  { mirror: "MemoryAperture", file: MEMORY_REL },
+  { mirror: "MemoryConflict", file: MEMORY_REL },
   { mirror: "MemoryView", file: MEMORY_REL },
 
   // ── board.yaml ──
@@ -307,6 +309,7 @@ const ALIASES = [
   { mirror: "LibraryEntry", file: BOARD_REL },
   { mirror: "SliceSizeStatus", file: MANIFEST_REL },
   { mirror: "MemorySpanKind", file: MEMORY_REL },
+  { mirror: "MemoryConflictKind", file: MEMORY_REL },
   { mirror: "ManifestFreshness", file: STALENESS_REL },
   { mirror: "DependencyStatus", file: PLANNER_REL },
   { mirror: "DependencyActionEffect", file: PLANNER_REL },

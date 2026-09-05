@@ -11,11 +11,50 @@
 // live hazard: writing the ATOC can leave the part unbootable. alp-sdk#1365 is
 // the request for the missing half; until it lands this view is read-only and
 // shows only what the manifest itself pins.
+//
+// READ-ONLY IS A GATE, NOT A HABIT: `test/memoryRegions.readOnly.test.js`
+// fails if this file grows a write path.
 
 import { useState } from "react";
-import type { MemorySpan, MemoryView, SliceSize } from "../../types";
+import type {
+  MemoryAperture,
+  MemoryConflict,
+  MemorySpan,
+  MemoryView,
+  SliceSize,
+} from "../../types";
 import { formatAddress, formatBytes } from "./format";
 import styles from "./MemoryRegions.module.css";
+
+/** Height of the rails, px. */
+const RAIL = 260;
+
+/**
+ * Vertical breathing room inside a rail, px.
+ *
+ * Not decoration: the highest and lowest extents land exactly ON the window's
+ * ends, and a hairline drawn at y=0 or y=RAIL has half its label outside a rail
+ * that clips. The window is mapped into the inset instead, which moves every
+ * mark by the same amount and so states the same distances.
+ */
+const PAD = 12;
+
+/**
+ * Magnification of the detail rail, and so the fraction of the window it covers.
+ *
+ * Fixed, not fitted to the content. On the SoM this feature was designed
+ * against, the band worth seeing — `reserved` + `storage` + the ATOC — is the
+ * top 256 KiB of a 5632 KiB window, which is 1/22 of it; at true scale that
+ * band is 12px of 260 and the ATOC inside it is 1.5px. A magnification that
+ * chased the content would change under the reader between two builds, and a
+ * ruler whose scale moves is a ruler you cannot compare against yesterday's.
+ */
+const DETAIL_FACTOR = 22;
+
+interface Window {
+  lo: number;
+  hi: number;
+}
 
 /** Where a span's end lies, or null when the manifest pinned no size. */
 function endOf(span: MemorySpan): number | null {
@@ -29,13 +68,19 @@ const KIND_LABEL: Record<MemorySpan["kind"], string> = {
   partition: "partition",
 };
 
+const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
+  overlap: "share addresses",
+  covers_load_address: "covers an image load address",
+  device_overlap: "overlap inside one flash device",
+};
+
 /**
  * The window the map covers: from the lowest pinned base to the highest pinned
  * end. Null when fewer than two distinct addresses are known — one point is
  * not a range, and a ruler drawn across nothing invites the reader to measure
  * distances that were never measured.
  */
-function windowOf(spans: MemorySpan[]): { lo: number; hi: number } | null {
+function windowOf(spans: MemorySpan[]): Window | null {
   const bases = spans.map((s) => s.base).filter((b): b is number => b !== null);
   if (bases.length === 0) return null;
   const ends = spans
@@ -46,21 +91,14 @@ function windowOf(spans: MemorySpan[]): { lo: number; hi: number } | null {
   return hi > lo ? { lo, hi } : null;
 }
 
-/**
- * Vertical breathing room inside the rail, in px.
- *
- * Not decoration: the highest and lowest extents land exactly ON the window's
- * ends, and a hairline drawn at y=0 or y=height has half its label outside a
- * rail that clips. The window is mapped into the inset instead, which moves
- * every mark by the same amount and so states the same distances.
- */
-const PAD = 12;
+/** Pixel offset of an address inside a rail drawn for `win`. */
+const yOf = (addr: number, win: Window): number =>
+  PAD + ((win.hi - addr) / (win.hi - win.lo)) * (RAIL - 2 * PAD);
 
-/** One band or hairline on the ruler. */
+/** One band or hairline on a rail. */
 function Band({
   span,
   window: win,
-  height,
   equalized,
   index,
   count,
@@ -68,8 +106,7 @@ function Band({
   onSelect,
 }: {
   span: MemorySpan;
-  window: { lo: number; hi: number };
-  height: number;
+  window: Window;
   equalized: boolean;
   index: number;
   count: number;
@@ -77,30 +114,29 @@ function Band({
   onSelect: () => void;
 }) {
   if (span.base === null) return null;
-  const size = span.sizeBytes;
-  const span_ = win.hi - win.lo;
-  const usable = height - 2 * PAD;
+  const end = endOf(span);
+  const usable = RAIL - 2 * PAD;
+  const rowHeight = usable / count;
   // Equalized gives every entry the same slice of the rail, lowest address at
   // the bottom — the same order as the true scale, so switching modes never
   // flips the picture upside down.
-  const rowHeight = usable / count;
   const top = equalized
     ? PAD + (count - 1 - index) * rowHeight
-    : PAD + ((win.hi - (endOf(span) ?? span.base)) / span_) * usable;
-  const bandHeight = equalized
+    : yOf(end ?? span.base, win);
+  const height = equalized
     ? rowHeight
-    : size === null
+    : end === null
       ? 0
-      : (size / span_) * usable;
+      : ((end - span.base) / (win.hi - win.lo)) * usable;
   return (
     <button
       type="button"
-      className={size === null ? styles.marker : styles.band}
+      className={end === null ? styles.marker : styles.band}
       data-kind={span.kind}
       data-selected={selected || undefined}
       style={{
         top: `${top}px`,
-        height: size === null && !equalized ? undefined : `${bandHeight}px`,
+        height: end === null && !equalized ? undefined : `${height}px`,
       }}
       onClick={onSelect}
       title={`${span.label} — ${formatAddress(span.base)}`}
@@ -110,50 +146,95 @@ function Band({
   );
 }
 
-/** The ruler: every extent the manifest pins, to scale unless told otherwise. */
-function Ruler({
+/** One rail: the window, its bands, and a caption naming its scale. */
+function Rail({
   spans,
+  window: win,
   equalized,
   selected,
   onSelect,
+  caption,
 }: {
   spans: MemorySpan[];
+  window: Window;
   equalized: boolean;
   selected: string | null;
   onSelect: (id: string) => void;
+  caption: string;
 }) {
-  const win = windowOf(spans);
-  if (!win) return null;
-  const height = 260;
-  const placed = spans.filter((s) => s.base !== null);
   return (
-    <div className={styles.ruler} style={{ height: `${height}px` }}>
-      {/* Two labels, and they sit at the inset ends the marks are mapped into,
-       *  not at the rail's own edges — an axis that names an address a pixel
-       *  away from the mark it belongs to is worse than no axis. */}
-      <div className={styles.axis}>
-        <span className={styles.axisEnd} style={{ top: `${PAD}px` }}>
-          {formatAddress(win.hi)}
-        </span>
-        <span className={styles.axisEnd} style={{ top: `${height - PAD}px` }}>
-          {formatAddress(win.lo)}
-        </span>
-      </div>
-      <div className={styles.rail}>
-        {placed.map((span, i) => (
+    <div className={styles.railGroup}>
+      <div className={styles.rail} style={{ height: `${RAIL}px` }}>
+        {spans.map((span, i) => (
           <Band
             key={span.id}
             span={span}
             window={win}
-            height={height}
             equalized={equalized}
             index={i}
-            count={placed.length}
+            count={spans.length}
             selected={selected === span.id}
             onSelect={() => onSelect(span.id)}
           />
         ))}
       </div>
+      <span className={styles.railCaption}>{caption}</span>
+    </div>
+  );
+}
+
+/** Axis labels for a rail: the two addresses its ends actually are. */
+function Axis({
+  window: win,
+  side,
+}: {
+  window: Window;
+  side: "left" | "right";
+}) {
+  return (
+    <div
+      className={styles.axis}
+      data-side={side}
+      style={{ height: `${RAIL}px` }}
+    >
+      <span className={styles.axisEnd} style={{ top: `${PAD}px` }}>
+        {formatAddress(win.hi)}
+      </span>
+      <span className={styles.axisEnd} style={{ top: `${RAIL - PAD}px` }}>
+        {formatAddress(win.lo)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * One aperture as a rail beside the map — never as a band inside it.
+ *
+ * An aperture's own base and size are not in this contract; what is known is
+ * which extents the resolver put inside it. So the rail spans the hull of its
+ * members and says so: "at least this much of it is in use". A rail drawn to a
+ * guessed extent would instead say how much is left, which nothing here knows.
+ */
+function ApertureRail({
+  aperture,
+  window: win,
+}: {
+  aperture: MemoryAperture;
+  window: Window;
+}) {
+  if (aperture.hullBase === null || aperture.hullEnd === null) return null;
+  const top = yOf(aperture.hullEnd, win);
+  const bottom = yOf(aperture.hullBase, win);
+  return (
+    <div className={styles.apertureRail} style={{ height: `${RAIL}px` }}>
+      <div
+        className={styles.aperture}
+        style={{ top: `${top}px`, height: `${Math.max(bottom - top, 2)}px` }}
+        title={`${aperture.name} — hull of ${aperture.members.join(", ")}`}
+      />
+      <span className={styles.apertureLabel} style={{ top: `${top}px` }}>
+        {aperture.name}
+      </span>
     </div>
   );
 }
@@ -171,6 +252,10 @@ function SpanRow({
   onSelect: () => void;
 }) {
   const end = endOf(span);
+  const slotBudget =
+    span.kind === "slot_image" && budget && budget.flash.total !== null
+      ? budget.flash.total
+      : null;
   return (
     <li
       className={styles.row}
@@ -199,14 +284,56 @@ function SpanRow({
         {span.region && <span>region {span.region}</span>}
         {span.fs && <span>fs {span.fs}</span>}
         {span.cores.length > 0 && <span>{span.cores.join(" ↔ ")}</span>}
-        {/* The slot's capacity comes from `tan size`, not from the manifest,
-         *  so it is named as a separate measurement rather than folded into
-         *  the extent above — the map places only what the manifest pins. */}
-        {budget?.flash.total !== null && budget?.flash.total !== undefined && (
-          <span>slot budget {formatBytes(budget.flash.total)} · tan size</span>
+        {/* A slot's capacity comes from `tan size`, not from the manifest, so
+         *  it is named as a separate measurement rather than folded into the
+         *  extent above. Gated on the KIND, not just on a name match: a
+         *  partition may legally be named after a core. */}
+        {slotBudget !== null && (
+          <span>slot budget {formatBytes(slotBudget)} · tan size</span>
         )}
       </span>
     </li>
+  );
+}
+
+/** Overlapping extents, stated before the picture rather than under it. */
+function Conflicts({ conflicts }: { conflicts: MemoryConflict[] }) {
+  if (conflicts.length === 0) return null;
+  return (
+    <div className={styles.conflicts} role="alert">
+      <p className={styles.conflictsTitle}>
+        {conflicts.length === 1
+          ? "One extent lands on another"
+          : `${conflicts.length} extents land on others`}
+      </p>
+      <ul className={styles.conflictList}>
+        {conflicts.map((c) => (
+          <li key={c.id} className={styles.conflictRow}>
+            <span className={styles.rowName}>
+              {c.first} · {c.second}
+            </span>
+            <span className={styles.conflictKind}>
+              {CONFLICT_TITLE[c.kind]}
+            </span>
+            <code className={styles.addr}>
+              {c.device !== null
+                ? `+${formatBytes(c.from)} – +${formatBytes(c.to)} in ${c.device}`
+                : c.from === c.to
+                  ? formatAddress(c.from)
+                  : `${formatAddress(c.from)} – ${formatAddress(c.to)}`}
+            </code>
+          </li>
+        ))}
+      </ul>
+      {/* The allocator's own overlap check runs against carve-outs already
+       *  placed in the SAME region; a pinned address, a partition offset and a
+       *  slice's load address are compared nowhere upstream. */}
+      <p className={styles.conflictNote}>
+        Computed here from the resolved extents — the allocator compares
+        carve-outs only against carve-outs in the same region, so nothing
+        upstream checks these pairs.
+      </p>
+    </div>
   );
 }
 
@@ -223,10 +350,24 @@ export function MemoryRegions({
   const budgetByCore = new Map(sizes.map((s) => [s.core_id, s]));
   const placed = memory.spans.filter((s) => s.base !== null);
   const deviceRelative = memory.spans.filter((s) => s.base === null);
-  const drawable = windowOf(placed) !== null;
+  const win = windowOf(placed);
+  const regionApertures = memory.apertures.filter(
+    (a) => a.kind === "region" && a.hullBase !== null,
+  );
+
+  // The top 1/DETAIL_FACTOR of the window, magnified by exactly that factor
+  // because it is drawn at the same rail height.
+  const detail: Window | null = win
+    ? { lo: win.hi - (win.hi - win.lo) / DETAIL_FACTOR, hi: win.hi }
+    : null;
+  const inDetail = detail
+    ? placed.filter((s) => (endOf(s) ?? (s.base as number)) > detail.lo)
+    : [];
 
   return (
     <div className={styles.root}>
+      <Conflicts conflicts={memory.conflicts} />
+
       <p className={styles.gap}>
         Only what the manifest pins. The SoM&rsquo;s own region table —
         bootloader, image slots and the Secure-Enclave band — is not part of{" "}
@@ -241,7 +382,7 @@ export function MemoryRegions({
         </p>
       ) : (
         <div className={styles.map}>
-          {drawable && (
+          {win && (
             <div className={styles.mapSide}>
               <div className={styles.scaleRow}>
                 <button
@@ -261,15 +402,40 @@ export function MemoryRegions({
                   Equalized
                 </button>
               </div>
-              <Ruler
-                spans={placed}
-                equalized={equalized}
-                selected={selected}
-                onSelect={setSelected}
-              />
+              <div className={styles.rulers}>
+                <Axis window={win} side="left" />
+                <Rail
+                  spans={placed}
+                  window={win}
+                  equalized={equalized}
+                  selected={selected}
+                  onSelect={setSelected}
+                  caption={equalized ? "not to scale" : "true scale"}
+                />
+                {!equalized &&
+                  regionApertures.map((a) => (
+                    <ApertureRail key={a.id} aperture={a} window={win} />
+                  ))}
+                {!equalized && detail && (
+                  <>
+                    <Rail
+                      spans={inDetail}
+                      window={detail}
+                      equalized={false}
+                      selected={selected}
+                      onSelect={setSelected}
+                      caption={`${DETAIL_FACTOR}× top ${formatBytes(
+                        detail.hi - detail.lo,
+                      )}`}
+                    />
+                    <Axis window={detail} side="right" />
+                  </>
+                )}
+              </div>
               {equalized && (
                 <p className={styles.notToScale}>
-                  Not to scale — every entry given equal height.
+                  Not to scale — every entry given equal height, and no
+                  magnified band.
                 </p>
               )}
             </div>
@@ -288,6 +454,14 @@ export function MemoryRegions({
             ))}
           </ul>
         </div>
+      )}
+
+      {memory.apertures.length > 0 && (
+        <p className={styles.apertureNote}>
+          {memory.apertures.map((a) => `${a.name} (${a.kind})`).join(" · ")} —
+          named by the manifest, with no extent of their own in this contract.
+          The rails span what resolved into each, not the aperture.
+        </p>
       )}
 
       {memory.unresolved.length > 0 && (
