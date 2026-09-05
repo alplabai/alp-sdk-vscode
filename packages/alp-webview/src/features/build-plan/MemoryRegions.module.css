@@ -10,16 +10,6 @@
   gap: var(--space-3);
 }
 
-/* The first thing read, because it is what the picture is NOT. */
-.gap {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  border-left: 2px solid var(--border-default);
-  padding-left: var(--space-3);
-  max-width: var(--prose-max);
-}
-
 .empty {
   margin: 0;
   font-size: var(--font-size-sm);
@@ -67,12 +57,6 @@
 .scaleBtn[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-fg);
-}
-
-.notToScale {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--status-warn);
 }
 
 .band[data-selected],
@@ -209,18 +193,12 @@
   color: var(--text-secondary);
 }
 
-.conflictNote {
+/* One line under the chart, where four paragraphs used to be. The rest of that
+   context now lives in the Notes tab: the map is a reading surface, not an
+   essay with a picture in it. */
+.legend {
   margin: 0;
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  max-width: var(--prose-max);
-}
-
-/* The apertures the manifest names, listed under the map rather than drawn as
-   bands in it — they have no extent of their own in this contract. */
-.apertureNote {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-  max-width: var(--prose-max);
+  max-width: 62ch;
 }

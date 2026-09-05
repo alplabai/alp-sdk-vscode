@@ -11,6 +11,7 @@ import type {
 } from "../../types";
 import styles from "./BuildPlanView.module.css";
 import { formatBytes } from "./format";
+import { MemoryNotes } from "./MemoryNotes";
 import { MemoryRegions } from "./MemoryRegions";
 import { useBuildPlan } from "./useBuildPlan";
 
@@ -123,7 +124,7 @@ function SystemManifestSection({
   // memory map is the address space. Tabs rather than a second panel — both
   // come off the same `build/system-manifest.yaml` read, and a second panel
   // would duplicate that read and its "run `tan build` first" empty state.
-  const [tab, setTab] = useState<"slices" | "memory">("slices");
+  const [tab, setTab] = useState<"slices" | "memory" | "notes">("slices");
   // Two independent commands feed this section, so both notes are rendered.
   // `sizesError` was reaching the view and being dropped on the floor: a
   // `tan size` failure left the footprint column simply absent, which reads as
@@ -201,8 +202,22 @@ function SystemManifestSection({
         >
           Memory
         </button>
+        {/* The map's context, one tab away instead of three paragraphs above
+         *  the chart. A reading surface should not have to explain itself in
+         *  place. */}
+        <button
+          type="button"
+          role="tab"
+          className={styles.tab}
+          aria-selected={tab === "notes"}
+          onClick={() => setTab("notes")}
+        >
+          Notes
+        </button>
       </div>
-      {tab === "memory" ? (
+      {tab === "notes" ? (
+        <MemoryNotes />
+      ) : tab === "memory" ? (
         <MemoryRegions memory={memory} sizes={sizes?.slices ?? []} />
       ) : (
         <ul className={styles.manifestSlices}>

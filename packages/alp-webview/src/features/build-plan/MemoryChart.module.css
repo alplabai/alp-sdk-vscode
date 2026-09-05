@@ -21,41 +21,114 @@
   stroke-width: 1;
 }
 
-/* A manifest-pinned extent: solid, because the manifest states both ends. */
-.band {
-  fill: color-mix(in srgb, var(--accent) 34%, transparent);
-  stroke: var(--accent);
-  stroke-width: 1;
-}
-
-.band[data-kind="partition"] {
-  fill: color-mix(in srgb, var(--status-info) 34%, transparent);
-  stroke: var(--status-info);
-}
-
-.band[data-selected] {
-  stroke: var(--border-focus);
-  stroke-width: 2;
-}
-
-/* The `tan size` budget: dashed, because its extent comes from a DIFFERENT
-   tool than the base it starts at. */
+/* Solid, and coloured by what the extent belongs to — its region, its flash
+   device, or its own core. Neighbouring extents in one region share a colour;
+   that is the fact worth seeing at a glance. Provenance (manifest base vs
+   tan-size budget) is carried by the legend and the row list, not by a dash
+   pattern: a chart where every edge is dashed reads as unfinished. */
+.band,
 .budget {
-  fill: color-mix(in srgb, var(--status-info) 12%, transparent);
-  stroke: var(--status-info);
   stroke-width: 1;
-  stroke-dasharray: 4 3;
 }
 
-.budgetLabel {
-  fill: var(--status-info);
-  font-size: 10px;
+.band[data-selected],
+.budget[data-selected] {
+  stroke-width: 2.5;
 }
 
 /* A base with no size is a line, not a block. */
 .marker {
-  stroke: var(--accent);
   stroke-width: 2;
+}
+
+.band[data-series="1"],
+.budget[data-series="1"] {
+  fill: color-mix(in srgb, var(--chart-1) 30%, transparent);
+  stroke: var(--chart-1);
+}
+
+.marker[data-series="1"] {
+  stroke: var(--chart-1);
+}
+
+.bandLabel[data-series="1"],
+.markerLabel[data-series="1"] {
+  fill: var(--chart-1);
+}
+
+.band[data-series="2"],
+.budget[data-series="2"] {
+  fill: color-mix(in srgb, var(--chart-2) 30%, transparent);
+  stroke: var(--chart-2);
+}
+
+.marker[data-series="2"] {
+  stroke: var(--chart-2);
+}
+
+.bandLabel[data-series="2"],
+.markerLabel[data-series="2"] {
+  fill: var(--chart-2);
+}
+
+.band[data-series="3"],
+.budget[data-series="3"] {
+  fill: color-mix(in srgb, var(--chart-3) 30%, transparent);
+  stroke: var(--chart-3);
+}
+
+.marker[data-series="3"] {
+  stroke: var(--chart-3);
+}
+
+.bandLabel[data-series="3"],
+.markerLabel[data-series="3"] {
+  fill: var(--chart-3);
+}
+
+.band[data-series="4"],
+.budget[data-series="4"] {
+  fill: color-mix(in srgb, var(--chart-4) 30%, transparent);
+  stroke: var(--chart-4);
+}
+
+.marker[data-series="4"] {
+  stroke: var(--chart-4);
+}
+
+.bandLabel[data-series="4"],
+.markerLabel[data-series="4"] {
+  fill: var(--chart-4);
+}
+
+.band[data-series="5"],
+.budget[data-series="5"] {
+  fill: color-mix(in srgb, var(--chart-5) 30%, transparent);
+  stroke: var(--chart-5);
+}
+
+.marker[data-series="5"] {
+  stroke: var(--chart-5);
+}
+
+.bandLabel[data-series="5"],
+.markerLabel[data-series="5"] {
+  fill: var(--chart-5);
+}
+
+.band[data-series="6"],
+.budget[data-series="6"] {
+  fill: color-mix(in srgb, var(--chart-6) 30%, transparent);
+  stroke: var(--chart-6);
+}
+
+.marker[data-series="6"] {
+  stroke: var(--chart-6);
+}
+
+.bandLabel[data-series="6"],
+.markerLabel[data-series="6"] {
+  fill: var(--chart-6);
 }
 
 .markerLabel,
@@ -80,13 +153,11 @@
 }
 
 /* The band the detail rail magnifies, marked on the rail it came from. */
-/* Outline only. A fill here washed out the band underneath and printed its
-   dashes through that band's own label. */
+/* The magnified slice of the window, marked on the rail's edge. A box around
+   the band printed its dashes through that band's own label. */
 .detailMark {
-  fill: none;
-  stroke: var(--text-secondary);
-  stroke-width: 1;
-  stroke-dasharray: 2 2;
+  stroke: var(--text-primary);
+  stroke-width: 3;
   pointer-events: none;
 }
 

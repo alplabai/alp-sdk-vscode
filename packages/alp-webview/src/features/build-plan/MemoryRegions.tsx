@@ -77,20 +77,21 @@ function SpanRow({
       <span className={styles.rowSize}>
         {span.sizeBytes !== null
           ? formatBytes(span.sizeBytes)
-          : "size not in the manifest"}
+          : /* A slot's capacity comes from `tan size`, not the manifest, so it
+             *  is named as a different measurement rather than folded into the
+             *  extent. Gated on the KIND, not on a name match: a partition may
+             *  legally be named after a core. */
+            budgetTo !== null && span.base !== null
+            ? `${formatBytes(budgetTo - span.base)} · tan size`
+            : "—"}
       </span>
       <span className={styles.rowMeta}>
-        {span.region && <span>region {span.region}</span>}
-        {span.fs && <span>fs {span.fs}</span>}
-        {span.cores.length > 0 && <span>{span.cores.join(" ↔ ")}</span>}
-        {/* A slot's capacity comes from `tan size`, not from the manifest, so
-         *  it is named as a separate measurement rather than folded into the
-         *  extent above. Gated on the KIND, not just on a name match: a
-         *  partition may legally be named after a core. */}
-        {budgetTo !== null && span.base !== null && (
-          <span>
-            slot budget {formatBytes(budgetTo - span.base)} · tan size
-          </span>
+        {span.region && <span>{span.region}</span>}
+        {span.fs && <span>{span.fs}</span>}
+        {/* A slot image's only core IS its label; printing it again reads as
+         *  a second fact. */}
+        {span.kind !== "slot_image" && span.cores.length > 0 && (
+          <span>{span.cores.join(" ↔ ")}</span>
         )}
       </span>
     </li>
@@ -126,14 +127,6 @@ function Conflicts({ conflicts }: { conflicts: MemoryConflict[] }) {
           </li>
         ))}
       </ul>
-      {/* The allocator's own overlap check runs against carve-outs already
-       *  placed in the SAME region; a pinned address, a partition offset and a
-       *  slice's load address are compared nowhere upstream. */}
-      <p className={styles.conflictNote}>
-        Computed here from the resolved extents — the allocator compares
-        carve-outs only against carve-outs in the same region, so nothing
-        upstream checks these pairs.
-      </p>
     </div>
   );
 }
@@ -156,13 +149,6 @@ export function MemoryRegions({
   return (
     <div className={styles.root}>
       <Conflicts conflicts={memory.conflicts} />
-
-      <p className={styles.gap}>
-        Only what the manifest pins. The SoM&rsquo;s own region table —
-        bootloader, image slots and the Secure-Enclave band — is not part of{" "}
-        <code>system-manifest-v1</code>, so it is not drawn here and nothing on
-        this screen is editable (alp-sdk#1365).
-      </p>
 
       {placed.length === 0 && deviceRelative.length === 0 ? (
         <p className={styles.empty}>
@@ -199,12 +185,11 @@ export function MemoryRegions({
                 selected={selected}
                 onSelect={toggle}
               />
-              {equalized && (
-                <p className={styles.notToScale}>
-                  Not to scale — every entry given equal height, and no
-                  magnified band.
-                </p>
-              )}
+              <p className={styles.legend}>
+                {equalized
+                  ? "Not to scale — every entry given equal height."
+                  : "Bands are extents, lines are a base with no size. Colour groups by region, device or core."}
+              </p>
             </div>
           )}
           <ul className={styles.rows}>
@@ -219,14 +204,6 @@ export function MemoryRegions({
             ))}
           </ul>
         </div>
-      )}
-
-      {memory.apertures.length > 0 && (
-        <p className={styles.apertureNote}>
-          {memory.apertures.map((a) => `${a.name} (${a.kind})`).join(" · ")} —
-          named by the manifest, with no extent of their own in this contract.
-          The bars span what resolved into each, not the aperture.
-        </p>
       )}
 
       {memory.unresolved.length > 0 && (

@@ -754,8 +754,9 @@ async function main() {
           "mram_main", // the region it came from
           "+0 b in storage", // the partition: an offset, never an address
           "64.0 kib", // its size
-          "size not in the manifest", // a slot address with no size
-          "alp-sdk#1365", // what the picture is missing, and why
+          // m55_hp's slot extent, named as tan's measurement rather than
+          // folded into the address beside it.
+          "5.50 mib · tan size",
           "peer slice skipped", // a degraded link's reason, verbatim
           // D3: true scale by default, with the fixed magnified top band
           // beside it and Equalized offered as a labelled alternative.
@@ -771,11 +772,8 @@ async function main() {
           "covers an image load address",
           "0x802b0000",
           // D4: the aperture, named beside the map with no extent of its own.
-          "named by the manifest, with no extent of their own",
-          // The `tan size` slot budget, drawn as an extent behind the
-          // hairline the manifest pinned — two numbers from two tools,
-          // kept distinguishable rather than merged.
-          "m55_hp budget",
+          // The legend that replaced four paragraphs of prose.
+          "bands are extents, lines are a base with no size",
         ]) {
           if (!memText.includes(needle)) {
             problems.push(`build-plan: memory tab missing "${needle}"`);
@@ -810,6 +808,31 @@ async function main() {
         );
         if (markers.length === 0) {
           problems.push("build-plan: memory tab drew no slot markers");
+        }
+        // The prose moved OUT of the map and into its own tab. Assert it
+        // landed there rather than simply vanishing.
+        const notesTab = tabs.find((b) =>
+          (b.textContent || "").toLowerCase().includes("notes"),
+        );
+        if (!notesTab) {
+          problems.push("build-plan: no Notes tab on the system manifest");
+        } else {
+          (notesTab as HTMLButtonElement).click();
+          await settle();
+          const notes = (container.textContent || "").toLowerCase();
+          for (const needle of [
+            "alp-sdk#1365", // why half the map is missing
+            "not in", // ...the contract
+            "nothing here is editable", // and why it stays read-only
+          ]) {
+            if (!notes.includes(needle)) {
+              problems.push(`build-plan: notes tab missing "${needle}"`);
+            }
+          }
+          // The map must not be on screen at the same time.
+          if (notes.includes("22× top")) {
+            problems.push("build-plan: the notes tab still renders the map");
+          }
         }
         (tabs[0] as HTMLButtonElement).click();
         await settle();

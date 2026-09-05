@@ -126,6 +126,31 @@ export function binaryTicks(win: Window, target = 4): number[] {
   return out;
 }
 
+/**
+ * What an extent BELONGS to, and therefore what colour it takes.
+ *
+ * A carve-out's home is the region the resolver allocated it from, a
+ * partition's is its flash device, a slot image's is its own core. Two extents
+ * in one region read as one colour, which is the thing worth seeing at a
+ * glance: not "this is a carve-out" (the row list says so) but "these three
+ * live in the same place".
+ */
+export function seriesKey(span: MemorySpan): string {
+  if (span.kind === "carve_out") return span.region ?? span.label;
+  if (span.kind === "partition") return span.device ?? span.label;
+  return span.label;
+}
+
+/** Stable colour index per home, in address order, cycling through the palette. */
+export function seriesIndex(spans: MemorySpan[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const span of spans) {
+    const key = seriesKey(span);
+    if (!out.has(key)) out.set(key, (out.size % 6) + 1);
+  }
+  return out;
+}
+
 interface RailProps {
   win: Window;
   spans: MemorySpan[];
@@ -138,6 +163,7 @@ interface RailProps {
   /** Which side of the rail the axis labels sit on. */
   axis: "left" | "right";
   caption: string;
+  series: Map<string, number>;
 }
 
 /** One rail: frame, budgets, bands, markers, axis. */
@@ -152,6 +178,7 @@ function Rail({
   onSelect,
   axis,
   caption,
+  series,
 }: RailProps) {
   const [hover, setHover] = useState<number | null>(null);
   // High addresses at the top: the range is inverted, which is the whole
@@ -231,18 +258,20 @@ function Rail({
             <g key={`budget-${s.id}`}>
               <rect
                 className={styles.budget}
+                data-series={series.get(seriesKey(s)) ?? 1}
+                data-selected={selected === s.id || undefined}
                 x={x + 1}
                 y={top}
                 width={width - 2}
                 height={Math.max(y(s.base) - top, 1)}
               />
               <text
-                className={styles.budgetLabel}
-                x={x + width - 5}
-                y={top + 11}
-                textAnchor="end"
+                className={styles.bandLabel}
+                data-series={series.get(seriesKey(s)) ?? 1}
+                x={x + 5}
+                y={top + 12}
               >
-                {s.label} budget
+                {s.label}
               </text>
             </g>
           );
@@ -270,6 +299,7 @@ function Rail({
               // height would put a wall where the manifest gave a point.
               <line
                 className={styles.marker}
+                data-series={series.get(seriesKey(s)) ?? 1}
                 x1={x}
                 x2={x + width}
                 y1={top}
@@ -278,7 +308,7 @@ function Rail({
             ) : (
               <rect
                 className={styles.band}
-                data-kind={s.kind}
+                data-series={series.get(seriesKey(s)) ?? 1}
                 data-selected={selected === s.id || undefined}
                 x={x + 1}
                 y={top}
@@ -286,13 +316,20 @@ function Rail({
                 height={Math.max(h, 1)}
               />
             )}
-            <text
-              className={isMarker ? styles.markerLabel : styles.bandLabel}
-              x={x + 5}
-              y={isMarker ? top - 4 : top + 12}
-            >
-              {s.label}
-            </text>
+            {/* A budget band already carries this label; a marker sitting on
+             *  its base would print it twice. */}
+            {(isMarker
+              ? budgetEnd(s, budgets.get(s.label)) === null
+              : true) && (
+              <text
+                className={isMarker ? styles.markerLabel : styles.bandLabel}
+                data-series={series.get(seriesKey(s)) ?? 1}
+                x={x + 5}
+                y={isMarker ? top - 4 : top + 12}
+              >
+                {s.label}
+              </text>
+            )}
           </g>
         );
       })}
@@ -427,6 +464,7 @@ export function MemoryChart({
   const regionApertures = apertures.filter(
     (a) => a.kind === "region" && a.hullBase !== null,
   );
+  const series = seriesIndex(placed);
   const y = scaleLinear()
     .domain([win.lo, win.hi])
     .range([PLOT_BOTTOM, PLOT_TOP])
@@ -452,6 +490,7 @@ export function MemoryChart({
         onSelect={onSelect}
         axis="left"
         caption={equalized ? "not to scale" : "true scale"}
+        series={series}
       />
 
       {!equalized &&
@@ -466,15 +505,17 @@ export function MemoryChart({
 
       {!equalized && (
         <>
-          {/* The magnified band, marked on the main rail and bracketed across
-           *  to the rail that magnifies it — otherwise the second rail is just
-           *  a second picture with no stated relationship to the first. */}
-          <rect
+          {/* The magnified band, marked on the EDGE of the rail it came from
+           *  and bracketed across to the rail that magnifies it — otherwise
+           *  the second rail is a second picture with no stated relationship
+           *  to the first. A box drawn around the band instead printed its
+           *  outline through that band's own label. */}
+          <line
             className={styles.detailMark}
-            x={RAIL_X}
-            y={y(detail.hi)}
-            width={RAIL_W}
-            height={Math.max(y(detail.lo) - y(detail.hi), 1)}
+            x1={RAIL_X + RAIL_W}
+            x2={RAIL_X + RAIL_W}
+            y1={y(detail.hi)}
+            y2={y(detail.lo)}
           />
           <line
             className={styles.bracket}
@@ -501,6 +542,7 @@ export function MemoryChart({
             onSelect={onSelect}
             axis="right"
             caption={`${DETAIL_FACTOR}× top ${formatBytes(detailSpan)}`}
+            series={series}
           />
         </>
       )}
