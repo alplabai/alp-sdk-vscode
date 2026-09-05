@@ -75,16 +75,42 @@ const CONFLICT_TITLE: Record<MemoryConflict["kind"], string> = {
 };
 
 /**
- * The window the map covers: from the lowest pinned base to the highest pinned
- * end. Null when fewer than two distinct addresses are known — one point is
- * not a range, and a ruler drawn across nothing invites the reader to measure
- * distances that were never measured.
+ * How far a slot image reaches, per `tan size`.
+ *
+ * The manifest pins where an image LOADS and says nothing about how much room
+ * it has; `tan size` resolves that budget from SoM metadata and reports it as
+ * `flash.total`. Measured on E1M-AEN801: 2.63 MiB for both M55 slices, which
+ * is 2688 KiB — byte-for-byte the `he_slot0` / `hp_slot0` region size. So the
+ * budget IS the slot, and drawing it is the difference between a picture with
+ * two hairlines on it and one that shows where the images actually sit.
+ *
+ * It is drawn DASHED and labelled, never as a solid manifest-pinned band: the
+ * base comes from the manifest and the extent from a second tool, and a reader
+ * has to be able to tell which number came from where.
  */
-function windowOf(spans: MemorySpan[]): Window | null {
+function budgetEnd(
+  span: MemorySpan,
+  budget: SliceSize | undefined,
+): number | null {
+  if (span.kind !== "slot_image" || span.base === null) return null;
+  const total = budget?.flash.total;
+  return typeof total === "number" && total > 0 ? span.base + total : null;
+}
+
+/**
+ * The window the map covers: from the lowest pinned base to the highest end
+ * anything reaches. Null when fewer than two distinct addresses are known — one
+ * point is not a range, and a ruler drawn across nothing invites the reader to
+ * measure distances that were never measured.
+ */
+function windowOf(
+  spans: MemorySpan[],
+  budgets: Map<string, SliceSize>,
+): Window | null {
   const bases = spans.map((s) => s.base).filter((b): b is number => b !== null);
   if (bases.length === 0) return null;
   const ends = spans
-    .map((s) => endOf(s) ?? s.base)
+    .flatMap((s) => [endOf(s) ?? s.base, budgetEnd(s, budgets.get(s.label))])
     .filter((e): e is number => e !== null);
   const lo = Math.min(...bases);
   const hi = Math.max(...ends);
@@ -94,6 +120,31 @@ function windowOf(spans: MemorySpan[]): Window | null {
 /** Pixel offset of an address inside a rail drawn for `win`. */
 const yOf = (addr: number, win: Window): number =>
   PAD + ((win.hi - addr) / (win.hi - win.lo)) * (RAIL - 2 * PAD);
+
+/** The `tan size` budget for a slot, drawn behind its hairline. */
+function BudgetBand({
+  span,
+  end,
+  window: win,
+}: {
+  span: MemorySpan;
+  end: number;
+  window: Window;
+}) {
+  if (span.base === null) return null;
+  const usable = RAIL - 2 * PAD;
+  const top = yOf(end, win);
+  const height = ((end - span.base) / (win.hi - win.lo)) * usable;
+  return (
+    <div
+      className={styles.budgetBand}
+      style={{ top: `${top}px`, height: `${height}px` }}
+      title={`${span.label} — slot budget from tan size`}
+    >
+      <span className={styles.budgetLabel}>{span.label} budget</span>
+    </div>
+  );
+}
 
 /** One band or hairline on a rail. */
 function Band({
@@ -154,6 +205,7 @@ function Rail({
   selected,
   onSelect,
   caption,
+  budgets,
 }: {
   spans: MemorySpan[];
   window: Window;
@@ -161,10 +213,23 @@ function Rail({
   selected: string | null;
   onSelect: (id: string) => void;
   caption: string;
+  budgets: Map<string, SliceSize>;
 }) {
   return (
     <div className={styles.railGroup}>
       <div className={styles.rail} style={{ height: `${RAIL}px` }}>
+        {!equalized &&
+          spans.map((span) => {
+            const end = budgetEnd(span, budgets.get(span.label));
+            return end === null ? null : (
+              <BudgetBand
+                key={`budget:${span.id}`}
+                span={span}
+                end={end}
+                window={win}
+              />
+            );
+          })}
         {spans.map((span, i) => (
           <Band
             key={span.id}
@@ -350,18 +415,33 @@ export function MemoryRegions({
   const budgetByCore = new Map(sizes.map((s) => [s.core_id, s]));
   const placed = memory.spans.filter((s) => s.base !== null);
   const deviceRelative = memory.spans.filter((s) => s.base === null);
-  const win = windowOf(placed);
+  const win = windowOf(placed, budgetByCore);
   const regionApertures = memory.apertures.filter(
     (a) => a.kind === "region" && a.hullBase !== null,
   );
 
   // The top 1/DETAIL_FACTOR of the window, magnified by exactly that factor
   // because it is drawn at the same rail height.
+  //
+  // FLOORED, because this bound is printed as an address. `(hi - lo) / 22` is
+  // almost never whole, and `Number.prototype.toString(16)` renders the
+  // remainder as hex digits after a dot — `0x80291745.d` reached the screen,
+  // which is precisely the wrong-address failure this whole view exists to
+  // prevent. An address is an integer or it is not an address.
+  const detailSpan = win
+    ? Math.max(1, Math.floor((win.hi - win.lo) / DETAIL_FACTOR))
+    : 0;
   const detail: Window | null = win
-    ? { lo: win.hi - (win.hi - win.lo) / DETAIL_FACTOR, hi: win.hi }
+    ? { lo: win.hi - detailSpan, hi: win.hi }
     : null;
   const inDetail = detail
-    ? placed.filter((s) => (endOf(s) ?? (s.base as number)) > detail.lo)
+    ? placed.filter((s) => {
+        const reach =
+          budgetEnd(s, budgetByCore.get(s.label)) ??
+          endOf(s) ??
+          (s.base as number);
+        return reach > detail.lo;
+      })
     : [];
 
   return (
@@ -411,6 +491,7 @@ export function MemoryRegions({
                   selected={selected}
                   onSelect={setSelected}
                   caption={equalized ? "not to scale" : "true scale"}
+                  budgets={budgetByCore}
                 />
                 {!equalized &&
                   regionApertures.map((a) => (
@@ -427,6 +508,7 @@ export function MemoryRegions({
                       caption={`${DETAIL_FACTOR}× top ${formatBytes(
                         detail.hi - detail.lo,
                       )}`}
+                      budgets={budgetByCore}
                     />
                     <Axis window={detail} side="right" />
                   </>

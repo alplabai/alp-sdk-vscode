@@ -153,9 +153,9 @@
 .rail {
   position: relative;
   flex: 1;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-widget);
   border-radius: var(--radius-sm);
-  background: var(--surface-badge);
+  background: var(--surface-input);
   overflow: hidden;
 }
 
@@ -171,11 +171,21 @@
   font-size: var(--font-size-xs);
   text-align: left;
   cursor: pointer;
-  overflow: hidden;
   white-space: nowrap;
   color: var(--text-primary);
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: 0;
+}
+
+/* A band clips; a hairline must not. `.marker` is a zero-height box, so
+   `overflow: hidden` on it removed its own label from the screen — the markers
+   rendered as bare lines with nothing naming them. */
+.band {
+  overflow: hidden;
+}
+
+.marker {
+  overflow: visible;
 }
 
 /* A pinned base with no size is a line, not a block. Giving it an invented
@@ -354,4 +364,29 @@
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
   max-width: var(--prose-max);
+}
+
+/* The `tan size` slot budget: where the image may reach, from a DIFFERENT tool
+   than the base beside it. Dashed and behind the hairline, so the two numbers
+   stay distinguishable — the manifest pinned the base, tan size resolved the
+   extent. */
+.budgetBand {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border: 1px dashed var(--status-info);
+  background: color-mix(in srgb, var(--status-info) 10%, transparent);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.budgetLabel {
+  position: absolute;
+  bottom: 2px;
+  left: var(--space-2);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--status-info);
+  white-space: nowrap;
 }

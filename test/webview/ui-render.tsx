@@ -385,6 +385,18 @@ function feedState() {
     hw_info: { sku: "E1M-AEN801" },
     slices: [
       {
+        // The second M55: a load address and NO tan-size row, so a hairline
+        // with no budget band beside one that has both. It also makes the
+        // window's span indivisible by the 22x detail factor, which is what
+        // lets the fractional-address gate below actually fire — a gate that
+        // cannot go red is not a gate.
+        core_id: "m55_he",
+        os: "zephyr",
+        status: "ok",
+        board: "alp_e1m_aen801_m55_he",
+        flash_args: { slot0_load_address: "0x80010000" },
+      },
+      {
         core_id: "m55_hp",
         os: "zephyr",
         status: "ok",
@@ -748,8 +760,11 @@ async function main() {
           // D3: true scale by default, with the fixed magnified top band
           // beside it and Equalized offered as a labelled alternative.
           "true scale",
-          // 0x80580000 − 0x802b0000 = 2 949 120 B; a 22× rail covers 1/22 of it.
-          "22× top 130.9 kib",
+          // The window runs from the lowest pinned base to the furthest reach,
+          // budgets included: 0x80010000 (m55_he's load address) to
+          // 0x802b0000 + 5 767 168 B (m55_hp's tan-size budget) = 0x80830000.
+          // A 22x rail covers 1/22 of that = 387 258.18 B, floored to 387 258.
+          "22× top 378.2 kib",
           "equalized",
           // D4: the conflict the allocator never checks, stated before the
           // picture — a carve-out pinned onto the HP image slot.
@@ -757,9 +772,33 @@ async function main() {
           "0x802b0000",
           // D4: the aperture, named beside the map with no extent of its own.
           "named by the manifest, with no extent of their own",
+          // The `tan size` slot budget, drawn as an extent behind the
+          // hairline the manifest pinned — two numbers from two tools,
+          // kept distinguishable rather than merged.
+          "m55_hp budget",
         ]) {
           if (!memText.includes(needle)) {
             problems.push(`build-plan: memory tab missing "${needle}"`);
+          }
+        }
+        // An address is an integer or it is not an address. `0x80291745.d`
+        // reached a real screen: the detail window was computed as
+        // `hi - (hi - lo) / 22`, which is almost never whole, and
+        // `toString(16)` renders the remainder as hex digits after a dot.
+        //
+        // Checked per LEAF ELEMENT, not on `container.textContent`: that glues
+        // adjacent elements with no separator, so a legitimate
+        // `0x802b1000` beside `4.0 KiB` reads as `0x802b10004.0` and the whole
+        // gate becomes a false alarm. (It did, first run.)
+        for (const el of Array.from(container.querySelectorAll("*"))) {
+          if (el.children.length > 0) continue;
+          const frac = (el.textContent || "").match(
+            /0x[0-9a-fA-F]+\.[0-9a-fA-F]+/,
+          );
+          if (frac) {
+            problems.push(
+              `build-plan: memory tab rendered a fractional address "${frac[0]}"`,
+            );
           }
         }
         // The slot markers exist at all. This asserts PRESENCE only — that a
